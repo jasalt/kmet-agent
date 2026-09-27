@@ -38,12 +38,12 @@
                 tui/tui-request-render (fn [_] nil)]
     (f)))
 
-(defn- mount-in [cs component & [focus opts]]
-  (let [done (tui-stubs #(apply dock/mount! cs component focus (when opts [opts])))]
+(defn- mount-in [cs component & [opts]]
+  (let [done (tui-stubs #(dock/mount! cs component (or opts {})))]
     (fn [] (tui-stubs done))))
 
-(defn- cover-in [cs component & [focus opts]]
-  (let [done (tui-stubs #(apply dock/cover! cs component focus (when opts [opts])))]
+(defn- cover-in [cs component & [opts]]
+  (let [done (tui-stubs #(dock/cover! cs component (or opts {})))]
     (fn [] (tui-stubs done))))
 
 (defn- release-in [cs component]
@@ -90,7 +90,7 @@
         disposed (atom [])
         p (panel disposed "frame")
         target (panel disposed "list")]
-    (dock/mount! cs p target)
+    (dock/mount! cs p {:focus-target target})
     (t/is (= p (top cs)) "the panel is docked")
     (t/is (identical? target (tui/tui-focused-component ui))
           "the focus target receives keys")))
@@ -162,11 +162,11 @@
         dlg (panel disposed "dialog")
         sel (panel disposed "selector")
         dlg2 (panel disposed "dialog-again")]
-    (mount-in cs dlg nil {:borrowed? true})
+    (mount-in cs dlg {:borrowed? true})
     (mount-in cs sel)
     (t/is (empty? @disposed) "a selector mount leaves the borrowed dialog alone")
     ;; the dialog takes the dock back (a re-mount, or a cover)
-    (mount-in cs dlg2 nil {:borrowed? true})
+    (mount-in cs dlg2 {:borrowed? true})
     (t/is (= ["selector"] @disposed)
           "a non-borrowed selector is disposed when borrowed chrome takes back the dock")))
 
@@ -177,7 +177,7 @@
           disposed (atom [])
           dlg (panel disposed "dialog")
           sel (panel disposed "selector")]
-      (mount-in cs dlg nil {:borrowed? true})
+      (mount-in cs dlg {:borrowed? true})
       (cover-in cs sel)
       (t/is (= [dlg sel] (mounted cs)))
       (release-in cs sel)
@@ -211,7 +211,7 @@
           disposed (atom [])
           dlg (panel disposed "dialog")
           sel (panel disposed "selector")
-          done-dlg (mount-in cs dlg nil {:borrowed? true})]
+          done-dlg (mount-in cs dlg {:borrowed? true})]
       (cover-in cs sel)
       (done-dlg)
       (t/is (= [sel] (mounted cs)) "the covered dialog left, the selector stays")
@@ -230,7 +230,7 @@
   (let [cs (test-cs)
         disposed (atom [])
         dlg (panel disposed "dialog")]
-    (mount-in cs dlg nil {:borrowed? true})
+    (mount-in cs dlg {:borrowed? true})
     (clear-in cs)
     (t/is (nil? (top cs)))
     (t/is (empty? @disposed) "borrowed panels are the owner's to dispose")))
@@ -322,7 +322,7 @@
             the input: the dock still hands focus back when it leaves"
     (let [{:keys [cs ui ed]} (focus-cs)
           dlg (panel (atom []) "dialog")]
-      (dock/mount! cs dlg nil {:borrowed? true})
+      (dock/mount! cs dlg {:borrowed? true})
       (t/is (identical? dlg (tui/tui-focused-component ui)))
       (dock/clear! cs)
       (t/is (identical? ed (tui/tui-focused-component ui))))))
@@ -332,7 +332,7 @@
             receives keys again, the released panel does not"
     (let [{:keys [cs ui ed]} (focus-cs)
           dlg (panel (atom []) "dialog")]
-      (dock/mount! cs dlg nil {:borrowed? true})
+      (dock/mount! cs dlg {:borrowed? true})
       (t/is (identical? dlg (tui/tui-focused-component ui)))
       (t/is (true? (dock/release! cs dlg)))
       (t/is (identical? ed (tui/tui-focused-component ui)))
@@ -347,7 +347,7 @@
     (let [{:keys [cs ui ed]} (focus-cs)
           dlg (panel (atom []) "dialog")
           sel (panel (atom []) "selector")]
-      (dock/mount! cs dlg nil {:borrowed? true})
+      (dock/mount! cs dlg {:borrowed? true})
       (t/is (identical? dlg (tui/tui-focused-component ui)))
       (let [done-sel (dock/cover! cs sel)]
         (t/is (identical? sel (tui/tui-focused-component ui)) "the cover holds input")

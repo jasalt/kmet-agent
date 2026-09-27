@@ -18,6 +18,7 @@
    - cover! pushes without touching anything below (pi showAuthSelect's
      temporary editorContainer swap): the login dialog's method selector
      covers it, and closing the selector reveals the dialog.
+   Both take {:focus-target f :borrowed? b} and return DONE.
 
    Leaving is by membership, never by a mount token:
    - the done fn returned by a mount removes its component from wherever
@@ -54,28 +55,18 @@
    :focus-target (or focus-target component)
    :borrowed? (boolean borrowed?)})
 
-(defn- update-stack!
-  "Atomically replace CS's dock stack with (f stack). Returns
-   {:old old :new new} — the watcher has already seen :new by the time
-   this returns, so callers use the pair for focus and disposal. A CS
-   without a dock (minimal test states) is treated as an empty one."
-  [cs f]
-  (if-let [dock (:dock-stack cs)]
-    (loop []
-      (let [old @dock
-            new (f old)]
-        (if (compare-and-set! dock old new)
-          {:old old :new new}
-          (recur))))
-    {:old nil :new nil}))
+(defn top-component
+  "The component the dock currently shows (the stack's top), or nil when
+   the editor is all there is."
+  [stack]
+  (:component (peek stack)))
 
-(defn- remove-component
-  "Take every entry whose :component is COMPONENT (identity) out of STACK.
-   Returns {:removed entries :remaining stack}."
-  [stack component]
-  (let [remove? #(identical? component (:component %))]
-    {:removed (filterv remove? stack)
-     :remaining (into [] (remove remove?) stack)}))
+(defn top-focus-target
+  "The component that should receive input while the dock's top renders —
+   a selector's inner list, or the panel itself when it was mounted
+   without an explicit focus target. Nil when the stack is empty."
+  [stack]
+  (:focus-target (peek stack)))
 
 (defn- stack-has?
   "True when C is an entry's component or focus target in STACK."
@@ -85,42 +76,20 @@
                        (identical? c (:focus-target e))))
                  stack)))
 
-(defn- top-entry [stack] (peek stack))
-
-(defn top-component
-  "The component the dock currently shows (the stack's top), or nil when
-   the editor is all there is."
-  [stack]
-  (:component (top-entry stack)))
-
-(defn top-focus-target
-  "The component that should receive input while the dock's top renders —
-   a selector's inner list, or the panel itself when it was mounted
-   without an explicit focus target. Nil when the stack is empty."
-  [stack]
-  (:focus-target (top-entry stack)))
-
-(defn registered?
-  "True when COMPONENT is still in CS's dock stack (identity). Tolerates a
-   CS without a dock (minimal test states). The dispose! invariant builds
-   on this."
-  [cs component]
-  (let [stack (some-> (:dock-stack cs) deref)]
-    (boolean (some #(identical? component (:component %)) stack))))
-
-(defn- install-focus-guard!
-  "Ensure the ::focus-guard watch on DOCK-STACK. The dock is the owner of
-   the editor slot, so it is also the chokepoint that decides what happens
-   to input when a panel leaves it (pi: disposeActiveSelector's restore).
-   The watch — not each close path — makes the invariant hold: whenever
-   the component holding focus was in the old stack and is gone from the
-   new one, input goes to the new top's focus target, else to the
-   resolver's fallback. That covers a top removal revealing a covered
-   surface, a removal from any depth, clear!, a bare atom reset and any
-   future path. Same shape as the TUI's ::ghost-guard on the overlay
-   stack: a watch cannot be bypassed by construction. Idempotent (a fixed
-   watch key), never throws (it runs inside swap! on the input dispatch
-   path).
+(defn- ensure-focus-guard!
+  "Ensure the ::focus-guard watch on DOCK-STACK — installed by
+   update-stack!, the single write path, so no dock change can bypass it.
+   The dock owns the editor slot, so it is also the chokepoint that
+   decides what happens to input when a panel leaves it (pi:
+   disposeActiveSelector's restore). The watch — not each close path —
+   makes the invariant hold: whenever the component holding focus was in
+   the old stack and is gone from the new one, input goes to the new top's
+   focus target, else to the resolver's fallback. That covers a top
+   removal revealing a covered surface, a removal from any depth, clear!,
+   a bare atom reset and any future path. Same shape as the TUI's
+   ::ghost-guard on the overlay stack: a watch cannot be bypassed by
+   construction. Idempotent (a fixed watch key), never throws (it runs
+   inside swap! on the input dispatch path).
 
    Taking focus does NOT happen here: a mount knows the new panel's focus
    target (a selector's inner list), which no watch could guess, so
@@ -137,7 +106,7 @@
                      (when (and (some? focused)
                                 (stack-has? old focused)
                                 (not (stack-has? new focused)))
-                       (if-let [top (top-entry new)]
+                       (if-let [top (peek new)]
                          ;; a covered surface is revealed: input goes to its
                          ;; focus target
                          (tui/tui-set-focus tui* (:focus-target top))
@@ -146,6 +115,32 @@
                          (tui/tui-release-focus! tui* focused))))
                    (catch Throwable _ nil)))))
   nil)
+
+(defn- update-stack!
+  "Atomically replace CS's dock stack with (f stack); installs the focus
+   guard first so every write path is guarded. Returns {:old old :new
+   new} — the watcher has already seen :new by the time this returns, so
+   callers use the pair for focus and disposal. A CS without a dock
+   (minimal test states) is treated as an empty one."
+  [cs f]
+  (if-let [dock (:dock-stack cs)]
+    (do
+      (ensure-focus-guard! cs)
+      (loop []
+        (let [old @dock
+              new (f old)]
+          (if (compare-and-set! dock old new)
+            {:old old :new new}
+            (recur)))))
+    {:old nil :new nil}))
+
+(defn- without-component
+  "STACK without every entry whose :component is COMPONENT (identity).
+   Returns STACK itself when nothing matched, so a no-op removal does not
+   swap the atom."
+  [stack component]
+  (let [kept (filterv #(not (identical? component (:component %))) stack)]
+    (if (= (count kept) (count stack)) stack kept)))
 
 (defn make-dock-area
   "The editor dock as a fn component (dsl.md stage 4, pi: the editorDock
@@ -161,85 +156,6 @@
     (or (top-component (r/tracked-deref dock-stack))
         (r/tracked-deref current-editor-atom))))
 
-(defn- describe-component
-  [component]
-  (str (type component)))
-
-(declare release!)
-
-(defn dispose!
-  "Dispose COMPONENT — the owner's ordered close for a panel it mounted.
-   The invariant (dock.md): a component is disposed only after it left the
-   stack, or the dock keeps rendering a corpse whose keys reach nothing
-   (issue #5). A still-registered component is a lifecycle bug: remove it
-   first so the visible failure cannot happen, record the violation in
-   kmet.error.log, and with --debug throw so development trips on it
-   instead of shipping another stranded panel. Handles nil."
-  [cs component]
-  (when (some? component)
-    (let [was-docked? (registered? cs component)]
-      (when was-docked?
-        (release! cs component)
-        (debug/log-error
-         "disposed a component that was still in the editor dock (removed first):"
-         (describe-component component)))
-      (cda/dispose-component! component)
-      (when (and was-docked? (debug/enabled?))
-        (throw (ex-info "Component disposed while still in the editor dock"
-                        {:type :dock/disposed-while-docked
-                         :component (describe-component component)}))))))
-
-(defn mount!
-  "Swap COMPONENT in as the dock's top: replace and dispose the displaced
-   top unless it was borrowed, keep the entries below (pi: showSelector +
-   disposeActiveSelector). FOCUS-TARGET (pi: showSelector's `focus`) is
-   the component that receives keys — the interactive child when COMPONENT
-   itself is inert chrome; defaults to COMPONENT. Returns DONE: a zero-arg
-   fn removing COMPONENT from the stack by identity, inert once it is
-   gone (pi's token check, expressed as membership). Pass :borrowed? true
-   for a panel whose owner keeps custody and re-mounts or disposes it (the
-   auth dialog, an extension dialog); the dock then never disposes it.
-
-   Focus is taken explicitly before the stack is published because only
-   the caller knows the target; the ::focus-guard watch (installed here)
-   handles every close path."
-
-  ([cs component]
-   (mount! cs component nil {}))
-  ([cs component focus-target]
-   (mount! cs component focus-target {}))
-  ([cs component focus-target {:keys [borrowed?]}]
-   (install-focus-guard! cs)
-   (let [e (entry component focus-target borrowed?)]
-     (tui/tui-set-focus (:tui cs) (:focus-target e))
-     (let [{:keys [old]} (update-stack! cs #(conj (vec (butlast %)) e))
-           displaced (top-entry old)]
-       (when (and displaced
-                  (not (identical? (:component displaced) component))
-                  (not (:borrowed? displaced)))
-         (dispose! cs (:component displaced)))
-       (tui/tui-request-render (:tui cs))
-       (fn done [] (release! cs component))))))
-
-(defn cover!
-  "Push COMPONENT on top of the dock without touching what is below (pi:
-   showAuthSelect swaps the login dialog out and back; a temporary surface
-   covers its owner). FOCUS-TARGET and :borrowed? as in mount!. Returns
-   DONE, which reveals the covered surface again. Pushing a component
-   that is already in the stack adds another entry; release!/done remove
-   every entry that holds it."
-  ([cs component]
-   (cover! cs component nil {}))
-  ([cs component focus-target]
-   (cover! cs component focus-target {}))
-  ([cs component focus-target {:keys [borrowed?]}]
-   (install-focus-guard! cs)
-   (let [e (entry component focus-target borrowed?)]
-     (tui/tui-set-focus (:tui cs) (:focus-target e))
-     (update-stack! cs #(conj % e))
-     (tui/tui-request-render (:tui cs))
-     (fn done [] (release! cs component)))))
-
 (defn release!
   "Owner-callable leave: remove COMPONENT from CS's dock stack, wherever
    it sits (identity, not a mount generation). Returns true when it
@@ -253,11 +169,82 @@
    restoring here: the ::focus-guard watch hands input to the revealed
    surface, or to the focus home."
   [cs component]
-  (install-focus-guard! cs)
-  (let [{:keys [old new]} (update-stack! cs #(:remaining (remove-component % component)))]
-    (when (> (count old) (count new))
+  (let [{:keys [old new]} (update-stack! cs #(without-component % component))]
+    (when-not (identical? old new)
       (tui/tui-request-render (:tui cs))
       true)))
+
+(defn dispose!
+  "Dispose COMPONENT — the owner's ordered close for a panel it mounted.
+   The invariant (dock.md): a component is disposed only after it left the
+   stack, or the dock keeps rendering a corpse whose keys reach nothing
+   (issue #5). release!'s result is that check: a still-registered
+   component is a lifecycle bug, so remove it first (the visible failure
+   cannot happen), record the violation in kmet.error.log, and with
+   --debug throw so development trips on it instead of shipping another
+   stranded panel. Handles nil."
+  [cs component]
+  (when (some? component)
+    (let [was-docked? (release! cs component)]
+      (when was-docked?
+        (debug/log-error
+         "disposed a component that was still in the editor dock (removed first):"
+         (type component)))
+      (cda/dispose-component! component)
+      (when (and was-docked? (debug/enabled?))
+        (throw (ex-info "Component disposed while still in the editor dock"
+                        {:type :dock/disposed-while-docked
+                         :component (type component)}))))))
+
+(defn- enter!
+  "The shared mount!/cover! path: take focus before publishing the stack
+   (only the caller knows the new panel's target; no watch could guess a
+   selector's inner list), publish it, and when REPLACE? dispose the
+   displaced top unless it was borrowed. Returns DONE (see mount!)."
+  [cs component focus-target borrowed? replace?]
+  (let [e (entry component focus-target borrowed?)]
+    (tui/tui-set-focus (:tui cs) (:focus-target e))
+    (let [{:keys [old]} (update-stack! cs (if replace?
+                                            #(conj (vec (butlast %)) e)
+                                            #(conj % e)))
+          displaced (peek old)]
+      (when (and replace?
+                 displaced
+                 (not (identical? (:component displaced) component))
+                 (not (:borrowed? displaced)))
+        (dispose! cs (:component displaced)))
+      (tui/tui-request-render (:tui cs))
+      (fn done [] (release! cs component)))))
+
+(defn mount!
+  "Swap COMPONENT in as the dock's top: replace and dispose the displaced
+   top unless it was borrowed, keep the entries below (pi: showSelector +
+   disposeActiveSelector). OPTS: :focus-target (pi: showSelector's
+   `focus`) is the component that receives keys — the interactive child
+   when COMPONENT itself is inert chrome; defaults to COMPONENT — and
+   :borrowed? true for a panel whose owner keeps custody and re-mounts or
+   disposes it (the auth dialog, an extension dialog); the dock then never
+   disposes it. Returns DONE: a zero-arg fn removing COMPONENT from the
+   stack by identity, inert once it is gone (pi's token check, expressed
+   as membership).
+
+   Focus is taken before the stack is published because only the caller
+   knows the target; the ::focus-guard watch handles every close path."
+  ([cs component]
+   (mount! cs component {}))
+  ([cs component {:keys [focus-target borrowed?]}]
+   (enter! cs component focus-target borrowed? true)))
+
+(defn cover!
+  "Push COMPONENT on top of the dock without touching what is below (pi:
+   showAuthSelect swaps the login dialog out and back; a temporary surface
+   covers its owner). OPTS and DONE as in mount!. Pushing a component that
+   is already in the stack adds another entry; release!/done remove every
+   entry that holds it."
+  ([cs component]
+   (cover! cs component {}))
+  ([cs component {:keys [focus-target borrowed?]}]
+   (enter! cs component focus-target borrowed? false)))
 
 (defn clear!
   "Take the editor dock back wholesale (pi: disposeActiveSelector +
@@ -268,10 +255,9 @@
 
    Focus needs no explicit restore: the ::focus-guard watch sees the
    focused occupant leave and hands input to the resolver's fallback —
-   including for a caller that never mounted anything and so never
-   installed the guard (clear! installs it)."
+   the guard is installed by the stack write itself, so even a caller that
+   never mounted anything is covered."
   [cs]
-  (install-focus-guard! cs)
   (let [{:keys [old]} (update-stack! cs (constantly []))]
     (doseq [e old :when (not (:borrowed? e))]
       (dispose! cs (:component e)))))

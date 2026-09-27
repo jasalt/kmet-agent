@@ -52,12 +52,12 @@
 
 (defn- capture-mount!
   "A dock/mount! stand-in for tests: records the component that receives
-  keys (the focus target when given, else COMPONENT) in REF and returns a
+  keys (the :focus-target when given, else COMPONENT) in REF and returns a
   no-op done (pi: showSelector mounts into the editor dock and focuses the
   interactive child; the tests don't have a dock)."
   [ref]
-  (fn [_ component & [focus]]
-    (reset! ref (or focus component))
+  (fn [_ component & [opts]]
+    (reset! ref (or (:focus-target opts) component))
     (fn [])))
 
 (def ^:private no-image-caps

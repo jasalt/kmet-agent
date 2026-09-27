@@ -431,4 +431,4 @@
     (reset! frame-atom frame)
     ;; pi: showSelector — mount the framed panel, focus the list
     ;; (focus: the interactive child)
-    (reset! sel-atom {:done (dock/mount! cs frame sl)})))
+    (reset! sel-atom {:done (dock/mount! cs frame {:focus-target sl})})))

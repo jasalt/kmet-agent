@@ -1175,5 +1175,5 @@
                    ((:done @sel-ref))
                    (dock/dispose! cs panel)
                    (protocols/dispose tl)))
-         (reset! sel-ref {:done (dock/mount! cs panel area)})
+         (reset! sel-ref {:done (dock/mount! cs panel {:focus-target area})})
          (tui/tui-request-render (:tui cs)))))))

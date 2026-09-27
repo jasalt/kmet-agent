@@ -165,4 +165,4 @@
                     (fn [] (close!)))
             ;; pi: showSelector — mount the panel, focus the list
             ;; (focus: selector.getMessageList())
-            (reset! sel-atom {:done (dock/mount! cs panel list)})))))))
+            (reset! sel-atom {:done (dock/mount! cs panel {:focus-target list})})))))))

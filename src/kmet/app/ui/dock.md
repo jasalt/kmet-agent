@@ -89,7 +89,9 @@ both by component identity. Regression test:
 ## Call-site rules
 
 - A selector replaces the top with `dock/mount!`; a temporary surface over
-  an owner's panel uses `dock/cover!`.
+  an owner's panel uses `dock/cover!`. Both take one options map:
+  `{:focus-target f :borrowed? b}` (the focus target is the interactive
+  child when the panel itself is inert chrome).
 - An owner close is `release!`/`done`, then `dispose!`. Never call
   `protocols/dispose` (or `dispose-tree!`) directly on a dock panel.
 - `clear!` is only for a wholesale takeover (custom-editor swap, session

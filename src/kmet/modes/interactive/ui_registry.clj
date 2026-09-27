@@ -317,7 +317,7 @@
                                           overlay-options)
                                    handle (tui/tui-show-overlay t component opts)]
                                (when on-handle (on-handle handle)))
-                             (dock/cover! cs component nil {:borrowed? true}))))
+                             (dock/cover! cs component {:borrowed? true}))))
                        (catch Exception e
                          (when-not @closed
                            (reset! closed true)

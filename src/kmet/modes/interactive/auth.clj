@@ -119,7 +119,7 @@
                      :prompt prompt-fn
                      :abort-prompt! cancel-pending!
                      :notify (fn [event] (oauth-notify! dlg event))}]
-    (dock/mount! cs dlg nil {:borrowed? true})
+    (dock/mount! cs dlg {:borrowed? true})
     (future
       (try
         (let [credential ((:login oauth) interaction)]
@@ -155,7 +155,7 @@
              ;; escape before submitting — nothing to abort, silently
              ;; restore like pi (the "Login cancelled" error is suppressed)
              (fn [_success _message] nil))]
-    (dock/mount! cs dlg nil {:borrowed? true})
+    (dock/mount! cs dlg {:borrowed? true})
     (future
       (try
         (let [key (str/trim (login-dialog/await-prompt!
