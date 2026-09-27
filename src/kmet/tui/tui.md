@@ -986,12 +986,12 @@ rots); it is enforced at the two removal chokepoints, both identity tests
   capturing overlay, else the focus home, else null).
 - **The app's surface owners.** Whatever atom holds a *panel* the app
   mounts must guard its removals the same way. The editor dock does it
-  with a watch on `:dock-current` (`::focus-guard`, same shape as
-  `::ghost-guard`): a cleared or reset occupant that held focus hands
-  input back to the active editor, whether `dock/clear!` ran, a session
-  reset wrote the atom, or some future path forgets entirely. The dock
-  also *takes* focus on mount — it alone knows the focus target (a
-  selector's inner list, not its chrome).
+  with a watch on `:dock-stack` (`::focus-guard`, same shape as
+  `::ghost-guard`): the component that held focus leaving the stack — a
+  cleared top, a released buried panel, a bare atom reset — hands input to
+  the new top's focus target, else to the active editor. The dock also
+  *takes* focus on mount — it alone knows the focus target (a selector's
+  inner list, not its chrome).
 
   Corollary for focus targets: they must be components the app owns and
   disposes through a guarded path (a panel record, a spliced widget). A
@@ -1012,7 +1012,7 @@ through the dock state and the ACTIVE editor so custom-editor swaps stay
 live:
 
 ```clojure
-(tui/tui-set-focus-home! t #(or (:component @dock-current)
+(tui/tui-set-focus-home! t #(or (dock/top-focus-target @dock-stack)
                                 @current-editor-atom))
 ```
 

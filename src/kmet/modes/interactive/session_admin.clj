@@ -6,7 +6,6 @@
             [kmet.debug :as debug]
             [kmet.config :as cfg]
             [kmet.tui.core :as tui]
-            [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.container :as container]
@@ -512,17 +511,15 @@
   [cs title message on-confirm]
   (let [tui (:tui cs)
         chat (:chat-history cs)
-        ;; late binding: the callbacks reach the mount's done through this
-        ;; atom (pi: done() is created by showSelector)
-        sel-atom (atom nil)
         ;; late binding: close! disposes the dialog it was built for
         dlg-atom (atom nil)
         close! (fn []
-                 ((:done @sel-atom))
-                 ;; the dock leaves foreign records alone — the owner disposes
-                 ;; (the frame's dispose cascades to its chrome + the list)
+                 ;; leave, then dispose (the invariant dispose! checks):
+                 ;; a late close cannot touch a newer occupant, and the
+                 ;; frame's dispose cascades to its chrome + the list
                  (when-let [dlg @dlg-atom]
-                   (protocols/dispose dlg))
+                   (dock/release! cs dlg)
+                   (dock/dispose! cs dlg))
                  (tui/tui-request-render tui))
         cancelled! (fn []
                      (chat-history/chat-history-show-status! chat "Import cancelled")
@@ -537,7 +534,7 @@
              (th/get-current-theme))]
     (reset! dlg-atom dlg)
     ;; pi: showSelector — the selector replaces the editor dock
-    (reset! sel-atom {:done (dock/mount! cs dlg)})
+    (dock/mount! cs dlg)
     (tui/tui-request-render tui)))
 
 (defn handle-import-command
@@ -789,11 +786,11 @@
         dlg (dialogs/make-input-dialog
              "Custom branch summarization instructions"
              (fn [instructions]
-               (state/close-selector! sel-atom)
+               (state/close-selector! cs sel-atom)
                (tui/tui-request-render (:tui cs))
                (navigate-tree! cs sess entry true (str/trim instructions) false nil))
              (fn []
-               (state/close-selector! sel-atom)
+               (state/close-selector! cs sel-atom)
                (ask-branch-summary cs sess entry))
              (th/get-current-theme))]
     (state/mount-selector! cs sel-atom dlg)
@@ -807,14 +804,14 @@
   [cs sess entry]
   (let [sel-atom (atom nil)
         on-select (fn [choice]
-                    (state/close-selector! sel-atom)
+                    (state/close-selector! cs sel-atom)
                     (tui/tui-request-render (:tui cs))
                     (case choice
                       "No summary" (navigate-tree! cs sess entry false nil false nil)
                       "Summarize" (navigate-tree! cs sess entry true nil false nil)
                       "Summarize with custom prompt" (prompt-custom-summary! cs sess entry)))
         on-escape (fn []
-                    (state/close-selector! sel-atom)
+                    (state/close-selector! cs sel-atom)
                     ;; re-open with the highlight on the entry being
                     ;; navigated to (pi showTreeSelector initialSelectedId)
                     (show-session-tree cs

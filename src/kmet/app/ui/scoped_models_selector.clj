@@ -410,7 +410,7 @@
         ;; selector's root reaction and foreign input
         close! (fn []
                  ((:done @sel-atom))
-                 (when-let [s (:sel @sel-atom)] (protocols/dispose s)))
+                 (when-let [s (:sel @sel-atom)] (dock/dispose! cs s)))
         available (models/get-available)
         ag @(:agent-state cs)
         session-scoped (vec @(:scoped-models ag))

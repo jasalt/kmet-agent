@@ -150,11 +150,12 @@
                 ;; late binding: the list callbacks reach done via this atom
                 sel-atom (atom nil)
                 ;; pi: done() — restore the editor and unwind the panel: the
-                ;; compiled frame's DSL chrome via dispose-tree!, the spliced
-                ;; list explicitly (the tree does not own it)
+                ;; compiled frame's DSL chrome via dock/dispose! (leave then
+                ;; dispose), the spliced list explicitly (the tree does not
+                ;; own it)
                 close! (fn []
                          ((:done @sel-atom))
-                         (h/dispose-tree! panel)
+                         (dock/dispose! cs panel)
                          (protocols/dispose list))]
             (reset! on-select-atom
                     (fn [entry-id]

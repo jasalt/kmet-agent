@@ -1169,10 +1169,11 @@
          (reset! close-ref
                  (fn []
                    ;; pi: done() — restore the editor and unwind the panel:
-                   ;; the compiled frame's DSL chrome via dispose-tree!, the
-                   ;; spliced tree-list explicitly (the tree does not own it)
+                   ;; the compiled frame's DSL chrome via dock/dispose!
+                   ;; (leave then dispose), the spliced tree-list explicitly
+                   ;; (the tree does not own it)
                    ((:done @sel-ref))
-                   (h/dispose-tree! panel)
+                   (dock/dispose! cs panel)
                    (protocols/dispose tl)))
          (reset! sel-ref {:done (dock/mount! cs panel area)})
          (tui/tui-request-render (:tui cs)))))))

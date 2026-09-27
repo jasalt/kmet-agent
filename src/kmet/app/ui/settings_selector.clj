@@ -404,11 +404,11 @@
         on-escape (fn []
                     ;; pi: done() — restore the editor and unwind the panel:
                     ;; the tree owns the chrome AND the settings list, so one
-                    ;; dispose-tree! releases both (the frame is late-bound —
-                    ;; built below)
+                    ;; dock/dispose! (leave then dispose) releases both (the
+                    ;; frame is late-bound — built below)
                     ((:done @sel-atom))
                     (when-let [frame @frame-atom]
-                      (h/dispose-tree! frame))
+                      (dock/dispose! cs frame))
                     (tui/tui-request-render (:tui cs)))
         ;; Frame the list like pi's SettingsSelectorComponent (DynamicBorder +
         ;; SettingsList + DynamicBorder); the list is the focus target (pi:

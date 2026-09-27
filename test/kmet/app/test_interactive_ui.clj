@@ -15,6 +15,7 @@
             [kmet.tui.terminal :as terminal]
             [kmet.tui.core :as tui]
             [kmet.modes.interactive :as inter]
+            [kmet.modes.interactive.auth :as ia]
             [kmet.modes.interactive.commands :as builtins]
             [kmet.modes.interactive.layout :as layout]
             [kmet.modes.interactive.ui-registry :as ui-registry]
@@ -1436,31 +1437,96 @@
 
 ;; ─── DSL stage 4 review: dock generation gate + widget-area reactivity ────
 
-(deftest test-dock-generation-gate
-  (testing "a stale done() from a replaced selector must not yank the newer
-            one out of the dock (pi: activeSelectorToken); done() is
+(deftest test-dock-membership-handles
+  (testing "a done() removes only its own component, wherever it sits, so a
+            replaced selector's close cannot yank the newer one out of the
+            dock (membership replaced pi's activeSelectorToken); done() is
             idempotent and restores the CURRENT active editor"
     (with-redefs [tui/tui-set-focus (fn [_ _] nil)
                   tui/tui-request-render (fn [_] nil)]
       (let [ed (editor/make-editor)
             cs {:tui {}
-                :dock-current (atom nil)
+                :dock-stack (atom [])
                 :current-editor-atom (atom ed)}
             panel-a (status-indicator/make-status-indicator)
             panel-b (editor/make-editor)
             ;; A mounts, then B replaces it
             done-a (dock/mount! cs panel-a)]
         (dock/mount! cs panel-b)
-        (t/is (= panel-b (:component @(:dock-current cs))) "B recorded")
+        (t/is (= panel-b (dock/top-component @(:dock-stack cs))) "B recorded")
         (done-a)
-        (t/is (= panel-b (:component @(:dock-current cs)))
-              "stale done() is inert")
-          ;; B's done restores the editor; a second call is harmless
+        (t/is (= panel-b (dock/top-component @(:dock-stack cs)))
+              "the absent component's done() is inert")
+        ;; B's done reveals the editor; a second call is harmless
         (let [done-b (dock/mount! cs panel-b)]
           (done-b)
-          (t/is (nil? @(:dock-current cs)) "editor restored")
+          (t/is (nil? (dock/top-component @(:dock-stack cs))) "editor restored")
           (done-b)
-          (t/is (nil? @(:dock-current cs)) "double done() stays nil"))))))
+          (t/is (nil? (dock/top-component @(:dock-stack cs)))
+                "double done() stays nil"))))))
+
+(deftest test-oauth-login-dialog-covers-and-releases
+  (testing "kmetia/kmet-agent#5: the :select round trip COVERS the login
+            dialog with the method selector (dock/cover!) instead of
+            re-mounting it, so no mount handle can go stale; closing the
+            selector reveals the dialog, and the flow's release + dispose
+            leaves the dock empty with the editor holding input"
+    (install-app-keybindings!)
+    (let [ui (tui/create-tui nil)
+          ed (editor/make-editor)
+          cs {:tui ui
+              :dock-stack (atom [])
+              :current-editor-atom (atom ed)
+              :chat-history (chat-history/make-chat-history)}
+          covers (atom 0)
+          selector-p (promise)
+          released-p (promise)
+          _ (tui/tui-add-child ui ed)
+          _ (tui/tui-set-focus-home!
+             ui #(or (dock/top-focus-target (deref (:dock-stack cs)))
+                     (deref (:current-editor-atom cs))))
+          ;; 1 = the dialog, 2 = the method selector covering it; the
+          ;; cover leaves the dialog below (depth 2), the flow's final
+          ;; release empties the stack and the guard hands focus back to
+          ;; the editor — waiting on the FOCUS atom (not the stack) lands
+          ;; after the guard has run
+          _ (add-watch (:dock-stack cs) ::issue-5-covers
+                       (fn [_ _ _ new]
+                         (when (= 2 (swap! covers inc))
+                           (deliver selector-p {:selector (dock/top-component new)
+                                                :depth (count new)}))))
+          _ (add-watch (:focused-component ui) ::issue-5-released
+                       (fn [_ _ _ new]
+                         (when (and (identical? ed new)
+                                    (empty? @(:dock-stack cs)))
+                           (deliver released-p :released))))
+          provider {:id :test-provider
+                    :name "Test Provider"
+                    :oauth {:login (fn [interaction]
+                                     (let [method ((:prompt interaction)
+                                                   {:type :select
+                                                    :message "Select login method:"
+                                                    :options [{:id "browser"
+                                                               :label "Browser login"}
+                                                              {:id "device"
+                                                               :label "Device code login"}]})]
+                                       (when-not (= "browser" method)
+                                         (throw (ex-info "unexpected method"
+                                                         {:method method})))
+                                       {:type :oauth :access "a" :refresh "r"}))}}]
+      (with-redefs [auth/set-oauth-credential! (fn [_ _] nil)]
+        ((var ia/oauth-login!) cs provider)
+        (let [covered (deref selector-p 5000 :timeout)]
+          (t/is (not= :timeout covered) "the method selector mounted")
+          (t/is (= 2 (:depth covered))
+                "the selector COVERS the dialog — it stayed below instead of
+                 being replaced/re-mounted (pi showAuthSelect)")
+          (protocols/handle-input (:selector covered) "\r"))
+        (t/is (= :released (deref released-p 5000 :timeout))
+              "the flow released the dock")
+        (t/is (empty? @(:dock-stack cs)) "no dialog left on screen")
+        (t/is (identical? ed (tui/tui-focused-component ui))
+              "the editor holds input again")))))
 
 (defn- strip-ansi-lines [lines]
   (mapv #(str/replace % #"\u001b\[[0-9;]*[a-zA-Z]" "") lines))

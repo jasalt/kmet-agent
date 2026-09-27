@@ -349,7 +349,7 @@
              ;; selector's root reaction and foreign input
              close! (fn []
                       ((:done @sel-atom))
-                      (when-let [s (:sel @sel-atom)] (protocols/dispose s)))
+                      (when-let [s (:sel @sel-atom)] (dock/dispose! cs s)))
              sel (make-model-selector
                   available scoped current
                   :search search-term

@@ -11,7 +11,6 @@
             [kmet.app.ui.footer-data-provider :as fdp]
             [kmet.app.ui.dock :as dock]
             [kmet.tui.theme :as th]
-            [kmet.tui.protocols :as protocols]
             [kmet.tui.terminal :as term]
             [kmet.libs.host :as host]))
 
@@ -178,7 +177,7 @@
                       pending-bash-components
                       pending-messages-container
                       dock-root
-                      dock-current
+                      dock-stack
                       theme-controller])
 
 ;; ─── Formatting helpers ────────────────────────────────────────────────────
@@ -277,15 +276,27 @@
 ;; ─── Selector mounting (shared by the login and session-tree flows) ────────
 
 (defn mount-selector!
-  "Swap SEL into CS's editor dock, recording the mount's done and the
-   selector itself on SEL-ATOM so close-selector! can unwind both."
+  "Replace CS's editor dock top with SEL, recording it on SEL-ATOM so
+   close-selector! can dispose it. dock/mount! disposes the selector it
+   displaces; cover-selector! leaves what is below alive instead."
   [cs sel-atom sel]
-  (reset! sel-atom {:done (dock/mount! cs sel) :sel sel}))
+  (dock/mount! cs sel)
+  (reset! sel-atom {:sel sel}))
+
+(defn cover-selector!
+  "Push SEL on top of CS's editor dock — the auth method selector over its
+   login dialog (pi showAuthSelect); closing reveals the covered surface
+   again. Records SEL on SEL-ATOM so close-selector! can dispose it."
+  [cs sel-atom sel]
+  (dock/cover! cs sel)
+  (reset! sel-atom {:sel sel}))
 
 (defn close-selector!
-  "Run the mount's done (restores the editor) and dispose the selector —
-   the dock drops foreign records without disposing them, so the root
-   reaction + foreign inputs would otherwise outlive the panel."
-  [sel-atom]
-  ((:done @sel-atom))
-  (when-let [s (:sel @sel-atom)] (protocols/dispose s)))
+  "Leave the dock and dispose the selector recorded on SEL-ATOM: release!
+   removes it by identity (wherever it sits) and dispose! checks the
+   remove-before-dispose invariant before unwinding its root reaction and
+   foreign inputs."
+  [cs sel-atom]
+  (when-let [sel (:sel @sel-atom)]
+    (dock/release! cs sel)
+    (dock/dispose! cs sel)))

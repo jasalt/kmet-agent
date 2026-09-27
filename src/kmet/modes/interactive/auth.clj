@@ -6,7 +6,6 @@
    are registered by kmet.modes.interactive.commands."
   (:require [clojure.string :as str]
             [kmet.tui.core :as tui]
-            [kmet.tui.protocols :as protocols]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.app.ui.auth-selector :as auth-selector]
             [kmet.app.ui.chat-history :as chat-history]
@@ -27,9 +26,10 @@
   "Show PROMPT inside the dock-mounted login dialog and block for the
    entered string (pi showAuthPrompt → LoginDialogComponent.showPrompt /
    showManualInput / showAuthSelect; the flow runs on a future, so kmet
-   blocks on the promise). :select swaps the dock to a method selector and
-   restores the dialog after; :text/:secret prompts through the dialog's
-   input; :manual-code is the manual-paste variant. The pending promise is
+   blocks on the promise). :select covers the dock with a method selector
+   and reveals the dialog again when it closes (pi showAuthSelect);
+   :text/:secret prompts through the dialog's input; :manual-code is the
+   manual-paste variant. The pending promise is
    registered in PROMPT-STATE so a loopback flow's :abort-prompt! can
    settle it when the browser callback wins the race. Dialog cancel settles
    the promise with the cancellation ex-info, which propagates here."
@@ -38,23 +38,22 @@
     :select
     (let [p (promise)
           labels (mapv :label (:options prompt))
-          ;; pi showAuthSelect: swap the dock to the selector, restore the
-          ;; login dialog when it resolves (re-mounting IS the restore)
+          ;; pi showAuthSelect: the method selector COVERS the login dialog
+          ;; (dock/cover!), so leaving it reveals the dialog again — no
+          ;; restore mount, no mount handle to go stale (issue #5)
           sel-atom (atom nil)
-          restore #(dock/mount! cs dlg nil {:borrowed? true})
+          finish! (fn [result]
+                    (state/close-selector! cs sel-atom)
+                    (deliver p result))
           sel (auth-selector/make-auth-method-selector
                (:message prompt) labels
                (fn [label]
-                 (state/close-selector! sel-atom)
-                 (restore)
-                 (deliver p (or (:id (first (filter #(= label (:label %)) (:options prompt))))
-                                label)))
+                 (finish! (or (:id (first (filter #(= label (:label %)) (:options prompt))))
+                              label)))
                (fn []
-                 (state/close-selector! sel-atom)
-                 (restore)
-                 (deliver p (ex-info "Login cancelled" {:type :login-cancelled}))))]
+                 (finish! (ex-info "Login cancelled" {:type :login-cancelled}))))]
       (reset! prompt-state {:promise p})
-      (state/mount-selector! cs sel-atom sel)
+      (state/cover-selector! cs sel-atom sel)
       (login-dialog/await-prompt! p))
 
     :manual-code
@@ -92,7 +91,9 @@
    restored. Escape cancels the flow through the dialog's on-complete.
    :abort-prompt! — the loopback flows' race hook — settles the pending
    manual-paste prompt as cancelled when the browser callback wins (pi
-   manualAbort.abort())."
+   manualAbort.abort()). The dialog leaves the dock through dock/dispose!
+   (component identity), which removes it from the stack wherever the
+   prompt round-trips left it before disposing (kmetia/kmet-agent#5)."
   [cs provider]
   (let [oauth (:oauth provider)
         signal (atom false)
@@ -117,8 +118,8 @@
         interaction {:signal signal
                      :prompt prompt-fn
                      :abort-prompt! cancel-pending!
-                     :notify (fn [event] (oauth-notify! dlg event))}
-        done (dock/mount! cs dlg nil {:borrowed? true})]
+                     :notify (fn [event] (oauth-notify! dlg event))}]
+    (dock/mount! cs dlg nil {:borrowed? true})
     (future
       (try
         (let [credential ((:login oauth) interaction)]
@@ -137,10 +138,11 @@
                                         (str "Failed to login to " (:name provider) ": "
                                              (ex-message e)))))
         (finally
-          (done)
-          ;; release the dialog's content-tree reaction (rows watches) —
-          ;; the dialog leaves the dock for good here
-          (protocols/dispose dlg)
+          ;; leave, then dispose (the invariant dispose! checks): the
+          ;; dialog may sit below a covered selector after a prompt round
+          ;; trip, and release! finds it by identity
+          (dock/release! cs dlg)
+          (dock/dispose! cs dlg)
           (tui/tui-request-render (:tui cs)))))))
 
 (defn- api-key-login!
@@ -152,8 +154,8 @@
              (:tui cs) (:name p)
              ;; escape before submitting — nothing to abort, silently
              ;; restore like pi (the "Login cancelled" error is suppressed)
-             (fn [_success _message] nil))
-        done (dock/mount! cs dlg nil {:borrowed? true})]
+             (fn [_success _message] nil))]
+    (dock/mount! cs dlg nil {:borrowed? true})
     (future
       (try
         (let [key (str/trim (login-dialog/await-prompt!
@@ -176,10 +178,9 @@
                                         (str "Failed to save API key for " (:name p) ": "
                                              (ex-message e)))))
         (finally
-          (done)
-          ;; release the dialog's content-tree reaction (rows watches) —
-          ;; the dialog leaves the dock for good here
-          (protocols/dispose dlg)
+          ;; leave, then dispose (see oauth-login!)
+          (dock/release! cs dlg)
+          (dock/dispose! cs dlg)
           (tui/tui-request-render (:tui cs)))))))
 
 ;; ─── Provider options (pi getLoginProviderOptions / getLogoutProviderOptions
@@ -283,7 +284,7 @@
              sel (auth-selector/make-auth-method-selector
                   title options
                   (fn [label]
-                    (state/close-selector! sel-atom)
+                    (state/close-selector! cs sel-atom)
                     (let [auth-type (if (= label subscription-label)
                                       :oauth :api-key)]
                       (if provider-options
@@ -292,7 +293,7 @@
                           (start-provider-login! cs entry))
                         (show-login-provider-selector! cs auth-type))))
                   (fn []
-                    (state/close-selector! sel-atom)
+                    (state/close-selector! cs sel-atom)
                     (tui/tui-request-render (:tui cs))))]
          (state/mount-selector! cs sel-atom sel))))))
 
@@ -316,7 +317,7 @@
              sel (auth-selector/make-auth-selector
                   :login entries
                   (fn [provider-id selected-type]
-                    (state/close-selector! sel-atom)
+                    (state/close-selector! cs sel-atom)
                     (if-let [entry (some #(when (and (= provider-id (:id %))
                                                      (= selected-type (:auth-type %)))
                                             %)
@@ -324,7 +325,7 @@
                       (start-provider-login! cs entry)
                       (tui/tui-request-render (:tui cs))))
                   (fn []
-                    (state/close-selector! sel-atom)
+                    (state/close-selector! cs sel-atom)
                     (if auth-type
                       (show-login-auth-type-selector! cs)
                       (tui/tui-request-render (:tui cs))))
@@ -394,7 +395,7 @@
             sel (auth-selector/make-auth-selector
                  :logout entries
                  (fn [provider-id _selected-type]
-                   (state/close-selector! sel-atom)
+                   (state/close-selector! cs sel-atom)
                    (if-let [entry (some #(when (= provider-id (:id %)) %) entries)]
                      (try
                        (auth/remove-credential! (keyword provider-id))
@@ -412,6 +413,6 @@
                                                      (str "Logout failed: " (ex-message e)))))
                      (tui/tui-request-render (:tui cs))))
                  (fn []
-                   (state/close-selector! sel-atom)
+                   (state/close-selector! cs sel-atom)
                    (tui/tui-request-render (:tui cs))))]
         (state/mount-selector! cs sel-atom sel)))))

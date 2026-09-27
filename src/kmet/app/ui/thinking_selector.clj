@@ -313,7 +313,7 @@
         ;; foreign records without disposing them)
         close! (fn []
                  ((:done @sel-atom))
-                 (when-let [s (:sel @sel-atom)] (protocols/dispose s)))
+                 (when-let [s (:sel @sel-atom)] (dock/dispose! cs s)))
         sel (make-thinking-selector
              (available-levels cs)
              @(:thinking ag)

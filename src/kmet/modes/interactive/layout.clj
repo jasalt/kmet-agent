@@ -567,7 +567,7 @@
         ;; in; the focus home reads both atoms at restore time so a mounted
         ;; dock selector outranks the editor (tui-set-focus-home!)
         current-editor-atom (atom ed)
-        dock-current (atom nil)
+        dock-stack (atom [])
         cs (state/map->CoreState {:tui t
                                   :agent-state (atom ag)
                                   :chat-history ch
@@ -591,7 +591,7 @@
                                   :bash-signal (atom false)
                                   :pending-bash-components (atom [])
                                   :pending-messages-container (container/make-container [pm])
-                                  :dock-current dock-current})]
+                                  :dock-stack dock-stack})]
 
     ;; Initial loaded-resources sections (rebuilt on /reload)
     (loaded-resources/loaded-resources-set-sections! lr (resources/build-loaded-resource-sections))
@@ -599,10 +599,10 @@
     ;; Focus editor
     (tui/tui-set-focus t ed)
     ;; Terminal focus fallback: when nothing capturing holds input, keys
-    ;; return to the dock's selector if one is mounted, else the ACTIVE
-    ;; editor - resolved through atoms so swaps stay live
+    ;; return to the dock's top focus target if one is mounted, else the
+    ;; ACTIVE editor - resolved through atoms so swaps stay live
     ;; (tui-set-focus-home!)
-    (tui/tui-set-focus-home! t #(or (:component (deref dock-current))
+    (tui/tui-set-focus-home! t #(or (dock/top-focus-target (deref dock-stack))
                                     (deref current-editor-atom)))
 
     ;; Hardware cursor: the setting wins over the KMET_HARDWARE_CURSOR env
@@ -730,9 +730,9 @@
           widgets-below-root (hiccup/root
                               (ui-registry/make-widget-area-below widgets-below-atom))
           ;; The editor dock as a mounted DSL tree (dsl.md stage 4): the
-          ;; root re-derives when :dock-current or the active editor swaps —
+          ;; root re-derives when :dock-stack or the active editor swaps —
           ;; selectors mount/unmount through pure atom writes.
-          dock-root (hiccup/root (dock/make-dock-area (:dock-current cs)
+          dock-root (hiccup/root (dock/make-dock-area (:dock-stack cs)
                                                       (:current-editor-atom cs)))
           cs (assoc cs :status-root status-root
                     :dock-root dock-root)]

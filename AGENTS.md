@@ -11,6 +11,7 @@ change when behavior changes.
 |------|-------------------------|
 | Application layout and contributor workflow | [`src/kmet/README.md`](src/kmet/README.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`src/kmet/tui/tui.md`](src/kmet/tui/tui.md) |
+| Editor dock lifecycle and design | [`src/kmet/app/ui/dock.md`](src/kmet/app/ui/dock.md) |
 | Extension contract and authoring | [`src/kmet/extension.md`](src/kmet/extension.md) |
 | Loader design and backends | [`src/kmet/loader/loader.md`](src/kmet/loader/loader.md) |
 | Jolt provider scaffolding and host integration | [`jolt/src/jolt/kmet/README.md`](jolt/src/jolt/kmet/README.md) |

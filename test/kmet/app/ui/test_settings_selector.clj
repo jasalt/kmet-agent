@@ -2,6 +2,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.app.ui.chat-history :as chat-history]
+            [kmet.app.ui.dock :as dock]
             [kmet.app.theme-controller :as theme-ctrl]
             [kmet.app.ui.settings-selector :as ss]
             [kmet.app.ui.subs :as subs]
@@ -10,7 +11,7 @@
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.settings-list :as settings-list]
             [kmet.tui.core :as core]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]))
 
 (defn- with-image-env
@@ -63,7 +64,7 @@
 
 (defn- settings-cs
   "A minimal CS stand-in: the panel reads :agent-state, :config,
-   :chat-history, :dock-current and :current-editor-atom; :tui stays nil
+   :chat-history, :dock-stack and :current-editor-atom; :tui stays nil
    (the panel guards the rows that need one)."
   []
   {:tui nil
@@ -81,7 +82,7 @@
                                    :base-delay-ms 1000})})
    :config {}
    :chat-history (chat-history/make-chat-history)
-   :dock-current (atom nil)
+   :dock-stack (atom [])
    :current-editor-atom (atom (editor/make-editor))})
 
 (defn- plain [comp width]
@@ -96,7 +97,7 @@
       (with-redefs [core/tui-set-focus (fn [_ c] (reset! focused c))
                     core/tui-request-render (fn [_] (swap! renders inc))]
         (ss/show-settings cs)
-        (let [frame (:component @(:dock-current cs))
+        (let [frame (dock/top-component @(:dock-stack cs))
               sl @focused]
           (is (some? frame) "the frame is docked")
           (is (and (some? (:items-atom sl)) (some? (:max-visible sl)))
@@ -112,10 +113,13 @@
             (is (some #(str/includes? % "Auto-compact") (plain frame 100))))
           (testing "escape unwinds the panel: dock restored, frame disposed"
             (let [disposed (atom nil)
-                  orig h/dispose-tree!]
-              (with-redefs [h/dispose-tree! (fn [f] (reset! disposed f) (orig f))]
+                  orig protocols/dispose]
+              (with-redefs [protocols/dispose (fn [c]
+                                                (when (identical? frame c)
+                                                  (reset! disposed c))
+                                                (orig c))]
                 (core/handle-input sl "\u001b"))
-              (is (nil? @(:dock-current cs)) "the editor is restored")
+              (is (empty? @(:dock-stack cs)) "the editor is restored")
               (is (identical? frame @disposed) "the frame's tree is disposed"))))))))
 
 ;; ─── New rows (terminal progress / clear-on-shrink / skill commands) ────────
@@ -143,7 +147,7 @@
                   core/tui-request-render (fn [_] nil)
                   cfg/save-setting! (fn [path value] (swap! saved conj [path value]))]
       (ss/show-settings cs)
-      (let [frame (:component @(:dock-current cs))
+      (let [frame (dock/top-component @(:dock-stack cs))
             sl @focused
             row-idx (first (keep-indexed (fn [i item]
                                            (when (= :clear-on-shrink (:id item)) i))
@@ -193,7 +197,7 @@
                     theme-ctrl/set-theme-setting! (fn [_ _] {:success true})
                     cfg/save-setting! (fn [path value] (swap! saved conj [path value]))]
         (ss/show-settings cs)
-        (let [frame (:component @(:dock-current cs))
+        (let [frame (dock/top-component @(:dock-stack cs))
               sl @focused]
           (settings-list/settings-list-select-item! sl :theme)
           (core/handle-input sl "\r")  ;; open the theme submenu
