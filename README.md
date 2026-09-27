@@ -36,9 +36,24 @@ bb run --list-models
 bb run --print "summarize the project"
 ```
 
-Use `jolt run -m kmet.core` on the optional Jolt host. A packaged executable
-can be run as `kmet`; see [Getting started](docs/getting-started.md) for
-provider setup, sessions, and installation details.
+Self-contained release binaries skip the Babashka install: download the zip
+for your platform from
+[GitHub Releases](https://github.com/kmetia/kmet-agent/releases) — the `v0.1.0`
+release ships `kmet-0.1.0-<platform>.zip`, with `<platform>` one of
+`linux-amd64`, `linux-aarch64`, `macos-amd64`, `macos-aarch64`, and
+`windows-amd64`. Unzip it and run the executable inside the extracted folder:
+
+```sh
+unzip kmet-0.1.0-linux-amd64.zip
+./kmet-0.1.0-linux-amd64/kmet --list-models
+```
+
+On Windows run `kmet.exe`; on Termux run the bundled `kmet.sh` launcher. Jolt
+releases are named `kmetj-0.1.0-<platform>.zip` and run as `kmetj`.
+
+Use `jolt run -m kmet.core` on the optional Jolt host. See
+[Getting started](docs/getting-started.md) for provider setup, sessions, and
+installation details.
 
 ## Documentation
 
