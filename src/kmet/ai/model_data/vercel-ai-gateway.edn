@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-26T20:28:40Z"
+ :generated-at "2026-09-27T20:24:11Z"
  :provider {:id :vercel-ai-gateway
             :name "Vercel AI Gateway"
             :env-vars ["AI_GATEWAY_API_KEY"]
@@ -1075,6 +1075,17 @@
     :cost {:input 1.5 :output 3.5 :cache-read 0 :cache-write 0}
     :context-window 1000000
     :max-tokens 32000}
+   "meituan/longcat-2.5-preview"
+   {:id "meituan/longcat-2.5-preview"
+    :name "LongCat 2.5 Preview"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 0.3 :output 1.2 :cache-read 0.006 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 131072}
    "meta/llama-3.1-70b"
    {:id "meta/llama-3.1-70b"
     :name "Llama 3.1 70B Instruct"
