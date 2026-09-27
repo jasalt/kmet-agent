@@ -640,9 +640,7 @@
             :footer-comp nil
             :footer-provider nil
             :tui nil}]
-    (with-redefs [dock/mount! (fn [_ component & _]
-                                (reset! sel-ref component)
-                                (fn []))
+    (with-redefs [dock/mount! (fn [_ component & _] (reset! sel-ref component))
                   tui/tui-request-render (fn [_] nil)
                   interactive-auth/oauth-login! (fn [_ prov] (reset! started [:oauth prov]))
                   interactive-auth/api-key-login! (fn [_ prov] (reset! started [:api-key prov]))]
@@ -673,9 +671,7 @@
             :footer-comp nil
             :footer-provider nil
             :tui nil}]
-    (with-redefs [dock/mount! (fn [_ component & _]
-                                (reset! sel-ref component)
-                                (fn []))
+    (with-redefs [dock/mount! (fn [_ component & _] (reset! sel-ref component))
                   tui/tui-request-render (fn [_] nil)
                   interactive-auth/oauth-login! (fn [_ prov] (reset! started [:oauth prov]))
                   interactive-auth/api-key-login! (fn [_ prov] (reset! started [:api-key prov]))]
@@ -711,9 +707,7 @@
                 :tui nil}]
         (with-redefs [chat-history/chat-history-add-message! (fn [_ msg] (swap! msgs conj msg))
                       chat-history/show-warning! (fn [_ _] nil)
-                      dock/mount! (fn [_ component & _]
-                                    (reset! sel-ref component)
-                                    (fn []))
+                      dock/mount! (fn [_ component & _] (reset! sel-ref component))
                       tui/tui-request-render (fn [_] nil)]
           (auth/set-oauth-credential! :github-copilot
                                       {:type :oauth :access "a" :refresh "r"

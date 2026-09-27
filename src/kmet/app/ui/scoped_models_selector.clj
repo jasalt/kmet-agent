@@ -406,11 +406,12 @@
    writes :enabled-models; the footer provider count updates live."
   [cs]
   (let [sel-atom (atom nil)
-        ;; the dock's done restores the editor; dispose unwinds the
-        ;; selector's root reaction and foreign input
+        ;; leave, then dispose: dispose unwinds the selector's root
+        ;; reaction and foreign input
         close! (fn []
-                 ((:done @sel-atom))
-                 (when-let [s (:sel @sel-atom)] (dock/dispose! cs s)))
+                 (when-let [s @sel-atom]
+                   (dock/release! cs s)
+                   (dock/dispose! cs s)))
         available (models/get-available)
         ag @(:agent-state cs)
         session-scoped (vec @(:scoped-models ag))
@@ -467,7 +468,8 @@
                           (close!)
                           (tui/tui-request-render (:tui cs))))]
     ;; pi: showSelector — the selector replaces the editor dock
-    (reset! sel-atom {:done (dock/mount! cs sel) :sel sel})))
+    (dock/mount! cs sel)
+    (reset! sel-atom sel)))
 
 (defn scoped-models-get-enabled-ids
   "The selector's current enabled ids (nil = all enabled)."

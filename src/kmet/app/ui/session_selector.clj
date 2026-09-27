@@ -1007,11 +1007,10 @@
               :request-render (fn [] (tui/tui-request-render tui*)))]
      (reset! sel-atom sel)
      ;; pi: showSelector — swap the selector into the editor dock; hide!
-     ;; runs the returned done (removing the panel) and disposes it via
-     ;; dock/dispose! (leave then dispose — the dock never disposes a
-     ;; removal itself)
+     ;; leaves by identity and disposes via dock/dispose! (leave then
+     ;; dispose — the dock never disposes a removal itself)
      (reset! (:hide-fn-atom sel)
-             {:hide (let [done (dock/mount! cs sel)]
-                      (fn [] (done) (dock/dispose! cs sel)))})
+             {:hide (do (dock/mount! cs sel)
+                        (fn [] (dock/release! cs sel) (dock/dispose! cs sel)))})
      (load-scope! sel :current :initial)
      sel)))

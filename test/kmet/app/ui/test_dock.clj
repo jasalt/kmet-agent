@@ -39,12 +39,12 @@
     (f)))
 
 (defn- mount-in [cs component & [opts]]
-  (let [done (tui-stubs #(dock/mount! cs component (or opts {})))]
-    (fn [] (tui-stubs done))))
+  (tui-stubs #(dock/mount! cs component (or opts {})))
+  (fn [] (tui-stubs #(dock/release! cs component))))
 
 (defn- cover-in [cs component & [opts]]
-  (let [done (tui-stubs #(dock/cover! cs component (or opts {})))]
-    (fn [] (tui-stubs done))))
+  (tui-stubs #(dock/cover! cs component (or opts {})))
+  (fn [] (tui-stubs #(dock/release! cs component))))
 
 (defn- release-in [cs component]
   (tui-stubs #(dock/release! cs component)))
@@ -73,17 +73,17 @@
 (deftest mount-records-focuses-and-restores
   (let [{:keys [cs ui ed]} (focus-cs)
         disposed (atom [])
-        p (panel disposed "a")
-        done (dock/mount! cs p)]
+        p (panel disposed "a")]
+    (dock/mount! cs p)
     (t/is (= p (top cs)))
     (t/is (identical? p (tui/tui-focused-component ui))
           "focus defaults to the component")
     (t/is (empty? @disposed))
-    (done)
-    (t/is (nil? (top cs)) "done reveals the editor")
+    (dock/release! cs p)
+    (t/is (nil? (top cs)) "release reveals the editor")
     (t/is (identical? ed (tui/tui-focused-component ui)))
-    (done)
-    (t/is (nil? (top cs)) "done is idempotent")))
+    (dock/release! cs p)
+    (t/is (nil? (top cs)) "release is idempotent")))
 
 (deftest mount-with-an-explicit-focus-target
   (let [{:keys [cs ui]} (focus-cs)
@@ -130,10 +130,10 @@
         a (panel disposed "a")
         b (panel disposed "b")]
     (mount-in cs a)
-    (let [done-b (cover-in cs b)]
+    (let [release-b (cover-in cs b)]
       (t/is (= [a b] (mounted cs)) "the cover sits on top")
       (t/is (empty? @disposed))
-      (done-b)
+      (release-b)
       (t/is (= [a] (mounted cs)) "the covered surface is revealed again")
       (t/is (empty? @disposed) "removal never disposes"))))
 
@@ -192,28 +192,28 @@
     (mount-in cs p)
     (t/is (empty? @disposed) "identity is respected (no self-disposal)")))
 
-(deftest a-done-for-an-absent-component-is-inert
-  (testing "membership replaced the generation token: a done removes only
+(deftest a-release-for-an-absent-component-is-inert
+  (testing "membership replaced the generation token: a release removes only
             its own component, so it cannot yank a newer occupant"
     (let [cs (test-cs)
           disposed (atom [])
           a (panel disposed "a")
           b (panel disposed "b")
-          done-a (mount-in cs a)]
+          release-a (mount-in cs a)]
       (mount-in cs b)
-      (done-a)
-      (t/is (= b (top cs)) "the stale done() is inert")
+      (release-a)
+      (t/is (= b (top cs)) "the stale release is inert")
       (t/is (= ["a"] @disposed) "disposal came from displacement"))))
 
-(deftest a-done-removes-its-component-from-any-depth
+(deftest a-release-removes-its-component-from-any-depth
   (testing "an owner can leave while covered — the Phase-1 residual gap"
     (let [cs (test-cs)
           disposed (atom [])
           dlg (panel disposed "dialog")
           sel (panel disposed "selector")
-          done-dlg (mount-in cs dlg {:borrowed? true})]
+          release-dlg (mount-in cs dlg {:borrowed? true})]
       (cover-in cs sel)
-      (done-dlg)
+      (release-dlg)
       (t/is (= [sel] (mounted cs)) "the covered dialog left, the selector stays")
       (t/is (empty? @disposed) "removal never disposes the borrowed panel"))))
 
@@ -252,7 +252,7 @@
       (t/is (= 1 (count @logged)) "the violation is recorded"))))
 
 (deftest dispose-of-a-released-panel-is-quiet
-  (testing "the ordered close (release!/done, then dispose!) records nothing"
+  (testing "the ordered close (release!, then dispose!) records nothing"
     (let [cs (test-cs)
           disposed (atom [])
           p (panel disposed "p")
@@ -349,10 +349,10 @@
           sel (panel (atom []) "selector")]
       (dock/mount! cs dlg {:borrowed? true})
       (t/is (identical? dlg (tui/tui-focused-component ui)))
-      (let [done-sel (dock/cover! cs sel)]
-        (t/is (identical? sel (tui/tui-focused-component ui)) "the cover holds input")
-        (t/is (= [dlg sel] (mounted cs)) "the dialog stayed below")
-        (done-sel))
+      (dock/cover! cs sel)
+      (t/is (identical? sel (tui/tui-focused-component ui)) "the cover holds input")
+      (t/is (= [dlg sel] (mounted cs)) "the dialog stayed below")
+      (dock/release! cs sel)
       (t/is (= [dlg] (mounted cs)) "the dialog is revealed")
       (t/is (identical? dlg (tui/tui-focused-component ui))
             "input lands back on the revealed dialog")

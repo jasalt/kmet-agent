@@ -104,8 +104,7 @@
    with a kmet backend; each change applies live and persists to the global
    settings.edn (pi: SettingsManager setters)."
   [cs]
-  (let [sel-atom (atom nil)
-        ;; late binding: the escape callback disposes the frame, built below
+  (let [;; late binding: the escape callback disposes the frame, built below
         frame-atom (atom nil)
         ag @(:agent-state cs)
         model (models/get-model @(:provider ag) @(:model ag))
@@ -402,12 +401,12 @@
                       (do (swap! (:cfg ag) assoc :thinking-loop-guard-enabled (boolean value))
                           (cfg/save-setting! [:thinking-loop-guard-enabled] (boolean value)))))
         on-escape (fn []
-                    ;; pi: done() — restore the editor and unwind the panel:
-                    ;; the tree owns the chrome AND the settings list, so one
-                    ;; dock/dispose! (leave then dispose) releases both (the
-                    ;; frame is late-bound — built below)
-                    ((:done @sel-atom))
+                    ;; restore the editor and unwind the panel: the tree owns
+                    ;; the chrome AND the settings list, so one dock/dispose!
+                    ;; (leave then dispose) releases both (the frame is
+                    ;; late-bound — built below)
                     (when-let [frame @frame-atom]
+                      (dock/release! cs frame)
                       (dock/dispose! cs frame))
                     (tui/tui-request-render (:tui cs)))
         ;; Frame the list like pi's SettingsSelectorComponent (DynamicBorder +
@@ -431,4 +430,4 @@
     (reset! frame-atom frame)
     ;; pi: showSelector — mount the framed panel, focus the list
     ;; (focus: the interactive child)
-    (reset! sel-atom {:done (dock/mount! cs frame {:focus-target sl})})))
+    (dock/mount! cs frame {:focus-target sl})))

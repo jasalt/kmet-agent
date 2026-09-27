@@ -33,9 +33,9 @@ Entering:
 
 Leaving is always by membership — never by a mount token:
 
-- the `done` fn returned by `mount!`/`cover!` removes that component from
-  wherever it sits in the stack; a handle whose component is gone is inert
-  (the replacement semantics pi gets from clearing `editorContainer`);
+- `release!` removes a component from wherever it sits in the stack; a
+  component that is already gone is inert (the replacement semantics pi
+  gets from clearing `editorContainer`);
 - `release!` is the same removal for owners that never kept a handle, e.g.
   a flow that mounted its dialog before a selector covered it;
 - `clear!` empties the stack (a custom-editor swap, a session reset, an
@@ -64,7 +64,7 @@ real input rather than keys dropped on chrome.
 | Failure | Status |
 |---|---|
 | Surface covered → its handle invalidated → never leaves (the login bug) | covered surfaces keep their entries; `cover!` + membership |
-| Owner finishes while its surface is buried | `release!`/`done` work from any depth |
+| Owner finishes while its surface is buried | `release!` works from any depth |
 | A replaced surface's late close yanks its successor | absent components are inert |
 | A flow forgets to leave before dispose | `dispose!` removes first, logs, throws in debug |
 | Surface removed but still holds keys | `::focus-guard` (any stack change) |
@@ -92,7 +92,7 @@ both by component identity. Regression test:
   an owner's panel uses `dock/cover!`. Both take one options map:
   `{:focus-target f :borrowed? b}` (the focus target is the interactive
   child when the panel itself is inert chrome).
-- An owner close is `release!`/`done`, then `dispose!`. Never call
+- An owner close is `release!`, then `dispose!`. Never call
   `protocols/dispose` (or `dispose-tree!`) directly on a dock panel.
 - `clear!` is only for a wholesale takeover (custom-editor swap, session
   reset, extension teardown) — not for closing one panel.
@@ -107,5 +107,3 @@ both by component identity. Regression test:
 - The overlay stack has the same "disposed while registered" hazard; it
   has a ghost guard but no `dispose!`-style check. Read `tui.md`'s overlay
   section before copying the dock pattern there.
-- The `done` handles are kept as the close-path name (pi parity). They are
-  now thin `release!` wrappers, so a flow may drop the handle at any time.

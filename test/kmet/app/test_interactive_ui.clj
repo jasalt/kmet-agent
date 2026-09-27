@@ -52,13 +52,12 @@
 
 (defn- capture-mount!
   "A dock/mount! stand-in for tests: records the component that receives
-  keys (the :focus-target when given, else COMPONENT) in REF and returns a
-  no-op done (pi: showSelector mounts into the editor dock and focuses the
-  interactive child; the tests don't have a dock)."
+  keys (the :focus-target when given, else COMPONENT) in REF (pi:
+  showSelector mounts into the editor dock and focuses the interactive
+  child; the tests don't have a dock)."
   [ref]
   (fn [_ component & [opts]]
-    (reset! ref (or (:focus-target opts) component))
-    (fn [])))
+    (reset! ref (or (:focus-target opts) component))))
 
 (def ^:private no-image-caps
   "Capabilities stub for the /settings tests: the image rows (Show images /
@@ -165,9 +164,7 @@
     (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [sel-ref (atom nil)]
-      (with-redefs [dock/mount! (fn [_ component & _]
-                                  (reset! sel-ref component)
-                                  (fn []))
+      (with-redefs [dock/mount! (fn [_ component & _] (reset! sel-ref component))
                     tui/tui-request-render (fn [_] nil)
                     chat-history/chat-history-add-message! (fn [_ _] nil)
                     chat-history/show-warning! (fn [_ _] nil)
@@ -1438,9 +1435,9 @@
 ;; ─── DSL stage 4 review: dock generation gate + widget-area reactivity ────
 
 (deftest test-dock-membership-handles
-  (testing "a done() removes only its own component, wherever it sits, so a
+  (testing "a release removes only its own component, wherever it sits, so a
             replaced selector's close cannot yank the newer one out of the
-            dock (membership replaced pi's activeSelectorToken); done() is
+            dock (membership replaced pi's activeSelectorToken); release is
             idempotent and restores the CURRENT active editor"
     (with-redefs [tui/tui-set-focus (fn [_ _] nil)
                   tui/tui-request-render (fn [_] nil)]
@@ -1449,21 +1446,20 @@
                 :dock-stack (atom [])
                 :current-editor-atom (atom ed)}
             panel-a (status-indicator/make-status-indicator)
-            panel-b (editor/make-editor)
-            ;; A mounts, then B replaces it
-            done-a (dock/mount! cs panel-a)]
+            panel-b (editor/make-editor)]
+        ;; A mounts, then B replaces it
+        (dock/mount! cs panel-a)
         (dock/mount! cs panel-b)
         (t/is (= panel-b (dock/top-component @(:dock-stack cs))) "B recorded")
-        (done-a)
+        (dock/release! cs panel-a)
         (t/is (= panel-b (dock/top-component @(:dock-stack cs)))
-              "the absent component's done() is inert")
-        ;; B's done reveals the editor; a second call is harmless
-        (let [done-b (dock/mount! cs panel-b)]
-          (done-b)
-          (t/is (nil? (dock/top-component @(:dock-stack cs))) "editor restored")
-          (done-b)
-          (t/is (nil? (dock/top-component @(:dock-stack cs)))
-                "double done() stays nil"))))))
+              "the absent component's release is inert")
+        ;; B's release reveals the editor; a second call is harmless
+        (dock/release! cs panel-b)
+        (t/is (nil? (dock/top-component @(:dock-stack cs))) "editor restored")
+        (dock/release! cs panel-b)
+        (t/is (nil? (dock/top-component @(:dock-stack cs)))
+              "double release stays nil")))))
 
 (deftest test-oauth-login-dialog-covers-and-releases
   (testing "kmetia/kmet-agent#5: the :select round trip COVERS the login

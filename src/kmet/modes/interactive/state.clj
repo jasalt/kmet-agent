@@ -281,7 +281,7 @@
    displaces; cover-selector! leaves what is below alive instead."
   [cs sel-atom sel]
   (dock/mount! cs sel)
-  (reset! sel-atom {:sel sel}))
+  (reset! sel-atom sel))
 
 (defn cover-selector!
   "Push SEL on top of CS's editor dock — the auth method selector over its
@@ -289,7 +289,7 @@
    again. Records SEL on SEL-ATOM so close-selector! can dispose it."
   [cs sel-atom sel]
   (dock/cover! cs sel)
-  (reset! sel-atom {:sel sel}))
+  (reset! sel-atom sel))
 
 (defn close-selector!
   "Leave the dock and dispose the selector recorded on SEL-ATOM: release!
@@ -297,6 +297,6 @@
    remove-before-dispose invariant before unwinding its root reaction and
    foreign inputs."
   [cs sel-atom]
-  (when-let [sel (:sel @sel-atom)]
+  (when-let [sel @sel-atom]
     (dock/release! cs sel)
     (dock/dispose! cs sel)))

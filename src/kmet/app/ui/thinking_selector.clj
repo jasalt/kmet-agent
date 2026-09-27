@@ -308,12 +308,13 @@
   [cs & {:keys [on-select on-persist]}]
   (let [ag @(:agent-state cs)
         sel-atom (atom nil)
-        ;; the dock's done restores the editor; dispose unwinds the
-        ;; selector's root reaction and foreign input (the dock drops
-        ;; foreign records without disposing them)
+        ;; leave, then dispose: dispose unwinds the selector's root
+        ;; reaction and foreign input (the dock drops foreign records
+        ;; without disposing them)
         close! (fn []
-                 ((:done @sel-atom))
-                 (when-let [s (:sel @sel-atom)] (dock/dispose! cs s)))
+                 (when-let [s @sel-atom]
+                   (dock/release! cs s)
+                   (dock/dispose! cs s)))
         sel (make-thinking-selector
              (available-levels cs)
              @(:thinking ag)
@@ -330,5 +331,6 @@
                           (close!)
                           (tui/tui-request-render (:tui cs))))]
     ;; pi: showSelector — the selector replaces the editor dock
-    (reset! sel-atom {:done (dock/mount! cs sel) :sel sel})
+    (dock/mount! cs sel)
+    (reset! sel-atom sel)
     (tui/tui-request-render (:tui cs))))

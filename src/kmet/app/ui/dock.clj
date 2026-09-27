@@ -21,11 +21,9 @@
    Both take {:focus-target f :borrowed? b} and return DONE.
 
    Leaving is by membership, never by a mount token:
-   - the done fn returned by a mount removes its component from wherever
-     it sits in the stack; a handle whose component is gone is inert —
-     the replacement semantics pi gets from clearing editorContainer.
-   - release! is that same removal for owners that never kept the handle
-     (the auth flow's dialog), and it works from any depth.
+   - release! removes a component from wherever it sits in the stack; a
+     component that is already gone is inert — the replacement semantics
+     pi gets from clearing editorContainer.
    - clear! empties the stack wholesale (a custom-editor swap, a session
      reset, an extension teardown), disposing every non-borrowed entry.
 
@@ -159,11 +157,8 @@
 (defn release!
   "Owner-callable leave: remove COMPONENT from CS's dock stack, wherever
    it sits (identity, not a mount generation). Returns true when it
-   removed anything. The done fn returned by mount!/cover! is this
-   operation; use release! when the owner never kept the handle, e.g. a
-   flow that mounted its dialog before a selector covered it. A component
-   that is no longer in the stack is inert, so a stale owner cannot yank a
-   newer occupant.
+   removed anything. A component that is no longer in the stack is inert,
+   so a stale owner cannot yank a newer occupant.
 
    Removals never dispose — the owner does (see dispose!). Focus needs no
    restoring here: the ::focus-guard watch hands input to the revealed
@@ -200,7 +195,7 @@
   "The shared mount!/cover! path: take focus before publishing the stack
    (only the caller knows the new panel's target; no watch could guess a
    selector's inner list), publish it, and when REPLACE? dispose the
-   displaced top unless it was borrowed. Returns DONE (see mount!)."
+   displaced top unless it was borrowed."
   [cs component focus-target borrowed? replace?]
   (let [e (entry component focus-target borrowed?)]
     (tui/tui-set-focus (:tui cs) (:focus-target e))
@@ -213,8 +208,7 @@
                  (not (identical? (:component displaced) component))
                  (not (:borrowed? displaced)))
         (dispose! cs (:component displaced)))
-      (tui/tui-request-render (:tui cs))
-      (fn done [] (release! cs component)))))
+      (tui/tui-request-render (:tui cs)))))
 
 (defn mount!
   "Swap COMPONENT in as the dock's top: replace and dispose the displaced
@@ -224,9 +218,7 @@
    when COMPONENT itself is inert chrome; defaults to COMPONENT — and
    :borrowed? true for a panel whose owner keeps custody and re-mounts or
    disposes it (the auth dialog, an extension dialog); the dock then never
-   disposes it. Returns DONE: a zero-arg fn removing COMPONENT from the
-   stack by identity, inert once it is gone (pi's token check, expressed
-   as membership).
+   disposes it.
 
    Focus is taken before the stack is published because only the caller
    knows the target; the ::focus-guard watch handles every close path."
@@ -238,9 +230,9 @@
 (defn cover!
   "Push COMPONENT on top of the dock without touching what is below (pi:
    showAuthSelect swaps the login dialog out and back; a temporary surface
-   covers its owner). OPTS and DONE as in mount!. Pushing a component that
-   is already in the stack adds another entry; release!/done remove every
-   entry that holds it."
+   covers its owner). OPTS as in mount!. Pushing a component that is
+   already in the stack adds another entry; release! removes every entry
+   that holds it."
   ([cs component]
    (cover! cs component {}))
   ([cs component {:keys [focus-target borrowed?]}]

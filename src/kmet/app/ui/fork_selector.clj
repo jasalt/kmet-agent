@@ -147,14 +147,12 @@
                         list
                         [:spacer {:lines 1}]
                         [:dynamic-border {:color-fn #(theme/fg th :accent %)}]])
-                ;; late binding: the list callbacks reach done via this atom
-                sel-atom (atom nil)
-                ;; pi: done() — restore the editor and unwind the panel: the
+                ;; pi: close — restore the editor and unwind the panel: the
                 ;; compiled frame's DSL chrome via dock/dispose! (leave then
                 ;; dispose), the spliced list explicitly (the tree does not
                 ;; own it)
                 close! (fn []
-                         ((:done @sel-atom))
+                         (dock/release! cs panel)
                          (dock/dispose! cs panel)
                          (protocols/dispose list))]
             (reset! on-select-atom
@@ -165,4 +163,4 @@
                     (fn [] (close!)))
             ;; pi: showSelector — mount the panel, focus the list
             ;; (focus: selector.getMessageList())
-            (reset! sel-atom {:done (dock/mount! cs panel {:focus-target list})})))))))
+            (dock/mount! cs panel {:focus-target list})))))))

@@ -342,14 +342,15 @@
                                                        (subs id (inc slash))))))
                                @(:scoped-models ag)))
              current (models/get-model @(:provider ag) @(:model ag))
-             ;; late binding: the callbacks reach the mount's done through
-             ;; this atom (pi: done() is created by showSelector)
+             ;; late binding: the close callbacks reach the mounted
+             ;; selector through this atom (pi: showSelector's handle)
              sel-atom (atom nil)
-             ;; the dock's done restores the editor; dispose unwinds the
-             ;; selector's root reaction and foreign input
+             ;; leave, then dispose: dispose unwinds the selector's root
+             ;; reaction and foreign input
              close! (fn []
-                      ((:done @sel-atom))
-                      (when-let [s (:sel @sel-atom)] (dock/dispose! cs s)))
+                      (when-let [s @sel-atom]
+                        (dock/release! cs s)
+                        (dock/dispose! cs s)))
              sel (make-model-selector
                   available scoped current
                   :search search-term
@@ -360,7 +361,8 @@
                   :on-cancel (fn []
                                (close!)
                                (tui/tui-request-render (:tui cs))))]
-         (reset! sel-atom {:done (dock/mount! cs sel) :sel sel})
+         (dock/mount! cs sel)
+         (reset! sel-atom sel)
          (tui/tui-request-render (:tui cs)))))))
 
 (defn resolve-model-ref
