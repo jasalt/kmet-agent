@@ -4,9 +4,10 @@
    A binary is the official babashka release binary with target/kmet.jar (an
    uberjar of src + runtime deps) appended — babashka detects the appended zip
    at startup and runs the uberjar's -main (babashka wiki: Self-contained
-   executable). One artifact per dist platform, named by the same scheme the
-   jolt packager uses — kmet-<ver>-bb<bb-ver>-<platform>; cross-builds work
-   from any host because packaging is just download + concat.
+   executable). One artifact per dist platform, laid out by the same scheme
+   the jolt packager uses: a flat dist/kmet-<ver>-<platform>.zip holding the
+   bare kmet executable; cross-builds work from any host because packaging
+   is just download + concat.
 
    Termux/Android: the glibc bb binary must be exec'd through the termux glibc
    dynamic linker, which also breaks bb's own appended-jar detection
@@ -66,21 +67,21 @@
 
 (defn- bb-only!
   "Throw ::bb-only when invoked under the jolt host. kmet.tasks.build is the
-   babashka packaging pipeline (babashka.classpath classpath, java.util.zip
-   uberjar); jolt has neither, and `jolt build` packages a self-contained
-   image instead — callers on jolt get a fast, explicit failure rather than
-   an unresolved-var or zip-ctor crash."
+   babashka packaging pipeline (babashka.classpath classpath,
+   java.util.zip uberjar); jolt has no classpath, and `jolt build` packages a
+   self-contained image instead — callers on jolt get a fast, explicit
+   failure rather than an unresolved-var crash."
   [what]
   (when (boolean (find-var 'clojure.core/*jolt-version*))
-    (throw (ex-info (str what " is bb-only — the jolt host has no classpath/zip machinery")
+    (throw (ex-info (str what " is bb-only — the jolt host has no classpath machinery")
                     {:type ::bb-only}))))
 
 ;; ─── Target table ──────────────────────────────────────────────────────────
 ;;
-;; Keyed by dist platform — the os-arch name both packagers stamp on
-;; artifacts (kmet-<ver>-bb<bb-ver>-<platform> here,
-;; kmet-<ver>-jolt<jv>-<platform> in the jolt packager), so one dist/ holds
-;; both hosts' artifacts for a machine under one platform string.
+;; Keyed by dist platform — the os-arch name both packagers stamp on the
+;; release zips (kmet-<ver>-<platform>.zip here, kmetj-<ver>-<platform>.zip
+;; in the jolt packager), so one dist/ holds both hosts' artifacts for a
+;; machine under one platform string.
 ;; :asset    babashka release asset slug backing the platform
 ;;           (babashka-<version>-<asset>.(tar.gz|zip) + .sha256 sibling). The
 ;;           names differ for linux: every linux platform is built from the
@@ -151,12 +152,56 @@
   []
   (version-lib/artifact-version))
 
+;; ─── Naming ────────────────────────────────────────────────────────────────
+;;
+;; Both packagers ship one flat, platform-qualified zip in dist/
+;; (<host>-<version>-<platform>[-dev].zip) holding the bare executable — kmet
+;; on babashka, kmetj on jolt, no version in the name — and its Termux
+;; launcher when one is written. Each host assembles that executable under
+;; target/dist/, and `--out DIR` additionally copies it (with the launcher)
+;; into DIR.
+
+(defn windows-platform?
+  "True for a dist platform whose executables carry the .exe suffix."
+  [platform]
+  (str/starts-with? (str platform) "windows-"))
+
 (defn artifact-base
-  "Dist artifact base name without extension:
-   kmet-<ver>-bb<bb-ver>-<platform>, or kmet-test-... for a --test build."
-  ([ver bb-ver platform] (artifact-base ver bb-ver platform {}))
-  ([ver bb-ver platform {:keys [test?]}]
-   (str (if test? "kmet-test-" "kmet-") ver "-bb" bb-ver "-" platform)))
+  "Artifact name without version or extension: kmet on babashka (:bb), kmetj
+   on jolt (:jolt) — the name the executable carries in dist/ and inside the
+   zip, and the base of the zip name — with -test for a --test build."
+  [host {:keys [test?]}]
+  (str (case host :bb "kmet" :jolt "kmetj") (when test? "-test")))
+
+(defn executable-name
+  "Executable file name for HOST's artifact on PLATFORM: artifact-base plus
+   the .exe suffix on windows platforms. No version: the zip name carries it."
+  [host platform opts]
+  (str (artifact-base host opts) (when (windows-platform? platform) ".exe")))
+
+(def ^:private staging-root
+  "Where each packager assembles the bare executable it zips: a scratch root
+   under target/, not dist/ — dist/ carries the released zips, and --out DIR
+   copies the executable where the user asks."
+  "target/dist")
+
+(defn staged-executable
+  "Assembly path of the bare executable for HOST on PLATFORM:
+   target/dist/<platform>/kmet[.exe] (kmetj on jolt; the -test runner for a
+   --test build). --out DIR copies this file; the zip in dist/ carries it at
+   its bare name."
+  [host platform opts]
+  (str staging-root "/" platform "/" (executable-name host platform opts)))
+
+(defn artifact-zip
+  "The release zip in dist/, flat and platform-qualified:
+   <base>-<version>-<platform>[-dev].zip — kmet-... on babashka, kmetj-... on
+   jolt, kmet-test-/kmetj-test-... for --test builds. The version is kmet's,
+   not the compiling host's; -dev marks a jolt --dev build, a different
+   artifact under the same sources."
+  [host ver platform {:keys [test? dev?]}]
+  (str dist-dir "/" (artifact-base host {:test? test?})
+       "-" ver "-" platform (when dev? "-dev") ".zip"))
 
 ;; ─── Downloading & extraction ──────────────────────────────────────────────
 
@@ -421,27 +466,56 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
           bin-name linker))
 
 (defn assemble-one!
-  "Produce dist/kmet-<ver>-bb<bb-ver>-<platform>[.exe] (kmet-test-... for a
-   --test build): the official babashka binary for platform with the uberjar
-   JAR appended. On a termux host, platforms that need the glibc linker also
-   get a matching .sh launcher script. Returns the artifact path."
-  ([ver platform target bb-ver] (assemble-one! ver platform target bb-ver {}))
-  ([ver platform {:keys [linker] :as target} bb-ver {:keys [test? jar]
-                                                     :or {jar jar-path}}]
-   (let [bb-bin (ensure-bb-binary! bb-ver target)
-         base (artifact-base ver bb-ver platform {:test? test?})
-         windows? (str/starts-with? platform "windows")
-         artifact (fs/path dist-dir (cond-> base windows? (str ".exe")))]
-     (println "building" (str artifact))
-     (concat-files! artifact [bb-bin (fs/path jar)])
-     (when-not windows?
-       (fs/set-posix-file-permissions artifact "rwxr-xr-x"))
-     (when (and (termux?) linker)
-       (let [w (fs/path dist-dir (str base ".sh"))]
-         (spit (str w) (wrapper-script (fs/file-name artifact) linker))
-         (fs/set-posix-file-permissions w "rwxr-xr-x")
-         (println "launcher:" (str w))))
-     artifact)))
+  "Produce the executable for PLATFORM under target/dist/<platform>/kmet[.exe]
+   (kmet-test[.exe] for a --test build): the official babashka binary for the
+   platform with the uberjar JAR appended. On a termux host, platforms that
+   need the glibc linker also get a matching .sh launcher beside it. The zip
+   packager and --out consume the returned {:exe path :launcher path-or-nil}."
+  [platform {:keys [linker] :as target} bb-ver {:keys [test? jar]}]
+  (let [bb-bin (ensure-bb-binary! bb-ver target)
+        exe (fs/path (staged-executable :bb platform {:test? test?}))
+        launcher (when (and (termux?) linker)
+                   (fs/path (fs/parent exe)
+                            (str (artifact-base :bb {:test? test?}) ".sh")))]
+    (println "building" (str exe))
+    (concat-files! exe [bb-bin (fs/path (or jar jar-path))])
+    (when-not (windows-platform? platform)
+      (fs/set-posix-file-permissions exe "rwxr-xr-x"))
+    (when launcher
+      (spit (str launcher) (wrapper-script (fs/file-name exe) linker))
+      (fs/set-posix-file-permissions launcher "rwxr-xr-x")
+      (println "launcher:" (str launcher)))
+    {:exe exe :launcher launcher}))
+
+(defn pack-artifact!
+  "Zip an assembled artifact for distribution: the executable (and its Termux
+   launcher, when the build wrote one) at the zip root, under the names they
+   carry in dist/. In-process through kmet.libs.archive/write-zip! — no
+   external zip program — on both hosts. Returns ZIP."
+  [zip {:keys [exe launcher]}]
+  (archive/write-zip!
+   zip
+   (cond-> [{:name (fs/file-name exe) :file (str exe) :executable? true}]
+     launcher (conj {:name (fs/file-name launcher) :file (str launcher)
+                     :executable? true})))
+  (println "packed" (str zip))
+  zip)
+
+(defn install-artifact!
+  "Copy an assembled artifact's executables into DIR — the `--out DIR` half
+   of the dist task on either host. Windows platforms keep whatever the
+   filesystem does with the copy; everywhere else the executable and launcher
+   copies stay executable. Returns DIR."
+  [dir platform {:keys [exe launcher]}]
+  (fs/create-dirs dir)
+  (doseq [f (cond-> [exe] launcher (conj launcher))]
+    (let [target (fs/path dir (fs/file-name f))]
+      (when-not (= (str (fs/absolutize f)) (str (fs/absolutize target)))
+        (fs/copy f target {:replace-existing true})
+        (when-not (windows-platform? platform)
+          (fs/set-posix-file-permissions target "rwxr-xr-x")))))
+  (println "copied executable to" (str dir))
+  (str dir))
 
 (defn- temp-run-dir
   "A throwaway dir to run an artifact from, on the platform's real temp root
@@ -457,7 +531,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
   "Run the freshly built current-host artifact. An app artifact: --list-models
    must list the embedded catalogs (exit 0), and --version must report the
    version the artifact was built as — the baked kmet/version.txt, not a
-   checkout. A --test artifact: `--test kmet.libs.test-num` must run that
+   checkout. A --test artifact: `--test kmet.libs.test-archive` must run that
    namespace from an empty work dir (exit 0 and the Testing header), proving
    the runner and its tests travel in the artifact. Skipped for cross-built
    platforms."
@@ -475,11 +549,11 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
                      (apply p/shell {:out :string :err :string :continue true
                                      :dir (str dir)} cmd args))]
            (try
-             (println "smoke test:" cmd "--test kmet.libs.test-num")
-             (let [res (run "--test" "kmet.libs.test-num")]
+             (println "smoke test:" cmd "--test kmet.libs.test-archive")
+             (let [res (run "--test" "kmet.libs.test-archive")]
                (if (and (zero? (:exit res))
-                        (str/includes? (:out res) "Testing kmet.libs.test-num"))
-                 (println "smoke test passed: the packaged runner ran kmet.libs.test-num")
+                        (str/includes? (:out res) "Testing kmet.libs.test-archive"))
+                 (println "smoke test passed: the packaged runner ran kmet.libs.test-archive")
                  (do (println (:err res))
                      (throw (ex-info (str "smoke test failed for " artifact
                                           " — the artifact did not run the test runner")
@@ -585,17 +659,10 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
   (let [{:keys [name]} (pack-verify! src-dir)
         root (fs/canonicalize src-dir)
         out (str (or out-path (str name ".jar")))]
-    (fs/create-dirs (fs/parent (fs/canonicalize out)))
-    (with-open [zos (java.util.zip.ZipOutputStream. (io/output-stream out))]
-      (doseq [f (sort-by str (filter #(fs/regular-file? %) (fs/glob root "**")))]
-        (let [rel (str/replace (str (fs/relativize root f)) "\\" "/")]
-          (when (or (str/starts-with? rel "/")
-                    (some #(= ".." %) (str/split rel #"/")))
-            (throw (ex-info (str "unsafe entry name: " rel) {:type ::pack-error})))
-          (.putNextEntry zos (java.util.zip.ZipEntry. rel))
-          (with-open [in (io/input-stream (fs/file f))]
-            (io/copy in zos))
-          (.closeEntry zos))))
+    (archive/write-zip!
+     out
+     (for [f (sort-by str (filter #(fs/regular-file? %) (fs/glob root "**")))]
+       {:name (str (fs/relativize root f)) :file (str f)}))
     (println "packed" out)
     out))
 
@@ -761,12 +828,13 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
 ;; ─── CLI ───────────────────────────────────────────────────────────────────
 
 (defn parse-args
-  "CLI args => {:targets [...] :all? :force? :no-smoke? :test? :help?}.
-   Unknown targets/options throw ex-info with :type ::usage."
+  "CLI args => {:targets [...] :all? :force? :no-smoke? :test? :out :help?}.
+   --out DIR additionally copies the built executable into DIR. Unknown
+   targets/options throw ex-info with :type ::usage."
   [args]
   (loop [args args
          opts {:targets [] :all? false :force? false :no-smoke? true
-               :test? false :help? false}]
+               :test? false :out nil :help? false}]
     (if-some [arg (first args)]
       (cond
         (= "--all" arg) (recur (rest args) (assoc opts :all? true))
@@ -774,6 +842,11 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
         (= "--smoke" arg) (recur (rest args) (assoc opts :no-smoke? false))
         (= "--no-smoke" arg) (recur (rest args) (assoc opts :no-smoke? true))
         (= "--test" arg) (recur (rest args) (assoc opts :test? true))
+        (#{"-o" "--out"} arg)
+        (let [dir (second args)]
+          (when (str/blank? (str dir))
+            (throw (ex-info (str arg " needs a directory") {:type ::usage :option arg})))
+          (recur (drop 2 args) (assoc opts :out dir)))
         (= "--help" arg) (recur (rest args) (assoc opts :help? true))
         (str/starts-with? arg "--") (throw (ex-info (str "unknown option: " arg)
                                                     {:type ::usage}))
@@ -784,27 +857,32 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
       opts)))
 
 (defn -main
-  "bb dist [target ...|--all] [--force] [--smoke] [--test]   (the bb.edn
-   task's babashka branch; the jolt branch runs kmet.tasks.build-jolt/-main)
+  "bb dist [target ...|--all] [--force] [--smoke] [--test] [--out DIR]
+   (the bb.edn task's babashka branch; the jolt branch runs
+   kmet.tasks.build-jolt/-main)
 
-   Build self-contained kmet executable(s) in dist/: the official babashka
-   release binary with an uberjar appended, named
-   kmet-<ver>-bb<bb-ver>-<platform> — the jolt packager's scheme with babashka
-   in its slot. --test swaps in the test-runner artifact instead:
-   kmet-test-<ver>-bb<bb-ver>-<platform>, Main-Class kmet.tasks.test-main,
-   whose --test/--test-ext flags run the packaged suite. Targets are dist
+   Build a self-contained kmet executable for each target platform: the
+   official babashka release binary with an uberjar appended. Each build
+   assembles the bare `kmet` (kmet.exe on Windows) under
+   target/dist/<platform>/ and packages it as dist/kmet-<ver>-<platform>.zip,
+   so the executable inside carries no version while the zip name carries the
+   version and the platform. --test swaps in the test-runner artifact
+   instead: kmet-test and dist/kmet-test-<ver>-<platform>.zip, Main-Class
+   kmet.tasks.test-main, whose
+   --test/--test-ext flags run the packaged suite. Targets are dist
    platforms (linux-aarch64, linux-amd64, macos-aarch64, macos-amd64,
    windows-amd64; a release asset slug like linux-amd64-static is accepted
    too); they default to the current platform. --all builds every published
-   platform, --force re-downloads cached babashka binaries, and --smoke runs
-   the current-host artifact after building (--list-models plus --version, or
+   platform, --force re-downloads cached babashka binaries, --out DIR
+   additionally copies the executable into DIR, and --smoke runs the
+   current-host artifact after building (--list-models plus --version, or
    the packaged test runner for --test; skipped by default to keep local
    dist builds fast and side-effect free). A fresh uberjar
    (target/kmet.jar, or target/kmet-test.jar for --test) is always rebuilt
    first so artifacts never bundle stale sources."
   [& args]
   (bb-only! "kmet.tasks.build/-main (the bb half of the dist task)")
-  (let [{:keys [targets all? force? no-smoke? test? help?]} (parse-args args)]
+  (let [{:keys [targets all? force? no-smoke? test? out help?]} (parse-args args)]
     (when help?
       (println (:doc (meta #'-main)))
       (System/exit 0))
@@ -823,12 +901,21 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
                             (when-not (string? platform)
                               (throw (ex-info "cannot determine host platform; pass explicit targets"
                                               {:type ::usage :reason platform})))
-                            [platform]))]
+                            [platform]))
+          _ (when (and out (> (count targets) 1))
+              (throw (ex-info "--out copies one platform's executable; name a single target"
+                              {:type ::usage :targets (vec targets)})))]
       (println (format "%s %s | babashka %s | targets: %s"
                        (if test? "kmet-test" "kmet") ver bb-ver (str/join ", " targets)))
       (doseq [platform targets]
-        (let [artifact (assemble-one! ver platform (get target-table platform) bb-ver
-                                      {:test? test? :jar jar})]
+        (let [built (assemble-one! platform (get target-table platform) bb-ver
+                                   {:test? test? :jar jar})]
+          (pack-artifact!
+           (artifact-zip :bb ver platform {:test? test?})
+           built)
+          (when out
+            (install-artifact! out platform built))
           (when-not no-smoke?
-            (smoke-test! artifact platform {:test? test?}))))
+            (smoke-test! (:exe built) platform {:test? test?}))))
       (println "done:" dist-dir))))
+

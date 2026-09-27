@@ -2,7 +2,8 @@
 
 The commands below use `bb run` from a source checkout. If you built or
 installed a self-contained executable, use the same options with `kmet` in
-place of `bb run` (or invoke the generated `dist/kmet-*` file directly).
+place of `bb run` (or unzip the built `dist/kmet-*.zip`, which holds the
+`kmet` executable; on Jolt it is `kmetj`).
 
 ### 1. Run from a checkout
 
@@ -15,8 +16,9 @@ bb run
 ```
 
 For a packaged build, use `bb dist` (or `jolt dist` on the Jolt host) and
-run the resulting executable in `dist/`; see [Building](building.md) for the
-options and artifact names.
+unzip the artifact from `dist/`; `bb dist --out ~/bin` (or `jolt dist --out
+~/bin`) also puts the bare executable where you want it. See
+[Building](building.md) for the options and artifact layout.
 
 ### 2. Configure a provider
 

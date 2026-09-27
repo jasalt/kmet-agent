@@ -1,7 +1,8 @@
 (ns kmet.version
   "kmet's checkout version — jolt's rule (jolt tools/version.sh), so the base
-   version kmet stamps on artifacts (`kmet-<ver>-<host><host-ver>-<platform>`)
-   and reports from `kmet --version` reads like the compiler's:
+   version kmet stamps on its artifact zips (`kmet-<ver>-<platform>.zip` from
+   babashka, `kmetj-<ver>-<platform>.zip` from jolt) and reports from
+   `kmet --version` reads like the compiler's:
 
      v0.8.0                on a release tag
      v0.8.0-56-g63374117   56 commits past it, at that sha (-dirty with edits)

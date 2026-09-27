@@ -27,7 +27,7 @@
            :requires ([kmet.tasks.build :as build])
            :task (help/with-help (build/uberjar*))
            :override-builtin true}
-  dist    {:doc "Package self-contained executable(s) into dist/ (bb: uberjar + babashka binary; jolt: AOT via `jolt build`)\n\n`bb dist --help` / `jolt dist --help`: platforms, flags (--force, --smoke, --test, --dev, --static/--dynamic, --boot, --target), artifact naming, and the bundled-extension staging both packagers share."
+  dist    {:doc "Package self-contained kmet executables (one platform-qualified zip in dist/; bb: uberjar + babashka binary; jolt: AOT via `jolt build`)\n\n`bb dist --help` / `jolt dist --help`: platforms, flags (--force, --smoke, --test, --dev, --out, --static/--dynamic, --boot, --target), artifact naming, and the bundled-extension staging both packagers share."
            :requires ([kmet.tasks.build :as build] [kmet.tasks.build-jolt :as jbuild])
            :task (if (find-var 'clojure.core/*jolt-version*)
                    (apply jbuild/-main *command-line-args*)

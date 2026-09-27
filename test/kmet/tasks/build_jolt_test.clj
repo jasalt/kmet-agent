@@ -127,28 +127,22 @@
       (finally
         (fs/delete-tree dir)))))
 
-(deftest artifact-base-mirrors-the-babashka-naming
-  (is (= "kmet-1.2.3-jolt0.8.6-linux-amd64"
-         (jbuild/artifact-base "1.2.3" "0.8.6" "linux-amd64" {})))
-  (is (= "kmet-20260911-abc1234-jolt0.8.6-86-g234f460b-windows-amd64"
-         (jbuild/artifact-base "20260911-abc1234" "0.8.6-86-g234f460b"
-                               "windows-amd64" {})))
-  (testing "a dev build cannot be mistaken for a release artifact"
-    (is (= "kmet-1.2.3-jolt0.8.6-linux-amd64-dev"
-           (jbuild/artifact-base "1.2.3" "0.8.6" "linux-amd64" {:dev? true}))))
-  (testing "a --test build is named kmet-test-*"
-    (is (= "kmet-test-1.2.3-jolt0.8.6-linux-amd64"
-           (jbuild/artifact-base "1.2.3" "0.8.6" "linux-amd64" {:test? true})))
-    (is (= "kmet-test-1.2.3-jolt0.8.6-linux-amd64-dev"
-           (jbuild/artifact-base "1.2.3" "0.8.6" "linux-amd64"
-                                 {:test? true :dev? true}))))
-  (testing "no jolt version (babashka, where the var is absent) still names"
-    (is (= "kmet-1.2.3-joltdev-linux-amd64"
-           (jbuild/artifact-base "1.2.3" nil "linux-amd64" {})))))
+(deftest artifact-names-are-shared-with-the-babashka-packager
+  (is (= "kmetj" (build/artifact-base :jolt {})))
+  (is (= "kmetj-test" (build/artifact-base :jolt {:test? true})))
+  (is (= "kmetj.exe" (build/executable-name :jolt "windows-amd64" {})))
+  (testing "the zip carries the version and platform, not the compiling jolt's"
+    (is (= "dist/kmetj-1.2.3-linux-amd64.zip"
+           (build/artifact-zip :jolt "1.2.3" "linux-amd64" {})))
+    (is (= "dist/kmetj-1.2.3-linux-amd64-dev.zip"
+           (build/artifact-zip :jolt "1.2.3" "linux-amd64" {:dev? true})))
+    (is (= "dist/kmetj-test-1.2.3-linux-amd64-dev.zip"
+           (build/artifact-zip :jolt "1.2.3" "linux-amd64"
+                               {:test? true :dev? true})))))
 
 (deftest parse-args-defaults-to-a-release-host-build
   (is (= {:mode "release" :flags [] :native-link nil :boot nil :target nil
-          :target-pack nil :out nil :jolt nil :force? false :no-smoke? true
+          :target-pack nil :out-dir nil :jolt nil :force? false :no-smoke? true
           :test? false :help? false}
          (jbuild/parse-args []))))
 
@@ -170,8 +164,9 @@
     (is (false? (:no-smoke? (jbuild/parse-args ["--smoke"]))))
     (is (true? (:no-smoke? (jbuild/parse-args ["--no-smoke"])))))
   (is (true? (:help? (jbuild/parse-args ["-h"]))))
-  (is (= "/tmp/kmet" (:out (jbuild/parse-args ["-o" "/tmp/kmet"]))))
-  (is (= "/tmp/kmet" (:out (jbuild/parse-args ["--out" "/tmp/kmet"]))))
+  (testing "--out names the directory the executable is additionally copied to"
+    (is (= "/tmp/kmet" (:out-dir (jbuild/parse-args ["-o" "/tmp/kmet"]))))
+    (is (= "/tmp/kmet" (:out-dir (jbuild/parse-args ["--out" "/tmp/kmet"])))))
   (is (= "/opt/jolt" (:jolt (jbuild/parse-args ["--jolt" "/opt/jolt"]))))
   (testing "--test builds the compiled test runner"
     (is (true? (:test? (jbuild/parse-args ["--test"]))))
@@ -202,30 +197,48 @@
   (is (thrown-with-msg? Exception #"--target-pack needs"
                         (jbuild/parse-args ["--target-pack"]))))
 
-(deftest default-artifact-appends-exe-only-on-windows
-  (let [artifact #'jbuild/default-artifact]
-    (is (= "dist/kmet-1.2.3-jolt0.8.6-linux-amd64"
-           (str (artifact "1.2.3" "0.8.6" "linux-amd64" "release"))))
-    (is (= "dist/kmet-1.2.3-jolt0.8.6-windows-amd64.exe"
-           (str (artifact "1.2.3" "0.8.6" "windows-amd64" "release"))))
-    (testing "the dev tag sits before the suffix"
-      (is (= "dist/kmet-1.2.3-jolt0.8.6-linux-amd64-dev"
-             (str (artifact "1.2.3" "0.8.6" "linux-amd64" "dev"))))
-      (is (= "dist/kmet-1.2.3-jolt0.8.6-windows-amd64-dev.exe"
-             (str (artifact "1.2.3" "0.8.6" "windows-amd64" "dev")))))
+(deftest default-artifacts-stage-the-executable-and-name-the-flat-zip
+  (let [artifacts #'jbuild/default-artifacts]
+    (is (= {:exe "target/dist/linux-amd64/kmetj"
+            :zip "dist/kmetj-1.2.3-linux-amd64.zip"}
+           (artifacts "1.2.3" "linux-amd64" "release" {})))
+    (testing "the windows executable takes the .exe suffix"
+      (is (= {:exe "target/dist/windows-amd64/kmetj.exe"
+              :zip "dist/kmetj-1.2.3-windows-amd64.zip"}
+             (artifacts "1.2.3" "windows-amd64" "release" {}))))
+    (testing "the dev tag sits on the zip, not on the executable"
+      (is (= "dist/kmetj-1.2.3-linux-amd64-dev.zip"
+             (:zip (artifacts "1.2.3" "linux-amd64" "dev" {}))))
+      (is (= "target/dist/linux-amd64/kmetj"
+             (:exe (artifacts "1.2.3" "linux-amd64" "dev" {})))))
     (testing "--test names the test artifact"
-      (is (= "dist/kmet-test-1.2.3-jolt0.8.6-linux-amd64"
-             (str (artifact "1.2.3" "0.8.6" "linux-amd64" "release" {:test? true}))))
-      (is (= "dist/kmet-test-1.2.3-jolt0.8.6-windows-amd64-dev.exe"
-             (str (artifact "1.2.3" "0.8.6" "windows-amd64" "dev" {:test? true})))))))
+      (is (= {:exe "target/dist/linux-amd64/kmetj-test"
+              :zip "dist/kmetj-test-1.2.3-linux-amd64.zip"}
+             (artifacts "1.2.3" "linux-amd64" "release" {:test? true}))))))
 
-(deftest scratch-bin-separates-test-builds
-  (is (= "kmet" (str (fs/file-name (@#'jbuild/scratch-bin "linux-amd64" "dev")))))
-  (is (= "kmet-test"
+(deftest scratch-bin-names-the-built-executable
+  (is (= "kmetj" (str (fs/file-name (@#'jbuild/scratch-bin "linux-amd64" "dev")))))
+  (is (= "kmetj-test"
          (str (fs/file-name (@#'jbuild/scratch-bin "linux-amd64" "dev" {:test? true})))))
+  (is (= "kmetj.exe"
+         (str (fs/file-name (@#'jbuild/scratch-bin "windows-amd64" "release")))))
   (testing "a test build gets its own incremental dir"
     (is (not= (str (@#'jbuild/scratch-bin "linux-amd64" "dev"))
               (str (@#'jbuild/scratch-bin "linux-amd64" "dev" {:test? true}))))))
+
+(deftest assemble-copies-the-compiled-binary-to-its-artifact-path
+  (let [dir "target/test-jolt-assemble"
+        bin (str (fs/path dir "scratch" "kmetj"))
+        artifact (str (fs/path dir "staged" "kmetj"))]
+    (fs/delete-tree dir)
+    (fs/create-dirs (fs/parent bin))
+    (spit bin "binary\n")
+    (try
+      (is (= artifact (str (@#'jbuild/assemble! bin artifact "linux-amd64"))))
+      (is (= "binary\n" (slurp artifact)))
+      (is (fs/executable? artifact))
+      (finally
+        (fs/delete-tree dir)))))
 
 (deftest build-argv-pins-the-entry-and-output
   (let [argv #'jbuild/build-argv]

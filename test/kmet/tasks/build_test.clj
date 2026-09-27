@@ -41,21 +41,27 @@
       (is (string? (:asset (get targets platform)))))))
 
 (deftest ^:bb-only parse-args-collects-targets-and-flags
-  (is (= {:targets [] :all? false :force? false :no-smoke? true :test? false :help? false}
+  (is (= {:targets [] :all? false :force? false :no-smoke? true
+          :test? false :out nil :help? false}
          (build/parse-args [])))
   (is (= {:targets ["linux-aarch64"] :all? true :force? true :no-smoke? true
-          :test? false :help? false}
+          :test? false :out nil :help? false}
          (build/parse-args ["linux-aarch64" "--all" "--force"])))
   (is (= {:targets ["macos-aarch64" "windows-amd64"]
-          :all? false :force? false :no-smoke? true :test? false :help? true}
+          :all? false :force? false :no-smoke? true :test? false :out nil :help? true}
          (build/parse-args ["macos-aarch64" "--help" "windows-amd64"])))
   (testing "a babashka release asset slug is accepted as its platform"
     (is (= {:targets ["linux-amd64"] :all? false :force? false :no-smoke? true
-            :test? false :help? false}
+            :test? false :out nil :help? false}
            (build/parse-args ["linux-amd64-static"]))))
   (testing "the smoke test is opt-in"
     (is (false? (:no-smoke? (build/parse-args ["--smoke"]))))
     (is (true? (:no-smoke? (build/parse-args ["--no-smoke"])))))
+  (testing "--out names the directory the executable is additionally copied to"
+    (is (= "bin" (:out (build/parse-args ["--out" "bin"]))))
+    (is (= "bin" (:out (build/parse-args ["-o" "bin"]))))
+    (is (thrown-with-msg? Exception #"needs a directory"
+                          (build/parse-args ["--out"]))))
   (testing "--test builds the test-runner artifact"
     (is (true? (:test? (build/parse-args ["--test"]))))
     (is (true? (:test? (build/parse-args ["linux-aarch64" "--test"]))))))
@@ -65,6 +71,44 @@
                         (build/parse-args ["plan9"])))
   (is (thrown-with-msg? Exception #"unknown option"
                         (build/parse-args ["--wat"]))))
+
+(deftest ^:bb-only pack-artifact-zips-the-executable-and-launcher
+  (let [dir "target/test-dist-pack"
+        exe (str dir "/kmet")
+        launcher (str dir "/kmet.sh")
+        zip (str dir "/kmet-1.2.3.zip")]
+    (fs/delete-tree dir)
+    (fs/create-dirs dir)
+    (spit exe "binary\n")
+    (spit launcher "#!/bin/sh\n")
+    (try
+      (is (= zip (str (build/pack-artifact! zip {:exe exe :launcher launcher}))))
+      (with-open [zf (java.util.zip.ZipFile. (fs/file zip))]
+        (let [names (set (map (fn [e] (.getName e))
+                              (enumeration-seq (.entries zf))))]
+          (is (= #{"kmet" "kmet.sh"} names))
+          (is (= "binary\n" (slurp (.getInputStream zf (.getEntry zf "kmet")))))))
+      (finally
+        (fs/delete-tree dir)))))
+
+(deftest ^:bb-only install-artifact-copies-the-executable-into-out
+  (let [dir "target/test-dist-install"
+        src "target/test-dist-install-src"
+        exe (str src "/kmet")
+        launcher (str src "/kmet.sh")]
+    (fs/delete-tree dir)
+    (fs/delete-tree src)
+    (fs/create-dirs src)
+    (spit exe "binary\n")
+    (spit launcher "#!/bin/sh\n")
+    (try
+      (is (= dir (build/install-artifact! dir "linux-amd64" {:exe exe :launcher launcher})))
+      (is (= "binary\n" (slurp (str (fs/path dir "kmet")))))
+      (is (= "#!/bin/sh\n" (slurp (str (fs/path dir "kmet.sh")))))
+      (is (fs/executable? (fs/path dir "kmet")))
+      (finally
+        (fs/delete-tree dir)
+        (fs/delete-tree src)))))
 
 (deftest ^:bb-only version-is-the-artifact-form-of-the-checkout-version
   ;; the rule (and its describe shapes) is kmet.libs.test-version's; the
@@ -76,14 +120,33 @@
   (with-redefs [version-lib/checkout-version (constantly "dev")]
     (is (= "dev" (build/version)))))
 
-(deftest ^:bb-only artifact-base-includes-bb-version-before-platform
-  (is (= "kmet-1.2.3-bb1.13.219-linux-aarch64"
-         (build/artifact-base "1.2.3" "1.13.219" "linux-aarch64")))
-  (is (= "kmet-20260903-abc1234-bb1.13.219-windows-amd64"
-         (build/artifact-base "20260903-abc1234" "1.13.219" "windows-amd64")))
-  (testing "a --test build is named kmet-test-*"
-    (is (= "kmet-test-1.2.3-bb1.13.219-linux-aarch64"
-           (build/artifact-base "1.2.3" "1.13.219" "linux-aarch64" {:test? true})))))
+(deftest ^:bb-only artifact-names-carry-no-host-or-version
+  (is (= "kmet" (build/artifact-base :bb {})))
+  (is (= "kmet-test" (build/artifact-base :bb {:test? true})))
+  (testing "the executable takes the .exe suffix only on windows platforms"
+    (is (= "kmet" (build/executable-name :bb "linux-aarch64" {})))
+    (is (= "kmet.exe" (build/executable-name :bb "windows-amd64" {})))
+    (is (= "kmet-test.exe" (build/executable-name :bb "windows-amd64" {:test? true}))))
+  (testing "jolt's executable is kmetj, in the same vocabulary"
+    (is (= "kmetj" (build/artifact-base :jolt {})))
+    (is (= "kmetj-test" (build/artifact-base :jolt {:test? true}))))
+  (testing "the executable is staged under target/, not dist/"
+    (is (= "target/dist/linux-aarch64/kmet"
+           (build/staged-executable :bb "linux-aarch64" {})))
+    (is (= "target/dist/windows-amd64/kmetj.exe"
+           (build/staged-executable :jolt "windows-amd64" {}))))
+  (testing "the zip is flat in dist/ and carries version and platform"
+    (is (= "dist/kmet-1.2.3-4-gabc1234-linux-aarch64.zip"
+           (build/artifact-zip :bb "1.2.3-4-gabc1234" "linux-aarch64" {})))
+    (is (= "dist/kmet-test-1.2.3-windows-amd64.zip"
+           (build/artifact-zip :bb "1.2.3" "windows-amd64" {:test? true})))
+    (is (= "dist/kmetj-1.2.3-macos-aarch64.zip"
+           (build/artifact-zip :jolt "1.2.3" "macos-aarch64" {})))
+    (is (= "dist/kmetj-1.2.3-linux-amd64-dev.zip"
+           (build/artifact-zip :jolt "1.2.3" "linux-amd64" {:dev? true}))))
+  (testing "windows is the shared platform vocabulary"
+    (is (true? (build/windows-platform? "windows-amd64")))
+    (is (false? (build/windows-platform? "linux-amd64")))))
 
 (deftest ^:bb-only generate-test-main-requires-the-suite-under-jolt
   (let [f (build/generate-test-main!)
