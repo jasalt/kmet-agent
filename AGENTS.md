@@ -115,6 +115,10 @@ to their source package. The temporary notes `script.md`, `perf.md`,
 - Supported platforms are Linux, macOS, Windows, WSL, and Termux. Start with
   [`docs/building.md`](docs/building.md) for platform setup and distribution;
   settings/theme/provider examples are in [`docs/examples/`](docs/examples/).
+- On Termux there is no `/tmp` directory. Never write scratch files there;
+  put temporary projects and test artifacts under the repository (e.g.
+  `target/` or a scratch dir beside the checkout), or use `$TMPDIR`/
+  `$PREFIX/tmp` when a real temp directory is needed.
 
 ## Git and instruction hierarchy
 
