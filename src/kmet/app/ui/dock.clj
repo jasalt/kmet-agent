@@ -41,7 +41,8 @@
    explicitly before publishing the stack — only they know the new
    panel's target (a selector's inner list, not its chrome).
 
-   The lifecycle contract and the refactor record live in dock.md."
+   The lifecycle contract and the refactor record live in dock.md at the
+   repository root (a temporary plan)."
   (:require [kmet.app.ui.custom-dialog-adapter :as cda]
             [kmet.debug :as debug]
             [kmet.libs.reakt :as r]
@@ -171,7 +172,7 @@
 
 (defn dispose!
   "Dispose COMPONENT — the owner's ordered close for a panel it mounted.
-   The invariant (dock.md): a component is disposed only after it left the
+   The invariant: a component is disposed only after it left the
    stack, or the dock keeps rendering a corpse whose keys reach nothing
    (issue #5). release!'s result is that check: a still-registered
    component is a lifecycle bug, so remove it first (the visible failure

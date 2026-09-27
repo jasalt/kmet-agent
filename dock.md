@@ -1,19 +1,26 @@
-# Dock lifecycle — design and status
+# Dock lifecycle — design, status, and follow-up plan
 
-Owner: `src/kmet/app/ui/dock.clj`. Related ticket:
+> Temporary note at the repository root — the dock refactor record and its
+> remaining plan, not package documentation. The lifecycle contract lives
+> in the `dock.clj` namespace docstring; delete this file once the
+> follow-ups are resolved.
+
+Owner: `src/kmet/app/ui/dock.clj`. Related ticket
 [kmetia/kmet-agent#5](https://github.com/kmetia/kmet-agent/issues/5) —
 "panel stays on screen with dead keys", reported mostly in selectors and
-login dialogs.
+login dialogs — closed by `95a5ad1`.
 
 ## Status
 
 | Phase | Scope | State |
 |---|---|---|
 | 1 | membership `release!`, login flows leave by identity, real-dock regression test | done |
-| 2 | single slot → stack, `cover!`, membership handles, `dispose!` invariant, extension dialogs covered | done |
+| 2 | single slot → stack, `cover!`, `dispose!` invariant, extension dialogs covered | done |
 
 `dock-generation` / `invalidate-pending!` are gone: validity is membership
-(component identity), not a mount token.
+(component identity), not a mount token. Shipped in `95a5ad1` (fix and
+stack), `db1b109` and `044b135` (simplification refactors); ticket #5 is
+closed.
 
 ## The dock
 
@@ -107,3 +114,14 @@ both by component identity. Regression test:
 - The overlay stack has the same "disposed while registered" hazard; it
   has a ghost guard but no `dispose!`-style check. Read `tui.md`'s overlay
   section before copying the dock pattern there.
+- No test covers the extension `:reset` teardown of an open dock-mounted
+  custom dialog (the release!-before-dispose fix in `ui_registry.clj`): no
+  harness builds the real registry and calls `:reset` with a dialog
+  mounted, so only the absence of runtime `kmet.error.log` violations
+  covers that path. Add a test that drives the registry reset directly and
+  asserts the dialog is disposed and `:dock-stack` is empty.
+- `cover!`ing a component that is already in the stack adds a second
+  entry, and `release!` then removes every entry holding it (documented in
+  the `cover!` docstring). No call site creates a duplicate today and no
+  test pins the semantics: either add the test or make same-component
+  `cover!` a no-op.
