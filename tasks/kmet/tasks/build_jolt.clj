@@ -11,7 +11,9 @@
 
    - the release zip in dist/, under the platform vocabulary shared with
      babashka (kmetj-<ver>-<platform>.zip next to the other packager's
-     kmet-<ver>-<platform>.zip, so one dist/ carries both hosts' artifacts);
+     kmet-<ver>-<platform>.zip, so one dist/ carries both hosts' artifacts),
+     each holding one top-level folder named after the zip with the
+     executable, its Termux launcher when one is written, and the LICENSE;
    - a stable scratch dir under target/jolt/, so jolt's incremental build (and
      its <out>.build payload dir) survives across runs and never lands in dist/;
    - the native link mode: static by default on Windows, dynamic elsewhere,
@@ -381,10 +383,10 @@
    tested, and str of a Path renders with backslashes on Windows):
      :exe  target/dist/<platform>/kmetj[.exe]      (kmetj-test for --test)
      :zip  dist/kmetj-<ver>-<platform>[-dev].zip   (kmetj-test-... for --test)
-   The executable carries no version — it is the file zipped and copied by
-   --out — while the zip name carries the version and the platform, keeping
-   dist/ flat. An nt platform takes the .exe suffix, the way jolt's own
-   output path does."
+   The executable carries no version — it is the file zipped inside the
+   artifact folder and copied by --out — while the zip name carries the
+   version and the platform, keeping dist/ flat. An nt platform takes the
+   .exe suffix, the way jolt's own output path does."
   [ver platform mode {:keys [test?]}]
   (let [opts {:test? test?}]
     {:exe (build/staged-executable :jolt platform opts)
@@ -708,8 +710,11 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
    Build kmet's Jolt executable as the bare `kmetj` (kmetj.exe on Windows):
    one native binary with the runtime, clojure.core, the stdlib, the
    dependencies and kmet itself compiled in (the entry is kmet.core),
-   packaged as dist/kmetj-<ver>-<platform>.zip. A static build is
-   self-contained; a dynamic one needs its native libraries on the host.
+   packaged as dist/kmetj-<ver>-<platform>.zip with one top-level folder
+   named after the zip (kmet.tasks.build/artifact-dir) holding the
+   executable, its Termux launcher when one is written, and the LICENSE. A
+   static build is self-contained; a dynamic one needs its native libraries
+   on the host.
 
    --test builds the compiled test runner instead: the same pipeline with the
    generated kmet.tasks.test-main entry, every test namespace statically
@@ -815,9 +820,11 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
                                         cross build for linux-aarch64
 
    Artifacts land in dist/ as kmetj-<ver>-<platform>[-dev].zip
-   (kmetj-test-... for --test builds), holding the bare kmetj (kmetj.exe on
-   Windows). The executable itself is assembled under target/dist/; --out
-   DIR copies it (and the Termux launcher, when the build wrote one) there.
+   (kmetj-test-... for --test builds), each holding one top-level folder
+   named after the zip with the bare kmetj (kmetj.exe on Windows), the
+   Termux launcher when one is written, and the LICENSE. The executable
+   itself is assembled under target/dist/; --out DIR copies it (and the
+   launcher) there.
    On a Termux host the build also writes a kmetj.sh launcher next to a
    glibc-linked binary (run that instead of the binary); a jolt linked with
    the bionic cc runs directly, and a cross build gets none either."

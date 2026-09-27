@@ -72,7 +72,7 @@
   (is (thrown-with-msg? Exception #"unknown option"
                         (build/parse-args ["--wat"]))))
 
-(deftest ^:bb-only pack-artifact-zips-the-executable-and-launcher
+(deftest ^:bb-only pack-artifact-zips-one-folder-with-executable-launcher-and-license
   (let [dir "target/test-dist-pack"
         exe (str dir "/kmet")
         launcher (str dir "/kmet.sh")
@@ -83,11 +83,16 @@
     (spit launcher "#!/bin/sh\n")
     (try
       (is (= zip (str (build/pack-artifact! zip {:exe exe :launcher launcher}))))
+      (is (= "kmet-1.2.3" (build/artifact-dir zip)))
       (with-open [zf (java.util.zip.ZipFile. (fs/file zip))]
         (let [names (set (map (fn [e] (.getName e))
                               (enumeration-seq (.entries zf))))]
-          (is (= #{"kmet" "kmet.sh"} names))
-          (is (= "binary\n" (slurp (.getInputStream zf (.getEntry zf "kmet")))))))
+          (is (= #{"kmet-1.2.3/kmet" "kmet-1.2.3/kmet.sh" "kmet-1.2.3/LICENSE"}
+                 names))
+          (is (= "binary\n"
+                 (slurp (.getInputStream zf (.getEntry zf "kmet-1.2.3/kmet")))))
+          (is (= (slurp "LICENSE")
+                 (slurp (.getInputStream zf (.getEntry zf "kmet-1.2.3/LICENSE")))))))
       (finally
         (fs/delete-tree dir)))))
 

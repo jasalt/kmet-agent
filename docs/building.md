@@ -2,9 +2,9 @@
 
 kmet ships as self-contained executables, packaged by the host-dispatched
 `dist` task: `bb dist` on babashka, `jolt dist` on jolt. Each build writes a
-flat, platform-qualified zip into `dist/` — `kmet-<version>-<platform>.zip`
-from babashka, `kmetj-<version>-<platform>.zip` from jolt — holding the
-version-less executable (`kmet` / `kmetj`).
+platform-qualified zip into `dist/` — `kmet-<version>-<platform>.zip` from
+babashka, `kmetj-<version>-<platform>.zip` from jolt — holding one top-level
+folder with the version-less executable (`kmet` / `kmetj`) and the LICENSE.
 
 ## Babashka artifacts
 
@@ -81,24 +81,29 @@ before publishing.
 
 ## Artifacts
 
-Both hosts write one flat, platform-qualified zip into `dist/`, using the
+Both hosts write one platform-qualified zip into `dist/`, using the
 `<os>-<arch>` platform vocabulary they share (`linux-amd64`, `linux-aarch64`,
 `macos-amd64`, `macos-aarch64`, `windows-amd64`; jolt can also cross-compile
 `windows-aarch64`):
 
-| Host | Zip | Executable inside |
-|------|-----|-------------------|
-| babashka | `dist/kmet-<version>-<platform>.zip` | `kmet` (`kmet.exe` on Windows) |
-| jolt | `dist/kmetj-<version>-<platform>.zip` | `kmetj` (`kmetj.exe` on Windows) |
+| Host | Zip | Folder inside |
+|------|-----|---------------|
+| babashka | `dist/kmet-<version>-<platform>.zip` | `kmet-<version>-<platform>/kmet` (`kmet.exe` on Windows) |
+| jolt | `dist/kmetj-<version>-<platform>.zip` | `kmetj-<version>-<platform>/kmetj` (`kmetj.exe` on Windows) |
 
-The executable carries no version — the zip name carries version and
-platform — so `bb dist --all` keeps one zip per platform, and both hosts'
-artifacts line up in one `dist/` (e.g. `dist/kmet-0.8.0-linux-amd64.zip` next
-to `dist/kmetj-0.8.0-linux-amd64.zip`). The executable is assembled under
+Each zip holds one top-level folder named after the zip (its file name
+minus `.zip`), so extracting never scatters files: the folder carries the
+version-less executable, its Termux launcher when the build wrote one, and
+the repository `LICENSE`. The executable carries no version — the zip name
+carries version and platform — so `bb dist --all` keeps one zip per platform,
+and both hosts' artifacts line up in one `dist/` (e.g.
+`dist/kmet-0.8.0-linux-amd64.zip` next to
+`dist/kmetj-0.8.0-linux-amd64.zip`). The executable is assembled under
 `target/dist/<platform>/` (scratch, not part of the release layout); `--out
 DIR` copies it — and its Termux launcher, when the build wrote one — into
-`DIR`. A `--test` build swaps in the test runner (`kmet-test` / `kmetj-test`,
-zipped as `kmet-test-<version>-<platform>.zip` /
+`DIR` without the folder. A `--test` build swaps in the test runner
+(`kmet-test` / `kmetj-test`, zipped as
+`kmet-test-<version>-<platform>.zip` /
 `kmetj-test-<version>-<platform>.zip`), and a jolt `--dev` build tags its zip
 `-dev` (`kmetj-<version>-<platform>-dev.zip`).
 

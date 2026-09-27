@@ -2,8 +2,8 @@
 
 The commands below use `bb run` from a source checkout. If you built or
 installed a self-contained executable, use the same options with `kmet` in
-place of `bb run` (or unzip the built `dist/kmet-*.zip`, which holds the
-`kmet` executable; on Jolt it is `kmetj`).
+place of `bb run` (or unzip the built `dist/kmet-*.zip`, whose `kmet-*/`
+folder holds the `kmet` executable and the LICENSE; on Jolt it is `kmetj`).
 
 ### 1. Run from a checkout
 

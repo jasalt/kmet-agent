@@ -5,9 +5,10 @@
    uberjar of src + runtime deps) appended — babashka detects the appended zip
    at startup and runs the uberjar's -main (babashka wiki: Self-contained
    executable). One artifact per dist platform, laid out by the same scheme
-   the jolt packager uses: a flat dist/kmet-<ver>-<platform>.zip holding the
-   bare kmet executable; cross-builds work from any host because packaging
-   is just download + concat.
+   the jolt packager uses: a dist/kmet-<ver>-<platform>.zip holding one
+   top-level folder — kmet-<ver>-<platform>/ with the bare kmet executable,
+   its Termux launcher when one is written, and the repository LICENSE;
+   cross-builds work from any host because packaging is just download + concat.
 
    Termux/Android: the glibc bb binary must be exec'd through the termux glibc
    dynamic linker, which also breaks bb's own appended-jar detection
@@ -39,7 +40,14 @@
 (def ^:private jar-path "target/kmet.jar")
 (def ^:private main-class "kmet.core")
 (def ^:private test-jar-path "target/kmet-test.jar")
+
 (def ^:private test-main-class "kmet.tasks.test-main")
+
+(def ^:private license-path
+  "The repository LICENSE shipped inside every dist zip, resolved against the
+   repo root the dist task runs in (like dist/ and target/)."
+  "LICENSE")
+
 (def ^:private test-entry-root
   "Source root the packagers generate the kmet-test entry under
    (generate-test-main!). A target/ scratch root — nothing here is shipped
@@ -154,12 +162,13 @@
 
 ;; ─── Naming ────────────────────────────────────────────────────────────────
 ;;
-;; Both packagers ship one flat, platform-qualified zip in dist/
-;; (<host>-<version>-<platform>[-dev].zip) holding the bare executable — kmet
-;; on babashka, kmetj on jolt, no version in the name — and its Termux
-;; launcher when one is written. Each host assembles that executable under
-;; target/dist/, and `--out DIR` additionally copies it (with the launcher)
-;; into DIR.
+;; Both packagers ship one platform-qualified zip in dist/
+;; (<host>-<version>-<platform>[-dev].zip) holding one top-level folder named
+;; after the zip (artifact-dir) with the bare executable — kmet on babashka,
+;; kmetj on jolt, no version in the name — its Termux launcher when one is
+;; written, and the repository LICENSE. Each host assembles that executable
+;; under target/dist/, and `--out DIR` additionally copies it (with the
+;; launcher, but without the folder) into DIR.
 
 (defn windows-platform?
   "True for a dist platform whose executables carry the .exe suffix."
@@ -168,8 +177,8 @@
 
 (defn artifact-base
   "Artifact name without version or extension: kmet on babashka (:bb), kmetj
-   on jolt (:jolt) — the name the executable carries in dist/ and inside the
-   zip, and the base of the zip name — with -test for a --test build."
+   on jolt (:jolt) — the name the executable carries inside the zip's top
+   folder, and the base of the zip name — with -test for a --test build."
   [host {:keys [test?]}]
   (str (case host :bb "kmet" :jolt "kmetj") (when test? "-test")))
 
@@ -189,12 +198,12 @@
   "Assembly path of the bare executable for HOST on PLATFORM:
    target/dist/<platform>/kmet[.exe] (kmetj on jolt; the -test runner for a
    --test build). --out DIR copies this file; the zip in dist/ carries it at
-   its bare name."
+   its bare name inside the artifact folder (artifact-dir)."
   [host platform opts]
   (str staging-root "/" platform "/" (executable-name host platform opts)))
 
 (defn artifact-zip
-  "The release zip in dist/, flat and platform-qualified:
+  "The release zip in dist/, platform-qualified:
    <base>-<version>-<platform>[-dev].zip — kmet-... on babashka, kmetj-... on
    jolt, kmet-test-/kmetj-test-... for --test builds. The version is kmet's,
    not the compiling host's; -dev marks a jolt --dev build, a different
@@ -202,6 +211,13 @@
   [host ver platform {:keys [test? dev?]}]
   (str dist-dir "/" (artifact-base host {:test? test?})
        "-" ver "-" platform (when dev? "-dev") ".zip"))
+
+(defn artifact-dir
+  "Top-level folder inside the release zip: the zip's own stem, so extracting
+   kmet-1.2.3-linux-amd64.zip yields kmet-1.2.3-linux-amd64/ holding the
+   executable, its Termux launcher when one is written, and the LICENSE."
+  [zip]
+  (fs/file-name (fs/strip-ext (fs/path zip))))
 
 ;; ─── Downloading & extraction ──────────────────────────────────────────────
 
@@ -488,16 +504,24 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
     {:exe exe :launcher launcher}))
 
 (defn pack-artifact!
-  "Zip an assembled artifact for distribution: the executable (and its Termux
-   launcher, when the build wrote one) at the zip root, under the names they
-   carry in dist/. In-process through kmet.libs.archive/write-zip! — no
-   external zip program — on both hosts. Returns ZIP."
+  "Zip an assembled artifact for distribution: one top-level folder named
+   after the zip (artifact-dir) holding the executable, its Termux launcher
+   when the build wrote one, and the repository LICENSE. In-process through
+   kmet.libs.archive/write-zip! — no external zip program — on both hosts.
+   Returns ZIP."
   [zip {:keys [exe launcher]}]
-  (archive/write-zip!
-   zip
-   (cond-> [{:name (fs/file-name exe) :file (str exe) :executable? true}]
-     launcher (conj {:name (fs/file-name launcher) :file (str launcher)
-                     :executable? true})))
+  (when-not (fs/regular-file? license-path)
+    (throw (ex-info (str "dist packaging needs the repository LICENSE at "
+                         license-path " — run from the repo root")
+                    {:type ::pack-error :path license-path})))
+  (let [root (artifact-dir zip)]
+    (archive/write-zip!
+     zip
+     (conj (cond-> [{:name (str root "/" (fs/file-name exe))
+                     :file (str exe) :executable? true}]
+             launcher (conj {:name (str root "/" (fs/file-name launcher))
+                             :file (str launcher) :executable? true}))
+           {:name (str root "/LICENSE") :file license-path})))
   (println "packed" (str zip))
   zip)
 
@@ -864,9 +888,11 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
    Build a self-contained kmet executable for each target platform: the
    official babashka release binary with an uberjar appended. Each build
    assembles the bare `kmet` (kmet.exe on Windows) under
-   target/dist/<platform>/ and packages it as dist/kmet-<ver>-<platform>.zip,
-   so the executable inside carries no version while the zip name carries the
-   version and the platform. --test swaps in the test-runner artifact
+   target/dist/<platform>/ and packages it as dist/kmet-<ver>-<platform>.zip
+   with one top-level folder named after the zip (artifact-dir) holding the
+   executable, its Termux launcher when one is written, and the repository
+   LICENSE — so the executable carries no version while the zip name carries
+   the version and the platform. --test swaps in the test-runner artifact
    instead: kmet-test and dist/kmet-test-<ver>-<platform>.zip, Main-Class
    kmet.tasks.test-main, whose
    --test/--test-ext flags run the packaged suite. Targets are dist
