@@ -1,17 +1,14 @@
 (ns kmet.app.ui.test-dialogs
   "Dialog component tests — selector and input framing and IFocusable
    propagation (pi: ExtensionSelector/InputComponent)."
-  (:require [clojure.string :as str]
-            [clojure.test :as t :refer [deftest testing]]
+  (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.tui.core :as core]
             [kmet.tui.theme :as theme]
-            [kmet.app.ui.dialogs :as d]))
-
-(defn- strip-ansi [s]
-  (str/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))
+            [kmet.app.ui.dialogs :as d]
+            [kmet.test-utils :as tu]))
 
 (defn- render-plain [comp width]
-  (->> (core/render comp width) (mapv strip-ansi)))
+  (->> (core/render comp width) (mapv tu/strip-ansi)))
 
 (deftest test-selector-framing
   (testing "selector renders title, options, and border lines"

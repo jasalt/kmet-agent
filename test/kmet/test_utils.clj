@@ -16,6 +16,12 @@
     (sequential? x) (mapv slash x)
     :else (str/replace (str x) "\\" "/")))
 
+(defn strip-ansi
+  "Remove ANSI CSI escape sequences from a string. Test helpers that render
+   TUI components commonly need the raw plain text for assertions."
+  [s]
+  (str/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))
+
 (t/deftest test-visible-width
   (t/is (= 0 (u/visible-width "")))
   (t/is (= 5 (u/visible-width "hello")))

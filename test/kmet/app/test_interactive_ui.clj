@@ -48,7 +48,7 @@
             [kmet.config :as cfg]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.app.event-bus :as event-bus]
-            [kmet.test-utils :refer [slash]]))
+            [kmet.test-utils :refer [slash strip-ansi]]))
 
 (defn- capture-mount!
   "A dock/mount! stand-in for tests: records the component that receives
@@ -1008,8 +1008,7 @@
             chat when the tree closed and the document shrank"
     (let [dir (str (fs/absolutize (str "target/test-tree-summary-dock-"
                                        (System/currentTimeMillis))))
-          sel-ref (atom nil)
-          strip-ansi #(str/replace % #"\u001b\[[0-9;]*[a-zA-Z]" "")]
+          sel-ref (atom nil)]
       (try
         (let [sess (session/create-session dir)
               entry (session/append-entry sess
@@ -1525,7 +1524,7 @@
               "the editor holds input again")))))
 
 (defn- strip-ansi-lines [lines]
-  (mapv #(str/replace % #"\u001b\[[0-9;]*[a-zA-Z]" "") lines))
+  (mapv strip-ansi lines))
 
 (deftest test-widget-area-tracked-reactivity
   (testing "the widget strips re-derive from pure map swaps: registered

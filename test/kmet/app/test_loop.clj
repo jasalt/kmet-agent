@@ -23,7 +23,7 @@
             [kmet.app.ui.chat-history :as ui]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]
-            [kmet.test-utils :refer [slash]]))
+            [kmet.test-utils :refer [slash] :as tu]))
 
 (declare make-test-provider)
 
@@ -3124,10 +3124,10 @@
                :compact-token-threshold 10
                :keep-recent-tokens 40)
         ch (ui/make-chat-history :tool-display-mode :collapsed)
-        strip-ansi #(str/replace % #"\u001b\[[0-9;]*[a-zA-Z]" "")
+
         render (fn [mode]
                  (ui/chat-history-set-tool-display-mode! ch mode)
-                 (mapv strip-ansi (protocols/render ch 80)))]
+                 (mapv tu/strip-ansi (protocols/render ch 80)))]
     (try
       ;; Seed enough context to cross the compact threshold.
       (dotimes [i 10]

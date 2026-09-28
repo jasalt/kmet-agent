@@ -48,7 +48,8 @@
             [babashka.fs :as fs]
             [babashka.process :as proc]
             [kmet.app.session-export :as session-export]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [kmet.test-utils :as tu]))
 
 (defn- make-handler
   "The real event handler over a standalone chat history and stub refs: the
@@ -790,7 +791,7 @@
                                      :content "file body"}]}]})
     (let [tools (filter #(= :tool (:kind (:component %))) @(:messages-atom ch))
           rendered (-> (str/join "\n" (protocols/render (:component (first tools)) 80))
-                       (str/replace #"\u001b\[[0-9;]*[a-zA-Z]" ""))]
+                       (tu/strip-ansi))]
       (is (= 1 (count tools)) "the raw result message is paired, not doubled")
       (is (str/includes? rendered "read src/main.clj")
           "the rebuilt tool component carries the call line"))))

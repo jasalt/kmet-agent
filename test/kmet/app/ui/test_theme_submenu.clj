@@ -2,7 +2,8 @@
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.app.ui.theme-submenu :as theme-submenu]
-            [kmet.tui.core :as core]))
+            [kmet.tui.core :as core]
+            [kmet.test-utils :as tu]))
 
 (def ^:const K-DOWN "\u001b[B")
 (def ^:const K-UP "\u001b[A")
@@ -10,7 +11,7 @@
 (def ^:const K-ENTER "\r")
 
 (defn- plain [comp width]
-  (mapv #(str/replace % #"\u001b\[[0-9;]*[a-zA-Z]" "") (core/render comp width)))
+  (mapv tu/strip-ansi (core/render comp width)))
 
 (defn- rendered [comp]
   (str/join "\n" (plain comp 100)))

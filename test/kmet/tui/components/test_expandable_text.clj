@@ -1,14 +1,11 @@
 (ns kmet.tui.components.test-expandable-text
-  (:require [clojure.string :as str]
-            [clojure.test :as t]
+  (:require [clojure.test :as t]
             [kmet.tui.core :as core]
-            [kmet.tui.components.expandable-text :as et]))
-
-(defn- strip-ansi [s]
-  (str/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))
+            [kmet.tui.components.expandable-text :as et]
+            [kmet.test-utils :as tu]))
 
 (defn- render-plain [c width]
-  (mapv strip-ansi (core/render c width)))
+  (mapv tu/strip-ansi (core/render c width)))
 
 (t/deftest test-collapsed-by-default
   (let [c (et/make-expandable-text (fn [] "collapsed") (fn [] "expanded"))]
