@@ -324,7 +324,7 @@ and a policy only covers code that goes through it.
   ask upstream for is an eval entry (or the ambient loader covering the eval
   funnel, which the loader's own docstring promises but does not implement
   yet) — prototyped as `jolt.loader/eval-in` in the jolt checkout on branch
-  `loader-eval-in-context` (`fc2d6a13`, loaderconf cases 38–39), pending
+  `loader-eval-in-context` (`6c032c0d`, loaderconf cases 38–39), pending
   upstream.
 - **What a native path would still cost.** A per-call native context is
   exactly the "one loader per request" case `loader.md` flags as unproven
