@@ -4,7 +4,7 @@
    [kmet.libs.json :as json]
    [kmet.ai.http :as ai-http]
    [kmet.ai.api.sse :as sse]
-   [kmet.ai.api.shared :refer [endpoint-url max-tokens-key openai-messages openai-messages-with-reasoning openai-thinking-params resolved-openai-compat apply-before-provider-request-hook request-headers tool->openai-schema transport-error-message usage-with-cost]]))
+   [kmet.ai.api.shared :refer [copilot-dynamic-headers endpoint-url max-tokens-key openai-messages openai-messages-with-reasoning openai-thinking-params resolved-openai-compat apply-before-provider-request-hook request-headers tool->openai-schema transport-error-message usage-with-cost]]))
 
 (defn openai-payload
   "Request body for an openai-completions request (pi buildParams):
@@ -40,6 +40,19 @@
       (:max-tokens model-record) (assoc max-tokens-field (:max-tokens model-record))
       (seq (:sampling-params model-record)) (merge (:sampling-params model-record)))))
 
+(defn openai-request-headers
+  "The full header map for an openai-completions request: Bearer auth +
+   content type, the per-request Copilot dynamic headers on github-copilot
+   requests (pi createClient buildCopilotDynamicHeaders), then the
+   request-headers merge."
+  [model-record provider-record api-key session-id messages]
+  (request-headers
+   (merge {"Authorization" (str "Bearer " api-key)
+           "Content-Type" "application/json"}
+          (when (= :github-copilot (:provider model-record))
+            (copilot-dynamic-headers messages)))
+   model-record provider-record api-key session-id))
+
 (defn openai-request
   [{:keys [model-record provider-record effort api-key messages tools signal base-url
            idle-timeout-ms total-timeout-ms session-id
@@ -52,11 +65,7 @@
             payload (apply-before-provider-request-hook
                      (openai-payload model-record effort messages tools model-id))
             response (ai-http/request url
-                                      {:headers (request-headers
-                                                 {"Authorization" (str "Bearer " api-key)
-                                                  "Content-Type" "application/json"}
-                                                 model-record provider-record api-key
-                                                 session-id)
+                                      {:headers (openai-request-headers model-record provider-record api-key session-id messages)
                                        :body (json/generate-string payload)
                                        :as :stream
                                          ;; Total request deadline (pi: SDK timeoutMs ??

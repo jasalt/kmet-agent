@@ -203,6 +203,31 @@
   [b]
   (or (= (:type b) :image) (= (:type b) "image")))
 
+(defn copilot-vision-input?
+  "pi hasCopilotVisionInput: any user or tool-result message carries image
+   content (Copilot-Vision-Request header)."
+  [messages]
+  (boolean
+   (some (fn [m]
+           (case (name (:role m))
+             "user" (some image-block? (:content m))
+             "tool" (seq (:images m))
+             false))
+         messages)))
+
+(defn copilot-dynamic-headers
+  "pi buildCopilotDynamicHeaders: per-request Copilot headers — X-Initiator
+   (user vs agent, from the last message role) and Openai-Intent, plus
+   Copilot-Vision-Request when any input has images."
+  [messages]
+  (let [last-role (some-> (peek (vec messages)) :role name)
+        ;; pi inferCopilotInitiator: no messages → "user"
+        initiator (if (= "user" last-role) "user" "agent")
+        headers (array-map "X-Initiator" initiator
+                           "Openai-Intent" "conversation-edits")]
+    (cond-> headers
+      (copilot-vision-input? messages) (assoc "Copilot-Vision-Request" "true"))))
+
 (defn openai-content
   "Convert kmet content blocks to OpenAI content. Returns the plain text
    string when there are no image blocks (backward compat); with image blocks

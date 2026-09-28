@@ -1954,32 +1954,75 @@
 (t/deftest test-llm-copilot-dynamic-headers
   (t/testing "X-Initiator from the last message role (pi inferCopilotInitiator)"
     (t/is (= {"X-Initiator" "user" "Openai-Intent" "conversation-edits"}
-             (@#'responses/copilot-dynamic-headers
+             (@#'shared/copilot-dynamic-headers
               [{:role :user :content [{:type :text :text "hi"}]}])))
     (t/is (= {"X-Initiator" "agent" "Openai-Intent" "conversation-edits"}
-             (@#'responses/copilot-dynamic-headers
+             (@#'shared/copilot-dynamic-headers
               [{:role :user :content [{:type :text :text "hi"}]}
                {:role :assistant :content [{:type :text :text "ok"}]}])))
     (t/is (= {"X-Initiator" "agent" "Openai-Intent" "conversation-edits"}
-             (@#'responses/copilot-dynamic-headers
+             (@#'shared/copilot-dynamic-headers
               [{:role :user :content [{:type :text :text "hi"}]}
                {:role :tool :content [{:type :tool-result :tool_use_id "t" :content "out"}]}]))))
   (t/testing "Copilot-Vision-Request when any user/tool-result message has images"
     (t/is (= {"X-Initiator" "user" "Openai-Intent" "conversation-edits"
               "Copilot-Vision-Request" "true"}
-             (@#'responses/copilot-dynamic-headers
+             (@#'shared/copilot-dynamic-headers
               [{:role :user :content [{:type :text :text "look"}
                                       {:type :image :data "AA" :mime-type "image/png"}]}])))
     (t/is (= {"X-Initiator" "agent" "Openai-Intent" "conversation-edits"
               "Copilot-Vision-Request" "true"}
-             (@#'responses/copilot-dynamic-headers
+             (@#'shared/copilot-dynamic-headers
               [{:role :user :content [{:type :text :text "hi"}]}
                {:role :tool :content [{:type :tool-result :tool_use_id "t" :content "out"}]
                 :images [{:type :image :data "AA" :mime-type "image/png"}]}]))))
   (t/testing "no images → no vision header"
-    (t/is (nil? (get (@#'responses/copilot-dynamic-headers
+    (t/is (nil? (get (@#'shared/copilot-dynamic-headers
                       [{:role :user :content [{:type :text :text "hi"}]}])
                      "Copilot-Vision-Request")))))
+
+(t/deftest test-llm-copilot-wire-headers
+  ;; openai-completions + anthropic wires carry the per-request Copilot
+  ;; dynamic headers too (pi createClient buildCopilotDynamicHeaders — the
+  ;; responses wire had them; the other copilot wires did not).
+  (let [model {:id "kimi-k2.7-code" :provider :github-copilot :api :openai-completions
+               :base-url "https://api.individual.githubcopilot.com"}
+        provider {:id :github-copilot :name "Copilot"}]
+    (t/testing "openai-completions: X-Initiator/Openai-Intent on the wire"
+      (let [h (@#'completions/openai-request-headers
+               model provider "sk-test" nil
+               [{:role :user :content [{:type :text :text "hi"}]}])]
+        (t/is (= "user" (get h "X-Initiator")))
+        (t/is (= "conversation-edits" (get h "Openai-Intent")))
+        (t/is (= "Bearer sk-test" (get h "Authorization")))))
+    (t/testing "openai-completions: agent + vision follow-up"
+      (let [h (@#'completions/openai-request-headers
+               model provider "sk-test" nil
+               [{:role :user :content [{:type :text :text "hi"}]}
+                {:role :tool :content [{:type :tool-result :tool_use_id "t" :content "out"}]
+                 :images [{:type :image :data "AA" :mime-type "image/png"}]}])]
+        (t/is (= "agent" (get h "X-Initiator")))
+        (t/is (= "true" (get h "Copilot-Vision-Request")))))
+    (t/testing "openai-completions: non-copilot providers get no dynamic headers"
+      (let [h (@#'completions/openai-request-headers
+               (assoc model :provider :opencode-go) provider "sk-test" nil
+               [{:role :user :content [{:type :text :text "hi"}]}])]
+        (t/is (nil? (get h "X-Initiator")))))
+    (t/testing "anthropic: copilot claude requests carry the dynamic headers"
+      (let [h (@#'anthropic/anthropic-request-headers
+               (assoc model :id "claude-sonnet-4.6" :api :anthropic-messages)
+               provider "sk-test" nil
+               [{:role :user :content [{:type :text :text "hi"}]}])]
+        (t/is (= "user" (get h "X-Initiator")))
+        (t/is (= "conversation-edits" (get h "Openai-Intent")))
+        (t/is (= "2023-06-01" (get h "anthropic-version")))
+        (t/is (= "sk-test" (get h "x-api-key")))))
+    (t/testing "anthropic: non-copilot providers get no dynamic headers"
+      (let [h (@#'anthropic/anthropic-request-headers
+               {:id "claude-sonnet-4.6" :provider :anthropic :api :anthropic-messages}
+               {:id :anthropic :name "Anthropic"} "sk-test" nil
+               [{:role :user :content [{:type :text :text "hi"}]}])]
+        (t/is (nil? (get h "X-Initiator")))))))
 
 (t/deftest test-llm-responses-tool-result-placeholder
   (let [model (responses-model {:input [:text]})]

@@ -6,7 +6,7 @@
    [kmet.ai.http :as ai-http]
    [kmet.ai.api.sse :as sse]
    [clojure.string :as str]
-   [kmet.ai.api.shared :refer [anthropic-thinking bash-execution-text endpoint-url image-block? apply-before-provider-request-hook request-headers tool->anthropic-schema transport-error-message usage-with-cost]]))
+   [kmet.ai.api.shared :refer [anthropic-thinking bash-execution-text copilot-dynamic-headers endpoint-url image-block? apply-before-provider-request-hook request-headers tool->anthropic-schema transport-error-message usage-with-cost]]))
 
 (def default-anthropic-version "2023-06-01")
 
@@ -190,6 +190,20 @@
                 (or (-> content first :text) "")))))
         messages))
 
+(defn anthropic-request-headers
+  "The full header map for an anthropic request: version + auth headers,
+   the per-request Copilot dynamic headers on github-copilot requests (pi
+   createClient buildCopilotDynamicHeaders), then the request-headers
+   merge."
+  [model-record provider-record api-key session-id messages]
+  (request-headers
+   (merge {"anthropic-version" default-anthropic-version
+           "Content-Type" "application/json"}
+          (anthropic-auth-headers (:id provider-record) api-key)
+          (when (= :github-copilot (:provider model-record))
+            (copilot-dynamic-headers messages)))
+   model-record provider-record api-key session-id))
+
 (defn anthropic-request
   [{:keys [model-record provider-record effort api-key messages tools signal base-url
            idle-timeout-ms total-timeout-ms session-id
@@ -220,12 +234,7 @@
                      (:output_config thinking) (assoc :output_config (:output_config thinking))))]
       (try
         (let [response (ai-http/request (or base-url (endpoint-url :anthropic-messages (:base-url model-record) model-id))
-                                        {:headers (request-headers
-                                                   (merge {"anthropic-version" default-anthropic-version
-                                                           "Content-Type" "application/json"}
-                                                          (anthropic-auth-headers (:id provider-record) api-key))
-                                                   model-record provider-record api-key
-                                                   session-id)
+                                        {:headers (anthropic-request-headers model-record provider-record api-key session-id messages)
                                          :body (json/generate-string payload)
                                          :as :stream
                                            ;; Total request deadline (pi: SDK timeoutMs ??

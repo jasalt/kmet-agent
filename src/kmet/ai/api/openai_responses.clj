@@ -6,7 +6,7 @@
    [kmet.ai.api.sse :as sse]
    [clojure.string :as str]
    [kmet.ai.constrained-sampling :as cs]
-   [kmet.ai.api.shared :refer [bash-execution-text content-text effort-value endpoint-url image-block? off-explicitly-null? apply-before-provider-request-hook request-headers responses-events-handler transport-error-message]]))
+   [kmet.ai.api.shared :refer [bash-execution-text content-text copilot-dynamic-headers effort-value endpoint-url image-block? off-explicitly-null? apply-before-provider-request-hook request-headers responses-events-handler transport-error-message]]))
 
 (defn normalize-id-part
   "pi normalizeIdPart: sanitize a tool-call id to [a-zA-Z0-9_-], cap at 64
@@ -155,31 +155,6 @@
                      :parameters (cs/get-json-schema-tool-parameters tool strict)}
               strict? (assoc :strict (true? strict)))))
         tools))
-
-(defn copilot-vision-input?
-  "pi hasCopilotVisionInput: any user or tool-result message carries image
-   content (Copilot-Vision-Request header)."
-  [messages]
-  (boolean
-   (some (fn [m]
-           (case (name (:role m))
-             "user" (some image-block? (:content m))
-             "tool" (seq (:images m))
-             false))
-         messages)))
-
-(defn copilot-dynamic-headers
-  "pi buildCopilotDynamicHeaders: per-request Copilot headers — X-Initiator
-   (user vs agent, from the last message role) and Openai-Intent, plus
-   Copilot-Vision-Request when any input has images."
-  [messages]
-  (let [last-role (some-> (peek (vec messages)) :role name)
-        ;; pi inferCopilotInitiator: no messages → "user"
-        initiator (if (= "user" last-role) "user" "agent")
-        headers (array-map "X-Initiator" initiator
-                           "Openai-Intent" "conversation-edits")]
-    (cond-> headers
-      (copilot-vision-input? messages) (assoc "Copilot-Vision-Request" "true"))))
 
 (defn responses-affinity-headers
   "pi createClient session-affinity headers from the session id (prompt
