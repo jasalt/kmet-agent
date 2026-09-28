@@ -738,7 +738,7 @@
   (reset! (:info-comp-atom ch) nil)
   (reset! (:streaming-atom ch) nil))
 
-(defn- tool-result-call-id
+(defn tool-result-call-id
   "The tool-call id a :tool result message answers — the first
    :tool_result block's :tool_use_id — or nil."
   [msg]
@@ -770,6 +770,16 @@
     (:details result) (assoc :details (:details result))
     (:images result) (assoc :images (:images result))))
 
+(defn tool-call-message
+  "The :tool chat message for assistant tool call TC (:id, :name,
+   :arguments), with RESULT's outcome merged in when present. A nil RESULT
+   leaves the call unanswered — its component renders pending (no ended-at).
+   Shared by the context-replaced rebuild and the session replay so both
+   project calls to the same pi-faithful :tool message shape."
+  [tc result]
+  (cond-> (call-message tc)
+    result (merge-tool-result result)))
+
 (defn- result-with-call-name
   "A standalone :tool result message that has no matching call. Tool-result
    entries are pi-faithful — they carry :tool-name and :arguments. If a
@@ -783,34 +793,40 @@
 
 (defn pair-tool-messages
   "Pair the assistant :tool-calls in an agent-context message vector with
-   their :tool result messages by tool-call id — the same correlation the
-   live event handler and the session replay use. Each call becomes a :tool
-   message carrying the call's :tool-name and :arguments, filled in place
-   by the matching result (results may arrive out of order with parallel
-   tools); the raw result message is dropped. A result whose call is no
-   longer in the vector still renders standalone.
+   their :tool result messages by tool-call id (tool-call-message) — the
+   same projection the session replay uses. Each call becomes a :tool
+   message carrying the call's :tool-name and :arguments, filled by the
+   matching result (results may arrive out of order with parallel tools);
+   the raw result message is dropped. A result whose call is no longer in
+   the vector still renders standalone.
    Without the pairing a rebuilt tool box carries only :tool-name, has no
    arguments, and renders its call line/title empty (result messages have
    neither name nor arguments)."
   [msgs]
-  (let [out (volatile! [])
-        idx-by-call-id (volatile! {})]
-    (doseq [m msgs]
-      (cond
-        (= :assistant (:role m))
-        (do (vswap! out conj m)
-            (doseq [tc (:tool-calls m)]
-              (vswap! idx-by-call-id assoc (:id tc) (count @out))
-              (vswap! out conj (call-message tc))))
-
-        (= :tool (:role m))
-        (if-let [idx (get @idx-by-call-id (tool-result-call-id m))]
-          (vswap! out update idx merge-tool-result m)
-          (vswap! out conj (result-with-call-name m)))
-
-        :else
-        (vswap! out conj m)))
-    @out))
+  (let [results (into {}
+                      (keep (fn [m]
+                              (when (= :tool (:role m))
+                                (when-let [id (tool-result-call-id m)]
+                                  [id m]))))
+                      msgs)
+        call-ids (into #{}
+                       (comp (filter #(= :assistant (:role %)))
+                             (mapcat :tool-calls)
+                             (keep :id))
+                       msgs)]
+    (into []
+          (mapcat (fn [m]
+                    (case (:role m)
+                      :assistant
+                      (into [m]
+                            (map #(tool-call-message % (get results (:id %))))
+                            (:tool-calls m))
+                      :tool
+                      (if (contains? call-ids (tool-result-call-id m))
+                        []
+                        [(result-with-call-name m)])
+                      [m])))
+          msgs)))
 
 (defn chat-history-rebuild!
   "Rebuild the chat history from a new message vector (context replacement).

@@ -489,6 +489,25 @@
       (is (some #(re-find #"grep" %) (plain-lines ch 60))
           "the standalone result keeps a visible call line"))))
 
+(deftest test-tool-call-message-projection
+  (testing "the shared call projection (used by the rebuild and the replay):
+            call fields plus the result outcome, or a pending message when
+            the call has no result"
+    (let [tc {:id "t1" :name "read" :arguments {:path "a.txt"}}]
+      (is (= {:role :tool :tool-call-id "t1" :tool-name "read"
+              :arguments {:path "a.txt"} :content "" :is-error false}
+             (ch/tool-call-message tc nil))
+          "an unanswered call keeps the pending shape (no ended-at)")
+      (is (= {:role :tool :tool-call-id "t1" :tool-name "read"
+              :arguments {:path "a.txt"}
+              :content [{:type :tool_result :tool_use_id "t1" :content "out"}]
+              :is-error true :truncation {:truncated true}}
+             (ch/tool-call-message
+              tc {:role :tool :tool-name "read" :is-error true
+                  :truncation {:truncated true}
+                  :content [{:type :tool_result :tool_use_id "t1" :content "out"}]}))
+          "the result's outcome merges into the call message"))))
+
 (deftest test-insert-before-streaming
   (testing "injected :info message lands above the streaming placeholder"
     (let [ch (ch/make-chat-history)]

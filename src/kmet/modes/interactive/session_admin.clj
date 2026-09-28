@@ -124,12 +124,12 @@
 
 (defn- replay-tool-results!
   "Return a seq of tool message maps for the current assistant entry's
-   tool calls, paired with their results by tool-call id — the same
-   correlation `pair-tool-messages` uses for context-replaced rebuilds.
-   RESULTS is a map of tool-call-id → :tool entry. Calls whose result is
-   missing are kept, carrying the assistant's :stop-reason failure text
-   when the turn was errored or aborted (pi: renderInitialMessages
-   updateResult error)."
+   tool calls, paired with their results by tool-call id through the shared
+   `tool-call-message` projection (the same one the context-replaced
+   rebuild uses). RESULTS is a map of tool-call-id → :tool entry. A call
+   whose result is missing is kept, carrying the assistant's :stop-reason
+   failure text when the turn was errored or aborted (pi:
+   renderInitialMessages updateResult error)."
   [tool-calls results assistant-entry]
   (let [errored? (contains? #{:error :aborted} (:stop-reason assistant-entry))
         error-text (when errored?
@@ -139,24 +139,8 @@
                            "Error")))
         errored? (and errored? (some? error-text))]
     (for [tc tool-calls]
-      (let [result (get results (:id tc))]
-        (cond-> {:role :tool
-                 :tool-call-id (:id tc)
-                 :tool-name (:name tc)
-                 :arguments (:arguments tc)
-                 :content ""
-                 :is-error false}
-          result (assoc :content (str/join
-                                  (keep (fn [b]
-                                          (case (:type b)
-                                            :tool_result (:content b)
-                                            nil))
-                                        (:content result)))
-                        :is-error (:is-error result false))
-          (:truncation result) (assoc :truncation (:truncation result))
-          (:details result) (assoc :details (:details result))
-          (seq (:images result)) (assoc :images (:images result))
-          errored? (assoc :content error-text :is-error true))))))
+      (cond-> (chat-history/tool-call-message tc (get results (:id tc)))
+        errored? (assoc :content error-text :is-error true)))))
 
 (defn- replay-branch!
   "Replay a session's compaction-aware context into the chat history (pi:
@@ -195,11 +179,9 @@
                     :assistant
                     [(into ids (keep :id) (:tool-calls e)) results]
                     :tool
-                    (let [id (some (fn [b]
-                                     (when (= :tool_result (:type b))
-                                       (:tool_use_id b)))
-                                   (:content e))]
-                      [ids (if id (assoc results id e) results)])
+                    (if-let [id (chat-history/tool-result-call-id e)]
+                      [ids (assoc results id e)]
+                      [ids results])
                     [ids results]))
                 [#{} {}]
                 (session/build-context sess))]
@@ -253,10 +235,7 @@
           ;; result (legacy sessions, extension tools) — render it
           ;; standalone from its own :tool-name.
           (when-not (contains? tool-call-ids
-                               (some (fn [b]
-                                       (when (= :tool_result (:type b))
-                                         (:tool_use_id b)))
-                                     (:content e)))
+                               (chat-history/tool-result-call-id e))
             (chat-history/chat-history-add-message!
              (:chat-history cs)
              (cond-> {:role :tool
