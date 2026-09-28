@@ -60,12 +60,14 @@ from the assistant entry, and production callers rely on
 
 ## 4. Live compaction regression test
 
-Cover the end-to-end path with a real `compact-context!` tail (post-compaction
-context with tool calls, then a display-mode toggle). The summarizer is
-LLM-backed, so it needs a stubbed `summarize!` in the agent loop.
+Done — `test/kmet/app/test_loop.clj` `test-loop-compaction-keeps-tool-call-pairing-in-ui`
+builds a session with a tool-call tail, triggers `loop/maybe-compact!` under
+`with-summarization-stub`, and rebuilds a chat history from the
+`:context-replaced` messages. It asserts the compaction summary + tool call
+line + result remain visible across collapsed/expanded/quiet display modes.
 
 ## 5. Test helper duplication (minor)
 
-`test/kmet/modes/test_interactive.clj` strips ANSI with a local regex while
-`test/kmet/app/ui/test_chat_history.clj` has `strip-ansi`. Consider a shared
-helper in `kmet.test-utils` if a third copy appears.
+Done — added `kmet.test-utils/strip-ansi` and replaced local copies in:
+`test_chat_history`, `test_loop`, `test_interactive`, `test_interactive_ui`,
+`test_dialogs`, `test_theme_submenu`, and `test_expandable_text`.
