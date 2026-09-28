@@ -554,13 +554,27 @@
 (defn tui-hide-overlay
   "Hide the topmost overlay and restore focus - the visible overlay below
    it, else the focus home (pi: TUI.hideOverlay; the ::ghost-guard watch
-   on the stack performs the restore)."
-  [tui]
-  (when (peek @(:overlays tui))
-    (swap! (:overlays tui) pop)
-    (when (empty? @(:overlays tui))
-      (when-let [term @(:terminal tui)] (terminal/hide-cursor! term)))
-    (tui-request-render tui)))
+   on the stack performs the restore).
+
+   With COMPONENT, hide that component's entries wherever they sit in the
+   stack (identity, not topmost) - the owner's leave for a specific
+   overlay; the no-arg arity is the same call for the top's component.
+   Hiding never disposes: the owner disposes after the leave (tui.md
+   §5.1), which is what makes the removal-before-dispose order checkable
+   (kmet.app.ui.dock/dispose!). Returns true when an entry was removed."
+  ([tui]
+   (if-let [top (peek @(:overlays tui))]
+     (tui-hide-overlay tui (:component top))
+     false))
+  ([tui component]
+   (boolean
+    (when-let [overlays (:overlays tui)]
+      (when (some #(identical? component (:component %)) @overlays)
+        (swap! overlays (fn [v] (filterv #(not (identical? component (:component %))) v)))
+        (when (empty? @overlays)
+          (when-let [term @(:terminal tui)] (terminal/hide-cursor! term)))
+        (tui-request-render tui)
+        true)))))
 
 (defn tui-has-overlay?
   "True when any visible overlay is on the stack (pi: TUI.hasOverlay)."

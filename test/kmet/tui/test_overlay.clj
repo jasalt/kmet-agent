@@ -297,6 +297,46 @@
         (t/is (identical? (:comp a) @(:focused-component tui))
               "home receives focus after hide")))))
 
+(t/deftest test-hide-overlay-by-component-is-membership
+  (testing "the component arity removes the named overlay wherever it
+            sits, not the topmost, and never disposes (the owner does)"
+    (let [tui (core/create-tui nil)
+          a (leaf)
+          b (leaf)
+          c (leaf)
+          components #(mapv :component @(:overlays tui))]
+      (core/tui-show-overlay tui (:comp a))
+      (core/tui-show-overlay tui (:comp b))
+      (core/tui-show-overlay tui (:comp c))
+      (t/is (true? (core/tui-hide-overlay tui (:comp b)))
+            "true when an entry was removed")
+      (t/is (= [(:comp a) (:comp c)] (components))
+            "only b left; the topmost stayed")
+      (t/is (false? (core/tui-hide-overlay tui (:comp b)))
+            "a component already gone is inert")
+      (t/is (true? (core/tui-hide-overlay tui (:comp c))))
+      (t/is (= [(:comp a)] (components)))
+      (core/tui-hide-overlay tui (:comp a))
+      (t/is (empty? (components)) "the stack empties")
+      (t/is (false? (core/tui-hide-overlay tui (:comp a)))
+            "an empty stack is inert"))))
+
+(t/deftest test-hide-by-component-restores-focus-when-it-held-input
+  (testing "membership hide runs the ::ghost-guard watch like any removal"
+    (let [tui (core/create-tui nil)
+          a (leaf)
+          b (leaf)
+          c (leaf)]
+      (core/tui-show-overlay tui (:comp a))
+      (core/tui-show-overlay tui (:comp b))
+      (core/tui-show-overlay tui (:comp c))
+      (core/tui-hide-overlay tui (:comp b))
+      (t/is (identical? (:comp c) @(:focused-component tui))
+            "removing a non-focused entry leaves input alone")
+      (core/tui-hide-overlay tui (:comp c))
+      (t/is (identical? (:comp a) @(:focused-component tui))
+            "removing the focused entry reveals the next one"))))
+
 (t/deftest test-hide-falls-back-to-focus-home
   (testing "with no capturing overlay below, hide lands on the focus home"
     (let [tui (core/create-tui nil)

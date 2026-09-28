@@ -211,18 +211,18 @@
         editor-factory-atom (atom nil)
         extension-autocomplete-factories (atom [])
         terminal-input-unsubscribers (atom [])
-        hide-dialog (fn []
-                      ;; the registry owns this dialog: release! removes it
-                      ;; by identity, dispose! checks the remove-before-
-                      ;; dispose order — neither touches a selector or
-                      ;; surface below. Focus needs no restore here: the
-                      ;; dock's ::focus-guard watch hands input back the
-                      ;; moment the occupant leaves
-                      (when-let [component @custom-dialog-comp]
-                        (reset! custom-dialog-comp nil)
-                        (dock/release! cs component)
-                        (dock/dispose! cs component))
-                      (tui/tui-request-render t))
+        close-dialog! (fn []
+                        ;; the registry owns this dialog: leave whichever
+                        ;; surface holds it first (each leave no-ops on the
+                        ;; other), then dispose! checks the leave-first
+                        ;; order; the dock and overlay focus guards restore
+                        ;; input on removal.
+                        (when-let [component @custom-dialog-comp]
+                          (reset! custom-dialog-comp nil)
+                          (tui/tui-hide-overlay t component)
+                          (dock/release! cs component)
+                          (dock/dispose! cs component))
+                        (tui/tui-request-render t))
         rebuild-autocomplete-provider! (fn []
                                          ;; pi: setupAutocompleteProvider — each
                                          ;; extension factory wraps the provider
@@ -275,19 +275,12 @@
                          close (fn [result]
                                  (when-not @closed
                                    (reset! closed true)
-                                   (if overlay
-                                     ;; overlay removal disposes through its
-                                     ;; own stack; unwind the component first
-                                     (do (when-let [component @custom-dialog-comp]
-                                           (reset! custom-dialog-comp nil)
-                                           (dispose-dialog-component! component))
-                                         (tui/tui-hide-overlay t))
-                                     ;; dock: leave + dispose by identity, so
-                                     ;; only this dialog goes away (a selector
-                                     ;; below is revealed again)
-                                     (do (hide-dialog)
-                                         (editor-text-set!
-                                          @current-editor-atom saved-text)))
+                                   (close-dialog!)
+                                   ;; the dock also restores the editor text
+                                   ;; the dialog covered
+                                   (when-not overlay
+                                     (editor-text-set!
+                                      @current-editor-atom saved-text))
                                    (deliver p result)))]
                      (try
                        ;; pi: custom() accepts a Promise<Component> — deref
@@ -302,14 +295,10 @@
                            (when-not @closed
                              (throw (ex-info "ui-custom factory returned no component (or timed out)" {}))))
                          (when-not @closed
-                           ;; a previous live dialog (defensive — normal flow
-                           ;; closes first) leaves both surfaces before the
-                           ;; new one mounts: release! is a no-op for an
-                           ;; overlay dialog, and for a dock dialog it keeps
-                           ;; the removed-before-disposed order
-                           (when-let [prev @custom-dialog-comp]
-                             (dock/release! cs prev)
-                             (dock/dispose! cs prev))
+                           ;; a previous live dialog (defensive — normal
+                           ;; flow closes first) leaves before the new one
+                           ;; mounts; close-dialog! is inert with none
+                           (close-dialog!)
                            (reset! custom-dialog-comp component)
                            (if overlay
                              (let [opts (if (fn? overlay-options)
@@ -321,7 +310,7 @@
                        (catch Exception e
                          (when-not @closed
                            (reset! closed true)
-                           (when-not overlay (hide-dialog))
+                           (close-dialog!)
                            (tui/tui-flash! t (str "Extension UI error: " (ex-message e)))
                            (deliver p nil))))
                      p))
@@ -745,15 +734,7 @@
                     (container/container-add-child header-container hdr)
                     (container/container-add-child header-container sp1)
                     (expandable-text/expandable-text-rebuild! hdr))
-                  (when-let [component @custom-dialog-comp]
-                    ;; leave the dock first when the dialog lives there —
-                    ;; release! is the identity leave, then dispose!
-                    ;; enforces the remove-before-dispose order; an overlay
-                    ;; dialog falls through the release no-op and is hidden
-                    ;; below
-                    (dock/release! cs component)
-                    (dock/dispose! cs component)
-                    (reset! custom-dialog-comp nil))
+                  (close-dialog!)
                   (doseq [unsub @terminal-input-unsubscribers]
                     (try (unsub) (catch Exception _)))
                   (reset! terminal-input-unsubscribers [])

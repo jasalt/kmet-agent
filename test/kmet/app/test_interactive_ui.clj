@@ -4,6 +4,7 @@
    editor duck-typed transfer (pi: setCustomEditorComponent)."
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest testing]]
+            [kmet.debug :as debug]
             [kmet.tui.autocomplete :as ac]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.settings-list :as settings-list]
@@ -1430,6 +1431,58 @@
       ;; the registry install is a side effect — don't leak the fake cs
       ;; registry into later tests (build-extension-context would merge it)
     (extensions/clear-ui-registry!)))
+
+(deftest test-extension-reset-closes-open-dialogs
+  (testing "the registry :reset teardown closes an open ui-custom dialog
+            through the ordered leave-then-dispose path on both surfaces:
+            the dialog is disposed, its surface empty, and no
+            disposed-while-mounted violation is logged (the follow-up had
+            no harness for this path)"
+    (let [ui (tui/create-tui nil)
+          ed (editor/make-editor)
+          cs {:tui ui
+              :dock-stack (atom [])
+              :current-editor-atom (atom ed)
+              :status-indicator (status-indicator/make-status-indicator)
+              :config cfg/default-config
+              :session-atom (atom nil)}
+          ch (chat-history/make-chat-history)
+          disposed (atom [])
+          logged (atom [])
+          registry ((var ui-registry/build-extension-ui-registry)
+                    {:tui ui :cs cs}
+                    {:ftr {:extension-statuses-atom (atom {})}
+                     :ed ed
+                     :ch ch
+                     :fdp (fdp/make-footer-data-provider)
+                     :widgets-above-atom (atom {})
+                     :widgets-below-atom (atom {})}
+                    nil)
+          factory (fn [_tui _theme _kb _close]
+                    {:render (fn [_width] [])
+                     :dispose (fn [] (swap! disposed conj :dialog))})]
+      (try
+        (with-redefs [debug/log-error (fn [& args] (swap! logged conj args))]
+          ;; dock surface: the path the release!-before-dispose fix covers
+          ((:custom registry) factory {})
+          (t/is (= 1 (count @(:dock-stack cs))) "the dialog docked")
+          ((:reset registry))
+          (t/is (= [:dialog] @disposed) "reset disposed the dock dialog")
+          (t/is (empty? @(:dock-stack cs)) "the dock is empty")
+          ;; overlay surface: the membership hide leaves before dispose
+          (reset! disposed [])
+          ((:custom registry) factory {:overlay true
+                                       :overlay-options {:anchor :center}})
+          (t/is (true? (tui/tui-has-overlay? ui)) "the dialog floated")
+          ((:reset registry))
+          (t/is (= [:dialog] @disposed) "reset disposed the overlay dialog")
+          (t/is (false? (tui/tui-has-overlay? ui)) "the overlay stack is empty")
+          (t/is (empty? @logged) "no disposed-while-mounted violation"))
+        (finally
+          (extensions/set-session! nil)
+          (extensions/set-context-sink! nil)
+          (extensions/set-entry-sink! nil)
+          (extensions/clear-ui-registry!))))))
 
 ;; ─── DSL stage 4 review: dock generation gate + widget-area reactivity ────
 

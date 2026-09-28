@@ -786,6 +786,13 @@ for flows that must float *above the transcript*; full-panel selectors and
 dialogs dock in the editor instead (the app's `showSelector` pattern), so
 only extension `ui-custom` overlays float in practice.
 
+`tui-hide-overlay` removes the topmost overlay (pi: `hideOverlay`); with a
+component argument it removes that component's entries wherever they sit
+(identity, not topmost) and returns true when one was removed. Hiding
+never disposes — the owner does (§5.1) — and the app's ordered close
+(`kmet.app.ui.dock/dispose!`) leaves the stack before disposing on both
+surfaces, so the frame can never composite a disposed component.
+
 Floating overlays get chrome **by default** so they can never read as text
 over text (pi leaves this to the component; kmet makes it the default):
 
@@ -799,6 +806,63 @@ width minus the frame). `composite-line` additionally resets SGR at the
 overlay boundary, so the base line's active style (a user-message
 background) cannot bleed into overlay cells the component itself does not
 style (pi: `SEGMENT_RESET` in `compositeTuiLine`).
+
+### 5.4 Surface stacks — the editor dock pattern
+
+Several surfaces can share one slot as a stack: the top entry renders,
+entries below stay mounted but hidden, so removing the top reveals the
+surface that was covered (pi: `showSelector` / `showAuthSelect` over the
+editor). The app's editor dock (`kmet.app.ui.dock`) is the canonical
+instance — `DOCK-STACK` holds `{:component c :focus-target f :borrowed? b}`
+entries, and the editor itself is the fallback when the stack is empty,
+not an entry. The overlay stack (§5.3) follows the same rules, and
+any future surface stack should too.
+
+- **Enter by intent.** Replacing the top (a selector opens and disposes
+  its displaced panel) and pushing without touching what is below (a
+  temporary surface that must reveal its owner) are distinct verbs. Both
+  take the interactive child as `:focus-target` when the panel itself is
+  inert chrome, and `:borrowed?` for a panel whose owner keeps custody —
+  the stack never disposes a borrowed entry.
+- **Leave by membership, never by a mount token.** Removal is by
+  component identity, from any depth; a component already gone is inert,
+  so a stale owner cannot yank its successor out. Clearing the whole
+  stack is a separate verb for a wholesale takeover (custom-editor swap,
+  session reset, extension teardown) — not for closing one panel.
+- **Removals never dispose; the owner's ordered close does.** Surface
+  components are often assembled from several owners' parts (a compiled
+  frame *plus* a spliced foreign list), and only the owner knows what to
+  unwind. The close order is contractual: leave first, then dispose. A
+  `dispose!` that finds the component still mounted removes it first (the
+  UI can never render a corpse), records the violation in
+  `kmet.error.log`, and throws under `--debug`. Never call
+  `protocols/dispose` (or `dispose-tree!`) directly on a stacked surface.
+- **Focus follows the stack.** A watch on the stack — not each close
+  path — restores input when the focused component leaves: to the new
+  top's focus target, else the resolver's fallback (topmost capturing
+  overlay, else the focus home). The entering verbs take focus explicitly
+  before publishing, because only they know the target (a selector's
+  inner list, not its inert chrome).
+
+The failure classes this shape closes — all one bug seen from different
+angles, a panel on screen with dead keys (kmetia/kmet-agent#5):
+
+| Failure | Guard |
+|---|---|
+| A covered surface's handle is invalidated and it never leaves | entries survive being covered; membership removal |
+| An owner finishes while its surface is buried | removal works from any depth |
+| A replaced surface's late close yanks its successor | absent components are inert |
+| A flow forgets to leave before dispose | the ordered close removes first, logs, throws in debug |
+| A removed surface still holds keys | the focus watch restores input on any stack change |
+
+Call-site rules: a CS without its stack atom is treated as an empty stack
+(removal paths no-op, so minimal test states keep working); tests assert
+through the public accessors (`dock/top-component`,
+`dock/top-focus-target`), never by destructuring entry maps. The dock's
+full contract lives in the `kmet.app.ui.dock` namespace docstring; the
+regression test for the round trip this shape was built from is
+`test-oauth-login-dialog-covers-and-releases` in
+`test/kmet/app/test_interactive_ui.clj`.
 
 ---
 

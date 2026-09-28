@@ -18,7 +18,8 @@
    - cover! pushes without touching anything below (pi showAuthSelect's
      temporary editorContainer swap): the login dialog's method selector
      covers it, and closing the selector reveals the dialog.
-   Both take {:focus-target f :borrowed? b} and return DONE.
+   Both take {:focus-target f :borrowed? b}; closing is release! by
+   identity, not a mount handle.
 
    Leaving is by membership, never by a mount token:
    - release! removes a component from wherever it sits in the stack; a
@@ -39,10 +40,7 @@
    :focus-target, else to the resolver's fallback (the focus home: the
    top dock target or the active editor). mount!/cover! take focus
    explicitly before publishing the stack — only they know the new
-   panel's target (a selector's inner list, not its chrome).
-
-   The lifecycle contract and the refactor record live in dock.md at the
-   repository root (a temporary plan)."
+   panel's target (a selector's inner list, not its chrome))."
   (:require [kmet.app.ui.custom-dialog-adapter :as cda]
             [kmet.debug :as debug]
             [kmet.libs.reakt :as r]
@@ -172,24 +170,26 @@
 
 (defn dispose!
   "Dispose COMPONENT — the owner's ordered close for a panel it mounted.
-   The invariant: a component is disposed only after it left the
-   stack, or the dock keeps rendering a corpse whose keys reach nothing
-   (issue #5). release!'s result is that check: a still-registered
-   component is a lifecycle bug, so remove it first (the visible failure
-   cannot happen), record the violation in kmet.error.log, and with
-   --debug throw so development trips on it instead of shipping another
-   stranded panel. Handles nil."
+   The invariant: a component is disposed only after it left every surface
+   it was shown on, or the UI keeps rendering a corpse whose keys reach
+   nothing (issue #5). The leave is tried first — release! for the editor
+   dock, tui-hide-overlay by identity for the overlay stack — and a hit is
+   a lifecycle bug: the caller skipped that surface's leave, so dispose!
+   removes it (the visible failure cannot happen), records the violation in
+   kmet.error.log, and with --debug throws so development trips on it
+   instead of shipping another stranded panel. Handles nil."
   [cs component]
   (when (some? component)
-    (let [was-docked? (release! cs component)]
-      (when was-docked?
+    (let [was-mounted? (or (release! cs component)
+                           (tui/tui-hide-overlay (:tui cs) component))]
+      (when was-mounted?
         (debug/log-error
-         "disposed a component that was still in the editor dock (removed first):"
+         "disposed a component that was still mounted (removed first):"
          (type component)))
       (cda/dispose-component! component)
-      (when (and was-docked? (debug/enabled?))
-        (throw (ex-info "Component disposed while still in the editor dock"
-                        {:type :dock/disposed-while-docked
+      (when (and was-mounted? (debug/enabled?))
+        (throw (ex-info "Component disposed while still mounted"
+                        {:type :dock/disposed-while-mounted
                          :component (type component)}))))))
 
 (defn- enter!
@@ -231,13 +231,17 @@
 (defn cover!
   "Push COMPONENT on top of the dock without touching what is below (pi:
    showAuthSelect swaps the login dialog out and back; a temporary surface
-   covers its owner). OPTS as in mount!. Pushing a component that is
-   already in the stack adds another entry; release! removes every entry
-   that holds it."
+   covers its owner). OPTS as in mount!. Covering a component that is
+   already in the stack is a no-op — a second entry would make one
+   release! take out both — and does not move a buried component to the
+   top; release! + cover! does that."
   ([cs component]
    (cover! cs component {}))
   ([cs component {:keys [focus-target borrowed?]}]
-   (enter! cs component focus-target borrowed? false)))
+   (if (when-let [dock (:dock-stack cs)]
+         (some #(identical? component (:component %)) @dock))
+     nil
+     (enter! cs component focus-target borrowed? false))))
 
 (defn clear!
   "Take the editor dock back wholesale (pi: disposeActiveSelector +

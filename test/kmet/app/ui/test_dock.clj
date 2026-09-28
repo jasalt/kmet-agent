@@ -137,6 +137,31 @@
       (t/is (= [a] (mounted cs)) "the covered surface is revealed again")
       (t/is (empty? @disposed) "removal never disposes"))))
 
+(deftest covering-an-already-docked-component-is-a-no-op
+  (testing "cover! never adds a second entry for the same component: one
+            release! must not take out two entries, a no-op leaves focus
+            alone, and re-covering does not move a buried component to the
+            top (release! + cover!)"
+    (let [{:keys [cs ui]} (focus-cs)
+          disposed (atom [])
+          dlg (panel disposed "dialog")
+          sel (panel disposed "selector")]
+      (dock/mount! cs dlg)
+      (dock/cover! cs sel)
+      (dock/cover! cs sel)
+      (t/is (= [dlg sel] (mounted cs))
+            "covering the top again adds nothing")
+      (t/is (identical? sel (tui/tui-focused-component ui))
+            "focus stays where it was")
+      (dock/cover! cs dlg)
+      (t/is (= [dlg sel] (mounted cs))
+            "covering a buried component adds nothing and leaves it buried")
+      (t/is (identical? sel (tui/tui-focused-component ui))
+            "a no-op cover does not move a buried component's focus")
+      (dock/release! cs sel)
+      (t/is (= [dlg] (mounted cs)) "one release removes the one entry")
+      (t/is (empty? @disposed) "a no-op cover disposes nothing"))))
+
 (deftest release-removes-from-any-depth-without-disposing
   (let [cs (test-cs)
         disposed (atom [])
@@ -276,6 +301,50 @@
       (t/is (nil? (top cs)) "still removed first")
       (t/is (= ["p"] @disposed) "still disposed")
       (t/is (= 1 (count @logged))))))
+
+(deftest dispose-removes-a-still-shown-overlay-first
+  (testing "the overlay stack gets the same ordered close as the dock: a
+            panel disposed while floating is removed first, and the
+            skipped leave is recorded"
+    (let [{:keys [cs ui]} (focus-cs)
+          disposed (atom [])
+          p (panel disposed "overlay")
+          logged (atom [])]
+      (tui/tui-show-overlay ui p)
+      (t/is (true? (tui/tui-has-overlay? ui)))
+      (with-redefs [debug/log-error (fn [& args] (swap! logged conj args))]
+        (dock/dispose! cs p))
+      (t/is (false? (tui/tui-has-overlay? ui)) "removed before disposal")
+      (t/is (= ["overlay"] @disposed) "then disposed")
+      (t/is (= 1 (count @logged)) "the violation is recorded"))))
+
+(deftest dispose-of-a-hidden-overlay-is-quiet
+  (testing "the ordered close (tui-hide-overlay by identity, then
+            dispose!) records nothing"
+    (let [{:keys [cs ui]} (focus-cs)
+          disposed (atom [])
+          p (panel disposed "overlay")
+          logged (atom [])]
+      (tui/tui-show-overlay ui p)
+      (tui/tui-hide-overlay ui p)
+      (with-redefs [debug/log-error (fn [& args] (swap! logged conj args))]
+        (dock/dispose! cs p))
+      (t/is (= ["overlay"] @disposed))
+      (t/is (empty? @logged)))))
+
+(deftest dispose-of-a-shown-overlay-throws-in-debug-mode
+  (testing "the overlay order violation trips --debug like the dock's"
+    (let [{:keys [cs ui]} (focus-cs)
+          disposed (atom [])
+          p (panel disposed "overlay")
+          logged (atom [])]
+      (tui/tui-show-overlay ui p)
+      (with-redefs [debug/log-error (fn [& args] (swap! logged conj args))
+                    debug/enabled? (constantly true)]
+        (t/is (thrown? Exception (dock/dispose! cs p)))
+        (t/is (false? (tui/tui-has-overlay? ui)) "still removed first")
+        (t/is (= ["overlay"] @disposed) "still disposed")
+        (t/is (= 1 (count @logged)))))))
 
 ;; ─── Focus integrity (the ::focus-guard watch) ─────────────────────────────
 ;; A panel that leaves the dock while holding input would swallow every key
