@@ -10,10 +10,13 @@
             [kmet.app.tools.util :as tool-util]))
 
 (defn title
-  "Quiet one-liner body for the bash tool: verb + `$ <cmd>` — pure data, or nil when the command is missing/empty (the quiet branch falls back to the tool name). Nil-safe over partial streaming args."
+  "Quiet one-liner body for the bash tool: the shell prompt `$ <cmd>`
+   (matching the collapsed bash call line) — pure data, or nil when the
+   command is missing/empty (the quiet branch falls back to the tool name).
+   Nil-safe over partial streaming args."
   [args]
   (when-let [cmd (tool-util/title-str-arg args :command)]
-    (str "bash $ " cmd)))
+    (str "$ " cmd)))
 
 (def ^:private update-throttle-ms 100)  ;; pi: BASH_UPDATE_THROTTLE_MS
 (def ^:private max-live-bytes (* 50 1024))  ;; pi: DEFAULT_MAX_BYTES

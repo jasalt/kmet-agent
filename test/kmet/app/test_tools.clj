@@ -244,7 +244,7 @@
                                        ["read" {:path "src/a.clj"} "read src/a.clj"]
                                        ["write" {:path "src/a.clj"} "write src/a.clj"]
                                        ["edit" {:path "src/a.clj"} "edit src/a.clj"]
-                                       ["bash" {:command "ls -la"} "bash $ ls -la"]]]
+                                       ["bash" {:command "ls -la"} "$ ls -la"]]]
       (let [title (:title (tools/get-tool tool-name))]
         (t/is (fn? title) (str tool-name " defines :title"))
         (t/is (= expected (title args)))))
