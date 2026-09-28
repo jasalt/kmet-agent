@@ -17,8 +17,9 @@ babashka and jolt); the mcp-adapter's `mcpScript` tool and `bb`-subprocess
 runtime retired into the same engine (its catalog joins the sandbox as a
 contributed tool source — T2 below). T4 shares the invocation pipeline with
 the loop (`kmet.app.tools.invoke`), so scripted calls fire the run's tool
-hooks and a script abort cancels inner calls. Only the plan's last item, the
-post-adoption T0 re-measurement, remains (⏳ below).
+hooks and a script abort cancels inner calls. The last plan item, the
+post-adoption T0 re-measurement, is recorded below as well (✅): script is
+still used rarely, so the bash find/read workload has not moved yet.
 
 A follow-up efficiency pass is also landed: `sandbox/emit` provides a
 single compact result path, `tools/call-many`/`tools/await-all` shorten
@@ -56,12 +57,12 @@ question is measured before anything is built. It does differ — see
 |---|---|
 | `index` (tree-sitter skeleton before reads) | ✅ tree-sitter extension: `list_symbols`, `get_symbol_body`, `find_definition`, `find_callers`, `find_callees` + `lsp` adapter |
 | deferred MCP tool definitions (`tool_search`) | ✅ mcp-adapter: one `mcp` proxy tool, lazy servers, output guard |
-| truncation everywhere | ✅ read (2000 lines/50KB), bash (line/byte caps + full-output file) |
+| truncation everywhere | ✅ read (2000 lines/50KB), bash (line/byte caps + full-output file), script (16 KiB/2000-line default result + capture budget) |
 | partial output on interrupt | ✅ bash returns streamed output + "Command aborted" |
 | compaction | ✅ `kmet.app.compaction` (LLM summarization) |
 | visibility (tokens/cost) | ✅ footer: ↑in ↓out R/W cache, $cost, context % |
 | `mcpScript` (scripted MCP calls) | ✅ mcp-adapter: retired into the shared `script` tool — the catalog is a contributed sandbox tool source (T2) |
-| `code_execution` (script + distilled output) | ❌ — the candidate change |
+| `code_execution` (script + distilled output) | ✅ builtin `script` (T1, landed — plan and re-measurement below) |
 | per-tool token attribution | ✅ measurement: every tool-result entry carries `:result-tokens`, `/session` shows the per-tool breakdown |
 
 ## Measurement (T0) — results
@@ -168,6 +169,50 @@ before any new engine; T1 must capture the rest.
                      (sort-by val >))]
      (doseq [[tool tokens] totals] (println (format "%-10s %d" tool tokens))))'
    ```
+
+### Post-adoption re-measurement (T1–T4 landed)
+
+Same method as T0 (stamped `:result-tokens` when present, else chars/4 from
+the stored content), corpus refreshed to 465 session files / 67,878 tool
+results / ~32.9M estimated result tokens. The adoption boundary is T1's
+landing (`590fe97`, 2026-09-22 22:02 UTC); `script` entries are zero before
+it.
+
+| tool | calls | tokens | share | avg/call |
+|---|---:|---:|---:|---:|
+| **bash** | 50,869 | 18.15M | **55.2%** | 356 |
+| **read** | 8,119 | 13.28M | **40.4%** | 1,635 |
+| **script** | 204 | 171k | **0.5%** | 839 |
+| web search + fetch | 274 | 886k | 2.7% | 3.2k |
+| everything else (edit, structural, lsp, mcp, …) | 8,412 | 383k | 1.2% | — |
+
+- **The T0 headline split has not moved** (54.8%/41.6% → 55.2%/40.4%):
+  script has not displaced bash-as-reader. Post-adoption alone it is 4.4% of
+  the 3.88M result tokens (bash 55.7%, read 34.6%).
+- **Inside bash, the find/read workload is unchanged**: with one classifier
+  applied to both sides (absolute levels are not comparable to T0's
+  categorizer), file-view moves 49.6% → 49.8% of bash tokens and search
+  43.0% → 43.4%. read + bash file-view + bash search is ~86.5% of
+  post-adoption result tokens.
+- **Script's average is a heavy tail, not a steady drip**: mean 839, median
+  229 (read averages 1,635). 13 results ≥3.5k estimated tokens carry 44% of
+  script tokens; 9 hit the output cap (54k tokens, 32%). Two are 50 KiB-era
+  `println` dumps of whole `cat` outputs, from before `f3bb0b6` lowered the
+  default to 16 KiB — since 2026-09-26 every truncated script result is
+  ≤~4.1k estimated tokens.
+- **The per-invocation view is one-sided**: the `/session` Tool Results
+  section counts result content only — never a call's `:code` argument
+  (~500 estimated tokens per script call, on the input side) nor the inner
+  calls the sandbox keeps out of context (43 of 204 results carry a trace,
+  88 inner calls, 86 of them bash; most scripts scan with `fs/` in-process).
+  Conversation-weighted (tokens × later assistant turns): script 2.1%, bash
+  58.6%, read 36.1%.
+
+Verdict: the T0 decision stands on the current corpus, with a different
+limiter — in aggregate the tool is cheap because it is used rarely (0.3% of
+calls), and its per-call average describes a handful of output-heavy calls
+rather than the design. The post-adoption corpus is kmet's own development
+sessions, including the tool's own development.
 
 ## Design investigation (what was verified, not assumed)
 
@@ -590,11 +635,11 @@ The plan above is now the record of what landed:
    `:execute` sanitized), the excluded surface, fork isolation, the capture
    edges, the print bounds and the tool-name forms, plus the subprocess and
    contributed-source cases.
-8. ⏳ **Verify** — after adoption, re-run the T0 measurement (`/session` Tool
-   Results against the 54.8%/41.6% split; the `--debug` per-tool report): bash
-   file-view/search share is the number the tool exists to move. The compact
-   output path and per-call budgets should be included in that before/after
-   comparison.
+8. ✅ **Verify** — the post-adoption T0 re-measurement is recorded above:
+   the 54.8%/41.6% split and the bash file-view/search shares are unchanged,
+   so adoption is the limiter, not per-call cost. The compact output path is
+   visible after `f3bb0b6`: every truncated script result is ≤~4.1k estimated
+   tokens (the two 50 KiB-era dumps predate the 16 KiB default).
 9. ✅ **T2 seam** — the tool takes its registry through seams; T2 passes
    extension-contributed sources through the same map instead of a new path.
 
