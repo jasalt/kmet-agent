@@ -120,7 +120,7 @@
       (is (str/includes? report "Syntax error in match_form"))
       (is (str/includes? report "at line 1, col 6"))
       (is (str/includes? report "Unexpected EOF"))))
-  (testing "unterminated string is a delimiter problem (parinferish-relevant)"
+  (testing "unterminated string is a delimiter problem (repair-relevant)"
     (let [{:keys [kind]} (util/parse-problem
                           "f.clj" "(def s \"unterminated")]
       (is (= :delimiter kind))))

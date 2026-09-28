@@ -116,10 +116,10 @@
         ;; and the fixed extension set.
         org.clojure/spec.alpha {:mvn/version "0.5.238"}
         rewrite-clj/rewrite-clj {:mvn/version "1.2.57"}
-        ;; the two remaining fixed-set roots: parinferish (delimiter repair,
-        ;; pure Clojure) and edamame (reader-error detection). edamame would
-        ;; arrive transitively via the jolt/ sci pin; declared so dropping
-        ;; that pin cannot silently drop it from the set.
+        ;; the two remaining fixed-set roots: parinferish (delimiter-repair
+        ;; tokenizer, pure Clojure) and edamame (reader-error detection).
+        ;; edamame would arrive transitively via the jolt/ sci pin; declared
+        ;; so dropping that pin cannot silently drop it from the set.
         parinferish/parinferish {:mvn/version "0.8.0"}
         borkdude/edamame {:mvn/version "1.6.44"}
         ;; kmet's own RFC 0014 provider lib (jolt/ dir): the JDK classes the

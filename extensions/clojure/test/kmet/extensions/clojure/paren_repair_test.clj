@@ -126,6 +126,57 @@
         (is (not (str/includes? content "\n       (render"))))
       (finally (fs/delete-tree dir)))))
 
+(deftest test-does-not-restructure-var-call
+  ;; Regression: indent-mode repair moved the ')' of '(var f!)' past
+  ;; deeper-indented continuation lines, pulling cs/:compaction into the
+  ;; var form. Delimiter-only repair drops the stray closer and leaves the
+  ;; explicit (var ...) call untouched.
+  (let [body (str "(deftest t\n"
+                  "  (testing \"x\"\n"
+                  "      ((var status/show-status-indicator!) cs :compaction\n"
+                  "                                           (status-indicator/make-compaction-status-indicator))\n"
+                  "      ))\n"
+                  ")\n")
+        path (write-test-file! "var-call.clj" body)
+        result (paren-repair/execute {:file_path path})]
+    (is (not (:is-error result)))
+    (let [content (read-test-file path)]
+      (is (str/includes? content "((var status/show-status-indicator!) cs :compaction"))
+      (is (not (str/includes? content "(var status/show-status-indicator! cs"))))))
+
+(deftest test-does-not-restructure-deep-continuation
+  ;; Same failure mode without var: a closed subform followed by same-line
+  ;; args and a deeper-indented continuation line must keep its closer.
+  (let [path (write-test-file! "deep-continuation.clj"
+                               "(defn f []\n  ((foo) a\n     (b))))\n")
+        result (paren-repair/execute {:file_path path})]
+    (is (not (:is-error result)))
+    (let [content (read-test-file path)]
+      (is (str/includes? content "((foo) a"))
+      (is (not (str/includes? content "(foo a"))))))
+
+(deftest test-closer-after-multiline-string
+  ;; A line ending inside a multiline string is not a safe place for a
+  ;; closer: it goes after the string's closing quote, never inside it.
+  (let [path (write-test-file! "multiline-string.clj"
+                               "(do\n  (println \"hello\nworld\"\n")
+        result (paren-repair/execute {:file_path path})]
+    (is (not (:is-error result)))
+    (let [content (read-test-file path)]
+      (is (str/includes? content "world\"))")))))
+
+(deftest test-closes-forgotten-opener-at-dedent
+  ;; The indentation-based half of the repair: a forgotten closer goes at
+  ;; the end of the dead-ended form's block, so the dedented `(defn b ...)`
+  ;; stays a sibling instead of being swallowed by `(b`.
+  (let [path (write-test-file! "dedent.clj"
+                               "(defn a []\n  (b\n(defn b []\n  (c))\n")
+        result (paren-repair/execute {:file_path path})]
+    (is (not (:is-error result)))
+    (let [content (read-test-file path)]
+      (is (str/includes? content "(defn a []\n  (b))"))
+      (is (str/includes? content "\n(defn b []\n  (c))")))))
+
 (deftest test-returns-diff
   (let [path (write-test-file! "diff.clj" "(defn foo [x] (+ x 1\n")
         result (paren-repair/execute {:file_path path})]

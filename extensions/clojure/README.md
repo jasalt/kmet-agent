@@ -67,7 +67,9 @@ Their normal result stores the numbered display diff in `:details :diff`.
 ### `clojure_paren_repair`
 
 Delimiter repair for Clojure files. Detects unbalanced parens/brackets/braces with
-edamame and repairs them with parinferish (indent mode), then formats with cljfmt.
+edamame and repairs them delimiter-only (parinferish's tokenizer with
+indentation-based closing; existing code is never moved or restructured),
+then formats with cljfmt.
 
 ```
 clojure_paren_repair:
@@ -109,7 +111,7 @@ Planned features:
 - Connect to a running nREPL server.
 - Discover ports through `.nrepl-port` and `lsof`.
 - Keep persistent sessions per host and port.
-- Repair delimiters with `parinferish` before evaluation.
+- Repair delimiters delimiter-only (via `parinferish`'s tokenizer) before evaluation.
 - Detect Clojure, Babashka, Shadow-CLJS, and Basilisp environments.
 - Apply evaluation timeouts.
 
@@ -153,7 +155,7 @@ hosts:
   `default-config` var)
 - rewrite-clj 1.2.57 — form parsing/zippers
 - edamame — delimiter error detection
-- parinferish 0.8.0 — delimiter repair (pure Clojure; parinfer is a JVM lib
+- parinferish 0.8.0 — delimiter-repair tokenizer (pure Clojure; parinfer is a JVM lib
   and can't run in SCI contexts)
 - clojure.spec.alpha — injected because `cljfmt.config` requires it
   (port on bb, the pinned Maven lib on Jolt)

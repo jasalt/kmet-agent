@@ -1,9 +1,10 @@
 ;; kmet.extensions.clojure.paren-repair — Delimiter repair for Clojure files.
 ;;
 ;; Port of clojure-mcp paren_repair/{core,tool}.clj: detects unbalanced
-;; delimiters with edamame, repairs with parinferish (indent mode), then
-;; formats with cljfmt (honoring the project's cljfmt.edn) and writes the
-;; file back with a unified diff.
+;; delimiters with edamame, balances them delimiter-only (parinferish's
+;; tokenizer + indentation-based closing), then formats with cljfmt
+;; (honoring the project's cljfmt.edn) and writes the file back with a
+;; unified diff.
 
 (ns kmet.extensions.clojure.paren-repair
   (:require [babashka.fs :as fs]
@@ -35,7 +36,7 @@
   "Repair delimiter errors in FILE-PATH and optionally format.
    Returns {:success bool :message str :diff str-or-nil
             :delimiter-fixed? bool :formatted? bool}.
-   A delimiter error that parinferish cannot repair (or a file that does
+   A delimiter error that delimiter-only repair cannot fix (or a file that does
    not parse at all) is an explicit failure carrying the precise report —
    never a silent \"no changes\" success."
   [file-path format?]
@@ -72,7 +73,7 @@
                            (:report problem)
                            "\n"
                            (case (:kind problem)
-                             :delimiter "parinferish only closes end-of-line openers and drops stray closers — fix this one manually (e.g. with the edit tool)."
+                             :delimiter "delimiter-only repair inserts missing closers and drops stray ones — fix this one manually (e.g. with the edit tool)."
                              "Fix the syntax error manually (e.g. with the edit tool)."))
              :delimiter-fixed? false
              :formatted? false
@@ -194,14 +195,14 @@
    {:name            "clojure_paren_repair"
     :label           "Repair delimiters"
     :description
-    "Fix delimiter errors (unbalanced parentheses, brackets, braces) in a Clojure file (.clj/.cljs/.cljc/.cljd/.bb/.edn/.lpy; other file types are rejected) using parinferish.\n\nUse this tool when:\n- A file has unbalanced delimiters causing parse errors\n- You need to repair a file after an errant edit\n- The file won't compile due to unbalanced parens/brackets\n\nDetection is via edamame (a parse error carrying an unclosed opener); repair is indentation-based: opens at the end of a line are closed, and stray closes are dropped. The file is then formatted with cljfmt (honoring the project's cljfmt.edn) unless format=false.\n\nReturns a status message and diff showing what changed."
+    "Fix delimiter errors (unbalanced parentheses, brackets, braces) in a Clojure file (.clj/.cljs/.cljc/.cljd/.bb/.edn/.lpy; other file types are rejected) using a delimiter-only, indentation-based repair.\n\nUse this tool when:\n- A file has unbalanced delimiters causing parse errors\n- You need to repair a file after an errant edit\n- The file won't compile due to unbalanced parens/brackets\n\nDetection is via edamame (a parse error carrying an unclosed opener); repair is delimiter-only and indentation-based: unclosed openers are closed at the end of their indentation block, and stray or mismatched closers are dropped; explicit closers always win and existing code is never moved or restructured. The file is then formatted with cljfmt (honoring the project's cljfmt.edn) unless format=false.\n\nReturns a status message and diff showing what changed."
     :render-call renderers/render-edit-call
     :render-result renderers/render-edit-result
     :render-shell :self
     :prompt-snippet "Fix unbalanced delimiters (parens/brackets/braces) in a Clojure file"
     :prompt-guidelines
     ["Use clojure_paren_repair when a Clojure file has unbalanced delimiters causing parse errors — after an errant edit or when the file won't compile."
-     "The tool detects delimiter errors with edamame and repairs them with parinferish (indent mode), then formats with cljfmt honoring the project's cljfmt.edn."
+     "The tool detects delimiter errors with edamame and repairs them delimiter-only (parinferish's tokenizer with indentation-based closing; existing code is never moved or restructured), then formats with cljfmt honoring the project's cljfmt.edn."
      "Pass format=false to only fix delimiters without reformatting."
      "The tool returns a diff of the changes."]
     :parameters

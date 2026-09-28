@@ -164,7 +164,8 @@
   "The first parse problem in SOURCE, labeled WHAT (a file path or an
    argument label like \"content\"): {:kind :delimiter|:syntax :report str},
    or nil when SOURCE parses cleanly. :kind separates repair strategies —
-   parinferish can fix delimiters, syntax errors need manual edits."
+   a delimiter-only repair can fix delimiters, syntax errors need
+   manual edits."
   [what source]
   (when-let [details (parse-error-details source)]
     (if (or (contains? details :edamame/opened-delimiter)
@@ -174,27 +175,130 @@
       {:kind :syntax
        :report (syntax-report what details)})))
 
-(defn- parinferish-repair
-  "Repair delimiters in S with parinferish indent mode. Returns the
-   repaired string, or nil when repair failed (or produced code that still
-   has delimiter errors)."
+;; ── Delimiter-only repair ─────────────────────────────────────────────────
+;; parinferish indent mode is made for interactive editing: when a matching
+;; closer is followed by deeper-indented continuation lines it *moves* that
+;; closer past them, pulling tokens into the inner form — e.g.
+;; ((var status/show-status-indicator!) cs :compaction
+;;  (status-indicator/make-compaction-status-indicator)) becomes
+;; ((var status/show-status-indicator! cs :compaction ...)), breaking the
+;; call. Repair must never restructure valid code, so parinferish is used
+;; only as a tokenizer ({:mode nil} never rebalances) and the
+;; indentation-based closing decisions live here: explicit matched pairs
+;; are authoritative — never moved, closed early, or dropped — while
+;; stray/mismatched closers are dropped and openers with no explicit
+;; closer are closed at the end of their indentation block (or before
+;; trailing whitespace/comments at EOF).
+
+(defn- delim-end
+  "The closing delimiter for OPEN, or nil when OPEN is not an opener.
+   Openers include the `#{` set literal."
+  [open]
+  (get {"(" ")" "[" "]" "{" "}" "#{" "}"} open))
+
+(defn- flat-tokens
+  "S's tokens as a vector, in order, with parinferish's :line/:column/:indent
+   and :whitespace? metadata. `:mode nil` builds the tree from the explicit
+   delimiters without rebalancing, so this is exactly S's token sequence."
   [s]
-  (try
-    (let [repaired (parinferish/flatten (parinferish/parse s {:mode :indent}))]
-      (when (and (some? repaired) (not (delimiter-error? repaired)))
-        repaired))
-    (catch Exception _ nil)))
+  (letfn [(leaves [x]
+            (if (and (vector? x) (= :collection (first x)))
+              (mapcat leaves (rest x))
+              [x]))]
+    (vec (mapcat leaves
+                 (parinferish/flatten identity (parinferish/parse s {:mode nil}))))))
+
+(defn- close-delim? [s] (contains? #{")" "]" "}"} s))
+
+(defn- matched-delims
+  "Which delimiter tokens form an explicit matched pair: [OPENS CLOSES],
+   sets of token indices from a plain stack scan. Matched pairs are
+   authoritative — repair never moves, drops, or closes them early."
+  [tokens]
+  (loop [i 0 st [] opens #{} closes #{}]
+    (if (= i (count tokens))
+      [opens closes]
+      (let [s (str/join (rest (nth tokens i)))]
+        (cond
+          (delim-end s)
+          (recur (inc i) (conj st i) opens closes)
+
+          (close-delim? s)
+          (if (and (seq st) (= (delim-end (str/join (rest (nth tokens (peek st))))) s))
+            (recur (inc i) (pop st) (conj opens (peek st)) (conj closes i))
+            (recur (inc i) st opens closes))
+
+          :else
+          (recur (inc i) st opens closes))))))
+
+(defn- balance-delimiters
+  "Delimiter-only repair: explicit matched pairs are kept exactly where the
+   author wrote them; unmatched closers are dropped; an opener with no
+   explicit closer is closed at the end of its indentation block (or before
+   trailing whitespace/comments at EOF). No existing delimiter or token is
+   ever moved."
+  [s]
+  (let [tokens (flat-tokens s)
+        [matched-opens matched-closes] (matched-delims tokens)]
+    (loop [i 0 out [] trivia [] stack []]
+      (if (< i (count tokens))
+        (let [t (nth tokens i)
+              txt (str/join (rest t))
+              tag (first t)]
+          (cond
+            (and (= :delimiter tag) (delim-end txt))
+            (recur (inc i)
+                   (into (into out trivia) [t])
+                   []
+                   (conj stack {:open txt
+                                :indent (:indent (meta t))
+                                :matched? (matched-opens i)}))
+
+            (and (= :delimiter tag) (close-delim? txt))
+            (if (matched-closes i)
+              (recur (inc i) (into (into out trivia) [t]) [] (pop stack))
+              (recur (inc i) out trivia stack))
+
+            (= :newline-and-indent tag)
+            (let [indent (:indent (meta t))
+                  [stack closers]
+                  (loop [stack stack closers []]
+                    (if-let [top (peek stack)]
+                      (if (and (not (:matched? top)) (< indent (:indent top)))
+                        (recur (pop stack) (conj closers (delim-end (:open top))))
+                        [stack closers])
+                      [stack closers]))]
+              (recur (inc i)
+                     (into out (mapv (fn [c] [:delimiter c]) closers))
+                     (conj trivia t)
+                     stack))
+
+            (true? (:whitespace? (meta t)))
+            (recur (inc i) out (conj trivia t) stack)
+
+            :else
+            (recur (inc i) (into (into out trivia) [t]) [] stack)))
+        (let [pending (loop [st stack acc []]
+                        (if (empty? st)
+                          acc
+                          (recur (pop st) (conj acc (delim-end (:open (peek st)))))))]
+          (str/join ""
+                    (map (fn [t] (str/join (rest t)))
+                         (into (into out (mapv (fn [c] [:delimiter c]) pending)) trivia))))))))
 
 (defn repair-delimiters
   "Fix unbalanced delimiters in S. Returns [text fixed?]:
    - no delimiter error → [s false]
-   - error repaired → [repaired true]
-   - error but repair failed → [s false] (the error surfaces downstream)"
+   - balanced by inserting/deleting delimiter characters → [repaired true]
+   - still unbalanced (e.g. unterminated string) → [s false]"
   [s]
   (if (delimiter-error? s)
-    (if-let [repaired (parinferish-repair s)]
-      [repaired true]
-      [s false])
+    (try
+      (let [repaired (balance-delimiters s)]
+        (if (delimiter-error? repaired)
+          [s false]
+          [repaired (not= s repaired)]))
+      (catch Exception _ [s false]))
     [s false]))
 
 (defn form-children
