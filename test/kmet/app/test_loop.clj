@@ -21,6 +21,7 @@
             [kmet.app.retry :as retry]
             [kmet.config :as cfg]
             [kmet.app.ui.chat-history :as ui]
+            [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]
             [kmet.test-utils :refer [slash]]))
 
@@ -3106,6 +3107,70 @@
                         (= (count @(:messages agent)) (count (:messages %))))
                   @events)
             "auto-compaction mirrors the new context to the UI (pi: compaction_end re-renders the chat)")
+      (finally
+        (fs/delete-tree dir)))))
+
+(t/deftest test-loop-compaction-keeps-tool-call-pairing-in-ui
+  "A live compaction whose kept tail includes an assistant tool-call + its
+   result must emit a :context-replaced message vector that rebuilds with
+   the tool's name/args and result. Regression: the rebuilt tool box lost
+   its title and collapsed/expanded toggle."
+  (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
+        sess (session/create-session (str dir))
+        events (atom [])
+        agent (loop/make-agent-state
+               :session sess
+               :on-event (fn [e] (swap! events conj e))
+               :compact-token-threshold 10
+               :keep-recent-tokens 40)
+        ch (ui/make-chat-history :tool-display-mode :collapsed)
+        strip-ansi #(str/replace % #"\u001b\[[0-9;]*[a-zA-Z]" "")
+        render (fn [mode]
+                 (ui/chat-history-set-tool-display-mode! ch mode)
+                 (mapv strip-ansi (protocols/render ch 80)))]
+    (try
+      ;; Seed enough context to cross the compact threshold.
+      (dotimes [i 10]
+        (session/append-entry sess
+                              {:role :user
+                               :content [{:type :text :text
+                                          (str "This is message body number " i
+                                               " with plenty of words so the estimated token count "
+                                               "easily exceeds the small test threshold.")}]}))
+      ;; The kept tail: an assistant tool call and its matching result.
+      (session/append-entry sess
+                            {:role :assistant
+                             :content [{:type :text :text "running read"}]
+                             :usage {:prompt_tokens 1000 :completion_tokens 50}
+                             :tool-calls [{:id "tc1" :name "read"
+                                           :arguments {:path "src/main.clj"}}]})
+      (session/append-entry sess
+                            {:role :tool
+                             :content [{:type :tool_result :tool_use_id "tc1" :content "file body"}]
+                             :tool-name "read" :is-error false})
+      (t/is (true? (binding [*err* (java.io.StringWriter.)]
+                     (with-summarization-stub #(loop/maybe-compact! agent))))
+            "token threshold triggers compaction")
+      (let [replaced (first (filter #(= :context-replaced (:type %)) @events))]
+        (t/is (some? replaced) ":context-replaced emitted after compaction")
+        (ui/chat-history-rebuild! ch (:messages replaced))
+        (let [collapsed (render :collapsed)]
+          (t/is (some #(re-find #"\[compaction\]" %) collapsed)
+                "compaction summary renders")
+          (t/is (some #(re-find #"Compacted from" %) collapsed)
+                "collapsed summary line shows token count")
+          (t/is (some #(re-find #"read src/main.clj" %) collapsed)
+                "collapsed tool box keeps the call-line title"))
+        (let [expanded (render :expanded)]
+          (t/is (some #(re-find #"summary of the old conversation" %) expanded)
+                "expanded summary box shows the summary text")
+          (t/is (some #(re-find #"read src/main.clj" %) expanded)
+                "expanded tool box keeps the call-line title")
+          (t/is (some #(re-find #"file body" %) expanded)
+                "expanded tool box shows the full result"))
+        (let [quiet (render :quiet)]
+          (t/is (some #(re-find #"read src/main.clj" %) quiet)
+                "quiet tool box keeps the title")))
       (finally
         (fs/delete-tree dir)))))
 

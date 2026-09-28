@@ -44,12 +44,19 @@ reads session entries. If a consumer of that shape appears, either keep
 
 ## 3. Unpaired call without a result renders pending
 
+Decision: **leave as-is**.
+
 `pair-tool-messages` keeps a synthetic component for an assistant call that
 has no matching result; it renders as pending (no ended-at). Unreachable
 through both real `:context-replaced` emit paths — `drop-incomplete-tool-calls`
-prunes unanswered calls — but a direct `chat-history-rebuild!` caller could
-hit it. Decide: leave as-is, or mark it errored with pi's aborted/error text
-like `replay-branch!` does for errored assistant messages.
+prunes unanswered calls before the event is emitted — but a direct
+`chat-history-rebuild!` caller could hit it.
+
+We do not inject failure text here because the rebuild path lacks the
+assistant entry's `:stop-reason` / `:error-message` metadata needed to choose
+pi's aborted vs. error wording. `replay-branch!` still synthesizes that text
+from the assistant entry, and production callers rely on
+`drop-incomplete-tool-calls` to remove the case before rebuild.
 
 ## 4. Live compaction regression test
 
