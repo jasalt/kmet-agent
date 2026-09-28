@@ -219,19 +219,37 @@ sessions, including the tool's own development.
 The full discussion explored four ways to run model-written code. Recorded here
 so T1–T3 don't re-litigate it:
 
-1. **In-process eval on a thread + SCI.** bb and jolt both have `Thread`;
-   thread termination does **not** exist on either host: `Thread.stop` throws
-   `UnsupportedOperationException` on bb (JDK 20+) and isn't implemented on
-   jolt ("No matching field found"); `suspend`/`resume`/`destroy` are gone;
-   `Thread.interrupt` only wakes blocking calls, a tight loop survives;
-   `future-cancel` returns true but the computation keeps running (all
-   measured). Jolt fibers track `dead` only when the fiber's own body raises —
-   no external kill. **However**: SCI's `:interrupt-fn` (called on every
-   interpreted fn/loop entry) reliably aborts interpreted code on both hosts
-   (verified: a 3M-iteration spin killed on bb; 666k on jolt through kmet's
-   pinned sci). Caveats from SCI's own docs: host-native CPU calls escape it
-   (`.pow` example), and "for hard guarantees it is best to run untrusted code
-   in a separate process that can be killed."
+1. **In-process eval on a thread + SCI.** Neither host has a force-kill:
+   `Thread.stop` throws `UnsupportedOperationException` on bb (JDK 20+) and
+   isn't implemented on jolt ("No matching field found");
+   `suspend`/`resume`/`destroy` are gone; `Thread.interrupt` only sets the
+   lock-wait flag and wakes blocking calls — a tight loop survives it
+   (re-verified on `jolt v0.8.13-54-gc80ccdf6`: `.interrupt` on a
+   1e12-iteration spin left it running); `future-cancel` returns true but the
+   computation keeps running. Abortability now differs by host:
+   - **jolt** has a runtime-level cooperative interrupt
+     (`host/chez/java/concurrency.ss`, exposed as `jolt.host`): a token from
+     `make-interrupt`, set from any thread with `interrupt!`, aborts the thunk
+     wrapped in `run-interruptible` via the Chez engine timer (`set-timer` +
+     thread-local `timer-interrupt-handler`, polled at procedure calls / loop
+     back-edges). Verified on `jolt v0.8.13-54-gc80ccdf6`: a
+     1e12-iteration tight loop aborted within the poll interval; the eval
+     throws `ex-info "Evaluation interrupted" {:jolt/interrupted true}` and
+     the thread is REUSED, not abandoned. It reaches Scheme/jolt CPU code,
+     which SCI's `:interrupt-fn` cannot — but it is not a force-kill: a
+     thread blocked in a foreign call (`Thread/sleep`, socket recv, blocking
+     file I/O) only sees it on return to Scheme, the wrapper is opt-in per
+     eval, and the API is `jolt.host` (a `#?(:jolt …)` seam).
+   - **bb** has no equivalent in-process abort; `Thread.interrupt` sets a
+     flag only.
+   SCI's `:interrupt-fn` (called on every interpreted fn/loop entry) remains
+   the cross-host mechanism the shipped T1 uses: it reliably aborts
+   interpreted code (verified: a 3M-iteration spin killed on bb; 666k on jolt
+   through kmet's pinned sci). Caveats from SCI's own docs: host-native CPU
+   calls escape it (`.pow` example), and "for hard guarantees it is best to
+   run untrusted code in a separate process that can be killed."
+   Consequence: on jolt the thread-stop blocker for a native-eval script path
+   is gone; on bb it stands, and the hard guarantee still points at T3.
 2. **Self-exec subprocess** (`kmet --script`): process isolation and hard kill
    with no external interpreter (mcpScript currently needs `bb` on PATH). Needs
    a lean script mode + self-path resolution (packaged binaries easy; dev mode
@@ -251,8 +269,80 @@ so T1–T3 don't re-litigate it:
 
 Loader facts: kmet.loader uses **SCI on babashka** and the **native
 `jolt.loader` on jolt** (`.jolt` file; backend selected in
-`kmet.app.extensions`). kmet pins SCI in `jolt/deps.edn`, so SCI is available
-on jolt if a script evaluator wants `:interrupt-fn` uniformly.
+`kmet.app.extensions`). The script tool already builds its per-call context
+through `kmet.loader.sci-loader` (`:base` fork + `:interrupt-fn`) on both
+hosts and then evaluates with `sci/eval-string*` directly; kmet pins SCI in
+`jolt/deps.edn`, so the same evaluator is available on jolt. Whether the eval
+itself could move behind `kmet.loader` is investigated next.
+
+### Scripts on kmet.loader (feasibility, verified)
+
+Prompted by "could the script tool stop using SCI directly and ride
+kmet.loader?" The answer differs by host: `load` evaluates what it loads,
+and a policy only covers code that goes through it.
+
+- **No eval API is needed — the question is where the block is installed.**
+  `Loader` is `find` / `resolve` / `load` / `parent` / `unload!`, and `load`
+  reads and evaluates *namespace sources*; `kmet.loader.sci-loader`'s
+  `:eval-fn` (default `sci/eval-string*`) is an internal hook, not part of the
+  contract. Blocking is exactly what the loader's policies do (`find` /
+  `allow` / `deny` / `host-view`), but a policy only sees requests that go
+  **through the loader**. On bb they do: SCI's `require` calls back into the
+  loader, so the script's `sci/eval-string*` on the loader's context is
+  already inside the block — the direct call is a one-line ownership seam,
+  not a behavior change.
+- **jolt's native loader blocks only what compiles through it.** The M4
+  ambient binding (`with-loader*`) covers `io/resource`, `RT/baseLoader` and
+  TCCL, but not the eval funnel: the context-carrying rewrite is a
+  **compile-time hook** (`jolt.host/*invoke-rewrite*`), bound by the loader
+  only while a context's own source is evaluated (`eval-namespace-source`),
+  and M1 (analyzer-visible loader state) was never built (`loader.md` §9
+  Phase 2). Verified on `jolt v0.8.13-54-gc80ccdf6`: `eval` of a `require`
+  under `with-loader*` with an `isolated` loader is not gated at all —
+  `clojure.zip`, absent from the process, loaded from the host roots anyway,
+  and a nonexistent namespace fell through to the host source roots ("Could
+  not locate zzz/nope.jolt (or .clj/.cljc) on the source roots"). The gate
+  fires when the hook is bound: the supported path is a source `load`ed
+  through a restricted context (verified: with a classpath root over a
+  miss-not-denial host view — kmet's `host-view` / `jl/->loader` shape — a
+  source requiring `clojure.set` loads and one requiring `clojure.string`
+  fails `:loader/unreadable`); the next bullet covers binding the hook
+  yourself around `eval`. `allow` is the wrong host filter for the view: its
+  denial propagates and denies the context's own namespaces too (verified).
+- **The file write is the supported path's cost, not an eval requirement.**
+  `load` reads a hit's `:file` (or jar/embedded key); there is no inline
+  `:source` hit (`hit-payload-keys`), so the public path needs a file. The
+  gate itself is only the compiler hook, and both it and the
+  context-carrying ops are public (`jolt.host/*invoke-rewrite*`,
+  `jolt.loader/__require-in` …, with the context registered by id): a
+  hand-written `context-rewriter`-shaped fn bound around `eval` in a created
+  namespace gates without a file — verified: `clojure.string` and
+  `jolt.host` refused, `clojure.set` allowed. That route leans on private
+  internals (`context-rewriter` / `qualify-symbol` are `defn-`; the
+  private-load claim/eviction is private) and creates the namespace by hand,
+  so it is a fork of the compile path, not a supported seam. The shape to
+  ask upstream for is an eval entry (or the ambient loader covering the eval
+  funnel, which the loader's own docstring promises but does not implement
+  yet) — prototyped as `jolt.loader/eval-in` in the jolt checkout on branch
+  `loader-eval-in-context` (`fc2d6a13`, loaderconf cases 38–39), pending
+  upstream.
+- **What a native path would still cost.** A per-call native context is
+  exactly the "one loader per request" case `loader.md` flags as unproven
+  (`loaders-by-id` retains every loader; the evict-evaluate-snapshot window
+  mutates the global registry under per-name claims), where an SCI `fork` is
+  a cheap per-call throwaway. The script body would have to be wrapped as a
+  namespace (for the `load` route) or evaluated in a hand-made one (for the
+  hook route) — line numbers, top-level forms, last-form return value — and
+  the tools bridge, output capture/print limits and the abort wrapper would
+  be re-provided natively. The abort half is now available
+  (`run-interruptible`, item 1), so it is no longer the blocker.
+- **Verdict.** On bb, moving the eval behind `kmet.loader` is a small,
+  behavior-neutral seam and the right cleanup. On jolt, a native script
+  evaluator is constructible on top of the loader, but it is a larger change
+  than the abort question that prompts it; the SCI fork stays the per-call
+  mechanism until per-call native contexts get a closed-marker and native
+  eval is wanted for its own reasons (e.g. running compiled/stdlib code the
+  interpreter is slow at).
 
 ## Tiers
 
@@ -265,8 +355,9 @@ on jolt if a script evaluator wants `:interrupt-fn` uniformly.
   guard. No process, no daemon, no protocol. Inner calls resolve through the
   normal registry path, are always async, and fire no tool-call hooks (below).
   Known limitation: host-native runaway code can't be aborted (abandoned
-  worker; the agent survives). The tool bridge and implementation plan are
-  below.
+  worker; the agent survives) — on bb that stands; on jolt the engine-timer
+  interrupt now makes a native-eval path abortable (see the loader
+  investigation above). The tool bridge and implementation plan are below.
 - **T2 — mcp-adapter rides the shared engine. ✅ landed.** The adapter's
   `mcpScript` tool and its `bb`-subprocess JSON-lines runtime are gone
   (`extensions/mcp-adapter/src/kmet/extensions/mcp_adapter/tool_source.clj` is
@@ -658,7 +749,8 @@ The probes that found the capture bugs left a set of deliberate behaviors:
   a host primitive that runs long is abandoned at the deadline (or, with no
   deadline, at the next Escape) + 1.5 s grace
   and keeps its thread until it finishes (the print limits are what keep that
-  window small).
+  window small). jolt's `run-interruptible` reaches host-native CPU code but
+  not a blocked foreign call, and bb has no equivalent.
 - **Coercions** — `:timeout` (seconds, bash's unit; fractional rounds to
   the nearest ms, minimum 1, capped at a day) absent, 0, negative or
   non-numeric → **no deadline**, exactly bash's semantics;
@@ -759,7 +851,12 @@ pipeline both callers use:
 - `src/kmet/app/event_bus.clj` — event vocabulary shared with the TUI (the
   serialization seam a future RPC mode would use).
 - `kmet.loader.sci-loader` — `:base` fork (per-call contexts for T3's daemon),
-  `:interrupt-fn` support.
+  `:eval-fn` (the default `sci/eval-string*`), `:interrupt-fn` support.
+- jolt upstream, checked on `v0.8.13-54-gc80ccdf6`:
+  `host/chez/java/concurrency.ss` (`run-interruptible` / `make-interrupt` /
+  `interrupt!` — the engine-timer cooperative abort) and
+  `stdlib/jolt/loader.clj` (the native loader's ambient binding and its
+  M0–M3 limits — `loader.md` §9 Phase 2).
 - `extensions/mcp-adapter/src/kmet/extensions/mcp_adapter/tool_source.clj` and
   `tool_proxy.clj` (`script-tool-records`) — the contributed MCP catalog
   (T2); `src/skills/mcp/SKILL.md` — the scripted-MCP surface taught to the

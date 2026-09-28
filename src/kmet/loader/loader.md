@@ -984,6 +984,14 @@ through the Jolt branch. M4 is complete now: `io/resource` 2-arity,
 (case 22), so a dependency that finds its own resources the Java way lands in
 the context's roots.
 
+One consequence of M1 not being built, verified on `v0.8.13-54-gc80ccdf6`:
+a top-level `eval` under `with-loader*` is **not** gated — a `require` of a
+namespace the loader cannot serve falls through to the runtime's global
+source roots. Only source *loaded through* a context carries the require
+rewrite, so code that must respect a context's policies has to enter as a
+namespace source — `script.md`, "Scripts on kmet.loader", records what that
+means for a native script evaluator.
+
 **Hardened since (cases 22–26).** The rewrite grew from four ops to nine, with
 the semantics Clojure gives them: `require`/`use`/`refer` load through the
 loader and apply `:as`/`:as-alias`/`:refer`/`:only`/`:exclude`/`:rename` in
