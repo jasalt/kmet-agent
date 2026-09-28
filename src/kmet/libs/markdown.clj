@@ -15,6 +15,7 @@
 (def ^:private quote-re #"^>\s?(.*)$")
 (def ^:private ul-re #"^[\s]*[-*+]\s+(.*)$")
 (def ^:private ol-re #"^[\s]*\d+\.\s+(.*)$")
+(def ^:private ol-marker-re #"^\d+\.")
 (def ^:private hr-re #"^([-*_])(?:[ \t]*\1){2,}$")
 (def ^:private empty-re #"^\s*$")
 (def ^:private sep-cell-re #":?-+:?")
@@ -391,9 +392,12 @@
   (if (re-matches ul-re trimmed) :ul :ol))
 
 (defn- make-item
-  "A list item holding one content line's inline tokens."
-  [inline-tokens]
-  {:content [inline-tokens]})
+  "A list item holding one content line's inline tokens. Ordered items keep
+   their source MARKER (\"2.\") so the renderer can honor the original
+   numbering; unordered items pass nil."
+  [inline-tokens marker]
+  (cond-> {:content [inline-tokens]}
+    marker (assoc :marker marker)))
 
 (defn- innermost-list
   "The list token being built on top of the STACK."
@@ -427,7 +431,8 @@
   (close-lists-above! stack result indent)
   (let [type (list-type trimmed)
         [_ content] (re-find (if (= type :ul) ul-re ol-re) trimmed)
-        item (make-item (parse-inline content))
+        item (make-item (parse-inline content)
+                        (when (= type :ol) (re-find ol-marker-re trimmed)))
         top-indent (:indent (peek @stack))
         top-type (:type (innermost-list stack))]
     (cond
@@ -542,7 +547,9 @@
    List items are maps: {:content [[inline] ...] :blocks [<block> ...]}.
    :content holds the item's lines (first line gets the bullet, the rest are
    continuations); :blocks holds nested :ul/:ol/:code tokens (indent-deeper
-   content). A :blank pseudo-item renders an empty line inside the list.
+   content). Ordered items also carry :marker, the source marker (\"2.\"), so
+   the renderer keeps the original numbering. A :blank pseudo-item renders an
+   empty line inside the list.
 
    Inline tokens are produced by parse-inline: :text/:strong/:em/:del/:code/:link.
    All tokens are plain data — no ANSI styling, no terminal-width dependence."

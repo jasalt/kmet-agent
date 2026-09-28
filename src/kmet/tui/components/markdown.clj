@@ -329,8 +329,10 @@
    render their :content lines (first gets the bullet, rest are continuations
    aligned to the marker column), wrap long lines to the item width, then
    render any :blocks (:ul/:ol at depth+1, :code at depth+1) and :blank
-   pseudo-items as empty lines. Ordered items number from 1 across real items.
-   DEFAULT-STYLE tints item text only."
+   pseudo-items as empty lines. Ordered items render their source :marker
+   (\"2.\"), so an interrupted list keeps the original numbering; a
+   marker-less item falls back to its position. DEFAULT-STYLE tints item text
+   only."
   [result t theme depth content-width left-pad default-style]
   (let [indent (apply str (repeat (* 4 depth) \space))
         indent-w (count indent)
@@ -340,7 +342,9 @@
         (vswap! result conj (str left-pad (apply str (repeat content-width \space))))
         (let [n (vswap! num inc)
               style-context (make-style-context default-style)
-              marker (if (= :ul (:type t)) "• " (str n ". "))
+              marker (if (= :ul (:type t))
+                       "• "
+                       (str (or (:marker item) (str n ".")) " "))
               marker-w (u/visible-width marker)
               bullet ((:list-bullet theme) marker)
               item-width (max 1 (- content-width indent-w marker-w))

@@ -548,6 +548,43 @@
     (t/is (some #(.contains % "1. first") lines))
     (t/is (some #(.contains % "2. second") lines))))
 
+(t/deftest test-markdown-ordered-list-honors-source-markers
+  ;; An intervening paragraph splits the list; the next list keeps the source
+  ;; number instead of restarting at 1
+  (let [m (md/make-markdown "1. Item q\n\nFhjg jhhh kjgg\n\n2. Itef bbb" :padding-x 0)
+        lines (mapv strip-ansi (core/render m 40))]
+    (t/is (some #(.contains % "1. Item q") lines))
+    (t/is (some #(.contains % "Fhjg jhhh kjgg") lines))
+    (t/is (some #(.contains % "2. Itef bbb") lines))
+    (t/is (not-any? #(.contains % "1. Itef bbb") lines)))
+  ;; Source markers are rendered as written: non-sequential and repeated
+  ;; markers are not normalized to 1..n (pi's preserveOrderedListMarkers)
+  (let [m (md/make-markdown "4. forth\n3. third" :padding-x 0)
+        lines (mapv strip-ansi (core/render m 40))]
+    (t/is (some #(.contains % "4. forth") lines))
+    (t/is (some #(.contains % "3. third") lines)))
+  (let [m (md/make-markdown "1. alpha\n1. beta" :padding-x 0)
+        lines (mapv strip-ansi (core/render m 40))]
+    (t/is (some #(.contains % "1. alpha") lines))
+    (t/is (some #(.contains % "1. beta") lines)))
+  ;; LLM output often leaves code blocks unindented between items; each item
+  ;; still keeps its source marker (pi regression: "maintain numbering when
+  ;; code blocks are not indented")
+  (let [src "1. First item\n\n```clojure\n(x)\n```\n\n2. Second item"
+        lines (mapv strip-ansi (core/render (md/make-markdown src :padding-x 0) 40))]
+    (t/is (some #(.contains % "1. First item") lines))
+    (t/is (some #(.contains % "2. Second item") lines))))
+
+(t/deftest test-markdown-ordered-list-markers-all-levels
+  ;; Markers are honored at every nesting depth: none of them restart at 1
+  (let [src "5. root\n   3. nested\n      7. deep\n   9. nested2\n1. root2"
+        lines (mapv strip-ansi (core/render (md/make-markdown src :padding-x 0) 40))]
+    (t/is (some #(.contains % "5. root") lines))
+    (t/is (some #(.contains % "    3. nested") lines))
+    (t/is (some #(.contains % "        7. deep") lines))
+    (t/is (some #(.contains % "    9. nested2") lines))
+    (t/is (some #(.contains % "1. root2") lines))))
+
 (t/deftest test-markdown-ordered-list-multidigit
   (let [m (md/make-markdown (str/join "\n" (map #(str % ". item") (range 1 11))) :padding-x 0)
         lines (mapv strip-ansi (core/render m 40))]

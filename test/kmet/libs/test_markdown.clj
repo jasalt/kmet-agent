@@ -144,9 +144,28 @@
   (t/is (= [{:type :ul :items [{:content [[{:type :text :s "a"}]]}
                                {:content [[{:type :text :s "b"}]]}]}]
            (md/parse "- a\n- b")))
-  (t/is (= [{:type :ol :items [{:content [[{:type :text :s "first"}]]}
-                               {:content [[{:type :text :s "second"}]]}]}]
+  (t/is (= [{:type :ol :items [{:content [[{:type :text :s "first"}]] :marker "1."}
+                               {:content [[{:type :text :s "second"}]] :marker "2."}]}]
            (md/parse "1. first\n2. second"))))
+
+(t/deftest test-parse-ordered-list-markers
+  ;; Ordered items keep the marker exactly as written, so an interrupted list
+  ;; (a paragraph or code block between items) still numbers from the source.
+  (t/is (= ["1." "2." "3."]
+           (mapv :marker (:items (first (md/parse "1. a\n2. b\n3. c"))))))
+  (t/is (= ["3." "7." "01."]
+           (mapv :marker (:items (first (md/parse "3. a\n7. b\n01. c"))))))
+  (let [ast (md/parse "1. a\n\npara\n\n2. b")]
+    (t/is (= [:ol :paragraph :blank :ol] (mapv :type ast)))
+    (t/is (= ["1."] (keep :marker (:items (first ast)))))
+    (t/is (= ["2."] (keep :marker (:items (last ast))))))
+  ;; Markers live on the item at every nesting depth
+  (let [l1 (first (md/parse "5. root\n   3. nested\n      7. deep"))
+        l2 (first (:blocks (first (:items l1))))
+        l3 (first (:blocks (first (:items l2))))]
+    (t/is (= "5." (:marker (first (:items l1)))))
+    (t/is (= "3." (:marker (first (:items l2)))))
+    (t/is (= "7." (:marker (first (:items l3)))))))
 
 (t/deftest test-parse-nested-ul
   (t/is (= [{:type :ul
@@ -168,10 +187,11 @@
 (t/deftest test-parse-mixed-ul-ol-nesting
   (t/is (= [{:type :ol
              :items [{:content [[{:type :text :s "ordered"}]]
+                      :marker "1."
                       :blocks [{:type :ul
                                 :items [{:content [[{:type :text :s "nested"}]]}
                                         {:content [[{:type :text :s "another"}]]}]}]}
-                     {:content [[{:type :text :s "second"}]]}]}]
+                     {:content [[{:type :text :s "second"}]] :marker "2."}]}]
            (md/parse "1. ordered\n   - nested\n   - another\n2. second"))))
 
 (t/deftest test-parse-list-unindent-returns-to-root
@@ -219,11 +239,11 @@
                       :blocks [{:type :ul
                                 :items [{:content [[{:type :text :s "b"}]]}]}
                                {:type :ol
-                                :items [{:content [[{:type :text :s "c"}]]}]}]}]}]
+                                :items [{:content [[{:type :text :s "c"}]] :marker "1."}]}]}]}]
            (md/parse "- a\n  - b\n  1. c")))
   ;; At root level the two lists are siblings
   (t/is (= [{:type :ul :items [{:content [[{:type :text :s "a"}]]}]}
-            {:type :ol :items [{:content [[{:type :text :s "b"}]]}]}]
+            {:type :ol :items [{:content [[{:type :text :s "b"}]] :marker "1."}]}]
            (md/parse "- a\n1. b"))))
 
 (t/deftest test-parse-quote
