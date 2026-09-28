@@ -317,9 +317,10 @@
                     :output-pad-atom output-pad-atom
                     :thinking-hidden-atom thinking-hidden-atom
                     :hidden-label-atom hidden-label-atom)
-        :tool (let [tool (tools/get-tool (:name msg ""))
+        :tool (let [name (or (:name msg) (:tool-name msg) "")
+                    tool (tools/get-tool name)
                     comp (te/make-tool-execution
-                          :name (:name msg "")
+                          :name name
                           :args (:args msg {})
                           :content (content->display-text (:content msg ""))
                           :is-error (:is-error msg false)
@@ -340,6 +341,11 @@
                           :render-result-fn (:render-result tool)
                           :render-shell (:render-shell tool)
                           :title-fn (:title tool))]
+            ;; a paired rebuild carries the call id so the render context's
+            ;; :tool-call-id matches the live/replay paths (extension
+            ;; renderers may key on it)
+                (when-let [id (:tool-call-id msg)]
+                  (reset! (:tool-call-id-atom comp) id))
             ;; Pi: replayed/persisted tool results are final — mark ended so
             ;; they render with success/error bg, footer strip, and Took.
             ;; Live pending messages (content "" + is-error false) are skipped.
@@ -732,9 +738,76 @@
   (reset! (:info-comp-atom ch) nil)
   (reset! (:streaming-atom ch) nil))
 
+(defn- tool-result-call-id
+  "The tool-call id a :tool result message answers — the first
+   :tool_result block's :tool_use_id — or nil."
+  [msg]
+  (some (fn [b] (when (= :tool_result (:type b)) (:tool_use_id b)))
+        (:content msg)))
+
+(defn- call-message
+  "The :tool message an assistant tool call renders as on rebuild: the
+   call's :id, :name and :arguments (the fields the live
+   :tool-execution-start event carries). Content is filled by the matching
+   result."
+  [tc]
+  {:role :tool
+   :tool-call-id (:id tc)
+   :name (:name tc)
+   :args (:arguments tc)
+   :content ""
+   :is-error false})
+
+(defn- merge-tool-result
+  "MSG with RESULT's outcome merged in — the keys make-component-for-msg
+   reads (content, is-error, truncation, details, images)."
+  [msg result]
+  (cond-> (assoc msg
+                 :content (:content result)
+                 :is-error (:is-error result false))
+    (:truncation result) (assoc :truncation (:truncation result))
+    (:details result) (assoc :details (:details result))
+    (:images result) (assoc :images (:images result))))
+
+(defn- pair-tool-messages
+  "Pair the assistant :tool-calls in an agent-context message vector with
+   their :tool result messages by tool-call id — the same correlation the
+   live event handler and the session replay use. Each call becomes a :tool
+   message carrying the call's :name and :args, filled in place by the
+   matching result (results may arrive out of order with parallel tools);
+   the raw result message is dropped. A result whose call is no longer in
+   the vector still renders standalone — :tool-name promoted to :name.
+   Without the pairing a rebuilt tool box carries only :tool-name, has no
+   args, and renders its call line/title empty (result messages have
+   neither name nor args)."
+  [msgs]
+  (let [out (volatile! [])
+        idx-by-call-id (volatile! {})]
+    (doseq [m msgs]
+      (cond
+        (= :assistant (:role m))
+        (do (vswap! out conj m)
+            (doseq [tc (:tool-calls m)]
+              (vswap! idx-by-call-id assoc (:id tc) (count @out))
+              (vswap! out conj (call-message tc))))
+
+        (= :tool (:role m))
+        (if-let [idx (get @idx-by-call-id (tool-result-call-id m))]
+          (vswap! out update idx merge-tool-result m)
+          (vswap! out conj (if (and (nil? (:name m)) (some? (:tool-name m)))
+                             (assoc m :name (:tool-name m))
+                             m)))
+
+        :else
+        (vswap! out conj m)))
+    @out))
+
 (defn chat-history-rebuild!
   "Rebuild the chat history from a new message vector (context replacement).
-   Clears existing messages and streaming state, preserves the top info banner."
+   Clears existing messages and streaming state, preserves the top info
+   banner. Agent-context messages go through pair-tool-messages first, so a
+   rebuilt tool execution renders its call line (name + args) and result
+   together instead of a title-less box."
   [ch msgs]
   (let [info @(:info-comp-atom ch)
         info-msg (when info
@@ -746,7 +819,7 @@
                             :expanded-content @(:expanded-content-atom info)
                             :expanded? @(:expanded-atom info))))]
     (chat-history-clear! ch)
-    (doseq [m msgs]
+    (doseq [m (pair-tool-messages msgs)]
       (chat-history-add-message! ch m))
     (when info-msg
       (chat-history-set-info-msg! ch info-msg))))

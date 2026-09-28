@@ -417,6 +417,80 @@
       (is (= [{:role :user :content "only"}]
              (ch/chat-history-get-messages ch))))))
 
+(deftest test-rebuild-pairs-tool-calls-with-results
+  (testing "an agent-context rebuild renders each tool execution's call line
+            (name + args) with its result — parallel results merge by id"
+    (let [msgs [{:role :assistant :content ""
+                 :tool-calls [{:id "t1" :name "read" :arguments {:path "a.txt"}}
+                              {:id "t2" :name "bash" :arguments {:command "ls"}}]}
+                ;; results arrive out of order (parallel completion)
+                {:role :tool :tool-name "bash" :is-error false
+                 :content [{:type :tool_result :tool_use_id "t2" :content "out-b"}]}
+                {:role :tool :tool-name "read" :is-error false
+                 :content [{:type :tool_result :tool_use_id "t1" :content "out-a"}]}]
+          ch (ch/make-chat-history :tool-display-mode :expanded)]
+      (ch/chat-history-rebuild! ch msgs)
+      (let [tools (filter #(= :tool (:kind %))
+                          (map :component @(:messages-atom ch)))
+            by-name (into {} (map (juxt #(deref (:name-atom %))
+                                        #(str/join "\n" (plain-lines % 60)))
+                                  tools))]
+        (is (= 2 (count tools))
+            "one component per call; the raw result messages are dropped")
+        (is (str/includes? (get by-name "read") "read a.txt")
+            "read's call line carries the name and path")
+        (is (str/includes? (get by-name "read") "out-a")
+            "read's result merged into the same component")
+        (is (str/includes? (get by-name "bash") "$ ls")
+            "bash's call line carries the command")
+        (is (str/includes? (get by-name "bash") "out-b"))
+        (is (= #{"t1" "t2"} (set (map #(deref (:tool-call-id-atom %)) tools)))
+            "paired components carry their call id (render-context parity)"))))
+
+  (testing "a paired edit result renders its recorded diff (details survive)"
+    (let [ch (ch/make-chat-history :tool-display-mode :expanded)]
+      (ch/chat-history-rebuild! ch
+                                [{:role :assistant :content ""
+                                  :tool-calls [{:id "t1" :name "edit"
+                                                :arguments {:path "note.txt"
+                                                            :edits [{:oldText "one"
+                                                                     :newText "two"}]}}]}
+                                 {:role :tool :tool-name "edit" :is-error false
+                                  :details {:diff "-1 one\n+1 TWO"}
+                                  :content [{:type :tool_result :tool_use_id "t1"
+                                             :content "ok"}]}])
+      (let [rendered (str/join "\n" (plain-lines ch 60))]
+        (is (str/includes? rendered "edit note.txt")
+            "the edit call line carries the path")
+        (is (str/includes? rendered "TWO")
+            "the recorded result diff renders on the first pass")
+        (is (not (str/includes? rendered "two"))
+            "the filesystem preview is not used (the recorded diff wins)"))))
+
+  (testing "a rebuilt tool keeps its title through a display-mode toggle"
+    (let [ch (ch/make-chat-history :tool-display-mode :quiet)]
+      (ch/chat-history-rebuild! ch
+                                [{:role :assistant :content ""
+                                  :tool-calls [{:id "t1" :name "read"
+                                                :arguments {:path "a.txt"}}]}
+                                 {:role :tool :tool-name "read" :is-error false
+                                  :content [{:type :tool_result :tool_use_id "t1"
+                                             :content "out-a"}]}])
+      (is (some #(re-find #"read a\.txt" %) (plain-lines ch 60))
+          "the quiet line carries the call title")
+      (ch/chat-history-cycle-tool-display! ch)
+      (is (some #(re-find #"read a\.txt" %) (plain-lines ch 60))
+          "toggling display mode does not blank the rebuilt title")))
+
+  (testing "a result whose call is gone renders with :tool-name promoted to :name"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-rebuild! ch
+                                [{:role :tool :tool-name "grep" :is-error false
+                                  :content [{:type :tool_result :tool_use_id "gone"
+                                             :content "hit"}]}])
+      (is (some #(re-find #"grep" %) (plain-lines ch 60))
+          "the standalone result keeps a visible call line"))))
+
 (deftest test-insert-before-streaming
   (testing "injected :info message lands above the streaming placeholder"
     (let [ch (ch/make-chat-history)]

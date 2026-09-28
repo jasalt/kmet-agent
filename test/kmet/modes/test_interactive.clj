@@ -771,6 +771,30 @@
       (is (str/includes? collapsed "[compaction]"))
       (is (not (str/includes? collapsed "SUM")) "collapsed by default"))))
 
+(deftest context-replaced-pairs-tool-calls-with-results-live
+  ;; the live compaction rebuild carries role-preserving context messages:
+  ;; tool results must re-render with the preceding assistant call's name +
+  ;; args (regression: a rebuilt tool box rendered an empty call line/title)
+  (let [ch (chat-history/make-chat-history)
+        handler ((var layout/make-agent-event-handler)
+                 {:chat-history ch
+                  :tui {:render-requested? (atom false)}
+                  :cs-ref (atom nil)
+                  :pending-tool-comps (atom {})})]
+    (handler {:type :context-replaced
+              :messages [{:role :assistant :content ""
+                          :tool-calls [{:id "t1" :name "read"
+                                        :arguments {:path "src/main.clj"}}]}
+                         {:role :tool :tool-name "read" :is-error false
+                          :content [{:type :tool_result :tool_use_id "t1"
+                                     :content "file body"}]}]})
+    (let [tools (filter #(= :tool (:kind (:component %))) @(:messages-atom ch))
+          rendered (-> (str/join "\n" (protocols/render (:component (first tools)) 80))
+                       (str/replace #"\u001b\[[0-9;]*[a-zA-Z]" ""))]
+      (is (= 1 (count tools)) "the raw result message is paired, not doubled")
+      (is (str/includes? rendered "read src/main.clj")
+          "the rebuilt tool component carries the call line"))))
+
 (deftest replay-branch-renders-a-branch-summary-box
   (testing "a branch_summary entry replays as the dedicated collapsible
             branch component (pi: BranchSummaryMessageComponent)"
