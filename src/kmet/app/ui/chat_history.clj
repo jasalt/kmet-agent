@@ -317,11 +317,11 @@
                     :output-pad-atom output-pad-atom
                     :thinking-hidden-atom thinking-hidden-atom
                     :hidden-label-atom hidden-label-atom)
-        :tool (let [name (or (:name msg) (:tool-name msg) "")
+        :tool (let [name (or (:tool-name msg) (:name msg) "")
                     tool (tools/get-tool name)
                     comp (te/make-tool-execution
                           :name name
-                          :args (:args msg {})
+                          :args (:arguments msg {})
                           :content (content->display-text (:content msg ""))
                           :is-error (:is-error msg false)
                           :truncation (:truncation msg)
@@ -747,14 +747,15 @@
 
 (defn- call-message
   "The :tool message an assistant tool call renders as on rebuild: the
-   call's :id, :name and :arguments (the fields the live
+   call's :id, :tool-name and :arguments (the fields the live
    :tool-execution-start event carries). Content is filled by the matching
-   result."
+   result. We use the pi-faithful session shape throughout so a rebuilt
+   message is indistinguishable from a persisted/live tool-result entry."
   [tc]
   {:role :tool
    :tool-call-id (:id tc)
-   :name (:name tc)
-   :args (:arguments tc)
+   :tool-name (:name tc)
+   :arguments (:arguments tc)
    :content ""
    :is-error false})
 
@@ -769,17 +770,28 @@
     (:details result) (assoc :details (:details result))
     (:images result) (assoc :images (:images result))))
 
-(defn- pair-tool-messages
+(defn- result-with-call-name
+  "A standalone :tool result message that has no matching call. Tool-result
+   entries are pi-faithful — they carry :tool-name and :arguments. If a
+   legacy/override message has only :name (or only :args) promote it."
+  [m]
+  (cond-> m
+    (and (nil? (:tool-name m)) (some? (:name m)))
+    (assoc :tool-name (:name m))
+    (and (nil? (:arguments m)) (some? (:args m)))
+    (assoc :arguments (:args m))))
+
+(defn pair-tool-messages
   "Pair the assistant :tool-calls in an agent-context message vector with
    their :tool result messages by tool-call id — the same correlation the
    live event handler and the session replay use. Each call becomes a :tool
-   message carrying the call's :name and :args, filled in place by the
-   matching result (results may arrive out of order with parallel tools);
-   the raw result message is dropped. A result whose call is no longer in
-   the vector still renders standalone — :tool-name promoted to :name.
+   message carrying the call's :tool-name and :arguments, filled in place
+   by the matching result (results may arrive out of order with parallel
+   tools); the raw result message is dropped. A result whose call is no
+   longer in the vector still renders standalone.
    Without the pairing a rebuilt tool box carries only :tool-name, has no
-   args, and renders its call line/title empty (result messages have
-   neither name nor args)."
+   arguments, and renders its call line/title empty (result messages have
+   neither name nor arguments)."
   [msgs]
   (let [out (volatile! [])
         idx-by-call-id (volatile! {})]
@@ -794,9 +806,7 @@
         (= :tool (:role m))
         (if-let [idx (get @idx-by-call-id (tool-result-call-id m))]
           (vswap! out update idx merge-tool-result m)
-          (vswap! out conj (if (and (nil? (:name m)) (some? (:tool-name m)))
-                             (assoc m :name (:tool-name m))
-                             m)))
+          (vswap! out conj (result-with-call-name m)))
 
         :else
         (vswap! out conj m)))

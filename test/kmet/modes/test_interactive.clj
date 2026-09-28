@@ -449,8 +449,8 @@
                 tools (filterv #(= :tool (:role %)) msgs)
                 [t1 t2] tools]
             (is (= 2 (count tools)) "one component per tool call")
-            (is (= "bash" (:name t1)) "tool name restored from the call")
-            (is (= "bash" (:name t2)) "second call too")
+            (is (= "bash" (:tool-name t1)) "tool name restored from the call")
+            (is (= "bash" (:tool-name t2)) "second call too")
             ;; collapsed bash: call line + 5-line preview + expand hint
             (let [lines (protocols/render (:component t1) 100)]
               (is (some #(str/includes? % "$ ls -la") lines)

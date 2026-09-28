@@ -122,6 +122,42 @@
                          (when (and cost (>= (double cost) 0.01))
                            (str " (~$" (format "%.2f" (double cost)) ")")))})))))
 
+(defn- replay-tool-results!
+  "Return a seq of tool message maps for the current assistant entry's
+   tool calls, paired with their results by tool-call id — the same
+   correlation `pair-tool-messages` uses for context-replaced rebuilds.
+   RESULTS is a map of tool-call-id → :tool entry. Calls whose result is
+   missing are kept, carrying the assistant's :stop-reason failure text
+   when the turn was errored or aborted (pi: renderInitialMessages
+   updateResult error)."
+  [tool-calls results assistant-entry]
+  (let [errored? (contains? #{:error :aborted} (:stop-reason assistant-entry))
+        error-text (when errored?
+                     (or (:error-message assistant-entry)
+                         (if (= :aborted (:stop-reason assistant-entry))
+                           "Aborted"
+                           "Error")))
+        errored? (and errored? (some? error-text))]
+    (for [tc tool-calls]
+      (let [result (get results (:id tc))]
+        (cond-> {:role :tool
+                 :tool-call-id (:id tc)
+                 :tool-name (:name tc)
+                 :arguments (:arguments tc)
+                 :content ""
+                 :is-error false}
+          result (assoc :content (str/join
+                                  (keep (fn [b]
+                                          (case (:type b)
+                                            :tool_result (:content b)
+                                            nil))
+                                        (:content result)))
+                        :is-error (:is-error result false))
+          (:truncation result) (assoc :truncation (:truncation result))
+          (:details result) (assoc :details (:details result))
+          (seq (:images result)) (assoc :images (:images result))
+          errored? (assoc :content error-text :is-error true))))))
+
 (defn- replay-branch!
   "Replay a session's compaction-aware context into the chat history (pi:
    renderInitialMessages — buildContextEntries, so summarized history is
@@ -148,11 +184,25 @@
                      :tool_result (:content b)
                      nil))
                  (:content e))))
-        ;; Pi: renderedPendingTools — tool-call id → ToolExecutionComponent
-        ;; created from the assistant message's tool calls, filled by the
-        ;; matching tool-result entry (results can arrive out of order with
-        ;; parallel tools).
-        pending-tools (atom {})]
+        ;; Index tool results by tool-call id once, and collect the tool-call
+        ;; ids that actually appear in assistant messages. The result map is
+        ;; used to pair calls with results; the call-id set is used to detect
+        ;; orphan results (legacy sessions, extension tools) that have no
+        ;; matching call.
+        [tool-call-ids tool-results-by-id]
+        (reduce (fn [[ids results] e]
+                  (case (:role e)
+                    :assistant
+                    [(into ids (keep :id) (:tool-calls e)) results]
+                    :tool
+                    (let [id (some (fn [b]
+                                     (when (= :tool_result (:type b))
+                                       (:tool_use_id b)))
+                                   (:content e))]
+                      [ids (if id (assoc results id e) results)])
+                    [ids results]))
+                [#{} {}]
+                (session/build-context sess))]
     (doseq [e (session/build-context sess)
             :when (not (contains? #{:session_info :label :model-change
                                     :thinking-level-change} (:role e)))]
@@ -188,70 +238,37 @@
             (chat-history/chat-history-add-message! (:chat-history cs)
                                                     (cond-> {:role role :content (content-of e)}
                                                       (= role :assistant) (assoc :thinking (:thinking e)
-                                                                       ;; replayed tool-call-only
-                                                                       ;; messages render no
-                                                                       ;; '(no response)' bubble
+                                                                                 ;; replayed tool-call-only
+                                                                                 ;; messages render no
+                                                                                 ;; '(no response)' bubble
                                                                                  :tool-calls (:tool-calls e))))
-            ;; Pi: create a ToolExecutionComponent per tool call declared in
-            ;; the assistant message (name + args from the call — the same
-            ;; fields the live :tool-execution-start event carries), then
-            ;; match the following tool-result entries by tool-call id. The
-            ;; tool entries themselves only store the pi-faithful
-            ;; :tool-name/:content — the call line (args) lives here.
-            ;; Tool calls inside an errored/aborted message get the failure
-            ;; text as their result instead of waiting for a result that
-            ;; never came (pi: renderInitialMessages updateResult error).
-            (let [errored? (contains? #{:error :aborted} (:stop-reason e))]
-              (doseq [tc (:tool-calls e)]
-                (when-let [comp (chat-history/chat-history-add-message!
-                                 (:chat-history cs)
-                                 {:role :tool
-                                  :name (:name tc)
-                                  :args (:arguments tc)
-                                  :content ""
-                                  :is-error false})]
-                  (reset! (:tool-call-id-atom comp) (:id tc))
-                  (tool-execution/tool-execution-set-args-complete! comp)
-                  (if errored?
-                    (do (reset! (:content-atom comp)
-                                (or (:error-message e)
-                                    (if (= :aborted (:stop-reason e))
-                                      "Aborted"
-                                      "Error")))
-                        (tool-execution/tool-execution-set-error! comp true))
-                    (swap! pending-tools assoc (:id tc) comp))))))
+            (doseq [tm (replay-tool-results! (:tool-calls e) tool-results-by-id e)]
+              (when-let [comp (chat-history/chat-history-add-message! (:chat-history cs) tm)]
+                (reset! (:tool-call-id-atom comp) (:tool-call-id tm))
+                (tool-execution/tool-execution-set-args-complete! comp))))
 
           (= role :tool)
-          (let [tc-id (some (fn [b] (when (= :tool_result (:type b))
-                                      (:tool_use_id b)))
-                            (:content e))]
-            (if-let [comp (get @pending-tools tc-id)]
-              ;; matched result — fill the pending call component (pi:
-              ;; updateResult by toolCallId)
-              (do (reset! (:content-atom comp) (content-of e))
-                  (tool-execution/tool-execution-set-error! comp (:is-error e false))
-                  (when-let [truncation (:truncation e)]
-                    (reset! (:truncation-atom comp) truncation))
-                  (when-let [details (:details e)]
-                    (reset! (:details-atom comp) details))
-                  (when-let [images (:images e)]
-                    (tool-execution/tool-execution-set-images! comp images))
-                  (swap! pending-tools dissoc tc-id))
-              ;; unpaired result (no matching tool call in the branch —
-              ;; legacy sessions, extension tools) — standalone component
-              ;; from the entry's own fields
-              (chat-history/chat-history-add-message!
-               (:chat-history cs)
-               (cond-> {:role :tool
-                        :content (content-of e)
-                        :name (or (:tool-name e) (:name e) "tool")
-                        :is-error (:is-error e false)
-                        :truncation (:truncation e)
-                        :details (:details e)}
-                 ;; image results carry their blocks on the entry (pi:
-                 ;; toolResult content blocks) — the callback component
-                 ;; renders them like a matched result's would
-                 (seq (:images e)) (assoc :images (:images e))))))
+          ;; Tool entries whose call was in the same assistant batch are
+          ;; already replayed above. Any remaining tool entry is an orphan
+          ;; result (legacy sessions, extension tools) — render it
+          ;; standalone from its own :tool-name.
+          (when-not (contains? tool-call-ids
+                               (some (fn [b]
+                                       (when (= :tool_result (:type b))
+                                         (:tool_use_id b)))
+                                     (:content e)))
+            (chat-history/chat-history-add-message!
+             (:chat-history cs)
+             (cond-> {:role :tool
+                      :content (content-of e)
+                      :tool-name (or (:tool-name e) (:name e) "tool")
+                      :is-error (:is-error e false)
+                      :truncation (:truncation e)
+                      :details (:details e)}
+               ;; image results carry their blocks on the entry (pi:
+               ;; toolResult content blocks) — the callback component
+               ;; renders them like a matched result's would
+               (seq (:images e)) (assoc :images (:images e)))))
 
           (= role :bash)
           ;; pi: addMessageToChat case "bashExecution" — !/!! replays as a

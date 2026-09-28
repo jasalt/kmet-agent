@@ -99,8 +99,8 @@
       ;; assistant message stays invisible instead of bubbling '(no response)'
       ;; (pi: hasToolCalls; loop-continue turns are usually tool-call-only).
       (let [msg {:role :tool
-                 :name (:tool-name evt)
-                 :args (:args evt {})
+                 :tool-name (:tool-name evt)
+                 :arguments (:args evt {})
                  :content ""
                  :is-error false}]
         (chat-history/chat-history-mark-streaming-tool-calls! chat-history)
