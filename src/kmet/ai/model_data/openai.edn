@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-24T07:02:29Z"
+ :generated-at "2026-09-29T16:15:58Z"
  :provider {:id :openai
             :name "OpenAI"
             :env-vars ["OPENAI_API_KEY"]
@@ -561,6 +561,50 @@
     :max-tokens 128000
     :compat {:supports-strict-mode true
              :supports-openai-grammar-tools true
+             :supports-explicit-prompt-cache-mode true}}
+   "gpt-daybreak-blue-latest"
+   {:id "gpt-daybreak-blue-latest"
+    :name "Daybreak Blue"
+    :provider :openai
+    :api :openai-responses
+    :base-url "https://api.openai.com/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium "medium"
+                         :minimal nil
+                         :off "none"
+                         :xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 4
+           :tiers [{:input 8 :input-tokens-above 272000 :output 30 :cache-read 0.8 :cache-write 10}]
+           :output 20
+           :cache-read 0.4
+           :cache-write 5}
+    :context-window 1050000
+    :max-tokens 128000
+    :compat {:supports-strict-mode true
+             :supports-explicit-prompt-cache-mode true}}
+   "gpt-daybreak-red-latest"
+   {:id "gpt-daybreak-red-latest"
+    :name "Daybreak Red"
+    :provider :openai
+    :api :openai-responses
+    :base-url "https://api.openai.com/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium "medium"
+                         :minimal nil
+                         :off "none"
+                         :xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 12.5 :output 75 :cache-read 1.25 :cache-write 15.625}
+    :context-window 400000
+    :max-tokens 128000
+    :compat {:supports-strict-mode true
              :supports-explicit-prompt-cache-mode true}}
    "gpt-realtime-2.1"
    {:id "gpt-realtime-2.1"

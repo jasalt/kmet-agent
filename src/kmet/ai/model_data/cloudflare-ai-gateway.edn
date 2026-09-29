@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-24T07:02:29Z"
+ :generated-at "2026-09-29T16:15:58Z"
  :provider {:id :cloudflare-ai-gateway
             :name "Cloudflare AI Gateway"
             :env-vars ["CLOUDFLARE_API_KEY" "CLOUDFLARE_ACCOUNT_ID" "CLOUDFLARE_GATEWAY_ID"]
@@ -130,7 +130,7 @@
     :reasoning true
     :input [:text :image]
     :cost {:input 3 :output 15 :cache-read 0.3 :cache-write 3.75}
-    :context-window 1000000
+    :context-window 200000
     :max-tokens 64000
     :compat {:send-session-affinity-headers true}}
    "claude-sonnet-4.6"

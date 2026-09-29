@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-19T20:36:00Z"
+ :generated-at "2026-09-29T16:15:58Z"
  :provider {:id :mistral
             :name "Mistral"
             :env-vars ["MISTRAL_API_KEY"]
@@ -105,17 +105,6 @@
     :cost {:input 2 :output 5 :cache-read 0.2 :cache-write 0}
     :context-window 128000
     :max-tokens 16384}
-   "magistral-small"
-   {:id "magistral-small"
-    :name "Magistral Small"
-    :provider :mistral
-    :api :mistral-conversations
-    :base-url "https://api.mistral.ai"
-    :reasoning true
-    :input [:text]
-    :cost {:input 0.5 :output 1.5 :cache-read 0.05 :cache-write 0}
-    :context-window 128000
-    :max-tokens 128000}
    "ministral-3b-latest"
    {:id "ministral-3b-latest"
     :name "Ministral 3B (latest)"

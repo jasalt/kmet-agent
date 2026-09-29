@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-24T07:02:29Z"
+ :generated-at "2026-09-29T16:15:58Z"
  :provider {:id :together
             :name "Together AI"
             :env-vars ["TOGETHER_API_KEY"]
@@ -230,44 +230,6 @@
     :input [:text]
     :cost {:input 1.04 :output 1.04 :cache-read 0 :cache-write 0}
     :context-window 131072
-    :max-tokens 131072
-    :compat {:supports-store false
-             :supports-developer-role false
-             :supports-reasoning-effort false
-             :thinking-format :together
-             :max-tokens-field :max-tokens
-             :supports-long-cache-retention false
-             :supports-strict-mode false}}
-   "moonshotai/Kimi-K2.6"
-   {:id "moonshotai/Kimi-K2.6"
-    :name "Kimi K2.6"
-    :provider :together
-    :api :openai-completions
-    :base-url "https://api.together.ai/v1"
-    :reasoning true
-    :thinking-level-map {:low nil :medium nil :minimal nil}
-    :input [:text :image]
-    :cost {:input 1.2 :output 4.5 :cache-read 0.2 :cache-write 0}
-    :context-window 262144
-    :max-tokens 131000
-    :compat {:supports-store false
-             :supports-developer-role false
-             :supports-reasoning-effort false
-             :thinking-format :together
-             :max-tokens-field :max-tokens
-             :supports-long-cache-retention false
-             :supports-strict-mode false}}
-   "moonshotai/Kimi-K2.7-Code"
-   {:id "moonshotai/Kimi-K2.7-Code"
-    :name "Kimi K2.7 Code"
-    :provider :together
-    :api :openai-completions
-    :base-url "https://api.together.ai/v1"
-    :reasoning true
-    :thinking-level-map {:low nil :medium nil :minimal nil}
-    :input [:text]
-    :cost {:input 0.95 :output 4 :cache-read 0.19 :cache-write 0}
-    :context-window 262144
     :max-tokens 131072
     :compat {:supports-store false
              :supports-developer-role false

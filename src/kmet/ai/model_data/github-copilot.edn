@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-24T07:02:29Z"
+ :generated-at "2026-09-29T16:15:58Z"
  :provider {:id :github-copilot
             :name "GitHub Copilot"
             :env-vars ["COPILOT_GITHUB_TOKEN"]
@@ -109,6 +109,23 @@
    "claude-sonnet-5"
    {:id "claude-sonnet-5"
     :name "Claude Sonnet 5"
+    :provider :github-copilot
+    :api :anthropic-messages
+    :base-url "https://api.individual.githubcopilot.com"
+    :reasoning true
+    :thinking-level-map {:max "max" :xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 2 :output 10 :cache-read 0.2 :cache-write 2.5}
+    :context-window 1000000
+    :max-tokens 128000
+    :headers {"Copilot-Integration-Id" "vscode-chat"
+              "Editor-Plugin-Version" "copilot-chat/0.35.0"
+              "Editor-Version" "vscode/1.107.0"
+              "User-Agent" "GitHubCopilotChat/0.35.0"}
+    :compat {:force-adaptive-thinking true}}
+   "claude-sonnet-5.5"
+   {:id "claude-sonnet-5.5"
+    :name "Claude Sonnet 5.5"
     :provider :github-copilot
     :api :anthropic-messages
     :base-url "https://api.individual.githubcopilot.com"
