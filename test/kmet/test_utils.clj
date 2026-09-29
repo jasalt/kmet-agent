@@ -17,10 +17,21 @@
     :else (str/replace (str x) "\\" "/")))
 
 (defn strip-ansi
-  "Remove ANSI CSI escape sequences from a string. Test helpers that render
-   TUI components commonly need the raw plain text for assertions."
+  "Remove ANSI CSI/OSC escape sequences from a string (the production
+   host-optimal stripper). OSC 8 hyperlinks are path metadata emitted only
+   when the detected terminal supports them, so plain-text assertions go
+   through this to stay independent of capability detection. Test helpers
+   that render TUI components commonly need the raw plain text."
   [s]
-  (str/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))
+  (u/strip-ansi-codes s))
+
+(t/deftest test-strip-ansi-strips-osc-hyperlinks
+  ;; Both OSC terminators (BEL and ESC\) and the CSI styles around them.
+  (t/is (= "read src/a.clj"
+           (strip-ansi (str "\u001b]8;;file:///x/src/a.clj\u001b\\"
+                            "\u001b[36mread src/a.clj\u001b[0m"
+                            "\u001b]8;;\u001b\\"))))
+  (t/is (= "link" (strip-ansi "\u001b]8;;https://x.example/\u0007link\u001b]8;;\u0007"))))
 
 (t/deftest test-visible-width
   (t/is (= 0 (u/visible-width "")))
