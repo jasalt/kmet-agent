@@ -38,7 +38,7 @@ the OpenSSL/lz4 DLLs and its PE imports contained Windows system DLLs only.
 Recheck when filing upstream; remove the shim once Jolt handles dependent
 native archives and their link libraries directly.
 
-### Unfiled — spawned children inherit the parent's ignored SIGPIPE
+### [jolt#1196](https://github.com/jolt-lang/jolt/issues/1196) — spawned children inherit the parent's ignored SIGPIPE
 
 Verified on `jolt v0.8.14-27-gb96f8615` (2026-09-29). A child spawned through
 `babashka.process/process` reports `SigIgn: 0000002000001001` (SIGHUP,
