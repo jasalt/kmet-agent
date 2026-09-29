@@ -1341,6 +1341,8 @@
          (for [f (->> (concat (fs/list-dir root) (fs/glob root "**/*"))
                       (filter fs/regular-file?)
                       distinct)
+               ;; jolt#1110 is closed upstream; this replace stays until a
+               ;; Windows run checks the tree with and without it.
                :let [rel (str/replace
                           (str (fs/normalize (fs/relativize root (str f))))
                           "\\" "/")]

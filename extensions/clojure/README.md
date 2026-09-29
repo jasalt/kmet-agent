@@ -133,11 +133,11 @@ clojure_eval:
 - Evaluation failures are an explicit `Eval error (class …)` result
 - On timeout the tool sends an nREPL `interrupt`; the environment (`:clj`,
   `:bb`, `:shadow`, `:basilisp`) is detected from `describe` and reported in
-  `:details`. Read deadlines use `Socket.setSoTimeout`; Jolt currently lacks
-  that method ([jolt#1191](https://github.com/jolt-lang/jolt/issues/1191)),
-  so on Jolt a read blocked on a silent server waits for the response
-  instead of timing out early (an explicit cancel still closes the
-  connection and unblocks it)
+  `:details`. The connect budget and the read deadline use `Socket.connect`'s
+  timeout and `Socket.setSoTimeout`, so a silent server is cut off at the
+  deadline (on Jolt's Windows build the read timeout is stored but not
+  enforced — blocking sockets; an explicit cancel still closes the connection
+  and unblocks it)
 - Cancelling the run (abort) closes the connection and returns an
   `Evaluation cancelled (abort requested)` result instead of waiting for the
   timeout

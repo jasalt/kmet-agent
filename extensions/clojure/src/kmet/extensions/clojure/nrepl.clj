@@ -11,12 +11,13 @@
 ;;     process, keyed by host:port.
 ;;
 ;; Everything stays loadable on both loader backends: java.net.Socket and its
-;; streams exist on babashka and on jolt's jolt.socket library. Read timeouts
-;; are best-effort — jolt's socket has no setSoTimeout (tracked as
-;; jolt-lang/jolt#1191), so the read-timeout setter is a no-op there and the
-;; eval deadline is enforced only when the underlying socket supports it.
-;; A cancel request is host-independent: a watcher thread closes the socket,
-;; which unblocks a read even where the read deadline cannot fire.
+;; streams exist on babashka and on jolt's jolt.socket library. The connect
+;; budget and the read deadline use Socket.connect's timeout and
+;; Socket.setSoTimeout, both honoured on Jolt (its Windows sockets are
+;; blocking, so the read timeout is stored but not enforced there and the
+;; deadline stays best-effort). A cancel request is host-independent: a
+;; watcher thread closes the socket, which unblocks a read even where the
+;; read deadline cannot fire.
 
 (ns kmet.extensions.clojure.nrepl
   "nREPL client: bencode codec, port discovery, persistent in-memory sessions,
@@ -263,13 +264,9 @@
     (try
       (.connect socket (java.net.InetSocketAddress. (str host) (int port))
                 (int (min (max 1 (long timeout-ms)) max-int)))
-      ;; jolt's socket has no setSoTimeout (jolt-lang/jolt#1191) and its
-      ;; connect ignores the timeout argument (jolt-lang/jolt#1192). The
-      ;; read deadline is therefore enforced only by the read loop's check,
-      ;; which cannot interrupt a blocking read there, and this connect
-      ;; budget is best effort. Never fatal.
-      (try (.setSoTimeout socket (int (min (max 1 (long timeout-ms)) max-int)))
-           (catch Exception _ nil))
+      ;; Bound the reads with the same budget before the first one;
+      ;; renew-read-timeout! refreshes it against the eval deadline.
+      (.setSoTimeout socket (int (min (max 1 (long timeout-ms)) max-int)))
       socket
       (catch Exception e
         (try (.close socket) (catch Exception _ nil))
@@ -296,13 +293,11 @@
 
 (defn- renew-read-timeout!
   "A fn setting the socket's read timeout to the time remaining before
-   DEADLINE. Returns a no-op reader when the socket lacks setSoTimeout."
+   DEADLINE."
   [socket deadline]
   (fn []
-    (try
-      (let [remaining (- deadline (System/currentTimeMillis))]
-        (.setSoTimeout socket (int (max 1 (min remaining max-int)))))
-      (catch Exception _ nil))))
+    (let [remaining (- deadline (System/currentTimeMillis))]
+      (.setSoTimeout socket (int (max 1 (min remaining max-int)))))))
 
 (defn- send-op!
   "Send OP (keyword keys) with a fresh id and collect the response messages
