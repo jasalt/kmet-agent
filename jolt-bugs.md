@@ -57,18 +57,25 @@ pre-exec hook. When Jolt resets SIGPIPE to the default in the child before
 exec, nothing in kmet changes — spawned commands simply start dying by
 SIGPIPE as they do on bb.
 
-### Unfiled — `java.time.LocalDateTime/ofInstant` is missing
+### [jolt#1197](https://github.com/jolt-lang/jolt/issues/1197) — java.time.LocalDateTime factory gaps
 
-Verified on `jolt v0.8.14-27-gb96f8615` (2026-09-29): every call throws
-`IllegalArgumentException: No matching field or method:
-java.time.LocalDateTime/ofInstant`, for `ZoneId/systemDefault`, `ZoneId/of`
-and `ZoneOffset/UTC` alike. The equivalent chain works:
-`(-> (Instant/parse ts) (.atZone zone) (.toLocalDateTime))`, as do
-`ZonedDateTime/ofInstant`, `LocalDateTime/now` and `LocalDateTime/parse`.
-A GitHub search found no open Jolt issue for it.
+Verified on `jolt v0.8.14-27-gb96f8615` (2026-09-29), all three in the
+`LocalDateTime` statics in `stdlib/jolt/time/local.clj`:
 
-kmet's tree selector formatted label timestamps through `ofInstant`; it now
-uses the `atZone`/`toLocalDateTime` chain. The old call site's catch had
+- `ofInstant` is absent — every call throws `IllegalArgumentException: No
+  matching field or method: java.time.LocalDateTime/ofInstant`, for
+  `ZoneId/systemDefault`, `ZoneId/of` and `ZoneOffset/UTC` alike.
+- `ofEpochSecond` ignores its offset argument (`(fn [secs nano _off] …)`):
+  with `ZoneOffset/ofHours 2` it returns the UTC-based local time, where
+  the JVM applies the offset. (It also accepts a ZoneId, which the JVM
+  rejects by signature.)
+- `of` has no `Month`-taking arity: `java.time.Month/SEPTEMBER` throws
+  `ClassCastException`; the JVM overloads accept it.
+
+The equivalent chain works on Jolt: `(-> (Instant/parse ts) (.atZone zone)
+(.toLocalDateTime))`, as do `ZonedDateTime/ofInstant`, `LocalDateTime/now`
+and `LocalDateTime/parse`. kmet's tree selector formatted label timestamps
+through `ofInstant`; it now uses the chain. The old call site's catch had
 swallowed the exception (labels silently showed the raw ISO timestamp on
 Jolt); the tree-selector test now pins the formatted output. Recheck when
-filing upstream; the workaround is behavior-identical on both hosts.
+the issue is fixed; the workaround is behavior-identical on both hosts.
