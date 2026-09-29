@@ -79,3 +79,18 @@ through `ofInstant`; it now uses the chain. The old call site's catch had
 swallowed the exception (labels silently showed the raw ISO timestamp on
 Jolt); the tree-selector test now pins the formatted output. Recheck when
 the issue is fixed; the workaround is behavior-identical on both hosts.
+
+### [jolt#1198](https://github.com/jolt-lang/jolt/issues/1198) — File(URI)/Paths.get(URI) keep the URI string
+
+Verified on `jolt v0.8.14-27-gb96f8615` (2026-09-29):
+`(java.io.File. (java.net.URI. "file:///data/tmp/a%20b"))` has `getPath`
+`file:/data/tmp/a%20b`, is not absolute, and reports `exists` false even for
+an existing file; a non-file scheme is accepted (`http:/example.com/x`)
+where the JVM throws. `Paths.get` and `Path.of` of the same URI return the
+URI string too. Jolt's `clojure.java.io/as-file` on a URL already converts
+correctly through `file-url->path`, so only the Java-level constructors
+diverge.
+
+kmet's read tool converts `file://` inputs with `URI.getPath` (plus a
+Windows drive strip) instead, so nothing here depends on the broken
+constructors; no kmet change is needed when the issue lands.
