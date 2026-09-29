@@ -152,6 +152,7 @@
     kmet.libs.test-oauth
     kmet.libs.test-edn-store
     kmet.libs.test-edit-diff
+    kmet.libs.test-process
     kmet.libs.test-jsonrpc
     kmet.libs.test-json
     kmet.libs.test-http
