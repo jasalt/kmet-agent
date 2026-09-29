@@ -239,11 +239,9 @@
    otherwise (local zone). Unparseable timestamps render raw."
   [ts]
   (try
-    ;; Jolt has no LocalDateTime/ofInstant (jolt-bugs.md) — atZone + toLocalDateTime
-    ;; is the same conversion.
-    (let [ldt (-> (java.time.Instant/parse ts)
-                  (.atZone (java.time.ZoneId/systemDefault))
-                  (.toLocalDateTime))
+    (let [ldt (java.time.LocalDateTime/ofInstant
+               (java.time.Instant/parse ts)
+               (java.time.ZoneId/systemDefault))
           now (java.time.LocalDateTime/now)
           hhmm (format "%02d:%02d" (.getHour ldt) (.getMinute ldt))]
       (cond

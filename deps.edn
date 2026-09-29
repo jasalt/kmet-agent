@@ -70,9 +70,12 @@
         ;; babashka's SCI cannot analyze.
         ;; java.time formatting/zone layer on Jolt (DateTimeFormatter,
         ;; ZoneId/ZoneOffset, ZonedDateTime — RFC 0008; inert on bb/JVM,
-        ;; where the JDK already provides these classes)
+        ;; where the JDK already provides these classes). This revision is
+        ;; the merge carrying the zone-aware LocalDateTime factories that
+        ;; close jolt#1197: ofInstant, and ofEpochSecond applying its offset
+        ;; (jolt-lang/time#18).
         io.github.jolt-lang/time {:git/url "https://github.com/jolt-lang/time.git"
-                                  :git/sha "8030de28d6cda6096896c3e653babdbc8105499c"}
+                                  :git/sha "faff43aa3260bf79bb3fba10f6d9336190f83281"}
         ;; OpenSSL-backed javax.crypto/java.security shims on Jolt
         ;; (MessageDigest, Mac, Cipher, SecureRandom, EC + RSA
         ;; Signature/KeyPairGenerator/KeyFactory — RFC 0014; inert on bb/JVM).
