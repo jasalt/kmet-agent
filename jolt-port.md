@@ -15,7 +15,11 @@ Status checked against `jolt v0.8.14-27-gb96f8615` (2026-09-29).
 
 Windows validation is outstanding: run the bash tool, `jolt lint`
 (clj-kondo), both native and curl HTTP transports on Windows, and give
-`destroy-tree` its Windows test.
+`destroy-tree` its Windows test. Process edges verified on Linux/Termux
+(2026-09-29) need the same on Windows: pipe streaming on stdout and
+stderr, the timeout/cancel tree kill (`taskkill /F /T` in
+`kmet.libs.process`), the WSL `bash -s` stdin transport, and a JSON-RPC
+stdio child.
 
 ## Verification backlog
 
