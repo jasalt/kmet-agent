@@ -168,8 +168,8 @@
       (is (= 12 (count lines)))
       (is (str/includes? (peek lines) "line 11"))))
   (testing "the quiet title keeps the first line, shortened"
-    (is (= "clojure_eval (+ 1 2)" (eval-tool/title {:code "(+ 1 2)\n(+ 3 4)"})))
+    (is (= "clj $ (+ 1 2)" (eval-tool/title {:code "(+ 1 2)\n(+ 3 4)"})))
     (let [long-title (eval-tool/title {:code (apply str (repeat 200 "x"))})]
       (is (str/ends-with? long-title "…"))
-      (is (= (+ (count "clojure_eval ") 81) (count long-title))))
+      (is (= (+ (count "clj $ ") 81) (count long-title))))
     (is (nil? (eval-tool/title {})))))

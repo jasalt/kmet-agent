@@ -135,13 +135,13 @@
     (renderers/render-code-call "clojure>" code suffix theme width context)))
 
 (defn title
-  "Quiet-mode one-liner: the first line of the code, shortened."
+  "Quiet-mode one-liner: `clj $ <first line of the code>`, shortened."
   [args]
   (let [code (or (:code args) (get args "code"))]
     (when (string? code)
       (let [line (first (str/split-lines code))
             line (if (> (count line) 80) (str (subs line 0 80) "…") line)]
-        (when (seq line) (str "clojure_eval " line))))))
+        (when (seq line) (str "clj $ " line))))))
 
 ;; ─── Registration ─────────────────────────────────────────────────────────
 
