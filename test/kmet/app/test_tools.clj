@@ -587,6 +587,22 @@
       (t/is (:is-error result))
       (t/is (str/includes? (:content result) "Custom shell path not found")))))
 
+(t/deftest test-wsl-launcher-bash-detection
+  (t/testing "both WSL launchers take the -s stdin transport (pi: legacy WSL bash path)"
+    (doseq [p ["C:\\Windows\\System32\\bash.exe"
+               "c:\\windows\\system32\\bash.exe"
+               "C:/Windows/System32/Bash.exe"
+               "C:\\Users\\me\\AppData\\Local\\Microsoft\\WindowsApps\\bash.exe"
+               "C:/Users/me/AppData/Local/Microsoft/WindowsApps/Bash.exe"]]
+      (t/is (true? (#'bash-exec/wsl-launcher-bash? p)) p)))
+  (t/testing "ordinary shells keep the -c transport"
+    (doseq [p ["C:\\Program Files\\Git\\bin\\bash.exe"
+               "C:\\Windows\\System32\\wsl.exe"
+               "/bin/bash"
+               "/usr/bin/bash"
+               "sh"]]
+      (t/is (false? (#'bash-exec/wsl-launcher-bash? p)) p))))
+
 ;; ─── Unknown tool ─────────────────────────────────────────────────────────
 
 (t/deftest test-truncate-tail-surrogate-boundary

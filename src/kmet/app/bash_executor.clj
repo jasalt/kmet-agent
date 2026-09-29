@@ -242,6 +242,17 @@
     (.waitFor child)
     (:exit (deref p))))
 
+(defn- wsl-launcher-bash?
+  "True when SHELL is a WSL bash launcher: the legacy
+   System32\\bash.exe, or the Windows 11 AppExecutionAlias at
+   %LOCALAPPDATA%\\Microsoft\\WindowsApps\\bash.exe. Both hand the command
+   to the distro through a layer that expands `$name` against the distro
+   environment before bash runs the script (`$i` becomes an empty word);
+   the `-s` transport with the command on stdin preserves it verbatim."
+  [shell]
+  (boolean (re-find #"(?i)(?:windows\\system32|windowsapps)\\bash\.exe"
+                    (str/replace shell "/" "\\"))))
+
 (defn create-default-ops [& {:keys [shell-path]}]
   ;; Pi: throw early if custom shellPath is specified but not found
   (when (and shell-path (not (fs/exists? shell-path)))
@@ -252,9 +263,7 @@
       (let [_ (when-not (fs/exists? cwd)
                 (throw (ex-info (str "Working directory does not exist: " cwd) {:cwd cwd})))
             ;; Pi: getShellConfig resolves shell + args per platform
-            use-stdin? (and process/windows-os?
-                            (re-find #"(?i)windows\\system32\\bash\.exe"
-                                     (str/replace shell "/" "\\")))
+            use-stdin? (and process/windows-os? (wsl-launcher-bash? shell))
             shell-args (cond
                          (str/includes? shell "cmd") [shell "/c" command]
                          use-stdin? [shell "-s"]
