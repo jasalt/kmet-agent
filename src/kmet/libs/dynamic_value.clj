@@ -154,7 +154,10 @@
         shell (shell-path)
         args (if (str/includes? shell "cmd") [shell "/c" command] [shell "-c" command])]
     (try
-      (let [p (proc/process args {:out :string :err :ignore})
+      ;; :discard drains stderr at the OS level; an unrecognized keyword
+      ;; (like :ignore) would leave a raw pipe nobody reads, so a command
+      ;; writing more than the pipe buffer would stall until the timeout.
+      (let [p (proc/process args {:out :string :err :discard})
             ;; deref blocks until exit and returns a copy of the record with
             ;; :exit (int) and :out (string) realized
             done (deref p command-timeout-ms nil)]

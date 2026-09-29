@@ -7,7 +7,7 @@ transport from http-client v0.0.15), packaging (`jolt dist`), and extensions
 (the native loader, with SCI as the declared fallback). This file tracks
 **only what is still open**; finished work lives in the code, and upstream
 issues filed or tracked live in `jolt-bugs.md` and are not repeated here.
-The item labels (M2, B2, …) are the original port report's ids.
+The item labels (M2, M15, …) are the original port report's ids.
 
 Status checked against `jolt v0.8.14-27-gb96f8615` (2026-09-29).
 
@@ -16,17 +16,6 @@ Status checked against `jolt v0.8.14-27-gb96f8615` (2026-09-29).
 Windows validation is outstanding: run the bash tool, `jolt lint`
 (clj-kondo), both native and curl HTTP transports on Windows, and give
 `destroy-tree` its Windows test.
-
-## Process edges (B2)
-
-- Probe: pipe-streaming without deadlock; timeout semantics (bb's `:timeout`
-  reports exit 0 on kill — check Jolt matches); `setsid`/process-group kill;
-  async stdin/stdout streams for MCP stdio servers; `destroy-tree` on all
-  OSes.
-- Compare the vendored `babashka.process` surface against kmet's use by file
-  — the vendored sources carry no version constants.
-- If `jolt.process` falls short, the fallback is direct
-  `posix_spawn`/`waitpid`/`kill` FFI (the calls `process.ss` itself uses).
 
 ## Verification backlog
 

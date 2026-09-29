@@ -37,3 +37,22 @@ lz4/zlib in the native directory. The final executable was smoke-run without
 the OpenSSL/lz4 DLLs and its PE imports contained Windows system DLLs only.
 Recheck when filing upstream; remove the shim once Jolt handles dependent
 native archives and their link libraries directly.
+
+### Unfiled — spawned children inherit the parent's ignored SIGPIPE
+
+Verified on `jolt v0.8.14-27-gb96f8615` (2026-09-29). A child spawned through
+`babashka.process/process` reports `SigIgn: 0000002000001001` (SIGHUP,
+SIGPIPE and a real-time signal, bit 37), and the mask survives `sh -c` into
+grandchildren. bb 1.13.224's children get `0000002000000001` — SIGHUP and
+the RT signal too, but SIGPIPE reset to the default, as the JVM does for its
+children. So `yes e | head -c …` run through a Jolt-host bash tool prints
+`yes: standard output: Broken pipe` and exits through the error path, where
+on bb `yes` is killed by SIGPIPE; the bytes are otherwise identical and
+nothing deadlocks.
+
+No kmet-side workaround is practical: `trap - PIPE` cannot reset it (POSIX
+forbids a non-interactive shell from resetting a signal ignored at entry;
+verified on Jolt that the mask survives), and `babashka.process` exposes no
+pre-exec hook. When Jolt resets SIGPIPE to the default in the child before
+exec, nothing in kmet changes — spawned commands simply start dying by
+SIGPIPE as they do on bb.

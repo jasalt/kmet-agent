@@ -283,8 +283,9 @@
             pid (try (-> p :proc .pid) (catch Exception _ nil))
             _ (when pid (process/track-pid! pid))
             ;; Pi: timeout handled manually (setTimeout + killProcessTree) —
-            ;; babashka.process's :timeout reports exit 0 on kill, so a
-            ;; timed-out command wouldn't be distinguishable from success.
+            ;; babashka.process has no :timeout option (removed upstream in
+            ;; favour of deref-with-timeout, which leaves the process
+            ;; running), so the tree kill is what stops a timed-out command.
             timed-out (atom false)
             ;; `done` is shared by both watchers below: it becomes true once
             ;; the process has exited, so each watcher can stop itself instead
