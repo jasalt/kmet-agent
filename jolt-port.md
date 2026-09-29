@@ -21,11 +21,6 @@ stderr, the timeout/cancel tree kill (`taskkill /F /T` in
 `kmet.libs.process`), the WSL `bash -s` stdin transport, and a JSON-RPC
 stdio child.
 
-## Per Jolt upgrade
-
-- Re-run `jolt test` / `jolt test-ext`; the vendored `babashka.fs` /
-  `babashka.process` carry no pins, so re-verify the surface kmet uses.
-
 ## Tests
 
 - **Flaky (Jolt-only, unpinned)**:
