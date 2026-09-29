@@ -157,6 +157,10 @@ bb help            # Show task entry points
 `bb tasks` prints one-line summaries; `bb <task> --help` (the same task works
 under `jolt`) prints a task's full usage, arguments and notes.
 
+The `bb nrepl` task starts a Babashka nREPL on port 1667 and writes no port
+file; for the Jolt reader view, `jolt nrepl-server [port]` starts the
+equivalent server (default 7888) and writes `.nrepl-port`.
+
 The `*-changed` tasks are the iteration loop — they cover only the current
 changes (git diff vs HEAD + untracked, plus the namespaces/tests that
 transitively require them via the require graph); `jolt` runs the same tasks:

@@ -226,11 +226,49 @@
         (fs/create-dirs dir)
         (spit (str dir "/.nrepl-port") (str port "\n") :encoding "UTF-8")
         (try
-          (is (= {:host "127.0.0.1" :port port :source ".nrepl-port"}
-                 (nrepl/discover-port "127.0.0.1" dir)))
-          (is (nil? (nrepl/discover-port "127.0.0.1" "target/no-such-nrepl-dir")))
+          (with-redefs [nrepl/common-ports []]
+            (is (= {:host "127.0.0.1" :port port :source ".nrepl-port"}
+                   (nrepl/discover-port "127.0.0.1" dir)))
+            (is (nil? (nrepl/discover-port "127.0.0.1" "target/no-such-nrepl-dir"))))
           (finally
             (fs/delete-tree dir))))
       (finally
+        (nrepl/close-sessions!)
+        (stop!)))))
+
+(deftest ^:slow test-discover-port-falls-back-to-common-ports
+  (let [{:keys [port stop!]} (start-fake-nrepl!)]
+    (try
+      (testing "with no port file, a responding common port is used"
+        (with-redefs [nrepl/common-ports [port]]
+          (is (= {:host "127.0.0.1" :port port :source :common}
+                 (nrepl/discover-port "127.0.0.1" "target/no-such-nrepl-dir")))))
+      (testing "a port file is preferred over a responding common port"
+        (let [dir "target/nrepl-tests-common"]
+          (fs/create-dirs dir)
+          (spit (str dir "/.nrepl-port") (str port "\n") :encoding "UTF-8")
+          (try
+            (with-redefs [nrepl/common-ports [port]]
+              (is (= {:host "127.0.0.1" :port port :source ".nrepl-port"}
+                     (nrepl/discover-port "127.0.0.1" dir))))
+            (finally
+              (fs/delete-tree dir)))))
+      (finally
+        (nrepl/close-sessions!)
+        (stop!)))))
+
+(deftest ^:slow test-discover-port-falls-through-a-stale-port-file
+  (let [{:keys [port stop!]} (start-fake-nrepl!)
+        dead-port (with-open [socket (java.net.ServerSocket. 0)]
+                    (.getLocalPort socket))
+        dir "target/nrepl-tests-stale"]
+    (fs/create-dirs dir)
+    (spit (str dir "/.nrepl-port") (str dead-port "\n") :encoding "UTF-8")
+    (try
+      (with-redefs [nrepl/common-ports [port]]
+        (is (= {:host "127.0.0.1" :port port :source :common}
+               (nrepl/discover-port "127.0.0.1" dir))))
+      (finally
+        (fs/delete-tree dir)
         (nrepl/close-sessions!)
         (stop!)))))

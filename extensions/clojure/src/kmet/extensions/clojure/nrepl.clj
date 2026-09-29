@@ -354,6 +354,13 @@
   [".nrepl-port" ".shadow-cljs/nrepl.port" ".shadow-cljs/.nrepl-port"
    ".cider-nrepl.port" "nrepl-port"])
 
+(def common-ports
+  "Fallback ports probed when no port file identifies a live server, in
+   probe order: the conventional nREPL port (7888 — nREPL's documented
+   example and jolt's `nrepl-server` default) and the babashka nREPL default
+   (1667 — `bb nrepl-server` and kmet's `bb nrepl` task)."
+  [7888 1667])
+
 (defn- port-file-candidates [dir]
   (keep (fn [file]
           (try
@@ -378,16 +385,31 @@
           (and (not= ::timeout msgs) (seq msgs)))))
     (catch Exception _ false)))
 
+(defn- distinct-port-candidates
+  "CANDIDATES — pairs of [port source] — with duplicate ports removed, first
+   occurrence (and its source) kept."
+  [candidates]
+  (loop [seen #{} out [] cs (seq candidates)]
+    (if cs
+      (let [[port source] (first cs)]
+        (if (contains? seen port)
+          (recur seen out (next cs))
+          (recur (conj seen port) (conj out [port source]) (next cs))))
+      out)))
+
 (defn discover-port
-  "Find a running nREPL server for HOST (default 127.0.0.1) through the
-   well-known port files (see PORT-FILES) in DIR (default: the process
-   working directory). Every candidate must answer a describe op. Returns
-   {:host :port :source} or nil."
+  "Find a running nREPL server for HOST (default 127.0.0.1): the well-known
+   port files (see PORT-FILES) in DIR (default: the process working
+   directory) first, then COMMON-PORTS, each candidate deduped by port and
+   validated with a describe op. Returns {:host :port :source} — :source is
+   the port file name or :common — or nil."
   ([] (discover-port "127.0.0.1" nil))
   ([host] (discover-port host nil))
   ([host dir]
    (let [host (or host "127.0.0.1")
-         candidates (distinct (port-file-candidates dir))]
+         candidates (distinct-port-candidates
+                     (concat (port-file-candidates dir)
+                             (map (fn [port] [port :common]) common-ports)))]
      (some (fn [[port source]]
              (when (and port (responding? host port))
                {:host host :port port :source source}))

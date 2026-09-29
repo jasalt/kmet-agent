@@ -78,7 +78,8 @@ After editing a namespace, verify it in a running nREPL with `clojure_eval`:
   otherwise the session's current namespace is used.
 - Pass `port` when no project port file (`.nrepl-port`, shadow-cljs, CIDER)
   identifies the server, or when more than one nREPL is running. Port files
-  are resolved from the session's working directory.
+  are resolved from the session's working directory; when none identifies a
+  live server, the common nREPL ports (7888, 1667) are probed.
 - To stop a long evaluation, cancel the run; the connection is closed and
   the result says the evaluation was cancelled. Code already running on the
   server may still complete.

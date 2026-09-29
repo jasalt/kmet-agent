@@ -40,7 +40,8 @@
     (let [result (eval-tool/execute {:code "(+ 1 2)"})]
       (is (:is-error result))
       (is (str/includes? (:content result) "No nREPL server found"))
-      (is (str/includes? (:content result) ".nrepl-port")))))
+      (is (str/includes? (:content result) ".nrepl-port"))
+      (is (str/includes? (:content result) "common nREPL ports")))))
 
 (deftest test-explicit-port-skips-discovery
   (let [discover-called (atom false)]

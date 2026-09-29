@@ -27,7 +27,12 @@ to their source package. The temporary notes `script.md`, `perf.md`,
   equivalent.
 - `bb clean` removes build output and caches; `bb clean --dry-run` lists what
   it would remove. `jolt clean` is the native-host equivalent.
-- `bb nrepl` starts the development server on port 1667 and blocks.
+- `bb nrepl` starts the development server on port 1667, blocks, and writes
+  no port file. `jolt nrepl-server [port]` (default 7888) starts the Jolt
+  equivalent and writes `.nrepl-port` (gitignored). `clojure_eval` discovers
+  port files first, then probes the common nREPL ports (7888, 1667), so a
+  lone `bb nrepl` is found; when both run the port file wins — pass
+  `port 1667` to target bb.
 - `bb tasks` lists the one-line task summaries; `bb <task> --help` prints a
   task's full usage (the details `bb tasks` leaves out).
 - Use the changed-file tasks for the normal loop:
@@ -43,6 +48,23 @@ to their source package. The temporary notes `script.md`, `perf.md`,
 - `bb check` verifies source namespaces. Do not hand-edit generated provider
   catalogs: use `bb generate-models` / `bb check-model-data`, the image-model
   generator, and `kmet --generate-models` for the user cache.
+
+### Interactive development
+
+- Prefer the running host's nREPL as the inner loop: edit, then `clojure_eval`
+  a `(require 'my.ns :reload)` and call the changed function. `bb nrepl` is
+  the bb reader view; `jolt nrepl-server` is the jolt view. Restart the server
+  when structural redefinitions (protocols, records, macros) leave stale
+  behavior.
+- `clojure_eval` returns only the last form's value, and a `require` and the
+  aliases it introduces must be in separate top-level forms.
+- Use a fresh process — `bb -e`, a scratch script, or a test — when a cold
+  start matters: namespace load order, extension/config discovery,
+  reproducible bug reports (`scripts/repro_*.bb` is the place for a repro).
+- The TUI cannot be driven from a REPL; use print mode or the tmux/pty capture
+  scripts in `scripts/` for real terminal behavior.
+- A REPL session does not replace the changed-file gates (`bb test-changed`,
+  `bb lint-changed`, `bb format-check-changed`).
 
 ## Editing rules
 

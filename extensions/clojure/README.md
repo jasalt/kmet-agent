@@ -101,7 +101,7 @@ running: `bb nrepl`, `clj -M:nrepl`, `lein repl`, or the project's REPL.
 ```
 clojure_eval:
   code: "(require '[my.app :as app] :reload)"
-  port: 7888          # optional — discovered from the session's port files when omitted
+  port: 7888          # optional — port files, then the common nREPL ports
   host: "127.0.0.1"   # optional
   ns: "my.app"        # optional target namespace
   timeout: 120000     # optional read timeout in milliseconds
@@ -117,8 +117,9 @@ clojure_eval:
 **Features:**
 - Port discovery through `.nrepl-port`, `.shadow-cljs/nrepl.port`,
   `.shadow-cljs/.nrepl-port`, `.cider-nrepl.port` and `nrepl-port`, resolved
-  from the session's working directory; every candidate is validated with an
-  nREPL `describe` before use
+  from the session's working directory; when no port file identifies a live
+  server, the common nREPL ports (7888, 1667) are probed; every candidate is
+  validated with an nREPL `describe` before use
 - Persistent sessions per host:port (in memory for the kmet process) — vars
   and loaded namespaces survive across calls
 - The target namespace is set through the nREPL `ns` op, with an
