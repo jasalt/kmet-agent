@@ -1,7 +1,7 @@
 (ns kmet.modes.test-overlay-input-smoke
   "End-to-end pty regression for the overlay-focus incident: open the /lsp
    dialog, close it with ESC, type - the editor must receive the text.
-   Drives a real `bb run` through a pty via an inline python3 driver, so
+   Drives a real `bb start` through a pty via an inline python3 driver, so
    this is ^:slow and skipped when python3 is unavailable (Windows).
 
    Assumes the repo-default extension set is enabled - the /lsp panel
@@ -14,7 +14,7 @@
             [clojure.test :as t :refer [deftest is testing]]))
 
 (def ^:private driver
-  "Staged pty driver: forks `bb run` in a pty, writes each stage's bytes at
+  "Staged pty driver: forks `bb start` in a pty, writes each stage's bytes at
    its delay, tees all output to OUTFILE. Exits once every stage ran plus
    GRACE seconds of settle time (or the hard deadline hits); nonzero on
    early EOF."
@@ -30,7 +30,7 @@ pid, fd = pty.fork()
 if pid == 0:
     os.environ['TERM'] = 'xterm-256color'
     os.chdir(cwd)
-    os.execvp('bb', ['bb', 'run'])
+    os.execvp('bb', ['bb', 'start'])
     os._exit(127)
 # no winsize means a 0-column pty - kmet renders one char per line
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 100, 0, 0))
@@ -80,7 +80,7 @@ sys.exit(status)
                                                   (str delay "|" bytes))))]
     exit))
 
-;; ^:bb-only: the driver spawns `bb run`, so under jolt it would exercise
+;; ^:bb-only: the driver spawns `bb start`, so under jolt it would exercise
 ;; bb's TUI, not jolt's (jolt-port.md lists a jolt-host variant as a follow-up)
 (deftest ^:slow ^:bb-only test-overlay-close-keeps-editor-alive
   (testing "the /lsp incident end to end: ESC-closing the dialog must not

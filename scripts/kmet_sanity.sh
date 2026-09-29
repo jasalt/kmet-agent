@@ -4,7 +4,7 @@
 set -u
 NAME="kmetsanity"; OUT="$1"
 tmux kill-session -t "$NAME" 2>/dev/null
-tmux new-session -d -s "$NAME" -x 80 -y 10 "cd /data/data/com.termux/files/home/kmet && bb run" 2>/dev/null
+tmux new-session -d -s "$NAME" -x 80 -y 10 "cd /data/data/com.termux/files/home/kmet && bb start" 2>/dev/null
 tmux pipe-pane -t "$NAME" -o "cat > '$OUT'"
 sleep 7
 # 10-row terminal: the startup document overflows the scroll viewport.

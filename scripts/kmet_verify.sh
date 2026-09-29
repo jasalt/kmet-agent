@@ -8,7 +8,7 @@ set -u
 NAME="kmetverify"; OUT="$1"
 PROMPT="Write a detailed essay about the history of computing, at least 1500 words. Keep going until finished."
 tmux kill-session -t "$NAME" 2>/dev/null
-tmux new-session -d -s "$NAME" -x 80 -y 14 "cd /data/data/com.termux/files/home/kmet && bb run" 2>/dev/null
+tmux new-session -d -s "$NAME" -x 80 -y 14 "cd /data/data/com.termux/files/home/kmet && bb start" 2>/dev/null
 tmux pipe-pane -t "$NAME" -o "cat > '$OUT'"
 sleep 8
 tmux send-keys -t "$NAME" "$PROMPT"

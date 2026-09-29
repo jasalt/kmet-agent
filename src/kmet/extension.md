@@ -95,7 +95,7 @@ select which discovered items stay enabled (e.g.
 
 The repo ships a set of opt-in extensions in `extensions/` — nothing there is
 loaded by default. They are **bundled with the application**: every run mode
-(`bb run`, `jolt run`, and the built binaries) offers the whole set in
+(`bb start`, `jolt start`, and the built binaries) offers the whole set in
 `kmet config` under “Bundled with kmet”, and the same set is enableable from
 the settings files via the `:bundled-extensions` key (resource-array
 vocabulary: `+`/plain enables, `-`/`!` disables; a project entry is a delta

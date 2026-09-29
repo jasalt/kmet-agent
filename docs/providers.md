@@ -4,15 +4,15 @@ kmet supports many hosted LLM providers. Use `--list-models` to see the models
 available with the credentials in the current environment or `auth.edn`:
 
 ```sh
-bb run --list-models
-bb run --provider <provider> --model <model>
+bb start --list-models
+bb start --provider <provider> --model <model>
 ```
 
 The default `opencode-go` provider reads `OPENCODE_API_KEY`:
 
 ```sh
 export OPENCODE_API_KEY='your-api-key'
-bb run --list-models
+bb start --list-models
 ```
 
 Credentials entered with `/login` are stored in

@@ -1,8 +1,8 @@
 # Getting started
 
-The commands below use `bb run` from a source checkout. If you built or
+The commands below use `bb start` from a source checkout. If you built or
 installed a self-contained executable, use the same options with `kmet` in
-place of `bb run` (or unzip the built `dist/kmet-*.zip`, whose `kmet-*/`
+place of `bb start` (or unzip the built `dist/kmet-*.zip`, whose `kmet-*/`
 folder holds the `kmet` executable and the LICENSE; on Jolt it is `kmetj`).
 
 ### 1. Run from a checkout
@@ -12,7 +12,7 @@ Install Babashka first, then clone and start kmet:
 ```sh
 git clone https://github.com/kmetia/kmet-agent.git
 cd kmet-agent
-bb run
+bb start
 ```
 
 For a packaged build, use `bb dist` (or `jolt dist` on the Jolt host) and
@@ -26,8 +26,8 @@ The default `opencode-go` provider reads `OPENCODE_API_KEY`:
 
 ```sh
 export OPENCODE_API_KEY='your-api-key'
-bb run --list-models
-bb run --provider opencode-go --model deepseek-v4-flash
+bb start --list-models
+bb start --provider opencode-go --model deepseek-v4-flash
 ```
 
 You can also start kmet and use `/login` to store a credential in
@@ -42,7 +42,7 @@ For a one-shot response, use print mode from the checkout or a packaged
 executable:
 
 ```sh
-bb run --print "summarize the project"
+bb start --print "summarize the project"
 ```
 
 Use `@path/to/file` before the message to attach file contents to the first
@@ -55,7 +55,7 @@ resource locations.
 - [Babashka](https://babashka.org/) ≥ 1.13.224 (bundles JLine 4.4.5) — the
   primary host
 - [Jolt](https://github.com/jolt-lang/jolt) ≥ v0.8.9 — optional: the same
-  code runs natively on Jolt (`jolt run -m kmet.core`, `jolt dist`). For
+  code runs natively on Jolt (`jolt start`, `jolt dist`). For
   Windows jar resources and extension-source cleanup,
   use a build containing PR #1123 (verified on
   `v0.8.11-18-g79bf6d6e`) or newer.

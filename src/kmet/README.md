@@ -136,7 +136,7 @@ cross-host build details are covered in the user-facing
 [`docs/building.md`](../../docs/building.md) guide.
 
 ```sh
-bb run             # Interactive TUI
+bb start           # Interactive TUI
 bb test            # Run fast test suites (excludes ^:slow tests)
 bb test-ext        # Run only the slow (^:slow) test suites
 bb lint            # clj-kondo over both reader views (babashka + jolt);

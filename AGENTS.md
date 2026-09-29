@@ -24,7 +24,7 @@ project root.
 
 ## Basic development flow
 
-- `bb run` starts `kmet.core/-main`; `jolt run -m kmet.core` is the native-host
+- `bb start` starts `kmet.core/-main`; `jolt start` is the native-host
   equivalent.
 - `bb clean` removes build output and caches; `bb clean --dry-run` lists what
   it would remove. `jolt clean` is the native-host equivalent.

@@ -1312,11 +1312,11 @@ stateful tag whose props never settle means fresh fn literals in its props
 
 ### Frame dumps & full-redraw reasons (env flags)
 
-- `KMET_TUI_DEBUG=1 bb run` — every frame dumps `newLines` vs
+- `KMET_TUI_DEBUG=1 bb start` — every frame dumps `newLines` vs
   `previousLines`, viewportTop, hardwareCursorRow and size into
   `$TMPDIR/tui/render-*.log` (or `java.io.tmpdir/tui/` when `TMPDIR` is
   unset — this babashka hardcodes java.io.tmpdir to `/tmp`; pi: PI_TUI_DEBUG).
-- `KMET_DEBUG_REDRAW=1 bb run` — appends one line per FULL redraw with its
+- `KMET_DEBUG_REDRAW=1 bb start` — appends one line per FULL redraw with its
   trigger reason to `kmet-debug-render.log` (cwd); a steady stream during
   normal streaming points at shrink/full-redraw churn. `firstChanged <
   viewportTop, scrollback only` is NOT a full redraw — it is the benign
@@ -1333,10 +1333,10 @@ stateful tag whose props never settle means fresh fn literals in its props
 
 ### Output + input traces (env flags)
 
-- `KMET_TUI_WRITE_LOG=<dir|file> bb run` — every byte written to the
+- `KMET_TUI_WRITE_LOG=<dir|file> bb start` — every byte written to the
   terminal is appended (a directory gets `tui-<ts>-<pid>.log`, a file is
   appended in place); the raw counterpart of the term_dump workflow below.
-- `KMET_TUI_INPUT_LOG=<dir|file> bb run` — the input path is appended
+- `KMET_TUI_INPUT_LOG=<dir|file> bb start` — the input path is appended
   (`tui-input-<ts>-<pid>.log` in a directory, or the given file). One line
   per **batch** (every byte the tty had queued: how input chunks under
   stalls), per **unit** (the raw bytes `\uXXXX`-escaped, the parsed key,
@@ -1351,7 +1351,7 @@ Both values are **literal paths, not booleans**: only an existing
 *directory* gets a timestamped file inside it — every other value is
 appended to as a file, so `KMET_TUI_INPUT_LOG=1` creates `./1` in the
 current directory. Prefer an existing, git-ignored directory, e.g.
-`mkdir -p target/trace && KMET_TUI_INPUT_LOG=target/trace bb run`.
+`mkdir -p target/trace && KMET_TUI_INPUT_LOG=target/trace bb start`.
 
 ### When bytes look wrong but headless render looks right
 

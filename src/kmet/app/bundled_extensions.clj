@@ -63,7 +63,7 @@
 (defn- manifest-source
   "Where the manifest can be read from, or nil: the classpath resource
    (URL or filesystem path), else the checkout under the process cwd (a
-   jolt run whose io/resource does not answer file URLs still has the
+   Jolt-host run whose io/resource does not answer file URLs still has the
    sources on disk)."
   []
   (or (io/resource manifest-resource)

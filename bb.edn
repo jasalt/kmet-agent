@@ -19,10 +19,9 @@
  ;; :requires here is shared by every task and only pulls in that wrapper.
  :tasks
  {:requires ([kmet.tasks.help :as help])
-  run     {:doc "Run kmet (interactive TUI); `bb run --help` for kmet's CLI options"
+  start   {:doc "Start kmet (interactive TUI); `bb start --help` for kmet's CLI options"
            :requires ([kmet.core :as core])
-           :task (apply core/-main *command-line-args*)
-           :override-builtin true}
+           :task (apply core/-main *command-line-args*)}
   uberjar {:doc "Build target/kmet.jar (run with: bb target/kmet.jar)"
            :requires ([kmet.tasks.build :as build])
            :task (help/with-help (build/uberjar*))
@@ -126,7 +125,7 @@
                      (println)
                      (println "  bb tasks          list tasks")
                      (println "  bb <task> --help  full task help")
-                     (println "  bb run --help     kmet CLI options")
+                     (println "  bb start --help   kmet CLI options")
                      (println)
                      (println "Changed-file dev loop: changed, test-changed, test-ext-changed,")
                      (println "lint-changed, format-changed, format-check-changed, changed-baseline.")

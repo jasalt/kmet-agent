@@ -2,20 +2,20 @@
 
 ```sh
 # Interactive TUI
-bb run
-jolt run -m kmet.core     # ...or on the Jolt host
+bb start
+jolt start                # ...or on the Jolt host
 
 # Or invoke the checked-in entry script explicitly (works on Termux too)
 bb kmet
 
 # With options
-bb run --model deepseek-v4-flash --provider opencode-go
+bb start --model deepseek-v4-flash --provider opencode-go
 
 # Non-interactive mode
-bb run --print "list files in current directory"
+bb start --print "list files in current directory"
 
 # Attach files to the initial message (@file args)
-bb run @tasks.md "summarize the tasks"
+bb start @tasks.md "summarize the tasks"
 ```
 
 ### Command-line options

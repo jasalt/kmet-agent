@@ -26,7 +26,7 @@
   (some-> (io/resource "kmet/version.txt") slurp str/trim not-empty))
 
 (defn- source-run?
-  "True when kmet's own source files resolve off disk — a `bb run` / `jolt run`
+  "True when kmet's own source files resolve off disk — a `bb start` / `jolt start`
    from the checkout, as opposed to a packaged jar/embedded image."
   []
   (some-> (io/resource "kmet/core.clj") str (str/starts-with? "file:")))

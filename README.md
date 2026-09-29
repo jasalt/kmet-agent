@@ -26,14 +26,14 @@ from a checkout:
 git clone https://github.com/kmetia/kmet-agent.git
 cd kmet-agent
 export OPENCODE_API_KEY='your-api-key'
-bb run
+bb start
 ```
 
 List available models or run a one-shot request with:
 
 ```sh
-bb run --list-models
-bb run --print "summarize the project"
+bb start --list-models
+bb start --print "summarize the project"
 ```
 
 Self-contained release binaries skip the Babashka install: download the zip
@@ -51,7 +51,7 @@ unzip kmet-0.1.0-linux-amd64.zip
 On Windows run `kmet.exe`; on Termux run the bundled `kmet.sh` launcher. Jolt
 releases are named `kmetj-0.1.0-<platform>.zip` and run as `kmetj`.
 
-Use `jolt run -m kmet.core` on the optional Jolt host. See
+Use `jolt start` on the optional Jolt host. See
 [Getting started](docs/getting-started.md) for provider setup, sessions, and
 installation details.
 

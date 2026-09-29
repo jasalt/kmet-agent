@@ -30,5 +30,5 @@ Status checked against `jolt v0.8.14-29-gc7c6b33e` (2026-09-29).
   — curl 97 "Connection reset by peer" through the test SOCKS proxy while
   the suite is loaded; green standalone.
 - **`modes.test-overlay-input-smoke`** is `^:bb-only` (its driver spawns
-  `bb run`, so on Jolt it would exercise bb's TUI); a Jolt-host pty variant
+  `bb start`, so on Jolt it would exercise bb's TUI); a Jolt-host pty variant
   is the follow-up.

@@ -129,7 +129,7 @@ anything parsing leading digits), and `dev` outside a git checkout. Rolling
 tags such as `vnightly` never match. Artifact zip names carry the same
 string with the `v` stripped; `kmet --version` prints it, from the version
 baked at build time when running a packaged binary and from git in a source
-run (`bb run` / `jolt run`).
+run (`bb start` / `jolt start`).
 
 ## Termux and Android
 
