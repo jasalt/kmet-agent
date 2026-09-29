@@ -19,7 +19,8 @@ change when behavior changes.
 
 User-facing documentation belongs in `docs/`. Implementation notes belong next
 to their source package. The temporary notes `script.md`, `perf.md`,
-`jolt-bugs.md`, and `jolt-port.md` intentionally remain at the project root.
+`jolt-bugs.md`, `jolt-port.md`, and `windows.md` intentionally remain at the
+project root.
 
 ## Basic development flow
 
