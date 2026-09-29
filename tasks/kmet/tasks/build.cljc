@@ -16,11 +16,12 @@
    companion launcher script that unsets LD_PRELOAD, execs via
    $PREFIX/glibc/lib/ld-linux-*.so.1 and passes --jar <self> explicitly.
 
-   bb-only: packaging runs on babashka.classpath and java.util.zip, which the
-   jolt host does not provide — the entry points (uberjar*, -main,
-   pack-extension!) fail fast with ::bb-only under jolt, where the packager is
-   kmet.tasks.build-jolt (jolt AOT-compiles instead of appending an uberjar), see
-   jolt-port.md M5/M6."
+   bb-only: the dist pipeline runs on babashka.classpath, which the jolt host
+   does not provide — uberjar* and -main fail fast with ::bb-only under jolt,
+   where the packager is kmet.tasks.build-jolt (jolt AOT-compiles instead of
+   appending an uberjar). pack-extension! needs no
+   classpath: it verifies and zips an artifact root through kmet.libs.archive,
+   which runs on both hosts."
   (:require #?@(:bb [[babashka.classpath :as bcp]])
             [babashka.fs :as fs]
             [babashka.process :as p]
@@ -74,11 +75,11 @@
   "extensions")
 
 (defn- bb-only!
-  "Throw ::bb-only when invoked under the jolt host. kmet.tasks.build is the
-   babashka packaging pipeline (babashka.classpath classpath,
-   java.util.zip uberjar); jolt has no classpath, and `jolt build` packages a
-   self-contained image instead — callers on jolt get a fast, explicit
-   failure rather than an unresolved-var crash."
+  "Throw ::bb-only when invoked under the jolt host. kmet.tasks.build's dist
+   pipeline is the babashka packager (babashka.classpath uberjar); jolt has no
+   classpath, and `jolt build` packages a self-contained image instead —
+   callers on jolt get a fast, explicit failure rather than an unresolved-var
+   crash. Functions that need no classpath (pack-extension!) do not call it."
   [what]
   (when (boolean (find-var 'clojure.core/*jolt-version*))
     (throw (ex-info (str what " is bb-only — the jolt host has no classpath machinery")
@@ -679,7 +680,6 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
    (default <name>.jar in the cwd). Deterministic sorted order, / entry
    separators, no META-INF. Returns the output path string."
   [src-dir & [out-path]]
-  (bb-only! "kmet.tasks.build/pack-extension!")
   (let [{:keys [name]} (pack-verify! src-dir)
         root (fs/canonicalize src-dir)
         out (str (or out-path (str name ".jar")))]

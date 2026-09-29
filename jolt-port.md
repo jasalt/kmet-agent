@@ -7,7 +7,7 @@ transport from http-client v0.0.15), packaging (`jolt dist`), and extensions
 (the native loader, with SCI as the declared fallback). This file tracks
 **only what is still open**; finished work lives in the code, and upstream
 issues filed or tracked live in `jolt-bugs.md` and are not repeated here.
-The item labels (B2, M5, …) are the original port report's ids.
+The item labels (M2, B2, …) are the original port report's ids.
 
 Status checked against `jolt v0.8.14-27-gb96f8615` (2026-09-29).
 
@@ -27,13 +27,6 @@ Windows validation is outstanding: run the bash tool, `jolt lint`
   — the vendored sources carry no version constants.
 - If `jolt.process` falls short, the fallback is direct
   `posix_spawn`/`waitpid`/`kill` FFI (the calls `process.ss` itself uses).
-
-## Tooling — remaining open surfaces (M5/M10)
-
-- **Extension packing on Jolt**: `kmet.tasks.build/pack-extension!` still
-  throws `::bb-only`.
-- **Model generators on Jolt**: a network `generate-models` /
-  `generate-image-models` run is unverified.
 
 ## Verification backlog
 

@@ -1,9 +1,11 @@
 (ns kmet.tasks.build-test
-  ;; Every test here exercises the bb-only packaging pipeline (kmet.tasks.build:
-  ;; uberjar/pack-extension over babashka.classpath + java.util.zip — the bb
-  ;; branch of the `dist` task). All vars carry ^:bb-only — kmet.tasks.runner runs
-  ;; them under bb and skips them on the jolt host, whose packager is
-  ;; kmet.tasks.build-jolt (see kmet.tasks.build-jolt-test).
+  ;; Most tests here exercise the bb-only dist pipeline (kmet.tasks.build:
+  ;; uberjar over babashka.classpath — the bb branch of the `dist` task), and
+  ;; their vars carry ^:bb-only: kmet.tasks.runner runs them under bb and skips
+  ;; them on the jolt host, whose packager is kmet.tasks.build-jolt (see
+  ;; kmet.tasks.build-jolt-test). The pack-extension tests are not marked —
+  ;; pack-extension! verifies and zips through kmet.libs.archive, which both
+  ;; hosts provide.
   (:require [babashka.fs :as fs]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -233,7 +235,7 @@
       (finally
         (fs/delete-tree tmp)))))
 
-(deftest ^:bb-only pack-extension-verifies-and-packs
+(deftest pack-extension-verifies-and-packs
   (testing "packs the real clojure artifact root"
     (let [out "target/test-pack-clojure.jar"]
       (fs/delete-if-exists out)
@@ -278,7 +280,7 @@
       (fs/delete-tree dir)
       (fs/delete-if-exists "target/test-pack-loader.jar"))))
 
-(deftest ^:bb-only pack-extension-roundtrip-loads
+(deftest pack-extension-roundtrip-loads
   (testing "packed jar of the clojure extension loads (fast: reused closure)"
     (let [out "target/test-pack-roundtrip.jar"]
       (fs/delete-if-exists out)
