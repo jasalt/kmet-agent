@@ -56,3 +56,19 @@ verified on Jolt that the mask survives), and `babashka.process` exposes no
 pre-exec hook. When Jolt resets SIGPIPE to the default in the child before
 exec, nothing in kmet changes — spawned commands simply start dying by
 SIGPIPE as they do on bb.
+
+### Unfiled — `java.time.LocalDateTime/ofInstant` is missing
+
+Verified on `jolt v0.8.14-27-gb96f8615` (2026-09-29): every call throws
+`IllegalArgumentException: No matching field or method:
+java.time.LocalDateTime/ofInstant`, for `ZoneId/systemDefault`, `ZoneId/of`
+and `ZoneOffset/UTC` alike. The equivalent chain works:
+`(-> (Instant/parse ts) (.atZone zone) (.toLocalDateTime))`, as do
+`ZonedDateTime/ofInstant`, `LocalDateTime/now` and `LocalDateTime/parse`.
+A GitHub search found no open Jolt issue for it.
+
+kmet's tree selector formatted label timestamps through `ofInstant`; it now
+uses the `atZone`/`toLocalDateTime` chain. The old call site's catch had
+swallowed the exception (labels silently showed the raw ISO timestamp on
+Jolt); the tree-selector test now pins the formatted output. Recheck when
+filing upstream; the workaround is behavior-identical on both hosts.
