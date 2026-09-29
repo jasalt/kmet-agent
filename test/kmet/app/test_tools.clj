@@ -261,6 +261,15 @@
     (t/is (.contains (:content result) "hello"))
     (t/is (not (:is-error result)))))
 
+(t/deftest test-tool-read-file-url
+  (let [f (fs/absolutize "target/test-tools-read-url.txt")
+        url (str "file:///" (str/replace (slash f) #"^/" ""))]
+    (spit (str f) "hello via url")
+    (let [result (tools/execute-tool "read" {:path url})]
+      (t/is (string? (:content result)))
+      (t/is (str/includes? (:content result) "hello via url"))
+      (t/is (not (:is-error result))))))
+
 (t/deftest test-tool-read-with-offset
   (spit "target/test-tools-read.txt" "line1\nline2\nline3\nline4")
   (let [result (tools/execute-tool "read" {:path "target/test-tools-read.txt" :offset 2})]

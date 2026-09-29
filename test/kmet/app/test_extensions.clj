@@ -318,7 +318,7 @@
                         {:name "ext-dir" :kind :resource-dir
                          :prefix "extensions/ext-dir" :path "extensions/ext-dir"
                          :native "embed:extensions/ext-dir" :bundled? true})
-              probe (requiring-resolve 'kmet.app.extensions/embedded-roots?)]
+              probe (requiring-resolve 'kmet.app.extensions.context/embedded-roots?)]
           (with-redefs-fn {probe (constantly true)}
             (fn []
               (t/is (= :jolt (@#'ext-context/forced-loader-kind resolved [:sci :jolt])))
@@ -358,7 +358,7 @@
                          :native "extensions/ext-single/hello_ext.clj"
                          :bundled? true})
               artifact (:artifact resolved)
-              probe (requiring-resolve 'kmet.app.extensions/embedded-roots?)]
+              probe (requiring-resolve 'kmet.app.extensions.context/embedded-roots?)]
           (t/is (= 'hello-ext (:entry-ns resolved)))
           (t/is (= 'hello-ext (:entry-ns artifact)))
           (t/is (= (:path resolved) (:path artifact)))

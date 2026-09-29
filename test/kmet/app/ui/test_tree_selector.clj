@@ -268,7 +268,10 @@
     (t/is (true? (:show-label-timestamps @(:state-atom tl))))
     (let [lines (plain tl)]
       (t/is (some #(str/includes? % "[+label time]") lines))
-      (t/is (some #(re-find #"\d{2}:\d{2}" %) lines)))))
+      (t/is (some #(re-find #"\d{2}:\d{2}" %) lines))
+      ;; the raw ISO timestamp is never shown — the formatter ran (local-zone
+      ;; independent)
+      (t/is (not-any? #(str/includes? % "2026-02-14T10:30:00Z") lines)))))
 
 (t/deftest shift-t-does-not-become-search-query
   ;; a bare uppercase letter is NOT shift+letter under kitty-protocol key

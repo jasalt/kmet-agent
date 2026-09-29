@@ -49,8 +49,12 @@
                              (and (windows-platform?) (str/starts-with? s "~\\"))))
        (str home (subs s 1))
        (str/starts-with? s "file://")
+       ;; URI has no toPath; getPath decodes the URL (pi fileURLToPath). Windows
+       ;; drive URLs carry a leading slash that is not part of the path.
        (try
-         (.toString (.toPath (java.net.URI. s)))
+         (let [p (.getPath (java.net.URI. s))]
+           (cond-> p
+             (and (windows-platform?) (re-find #"^/[A-Za-z]:" p)) (subs 1)))
          (catch Exception _ s))
        :else s))))
 
