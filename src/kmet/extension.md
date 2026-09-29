@@ -398,8 +398,9 @@ Under the SCI host contexts (bb and the JVM, and a `:sci`-only extension on Jolt
   selmer, ...) usually cannot be replaced by their raw Maven versions — the
   Java classes are missing or not registered for reflection — and are not
   in the set; kmet warns when an extension pins one. Use the `kmet.libs.*`
-  seams instead. The `clojure.data.xml` family is bb-only: the port is
-  shared there, Jolt needs a declared Maven dep if you want it.
+  seams instead. The `clojure.data.xml` family is not provided either: an
+  extension needing it declares a Maven dep, served by Jolt's native
+  loader (its Maven copy uses `definline`, which SCI rejects).
 - Single-file extensions (plain `.clj` files, no directory) cannot carry a
   `deps.edn` — they can use the fixed set and the shared libraries, and
   nothing else.
@@ -441,9 +442,10 @@ not author-visible:
 - **Bundled libraries.** The fixed bundled set (Bundled extension
   libraries) is shared on both hosts: bb's ports serve the namespaces
   there, Jolt compiles kmet's pinned Maven deps into the binary and the
-  host view shares them. `clojure.data.xml` stays bb-only — Jolt has no
-  copy and it is not in the set, so an extension needing it declares a
-  Maven dep there (on bb the port still serves the require).
+  host view shares them. `clojure.data.xml` is not in the set and is not
+  shared on either host: an extension needing it declares a Maven dep,
+  served by Jolt's native loader (its Maven copy uses `definline`, which
+  SCI rejects).
 
 ## Runtime lifecycle
 

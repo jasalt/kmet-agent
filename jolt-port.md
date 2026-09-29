@@ -28,11 +28,6 @@ Windows validation is outstanding: run the bash tool, `jolt lint`
 - If `jolt.process` falls short, the fallback is direct
   `posix_spawn`/`waitpid`/`kill` FFI (the calls `process.ss` itself uses).
 
-## Extension content on Jolt (B3)
-
-- **`clojure.data.xml`**: bb-only; on Jolt an extension needing it declares
-  a Maven dep (it is not in the fixed bundled set).
-
 ## Tooling — remaining open surfaces (M5/M10)
 
 - **Extension packing on Jolt**: `kmet.tasks.build/pack-extension!` still

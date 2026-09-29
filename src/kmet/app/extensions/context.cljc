@@ -116,10 +116,9 @@
 
 (def ^:private bb-shared-namespaces
   "bb pre-loads these adapted-lib namespaces at startup (rewrite-clj ports,
-    edamame, the data.xml family) and their Maven copies cannot run under
-    SCI: rewrite-clj/edamame require clojure.tools.reader.impl.* (impl.inspect
-    dispatches on the removed PersistentArrayMap$Seq class), and data.xml's
-    copy uses definline (unsupported by SCI). Injected by reference into
+    edamame) and their Maven copies cannot run under SCI: rewrite-clj/edamame
+    require clojure.tools.reader.impl.* (impl.inspect dispatches on the
+    removed PersistentArrayMap$Seq class). Injected by reference into
     extension contexts like the custom ports, so extensions resolving them
     get the bundled copy and must not declare the Maven libs in deps.edn."
   '#{rewrite-clj.node
@@ -127,8 +126,7 @@
      rewrite-clj.paredit
      rewrite-clj.zip
      rewrite-clj.zip.subedit
-     edamame.core
-     clojure.data.xml})
+     edamame.core})
 
 (def ^:private missing-classname-re
   "Matches SCI's analysis error for an unregistered class:
@@ -515,16 +513,14 @@
          ;; under SCI (data.json, tools.cli, data.csv, ...)
          ;; are NOT injected — they resolve through the
          ;; load-fn, so a declared Maven version wins over
-         ;; the host classpath. The adapted ports
-         ;; (core.async, bundled-port-namespaces,
-         ;; bb-shared-namespaces, the data.xml family), the
-         ;; fixed bundled extension set
+         ;; the host classpath; clojure.data.xml is not
+         ;; provided at all. The adapted ports (core.async,
+         ;; bundled-port-namespaces, bb-shared-namespaces),
+         ;; the fixed bundled extension set
          ;; (bundled-extension-lib?) and the kmet layers stay
          ;; injected: their Maven copies fail under SCI, so
          ;; the bundled copy is the only working one.
-         (not (or (and (str/starts-with? n "clojure.data.")
-                       (not (or (= n "clojure.data.xml")
-                                (str/starts-with? n "clojure.data.xml."))))
+         (not (or (str/starts-with? n "clojure.data.")
                   (and (str/starts-with? n "clojure.tools.")
                        (not (contains? bundled-port-namespaces
                                        (ns-name ns-obj))))))
@@ -1169,9 +1165,9 @@
    kmet.app.extension-libs is the fixed bundled extension set (see there):
    on Jolt it is already loaded (statically required for the build
    closure), on bb/JVM this first extension load pulls it in. bb-only ports
-   (clojure.spec, rewrite-clj, tools.reader, data.xml — SCI-incompatible
-   Maven sources with bb-bundled replacements) are required only on bb:
-   Jolt uses the Maven copies from the fixed set instead."
+   (clojure.spec, rewrite-clj, tools.reader — SCI-incompatible Maven
+   sources with bb-bundled replacements) are required only on bb: Jolt uses
+   the Maven copies from the fixed set instead."
   []
   (require 'clojure.core.async)
   (apply require (concat tui-library-namespaces libs-library-namespaces))
