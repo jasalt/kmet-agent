@@ -27,6 +27,15 @@ ordered fan-out, per-call output budgets default to 16 KiB, capture budgets
 default to 1 MiB and are configurable up to 16 MiB, and the provider-facing
 description/guidelines are substantially shorter.
 
+**Native Jolt evaluator now unblocked.** `jolt.loader/eval-in` landed
+upstream after v0.8.14, closing the gap the loader investigation below
+flagged. A probe verified the whole T1 engine shape natively — per-call
+context, require gate, bridge, capture, native abort; the mechanics are
+ready, but adopting it drops the capability restriction, so the contract
+decision is recorded rather than taken ("Native script evaluator" below).
+The loader-eviction fix the per-call case needs is on branch
+`fix/loader-evict-unloaded` in the jolt checkout.
+
 **T0 measured and analysed** (results below); the numbers rewrote the premise
 rather than killed it: maki's read-share did not transfer — bash dominates —
 but ~75% of all result tokens are still the find/read workload; it leaks
@@ -324,25 +333,88 @@ and a policy only covers code that goes through it.
   ask upstream for is an eval entry (or the ambient loader covering the eval
   funnel, which the loader's own docstring promises but does not implement
   yet) — prototyped as `jolt.loader/eval-in` in the jolt checkout on branch
-  `loader-eval-in-context` (`6c032c0d`, loaderconf cases 38–39), pending
-  upstream.
-- **What a native path would still cost.** A per-call native context is
-  exactly the "one loader per request" case `loader.md` flags as unproven
-  (`loaders-by-id` retains every loader; the evict-evaluate-snapshot window
-  mutates the global registry under per-name claims), where an SCI `fork` is
-  a cheap per-call throwaway. The script body would have to be wrapped as a
-  namespace (for the `load` route) or evaluated in a hand-made one (for the
-  hook route) — line numbers, top-level forms, last-form return value — and
-  the tools bridge, output capture/print limits and the abort wrapper would
-  be re-provided natively. The abort half is now available
-  (`run-interruptible`, item 1), so it is no longer the blocker.
+  `loader-eval-in-context` (`6c032c0d`, loaderconf cases 38–39); **landed
+  upstream** as `a95c0eb5` (PR #1181, 2026-09-29) plus the read-order follow-up
+  `24cb1312` — one day after the v0.8.14 tag, so no release carries it yet and
+  the capability probe `(resolve 'jolt.loader/eval-in)` is the floor (the
+  `embedded-root?` precedent).
+- **What a native path would still cost.** `eval-in` answers the wrapping
+  question (a source string evaluated in the context, form by form, last-form
+  value) and `run-interruptible` (item 1) answers the abort half, so what
+  remains is semantic, not mechanical: the native evaluator cannot enforce
+  the capability table below (class resolution is the host's), the require
+  gate is advisory because direct fully-qualified references bypass it, host
+  var mutation is global where an SCI fork kept it local, and scripts diverge
+  by host. The per-call loader retention `loader.md` flags is fixed by the
+  eviction branch ("Native script evaluator" below); until that lands, a
+  native per-call context retains one loader per call (small, but unbounded).
 - **Verdict.** On bb, moving the eval behind `kmet.loader` is a small,
-  behavior-neutral seam and the right cleanup. On jolt, a native script
-  evaluator is constructible on top of the loader, but it is a larger change
-  than the abort question that prompts it; the SCI fork stays the per-call
-  mechanism until per-call native contexts get a closed-marker and native
-  eval is wanted for its own reasons (e.g. running compiled/stdlib code the
-  interpreter is slow at).
+  behavior-neutral seam and the right cleanup. On jolt, the native evaluator
+  is now constructible and probed (below), but it trades the capability
+  restriction for native fidelity, speed and abort coverage — a contract
+  decision, not an engineering blocker, and one the measurement does not
+  make either way (context economics are identical). The SCI fork stays the
+  default until that decision lands, or until T3's process isolation is
+  wanted for a real boundary (there the native evaluator is the evaluator
+  and the process is the sandbox).
+
+### Native script evaluator — eval-in landed (probe, 2026-09-29)
+
+`eval-in` makes the whole T1 engine shape constructible without SCI. Probed
+on `v0.8.14-6-g5cfe9b16` with `target/eval_in_probe.clj` (scratch under
+`target/`):
+
+- **Context** — one `jl/classpath []` over a host-view parent per call, a
+  fresh namespace name each time; `unload!` unmaps it. The whitelist gates
+  `require`: a name outside it fails `:loader/unreadable`.
+- **Bridge** — a host namespace with dynamic vars, `require`d through the
+  gate and bound around `eval-in`; promises deref; the binding conveys into
+  `future` (so `sandbox/spawn` needs no re-binding).
+- **Capture** — plain `binding` of `*out*`/`*err*`/print limits; the
+  `sci/binding` Jolt branch disappears.
+- **Abort** — `run-interruptible` around `eval-in`, `interrupt!` from the
+  control thread: 1–4 ms, the thread is reused, and the continuation escape
+  cannot be caught by the script (stronger than SCI's `:interrupt-fn`). A
+  blocked foreign call still sees it only on return, as with the JVM.
+- **Cost** — ~5–8 ms per call (prelude requires + compile + unload); there
+  is no base context to cache.
+
+What the SCI path uniquely provided does not survive:
+
+- **No capability restriction.** A script resolves classes and loaded
+  namespaces directly: `System/currentTimeMillis`, `Thread`,
+  `java.io.File`, `Throwable`, `eval`, and loaded kmet namespaces by
+  fully-qualified reference. `test-script-boundary` asserts the opposite.
+- **The gate is advisory.** `(require 'clojure.pprint)` is refused, but
+  `(clojure.pprint/cl-format …)` works once the host has loaded it: the
+  context rewrite covers the nine `clojure.core` loading/resolve calls, not
+  direct references.
+- **Isolation is weaker.** SCI kept `alter-var-root`/redefinitions
+  fork-local; natively a host var mutation is global.
+- **Host divergence.** A Jolt script can use what bb's SCI context lacks;
+  the description's "No Java interop / `Throwable` unavailable" would hold
+  only where SCI runs.
+
+**The per-call loader.** A native context is one loader; `loaders-by-id`
+kept every loader ever constructed reachable, so a per-request process
+accumulated them (vs. a throwaway SCI fork). The fix is drafted upstream on
+branch `fix/loader-evict-unloaded` in the jolt checkout: `unload!` swaps the
+entry for a closed stand-in carrying the id and an unloaded state, so the
+loader graph is collectable while a stale call site still fails
+`:loader/unloaded` (loaderconf case 40, a `WeakReference` + `gc-full!`
+assertion). Verified against the pre-fix runtime by `target/evict_probe.clj`:
+before the swap the loader is not collectable and the stale call reports
+`:loader/unloaded`; after it the loader is collected and the diagnosis is
+unchanged. The stand-ins themselves are not reclaimed — that waits for
+per-context var tables.
+
+**Implementation shape, if the contract decision goes native:** a portable
+`script-bridge` host namespace whose dynamic vars carry the per-call bridge
+(the gate admits it), a `#?(:jolt)` evaluator over `kmet.loader.jolt-loader`
+(`classpath []` + `host-view`) and `eval-in`, and `script.cljc` selecting it
+when `(resolve 'jolt.loader/eval-in)` is present — SCI stays for bb and
+older Jolt. Not started: it changes the tool's contract, so the decision
+comes first.
 
 ## Tiers
 
@@ -852,11 +924,18 @@ pipeline both callers use:
   serialization seam a future RPC mode would use).
 - `kmet.loader.sci-loader` — `:base` fork (per-call contexts for T3's daemon),
   `:eval-fn` (the default `sci/eval-string*`), `:interrupt-fn` support.
-- jolt upstream, checked on `v0.8.13-54-gc80ccdf6`:
+- jolt upstream, checked on `v0.8.14-6-g5cfe9b16`:
   `host/chez/java/concurrency.ss` (`run-interruptible` / `make-interrupt` /
   `interrupt!` — the engine-timer cooperative abort) and
-  `stdlib/jolt/loader.clj` (the native loader's ambient binding and its
-  M0–M3 limits — `loader.md` §9 Phase 2).
+  `stdlib/jolt/loader.clj` (`eval-in` — per-context string eval, loaderconf
+  cases 38–39 — the native loader's ambient binding and its M0–M3 limits —
+  `loader.md` §9 Phase 2). The eviction fix lives on branch
+  `fix/loader-evict-unloaded` in the `~/jolt` checkout (`unload!` swaps the
+  id→loader registry entry for a closed stand-in; loaderconf case 40 asserts
+  collectability). The earlier probes in this file were taken on
+  `v0.8.13-54-gc80ccdf6`; `target/eval_in_probe.clj` and
+  `target/evict_probe.clj` are the scratch probes behind the native-evaluator
+  subsection.
 - `extensions/mcp-adapter/src/kmet/extensions/mcp_adapter/tool_source.clj` and
   `tool_proxy.clj` (`script-tool-records`) — the contributed MCP catalog
   (T2); `src/skills/mcp/SKILL.md` — the scripted-MCP surface taught to the
