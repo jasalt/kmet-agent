@@ -66,9 +66,11 @@
    whole tree in one shot — including background jobs reparented outside
    the ppid tree (mksh on Termux forks `cmd &` from the sh's parent, so
    ppid-walking alone misses them). For non-leaders the group kill fails
-   (ESRCH) and we fall back to walking the process table and killing each
-   descendant directly (deepest first) — this also covers ProcessBuilder
-   children that share the app's process group."
+   (ESRCH) and we fall back to walking the process table and killing the
+   root then each descendant parents-first: killing a shell's running
+   child can make that shell advance to its next command, so ancestors
+   must die first. This also covers ProcessBuilder children that share
+   the app's process group."
   [pid]
   (if windows-os?
     ;; Windows: taskkill /T kills the tree natively
@@ -78,7 +80,7 @@
       (catch Exception _e nil))
     (if (zero? (group-kill pid))
       nil
-      (doseq [p (concat (reverse (collect-descendant-pids pid)) [pid])]
+      (doseq [p (cons pid (collect-descendant-pids pid))]
         (try
           @(proc/process ["kill" "-9" (str p)] {:out :discard :err :discard})
           (catch Exception _e nil))))))
