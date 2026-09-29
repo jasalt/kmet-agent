@@ -1,6 +1,6 @@
 ---
 name: clojure-edit
-description: Guidelines for using the clojure_edit, clojure_edit_replace_sexp and clojure_paren_repair tools. Use when editing Clojure files to ensure structure-aware editing, avoid paren errors, and follow best practices for Clojure code generation.
+description: Guidelines for using the clojure_edit, clojure_edit_replace_sexp, clojure_paren_repair and clojure_eval tools. Use when editing Clojure files to ensure structure-aware editing, avoid paren errors, verify changes in a running REPL, and follow best practices for Clojure code generation.
 ---
 
 # Use Clojure Structure-Aware Editing Tools
@@ -18,6 +18,7 @@ These tools understand Clojure syntax and prevent common errors.
 - `clojure_edit` — Replace entire top-level forms (an empty `content` deletes them)
 - `clojure_edit_replace_sexp` — Modify expressions within top-level forms (an empty `new_form` deletes them)
 - `clojure_paren_repair` — Fix unbalanced delimiters (parens/brackets/braces) in a file
+- `clojure_eval` — Evaluate code in a running nREPL server to verify your changes
 
 `clojure_edit` and `clojure_edit_replace_sexp` REJECT unbalanced delimiters in
 the content you pass (missing or extra parens are NOT auto-fixed) — you must
@@ -68,6 +69,22 @@ pass complete, balanced forms. When a file's delimiters get broken, run
 2. Then add each function one at a time with `clojure_edit` using the "insert_after" operation
 3. Test each function before adding the next
 
+## Verifying Changes in the REPL
+After editing a namespace, verify it in a running nREPL with `clojure_eval`:
+- Evaluate `(require '[my.ns :as ns] :reload)` and then call the changed function.
+- The session persists, so vars and namespaces loaded by one call are visible
+  to later calls; return to the same port to keep that state.
+- Pass `ns` to evaluate in a target namespace (e.g. `ns: "my.app"`);
+  otherwise the session's current namespace is used.
+- Pass `port` when no project port file (`.nrepl-port`, shadow-cljs, CIDER)
+  identifies the server, or when more than one nREPL is running. Port files
+  are resolved from the session's working directory.
+- To stop a long evaluation, cancel the run; the connection is closed and
+  the result says the evaluation was cancelled. Code already running on the
+  server may still complete.
+- Unbalanced delimiters in the code are repaired before evaluation and the
+  result says so — fix the code instead of relying on it.
+
 ## Working with Defmethod
 Remember to include dispatch values:
 - Normal dispatch: `form_identifier: "area :rectangle"`
@@ -85,6 +102,7 @@ Remember to include dispatch values:
 | Rename a symbol everywhere in a file | `clojure_edit_replace_sexp` with `replace_all` |
 | Edit an ns declaration | `clojure_edit` |
 | Fix unbalanced delimiters after an errant edit | `clojure_paren_repair` |
+| Verify a change in a running nREPL | `clojure_eval` |
 
 **Rule of thumb:** prefer `insert_before`/`insert_after` for ADDING new forms
 (no need to reproduce the anchor's text); use `replace` only to MODIFY an

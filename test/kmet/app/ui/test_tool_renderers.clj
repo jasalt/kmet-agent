@@ -381,6 +381,25 @@
       (is (= 1 (count lines)))
       (is (str/includes? (first lines) "script ...")))))
 
+(deftest test-render-code-call
+  (testing "a custom label and suffix render like the script call"
+    (let [lines (plain (r/render-code-call "clojure>" "(+ 1 2)"
+                                           (theme/fg th :dim "  :7888") th 60 {}) 60)]
+      (is (= 1 (count lines)))
+      (is (str/includes? (first lines) "clojure> (+ 1 2)"))
+      (is (str/includes? (first lines) ":7888"))))
+  (testing "collapsed multi-line code keeps the head and hints at the rest"
+    (let [code (str/join "\n" (mapv #(str "(println " % ")") (range 20)))
+          lines (plain (r/render-code-call "clojure>" code "" th 60 {:expanded false}) 60)]
+      (is (< (count lines) 20) "the payload does not render in full")
+      (is (str/starts-with? (first lines) "clojure> (println 0)"))
+      (is (str/includes? (peek lines) "more lines,"))))
+  (testing "expanded code renders verbatim"
+    (let [code (str/join "\n" (mapv #(str "line " %) (range 12)))
+          lines (plain (r/render-code-call "run" code "" th 60 {:expanded true}) 60)]
+      (is (= 12 (count lines)))
+      (is (str/includes? (peek lines) "line 11")))))
+
 (deftest test-script-result
   (testing "output preview, inner-call summary and Took all render"
     (let [context {:details {:calls [{:tool "read" :ok true}

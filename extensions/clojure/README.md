@@ -1,6 +1,7 @@
 # Clojure Extension
 
-Clojure-aware tools for kmet, ported from [clojure-mcp](https://github.com/bhauman/clojure-mcp).
+Clojure-aware tools for kmet, ported from [clojure-mcp](https://github.com/bhauman/clojure-mcp)
+(the nREPL client follows [clojure-mcp-light](https://github.com/bhauman/clojure-mcp-light)).
 
 ## Tools
 
@@ -92,34 +93,61 @@ in replacement/match content via the shared `kmet.extensions.clojure.edit-util` 
 complete, balanced forms. Use `clojure_paren_repair` to fix a file whose
 delimiters are broken.
 
-## Planned: nREPL evaluation
+### `clojure_eval`
 
-A future `clojure-nrepl-eval` tool would port the nREPL evaluator from
-[clojure-mcp-light](https://github.com/bhauman/clojure-mcp-light). It is not
-currently implemented.
+Evaluate Clojure code in a running nREPL server. The server must already be
+running: `bb nrepl`, `clj -M:nrepl`, `lein repl`, or the project's REPL.
 
-The official `nrepl.core` Maven client is not usable in the extension SCI
-context because it requires `nrepl.tls` and the unavailable
-`java.security.cert.Certificate` class. The planned implementation uses the
-small bencode-based client from clojure-mcp-light instead, with only bundled
-`bencode.core` and `java.net.*` dependencies. The port can omit that project's
-timbre/statistics/temp-session-file behavior; kmet has no corresponding
-session persistence.
+```
+clojure_eval:
+  code: "(require '[my.app :as app] :reload)"
+  port: 7888          # optional — discovered from the session's port files when omitted
+  host: "127.0.0.1"   # optional
+  ns: "my.app"        # optional target namespace
+  timeout: 120000     # optional read timeout in milliseconds
+```
 
-Planned features:
+**Parameters:**
+- `code` — Clojure code to evaluate (required; one or more forms)
+- `port` — nREPL port; auto-discovered when omitted
+- `host` — nREPL host (default `127.0.0.1`)
+- `ns` — target namespace; omitted means the session's current namespace
+- `timeout` — read timeout in milliseconds (default 120000)
 
-- Connect to a running nREPL server.
-- Discover ports through `.nrepl-port` and `lsof`.
-- Keep persistent sessions per host and port.
-- Repair delimiters delimiter-only (via `parinferish`'s tokenizer) before evaluation.
-- Detect Clojure, Babashka, Shadow-CLJS, and Basilisp environments.
-- Apply evaluation timeouts.
+**Features:**
+- Port discovery through `.nrepl-port`, `.shadow-cljs/nrepl.port`,
+  `.shadow-cljs/.nrepl-port`, `.cider-nrepl.port` and `nrepl-port`, resolved
+  from the session's working directory; every candidate is validated with an
+  nREPL `describe` before use
+- Persistent sessions per host:port (in memory for the kmet process) — vars
+  and loaded namespaces survive across calls
+- The target namespace is set through the nREPL `ns` op, with an
+  `(in-ns 'ns)` fallback for servers that do not implement it (babashka's
+  nREPL answers `unknown-op`)
+- Delimiter repair before evaluation (the same delimiter-only repair as
+  `clojure_paren_repair`), reported explicitly when it fires instead of
+  silently correcting the code
+- Output interleaved with values in arrival order (`=> v` lines), including
+  stdout/stderr
+- Evaluation failures are an explicit `Eval error (class …)` result
+- On timeout the tool sends an nREPL `interrupt`; the environment (`:clj`,
+  `:bb`, `:shadow`, `:basilisp`) is detected from `describe` and reported in
+  `:details`. Read deadlines use `Socket.setSoTimeout`; Jolt currently lacks
+  that method ([jolt#1191](https://github.com/jolt-lang/jolt/issues/1191)),
+  so on Jolt a read blocked on a silent server waits for the response
+  instead of timing out early (an explicit cancel still closes the
+  connection and unblocks it)
+- Cancelling the run (abort) closes the connection and returns an
+  `Evaluation cancelled (abort requested)` result instead of waiting for the
+  timeout
 
-Planned parameters:
-
-- `port` — nREPL port; auto-discover when omitted.
-- `code` — Clojure code to evaluate.
-- `timeout` — timeout in milliseconds.
+**Why the client is in-tree:** the official `nrepl.core` needs `nrepl.tls`
+(`java.security.cert.Certificate`, unavailable in the extension context), and
+`nrepl/bencode` — even declared through a `deps.edn` — fails SCI source
+evaluation (`definline`, `clojure.lang` imports). The extension therefore
+carries a small pure-Clojure bencode codec and socket client in
+`kmet.extensions.clojure.nrepl`. No `deps.edn` means the shipped extension
+stays loadable in `jolt dist` builds.
 
 ## Skill
 
@@ -143,6 +171,7 @@ Editing guidelines pulled on demand when working with Clojure files. Covers:
 | Rename a symbol everywhere in a file | `clojure_edit_replace_sexp` with `replace_all` |
 | Edit an ns declaration | `clojure_edit` |
 | Fix unbalanced delimiters after an errant edit | `clojure_paren_repair` |
+| Verify a change in a running nREPL | `clojure_eval` |
 
 ## Dependencies
 
@@ -162,5 +191,5 @@ hosts:
 
 ## Skills
 
-- `clojure-edit` — editing guidelines (when to use which tool, paren handling, small edits)
+- `clojure-edit` — editing guidelines (when to use which tool, paren handling, small edits, REPL verification with `clojure_eval`)
 - Ported from clojure-mcp's `clojure_form_edit.md` system prompt

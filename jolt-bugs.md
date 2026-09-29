@@ -9,6 +9,9 @@ fix named below).
 
 ## Open
 
+Each entry below records the kmet-side workaround (if any) and exactly what
+to remove or update when the upstream fix lands.
+
 ### [jolt#1031](https://github.com/jolt-lang/jolt/issues/1031) — SCI host-protocol support on Jolt
 
 The issue affects extensions that choose the SCI loader backend on Jolt and
@@ -33,6 +36,56 @@ sections (`kmet.libs.jsonrpc`, `kmet.tui.wake`, the shared context cache) only
 `swap!` or `deliver` without parking. It is a constraint for new Jolt code
 rather than a bug to fix: keep parking work out of the lazy seq, or realize it
 eagerly first.
+
+### [jolt#1191](https://github.com/jolt-lang/jolt/issues/1191) — `Socket.setSoTimeout`/`getSoTimeout` are missing
+
+Filed 2026-09-29, observed on master `c2c5b2c0`. `jolt.socket` implements
+neither accessor, so JVM code that bounds a blocking read or accept with
+`Socket.setSoTimeout` fails at the setter, and a peer that never answers
+blocks the read indefinitely (POSIX fds are `O_NONBLOCK`, so the wait is a
+poller park and `SO_RCVTIMEO` cannot fire).
+`java.net.SocketTimeoutException` is registered in the class hierarchy but
+nothing can raise it.
+
+Affects `kmet.extensions.clojure.nrepl`: its per-read eval deadline is a
+no-op on Jolt until this lands — the deadline is still re-checked between
+messages, but a read blocked on a silent server waits for the response
+(an explicit cancel still closes the socket and unblocks it). The
+timed-wait seam this needs is the same one
+[jolt#1192](https://github.com/jolt-lang/jolt/issues/1192) (connect timeout)
+needs — fix them together. jolt#1192 also covers the related open divergence
+that `connect` ignores its timeout argument
+(`test/conformance/known-divergences.edn`).
+
+**Workaround:** `kmet.extensions.clojure.nrepl` guards both `.setSoTimeout`
+calls in `try`/`catch` — the connect-time setter in `connect-socket` and the
+per-read renewer in `renew-read-timeout!` — and documents the deadline as
+best-effort in its namespace header and in `extensions/clojure/README.md`
+(the `clojure_eval` feature list). When the fix lands: drop both guards,
+update those notes to say the deadline holds on both hosts, and let a setter
+failure surface instead of being swallowed.
+
+### [jolt#1192](https://github.com/jolt-lang/jolt/issues/1192) — `Socket.connect(endpoint, timeout)` ignores its timeout
+
+Filed 2026-09-29, observed on master `c2c5b2c0`. The 2-arity accepts a
+timeout, binds it as `_timeout`, and waits on the poller with no deadline
+(`stdlib/jolt/socket.clj` `connect-fd!`), so a connect to a blackholed or
+slow endpoint blocks until the OS gives up. Upstream's own divergence row
+(`test/conformance/known-divergences.edn`) records it and can retire with
+the fix.
+
+kmet does use this arity: `kmet.extensions.clojure.nrepl` passes its
+timeout to `(.connect socket endpoint timeout)`, so on Jolt a connect to an
+unreachable nREPL server can stall before any read happens. The reason to
+track it beside jolt#1191 is shared work: both need a timed
+`jolt.io-poller/wait-ready` (kqueue/epoll timeout plus the thread path)
+while keeping the untimed path's "never a timed poll" property. Landing
+#1191 first makes #1192 a small follow-up.
+
+**Workaround:** none — `connect-socket` already passes its budget to the
+3-arity. When the fix lands: only the comment there and this entry change;
+the `:nrepl-connect` error then arrives after the configured budget instead
+of after the OS gives up.
 
 ### Unfiled — Windows static-native builds need dependency-aware preload and link flags
 

@@ -13,7 +13,9 @@
                             '[kmet.extensions.clojure.edit-util-test
                               kmet.extensions.clojure.edit-tool-test
                               kmet.extensions.clojure.sexp-tool-test
-                              kmet.extensions.clojure.paren-repair-test])]
+                              kmet.extensions.clojure.paren-repair-test
+                              kmet.extensions.clojure.nrepl-test
+                              kmet.extensions.clojure.eval-tool-test])]
                 (doseq [ns-sym nss]
                   (require ns-sym))
                 (let [summary (apply clojure.test/run-tests nss)]

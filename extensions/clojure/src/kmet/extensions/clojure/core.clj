@@ -4,22 +4,27 @@
 ;;   clojure_edit              — structure-aware form editing
 ;;   clojure_edit_replace_sexp — s-expression replacement
 ;;   clojure_paren_repair      — delimiter repair
+;;   clojure_eval              — nREPL evaluation
 
 (ns kmet.extensions.clojure.core
   (:require [clojure.java.io :as io]
+            [kmet.extension :as ext]
             [kmet.extensions.clojure.edit-tool :as edit-tool]
+            [kmet.extensions.clojure.eval-tool :as eval-tool]
+            [kmet.extensions.clojure.nrepl :as nrepl]
             [kmet.extensions.clojure.paren-repair :as paren-repair]
-            [kmet.extensions.clojure.sexp-tool :as sexp-tool]
-            [kmet.extension :as ext]))
+            [kmet.extensions.clojure.sexp-tool :as sexp-tool]))
 
 (defn init [api]
   (edit-tool/register! api)
   (sexp-tool/register! api)
   (paren-repair/register! api)
+  (eval-tool/register! api)
   ;; contribute the editing-guidelines skill (self-registered content —
   ;; no host path enumeration, so jar/zip artifacts work unexpanded)
   (ext/register-skill! api (slurp (io/resource "skills/clojure-edit/SKILL.md"))
                        {:location "clojure:skills/clojure-edit/SKILL.md"}))
 
 (defn shutdown [_api]
-  nil)
+  ;; best-effort: close the nREPL sessions this process created
+  (nrepl/close-sessions!))

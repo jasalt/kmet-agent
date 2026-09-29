@@ -1029,50 +1029,59 @@
          (concat (output-result-nodes content theme width expanded? ended-at truncation)
                  (elapsed-result-nodes theme started-at ended-at)))))
 
-(def ^:private script-call-preview-lines
-  "Collapsed cap on the rendered script body, in visual lines. A long script
-   would otherwise dominate the transcript for every later message; the
-   expanded form renders it in full."
+(def ^:private code-call-preview-lines
+  "Collapsed cap on a code-bearing call line (script, clojure_eval), in
+   visual lines. A long payload would otherwise dominate the transcript for
+   every later message; the expanded form renders it in full."
   5)
 
-(defn render-script-call
-  "Call line for the script tool: `script <code>` (+ an explicit timeout
-   suffix). The collapsed form keeps the head of a long script and hints at
-   the rest; the expanded form renders it verbatim. The quiet title mirrors
-   the collapsed shape on one line."
-  [_name args theme width context]
-  (let [code (:code args)
-        code-str (if (string? code) code (if (nil? code) "" nil))
-        timeout (:timeout args)
+(defn render-code-call
+  "The shared call line for tools whose primary argument is code (script,
+   clojure_eval): `<label> <code>` collapsed to a width-aware window of the
+   first CODE-CALL-PREVIEW-LINES visual lines with an expand hint, rendered
+   verbatim when expanded. LABEL is plain text (styled bold tool-title);
+   SUFFIX is appended as given (pre-styled), on the hint line when one
+   renders."
+  [label code suffix theme width context]
+  (let [code-str (if (string? code) code (if (nil? code) "" nil))
         code-display (cond
                        (nil? code-str) (theme/fg theme :error "[invalid arg]")
                        (empty? code-str) (theme/fg theme :tool-output "...")
                        :else code-str)
         code-line (theme/fg theme :tool-title
-                            (theme/bold (str "script " code-display)))
-        timeout-suffix (if (and (number? timeout) (pos? timeout))
-                         (theme/fg theme :muted (str " (" timeout "s)"))
-                         "")
-        rendered (if (:expanded context)
-                   (str code-line timeout-suffix)
-                   (let [{:keys [visual-lines skipped-count]}
-                         (utils/truncate-head-to-visual-lines code-line
-                                                              script-call-preview-lines
-                                                              width)]
-                     (if (zero? skipped-count)
-                       (str code-line timeout-suffix)
-                       (str (str/join "\n" visual-lines)
-                            "\n"
-                            (utils/truncate-to-width
-                             (str (theme/fg theme :muted
-                                            (str "... (" skipped-count " more lines,"))
-                                  " "
-                                  (app-kb/key-hint "app.tools.expand" "to toggle")
-                                  (theme/fg theme :muted ")")
-                                  timeout-suffix)
-                             width
-                             "...")))))]
-    (h/compile-tree (tool-text rendered))))
+                            (theme/bold (str label " " code-display)))]
+    (h/compile-tree
+     (tool-text
+      (if (:expanded context)
+        (str code-line suffix)
+        (let [{:keys [visual-lines skipped-count]}
+              (utils/truncate-head-to-visual-lines code-line
+                                                   code-call-preview-lines
+                                                   width)]
+          (if (zero? skipped-count)
+            (str code-line suffix)
+            (str (str/join "\n" visual-lines)
+                 "\n"
+                 (utils/truncate-to-width
+                  (str (theme/fg theme :muted
+                                 (str "... (" skipped-count " more lines,"))
+                       " "
+                       (app-kb/key-hint "app.tools.expand" "to toggle")
+                       (theme/fg theme :muted ")")
+                       suffix)
+                  width
+                  "...")))))))))
+
+(defn render-script-call
+  "Call line for the script tool: `script <code>` (+ an explicit timeout
+   suffix), via the shared code-call renderer. The quiet title mirrors the
+   collapsed shape on one line."
+  [_name args theme width context]
+  (let [timeout (:timeout args)
+        suffix (if (and (number? timeout) (pos? timeout))
+                 (theme/fg theme :muted (str " (" timeout "s)"))
+                 "")]
+    (render-code-call "script" (:code args) suffix theme width context)))
 
 (defn- script-calls-nodes
   "One muted summary line for the script tool's inner-call trace (details
