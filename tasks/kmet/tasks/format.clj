@@ -12,9 +12,7 @@
    interpreter runs rewrite-clj), so a full-tree jolt run is minutes — the
    changed-file task (`jolt format-check-changed`) and babashka remain the
    practical gates for the whole tree."
-  (:require [babashka.fs :as fs]
-            [clojure.string :as str]
-            [kmet.tasks.changed :as changed]))
+  (:require [kmet.tasks.changed :as changed]))
 
 (defn- cljfmt-op
   "cljfmt.tool's FIX or CHECK fn. Loaded lazily — the format tasks are its
@@ -33,19 +31,15 @@
   ((cljfmt-op op) {:paths (vec paths)}))
 
 (defn- source-paths
-  "Every cljfmt-managed file: src/test/tasks/extensions, minus build output
-   (target/) and the generated provider catalogs ([image_]model_data/ —
-   their exact bytes are sha256-manifested and owned by the model
-   generators, not cljfmt)."
+  "Every cljfmt-managed file: src/test/tasks/extensions, minus the generated
+   provider catalogs ([image_]model_data/ — their exact bytes are
+   sha256-manifested and owned by the model generators, not cljfmt).
+   Gitignored trees are never traversed (kmet.tasks.changed/project-files)."
   []
-  (->> ["src" "test" "tasks" "extensions"]
-       (mapcat (fn [root] (fs/glob root "**.{clj,cljs,cljc,cljd,bb,edn,jolt}")))
-       ;; the exclusion matches / — fs/glob yields the platform separator
-       ;; (backslash on Windows), which would let the generated catalogs
-       ;; through to cljfmt
-       (remove (fn [path] (re-find #"/target/|/(image_)?model_data/"
-                                   (str/replace (str path) "\\" "/"))))
-       (mapv str)))
+  (->> (changed/project-files ["src" "test" "tasks" "extensions"]
+                              ["clj" "cljs" "cljc" "cljd" "bb" "edn" "jolt"])
+       (remove #(re-find #"/(image_)?model_data/" %))
+       vec))
 
 (defn format!
   "Fix formatting (bb format / jolt format). ARGS: specific files/dirs, else

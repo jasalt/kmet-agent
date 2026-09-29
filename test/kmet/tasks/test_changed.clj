@@ -1,6 +1,7 @@
 (ns kmet.tasks.test-changed
   "Tests for the changed-file/require-graph helper behind `bb *-changed`."
-  (:require [clojure.string :as str]
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kmet.tasks.changed :as changed]))
 
@@ -70,3 +71,40 @@
     (let [nss (set (changed/affected-test-nss-by '[kmet.extension extensions.tools]))]
       (is (empty? (filter #(str/starts-with? (str %) "extensions.") nss)))
       (is (contains? nss 'kmet.app.test-extensions)))))
+
+(deftest affected-lint-file-closure
+  (testing "a changed file, its dependents, and their transitive dependencies are linted together
+            (clj-kondo resolves qualified vars across the files of one invocation only)"
+    (let [files (set (changed/affected-lint-files-by ["src/kmet/libs/process.clj"]))]
+      (is (contains? files "src/kmet/libs/process.clj")
+          "the changed file is linted")
+      (is (contains? files "src/kmet/app/extensions.cljc")
+          "a dependent is linted (its call sites see a changed signature)")
+      (is (contains? files "src/kmet/app/extensions/context.cljc")
+          "a dependency of the dependent is linted (its vars must resolve)")))
+  (testing "unrelated namespaces stay out"
+    (let [files (set (changed/affected-lint-files-by ["src/kmet/libs/process.clj"]))]
+      (is (not (contains? files "src/kmet/tui/hiccup.cljc"))))))
+
+(deftest project-files-skips-ignored-trees
+  (let [files (changed/project-files ["extensions"] ["clj" "cljc" "jolt"])]
+    (is (contains? (set files) "extensions/clojure/src/kmet/extensions/clojure/core.clj")
+        "tracked source files are listed")
+    (is (not-any? #(str/includes? % "/target/") files)
+        "gitignored build output (extensions/clojure/target/) is not traversed")))
+
+(deftest fallback-files-prunes-build-dirs
+  (let [dir (fs/create-temp-dir {:dir "target" :prefix "fallback-walk-"})
+        src (str (fs/file dir "src"))]
+    (try
+      (fs/create-dirs src)
+      (fs/create-dirs (str (fs/file dir "target" "deep")))
+      (spit (str (fs/file src "a.clj")) "(ns a)\n")
+      (spit (str (fs/file dir "target" "deep" "b.clj")) "(ns b)\n")
+      (let [files (@#'changed/fallback-files (str dir))]
+        (is (some #(str/ends-with? % "src/a.clj") files)
+            "source files below the root are walked")
+        (is (not-any? #(str/includes? % "/target/") files)
+            "build directories are pruned, not descended into"))
+      (finally
+        (fs/delete-tree dir)))))

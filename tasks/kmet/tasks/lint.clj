@@ -223,15 +223,11 @@
   (contains? lint-exts (fs/extension (str path))))
 
 (defn- lintable-files
-  "The lintable files under DIR, recursively — one `**.{…}` pattern matches
-   top-level and nested files (`**` crosses separators), the same spelling
-   kmet.tasks.changed/dir-clj-files uses. target/ is build output — and this
-   namespace's own mirrors — never source."
+  "The lintable files under DIR — gitignored trees are never traversed:
+   target/ is build output (and this namespace's own mirrors), and the caches
+   and VCS dirs are not source. See kmet.tasks.changed/project-files."
   [dir]
-  (->> (fs/glob dir glob-pattern)
-       (map str)
-       (remove #(str/includes? % "/target/"))
-       sort))
+  (changed/project-files [dir] lint-exts))
 
 (defn- target-files
   "The files a lint run covers for PATHS: a directory expands to the lintable

@@ -5,9 +5,10 @@
    ↔ src/kmet/x/y.clj, and test/kmet/tasks/y_test.clj ↔ tasks/kmet/tasks/y.clj),
    so a source change must also re-run the tests that transitively require it.
 
-   The source roots are src/, tasks/ and extensions/ (see AGENTS.md § File
-   layout — tasks/ holds the task implementations), all scanned as plain
-   directories, so a new root must be added to `source-roots` here.
+   The source roots are src/, test/, tasks/ and extensions/ (see AGENTS.md
+   § File layout — tasks/ holds the task implementations). Their files are
+   listed gitignore-aware — git in a repo, a pruned walk otherwise (see
+   project-files) — so a new root must be added to `source-roots` here.
 
    extensions/ is first-class: its .clj files (source and any tests they
    carry) are part of the lint/format gates and the changed-file scan, and
@@ -30,9 +31,9 @@
 
 (def ^:private source-roots
   "The classpath source roots the changed-file scan and the require graph
-   cover, in glob order. test/ is a root too but holds only tests — its files
-   reach the graph through the same scan (the roots are listed explicitly
-   because `fs/glob` takes one root at a time)."
+   cover, in listing order. test/ is a root too but holds only tests — its
+   files reach the graph through the same scan (see project-files for how
+   the roots are enumerated)."
   ["src" "test" "tasks" "extensions"])
 
 (def ^:private changed-path-re
@@ -69,12 +70,71 @@
   [path]
   (str/replace (str path) "\\" "/"))
 
-(defn- dir-clj-files
-  "Every .clj/.cljc/.jolt file under DIR — top level and nested, /-separated.
-   One `**.{…}` pattern rather than a `*.{…}` + `**/*.{…}` pair: `**`
-   crosses separators on both hosts and matches top-level files too."
+(def ^:private fallback-skip-dirs
+  "Directory names the no-git fallback never descends into. A git repo uses
+   the real ignore rules instead."
+  #{"target" ".git" "node_modules" ".cpcache" "dist" ".jolt" ".lsp" ".bb"})
+
+(defn- git-listed-files
+  "The tracked plus untracked, non-ignored files under ROOTS as /-separated
+   strings, or nil when git cannot answer (not a repo, git unavailable,
+   absolute roots)."
+  [roots]
+  (when (every? #(not (fs/absolute? %)) roots)
+    (try
+      (let [res (apply proc/shell {:out :string :err :string :continue true}
+                       "git" "ls-files" "-z" "--cached" "--others" "--exclude-standard"
+                       "--" roots)]
+        (when (zero? (:exit res))
+          (->> (str/split (:out res) #"\u0000")
+               (remove str/blank?)
+               (map slashify)
+               (filter #(fs/exists? %)))))
+      (catch Exception _ nil))))
+
+(defn- fallback-files
+  "Files under DIR, /-separated, never descending into fallback-skip-dirs or
+   symlinked directories."
   [dir]
-  (map slashify (fs/glob dir "**.{clj,cljc,jolt}")))
+  (letfn [(walk [d]
+            (mapcat (fn [f]
+                      (cond
+                        (and (fs/directory? f)
+                             (not (fs/sym-link? f))
+                             (not (contains? fallback-skip-dirs (str (fs/file-name f)))))
+                        (walk f)
+
+                        (fs/regular-file? f)
+                        [(slashify f)]
+
+                        :else []))
+                    (fs/list-dir d)))]
+    (walk dir)))
+
+(defn project-files
+  "Every existing file under ROOTS with an extension in EXTS, /-separated,
+   sorted, hidden entries skipped (the `fs/glob` default). A git repo lists
+   through git — tracked plus untracked, ignored excluded — so gitignored
+   directories (target/, caches, VCS) are never traversed; without git the
+   walk prunes the standard build directories instead."
+  [roots exts]
+  (let [exts (set exts)
+        roots (mapv str roots)
+        listed (git-listed-files roots)
+        files (or listed (mapcat fallback-files roots))]
+    (->> files
+         (filter #(contains? exts (fs/extension %)))
+         (remove #(some (fn [seg] (str/starts-with? seg "."))
+                        (str/split % #"[\\/]")))
+         distinct
+         sort
+         vec)))
+
+(defn- source-clj-files
+  "The source roots' .clj/.cljc/.jolt files, gitignore-aware (see
+   project-files)."
+  []
+  (project-files source-roots ["clj" "cljc" "jolt"]))
 
 (defn- mtime-changed-files
   "The source-roots' .clj files modified after the baseline timestamp (mtime
@@ -82,7 +142,7 @@
   []
   (let [base (try (Long/parseLong (str/trim (slurp baseline-file)))
                   (catch Exception _ 0))]
-    (->> (mapcat dir-clj-files source-roots)
+    (->> (source-clj-files)
          (filter #(> (.toMillis (fs/last-modified-time %)) base))
          (map slashify)
          sort)))
@@ -174,7 +234,7 @@
                     (update :paths assoc ns-sym path))
                 acc)))
           {:graph {} :paths {}}
-          (mapcat dir-clj-files source-roots)))
+          (source-clj-files)))
 
 (defn- reverse-graph
   "ns → set of namespaces that require it."
@@ -184,11 +244,12 @@
              {} graph))
 
 (defn- closure
-  "ROOTS plus every namespace transitively depending on them."
-  [roots rev]
+  "ROOTS plus every namespace reachable from them through EDGES — the
+   reverse graph walks to dependents, the forward graph to dependencies."
+  [roots edges]
   (loop [frontier (seq roots) seen (set roots)]
     (if-let [n (first frontier)]
-      (let [deps (rev n #{})]
+      (let [deps (edges n #{})]
         (recur (concat (rest frontier) (remove seen deps))
                (into seen deps)))
       seen)))
@@ -227,17 +288,26 @@
   []
   (affected-test-nss-by (map path->ns (changed-clj-files))))
 
-(defn affected-lint-files
-  "Files to lint: the changed source-root .clj files plus every affected
-   dependent (a changed signature is only flagged at the call site)."
-  []
+(defn affected-lint-files-by
+  "Files to lint for CHANGED-PATHS: the paths themselves, every affected
+   dependent (a changed signature is only flagged at the call site), and the
+   transitive dependencies of that set — clj-kondo resolves qualified vars
+   across the files of one invocation only, so a file linted without its
+   requires reports their vars as unresolved."
+  [changed-paths]
   (let [{:keys [graph paths]} (scan-graph)
         rev (reverse-graph graph)
-        roots (filter graph (map path->ns (changed-clj-files)))
-        closure-nss (closure roots rev)]
-    (->> (concat (changed-clj-files) (map paths closure-nss))
+        roots (filter graph (map path->ns changed-paths))
+        dependents (closure roots rev)
+        lint-set (closure dependents graph)]
+    (->> (concat changed-paths (keep paths lint-set))
          distinct
          sort)))
+
+(defn affected-lint-files
+  "Files to lint for the currently changed files."
+  []
+  (affected-lint-files-by (changed-clj-files)))
 
 (defn extension-changed-files
   "Changed .clj files under extensions/. Their tests run from inside the
