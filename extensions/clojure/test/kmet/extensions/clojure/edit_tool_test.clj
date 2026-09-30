@@ -168,6 +168,29 @@
       (is (str/includes? content "* x y"))
       (is (not (str/includes? content "+ x y"))))))
 
+(deftest test-replace-defn-multi-arity
+  ;; the shape validator must accept the full multi-arity grammar:
+  ;; docstring and attr-map around the arities, metadata on the arg vectors
+  (let [path (write-test-file! "replace-defn-multi-arity"
+                               "(defn area\n  ([w] (* w w))\n  ([w h] (* w h)))\n")
+        result (edit-tool/execute
+                (edit-opts path "defn" "area"
+                           "(defn area\n  \"Rect or square area.\"\n  {:private true}\n  ([w] (* w w))\n  ([w h] (long (* w h))))"))]
+    (is (not (:is-error result)))
+    (let [content (read-test-file path)]
+      (is (str/includes? content "Rect or square area."))
+      (is (str/includes? content ":private true"))
+      (is (str/includes? content "(long (* w h))")))))
+
+(deftest test-replace-defn-multi-arity-single-clause
+  (let [path (write-test-file! "replace-defn-multi-arity-one"
+                               "(defn classify [x] :num)\n")
+        result (edit-tool/execute
+                (edit-opts path "defn" "classify"
+                           "(defn classify ([x] :num))"))]
+    (is (not (:is-error result)))
+    (is (str/includes? (read-test-file path) "([x] :num)"))))
+
 ;; ═══════════════════════════════════════════════════════════════════════════════
 ;; Replace a def
 ;; ═══════════════════════════════════════════════════════════════════════════════

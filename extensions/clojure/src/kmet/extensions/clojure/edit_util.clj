@@ -320,26 +320,79 @@
 (defn- child-sexpr [node]
   (try (z/sexpr (z/of-node node)) (catch Exception _ nil)))
 
+(defn- unwrap-meta
+  "NODE with leading metadata wrappers removed (stacked ^:a ^:b ...): for
+   a `:meta` node, the value it wraps (its last child), unwrapped
+   recursively; otherwise NODE itself. Lets the structure checks see
+   `^long [x]` as the argument vector it is."
+  [node]
+  (if (= :meta (n/tag node))
+    (if-some [value (last (n/children node))]
+      (recur value)
+      node)
+    node))
+
+(defn- first-form-child
+  "The first child node of NODE that survives reading, or nil: whitespace,
+   comments, and reader-discarded #_ forms are skipped."
+  [node]
+  (first (remove #(contains? #{:whitespace :comment :uneval} (n/tag %))
+                 (n/children node))))
+
+(defn- arg-vector-node?
+  "True for an argument vector node, directly or behind metadata
+   (^long [x])."
+  [node]
+  (= :vector (n/tag (unwrap-meta node))))
+
+(defn- reader-conditional-node?
+  "True for a #? / #?@ reader conditional. Its platform branches cannot
+   be resolved here, so it counts as an unverifiable arglist or clause
+   rather than a shape error."
+  [node]
+  (and (= :reader-macro (n/tag node))
+       (str/starts-with? (n/string node) "#?")))
+
+(defn- arity-clause-node?
+  "True for one multi-arity clause: a list whose first form child is an
+   argument vector, e.g. ([x] ...) or (^long [x] ...). A reader
+   conditional in clause position is accepted unverified."
+  [node]
+  (let [node (unwrap-meta node)]
+    (or (reader-conditional-node? node)
+        (and (= :list (n/tag node))
+             (some-> (first-form-child node) arg-vector-node?)))))
+
 (defn- defn-args-present?
   "True when the defn-form children after the name include an argument
    vector, either directly ([x] body), as the head of every multi-arity
-   clause ((defn foo ([x] ...) ([x y] ...))), or after an optional
-   docstring."
+   clause ((defn foo ([x] ...) ([x y] ...))), or as an unverifiable
+   reader conditional (#?(:bb ([x] x) :clj ([x y] y))). Handles the whole
+   defn grammar around the arglists: reader-discarded #_ forms, an
+   optional docstring, attribute maps (before the arglist or after the
+   last arity), and metadata on the argument vectors or arity clauses
+   (^long [x])."
   [children]
-  (let [after-name (rest (rest children))
-        after-doc (if (and (seq after-name)
-                           (= :token (n/tag (first after-name)))
-                           (string? (child-sexpr (first after-name))))
-                    (rest after-name)
-                    after-name)]
-    (if (some #(= :vector (n/tag %)) after-doc)
-      true
-      (and (seq after-doc)
-           (every? #(= :list (n/tag %)) after-doc)
-           (every? (fn [node]
-                     (let [first-child (some-> (z/of-node node) z/down z/node)]
-                       (= :vector (n/tag first-child))))
-                   after-doc)))))
+  (let [;; discarded forms are absent by the time defn sees the form —
+        ;; dropping them first keeps the name/docstring/arglist positions
+        ;; aligned
+        children (remove #(= :uneval (n/tag %)) children)
+        fdecl (rest (rest children))
+        fdecl (if (and (seq fdecl)
+                       (= :token (n/tag (first fdecl)))
+                       (string? (child-sexpr (first fdecl))))
+                (rest fdecl)
+                fdecl)
+        ;; attr-maps are metadata, not arities, wherever defn allows them
+        ;; (front or trailing); a map inside a clause is body code and is
+        ;; not a direct child
+        fdecl (remove #(map? (child-sexpr %)) fdecl)]
+    (cond
+      (empty? fdecl) false
+      (or (arg-vector-node? (first fdecl))
+          (reader-conditional-node? (first fdecl))) true
+      (every? arity-clause-node? fdecl) true
+      :else false)))
 
 (defn validate-form-shape
   "Validate that S is structurally a well-formed instance of FORM-TYPE

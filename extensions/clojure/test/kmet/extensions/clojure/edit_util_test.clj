@@ -264,3 +264,64 @@
           expr     (-> zloc z/down z/right)
           replaced (util/replace-form expr ";; replaced")]
       (is (str/includes? (z/root-string replaced) "replaced")))))
+
+(deftest test-validate-form-shape
+  (testing "single-arity defns with a docstring and attr-map are complete"
+    (is (nil? (util/validate-form-shape "defn" "(defn f [x] x)")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f \"doc\" [x] x)")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f {:private true} [x] x)")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f \"doc\" {:private true} [x] x)"))))
+  (testing "multi-arity defns with a docstring and attr-map are complete"
+    (is (nil? (util/validate-form-shape "defn" "(defn f ([x] x))")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f ([x] x) ([x y] y))")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f ([] 1) ([x] x) ([x y] y))")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f {:private true} ([x] x))")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f \"doc\" {:private true} ([x] x))")))
+    (is (nil? (util/validate-form-shape "defn"
+                                        "(defn f ([x] x) ([x y] y) {:private true})")))
+    (is (nil? (util/validate-form-shape
+               "defn"
+               "(defn f \"doc\" {:private true} ([x] x) ([x y] y) {:added \"1\"})"))))
+  (testing "metadata on the name, argument vector, or arity clause is ignored"
+    (is (nil? (util/validate-form-shape "defn" "(defn ^:private f [x] x)")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f ^long [x] x)")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f (^long [x] x) (^long [x y] y))")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f ^:private ^long [x] x)")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f ^:a ^:b ([x] x) ([x y] y))")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f (^:a ^long [x] x))"))))
+  (testing "reader conditionals in arglist position are accepted unverified"
+    (is (nil? (util/validate-form-shape "defn" "(defn f #?(:bb ([x] x) :clj ([x y] y)))")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f #?@(:bb [([x] x)] :clj [([x y] y)]))")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f ([x] x) #?(:bb ([x y] y)))"))))
+  (testing "multi-line multi-arity content with comments is complete"
+    (is (nil? (util/validate-form-shape
+               "defn"
+               "(defn f\n  \"doc\"\n  ;; one arg\n  ([x] x)\n  ;; two args\n  ([x y] y))"))))
+  (testing "a defn without an argument vector is incomplete"
+    (is (string? (util/validate-form-shape "defn" "(defn f)")))
+    (is (string? (util/validate-form-shape "defn" "(defn f \"doc\")")))
+    (is (string? (util/validate-form-shape "defn" "(defn f {:private true})"))))
+  (testing "mixing an arity list with a bare argument vector is invalid"
+    (is (string? (util/validate-form-shape "defn" "(defn f ([x] x) [y] y)"))))
+  (testing "a clause that does not head an argument vector is invalid"
+    (is (string? (util/validate-form-shape "defn" "(defn f ([x] x) (1 2))"))))
+  (testing "defn-/defmacro multi-arity follows the defn rules"
+    (is (nil? (util/validate-form-shape "defn-" "(defn- g ([x] x) ([x y] y))")))
+    (is (nil? (util/validate-form-shape "defmacro" "(defmacro m ([x] x) ([x y] y))"))))
+  (testing "ns and def keep their own required parts"
+    (is (nil? (util/validate-form-shape "ns" "(ns my.app (:require [clojure.string :as str]))")))
+    (is (string? (util/validate-form-shape "ns" "(ns)")))
+    (is (nil? (util/validate-form-shape "def" "(def x 1)")))
+    (is (string? (util/validate-form-shape "def" "(def x)")))))
+
+(deftest test-validate-form-shape-reader-discards
+  (testing "reader-discarded #_ forms before an arglist are ignored"
+    (is (nil? (util/validate-form-shape "defn" "(defn f #_{:private true} [x] x)")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f \"doc\" #_[x] [y] y)")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f #_{:private true} ([x] x) ([x y] y))"))))
+  (testing "reader-discarded #_ forms before the name or docstring are ignored"
+    (is (nil? (util/validate-form-shape "defn" "(defn #_x f [x] x)")))
+    (is (nil? (util/validate-form-shape "defn" "(defn f #_junk \"doc\" [x] x)"))))
+  (testing "reader-discarded #_ forms inside a clause are ignored"
+    (is (nil? (util/validate-form-shape "defn" "(defn f (#_x [y] y))")))
+    (is (string? (util/validate-form-shape "defn" "(defn f (#_x))")))))
