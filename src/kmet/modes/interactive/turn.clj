@@ -439,8 +439,12 @@
    jump lands on a screen transition instead of mid-stream (the scroll-to-top
    bug). The idle-input trigger also covers input that never starts a turn
    (slash/bash commands, text typed then cancelled), which would otherwise
-   leave stale lines until the next turn. No-op unless the scrollback is
-   dirty (kmet.tui.core/tui-heal-scrollback!)."
+   leave stale lines until the next turn. The TUI latches the request and
+   checks the dirt after its next frame (see
+   kmet.tui.core/tui-heal-scrollback!), so a heal racing the frame that
+   records the dirt — the fast-tool case, where the tool's final render and
+   the heal land in the same instant — still fires instead of leaving the
+   stale scrollback until the next keystroke."
   [cs]
   (when (streaming-free? cs)
     (tui/tui-heal-scrollback! (:tui cs))))

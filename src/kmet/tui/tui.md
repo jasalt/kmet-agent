@@ -70,11 +70,19 @@ viewport to the top on Termux and Windows Terminal
 stale scrollback: those lines were written with the old content and the
 terminal cannot rewrite them, so the TUI *records* that
 (`tui-scrollback-dirty?`) and rebuilds it with one clearing full redraw at a
-streaming-free boundary — the app calls `tui-heal-scrollback!` at the end of
+streaming-free boundary. The app calls `tui-heal-scrollback!` at the end of
 a turn (`on-agent-done` / `on-agent-error`, gated on nothing else streaming:
-no turn, bash command or compaction) and on idle input. Both are moments
-where the user is expected to be at the document end, so the clear's viewport
-jump lands on a screen transition instead of mid-stream. An *explicit* reflow
+no turn, bash command or compaction) and on idle input. The heal does not
+trust the dirty flag at call time: it runs in the same instant as the
+boundary's own state changes, before the render loop has diffed them, so it
+latches the request as a target frame (`tui-scrollback-heal-target`) and the
+loop re-checks the dirt at the end of the first frame that STARTS after the
+request — a frame already in flight can never clear the latch prematurely,
+and a fast tool whose final render and the heal land in the same instant
+(the stale-scrollback report) is healed at the turn end instead of staying
+stale until the next keystroke. Both are moments where the user is expected
+to be at the document end, so the clear's viewport jump lands on a screen
+transition instead of mid-stream. An *explicit* reflow
 is not the automatic path the clamp protects: the tool-display / thinking
 toggles (and the `set-tool-display-mode` / `set-tools-expanded` extension APIs) and a theme switch are
 discrete user actions, so the app forces the clearing rebuild for them rather

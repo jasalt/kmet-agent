@@ -972,8 +972,11 @@
                    :agent-state (atom {:compacting? (atom compacting)})
                    :tui {:scrollback-dirty? (atom dirty)
                          :force-redraw? (atom false)
-                         :render-requested? (atom false)}}))
-          healed? (fn [cs] (true? @(get-in cs [:tui :force-redraw?])))]
+                         :render-requested? (atom false)
+                         :frame-count (atom 0)
+                         :scrollback-heal-target (atom 0)}}))
+          healed? (fn [cs] (true? @(get-in cs [:tui :force-redraw?])))
+          latched? (fn [cs] (pos? @(get-in cs [:tui :scrollback-heal-target])))]
       (let [cs (make false false false true)]
         ((var turn/heal-stale-scrollback-when-idle!) cs)
         (is (healed? cs) "idle + dirty requests the heuristic full redraw"))
@@ -984,7 +987,8 @@
         (is (not (healed? cs)) (str label " must not emit the destructive 3J clear")))
       (let [cs (make false false false false)]
         ((var turn/heal-stale-scrollback-when-idle!) cs)
-        (is (not (healed? cs)) "a clean scrollback is a no-op")))))
+        (is (not (healed? cs)) "a clean scrollback requests no clearing redraw")
+        (is (latched? cs) "but the heal latches, so a frame still to run cannot race it")))))
 
 (deftest request-global-reflow-render-forces
   (testing "an explicit global reflow (toggle) forces the clearing rebuild, streaming or not"
@@ -1032,7 +1036,9 @@
                    :chat-history (chat-history/make-chat-history)
                    :tui {:scrollback-dirty? (atom dirty?)
                          :force-redraw? (atom false)
-                         :render-requested? (atom false)}})]
+                         :render-requested? (atom false)
+                         :frame-count (atom 0)
+                         :scrollback-heal-target (atom 0)}})]
           (with-redefs [status/stop-anim-timer! noop
                         status/clear-status-indicator! noop
                         state/update-footer! noop]

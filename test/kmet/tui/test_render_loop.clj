@@ -20,7 +20,10 @@
      change began inside the window).
    - leaving those lines un-repainted marks the scrollback dirty
      (tui-scrollback-dirty?); tui-heal-scrollback! rebuilds it with one
-     clearing full redraw (the app calls it at the start of a turn).
+     clearing full redraw. The heal is latched behind the first frame that
+     starts after the request and re-checks the dirt there, so a call made
+     in the same instant as the dirtying change (the app heals at turn
+     boundaries, before the loop has diffed them) is never lost.
 
    The render loop is driven headlessly through the private
    run-render-loop!, mirroring pi's VirtualTerminal-based render tests."
@@ -90,6 +93,23 @@
     (render [_ _] @lines)
     (handle-input [_ _] nil)
     (invalidate [_] nil)))
+
+(defn- gated-test-component
+  "Like test-component, but the FIRST render snapshots LINES and blocks on
+   GATE before returning the snapshot; later renders return the current
+   LINES. Holds a frame in flight after it has read the document, so a test
+   can make state changes and heal while that frame is still running."
+  [lines gate]
+  (let [first? (atom true)]
+    (reify core/IComponent
+      (render [_ _]
+        (if (compare-and-set! first? true false)
+          (let [snapshot @lines]
+            (deliver gate true)
+            snapshot)
+          @lines))
+      (handle-input [_ _] nil)
+      (invalidate [_] nil))))
 
 ;; ─── Render-loop driver ────────────────────────────────────────────────────
 
@@ -294,6 +314,97 @@
                   "the healed scrollback re-emits the current content")
             (t/is (str/includes? redraw "line 29") "the whole transcript is re-emitted")))
         (t/is (false? (core/tui-scrollback-dirty? tui)) "clean again after the heal")
+        (finally
+          (stop-loop tui))))))
+
+(deftest ^:slow scrollback-heal-before-dirty-frame-still-heals
+  (testing "tui-heal-scrollback! called in the same instant as the change — before the
+            render loop has diffed it — latches the request and still rebuilds the stale
+            scrollback. This is the fast-tool race: the heal used to check the not-yet-set
+            dirty flag, no-op, and leave the stale lines until the next trigger."
+    (let [lines (atom (vec (map #(str "line " %) (range 30))))
+          vt (make-virtual-terminal)
+          tui (core/create-tui (:terminal vt))]
+      (try
+        (core/tui-add-child tui (test-component lines))
+        (start-loop tui)
+        (wait-for-frames (:writes vt) 1 2000)
+        (let [frames-before (count (frame-writes (:writes vt)))]
+          ;; the boundary's change and its heal land together: the heal must
+          ;; not rely on the dirty flag, which no frame has set yet
+          (swap! lines assoc 2 "line 2 CHANGED")
+          (core/tui-heal-scrollback! tui)
+          (t/is (true? (core/tui-scrollback-heal-pending? tui))
+                "the heal is latched, not dropped by the not-yet-dirty flag")
+          (t/is (wait-until #(some (fn [w] (str/includes? w clear-seq))
+                                   (drop frames-before (frame-writes (:writes vt))))
+                            3000)
+                "the clearing rebuild fires after the frame that records the dirt")
+          (t/is (false? (core/tui-scrollback-dirty? tui))
+                "the stale scrollback is healed, not left for the next trigger")
+          (t/is (false? (core/tui-scrollback-heal-pending? tui))
+                "the latch cleared")
+          (let [redraw (last (filterv #(str/includes? % clear-seq)
+                                      (drop frames-before (frame-writes (:writes vt)))))]
+            (t/is (str/includes? redraw "line 2 CHANGED")
+                  "the healed rebuild re-emits the current content")))
+        (finally
+          (stop-loop tui))))))
+
+(deftest ^:slow scrollback-heal-latch-survives-an-in-flight-frame
+  (testing "a heal requested while a frame is in flight — after that frame had already
+            read the document — is not cleared by the in-flight frame; the frame that
+            starts after the request still records the dirt and forces the rebuild"
+    (let [lines (atom (vec (map #(str "line " %) (range 30))))
+          gate (promise)
+          vt (make-virtual-terminal)
+          tui (core/create-tui (:terminal vt))]
+      (try
+        (core/tui-add-child tui (gated-test-component lines gate))
+        (start-loop tui)
+        (t/is (true? (deref gate 2000 false))
+              "the first frame is in flight, blocked after reading the document")
+        ;; the boundary's change and heal land while frame 1 is in flight
+        (swap! lines assoc 2 "line 2 CHANGED")
+        (core/tui-request-render tui)
+        (core/tui-heal-scrollback! tui)
+        (t/is (false? (core/tui-scrollback-dirty? tui))
+              "the in-flight frame has not diffed the change yet")
+        (t/is (true? (core/tui-scrollback-heal-pending? tui))
+              "the request latches for the frame that starts after it")
+        ;; release frame 1: it returns the OLD snapshot and must not clear the
+        ;; latch (it started before the heal request)
+        (deliver gate true)
+        (t/is (wait-until #(some (fn [w] (str/includes? w clear-seq))
+                                 (frame-writes (:writes vt)))
+                          3000)
+              "the heal still fired once the post-request frame recorded the dirt")
+        (t/is (false? (core/tui-scrollback-dirty? tui))
+              "the stale scrollback was rebuilt, not left pending")
+        (t/is (false? (core/tui-scrollback-heal-pending? tui))
+              "the latch cleared only after the heal")
+        (finally
+          (deliver gate true) ;; never leave the render loop blocked
+          (stop-loop tui))))))
+
+(deftest ^:slow scrollback-heal-clean-is-a-no-op
+  (testing "a heal on a clean scrollback latches but emits no clearing rebuild — the
+            idle-input heal must not re-emit the transcript when nothing is stale"
+    (let [lines (atom (vec (map #(str "line " %) (range 30))))
+          vt (make-virtual-terminal)
+          tui (core/create-tui (:terminal vt))]
+      (try
+        (core/tui-add-child tui (test-component lines))
+        (start-loop tui)
+        (wait-for-frames (:writes vt) 1 2000)
+        (let [writes-before (count @(:writes vt))]
+          (core/tui-heal-scrollback! tui)
+          (t/is (true? (core/tui-scrollback-heal-pending? tui))
+                "the request latches")
+          (t/is (wait-until #(false? (core/tui-scrollback-heal-pending? tui)) 2000)
+                "the frame after the request drops the clean latch")
+          (t/is (not (str/includes? (apply str (drop writes-before @(:writes vt))) clear-seq))
+                "no clearing redraw for a scrollback that stayed clean"))
         (finally
           (stop-loop tui))))))
 
