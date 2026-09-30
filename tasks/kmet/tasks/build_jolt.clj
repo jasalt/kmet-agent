@@ -513,12 +513,12 @@
 (defn- assemble!
   "Copy the compiled binary out of the scratch dir to its dist artifact,
    keeping the scratch for the next incremental build. Returns the artifact
-   path. PLATFORM decides the executable bit: a windows artifact keeps whatever
-   the filesystem does with it (setting POSIX permissions there fails)."
+   path. A Windows target, or a Windows host whose filesystem has no POSIX
+   permissions, keeps whatever the copy gives it (setting them there fails)."
   [bin artifact platform]
   (fs/create-dirs (fs/parent artifact))
   (fs/copy bin artifact {:replace-existing true})
-  (when-not (windows-platform? platform)
+  (when (and (not (windows-platform? platform)) (not (fs/windows?)))
     (fs/set-posix-file-permissions artifact "rwxr-xr-x"))
   artifact)
 

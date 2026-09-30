@@ -5,7 +5,8 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :as t :refer [deftest is]]
-            [kmet.tasks.slop :as slop]))
+            [kmet.tasks.slop :as slop]
+            [kmet.test-utils :refer [slash]]))
 
 (defn- make-tree
   "Create a temp tree under target/ from a {relative-path content} map."
@@ -159,7 +160,7 @@
             "data.edn" "{:x 1}"}
            (fn [dir]
              (is (= ["src/a.clj"]
-                    (mapv #(str (fs/relativize dir %)) (slop/source-files dir)))))))
+                    (mapv #(slash (fs/relativize dir %)) (slop/source-files dir)))))))
 
 (deftest report-shows-references-and-outliers-only
   (in-tree {"clean.clj" "(defn f [x] (inc x))"}

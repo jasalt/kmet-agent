@@ -496,7 +496,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
                             (str (artifact-base :bb {:test? test?}) ".sh")))]
     (println "building" (str exe))
     (concat-files! exe [bb-bin (fs/path (or jar jar-path))])
-    (when-not (windows-platform? platform)
+    (when (and (not (windows-platform? platform)) (not (fs/windows?)))
       (fs/set-posix-file-permissions exe "rwxr-xr-x"))
     (when launcher
       (spit (str launcher) (wrapper-script (fs/file-name exe) linker))
@@ -528,16 +528,16 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
 
 (defn install-artifact!
   "Copy an assembled artifact's executables into DIR — the `--out DIR` half
-   of the dist task on either host. Windows platforms keep whatever the
-   filesystem does with the copy; everywhere else the executable and launcher
-   copies stay executable. Returns DIR."
+   of the dist task on either host. A Windows target, or a Windows host whose
+   filesystem has no POSIX permissions, keeps whatever the copy gives it;
+   elsewhere the executable and launcher copies stay executable. Returns DIR."
   [dir platform {:keys [exe launcher]}]
   (fs/create-dirs dir)
   (doseq [f (cond-> [exe] launcher (conj launcher))]
     (let [target (fs/path dir (fs/file-name f))]
       (when-not (= (str (fs/absolutize f)) (str (fs/absolutize target)))
         (fs/copy f target {:replace-existing true})
-        (when-not (windows-platform? platform)
+        (when (and (not (windows-platform? platform)) (not (fs/windows?)))
           (fs/set-posix-file-permissions target "rwxr-xr-x")))))
   (println "copied executable to" (str dir))
   (str dir))

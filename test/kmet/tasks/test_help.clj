@@ -1,6 +1,7 @@
 (ns kmet.tasks.test-help
   "kmet.tasks.help — the task-level --help wrapper behind `bb <task> --help`."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [kmet.tasks.help :as help]))
 
 (defn- with-fake-task
@@ -9,6 +10,13 @@
   [task f]
   (with-bindings {(requiring-resolve 'babashka.tasks/*task*) task}
     (f)))
+
+(defn- out-str-lf
+  "with-out-str with CRLF normalized to LF: bb's capture translates the
+   newline on Windows, Jolt's does not, so the line-ending assertions compare
+   through this on both hosts."
+  [f]
+  (str/replace (with-out-str (f)) "\r\n" "\n"))
 
 (deftest help-requested?-test
   (testing "both help spellings count, wherever they appear"
@@ -24,10 +32,10 @@
       (fn []
         (binding [*command-line-args* ["--help"]]
           (is (= "summary\n\ndetails\n"
-                 (with-out-str (help/with-help (println "RAN")))))))))
+                 (out-str-lf #(help/with-help (println "RAN")))))))))
   (testing "without --help the body runs"
     (with-fake-task {:name 'demo :doc "summary\n\ndetails"}
       (fn []
         (binding [*command-line-args* []]
           (is (= "RAN\n"
-                 (with-out-str (help/with-help (println "RAN"))))))))))
+                 (out-str-lf #(help/with-help (println "RAN"))))))))))

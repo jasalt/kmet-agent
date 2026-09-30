@@ -11,7 +11,8 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kmet.version :as version-lib]
-            [kmet.tasks.build :as build]))
+            [kmet.tasks.build :as build]
+            [kmet.test-utils :refer [slash]]))
 
 (deftest ^:bb-only platform-for-names-os-and-arch
   (is (= "linux-aarch64" (build/platform-for "linux" "aarch64")))
@@ -357,7 +358,7 @@
 
 (deftest ^:bb-only stage-bundled-extensions-embeds-the-artifact-roots
   (let [root (build/stage-bundled-extensions!)]
-    (is (= "target/kmet-bundled" root))
+    (is (= "target/kmet-bundled" (slash root)))
     (testing "directory artifacts keep the extensions/<name>/src layout"
       (is (fs/regular-file? "target/kmet-bundled/extensions/clojure/src/extension.edn"))
       (is (fs/regular-file? "target/kmet-bundled/extensions/clojure/src/kmet/extensions/clojure/core.clj"))
