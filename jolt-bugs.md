@@ -69,3 +69,16 @@ kmet sees it as the Jolt-only failure of
 workaround: the failing open runs inside `jolt.loader`, behind the adapter's
 `load` delegation. Nothing to remove when it lands — the test passes
 unchanged.
+
+### [jolt#1208](https://github.com/jolt-lang/jolt/issues/1208) — `java.net.Socket` half-close members missing
+
+`shutdownOutput`, `shutdownInput`, `isOutputShutdown` and `isInputShutdown`
+all raise `IllegalArgumentException: No matching field found` on every
+platform (verified on `v0.8.15`, `924d80e9`). kmet's test SOCKS5 proxy
+half-closes each pump with `shutdownOutput`; the caught no-op leaves the
+client→target pump's pending recv open when the proxy closes the socket, and
+Windows answers that with an RST — the standalone curl-56 flakes in
+`libs.test-http/test-curl-bodiless-post` and `test-curl-direct-proxy-map`.
+The proxy now briefly joins the client→target pump before closing
+(`test/kmet/libs/test_http.clj`); drop the join for the bare close when the
+members land.

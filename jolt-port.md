@@ -29,12 +29,6 @@ Status checked against `jolt v0.8.15` (2026-09-30).
 - **Flaky under load**: `libs.test-http/test-curl-redirect-slow-second-hop`
   — curl 97 "Connection reset by peer" through the test SOCKS proxy while
   the suite is loaded; green standalone (3/3 on v0.8.15).
-- **Flaky standalone (Jolt on Windows)**:
-  `libs.test-http/test-curl-bodiless-post` (4 of 20 standalone reruns on
-  v0.8.15) and `libs.test-http/test-curl-direct-proxy-map` (2 of 20) fail
-  with curl 56 "Recv failure: Connection was reset" through the test SOCKS
-  proxy; the Windows-host full-run misses are in `windows.md` §Flaky. The
-  test SOCKS proxy's curl transport on Windows is the follow-up.
 - **`modes.test-overlay-input-smoke`** is `^:bb-only` (its driver spawns
   `bb start`, so on Jolt it would exercise bb's TUI); a Jolt-host pty variant
   is the follow-up.
