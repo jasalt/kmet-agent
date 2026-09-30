@@ -14,12 +14,10 @@ The one error is upstream and tracked in `jolt-bugs.md`:
 ### `loader.test-jolt-loader/adapter-host-view-is-the-extension-contract`
 `test/kmet/loader/test_jolt_loader.clj:111` —
 `java.io.FileNotFoundException: \C:\src\my\kmet\src\kmet\loader\loader.md
-(Invalid argument)`. **Not** the runtime's URI-to-path constructors (fixed
-in v0.8.15): it is `jolt.loader/file-url-path` (`stdlib/jolt/loader.clj:350`)
-stripping `file:` with `(subs s 5)`, so `file:/C:/…` becomes the invalid
-`\C:\…` on Windows. Tracked as
-[jolt#1203](https://github.com/jolt-lang/jolt/issues/1203). `bb test` passes;
-nothing to fix in kmet.
+(Invalid argument)`. The ticket, mechanism and upstream fix live in
+`jolt-bugs.md`
+([jolt#1203](https://github.com/jolt-lang/jolt/issues/1203)); `bb test`
+passes and there is nothing to fix in kmet.
 
 ## Fixed 2026-09-30
 

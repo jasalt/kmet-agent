@@ -65,9 +65,10 @@ already handles the shape, so the fix is to convert through
 
 kmet sees it as the Jolt-only failure of
 `kmet.loader.test-jolt-loader/adapter-host-view-is-the-extension-contract`
-(a `:resource` request through the host view; `bb test` passes). No kmet-side
-workaround: the failing open runs inside `jolt.loader`, behind the adapter's
-`load` delegation. Nothing to remove when it lands — the test passes
+(`test/kmet/loader/test_jolt_loader.clj:111`, a `:resource` request through
+the host view; `bb test` passes). No kmet-side workaround: the failing open
+runs inside `jolt.loader`, behind the adapter's `load`
+delegation. Nothing to remove when it lands — the test passes
 unchanged.
 
 ### [jolt#1208](https://github.com/jolt-lang/jolt/issues/1208) — `java.net.Socket` half-close members missing
