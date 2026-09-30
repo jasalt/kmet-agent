@@ -396,7 +396,19 @@
                     ;; proxy connection for the next hop (redirect), which
                     ;; the accept loop serves. Joining p1 would block
                     ;; forever: curl keeps the connection open for reuse.
+                    ;;
+                    ;; Joining it BRIEFLY is what makes the teardown safe
+                    ;; where the runtime has no Socket.shutdownOutput
+                    ;; (jolt#1208), so pump's half-close is a no-op: the
+                    ;; immediate close lands while p1 still owns a pending
+                    ;; recv on the client socket, and Windows answers that
+                    ;; with a reset curl reports as (56) "Connection was
+                    ;; reset". The short join lets curl finish reading and
+                    ;; close its side first; a reused connection just
+                    ;; waits out the timeout. Drop the join for the bare
+                    ;; close when jolt#1208 lands.
                     (.join p2)
+                    (.join p1 250)
                     (try (.close client) (catch Exception _ nil))
                     (try (.close target) (catch Exception _ nil)))
                   (recur)))))))

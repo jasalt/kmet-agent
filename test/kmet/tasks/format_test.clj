@@ -5,16 +5,17 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [babashka.fs :as fs]
-            [kmet.tasks.format :as format]))
+            [kmet.tasks.format :as format]
+            [kmet.test-utils :refer [slash]]))
 
 (defn- dir-segments [p]
   (str/split (str p) #"[\\/]"))
 
 (t/deftest test-source-paths
   (let [paths (#'format/source-paths)]
-    (t/is (contains? (set paths) (str (fs/file "src" "kmet" "core.clj")))
+    (t/is (contains? (set paths) (slash (str (fs/file "src" "kmet" "core.clj"))))
           "source files are included")
-    (t/is (contains? (set paths) (str (fs/file "test" "kmet" "app" "test_loop.clj")))
+    (t/is (contains? (set paths) (slash (str (fs/file "test" "kmet" "app" "test_loop.clj"))))
           "test files are included")
     (t/is (some #(str/ends-with? (str %) (str (fs/file "format.clj"))) paths)
           "task files are included")
