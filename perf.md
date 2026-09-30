@@ -468,7 +468,7 @@ line truncation on ANSI-dense lines (tool output, markdown) — smaller than
 - Reader/IO workarounds (#946/#947/#948/#952/#954) are on the tool/IO paths,
   not the frame path; they do not affect the numbers above. All of them have
   since landed (#946/#948/#952 in `-86`; #947/#954 in `-98`) and the last
-  workarounds are gone (`jolt-bugs.md`).
+  workarounds are gone (all closed upstream).
 
 ---
 

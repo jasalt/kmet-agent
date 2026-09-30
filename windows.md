@@ -1,9 +1,10 @@
 # Windows host — outstanding test failures
 
 Recorded 2026-09-29 on Windows 11 26200 in Windows Terminal (`WT_SESSION`
-set), Jolt `v0.8.14-29-gc7c6b33e`. A clean `master` fails these — they are
-pre-existing Windows-host issues, not regressions from the Jolt-port
-validation work:
+set), Jolt `v0.8.14-29-gc7c6b33e`; re-verified 2026-09-30 on `jolt v0.8.15`
+(`924d80e9`). A clean `master` fails these — they are pre-existing
+Windows-host issues, not regressions from the Jolt-port validation work,
+and every standalone item below still fails as recorded:
 
 - `bb test` — 2730 tests / 17749 assertions, 4 failures + 3 errors (34 s)
 - `jolt test` — 2710 tests / 17648 assertions, 1 failure + 4 errors (79 s)
@@ -57,15 +58,17 @@ Windows. `jolt test with-help-test` passes (Jolt's output capture does not
 translate). Fix: normalize `\r\n` → `\n` in the expected strings (or bind a
 writer that does not translate).
 
-## Jolt-only: URI-to-path (tracked upstream)
+## Jolt-only: Windows `file:` resource paths (tracked upstream)
 
 ### `loader.test-jolt-loader/adapter-host-view-is-the-extension-contract`
 `test/kmet/loader/test_jolt_loader.clj:111` —
 `java.io.FileNotFoundException: \C:\src\my\kmet\src\kmet\loader\loader.md
-(Invalid argument)`: the resource URI resolves to a path with a leading
-backslash. This is **jolt#1198** (URI-to-path constructors), already listed
-in `jolt-bugs.md`. `bb test` passes. Nothing to fix in kmet beyond an
-upstream bump; revisit with the issue.
+(Invalid argument)`. **Not** the runtime's URI-to-path constructors (fixed
+in v0.8.15): it is `jolt.loader/file-url-path` (`stdlib/jolt/loader.clj:350`)
+stripping `file:` with `(subs s 5)`, so `file:/C:/…` becomes the invalid
+`\C:\…` on Windows. Tracked as
+[jolt#1203](https://github.com/jolt-lang/jolt/issues/1203) (`jolt-bugs.md`);
+`bb test` passes and there is nothing to fix in kmet.
 
 ## Flaky: curl through the test SOCKS proxy (observed on Jolt)
 
@@ -74,16 +77,18 @@ upstream bump; revisit with the issue.
 `deftest-transports` runs):
 `network error: Proxy request failed: curl: (56) Recv failure: Connection
 was reset {:type :transport-error, :exit 56}`. Jolt: failed in the full run
-and 1 of 3 standalone reruns (green on retry). bb: green in the full run and
-2/2 standalone reruns.
+and in 4 of 20 standalone reruns on v0.8.15 (2026-09-30). bb: green in the
+full run and 2/2 standalone reruns.
 
 ### `libs.test-http/test-curl-direct-proxy-map`
-Same curl 56 in the Jolt full run; green standalone on Jolt and bb.
+Same curl 56 in the Jolt full run; standalone on v0.8.15 it failed 2 of 20
+runs (one surfaced as an uncaught exception, not an assertion error). bb:
+green standalone.
 
-Both are the same family as the already-documented load flake
-`libs.test-http/test-curl-redirect-slow-second-hop` (curl 97, `jolt-port.md`
-§Tests). Revisit only if it persists standalone: then check the test SOCKS
-proxy's handling of the curl transport on Windows.
+Both are the same family as `libs.test-http/test-curl-redirect-slow-second-hop`
+(curl 97, `jolt-port.md` §Tests), but that one stayed green standalone on
+v0.8.15 (3/3). These two persist standalone, so the follow-up is due: check
+the test SOCKS proxy's handling of the curl transport on Windows.
 
 ## Resolved for context
 

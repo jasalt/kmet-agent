@@ -19,8 +19,8 @@ self-containment guard (`kmet.loader.test-self-contained`) so
 `src/kmet/loader/` can be extracted as a whole.
 
 Phase 2, the **native Jolt backend**, is implemented in the *Jolt* repo
-(`stdlib/jolt/loader.clj`), tracked in jolt-lang/jolt#912 (the
-classloader-lite request) and jolt-lang/jolt#1039 (the implementation),
+(`stdlib/jolt/loader.clj`; the classloader-lite request was
+jolt-lang/jolt#912 and the implementation jolt-lang/jolt#1039, both closed),
 with `test/chez/loaderconf-test.clj` as its writ — the 36-case suite
 `make loaderconf` runs, baseline empty, including embedded loader roots.
 kmet consumes it through its own
@@ -928,7 +928,9 @@ Shipped in the Jolt repo rather than here: `stdlib/jolt/loader.clj` plus
 the host seams (`clojure.java.io/resource` 2-arity, `RT/baseLoader`, the
 tagged-table classloader facade), with `test/chez/loaderconf-test.clj` as
 the writ — `make loaderconf`, 36 cases, empty baseline, including the
-embedded-root cases. Tracked in jolt-lang/jolt#912 and jolt-lang/jolt#1039.
+embedded-root cases. The upstream request and implementation
+(jolt-lang/jolt#912, jolt-lang/jolt#1039) are closed; this describes the
+shipped behavior.
 
 **Embedded roots.** Jolt's loader also accepts `embed:<prefix>`, a prefix
 into the resource table baked by `:jolt/build {:embed [...]}`. Namespace and
