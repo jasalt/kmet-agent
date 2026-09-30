@@ -47,8 +47,8 @@ project root.
   ```
 
 - `bb check` verifies source namespaces. Do not hand-edit generated provider
-  catalogs: use `bb generate-models` / `bb check-model-data`, the image-model
-  generator, and `kmet --generate-models` for the user cache.
+  or image-model catalogs: use `bb generate-models` / `bb check-model-data`
+  and `kmet --generate-models` for the user-level caches.
 
 ### Interactive development
 

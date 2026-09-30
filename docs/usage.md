@@ -35,8 +35,8 @@ bb start @tasks.md "summarize the tasks"
                         openrouter, fireworks, vercel-ai-gateway, ...)
   --models <patterns>   Comma-separated model patterns for Ctrl+P cycling
   --list-models [search] List available models (with optional fuzzy search)
-  --generate-models     Fetch current provider catalogs (models.dev + live
-                        sources) into ~/.kmet/agent/models-cache and exit;
+  --generate-models     Fetch current provider + image model catalogs
+                        (models.dev + live sources) into ~/.kmet/agent/ and exit;
                         used at startup when newer than the built-in data
   --system-prompt <txt> Replace the system prompt (or a path to read it from)
   --append-system-prompt <txt> Append to the system prompt (repeatable)

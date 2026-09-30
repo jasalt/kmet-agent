@@ -3,12 +3,13 @@
    (the generator's validate-committed! is the single source of truth), the
    registry semantics, the :openrouter-images wire (mocked HTTP), usage/cost,
    and the never-throw generate-images contract."
-  (:require [clojure.string :as str]
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]
             [clojure.test :as t :refer [testing]]
             [kmet.ai.auth :as auth]
+            [kmet.ai.image-model-gen :as gen-image-models]
             [kmet.ai.image-models :as im]
-            [kmet.libs.http :as http]
-            [kmet.tasks.generate-image-models :as gen-image-models]))
+            [kmet.libs.http :as http]))
 
 (defn- validate-committed!
   "Run the generator's offline validation over the committed catalog."
@@ -40,6 +41,114 @@
 
 (t/deftest test-image-catalog-validates
   (t/is (empty? (validate-committed!)) "committed catalog passes the offline gate"))
+
+;; ─── Generator (parse + write, the online half) ───────────────────────────
+
+(t/deftest test-parse-openrouter-image-models
+  (let [models (gen-image-models/parse-openrouter-image-models
+                {:data [{:id "a/b" :name "AB"
+                         :architecture {:input_modalities ["text"]
+                                        :output_modalities ["image" "text"]}
+                         :pricing {:prompt "0.5" :completion "1.5"
+                                   :input_cache_read "-1e6"}}]})]
+    (t/is (= 1 (count models)))
+    (let [m (first models)]
+      (t/is (= "a/b" (:id m)))
+      (t/is (= [:text] (:input m)))
+      (t/is (= [:image :text] (:output m))
+            "modalities are canonical vectors, never lazy seqs")
+      (t/is (= 500000.0 (get-in m [:cost :input])))
+      (t/is (= 1500000.0 (get-in m [:cost :output])))
+      (t/is (= 0.0 (get-in m [:cost :cache-read])) "negative sentinel clamped")))
+  (testing "models without image output are dropped"
+    (t/is (empty? (gen-image-models/parse-openrouter-image-models
+                   {:data [{:id "x" :name "X"
+                            :architecture {:output_modalities ["text"]}}]}))))
+  (testing "an empty model list fails generation"
+    (t/is (thrown? Exception (gen-image-models/parse-openrouter-image-models {:data []})))
+    (t/is (thrown? Exception (gen-image-models/parse-openrouter-image-models {})))))
+
+(t/deftest test-generate-and-write-writes-and-skips-unchanged
+  (let [dir (str (fs/create-temp-dir {:dir "target" :prefix "image-gen-test-"}))
+        models [{:id "m1" :name "M1" :api :openrouter-images :provider :openrouter
+                 :base-url "https://openrouter.ai/api/v1"
+                 :input [:text] :output [:image]
+                 :cost {:input 1.0 :output 2.0 :cache-read 0 :cache-write 0}}]]
+    (try
+      (with-redefs [gen-image-models/fetch-openrouter-image-models (fn [] models)]
+        (t/is (:ok (gen-image-models/generate-and-write! dir)))
+        (let [f (str (fs/path dir "image-models.edn"))
+              before (str (fs/last-modified-time f))]
+          (t/is (empty? (gen-image-models/validate-committed! dir)))
+          (t/is (:ok (gen-image-models/generate-and-write! dir)))
+          (t/is (= before (str (fs/last-modified-time f)))
+                "an unchanged regeneration touches no file")))
+      (finally
+        (fs/delete-tree dir)))))
+
+(t/deftest test-generate-and-write-fails-on-empty
+  (let [dir (str (fs/create-temp-dir {:dir "target" :prefix "image-gen-test-"}))]
+    (try
+      (with-redefs [gen-image-models/fetch-openrouter-image-models (fn [] [])]
+        (t/is (false? (:ok (gen-image-models/generate-and-write! dir)))))
+      (t/is (not (fs/exists? (fs/path dir "image-models.edn"))))
+      (finally
+        (fs/delete-tree dir)))))
+
+;; ─── User-level cache (the `kmet --generate-models` image half) ───────────
+
+(defn- write-image-cache!
+  "Write a one-model image catalog with GENERATED-AT into DIR."
+  [dir generated-at]
+  (fs/create-dirs dir)
+  (spit (str (fs/path dir "image-models.edn"))
+        (pr-str {:schema-version 1
+                 :generated-at generated-at
+                 :provider {:id :openrouter :name "OpenRouter"}
+                 :models {"cache-model" {:id "cache-model" :name "Cache Model"
+                                         :api :openrouter-images :provider :openrouter
+                                         :base-url "https://openrouter.ai/api/v1"
+                                         :input [:text] :output [:image]
+                                         :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}}}})))
+
+(t/deftest test-image-cache-wins-when-fresh
+  (let [dir (str (fs/create-temp-dir {:dir "target" :prefix "image-cache-test-"}))]
+    (try
+      (write-image-cache! dir "2999-01-01T00:00:00Z")
+      (binding [*out* (java.io.StringWriter.)
+                *err* (java.io.StringWriter.)
+                im/*use-image-models-cache* true
+                im/*image-models-cache-dir* dir]
+        (t/is (= (str (fs/path dir "image-models.edn")) (im/fresh-image-model-cache)))
+        (im/load-image-catalogs!)
+        (t/is (= ["cache-model"] (mapv :id (im/get-models)))))
+      (finally
+        (fs/delete-tree dir)
+        (im/load-image-catalogs!)))))
+
+(t/deftest test-image-cache-stale-or-broken-ignored
+  (let [dir (str (fs/create-temp-dir {:dir "target" :prefix "image-cache-test-"}))]
+    (try
+      (write-image-cache! dir "2000-01-01T00:00:00Z")
+      (binding [*out* (java.io.StringWriter.)
+                im/*use-image-models-cache* true
+                im/*image-models-cache-dir* dir]
+        (t/is (nil? (im/fresh-image-model-cache)) "stale generation ignored")
+        (im/load-image-catalogs!)
+        (t/is (not-any? #(= "cache-model" (:id %)) (im/get-models))
+              "bundled catalog wins"))
+      (spit (str (fs/path dir "image-models.edn")) "{{{ not edn")
+      (binding [*out* (java.io.StringWriter.)
+                *err* (java.io.StringWriter.)
+                im/*use-image-models-cache* true
+                im/*image-models-cache-dir* dir]
+        (t/is (nil? (im/fresh-image-model-cache)))
+        (im/load-image-catalogs!)
+        (t/is (some #(= :openrouter (:id %)) (im/get-providers))
+              "bundled catalog still loads"))
+      (finally
+        (fs/delete-tree dir)
+        (im/load-image-catalogs!)))))
 
 ;; ─── Registry semantics ────────────────────────────────────────────────────
 

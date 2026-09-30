@@ -48,14 +48,15 @@ openrouter, nvidia, moonshotai, qwen-token-plan, minimax, fireworks,
 vercel-ai-gateway, zai, together, baseten, kimi-coding, cloudflare, mistral,
 google-vertex, amazon-bedrock, ...; generated from models.dev + live
 catalogs — `bb generate-models`). A user-level cache can be refreshed
-without touching the repo: `kmet --generate-models` runs the same generator
-into `~/.kmet/agent/models-cache/` (one `<provider>.edn` per provider +
-`manifest.edn`, same layout as the built-ins), and that cache replaces the
-built-in catalogs whenever it is strictly newer — so an upgrade shipping
-newer bundled data wins over a stale cache until the next refresh.
-Reruns with no upstream changes rewrite nothing. The image-model catalog
-lives in `src/kmet/ai/image_model_data/image-models.edn`
-(`bb generate-image-models`).
+without touching the repo: `kmet --generate-models` runs the same generators
+into `~/.kmet/agent/models-cache/` for the provider catalogs (one
+`<provider>.edn` per provider + `manifest.edn`, same layout as the
+built-ins) and `~/.kmet/agent/image-models-cache/` for the image catalog,
+and each cache replaces the corresponding built-in data whenever it is
+strictly newer — so an upgrade shipping newer bundled data wins over a
+stale cache until the next refresh. Reruns with no upstream changes rewrite
+nothing. The image-model catalog lives in
+`src/kmet/ai/image_model_data/image-models.edn`.
 Models, base URLs and defaults are registry data; custom providers, API keys
 and model overrides go in `~/.kmet/agent/models.edn`. OpenAI-completions
 wire compatibility (thinking format, max-tokens field, reasoning

@@ -78,7 +78,9 @@
     (true? v) "true"
     (false? v) "false"
     (number? v) (num-str v)
-    (vector? v) (str "[" (str/join " " (map flat v)) "]")
+    ;; sequential? (not just vector?) so a stray lazy seq renders as a
+    ;; canonical vector instead of corrupting the file with object identity
+    (sequential? v) (str "[" (str/join " " (map flat v)) "]")
     (map? v) (str "{" (str/join " " (map (fn [[k v]] (str (key-str k) " " (flat v))) (sorted-entries v))) "}")
     :else (str v)))
 

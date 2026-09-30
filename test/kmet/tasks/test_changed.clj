@@ -14,8 +14,8 @@
     (is (= 'kmet.app.test-loop (changed/path->ns "test/kmet/app/test_loop.clj"))))
   (testing "task files map through their own root (tasks/, not src/)"
     (is (= 'kmet.tasks.build (changed/path->ns "tasks/kmet/tasks/build.cljc")))
-    (is (= 'kmet.tasks.generate-image-models
-           (changed/path->ns "tasks/kmet/tasks/generate_image_models.clj")))
+    (is (= 'kmet.tasks.generate-models
+           (changed/path->ns "tasks/kmet/tasks/generate_models.clj")))
     (is (= 'kmet.tasks.test-lint (changed/path->ns "test/kmet/tasks/test_lint.clj"))))
   (testing "extension files map to path-derived namespaces"
     (is (= 'extensions.tools (changed/path->ns "extensions/tools.clj"))))

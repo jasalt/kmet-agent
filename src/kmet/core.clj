@@ -10,6 +10,7 @@
             [kmet.app.packages :as packages]
             [kmet.package-manager :as package-manager]
             [kmet.ai.image-models :as image-models]
+            [kmet.ai.image-model-gen :as image-gen]
             [kmet.ai.model-gen :as model-gen]
             [kmet.ai.models :as models]
             [kmet.app.model-resolver :as resolver]
@@ -180,8 +181,8 @@
   (println "  --provider <name>     Provider (opencode-go, opencode, deepseek,\n                        github-copilot, openai, xai, openai-codex,\n                        azure-openai-responses, anthropic, google, groq,\n                        cerebras, huggingface, moonshotai, xiaomi, qwen-token-plan,\n                        minimax, nvidia, openrouter, fireworks, ...)")
   (println "  --models <patterns>   Comma-separated model patterns for Ctrl+P cycling")
   (println "  --list-models [search] List available models (with optional fuzzy search)")
-  (println "  --generate-models     Fetch current provider catalogs (models.dev +")
-  (println "                        live sources) into ~/.kmet/agent/models-cache and exit;")
+  (println "  --generate-models     Fetch current provider + image model catalogs")
+  (println "                        (models.dev + live sources) into ~/.kmet/agent/ and exit;")
   (println "                        used at startup when newer than the built-in data")
   (println "  --system-prompt <txt> Replace the system prompt (or path to a file)")
   (println "  --append-system-prompt <txt> Append to the system prompt (repeatable)")
@@ -305,19 +306,25 @@
       (System/exit 0))
 
     ;; --generate-models runs the bb generate-models pipeline into the
-    ;; user-level cache (~/.kmet/agent/models-cache, KMET_CODING_AGENT_DIR-aware)
-    ;; and exits — no registry or config needed. load-catalogs! prefers that
-    ;; cache over the built-in model_data whenever it is strictly newer.
+    ;; user-level caches (provider catalogs into ~/.kmet/agent/models-cache,
+    ;; image models into ~/.kmet/agent/image-models-cache;
+    ;; KMET_CODING_AGENT_DIR-aware) and exits — no registry or config needed.
+    ;; load-catalogs! / load-image-catalogs! prefer each cache over the
+    ;; built-in data whenever it is strictly newer.
     (when (:generate-models opts)
-      (let [{:keys [ok]} (try
-                           (model-gen/generate-and-write!
-                            (or models/*models-cache-dir*
-                                (models/default-models-cache-dir)))
-                           (catch Exception e
-                             (binding [*out* *err*]
-                               (println "Error:" (ex-message e)))
-                             {:ok false}))]
-        (System/exit (if ok 0 1))))
+      (let [run (fn [generate target]
+                  (try (:ok (generate target))
+                       (catch Exception e
+                         (binding [*out* *err*]
+                           (println "Error:" (ex-message e)))
+                         false)))
+            models-ok (run model-gen/generate-and-write!
+                           (or models/*models-cache-dir*
+                               (models/default-models-cache-dir)))
+            images-ok (run image-gen/generate-and-write!
+                           (or image-models/*image-models-cache-dir*
+                               (image-models/default-image-models-cache-dir)))]
+        (System/exit (if (and models-ok images-ok) 0 1))))
 
     ;; --debug turns on debug.log before any startup work loads, so the
     ;; catalog/extension load trail is in the log too (the extension loader

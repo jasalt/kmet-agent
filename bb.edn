@@ -84,16 +84,13 @@
            :requires ([kmet.core])
            :task (help/with-help (println "All source namespaces compile successfully."))
            :override-builtin true}
-  generate-models {:doc "Regenerate provider model catalogs from models.dev (network)"
+  generate-models {:doc "Regenerate the committed provider + image model catalogs (network)\n\nProvider catalogs come from models.dev + the live sources; the image catalog from OpenRouter. Either failure exits 1."
                    :requires ([kmet.tasks.generate-models :as gen-models])
                    :task (help/with-help (gen-models/-main))}
-  generate-image-models {:doc "Regenerate the image model catalog from OpenRouter (network)\n\n--strict fails on an empty result."
-                         :requires ([kmet.tasks.generate-image-models :as gen-image-models])
-                         :task (help/with-help (gen-image-models/-main))}
-  check-model-data {:doc "Offline validation of committed provider catalogs + manifest"
+  check-model-data {:doc "Offline validation of committed provider + image catalogs + manifest"
                     :requires ([kmet.tasks.generate-models :as gen-models])
                     :task (help/with-help
-                           (let [errors (gen-models/validate-committed!)]
+                           (let [errors (gen-models/validate-all!)]
                              (if (seq errors)
                                (do (println "Invalid model data:")
                                    (doseq [e errors] (println "  -" e))

@@ -8,13 +8,17 @@
    kmet.ai.models; auth reuses kmet.ai.auth (:openrouter already resolves
    env + the Phase 16 OAuth credential); the one wire API is
    :openrouter-images (non-stream chat/completions with modalities). The
-   committed catalog is one static provider (openrouter, 45 models) — no
-   dynamic providers yet, so pi's refreshModels machinery is not ported."
-  (:require [clojure.edn :as edn]
+   catalog is one static provider (openrouter) — no dynamic providers yet,
+   so pi's refreshModels machinery is not ported; `kmet --generate-models`
+   can refresh it into a user-level cache, which load-image-catalogs!
+   prefers when strictly newer than the bundled data."
+  (:require [babashka.fs :as fs]
+            [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [kmet.ai.auth :as auth]
             [kmet.ai.models :as models]
+            [kmet.config :as cfg]
             [kmet.libs.http :as http]))
 
 ;; ─── Records (pi types.ts ImagesModel / images-models.ts ImagesProvider) ──
@@ -220,6 +224,9 @@
 (def ^:private required-model-keys
   [:id :name :api :provider :base-url :input :output :cost])
 
+(def ^:private bundled-catalog-resource
+  "kmet/ai/image_model_data/image-models.edn")
+
 (defn- validate-model-entry
   "Light structural validation of one catalog model map; throws on a missing
    required key (strict validation lives in the generator + offline test)."
@@ -230,24 +237,103 @@
                       {:type :images-invalid-catalog}))))
   (map->ImagesModel (assoc m :id id)))
 
-(defn load-image-catalogs!
-  "Load the committed image-model catalog (image_model_data/image-models.edn)
-   into the registry, replacing whatever was registered before. Also ensures
-   the builtin :openrouter-images wire api is registered."
-  []
-  (register-images-api-provider! :openrouter-images generate-openrouter-images)
-  (clear-providers!)
-  (let [data (try
-               (when-let [r (io/resource "kmet/ai/image_model_data/image-models.edn")]
-                 (edn/read-string (slurp r)))
-               (catch Exception _ nil))
-        provider-info (:provider data)]
-    (when data
-      (when-not (and (map? data) (map? provider-info) (map? (:models data)))
-        (throw (ex-info "Invalid image-model catalog" {:type :images-invalid-catalog})))
-      (register-provider!
-       (map->ImagesProvider {:id (:id provider-info)
-                             :name (:name provider-info)
-                             :models (mapv (fn [[id m]] (validate-model-entry id m))
-                                           (:models data))}))))
+(def ^:dynamic *image-models-cache-dir*
+  "User-level image-model catalog cache dir, written by
+   `kmet --generate-models` (the same generator as `bb generate-models`).
+   load-image-catalogs! prefers it over the bundled catalog when it is
+   strictly newer (fresh-image-model-cache). Bindable for tests; nil (the
+   default) resolves via default-image-models-cache-dir —
+   ~/.kmet/agent/image-models-cache, or AGENT-DIR/image-models-cache when
+   load-image-catalogs! pins a scope dir (KMET_CODING_AGENT_DIR sandboxing)."
   nil)
+
+(def ^:dynamic *use-image-models-cache*
+  "When false, load-image-catalogs! ignores *image-models-cache-dir* even
+   when fresh. The test runner binds it false so suites always exercise the
+   committed catalog regardless of the local machine's cache state."
+  true)
+
+(defn default-image-models-cache-dir
+  "The default user-level image-model catalog cache dir
+   (<agent-dir>/image-models-cache). `kmet --generate-models` writes it;
+   load-image-catalogs! reads it. AGENT-DIR pins the scope dir
+   (KMET_CODING_AGENT_DIR sandboxing); nil resolves via cfg/get-agent-dir."
+  ([] (default-image-models-cache-dir nil))
+  ([agent-dir] (str (fs/path (or agent-dir (cfg/get-agent-dir)) "image-models-cache"))))
+
+(defn- bundled-image-catalog
+  "The bundled image-model catalog blob, nil when the resource is missing or
+   unreadable."
+  []
+  (try
+    (when-let [r (io/resource bundled-catalog-resource)]
+      (edn/read-string (slurp r)))
+    (catch Exception _ nil)))
+
+(defn- read-catalog-file
+  "Parse the image catalog file at PATH (throws on unreadable/invalid EDN)."
+  [path]
+  (edn/read-string (slurp path)))
+
+(defn fresh-image-model-cache
+  "*image-models-cache-dir (defaulting to the agent-dir cache) as a catalog
+   file path when usable: it must exist and carry a :generated-at timestamp
+   strictly newer than the bundled catalog's — so an upgrade that ships
+   newer data wins over a stale cache until `kmet --generate-models`
+   refreshes it. AGENT-DIR pins the default's scope dir
+   (KMET_CODING_AGENT_DIR sandboxing); nil resolves via cfg/get-agent-dir.
+   nil otherwise."
+  ([] (fresh-image-model-cache nil))
+  ([agent-dir]
+   (when *use-image-models-cache*
+     (let [f (fs/file (or *image-models-cache-dir*
+                          (default-image-models-cache-dir agent-dir))
+                      "image-models.edn")]
+       (when (fs/exists? f)
+         (let [cache-gen (try (:generated-at (read-catalog-file (str f)))
+                              (catch Exception _ nil))
+               bundled-gen (:generated-at (bundled-image-catalog))]
+           (when (and cache-gen bundled-gen
+                      (pos? (compare cache-gen bundled-gen)))
+             (str f))))))))
+
+;; load-image-catalogs! runs on every startup/reload — announce a newly
+;; adopted cache source only on the transition, not on every reload.
+(defonce ^:private announced-image-cache (atom nil))
+
+(defn load-image-catalogs!
+  "Load the image-model catalog into the registry, replacing whatever was
+   registered before: the user-level cache (fresh-image-model-cache,
+   written by `kmet --generate-models`) when strictly newer than the bundled
+   data, else the bundled resource — falling back to the bundled data with a
+   warning when a present-but-unusable cache fails to load. Also ensures the
+   builtin :openrouter-images wire api is registered. AGENT-DIR pins the
+   cache default's scope dir (KMET_CODING_AGENT_DIR sandboxing); nil
+   resolves via cfg/get-agent-dir."
+  ([] (load-image-catalogs! nil))
+  ([agent-dir]
+   (register-images-api-provider! :openrouter-images generate-openrouter-images)
+   (clear-providers!)
+   (let [data (or (when-let [cache (fresh-image-model-cache agent-dir)]
+                    (try
+                      (when (not= cache @announced-image-cache)
+                        (reset! announced-image-cache cache)
+                        (println "Image models: using cached catalog from" cache))
+                      (read-catalog-file cache)
+                      (catch Exception e
+                        (binding [*out* *err*]
+                          (println "Warning: ignoring unusable image-model cache:"
+                                   (ex-message e)))
+                        nil)))
+                  (do (reset! announced-image-cache nil)
+                      (bundled-image-catalog)))
+         provider-info (:provider data)]
+     (when data
+       (when-not (and (map? data) (map? provider-info) (map? (:models data)))
+         (throw (ex-info "Invalid image-model catalog" {:type :images-invalid-catalog})))
+       (register-provider!
+        (map->ImagesProvider {:id (:id provider-info)
+                              :name (:name provider-info)
+                              :models (mapv (fn [[id m]] (validate-model-entry id m))
+                                            (:models data))}))))
+   nil))

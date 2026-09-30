@@ -1,11 +1,12 @@
 ;; Provider catalog generator (pi: packages/ai/scripts/generate-models.ts,
 ;; ported to kmet's 40 providers) — fetches models.dev + the live provider
 ;; catalogs and writes the per-provider EDN files + manifest. The pipeline is
-;; target-agnostic: `bb generate-models` (via kmet.tasks.generate-models, a
-;; shim over this namespace) regenerates the committed src/kmet/ai/model_data;
-;; `kmet --generate-models` runs the same pipeline into the user-level cache
-;; (~/.kmet/agent/models-cache, kmet.ai.models/default-models-cache-dir) without
-;; touching the repo.
+;; target-agnostic: `bb generate-models` (via kmet.tasks.generate-models,
+;; which drives this namespace plus kmet.ai.image-model-gen) regenerates the
+;; committed src/kmet/ai/model_data (and image_model_data);
+;; `kmet --generate-models` runs the same pipelines into the user-level caches
+;; (~/.kmet/agent/models-cache, kmet.ai.models/default-models-cache-dir, and
+;; ~/.kmet/agent/image-models-cache) without touching the repo.
 ;;
 ;; Radius is deliberately dropped (pi-messages API + dynamic gateway
 ;; catalog, both out of kmet's scope); every other pi provider is

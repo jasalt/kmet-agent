@@ -85,8 +85,9 @@ The built-in catalog is stored in `src/kmet/ai/model_data/*.edn` and covers
 providers including opencode-go, deepseek, anthropic, google, groq, cerebras,
 openrouter, nvidia, moonshotai, qwen-token-plan, minimax, fireworks,
 vercel-ai-gateway, zai, together, baseten, kimi-coding, cloudflare, mistral,
-google-vertex, and amazon-bedrock. The catalogs are generated with
-`bb generate-models`.
+google-vertex, and amazon-bedrock. The provider catalogs and the image-model
+catalog (`src/kmet/ai/image_model_data/image-models.edn`) are regenerated
+together with `bb generate-models`.
 
 A user-level cache can be refreshed without modifying the repository:
 
@@ -94,7 +95,7 @@ A user-level cache can be refreshed without modifying the repository:
 kmet --generate-models
 ```
 
-The refresh is written to `~/.kmet/agent/models-cache/` and takes precedence
-over the bundled catalog when it is strictly newer. Rerunning it without an
-upstream change rewrites nothing. The image-model catalog is separate and is
-refreshed with `bb generate-image-models`.
+The provider refresh is written to `~/.kmet/agent/models-cache/` and the
+image refresh to `~/.kmet/agent/image-models-cache/`; each takes precedence
+over the corresponding bundled catalog when it is strictly newer. Rerunning
+without an upstream change rewrites nothing.

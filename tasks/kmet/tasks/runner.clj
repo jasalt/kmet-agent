@@ -560,10 +560,15 @@
    the changed-files baseline (kmet.tasks.changed — bb only)."
   [{:keys [vars unloaded filters]} mark-validated?]
   (let [start-ns (System/nanoTime)
-        models-var (try (requiring-resolve 'kmet.ai.models/*use-models-cache*)
-                        (catch Throwable _ nil))
-        results (if (and (not jolt?) models-var)
-                  (with-bindings {models-var false} (run-selected vars))
+        cache-vars (into {}
+                         (for [sym '[kmet.ai.models/*use-models-cache*
+                                     kmet.ai.image-models/*use-image-models-cache*]
+                               :let [v (try (requiring-resolve sym)
+                                            (catch Throwable _ nil))]
+                               :when v]
+                           [v false]))
+        results (if (and (not jolt?) (seq cache-vars))
+                  (with-bindings cache-vars (run-selected vars))
                   (run-selected vars))
         n-tests (:test results)
         n-assertions (+ (:pass results) (:fail results) (:error results))
