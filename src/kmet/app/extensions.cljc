@@ -697,8 +697,8 @@
                        (tools/register-tool! (loader-aware-map ext tool))
                        (track (fn [] (tools/unregister-tool! (:name tool)))))
      :unregister-tool! tools/unregister-tool!
-     ;; sandbox-only tools: contributed into the script tool's surface, never
-     ;; the model's tool set (mcp-adapter's MCP catalog — script.md T2)
+     ;; sandbox-only tools: contributed into the run_code tool's surface, never
+     ;; the model's tool set (mcp-adapter's MCP catalog — run_code.md T2)
      :register-tool-source! (fn [id tools-fn]
                               (tools/register-tool-source! id tools-fn)
                               (if (contains? @source-ids id)

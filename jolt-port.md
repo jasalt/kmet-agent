@@ -23,7 +23,7 @@ Status checked against `jolt v0.8.14-29-gc7c6b33e` (2026-09-29).
   run; standalone they pass on both hosts.
 - **Flaky under load (Jolt)**:
   `app.test-tools/test-tool-bash-background-pipe-closed` (12.5 s against its
-  8 s window) and `app.test-script/test-script-await-all-honors-timeout`
+  8 s window) and `app.test-run-code/test-run-code-await-all-honors-timeout`
   (13.7 s against its 1 s window) each missed once in a loaded `jolt
   test-ext`; both pass standalone and on bb.
 - **Flaky under load**: `libs.test-http/test-curl-redirect-slow-second-hop`

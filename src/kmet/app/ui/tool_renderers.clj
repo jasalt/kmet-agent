@@ -945,7 +945,7 @@
                               (let [footer (subs trimmed footer-start)]
                                 (or (and full-output-path
                                          (str/includes? footer full-output-path))
-                                    ;; the script tool's footer names the
+                                    ;; the run_code tool's footer names the
                                     ;; truncation instead of a spill file
                                     (str/includes? (str/lower-case footer) "truncat"))))
                        (str/trimr (subs trimmed 0 footer-start))
@@ -999,7 +999,7 @@
 
 (defn- elapsed-result-nodes
   "The muted Elapsed/Took line, or nil when the execution never started.
-   MEASURED-MS — the tool's own recorded duration (script's :details
+   MEASURED-MS — the tool's own recorded duration (run_code's :details
    :elapsed-ms) — wins over the component timestamp span when given."
   [theme started-at ended-at & [measured-ms]]
   (let [elapsed-ms (or measured-ms
@@ -1030,13 +1030,13 @@
                  (elapsed-result-nodes theme started-at ended-at)))))
 
 (def ^:private code-call-preview-lines
-  "Collapsed cap on a code-bearing call line (script, clojure_eval), in
+  "Collapsed cap on a code-bearing call line (run_code, clojure_eval), in
    visual lines. A long payload would otherwise dominate the transcript for
    every later message; the expanded form renders it in full."
   5)
 
 (defn render-code-call
-  "The shared call line for tools whose primary argument is code (script,
+  "The shared call line for tools whose primary argument is code (run_code,
    clojure_eval): `<label> <code>` collapsed to a width-aware window of the
    first CODE-CALL-PREVIEW-LINES visual lines with an expand hint, rendered
    verbatim when expanded. LABEL is plain text (styled bold tool-title);
@@ -1072,8 +1072,8 @@
                   width
                   "...")))))))))
 
-(defn render-script-call
-  "Call line for the script tool: `script <code>` (+ an explicit timeout
+(defn render-run-code-call
+  "Call line for the run_code tool: `run_code <code>` (+ an explicit timeout
    suffix), via the shared code-call renderer. The quiet title mirrors the
    collapsed shape on one line."
   [_name args theme width context]
@@ -1081,11 +1081,11 @@
         suffix (if (and (number? timeout) (pos? timeout))
                  (theme/fg theme :muted (str " (" timeout "s)"))
                  "")]
-    (render-code-call "script" (:code args) suffix theme width context)))
+    (render-code-call "run_code" (:code args) suffix theme width context)))
 
-(defn- script-calls-nodes
-  "One muted summary line for the script tool's inner-call trace (details
-   :calls): the tool work a script did is otherwise invisible in the
+(defn- run-code-calls-nodes
+  "One muted summary line for the run_code tool's inner-call trace (details
+   :calls): the tool work the run_code call did is otherwise invisible in the
    transcript. Failed/incomplete entries are counted."
   [context theme]
   (let [calls (seq (get-in context [:details :calls]))]
@@ -1105,8 +1105,8 @@
                          ": " summary
                          (when (pos? failed) (str ", " failed " failed")))))]))))
 
-(defn render-script-result
-  "Result body for the script tool: the shell-style body (output preview,
+(defn render-run-code-result
+  "Result body for the run_code tool: the shell-style body (output preview,
    truncation warning, elapsed/took — the tool's own measured time when the
    result carries it) plus the inner-call summary line."
   [content is-error theme width expanded? started-at ended-at truncation context]
@@ -1114,7 +1114,7 @@
   (h/compile-tree
    (into [:container {}]
          (concat (output-result-nodes content theme width expanded? ended-at truncation)
-                 (script-calls-nodes context theme)
+                 (run-code-calls-nodes context theme)
                  (elapsed-result-nodes theme started-at ended-at
                                        (get-in context [:details :elapsed-ms]))))))
 

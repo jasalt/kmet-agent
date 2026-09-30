@@ -509,12 +509,12 @@ the wrappers below or directly.
 
 ### Sandbox tool sources (`register-tool-source!`)
 
-A tool source contributes a whole catalog of tools **only to the `script`
+A tool source contributes a whole catalog of tools **only to the `run_code`
 tool's sandbox surface**: the model never sees them in its tool schema and
 `set-active-tools!` does not filter them. Use it for tools that are meant
 to be looped over or fanned out inside scripts but would bloat the model's
 context if advertised (the mcp-adapter contributes its cached MCP catalog
-this way — script.md T2):
+this way — run_code.md T2):
 
 ```clojure
 (ext/register-tool-source! api :my-catalog
@@ -536,7 +536,7 @@ this way — script.md T2):
   (arg normalization, `:prepare-arguments`, `:contextual?`/`:streams?`
   dispatch, error mapping). The registry shadows a colliding name, and the
   sandbox exclusion list still applies — a source can never contribute
-  `script` itself.
+  `run_code` itself.
 - The registration is removed automatically when the extension unloads.
 
 ### Tool execute contract
@@ -579,7 +579,7 @@ renderer vars are in `kmet.app.ui.tool-renderers`, including
 `render-edit-call`, `render-edit-result`, `render-bash-result` (a
 plain-text output body: styled lines, a collapsed line window with an expand
 hint, truncation and elapsed lines — the opt-in grep/find/ls tools use it)
-and `render-code-call` (the `script`/`clojure_eval` call line: a code
+and `render-code-call` (the `run_code`/`clojure_eval` call line: a code
 argument collapsed to a width-aware head window with an expand hint,
 verbatim when expanded); the namespace is explicitly
 shared with extensions. Path display helpers are public too:
@@ -800,7 +800,7 @@ for each, the **last non-nil handler result wins**:
     nil))
 ```
 
-Scripted tool calls run through the same hooks: a `script` call's inner
+Scripted tool calls run through the same hooks: a `run_code` call's inner
 `tools/call` (and the `tools/bash`/`read`/`write`/`edit` sugars) fires the
 before hook (block with `{:block true :reason ...}`, or rewrite with
 `{:args ...}`) and the after hook (override `:content` / `:is-error`). Two
@@ -808,9 +808,9 @@ caveats: an inner call carries a synthetic `:tool-call-id` (but the batch's
 assistant message), and a blocked call's `:terminate` hint is ignored
 (there is no batch). Inner calls still produce no tool-execution events and
 no transcript/session entries. A per-tool hook is policy, not a sandbox —
-the script sandbox can also shell out through `babashka.process`
+the run_code sandbox can also shell out through `babashka.process`
 (`p/sh`/`p/shell`/`p/process`) which no per-tool hook covers — so blocking
-the `script` tool itself is the only real gate.
+the `run_code` tool itself is the only real gate.
 
 ### Shortcuts and markdown transformers
 

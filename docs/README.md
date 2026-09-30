@@ -3,7 +3,7 @@
 This directory contains the documentation intended for people using kmet.
 Implementation, API, design, and performance notes live next to the code they
 describe instead of being mixed into this user guide. The temporary root notes
-`script.md`, `perf.md`, `jolt-bugs.md`, and `jolt-port.md` are the deliberate
+`run_code.md`, `perf.md`, `jolt-bugs.md`, and `jolt-port.md` are the deliberate
 exception.
 
 ## Start here

@@ -179,7 +179,7 @@ cached metadata so no server spawns at startup. Names are lowercased with
   `resources/read`.
 - **Scripted MCP** (settings `:script-mode false` stops the
   contribution): the adapter contributes its cached MCP catalog to
-  kmet's builtin **`script`** tool as a tool source
+  kmet's builtin **`run_code`** tool as a tool source
   (`tool_source.clj`) — MCP tools are in the sandbox surface by their
   prefixed names, `(tools/list)`/`(tools/describe)` discover them, and
   `@(tools/call "server_tool" args)` runs one (a promise settling with
@@ -188,7 +188,7 @@ cached metadata so no server spawns at startup. Names are lowercased with
   lazy connect, failure backoff, auth and the output guard match the
   proxy; progress notifications stream while a call runs. The separate
   `mcpScript` tool and its `bb`-subprocess runtime retired
-  (script.md T2) — scripts are the one scripted-MCP surface. See
+  (run_code.md T2) — scripts are the one scripted-MCP surface. See
   `skills/mcp/SKILL.md`.
 - **include/exclude globs**: server `:include-tools`/`:exclude-tools`
   (`["server_*"]`) filter which tools register as direct tools;

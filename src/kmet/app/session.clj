@@ -295,7 +295,7 @@
                    :leaf-id (atom leaf-id)
                    :lock (java.util.concurrent.locks.ReentrantLock.)})))
 
-;; ─── Tool result token attribution (script.md T0) ──────────────────────────
+;; ─── Tool result token attribution (run_code.md T0) ──────────────────────────
 ;; Every tool-result entry carries an estimated :result-tokens (chars/4, the
 ;; compaction convention). The totals are DERIVED from the entries, so loaded
 ;; and forked sessions report without extra bookkeeping.
@@ -328,7 +328,7 @@
    orphaned sibling entries.
 
    Tool-result entries get an estimated :result-tokens stamped onto them
-   (script.md T0 — see tool-usage)."
+   (run_code.md T0 — see tool-usage)."
   [session entry]
   (with-session-lock session
     (let [entry (build-entry @(:entries session) @(:leaf-id session) entry)

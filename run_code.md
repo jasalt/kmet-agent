@@ -1,4 +1,4 @@
-# script.md — the script tool (design + measurement)
+# run_code.md — the `run_code` tool (design + measurement)
 
 Question this file answers: **should kmet add a "code execution" tool (à la
 maki's `code_execution`) so the model can scan/filter many files and put only
@@ -11,14 +11,14 @@ opt-in extensions). The one thing already in place is measurement — per-tool
 result-token attribution — so the build/no-build decision can be made on data.
 
 Status: **T1, T2 and T4 implemented** in this tree —
-`src/kmet/app/tools/script.cljc`, a builtin (read/write/edit/bash + `script`),
-`kmet.app.test-script` (52 tests: 39 fast + 13 `^:slow`, smoke-verified on
+`src/kmet/app/tools/run_code.cljc`, a builtin (read/write/edit/bash + `run_code`),
+`kmet.app.test-run-code` (52 tests: 39 fast + 13 `^:slow`, smoke-verified on
 babashka and jolt); the mcp-adapter's `mcpScript` tool and `bb`-subprocess
 runtime retired into the same engine (its catalog joins the sandbox as a
 contributed tool source — T2 below). T4 shares the invocation pipeline with
 the loop (`kmet.app.tools.invoke`), so scripted calls fire the run's tool
 hooks and a script abort cancels inner calls. The last plan item, the
-post-adoption T0 re-measurement, is recorded below as well (✅): script is
+post-adoption T0 re-measurement, is recorded below as well (✅): run_code is
 still used rarely, so the bash find/read workload has not moved yet.
 
 A follow-up efficiency pass is also landed: `sandbox/emit` provides a
@@ -51,7 +51,7 @@ tokens once — it costs them again on every later turn until compaction. maki's
 `code_execution` lets the model write a script that gathers/reads/greps many
 files inside a sandbox and prints only the lines that matter; the rest never
 enters the context window. Their reported split: read results were ~65% of all
-billed tokens, bash ~12%. The script tool was built to compete with *reads*.
+billed tokens, bash ~12%. The run_code tool was built to compete with *reads*.
 
 Their second observation: the model can already batch via `bash` + python/awk/
 jq, but it doesn't *reliably choose to*. That is an argument for a dedicated
@@ -70,8 +70,8 @@ question is measured before anything is built. It does differ — see
 | partial output on interrupt | ✅ bash returns streamed output + "Command aborted" |
 | compaction | ✅ `kmet.app.compaction` (LLM summarization) |
 | visibility (tokens/cost) | ✅ footer: ↑in ↓out R/W cache, $cost, context % |
-| `mcpScript` (scripted MCP calls) | ✅ mcp-adapter: retired into the shared `script` tool — the catalog is a contributed sandbox tool source (T2) |
-| `code_execution` (script + distilled output) | ✅ builtin `script` (T1, landed — plan and re-measurement below) |
+| `mcpScript` (scripted MCP calls) | ✅ mcp-adapter: retired into the shared `run_code` tool — the catalog is a contributed sandbox tool source (T2) |
+| `code_execution` (script + distilled output) | ✅ builtin `run_code` (T1, landed — plan and re-measurement below) |
 | per-tool token attribution | ✅ measurement: every tool-result entry carries `:result-tokens`, `/session` shows the per-tool breakdown |
 
 ## Measurement (T0) — results
@@ -135,7 +135,7 @@ tokens (T0 era: **~75%**).
 - "some other tool dominates → look there": **met** — and looking inside bash
   shows file-view + search ≈ two-thirds of it.
 
-So the script tool's competition is **bash-as-file-reader and broad search**,
+So the run_code tool's competition is **bash-as-file-reader and broad search**,
 not primarily the `read` tool. The description leads with what only the tool
 can do — run a multi-step task as one call, fan calls out in parallel, keep N
 tool results out of context — and nags at the measured workload beneath it:
@@ -184,26 +184,26 @@ before any new engine; T1 must capture the rest.
 Same method as T0 (stamped `:result-tokens` when present, else chars/4 from
 the stored content), corpus refreshed to 465 session files / 67,878 tool
 results / ~32.9M estimated result tokens. The adoption boundary is T1's
-landing (`590fe97`, 2026-09-22 22:02 UTC); `script` entries are zero before
+landing (`590fe97`, 2026-09-22 22:02 UTC); `run_code` entries are zero before
 it.
 
 | tool | calls | tokens | share | avg/call |
 |---|---:|---:|---:|---:|
 | **bash** | 50,869 | 18.15M | **55.2%** | 356 |
 | **read** | 8,119 | 13.28M | **40.4%** | 1,635 |
-| **script** | 204 | 171k | **0.5%** | 839 |
+| **run_code** | 204 | 171k | **0.5%** | 839 |
 | web search + fetch | 274 | 886k | 2.7% | 3.2k |
 | everything else (edit, structural, lsp, mcp, …) | 8,412 | 383k | 1.2% | — |
 
 - **The T0 headline split has not moved** (54.8%/41.6% → 55.2%/40.4%):
-  script has not displaced bash-as-reader. Post-adoption alone it is 4.4% of
+  run_code has not displaced bash-as-reader. Post-adoption alone it is 4.4% of
   the 3.88M result tokens (bash 55.7%, read 34.6%).
 - **Inside bash, the find/read workload is unchanged**: with one classifier
   applied to both sides (absolute levels are not comparable to T0's
   categorizer), file-view moves 49.6% → 49.8% of bash tokens and search
   43.0% → 43.4%. read + bash file-view + bash search is ~86.5% of
   post-adoption result tokens.
-- **Script's average is a heavy tail, not a steady drip**: mean 839, median
+- **run_code's average is a heavy tail, not a steady drip**: mean 839, median
   229 (read averages 1,635). 13 results ≥3.5k estimated tokens carry 44% of
   script tokens; 9 hit the output cap (54k tokens, 32%). Two are 50 KiB-era
   `println` dumps of whole `cat` outputs, from before `f3bb0b6` lowered the
@@ -211,10 +211,10 @@ it.
   ≤~4.1k estimated tokens.
 - **The per-invocation view is one-sided**: the `/session` Tool Results
   section counts result content only — never a call's `:code` argument
-  (~500 estimated tokens per script call, on the input side) nor the inner
+  (~500 estimated tokens per run_code call, on the input side) nor the inner
   calls the sandbox keeps out of context (43 of 204 results carry a trace,
   88 inner calls, 86 of them bash; most scripts scan with `fs/` in-process).
-  Conversation-weighted (tokens × later assistant turns): script 2.1%, bash
+  Conversation-weighted (tokens × later assistant turns): run_code 2.1%, bash
   58.6%, read 36.1%.
 
 Verdict: the T0 decision stands on the current corpus, with a different
@@ -278,7 +278,7 @@ so T1–T3 don't re-litigate it:
 
 Loader facts: kmet.loader uses **SCI on babashka** and the **native
 `jolt.loader` on jolt** (`.jolt` file; backend selected in
-`kmet.app.extensions`). The script tool already builds its per-call context
+`kmet.app.extensions`). The run_code tool already builds its per-call context
 through `kmet.loader.sci-loader` (`:base` fork + `:interrupt-fn`) on both
 hosts and then evaluates with `sci/eval-string*` directly; kmet pins SCI in
 `jolt/deps.edn`, so the same evaluator is available on jolt. Whether the eval
@@ -286,7 +286,7 @@ itself could move behind `kmet.loader` is investigated next.
 
 ### Scripts on kmet.loader (feasibility, verified)
 
-Prompted by "could the script tool stop using SCI directly and ride
+Prompted by "could the run_code tool stop using SCI directly and ride
 kmet.loader?" The answer differs by host: `load` evaluates what it loads,
 and a policy only covers code that goes through it.
 
@@ -384,7 +384,7 @@ What the SCI path uniquely provided does not survive:
 - **No capability restriction.** A script resolves classes and loaded
   namespaces directly: `System/currentTimeMillis`, `Thread`,
   `java.io.File`, `Throwable`, `eval`, and loaded kmet namespaces by
-  fully-qualified reference. `test-script-boundary` asserts the opposite.
+  fully-qualified reference. `test-run-code-boundary` asserts the opposite.
 - **The gate is advisory.** `(require 'clojure.pprint)` is refused, but
   `(clojure.pprint/cl-format …)` works once the host has loaded it: the
   context rewrite covers the nine `clojure.core` loading/resolve calls, not
@@ -411,7 +411,7 @@ per-context var tables.
 **Implementation shape, if the contract decision goes native:** a portable
 `script-bridge` host namespace whose dynamic vars carry the per-call bridge
 (the gate admits it), a `#?(:jolt)` evaluator over `kmet.loader.jolt-loader`
-(`classpath []` + `host-view`) and `eval-in`, and `script.cljc` selecting it
+(`classpath []` + `host-view`) and `eval-in`, and `run_code.cljc` selecting it
 when `(resolve 'jolt.loader/eval-in)` is present — SCI stays for bb and
 older Jolt. Not started: it changes the tool's contract, so the decision
 comes first.
@@ -422,7 +422,7 @@ comes first.
   each tool-result entry, derived by `tool-usage`, shown in `/session` and
   logged with `--debug`. No existing tool behavior or instruction changes.
   Results above.
-- **T1 — thin script tool.** One in-process SCI context per call, tools
+- **T1 — thin run_code tool.** One in-process SCI context per call, tools
   injected as fns, eval on a daemon thread, `:interrupt-fn` + timeout + output
   guard. No process, no daemon, no protocol. Inner calls resolve through the
   normal registry path, are always async, and fire no tool-call hooks (below).
@@ -438,12 +438,12 @@ comes first.
     `kmet.app.tools.registry/register-tool-source!` /
     `unregister-tool-source!` (id → a 0-arg fn returning {name → tool map})
     and `get-contributed-tools`; registration bumps the generation, so
-    cached sandbox bases rebuild. `script/create-tool` gained the
+    cached sandbox bases rebuild. `run-code/create-tool` gained the
     `:get-contributed-tools` seam; `active-surface` merges contributions
     after the enabled filter (sandbox-only tools are not in the model's
     tool set, so `set-active-tools!` must not hide them; the registry
     shadows a colliding name) and still applies the exclusion list — a
-    source can never contribute `script` itself. Dispatch stays one path:
+    source can never contribute `run_code` itself. Dispatch stays one path:
     the bridge passes its surface as `execute-tool`'s `:tools` opt, so a
     contributed name goes through the same normalization/`:streams?`/
     `:contextual?` handling without joining `get-tool`/`get-all-tools`.
@@ -470,7 +470,7 @@ comes first.
   - **Docs/validation:** the mcp skill, adapter README, and the `mcp`
     proxy description teach the script surface;
     `scripts/validate-script.bb` was rewritten to drive the contributed
-    source through the real script tool (17 checks).
+    source through the real run_code tool (17 checks).
 - **T3 — `kmet --script` (self-exec) and/or `--mode rpc`.** Only with a
   measured need (boot cost/call frequency) or a second consumer. The tool
   contract (description/skill/API) should survive T1→T3 untouched.
@@ -487,7 +487,7 @@ Decisions from the design pass, so implementation doesn't re-derive them.
 ### Callable set
 
 - **All active tools**, i.e. `registry ∩ (:enabled-tools agent)` (nil = whole
-  registry), minus an exclusion list (`script` itself, and later any nested
+  registry), minus an exclusion list (`run_code` itself, and later any nested
   sandbox). Active is exactly what the model sees in its tool schema — this
   respects `set-active-tools!`, picks up extension tools automatically, and
   keeps discovery equal to callability. The set is fixed when the base is
@@ -539,7 +539,7 @@ returns `nil`, so the final expression does not duplicate it.
   concurrent calls from `future`s are safe) ported in-process — except the
   bridge hands the script the promise instead of derefing internally, which
   makes fan-out idiomatic: fire N calls, scan files locally meanwhile, deref.
-  One script call, one context entry, N inner calls that never enter context.
+  One run_code call, one context entry, N inner calls that never enter context.
 - `list`/`describe` are the exception: bridge-local reads of the active-set
   registry (no dispatch), so they stay synchronous.
 - Built-in fns are generated for the four builtins unconditionally (fixed,
@@ -559,7 +559,7 @@ returns `nil`, so the final expression does not duplicate it.
   `:contextual?`/`:streams?` dispatch, and exception → `{:is-error true}`.
 - **Never through `loop/execute-tool-calls-*`**: that path emits
   `:tool-execution-*` events, runs hooks, and appends `:role :tool` entries to
-  context and session — exactly the cost the script tool exists to avoid.
+  context and session — exactly the cost the run_code tool exists to avoid.
   Inner results stay out of context; only the script's output enters.
 - Result map settled **verbatim**: `{:content :is-error :details :truncation
   :images}`. Scripts branch on `:is-error` instead of catching; do not unwrap
@@ -573,7 +573,7 @@ returns `nil`, so the final expression does not duplicate it.
   scans) meanwhile, then deref — and the run `:signal` reaches the inner call,
   so Escape cancels it. A script that fans out far more calls than workers and
   derefs them in reverse waits for the queue ahead of it; bridge submissions
-  cannot nest (script is excluded from the surface), so the pool cannot
+  cannot nest (run_code is excluded from the surface), so the pool cannot
   deadlock on itself.
 - **Settlement.** Every dispatched promise settles when its tool returns —
   success or `{:is-error true}`; a tool that observes the cancel signal (bash
@@ -589,13 +589,13 @@ returns `nil`, so the final expression does not duplicate it.
   interrupt exception cannot outlive its abort either: the result reports
   the abort reason, not `:ok`.
 - **Tool-call hooks (T4).** Inner calls run through the run's agent-level
-  before/after hooks (`script/*tool-hooks*`): block/arg rewrite and
+  before/after hooks (`run-code/*tool-hooks*`): block/arg rewrite and
   `:content`/`:is-error` overrides apply, for blocked calls too. An inner
   call has a synthetic `:tool-call-id` but carries the batch's
-  `:assistant-message` (`script/*assistant-message*`), and its `:terminate`
+  `:assistant-message` (`run-code/*assistant-message*`), and its `:terminate`
   hint is dropped; it still emits no tool-execution event or
   transcript/session entry. A per-tool hook is policy, not a sandbox (the
-  script can shell out via `babashka.process`), so gating the outer `script`
+  script can shell out via `babashka.process`), so gating the outer `run_code`
   call is the only real block.
 - Inner-call opts: `:signal` (the combined cancel signal — Escape and the
   script's own abort both kill inner bash children), `:ctx`
@@ -607,7 +607,7 @@ returns `nil`, so the final expression does not duplicate it.
 
 ### Plumbing
 
-- The enabled set rides a run-level thunk (`script/*enabled-tools-fn*`, bound
+- The enabled set rides a run-level thunk (`run-code/*enabled-tools-fn*`, bound
   in `loop.clj` next to `bash-tool/*cancel-signal*`; nil outside loop runs =
   all tools) and is resolved once per call: the surface, the fork's bridge and
   the base's discovery fns all read that one computed map, fixed for the call.
@@ -644,7 +644,7 @@ returns `nil`, so the final expression does not duplicate it.
 Settled surface. Verified against both SCI hosts (bb's bundled SCI and the
 jolt pin): value-shared `babashka.*` namespaces work in a context with **no
 `:classes`/`:imports` at all** — the extension context's `:classes {:allow
-:all}` is exactly what the script sandbox must not copy.
+:all}` is exactly what the run_code sandbox must not copy.
 
 | capability | surface | notes |
 |---|---|---|
@@ -698,11 +698,11 @@ additions; pi has no parallel-tool-call guidance.
   returns a promise the script derefs; `call-many` validates and submits a
   batch, and `await-all` polls cancellation while waiting in input order.
   Dispatch never blocks the interpreter, and the run `:signal` reaches the
-  inner call so Escape cancels it. Scripts fan out freely — one `script` call
+  inner call so Escape cancels it. Scripts fan out freely — one `run_code` call
   can run N inner calls in parallel.
 - **Hooks (T4).** Script-inner calls run through the *same* agent-level
-  before/after hooks as the loop's batches (`script/*tool-hooks*` and the
-  per-batch `script/*assistant-message*`, bound in `run-agent-turn` and
+  before/after hooks as the loop's batches (`run-code/*tool-hooks*` and the
+  per-batch `run-code/*assistant-message*`, bound in `run-agent-turn` and
   `execute-tool-calls!`):
   the before hook can block (the call settles with its reason and never
   executes) or rewrite args, the after hook can override `:content` /
@@ -712,20 +712,20 @@ additions; pi has no parallel-tool-call guidance.
   tool-execution event, transcript or session entry. Mutation tools ride the
   same bridge; the callable set is every active tool, not a read-only subset.
   A per-tool gate is policy, not a sandbox — the script can also shell out
-  via `babashka.process` — so gating `script` itself is the only real block.
+  via `babashka.process` — so gating `run_code` itself is the only real block.
 
 ## T1 implementation (landed)
 
 Placement: **builtin** (`src/`), not an opt-in extension — the measured
 workload is ~75% of all result tokens; an opt-in tool would not move it. The
-builtin set grows by one (read/write/edit/bash + `script`); existing tool
+builtin set grows by one (read/write/edit/bash + `run_code`); existing tool
 descriptions are untouched. No settings gate in v1 (mcpScript's `:script-mode`
 precedent is available if the prompt impact measures badly).
 
 The plan above is now the record of what landed:
 
-1. ✅ **Tool** — `src/kmet/app/tools/script.cljc` (`.cljc` for the
-   jolt/bb `sci/binding` split), a `script` record (params `code` +
+1. ✅ **Tool** — `src/kmet/app/tools/run_code.cljc` (`.cljc` for the
+   jolt/bb `sci/binding` split), a `run_code` record (params `code` +
    `timeout` in seconds — bash's unit — plus optional result and capture
    budgets, `:streams? true`, `:contextual? true`), registered at the
    bottom of `registry.clj` — after the registry fns — carrying seams
@@ -783,11 +783,11 @@ The plan above is now the record of what landed:
    deadline. On Jolt the writers are bound with `sci/binding` (the
    `with-sci-io` pattern); on babashka the host `*out*`/`*err*` bindings are
    enough. UI: a builtin renderer
-   (`render-script-call`/`render-script-result`) shows the code header
+   (`render-run-code-call`/`render-run-code-result`) shows the code header
    (collapsed head + expand hint), the output preview, a muted inner-call
    summary from `:details :calls` and the elapsed/took line, and strips the
    model-facing truncation notice in favor of its own warn line.
-7. ✅ **Tests** — `test/kmet/app/test_script.clj`, registered in
+7. ✅ **Tests** — `test/kmet/app/test_run_code.clj`, registered in
    `kmet.tasks.runner/all-namespaces`: 39 fast tests and 13 `^:slow` tests
    covering return/output, compact `sandbox/emit` (including spawned output),
    ordered `call-many` / cancellation-aware `await-all`, batch validation,
@@ -854,17 +854,17 @@ pipeline both callers use:
   call settles with the hook's reason (its `:terminate` hint is dropped — no
   batch) and the after hook still runs, matching the loop. Promises, trace,
   gate and discovery stay bridge-local.
-- **Hooks reach the script** through `script/*tool-hooks*`, bound in
+- **Hooks reach the script** through `run-code/*tool-hooks*`, bound in
   `run-agent-turn` as thunks over the agent's
   `:before-tool-call`/`:after-tool-call` (the mode-built chains over
   `extensions/get-tool-call-hooks`/`get-tool-result-hooks`), and the batch's
-  assistant message through `script/*assistant-message*`, bound around
+  assistant message through `run-code/*assistant-message*`, bound around
   `execute-tool-calls!` — so an inner call's hook payload matches the outer
-  script call's, except for the synthetic `:tool-call-id` (`script-<n>`).
+  run_code call's, except for the synthetic `:tool-call-id` (`run_code-<n>`).
   Both are captured on the tool thread and passed to the pool workers by
   value (raw worker threads convey no bindings). An inner call still emits
   no tool-execution event and no transcript/session entry — gate the
-  `script` tool itself for policy (a per-tool gate is not a sandbox: the
+  `run_code` tool itself for policy (a per-tool gate is not a sandbox: the
   script can shell out via `babashka.process`).
 - **Cancellation**: the bridge's per-call signal is a read-only OR-view
   (`kmet.libs.concurrent/or-signal` — the same helper behind the loop's
@@ -873,7 +873,7 @@ pipeline both callers use:
   `*cancel-signal*`/`:signal` (bash's poller kills the process tree) and is
   checked twice by a pool task — at admission and again after its before
   hook, so a slow hook cannot start a call past the abort: such a call
-  settles as `{:is-error true :content "Script cancelled before …"}` and
+  settles as `{:is-error true :content "run_code cancelled before …"}` and
   never executes (the trace records `:error "cancelled"`). A normally
   finished script leaves the signal false, so its queue still drains
   (underefed `tools/call` keeps its fire-and-forget meaning) — only its
@@ -888,9 +888,9 @@ pipeline both callers use:
 
 ## References
 
-- `src/kmet/app/tools/script.cljc` — the T1 implementation: base cache,
+- `src/kmet/app/tools/run_code.cljc` — the T1 implementation: base cache,
   capabilities, bridge, capture, deadline, combined cancel signal;
-  `test/kmet/app/test_script.clj` the tests. `script.cljc` (not `.clj`)
+  `test/kmet/app/test_run_code.clj` the tests. `run_code.cljc` (not `.clj`)
   because of the `#?(:jolt … :default …)` `sci/binding` — clj-kondo allows
   reader conditionals only in `.cljc`, and the split must be read out on
   babashka (the macro expands to private `sci.impl` fns babashka's nested SCI
@@ -902,15 +902,15 @@ pipeline both callers use:
   batch modes, after-hook overrides, and hook propagation into a scripted
   call).
 - `src/kmet/libs/concurrent.clj` — `or-signal` (the read-only OR-view of
-  cancel signals used by the script bridge and the loop's provider guard)
+  cancel signals used by the run_code bridge and the loop's provider guard)
   next to the extension `spawn` helper.
 - `src/kmet/app/tools/core.clj`, `src/kmet/app/tools/registry.clj` —
   `execute-tool` (the bridge seam), `select-tools` (the shared surface
   filter), `built-in-tools`, `get-all-tools`, `get-tool`,
   `tool-registry-generation` (the base-cache generation counter).
 - `src/kmet/app/loop.clj` — run-level bindings (incl.
-  `script/*enabled-tools-fn*`, `script/*tool-hooks*` and the per-batch
-  `script/*assistant-message*`) + `active-tools` / `set-active-tools!`;
+  `run-code/*enabled-tools-fn*`, `run-code/*tool-hooks*` and the per-batch
+  `run-code/*assistant-message*`) + `active-tools` / `set-active-tools!`;
   `execute-tool-calls-*` (what the bridge must not route through); the
   `--debug` per-tool report at agent end.
 - `src/kmet/app/extensions.cljc` — `shared-context` / `shared-var-map` /

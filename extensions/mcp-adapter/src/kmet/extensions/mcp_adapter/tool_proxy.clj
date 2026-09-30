@@ -10,7 +10,7 @@
    progress events as partial content), resource reads
    (read-mcp-resource — the read_<resource> direct-tool executor),
    and script-tool-records — the cached catalog the mcp-adapter
-   contributes to kmet's `script` sandbox (script.md T2; replaces the
+   contributes to kmet's `run_code` sandbox (run_code.md T2; replaces the
    retired mcpScript runtime and its search/describe/TS-shape envelopes).
 
    Dispatch precedence (§9.2): search → describe → tool → connect →
@@ -740,8 +740,8 @@
             (return-error (str "MCP call failed: " (ex-message e)))))))))
 
 (defn script-tool-records
-  "The cached MCP catalog as script-sandbox tool maps, keyed by the
-   prefixed name (script.md T2 — replaces the retired mcpScript tool):
+  "The cached MCP catalog as run_code sandbox tool maps, keyed by the
+   prefixed name (run_code.md T2 — replaces the retired mcpScript tool):
    {name → {:name :label :description :parameters :streams? :execute}}.
    Every enabled, configured server's cached tools are listed (no spawn —
    the call connects lazily), so the sandbox sees the catalog the `mcp`

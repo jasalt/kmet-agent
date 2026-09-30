@@ -1067,7 +1067,7 @@
         (finally (tui-kb/set-global-keybindings! prev-global))))))
 
 (deftest session-info-shows-per-tool-usage
-  (testing "/session's Tool Results section: per-tool calls + estimated result tokens, highest first, with a TOTAL (script.md T0)"
+  (testing "/session's Tool Results section: per-tool calls + estimated result tokens, highest first, with a TOTAL (run_code.md T0)"
     (let [sess-dir (str "target/test-interactive-session-info-" (System/currentTimeMillis))
           sess (session/create-session sess-dir)
           pad (fn [n] (apply str (repeat n \a)))]

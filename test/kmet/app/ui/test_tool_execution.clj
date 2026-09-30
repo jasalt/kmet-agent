@@ -101,7 +101,7 @@
       (reset! (:content-atom c) "second")
       (is (some #(re-find #"second" %) (mapv strip-ansi (core/render c 40)))))))
 
-;; ─── Built-in renderers (read / write / edit / bash / script) ────────────
+;; ─── Built-in renderers (read / write / edit / bash / run_code) ────────────
 
 (defn- render-tool [& {:keys [name args content is-error expanded? truncation]}]
   (let [c (te/make-tool-execution :name name :args args :content (or content "")
@@ -307,15 +307,15 @@
         (is (some #(re-find #"out1" %) plain))
         (is (some #(re-find #"Took" %) plain))))))
 
-(deftest test-script-render-call
-  (testing "script call shows the code, not the raw args map"
-    (let [plain (render-tool :name "script" :args {:code "(+ 1 2)"})]
-      (is (some #(re-find #"script \(\+ 1 2\)" %) plain))
+(deftest test-run-code-render-call
+  (testing "run_code call shows the code, not the raw args map"
+    (let [plain (render-tool :name "run_code" :args {:code "(+ 1 2)"})]
+      (is (some #(re-find #"run_code \(\+ 1 2\)" %) plain))
       (is (not-any? #(re-find #":code" %) plain)))))
 
-(deftest test-script-render-result
-  (testing "script result shows output, the inner-call summary and duration"
-    (let [c (te/make-tool-execution :name "script"
+(deftest test-run-code-render-result
+  (testing "run_code result shows output, the inner-call summary and duration"
+    (let [c (te/make-tool-execution :name "run_code"
                                     :args {:code "1"}
                                     :content "out1\nout2"
                                     :details {:calls [{:tool "read" :ok true}]})]

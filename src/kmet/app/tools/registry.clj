@@ -6,7 +6,7 @@
             [kmet.app.tools.write :as write]
             [kmet.app.tools.edit :as edit]
             [kmet.app.tools.bash :as bash]
-            [kmet.app.tools.script :as script]))
+            [kmet.app.tools.run-code :as run-code]))
 
 (declare built-in-tools)
 
@@ -16,7 +16,7 @@
 
 (defn tool-registry-generation
   "Monotonic counter bumped on every registry mutation (register-tool!,
-   unregister-tool!). The script sandbox's base-context cache keys on it, so
+   unregister-tool!). The run_code sandbox's base-context cache keys on it, so
    a changed registry can never be served a stale sandbox surface."
   []
   @registry-generation)
@@ -24,7 +24,7 @@
 ;; ─── Built-in tools ─────────────────────────────────────────────────────────
 
 (def ^:private base-tools
-  "Built-in tools without registry seams; the script tool joins at the bottom
+  "Built-in tools without registry seams; the run_code tool joins at the bottom
    (it dispatches through this namespace, so its record needs the fns)."
   {"read"  (tool/make-tool
             :name "read"
@@ -111,9 +111,9 @@
   (get (get-all-tools) name))
 
 ;; ─── Extension-contributed tool sources ────────────────────────────────────
-;; Sandbox-only tools: a source contributes tool maps into the script tool's
+;; Sandbox-only tools: a source contributes tool maps into the run_code tool's
 ;; surface without joining get-all-tools (the model's tool set). The
-;; mcp-adapter contributes its cached MCP catalog this way (script.md T2).
+;; mcp-adapter contributes its cached MCP catalog this way (run_code.md T2).
 
 (defonce ^:private tool-sources (atom {}))
 
@@ -122,9 +122,9 @@
    the source; TOOLS-FN is a 0-arg fn returning {name → tool map} — the same
    shape a registered tool map has (:name :label :description :parameters
    :execute, optional :streams?/:contextual?/:prepare-arguments).
-   Contributed tools join the script sandbox's surface only; the registry
+   Contributed tools join the run_code sandbox's surface only; the registry
    shadows a colliding name. Re-registering under the same ID replaces the
-   source and bumps the generation, so cached script bases rebuild against
+   source and bumps the generation, so cached run_code bases rebuild against
    the new catalog."
   [id tools-fn]
   (swap! tool-sources assoc id tools-fn)
@@ -155,7 +155,7 @@
    ENABLED names (nil = every tool in ALL), plus CONTRIBUTED sandbox-only
    tools (not in get-all-tools; a colliding name keeps ALL's record), minus
    EXCLUDE names (a sandbox must not expose itself). Preserves ALL's order.
-   The loop's schema and the script bridge's callable set both resolve
+   The loop's schema and the run_code bridge's callable set both resolve
    through this, so what a caller lists and what it can dispatch cannot
    drift."
   [all {:keys [enabled contributed exclude]}]
@@ -191,7 +191,7 @@
    tool's execute when it declares :streams?); :signal — cancel atom; :ctx
    — extension context map for :contextual? tools (pi: execute(toolCallId,
    params, signal, onUpdate, ctx)); :tools — a name → tool map override for
-   the script sandbox, which passes its own surface so the script's listing
+   the run_code sandbox, which passes its own surface so the script's listing
    is authoritative for dispatch (contributed sandbox tools are not in
    get-all-tools). A :contextual? tool's execute always receives 4 args
    (fn [args on-update signal ctx]) — pi passes the signal and ctx
@@ -225,14 +225,14 @@
 ;; ─── The full built-in map ─────────────────────────────────────────────────
 
 (def built-in-tools
-  "Map of tool name → Tool record for all built-in tools. The script tool
+  "Map of tool name → Tool record for all built-in tools. The run_code tool
    carries this namespace's seams: it lists through get-all-tools (plus
    extension-contributed sources) and dispatches inner calls through
-   execute-tool, so script resolution is the same as the model's."
+   execute-tool, so run_code resolution is the same as the model's."
   (assoc base-tools
-         "script"
-         (script/create-tool {:get-all-tools get-all-tools
-                              :get-contributed-tools get-contributed-tools
-                              :select-tools select-tools
-                              :execute-tool execute-tool
-                              :generation-fn tool-registry-generation})))
+         "run_code"
+         (run-code/create-tool {:get-all-tools get-all-tools
+                                :get-contributed-tools get-contributed-tools
+                                :select-tools select-tools
+                                :execute-tool execute-tool
+                                :generation-fn tool-registry-generation})))

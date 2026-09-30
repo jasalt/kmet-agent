@@ -1,6 +1,6 @@
-(ns kmet.app.tools.script
-  "The `script` tool — model-written Clojure in a per-call SCI sandbox with
-   kmet's tools bridged in (design: script.md).
+(ns kmet.app.tools.run-code
+  "The `run_code` tool — model-written Clojure in a per-call SCI sandbox with
+   kmet's tools bridged in (design: run_code.md).
 
    Lifecycle: every call forks a fresh SCI context from a base cached per
    [registry-generation enabled-tool-set] and discards it on return. The base
@@ -47,7 +47,7 @@
 (def ^:private tool-max-output-bytes bash-exec/DEFAULT-MAX-BYTES)
 (def ^:private tool-max-output-lines bash-exec/DEFAULT-MAX-LINES)
 
-(def ^:private default-script-output-bytes (* 16 1024))
+(def ^:private default-run-code-output-bytes (* 16 1024))
 (def ^:private tool-max-capture-bytes (* 16 1024 1024))
 
 (def ^:private default-capture-bytes (* 1 1024 1024))
@@ -65,7 +65,7 @@
 (def ^:private error-preview-chars 300)
 (def ^:private error-preview-lines 3)
 (def ^:private base-cache-size 4)
-(def ^:private excluded-tool-names #{"script"})
+(def ^:private excluded-tool-names #{"run_code"})
 
 (def ^:private alias-prelude
   "The aliases every script gets without a require — the standard Clojure and
@@ -161,7 +161,7 @@
 
 (defn- output-limits [max-bytes max-lines]
   {:bytes (normalize-limit max-bytes
-                           default-script-output-bytes
+                           default-run-code-output-bytes
                            tool-max-output-bytes)
    :lines (normalize-limit max-lines
                            tool-max-output-lines
@@ -172,7 +172,7 @@
   [v]
   (normalize-limit v default-capture-bytes tool-max-capture-bytes))
 
-(defn- script-limits
+(defn- run-code-limits
   "Resolve result and capture budgets once, before the script starts."
   [max-bytes max-lines max-capture-bytes]
   (let [limits (output-limits max-bytes max-lines)]
@@ -375,7 +375,7 @@
                             :is-partial true})))))))))
 
 (defn- start-capture [on-update abort capture-limit]
-  (let [dir (str (temp-root) "/kmet-script-" (System/nanoTime))
+  (let [dir (str (temp-root) "/kmet-run-code-" (System/nanoTime))
         _ (fs/create-dirs dir)
         out-file (str dir "/out.log")
         err-file (str dir "/err.log")
@@ -505,8 +505,8 @@
    'emit (fn [v]
            (if-let [{:keys [out-w]} @writers]
              (emit-value out-w v)
-             (throw (ex-info "Script output is not initialized"
-                             {:type :script/no-output}))))
+             (throw (ex-info "run_code output is not initialized"
+                             {:type :run-code/no-output}))))
    ;; a derefable result on a daemon thread (babashka/jolt futures are
    ;; daemon-backed; SCI's own future is unavailable in a value-shared ctx).
    ;; The writers are re-bound: a future does not convey SCI's var bindings
@@ -622,7 +622,7 @@
          (try
            (task)
            (catch Throwable t
-             (debug/log "script bridge task failed: " t))))
+             (debug/log "run_code bridge task failed: " t))))
        (recur)))))
 
 (defonce ^:private bridge-queue
@@ -659,7 +659,7 @@
         p (promise)]
     (if-not (contains? surface name)
       (deliver p {:is-error true
-                  :content (str "Tool not active in this script: " name
+                  :content (str "Tool not active in this run_code call: " name
                                 ". Active tools: " (str/join ", " (keys surface)))})
       (let [started (System/currentTimeMillis)
             idx (dec (count (swap! trace conj {:tool name :ok false
@@ -675,14 +675,14 @@
                         :duration-ms (- (System/currentTimeMillis) started)})
                 (catch Throwable _ nil))
               (deliver p {:is-error true
-                          :content (str "Script cancelled before " name " ran")}))]
+                          :content (str "run_code cancelled before " name " ran")}))]
         (.offer @bridge-queue
                 (fn []
                   (if @signal
                     (settle-cancelled!)
                     (let [call {:tool-name name
                                 :args args
-                                :tool-call-id (str "script-" idx)
+                                :tool-call-id (str "run_code-" idx)
                                 :assistant-message assistant-message}
                           prep (invoke/prepare-tool-call (assoc call :before-hook (:before hooks)))]
                       (if @signal
@@ -722,7 +722,7 @@
     (map? spec) [(:name spec) (:args spec)]
     (sequential? spec) [(first spec) (second spec)]
     :else (throw (ex-info "call-many expects {:name ... :args ...} or [name args]"
-                          {:type :script/invalid-call}))))
+                          {:type :run-code/invalid-call}))))
 
 (defn- call-many
   "Validate the complete batch before dispatching any descriptor."
@@ -733,8 +733,8 @@
 (defn- abort-await! [abort]
   (when abort
     (compare-and-set! abort nil :aborted))
-  (throw (ex-info "Script aborted while waiting for tool calls"
-                  {:type :script/await-aborted
+  (throw (ex-info "run_code aborted while waiting for tool calls"
+                  {:type :run-code/await-aborted
                    :reason :aborted})))
 
 (defn- await-one
@@ -776,7 +776,7 @@
       (pr-str v))))
 
 (defn- truncation-notice [t]
-  (str "[Script output truncated: " (:total-lines t) " lines / "
+  (str "[run_code output truncated: " (:total-lines t) " lines / "
        (bash-exec/format-size (:total-bytes t))
        " total, showing the last " (:shown-lines t)
        " lines. Print less or return distilled data instead.]"))
@@ -820,7 +820,7 @@
               e))
           @trace)))
 
-(defn- script-error-message [t]
+(defn- run-code-error-message [t]
   (str (some-> t class .getSimpleName) ": " (or (ex-message t) (str t))))
 
 (defn- interrupt-fn
@@ -832,15 +832,15 @@
   (fn []
     (cond
       (some? @abort)
-      (throw (ex-info "Script interrupted" {:type :script/interrupt :reason @abort}))
+      (throw (ex-info "run_code interrupted" {:type :run-code/interrupt :reason @abort}))
 
       (and signal @signal)
       (do (reset! abort :aborted)
-          (throw (ex-info "Script interrupted" {:type :script/interrupt :reason :aborted})))
+          (throw (ex-info "run_code interrupted" {:type :run-code/interrupt :reason :aborted})))
 
       (and deadline (>= (System/currentTimeMillis) deadline))
       (do (reset! abort :timeout)
-          (throw (ex-info "Script interrupted" {:type :script/interrupt :reason :timeout}))))))
+          (throw (ex-info "run_code interrupted" {:type :run-code/interrupt :reason :timeout}))))))
 
 (defn- start-eval-thread!
   "Start the daemon eval thread. The alias prelude runs here, on the eval
@@ -863,7 +863,7 @@
                                 (reset! result (if reason
                                                  {:status reason}
                                                  {:status :error
-                                                  :error (script-error-message t)}))))
+                                                  :error (run-code-error-message t)}))))
                             (finally
                               (try (.close (:out-w capture)) (catch Throwable _ nil))
                               (try (.close (:err-w capture)) (catch Throwable _ nil))
@@ -886,9 +886,9 @@
         value (when (= :ok status) (:value res))
         ret (when (some? value) (format-value value))
         error-text (case status
-                     :timeout (str "Script timed out after " (ms->sec timeout-ms) "s")
-                     :aborted "Script aborted"
-                     :output-limit (str "Script output exceeded "
+                     :timeout (str "run_code timed out after " (ms->sec timeout-ms) "s")
+                     :aborted "run_code aborted"
+                     :output-limit (str "run_code output exceeded "
                                         (bash-exec/format-size capture-bytes)
                                         " — stopped")
                      :error (:error res)
@@ -914,7 +914,7 @@
                         (seq calls) (assoc :calls calls))}
       truncation (assoc :truncation truncation))))
 
-(defn- run-script
+(defn- run-code
   [{:keys [code timeout limits signal ctx on-update
            get-all-tools get-contributed-tools select-tools execute-tool
            generation-fn]}]
@@ -954,7 +954,7 @@
                             :on-update on-update
                             :trace trace})
         fork (sci-loader/sci-loader
-              {:id "script"
+              {:id "run_code"
                :base base
                :namespaces (fork-namespaces cwd bridge writers)
                :sci-opts {:interrupt-fn (interrupt-fn abort signal deadline)}})
@@ -994,24 +994,24 @@
 ;; ─── Tool record ──────────────────────────────────────────────────────────
 
 (def ^:private description
-  (str "Run a Clojure script for bulk scans, filtering, and multi-step workflows; inner results stay in the script and only its distilled output enters the conversation.\n\n"
+  (str "Run a Clojure program against the available tools. `code` is the program body; top-level forms run in order and the last value is returned. Call tools from inside the program — inner results stay there and never enter the conversation. Only what you print or return is program output — curate it.\n\n"
        "Tool calls are async: @(tools/call \"name\" args). Fire independent calls before derefing them; use (deref p ms ::timeout) when needed. For batches, use (tools/await-all (tools/call-many [{:name \"read\" :args {...}} ...])). Discover active tools with (tools/list) and (tools/describe \"name\"). (sandbox/emit value) prints one compact result and returns nil. Calls settle as {:content :is-error :details :truncation :images}; branch on :is-error and read :content.\n\n"
        "Aliases: fs, str/set/edn/walk, json, p, tools, and sandbox; core adds slurp/spit/file-seq/pmap. No Java interop. `fs` is process-relative; `slurp`/`spit`/`sh` use the session cwd. Catch `Exception` (`Throwable` is unavailable); `:content` may be a block vector/image. Extension-contributed tools join the active surface. :timeout is seconds (0 or omitted means no deadline). Output is capped at 16 KiB/2000 lines by default; :max-output-bytes and :max-output-lines tune the result, while :max-capture-bytes tunes capture (default 1 MiB, hard cap 16 MiB)."))
 
 (defn title
-  "Quiet one-liner body for the script tool: the first code line, shortened."
+  "Quiet one-liner body for the run_code tool: the first code line, shortened."
   [args]
   (when-let [code (tool-util/title-str-arg args :code)]
     (let [line (first (str/split-lines code))
           line (if (> (count line) 80) (str (subs line 0 80) "…") line)]
-      (str "script " line))))
+      (str "run_code " line))))
 
 (defn create-tool
   "Build the script Tool record. OPTS wires the registry seams (registry.clj
    builds the built-in entry; tests may build their own):
      :get-all-tools — 0-arg registry tool map (the model's tools)
      :get-contributed-tools — 0-arg extension-contributed sandbox tool map
-                              (script.md T2; optional, defaults to none)
+                              (run_code.md T2; optional, defaults to none)
      :select-tools  — (fn [all {:keys [enabled contributed exclude]}]) — the
                       registry's surface filter, so a script's callable set
                       resolves exactly like the loop's schema
@@ -1019,15 +1019,15 @@
      :generation-fn — 0-arg registry generation counter"
   [{:keys [get-all-tools get-contributed-tools select-tools execute-tool generation-fn]}]
   (tool/make-tool
-   :name "script"
-   :label "Run script"
+   :name "run_code"
+   :label "Run code"
    :description description
-   :prompt-snippet "Orchestrate tool calls and bulk file work in one Clojure script, printing only distilled results"
+   :prompt-snippet "Run a Clojure program against the available tools, curating its output"
    :prompt-guidelines
-   ["Use script for a search/read/verify chain, a loop over many files, or several tool calls; use bash for one small command and read for one file."
-    "Fire independent inner calls before derefing them; tools/call-many and tools/await-all keep batch code short."
+   ["Use run_code when a task needs several tool calls, a loop over many files, or a search/read/verify chain; use bash for one small command and read for one file."
+    "Call tools from inside the program; only what it prints or returns enters the conversation — curate it. Fire independent calls before derefing them, and use tools/call-many + tools/await-all for batches."
     "Filter and aggregate locally, then use sandbox/emit (or return one distilled value) instead of printing raw file/search output."]
-   :params {:code {:type :string :description "Clojure code to run"}
+   :params {:code {:type :string :description "Clojure program body to run"}
             :timeout {:type :number
                       :description (str "Timeout in seconds — like bash's :timeout: omit or 0 "
                                         "= no deadline; fractional ok, capped at a day")
@@ -1045,19 +1045,19 @@
               (let [code (some-> (:code args) str)]
                 (if (str/blank? code)
                   {:content "No code provided." :is-error true}
-                  (run-script {:code code
-                               :timeout (:timeout args)
-                               :limits (script-limits (:max-output-bytes args)
+                  (run-code {:code code
+                             :timeout (:timeout args)
+                             :limits (run-code-limits (:max-output-bytes args)
                                                       (:max-output-lines args)
                                                       (:max-capture-bytes args))
-                               :signal signal
-                               :ctx ctx
-                               :on-update on-update
-                               :get-all-tools get-all-tools
-                               :get-contributed-tools get-contributed-tools
-                               :select-tools select-tools
-                               :execute-tool execute-tool
-                               :generation-fn generation-fn}))))
+                             :signal signal
+                             :ctx ctx
+                             :on-update on-update
+                             :get-all-tools get-all-tools
+                             :get-contributed-tools get-contributed-tools
+                             :select-tools select-tools
+                             :execute-tool execute-tool
+                             :generation-fn generation-fn}))))
    :streams? true
    :contextual? true
    :title title))

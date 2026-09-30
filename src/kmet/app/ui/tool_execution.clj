@@ -41,8 +41,8 @@
             :shell :self}
    "bash"  {:call renderers/render-bash-call
             :result renderers/render-bash-result}
-   "script" {:call renderers/render-script-call
-             :result renderers/render-script-result}})
+   "run_code" {:call renderers/render-run-code-call
+               :result renderers/render-run-code-result}})
 
 ;; ─── Render context helper ─────────────────────────────────────────────────
 

@@ -404,7 +404,7 @@
    Resource read_* tools execute via proxy/read-mcp-resource; tools via
    proxy/call-mcp-tool. All declare :streams? — progress notifications
    stream as partial content while a call runs. Also syncs the script
-   sandbox's MCP tool source (script.md T2) — same trigger, same catalog."
+   sandbox's MCP tool source (run_code.md T2) — same trigger, same catalog."
   [state]
   (let [specs (direct-tools-specs state)
         next-names (set (map :prefixed specs))
@@ -461,7 +461,7 @@
            (str "Servers: " (str/join ", " summaries) ". ")
            "No servers with cached tools. ")
          "Servers connect lazily on first use. "
-         "For several calls in one request use the script tool — MCP tools are in its surface by name. "
+         "For several calls in one request use the run_code tool — MCP tools are in its surface by name. "
          "search: \"screenshot\" · tool: \"" (name prefix) "_tool\" args: {...}.")))
 
 (defn- register-proxy-tool!
@@ -1073,9 +1073,9 @@
     (auth/configure-storage! (:settings config))
     ;; 2. proxy tool (§10.4)
     (register-proxy-tool! state)
-    ;; 2b. the MCP catalog joins the script sandbox as a tool source —
+    ;; 2b. the MCP catalog joins the run_code sandbox as a tool source —
     ;; registered by sync-direct-tools! below (settings :script-mode
-    ;; gates it; script.md T2 retired the separate mcpScript tool)
+    ;; gates it; run_code.md T2 retired the separate mcpScript tool)
     ;; 3. direct tools from cache (§10.5)
     (sync-direct-tools! state)
     ;; 3b. prompt commands from cache (pi resolveCachedPrompts)

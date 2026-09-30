@@ -1590,7 +1590,7 @@
                                              :input_tokens_details {:cached_tokens 0}}}]]
       (t/is (true? (:model-changed (s/detect-cache-miss entries)))))))
 
-;; ─── Tool-result token attribution (script.md T0) ─────────────────────────
+;; ─── Tool-result token attribution (run_code.md T0) ─────────────────────────
 
 (t/deftest test-session-tool-usage
   (let [session (s/create-session test-dir)]

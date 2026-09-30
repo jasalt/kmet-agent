@@ -357,32 +357,32 @@
     (testing "pending bg while nothing rendered yet"
       (is (re-find #"\u001b\[48;" (or ansi "")) "box paints a background"))))
 
-(deftest test-script-call
+(deftest test-run-code-call
   (testing "short code renders as one line"
-    (let [lines (plain (r/render-script-call "script" {:code "(+ 1 2)"} th 60 {:expanded false}) 60)]
+    (let [lines (plain (r/render-run-code-call "run_code" {:code "(+ 1 2)"} th 60 {:expanded false}) 60)]
       (is (= 1 (count lines)))
-      (is (str/includes? (first lines) "script (+ 1 2)"))))
+      (is (str/includes? (first lines) "run_code (+ 1 2)"))))
   (testing "an explicit timeout renders as a suffix"
-    (let [lines (plain (r/render-script-call "script" {:code "1" :timeout 5} th 60 {}) 60)]
+    (let [lines (plain (r/render-run-code-call "run_code" {:code "1" :timeout 5} th 60 {}) 60)]
       (is (str/includes? (first lines) "(5s)"))))
   (testing "collapsed caps a multiline script at the head + hint"
     (let [code (str/join "\n" (mapv #(str "(println " % ")") (range 20)))
-          lines (plain (r/render-script-call "script" {:code code} th 60 {:expanded false}) 60)]
+          lines (plain (r/render-run-code-call "run_code" {:code code} th 60 {:expanded false}) 60)]
       (is (< (count lines) 20) "the payload does not render in full")
-      (is (str/starts-with? (first lines) "script (println 0)"))
+      (is (str/starts-with? (first lines) "run_code (println 0)"))
       (is (str/includes? (peek lines) "more lines,"))))
   (testing "expanded renders the script verbatim"
     (let [code (str/join "\n" (mapv #(str "line " %) (range 12)))
-          lines (plain (r/render-script-call "script" {:code code} th 60 {:expanded true}) 60)]
+          lines (plain (r/render-run-code-call "run_code" {:code code} th 60 {:expanded true}) 60)]
       (is (= 12 (count lines)))
       (is (str/includes? (peek lines) "line 11"))))
   (testing "missing code keeps the `script ...` placeholder"
-    (let [lines (plain (r/render-script-call "script" {} th 60 {:expanded false}) 60)]
+    (let [lines (plain (r/render-run-code-call "run_code" {} th 60 {:expanded false}) 60)]
       (is (= 1 (count lines)))
-      (is (str/includes? (first lines) "script ...")))))
+      (is (str/includes? (first lines) "run_code ...")))))
 
 (deftest test-render-code-call
-  (testing "a custom label and suffix render like the script call"
+  (testing "a custom label and suffix render like the run_code call"
     (let [lines (plain (r/render-code-call "clojure>" "(+ 1 2)"
                                            (theme/fg th :dim "  :7888") th 60 {}) 60)]
       (is (= 1 (count lines)))
@@ -400,38 +400,38 @@
       (is (= 12 (count lines)))
       (is (str/includes? (peek lines) "line 11")))))
 
-(deftest test-script-result
+(deftest test-run-code-result
   (testing "output preview, inner-call summary and Took all render"
     (let [context {:details {:calls [{:tool "read" :ok true}
                                      {:tool "bash" :ok true}
                                      {:tool "bash" :ok false}]}}
-          lines (plain (r/render-script-result "a\nb" false th 60 true 1000 2000 nil context) 60)]
+          lines (plain (r/render-run-code-result "a\nb" false th 60 true 1000 2000 nil context) 60)]
       (is (some #(= "a" (str/trim %)) lines))
       (is (= "3 tool calls: bash ×2, read, 1 failed"
              (some #(when (str/includes? % "tool call") (str/trim %)) lines)))
       (is (str/includes? (peek lines) "Took 1.0s"))))
   (testing "no inner calls → no summary line"
-    (let [lines (plain (r/render-script-result "x" false th 60 true 1000 2000 nil {}) 60)]
+    (let [lines (plain (r/render-run-code-result "x" false th 60 true 1000 2000 nil {}) 60)]
       (is (not-any? #(str/includes? % "tool call") lines))
       (is (str/includes? (peek lines) "Took 1.0s"))))
   (testing "truncation warns like bash"
     (let [trunc {:truncated-by :lines :shown-lines 2 :total-lines 99}
-          lines (plain (r/render-script-result "a\nb" false th 80 true 1000 2000 trunc {}) 80)]
+          lines (plain (r/render-run-code-result "a\nb" false th 80 true 1000 2000 trunc {}) 80)]
       (is (some #(str/includes? % "Truncated: showing 2 of 99 lines") lines))))
   (testing "the script's own truncation notice is stripped from the body"
     (let [trunc {:truncated-by :lines :shown-lines 2 :total-lines 99}
-          content (str "a\nb\n\n[Script output truncated: 99 lines / 1.0 KiB total, "
+          content (str "a\nb\n\n[run_code output truncated: 99 lines / 1.0 KiB total, "
                        "showing the last 2 lines. Print less or return distilled data instead.]")
-          lines (plain (r/render-script-result content false th 100 true 1000 2000 trunc {}) 100)]
+          lines (plain (r/render-run-code-result content false th 100 true 1000 2000 trunc {}) 100)]
       (is (not-any? #(str/includes? % "Print less") lines)
           "the model-facing notice does not render twice")
       (is (some #(str/includes? % "Truncated: showing 2 of 99 lines") lines))))
   (testing "the measured :elapsed-ms wins over the component timestamp span"
     (let [context {:details {:elapsed-ms 3400}}
-          lines (plain (r/render-script-result "a" false th 60 true 1000 2000 nil context) 60)]
+          lines (plain (r/render-run-code-result "a" false th 60 true 1000 2000 nil context) 60)]
       (is (str/includes? (peek lines) "Took 3.4s")
           "the tool's own measurement, not the 1.0s start/end span")))
   (testing "a replayed result (no timestamps) still reports the measured time"
     (let [context {:details {:elapsed-ms 3400}}
-          lines (plain (r/render-script-result "a" false th 60 true nil nil nil context) 60)]
+          lines (plain (r/render-run-code-result "a" false th 60 true nil nil nil context) 60)]
       (is (str/includes? (peek lines) "Took 3.4s")))))

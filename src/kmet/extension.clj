@@ -97,10 +97,10 @@
 
 (defn register-tool-source!
   "Register (or replace) a sandbox tool source: ID → a 0-arg fn returning
-   {name → tool map}. Contributed tools join the script tool's surface (e.g.
+   {name → tool map}. Contributed tools join the run_code tool's surface (e.g.
    the mcp-adapter's MCP catalog) without joining the model's tool set;
    re-registering under the same ID replaces the source and invalidates
-   cached script surfaces. Removed automatically when the extension unloads.
+   cached run_code surfaces. Removed automatically when the extension unloads.
    Returns the deregister fn on the first registration under ID, nil on a
    replace."
   [api id tools-fn] ((:register-tool-source! api) id tools-fn))

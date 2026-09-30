@@ -2099,7 +2099,7 @@
 
 (t/deftest test-loop-scripted-calls-fire-tool-hooks
   ;; the run's agent-level hooks reach calls made inside a script: the loop
-  ;; binds script/*tool-hooks* and script/*assistant-message* around the batch,
+  ;; binds run-code/*tool-hooks* and run-code/*assistant-message* around the batch,
   ;; the bridge captures them on the tool thread and hands them to its pool
   ;; workers (raw threads convey no bindings)
   (let [hook-calls (atom [])
@@ -2113,7 +2113,7 @@
                     (future
                       (if (= 1 (swap! calls inc))
                         (do (when-let [on-tc (:on-tool-call opts)]
-                              (on-tc {:id "tc1" :name "script"
+                              (on-tc {:id "tc1" :name "run_code"
                                       :arguments (json/generate-string
                                                   {:code "(deref (tools/call \"read\" {:path \"deps.edn\"}))"})
                                       :index 0}))
@@ -2127,11 +2127,11 @@
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (some #(= "read" (:tool-name %)) @hook-calls)
           "the scripted read call fired the run's before-tool-call hook")
-    (t/is (some #(str/starts-with? (str (:tool-call-id %)) "script-") @hook-calls)
+    (t/is (some #(str/starts-with? (str (:tool-call-id %)) "run_code-") @hook-calls)
           "the inner call carries a synthetic script-N tool-call-id")
     (t/is (some #(= "tc1" (:tool-call-id %)) @hook-calls)
-          "the outer script call went through the same hook")
-    (t/is (= (:assistant-message (first (filter #(= "script" (:tool-name %)) @hook-calls)))
+          "the outer run_code call went through the same hook")
+    (t/is (= (:assistant-message (first (filter #(= "run_code" (:tool-name %)) @hook-calls)))
              (:assistant-message (first (filter #(= "read" (:tool-name %)) @hook-calls))))
           "the inner call carries the same assistant message as the outer call")))
 

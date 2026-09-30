@@ -1,6 +1,6 @@
 (ns kmet.app.tools.invoke
   "The shared tool-invocation pipeline — one implementation for the agent
-   loop's batches and the script sandbox's bridge:
+   loop's batches and the run_code sandbox's bridge:
 
      prepare-tool-call  — the before hook (pi: beforeToolCall): pass, rewrite
                           args, or block the call with a result
@@ -12,10 +12,10 @@
    Each caller keeps its own concurrency and bookkeeping: the loop emits
    events and appends context/session entries (and splits prepare from
    execute so a batch prepares sequentially and runs concurrently), the
-   script bridge returns promises and keeps a call trace. The registry's
+   run_code bridge returns promises and keeps a call trace. The registry's
    `execute-tool` remains the per-tool dispatcher (argument normalization,
    :prepare-arguments, :contextual?/:streams? shapes); it is passed in rather
-   than required so kmet.app.tools.script can use this namespace without a
+   than required so kmet.app.tools.run-code can use this namespace without a
    require cycle (the registry requires script)."
   (:require [kmet.app.tools.bash :as bash-tool]
             [kmet.app.tools.util :as tool-util]))
@@ -23,7 +23,7 @@
 (defn- blocked-result
   "The canonical result of a blocked call (pi: beforeToolCall :block). The
    hook's :terminate rides through — the loop's batch handling reads it; the
-   script bridge drops it (there is no batch)."
+   run_code bridge drops it (there is no batch)."
   [hook-result]
   (cond-> {:content (or (:reason hook-result) "Tool execution was blocked")
            :is-error true}
@@ -59,7 +59,7 @@
 (defn execute-tool-call
   "Execute one call through EXECUTE-TOOL. BINDINGS, when given, are applied
    around execution ({:signal :session-env-fn :cwd}) — a raw worker thread
-   conveys no dynamic bindings, which is the script bridge's pool-worker
+   conveys no dynamic bindings, which is the run_code bridge's pool-worker
    case; the loop's futures already convey the run-wide ones. Returns the
    result map; never throws — a throwing tool becomes an error result.
    Catches Throwable, not just Exception: a pool worker must settle its

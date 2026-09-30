@@ -1,8 +1,8 @@
 #!/usr/bin/env bb
-;; Scripted-MCP end-to-end validation (§12.6 Phase 2, script.md T2): load the
+;; Scripted-MCP end-to-end validation (§12.6 Phase 2, run_code.md T2): load the
 ;; extension against create-nullable-api with a config pointing at the fake
 ;; stdio server, bridge the contributed MCP tool source into the real
-;; registry, then drive kmet's builtin `script` tool: discovery, calls,
+;; registry, then drive kmet's builtin `run_code` tool: discovery, calls,
 ;; error results, the gate, timeout, streaming, and the call trace.
 ;;
 ;; The adapter no longer ships its own runtime — `mcpScript` retired into the
@@ -74,9 +74,9 @@
 (spit project-off "{}\n")
 
 (defn- script-exec
-  "Run CODE through the real script tool; returns the tool result map."
+  "Run CODE through the real run_code tool; returns the tool result map."
   [code & [{:keys [on-update timeout]}]]
-  (registry/execute-tool "script"
+  (registry/execute-tool "run_code"
                          (cond-> {:code code}
                            timeout (assoc :timeout timeout))
                          (cond-> {}
@@ -90,7 +90,7 @@
       (check "mcpScript retired (no registered tool)" (nil? (get-in @state [:tools "mcpScript"])))
       (check "tool source registered by the extension" (fn? source-fn))
       ;; bridge the fixture's source into the real registry (the fixture api
-      ;; captures registrations; the shared script tool reads the registry)
+      ;; captures registrations; the shared run_code tool reads the registry)
       (registry/register-tool-source! :mcp source-fn))
 
     ;; connect the fake server (fills the metadata cache the source reads)

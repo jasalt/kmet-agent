@@ -989,7 +989,7 @@ a top-level `eval` under `with-loader*` is **not** gated — a `require` of a
 namespace the loader cannot serve falls through to the runtime's global
 source roots. Only source *loaded through* a context carries the require
 rewrite, so code that must respect a context's policies has to enter as a
-namespace source — `script.md`, "Scripts on kmet.loader", records what that
+namespace source — `run_code.md`, "Scripts on kmet.loader", records what that
 means for a native script evaluator.
 
 **Hardened since (cases 22–26).** The rewrite grew from four ops to nine, with

@@ -85,7 +85,7 @@
             [kmet.app.tools.invoke :as invoke]
             [kmet.app.tools.util :as tools-util]
             [kmet.app.tools.bash :as bash-tool]
-            [kmet.app.tools.script :as script-tool]
+            [kmet.app.tools.run-code :as run-code-tool]
             [kmet.ai.auth :as auth]
             [kmet.app.session :as session]
             [kmet.ai.models :as models]
@@ -756,12 +756,12 @@ Be precise and concise in your responses."}}]
    batch with suppressed calls keeps tool_use/tool_result ordering (strict
    providers reject misordered results).
 
-   The batch runs under script-tool/*assistant-message* so a scripted inner
+   The batch runs under run-code-tool/*assistant-message* so a scripted inner
    call carries the same assistant message in its hook payload as the outer
-   script call (futures convey the binding; the bridge captures it on the
+   run_code call (futures convey the binding; the bridge captures it on the
    tool thread and hands it to its pool workers, which do not)."
   [agent tool-calls assistant-msg & [append?]]
-  (binding [script-tool/*assistant-message* assistant-msg]
+  (binding [run-code-tool/*assistant-message* assistant-msg]
     (if (has-sequential-tool-call? tool-calls)
       (execute-tool-calls-sequential! agent tool-calls assistant-msg append?)
       (execute-tool-calls-parallel! agent tool-calls assistant-msg append?))))
@@ -1656,13 +1656,13 @@ Be precise and concise in your responses."}}]
                 tools-util/*cwd* (or (session/session-cwd (:session agent))
                                      (tools-util/cwd))
                 ;; a thunk, not a snapshot: set-active-tools! takes effect on
-                ;; the next turn, and the script sandbox keys its context on
+                ;; the next turn, and the run_code sandbox keys its context on
                 ;; the set it resolves at call time
-                script-tool/*enabled-tools-fn* (fn [] @(:enabled-tools agent))
+                run-code-tool/*enabled-tools-fn* (fn [] @(:enabled-tools agent))
                 ;; the run's agent-level tool hooks as thunks — a hook set
                 ;; mid-run is picked up, and scripted inner calls go through
                 ;; the same before/after semantics as the loop's own batches
-                script-tool/*tool-hooks*
+                run-code-tool/*tool-hooks*
                 {:before (fn [ctx] (when-let [h @(:before-tool-call agent)] (h ctx)))
                  :after (fn [ctx] (when-let [h @(:after-tool-call agent)] (h ctx)))}]
         (future

@@ -52,7 +52,7 @@
     kmet.app.test-session-export
     kmet.app.test-compaction
     kmet.app.test-tools
-    kmet.app.test-script
+    kmet.app.test-run-code
     kmet.ai.test-llm
     kmet.ai.test-attribution
     kmet.ai.test-models

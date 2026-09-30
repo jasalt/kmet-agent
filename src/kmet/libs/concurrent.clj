@@ -3,7 +3,7 @@
 
    - `spawn` — the extension-SCI daemon-thread replacement for `future`
    - `or-signal` — a read-only OR-view over cancel signals (the provider
-     stream's guard trip, the script bridge's abort), used wherever a
+     stream's guard trip, the run_code bridge's abort), used wherever a
      consumer must poll two triggers as one
 
    Extensions run in isolated SCI contexts where `future`/`pmap`/`pcalls`
