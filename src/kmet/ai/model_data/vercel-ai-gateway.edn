@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-29T16:15:58Z"
+ :generated-at "2026-09-30T20:07:26Z"
  :provider {:id :vercel-ai-gateway
             :name "Vercel AI Gateway"
             :env-vars ["AI_GATEWAY_API_KEY"]
@@ -1077,6 +1077,28 @@
     :cost {:input 0.075 :output 0.22 :cache-read 0.015 :cache-write 0}
     :context-window 256000
     :max-tokens 32000}
+   "inclusionai/ling-3.1-flash"
+   {:id "inclusionai/ling-3.1-flash"
+    :name "Ling 3.1 Flash"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 262144
+    :max-tokens 32768}
+   "inclusionai/ling-3.1-flash-free"
+   {:id "inclusionai/ling-3.1-flash-free"
+    :name "Ling 3.1 Flash (Free)"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 262144
+    :max-tokens 32768}
    "interfaze/interfaze-beta"
    {:id "interfaze/interfaze-beta"
     :name "Interfaze Beta"
@@ -2147,6 +2169,30 @@
     :thinking-level-map {:xhigh "xhigh"}
     :input [:text :image]
     :cost {:input 4 :output 20 :cache-read 0.4 :cache-write 5}
+    :context-window 1050000
+    :max-tokens 128000}
+   "openai/gpt-6.1-sol"
+   {:id "openai/gpt-6.1-sol"
+    :name "GPT-6.1 Sol"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :thinking-level-map {:xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 2 :output 10 :cache-read 0.1 :cache-write 2.5}
+    :context-window 1050000
+    :max-tokens 128000}
+   "openai/gpt-6.1-sol-fast"
+   {:id "openai/gpt-6.1-sol-fast"
+    :name "GPT-6.1 Sol (Fast)"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :thinking-level-map {:xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 4 :output 20 :cache-read 0.2 :cache-write 5}
     :context-window 1050000
     :max-tokens 128000}
    "openai/gpt-oss-120b"

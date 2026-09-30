@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-29T16:15:58Z"
+ :generated-at "2026-09-30T20:07:26Z"
  :provider {:id :amazon-bedrock
             :name "Amazon Bedrock"
             :env-vars []
@@ -186,6 +186,18 @@
    "anthropic.claude-sonnet-5"
    {:id "anthropic.claude-sonnet-5"
     :name "Claude Sonnet 5"
+    :provider :amazon-bedrock
+    :api :bedrock-converse-stream
+    :base-url "https://bedrock-runtime.us-east-1.amazonaws.com"
+    :reasoning true
+    :thinking-level-map {:max "max" :xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 2 :output 10 :cache-read 0.2 :cache-write 2.5}
+    :context-window 1000000
+    :max-tokens 128000}
+   "anthropic.claude-sonnet-5-5"
+   {:id "anthropic.claude-sonnet-5-5"
+    :name "Claude Sonnet 5.5"
     :provider :amazon-bedrock
     :api :bedrock-converse-stream
     :base-url "https://bedrock-runtime.us-east-1.amazonaws.com"
@@ -1489,6 +1501,23 @@
     :context-window 1050000
     :max-tokens 128000
     :compat {:supports-strict-mode true}}
+   "openai.gpt-6.1-sol"
+   {:id "openai.gpt-6.1-sol"
+    :name "GPT-6.1 Sol"
+    :provider :amazon-bedrock
+    :api :bedrock-converse-stream
+    :base-url "https://bedrock-runtime.us-east-1.amazonaws.com"
+    :reasoning true
+    :thinking-level-map {:xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 2.2
+           :tiers [{:input 4.4 :input-tokens-above 272000 :output 16.5 :cache-read 0.22 :cache-write 5.5}]
+           :output 11
+           :cache-read 0.11
+           :cache-write 2.75}
+    :context-window 1050000
+    :max-tokens 128000
+    :compat {:supports-strict-mode true}}
    "openai.gpt-oss-120b"
    {:id "openai.gpt-oss-120b"
     :name "gpt-oss-120b"
@@ -2066,6 +2095,23 @@
            :tiers [{:input 4.4 :input-tokens-above 272000 :output 16.5 :cache-read 0.44 :cache-write 5.5}]
            :output 11
            :cache-read 0.22
+           :cache-write 2.75}
+    :context-window 1050000
+    :max-tokens 128000
+    :compat {:supports-strict-mode true}}
+   "us.openai.gpt-6.1-sol"
+   {:id "us.openai.gpt-6.1-sol"
+    :name "GPT-6.1 Sol (US)"
+    :provider :amazon-bedrock
+    :api :bedrock-converse-stream
+    :base-url "https://bedrock-runtime.us-east-1.amazonaws.com"
+    :reasoning true
+    :thinking-level-map {:xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 2.2
+           :tiers [{:input 4.4 :input-tokens-above 272000 :output 16.5 :cache-read 0.22 :cache-write 5.5}]
+           :output 11
+           :cache-read 0.11
            :cache-write 2.75}
     :context-window 1050000
     :max-tokens 128000

@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-29T16:15:58Z"
+ :generated-at "2026-09-30T20:07:26Z"
  :provider {:id :commandcode
             :name "Command Code"
             :env-vars ["CMD_API_KEY"]
@@ -239,7 +239,7 @@
     :input [:text :image]
     :cost {:input 0.4 :output 3 :cache-read 0.04 :cache-write 0}
     :context-window 262144
-    :max-tokens 235929
+    :max-tokens 131072
     :compat {:thinking-format :openrouter}}
    "Qwen/Qwen3.8-Flash"
    {:id "Qwen/Qwen3.8-Flash"
@@ -627,9 +627,31 @@
     :cost {:input 2 :output 10 :cache-read 0.2 :cache-write 2.5}
     :context-window 1050000
     :max-tokens 32768}
+   "gpt-6.1-sol"
+   {:id "gpt-6.1-sol"
+    :name "GPT-6.1 Sol"
+    :provider :commandcode
+    :api :openai-completions
+    :base-url "https://api.commandcode.ai/provider/v1"
+    :reasoning false
+    :input [:text]
+    :cost {:input 2 :output 10 :cache-read 0.1 :cache-write 2.5}
+    :context-window 1050000
+    :max-tokens 32768}
    "inclusionai/ling-3.0-flash-sante:free"
    {:id "inclusionai/ling-3.0-flash-sante:free"
     :name "Ling 3.0 Flash Sante"
+    :provider :commandcode
+    :api :openai-completions
+    :base-url "https://api.commandcode.ai/provider/v1"
+    :reasoning false
+    :input [:text]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 262144
+    :max-tokens 32768}
+   "inclusionai/ling-3.1-flash:free"
+   {:id "inclusionai/ling-3.1-flash:free"
+    :name "Ling 3.1 Flash"
     :provider :commandcode
     :api :openai-completions
     :base-url "https://api.commandcode.ai/provider/v1"

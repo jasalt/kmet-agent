@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-11T16:53:55Z"
+ :generated-at "2026-09-30T20:07:26Z"
  :provider {:id :baseten
             :name "Baseten"
             :env-vars ["BASETEN_API_KEY"]
@@ -97,6 +97,31 @@
                          :xhigh nil}
     :input [:text :image]
     :cost {:input 0.3 :output 1.2 :cache-read 0.03 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 32768
+    :compat {:supports-store false
+             :supports-developer-role false
+             :supports-reasoning-effort true
+             :thinking-format :openai
+             :max-tokens-field :max-tokens
+             :supports-long-cache-retention false
+             :supports-strict-mode true}}
+   "deepseek-ai/DeepSeek-V4.1-Flash-Fast"
+   {:id "deepseek-ai/DeepSeek-V4.1-Flash-Fast"
+    :name "deepseek-ai/DeepSeek-V4.1-Flash-Fast"
+    :provider :baseten
+    :api :openai-completions
+    :base-url "https://inference.baseten.co/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium nil
+                         :minimal nil
+                         :off "none"
+                         :xhigh nil}
+    :input [:text :image]
+    :cost {:input 0.6 :output 2.4 :cache-read 0 :cache-write 0}
     :context-window 1048576
     :max-tokens 32768
     :compat {:supports-store false

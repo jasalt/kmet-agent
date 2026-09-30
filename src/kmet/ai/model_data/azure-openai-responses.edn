@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-29T16:15:58Z"
+ :generated-at "2026-09-30T20:07:26Z"
  :provider {:id :azure-openai-responses
             :name "Azure OpenAI"
             :env-vars ["AZURE_OPENAI_API_KEY"]
@@ -481,6 +481,25 @@
                          :xhigh "xhigh"}
     :input [:text :image]
     :cost {:input 2 :output 10 :cache-read 0.2 :cache-write 2.5}
+    :context-window 1050000
+    :max-tokens 128000
+    :compat {:supports-openai-grammar-tools true}}
+   "gpt-6.1-sol"
+   {:id "gpt-6.1-sol"
+    :name "GPT-6.1 Sol"
+    :provider :azure-openai-responses
+    :api :azure-openai-responses
+    :base-url ""
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium "medium"
+                         :minimal nil
+                         :off nil
+                         :xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 2 :output 10 :cache-read 0.1 :cache-write 2.5}
     :context-window 1050000
     :max-tokens 128000
     :compat {:supports-openai-grammar-tools true}}

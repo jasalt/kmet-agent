@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-29T16:15:58Z"
+ :generated-at "2026-09-30T20:07:26Z"
  :provider {:id :openai
             :name "OpenAI"
             :env-vars ["OPENAI_API_KEY"]
@@ -556,6 +556,31 @@
            :tiers [{:input 4 :input-tokens-above 272000 :output 15 :cache-read 0.4 :cache-write 5}]
            :output 10
            :cache-read 0.2
+           :cache-write 2.5}
+    :context-window 1050000
+    :max-tokens 128000
+    :compat {:supports-strict-mode true
+             :supports-openai-grammar-tools true
+             :supports-explicit-prompt-cache-mode true}}
+   "gpt-6.1-sol"
+   {:id "gpt-6.1-sol"
+    :name "GPT-6.1 Sol"
+    :provider :openai
+    :api :openai-responses
+    :base-url "https://api.openai.com/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium "medium"
+                         :minimal nil
+                         :off nil
+                         :xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 2
+           :tiers [{:input 4 :input-tokens-above 272000 :output 15 :cache-read 0.2 :cache-write 5}]
+           :output 10
+           :cache-read 0.1
            :cache-write 2.5}
     :context-window 1050000
     :max-tokens 128000
