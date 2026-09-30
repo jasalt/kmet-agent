@@ -580,9 +580,8 @@ renderer vars are in `kmet.app.ui.tool-renderers`, including
 plain-text output body: styled lines, a collapsed line window with an expand
 hint, truncation and elapsed lines — the opt-in grep/find/ls tools use it)
 and `render-code-call` (the `run_code`/`clojure_eval` call line: a code
-argument collapsed to a width-aware head window with an expand hint,
-verbatim when expanded); the namespace is explicitly
-shared with extensions. Path display helpers are public too:
+argument rendered verbatim, whatever the display mode); the namespace is
+explicitly shared with extensions. Path display helpers are public too:
 `render-tool-path` (shortened, accent, hyperlinked path) and `link-path`
 (wrap any styled text in a terminal hyperlink), for tools that render
 locations (the lsp tool renderer uses both). `:streams? true` keeps the 2-arg `(fn [args

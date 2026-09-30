@@ -154,10 +154,9 @@
 (defn- bounded-head-visual-lines
   "Bounded head VISUAL-line truncation over logical LINES. Wraps each line
    only as far as MAX-VISUAL requires (see wrap-line-prefix), so the cost is
-   O(shown head) instead of O(content) — the full-wrap sibling
-   utils/truncate-head-to-visual-lines costs ~80 ms on a 135 KB body vs
-   ~0.6 ms here because it wraps everything to report the exact skipped
-   VISUAL count. This variant instead lets the caller report logical lines:
+   O(shown head) instead of O(content) — a full wrap to report the exact
+   skipped VISUAL count would cost ~80 ms on a 135 KB body vs ~0.6 ms here.
+   This variant instead lets the caller report logical lines:
    :consumed counts lines shown in FULL (a line cut mid-wrap is not
    consumed), so (- total consumed) is the pi-style \"N more lines\" hint
    count. Returns {:visual-lines [...] :consumed n}."
@@ -860,13 +859,6 @@
           (when-let [invalidate (:invalidate context)]
             (invalidate)))
         nil))))
-(def ^:private bash-call-preview-lines
-  "Collapsed cap on the rendered command, in visual lines. A multiline
-   command — a heredoc, a chained script — otherwise dominates the
-   transcript for every later message; the expanded form renders it in
-   full (pi always renders the raw command)."
-  3)
-
 (def ^:private bash-result-preview-lines
   "Collapsed cap on the rendered output, in visual lines — a wrapped line
    counts once, and the expand hint reports the rest."
@@ -874,9 +866,9 @@
 
 (defn render-bash-call
   "Call line for the shell tool: `$ <command>` (+ timeout suffix). The
-   collapsed form keeps the head of a long command and hints at the rest;
-   the expanded form renders the command verbatim."
-  [_name args theme width context]
+   command renders verbatim whether the transcript is collapsed or expanded
+   (pi: the call line never truncates; Text wraps it at the width)."
+  [_name args theme _width _context]
   (let [cmd (:command args)
         timeout (:timeout args)
         cmd-str (if (string? cmd) cmd (if (nil? cmd) "" nil))
@@ -887,28 +879,8 @@
         cmd-line (theme/fg theme :tool-title (theme/bold (str "$ " cmd-display)))
         timeout-suffix (if (and (number? timeout) (pos? timeout))
                          (theme/fg theme :muted (str " (timeout " timeout "s)"))
-                         "")
-        rendered (if (:expanded context)
-                   (str cmd-line timeout-suffix)
-                   (let [{:keys [visual-lines skipped-count]}
-                         (utils/truncate-head-to-visual-lines cmd-line
-                                                              bash-call-preview-lines
-                                                              width)]
-                     (if (zero? skipped-count)
-                       (str cmd-line timeout-suffix)
-                       (str (str/join "\n" visual-lines)
-                            "\n"
-                            ;; one line, never a wrap: the marker plus the
-                            ;; timeout suffix can outrun a narrow terminal
-                            (utils/truncate-to-width
-                             (str (theme/fg theme :muted (str "... (" skipped-count " more lines,"))
-                                  " "
-                                  (app-kb/key-hint "app.tools.expand" "to toggle")
-                                  (theme/fg theme :muted ")")
-                                  timeout-suffix)
-                             width
-                             "...")))))]
-    (h/compile-tree (tool-text rendered))))
+                         "")]
+    (h/compile-tree (tool-text (str cmd-line timeout-suffix)))))
 
 (defn- manage-result-timer!
   "Park/cancel the 1s invalidate timer that keeps a running tool's elapsed
@@ -1029,20 +1001,12 @@
          (concat (output-result-nodes content theme width expanded? ended-at truncation)
                  (elapsed-result-nodes theme started-at ended-at)))))
 
-(def ^:private code-call-preview-lines
-  "Collapsed cap on a code-bearing call line (run_code, clojure_eval), in
-   visual lines. A long payload would otherwise dominate the transcript for
-   every later message; the expanded form renders it in full."
-  5)
-
 (defn render-code-call
   "The shared call line for tools whose primary argument is code (run_code,
-   clojure_eval): `<label> <code>` collapsed to a width-aware window of the
-   first CODE-CALL-PREVIEW-LINES visual lines with an expand hint, rendered
-   verbatim when expanded. LABEL is plain text (styled bold tool-title);
-   SUFFIX is appended as given (pre-styled), on the hint line when one
-   renders."
-  [label code suffix theme width context]
+   clojure_eval): `<label> <code>` rendered verbatim, whatever the display
+   mode (no head window, no expand hint). LABEL is plain text (styled bold
+   tool-title); SUFFIX is appended as given (pre-styled)."
+  [label code suffix theme _width _context]
   (let [code-str (if (string? code) code (if (nil? code) "" nil))
         code-display (cond
                        (nil? code-str) (theme/fg theme :error "[invalid arg]")
@@ -1050,32 +1014,12 @@
                        :else code-str)
         code-line (theme/fg theme :tool-title
                             (theme/bold (str label " " code-display)))]
-    (h/compile-tree
-     (tool-text
-      (if (:expanded context)
-        (str code-line suffix)
-        (let [{:keys [visual-lines skipped-count]}
-              (utils/truncate-head-to-visual-lines code-line
-                                                   code-call-preview-lines
-                                                   width)]
-          (if (zero? skipped-count)
-            (str code-line suffix)
-            (str (str/join "\n" visual-lines)
-                 "\n"
-                 (utils/truncate-to-width
-                  (str (theme/fg theme :muted
-                                 (str "... (" skipped-count " more lines,"))
-                       " "
-                       (app-kb/key-hint "app.tools.expand" "to toggle")
-                       (theme/fg theme :muted ")")
-                       suffix)
-                  width
-                  "...")))))))))
+    (h/compile-tree (tool-text (str code-line suffix)))))
 
 (defn render-run-code-call
   "Call line for the run_code tool: `run_code <code>` (+ an explicit timeout
    suffix), via the shared code-call renderer. The quiet title mirrors the
-   collapsed shape on one line."
+   one-line head of the same call."
   [_name args theme width context]
   (let [timeout (:timeout args)
         suffix (if (and (number? timeout) (pos? timeout))

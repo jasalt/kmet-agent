@@ -26,20 +26,25 @@
                                            th 60 {:expanded false}) 60)]
       (is (= 1 (count lines)))
       (is (str/includes? (first lines) "$ ls -la (timeout 60s)"))))
-  (testing "collapsed caps a multiline command at the head + hint"
+  (testing "collapsed renders a multiline command in full (pi parity)"
     (let [cmd (str "python3 - <<'EOF'\n"
                    (str/join "\n" (mapv #(str "body " %) (range 10)))
                    "\nEOF")
           lines (plain (r/render-bash-call "bash" {:command cmd} th 60 {:expanded false}) 60)]
-      (is (< (count lines) 10) "the payload does not render in full")
+      (is (= 12 (count lines)) "every command line renders")
       (is (str/starts-with? (first lines) "$ python3 - <<'EOF'"))
-      (is (str/includes? (peek lines) "more lines,"))
-      (is (not-any? #(str/includes? % "body 9") lines) "tail is cut")))
-  (testing "collapsed caps a long single-line command at the wrapped head"
+      (is (str/includes? (peek lines) "EOF"))
+      (is (every? (fn [i] (some #(str/includes? % (str "body " i)) lines))
+                  (range 10))
+          "the payload renders in full")
+      (is (not-any? #(str/includes? % "more lines,") lines) "no collapse hint")))
+  (testing "collapsed wraps a long single-line command in full"
     (let [cmd (str "echo " (str/join " " (repeat 60 "word")))
           lines (plain (r/render-bash-call "bash" {:command cmd} th 60 {:expanded false}) 60)]
-      (is (= 4 (count lines)) "3 visual lines + hint")
-      (is (str/includes? (peek lines) "more lines,"))))
+      (is (< 3 (count lines)) "wraps at the width")
+      (is (= 60 (count (re-seq #"word" (str/join "\n" lines))))
+          "every word of the command is present")
+      (is (not-any? #(str/includes? % "more lines,") lines) "no collapse hint")))
   (testing "expanded renders the command verbatim (pi parity)"
     (let [cmd (str/join "\n" (mapv #(str "line " %) (range 12)))
           lines (plain (r/render-bash-call "bash" {:command cmd} th 60 {:expanded true}) 60)]
@@ -374,18 +379,19 @@
   (testing "an explicit timeout renders as a suffix"
     (let [lines (plain (r/render-run-code-call "run_code" {:code "1" :timeout 5} th 60 {}) 60)]
       (is (str/includes? (first lines) "(5s)"))))
-  (testing "collapsed caps a multiline script at the head + hint"
+  (testing "collapsed renders a multiline script in full (no head window)"
     (let [code (str/join "\n" (mapv #(str "(println " % ")") (range 20)))
           lines (plain (r/render-run-code-call "run_code" {:code code} th 60 {:expanded false}) 60)]
-      (is (< (count lines) 20) "the payload does not render in full")
+      (is (= 20 (count lines)) "every script line renders")
       (is (str/starts-with? (first lines) "run_code (println 0)"))
-      (is (str/includes? (peek lines) "more lines,"))))
+      (is (str/includes? (peek lines) "(println 19)"))
+      (is (not-any? #(str/includes? % "more lines,") lines) "no collapse hint")))
   (testing "expanded renders the script verbatim"
     (let [code (str/join "\n" (mapv #(str "line " %) (range 12)))
           lines (plain (r/render-run-code-call "run_code" {:code code} th 60 {:expanded true}) 60)]
       (is (= 12 (count lines)))
       (is (str/includes? (peek lines) "line 11"))))
-  (testing "missing code keeps the `script ...` placeholder"
+  (testing "missing code keeps the `run_code ...` placeholder"
     (let [lines (plain (r/render-run-code-call "run_code" {} th 60 {:expanded false}) 60)]
       (is (= 1 (count lines)))
       (is (str/includes? (first lines) "run_code ...")))))
@@ -397,12 +403,13 @@
       (is (= 1 (count lines)))
       (is (str/includes? (first lines) "clojure> (+ 1 2)"))
       (is (str/includes? (first lines) ":7888"))))
-  (testing "collapsed multi-line code keeps the head and hints at the rest"
+  (testing "multi-line code renders in full when collapsed (no head window)"
     (let [code (str/join "\n" (mapv #(str "(println " % ")") (range 20)))
           lines (plain (r/render-code-call "clojure>" code "" th 60 {:expanded false}) 60)]
-      (is (< (count lines) 20) "the payload does not render in full")
+      (is (= 20 (count lines)) "every code line renders")
       (is (str/starts-with? (first lines) "clojure> (println 0)"))
-      (is (str/includes? (peek lines) "more lines,"))))
+      (is (str/includes? (peek lines) "(println 19)"))
+      (is (not-any? #(str/includes? % "more lines,") lines) "no collapse hint")))
   (testing "expanded code renders verbatim"
     (let [code (str/join "\n" (mapv #(str "line " %) (range 12)))
           lines (plain (r/render-code-call "run" code "" th 60 {:expanded true}) 60)]

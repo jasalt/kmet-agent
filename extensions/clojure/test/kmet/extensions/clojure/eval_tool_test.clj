@@ -154,13 +154,14 @@
       (is (= 1 (count lines)))
       (is (str/includes? (first lines) "clojure> (+ 1 2)"))
       (is (str/includes? (first lines) ":7888"))))
-  (testing "a large multi-line payload collapses to a head window with a hint"
+  (testing "a large multi-line payload renders in full (no head window)"
     (let [code (str/join "\n" (mapv #(str "(println " % ")") (range 20)))
           lines (plain (eval-tool/render-eval-call "clojure_eval" {:code code}
                                                    theme/dark-theme 60 {:expanded false}) 60)]
-      (is (< (count lines) 20) "the payload does not render in full")
+      (is (= 20 (count lines)) "every payload line renders")
       (is (str/starts-with? (first lines) "clojure> (println 0)"))
-      (is (str/includes? (peek lines) "more lines,"))))
+      (is (str/includes? (peek lines) "(println 19)"))
+      (is (not-any? #(str/includes? % "more lines,") lines) "no collapse hint")))
   (testing "expanded renders the payload verbatim"
     (let [code (str/join "\n" (mapv #(str "line " %) (range 12)))
           lines (plain (eval-tool/render-eval-call "clojure_eval" {:code code}
