@@ -70,6 +70,102 @@
       (t/is (= (theme/get-fg-ansi t :thinking-xhigh)
                (theme/get-fg-ansi t :thinking-max))))))
 
+;; ─── pi color formats (pi: parseColor / okhslToRgb / oklchToRgb) ───────────
+
+(t/deftest test-parse-color-hex
+  (t/is (= {:kind :rgb :r 170 :g 187 :b 204} (theme/parse-color "#abc"))
+        "three-digit shorthand")
+  (t/is (= {:kind :rgb :r 255 :g 0 :b 0} (theme/parse-color "#ff0000")))
+  (t/is (= {:kind :rgb :r 255 :g 0 :b 0} (theme/parse-color "#FF0000"))
+        "hex is case-insensitive"))
+
+(t/deftest test-parse-color-okhsl
+  ;; pi's colors.test.ts: full saturation at the red cusp is pure sRGB red.
+  (t/is (= {:kind :rgb :r 255 :g 0 :b 0}
+           (theme/parse-color "okhsl(29.23 100% 56.8%)")))
+  (t/is (= {:kind :rgb :r 78 :g 136 :b 194}
+           (theme/parse-color "OKHSL(250deg 60% 55%)"))
+        "uppercase, deg suffix, and 0-1 fractions without %")
+  (t/is (= {:kind :rgb :r 78 :g 136 :b 194}
+           (theme/parse-color "okhsl(250\t60%\t55%)"))
+        "whitespace classes accept tabs, like pi's \\s")
+  (t/is (= {:kind :rgb :r 222 :g 224 :b 225}
+           (theme/parse-color "okhsl(234 3% 89%)"))
+        "pi dark.json text color")
+  (t/is (thrown-with-msg? clojure.lang.ExceptionInfo #"s must be between 0 and 1"
+                          (theme/parse-color "okhsl(250 160% 55%)"))))
+
+(t/deftest test-parse-color-oklch
+  (t/is (= {:kind :rgb :r 28 :g 152 :b 158} (theme/parse-color "oklch(62% 0.1 200)")))
+  (t/is (= {:kind :rgb :r 255 :g 0 :b 0}
+           (theme/parse-color "oklch(0.627955 0.257683 29.2339)"))
+        "gamut mapping at the red cusp")
+  (t/is (= {:kind :rgb :r 255 :g 255 :b 255} (theme/parse-color "oklch(1 0.3 150)"))
+        "out-of-gamut lightness maps to white")
+  (t/is (= {:kind :rgb :r 0 :g 0 :b 0} (theme/parse-color "oklch(0 0.3 150)"))
+        "zero lightness maps to black"))
+
+(t/deftest test-parse-color-index-and-default
+  (t/is (= {:kind :indexed :index 196} (theme/parse-color 196)))
+  (t/is (nil? (theme/parse-color "")) "terminal default")
+  (t/is (nil? (theme/parse-color nil)))
+  (t/is (thrown-with-msg? clojure.lang.ExceptionInfo #"Invalid color value"
+                          (theme/parse-color "red"))
+        "a bare name is a variable reference, not a color"))
+
+(t/deftest test-okhsl-256-index
+  ;; pi's rgbToAnsi256 for the dark text color (okhsl 234 3% 89%).
+  (let [t (theme/make-theme {:name "idx" :text "okhsl(234 3% 89%)"} nil :256color)]
+    (t/is (.contains (get-in t [:fg-colors :text]) "38;5;254"))))
+
+(t/deftest test-built-in-themes-match-pi-palette
+  (t/testing "dark.json"
+    (let [t (theme/make-theme @#'theme/dark-theme-data nil :truecolor)]
+      (t/is (= "\u001b[38;2;222;224;225m" (get-in t [:fg-colors :text])))
+      (t/is (= "\u001b[38;2;167;152;215m" (get-in t [:fg-colors :accent])))
+      (t/is (= "\u001b[38;2;95;168;204m" (get-in t [:fg-colors :border])))
+      (t/is (= "\u001b[48;2;33;59;73m" (get-in t [:bg-colors :user-message-bg])))
+      (t/is (= "\u001b[38;2;72;78;82m" (get-in t [:fg-colors :scrollbar-track])))
+      (t/is (= "\u001b[38;2;151;160;165m" (get-in t [:fg-colors :scrollbar-thumb])))))
+  (t/testing "light.json"
+    (let [t (theme/make-theme @#'theme/light-theme-data nil :truecolor)]
+      (t/is (= "\u001b[38;2;59;63;65m" (get-in t [:fg-colors :text])))
+      (t/is (= "\u001b[38;2;116;89;180m" (get-in t [:fg-colors :accent]))))))
+
+(t/deftest test-optional-token-fallbacks
+  (t/testing "scrollbarTrack inherits muted, scrollbarThumb/searchMatchText inherit text, searchMatchBg inherits selectedBg (pi: withThemeColorFallbacks)"
+    (let [colors (into {} (map (fn [k] [(name k) "#111111"]))
+                       (concat theme/FG-TOKENS theme/BG-TOKENS))
+          colors (assoc colors "muted" "#010101" "text" "#020202" "selected-bg" "#030303")
+          colors (dissoc colors "scrollbar-track" "scrollbar-thumb" "search-match-bg" "search-match-text")
+          t (theme/make-theme {:name "fallbacks" :colors colors} nil :truecolor)]
+      (t/is (= (theme/get-fg-ansi t :muted) (theme/get-fg-ansi t :scrollbar-track)))
+      (t/is (= (theme/get-fg-ansi t :text) (theme/get-fg-ansi t :scrollbar-thumb)))
+      (t/is (= (theme/get-fg-ansi t :text) (theme/get-fg-ansi t :search-match-text)))
+      (t/is (= (theme/get-bg-ansi t :selected-bg) (theme/get-bg-ansi t :search-match-bg)))))
+  (t/testing "a theme without a text color keeps the dark scrollbarThumb"
+    (let [dark (theme/make-theme @#'theme/dark-theme-data nil :truecolor)
+          t (theme/make-theme {:name "no-text" :accent "#ff0000"} nil :truecolor)]
+      (t/is (= (theme/get-fg-ansi dark :scrollbar-thumb)
+               (theme/get-fg-ansi t :scrollbar-thumb))))))
+
+(t/deftest test-var-refs
+  (t/testing "chained variable references resolve"
+    (let [t (theme/make-theme
+             {:name "chain"
+              :vars {"primary" "#ff0000" "alias" "primary"}
+              :colors {"text" "alias"}} nil :truecolor)]
+      (t/is (= "\u001b[38;2;255;0;0m" (get-in t [:fg-colors :text])))))
+  (t/testing "missing and circular references throw"
+    (t/is (thrown-with-msg?
+           clojure.lang.ExceptionInfo #"Variable reference not found"
+           (theme/make-theme {:name "missing" :colors {"text" "nope"}} nil :truecolor)))
+    (t/is (thrown-with-msg?
+           clojure.lang.ExceptionInfo #"Circular variable reference detected"
+           (theme/make-theme {:name "cycle"
+                              :vars {"a" "b" "b" "a"}
+                              :colors {"text" "a"}} nil :truecolor)))))
+
 ;; ─── Make theme ────────────────────────────────────────────────────────────
 
 (t/deftest test-make-theme
@@ -157,9 +253,9 @@
            {:name "nil-test"
             :text nil
             :accent nil} nil :truecolor)]
-    ;; nil means "use default" — falls back to dark theme defaults
-    (t/is (= "\u001b[38;2;212;212;212m" (get-in t [:fg-colors :text])))
-    (t/is (= "\u001b[38;2;138;190;183m" (get-in t [:fg-colors :accent])))))
+    ;; nil means "use default" — falls back to pi's dark palette
+    (t/is (= "\u001b[38;2;222;224;225m" (get-in t [:fg-colors :text])))
+    (t/is (= "\u001b[38;2;167;152;215m" (get-in t [:fg-colors :accent])))))
 
 (t/deftest test-make-theme-with-bg
   (let [t (theme/make-theme
@@ -168,8 +264,8 @@
             :custom-message-bg nil
             :selected-bg "#00ffff"} nil :truecolor)]
     (t/is (.contains (get-in t [:bg-colors :user-message-bg]) "48;2;80;80;80"))
-    ;; nil bg means "use default" — falls back to dark theme default
-    (t/is (= "\u001b[48;2;45;40;56m" (get-in t [:bg-colors :custom-message-bg])))
+    ;; nil bg means "use default" — falls back to pi's dark palette
+    (t/is (= "\u001b[48;2;58;48;85m" (get-in t [:bg-colors :custom-message-bg])))
     (t/is (.contains (get-in t [:bg-colors :selected-bg]) "48;2;0;255;255"))))
 
 (t/deftest test-thinking-levels

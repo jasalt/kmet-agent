@@ -101,9 +101,14 @@
           gray-esc (theme/get-fg-ansi th :tool-output)
           kw-esc (theme/get-fg-ansi th :syntax-keyword)]
       (testing "known language uses syntax colors, not toolOutput gray"
-        (let [s (render "a.clj" false {})]
+        (let [s (render "a.clj" false {})
+              ;; pi's palette gives syntax punctuation/comment/meta the muted
+              ;; color, which toolOutput also uses, so the restyled check is
+              ;; "differs from the plain-gray render", not "has no gray".
+              plain-gray (render "a.txt" false {})]
           (is (str/includes? s kw-esc) ".clj output is syntax-highlighted")
-          (is (not (str/includes? s gray-esc)) ".clj output skips toolOutput gray")))
+          (is (not= s plain-gray)
+              ".clj output is restyled, not one toolOutput-gray span")))
       (testing "extension case does not matter (canonical language key)"
         (let [s (render "a.CLJ" false {})]
           (is (str/includes? s kw-esc) ".CLJ output is syntax-highlighted")))
@@ -154,9 +159,13 @@
                              (subvec 3)))
           clj-lines (render "a.clj")
           txt-lines (render "a.txt")
-          gray-esc (theme/get-fg-ansi th :tool-output)]
+          gray-esc (theme/get-fg-ansi th :tool-output)
+          kw-esc (theme/get-fg-ansi th :syntax-keyword)]
       (is (some #(str/includes? % gray-esc) txt-lines) ".txt content is toolOutput gray")
-      (is (not-any? #(str/includes? % gray-esc) clj-lines) ".clj content uses syntax colors, not toolOutput"))))
+      ;; syntax punctuation/comment/meta share toolOutput's muted color in
+      ;; pi's palette, so assert the restyling and the keyword color.
+      (is (not= clj-lines txt-lines) ".clj content is restyled")
+      (is (some #(str/includes? % kw-esc) clj-lines) ".clj content is syntax-highlighted"))))
 
 (deftest test-bash-result
   (testing "collapsed keeps the tail of the output, capped, with the expand hint"

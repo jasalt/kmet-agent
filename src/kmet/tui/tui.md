@@ -1214,7 +1214,10 @@ deref and every subscriber pays it on every frame's check. Construction-time
 snapshot reads (`get-current-theme`) remain valid.
 
 Theme definitions are EDN files; `docs/examples/themes/` contains complete
-current dark/light examples. The color mode (`:truecolor` / `:256color`) comes
+current dark/light examples. Color values match pi's `parseColor`: hex
+(`#rgb`/`#rrggbb`), `okhsl(...)`, `oklch(...)`, a 256-color index, a `:vars`
+reference, or `""` for the terminal default; the built-in palettes are pi's
+OKHSL dark/light themes. The color mode (`:truecolor` / `:256color`) comes
 from the shared `kmet.libs.terminal-image` capability detection at construction (`COLORTERM`
 plus the known true-color terminal programs; no true-color → 256-color, the
 safe default) and is baked into the resolved ANSI strings, so a theme built

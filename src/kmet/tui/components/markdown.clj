@@ -17,7 +17,7 @@
 (defrecord MarkdownTheme [heading link link-url code code-block
                           code-block-border quote quote-border hr
                           list-bullet bold italic underline strikethrough
-                          table-border code-block-indent highlight-code])
+                          code-block-indent highlight-code])
 
 (def ^:private rst "\u001b[0m")
 (def ^:private bold-ansi "\u001b[1m")
@@ -43,7 +43,6 @@
     :italic (fn [s] (str italic-ansi s "\u001b[23m"))
     :underline (fn [s] (str ul-ansi s "\u001b[24m"))
     :strikethrough (fn [s] (str strike-ansi s "\u001b[29m"))
-    :table-border (fn [s] (str dim-ansi s rst))
     :code-block-indent "  "
     :highlight-code nil}))
 
@@ -223,9 +222,9 @@
 
 (defn- emit-table-row!
   "Push the visual lines of one table ROW onto RESULT: each cell wrapped to
-   its COLUMN-WIDTHS entry, padded, joined with themed cell separators taken
-   from B (a kmet.tui.border set). Header cells render bold when BOLD?."
-  [result row column-widths theme border-fn bold? left-pad b]
+   its COLUMN-WIDTHS entry, padded, joined with cell separators taken from B
+   (a kmet.tui.border set). Header cells render bold when BOLD?."
+  [result row column-widths theme bold? left-pad b]
   (let [v (:left b)
         wrapped (mapv (fn [c w] (u/wrap-text-with-ansi c (max 1 w))) row column-widths)
         height (reduce max 1 (map count wrapped))]
@@ -235,9 +234,9 @@
                                 padded (str s (apply str (repeat (max 0 (- w (u/visible-width s))) \space)))]
                             (if bold? ((:bold theme) padded) padded)))
                         wrapped column-widths)]
-        (vswap! result conj (str left-pad (border-fn (str v " "))
-                                 (str/join (str " " (border-fn v) " ") cells)
-                                 " " (border-fn v)))))))
+        (vswap! result conj (str left-pad v " "
+                                 (str/join (str " " v " ") cells)
+                                 " " v))))))
 
 (defn- table-line
   "One table rule line: LEFT and RIGHT corners and MID junctions around a
@@ -256,7 +255,6 @@
   [result t theme content-width left-pad default-style border-set]
   (let [num-cols (count (:header t))
         b (or border-set border/normal)
-        border-fn (or (:table-border theme) identity)
         border-overhead (inc (* 3 num-cols))
         available-for-cells (- content-width border-overhead)
         style-context (make-style-context default-style)
@@ -314,14 +312,14 @@
             top (table-line (:top b) (:top-left b) (:tee-down b) (:top-right b) column-widths)
             sep (table-line (:top b) (:tee-right b) (:cross b) (:tee-left b) column-widths)
             bot (table-line (:bottom b) (:bottom-left b) (:tee-up b) (:bottom-right b) column-widths)]
-        (vswap! result conj (str left-pad (border-fn top)))
-        (emit-table-row! result header-styled column-widths theme border-fn true left-pad b)
-        (vswap! result conj (str left-pad (border-fn sep)))
+        (vswap! result conj (str left-pad top))
+        (emit-table-row! result header-styled column-widths theme true left-pad b)
+        (vswap! result conj (str left-pad sep))
         (doseq [[i row] (map-indexed vector row-styled)]
-          (emit-table-row! result row column-widths theme border-fn false left-pad b)
+          (emit-table-row! result row column-widths theme false left-pad b)
           (when (< i (dec (count row-styled)))
-            (vswap! result conj (str left-pad (border-fn sep)))))
-        (vswap! result conj (str left-pad (border-fn bot)))))))
+            (vswap! result conj (str left-pad sep))))
+        (vswap! result conj (str left-pad bot))))))
 
 (defn- render-list
   "Render a :ul/:ol token at nesting DEPTH (0 = root), pushing lines onto

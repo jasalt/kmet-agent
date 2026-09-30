@@ -99,7 +99,7 @@ A current theme uses three top-level keys (the shape below is abbreviated):
 
 ```clojure
 {:name "my-theme"
- :vars {"primary" "#00aaff"
+ :vars {"primary" "okhsl(250 60% 55%)"
         "muted" 242}
  :colors {"accent" "primary"
           "muted" "muted"
@@ -113,21 +113,26 @@ A current theme uses three top-level keys (the shape below is abbreviated):
 - `:vars` is an optional map of reusable values.
 - `:colors` maps every theme token to a color value. The examples use pi's
   camelCase string keys; EDN kebab-case keyword keys are also accepted.
-- All 54 current tokens are included in the examples. `thinkingMax` is the
-  only optional token and falls back to `thinkingXhigh`; the other 53 are
-  required when a theme file is loaded.
+- All 56 current tokens are included in the examples. Five are optional and
+  inherit another token when omitted: `scrollbarTrack` from `muted`,
+  `scrollbarThumb` from `text`, `searchMatchBg` from `selectedBg`,
+  `searchMatchText` from `text`, and `thinkingMax` from `thinkingXhigh`.
+  The other 51 are required when a theme file is loaded.
 
 Color values may be:
 
 | Value | Meaning |
 |-------|---------|
-| `"#rrggbb"` | 24-bit RGB color, approximated on terminals without truecolor support |
+| `"#rgb"` or `"#rrggbb"` | 24-bit RGB color, approximated on terminals without truecolor support |
+| `"okhsl(H S% L%)"` | OKHSL perceptual color; the built-in pi palettes use this form |
+| `"oklch(L C H)"` | OKLCH perceptual color, gamut-mapped to sRGB |
 | `0`–`255` | xterm 256-color palette index |
-| `"primary"` | Name of an entry in `:vars` |
+| `"primary"` | Name of an entry in `:vars`; references can chain |
 | `""` | The terminal's default foreground or background |
 
 A bare name such as `"red"` is a variable reference, not an ANSI color name.
-Define it in `:vars` or use a hex or numeric value. Invalid EDN, a `:name`
+Define it in `:vars` or use a hex, OKHSL, OKLCH, or numeric value. Invalid
+EDN, an unknown or circular variable, an invalid color, a `:name`
 containing `/`, or a missing required token is rejected; startup keeps the
 built-in fallback, and live reload keeps the last valid theme.
 

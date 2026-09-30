@@ -1,6 +1,8 @@
 (ns kmet.tui.theme
   "Theme system — identical structure to pi's theme.ts.
-   EDN-only loading with same :vars/:colors schema as pi's JSON."
+   EDN-only loading with the same :vars/:colors schema and color values
+   (hex, OKHSL, OKLCH, 256-color index, variable refs, terminal default)
+   as pi's JSON."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -15,11 +17,12 @@
 (def ^:const FG-TOKENS
   [:accent :border :border-accent :border-muted
    :success :error :warning :muted :dim :text :thinking-text
+   :scrollbar-track :scrollbar-thumb :search-match-text
    :user-message-text :custom-message-text :custom-message-label
    :tool-title :tool-output
    :md-heading :md-link :md-link-url :md-code
    :md-code-block :md-code-block-border :md-quote :md-quote-border
-   :md-hr :md-list-bullet :md-table-border
+   :md-hr :md-list-bullet
    :tool-diff-added :tool-diff-removed :tool-diff-context
    :syntax-comment :syntax-keyword :syntax-function
    :syntax-variable :syntax-string :syntax-number
@@ -29,9 +32,8 @@
    :bash-mode])
 
 (def ^:const BG-TOKENS
-  [:selected-bg :user-message-bg :custom-message-bg
-   :tool-pending-bg :tool-success-bg :tool-error-bg
-   :scrollbar-thumb])
+  [:selected-bg :search-match-bg :user-message-bg :custom-message-bg
+   :tool-pending-bg :tool-success-bg :tool-error-bg])
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; Theme record — wraps fg/bg ANSI maps with API matching pi's Theme class
@@ -47,63 +49,308 @@
   (toString [this] (str "#Theme{:name " (:name this) "}")))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
-;; Color helpers — matching pi's hexToRgb, rgbTo256, fgAnsi, bgAnsi
+;; Color helpers — pi's parseColor / okhslToRgb / oklchToRgb / rgbToAnsi256,
+;; plus the fg/bg ANSI escapes built from them.
 ;; ═══════════════════════════════════════════════════════════════════════════
 
 (def ^:private FG-RST "\u001b[39m")
 (def ^:private BG-RST "\u001b[49m")
 
-(defn hex->rgb [hex]
+(defn hex->rgb
+  "Parse #rgb or #rrggbb into {:r :g :b} 0-255 channels (pi: hexToRgb, plus
+   the three-digit shorthand)."
+  [hex]
   (let [h (subs hex 1)
-        r (Integer/parseInt (subs h 0 2) 16)
-        g (Integer/parseInt (subs h 2 4) 16)
-        b (Integer/parseInt (subs h 4 6) 16)]
-    {:r r :g g :b b}))
+        h (if (= 3 (count h))
+            (apply str (mapcat (fn [digit] [digit digit]) h))
+            h)]
+    {:r (Integer/parseInt (subs h 0 2) 16)
+     :g (Integer/parseInt (subs h 2 4) 16)
+     :b (Integer/parseInt (subs h 4 6) 16)}))
 
-(defn- rgb->256 [r g b]
-  (let [cube [0 95 135 175 215 255]
-        closest #(first (sort-by (fn [x] (Math/abs (- % x))) cube))
-        ri (.indexOf cube (closest r))
-        gi (.indexOf cube (closest g))
-        bi (.indexOf cube (closest b))
-        cube-idx (+ 16 (* 36 ri) (* 6 gi) bi)
-        ;; grayscale check
-        maxc (max r g b)
-        minc (min r g b)
-        spread (- maxc minc)
-        gray (int (+ (* 0.299 r) (* 0.587 g) (* 0.114 b)))]
-    (if (< spread 10)
-      (let [gray-idx (int (Math/round (/ (double (- gray 8)) 10)))]
-        (+ 232 (min 23 (max 0 gray-idx))))
-      cube-idx)))
+;; ─── Oklab / OKHSL / OKLCH → sRGB (pi: packages/tui/src/oklab.ts) ──────────
+;;
+;; Björn Ottosson's reference implementation (MIT license), ported from pi's
+;; oklab.ts. OKHSL and OKLCH are the color formats pi's built-in themes use.
+
+(def ^:private lab->lms
+  [[1 0.3963377773761749 0.2158037573099136]
+   [1 -0.1055613458156586 -0.0638541728258133]
+   [1 -0.0894841775298119 -1.2914855480194092]])
+
+(def ^:private lms->linear-srgb
+  [[4.0767416360759583 -3.3077115392580629 0.2309699031821043]
+   [-1.2684379732850315 2.6097573492876882 -0.341319376002657]
+   [-0.0041960761386756 -0.7034186179359362 1.7076146940746117]])
+
+(def ^:private saturation-fit
+  "Per sRGB channel (red, green, blue): the (a, b) half-plane where the
+   channel clips first, and the polynomial approximating the maximum
+   saturation there."
+  [[[-1.8817031 -0.80936501]
+    [1.19086277 1.76576728 0.59662641 0.75515197 0.56771245]]
+   [[1.8144408 -1.19445267]
+    [0.73956515 -0.45954404 0.08285427 0.12541073 -0.14503204]]
+   [[0.13110758 1.81333971]
+    [1.35733652 -0.00915799 -1.1513021 -0.50559606 0.00692167]]])
+
+(def ^:private okhsl-k1 0.206)
+(def ^:private okhsl-k2 0.03)
+(def ^:private okhsl-k3 (/ (+ 1 okhsl-k1) (+ 1 okhsl-k2)))
+
+(defn- mat*vec [m v]
+  (mapv (fn [row] (reduce + (map * row v))) m))
+
+(defn- oklab->linear-srgb [lab]
+  (mat*vec lms->linear-srgb
+           (mapv (fn [v] (* v v v)) (mat*vec lab->lms lab))))
+
+(defn- linear->srgb [value]
+  (if (> value 0.0031308)
+    (- (* 1.055 (Math/pow value (/ 1 2.4))) 0.055)
+    (* 12.92 value)))
+
+(defn- linear-srgb->rgb
+  "Linear sRGB (0-1, possibly out of gamut) → {:kind :rgb} with rounded
+   0-255 channels, clipping like pi's linearSrgbToRgb."
+  [linear]
+  (let [channel (fn [v] (Math/round (double (* 255 (min 1 (max 0 (linear->srgb v)))))))]
+    {:kind :rgb
+     :r (channel (nth linear 0))
+     :g (channel (nth linear 1))
+     :b (channel (nth linear 2))}))
+
+(defn- okhsl->oklab-lightness [x]
+  (/ (+ (* x x) (* okhsl-k1 x)) (* okhsl-k3 (+ x okhsl-k2))))
+
+(defn- lms-slopes [a b]
+  (mapv (fn [row] (+ (* (nth row 1) a) (* (nth row 2) b))) lab->lms))
+
+(defn- max-saturation
+  "Largest saturation (C/L) inside sRGB for hue (a, b): polynomial fit plus
+   one Halley step."
+  [a b]
+  (let [channel (first (keep-indexed
+                        (fn [index [[x y] _]]
+                          (when (or (= index 2) (> (+ (* x a) (* y b)) 1)) index))
+                        saturation-fit))
+        weights (nth lms->linear-srgb channel)
+        [k0 k1 k2 k3 k4] (second (nth saturation-fit channel))
+        saturation (+ k0 (* k1 a) (* k2 b) (* k3 a a) (* k4 a b))
+        slopes (lms-slopes a b)
+        base (mapv (fn [k] (+ 1 (* saturation k))) slopes)
+        dot (fn [values] (reduce + (map * weights values)))
+        f (dot (mapv (fn [v] (* v v v)) base))
+        f1 (dot (mapv (fn [v k] (* 3 k v v)) base slopes))
+        f2 (dot (mapv (fn [v k] (* 6 k k v)) base slopes))]
+    (- saturation (/ (* f f1) (- (* f1 f1) (* 0.5 f f2))))))
+
+(defn- cusp
+  "Oklab lightness and chroma of the most saturated sRGB color for hue
+   (a, b)."
+  [a b]
+  (let [saturation (max-saturation a b)
+        linear (oklab->linear-srgb [1 (* saturation a) (* saturation b)])
+        lightness (Math/cbrt (/ 1 (apply max linear)))]
+    [lightness (* lightness saturation)]))
+
+(defn- max-chroma
+  "Chroma where the constant-lightness line at LIGHTNESS leaves the sRGB
+   gamut."
+  [a b lightness [cusp-l cusp-c]]
+  (if (<= lightness cusp-l)
+    (/ (* cusp-c lightness) cusp-l)
+    (let [t (/ (* cusp-c (- lightness 1)) (- cusp-l 1))
+          slopes (lms-slopes a b)
+          lms (mapv (fn [k] (+ lightness (* t k))) slopes)
+          cubes (mapv (fn [v] (* v v v)) lms)
+          firsts (mapv (fn [k v] (* 3 k v v)) slopes lms)
+          seconds (mapv (fn [k v] (* 6 k k v)) slopes lms)
+          dot (fn [row values] (reduce + (map * row values)))
+          steps (map (fn [row]
+                       (let [f (- (dot row cubes) 1)
+                             f1 (dot row firsts)
+                             f2 (dot row seconds)
+                             u (/ f1 (- (* f1 f1) (* 0.5 f f2)))]
+                         (if (>= u 0) (- (* f u)) ##Inf)))
+                     lms->linear-srgb)]
+      (+ t (apply min steps)))))
+
+(defn- chroma-stops
+  "OKHSL's chroma reference points at LIGHTNESS and hue (a, b):
+   [c0 c-mid c-max]."
+  [lightness a b]
+  (let [[peak-l peak-c] (cusp a b)
+        c-max (max-chroma a b lightness [peak-l peak-c])
+        k (/ c-max (min (* lightness (/ peak-c peak-l))
+                        (* (- 1 lightness) (/ peak-c (- 1 peak-l)))))
+        mid-s-w (+ -4.24894561 (* 5.38770819 b) (* 4.69891013 a))
+        mid-s-z (+ -2.13704948 (* -10.02301043 b) (* a mid-s-w))
+        mid-s-y (+ -2.19557347 (* 1.75198401 b) (* a mid-s-z))
+        mid-s (+ 0.11516993 (/ 1 (+ 7.4477897 (* 4.1590124 b) (* a mid-s-y))))
+        mid-t-w (+ 0.00299215 (* -0.45399568 b) (* -0.14661872 a))
+        mid-t-z (+ -0.27087943 (* 0.6122399 b) (* a mid-t-w))
+        mid-t-y (+ 0.40370612 (* 0.90148123 b) (* a mid-t-z))
+        mid-t (+ 0.11239642 (/ 1 (+ 1.6132032 (* -0.68124379 b) (* a mid-t-y))))
+        c-mid (* 0.9 k (Math/sqrt (Math/sqrt (/ 1 (+ (/ 1 (Math/pow (* lightness mid-s) 4))
+                                                     (/ 1 (Math/pow (* (- 1 lightness) mid-t) 4)))))))
+        c0 (Math/sqrt (/ 1 (+ (/ 1 (Math/pow (* lightness 0.4) 2))
+                              (/ 1 (Math/pow (* (- 1 lightness) 0.8) 2)))))]
+    [c0 c-mid c-max]))
+
+(defn- okhsl->rgb
+  "OKHSL → {:kind :rgb} (pi: okhslToRgb). HUE in degrees; SATURATION and
+   LIGHTNESS in 0-1, relative to the sRGB gamut at the hue and lightness."
+  [hue saturation lightness]
+  (let [l (okhsl->oklab-lightness lightness)
+        lab (if (and (> l 0) (< l 1) (> saturation 0))
+              (let [angle (/ (* 2 Math/PI (mod hue 360)) 360)
+                    a (Math/cos angle)
+                    b (Math/sin angle)
+                    [c0 c-mid c-max] (chroma-stops l a b)
+                    chroma (if (< saturation 0.8)
+                             (let [t (* 1.25 saturation)
+                                   k1 (* 0.8 c0)]
+                               (/ (* t k1) (- 1 (* (- 1 (/ k1 c-mid)) t))))
+                             (let [t (* 5 (- saturation 0.8))
+                                   k1 (/ (* 0.2 c-mid c-mid (Math/pow 1.25 2)) c0)]
+                               (+ c-mid (/ (* t k1) (- 1 (* (- 1 (/ k1 (- c-max c-mid))) t))))))]
+                [l (* chroma a) (* chroma b)])
+              [l 0 0])]
+    (linear-srgb->rgb (oklab->linear-srgb lab))))
+
+(defn- oklch->rgb
+  "OKLCH → {:kind :rgb} with pi's chroma bisection gamut mapping (pi:
+   oklchToRgb). LIGHTNESS in 0-1, CHROMA >= 0, HUE in degrees."
+  [lightness chroma hue]
+  (let [radians (/ (* hue Math/PI) 180)
+        cos (Math/cos radians)
+        sin (Math/sin radians)
+        at-chroma (fn [c] (oklab->linear-srgb [lightness (* c cos) (* c sin)]))
+        in-gamut? (fn [linear] (every? #(and (>= % -1e-7) (<= % 1.0000001)) linear))
+        direct (at-chroma chroma)]
+    (if (in-gamut? direct)
+      (linear-srgb->rgb direct)
+      (loop [i 0 low 0.0 high chroma linear (at-chroma 0)]
+        (if (= i 20)
+          (linear-srgb->rgb linear)
+          (let [c (/ (+ low high) 2)
+                candidate (at-chroma c)]
+            (if (in-gamut? candidate)
+              (recur (inc i) c high candidate)
+              (recur (inc i) low c linear))))))))
+
+;; ─── Color parsing (pi: parseColor) ────────────────────────────────────────
+
+(def ^:private number-pattern
+  "[+-]?(?:[0-9]+(?:[.][0-9]*)?|[.][0-9]+)(?:e[+-]?[0-9]+)?")
+
+(def ^:private oklch-pattern
+  (re-pattern (str "^oklch[(]\\s*(" number-pattern ")(%)?\\s+(" number-pattern
+                   ")\\s+(" number-pattern ")(?:deg)?\\s*[)]$")))
+
+(def ^:private okhsl-pattern
+  (re-pattern (str "^okhsl[(]\\s*(" number-pattern ")(?:deg)?\\s+(" number-pattern
+                   ")(%)?\\s+(" number-pattern ")(%)?\\s*[)]$")))
+
+(defn parse-color
+  "Parse VALUE the way pi's parseColor does: #rgb/#rrggbb, oklch(...),
+   okhsl(...), a 0-255 palette index, or an empty string for the terminal
+   default. Returns nil for the terminal default, {:kind :rgb :r :g :b} for
+   colors and {:kind :indexed :index n} for palette indices; throws on an
+   invalid color string (pi: Invalid color value)."
+  [value]
+  (cond
+    (nil? value) nil
+    (number? value) {:kind :indexed :index (long value)}
+    (not (string? value)) nil
+    (= value "") nil
+    :else
+    (let [s (str/lower-case value)]
+      (or (when (re-matches #"^#([0-9a-f]{3}|[0-9a-f]{6})$" s)
+            (assoc (hex->rgb s) :kind :rgb))
+          (when-let [[_ lightness percent chroma hue] (re-matches oklch-pattern s)]
+            (let [l (/ (parse-double lightness) (if percent 100.0 1.0))
+                  c (parse-double chroma)]
+              (when (or (neg? l) (> l 1))
+                (throw (ex-info (str "l must be between 0 and 1: " l) {:type :invalid-color})))
+              (when (neg? c)
+                (throw (ex-info (str "c must not be negative: " c) {:type :invalid-color})))
+              (oklch->rgb l c (parse-double hue))))
+          (when-let [[_ hue saturation s-percent lightness l-percent] (re-matches okhsl-pattern s)]
+            (let [sat (/ (parse-double saturation) (if s-percent 100.0 1.0))
+                  l (/ (parse-double lightness) (if l-percent 100.0 1.0))]
+              (when (or (neg? sat) (> sat 1))
+                (throw (ex-info (str "s must be between 0 and 1: " sat) {:type :invalid-color})))
+              (when (or (neg? l) (> l 1))
+                (throw (ex-info (str "l must be between 0 and 1: " l) {:type :invalid-color})))
+              (okhsl->rgb (parse-double hue) sat l)))
+          (throw (ex-info (str "Invalid color value: " value) {:type :invalid-color}))))))
+
+;; ─── 256-color approximation and ANSI escapes (pi: rgbToAnsi256, colorAnsi) ─
+
+(def ^:private cube-values [0 95 135 175 215 255])
+(def ^:private gray-values (mapv #(+ 8 (* % 10)) (range 24)))
+
+(defn- find-closest
+  "Index into VALUES of the value closest to TARGET (pi: findClosest)."
+  [values target]
+  (first (reduce (fn [[best-index best-distance] [index value]]
+                   (let [distance (Math/abs (- (double target) value))]
+                     (if (< distance best-distance)
+                       [index distance]
+                       [best-index best-distance])))
+                 [0 ##Inf]
+                 (map-indexed vector values))))
+
+(defn- color-distance
+  "Squared weighted RGB distance (pi: colorDistance)."
+  [[r1 g1 b1] [r2 g2 b2]]
+  (let [square (fn [d] (* d d))]
+    (+ (* 0.299 (square (- r1 r2)))
+       (* 0.587 (square (- g1 g2)))
+       (* 0.114 (square (- b1 b2))))))
+
+(defn- rgb->256
+  "Closest xterm 256-color palette index; the gray ramp is only preferred
+   when it beats the color cube (pi: rgbToAnsi256)."
+  [r g b]
+  (let [r-index (find-closest cube-values r)
+        g-index (find-closest cube-values g)
+        b-index (find-closest cube-values b)
+        cube-color [(nth cube-values r-index) (nth cube-values g-index) (nth cube-values b-index)]
+        cube-index (+ 16 (* 36 r-index) (* 6 g-index) b-index)
+        gray (Math/round (double (+ (* 0.299 r) (* 0.587 g) (* 0.114 b))))
+        gray-offset (find-closest gray-values gray)
+        gray-value (nth gray-values gray-offset)
+        spread (- (max r g b) (min r g b))]
+    (if (and (< spread 10)
+             (< (color-distance [r g b] [gray-value gray-value gray-value])
+                (color-distance [r g b] cube-color)))
+      (+ 232 gray-offset)
+      cube-index)))
+
+(defn- color->ansi
+  "The escape that sets PARSED (a parse-color result) in the foreground or
+   background slot of COLOR-MODE (pi: colorAnsi)."
+  [parsed color-mode background?]
+  (let [slot (if background? 48 38)]
+    (case (:kind parsed)
+      :indexed (str "\u001b[" slot ";5;" (:index parsed) "m")
+      :rgb (let [{:keys [r g b]} parsed]
+             (if (= color-mode :truecolor)
+               (str "\u001b[" slot ";2;" r ";" g ";" b "m")
+               (str "\u001b[" slot ";5;" (rgb->256 r g b) "m"))))))
 
 (defn- fg-ansi [value color-mode]
-  (cond
-    (nil? value) FG-RST
-    (= value "") FG-RST
-    (number? value) (str "\u001b[38;5;" value "m")
-    (string? value)
-    (if (str/starts-with? value "#")
-      (let [{:keys [r g b]} (hex->rgb value)]
-        (if (= color-mode :truecolor)
-          (str "\u001b[38;2;" r ";" g ";" b "m")
-          (str "\u001b[38;5;" (rgb->256 r g b) "m")))
-      FG-RST)
-    :else FG-RST))
+  (if-let [parsed (parse-color value)]
+    (color->ansi parsed color-mode false)
+    FG-RST))
 
 (defn- bg-ansi [value color-mode]
-  (cond
-    (nil? value) BG-RST
-    (= value "") BG-RST
-    (number? value) (str "\u001b[48;5;" value "m")
-    (string? value)
-    (if (str/starts-with? value "#")
-      (let [{:keys [r g b]} (hex->rgb value)]
-        (if (= color-mode :truecolor)
-          (str "\u001b[48;2;" r ";" g ";" b "m")
-          (str "\u001b[48;5;" (rgb->256 r g b) "m")))
-      BG-RST)
-    :else BG-RST))
+  (if-let [parsed (parse-color value)]
+    (color->ansi parsed color-mode true)
+    BG-RST))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; Theme API — matching pi's theme.fg() / theme.bg() / bold() etc.
@@ -225,7 +472,6 @@
    :quote-border (fn [s] (fg t :md-quote-border s))
    :hr (fn [s] (fg t :md-hr s))
    :list-bullet (fn [s] (fg t :md-list-bullet s))
-   :table-border (fn [s] (fg t :md-table-border s))
    :highlight-code (fn [code lang] (render-highlighted t code lang))
    :bold bold
    :italic italic
@@ -260,11 +506,15 @@
 ;; Theme construction — from pi-identical EDN schema
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;;
-;; EDN file format (identical structure to pi's JSON):
+;; EDN file format (identical structure and color values to pi's JSON):
 ;;
 ;;   {:name "dark"
-;;    :vars {"cyan" "#00d7ff" "blue" "#5f87ff" ...}
-;;    :colors {:accent "accent" :border "blue" ...}}
+;;    :vars {"text" "okhsl(234 3% 89%)" "blue" "okhsl(232 54% 67%)" ...}
+;;    :colors {"accent" "violet" "border" "blue" ...}}
+;;
+;; Color values: "#rgb"/"#rrggbb", "okhsl(H S% L%)", "oklch(L C H)", a
+;; 0-255 palette index, a :vars name (references chain), or "" for the
+;; terminal default.
 ;;
 ;; or flat format (backward compat):
 ;;
@@ -286,8 +536,9 @@
    "success" :success "error" :error "warning" :warning
    "muted" :muted "dim" :dim "text" :text
    "thinkingText" :thinking-text
-   "selectedBg" :selected-bg
-   "scrollbarThumb" :scrollbar-thumb
+   "scrollbarTrack" :scrollbar-track "scrollbarThumb" :scrollbar-thumb
+   "searchMatchText" :search-match-text
+   "selectedBg" :selected-bg "searchMatchBg" :search-match-bg
    "userMessageBg" :user-message-bg "userMessageText" :user-message-text
    "customMessageBg" :custom-message-bg "customMessageText" :custom-message-text
    "customMessageLabel" :custom-message-label
@@ -299,7 +550,6 @@
    "mdCodeBlockBorder" :md-code-block-border
    "mdQuote" :md-quote "mdQuoteBorder" :md-quote-border
    "mdHr" :md-hr "mdListBullet" :md-list-bullet
-   "mdTableBorder" :md-table-border
    "toolDiffAdded" :tool-diff-added "toolDiffRemoved" :tool-diff-removed
    "toolDiffContext" :tool-diff-context
    "syntaxComment" :syntax-comment "syntaxKeyword" :syntax-keyword
@@ -321,31 +571,195 @@
                   [(if (keyword? k) k (camel->kebab k)) v]))
         raw))
 
+(defn- ok-color-string?
+  "True for strings pi's resolveVarRefs treats as literal colors."
+  [v]
+  (or (str/starts-with? v "#")
+      (str/starts-with? (str/lower-case v) "okhsl(")
+      (str/starts-with? (str/lower-case v) "oklch(")))
+
+(defn- resolve-var-refs
+  "Resolve chained variable references like pi's resolveVarRefs: literal
+   colors, the terminal default and non-strings pass through; a missing or
+   circular reference throws."
+  [value vars]
+  (letfn [(walk [v visited]
+            (cond
+              (not (string? v)) v
+              (or (= v "") (ok-color-string? v)) v
+              (contains? visited v)
+              (throw (ex-info (str "Circular variable reference detected: " v)
+                              {:type :theme-validation :variable v}))
+              (contains? vars v) (walk (get vars v) (conj visited v))
+              :else (throw (ex-info (str "Variable reference not found: " v)
+                                    {:type :theme-validation :variable v}))))]
+    (walk value #{})))
+
+(defn- apply-optional-color-fallbacks
+  "Fill pi's optional tokens from the theme's own colors before resolution
+   (pi: withThemeColorFallbacks): scrollbarTrack inherits muted, scrollbarThumb
+   inherits text, searchMatchBg inherits selectedBg, searchMatchText inherits
+   text, thinkingMax inherits thinkingXhigh. Missing fallback sources stay
+   absent so make-theme can fill them from the dark palette."
+  [raw]
+  (cond-> raw
+    (not (contains? raw :thinking-max)) (assoc :thinking-max (get raw :thinking-xhigh))
+    (not (contains? raw :scrollbar-track)) (assoc :scrollbar-track (get raw :muted))
+    (not (contains? raw :scrollbar-thumb)) (assoc :scrollbar-thumb (get raw :text))
+    (not (contains? raw :search-match-bg)) (assoc :search-match-bg (get raw :selected-bg))
+    (not (contains? raw :search-match-text)) (assoc :search-match-text (get raw :text))))
+
+(def ^:private dark-theme-data
+  "pi's built-in dark.json, in EDN: OKHSL colors with shared vars, including
+   the scrollbar and search-match tokens."
+  {:name "dark"
+   :vars {"text" "okhsl(234 3% 89%)"
+          "muted" "okhsl(229 6% 67%)"
+          "violet" "okhsl(295 50% 67%)"
+          "blue" "okhsl(232 54% 67%)"
+          "green" "okhsl(159 59% 67%)"
+          "red" "okhsl(20 72% 67%)"
+          "yellow" "okhsl(83 88% 67%)"
+          "blueBg" "okhsl(233 41% 24%)"}
+   :colors {"accent" "violet"
+            "border" "okhsl(231 57% 65%)"
+            "borderAccent" "okhsl(295 53% 64%)"
+            "borderMuted" "okhsl(229 8% 53%)"
+            "success" "green"
+            "error" "red"
+            "warning" "yellow"
+            "muted" "muted"
+            "dim" "okhsl(229 8% 56%)"
+            "text" "text"
+            "thinkingText" "okhsl(226 7% 65%)"
+            "selectedBg" "blueBg"
+            "scrollbarTrack" "okhsl(237 7% 33%)"
+            "scrollbarThumb" "okhsl(232 7% 65%)"
+            "searchMatchBg" "okhsl(53 51% 24%)"
+            "searchMatchText" "muted"
+            "userMessageBg" "blueBg"
+            "userMessageText" "text"
+            "customMessageBg" "okhsl(295 42% 24%)"
+            "customMessageText" "muted"
+            "customMessageLabel" "violet"
+            "toolPendingBg" "okhsl(229 5% 24%)"
+            "toolSuccessBg" "okhsl(158 46% 25%)"
+            "toolErrorBg" "okhsl(19 54% 25%)"
+            "toolTitle" "text"
+            "toolOutput" "muted"
+            "mdHeading" "yellow"
+            "mdLink" "blue"
+            "mdLinkUrl" "muted"
+            "mdCode" "violet"
+            "mdCodeBlock" "green"
+            "mdCodeBlockBorder" "muted"
+            "mdQuote" "muted"
+            "mdQuoteBorder" "muted"
+            "mdHr" "muted"
+            "mdListBullet" "violet"
+            "toolDiffAdded" "green"
+            "toolDiffRemoved" "red"
+            "toolDiffContext" "muted"
+            "syntaxComment" "muted"
+            "syntaxKeyword" "blue"
+            "syntaxFunction" "yellow"
+            "syntaxVariable" "okhsl(202 58% 67%)"
+            "syntaxString" "okhsl(52 67% 67%)"
+            "syntaxNumber" "green"
+            "syntaxType" "violet"
+            "syntaxOperator" "muted"
+            "syntaxPunctuation" "muted"
+            "thinkingOff" "okhsl(229 8% 49%)"
+            "thinkingMinimal" "okhsl(232 20% 52%)"
+            "thinkingLow" "okhsl(232 45% 54%)"
+            "thinkingMedium" "okhsl(263 59% 56%)"
+            "thinkingHigh" "okhsl(295 73% 59%)"
+            "thinkingXhigh" "okhsl(337 81% 61%)"
+            "thinkingMax" "okhsl(20 99% 63%)"
+            "bashMode" "okhsl(159 64% 65%)"}})
+
+(def ^:private light-theme-data
+  "pi's built-in light.json, in EDN: OKHSL colors with shared vars."
+  {:name "light"
+   :vars {"text" "okhsl(225 5% 27%)"
+          "muted" "okhsl(229 8% 47%)"
+          "violet" "okhsl(295 60% 46%)"
+          "blue" "okhsl(231 68% 47%)"
+          "green" "okhsl(159 75% 46%)"
+          "red" "okhsl(20 91% 47%)"
+          "yellow" "okhsl(83 99% 47%)"
+          "blueBg" "okhsl(235 19% 91%)"}
+   :colors {"accent" "violet"
+            "border" "okhsl(231 67% 55%)"
+            "borderAccent" "okhsl(295 59% 55%)"
+            "borderMuted" "okhsl(235 7% 66%)"
+            "success" "green"
+            "error" "red"
+            "warning" "yellow"
+            "muted" "muted"
+            "dim" "okhsl(229 7% 59%)"
+            "text" "text"
+            "thinkingText" "okhsl(234 8% 55%)"
+            "selectedBg" "blueBg"
+            "scrollbarTrack" "okhsl(248 3% 90%)"
+            "scrollbarThumb" "okhsl(226 7% 65%)"
+            "searchMatchBg" "okhsl(56 22% 91%)"
+            "searchMatchText" "muted"
+            "userMessageBg" "blueBg"
+            "userMessageText" "text"
+            "customMessageBg" "okhsl(295 25% 91%)"
+            "customMessageText" "muted"
+            "customMessageLabel" "violet"
+            "toolPendingBg" "okhsl(248 3% 91%)"
+            "toolSuccessBg" "okhsl(156 21% 91%)"
+            "toolErrorBg" "okhsl(24 23% 91%)"
+            "toolTitle" "text"
+            "toolOutput" "muted"
+            "mdHeading" "yellow"
+            "mdLink" "blue"
+            "mdLinkUrl" "muted"
+            "mdCode" "violet"
+            "mdCodeBlock" "green"
+            "mdCodeBlockBorder" "muted"
+            "mdQuote" "muted"
+            "mdQuoteBorder" "muted"
+            "mdHr" "muted"
+            "mdListBullet" "violet"
+            "toolDiffAdded" "green"
+            "toolDiffRemoved" "red"
+            "toolDiffContext" "muted"
+            "syntaxComment" "muted"
+            "syntaxKeyword" "blue"
+            "syntaxFunction" "yellow"
+            "syntaxVariable" "okhsl(203 73% 46%)"
+            "syntaxString" "okhsl(52 84% 46%)"
+            "syntaxNumber" "green"
+            "syntaxType" "violet"
+            "syntaxOperator" "muted"
+            "syntaxPunctuation" "muted"
+            "thinkingOff" "okhsl(223 5% 80%)"
+            "thinkingMinimal" "okhsl(229 14% 78%)"
+            "thinkingLow" "okhsl(232 33% 76%)"
+            "thinkingMedium" "okhsl(264 48% 74%)"
+            "thinkingHigh" "okhsl(295 62% 72%)"
+            "thinkingXhigh" "okhsl(337 74% 70%)"
+            "thinkingMax" "okhsl(20 98% 68%)"
+            "bashMode" "okhsl(159 74% 55%)"}})
+
 (defn- is-pi-schema?
   "Check if data uses pi's {:name :vars :colors} schema."
   [data]
   (contains? data :colors))
 
 (defn- resolve-colors-from-pi-schema
-  "Resolve colors from pi-style {:name :vars :colors} data.
-   :colors keys can be camelCase strings (pi JSON style) or kebab-case keywords."
+  "Resolve colors from pi-style {:name :vars :colors} data: optional tokens
+   fall back to the theme's own colors, then var references resolve (chained,
+   like pi). :colors keys can be camelCase strings (pi JSON style) or
+   kebab-case keywords."
   [data color-mode]
   (let [vars (get data :vars {})
-        raw (normalize-color-keys (:colors data {}))
-        ;; pi: thinkingMax ?? thinkingXhigh (Type.Optional in the schema)
-        raw (if (contains? raw :thinking-max)
-              raw
-              (assoc raw :thinking-max (get raw :thinking-xhigh)))
-        resolve (fn [v]
-                  (cond
-                    (number? v) v
-                    (string? v)
-                    (if (str/starts-with? v "#")
-                      v
-                      (let [var-val (get vars v)]
-                        (if var-val var-val v)))
-                    :else nil))
-        get-color (fn [k] (when-let [v (get raw k)] (resolve v)))
+        raw (apply-optional-color-fallbacks (normalize-color-keys (:colors data {})))
+        get-color (fn [k] (when-let [v (get raw k)] (resolve-var-refs v vars)))
         fg-map (into {} (keep (fn [k] (when-let [v (get-color k)] [k (fg-ansi v color-mode)])) FG-TOKENS))
         bg-map (into {} (keep (fn [k] (when-let [v (get-color k)] [k (bg-ansi v color-mode)])) BG-TOKENS))]
     {:fg-map fg-map :bg-map bg-map}))
@@ -353,9 +767,7 @@
 (defn- resolve-colors-from-flat-map
   "Resolve colors from a flat kebab-case keyword → value map (legacy format)."
   [data color-mode]
-  (let [data (if (contains? data :thinking-max)
-               data
-               (assoc data :thinking-max (get data :thinking-xhigh)))
+  (let [data (apply-optional-color-fallbacks data)
         fg-map (into {} (keep (fn [k] (when-let [v (get data k)] [k (fg-ansi v color-mode)])) FG-TOKENS))
         bg-map (into {} (keep (fn [k] (when-let [v (get data k)] [k (bg-ansi v color-mode)])) BG-TOKENS))]
     {:fg-map fg-map :bg-map bg-map}))
@@ -376,9 +788,10 @@
   "Create a Theme from an EDN color map.
    Accepts pi-schema {:name \"...\" :vars {...} :colors {...}}
    or flat schema {:accent \"...\" :border \"...\" ...}.
-   Falls back to dark theme keys for missing colors. MODE pins the color
-   mode (:truecolor/:256color); nil detects it from the terminal env (pi:
-   createTheme's mode argument, defaulting to getCapabilities().trueColor)."
+   Missing tokens fall back to pi's dark palette (dark-theme-data). MODE pins
+   the color mode (:truecolor/:256color); nil detects it from the terminal
+   env (pi: createTheme's mode argument, defaulting to
+   getCapabilities().trueColor)."
   ([data] (make-theme data nil nil))
   ([data source-path] (make-theme data source-path nil))
   ([data source-path mode]
@@ -387,137 +800,24 @@
          {:keys [fg-map bg-map]} (if (is-pi-schema? data)
                                    (resolve-colors-from-pi-schema data color-mode)
                                    (resolve-colors-from-flat-map data color-mode))
-         ;; Fill missing tokens with dark theme defaults
-         dark (resolve-colors-from-flat-map
-               {:accent "#8abeb7" :border "#5f87ff" :border-accent "#00d7ff"
-                :border-muted "#505050" :success "#b5bd68" :error "#cc6666"
-                :warning "#ffff00" :muted "#808080" :dim "#666666"
-                :text "#d4d4d4" :thinking-text "#808080"
-                :selected-bg "#3a3a4a" :scrollbar-thumb "#3a3a4a"
-                :user-message-bg "#343541"
-                :user-message-text "#d4d4d4" :custom-message-bg "#2d2838"
-                :custom-message-text "#d4d4d4" :custom-message-label "#9575cd"
-                :tool-pending-bg "#282832" :tool-success-bg "#283228"
-                :tool-error-bg "#3c2828" :tool-title "#d4d4d4"
-                :tool-output "#808080"
-                :md-heading "#f0c674" :md-link "#81a2be" :md-link-url "#666666"
-                :md-code "#8abeb7" :md-code-block "#b5bd68"
-                :md-code-block-border "#808080" :md-quote "#808080"
-                :md-quote-border "#808080" :md-hr "#808080"
-                :md-list-bullet "#8abeb7"
-                :md-table-border "#808080"
-                :tool-diff-added "#b5bd68" :tool-diff-removed "#cc6666"
-                :tool-diff-context "#808080"
-                :syntax-comment "#6A9955" :syntax-keyword "#569CD6"
-                :syntax-function "#DCDCAA" :syntax-variable "#9CDCFE"
-                :syntax-string "#CE9178" :syntax-number "#B5CEA8"
-                :syntax-type "#4EC9B0" :syntax-operator "#D4D4D4"
-                :syntax-punctuation "#D4D4D4"
-                :thinking-off "#505050" :thinking-minimal "#6e6e6e"
-                :thinking-low "#5f87af" :thinking-medium "#81a2be"
-                :thinking-high "#b294bb" :thinking-xhigh "#d183e8"
-                :thinking-max "#ff5fff"
-                :bash-mode "#b5bd68"}
-               color-mode)
-         complete-fg (merge (:fg-map dark) fg-map)
-         complete-bg (let [cb (merge (:bg-map dark) bg-map)]
-                       ;; pi: scrollbarThumb ?? selectedBg — a theme that does
-                       ;; not set scrollbarThumb inherits its OWN selectedBg
-                       ;; (not the dark fallback) so light themes get a light
-                       ;; thumb.
-                       (if (contains? bg-map :scrollbar-thumb)
-                         cb
-                         (assoc cb :scrollbar-thumb (get cb :selected-bg))))]
+         ;; Fill missing tokens from the dark palette; the optional tokens
+         ;; already fell back to this theme's own colors in the resolvers.
+         dark (resolve-colors-from-pi-schema dark-theme-data color-mode)]
      (map->Theme
       {:name name
-       :fg-colors complete-fg
-       :bg-colors complete-bg
+       :fg-colors (merge (:fg-map dark) fg-map)
+       :bg-colors (merge (:bg-map dark) bg-map)
        :color-mode color-mode
        :source-path source-path}))))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
-;; Built-in themes — same color values as pi's dark.json / light.json
+;; Built-in themes — pi's dark.json / light.json palettes (OKHSL colors),
+;; built through the same resolver as loaded theme files.
 ;; ═══════════════════════════════════════════════════════════════════════════
 
-(def dark-theme
-  (make-theme
-   {:name "dark"
-    :vars {"cyan" "#00d7ff" "blue" "#5f87ff" "green" "#b5bd68"
-           "red" "#cc6666" "yellow" "#ffff00"
-           "text" "#d4d4d4" "gray" "#808080" "dimGray" "#666666"
-           "darkGray" "#505050" "accent" "#8abeb7"
-           "selectedBg" "#3a3a4a" "userMsgBg" "#343541"
-           "toolPendingBg" "#282832" "toolSuccessBg" "#283228"
-           "toolErrorBg" "#3c2828" "customMsgBg" "#2d2838"}
-    :colors {"accent" "accent" "border" "blue"
-             "borderAccent" "cyan" "borderMuted" "darkGray"
-             "success" "green" "error" "red" "warning" "yellow"
-             "muted" "gray" "dim" "dimGray" "text" "text"
-             "thinkingText" "gray"
-             "selectedBg" "selectedBg" "userMessageBg" "userMsgBg"
-             "userMessageText" "text"
-             "customMessageBg" "customMsgBg" "customMessageText" "text"
-             "customMessageLabel" "#9575cd"
-             "toolPendingBg" "toolPendingBg" "toolSuccessBg" "toolSuccessBg"
-             "toolErrorBg" "toolErrorBg" "toolTitle" "text"
-             "toolOutput" "gray"
-             "mdHeading" "#f0c674" "mdLink" "#81a2be"
-             "mdLinkUrl" "dimGray" "mdCode" "accent"
-             "mdCodeBlock" "green" "mdCodeBlockBorder" "gray"
-             "mdQuote" "gray" "mdQuoteBorder" "gray" "mdHr" "gray"
-             "mdListBullet" "accent"
-             "toolDiffAdded" "green" "toolDiffRemoved" "red"
-             "toolDiffContext" "gray"
-             "syntaxComment" "#6A9955" "syntaxKeyword" "#569CD6"
-             "syntaxFunction" "#DCDCAA" "syntaxVariable" "#9CDCFE"
-             "syntaxString" "#CE9178" "syntaxNumber" "#B5CEA8"
-             "syntaxType" "#4EC9B0" "syntaxOperator" "#D4D4D4"
-             "syntaxPunctuation" "#D4D4D4"
-             "thinkingOff" "darkGray" "thinkingMinimal" "#6e6e6e"
-             "thinkingLow" "#5f87af" "thinkingMedium" "#81a2be"
-             "thinkingHigh" "#b294bb" "thinkingXhigh" "#d183e8"
-             "thinkingMax" "#ff5fff"
-             "bashMode" "green"}}))
+(def dark-theme (make-theme dark-theme-data))
 
-(def light-theme
-  (make-theme
-   {:name "light"
-    :vars {"teal" "#5a8080" "blue" "#547da7"
-           "green" "#588458" "red" "#aa5555" "yellow" "#9a7326"
-           "text" "#1f2328" "mediumGray" "#6c6c6c" "dimGray" "#767676"
-           "lightGray" "#b0b0b0"
-           "selectedBg" "#d0d0e0" "userMsgBg" "#e8e8e8"
-           "toolPendingBg" "#e8e8f0" "toolSuccessBg" "#e8f0e8"
-           "toolErrorBg" "#f0e8e8" "customMsgBg" "#ede7f6"}
-    :colors {"accent" "teal" "border" "blue"
-             "borderAccent" "teal" "borderMuted" "lightGray"
-             "success" "green" "error" "red" "warning" "yellow"
-             "muted" "mediumGray" "dim" "dimGray" "text" "text"
-             "thinkingText" "mediumGray"
-             "selectedBg" "selectedBg" "userMessageBg" "userMsgBg"
-             "userMessageText" "text"
-             "customMessageBg" "customMsgBg" "customMessageText" "text"
-             "customMessageLabel" "#7e57c2"
-             "toolPendingBg" "toolPendingBg" "toolSuccessBg" "toolSuccessBg"
-             "toolErrorBg" "toolErrorBg" "toolTitle" "text"
-             "toolOutput" "mediumGray"
-             "mdHeading" "yellow" "mdLink" "blue"
-             "mdLinkUrl" "dimGray" "mdCode" "teal"
-             "mdCodeBlock" "green" "mdCodeBlockBorder" "mediumGray"
-             "mdQuote" "mediumGray" "mdQuoteBorder" "mediumGray" "mdHr" "mediumGray"
-             "mdListBullet" "green"
-             "toolDiffAdded" "green" "toolDiffRemoved" "red"
-             "toolDiffContext" "mediumGray"
-             "syntaxComment" "#008000" "syntaxKeyword" "#0000FF"
-             "syntaxFunction" "#795E26" "syntaxVariable" "#001080"
-             "syntaxString" "#A31515" "syntaxNumber" "#098658"
-             "syntaxType" "#267F99" "syntaxOperator" "#000000"
-             "syntaxPunctuation" "#000000"
-             "thinkingOff" "lightGray" "thinkingMinimal" "#767676"
-             "thinkingLow" "blue" "thinkingMedium" "teal"
-             "thinkingHigh" "#875f87" "thinkingXhigh" "#8b008b"
-             "thinkingMax" "#af005f"
-             "bashMode" "green"}}))
+(def light-theme (make-theme light-theme-data))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; Registry & Loading — EDN only, same schema as pi's JSON
@@ -595,7 +895,8 @@
 
 (def ^:private optional-color-tokens
   "Tokens not required by pi's schema (Type.Optional)."
-  #{:thinking-max})
+  #{:thinking-max :scrollbar-track :scrollbar-thumb
+    :search-match-bg :search-match-text})
 
 (defn- missing-color-tokens
   "Required color tokens missing from the theme's :colors map (pi: required

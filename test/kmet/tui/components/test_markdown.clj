@@ -411,15 +411,21 @@
     (t/is (some #(.contains % "b") lines))
     (t/is (some #(.contains % "c") lines))))
 
-(t/deftest test-markdown-table-themed-border
-  ;; Theme-sourced tables style the border chars (dim) and keep headers bold
+(t/deftest test-markdown-table-borders-unstyled
+  ;; pi renders table rules as raw text in the terminal's default foreground;
+  ;; only the cells are themed (headers bold). There is no mdTableBorder token.
   (let [m (md/make-markdown "| a | b |\n|---|---|\n| 1 | 2 |"
                             :theme (theme/get-markdown-theme theme/dark-theme)
                             :padding-x 0)
-        lines (core/render m 20)]
-    (t/is (some #(.contains % (str (theme/get-fg-ansi theme/dark-theme :md-table-border) "┌")) lines))
-    (t/is (some #(.contains % "\u001b[1ma\u001b[22m") lines))
-    (t/is (some #(.contains % "│ 1") (map strip-ansi lines)))))
+        lines (core/render m 20)
+        top (first lines)]
+    (t/is (str/starts-with? top "┌") "the table renders a top rule")
+    (t/is (= top (strip-ansi top)) "the top rule carries no theme escape")
+    (t/is (not-any? #(str/includes? % "\u001b[")
+                    (filter #(re-find #"[─┼├┤┬┴]" %) lines))
+          "no rule or separator line carries an escape")
+    (t/is (some #(.contains % "\u001b[1ma\u001b[22m") lines) "headers stay bold")
+    (t/is (some #(.contains % "│ 1") (map strip-ansi lines)) "cells render")))
 
 (t/deftest test-markdown-table-emoji-alignment
   ;; Emoji graphemes (ZWJ families, flags, skin tones) measure as ONE width-2
