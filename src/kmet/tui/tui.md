@@ -80,7 +80,14 @@ loop re-checks the dirt at the end of the first frame that STARTS after the
 request — a frame already in flight can never clear the latch prematurely,
 and a fast tool whose final render and the heal land in the same instant
 (the stale-scrollback report) is healed at the turn end instead of staying
-stale until the next keystroke. Both are moments where the user is expected
+stale until the next keystroke. A clean target frame does not drop the latch
+unconditionally: a renderer that corrects its state during the pass (the
+tool result's preview correction calls `:invalidate` mid-render) records its
+dirt in the frame that starts after, so when such a follow-up frame is
+already requested the latch survives for exactly that one grace frame
+(`tui-scrollback-heal-graced?`). The grace is per request — a later
+streaming frame cannot keep the latch alive into a mid-stream clear. Both
+healing boundaries are moments where the user is expected
 to be at the document end, so the clear's viewport jump lands on a screen
 transition instead of mid-stream. An *explicit* reflow
 is not the automatic path the clamp protects: the tool-display / thinking

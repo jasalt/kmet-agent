@@ -128,7 +128,7 @@
                 negotiation-buffer negotiation-timer
                 previous-height max-lines-rendered clear-on-shrink?
                 full-redraw-count scrollback-dirty? previous-kitty-image-ids
-                frame-count scrollback-heal-target
+                frame-count scrollback-heal-target scrollback-heal-graced?
                 pending-osc-11? osc-11-queries
                 color-scheme-listeners terminal-response-buffer
                 terminal-response-timer color-scheme-notifications-enabled?
@@ -174,11 +174,14 @@
                        :previous-kitty-image-ids (atom #{})
                        ;; frame-count — frames started (render-loop owned);
                        ;; scrollback-heal-target — the frame-count at which a
-                       ;; latched heal qualifies (0 = none). See
+                       ;; latched heal qualifies (0 = none);
+                       ;; scrollback-heal-graced? — whether the qualifying
+                       ;; frame already spent its one-frame settle grace. See
                        ;; tui-heal-scrollback! for why the heal cannot decide
                        ;; from the dirty flag at call time.
                        :frame-count (atom 0)
                        :scrollback-heal-target (atom 0)
+                       :scrollback-heal-graced? (atom false)
                        :pending-osc-11? (atom false)
                        :osc-11-queries (atom [])
                        :color-scheme-listeners (atom #{})
@@ -2033,8 +2036,9 @@
 (defn tui-scrollback-heal-pending?
   "True while a heal latched by tui-heal-scrollback! is waiting for the
    render loop to reach its target frame — the frame that starts after the
-   request and therefore sees the state changes the heal was requested for.
-   A TUI without the latch (test stubs) is not pending."
+   request and therefore sees the state changes the heal was requested for
+   — or for the one-frame settle grace after it. A TUI without the latch
+   (test stubs) is not pending."
   [tui]
   (boolean (some-> (:scrollback-heal-target tui) deref pos?)))
 
@@ -2055,16 +2059,26 @@
    until the next trigger (the fast-tool report: a tool that completes and
    scrolls above the window between frames). Instead the request is latched
    as a target frame number (:scrollback-heal-target) and the render loop
-   re-checks the dirt at the END of the target frame; only a dirty
-   scrollback then requests the forced rebuild. A clean frame simply drops
-   the latch, and because the target is the next frame, a frame in flight
-   at call time can never clear it prematurely. A partial test TUI without
-   the latch falls back to the immediate dirty check (there is no render
-   loop to latch behind). Returns nil."
+   re-checks the dirt at the END of the target frame; a dirty scrollback
+   then requests the forced rebuild. A CLEAN target frame does not drop the
+   latch unconditionally: a renderer may correct its state during the pass
+   (the tool result's preview correction calls :invalidate from inside the
+   pass), so the frame that records the dirt can be the one that STARTS
+   after the target. When such a follow-up frame is already requested at
+   the target's end, the latch survives for exactly that one grace frame —
+   the dirt still belongs to the streaming-free boundary that asked for the
+   heal. The grace is per request, so a new turn's streaming frames can
+   never keep the latch alive into a mid-stream clear. Because the target
+   is the next frame, a frame in flight at call time can never clear it
+   prematurely. A partial test TUI without the latch falls back to the
+   immediate dirty check (there is no render loop to latch behind). Returns
+   nil."
   [tui]
   (if-let [target-atom (:scrollback-heal-target tui)]
     (let [target (inc (or (some-> (:frame-count tui) deref) 0))]
       (swap! target-atom max target)
+      ;; A fresh request re-arms the one-frame settle grace.
+      (some-> (:scrollback-heal-graced? tui) (reset! false))
       (tui-request-render tui (tui-scrollback-dirty? tui)))
     (when (tui-scrollback-dirty? tui)
       (tui-request-render tui true))))
@@ -2698,17 +2712,32 @@
                   ;; A latched scrollback heal (tui-heal-scrollback!) belongs to
                   ;; the first frame that STARTED after the request, so this frame
                   ;; — and not one already in flight — is the one whose diff
-                  ;; recorded the boundary's above-window changes. Only now is the
-                  ;; dirty flag the authority: a dirty scrollback forces the
-                  ;; clearing rebuild, a clean one drops the latch (the changes
-                  ;; were rendered and left nothing stale). compare-and-set!
-                  ;; leaves a new latch raised concurrently by another heal call
-                  ;; alone.
+                  ;; normally recorded the boundary's above-window changes. A
+                  ;; dirty scrollback forces the clearing rebuild. A CLEAN
+                  ;; qualifying frame does not always drop the latch: a renderer
+                  ;; that corrected its state during the pass (the tool result's
+                  ;; preview correction) requested the follow-up frame itself, and
+                  ;; the dirt it records there still belongs to this healing
+                  ;; boundary — keep the latch for that one grace frame. The grace
+                  ;; is spent at most once (reset by the next heal request), so a
+                  ;; later streaming frame can never keep the latch alive into a
+                  ;; mid-stream clear. compare-and-set! leaves a new latch raised
+                  ;; concurrently by another heal call alone.
                   (let [target @(:scrollback-heal-target tui)]
                     (when (and (pos? target) (>= @(:frame-count tui) target))
                       (when (compare-and-set! (:scrollback-heal-target tui) target 0)
-                        (when (tui-scrollback-dirty? tui)
-                          (tui-request-render tui true)))))))))
+                        (cond
+                          (tui-scrollback-dirty? tui)
+                          (do (some-> (:scrollback-heal-graced? tui) (reset! false))
+                              (tui-request-render tui true))
+
+                          (and @(:render-requested? tui)
+                               (not (some-> (:scrollback-heal-graced? tui) deref)))
+                          (do (some-> (:scrollback-heal-graced? tui) (reset! true))
+                              (swap! (:scrollback-heal-target tui)
+                                     max (inc @(:frame-count tui))))
+
+                          :else nil))))))))
 
           ;; The frame's buffer leaves the lock with it: the write is the
           ;; only blocking tty I/O in the iteration (even the string

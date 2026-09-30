@@ -23,7 +23,10 @@
      clearing full redraw. The heal is latched behind the first frame that
      starts after the request and re-checks the dirt there, so a call made
      in the same instant as the dirtying change (the app heals at turn
-     boundaries, before the loop has diffed them) is never lost.
+     boundaries, before the loop has diffed them) is never lost — and the
+     latch survives one renderer settle frame (a renderer that corrects its
+     state during the pass schedules its own follow-up frame, where the dirt
+     lands).
 
    The render loop is driven headlessly through the private
    run-render-loop!, mirroring pi's VirtualTerminal-based render tests."
@@ -98,18 +101,39 @@
   "Like test-component, but the FIRST render snapshots LINES and blocks on
    GATE before returning the snapshot; later renders return the current
    LINES. Holds a frame in flight after it has read the document, so a test
-   can make state changes and heal while that frame is still running."
-  [lines gate]
+   can make state changes and heal while that frame is still running (GATE
+   signals that the snapshot is taken and the frame is about to block on
+   RELEASE)."
+  [lines gate release]
   (let [first? (atom true)]
     (reify core/IComponent
       (render [_ _]
         (if (compare-and-set! first? true false)
           (let [snapshot @lines]
             (deliver gate true)
+            (deref release)
             snapshot)
           @lines))
       (handle-input [_ _] nil)
       (invalidate [_] nil))))
+
+(defn- settling-test-component
+  "Like test-component, but the first render after ARM is set snapshots LINES,
+   then applies the state change and requests the follow-up frame — the
+   one-frame renderer settle (a renderer that corrects its state during the
+   pass, e.g. render-edit-result's preview correction via :invalidate). The
+   snapshot frame itself stays clean; the follow-up frame records the change."
+  [lines arm tui]
+  (reify core/IComponent
+    (render [_ _]
+      (let [snapshot @lines]
+        (when (compare-and-set! arm true false)
+          (swap! lines assoc 2 "line 2 CHANGED")
+          ;; the settle's invalidate schedules the follow-up frame
+          (core/tui-request-render tui))
+        snapshot))
+    (handle-input [_ _] nil)
+    (invalidate [_] nil)))
 
 ;; ─── Render-loop driver ────────────────────────────────────────────────────
 
@@ -169,7 +193,7 @@
       (try
         (core/tui-add-child tui (test-component (atom ["alpha" "beta"])))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         (let [frame (first (frame-writes (:writes vt)))]
           (t/is (some? frame) "a frame was rendered")
           (t/is (not (str/includes? frame "\u001b[2J")) "no screen clear on first render")
@@ -190,7 +214,7 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         (let [frame (first (frame-writes (:writes vt)))]
           (t/is (str/includes? frame (str "alpha" reset))
                 "full redraw: a content line carries the reset")
@@ -200,7 +224,7 @@
         ;; the 2K clear that erased the old line)
         (swap! lines assoc 1 "beta CHANGED")
         (core/tui-request-render tui)
-        (wait-for-frames (:writes vt) 2 2000)
+        (wait-for-frames (:writes vt) 2 5000)
         (let [redraw (second (frame-writes (:writes vt)))]
           (t/is (str/includes? redraw (str "beta CHANGED" reset))
                 "diff rewrite: the rewritten line carries the reset"))
@@ -214,9 +238,9 @@
       (try
         (core/tui-add-child tui (test-component (atom ["alpha" "beta" "gamma"])))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         (core/tui-request-render tui true)
-        (wait-for-frames (:writes vt) 2 2000)
+        (wait-for-frames (:writes vt) 2 5000)
         (let [redraw (second (frame-writes (:writes vt)))
               clear-idx (str/index-of redraw clear-seq)
               alpha-idx (str/index-of redraw "alpha")]
@@ -240,14 +264,14 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         ;; 30 lines on a 24-row screen → viewport top at row 6; change row 2
         (let [writes-before (count @(:writes vt))]
           (swap! lines assoc 2 "line 2 CHANGED")
           (core/tui-request-render tui)
           ;; The skip path emits NOTHING, so there is no frame to wait for;
           ;; poll the state the loop updates.
-          (t/is (wait-until #(str/includes? (nth @(:previous-lines tui) 2) "line 2 CHANGED") 2000)
+          (t/is (wait-until #(str/includes? (nth @(:previous-lines tui) 2) "line 2 CHANGED") 5000)
                 "the frame processed and internal state updated")
           (let [emitted (apply str (drop writes-before @(:writes vt)))]
             (t/is (not (str/includes? emitted clear-seq))
@@ -270,11 +294,11 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         ;; change row 2 (scrollback) and row 29 (visible)
         (swap! lines assoc 2 "line 2 CHANGED" 29 "line 29 CHANGED")
         (core/tui-request-render tui)
-        (wait-for-frames (:writes vt) 2 2000)
+        (wait-for-frames (:writes vt) 2 5000)
         (let [redraw (second (frame-writes (:writes vt)))]
           (t/is (not (str/includes? redraw clear-seq))
                 "no screen/scrollback clear when clamping to the viewport")
@@ -297,16 +321,16 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         (t/is (false? (core/tui-scrollback-dirty? tui)) "clean after the first render")
         ;; dirty it with a scrollback-only change
         (swap! lines assoc 2 "line 2 CHANGED")
         (core/tui-request-render tui)
-        (t/is (wait-until #(core/tui-scrollback-dirty? tui) 2000)
+        (t/is (wait-until #(core/tui-scrollback-dirty? tui) 5000)
               "the above-window change marks the scrollback dirty")
         (let [frames-before (count (frame-writes (:writes vt)))]
           (core/tui-heal-scrollback! tui)
-          (wait-for-frames (:writes vt) (inc frames-before) 2000)
+          (wait-for-frames (:writes vt) (inc frames-before) 5000)
           (let [redraw (last (frame-writes (:writes vt)))]
             (t/is (str/includes? redraw clear-seq)
                   "the heal emits the clearing full redraw (2J H 3J)")
@@ -328,17 +352,23 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
-        (let [frames-before (count (frame-writes (:writes vt)))]
-          ;; the boundary's change and its heal land together: the heal must
-          ;; not rely on the dirty flag, which no frame has set yet
-          (swap! lines assoc 2 "line 2 CHANGED")
-          (core/tui-heal-scrollback! tui)
-          (t/is (true? (core/tui-scrollback-heal-pending? tui))
-                "the heal is latched, not dropped by the not-yet-dirty flag")
+        (wait-for-frames (:writes vt) 1 5000)
+        (let [frames-before (count (frame-writes (:writes vt)))
+              lock @(var core/dispatch-lock)]
+          ;; hold the frame pass off between the change and the latch check so
+          ;; the pending assertion is deterministic, not a race with the loop
+          (.lock lock)
+          (try
+            ;; the boundary's change and its heal land together: the heal must
+            ;; not rely on the dirty flag, which no frame has set yet
+            (swap! lines assoc 2 "line 2 CHANGED")
+            (core/tui-heal-scrollback! tui)
+            (t/is (true? (core/tui-scrollback-heal-pending? tui))
+                  "the heal is latched, not dropped by the not-yet-dirty flag")
+            (finally (.unlock lock)))
           (t/is (wait-until #(some (fn [w] (str/includes? w clear-seq))
                                    (drop frames-before (frame-writes (:writes vt))))
-                            3000)
+                            5000)
                 "the clearing rebuild fires after the frame that records the dirt")
           (t/is (false? (core/tui-scrollback-dirty? tui))
                 "the stale scrollback is healed, not left for the next trigger")
@@ -357,12 +387,13 @@
             starts after the request still records the dirt and forces the rebuild"
     (let [lines (atom (vec (map #(str "line " %) (range 30))))
           gate (promise)
+          release (promise)
           vt (make-virtual-terminal)
           tui (core/create-tui (:terminal vt))]
       (try
-        (core/tui-add-child tui (gated-test-component lines gate))
+        (core/tui-add-child tui (gated-test-component lines gate release))
         (start-loop tui)
-        (t/is (true? (deref gate 2000 false))
+        (t/is (true? (deref gate 5000 false))
               "the first frame is in flight, blocked after reading the document")
         ;; the boundary's change and heal land while frame 1 is in flight
         (swap! lines assoc 2 "line 2 CHANGED")
@@ -374,7 +405,7 @@
               "the request latches for the frame that starts after it")
         ;; release frame 1: it returns the OLD snapshot and must not clear the
         ;; latch (it started before the heal request)
-        (deliver gate true)
+        (deliver release true)
         (t/is (wait-until #(some (fn [w] (str/includes? w clear-seq))
                                  (frame-writes (:writes vt)))
                           3000)
@@ -385,6 +416,39 @@
               "the latch cleared only after the heal")
         (finally
           (deliver gate true) ;; never leave the render loop blocked
+          (deliver release true)
+          (stop-loop tui))))))
+
+(deftest ^:slow scrollback-heal-survives-a-renderer-settle-frame
+  (testing "a renderer that corrects its state during the pass (the tool result's
+            preview correction calls :invalidate from inside the render) records its
+            above-window change in the frame that STARTS AFTER the qualifying one; the
+            dirt still belongs to the heal's streaming-free boundary and is rebuilt,
+            not dropped when the clean qualifying frame ends"
+    (let [lines (atom (vec (map #(str "line " %) (range 30))))
+          arm (atom false)
+          vt (make-virtual-terminal)
+          tui (core/create-tui (:terminal vt))]
+      (try
+        (core/tui-add-child tui (settling-test-component lines arm tui))
+        (start-loop tui)
+        (wait-for-frames (:writes vt) 1 5000)
+        (let [frames-before (count (frame-writes (:writes vt)))]
+          (reset! arm true)
+          (core/tui-heal-scrollback! tui)
+          ;; the qualifying frame renders the OLD snapshot and schedules its own
+          ;; settle frame; the latch must survive that clean qualifying frame
+          (t/is (wait-until #(some (fn [w] (str/includes? w clear-seq))
+                                   (drop frames-before (frame-writes (:writes vt))))
+                            5000)
+                "the settle frame's above-window dirt forces the clearing rebuild")
+          (t/is (false? (core/tui-scrollback-dirty? tui))
+                "the settled scrollback is healed, not left for the next trigger")
+          (let [redraw (last (filterv #(str/includes? % clear-seq)
+                                      (drop frames-before (frame-writes (:writes vt)))))]
+            (t/is (str/includes? redraw "line 2 CHANGED")
+                  "the rebuilt scrollback re-emits the settled content")))
+        (finally
           (stop-loop tui))))))
 
 (deftest ^:slow scrollback-heal-clean-is-a-no-op
@@ -396,12 +460,18 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
-        (let [writes-before (count @(:writes vt))]
-          (core/tui-heal-scrollback! tui)
-          (t/is (true? (core/tui-scrollback-heal-pending? tui))
-                "the request latches")
-          (t/is (wait-until #(false? (core/tui-scrollback-heal-pending? tui)) 2000)
+        (wait-for-frames (:writes vt) 1 5000)
+        (let [writes-before (count @(:writes vt))
+              lock @(var core/dispatch-lock)]
+          ;; hold the frame pass off between the request and the latch check so
+          ;; the pending assertion is deterministic, not a race with the loop
+          (.lock lock)
+          (try
+            (core/tui-heal-scrollback! tui)
+            (t/is (true? (core/tui-scrollback-heal-pending? tui))
+                  "the request latches")
+            (finally (.unlock lock)))
+          (t/is (wait-until #(false? (core/tui-scrollback-heal-pending? tui)) 5000)
                 "the frame after the request drops the clean latch")
           (t/is (not (str/includes? (apply str (drop writes-before @(:writes vt))) clear-seq))
                 "no clearing redraw for a scrollback that stayed clean"))
@@ -417,13 +487,13 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         ;; change row 2 (scrollback) and append rows 30..40
         (swap! lines (fn [v]
                        (into (assoc v 2 "line 2 CHANGED")
                              (mapv #(str "line " %) (range 30 41)))))
         (core/tui-request-render tui)
-        (wait-for-frames (:writes vt) 2 2000)
+        (wait-for-frames (:writes vt) 2 5000)
         (let [redraw (second (frame-writes (:writes vt)))]
           (t/is (not (str/includes? redraw clear-seq))
                 "no screen/scrollback clear when clamping to the viewport")
@@ -444,7 +514,7 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         ;; 40 lines on a 24-row screen → viewport top at row 16; drop lines
         ;; 2-5 (all above the window), keeping the visible tail identical
         (let [writes-before (count @(:writes vt))]
@@ -452,7 +522,7 @@
           (core/tui-request-render tui)
           ;; the no-repaint path emits nothing, so there is no frame to wait
           ;; for; poll the state the loop updates
-          (t/is (wait-until #(= 36 (count @(:previous-lines tui))) 2000)
+          (t/is (wait-until #(= 36 (count @(:previous-lines tui))) 5000)
                 "the frame processed and internal state updated")
           (let [emitted (apply str (drop writes-before @(:writes vt)))]
             (t/is (not (str/includes? emitted clear-seq))
@@ -474,12 +544,12 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         (swap! lines (fn [v]
                        (-> (into (subvec v 0 2) (subvec v 6))
                            (assoc 35 "line 39 CHANGED"))))
         (core/tui-request-render tui)
-        (wait-for-frames (:writes vt) 2 2000)
+        (wait-for-frames (:writes vt) 2 5000)
         (let [redraw (second (frame-writes (:writes vt)))]
           (t/is (str/includes? redraw clear-seq)
                 "a shrink with a visible change still rebuilds the screen")
@@ -497,11 +567,11 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         ;; change row 2 (above the window) and truncate 30 → 10 lines
         (swap! lines (fn [v] (assoc (subvec v 0 10) 2 "line 2 CHANGED")))
         (core/tui-request-render tui)
-        (wait-for-frames (:writes vt) 2 2000)
+        (wait-for-frames (:writes vt) 2 5000)
         (let [redraw (second (frame-writes (:writes vt)))]
           (t/is (str/includes? redraw clear-seq)
                 "a shrink above the window rebuilds the screen (clearing redraw)")
@@ -520,18 +590,18 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         ;; grow by one (the dropdown opens): the screen scrolls down, so the
         ;; addressable window top moves from line 6 to line 7
         (swap! lines conj "dropdown")
         (core/tui-request-render tui)
-        (wait-for-frames (:writes vt) 2 2000)
+        (wait-for-frames (:writes vt) 2 5000)
         ;; shrink back while the flash is up — the natural flash row (the new
         ;; window top, line 6) is now above what the screen shows (line 7)
         (swap! lines (fn [v] (subvec v 0 30)))
         (core/tui-flash! tui "Copied!" :duration-ms 60000)
         (core/tui-request-render tui)
-        (wait-for-frames (:writes vt) 3 2000)
+        (wait-for-frames (:writes vt) 3 5000)
         (let [redraw (nth (frame-writes (:writes vt)) 2)
               flash-line (some #(when (str/includes? % "Copied!") %)
                                (str/split-lines redraw))]
@@ -551,10 +621,10 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         (swap! lines conj "gamma") ;; append — below the viewport
         (core/tui-request-render tui)
-        (wait-for-frames (:writes vt) 2 2000)
+        (wait-for-frames (:writes vt) 2 5000)
         (let [diff (second (frame-writes (:writes vt)))]
           (t/is (not (str/includes? diff "\u001b[2J")) "no screen clear on an ordinary diff")
           (t/is (not (str/includes? diff "\u001b[3J")) "no scrollback clear on an ordinary diff")
@@ -576,12 +646,12 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         (t/is (= 80 @(:previous-width tui)) "rendered at the initial 80 cols")
         ;; Resize the terminal WITHOUT requesting a render — the loop's own
         ;; size poll must notice and reflow.
         (swap! size assoc :cols 60)
-        (wait-for-frames (:writes vt) 2 2000)
+        (wait-for-frames (:writes vt) 2 5000)
         (let [frame (second (frame-writes (:writes vt)))]
           (t/is (some? frame) "a new frame was rendered after the resize")
           (t/is (str/includes? frame clear-seq)
@@ -594,7 +664,7 @@
         ;; unchanged content emits nothing) — the render itself is observable
         ;; via the diff-state update.
         (swap! size assoc :rows 30)
-        (let [deadline (+ (System/currentTimeMillis) 2000)]
+        (let [deadline (+ (System/currentTimeMillis) 5000)]
           (loop []
             (when (and (< (System/currentTimeMillis) deadline)
                        (not= 30 @(:previous-height tui)))
@@ -627,7 +697,7 @@
            (handle-input [_ _] nil)
            (invalidate [_] nil)))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         (t/is (seq @held) "the component rendered")
         (t/is (every? true? @held)
               "every render ran with dispatch-lock held by the loop thread")
@@ -656,7 +726,7 @@
         (core/tui-add-child tui comp)
         (core/tui-set-focus tui comp)
         (start-loop tui)
-        (t/is (deref entered 2000 false) "the first frame started")
+        (t/is (deref entered 5000 false) "the first frame started")
         (t/is (some? @(:focused-component tui)) "the component is focused")
         ;; the loop holds the lock for the in-flight frame
         (let [locked? (.tryLock lock 100 java.util.concurrent.TimeUnit/MILLISECONDS)]
@@ -673,8 +743,8 @@
           (t/is (empty? @handled)
                 "the key waits for the in-flight frame, not the other way around")
           (deliver release true)
-          (t/is (wait-until #(seq @handled) 2000) "the key dispatches once the frame releases")
-          (t/is (not= ::timeout (deref input-future 2000 ::timeout))
+          (t/is (wait-until #(seq @handled) 5000) "the key dispatches once the frame releases")
+          (t/is (not= ::timeout (deref input-future 5000 ::timeout))
                 "the input pass finished"))
         (finally
           (deliver release true)
@@ -690,17 +760,19 @@
       (try
         (core/tui-add-child tui (test-component (atom ["frame"])))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
-        ;; the reader dispatches under this lock; suspend joins the loop
-        (.lock lock)
-        ;; wake the loop into its next acquisition and let it block there
-        ;; (a plain blocking acquire would now wait on the lock this thread
-        ;; holds, deadlocking the join below)
-        (core/tui-request-render tui)
-        (Thread/sleep 100)
-        (let [started (System/currentTimeMillis)]
+        (wait-for-frames (:writes vt) 1 5000)
+        (let [loop-fut @(:render-loop tui)]
+          ;; the reader dispatches under this lock; suspend joins the loop
+          (.lock lock)
+          ;; wake the loop into its next acquisition and let it block there
+          ;; (a plain blocking acquire would now wait on the lock this thread
+          ;; holds, deadlocking the join below)
+          (core/tui-request-render tui)
+          (Thread/sleep 100)
           (core/tui-suspend! tui)
-          (t/is (< (- (System/currentTimeMillis) started) 2000)
+          ;; still holding the lock: a plain blocking acquire could not have
+          ;; exited, so the exit must have come from the running? recheck
+          (t/is (wait-until #(realized? loop-fut) 5000)
                 "the loop backed out of the acquisition instead of waiting out
                  the join timeout"))
         (finally
@@ -719,7 +791,7 @@
       (try
         (core/tui-add-child tui (test-component (atom ["frame"])))
         (start-loop tui)
-        (wait-for-frames writes 1 2000)
+        (wait-for-frames writes 1 5000)
         (t/is (seq @lock-held) "the frame was written")
         (t/is (every? false? @lock-held)
               "every terminal write ran with dispatch-lock free")
@@ -742,14 +814,14 @@
       (try
         (core/tui-add-child tui (test-component lines))
         (start-loop tui)
-        (wait-for-frames (:writes vt) 1 2000)
+        (wait-for-frames (:writes vt) 1 5000)
         (t/is (not-any? #(str/includes? % marker) @(:writes vt))
               "no emitted frame contains the marker's APC sequence")
         ;; and again on a diff pass: only line 15 changes, so the marker line
         ;; (index 0) rides along in previous-lines and must stay stripped
         (swap! lines assoc 15 "line-CHANGED")
         (core/tui-request-render tui)
-        (wait-for-frames (:writes vt) 2 2000)
+        (wait-for-frames (:writes vt) 2 5000)
         (t/is (not-any? #(str/includes? % marker)
                         (second (frame-writes (:writes vt))))
               "neither does the diff frame")

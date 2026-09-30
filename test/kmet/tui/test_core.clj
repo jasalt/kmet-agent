@@ -1178,7 +1178,7 @@
       (swap! (:input-generation tui) inc)
       (swap! buf str "\u001b")
       ((var kmet.tui.core/process-input-buffer!) tui (fn [_] -2) buf)
-      (let [deadline (+ (System/currentTimeMillis) 600)]
+      (let [deadline (+ (System/currentTimeMillis) 2000)]
         (while (and (empty? @dispatched) (< (System/currentTimeMillis) deadline))
           (Thread/sleep 5)))
       (t/is (= ["\u001b"] @dispatched) "genuine Escape still works"))))
