@@ -47,7 +47,10 @@
     (is (nil? (auth/parse-www-authenticate "Bearer realm=example")))
     (is (nil? (auth/parse-www-authenticate "Bearer"))))
   (testing "whitespace around the scheme and a leading param is tolerated"
-    (is (= {:scope "a"} (auth/parse-www-authenticate "  Bearer   scope=\"a\"")))))
+    (is (= {:scope "a"} (auth/parse-www-authenticate "  Bearer   scope=\"a\""))))
+  (testing "OWS around the auth-param separators is tolerated (RFC 9110)"
+    (is (= {:scope "a" :error "b"}
+           (auth/parse-www-authenticate "Bearer scope=\"a\" , error=\"b\"")))))
 
 (deftest challenge-record-and-selection
   (let [s "test-auth-server-1"

@@ -46,7 +46,7 @@
       (not-empty
        (into {}
              (keep (fn [param]
-                     (when-let [[_ k v] (re-matches #"\s*([A-Za-z_-]+)\s*=\s*\"([^\"]*)\""
+                     (when-let [[_ k v] (re-matches #"\s*([A-Za-z_-]+)\s*=\s*\"([^\"]*)\"\s*"
                                                     param)]
                        ;; resource_metadata → :resource-metadata, so both
                        ;; the RFC 9728 spelling and a hyphenated one land
