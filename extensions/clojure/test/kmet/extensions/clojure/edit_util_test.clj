@@ -325,3 +325,46 @@
   (testing "reader-discarded #_ forms inside a clause are ignored"
     (is (nil? (util/validate-form-shape "defn" "(defn f (#_x [y] y))")))
     (is (string? (util/validate-form-shape "defn" "(defn f (#_x))")))))
+
+(deftest test-validate-form-shape-multi-line-docstring
+  ;; Regression: a docstring spanning lines parses as a :multi-line node,
+  ;; not :token. defn-args-present? only stripped :token docstrings, so
+  ;; (defn- f "two\nlines" [x] x) was rejected as "missing the argument
+  ;; vector" — the clojure_edit insert that failed in the bump session.
+  (testing "a multi-line docstring is an optional docstring like any other"
+    (is (nil? (util/validate-form-shape
+               "defn"
+               "(defn f \"line one\n   line two\" [x] x)")))
+    (is (nil? (util/validate-form-shape
+               "defn-"
+               "(defn- f \"line one\n   line two\" [x] x)")))
+    (is (nil? (util/validate-form-shape
+               "defmacro"
+               "(defmacro m \"line one\n   line two\" ([x] x) ([x y] y))")))
+    (is (nil? (util/validate-form-shape
+               "defn"
+               "(defn f \"line one\n   line two\" {:private true} [x] x)"))))
+  (testing "a multi-line docstring does not excuse a missing arg vector"
+    (is (string? (util/validate-form-shape
+                  "defn"
+                  "(defn f \"line one\n   line two\")")))))
+
+(deftest test-form-head
+  ;; form-head supplies the type for content validation when the caller
+  ;; has no expected type; qualified heads unqualify and non-list content
+  ;; has no head to take.
+  (testing "the head symbol of the first list form"
+    (is (= "defn" (util/form-head "(defn f [x] x)")))
+    (is (= "defn-" (util/form-head "(defn- f [x] x)")))
+    (is (= "def" (util/form-head "(def x 1)")))
+    (is (= "deftest" (util/form-head "(t/deftest my-test (t/is true))")))
+    (is (= "ns" (util/form-head "(ns my.app)"))))
+  (testing "nil when there is no head symbol to take"
+    (is (nil? (util/form-head "[1 2 3]")))
+    (is (nil? (util/form-head "just-a-symbol")))
+    (is (nil? (util/form-head "\"a string\""))))
+  (testing "the inferred head selects the shape grammar"
+    (is (nil? (util/validate-form-shape (util/form-head "(def constant 1)")
+                                        "(def constant 1)")))
+    (is (string? (util/validate-form-shape (util/form-head "(def constant)")
+                                           "(def constant)")))))

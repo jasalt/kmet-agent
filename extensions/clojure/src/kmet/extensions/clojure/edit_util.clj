@@ -378,8 +378,9 @@
         ;; aligned
         children (remove #(= :uneval (n/tag %)) children)
         fdecl (rest (rest children))
+        ;; the optional docstring; a single-line string is a :token node,
+        ;; a multi-line string a :multi-line node, so test the value
         fdecl (if (and (seq fdecl)
-                       (= :token (n/tag (first fdecl)))
                        (string? (child-sexpr (first fdecl))))
                 (rest fdecl)
                 fdecl)
@@ -393,6 +394,18 @@
           (reader-conditional-node? (first fdecl))) true
       (every? arity-clause-node? fdecl) true
       :else false)))
+
+(defn form-head
+  "The name of the head symbol of the first top-level form in S, or nil
+   when S does not start with a list form or its head is not a symbol —
+   the type to validate content against when the expected type comes
+   from the content itself rather than from the caller."
+  [s]
+  (let [children (form-children s)]
+    (when (seq children)
+      (let [head (child-sexpr (first children))]
+        (when (symbol? head)
+          (name head))))))
 
 (defn validate-form-shape
   "Validate that S is structurally a well-formed instance of FORM-TYPE

@@ -341,6 +341,50 @@
     (let [content (read-test-file path)]
       (is (str/includes? content "before-target")))))
 
+(deftest test-insert-before-defn-private-with-multi-line-docstring
+  ;; Regression (bump session): inserting a defn- whose docstring spans
+  ;; lines failed "Incomplete 'defn' form: missing the argument vector" —
+  ;; the shape validator recognized only single-line (:token) docstrings,
+  ;; while multi-line strings parse as :multi-line.
+  (let [path (write-test-file! "insert-before-ml-doc"
+                               "(defn- emit-row [x] (inc x))\n")
+        result (edit-tool/execute
+                (edit-opts path "defn" "emit-row"
+                           "(defn- wrap-cell\n  \"Wrap CELL, closing styles after every\n   non-final fragment.\"\n  [cell max-width]\n  (vec cell))"
+                           "insert_before"))]
+    (is (not (:is-error result)))
+    (let [content (read-test-file path)]
+      (is (< (.indexOf content "wrap-cell")
+             (.indexOf content "emit-row")))
+      (is (str/includes? content "non-final fragment.")))))
+
+(deftest test-insert-before-different-form-type
+  ;; form_type names the anchor; an inserted form is independent and is
+  ;; checked against its own head, so a def may be inserted beside a defn.
+  (let [path (write-test-file! "insert-before-other-type"
+                               "(defn target [x] (inc x))\n")
+        result (edit-tool/execute
+                (edit-opts path "defn" "target"
+                           "(def cell-style-reset \"reset\")"
+                           "insert_before"))]
+    (is (not (:is-error result)))
+    (let [content (read-test-file path)]
+      (is (< (.indexOf content "cell-style-reset")
+             (.indexOf content "target"))))))
+
+(deftest test-insert-before-incomplete-own-type-rejected
+  ;; The looser insert check still validates the inserted form against its
+  ;; own type: a bodyless (def x) beside a defn anchor is rejected.
+  (let [path (write-test-file! "insert-before-incomplete"
+                               "(defn target [x] (inc x))\n")
+        result (edit-tool/execute
+                (edit-opts path "defn" "target"
+                           "(def x)"
+                           "insert_before"))]
+    (is (:is-error result))
+    (is (str/includes? (:content result) "expected (def name value)"))
+    (is (str/includes? (read-test-file path) "(defn target [x] (inc x))"))))
+
 ;; ═══════════════════════════════════════════════════════════════════════════════
 ;; Insert after
 ;; ═══════════════════════════════════════════════════════════════════════════════
