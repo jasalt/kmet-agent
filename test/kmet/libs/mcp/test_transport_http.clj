@@ -91,7 +91,7 @@
                                            (response 200 "application/json"
                                                      "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}"
                                                      {"Mcp-Session-Id" "s1"}))})]
-    (is (= {:ok true} (http/request! conn "tools/list" {:cursor "c"} 1 5000 nil)))
+    (is (= {:ok true} (http/request! conn "tools/list" {:cursor "c"} 5000 nil)))
     (is (= 1 (count @requests)))
     (is (= "http://server" (ffirst @requests)))
     (let [[_ opts] (first @requests)
@@ -112,13 +112,13 @@
                              :on-401 (fn [response]
                                        (is (= 401 (:status response)))
                                        {"Authorization" "Bearer refreshed"})})]
-    (is (= {} (http/request! conn "tools/list" {} 1 5000 nil)))
+    (is (= {} (http/request! conn "tools/list" {} 5000 nil)))
     (is (= 2 @attempts) "one retry with the refreshed headers")))
 
 (deftest request!-empty-response-is-an-error
   (let [conn (http/connect! "http://server"
                             {:request-fn (fn [_ _] (response 202 "application/json" ""))})
-        e (try (http/request! conn "tools/list" {} 1 5000 nil) nil
+        e (try (http/request! conn "tools/list" {} 5000 nil) nil
                (catch Exception e e))]
     (is (some? e))
     (is (re-find #"empty response to tools/list" (ex-message e)))))

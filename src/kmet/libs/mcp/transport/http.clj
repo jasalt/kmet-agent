@@ -171,9 +171,10 @@
    body; the caller's deadline bounds the wait). On timeout the request is
    cancelled and the conn is marked closed — the abandoned response has no
    transport to read it."
-  [conn method params id timeout-ms on-notification]
+  [conn method params timeout-ms on-notification]
   (transport/touch! conn)
-  (let [result-p (promise)
+  (let [id (swap! (:id-counter conn) inc)
+        result-p (promise)
         _ (spawn
            (fn []
              (let [value (try

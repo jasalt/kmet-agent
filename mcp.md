@@ -33,12 +33,11 @@ depend on — and they can disagree.
 - **Baseline first**: capture the six `scripts/validate-*.bb` outputs (or add
   `scripts/validate-all.bb`, one command wrapping them) before 0.1. Every
   landing must reproduce or intentionally update that baseline.
-- **Time-box the jsonrpc adoption** (1.0): if stdio-over-jsonrpc needs more
-  than the `:id`-in-ex-data addition — per-request notification hooks, a second
-  error taxonomy — stop and move the existing stdio transport as-is into
-  `kmet.libs.mcp.transport.stdio`. `kmet.libs.jsonrpc` is shared with
-  lsp-adapter; contorting it for MCP is worse than accepting the duplication
-  temporarily.
+- **The jsonrpc substrate is shared with lsp-adapter**: MCP-specific needs
+  (ping policy, progress routing, error translation, process tracking) live
+  in the MCP adapter, never in jsonrpc. During Phase 1 the stdio transport
+  briefly moved as-is under a time-box, then a follow-up landing folded it
+  onto jsonrpc once the wrapper cost was clear — the adapter is thin.
 
 ## Decisions
 
@@ -195,13 +194,14 @@ streamable-http (151), request core (381), handshake/discovery (747), result
 formatting (918) — plus the legacy SSE transport. Behavior preserved; era
 neutrality deliberate (Phase 4 is 2026-07-28).
 
-Status: **landed** (1.0-1.5), with one deliberate deviation — the stdio
-transport moved as-is, not onto `kmet.libs.jsonrpc`: the 1.0 time-box rule
-fired (jsonrpc does not expose host process tracking, best-effort
-notifications, per-request progress hooks, or the pid/stderr-tail surface,
-and MCP needs all four). The `:id`-in-failure-ex-data addition remains the
-groundwork for a later swap. `scripts/validate-all.bb` and the repo gates are
-green on both hosts.
+Status: **landed** (1.0-1.5), plus the follow-up stdio swap: the transport
+now runs on `kmet.libs.jsonrpc` — line framing, id allocation and response
+correlation are shared with lsp-adapter, with MCP policy (ping replies,
+progress routing, error translation, tree-kill + pid tracking) as a thin
+adapter. Request ids are transport-owned as a result (the client no longer
+allocates them), and the client repoints the transport's `:conn-ref` at the
+final conn so internal callbacks see `:capabilities`. `scripts/validate-all.bb`
+and the repo gates are green on both hosts.
 
 ### 1.0. `kmet.libs.jsonrpc` additions (stdio substrate, time-boxed)
 
@@ -220,8 +220,11 @@ Per-request progress routing stays in the MCP client layer
 (`progressToken → callback` map installed as the conn-level
 `:on-notification` handler, pi's `progressRequests` pattern).
 
-If this needs more than the `:id` addition, use the time-box rule above and
-move the current stdio transport into the lib unchanged.
+If this needs more than the `:id` addition, stop and move the current stdio
+transport into the lib unchanged, then revisit. Outcome: Phase 1's first
+landing did exactly that; the follow-up landing folded stdio onto jsonrpc
+with no further jsonrpc changes — the wrapper passes its own `:kill-fn`,
+`:on-request` and `:on-notification`, and translates `::jsonrpc/*` failures.
 
 Tests in `test/kmet/libs/test_jsonrpc.clj`: id present on timeout; a
 cancellation round-trip against the in-process fake (assert the server sees
@@ -269,9 +272,9 @@ src/kmet/libs/mcp/transport/sse.clj       kmet.libs.mcp.transport.sse
   `stream-loop` where its idle/abort/cleanup semantics fit). Migrated as-is, no
   behavior improvements; docstring marks it deprecated and points at streamable
   HTTP.
-- `transport.stdio`: the extension's stdio transport moved as-is
-  (core.async channel, process tracking, stderr tail); the jsonrpc swap
-  was time-boxed out — see the Phase 1 status note.
+- `transport.stdio`: MCP policy over `kmet.libs.jsonrpc` — ping replies,
+  per-request progress routing, `::jsonrpc/*` → `:mcp-error` translation,
+  tree-kill + host pid tracking, `:conn-ref` hand-off.
 
 `uri-escape` stays private to the client.
 
@@ -303,10 +306,14 @@ The facade can be deleted in Phase 4 with callers pointed at the lib directly.
   `format-result` for text/error/image/`structuredContent`/empty; template
   escaping and expansion (missing var left in place).
 - `test/kmet/libs/mcp/test_client.clj` — `expand-uri-template` (escaping,
-  missing vars) and the capability-gated `establish!` flow (request!/notify!
+  missing vars), the capability-gated `establish!` flow (request!/notify!
   redefined): advertised capabilities only, unsupported revision rejection,
-  -32601 template tolerance. Subprocess cases stay in
-  `scripts/validate-client.bb` / `e2e.bb` or get `^:slow`.
+  -32601 template tolerance, and the `connect!` `:conn-ref` hand-off.
+  Subprocess cases stay in `scripts/validate-client.bb` / `e2e.bb` or get
+  `^:slow`.
+- `test/kmet/libs/mcp/test_transport_stdio.clj` — ping policy, progress
+  routing, error translation, plus a `^:slow` end-to-end run against a real
+  `bb`-spawned JSON-RPC server (initialize → list → server ping auto-reply).
 - `test/kmet/libs/mcp/test_transport_http.clj` — JSON and SSE response bodies,
   content-type branching, header lookup, 401 retry hook, via `:request-fn`
   injection. Socket-level end-to-end stays in `validate-client.bb` /
@@ -400,12 +407,13 @@ era-neutral seam and Phase 2's auth plumbing.
 - [x] 0.1 `names.clj` primitives + callers switched + originals deleted (move only)
 - [x] 0.2 `assign-names` + `:tool-names` + proxy `display-name` (the fix)
 - [x] 0.3 `validate-names.bb` + six extension scripts + lint/format
-- [x] 1.0 jsonrpc `:id` in ex-data + tests; lsp validation green (stdio swap time-boxed out)
+- [x] 1.0 jsonrpc `:id` in ex-data + tests; lsp validation green
 - [x] 1.1 lib files: protocol → transport → stdio/http/sse → client
 - [x] 1.2 extension facade (pure re-export)
 - [x] 1.3 whitelist + self-contained guard recursion + test registration
 - [x] 1.4 lib tests (24 tests: protocol, client, http/sse/stdio transports)
 - [x] 1.5 full gates + extension scripts + lsp validation
+- [x] 1.6 stdio on `kmet.libs.jsonrpc` (transport-owned ids, `:conn-ref` hand-off)
 - [ ] 2 auth extraction + hardening
 - [ ] 3 optional hygiene
 - [ ] 4 2026-07-28 protocol work (separate plan)

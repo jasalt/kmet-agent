@@ -36,13 +36,12 @@
    (streaming tool-call progress)}. Throws ex-info on JSON-RPC error,
    timeout, or transport death (§7.7)."
   [conn method params & [{:keys [timeout-ms on-notification]}]]
-  (let [id (swap! (:id-counter conn) inc)
-        timeout (or timeout-ms protocol/default-request-timeout-ms)
+  (let [timeout (or timeout-ms protocol/default-request-timeout-ms)
         dispatch (fn []
                    (case (:transport conn)
-                     :stdio (stdio/request! conn method params id timeout on-notification)
-                     :streamable-http (http/request! conn method params id timeout on-notification)
-                     :sse (sse/request! conn method params id timeout on-notification)))]
+                     :stdio (stdio/request! conn method params timeout on-notification)
+                     :streamable-http (http/request! conn method params timeout on-notification)
+                     :sse (sse/request! conn method params timeout on-notification)))]
     ;; one request at a time per stdio/sse conn: both transports match
     ;; responses on one shared channel, so two waiters would consume (and
     ;; drop) each other's responses. A background list_changed resync now
@@ -269,9 +268,12 @@
     (try
       (when (and url (= :sse (:transport conn)))
         (sse/open-stream! conn))
-      (let [established (establish! conn)]
-        (assoc established
-               :conn (assoc conn :capabilities (:capabilities established))))
+      (let [established (establish! conn)
+            conn (assoc conn :capabilities (:capabilities established))]
+        ;; the transport's internal callbacks captured the pre-assoc map;
+        ;; repoint them at the conn the caller will store
+        (when-let [r (:conn-ref conn)] (reset! r conn))
+        (assoc established :conn conn))
       (catch Exception e
         (close! conn)
         (throw e)))))

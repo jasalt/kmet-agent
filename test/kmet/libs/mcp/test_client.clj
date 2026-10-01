@@ -1,8 +1,10 @@
 (ns kmet.libs.mcp.test-client
-  "Client-level helpers that need no transport: URI-template expansion and
-   the capability-gated establish! flow (request!/notify! redefined)."
+  "Client-level helpers that need no transport: URI-template expansion,
+   the capability-gated establish! flow and the connect! conn-ref hand-off
+   (request!/notify!/transports redefined)."
   (:require [clojure.test :as t :refer [deftest is testing]]
-            [kmet.libs.mcp.client :as mcp]))
+            [kmet.libs.mcp.client :as mcp]
+            [kmet.libs.mcp.transport.stdio :as stdio]))
 
 ;; ─── URI templates ────────────────────────────────────────────────────────
 
@@ -115,3 +117,21 @@
                     nil))
                 mcp/notify! (fn [_ _ _] nil)]
     (is (thrown? Exception (mcp/establish! :conn)))))
+
+;; ─── connect! conn-ref hand-off ───────────────────────────────────────────
+
+(deftest connect!-repoints-the-transport-conn-ref
+  ;; The transports' internal callbacks (stdio's notification handler)
+  ;; capture the conn before :capabilities is assoc'd on; connect! must
+  ;; repoint the transport's :conn-ref at the map the caller stores, or
+  ;; e.g. the extension's list_changed handler sees no capabilities.
+  (let [conn-ref (atom nil)
+        fake-conn {:transport :stdio :conn-ref conn-ref}]
+    (with-redefs [stdio/connect! (fn [_ _] fake-conn)
+                  mcp/establish! (fn [_]
+                                   {:protocol-version "2025-11-25"
+                                    :capabilities {:tools {}}})]
+      (let [{:keys [conn]} (mcp/connect! {:command "x"} {})]
+        (is (identical? conn @conn-ref)
+            "the transport's callback sees the returned conn")
+        (is (= {:tools {}} (:capabilities @conn-ref)))))))

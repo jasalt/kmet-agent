@@ -3,8 +3,9 @@
 
    A conn is a plain map. Every transport provides the same operations:
 
-     (request! conn method params id timeout-ms on-notification)
-                                   send a request, wait for its result
+     (request! conn method params timeout-ms on-notification)
+                                   send a request (the transport allocates
+                                   the JSON-RPC id), wait for its result
      (send-async! conn msg)        deliver a message expecting no answer
                                    (notification, or a reply to a
                                    server->client request)
@@ -22,6 +23,12 @@
                        request on its own response body and stays
                        concurrent)
      :on-notification  (fn [conn msg]) for server notifications
+     :conn-ref         atom holding the conn as the client sees it after
+                       derived keys (:capabilities) are attached — the
+                       transports' internal callbacks (stdio's
+                       notification handler) capture the pre-assoc map,
+                       so the client repoints this atom; the extension's
+                       list_changed handler needs those keys
      :auth-headers     (fn [] -> headers map) — HTTP transports
      :on-401           (fn [response] -> fresh headers) — HTTP transports
 

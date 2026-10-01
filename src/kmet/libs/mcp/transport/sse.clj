@@ -142,45 +142,46 @@
 (defn request!
   "POST a request and wait for its id-matched message on the stream. A
    dropped stream reopens once and re-establishes the session."
-  [conn method params id timeout-ms on-notification]
+  [conn method params timeout-ms on-notification]
   (transport/touch! conn)
-  (loop [attempts 0]
-    (let [ch @(:ch conn)]
-      (when (nil? ch)
-        (throw (protocol/mcp-error "MCP connect failed: SSE stream not open"
-                                   {:transport :sse})))
-      (let [endpoint (endpoint! conn)
-            body (json/generate-string {:jsonrpc "2.0" :id id :method method :params params})
-            response (http-transport/http-post! conn endpoint
-                                                (http-transport/http-request-headers conn)
-                                                body timeout-ms)
-            parsed (http-transport/parse-http-response conn response id on-notification)]
-        (if (and (map? parsed) (contains? parsed :id) (:error parsed))
-          (throw (protocol/mcp-error (str "MCP error " (:code (:error parsed)) ": "
-                                          (:message (:error parsed)))
-                                     {:code (:code (:error parsed))
-                                      :message (:message (:error parsed))}))
-          (let [wait-result (if (and (map? parsed) (contains? parsed :id))
-                              parsed
-                              (transport/wait-for-response conn ch id method timeout-ms
-                                                           on-notification send-async!))]
-            (if (= transport/eof-marker wait-result)
+  (let [id (swap! (:id-counter conn) inc)]
+    (loop [attempts 0]
+      (let [ch @(:ch conn)]
+        (when (nil? ch)
+          (throw (protocol/mcp-error "MCP connect failed: SSE stream not open"
+                                     {:transport :sse})))
+        (let [endpoint (endpoint! conn)
+              body (json/generate-string {:jsonrpc "2.0" :id id :method method :params params})
+              response (http-transport/http-post! conn endpoint
+                                                  (http-transport/http-request-headers conn)
+                                                  body timeout-ms)
+              parsed (http-transport/parse-http-response conn response id on-notification)]
+          (if (and (map? parsed) (contains? parsed :id) (:error parsed))
+            (throw (protocol/mcp-error (str "MCP error " (:code (:error parsed)) ": "
+                                            (:message (:error parsed)))
+                                       {:code (:code (:error parsed))
+                                        :message (:message (:error parsed))}))
+            (let [wait-result (if (and (map? parsed) (contains? parsed :id))
+                                parsed
+                                (transport/wait-for-response conn ch id method timeout-ms
+                                                             on-notification send-async!))]
+              (if (= transport/eof-marker wait-result)
               ;; Stream dropped — reopen + re-initialize (bounded retry).
-              (if (< attempts 1)
-                (do (reset! (:stream-open conn) false)
-                    (open-stream! conn)
-                    (when-let [reconnect (:reconnect-fn conn)] (reconnect conn))
-                    (recur (inc attempts)))
-                (throw (protocol/mcp-error
-                        (str "MCP connect failed: SSE stream dropped while waiting for "
-                             method)
-                        {:transport :sse})))
-              (if (:error wait-result)
-                (throw (protocol/mcp-error (str "MCP error " (:code (:error wait-result)) ": "
-                                                (:message (:error wait-result)))
-                                           {:code (:code (:error wait-result))
-                                            :message (:message (:error wait-result))}))
-                (:result wait-result)))))))))
+                (if (< attempts 1)
+                  (do (reset! (:stream-open conn) false)
+                      (open-stream! conn)
+                      (when-let [reconnect (:reconnect-fn conn)] (reconnect conn))
+                      (recur (inc attempts)))
+                  (throw (protocol/mcp-error
+                          (str "MCP connect failed: SSE stream dropped while waiting for "
+                               method)
+                          {:transport :sse})))
+                (if (:error wait-result)
+                  (throw (protocol/mcp-error (str "MCP error " (:code (:error wait-result)) ": "
+                                                  (:message (:error wait-result)))
+                                             {:code (:code (:error wait-result))
+                                              :message (:message (:error wait-result))}))
+                  (:result wait-result))))))))))
 
 ;; ─── Teardown ─────────────────────────────────────────────────────────────
 

@@ -1,151 +1,146 @@
 (ns kmet.libs.mcp.transport.stdio
-  "MCP stdio transport (§7.2): spawn the server (babashka.process),
-   line-delimited JSON over stdout/stdin, core.async response channel,
-   bounded stderr tail for diagnostics, host process tracking
-   (kmet.libs.process) and process-tree kill on close.
+  "MCP stdio transport (§7.2) on top of kmet.libs.jsonrpc. The shared
+   JSON-RPC session owns the wire — line-delimited framing, id allocation,
+   pending responses, server-request replies and the stderr tail — and this
+   namespace adds only MCP policy and process management:
 
-   Conn keys: :proc :pid :ch :stderr-tail :out-lock, plus the common
-   contract keys documented in kmet.libs.mcp.transport.
+     - spawn from the server definition (:command/:args/:env/:cwd)
+     - `ping` answered with an empty result; other server->client requests
+       refused with -32601 (jsonrpc maps a nil handler return to it)
+     - per-request progress routing to the in-flight call's callback
+     - process-tree kill + host pid tracking on close
 
-   Deliberately not built on kmet.libs.jsonrpc yet: adopting it needs
-   per-request progress callbacks, best-effort notifications, host process
-   tracking and the pid/stderr-tail surface that jsonrpc does not expose
-   (mcp.md Phase 1.0 time-box)."
-  (:require [babashka.process :as proc]
-            [clojure.core.async :as async]
-            [clojure.java.io :as io]
-            [clojure.string :as str]
-            [kmet.libs.concurrent :as concurrent]
-            [kmet.libs.json :as json]
+   The conn is the jsonrpc conn map plus :transport :stdio, :req-lock and
+   :progress-callback; the common contract keys are documented in
+   kmet.libs.mcp.transport.
+
+   Notification handlers run on the jsonrpc reader thread (the
+   streamable-HTTP transport delivers them on the response thread, so
+   handlers must not block — the extension's list_changed resync spawns)."
+  (:require [clojure.string :as str]
+            [kmet.libs.jsonrpc :as jrpc]
             [kmet.libs.mcp.protocol :as protocol]
             [kmet.libs.mcp.transport :as transport]
             [kmet.libs.process :as process]))
 
-(def ^:private stderr-tail-lines 20)
-(def ^:private spawn concurrent/spawn)
+;; ─── MCP policy ───────────────────────────────────────────────────────────
 
-;; ─── Process + readers ────────────────────────────────────────────────────
+(defn- ping-handler
+  "Server->client requests: `ping` answers with an empty result — a
+   receiver MUST respond promptly. The client features we do not
+   implement (sampling/createMessage, elicitation/create, roots/list) are
+   refused with -32601: jsonrpc turns a nil return into Method not found,
+   so a conforming server never sees a silent drop. We declare no such
+   capabilities."
+  []
+  (fn [method _params]
+    (when (= "ping" method) {})))
 
-(defn- stdio-argv
-  "Full argv for a stdio server: :command may be a string or a vector
-   (vector = full argv, merged with :args)."
-  [definition]
-  (let [{:keys [command args]} definition]
-    (if (vector? command)
-      (into (vec command) args)
-      (into [(str command)] args))))
-
-(defn- drain-stdout
-  "Background reader: stdout lines → JSON parse → response channel.
-   Non-JSON lines (banners on stdout) are dropped. ::eof + close on EOF."
-  [out ch]
-  (try
-    (with-open [rdr (io/reader out)]
-      (doseq [line (line-seq rdr)]
-        (when (seq (str/trim line))
-          (try
-            (let [parsed (json/parse-string line true)]
-              (when (map? parsed)
-                (async/put! ch parsed)))
-            (catch Exception _ nil)))))
-    (catch Exception _ nil)
-    (finally
-      (async/put! ch transport/eof-marker)
-      (async/close! ch))))
-
-(defn- drain-stderr
-  "Background reader: keep the last 20 stderr lines for diagnostics."
-  [err tail]
-  (try
-    (with-open [rdr (io/reader err)]
-      (doseq [line (line-seq rdr)]
-        (swap! tail (fn [lines]
-                      (vec (take-last stderr-tail-lines
-                                      (conj (vec lines) line)))))))
-    (catch Exception _ nil)))
-
-(defn connect!
-  "Spawn a stdio server process. Returns the conn map."
-  [definition opts]
-  (let [argv (stdio-argv definition)
-        env (merge (into {} (System/getenv)) (:env definition))
-        ;; the vector form: babashka.process's variadic form silently drops
-        ;; the opts map, so `(apply proc/process argv opts)` never passed
-        ;; :env (per-server env was broken)
-        p (proc/process (vec argv)
-                        {:in :stream :out :stream :err :stream
-                         :dir (:cwd definition)
-                         :env env})
-        pid (process/process-pid p)
-        ch (async/chan 128)
-        tail (atom [])]
-    (when pid (process/track-pid! pid))
-    (spawn #(drain-stdout (:out p) ch))
-    (spawn #(drain-stderr (:err p) tail))
-    {:transport :stdio
-     :proc p
-     :pid pid
-     :ch ch
-     :stderr-tail tail
-     :out-lock (Object.)
-     :req-lock (Object.)
-     :id-counter (atom 0)
-     :last-used (atom (System/currentTimeMillis))
-     :on-notification (:on-notification opts)}))
-
-;; ─── Messaging ────────────────────────────────────────────────────────────
-
-(defn- write-msg!
-  "Write one JSON-RPC line to the server, serialized on the conn's write
-   lock: a background request (a list_changed resync) and a foreground
-   tool call can share one conn, and two io/copy calls on the same
-   stream would interleave into a corrupt line."
-  [conn msg]
-  ;; io/copy instead of .write — direct stream methods are not callable
-  ;; from the extension sci context
-  (let [line (str (json/generate-string msg) "\n")
-        write! (fn [] (io/copy line (:in (:proc conn))))]
-    (if-let [lock (:out-lock conn)]
-      (locking lock (write!))
-      (write!)))
-  nil)
-
-(defn send-async!
-  "Deliver a JSON-RPC message that expects no answer — a notification, or
-   a response to a server->client request."
-  [conn msg]
-  (transport/touch! conn)
-  (write-msg! conn msg))
+(defn- notification-handler
+  "Route one incoming notification: notifications/progress goes to the
+   in-flight request's callback (the client serializes stdio requests, so
+   at most one is live), and every notification reaches the conn-level
+   handler."
+  [conn-atom callback notify]
+  (fn [msg]
+    (when (and (= "notifications/progress" (:method msg)) @callback)
+      (@callback msg))
+    (when notify
+      (try (notify @conn-atom msg) (catch Exception _ nil)))))
 
 (defn- dead-message
   "Diagnostic message for a dead stdio process (stderr tail appended)."
   [conn method]
   (str "MCP connect failed: process exited"
        (when method (str " while waiting for " method))
-       (let [tail (str/join " — " @(:stderr-tail conn))]
+       (let [tail (str/join " — " (jrpc/stderr-tail conn))]
          (when (seq tail) (str " (stderr: " tail ")")))))
 
+(defn- translate-exception
+  "Map a jsonrpc failure into the MCP error contract (§7.7). Anything
+   else is returned unchanged for rethrow."
+  [conn e method timeout-ms]
+  (case (:type (ex-data e))
+    ::jrpc/timeout
+    (do
+      ;; the request is abandoned — tell the server to stop working
+      (try (jrpc/notify! conn "notifications/cancelled"
+                         {:requestId (:id (ex-data e))
+                          :reason (str "kmet: " method " — timed out")})
+           (catch Exception _ nil))
+      (protocol/mcp-error (str "MCP request timed out after " timeout-ms "ms: " method)
+                          {:timeout-ms timeout-ms :method method}))
+
+    ::jrpc/request-error
+    (let [{:keys [code message]} (:error (ex-data e))]
+      (protocol/mcp-error (str "MCP error " code ": " message)
+                          {:code code :message message}))
+
+    ::jrpc/transport-dead
+    (protocol/mcp-error (dead-message conn method) {:transport :stdio})
+
+    e))
+
+;; ─── Connect / request / close ────────────────────────────────────────────
+
+(defn connect!
+  "Spawn a stdio server over a jsonrpc session. Returns the MCP conn."
+  [definition opts]
+  (let [conn-atom (atom nil)
+        callback (atom nil)
+        notify (:on-notification opts)
+        pid (atom nil)
+        kill! (fn []
+                (when-let [p @pid]
+                  (process/kill-process-tree! p)
+                  (process/untrack-pid! p)
+                  (reset! pid nil)))
+        conn (jrpc/connect-stdio
+              {:command (:command definition)
+               :args (:args definition)
+               :env (:env definition)
+               :cwd (:cwd definition)
+               :framing :line-delimited
+               :kill-fn kill!
+               :on-request (ping-handler)
+               :on-notification (notification-handler conn-atom callback notify)})]
+    (reset! conn-atom conn)
+    (when-let [p (:pid conn)]
+      (reset! pid p)
+      (process/track-pid! p))
+    (assoc conn
+           :transport :stdio
+           :req-lock (Object.)
+           :progress-callback callback
+           :conn-ref conn-atom)))
+
 (defn request!
-  "Send one request and wait for the response with :id = ID."
-  [conn method params id timeout-ms on-notification]
+  "Send one request and return its :result. The jsonrpc session owns the
+   id and the response correlation; the timeout is translated into the MCP
+   error contract (and the abandoned request cancelled)."
+  [conn method params timeout-ms on-notification]
   (transport/touch! conn)
-  (when-not (proc/alive? (:proc conn))
-    (throw (protocol/mcp-error (dead-message conn nil) {:transport :stdio})))
-  (write-msg! conn {:jsonrpc "2.0" :id id :method method :params params})
-  (let [response (transport/wait-for-response conn (:ch conn) id method timeout-ms
-                                              on-notification send-async!)]
-    (if (= transport/eof-marker response)
-      (throw (protocol/mcp-error (dead-message conn method) {:transport :stdio}))
-      (:result response))))
+  (reset! (:progress-callback conn) on-notification)
+  (try
+    (jrpc/request! conn method params {:timeout-ms timeout-ms})
+    (catch Exception e
+      (throw (translate-exception conn e method timeout-ms)))
+    (finally
+      (reset! (:progress-callback conn) nil))))
+
+(defn send-async!
+  "Deliver a JSON-RPC message that expects no answer (a notification)."
+  [conn msg]
+  (jrpc/notify! conn (:method msg) (:params msg)))
 
 (defn close!
-  "Kill the server's process tree and close the response channel."
+  "Close the jsonrpc session; its kill-fn destroys the process tree and
+   untracks the pid."
   [conn]
-  (when (:pid conn) (process/kill-process-tree! (:pid conn)))
-  (try (async/close! (:ch conn)) (catch Exception _ nil))
+  (jrpc/close! conn)
   nil)
 
 (defn alive?
-  "True while the child process is running."
+  "True while the child process runs and the session is not closed."
   [conn]
-  (boolean (and (:proc conn) (proc/alive? (:proc conn)))))
+  (jrpc/alive? conn))
