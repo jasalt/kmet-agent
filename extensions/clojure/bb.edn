@@ -1,12 +1,12 @@
 {:paths ["src" "test" "../../src"]
- :deps {dev.weavejester/cljfmt {:mvn/version "0.16.5"
+ :deps {dev.weavejester/cljfmt {:mvn/version "0.16.6"
                                 :exclusions [rewrite-clj/rewrite-clj]}
         parinferish/parinferish {:mvn/version "0.8.0"}
         ;; clojure-edit loads kmet.app.ui.tool-renderers (../../src), whose
-        ;; kmet.libs.json seam requires clojure.data.json — a Maven lib, not
-        ;; bb-bundled, so it must be on this standalone test classpath.
-        ;; 2.4.0: bb cannot analyze data.json >= 2.5 (definterface)
-        org.clojure/data.json {:mvn/version "2.4.0"}}
+        ;; kmet.libs.json seam requires clojure.data.json — bb >= 1.13.224
+        ;; bundles it (the built-in wins), declared here for a standalone
+        ;; classpath and version-aligned with the root deps.edn.
+        org.clojure/data.json {:mvn/version "2.5.2"}}
  :tasks
  {test {:doc "Run clojure extension tests (args: test namespace names)"
         :task (let [nss (or (some->> *command-line-args* (map symbol))

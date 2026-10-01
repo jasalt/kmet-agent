@@ -105,62 +105,62 @@
        (do (reset! state (assoc @state :session-id (or session-id "sess-1")))
            {:jsonrpc "2.0" :id id
             :result {:protocolVersion (or version-override
-                                         (get-in msg [:params :protocolVersion]))
+                                          (get-in msg [:params :protocolVersion]))
                      :capabilities {:tools {}
                                     :prompts {:listChanged false}
                                     :resources {:listChanged false}}
                      :serverInfo {:name "fake-http-mcp-server" :version "1.0.0"}}})
-      "notifications/initialized" nil
-      "tools/list"
-      {:jsonrpc "2.0" :id id :result {:tools tools}}
-      "tools/call"
-      (let [name (get-in msg [:params :name])
-            args (get-in msg [:params :arguments])]
-        (case name
-          "http-echo" {:jsonrpc "2.0" :id id
+       "notifications/initialized" nil
+       "tools/list"
+       {:jsonrpc "2.0" :id id :result {:tools tools}}
+       "tools/call"
+       (let [name (get-in msg [:params :name])
+             args (get-in msg [:params :arguments])]
+         (case name
+           "http-echo" {:jsonrpc "2.0" :id id
+                        :result {:content [{:type "text"
+                                            :text (str "http-echo: " (:message args))}]}}
+           "http-add" {:jsonrpc "2.0" :id id
                        :result {:content [{:type "text"
-                                           :text (str "http-echo: " (:message args))}]}}
-          "http-add" {:jsonrpc "2.0" :id id
-                      :result {:content [{:type "text"
-                                          :text (str (+ (:a args) (:b args)))}]}}
-          "http-slow" (do (Thread/sleep 2000)
-                          {:jsonrpc "2.0" :id id
-                           :result {:content [{:type "text" :text "finally"}]}})
-          "http-headers"
-          {:jsonrpc "2.0" :id id
-           :result {:content [{:type "text"
-                               :text (str (get-in @state
-                                                  [:last-headers
-                                                   "mcp-protocol-version"]))}]}}
-          {:jsonrpc "2.0" :id id
-           :result {:content [{:type "text" :text "unknown"}]
-                    :isError true}}))
-      "prompts/list"
-      {:jsonrpc "2.0" :id id
-       :result {:prompts [{:name "http-brief"
-                           :description "Summarize a topic briefly"
-                           :arguments [{:name "topic" :required true}]}]}}
-      "prompts/get"
-      {:jsonrpc "2.0" :id id
-       :result {:messages [{:role "user"
-                            :content {:type "text"
-                                      :text (str "http brief: "
-                                                 (get-in msg [:params :arguments :topic]))}}]}}
-      "resources/list"
-      {:jsonrpc "2.0" :id id
-       :result {:resources [{:name "HTTP doc" :uri "http://fake/doc"
-                             :description "A fake http resource"}]}}
-      "resources/templates/list"
-      {:jsonrpc "2.0" :id id
-       :result {:resourceTemplates [{:name "http pages"
-                                     :uriTemplate "http://fake/page/{id}"
-                                     :description "A fake http resource template"}]}}
-      "resources/read"
-      {:jsonrpc "2.0" :id id
-       :result {:contents [{:type "text" :uri (get-in msg [:params :uri])
-                            :text "http resource content"}]}}
-      {:jsonrpc "2.0" :id id
-       :error {:code -32601 :message (str "Method not found: " method)}}))))
+                                           :text (str (+ (:a args) (:b args)))}]}}
+           "http-slow" (do (Thread/sleep 2000)
+                           {:jsonrpc "2.0" :id id
+                            :result {:content [{:type "text" :text "finally"}]}})
+           "http-headers"
+           {:jsonrpc "2.0" :id id
+            :result {:content [{:type "text"
+                                :text (str (get-in @state
+                                                   [:last-headers
+                                                    "mcp-protocol-version"]))}]}}
+           {:jsonrpc "2.0" :id id
+            :result {:content [{:type "text" :text "unknown"}]
+                     :isError true}}))
+       "prompts/list"
+       {:jsonrpc "2.0" :id id
+        :result {:prompts [{:name "http-brief"
+                            :description "Summarize a topic briefly"
+                            :arguments [{:name "topic" :required true}]}]}}
+       "prompts/get"
+       {:jsonrpc "2.0" :id id
+        :result {:messages [{:role "user"
+                             :content {:type "text"
+                                       :text (str "http brief: "
+                                                  (get-in msg [:params :arguments :topic]))}}]}}
+       "resources/list"
+       {:jsonrpc "2.0" :id id
+        :result {:resources [{:name "HTTP doc" :uri "http://fake/doc"
+                              :description "A fake http resource"}]}}
+       "resources/templates/list"
+       {:jsonrpc "2.0" :id id
+        :result {:resourceTemplates [{:name "http pages"
+                                      :uriTemplate "http://fake/page/{id}"
+                                      :description "A fake http resource template"}]}}
+       "resources/read"
+       {:jsonrpc "2.0" :id id
+        :result {:contents [{:type "text" :uri (get-in msg [:params :uri])
+                             :text "http resource content"}]}}
+       {:jsonrpc "2.0" :id id
+        :error {:code -32601 :message (str "Method not found: " method)}}))))
 
 (defn- handle-streamable
   "POST /mcp — JSON or SSE response per the Accept header. The last

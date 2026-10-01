@@ -12,34 +12,8 @@
 ;; extension's :script-mode gate.
 ;;
 ;; Usage: bb -cp ../../src:src scripts/validate-script.bb scripts/fake-mcp-server.bb
-;; (the script adds org.clojure/data.json from ~/.m2 to the classpath when the
-;; runner didn't already include it)
-(require '[babashka.classpath :as bcp]
-         '[babashka.fs :as fs]
-         '[clojure.java.io :as io]
+(require '[clojure.java.io :as io]
          '[clojure.string :as str])
-
-;; kmet.libs.json needs org.clojure/data.json; a bare `bb -cp ../../src:src`
-;; (the documented invocation) doesn't resolve bb.edn deps, so when the
-;; namespace isn't loadable, add the version the root bb.edn pins (2.4.0 —
-;; 2.5.x uses definterface, which babashka's native image rejects) from the
-;; local Maven cache.
-(defn- ensure-data-json! []
-  (try (require 'clojure.data.json)
-       (catch Exception _
-         (let [base (str (fs/home) "/.m2/repository/org/clojure/data.json")
-               jar (or (first (fs/glob (str base "/2.4.0") "*.jar"))
-                       (last (sort (fs/glob base "**/*.jar"))))]
-           (when jar (bcp/add-classpath (str jar)))
-           (try (require 'clojure.data.json)
-                (catch Exception _
-                  (println "org.clojure/data.json is not loadable and no usable jar was found in ~/.m2.")
-                  (println "Re-run with one added to the classpath, e.g.:")
-                  (println "  bb -cp ../../src:src:$HOME/.m2/repository/org/clojure/data.json/2.4.0/data.json-2.4.0.jar \\")
-                  (println "     scripts/validate-script.bb scripts/fake-mcp-server.bb")
-                  (System/exit 2)))))))
-
-(ensure-data-json!)
 
 (require '[kmet.extension :as ext]
          '[kmet.app.tools.registry :as registry]

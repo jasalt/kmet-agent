@@ -180,10 +180,10 @@ No `deps.edn` — everything is served by kmet's fixed bundled set
 (`src/kmet/extension.md` § Bundled extension libraries), shared by reference on both
 hosts:
 
-- cljfmt 0.16.5 — code formatting (`cljfmt.edn` discovery and its `#re`
+- cljfmt 0.16.6 — code formatting (`cljfmt.edn` discovery and its `#re`
   reader live in `kmet.extensions.clojure.edit-util`, so `cljfmt.config` is only loaded for its
   `default-config` var)
-- rewrite-clj 1.2.57 — form parsing/zippers
+- rewrite-clj 1.3.58 — form parsing/zippers
 - edamame — delimiter error detection
 - parinferish 0.8.0 — delimiter-repair tokenizer (pure Clojure; parinfer is a JVM lib
   and can't run in SCI contexts)

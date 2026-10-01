@@ -60,7 +60,7 @@
    checks assert the RFC 8707 resource indicator and the scopes."
   [oauth-port]
   (:body (oauth-lib/fetch-json (str "http://127.0.0.1:" oauth-port "/last-token-request")
-                              {:method :get})))
+                               {:method :get})))
 
 (defn- capture-notify
   "Interaction helper: capture the :auth-url / :device-code events."
@@ -289,7 +289,7 @@
       (check "cross-origin authorization server accepted"
              (= "https://auth.example.com"
                 (:issuer (discover-meta "srv" {:url "https://mcp.example.com/mcp"
-                                                :oauth {}})))))
+                                               :oauth {}})))))
     (with-redefs [oauth-lib/protected-resource-metadata
                   (fn [_url _opts]
                     {:authorization_servers ["https://auth.example.com"]})
@@ -299,7 +299,7 @@
                      :token_endpoint "https://evil.example/token"})]
       (check "issuer mismatch against the AS URL still rejected"
              (try (discover-meta "srv" {:url "https://mcp.example.com/mcp"
-                                         :oauth {}})
+                                        :oauth {}})
                   false
                   (catch Exception e
                     (= :oauth-issuer-mismatch (:type (ex-data e))))))))

@@ -12,22 +12,20 @@ Status checked against `jolt v0.8.15-46-g005d134b` (2026-10-01).
 
 ## Dependency pins
 
-Both git pins trail their upstream releases (checked 2026-10-01). They
-interlock through crypto, so bump them together and rerun the full suites:
+The git pins track their upstream releases (checked 2026-10-01):
 
-- `io.github.jolt-lang/crypto` — pinned at PR #10 (`8d821a9d`, 2026-09-18);
-  upstream `v0.0.10` (`feb25f70`) carries the `(bytes, off, len)` overload
-  fixes and the quadratic `MessageDigest.update` fix (PR #13) plus the macOS
-  `:link-libs` change (PR #14). Upstream's lib name is
-  `jolt-lang/jolt-crypto` while kmet declares `io.github.jolt-lang/crypto`;
-  a bump should reconcile the two spellings.
-- `io.github.jolt-lang/http-client` — pinned at the PR #29 merge
-  (`29385f28`); upstream `v0.0.17` (`77d7e310`) adds interrupted-connect
-  handling and TLS stream/context lifecycle fixes (PRs #30, #31). Its
-  `:jolt/provides` still claims `java.util.concurrent.CompletableFuture`,
-  which current Jolt provides and drops with a startup warning ("upgrade
-  io.github.jolt-lang/http-client"); upstream still claims it and has no
-  open issue — worth a one-line upstream report.
+- `jolt-lang/jolt-crypto` — `v0.0.10` (`feb25f70`): the `(bytes, off, len)`
+  overload fixes and the quadratic `MessageDigest.update` fix (PR #13)
+  plus the macOS stub/libcrypto `:link-libs` change (PR #14). Keyed
+  `jolt-lang/jolt-crypto` to match the lib name upstream http-client
+  depends on, so this root pin supersedes the transitive v0.0.9.
+- `io.github.jolt-lang/http-client` — `v0.0.17` (`77d7e310`): interrupted
+  connects are retried and TLS streams/contexts released once a connection
+  fails (PRs #30, #31). Its `:jolt/provides` still claims
+  `java.util.concurrent.CompletableFuture`, which current Jolt provides and
+  drops with a startup warning ("upgrade io.github.jolt-lang/http-client");
+  upstream still claims it and has no open issue — worth a one-line upstream
+  report.
 
 ## Tests
 

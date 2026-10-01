@@ -11,7 +11,7 @@
  ;; java.security.Signature / KeyPairGenerator / KeyFactory live in
  ;; crypto's own :jolt/provides (jolt allows a class only one provider).
  ;;
- ;; The crypto java.* classes come from io.github.jolt-lang/crypto. This lib
+ ;; The crypto java.* classes come from jolt-lang/jolt-crypto. This lib
  ;; does NOT require it: crypto's own :jolt/provides claims resolve its classes
  ;; on the first reference, whatever loaded first — RFC 0014 gives a class one
  ;; provider, and a declared provider owns the members it registers. Its

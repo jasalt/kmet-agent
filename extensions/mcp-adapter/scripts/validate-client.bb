@@ -56,7 +56,7 @@
     (check "handshake server-info" (= "fake-mcp-server" (:name server-info)))
     (check "tools/list pagination" (= 9 (count tools)))
     (check "tool names" (= #{"echo" "add" "slow" "boom" "ping-mid"
-                            "who-asks" "add-tool" "storm" "list-count"}
+                             "who-asks" "add-tool" "storm" "list-count"}
                            (set (map :name tools))))
     (let [result (client/request! conn "tools/call"
                                   {:name "echo" :arguments {:message "hi"}})]
@@ -153,9 +153,9 @@
     ;; a list_changed notification reaches the conn-level handler
     (let [notifications (atom [])
           {:keys [conn]} (client/connect! definition
-                                       {:on-notification (fn [_conn msg]
-                                                           (swap! notifications conj
-                                                                  (:method msg)))})]
+                                          {:on-notification (fn [_conn msg]
+                                                              (swap! notifications conj
+                                                                     (:method msg)))})]
       (client/request! conn "tools/call" {:name "add-tool" :arguments {}})
       (Thread/sleep 200)
       (check "list_changed notification dispatched"

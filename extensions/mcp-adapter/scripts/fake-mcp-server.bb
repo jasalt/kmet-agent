@@ -129,7 +129,7 @@
           (send! {:jsonrpc "2.0" :id 9002 :method "roots/list" :params {}})
           (Thread/sleep 400)
           (send-result! id {:content [{:type "text"
-                                      :text (json/generate-string @answers)}]}))
+                                       :text (json/generate-string @answers)}]}))
       ;; add a tool and tell the client its catalog changed
       "add-tool"
       (do (reset! extra-tool? true)
@@ -155,89 +155,89 @@
         ;; ping / roots/list) — record it, never answer it
         (and id (nil? method))
         (swap! answers assoc id (if (:error msg)
-                                   {:error (:error msg)}
-                                   {:result (:result msg)}))
+                                  {:error (:error msg)}
+                                  {:result (:result msg)}))
 
         (= method "notifications/cancelled")
         (log! (json/generate-string (select-keys msg [:method :params])))
 
         :else
         (case method
-        "initialize"
-        (do (send-result! id {:protocolVersion (:protocolVersion (:params msg))
-                              :capabilities {:tools {:listChanged true}
-                                             :prompts {:listChanged false}
-                                             :resources {:listChanged false}}
-                              :serverInfo {:name "fake-mcp-server" :version "1.0.0"}})
-            (send! {:jsonrpc "2.0" :method "notifications/initialized" :params {}}))
-        "notifications/initialized" nil
-        "tools/list"
-        (let [_ (swap! list-calls inc)
-              _ (when @storm?
-                  (send! {:jsonrpc "2.0" :method "notifications/tools/list_changed"}))
-              cursor (:cursor (:params msg))
-              all (cond-> tools @extra-tool? (conj {:name "echo2"
-                                                   :description "Second echo"
-                                                   :inputSchema {:type "object"
-                                                                 :properties {}
-                                                                 :required []}}))
-              page1 (subvec (vec all) 0 2)
-              page2 (subvec (vec all) 2)]
-          (if (nil? cursor)
-            (send-result! id {:tools page1 :nextCursor "p2"})
-            (send-result! id {:tools page2})))
+          "initialize"
+          (do (send-result! id {:protocolVersion (:protocolVersion (:params msg))
+                                :capabilities {:tools {:listChanged true}
+                                               :prompts {:listChanged false}
+                                               :resources {:listChanged false}}
+                                :serverInfo {:name "fake-mcp-server" :version "1.0.0"}})
+              (send! {:jsonrpc "2.0" :method "notifications/initialized" :params {}}))
+          "notifications/initialized" nil
+          "tools/list"
+          (let [_ (swap! list-calls inc)
+                _ (when @storm?
+                    (send! {:jsonrpc "2.0" :method "notifications/tools/list_changed"}))
+                cursor (:cursor (:params msg))
+                all (cond-> tools @extra-tool? (conj {:name "echo2"
+                                                      :description "Second echo"
+                                                      :inputSchema {:type "object"
+                                                                    :properties {}
+                                                                    :required []}}))
+                page1 (subvec (vec all) 0 2)
+                page2 (subvec (vec all) 2)]
+            (if (nil? cursor)
+              (send-result! id {:tools page1 :nextCursor "p2"})
+              (send-result! id {:tools page2})))
         ;; who-asks blocks while it waits for the client's answers, so it
         ;; runs off the read loop (the loop keeps reading responses); the
         ;; thread is returned so the loop can join it before exiting
-        "tools/call"
-        (if (= "who-asks" (get-in msg [:params :name]))
+          "tools/call"
+          (if (= "who-asks" (get-in msg [:params :name]))
           ;; the answer map is cleared here, before the thread sends its
           ;; requests — clearing it inside the thread would race the read
           ;; loop, which may already have recorded the answers
-          (do (reset! answers {})
-              (doto (Thread. (fn []
-                               (try (handle-call id (:params msg))
-                                    (catch Exception e
-                                      (send-error! id -32603 (ex-message e))))))
-                (.start)))
-          (handle-call id (:params msg)))
-        "prompts/list" (send-result! id {:prompts prompts})
-        "prompts/get"
-        (let [name (:name (:params msg))
-              args (or (:arguments (:params msg)) {})]
-          (case name
-            "brief" (send-result! id {:description "Summarize a topic briefly"
-                                      :messages [{:role "user"
-                                                  :content {:type "text"
-                                                            :text (str "Briefly summarize: " (:topic args))}}]})
-            "review" (send-result! id {:description "Review code"
-                                       :messages [{:role "user"
-                                                   :content {:type "text"
-                                                             :text (str "Review " (:path args))}}
-                                                  {:role "assistant"
-                                                   :content {:type "text"
-                                                             :text (str "Focus: " (or (:focus args) "overall"))}}]})
-            (send-error! id -32602 (str "Unknown prompt: " name))))
-        "resources/list" (send-result! id {:resources resources})
-        "resources/templates/list" (send-result! id {:resourceTemplates resource-templates})
-        "resources/read"
-        (let [uri (:uri (:params msg))]
-          (case uri
-            "file:///README.md" (send-result! id {:contents [{:type "text"
-                                                              :uri uri
-                                                              :text "# Fake README\ncontent"}]})
-            "file:///schema.json" (send-result! id {:contents [{:type "text"
+            (do (reset! answers {})
+                (doto (Thread. (fn []
+                                 (try (handle-call id (:params msg))
+                                      (catch Exception e
+                                        (send-error! id -32603 (ex-message e))))))
+                  (.start)))
+            (handle-call id (:params msg)))
+          "prompts/list" (send-result! id {:prompts prompts})
+          "prompts/get"
+          (let [name (:name (:params msg))
+                args (or (:arguments (:params msg)) {})]
+            (case name
+              "brief" (send-result! id {:description "Summarize a topic briefly"
+                                        :messages [{:role "user"
+                                                    :content {:type "text"
+                                                              :text (str "Briefly summarize: " (:topic args))}}]})
+              "review" (send-result! id {:description "Review code"
+                                         :messages [{:role "user"
+                                                     :content {:type "text"
+                                                               :text (str "Review " (:path args))}}
+                                                    {:role "assistant"
+                                                     :content {:type "text"
+                                                               :text (str "Focus: " (or (:focus args) "overall"))}}]})
+              (send-error! id -32602 (str "Unknown prompt: " name))))
+          "resources/list" (send-result! id {:resources resources})
+          "resources/templates/list" (send-result! id {:resourceTemplates resource-templates})
+          "resources/read"
+          (let [uri (:uri (:params msg))]
+            (case uri
+              "file:///README.md" (send-result! id {:contents [{:type "text"
                                                                 :uri uri
-                                                                :text "{\"type\": \"object\"}"}]})
+                                                                :text "# Fake README\ncontent"}]})
+              "file:///schema.json" (send-result! id {:contents [{:type "text"
+                                                                  :uri uri
+                                                                  :text "{\"type\": \"object\"}"}]})
             ;; a template read arrives already expanded by the client
-            "file:///src/main.clj" (send-result! id {:contents [{:type "text"
-                                                                 :uri uri
-                                                                 :text "(ns main)"}]})
-            "file:///a b.txt" (send-result! id {:contents [{:type "text"
-                                                             :uri uri
-                                                             :text "spaced path"}]})
-            (send-error! id -32602 (str "Unknown resource: " uri))))
-        (send-error! id -32601 (str "Method not found: " method)))))))
+              "file:///src/main.clj" (send-result! id {:contents [{:type "text"
+                                                                   :uri uri
+                                                                   :text "(ns main)"}]})
+              "file:///a b.txt" (send-result! id {:contents [{:type "text"
+                                                              :uri uri
+                                                              :text "spaced path"}]})
+              (send-error! id -32602 (str "Unknown resource: " uri))))
+          (send-error! id -32601 (str "Method not found: " method)))))))
 
 ;; clean exit on EOF (client killed the pipe) — call threads are joined
 ;; first so a handler still waiting on the client's answers gets its

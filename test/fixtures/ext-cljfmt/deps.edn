@@ -1,4 +1,4 @@
-{:deps {dev.weavejester/cljfmt {:mvn/version "0.16.5"
+{:deps {dev.weavejester/cljfmt {:mvn/version "0.16.6"
                                 ;; rewrite-clj is bb-bundled (adapted port) —
                                 ;; the Maven lib requires clojure.tools.reader
                                 ;; impl namespaces bb does not ship

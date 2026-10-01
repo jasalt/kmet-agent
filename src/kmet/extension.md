@@ -352,7 +352,7 @@ needs **no `deps.edn`** and no host-conditional code. The set is enumerated in
 | edamame | `edamame.core` | reader-error/delimiter detection |
 | clojure.tools.reader | `clojure.tools.reader*` | bb's reduced port; the Maven lib on Jolt |
 | clojure.spec | `clojure.spec.alpha` | bb's port; the Maven lib on Jolt |
-| cljfmt | `cljfmt.core`, `cljfmt.config` | 0.16.5 on both |
+| cljfmt | `cljfmt.core`, `cljfmt.config` | 0.16.6 on both |
 | parinferish | `parinferish.core` | pure Clojure, 0.8.0 on both |
 
 Plus the libraries shared from the host itself: `clojure.*` (`core.async`

@@ -65,9 +65,11 @@
         ;; vendored copy on jolt.
 
         org.clojure/data.json {:mvn/version "2.5.2"}
-        ;; ^ 2.5.2 for jolt/JVM only — bb.edn (babashka) pins 2.4.0 because
-        ;; data.json >= 2.5 uses definterface (json.clj InternalPBR), which
-        ;; babashka's SCI cannot analyze.
+        ;; ^ 2.5.2 on both hosts: babashka >= 1.13.224 bundles data.json
+        ;; (2.5.2 as of 1.13.225) and the built-in wins over any declared
+        ;; copy, so the pre-bundling concern (>= 2.5 uses definterface,
+        ;; json.clj InternalPBR, which SCI would not analyze) is gone;
+        ;; bb.edn pins the same version.
         ;; java.time formatting/zone layer on Jolt (DateTimeFormatter,
         ;; ZoneId/ZoneOffset, ZonedDateTime — RFC 0008; inert on bb/JVM,
         ;; where the JDK already provides these classes). This revision is
@@ -82,11 +84,16 @@
         ;; RSA (keygen + SHA*withRSA + RSA KeyFactory) comes from the library,
         ;; as do the libcrypto/libssl runtime candidates. The project-level
         ;; specs above retain those candidates and add static archives.
-        ;; Pinned at PR #10 (2026-09-18); upstream v0.0.10 (feb25f70) carries
-        ;; the off/len overload and quadratic MessageDigest.update fixes plus
-        ;; the macOS link-libs change — bump pending, see jolt-port.md.
-        io.github.jolt-lang/crypto {:git/url "https://github.com/jolt-lang/crypto.git"
-                                    :git/sha "8d821a9dcdca2fd909e2bedc215d523775b16073"}
+        ;; v0.0.10 (feb25f70, 2026-10-01): honors off/len in the byte-array
+        ;; update/digest/doFinal overloads and the key/IV spec constructors,
+        ;; fixes the quadratic MessageDigest.update, drops the Apple
+        ;; libcrypto stub fallback, and declares the link-libs its static
+        ;; archives need. Keyed jolt-lang/jolt-crypto to match the name
+        ;; upstream http-client depends on: the shared key lets this root
+        ;; pin supersede the transitive v0.0.9 instead of resolving a
+        ;; second crypto copy.
+        jolt-lang/crypto {:git/url "https://github.com/jolt-lang/crypto.git"
+                               :git/sha "feb25f70c76ff1030f621817a31723a183ece80b"}
         ;; babashka.http-client on Jolt: the jolt-lang/http-client library's
         ;; java.net.http shims (RFC 0014 :jolt/provides over BSD sockets +
         ;; OpenSSL + libz via jolt.ffi) run the real org.babashka/http-client
@@ -101,13 +108,14 @@
         ;; v0.0.15, fixing http-client#28). Pin the merge so the default
         ;; :platform transport works on Windows too. OpenSSL comes from
         ;; jolt-crypto; java.util.zip is runtime surface from Jolt 0.8.9.
-        ;; Upstream v0.0.17 (77d7e310) adds interrupted-connect handling and
-        ;; TLS stream/context lifecycle fixes — bump pending (jolt-port.md).
+        ;; v0.0.17 (77d7e310, 2026-09-30) adds the crypto v0.0.9 dependency
+        ;; (PR #30) and PR #31: interrupted connects are retried and TLS
+        ;; streams/contexts released once a connection fails.
         ;; Its :jolt/provides still claims java.util.concurrent.CompletableFuture,
         ;; a class current Jolt provides (the claim is dropped with a startup
         ;; warning); upstream still claims it, with no open issue.
         io.github.jolt-lang/http-client {:git/url "https://github.com/jolt-lang/http-client.git"
-                                         :git/sha "29385f28fac5a139ef090c2d806e1122123ce386"}
+                                         :git/sha "77d7e310a1aab2c7d5ecc9f6cc10f77b7a7f23ba"}
         ;; cljfmt / spec.alpha / rewrite-clj serve the format tasks
         ;; (kmet.tasks.format — one code path on both hosts) AND the fixed
         ;; bundled extension set (kmet.app.extension-libs, src/kmet/extension.md §
@@ -118,15 +126,16 @@
         ;; org.clojure/spec.alpha is declared explicitly: jolt's resolver
         ;; drops cljfmt's org.clojure/clojure dep (vendored core), and
         ;; cljfmt.config requires clojure.spec.alpha. rewrite-clj is pinned
-        ;; to the version babashka bundles (bb's built-in wins over cljfmt's
-        ;; transitive 1.2.50 there, so bb formats with it) to keep both hosts
-        ;; on the same parser — no longer a workaround, just parity.
-        dev.weavejester/cljfmt {:mvn/version "0.16.5"}
+        ;; to the version the supported babashka bundles — 1.3.58 as of the
+        ;; 1.13.225 min-bb floor (bb's built-in wins over cljfmt's transitive
+        ;; 1.2.50 there, so bb formats with it) — to keep both hosts on the
+        ;; same parser — no longer a workaround, just parity.
+        dev.weavejester/cljfmt {:mvn/version "0.16.6"}
         ;; 0.5.238, not 0.6.249: the newer line updates to Clojure 1.12.4 and
         ;; jolt vendors Clojure 1.11.0-jolt. Feeds cljfmt's config require
         ;; and the fixed extension set.
         org.clojure/spec.alpha {:mvn/version "0.5.238"}
-        rewrite-clj/rewrite-clj {:mvn/version "1.2.57"}
+        rewrite-clj/rewrite-clj {:mvn/version "1.3.58"}
         ;; the two remaining fixed-set roots: parinferish (delimiter-repair
         ;; tokenizer, pure Clojure) and edamame (reader-error detection).
         ;; edamame would arrive transitively via the jolt/ sci pin; declared

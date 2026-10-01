@@ -372,7 +372,7 @@
   ;; resolution itself is the same tools.deps pass as any extension's)
   (with-extension-resources
     (fn []
-      (t/is (= {'dev.weavejester/cljfmt {:mvn/version "0.16.5"
+      (t/is (= {'dev.weavejester/cljfmt {:mvn/version "0.16.6"
                                          :exclusions ['rewrite-clj/rewrite-clj]}}
                (@#'ext-context/deps-of-root {:kind :resource-dir
                                              :prefix "extensions/ext-cljfmt"}))))))
@@ -588,7 +588,7 @@
     (t/is (nil? (:error result)) (str "loaded: " (:error result)))
     (testing "the closure carries the declared cljfmt, not the bundled ports"
       (let [jars (extensions/extension-jars "cljfmt-ext")]
-        (t/is (some #(str/includes? % "cljfmt-0.16.5.jar") jars))
+        (t/is (some #(str/includes? % "cljfmt-0.16.6.jar") jars))
         (t/is (not-any? #(str/includes? % "spec.alpha-") jars))
         (t/is (not-any? #(str/includes? % "core.specs.alpha-") jars))
         (t/is (not-any? #(re-find #"/clojure-\\d" %) jars))))

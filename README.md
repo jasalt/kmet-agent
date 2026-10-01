@@ -19,7 +19,7 @@ Termux. The primary runtime is [Babashka](https://babashka.org/); native
 
 ## Quick start
 
-Install [Babashka](https://babashka.org/) 1.13.224 or newer, then run kmet
+Install [Babashka](https://babashka.org/) 1.13.225 or newer, then run kmet
 from a checkout:
 
 ```sh

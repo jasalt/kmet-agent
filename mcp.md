@@ -334,13 +334,14 @@ The facade can be deleted in Phase 4 with callers pointed at the lib directly.
 extension suite (`scripts/validate-all.bb`, or individually):
 
 ```
-DATA_JSON="$HOME/.m2/repository/org/clojure/data.json/2.4.0/data.json-2.4.0.jar"
-bb -cp ../../src:src:$DATA_JSON scripts/validate-client.bb scripts/fake-mcp-server.bb scripts/fake-http-mcp-server.bb
-bb -cp ../../src:src:$DATA_JSON scripts/validate-config.bb
-bb -cp ../../src:src:$DATA_JSON scripts/validate-panel.bb
-bb -cp ../../src:src:$DATA_JSON scripts/validate-oauth.bb scripts/fake-oauth-server.bb
-bb -cp ../../src:src:$DATA_JSON scripts/validate-script.bb scripts/fake-mcp-server.bb
-bb -cp ../../src:src:$DATA_JSON scripts/e2e.bb scripts/fake-mcp-server.bb
+# `bb -cp` replaces the classpath; org.clojure/data.json is bb-bundled
+# (1.13.224+).
+bb -cp ../../src:src scripts/validate-client.bb scripts/fake-mcp-server.bb scripts/fake-http-mcp-server.bb
+bb -cp ../../src:src scripts/validate-config.bb
+bb -cp ../../src:src scripts/validate-panel.bb
+bb -cp ../../src:src scripts/validate-oauth.bb scripts/fake-oauth-server.bb
+bb -cp ../../src:src scripts/validate-script.bb scripts/fake-mcp-server.bb
+bb -cp ../../src:src scripts/e2e.bb scripts/fake-mcp-server.bb
 ```
 
 Also `extensions/lsp-adapter/scripts/validate.bb` (jsonrpc change) and

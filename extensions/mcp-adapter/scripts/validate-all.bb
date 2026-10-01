@@ -1,18 +1,12 @@
 #!/usr/bin/env bb
 ;; Run every mcp-adapter validation script with the classpath a direct run
-;; needs (the extension's src, the repo src, and data.json from the local
-;; Maven cache — override with DATA_JSON or pass the jar as $1).
+;; needs (the extension's src and the repo src; org.clojure/data.json is
+;; bb-bundled since 1.13.224).
 ;;
-;; Usage: bb scripts/validate-all.bb [data.json-path]
+;; Usage: bb scripts/validate-all.bb
 (require '[babashka.process :as proc])
 
-(def data-json
-  (or (first *command-line-args*)
-      (System/getenv "DATA_JSON")
-      (str (System/getenv "HOME")
-           "/.m2/repository/org/clojure/data.json/2.4.0/data.json-2.4.0.jar")))
-
-(def cp (str "../../src:src:" data-json))
+(def cp "../../src:src")
 
 (def runs
   [["validate-names.bb"]
@@ -28,7 +22,7 @@
 (doseq [[script & argv] runs]
   (println (str "\n════ " script " ════"))
   (let [{:keys [exit]} (apply proc/shell {:out :inherit :err :inherit :continue true}
-                                   "bb" "-cp" cp (str "scripts/" script) argv)]
+                              "bb" "-cp" cp (str "scripts/" script) argv)]
     (when-not (zero? exit)
       (swap! failures inc)
       (println (str "FAILED: " script " (exit " exit ")")))))

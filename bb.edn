@@ -1,14 +1,16 @@
-{:min-bb-version "1.13.224"
+{:min-bb-version "1.13.225"
  ;; tasks/ is a second source root, not part of the app: every bb-task
  ;; implementation lives there (see AGENTS.md § File layout). Both hosts
  ;; resolve kmet.tasks.* from it, and neither artifact carries it — the
  ;; uberjar walks src/, jolt's :jolt/build :embed does too.
  :paths ["src" "test" "tasks"]
- :deps {dev.weavejester/cljfmt {:mvn/version "0.16.5"}
-        ;; 2.4.0, NOT 2.5.x: data.json >= 2.5 uses definterface (json.clj
-        ;; InternalPBR), which babashka SCI cannot analyze. The jolt/JVM
-        ;; classpath (deps.edn) may pin 2.5.1.
-        org.clojure/data.json {:mvn/version "2.4.0"}
+ :deps {dev.weavejester/cljfmt {:mvn/version "0.16.6"}
+        ;; babashka >= 1.13.224 bundles data.json (2.5.2 as of 1.13.225) and
+        ;; the built-in wins over any declared copy; pinned at the bundled
+        ;; version in lockstep with the jolt/JVM classpath (deps.edn).
+        ;; Before the bundling, >= 2.5 could not load under SCI (definterface
+        ;; in json.clj InternalPBR), hence the old 2.4.0 pin.
+        org.clojure/data.json {:mvn/version "2.5.2"}
         ;; Fixed bundled extension set (kmet.app.extension-libs). rewrite-clj,
         ;; edamame, spec.alpha and tools.reader are bb-bundled ports, so only
         ;; the two Maven-only set members need declaring here; cljfmt above
