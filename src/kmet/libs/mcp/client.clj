@@ -42,12 +42,14 @@
                      :stdio (stdio/request! conn method params timeout on-notification)
                      :streamable-http (http/request! conn method params timeout on-notification)
                      :sse (sse/request! conn method params timeout on-notification)))]
-    ;; one request at a time per stdio/sse conn: both transports match
-    ;; responses on one shared channel, so two waiters would consume (and
-    ;; drop) each other's responses. A background list_changed resync now
-    ;; queues behind an in-flight tool call instead of racing it
-    ;; (streamable-http answers each request on its own response body and
-    ;; stays concurrent).
+    ;; one request at a time per stdio/sse conn: SSE matches responses on
+    ;; one shared channel, so two waiters would consume (and drop) each
+    ;; other's responses; stdio correlates per request in jsonrpc but
+    ;; routes progress through a single conn-level callback, so
+    ;; serializing keeps the in-flight callback unambiguous. A background
+    ;; list_changed resync queues behind an in-flight tool call instead of
+    ;; racing it (streamable-http answers each request on its own response
+    ;; body and stays concurrent).
     (if (= :streamable-http (:transport conn))
       (dispatch)
       ;; clj-kondo flags the map lookup as locally created; the lock object

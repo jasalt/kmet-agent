@@ -92,7 +92,8 @@
         pid (atom nil)
         kill! (fn []
                 (when-let [p @pid]
-                  (process/kill-process-tree! p)
+                  (try (process/kill-process-tree! p)
+                       (catch Exception _ nil))
                   (process/untrack-pid! p)
                   (reset! pid nil)))
         conn (jrpc/connect-stdio

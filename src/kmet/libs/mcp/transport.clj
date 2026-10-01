@@ -16,12 +16,14 @@
      :transport        :stdio | :streamable-http | :sse
      :id-counter       atom of the next JSON-RPC id
      :last-used        atom of the last activity epoch-ms (idle reaper)
-     :req-lock         monitor serializing dispatch per conn — the
-                       channel-based transports match responses on one
-                       shared channel, so two waiters would consume each
-                       other's responses (streamable-HTTP answers each
-                       request on its own response body and stays
-                       concurrent)
+     :req-lock         monitor serializing dispatch per conn — the legacy
+                       SSE transport matches responses on one shared
+                       channel, so two waiters would consume each other's
+                       responses; stdio correlates per request in jsonrpc
+                       but routes progress through one conn-level
+                       callback, so serializing keeps it unambiguous
+                       (streamable-HTTP answers each request on its own
+                       response body and stays concurrent)
      :on-notification  (fn [conn msg]) for server notifications
      :conn-ref         atom holding the conn as the client sees it after
                        derived keys (:capabilities) are attached — the
@@ -35,11 +37,12 @@
    Transport keys are documented beside each conn constructor in
    kmet.libs.mcp.transport.{stdio,http,sse}.
 
-   This namespace holds what stdio and the legacy SSE transport share:
-   header lookup, last-used bookkeeping, and the channel wait loop that
-   matches a response id while dispatching everything else. Calling the
-   transport-specific send-async! is passed in, so this namespace never
-   requires a transport."
+   This namespace holds what the legacy SSE transport needs on top of
+   the transport-specific send-async!: header lookup, last-used
+   bookkeeping, and the channel wait loop that matches a response id
+   while dispatching everything else. Calling the transport-specific
+   send-async! is passed in, so this namespace never requires a
+   transport."
   (:require [clojure.core.async :as async]
             [clojure.string :as str]
             [kmet.libs.concurrent :as concurrent]

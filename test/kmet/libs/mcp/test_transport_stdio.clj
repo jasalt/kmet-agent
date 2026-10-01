@@ -77,8 +77,9 @@
 
 (def ^:private fake-server-code
   ;; A minimal MCP stdio server: answers initialize, sends a server->client
-  ;; ping after initialized, and reports on tools/list whether the auto
-  ;; reply arrived. clojure.data.json is built into babashka.
+  ;; ping after initialized, sends a progress notification before each
+  ;; tools/list result, and reports whether the ping auto reply arrived.
+  ;; clojure.data.json is built into babashka.
   (str "(require '[clojure.data.json :as json])"
        "(defn send! [m] (println (json/write-str m)) (flush))"
        "(def ping-replied (atom false))"
@@ -94,8 +95,10 @@
        "        (= 900 (:id msg))"
        "        (reset! ping-replied true)"
        "        (= \"tools/list\" (:method msg))"
-       "        (send! {:jsonrpc \"2.0\" :id (:id msg)"
-       "                :result {:tools [{:name \"echo\"}] :pingReplied @ping-replied}})"
+       "        (do (send! {:jsonrpc \"2.0\" :method \"notifications/progress\""
+       "                    :params {:progress 50 :total 100 :message \"half\"}})"
+       "            (send! {:jsonrpc \"2.0\" :id (:id msg)"
+       "                    :result {:tools [{:name \"echo\"}] :pingReplied @ping-replied}}))"
        "        :else nil))"
        "    (recur)))"))
 
@@ -104,10 +107,18 @@
     (try
       (is (stdio/alive? conn))
       (is (= "2025-11-25" (:protocol-version (mcp/initialize! conn))))
-      (is (= [{:name "echo"}] (:tools (mcp/request! conn "tools/list" {}))))
+      (let [seen (atom [])
+            result (mcp/request! conn "tools/list" {}
+                                 {:on-notification #(swap! seen conj %)})]
+        (is (= [{:name "echo"}] (:tools result)))
+        (is (= [{:jsonrpc "2.0" :method "notifications/progress"
+                 :params {:progress 50 :total 100 :message "half"}}]
+               @seen)
+            "progress routes to the in-flight request's callback"))
       ;; the reader dispatches the server's ping before it delivers the
       ;; first tools/list response, so by the second round trip the
-      ;; notifications/cancelled-style auto reply is guaranteed to have run
+      ;; auto reply is guaranteed to have run; with no callback the
+      ;; progress notification is dropped
       (is (true? (:pingReplied (mcp/request! conn "tools/list" {}))))
       (finally
         (stdio/close! conn)))))
