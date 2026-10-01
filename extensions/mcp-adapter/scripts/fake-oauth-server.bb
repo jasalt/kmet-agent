@@ -4,6 +4,10 @@
 ;; A plain java.net.ServerSocket HTTP loop. Serves:
 ;;
 ;;   GET  /.well-known/oauth-authorization-server — RFC 8414 metadata
+;;   GET  /.well-known/oauth-protected-resource[/mcp] — RFC 9728 resource
+;;                        metadata (authorization_servers, scopes_supported)
+;;   GET  /no-pkce-metadata — AS metadata WITHOUT code_challenge_methods_supported
+;;   GET  /last-token-request — the last /token request form (RFC 8707 checks)
 ;;   POST /register     — RFC 7591 DCR (returns a fixed client id)
 ;;   GET  /authorize    — loopback authorize: redirects to the callback
 ;;                        with ?code=...&state=<echoed> when code_verifier
@@ -38,6 +42,7 @@
 
 (def state (atom {:device-polls 0
                   :issued-tokens 0}))
+(def last-token-request (atom {}))
 
 (defn- http-response
   ([status body] (http-response status body {"Content-Type" "application/json"}))
@@ -110,7 +115,31 @@
                                                "urn:ietf:params:oauth:grant-type:device_code"
                                                "client_credentials"
                                                "urn:ietf:params:oauth:grant-type:jwt-bearer"]
-                       :token_endpoint_auth_methods_supported ["none"]}))
+                       :token_endpoint_auth_methods_supported ["none"]
+                       :code_challenge_methods_supported ["S256"]}))
+
+      (and (= method "GET")
+           (str/includes? path "/.well-known/oauth-protected-resource"))
+      (http-response 200
+                     (json/generate-string
+                      {:resource (str "http://127.0.0.1:" (:port @state))
+                       :authorization_servers [(str "http://127.0.0.1:" (:port @state))]
+                       :scopes_supported ["read" "write"]
+                       :bearer_methods_supported ["header"]}))
+
+      ;; an AS that does not advertise PKCE support — the client must
+      ;; refuse to authorize against it (OAuth 2.1)
+      (and (= method "GET") (= path "/no-pkce-metadata"))
+      (http-response 200
+                     (json/generate-string
+                      {:issuer (str "http://127.0.0.1:" (:port @state))
+                       :authorization_endpoint (str "http://127.0.0.1:" (:port @state) "/authorize")
+                       :token_endpoint (str "http://127.0.0.1:" (:port @state) "/token")
+                       :registration_endpoint (str "http://127.0.0.1:" (:port @state) "/register")}))
+
+      ;; what the last /token request carried (RFC 8707 resource, scopes)
+      (and (= method "GET") (= path "/last-token-request"))
+      (http-response 200 (json/generate-string @last-token-request))
 
       (and (= method "POST") (= path "/register"))
       (http-response 201
@@ -134,6 +163,7 @@
       (and (= method "POST") (= path "/token"))
       (let [form (form-decode (:body req))
             grant (get form "grant_type")]
+        (reset! last-token-request form)
         (case grant
           "authorization_code"
           (if (= "fake-code" (get form "code"))

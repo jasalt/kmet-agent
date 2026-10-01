@@ -50,6 +50,19 @@
   ["2025-11-25" "2025-06-18" "2025-03-26" "2024-11-05"])
 (def client-info {:name "kmet-mcp-adapter" :version "0.1.0"})
 
+(def ^:private progress-counter (atom 0))
+
+(defn progress-token
+  "A correlation id for the _meta.progressToken of one request.
+   Progress is opt-in per request — a server only emits
+   notifications/progress for requests carrying the token, so every call
+   the client wants streamed must send one (spec, progress). Monotonic:
+   the id only has to be unique within the session."
+  []
+  (str "kmet-" (swap! progress-counter inc)))
+
+(declare send-async! dispatch-server-message!)
+
 (defn- mcp-error
   "ex-info with the §7.7 message patterns."
   ([message] (ex-info message {:type :mcp-error}))
@@ -108,7 +121,7 @@
 
 (defn- connect-stdio
   "Spawn a stdio server process. Returns the conn map."
-  [definition]
+  [definition opts]
   (let [argv (stdio-argv definition)
         env (merge (into {} (System/getenv)) (:env definition))
         ;; the vector form: babashka.process's variadic form silently drops
@@ -129,13 +142,17 @@
      :pid pid
      :ch ch
      :stderr-tail tail
+     :out-lock (Object.)
+     :req-lock (Object.)
      :id-counter (atom 0)
-     :last-used (atom (System/currentTimeMillis))}))
+     :last-used (atom (System/currentTimeMillis))
+     :on-notification (:on-notification opts)}))
 
 ;; ─── streamable-http transport (§7.3) ────────────────────────────────────
 
-(defn- header-value
-  "Case-insensitive header lookup."
+(defn header-value
+  "Case-insensitive header lookup (HTTP response headers, string or
+   keyword keys)."
   [headers name]
   (some (fn [[k v]]
           (when (= (str/lower-case (str k)) (str/lower-case name)) v))
@@ -156,7 +173,9 @@
    :closed (atom false)
    :last-used (atom (System/currentTimeMillis))
    :auth-headers (:auth-headers opts)
-   :on-401 (:on-401 opts)})
+   :on-401 (:on-401 opts)
+   :on-notification (:on-notification opts)
+   :req-lock (Object.)})
 
 (defn- base-http-headers
   "Static headers for an MCP POST: Mcp-Session-Id and the negotiated
@@ -177,11 +196,12 @@
 
 (defn- read-sse-response
   "Read an SSE response body: collect data: payloads (event: lines set the
-   event name), keep the one whose parsed JSON matches our id; progress
-   notifications (no :id, method notifications/progress) are forwarded to
-   ON-NOTIFICATION when given; the server closes the stream after the
+   event name) and return the one whose parsed JSON matches our id.
+   Anything else on the stream is a server->client request or
+   notification and is dispatched (§7.7); progress notifications
+   stream to ON-NOTIFICATION. The server closes the stream after the
    result."
-  [body id on-notification]
+  [conn body id on-notification]
   (with-open [rdr (io/reader body)]
     (loop [event-name nil buf ""]
       (let [line (.readLine rdr)]
@@ -195,17 +215,18 @@
               (and (str/blank? line) (seq buf))
               (let [parsed (try (json/parse-string buf true)
                                 (catch Exception _ nil))]
-                (cond
-                  (and (map? parsed) (= id (:id parsed))) parsed
-                  (and on-notification (map? parsed) (nil? (:id parsed))
-                       (= "notifications/progress" (:method parsed)))
-                  (do (on-notification parsed) (recur nil ""))
-                  :else (recur nil "")))
+                (if (and (map? parsed) (= id (:id parsed)))
+                  parsed
+                  (do (when (map? parsed)
+                        (dispatch-server-message! conn parsed on-notification))
+                      (recur nil ""))))
               :else (recur event-name buf))))))))
 
 (defn- http-post!
   "POST one JSON-RPC message; retries once with fresh headers on 401 when
-   the conn has an :on-401 hook."
+   the conn has an :on-401 hook. The hook receives the 401 response so it
+   can read the WWW-Authenticate challenge (RFC 9728 resource metadata /
+   scope) before answering."
   [conn url headers body timeout-ms]
   (let [attempt (fn [hs]
                   (http/post url
@@ -219,7 +240,8 @@
       (do
         ;; the discarded 401 body is never read — reap its transport
         (http/close! response)
-        (attempt (merge (base-http-headers conn) (or ((:on-401 conn)) {}))))
+        (attempt (merge (base-http-headers conn)
+                        (or ((:on-401 conn) response) {}))))
       response)))
 
 (defn- parse-http-response
@@ -231,7 +253,7 @@
    is reaped and its temp files deleted (a stream that must stay open
    beyond this call is only used by the sse GET, which manages it
    separately)."
-  [response id on-notification]
+  [conn response id on-notification]
   (try
     (let [status (:status response)
           content-type (or (header-value (:headers response) "Content-Type") "")]
@@ -239,7 +261,7 @@
         (<= 200 status 299)
         (cond
           (str/includes? content-type "text/event-stream")
-          (read-sse-response (:body response) id on-notification)
+          (read-sse-response conn (:body response) id on-notification)
 
           (str/includes? content-type "application/json")
           (let [text (read-stream (:body response))]
@@ -352,7 +374,9 @@
    :closed (atom false)
    :last-used (atom (System/currentTimeMillis))
    :auth-headers (:auth-headers opts)
-   :on-401 (:on-401 opts)})
+   :on-401 (:on-401 opts)
+   :on-notification (:on-notification opts)
+   :req-lock (Object.)})
 
 ;; ─── request!/notify!/close!/alive? (§7.1) ────────────────────────────────
 
@@ -370,20 +394,109 @@
       :else (recur (ex-cause e)))))
 
 (defn- write-stdio-msg!
+  "Write one JSON-RPC line to the server, serialized on the conn's write
+   lock: a background request (a list_changed resync) and a foreground
+   tool call can share one conn, and two io/copy calls on the same
+   stream would interleave into a corrupt line."
   [conn msg]
   ;; io/copy instead of .write — direct stream methods are not callable
   ;; from the extension sci context
-  (let [line (str (json/generate-string msg) "\n")]
-    (io/copy line (:in (:proc conn))))
+  (let [line (str (json/generate-string msg) "\n")
+        write! (fn [] (io/copy line (:in (:proc conn))))]
+    (if-let [lock (:out-lock conn)]
+      (locking lock (write!))
+      (write!)))
   nil)
 
+(defn- send-async!
+  "Deliver a JSON-RPC message that expects no answer — a notification, or
+   a response to a server->client request. stdio writes the line to the
+   process; the HTTP transports POST it and reap the transport without
+   reading the body. A delivery failure is dropped, never surfaced
+   (§7.7: notifications are best-effort)."
+  [conn msg]
+  (let [body (json/generate-string msg)]
+    (when-let [lu (:last-used conn)] (reset! lu (System/currentTimeMillis)))
+    (case (:transport conn)
+      :stdio (write-stdio-msg! conn msg)
+      (:streamable-http :sse)
+      (try
+        (let [endpoint (if (= :sse (:transport conn))
+                         (or @(:endpoint-atom conn)
+                             (throw (mcp-error "MCP connect failed: no SSE endpoint received"
+                                               {:transport :sse})))
+                         (:url conn))
+              response (http-post! conn endpoint (http-request-headers conn) body 30000)]
+          ;; fire-and-forget: the body is never read — reap the transport
+          ;; (curl: untrack pid + delete temp files) right away
+          (http/close! response))
+        (catch Exception _ nil)))
+    nil))
+
+(defn- reply!
+  "Answer a server->client request. `ping` is answered with an empty
+   result — a receiver MUST respond promptly. The client features we do
+   not implement (sampling/createMessage, elicitation/create,
+   roots/list) are refused with -32601 Method not found: dropping the
+   message would leave the server waiting out its own timeout and
+   logging a protocol error. We declare no such capabilities, so a
+   conforming server never sends them."
+  [conn msg]
+  (let [id (:id msg)
+        method (:method msg)]
+    (send-async! conn
+                 (if (= "ping" method)
+                   {:jsonrpc "2.0" :id id :result {}}
+                   {:jsonrpc "2.0" :id id
+                    :error {:code -32601
+                            :message (str "Method not found: " method)}})))
+  nil)
+
+(defn- cancel!
+  "Send notifications/cancelled for a request we stop waiting for. A
+   dropped connection is not a cancellation (transports), so a tool call
+   that timed out would otherwise keep running on the server. Best-effort:
+   the HTTP transports deliver it from a background thread so a server
+   busy with the abandoned call cannot delay the timeout error itself."
+  [conn id method reason]
+  (let [msg {:jsonrpc "2.0"
+             :method "notifications/cancelled"
+             :params {:requestId id
+                      :reason (str "kmet: " method " — " reason)}}]
+    (if (= :stdio (:transport conn))
+      (send-async! conn msg)
+      (spawn (fn [] (send-async! conn msg)))))
+  nil)
+
+(defn- dispatch-server-message!
+  "Route a message that is not the response being awaited: a
+   server->client request (an :id plus a :method) gets an answer, a
+   notification goes to the in-flight call's ON-NOTIFICATION hook
+   (notifications/progress) and to the conn-level :on-notification
+   handler (fn [conn msg] — list_changed and the like). Anything else is
+   dropped."
+  [conn msg on-notification]
+  (cond
+    (and (contains? msg :id) (contains? msg :method))
+    (reply! conn msg)
+
+    (:method msg)
+    (do (when (and on-notification
+                   (= "notifications/progress" (:method msg)))
+          (on-notification msg))
+        (when-let [f (:on-notification conn)]
+          (try (f conn msg) (catch Exception _ nil))))
+
+    :else nil))
+
 (defn- wait-for-response
-  "Wait on CH for the message with :id = ID; notifications and stale
-   responses are dropped and the loop continues. Returns the response map
+  "Wait on CH for the message with :id = ID. Anything else that arrives
+   (notifications, server->client requests, stale responses) is
+   dispatched (§7.7) and the wait continues. Returns the response map
    (with :result or :error), or ::eof when the channel closed (transport
    death) before the response arrived. The timeout is an overall deadline —
-   notifications do not extend it."
-  [ch id method timeout-ms on-notification]
+   notifications do not extend it; on expiry the request is cancelled."
+  [conn ch id method timeout-ms on-notification]
   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
     (loop []
       (let [remaining (- deadline (System/currentTimeMillis))
@@ -391,8 +504,9 @@
             [value port] (async/alts!! [ch timeout-ch])]
         (cond
           (identical? port timeout-ch)
-          (throw (mcp-error (str "MCP request timed out after " timeout-ms "ms: " method)
-                            {:timeout-ms timeout-ms :method method}))
+          (do (cancel! conn id method "timed out")
+              (throw (mcp-error (str "MCP request timed out after " timeout-ms "ms: " method)
+                                {:timeout-ms timeout-ms :method method})))
 
           (or (nil? value) (= eof-marker value)) eof-marker
 
@@ -400,19 +514,21 @@
           (let [msg value]
             (cond
               (not (map? msg)) (recur)
-              (nil? (:id msg))
-              (do
-                (when (and on-notification
-                           (= "notifications/progress" (:method msg)))
-                  (on-notification msg))
-                (recur))
-              (not= id (:id msg)) (recur)         ;; stale response
-              (contains? msg :error)
-              (throw (mcp-error (str "MCP error " (:code (:error msg)) ": "
-                                     (:message (:error msg)))
-                                {:code (:code (:error msg))
-                                 :message (:message (:error msg))}))
-              :else msg)))))))
+              (= id (:id msg))
+              (cond
+                (contains? msg :error)
+                (throw (mcp-error (str "MCP error " (:code (:error msg)) ": "
+                                       (:message (:error msg)))
+                                  {:code (:code (:error msg))
+                                   :message (:message (:error msg))}))
+                :else msg)
+
+              ;; not our response: a server->client request or notification
+              (or (contains? msg :id) (:method msg))
+              (do (dispatch-server-message! conn msg on-notification)
+                  (recur))
+
+              :else (recur))))))))
 
 (defn- stdio-dead-message
   "Diagnostic message for a dead stdio process (stderr tail appended)."
@@ -427,7 +543,7 @@
   (when-not (proc/alive? (:proc conn))
     (throw (mcp-error (stdio-dead-message conn nil) {:transport :stdio})))
   (write-stdio-msg! conn {:jsonrpc "2.0" :id id :method method :params params})
-  (let [response (wait-for-response (:ch conn) id method timeout-ms on-notification)]
+  (let [response (wait-for-response conn (:ch conn) id method timeout-ms on-notification)]
     (if (= eof-marker response)
       (throw (mcp-error (stdio-dead-message conn method) {:transport :stdio}))
       (:result response))))
@@ -446,7 +562,7 @@
                              (when-let [session-id (header-value (:headers response)
                                                                  "Mcp-Session-Id")]
                                (reset! (:session-id conn) session-id))
-                             (parse-http-response response id on-notification))
+                             (parse-http-response conn response id on-notification))
                            (catch Exception e
                              (if (timeout-exception? e)
                                (mcp-error (str "MCP request timed out after " timeout-ms "ms: " method)
@@ -458,8 +574,10 @@
       (do
         ;; The server may still complete the call; the result is lost (no
         ;; abort transport in bb) — documented limitation (§7.3). The conn
-        ;; is dead after this: the client was closed.
+        ;; is dead after this: the client was closed. Tell the server to
+        ;; stop working on the abandoned request.
         (reset! (:closed conn) true)
+        (cancel! conn id method "timed out")
         (throw (mcp-error (str "MCP request timed out after " timeout-ms "ms: " method)
                           {:timeout-ms timeout-ms :method method})))
       (if (instance? Exception response)
@@ -496,7 +614,7 @@
             body (json/generate-string {:jsonrpc "2.0" :id id :method method :params params})
             response (http-post! conn endpoint (http-request-headers conn)
                                  body timeout-ms)
-            parsed (parse-http-response response id on-notification)]
+            parsed (parse-http-response conn response id on-notification)]
         (if (and (map? parsed) (contains? parsed :id) (:error parsed))
           (throw (mcp-error (str "MCP error " (:code (:error parsed)) ": "
                                  (:message (:error parsed)))
@@ -504,7 +622,8 @@
                              :message (:message (:error parsed))}))
           (let [wait-result (if (and (map? parsed) (contains? parsed :id))
                               parsed
-                              (wait-for-response ch id method timeout-ms on-notification))]
+                              (wait-for-response conn ch id method timeout-ms
+                                                 on-notification))]
             (if (= eof-marker wait-result)
               ;; Stream dropped — reopen + re-initialize (bounded retry).
               (if (< attempts 1)
@@ -530,55 +649,85 @@
    timeout, or transport death (§7.7)."
   [conn method params & [{:keys [timeout-ms on-notification]}]]
   (let [id (swap! (:id-counter conn) inc)
-        timeout (or timeout-ms default-request-timeout-ms)]
+        timeout (or timeout-ms default-request-timeout-ms)
+        dispatch (fn []
+                   (case (:transport conn)
+                     :stdio (request-stdio! conn method params id timeout on-notification)
+                     :streamable-http (request-http! conn method params id timeout on-notification)
+                     :sse (request-sse! conn method params id timeout on-notification)))]
     (when-let [lu (:last-used conn)] (reset! lu (System/currentTimeMillis)))
-    (case (:transport conn)
-      :stdio (request-stdio! conn method params id timeout on-notification)
-      :streamable-http (request-http! conn method params id timeout on-notification)
-      :sse (request-sse! conn method params id timeout on-notification))))
+    ;; one request at a time per stdio/sse conn: both transports match
+    ;; responses on one shared channel, so two waiters would consume (and
+    ;; drop) each other's responses. A background list_changed resync now
+    ;; queues behind an in-flight tool call instead of racing it
+    ;; (streamable-http answers each request on its own response body and
+    ;; stays concurrent).
+    (if (= :streamable-http (:transport conn))
+      (dispatch)
+      ;; clj-kondo flags the map lookup as locally created; the lock object
+      ;; is created once per conn (connect-stdio/http/sse) and shared by
+      ;; every caller of that conn
+      #_{:clj-kondo/ignore [:locking-suspicious-lock]}
+      (locking (:req-lock conn) (dispatch)))))
 
 (defn notify!
   "Send a JSON-RPC notification (no response expected)."
   [conn method params]
-  (let [msg {:jsonrpc "2.0" :method method :params params}
-        body (json/generate-string msg)]
-    (when-let [lu (:last-used conn)] (reset! lu (System/currentTimeMillis)))
-    (case (:transport conn)
-      :stdio (write-stdio-msg! conn msg)
-      (:streamable-http :sse)
-      (try
-        (let [endpoint (if (= :sse (:transport conn))
-                         (or @(:endpoint-atom conn)
-                             (throw (mcp-error "MCP connect failed: no SSE endpoint received"
-                                               {:transport :sse})))
-                         (:url conn))
-              response (http-post! conn endpoint (http-request-headers conn) body 30000)]
-          ;; fire-and-forget: the body is never read — reap the transport
-          ;; (curl: untrack pid + delete temp files) right away
-          (http/close! response))
-        ;; a notification that cannot be delivered is dropped, never
-        ;; surfaced (pi parity — notifications are best-effort)
-        (catch Exception _ nil)))
-    nil))
+  (send-async! conn {:jsonrpc "2.0" :method method :params params}))
+
+(defn- terminate-http-session!
+  "Release a streamable-HTTP session: an HTTP DELETE to the MCP endpoint
+   ends the server-side session (transports — a client that no longer
+   needs a session SHOULD delete it). Delivered from a background thread
+   — a DELETE (and the auth-header refresh it can trigger) must never
+   block the caller; /mcp disconnect runs on the TUI thread. Failures
+   are ignored; the session expires on its own. No-op without a
+   negotiated Mcp-Session-Id."
+  [conn]
+  (when (and (= :streamable-http (:transport conn)) @(:session-id conn))
+    (spawn
+     (fn []
+       (try
+         (http/request {:url (:url conn)
+                        :method :delete
+                        :headers (http-request-headers conn)
+                        :as :string
+                        :throw? false
+                        :timeout 10000})
+         (catch Exception _ nil))
+       (reset! (:session-id conn) nil))))
+  nil)
 
 (defn close!
   "Close a connection: kill the stdio process tree, abort the active SSE
-   stream (releases the blocked reader + reaps the transport). Idempotent."
-  [conn]
-  (case (:transport conn)
-    :stdio
-    (do
-      (when (:pid conn) (process/kill-process-tree! (:pid conn)))
-      (try (async/close! (:ch conn)) (catch Exception _ nil)))
+   stream (releases the blocked reader + reaps the transport), or DELETE
+   a streamable-HTTP session (sent from a background thread, so the
+   caller never waits on the server). OPTS: :terminate-http-session?
+   false skips the DELETE entirely — teardown paths (session shutdown,
+   a retry after a request timeout) rely on the session expiring on its
+   own. A conn already marked closed (request timeout) skips the DELETE
+   too. Idempotent."
+  ([conn] (close! conn {}))
+  ([conn {:keys [terminate-http-session?] :or {terminate-http-session? true}}]
+   (case (:transport conn)
+     :stdio
+     (do
+       (when (:pid conn) (process/kill-process-tree! (:pid conn)))
+       (try (async/close! (:ch conn)) (catch Exception _ nil)))
 
-    (:streamable-http :sse)
-    (do
-      (reset! (:closed conn) true)
-      (when (= :sse (:transport conn))
-        (reset! (:stream-open conn) false)
-        (when-let [r @(:response conn)]
-          (try (http/close! r) (catch Exception _ nil))))))
-  nil)
+     :streamable-http
+     (let [was-closed @(:closed conn)]
+       (reset! (:closed conn) true)
+       (when (and terminate-http-session? (not was-closed))
+         (terminate-http-session! conn)))
+
+     :sse
+     (do
+       (reset! (:closed conn) true)
+       (reset! (:stream-open conn) false)
+       (when-let [r @(:response conn)]
+         (try (http/close! r) (catch Exception _ nil)))))
+   nil))
 
 (defn alive?
   "True when the connection is still usable."
@@ -669,15 +818,74 @@
         (recur next-cursor resources)
         resources))))
 
+(defn list-all-resource-templates
+  "resources/templates/list with cursor pagination (30s per page) —
+   parameterized resources (file:///{path} and friends). A server whose
+   resources are all templates exposes nothing through resources/list.
+   Tolerates a server that advertises the resources capability but
+   answers -32601 (templates are a sub-feature of resource discovery —
+   failing the whole connect or resync over them would cost us the plain
+   resources/tools too). Any other error propagates."
+  [conn]
+  (try
+    (loop [cursor nil templates []]
+      (let [result (request! conn "resources/templates/list"
+                             (if cursor {:cursor cursor} {})
+                             {:timeout-ms list-page-timeout-ms})
+            templates (into templates (:resourceTemplates result))]
+        (if-let [next-cursor (:nextCursor result)]
+          (recur next-cursor templates)
+          templates)))
+    (catch Exception e
+      (when-not (= -32601 (:code (ex-data e))) (throw e))
+      [])))
+
 (defn read-resource
   "resources/read — result contains :contents (text or blob blocks)."
   [conn uri & [{:keys [timeout-ms]}]]
   (request! conn "resources/read" {:uri uri}
             {:timeout-ms (or timeout-ms default-request-timeout-ms)}))
 
+(defn- uri-escape
+  "Percent-escape a template variable's value: everything outside the
+   RFC 3986 unreserved / sub-delims / ':@/' set, plus control
+   characters — so a space, ?, # or % cannot change the URI's meaning.
+   Deliberately minimal: '/' survives inside a {path} variable (servers
+   expect the raw path), and non-ASCII is left as-is rather than
+   percent-encoded per byte."
+  [s]
+  (apply str
+         (map (fn [c]
+                (if (or (> (int c) 126)
+                        (re-matches #"[A-Za-z0-9\-._~!$&'()*+,;=:@/]" (str c)))
+                  (str c)
+                  (format "%%%02X" (int c))))
+              (str s))))
+
+(defn expand-uri-template
+  "Expand a level-1 URI template (RFC 6570 {var} placeholders) with
+   ARGS, turning a resources/templates/list entry into a concrete
+   resources/read URI. Argument keys may be strings or keywords. A
+   variable with no matching argument is left in place, so the server
+   answers with its own error instead of us guessing a value."
+  [uri-template args]
+  (let [args (or args {})]
+    (str/replace (str uri-template)
+                 #"\{([^{}]+)\}"
+                 (fn [match]
+                   (let [var-name (second match)
+                         value (get args var-name (get args (keyword var-name)))]
+                     (if (some? value)
+                       (uri-escape (str value))
+                       (first match)))))))
+
 (defn connect!
   "Full connect for a DEFINITION: build the transport, handshake,
-   tools/list. OPTS: :auth-headers / :on-401 (HTTP transports, §7.8).
+   tools/list. OPTS: :auth-headers / :on-401 (HTTP transports, §7.8 —
+   :on-401 is called as (fn [response]) with the 401 response so it can
+   read the WWW-Authenticate challenge, and returns fresh headers) /
+   :on-notification (fn [conn msg] — server->client notifications other
+   than progress, e.g. list_changed).
    Returns {:conn conn :tools [..] :protocol-version str :server-info map}.
    On any failure the transport is closed and the ex-info rethrown."
   [definition opts]
@@ -686,18 +894,21 @@
                (case (:http-transport definition)
                  :sse (connect-sse url opts)
                  (connect-streamable-http url opts))
-               (connect-stdio definition))]
+               (connect-stdio definition opts))]
     (try
       (when (and url (= :sse (:transport conn)))
         (open-sse-stream! conn))
       (let [{:keys [protocol-version server-info capabilities]} (initialize! conn)
             capabilities (or capabilities {})]
-        {:conn conn
+        {:conn (assoc conn :capabilities capabilities)
          ;; prompts/resources are only queried when the server advertises
          ;; the capability (an unadvertised method errors with -32601)
          :tools (if (:tools capabilities) (list-all-tools conn) [])
          :prompts (if (:prompts capabilities) (list-all-prompts conn) [])
          :resources (if (:resources capabilities) (list-all-resources conn) [])
+         :resource-templates (if (:resources capabilities)
+                               (list-all-resource-templates conn)
+                               [])
          :protocol-version protocol-version
          :server-info server-info})
       (catch Exception e

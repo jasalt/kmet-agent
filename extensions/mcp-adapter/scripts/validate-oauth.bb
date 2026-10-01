@@ -54,6 +54,13 @@
       (catch Exception _ false)
       (finally (.close s)))))
 
+(defn- last-token-request
+  "What the fake authorization server last received at /token — lets the
+   checks assert the RFC 8707 resource indicator and the scopes."
+  [oauth-port]
+  (:body (oauth-lib/fetch-json (str "http://127.0.0.1:" oauth-port "/last-token-request")
+                              {:method :get})))
+
 (defn- capture-notify
   "Interaction helper: capture the :auth-url / :device-code events."
   [events]
@@ -96,9 +103,9 @@
                     :auth :oauth
                     :oauth {:flow :pkce :scopes ["read"]}}
         abort-called (atom false)
-        interaction (assoc (interaction events)
-                           :abort-prompt! (fn [] (reset! abort-called true)))
-        status (auth/run-flow! "pkce-server" definition interaction)
+        flow-interaction (assoc (interaction events)
+                                :abort-prompt! (fn [] (reset! abort-called true)))
+        status (auth/run-flow! "pkce-server" definition flow-interaction)
         auth-event (first (filter #(= :auth-url (:type %)) @events))]
     (check "flow returns :logged-in" (= :logged-in status))
     (check "abort-prompt! invoked after the callback (pi manualAbort.abort)"
@@ -137,13 +144,49 @@
                           (assoc-in (auth/server-entry "pkce-server")
                                     [:tokens :access] "stale-access"))
       (let [auth-fns (auth/make-auth-fns "pkce-server" definition)
-            headers ((:on-401 auth-fns))
+            challenge {:headers {"www-authenticate"
+                                 (str "Bearer resource_metadata=\"http://127.0.0.1:"
+                                      oauth-port "/.well-known/oauth-protected-resource\", "
+                                      "scope=\"files:read\"")}}
+            headers ((:on-401 auth-fns) challenge)
             new-access (get-in (auth/server-entry "pkce-server") [:tokens :access])]
         (check "401 refresh replaces access token"
                (and (not= "stale-access" new-access)
                     (seq new-access)
                     (= (str "Bearer " new-access) (get headers "Authorization"))))
-        (check "refresh rotated the refresh token" (some? old-refresh))))
+        (check "refresh rotated the refresh token" (some? old-refresh))
+        ;; the challenge is recorded (resource_metadata + scope); a flow
+        ;; with no configured :scopes must take the challenged scope (the
+        ;; earlier definition's :scopes ["read"] would mask it)
+        (let [bare-events (atom [])
+              bare-definition (assoc definition :oauth {:flow :pkce})]
+          (auth/run-flow! "pkce-server" bare-definition (interaction bare-events))
+          (check "challenge scope used for the next token request"
+                 (= "files:read" (:scope (last-token-request oauth-port)))))))
+    ;; RFC 8707: the resource indicator is mandatory in authorization
+    ;; and token requests
+    (check "canonical resource uri"
+           (= "https://mcp.example.com/mcp"
+              (auth/canonical-resource-uri "HTTPS://MCP.Example.com/mcp/")))
+    (check "canonical resource uri drops a root path"
+           (= "https://mcp.example.com" (auth/canonical-resource-uri "https://mcp.example.com")))
+    (check "canonical resource uri strips query and fragment"
+           (and (= "https://mcp.example.com/mcp"
+                   (auth/canonical-resource-uri "https://mcp.example.com/mcp?key=1"))
+                (= "https://mcp.example.com/mcp"
+                   (auth/canonical-resource-uri "https://mcp.example.com/mcp#frag"))))
+    (check "www-authenticate parsed"
+           (= {:resource-metadata "https://as.example/.well-known/oauth-protected-resource"
+               :scope "files:read"}
+              (auth/parse-www-authenticate
+               (str "Bearer resource_metadata=\"https://as.example/.well-known/"
+                    "oauth-protected-resource\", scope=\"files:read\""))))
+    (check "authorize URL carries the resource indicator"
+           (= (str "http://127.0.0.1:" oauth-port "/mcp")
+              (:resource (params-of (:url (first (filter #(= :auth-url (:type %)) @events)))))))
+    (check "token request carries the resource indicator"
+           (= (str "http://127.0.0.1:" oauth-port "/mcp")
+              (:resource (last-token-request oauth-port))))
     (check "status logged-in" (= :logged-in (auth/auth-status "pkce-server" definition)))))
 
 (defn test-configured-redirect-uri [oauth-port store-path]
@@ -209,13 +252,103 @@
            (= :client-credentials (auth/auth-status "cc-server" definition)))
     ;; the 401 retry path re-fetches (forced) — a fresh token id
     (let [auth-fns (auth/make-auth-fns "cc-server" definition)
-          headers ((:on-401 auth-fns))]
+          headers ((:on-401 auth-fns) {:headers {}})]
       (check "401 re-fetch gets a fresh token"
              (str/starts-with? (get headers "Authorization") "Bearer access-cc-")))
     (auth/logout! "cc-server")
     (check "logout clears machine cache"
            (nil? (get @(resolve 'kmet.extensions.mcp-adapter.auth/machine-token-cache)
                       "cc-server")))))
+
+(defn test-discovery-and-pkce-verification [oauth-port store-path]
+  (println "\n── RFC 9728 / 8414 discovery + PKCE verification ──")
+  ;; RFC 9728: the protected-resource document is found by probing, and it
+  ;; carries the authorization-server location
+  (let [prm (oauth-lib/protected-resource-metadata
+             (str "http://127.0.0.1:" oauth-port "/mcp") {})]
+    (check "protected-resource metadata discovered"
+           (= [(str "http://127.0.0.1:" oauth-port)] (:authorization_servers prm)))
+    (check "protected-resource metadata advertises scopes"
+           (= ["read" "write"] (:scopes_supported prm))))
+  ;; RFC 9728: the resource server may name an authorization server on a
+  ;; different origin. RFC 8414 §3.3 validates the issuer against the URL
+  ;; the document was fetched from (the AS), not the resource server —
+  ;; otherwise every split-origin deployment fails the issuer check
+  (let [discover-meta (deref (resolve 'kmet.extensions.mcp-adapter.auth/discover-meta))]
+    (with-redefs [oauth-lib/protected-resource-metadata
+                  (fn [_url _opts]
+                    {:authorization_servers ["https://auth.example.com"]})
+                  oauth-lib/discover-authorization-server
+                  (fn [url _opts]
+                    (when (= url "https://auth.example.com")
+                      {:issuer url
+                       :authorization_endpoint (str url "/authorize")
+                       :token_endpoint (str url "/token")
+                       :code_challenge_methods_supported ["S256"]}))]
+      (check "cross-origin authorization server accepted"
+             (= "https://auth.example.com"
+                (:issuer (discover-meta "srv" {:url "https://mcp.example.com/mcp"
+                                                :oauth {}})))))
+    (with-redefs [oauth-lib/protected-resource-metadata
+                  (fn [_url _opts]
+                    {:authorization_servers ["https://auth.example.com"]})
+                  oauth-lib/discover-authorization-server
+                  (fn [url _opts]
+                    {:issuer (str url ".evil.example")
+                     :token_endpoint "https://evil.example/token"})]
+      (check "issuer mismatch against the AS URL still rejected"
+             (try (discover-meta "srv" {:url "https://mcp.example.com/mcp"
+                                         :oauth {}})
+                  false
+                  (catch Exception e
+                    (= :oauth-issuer-mismatch (:type (ex-data e))))))))
+  ;; a server with no configured scopes requests what the resource
+  ;; document advertises
+  (let [events (atom [])
+        definition {:url (str "http://127.0.0.1:" oauth-port "/mcp")
+                    :auth :oauth
+                    :oauth {:flow :device}}
+        _ (auth/run-flow! "scoped-server" definition (interaction events))]
+    (check "scopes come from the resource metadata"
+           (= "read write" (:scope (last-token-request oauth-port))))
+    (auth/logout! "scoped-server"))
+  ;; OAuth 2.1: an authorization server that does not advertise PKCE
+  ;; support must be refused before we send a challenge
+  (let [events (atom [])
+        definition {:url (str "http://127.0.0.1:" oauth-port "/mcp")
+                    :auth :oauth
+                    :oauth {:flow :pkce
+                            :authorization-server-url
+                            (str "http://127.0.0.1:" oauth-port "/no-pkce-metadata")}}]
+    (check "refuses an AS without PKCE support"
+           (try (auth/run-flow! "no-pkce" definition (interaction events))
+                false
+                (catch Exception e (= :oauth-no-pkce (:type (ex-data e)))))))
+  ;; ...and the documented override lets a user proceed anyway
+  (let [events (atom [])
+        definition {:url (str "http://127.0.0.1:" oauth-port "/mcp")
+                    :auth :oauth
+                    :oauth {:flow :pkce
+                            :skip-pkce-verification true
+                            :authorization-server-url
+                            (str "http://127.0.0.1:" oauth-port "/no-pkce-metadata")}}]
+    (check "skip-pkce-verification overrides the refusal"
+           (= :logged-in (auth/run-flow! "no-pkce-override" definition
+                                         (interaction events))))
+    (auth/logout! "no-pkce-override"))
+  ;; the RFC 8628 device flow sends no code challenge, so missing PKCE
+  ;; metadata must not refuse it — it stops at the missing device endpoint
+  ;; instead, and the point is that :oauth-no-pkce is never thrown
+  (let [events (atom [])
+        definition {:url (str "http://127.0.0.1:" oauth-port "/mcp")
+                    :auth :oauth
+                    :oauth {:flow :device
+                            :authorization-server-url
+                            (str "http://127.0.0.1:" oauth-port "/no-pkce-metadata")}}]
+    (check "device flow is not refused for missing PKCE metadata"
+           (try (auth/run-flow! "no-pkce-device" definition (interaction events))
+                false
+                (catch Exception e (not= :oauth-no-pkce (:type (ex-data e))))))))
 
 (defn test-jwt-bearer-flow [oauth-port store-path]
   (println "\n── jwt-bearer grant (RFC 7523) ──")
@@ -264,6 +397,7 @@
         (test-device-flow port store-path)
         (test-client-credentials-flow port store-path)
         (test-jwt-bearer-flow port store-path)
+        (test-discovery-and-pkce-verification port store-path)
         (finally
           (stop-server! {:proc proc})
           (io/delete-file store-path true)))))

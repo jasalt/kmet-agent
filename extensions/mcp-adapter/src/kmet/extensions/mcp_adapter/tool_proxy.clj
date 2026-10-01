@@ -93,6 +93,22 @@
   (-> (str/lower-case (str s))
       (str/replace #"[^a-z0-9_]" "_")))
 
+(defn resource-tool-name
+  "Pi resourceNameToToolName: [^a-zA-Z0-9] → _, collapse runs, trim
+   leading/trailing _, lowercase; empty or digit-start → prefixed with
+   'resource'. Shared by the read_<resource> direct-tool registration
+   (core.clj) and the /mcp list display so both spell a tool the same
+   way."
+  [name]
+  (let [result (-> (str name)
+                   (str/replace #"[^a-zA-Z0-9]" "_")
+                   (str/replace #"_+" "_")
+                   (str/replace #"^_+|_+$" "")
+                   str/lower-case)]
+    (if (or (str/blank? result) (re-matches #"^[0-9].*" result))
+      (str "resource" (when (seq result) (str "_" result)))
+      result)))
+
 (defn sanitize-server-name
   "The sanitized server name used as a tool/command prefix (§10.5)."
   [server-name]
@@ -619,7 +635,9 @@
 ;; ─── List / connect / disconnect ──────────────────────────────────────────
 
 (defn list-text
-  "List a server's tools (cache; §9.2 `server` mode)."
+  "List a server's tools (cache; §9.2 `server` mode). Resource templates
+   are listed after the tools — a server whose resources are all
+   templates (`file:///{path}`) shows nothing in its tool list."
   [state server]
   (let [definition (server-definition state server)]
     (cond
@@ -631,8 +649,13 @@
                          " and /reload to enable it."))
 
       :else
-      (let [tools (cached-tools state server)]
-        (if (seq tools)
+      (let [tools (cached-tools state server)
+            templates (:resource-templates
+                       (metadata/server-entry (:cache state)
+                                              server
+                                              definition
+                                              (settings state)))]
+        (if (or (seq tools) (seq templates))
           (let [out (atom [(str server " (" (count tools) " tools"
                                 (when-not (= :connected (state-label state server definition))
                                   ", not connected, cached")
@@ -642,6 +665,11 @@
                                    (when (seq (:description tool))
                                      (str " - " (truncate-at-word (:description tool)
                                                                   desc-truncate-length))))))
+            (doseq [template (sort-by :name templates)]
+              (swap! out conj (str "- " (format-tool-name state server
+                                                          (str "read_"
+                                                               (resource-tool-name (:name template))))
+                                   " — " (:uriTemplate template))))
             {:content (str/join "\n" @out) :is-error false})
           (if (= :connected (state-label state server definition))
             {:content (str "Server \"" server "\" has no tools.") :is-error false}
@@ -727,8 +755,13 @@
           (let [conn ((:ensure-connected-fn state) server)]
             (if conn
               (let [timeout-ms (or (:request-timeout-ms definition) 120000)
+                    ;; _meta.progressToken is what makes a server emit
+                    ;; notifications/progress for this call — without it the
+                    ;; streaming path below never fires
                     result (client/request! conn "tools/call"
-                                            {:name tool-name :arguments (normalize-args args)}
+                                            {:name tool-name
+                                             :arguments (normalize-args args)
+                                             :_meta {:progressToken (client/progress-token)}}
                                             {:timeout-ms timeout-ms
                                              :on-notification (on-update-progress! (:on-update opts))})
                     formatted (client/format-result result)

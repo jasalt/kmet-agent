@@ -23,7 +23,7 @@
                         {"e2e" {:command "bb" :args [fake-stdio] :lifecycle :lazy
                                 ;; the fake server requires kmet.libs.json (data.json)
                                 :env {"BABASHKA_CLASSPATH" (System/getProperty "java.class.path")}
-                                :direct-tools ["echo"]}
+                                :direct-tools true}
                          "bad" {:command "sh" :args ["-c" "exit 3"] :lifecycle :lazy}}}))
   (with-redefs [config/global-config-path (fn [] global)
                 config/project-config-path (fn [& _] (str global ".project"))
@@ -99,6 +99,63 @@
         (Thread/sleep 2000)
         (check "bootstrap registered the direct tool"
                (contains? (:tools @state) "e2e_echo"))
+        ;; tools/list_changed: the server adds a tool and notifies — the
+        ;; extension must re-list and register it with no manual connect
+        ;; or refresh (client.clj dispatch -> core.clj resync)
+        (let [r (s {:tool "e2e_add_tool" :args {}})]
+          (check "list_changed trigger tool called"
+                 (str/includes? (:content r) "added echo2")))
+        (check "resync registered the added direct tool"
+               (loop [waits 0]
+                 (cond
+                   (contains? (:tools @state) "e2e_echo2") true
+                   (< waits 40) (do (Thread/sleep 100) (recur (inc waits)))
+                   :else false)))
+        (let [r (s {:search "echo2"})]
+          (check "resync refreshed the proxy search"
+                 (str/includes? (:content r) "echo2")))
+        ;; a resource template (file:///{path}) registers a read tool
+        ;; whose {path} variable expands into the resources/read URI
+        (check "resource template registered a read tool"
+               (loop [waits 0]
+                 (cond
+                   (contains? (:tools @state) "e2e_read_project_files") true
+                   (< waits 40) (do (Thread/sleep 100) (recur (inc waits)))
+                   :else false)))
+        (let [r (s {:server "e2e"})]
+          (check "list shows the resource template"
+                 (str/includes? (:content r) "file:///{path}")))
+        ;; a template whose display name needs resource-tool-name
+        ;; normalization registers and lists under the same tool name
+        ;; (a raw sanitize of "read_issues (all)" would double the
+        ;; separators and the listed name would not address the tool)
+        (check "spec-char template registered"
+               (loop [waits 0]
+                 (cond
+                   (contains? (:tools @state) "e2e_read_issues_all") true
+                   (< waits 40) (do (Thread/sleep 100) (recur (inc waits)))
+                   :else false)))
+        (let [r (s {:server "e2e"})]
+          (check "list shows the normalized template name"
+                 (str/includes? (:content r) "e2e_read_issues_all")))
+        (when-let [execute (get-in @state [:tools "e2e_read_project_files" :execute])]
+          (let [r (execute {:path "src/main.clj"})]
+            (check "template read tool expands and reads"
+                   (str/includes? (:content r) "(ns main)"))))
+        ;; a list_changed storm must not turn into an unbounded resync
+        ;; loop: the fake answers every tools/list with another
+        ;; notification. The client runs the owning resync plus at most
+        ;; one deferred pass (2 x 2 tools/list pages) and then stops — a
+        ;; client that resyncs per notification never settles and the
+        ;; count runs away
+        (let [before (s {:tool "e2e_list_count" :args {}})
+              _ (s {:tool "e2e_storm" :args {}})
+              _ (Thread/sleep 2000)
+              after (s {:tool "e2e_list_count" :args {}})
+              calls (- (Long/parseLong (str/trim (:content after)))
+                       (Long/parseLong (str/trim (:content before))))]
+          (check "list_changed storm does not resync without bound"
+                 (< calls 6)))
         (mcp/shutdown api)
         (check "shutdown" true))
       (finally

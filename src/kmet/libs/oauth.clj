@@ -375,29 +375,89 @@
     {:status status
      :body (when (seq body) (json/parse-string body true))}))
 
-(defn discover-authorization-server
-  "RFC 8414 authorization-server metadata discovery for an MCP server URL:
-   GET <url>/.well-known/oauth-authorization-server, falling back to
-   <url>/.well-known/oauth-protected-resource. Returns the metadata map
-   (keys as received) or nil when neither endpoint answers (non-2xx or
-   transport error — pi's probe returns {} on failure). OPTS: :headers
-   (static headers to send), :timeout (default 5000)."
+(defn- split-origin
+  "ORIGIN and PATH of a URL string: [\"https://host:port\" \"/a/b\"] (path is
+   \"\" when there is none, \"/\" collapsed away)."
+  [url]
+  (if-let [[_ origin path] (re-matches #"(https?://[^/?#]+)(/[^?#]*)?" url)]
+    [origin (let [p (or path "")] (if (= p "/") "" p))]
+    [(str/replace url #"/+$" "") ""]))
+
+(defn- fetch-first-json-map
+  "Fetch CANDIDATES in order and return the first response body that is
+   a JSON map; nil when none answers (non-2xx or transport error). The
+   candidates are distinct-ed; HEADERS are sent on every request and
+   TIMEOUT is the per-request budget in ms."
+  [candidates headers timeout]
+  (loop [[candidate & more] (distinct candidates)]
+    (when candidate
+      (let [result (try
+                     (fetch-json candidate
+                                 {:method :get
+                                  :headers headers
+                                  :timeout timeout})
+                     (catch Exception _ nil))]
+        (if (and result (map? (:body result)))
+          (:body result)
+          (recur more))))))
+
+(defn protected-resource-metadata
+  "RFC 9728 protected-resource metadata discovery for an MCP server URL.
+   Candidates in order: an explicit :resource-metadata-url (the
+   `resource_metadata` parameter of a 401 WWW-Authenticate challenge),
+   then the endpoint-path variant
+   <origin>/.well-known/oauth-protected-resource<path>, then the root
+   variant <origin>/.well-known/oauth-protected-resource. Returns the
+   metadata map (keys as received) or nil when none answers (non-2xx or
+   transport error). OPTS: :resource-metadata-url, :headers, :timeout."
   [url & [opts]]
-  (let [base (str/replace url #"/+$" "")
-        candidates [(str base "/.well-known/oauth-authorization-server")
-                    (str base "/.well-known/oauth-protected-resource")]
+  (let [[origin path] (split-origin url)
+        candidates (cond-> []
+                     (:resource-metadata-url opts)
+                     (conj (:resource-metadata-url opts))
+                     (seq path) (conj (str origin "/.well-known/oauth-protected-resource" path))
+                     :always (conj (str origin "/.well-known/oauth-protected-resource")))
         headers (merge {"Accept" "application/json"} (:headers opts))]
-    (loop [[candidate & more] candidates]
-      (when candidate
-        (let [result (try
-                       (fetch-json candidate
-                                   {:method :get
-                                    :headers headers
-                                    :timeout (or (:timeout opts) 5000)})
-                       (catch Exception _ nil))]
-          (if (and result (map? (:body result)))
-            (:body result)
-            (recur more)))))))
+    (fetch-first-json-map candidates headers (or (:timeout opts) 5000))))
+
+(defn discover-authorization-server
+  "Authorization-server metadata discovery for an ISSUER url: RFC 8414
+   §3.1 (\"OAuth 2.0 Authorization Server Metadata\") with OpenID Connect
+   Discovery 1.0 as the required alternative, in the priority order the
+   MCP authorization spec mandates. For an issuer with a path component
+   (<host>/tenant1):
+     1. <origin>/.well-known/oauth-authorization-server/tenant1
+     2. <origin>/.well-known/openid-configuration/tenant1
+     3. <host>/tenant1/.well-known/openid-configuration
+   Without a path component:
+     1. <origin>/.well-known/oauth-authorization-server
+     2. <origin>/.well-known/openid-configuration
+   After those, lenient fallbacks so servers that publish their documents
+   elsewhere still resolve: <url>/.well-known/oauth-authorization-server
+   (the path-appending form earlier revisions used), the root well-known
+   pair, then /.well-known/oauth-protected-resource at the origin and at
+   the endpoint (older servers expose the resource document only).
+   Returns the metadata map (keys as received) or nil when none answers.
+   OPTS: :headers, :timeout."
+  [url & [opts]]
+  (let [[origin path] (split-origin url)
+        base (str origin (str/replace path #"/+$" ""))
+        candidates (concat (if (seq path)
+                             [(str origin "/.well-known/oauth-authorization-server" path)
+                              (str origin "/.well-known/openid-configuration" path)
+                              (str base "/.well-known/openid-configuration")]
+                             [(str origin "/.well-known/oauth-authorization-server")
+                              (str origin "/.well-known/openid-configuration")])
+                           ;; lenient: the path-appending forms and the
+                           ;; root documents, then the resource document
+                           ;; at the origin and at the endpoint
+                           [(str base "/.well-known/oauth-authorization-server")
+                            (str origin "/.well-known/oauth-authorization-server")
+                            (str origin "/.well-known/openid-configuration")
+                            (str origin "/.well-known/oauth-protected-resource")
+                            (str base "/.well-known/oauth-protected-resource")])
+        headers (merge {"Accept" "application/json"} (:headers opts))]
+    (fetch-first-json-map candidates headers (or (:timeout opts) 5000))))
 
 (defn register-client
   "RFC 7591 dynamic client registration. POSTS to REGISTRATION-ENDPOINT and
@@ -455,16 +515,18 @@
   "Exchange an authorization code at TOKEN-ENDPOINT (grant_type
    authorization_code + PKCE verifier). OPTS: :client-id (required unless
    the endpoint authenticates the client another way), :code, :code-verifier,
-   :redirect-uri, :scope, :timeout. Returns the normalized token map
-   {:access :refresh :expires-in :scope}."
-  [token-endpoint {:keys [client-id code code-verifier redirect-uri scope]
+   :redirect-uri, :scope, :resource (RFC 8707 resource indicator — the
+   canonical MCP server URI the token must be issued for), :timeout.
+   Returns the normalized token map {:access :refresh :expires-in :scope}."
+  [token-endpoint {:keys [client-id code code-verifier redirect-uri scope resource]
                    :as opts}]
   (let [body (cond-> {"grant_type" "authorization_code"
                       "client_id" client-id
                       "code" code}
                code-verifier (assoc "code_verifier" code-verifier)
                redirect-uri (assoc "redirect_uri" redirect-uri)
-               scope (assoc "scope" scope))
+               scope (assoc "scope" scope)
+               resource (assoc "resource" resource))
         data (:body (fetch-json token-endpoint
                                 {:method :post
                                  :headers {"Content-Type"
@@ -476,16 +538,18 @@
 
 (defn refresh-access-token
   "Refresh tokens at TOKEN-ENDPOINT (grant_type refresh_token). OPTS:
-   :client-id, :refresh-token (required), :scope, :timeout. Returns the
+   :client-id, :refresh-token (required), :scope, :resource (RFC 8707
+   resource indicator), :timeout. Returns the
    normalized token map {:access :refresh :expires-in :scope}."
-  [token-endpoint {:keys [client-id refresh-token scope timeout]}]
+  [token-endpoint {:keys [client-id refresh-token scope resource timeout]}]
   (when-not (seq refresh-token)
     (throw (ex-info "OAuth refresh requires a refresh token"
                     {:type :oauth-invalid-config})))
   (let [body (cond-> {"grant_type" "refresh_token"
                       "refresh_token" refresh-token}
                client-id (assoc "client_id" client-id)
-               scope (assoc "scope" scope))
+               scope (assoc "scope" scope)
+               resource (assoc "resource" resource))
         data (:body (fetch-json token-endpoint
                                 {:method :post
                                  :headers {"Content-Type"
@@ -497,16 +561,18 @@
 
 (defn start-device-authorization
   "Start an RFC 8628 device flow at DEVICE-ENDPOINT. OPTS: :client-id
-   (required), :scope, :timeout. Validates the response fields and that
+   (required), :scope, :resource (RFC 8707 resource indicator),
+   :timeout. Validates the response fields and that
    the verification URI is http(s) — it is opened in the user's browser, so
    `open` must never run an executable or similar (pi). Returns
    {:device-code :user-code :verification-uri :interval :expires-in}."
-  [device-endpoint {:keys [client-id scope timeout]}]
+  [device-endpoint {:keys [client-id scope resource timeout]}]
   (when-not (seq client-id)
     (throw (ex-info "OAuth device flow requires a client id"
                     {:type :oauth-invalid-config})))
   (let [body (cond-> {"client_id" client-id}
-               scope (assoc "scope" scope))
+               scope (assoc "scope" scope)
+               resource (assoc "resource" resource))
         data (:body (fetch-json device-endpoint
                                 {:method :post
                                  :headers {"Accept" "application/json"
@@ -551,12 +617,12 @@
        :client-secret-post (secret in the form body), or :none (client_id
        in the body only — public clients / DCR'd clients with
        token_endpoint_auth_method \"none\").
-     :scope, :timeout.
+     :scope, :resource (RFC 8707 resource indicator), :timeout.
    Returns the normalized token map {:access :refresh :expires-in :scope}
    (a refresh token is kept when the server returns one, but none is
    expected)."
   [token-endpoint {:keys [client-id client-secret token-endpoint-auth-method
-                          scope timeout]}]
+                          scope resource timeout]}]
   (when-not (seq client-id)
     (throw (ex-info "OAuth client-credentials grant requires a client id"
                     {:type :oauth-invalid-config})))
@@ -575,6 +641,7 @@
         form (cond-> {"grant_type" "client_credentials"
                       "client_id" client-id}
                (seq scope) (assoc "scope" scope)
+               (seq resource) (assoc "resource" resource)
                (= method :client-secret-post) (assoc "client_secret" client-secret))
         data (:body (fetch-json token-endpoint
                                 {:method :post
@@ -594,10 +661,10 @@
      :subject     — sub claim (defaults to :issuer)
      :audience    — aud claim (defaults to the token endpoint URL)
      :client-id   — optional, sent in the form body (RFC 7523 §2.2)
-     :scope, :timeout
+     :scope, :resource (RFC 8707 resource indicator), :timeout
    Returns the normalized token map."
   [token-endpoint {:keys [private-key algorithm issuer subject audience
-                          client-id scope timeout]}]
+                          client-id scope resource timeout]}]
   (when-not (seq issuer)
     (throw (ex-info "OAuth jwt-bearer grant requires :issuer"
                     {:type :oauth-invalid-config})))
@@ -610,7 +677,8 @@
         form (cond-> {"grant_type" "urn:ietf:params:oauth:grant-type:jwt-bearer"
                       "assertion" assertion}
                (seq client-id) (assoc "client_id" client-id)
-               (seq scope) (assoc "scope" scope))
+               (seq scope) (assoc "scope" scope)
+               (seq resource) (assoc "resource" resource))
         data (:body (fetch-json token-endpoint
                                 {:method :post
                                  :headers {"Content-Type"

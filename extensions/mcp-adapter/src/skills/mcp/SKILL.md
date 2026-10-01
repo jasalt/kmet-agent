@@ -80,7 +80,9 @@ separate runtime retired into this engine):
 
 - MCP tools appear by their prefixed names (`server_toolname`) from the
   metadata cache — the first call connects lazily, and failure backoff,
-  auth and the output guard match the `mcp` proxy. A server that has
+  auth and the output guard match the `mcp` proxy. Servers whose
+  resources are URI templates also appear: `read_<name>` with the
+  template's `{var}` placeholders as parameters. A server that has
   never been connected has no cache entry yet, so connect it once
   (`mcp({connect: "name"})`) before scripting it.
 - Print with `println`; the script's return value is reported too. For one
@@ -128,6 +130,9 @@ prompt commands.
 ## Notes
 
 - Search/describe are cache-only — no server is spawned for them.
+- A server that adds or removes tools mid-session sends
+  `notifications/tools/list_changed`; the adapter re-lists and resyncs
+  on its own — no `/mcp connect` needed.
 - After a connect failure, the next use reconnects automatically.
 - Servers idle past `:idle-timeout` minutes (settings, default 10; 0
   disables; `:keep-alive` servers never reap) are disconnected by a

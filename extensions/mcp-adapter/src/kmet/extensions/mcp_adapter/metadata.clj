@@ -9,7 +9,9 @@
                            :fetched-at ms
                            :tools [{:name :description :inputSchema}]
                            :prompts [{:name :description :arguments}]
-                           :resources [{:name :uri :description :mimeType}]}}}
+                           :resources [{:name :uri :description :mimeType}]
+                           :resource-templates
+                           [{:name :uriTemplate :description :mimeType}]}}}
 
    Freshness: 7 days. server-entry returns nil when stale or the config
    fingerprint mismatches — callers fall back to a live connect. A config
@@ -17,7 +19,9 @@
    relevant settings) invalidates cached metadata.
 
    Writes merge with the existing file and go through temp-file + rename
-   (atomic-ish, single process — no lock needed)."
+   (atomic-ish); save-cache! serializes concurrent writers (a background
+   list_changed resync and a foreground connect) with one process-wide
+   lock."
   (:require [babashka.fs :as fs]
             [clojure.edn :as edn]
             [kmet.extensions.mcp-adapter.config :as config]))
@@ -33,6 +37,13 @@
 
 (def ^:private cache-version 1)
 (def ^:private max-age-ms (* 7 24 60 60 1000))
+
+(def ^:private save-lock
+  "Serializes save-cache! (one process): a background list_changed resync
+   and a foreground connect can both refresh the cache, and the
+   read-merge-write plus the shared temp path would otherwise lose an
+   entry or race the rename."
+  (Object.))
 
 (defn cache-path
   "The metadata cache file (<agent-dir>/mcp-cache.edn; the host agent dir
@@ -59,17 +70,20 @@
 
 (defn save-cache!
   "Merge ENTRY-MAP {:servers {name entry}} into the existing cache file and
-   write atomically (temp file + rename)."
+   write atomically (temp file + rename). Serialized: concurrent
+   refreshes (a background list_changed resync and a connect) must not
+   interleave the read-merge-write or the temp file."
   [entry-map]
-  (let [path (cache-path)
-        existing (load-cache)
-        merged {:version cache-version
-                :servers (merge (:servers existing) (:servers entry-map))}
-        tmp (str path ".tmp")]
-    (fs/create-dirs (fs/parent path))
-    (write-text tmp (pr-str merged))
-    (fs/move tmp path {:replace-existing true})
-    nil))
+  (locking save-lock
+    (let [path (cache-path)
+          existing (load-cache)
+          merged {:version cache-version
+                  :servers (merge (:servers existing) (:servers entry-map))}
+          tmp (str path ".tmp")]
+      (fs/create-dirs (fs/parent path))
+      (write-text tmp (pr-str merged))
+      (fs/move tmp path {:replace-existing true})
+      nil)))
 
 (defn config-fingerprint
   "Fingerprint of the config bits that affect which tools/prompts/
@@ -103,9 +117,11 @@
 
 (defn update-entry!
   "Persist a fresh entry for a server (also returned). TOOLS/PROMPTS/
-   RESOURCES are the wire lists; prompts keep :name/:description/
-   :arguments, resources :name/:uri/:description/:mimeType."
-  [cache name definition settings tools & [prompts resources]]
+   RESOURCES/RESOURCE-TEMPLATES are the wire lists; prompts keep
+   :name/:description/:arguments, resources :name/:uri/:description/
+   :mimeType, resource templates :uriTemplate/:name/:description/
+   :mimeType."
+  [cache name definition settings tools & [prompts resources resource-templates]]
   (let [entry {:config-fingerprint (config-fingerprint name definition settings)
                :fetched-at (System/currentTimeMillis)
                :tools (vec (mapv (fn [t]
@@ -116,7 +132,11 @@
                                    (or prompts [])))
                :resources (vec (mapv (fn [r]
                                        (select-keys r [:name :uri :description :mimeType]))
-                                     (or resources [])))}]
+                                     (or resources [])))
+               :resource-templates
+               (vec (mapv (fn [t]
+                            (select-keys t [:uriTemplate :name :description :mimeType]))
+                          (or resource-templates [])))}]
     (save-cache! {:servers {name entry}})
     (assoc-in (or cache {:version cache-version :servers {}})
               [:servers name] entry)))

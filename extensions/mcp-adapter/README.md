@@ -133,7 +133,13 @@ map), `:algorithm` (`:RS256` default | `:ES256`),
 `:issuer`/`:subject`/`:audience` (jwt-bearer claims; sub defaults to
 issuer, aud to the token endpoint), `:redirect-uri`,
 `:authorization-server-url` (fetch metadata directly, skips well-known
-discovery), `:skip-issuer-metadata-validation`.
+discovery), `:resource` (RFC 8707 resource indicator override; default
+is the server url, canonicalized), `:skip-issuer-metadata-validation`,
+`:skip-pkce-verification` (proceed against an authorization server that
+does not advertise `code_challenge_methods_supported`).
+`:token-endpoint` and `:authorization-server-url` also skip the RFC 9728
+protected-resource probe, so a pinned configuration makes no discovery
+requests at all.
 
 ## The `mcp` tool
 
@@ -187,7 +193,12 @@ cached metadata so no server spawns at startup. Names are lowercased with
   is sent into the conversation.
 - **Resources** → read tools: servers expose `read_<resource>` direct
   tools by default (`:expose-resources false` disables) that call
-  `resources/read`.
+  `resources/read`. Parameterized resources from
+  `resources/templates/list` register the same way — one `read_<name>`
+  tool whose parameters are the template's `{var}` placeholders,
+  expanded into the URI (`file:///{path}` + `{path "src/main.clj"}` →
+  `file:///src/main.clj`; `/` survives inside a variable, `? # %` and
+  spaces are escaped). Templates are listed by `/mcp list <server>`.
 - **Scripted MCP** (settings `:script-mode false` stops the
   contribution): the adapter contributes its cached MCP catalog to
   kmet's builtin **`run_code`** tool as a tool source
@@ -212,8 +223,26 @@ cached metadata so no server spawns at startup. Names are lowercased with
   settings `:output-guard {:max-bytes .. :max-lines ..
   :details-max-bytes ..}` or disable with `:output-guard false`
   (`MCP_OUTPUT_GUARD=0`).
-- **Streaming progress**: `notifications/progress` events during a call
-  stream as partial content into the tool output (all transports).
+- **Streaming progress**: every `tools/call` sends
+  `_meta.progressToken` (the opt-in that makes a server emit progress at
+  all), and `notifications/progress` events stream as partial content
+  into the tool output (all transports).
+- **Server→client messages**: incoming JSON-RPC is dispatched rather
+  than dropped — `ping` is answered with an empty result, a client
+  feature we do not implement (`sampling/createMessage`,
+  `elicitation/create`, `roots/list`) is refused with `-32601` instead
+  of being left to time out server-side, and `notifications/tools|prompts|
+  resources/list_changed` re-lists that catalog and resyncs the cache,
+  direct tools and prompt commands with no manual `/mcp connect`. One
+  resync runs at a time (the transport serializes requests per
+  connection); a change notification landing mid-resync triggers exactly
+  one deferred pass, so nothing is lost and a server that re-notifies on
+  every list cannot loop. A request abandoned on timeout is cancelled
+  with `notifications/cancelled` (sent in the background on the HTTP
+  transports), and closing a streamable-HTTP connection releases the
+  server session with an HTTP `DELETE` (also sent in the background;
+  skipped at session shutdown and for a connection already dead from a
+  timeout, so a stalled server cannot delay the next use or app exit).
 - **Host-config adoption**: `:host-config-discovery :on` in settings
   merges Cursor/Claude/Codex/opencode/windsurf/vscode `mcp.json` files at
   the lowest precedence; `/mcp import` (or the setup panel) adopts their
@@ -225,11 +254,25 @@ cached metadata so no server spawns at startup. Names are lowercased with
 - **Bearer**: `:auth :bearer` with `:bearer-token` or `:bearer-token-env`
   (or an explicit `:headers {"Authorization" ...}`).
 - **OAuth**: `:auth :oauth` (+ optional `:oauth` map). The flow follows
-  RFC 8414 metadata discovery, RFC 7591 dynamic client registration (or a
-  config `:client-id`), and the PKCE loopback flow (browser → local
-  callback on an OS-assigned port) or the RFC 8628 device flow (`:flow
-  :device`, or auto-selected when headless). Tokens refresh silently on
-  expiry; a 401 with a stored refresh token refreshes once and retries.
+  RFC 9728 protected-resource metadata for the authorization-server
+  location (the `resource_metadata` URL from a 401 `WWW-Authenticate`
+  challenge when one has been seen, else the well-known probes), then
+  RFC 8414 / OpenID Connect authorization-server metadata; RFC 7591
+  dynamic client registration (or a config `:client-id`); and the PKCE
+  loopback flow (browser → local callback on an OS-assigned port) or the
+  RFC 8628 device flow (`:flow :device`, or auto-selected when
+  headless). The issuer is checked against the URL the metadata came
+  from (the authorization server — a split-origin deployment is fine),
+  and the static `:headers` are only sent to the MCP server's own origin,
+  never to an authorization server or metadata host it names. Requests
+  carry the RFC 8707 `resource` indicator — the canonical server URI —
+  in both authorization and token requests, and the scopes come from
+  config, else the server's `WWW-Authenticate` challenge, else
+  `scopes_supported`. PKCE support is verified before the PKCE flow
+  authorizes (`:skip-pkce-verification` overrides; the device flow sends
+  no challenge and is never refused for missing PKCE metadata). Tokens
+  refresh silently on expiry; a 401 with a stored refresh token refreshes
+  once and retries.
   Tokens are stored in the **OS keyring when available** — macOS
   `security`, Linux `secret-tool`, Windows Credential Manager (PowerShell
   P/Invoke) — and fall back to **plaintext** `~/.kmet/agent/mcp-oauth.edn`
@@ -279,3 +322,29 @@ list (keyring storage, prompts, resources, scripted MCP, setup wizard +
 host-config adoption, include/exclude globs, idle-timeout reaping, output
 guards, streaming progress) is implemented — see the plan's §15.23-34 for
 the recorded deviations.
+
+### Deliberately out of scope
+
+Only what the `2025-11-25` specification requires of a client is
+implemented. Left out on purpose:
+
+- **Tasks** (SEP-1686, experimental) — no `tasks/get|result|cancel`, no
+  `execution.taskSupport`, no `experimental` capability negotiation.
+- **Optional client features** — no `sampling/createMessage`,
+  `elicitation/create` or `roots/list`; the client declares no such
+  capabilities and refuses those methods with `-32601` rather than
+  leaving a server waiting out its timeout.
+- **Resource subscriptions** — `subscribe` is an explicitly optional
+  capability, so no `resources/subscribe` and no handling of
+  `notifications/resources/updated`.
+- **Logging** — `logging/setLevel` is a client MAY;
+  `notifications/message` is not collected.
+- **Completion** — `completion/complete` needs an interactive argument
+  editor the adapter has no surface for.
+- **Streamable HTTP GET stream** — a client MAY; there is no
+  server→client channel outside a POST response, hence no
+  `Last-Event-ID` resumption.
+- **Client ID Metadata Documents** (SEP-991, a SHOULD) — needs an
+  HTTPS-hosted metadata document; RFC 7591 dynamic registration stays.
+- **Tool `annotations` / `outputSchema` / `icons`** — optional display and
+  safety metadata, not cached.

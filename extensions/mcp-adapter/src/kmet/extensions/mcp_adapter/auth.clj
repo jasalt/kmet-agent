@@ -13,7 +13,11 @@
 
    Flow (per server, §7.8):
      1. token lookup — expired → refresh; missing/refresh-failed → flow
-     2. discovery (RFC 8414; :authorization-server-url skips it)
+     2. discovery (RFC 9728 protected-resource metadata for the AS
+        location — the 401 WWW-Authenticate `resource_metadata` when we
+        have seen one, else the well-known probes — then RFC 8414 / OIDC
+        authorization-server metadata; :authorization-server-url skips
+        discovery)
      3. client registration (RFC 7591) unless :oauth {:client-id ...}
      4. authorization — PKCE loopback on an OS-assigned port (default), or
         the RFC 8628 device flow (forced via :flow :device, or auto when
@@ -25,6 +29,7 @@
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [kmet.extensions.mcp-adapter.client :as client]
             [kmet.extensions.mcp-adapter.config :as config]
             [kmet.libs.oauth :as oauth-lib]))
 
@@ -36,6 +41,90 @@
 (defn- write-text
   [path text]
   (spit path (str text)))
+
+;; ─── RFC 8707 resource indicator + RFC 9728 scope challenge ───────────────
+
+(defn canonical-resource-uri
+  "The RFC 8707 §2 canonical URI of the MCP server a token is for: the
+   server url lowercased in scheme and host, without query or fragment,
+   and without a trailing slash unless the path is only \"/\". Sent as
+   the `resource` parameter of authorization and token requests — the
+   authorization spec makes it mandatory in both, whatever the
+   authorization server supports."
+  [url]
+  (when (string? url)
+    (when-let [[_ scheme authority path] (re-find #"^(?i)(https?)://([^/?#]+)([^?#]*)" url)]
+      (let [p (or path "")]
+        (str (str/lower-case scheme) "://"
+             (str/lower-case authority)
+             (if (or (str/blank? p) (= p "/")) "" (str/replace p #"/+$" "")))))))
+
+(defn parse-www-authenticate
+  "The auth-param map of a `WWW-Authenticate: Bearer ...` challenge:
+   {:resource-metadata \"...\" :scope \"a b\" :error \"insufficient_scope\"}.
+   RFC 9728 §5.1 resource_metadata points at the protected-resource
+   document; the scope parameter is the server's authoritative minimum
+   for this request. nil when the header is absent or not a Bearer
+   challenge."
+  [header]
+  (when (and (string? header) (str/starts-with? (str/trim header) "Bearer"))
+    (let [params (str/split (subs (str/trim header) 6) #",")]
+      (not-empty
+       (into {}
+             (keep (fn [param]
+                     (when-let [[_ k v] (re-matches #"\s*([A-Za-z_-]+)\s*=\s*\"([^\"]*)\""
+                                                    param)]
+                       ;; resource_metadata → :resource-metadata, so both
+                       ;; the RFC 9728 spelling and a hyphenated one land
+                       ;; on the same key
+                       [(keyword (str/replace (str/lower-case k) "_" "-")) v])))
+             params)))))
+
+;; the last WWW-Authenticate challenge seen per server (the transport
+;; records it on every 401), so discovery and scope selection can use
+;; what the server actually asked for
+(defonce ^:private challenges (atom {}))
+
+(defn- record-challenge!
+  "Remember a server's latest Bearer challenge."
+  [name header]
+  (when-let [params (parse-www-authenticate header)]
+    (swap! challenges assoc name params))
+  nil)
+
+(defn- clear-challenges!
+  [name]
+  (swap! challenges dissoc name)
+  nil)
+
+(defn- scopes-string
+  "Config :scopes — a string or a vector, joined with spaces."
+  [cfg]
+  (let [scopes (:scopes cfg)]
+    (cond
+      (nil? scopes) nil
+      (string? scopes) scopes
+      (sequential? scopes) (str/join " " scopes)
+      :else (str scopes))))
+
+(defn- effective-scopes
+  "The scopes to request for a server: config :scopes wins; else the
+   scope the server challenged with (authoritative for the current
+   request); else `scopes_supported` from the protected-resource
+   metadata (spec, scope selection strategy)."
+  [name definition prm]
+  (or (scopes-string (:oauth definition))
+      (:scope (get @challenges name))
+      (let [supported (:scopes_supported prm)]
+        (when (seq supported)
+          (str/join " " supported)))))
+
+(defn- effective-resource
+  "The RFC 8707 resource indicator for a server: its url, canonicalized.
+   Config :resource overrides (a server fronted by a gateway)."
+  [definition]
+  (or (get-in definition [:oauth :resource])
+      (canonical-resource-uri (:url definition))))
 
 ;; ─── Token store ──────────────────────────────────────────────────────────
 ;; Two backends, selected by settings :token-storage (or the MCP_TOKEN_STORAGE
@@ -341,12 +430,13 @@
 
 (defn logout!
   "Clear the stored OAuth tokens + client info for a server (§10.6), and
-   any cached machine-grant token."
+   any cached machine-grant token or recorded 401 challenge."
   [name]
   (swap! machine-token-cache dissoc name)
+  (clear-challenges! name)
   (clear-server! name))
 
-;; ─── Discovery (RFC 8414) ─────────────────────────────────────────────────
+;; ─── Discovery (RFC 9728 protected resource + RFC 8414 / OIDC AS) ────────
 
 (defn- origin-of
   "scheme://host of a URL."
@@ -367,28 +457,114 @@
         (= issuer base)
         (= origin (origin-of issuer)))))
 
-(defn- discover-meta
-  "Authorization-server metadata for a server (§7.8.2): config
-   :authorization-server-url fetches the metadata from that URL directly
-   (skips well-known discovery); otherwise RFC 8414 discovery against the
-   server URL. Throws when nothing answers. The issuer check (RFC 8414) is
-   skipped when :skip-issuer-metadata-validation is set."
-  [definition]
+(defn- server-headers
+  "Static config :headers for a discovery URL, but only when it shares
+   the resource server's origin: the headers may carry an API key or
+   bearer meant for the MCP server itself and must not be forwarded to
+   an authorization server or metadata host the server names (RFC 9728
+   discovery crosses origins by design)."
+  [definition url]
+  (when (and (string? url)
+             (= (origin-of (:url definition)) (origin-of url)))
+    (:headers definition)))
+
+(defn- protected-resource-meta
+  "RFC 9728 protected-resource metadata for a server: the
+   `resource_metadata` URL from a WWW-Authenticate challenge we have
+   seen for this server, else the well-known probes. nil when the
+   server publishes none (older deployments — discovery then falls back
+   to probing the server URL for authorization-server metadata)."
+  [name definition]
+  (let [url (:url definition)
+        challenge (:resource-metadata (get @challenges name))]
+    (when (string? url)
+      ;; the lib returns the metadata document itself (nil when nothing
+      ;; answers — an older server that publishes none). The challenge
+      ;; URL may be cross-origin, in which case no config headers go out
+      ;; at all (the well-known probes are best-effort without them).
+      (oauth-lib/protected-resource-metadata
+       url {:headers (server-headers definition (or challenge url))
+            :resource-metadata-url challenge}))))
+
+(defn- verify-pkce-support!
+  "OAuth 2.1 requires PKCE for the authorization-code flow and says a
+   client MUST verify the authorization server supports it before
+   authorizing: an absent `code_challenge_methods_supported` means no
+   PKCE support, and we must refuse rather than send a challenge the
+   server will ignore. Only the PKCE flow is checked — the RFC 8628
+   device flow sends no challenge. Config :skip-pkce-verification
+   overrides for broken servers."
+  [name definition metadata]
+  (let [cfg (:oauth definition)]
+    (when (and (= :authorization-code (or (:grant cfg) :authorization-code))
+               (not (true? (:skip-pkce-verification cfg)))
+               (:authorization_endpoint metadata)
+               (nil? (:code_challenge_methods_supported metadata)))
+      (throw (ex-info (str "MCP auth failed: " name " does not advertise PKCE support "
+                           "(no code_challenge_methods_supported in its authorization "
+                           "server metadata) — refusing to authorize. Set "
+                           ":oauth {:skip-pkce-verification true} to override.")
+                      {:type :oauth-no-pkce})))))
+
+(defn- discover-document
+  "The authorization-server metadata document and the URL it came from,
+   as [metadata document-url]. An explicit config :token-endpoint or
+   :authorization-server-url short-circuits discovery; otherwise the
+   RFC 9728 protected-resource document names the authorization
+   server(s) and RFC 8414 / OIDC discovery runs against the first that
+   answers, falling back to the MCP server URL when the server
+   publishes no resource document. document-url is the RFC 8414 §3.3
+   issuer-check reference."
+  [definition prm]
   (let [cfg (:oauth definition)
         url (:url definition)
         headers (:headers definition)
-        metadata (cond
-                   ;; an explicit token endpoint needs no discovery at all
-                   (:token-endpoint cfg) {:token_endpoint (:token-endpoint cfg)}
+        issuers (let [as (:authorization_servers prm)]
+                  (cond
+                    (sequential? as) as
+                    (string? as) [as]
+                    :else nil))]
+    (cond
+      ;; an explicit token endpoint needs no discovery at all
+      (:token-endpoint cfg) [{:token_endpoint (:token-endpoint cfg)} url]
 
-                   (:authorization-server-url cfg)
-                   (:body (oauth-lib/fetch-json (:authorization-server-url cfg)
-                                                {:method :get
-                                                 :headers headers
-                                                 :timeout 5000}))
+      ;; an explicit, user-chosen URL keeps the static headers
+      ;; (pre-existing behavior)
+      (:authorization-server-url cfg)
+      [(:body (oauth-lib/fetch-json (:authorization-server-url cfg)
+                                    {:method :get
+                                     :headers headers
+                                     :timeout 5000}))
+       (:authorization-server-url cfg)]
 
-                   :else
-                   (oauth-lib/discover-authorization-server url {:headers headers}))]
+      :else
+      (or (some (fn [issuer]
+                  (when-let [m (oauth-lib/discover-authorization-server
+                                issuer {:headers (server-headers definition issuer)})]
+                    [m issuer]))
+                issuers)
+          (when-let [m (oauth-lib/discover-authorization-server
+                        url {:headers headers})]
+            [m url])))))
+
+(defn- discover-meta
+  "Authorization-server metadata for a server (§7.8.2), via
+   discover-document. Throws when nothing answers. The issuer check
+   (RFC 8414 §3.3) compares the issuer to the URL the document was
+   fetched from — under RFC 9728 that is the authorization server, not
+   the resource server — and is skipped when
+   :skip-issuer-metadata-validation is set. Returns the metadata map;
+   the protected-resource document (for scope selection) rides along
+   under ::prm."
+  [name definition]
+  (let [cfg (:oauth definition)
+        url (:url definition)
+        ;; explicit configs skip discovery entirely: probing the
+        ;; protected-resource metadata for scopes would add up to two
+        ;; 5s-timeout requests to every token fetch
+        prm (when-not (or (:token-endpoint cfg) (:authorization-server-url cfg))
+              (protected-resource-meta name definition))
+        [metadata discovered-from] (discover-document definition prm)]
     (when-not (map? metadata)
       (throw (ex-info (str "MCP auth failed: no OAuth authorization server metadata "
                            "discovered at " url)
@@ -396,12 +572,12 @@
     (when-not (or (:token-endpoint cfg)
                   (true? (:skip-issuer-metadata-validation cfg)))
       (when (and (seq (:issuer metadata))
-                 (not (issuer-matches? url (:issuer metadata))))
+                 (not (issuer-matches? discovered-from (:issuer metadata))))
         (throw (ex-info (str "MCP auth failed: authorization server issuer mismatch ("
-                             (:issuer metadata) " vs " url "). Set "
+                             (:issuer metadata) " vs " discovered-from "). Set "
                              ":skip-issuer-metadata-validation true to override.")
                         {:type :oauth-issuer-mismatch}))))
-    metadata))
+    (assoc metadata ::prm prm)))
 
 (defn- required-endpoint
   "One metadata endpoint or a clear error."
@@ -505,22 +681,13 @@
    unload). Idempotent."
   []
   (reset! machine-token-cache {})
+  (reset! challenges {})
   (when-let [{:keys [server]} @callback-state]
     (try ((:close server)) (catch Exception _ nil))
     (reset! callback-state nil)
     (reset! current-flow nil)))
 
 ;; ─── Client info (config pre-registered or RFC 7591 DCR) ──────────────────
-
-(defn- scopes-string
-  "Config :scopes — a string or a vector, joined with spaces."
-  [cfg]
-  (let [scopes (:scopes cfg)]
-    (cond
-      (nil? scopes) nil
-      (string? scopes) scopes
-      (sequential? scopes) (str/join " " scopes)
-      :else (str scopes))))
 
 (defn- stored-client-id
   [name]
@@ -608,8 +775,10 @@
    MCP auth failed on any error (§7.7)."
   [name definition]
   (let [cfg (:oauth definition)
-        token-endpoint (required-endpoint (discover-meta definition)
-                                          :token_endpoint name)
+        metadata (discover-meta name definition)
+        token-endpoint (required-endpoint metadata :token_endpoint name)
+        scope (effective-scopes name definition (::prm metadata))
+        resource (effective-resource definition)
         tokens (case (grant-of definition)
                  :client-credentials
                  (oauth-lib/client-credentials-token
@@ -617,7 +786,8 @@
                   {:client-id (:client-id cfg)
                    :client-secret (:client-secret cfg)
                    :token-endpoint-auth-method (:token-endpoint-auth-method cfg)
-                   :scope (scopes-string cfg)})
+                   :scope scope
+                   :resource resource})
 
                  :jwt-bearer
                  (let [key-file (:private-key-file cfg)
@@ -641,7 +811,8 @@
                      :subject (:subject cfg)
                      :audience (:audience cfg)
                      :client-id (:client-id cfg)
-                     :scope (scopes-string cfg)})))
+                     :scope scope
+                     :resource resource})))
         stored (tokens->store tokens)]
     (swap! machine-token-cache assoc name stored)
     stored))
@@ -685,7 +856,7 @@
     (when (and (seq refresh)
                (seq (:url definition)))
       (try
-        (let [metadata (discover-meta definition)
+        (let [metadata (discover-meta name definition)
               token-endpoint (required-endpoint metadata :token_endpoint name)
               client-id (or (get-in definition [:oauth :client-id])
                             (stored-client-id name))
@@ -694,7 +865,8 @@
                         token-endpoint
                         {:client-id client-id
                          :refresh-token refresh
-                         :scope (get-in entry [:tokens :scope])}))]
+                         :scope (get-in entry [:tokens :scope])
+                         :resource (effective-resource definition)}))]
           (when tokens
             (store-tokens! name (tokens->store tokens))
             (tokens->store tokens)))
@@ -724,9 +896,15 @@
       (= :oauth (:auth definition))
       (if (machine-grant? definition)
         {:auth-headers (fn [] (merge-headers (machine-token-header name definition false)))
-         :on-401 (fn [] (merge-headers (machine-token-header name definition true)))}
+         :on-401 (fn [response]
+                   (when response (record-challenge! name (client/header-value (:headers response)
+                                                                               "WWW-Authenticate")))
+                   (merge-headers (machine-token-header name definition true)))}
         {:auth-headers (fn [] (merge-headers (oauth-header name definition)))
-         :on-401 (fn [] (merge-headers (oauth-header-after-401 name definition)))})
+         :on-401 (fn [response]
+                   (when response (record-challenge! name (client/header-value (:headers response)
+                                                                               "WWW-Authenticate")))
+                   (merge-headers (oauth-header-after-401 name definition)))})
 
       (= :bearer (:auth definition))
       {:auth-headers (fn [] (merge-headers (oauth-bearer-header
@@ -756,9 +934,10 @@
                       {:type :oauth-invalid-config})))))
 
 (defn- authorize-url
-  "The authorization endpoint URL with the PKCE challenge, state, scope
-   and redirect URI."
-  [authorize-endpoint client-id redirect-uri challenge state scope]
+  "The authorization endpoint URL with the PKCE challenge, state, scope,
+   redirect URI and the RFC 8707 resource indicator (mandatory in
+   authorization requests as well as token requests)."
+  [authorize-endpoint client-id redirect-uri challenge state scope resource]
   (str authorize-endpoint
        "?response_type=code"
        "&client_id=" (oauth-lib/url-encode client-id)
@@ -767,7 +946,9 @@
        "&code_challenge_method=S256"
        "&state=" (oauth-lib/url-encode state)
        (when (seq scope)
-         (str "&scope=" (oauth-lib/url-encode scope)))))
+         (str "&scope=" (oauth-lib/url-encode scope)))
+       (when (seq resource)
+         (str "&resource=" (oauth-lib/url-encode resource)))))
 
 (defn- run-pkce-flow
   [name definition metadata interaction]
@@ -776,12 +957,14 @@
         state (oauth-lib/random-hex 16)
         redirect-uri (ensure-callback-redirect! cfg)
         client-id (resolve-client-id! name definition metadata)
+        scope (effective-scopes name definition (::prm metadata))
+        resource (effective-resource definition)
         code-p (promise)
         authorize-endpoint (required-endpoint metadata :authorization_endpoint name)]
     (reset! current-flow {:state state :code-p code-p})
     (try
       (let [url (authorize-url authorize-endpoint client-id redirect-uri
-                               challenge state (scopes-string cfg))]
+                               challenge state scope resource)]
         ((:notify interaction)
          {:type :auth-url :url url
           :instructions "Open the URL in your browser to authorize MCP access."})
@@ -815,7 +998,8 @@
                          :code code
                          :code-verifier verifier
                          :redirect-uri redirect-uri
-                         :scope (scopes-string cfg)})]
+                         :scope scope
+                         :resource resource})]
             (store-tokens! name (tokens->store tokens))
             (store-server! name (assoc (server-entry name)
                                        :client-info {:client-id client-id
@@ -831,11 +1015,12 @@
 
 (defn- run-device-flow
   [name definition metadata interaction]
-  (let [cfg (:oauth definition)
-        client-id (resolve-client-id! name definition metadata)
+  (let [client-id (resolve-client-id! name definition metadata)
+        scope (effective-scopes name definition (::prm metadata))
+        resource (effective-resource definition)
         device (oauth-lib/start-device-authorization
                 (required-endpoint metadata :device_authorization_endpoint name)
-                {:client-id client-id :scope (scopes-string cfg)})
+                {:client-id client-id :scope scope :resource resource})
         token-endpoint (required-endpoint metadata :token_endpoint name)]
     ((:notify interaction)
      {:type :device-code
@@ -862,7 +1047,13 @@
                                                    "&device_code="
                                                    (oauth-lib/url-encode (:device-code device))
                                                    "&client_id="
-                                                   (oauth-lib/url-encode client-id))
+                                                   (oauth-lib/url-encode client-id)
+                                                   (when (seq scope)
+                                                     (str "&scope="
+                                                          (oauth-lib/url-encode scope)))
+                                                   (when (seq resource)
+                                                     (str "&resource="
+                                                          (oauth-lib/url-encode resource))))
                                         :timeout 15000}))]
                        (cond
                          (string? (:access_token raw))
@@ -899,8 +1090,12 @@
   [name definition interaction]
   (if (machine-grant? definition)
     (do (fetch-machine-token! name definition) :logged-in)
-    (let [metadata (discover-meta definition)
+    (let [metadata (discover-meta name definition)
           flow (resolve-flow (:oauth definition) metadata interaction)]
+      ;; only the PKCE flow sends a code challenge — a device-only server
+      ;; must not be refused for missing PKCE metadata
+      (when (= :pkce flow)
+        (verify-pkce-support! name definition metadata))
       (case flow
         :pkce (run-pkce-flow name definition metadata interaction)
         :device (run-device-flow name definition metadata interaction)))))

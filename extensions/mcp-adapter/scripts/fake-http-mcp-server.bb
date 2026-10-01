@@ -150,6 +150,11 @@
       {:jsonrpc "2.0" :id id
        :result {:resources [{:name "HTTP doc" :uri "http://fake/doc"
                              :description "A fake http resource"}]}}
+      "resources/templates/list"
+      {:jsonrpc "2.0" :id id
+       :result {:resourceTemplates [{:name "http pages"
+                                     :uriTemplate "http://fake/page/{id}"
+                                     :description "A fake http resource template"}]}}
       "resources/read"
       {:jsonrpc "2.0" :id id
        :result {:contents [{:type "text" :uri (get-in msg [:params :uri])
@@ -173,6 +178,9 @@
         is-initialize? (= "initialize" (:method body-msg))
         is-slow-call? (and (= "tools/call" (:method body-msg))
                            (= "http-slow" (get-in body-msg [:params :name])))
+        ;; like a real SDK server: progress only for requests carrying
+        ;; _meta.progressToken
+        progress-token (get-in body-msg [:params :_meta :progressToken])
         response (handle-json-rpc (:body req) session-id version-override)]
     ;; notifications get an empty 200 (never close without a response —
     ;; java.net.http reports that as an error)
@@ -183,7 +191,7 @@
         (let [session-header (when is-initialize?
                                {"Mcp-Session-Id" (or session-id "sess-1")})]
           (if (str/includes? (str (get-in req [:headers "accept"])) "text/event-stream")
-            (let [sse-parts (if is-slow-call?
+            (let [sse-parts (if (and is-slow-call? progress-token)
                               ;; progress notifications before the result
                               (apply str
                                      (map (fn [p]
@@ -192,6 +200,7 @@
                                                   {:jsonrpc "2.0"
                                                    :method "notifications/progress"
                                                    :params {:progress p :total 100
+                                                            :progressToken progress-token
                                                             :message (str "p" p)}})
                                                  "\n\n"))
                                           [10 50]))
@@ -252,7 +261,14 @@
                                (http-response 202 "" {"Content-Type" "application/json"}))
 
                              (= path "/mcp")
-                             (handle-streamable req)
+                             (if (= method "DELETE")
+                               ;; session termination — the marker line
+                               ;; lets a test assert the client released
+                               ;; the session on close!
+                               (do (println "SESSION DELETED")
+                                   (flush)
+                                   (http-response 200 "" {}))
+                               (handle-streamable req))
 
                              :else (http-response 404 "not found"))]
               (when response

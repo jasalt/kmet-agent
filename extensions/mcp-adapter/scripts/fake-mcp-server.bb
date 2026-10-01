@@ -4,7 +4,10 @@
 ;;
 ;; Implements: initialize (negotiation), notifications/initialized echo,
 ;; tools/list (with a cursor page), tools/call (echo + error path), a
-;; notification mid-request, and clean exit on SIGTERM/EOF.
+;; notification mid-request, server->client requests (ping / an
+;; unimplemented method) answered mid-call, a list_changed notification
+;; that adds a tool, notifications/cancelled logging, and clean exit on
+;; SIGTERM/EOF.
 ;;
 ;; Usage: bb fake-mcp-server.bb  (speaks JSON-RPC over stdin/stdout)
 ;; Locate the kmet source tree (the fakes run as bare bb children with no
@@ -33,7 +36,34 @@
    {:name "boom" :description "Always fails with an error result"
     :inputSchema {:type "object" :properties {} :required []}}
    {:name "ping-mid" :description "Sends a notification mid-request"
+    :inputSchema {:type "object" :properties {} :required []}}
+   {:name "who-asks" :description "Asks the client ping + roots/list mid-call"
+    :inputSchema {:type "object" :properties {} :required []}}
+   {:name "add-tool" :description "Adds a tool and sends tools/list_changed"
+    :inputSchema {:type "object" :properties {} :required []}}
+   {:name "storm" :description "list_changed storm: every tools/list re-notifies"
+    :inputSchema {:type "object" :properties {} :required []}}
+   {:name "list-count" :description "How many tools/list calls this process served"
     :inputSchema {:type "object" :properties {} :required []}}])
+
+;; set by the add-tool call: tools/list then carries one more tool
+(def extra-tool? (atom false))
+
+;; answers to the server->client requests the who-asks tool sends
+(def answers (atom {}))
+
+;; storm mode: every tools/list answers with another list_changed, so a
+;; client that resyncs per notification never stops
+(def storm? (atom false))
+(def list-calls (atom 0))
+
+;; cancellation log (env FAKE_LOG) so a test can see the client's
+;; notifications/cancelled for an abandoned request
+(def log-file (System/getenv "FAKE_LOG"))
+
+(defn- log! [line]
+  (when log-file
+    (spit log-file (str line "\n") :append true)))
 
 (def prompts
   [{:name "brief" :description "Summarize a topic briefly"
@@ -45,6 +75,17 @@
 (def resources
   [{:name "README" :uri "file:///README.md" :description "The project readme"}
    {:name "schema" :uri "file:///schema.json" :description "JSON schema"}])
+
+(def resource-templates
+  [{:name "project files" :uriTemplate "file:///{path}"
+    :description "Read a file in the project" :mimeType "text/plain"}
+   ;; a display name whose resource-tool-name normalization differs from a
+   ;; raw sanitize (spaces + parens) — /mcp list must show the registered
+   ;; tool name
+   {:name "issues (all)" :uriTemplate "file:///issues/{state}"
+    :description "All tracked issues"}
+   {:name "issues" :uriTemplate "github://repo/{owner}/{repo}/issues/{number}"
+    :description "A tracked issue"}])
 
 (defn- send! [msg]
   (println (json/generate-string msg))
@@ -58,23 +99,50 @@
 
 (defn- handle-call [id params]
   (let [name (:name params)
-        args (:arguments params)]
+        args (:arguments params)
+        ;; like a real SDK server: progress is emitted ONLY for requests
+        ;; carrying _meta.progressToken
+        token (get-in params [:_meta :progressToken])]
     (case name
       "echo" (send-result! id {:content [{:type "text" :text (str "echo: " (:message args))}]})
       "add" (send-result! id {:content [{:type "text" :text (str (+ (:a args) (:b args)))}]})
       "slow" (do (doseq [i [25 50 75]]
-                   (send! {:jsonrpc "2.0" :method "notifications/progress"
-                           :params {:progress i :total 100
-                                    :message (str "working " i "%")}})
+                   (when token
+                     (send! {:jsonrpc "2.0" :method "notifications/progress"
+                             :params {:progress i :total 100
+                                      :progressToken token
+                                      :message (str "working " i "%")}}))
                    (Thread/sleep (long (/ (or (:ms args) 100) 4))))
                  (send-result! id {:content [{:type "text" :text "slept"}]}))
       "boom" (send-result! id {:content [{:type "text" :text "kaboom"}]
                                :isError true})
       "ping-mid"
-      (do (send! {:jsonrpc "2.0" :method "notifications/progress"
-                  :params {:progress 0.5 :progressToken "t"}})
+      (do (when token
+            (send! {:jsonrpc "2.0" :method "notifications/progress"
+                    :params {:progress 0.5 :progressToken token}}))
           (Thread/sleep 50)
           (send-result! id {:content [{:type "text" :text "pong"}]}))
+      ;; server->client requests mid-call: ping MUST be answered, the
+      ;; optional client features (roots) must be refused, not dropped
+      "who-asks"
+      (do (send! {:jsonrpc "2.0" :id 9001 :method "ping" :params {}})
+          (send! {:jsonrpc "2.0" :id 9002 :method "roots/list" :params {}})
+          (Thread/sleep 400)
+          (send-result! id {:content [{:type "text"
+                                      :text (json/generate-string @answers)}]}))
+      ;; add a tool and tell the client its catalog changed
+      "add-tool"
+      (do (reset! extra-tool? true)
+          (send! {:jsonrpc "2.0" :method "notifications/tools/list_changed"})
+          (send-result! id {:content [{:type "text" :text "added echo2"}]}))
+      ;; three notifications in a row, then every tools/list re-notifies
+      "storm"
+      (do (reset! storm? true)
+          (dotimes [_ 3]
+            (send! {:jsonrpc "2.0" :method "notifications/tools/list_changed"}))
+          (send-result! id {:content [{:type "text" :text "storming"}]}))
+      "list-count"
+      (send-result! id {:content [{:type "text" :text (str @list-calls)}]})
       (send-error! id -32602 (str "Unknown tool: " name)))))
 
 (defn- handle-line [line]
@@ -82,23 +150,57 @@
     (let [msg (json/parse-string line true)
           id (:id msg)
           method (:method msg)]
-      (case method
+      (cond
+        ;; a response to one of our own requests (the client's answer to
+        ;; ping / roots/list) — record it, never answer it
+        (and id (nil? method))
+        (swap! answers assoc id (if (:error msg)
+                                   {:error (:error msg)}
+                                   {:result (:result msg)}))
+
+        (= method "notifications/cancelled")
+        (log! (json/generate-string (select-keys msg [:method :params])))
+
+        :else
+        (case method
         "initialize"
         (do (send-result! id {:protocolVersion (:protocolVersion (:params msg))
-                              :capabilities {:tools {}
+                              :capabilities {:tools {:listChanged true}
                                              :prompts {:listChanged false}
                                              :resources {:listChanged false}}
                               :serverInfo {:name "fake-mcp-server" :version "1.0.0"}})
             (send! {:jsonrpc "2.0" :method "notifications/initialized" :params {}}))
         "notifications/initialized" nil
         "tools/list"
-        (let [cursor (:cursor (:params msg))
-              page1 (subvec (vec tools) 0 2)
-              page2 (subvec (vec tools) 2)]
+        (let [_ (swap! list-calls inc)
+              _ (when @storm?
+                  (send! {:jsonrpc "2.0" :method "notifications/tools/list_changed"}))
+              cursor (:cursor (:params msg))
+              all (cond-> tools @extra-tool? (conj {:name "echo2"
+                                                   :description "Second echo"
+                                                   :inputSchema {:type "object"
+                                                                 :properties {}
+                                                                 :required []}}))
+              page1 (subvec (vec all) 0 2)
+              page2 (subvec (vec all) 2)]
           (if (nil? cursor)
             (send-result! id {:tools page1 :nextCursor "p2"})
             (send-result! id {:tools page2})))
-        "tools/call" (handle-call id (:params msg))
+        ;; who-asks blocks while it waits for the client's answers, so it
+        ;; runs off the read loop (the loop keeps reading responses); the
+        ;; thread is returned so the loop can join it before exiting
+        "tools/call"
+        (if (= "who-asks" (get-in msg [:params :name]))
+          ;; the answer map is cleared here, before the thread sends its
+          ;; requests — clearing it inside the thread would race the read
+          ;; loop, which may already have recorded the answers
+          (do (reset! answers {})
+              (doto (Thread. (fn []
+                               (try (handle-call id (:params msg))
+                                    (catch Exception e
+                                      (send-error! id -32603 (ex-message e))))))
+                (.start)))
+          (handle-call id (:params msg)))
         "prompts/list" (send-result! id {:prompts prompts})
         "prompts/get"
         (let [name (:name (:params msg))
@@ -117,6 +219,7 @@
                                                              :text (str "Focus: " (or (:focus args) "overall"))}}]})
             (send-error! id -32602 (str "Unknown prompt: " name))))
         "resources/list" (send-result! id {:resources resources})
+        "resources/templates/list" (send-result! id {:resourceTemplates resource-templates})
         "resources/read"
         (let [uri (:uri (:params msg))]
           (case uri
@@ -126,9 +229,24 @@
             "file:///schema.json" (send-result! id {:contents [{:type "text"
                                                                 :uri uri
                                                                 :text "{\"type\": \"object\"}"}]})
+            ;; a template read arrives already expanded by the client
+            "file:///src/main.clj" (send-result! id {:contents [{:type "text"
+                                                                 :uri uri
+                                                                 :text "(ns main)"}]})
+            "file:///a b.txt" (send-result! id {:contents [{:type "text"
+                                                             :uri uri
+                                                             :text "spaced path"}]})
             (send-error! id -32602 (str "Unknown resource: " uri))))
-        (send-error! id -32601 (str "Method not found: " method))))))
+        (send-error! id -32601 (str "Method not found: " method)))))))
 
-;; clean exit on EOF (client killed the pipe)
-(doseq [line (line-seq (java.io.BufferedReader. *in*))]
-  (try (handle-line line) (catch Exception e (println "ERR" (ex-message e)))))
+;; clean exit on EOF (client killed the pipe) — call threads are joined
+;; first so a handler still waiting on the client's answers gets its
+;; result out before the process exits
+(let [pending (atom [])]
+  (doseq [line (line-seq (java.io.BufferedReader. *in*))]
+    (try
+      ;; handle-line yields a thread only for the off-loop call handler
+      (let [t (handle-line line)]
+        (when (instance? java.lang.Thread t) (swap! pending conj t)))
+      (catch Exception e (println "ERR" (ex-message e)))))
+  (doseq [t @pending] (.join t 10000)))

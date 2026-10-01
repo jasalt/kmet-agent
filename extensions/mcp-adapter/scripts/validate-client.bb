@@ -11,6 +11,7 @@
 ;; the process tree.
 (require '[babashka.process :as proc]
          '[clojure.string :as str]
+         '[kmet.libs.json :as json]
          '[clojure.java.io :as io]
          '[kmet.extensions.mcp-adapter.client :as client]
          '[kmet.extensions.mcp-adapter.config :as config])
@@ -32,7 +33,7 @@
     (loop [waits 0]
       (let [out (try (slurp out-file) (catch Exception _ ""))]
         (if-let [m (re-find #"PORT (\d+)" out)]
-          {:proc p :port (Long/parseLong (second m))}
+          {:proc p :port (Long/parseLong (second m)) :out-file out-file}
           (do (Thread/sleep 100)
               (if (< waits 50)
                 (recur (inc waits))
@@ -51,8 +52,9 @@
         (client/connect! definition {})]
     (check "handshake protocol-version" (= "2025-11-25" protocol-version))
     (check "handshake server-info" (= "fake-mcp-server" (:name server-info)))
-    (check "tools/list pagination" (= 5 (count tools)))
-    (check "tool names" (= #{"echo" "add" "slow" "boom" "ping-mid"}
+    (check "tools/list pagination" (= 9 (count tools)))
+    (check "tool names" (= #{"echo" "add" "slow" "boom" "ping-mid"
+                            "who-asks" "add-tool" "storm" "list-count"}
                            (set (map :name tools))))
     (let [result (client/request! conn "tools/call"
                                   {:name "echo" :arguments {:message "hi"}})]
@@ -66,7 +68,11 @@
       (check "prompts/list" (= #{"brief" "review"}
                                (set (map :name (:prompts result)))))
       (check "resources/list" (= #{"README" "schema"}
-                                 (set (map :name (:resources result))))))
+                                 (set (map :name (:resources result)))))
+      (check "resources/templates/list"
+             (= #{"file:///{path}" "file:///issues/{state}"
+                  "github://repo/{owner}/{repo}/issues/{number}"}
+                (set (map :uriTemplate (:resource-templates result))))))
     (let [result (client/get-prompt conn "brief" {"topic" "clojure"})]
       (check "prompts/get args"
              (str/includes? (get-in result [:messages 0 :content :text])
@@ -74,9 +80,25 @@
     (let [result (client/read-resource conn "file:///README.md")]
       (check "resources/read"
              (str/includes? (get-in result [:contents 0 :text]) "# Fake README")))
+    ;; a level-1 URI template expands into a concrete resources/read URI:
+    ;; '/' survives inside a variable, '?' '#' '%' and spaces are escaped
+    (check "uri template expansion"
+           (= "file:///src/main.clj"
+              (client/expand-uri-template "file:///{path}" {:path "src/main.clj"})))
+    (check "uri template escapes unsafe characters"
+           (= "file:///a%20b%3F.txt"
+              (client/expand-uri-template "file:///{path}" {:path "a b?.txt"})))
+    (check "uri template leaves unknown variables"
+           (= "file:///{path}"
+              (client/expand-uri-template "file:///{path}" {})))
+    (let [uri (client/expand-uri-template "file:///{path}" {:path "src/main.clj"})
+          result (client/read-resource conn uri)]
+      (check "resources/read through a template"
+             (= "(ns main)" (get-in result [:contents 0 :text]))))
     (let [progress (atom [])
           result (client/request! conn "tools/call"
-                                  {:name "slow" :arguments {:ms 400}}
+                                  {:name "slow" :arguments {:ms 400}
+                                   :_meta {:progressToken "t"}}
                                   {:timeout-ms 5000
                                    :on-notification
                                    (fn [n] (swap! progress conj
@@ -84,10 +106,62 @@
           formatted (client/format-result result)]
       (check "progress notifications streamed" (= [25 50 75] @progress))
       (check "slow call after progress" (= "slept" (:text formatted))))
+    ;; no _meta.progressToken → the server sends no progress at all
+    (let [progress (atom [])
+          result (client/request! conn "tools/call"
+                                  {:name "slow" :arguments {:ms 100}}
+                                  {:timeout-ms 5000
+                                   :on-notification
+                                   (fn [n] (swap! progress conj n))})]
+      (check "no progress without a token" (empty? @progress))
+      (check "unprogressed call result" (= "slept" (:text (client/format-result result)))))
     ;; notification mid-request must be dropped, response still arrives
-    (let [result (client/request! conn "tools/call" {:name "ping-mid" :arguments {}})]
+    (let [result (client/request! conn "tools/call"
+                                  {:name "ping-mid" :arguments {}
+                                   :_meta {:progressToken "t"}})]
       (check "notification mid-request dropped"
              (= "pong" (:text (client/format-result result)))))
+    ;; server->client requests: ping is answered, an unimplemented
+    ;; optional client feature is refused with -32601 (never dropped)
+    (let [formatted (client/format-result
+                     (client/request! conn "tools/call"
+                                      {:name "who-asks" :arguments {}}
+                                      {:timeout-ms 5000}))
+          answers (json/parse-string (:text formatted) true)]
+      ;; json object keys arrive keywordized (":9001" — the ids are numbers)
+      (check "client answers server ping" (= {} (get-in answers [:9001 :result])))
+      (check "client refuses roots/list"
+             (= -32601 (get-in answers [:9002 :error :code]))))
+    ;; two live requests on one stdio conn must not consume (and drop)
+    ;; each other's responses — request! serializes them, so a background
+    ;; list_changed resync queues behind an in-flight tool call
+    (let [a (future (try (client/request! conn "tools/call"
+                                          {:name "who-asks" :arguments {}}
+                                          {:timeout-ms 5000})
+                         :ok
+                         (catch Exception e (ex-message e))))
+          _ (Thread/sleep 150)
+          b (future (try (client/request! conn "tools/call"
+                                          {:name "echo" :arguments {:message "hi"}}
+                                          {:timeout-ms 5000})
+                         :ok
+                         (catch Exception e (ex-message e))))]
+      (check "concurrent requests both complete"
+             (and (= :ok @a) (= :ok @b))))
+    ;; a list_changed notification reaches the conn-level handler
+    (let [notifications (atom [])
+          {:keys [conn]} (client/connect! definition
+                                       {:on-notification (fn [_conn msg]
+                                                           (swap! notifications conj
+                                                                  (:method msg)))})]
+      (client/request! conn "tools/call" {:name "add-tool" :arguments {}})
+      (Thread/sleep 200)
+      (check "list_changed notification dispatched"
+             (some #{"notifications/tools/list_changed"} @notifications))
+      (check "re-list sees the added tool"
+             (some #(= "echo2" (:name %))
+                   (client/list-all-tools conn)))
+      (client/close! conn))
     ;; error result surfaces as :is-error
     (let [formatted (client/format-result
                      (client/request! conn "tools/call" {:name "boom" :arguments {}}))]
@@ -104,6 +178,25 @@
                                  {:timeout-ms 300})
                 false
                 (catch Exception e (str/includes? (ex-message e) "timed out after 300ms"))))
+    ;; a dropped connection is not a cancellation — an abandoned request
+    ;; must carry notifications/cancelled
+    (check "abandoned request cancelled"
+           (let [log-file (str (System/getProperty "user.dir") "/.mcp-cancel-"
+                               (System/nanoTime) ".log")
+                 {:keys [conn]} (client/connect!
+                                 {:command "bb" :args [fake-stdio] :env {"FAKE_LOG" log-file}}
+                                 {})]
+             (try
+               (client/request! conn "tools/call" {:name "slow" :arguments {:ms 1200}}
+                                {:timeout-ms 200})
+               (catch Exception _ nil))
+             ;; the fake reads stdin on its loop, which is inside the slow
+             ;; call — the cancel lands once that returns
+             (Thread/sleep 1600)
+             (let [logged (try (slurp log-file) (catch Exception _ ""))]
+               (client/close! conn)
+               (and (str/includes? logged "notifications/cancelled")
+                    (str/includes? logged "tools/call")))))
     ;; process-exit error: kill the server, next request fails with stderr
     (check "alive?" (client/alive? conn))
     (proc/destroy-tree (:proc conn))
@@ -124,7 +217,7 @@
 
 (defn test-http [fake-http]
   (println "\n── streamable-http transport ──")
-  (let [{:keys [proc port]} (spawn-server! fake-http)
+  (let [{:keys [proc port] :as server} (spawn-server! fake-http)
         definition {:url (str "http://127.0.0.1:" port "/mcp")
                     :http-transport :streamable-http}]
     (try
@@ -150,7 +243,10 @@
           (check "http prompts/list"
                  (= #{"http-brief"} (set (map :name (:prompts result)))))
           (check "http resources/list"
-                 (= #{"HTTP doc"} (set (map :name (:resources result))))))
+                 (= #{"HTTP doc"} (set (map :name (:resources result)))))
+          (check "http resources/templates/list"
+                 (= #{"http://fake/page/{id}"}
+                    (set (map :uriTemplate (:resource-templates result))))))
         (let [result (client/get-prompt conn "http-brief" {"topic" "x"})]
           (check "http prompts/get"
                  (str/includes? (get-in result [:messages 0 :content :text])
@@ -158,7 +254,8 @@
         ;; SSE responses stream progress notifications before the result
         (let [progress (atom [])
               result (client/request! conn "tools/call"
-                                      {:name "http-slow" :arguments {}}
+                                      {:name "http-slow" :arguments {}
+                                       :_meta {:progressToken "t"}}
                                       {:timeout-ms 5000
                                        :on-notification
                                        (fn [n] (swap! progress conj
@@ -172,7 +269,21 @@
                     false
                     (catch Exception e (str/includes? (ex-message e) "timed out after 300ms"))))
         (check "http conn dead after timeout" (not (client/alive? conn)))
-        (client/close! conn))
+        ;; a conn that already died on timeout is not DELETEd on close (the
+        ;; session expires server-side; a DELETE to the stalled server
+        ;; would make the next use wait on it)
+        (client/close! conn)
+        ;; a healthy session IS released with an HTTP DELETE (the fake
+        ;; prints a marker on its stdout)
+        (let [{:keys [conn]} (client/connect! definition {})]
+          (client/close! conn)
+          (check "close deletes the http session"
+                 (loop [waits 0]
+                   (let [out (try (slurp (:out-file server)) (catch Exception _ ""))]
+                     (cond
+                       (str/includes? out "SESSION DELETED") true
+                       (< waits 30) (do (Thread/sleep 100) (recur (inc waits)))
+                       :else false))))))
       (finally
         (stop-server! {:proc proc})))))
 

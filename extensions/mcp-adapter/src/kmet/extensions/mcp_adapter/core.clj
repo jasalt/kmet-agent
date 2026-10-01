@@ -39,20 +39,28 @@
 
 (defn- build-servers
   "Build the :servers map from config: {name {:definition .. :conn atom
-   :error atom :failed-at atom :lock Object}} — :failed-at records the
-   last connect failure (60s backoff window, pi FAILURE_BACKOFF_MS)."
+   :error atom :failed-at atom :lock Object :resyncing atom
+   :resync-changes atom :resync-covered atom}} — :failed-at records the
+   last connect failure (60s backoff window, pi FAILURE_BACKOFF_MS),
+   :resyncing is the list_changed resync gate, :resync-changes counts
+   notifications (each one gets a generation at dispatch) and
+   :resync-covered is the newest generation a completed resync has
+   listed."
   [config]
   (into {} (map (fn [[name definition]]
                   [name {:definition definition
                          :conn (atom nil)
                          :error (atom nil)
                          :failed-at (atom nil)
-                         :lock (Object.)}]))
+                         :lock (Object.)
+                         :resyncing (atom false)
+                         :resync-changes (atom 0)
+                         :resync-covered (atom 0)}]))
         (:mcp-servers config)))
 
 (defn- rebuild-servers
-  "Rebuild :servers from a fresh config, preserving conn/error/lock for
-   servers that persist (used by /mcp refresh)."
+  "Rebuild :servers from a fresh config, preserving conn/error/lock/
+   resync state for servers that persist (used by /mcp refresh)."
   [state config]
   (let [old (:servers @state)]
     (into {} (map (fn [[name definition]]
@@ -60,7 +68,10 @@
                                      {:conn (atom nil)
                                       :error (atom nil)
                                       :failed-at (atom nil)
-                                      :lock (Object.)})
+                                      :lock (Object.)
+                                      :resyncing (atom false)
+                                      :resync-changes (atom 0)
+                                      :resync-covered (atom 0)})
                                  :definition definition)]))
           (:mcp-servers config))))
 
@@ -104,23 +115,116 @@
 (defn- refresh-after-connect!
   "On successful connect: refresh the metadata cache + save, resync direct
    tools, resync prompt commands, rebuild the proxy description (§10.3)."
-  [state name tools prompts resources]
+  [state name tools prompts resources & [resource-templates]]
   (when-let [definition (get-in @state [:config :mcp-servers name])]
     (swap! state (fn [st]
                    (assoc st :cache
                           (metadata/update-entry! (:cache st) name definition
                                                   (:settings (:config st))
-                                                  tools prompts resources))))
+                                                  tools prompts resources
+                                                  resource-templates))))
     (sync-direct-tools! state)
     (prompts/sync-prompt-commands! state)
     (register-proxy-tool! state)
     (update-status-bar! state)))
 
+(defn- resync-server-catalog!
+  "One catalog re-list pass on the live conn: the capability-gated
+   prompts/resources/templates lists included, then refresh-after-connect!."
+  [state name conn]
+  (let [capabilities (or (:capabilities conn) {})]
+    (refresh-after-connect! state name
+                            (if (:tools capabilities)
+                              (client/list-all-tools conn)
+                              [])
+                            (if (:prompts capabilities)
+                              (client/list-all-prompts conn)
+                              [])
+                            (if (:resources capabilities)
+                              (client/list-all-resources conn)
+                              [])
+                            (if (:resources capabilities)
+                              (client/list-all-resource-templates conn)
+                              []))))
+
+(defn- refresh-server-catalog!
+  "Re-list a connected server's catalog on the live conn and push it
+   through refresh-after-connect! (metadata cache, direct tools, prompt
+   commands, proxy description). GEN is the notification generation
+   (allocated at dispatch) this call answers. Runs on a background
+   thread: the transports deliver notifications from inside a request
+   wait.
+
+   One resync session at a time, and at most two listing passes per
+   session: the owning pass plus one deferred pass when further
+   notifications arrived while it listed. A session records the newest
+   generation it has covered, so a handler thread that runs after the
+   catalog was already re-listed skips its session — that keeps a server
+   that re-notifies on every list from chasing its own notifications,
+   while a notification that lands after the last pass still gets one."
+  [state name conn gen]
+  (let [busy (get-in @state [:servers name :resyncing])
+        changes (get-in @state [:servers name :resync-changes])
+        covered (get-in @state [:servers name :resync-covered])]
+    (when (and busy (client/alive? conn))
+      (if (compare-and-set! busy false true)
+        (try
+          (when (> gen @covered)
+            (loop [rerun? false]
+              (let [seen @changes]
+                (try
+                  (resync-server-catalog! state name conn)
+                  (catch Exception _ nil))
+                ;; everything dispatched up to now is reflected in the
+                ;; catalog this pass just read
+                (reset! covered @changes)
+                (when (and (not rerun?) (> @changes seen))
+                  (recur true)))))
+          (finally
+            (reset! busy false)
+            ;; a notification that landed after the last pass covered it
+            ;; (or while this call held a no-op session) must not be
+            ;; stranded — pick it up once the gate is free
+            (when (> @changes @covered)
+              (spawn (fn [] (refresh-server-catalog! state name conn @changes))))))
+        nil))))
+
+(defn- handle-list-changed!
+  "Conn-level notification handler (client.clj dispatch): a
+   list_changed notification means the server's catalog changed, so
+   re-list it and resync — without this the cached tools, direct tools
+   and prompt commands stay stale until a manual /mcp connect or
+   /mcp refresh. Gated on the capability the server advertised:
+   re-listing an unadvertised method would only draw -32601."
+  [state name conn msg]
+  (let [capabilities (or (:capabilities conn) {})
+        changed? (case (:method msg)
+                   "notifications/tools/list_changed" (contains? capabilities :tools)
+                   "notifications/prompts/list_changed" (contains? capabilities :prompts)
+                   "notifications/resources/list_changed" (contains? capabilities :resources)
+                   false)]
+    (when changed?
+      ;; background: the notification arrives on a transport thread and
+      ;; the resync must never block the request that delivered it. The
+      ;; generation is allocated here, at dispatch, so a resync that has
+      ;; already re-listed the catalog can tell a notification it covered
+      ;; from one that arrived afterwards.
+      (let [gen (swap! (get-in @state [:servers name :resync-changes]) inc)]
+        (spawn
+         (fn []
+           (try (refresh-server-catalog! state name conn gen)
+                (catch Exception _ nil))))))))
+
 (defn- connect-with-auth
-  "Connect a server, wiring the HTTP auth fns (§7.8.5) when configured."
+  "Connect a server, wiring the HTTP auth fns (§7.8.5) when configured
+   and the conn-level notification handler (list_changed → resync)."
   [state name]
   (let [definition (get-in @state [:config :mcp-servers name])]
-    (client/connect! definition (auth/make-auth-fns name definition))))
+    (client/connect! definition
+                     (assoc (auth/make-auth-fns name definition)
+                            :on-notification
+                            (fn [conn msg]
+                              (handle-list-changed! state name conn msg))))))
 
 (defn- ensure-connected!
   "Locked, idempotent connect (§10.3): connected + alive? → return; dead →
@@ -149,30 +253,37 @@
                     new-conn (:conn result)
                     tools (:tools result)
                     prompts (:prompts result)
-                    resources (:resources result)]
+                    resources (:resources result)
+                    resource-templates (:resource-templates result)]
                 (reset! conn new-conn)
                 (clear-failure! state name)
-                (refresh-after-connect! state name tools prompts resources)
+                (refresh-after-connect! state name tools prompts resources
+                                        resource-templates)
                 new-conn)
               (catch Exception e
                 (record-failure! state name (ex-message e))
                 (throw e)))))))))
 
 (defn- disconnect-server!
-  "Close + kill a server connection (§10.3)."
-  [state name]
+  "Close + kill a server connection (§10.3). OPTS are passed to
+   client/close! — teardown paths pass :terminate-http-session? false so
+   a synchronous :session-shutdown handler never waits on an
+   unresponsive streamable-HTTP server."
+  [state name & [opts]]
   (when-let [{:keys [conn]} (get-in @state [:servers name])]
     (when-let [c @conn]
-      (try (client/close! c) (catch Exception _ nil)))
+      (try (client/close! c opts) (catch Exception _ nil)))
     (reset! conn nil))
   (update-status-bar! state)
   nil)
 
 (defn- disconnect-all!
-  "Close every connection (session shutdown / extension shutdown)."
+  "Close every connection (session shutdown / extension shutdown) — the
+   shutdown event is synchronous, so the streamable-HTTP session DELETEs
+   are skipped (the sessions expire on their own)."
   [state]
   (doseq [name (keys (:servers @state))]
-    (disconnect-server! state name)))
+    (disconnect-server! state name {:terminate-http-session? false})))
 
 ;; ─── Direct tools (§10.5) ─────────────────────────────────────────────────
 
@@ -206,19 +317,20 @@
       (str (sanitize-tool-name server-name) "_" sanitized)
       name)))
 
-(defn- resource-tool-name
-  "Pi resourceNameToToolName: [^a-zA-Z0-9] → _, collapse runs, trim
-   leading/trailing _, lowercase; empty or digit-start → prefixed with
-   'resource'."
-  [name]
-  (let [result (-> (str name)
-                   (str/replace #"[^a-zA-Z0-9]" "_")
-                   (str/replace #"_+" "_")
-                   (str/replace #"^_+|_+$" "")
-                   str/lower-case)]
-    (if (or (str/blank? result) (re-matches #"^[0-9].*" result))
-      (str "resource" (when (seq result) (str "_" result)))
-      result)))
+(defn- template-vars
+  "The {var} placeholders of a level-1 URI template, in order — the
+   parameter names of a template read tool."
+  [uri-template]
+  (mapv second (re-seq #"\{([^{}]+)\}" (str uri-template))))
+
+(defn- template-schema
+  "Input schema for a template read tool: one required string per {var}."
+  [vars]
+  {:type "object"
+   :properties (into {} (map (fn [v] [v {:type "string"
+                                         :description (str "Value for " v)}])
+                             vars))
+   :required (vec vars)})
 
 (defn- direct-tools-specs
   "Resolve direct-tool specs from the metadata cache only (never spawns;
@@ -254,7 +366,7 @@
               exclude (:exclude-tools definition)]
           (when filter
             (let [entry (metadata/server-entry (:cache @state) name definition settings)
-                  add-spec! (fn [tool-name description schema & [resource-uri]]
+                  add-spec! (fn [tool-name description schema & [resource-uri resource-template]]
                               (when (proxy/tool-allowed? name tool-name include exclude)
                                 (let [prefixed (prefixed-tool-name name tool-name mode @seen)]
                                   (swap! seen conj prefixed)
@@ -264,7 +376,9 @@
                                                   :prefixed prefixed
                                                   :description description
                                                   :input-schema schema}
-                                           resource-uri (assoc :resource-uri resource-uri))))))]
+                                           resource-uri (assoc :resource-uri resource-uri)
+                                           resource-template
+                                           (assoc :resource-template resource-template))))))]
               (doseq [tool (:tools entry)]
                 (when (or (true? filter) (some #{(:name tool)} filter))
                   (add-spec! (:name tool)
@@ -272,13 +386,26 @@
                              (:inputSchema tool))))
               (when (not= false (:expose-resources definition))
                 (doseq [resource (:resources entry)]
-                  (let [base-name (str "read_" (resource-tool-name (:name resource)))]
+                  (let [base-name (str "read_" (proxy/resource-tool-name (:name resource)))]
                     (when (or (true? filter) (some #{base-name} filter))
                       (add-spec! base-name
                                  (or (:description resource)
                                      (str "Read resource: " (:uri resource)))
                                  nil
-                                 (:uri resource)))))))))))
+                                 (:uri resource)))))
+                ;; a parameterized resource (file:///{path}) becomes a
+                ;; read tool whose parameters are the template variables
+                (doseq [template (:resource-templates entry)]
+                  (let [base-name (str "read_" (proxy/resource-tool-name (:name template)))
+                        vars (template-vars (:uriTemplate template))]
+                    (when (or (true? filter) (some #{base-name} filter))
+                      (add-spec! base-name
+                                 (str (or (:description template)
+                                          "Read resource: ")
+                                      " (" (:uriTemplate template) ")")
+                                 (template-schema vars)
+                                 nil
+                                 (:uriTemplate template)))))))))))
     @specs))
 
 (defn- title-str
@@ -413,12 +540,21 @@
                       (pr-str (select-keys spec
                                            [:server :original :prefixed
                                             :description :input-schema
-                                            :resource-uri])))
+                                            :resource-uri :resource-template])))
         make-execute (fn [spec]
                        (fn [args & [on-update]]
-                         (if (:resource-uri spec)
+                         (cond
+                           (:resource-uri spec)
                            (proxy/read-mcp-resource @state (:server spec)
                                                     (:resource-uri spec))
+
+                           (:resource-template spec)
+                           (proxy/read-mcp-resource @state (:server spec)
+                                                    (client/expand-uri-template
+                                                     (:resource-template spec)
+                                                     (or args {})))
+
+                           :else
                            (proxy/call-mcp-tool @state (:server spec)
                                                 (:original spec) args
                                                 {:on-update on-update}))))]
