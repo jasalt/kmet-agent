@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-30T20:07:26Z"
+ :generated-at "2026-10-01T07:58:41Z"
  :provider {:id :openrouter
             :name "OpenRouter"
             :env-vars ["OPENROUTER_API_KEY"]
@@ -970,7 +970,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 0.07854 :output 0.15708 :cache-read 0.015708 :cache-write 0}
+    :cost {:input 0.042 :output 0.084 :cache-read 0.0084 :cache-write 0}
     :context-window 1024000
     :max-tokens 384000
     :compat {:supports-developer-role false
@@ -992,7 +992,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 0.01 :output 1.28 :cache-read 0.01 :cache-write 0}
+    :cost {:input 0.0108 :output 1.28 :cache-read 0.0108 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
@@ -1036,7 +1036,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 0.783 :output 1.566 :cache-read 0.06525 :cache-write 0}
+    :cost {:input 0.216282 :output 0.432564 :cache-read 0.018023 :cache-write 0}
     :context-window 1024000
     :max-tokens 384000
     :compat {:supports-developer-role false
@@ -1058,7 +1058,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 0.66 :output 1.98 :cache-read 0.022 :cache-write 0}
+    :cost {:input 1.32 :output 3.96 :cache-read 0.044 :cache-write 0}
     :context-window 1048576
     :max-tokens 393216
     :compat {:supports-developer-role false
@@ -1080,7 +1080,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text :image]
-    :cost {:input 0.0198 :output 0.396 :cache-read 0.00291 :cache-write 0}
+    :cost {:input 0.027 :output 0.6 :cache-read 0.027 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
@@ -1683,7 +1683,7 @@
                          :minimal "MINIMAL"
                          :off nil}
     :input [:text :image]
-    :cost {:input 0.0765 :output 0.255 :cache-read 0.0425 :cache-write 0}
+    :cost {:input 0.09 :output 0.3 :cache-read 0.05 :cache-write 0}
     :context-window 262144
     :max-tokens 235929
     :compat {:supports-developer-role false
@@ -1945,7 +1945,7 @@
     :reasoning false
     :input [:text]
     :cost {:input 0.1 :output 0.32 :cache-read 0 :cache-write 0}
-    :context-window 131072
+    :context-window 65536
     :max-tokens 16384
     :compat {:supports-developer-role false
              :thinking-format :openrouter
@@ -2112,7 +2112,7 @@
     :base-url "https://openrouter.ai/api/v1"
     :reasoning true
     :input [:text]
-    :cost {:input 0.4 :output 2.2 :cache-read 0 :cache-write 0}
+    :cost {:input 0.55 :output 2.2 :cache-read 0 :cache-write 0}
     :context-window 1000000
     :max-tokens 40000
     :compat {:supports-developer-role false
@@ -2593,9 +2593,9 @@
     :reasoning true
     :thinking-level-map {:off nil}
     :input [:text]
-    :cost {:input 0.6 :output 2.5 :cache-read 0.15 :cache-write 0}
+    :cost {:input 0.6 :output 2.5 :cache-read 0 :cache-write 0}
     :context-window 262144
-    :max-tokens 98304
+    :max-tokens 235929
     :compat {:supports-developer-role false
              :thinking-format :openrouter
              :supports-strict-mode true}}
@@ -2657,7 +2657,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 3 :output 15 :cache-read 0.3 :cache-write 0}
+    :cost {:input 0.6789 :output 10 :cache-read 0.6789 :cache-write 0}
     :context-window 1048576
     :max-tokens 131072
     :compat {:supports-developer-role false
@@ -2825,9 +2825,9 @@
     :base-url "https://openrouter.ai/api/v1"
     :reasoning true
     :input [:text]
-    :cost {:input 0.06 :output 0.16 :cache-read 0.03 :cache-write 0}
+    :cost {:input 0.0595 :output 0.17 :cache-read 0.02975 :cache-write 0}
     :context-window 262144
-    :max-tokens 32768
+    :max-tokens 131072
     :compat {:supports-developer-role false
              :thinking-format :openrouter
              :supports-strict-mode true}}
@@ -4190,44 +4190,6 @@
                          :xhigh "xhigh"}
     :input [:text :image]
     :cost {:input 2 :output 10 :cache-read 0.1 :cache-write 2.5}
-    :context-window 1050000
-    :max-tokens 128000
-    :compat {:thinking-format :openrouter :supports-strict-mode true}}
-   "openai/gpt-6.1-sol-pro:batch"
-   {:id "openai/gpt-6.1-sol-pro:batch"
-    :name "OpenAI: GPT-6.1 Sol Pro (batch)"
-    :provider :openrouter
-    :api :openai-completions
-    :base-url "https://openrouter.ai/api/v1"
-    :reasoning true
-    :thinking-level-map {:high "high"
-                         :low "low"
-                         :max "max"
-                         :medium "medium"
-                         :minimal nil
-                         :off nil
-                         :xhigh "xhigh"}
-    :input [:text :image]
-    :cost {:input 1 :output 5 :cache-read 0.05 :cache-write 1.25}
-    :context-window 1050000
-    :max-tokens 128000
-    :compat {:thinking-format :openrouter :supports-strict-mode true}}
-   "openai/gpt-6.1-sol:batch"
-   {:id "openai/gpt-6.1-sol:batch"
-    :name "OpenAI: GPT-6.1 Sol (batch)"
-    :provider :openrouter
-    :api :openai-completions
-    :base-url "https://openrouter.ai/api/v1"
-    :reasoning true
-    :thinking-level-map {:high "high"
-                         :low "low"
-                         :max "max"
-                         :medium "medium"
-                         :minimal nil
-                         :off nil
-                         :xhigh "xhigh"}
-    :input [:text :image]
-    :cost {:input 1 :output 5 :cache-read 0.05 :cache-write 1.25}
     :context-window 1050000
     :max-tokens 128000
     :compat {:thinking-format :openrouter :supports-strict-mode true}}
@@ -5611,7 +5573,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text]
-    :cost {:input 0.0825 :output 0.33 :cache-read 0.020625 :cache-write 0}
+    :cost {:input 0.132 :output 0.528 :cache-read 0.033 :cache-write 0}
     :context-window 262144
     :max-tokens 128000
     :compat {:supports-developer-role false
@@ -5653,7 +5615,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text]
-    :cost {:input 0.7506 :output 2.2509 :cache-read 0.0378 :cache-write 0}
+    :cost {:input 0.834 :output 2.501 :cache-read 0.042 :cache-write 0}
     :context-window 1048576
     :max-tokens 64000
     :compat {:supports-developer-role false
@@ -5740,6 +5702,20 @@
     :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
     :context-window 1048576
     :max-tokens 262144
+    :compat {:supports-developer-role false
+             :thinking-format :openrouter
+             :supports-strict-mode true}}
+   "typesafe/jev-router"
+   {:id "typesafe/jev-router"
+    :name "TypeSafe: Jev Router"
+    :provider :openrouter
+    :api :openai-completions
+    :base-url "https://openrouter.ai/api/v1"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 1000000
+    :max-tokens 4096
     :compat {:supports-developer-role false
              :thinking-format :openrouter
              :supports-strict-mode true}}
@@ -6179,7 +6155,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 0.52 :output 3.99 :cache-read 0.26 :cache-write 0}
+    :cost {:input 1.4 :output 4.4 :cache-read 0.26 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
@@ -6200,9 +6176,9 @@
                          :off nil
                          :xhigh nil}
     :input [:text]
-    :cost {:input 1.4 :output 4.4 :cache-read 0.26 :cache-write 0}
-    :context-window 1048575
-    :max-tokens 943717
+    :cost {:input 0.2219 :output 4.4 :cache-read 0.1775 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 943718
     :compat {:supports-developer-role false
              :thinking-format :openrouter
              :supports-strict-mode true}}
@@ -6417,7 +6393,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.0198 :output 0.396 :cache-read 0.00291 :cache-write 0}
+    :cost {:input 0.027 :output 0.6 :cache-read 0.027 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
@@ -6438,7 +6414,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text]
-    :cost {:input 0.123 :output 3.5 :cache-read 0.123 :cache-write 0}
+    :cost {:input 0.2384 :output 3.5 :cache-read 0.2384 :cache-write 0}
     :context-window 1048576
     :max-tokens 393216
     :compat {:supports-developer-role false
@@ -6459,7 +6435,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 0.0099 :output 0.13068 :cache-read 0.001386 :cache-write 0}
+    :cost {:input 0.0108 :output 1.28 :cache-read 0.0108 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
@@ -6523,7 +6499,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.1941 :output 7.3625 :cache-read 0.4 :cache-write 0}
+    :cost {:input 0.6789 :output 10 :cache-read 0.6789 :cache-write 0}
     :context-window 1048576
     :max-tokens 131072
     :compat {:supports-developer-role false
@@ -6670,7 +6646,7 @@
                          :off nil
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.02 :output 0.2475 :cache-read 0.01 :cache-write 0}
+    :cost {:input 0.02 :output 0.3 :cache-read 0.01 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
@@ -6691,7 +6667,7 @@
                          :off nil
                          :xhigh nil}
     :input [:text]
-    :cost {:input 0.13 :output 4 :cache-read 0.13 :cache-write 0}
+    :cost {:input 0.1566 :output 4 :cache-read 0.1566 :cache-write 0}
     :context-window 1048576
     :max-tokens 131072
     :compat {:supports-developer-role false
