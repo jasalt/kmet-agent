@@ -14,6 +14,7 @@
             [kmet.extensions.mcp-adapter.client :as client]
             [kmet.extensions.mcp-adapter.config :as config]
             [kmet.extensions.mcp-adapter.metadata :as metadata]
+            [kmet.extensions.mcp-adapter.names :as names]
             [kmet.extensions.mcp-adapter.panel :as panel]
             [kmet.extensions.mcp-adapter.prompts :as prompts]
             [kmet.extensions.mcp-adapter.tool-proxy :as proxy]
@@ -31,9 +32,6 @@
          sync-prompt-commands! register-proxy-tool!
          handle-import open-setup-panel!
          update-status-bar!)
-
-(def ^:private builtin-tool-names
-  #{"read" "bash" "edit" "write" "grep" "find" "ls" "mcp"})
 
 ;; ─── State (§10.1) ────────────────────────────────────────────────────────
 
@@ -83,6 +81,7 @@
                    :config config
                    :cache (metadata/load-cache)
                    :servers (build-servers config)
+                   :tool-names {}
                    :registered-direct (atom {})
                    :registered-prompts (atom {})
                    :reaper-stop (atom false)})
@@ -287,36 +286,6 @@
 
 ;; ─── Direct tools (§10.5) ─────────────────────────────────────────────────
 
-(defn- sanitize-tool-name
-  "Lowercase; [^a-z0-9_] → _ (§10.5)."
-  [s]
-  (-> (str/lower-case (str s))
-      (str/replace #"[^a-z0-9_]" "_")))
-
-(defn- server-prefix
-  "Pi getServerPrefix (§10.5): :server default → sanitized server name;
-   :mcp → \"mcp\"; :none/:short → bare (collision fallback by the caller)."
-  [server-name mode]
-  (case mode
-    :none ""
-    :short (let [short (sanitize-tool-name (str/replace server-name #"-?mcp$" ""))]
-             (if (seq short) short "mcp"))
-    :mcp "mcp"
-    (sanitize-tool-name server-name)))
-
-(defn- prefixed-tool-name
-  "Pi formatToolName (§10.5): prefix + '_' + sanitized tool name; bare
-   names with a collision (another server's tool or a builtin) fall back to
-   the server prefix."
-  [server-name tool-name mode seen]
-  (let [sanitized (sanitize-tool-name tool-name)
-        prefix (server-prefix server-name mode)
-        name (if (seq prefix) (str prefix "_" sanitized) sanitized)]
-    (if (or (contains? seen name)
-            (and (empty? prefix) (contains? builtin-tool-names name)))
-      (str (sanitize-tool-name server-name) "_" sanitized)
-      name)))
-
 (defn- template-vars
   "The {var} placeholders of a level-1 URI template, in order — the
    parameter names of a template read tool."
@@ -332,12 +301,41 @@
                              vars))
    :required (vec vars)})
 
+(defn- catalog-entries
+  "Assignment input for names/assign-names: every cached tool plus its
+   read_<resource> entries for enabled, configured servers. Independent of
+   the direct-tools / include / exclude filters — which tools are
+   registered must never rename the ones that are."
+  [state]
+  (let [config (:config @state)
+        settings (:settings config)]
+    (vec
+     (mapcat
+      (fn [[name definition]]
+        (when-not (or (true? (:disabled definition))
+                      (and (not (:command definition)) (not (:url definition))))
+          (let [entry (metadata/server-entry (:cache @state) name definition settings)]
+            (concat
+             (for [tool (:tools entry)]
+               {:server name :kind :tool :id (:name tool) :name (:name tool)})
+             (when (not= false (:expose-resources definition))
+               (concat
+                (for [resource (:resources entry)]
+                  {:server name :kind :resource :id (:uri resource)
+                   :name (str "read_" (names/resource-tool-name (:name resource)))})
+                (for [template (:resource-templates entry)]
+                  {:server name :kind :resource :id (:uriTemplate template)
+                   :name (str "read_" (names/resource-tool-name (:name template)))})))))))
+      (sort-by key (:mcp-servers config))))))
+
 (defn- direct-tools-specs
   "Resolve direct-tool specs from the metadata cache only (never spawns;
    §10.5.1): MCP_DIRECT_TOOLS env → only listed servers (config ignored),
    __none__ → none; else server :direct-tools (bool | name list), else
    settings :direct-tools, else false. Skips disabled and misconfigured
-   servers. Naming per §10.5 with collision fallback. Phase 2: server
+   servers. Names come from the deterministic catalog assignment
+   (:tool-names, names/assign-names — computed by sync-direct-tools!) so
+   display and registration always agree. Phase 2: server
    :include-tools/:exclude-tools globs filter the registration (pi
    isToolAllowed), and :expose-resources (default true) registers
    read_<resource> tools alongside the tool list (pi resource tools).
@@ -349,9 +347,8 @@
         env-servers (when (and env-raw (not= "__none__" env-raw))
                       (set (map str/trim (str/split env-raw #","))))
         env-none? (= "__none__" env-raw)
-        prefix-mode (or (:tool-prefix settings) :server)
-        specs (atom [])
-        seen (atom #{})]
+        assigned (:tool-names @state)
+        specs (atom [])]
     (doseq [[name definition] (sort-by key (:mcp-servers config))]
       (when-not (or (true? (:disabled definition))
                     (and (not (:command definition)) (not (:url definition))))
@@ -361,34 +358,37 @@
                        :else (if (contains? definition :direct-tools)
                                (:direct-tools definition)
                                (if (:direct-tools settings) true false)))
-              mode (or (:tool-prefix definition) prefix-mode)
               include (:include-tools definition)
               exclude (:exclude-tools definition)]
           (when filter
             (let [entry (metadata/server-entry (:cache @state) name definition settings)
-                  add-spec! (fn [tool-name description schema & [resource-uri resource-template]]
-                              (when (proxy/tool-allowed? name tool-name include exclude)
-                                (let [prefixed (prefixed-tool-name name tool-name mode @seen)]
-                                  (swap! seen conj prefixed)
-                                  (swap! specs conj
-                                         (cond-> {:server name
-                                                  :original tool-name
-                                                  :prefixed prefixed
-                                                  :description description
-                                                  :input-schema schema}
-                                           resource-uri (assoc :resource-uri resource-uri)
-                                           resource-template
-                                           (assoc :resource-template resource-template))))))]
+                  name-for (fn [kind id raw]
+                             (or (get assigned [name kind id])
+                                 (names/prefixed-name
+                                  name raw
+                                  (names/effective-mode definition settings))))
+                  add-spec! (fn [kind id tool-name description schema
+                                 & [resource-uri resource-template]]
+                              (when (names/tool-allowed? name tool-name include exclude)
+                                (swap! specs conj
+                                       (cond-> {:server name
+                                                :original tool-name
+                                                :prefixed (name-for kind id tool-name)
+                                                :description description
+                                                :input-schema schema}
+                                         resource-uri (assoc :resource-uri resource-uri)
+                                         resource-template
+                                         (assoc :resource-template resource-template)))))]
               (doseq [tool (:tools entry)]
                 (when (or (true? filter) (some #{(:name tool)} filter))
-                  (add-spec! (:name tool)
+                  (add-spec! :tool (:name tool) (:name tool)
                              (or (:description tool) "")
                              (:inputSchema tool))))
               (when (not= false (:expose-resources definition))
                 (doseq [resource (:resources entry)]
-                  (let [base-name (str "read_" (proxy/resource-tool-name (:name resource)))]
+                  (let [base-name (str "read_" (names/resource-tool-name (:name resource)))]
                     (when (or (true? filter) (some #{base-name} filter))
-                      (add-spec! base-name
+                      (add-spec! :resource (:uri resource) base-name
                                  (or (:description resource)
                                      (str "Read resource: " (:uri resource)))
                                  nil
@@ -396,10 +396,10 @@
                 ;; a parameterized resource (file:///{path}) becomes a
                 ;; read tool whose parameters are the template variables
                 (doseq [template (:resource-templates entry)]
-                  (let [base-name (str "read_" (proxy/resource-tool-name (:name template)))
+                  (let [base-name (str "read_" (names/resource-tool-name (:name template)))
                         vars (template-vars (:uriTemplate template))]
                     (when (or (true? filter) (some #{base-name} filter))
-                      (add-spec! base-name
+                      (add-spec! :resource (:uriTemplate template) base-name
                                  (str (or (:description template)
                                           "Read resource: ")
                                       " (" (:uriTemplate template) ")")
@@ -533,7 +533,13 @@
    stream as partial content while a call runs. Also syncs the script
    sandbox's MCP tool source (run_code.md T2) — same trigger, same catalog."
   [state]
-  (let [specs (direct-tools-specs state)
+  (let [config (:config @state)
+        mode-for (fn [server]
+                   (names/effective-mode (get-in config [:mcp-servers server])
+                                         (:settings config)))
+        _ (swap! state assoc
+                 :tool-names (names/assign-names (catalog-entries state) mode-for))
+        specs (direct-tools-specs state)
         next-names (set (map :prefixed specs))
         registered @(:registered-direct @state)
         fingerprint (fn [spec]

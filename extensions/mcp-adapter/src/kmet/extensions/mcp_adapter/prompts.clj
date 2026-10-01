@@ -14,6 +14,7 @@
   (:require [clojure.string :as str]
             [kmet.extensions.mcp-adapter.client :as client]
             [kmet.extensions.mcp-adapter.metadata :as metadata]
+            [kmet.extensions.mcp-adapter.names :as names]
             [kmet.extensions.mcp-adapter.tool-proxy :as proxy]
             [kmet.extension :as ext]))
 
@@ -33,10 +34,10 @@
   "The server component of the command name for a prefix mode (pi
    getServerPrefix || sanitizeServerPrefix || \"server\")."
   [server-name mode]
-  (let [sanitized (proxy/sanitize-server-name server-name)
+  (let [sanitized (names/sanitize-server-name server-name)
         part (case mode
                :none sanitized
-               :short (let [short (proxy/sanitize-server-name
+               :short (let [short (names/sanitize-server-name
                                    (str/replace server-name #"-?mcp$" ""))]
                         (if (seq short) short "mcp"))
                :mcp "mcp"

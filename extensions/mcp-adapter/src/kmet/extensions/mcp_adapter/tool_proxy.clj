@@ -23,6 +23,7 @@
             [kmet.extensions.mcp-adapter.auth :as auth]
             [kmet.extensions.mcp-adapter.client :as client]
             [kmet.extensions.mcp-adapter.metadata :as metadata]
+            [kmet.extensions.mcp-adapter.names :as names]
             [kmet.extensions.mcp-adapter.output-guard :as guard]))
 
 (def ^:private desc-truncate-length 50)
@@ -82,93 +83,6 @@
                                           (settings state))]
     (:tools entry)))
 
-;; ─── Tool name candidates + glob selectors (§10.5 include/exclude, pi
-;; types.ts getToolNameCandidates / matchesToolSelector — simplified: the
-;; candidate set covers every current prefix form plus the legacy
-;; dash→underscore forms; pi's collision-aware legacy path is dropped)
-
-(defn- sanitize-tool-name
-  "Lowercase; [^a-z0-9_] → _ (§10.5)."
-  [s]
-  (-> (str/lower-case (str s))
-      (str/replace #"[^a-z0-9_]" "_")))
-
-(defn resource-tool-name
-  "Pi resourceNameToToolName: [^a-zA-Z0-9] → _, collapse runs, trim
-   leading/trailing _, lowercase; empty or digit-start → prefixed with
-   'resource'. Shared by the read_<resource> direct-tool registration
-   (core.clj) and the /mcp list display so both spell a tool the same
-   way."
-  [name]
-  (let [result (-> (str name)
-                   (str/replace #"[^a-zA-Z0-9]" "_")
-                   (str/replace #"_+" "_")
-                   (str/replace #"^_+|_+$" "")
-                   str/lower-case)]
-    (if (or (str/blank? result) (re-matches #"^[0-9].*" result))
-      (str "resource" (when (seq result) (str "_" result)))
-      result)))
-
-(defn sanitize-server-name
-  "The sanitized server name used as a tool/command prefix (§10.5)."
-  [server-name]
-  (sanitize-tool-name server-name))
-
-(defn tool-name-candidates
-  "Every name a tool can be addressed by: the raw name + the prefixed form
-   under each prefix mode + legacy dash→underscore spellings."
-  [server-name tool-name]
-  (let [modes [:server :short :mcp]
-        raw (str tool-name)
-        legacy (str/replace raw #"-" "_")
-        prefixed (fn [mode]
-                   (let [prefix (case mode
-                                  :short (let [short (sanitize-tool-name
-                                                      (str/replace server-name #"-?mcp$" ""))]
-                                           (if (seq short) short "mcp"))
-                                  :mcp "mcp"
-                                  (sanitize-tool-name server-name))
-                         sanitized (sanitize-tool-name raw)]
-                     (if (seq prefix) (str prefix "_" sanitized) sanitized)))]
-    ;; hash-set, not a literal: sci builds set literals as maps and throws
-    ;; "Duplicate key" when raw == legacy (same value twice)
-    (-> (hash-set raw legacy)
-        (into (map prefixed modes))
-        (into (map (comp sanitize-tool-name #(str % "_" (sanitize-tool-name raw)))
-                   [server-name (str/replace server-name #"-?mcp$" "") "mcp"])))))
-
-(defn- glob->regex
-  "A glob pattern (* = any run, ? = one char) as an anchored regex."
-  [pattern]
-  (re-pattern (str "^" (-> pattern
-                           (str/replace #"[.+^${}()|\[\\\]\\]" "\\$&")
-                           (str/replace #"\*" ".*")
-                           (str/replace #"\?" "."))
-                   "$")))
-
-(defn- matches-tool-pattern
-  "True when any PATTERN matches any of the CANDIDATES (exact or glob)."
-  [candidates patterns]
-  (boolean
-   (some (fn [pattern]
-           (when (string? pattern)
-             (if (or (str/includes? pattern "*")
-                     (str/includes? pattern "?"))
-               (some (fn [c] (boolean (re-find (glob->regex pattern) c)))
-                     candidates)
-               (contains? candidates pattern))))
-         (or patterns []))))
-
-(defn tool-allowed?
-  "include/exclude gate (pi isToolAllowed): empty :include-tools allows
-   everything; :exclude-tools always wins. Applied to direct-tool
-   registration (tools and read_<resource> tools)."
-  [server-name tool-name include-tools exclude-tools]
-  (let [candidates (tool-name-candidates server-name tool-name)]
-    (and (or (empty? include-tools)
-             (matches-tool-pattern candidates include-tools))
-         (not (matches-tool-pattern candidates exclude-tools)))))
-
 ;; ─── Search ranking (pi search-ranking.ts) ────────────────────────────────
 
 (def ^:private field-weights
@@ -197,12 +111,12 @@
   [definition tool-name server-name]
   (let [map (:search-keywords definition)]
     (when (map? map)
-      (let [candidates (tool-name-candidates server-name tool-name)
+      (let [candidates (names/tool-name-candidates server-name tool-name)
             out (atom [])
             seen (atom #{})]
         (doseq [[pattern values] map
                 :when (and (vector? values)
-                           (matches-tool-pattern candidates [pattern]))]
+                           (names/matches-tool-pattern candidates [pattern]))]
           (doseq [value values
                   :let [value (str/trim (str value))]
                   :when (and (seq value) (not (contains? @seen value)))]
@@ -322,23 +236,17 @@
 (defn- tool-prefix-mode
   "The effective prefix mode for a server (per-server over settings)."
   [state server-name]
-  (or (get-in state [:config :mcp-servers server-name :tool-prefix])
-      (get-in state [:config :settings :tool-prefix])
-      :server))
+  (names/effective-mode (server-definition state server-name) (settings state)))
 
-(defn- format-tool-name
-  "The prefixed display name for a raw tool name (§10.5)."
-  [state server-name tool-name]
-  (let [mode (tool-prefix-mode state server-name)
-        prefix (case mode
-                 :none ""
-                 :short (let [short (sanitize-tool-name
-                                     (str/replace server-name #"-?mcp$" ""))]
-                          (if (seq short) short "mcp"))
-                 :mcp "mcp"
-                 (sanitize-tool-name server-name))
-        sanitized (sanitize-tool-name tool-name)]
-    (if (seq prefix) (str prefix "_" sanitized) sanitized)))
+(defn- display-name
+  "The assigned name for a tool/resource (§10.5): the deterministic
+   assignment from the last catalog sync, else the composed name before an
+   assignment exists (startup) or for an entry outside the registered
+   catalog."
+  [state server-name kind id raw-name]
+  (or (get (:tool-names state) [server-name kind id])
+      (names/prefixed-name server-name raw-name
+                           (tool-prefix-mode state server-name))))
 
 ;; ─── Status (§9.5) ────────────────────────────────────────────────────────
 
@@ -562,7 +470,7 @@
                             " matching \"" query "\":\n")])]
         (doseq [{:keys [server tool]} items]
           (swap! out conj (str server ": "
-                               (format-tool-name state server (:name tool))
+                               (display-name state server :tool (:name tool) (:name tool))
                                " — " (or (:description tool) "(no description)")))
           (when (not= false include-schemas?)
             (doseq [line (schema-param-lines (:inputSchema tool))]
@@ -576,18 +484,29 @@
 ;; Find + render one cached tool for the proxy tool's describe mode.
 
 (defn- find-tool
-  "Find a tool by (prefixed) name across servers. Returns {:server :tool}
-   or :ambiguous when the name matches multiple enabled servers."
+  "Find a tool by (prefixed) name across servers. Exact (raw or assigned)
+   matches win; otherwise every addressable spelling is accepted
+   (tool-name-candidates — legacy dash→underscore and the other prefix
+   modes). Returns {:server :tool} or :ambiguous when the name matches
+   multiple enabled servers."
   [state tool-name]
-  (let [matches (for [[name _] (:mcp-servers (:config state))
-                      :when (not (disabled? state name))
-                      tool (or (cached-tools state name) [])
-                      :when (or (= tool-name (:name tool))
-                                (= tool-name (format-tool-name state name (:name tool))))]
-                  {:server name :tool tool})]
+  (let [matches (fn [match?]
+                  (for [[name _] (:mcp-servers (:config state))
+                        :when (not (disabled? state name))
+                        tool (or (cached-tools state name) [])
+                        :when (match? name tool)]
+                    {:server name :tool tool}))
+        exact (seq (matches (fn [name tool]
+                              (or (= tool-name (:name tool))
+                                  (= tool-name (display-name state name :tool (:name tool)
+                                                             (:name tool)))))))
+        all (or exact
+                (seq (matches (fn [name tool]
+                                (contains? (names/tool-name-candidates name (:name tool))
+                                           tool-name)))))]
     (cond
-      (> (count matches) 1) :ambiguous
-      (seq matches) (first matches)
+      (> (count all) 1) :ambiguous
+      (seq all) (first all)
       :else nil)))
 
 (defn describe-text
@@ -610,7 +529,7 @@
             schema (or (:inputSchema tool) {})
             properties (:properties schema)
             required (set (:required schema))
-            out (atom [(str (format-tool-name state server (:name tool))
+            out (atom [(str (display-name state server :tool (:name tool) (:name tool))
                             "\nServer: " server "\n\n"
                             (or (:description tool) "(no description)"))])]
         (if (seq properties)
@@ -661,14 +580,14 @@
                                   ", not connected, cached")
                                 "):\n")])]
             (doseq [tool (sort-by :name tools)]
-              (swap! out conj (str "- " (format-tool-name state server (:name tool))
+              (swap! out conj (str "- " (display-name state server :tool (:name tool) (:name tool))
                                    (when (seq (:description tool))
                                      (str " - " (truncate-at-word (:description tool)
                                                                   desc-truncate-length))))))
             (doseq [template (sort-by :name templates)]
-              (swap! out conj (str "- " (format-tool-name state server
-                                                          (str "read_"
-                                                               (resource-tool-name (:name template))))
+              (swap! out conj (str "- " (display-name state server :resource (:uriTemplate template)
+                                                      (str "read_"
+                                                           (names/resource-tool-name (:name template))))
                                    " — " (:uriTemplate template))))
             {:content (str/join "\n" @out) :is-error false})
           (if (= :connected (state-label state server definition))
@@ -793,7 +712,7 @@
                          :when (not (or (true? (:disabled definition))
                                         (misconfigured? definition)))
                          tool (or (cached-tools state server) [])]
-                     [(format-tool-name state server (:name tool)) server tool])]
+                     [(display-name state server :tool (:name tool) (:name tool)) server tool])]
     (into {}
           (keep (fn [[name entries]]
                   (when (= 1 (count entries))
