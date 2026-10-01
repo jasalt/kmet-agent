@@ -38,17 +38,26 @@
 ;; RFC 8628 section 3.5: `slow_down` means the polling interval must increase by 5 seconds.
 (def ^:private slow-down-interval-increment-ms 5000)
 
+(defn- monotonic-ms
+  "Monotonic milliseconds. Durations — sleep slices and the `expires_in`
+   polling deadline — must not be measured on the wall clock: NTP and
+   Android step `currentTimeMillis` (a forward step aborts a flow that has
+   only just started, and the slow_down hint below is about the same host
+   problem). `nanoTime` has no epoch and cannot step."
+  []
+  (quot (System/nanoTime) 1000000))
+
 (defn abortable-sleep
   "Sleep MS ms, aborting early when SIGNAL (an atom) turns truthy; then throw
    \"Login cancelled\" (pi abortableSleep). Checks in 100ms slices so cancel
    is never blocked by a long sleep."
   [ms signal]
-  (let [end (+ (System/currentTimeMillis) ms)]
+  (let [end (+ (monotonic-ms) ms)]
     (loop []
       (cond
         @signal (throw (ex-info cancel-message {:type :login-cancelled}))
-        (< (System/currentTimeMillis) end)
-        (do (Thread/sleep (min 100 (- end (System/currentTimeMillis))))
+        (< (monotonic-ms) end)
+        (do (Thread/sleep (min 100 (- end (monotonic-ms))))
             (recur))))))
 
 (defn poll-oauth-device-code-flow
@@ -63,6 +72,10 @@
                                 | {:status :failed :message str})
      :signal                — cancel atom (truthy aborts with
                                \"Login cancelled\")
+     :now                   — (fn [] → ms) clock for the deadline; defaults
+                               to a monotonic source, because `expires_in`
+                               is a duration (see monotonic-ms). Callers
+                               that inject a clock keep full control.
      :sleep                 — (fn [ms signal]) sleep implementation;
                                defaults to abortable-sleep. Callers that need
                                with-redefs-compatible sleeping (kmet.ai.oauth)
@@ -72,7 +85,7 @@
    pi's distinct messages (slow_down timeouts get the clock-drift hint)."
   [{:keys [interval-seconds expires-in-seconds wait-before-first-poll poll signal now sleep]}]
   (let [sleep (or sleep abortable-sleep)
-        now (or now System/currentTimeMillis)
+        now (or now monotonic-ms)
         deadline (if (number? expires-in-seconds)
                    (+ (now) (* expires-in-seconds 1000))
                    Double/POSITIVE_INFINITY)
