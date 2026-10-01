@@ -205,13 +205,24 @@
       ;; RetryStatusIndicator — the errored block remains in the
       ;; chat and the retried stream opens a fresh message below it)
       ;; (the :status-current swap schedules its own frame)
-      (when-let [cs @cs-ref]
-        (status/show-status-indicator!
-         cs :retry
-         (status-indicator/make-retry-status-indicator
-          (:attempt evt) (:max-attempts evt) (:delay-ms evt)
-          :cancel-hint (status/fmt-key-display
-                        (app-kb/key-text "app.interrupt")))))
+      ;;
+      ;; The reason is recorded here, not at :message-end: this event
+      ;; fires only when a retry actually follows, so a terminal failure
+      ;; still reports exactly once through on-agent-error. Without it a
+      ;; stalled attempt leaves nothing behind — the retried stream opens
+      ;; a fresh message below it — and an unattended hang is
+      ;; indistinguishable from slow work.
+      (do
+        (when-let [err (:error-message evt)]
+          (chat-history/show-error! chat-history err))
+        (when-let [cs @cs-ref]
+          (status/show-status-indicator!
+           cs :retry
+           (status-indicator/make-retry-status-indicator
+            (:attempt evt) (:max-attempts evt) (:delay-ms evt)
+            :cancel-hint (status/fmt-key-display
+                          (app-kb/key-text "app.interrupt")))))
+        (tui/tui-request-render tui))
       :auto-retry-end
       ;; Retry finished (pi: auto_retry_end →
       ;; clearStatusIndicator("retry")). Kind-gated: when
@@ -359,7 +370,17 @@
       (when-let [cs @cs-ref]
         (turn/set-terminal-progress! cs true))
       :message-update nil
-      :message-end nil
+      :message-end
+      ;; A failed attempt finalizes empty when the stream delivered
+      ;; nothing before the deadline: drop that placeholder instead of
+      ;; letting it settle into a bare "(no response)" bubble. Any
+      ;; partial text/thinking stays (record-abandoned-attempt! kept
+      ;; it), and the reason surfaces once per attempt with the retry
+      ;; line — or, for a terminal failure, through on-agent-error.
+      (when (and (:error-message (:message evt))
+                 (chat-history/chat-history-streaming-empty? chat-history))
+        (chat-history/chat-history-remove-streaming-placeholder! chat-history)
+        (tui/tui-request-render tui))
       :turn-end nil
       :agent-settled nil
       :session-compact-failed nil

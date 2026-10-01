@@ -3837,8 +3837,11 @@
     ;; fallback when the transport didn't deliver an error).
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
-                  (fn [_]
-                    ;; never deliver — the deref hits its timeout
+                  (fn [opts]
+                    ;; stream partials, then never deliver — the deref hits
+                    ;; its timeout and the partials must survive it
+                    ((:on-text opts) "partial answer")
+                    ((:on-thinking opts) "still reasoning")
                     (promise))]
       @(loop/run-agent-turn agent {:message "hi" :on-error (fn [e] (swap! errors conj e))}))
     (t/is (= 1 (count @errors)) "the timeout surfaces via on-error (not silent)")
@@ -3847,6 +3850,14 @@
     (let [starts (filter #(= :auto-retry-start (:type %)) @events)]
       (t/is (= 1 (count starts)) "the timeout is retried once (retryable)")
       (t/is (= "LLM call timed out after 10ms" (:error-message (first starts)))))
+    (let [errored (first (filter #(:error-message (:message %))
+                                 (filter #(= :message-end (:type %)) @events)))]
+      (t/is (some? errored) "the failed attempt is recorded with its error")
+      (t/is (= "partial answer"
+               (apply str (map :text (:content (:message errored)))))
+            "text streamed before the deadline survives the timeout")
+      (t/is (= "still reasoning" (:thinking (:message errored)))
+            "thinking streamed before the deadline survives the timeout"))
     (t/is (= :idle @(:status agent)) "run settles idle after retries exhausted")
     (t/is (some #(= :error (:type %)) @events) "terminal :error event emitted")))
 

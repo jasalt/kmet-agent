@@ -1100,3 +1100,56 @@
         (let [bare (session/create-session (str sess-dir "-bare"))]
           (session/append-entry bare {:role :user :content "hi"})
           (is (not (str/includes? ((var builtins/session-info-text) bare) "Tool Results"))))))))
+
+(deftest failed-attempt-leaves-no-blank-bubble-and-reports-its-reason
+  (testing "a stalled/errored agent attempt leaves no bare (no response)
+            bubble, keeps whatever streamed, and reports the reason with the
+            retry line (terminal failures report through on-agent-error)"
+    (let [ch (chat-history/make-chat-history)
+          handler ((var layout/make-agent-event-handler)
+                   {:chat-history ch
+                    :tui {:render-requested? (atom false)}
+                    :cs-ref (atom nil)
+                    :pending-tool-comps (atom {})})
+          err-msg "LLM call timed out after 300000ms"]
+      (testing "contentless attempt: the empty placeholder is dropped, the
+                reason arrives with the retry event"
+        (handler {:type :message-start :message {:role :assistant :content []}})
+        (handler {:type :message-end
+                  :message {:role :assistant :content []
+                            :stop-reason :error
+                            :error-message err-msg}})
+        (is (nil? @(:streaming-atom ch))
+            "the empty placeholder was removed, not left to render (no response)")
+        (is (empty? (filterv #(= :error (:role %)) @(:messages-atom ch)))
+            "no error line yet — a terminal failure must report exactly once")
+        (handler {:type :auto-retry-start :attempt 1 :max-attempts 3
+                  :delay-ms 500 :error-message err-msg})
+        (let [errs (filterv #(= :error (:role %)) @(:messages-atom ch))]
+          (is (= 1 (count errs)) "the retried attempt records its reason once")
+          (is (= err-msg (:content (first errs))))))
+      (testing "attempt with partials: the streamed text stays, no placeholder
+                is dropped"
+        (handler {:type :message-start :message {:role :assistant :content []}})
+        ;; text deltas reach the streaming component through the agent's
+        ;; on-text callback (turn.clj), not through a bus event
+        (chat-history/chat-history-append-streaming-text! ch "partial answer")
+        (handler {:type :message-end
+                  :message {:role :assistant
+                            :content [{:type :text :text "partial answer"}]
+                            :stop-reason :error
+                            :error-message "network error: request timed out"}})
+        (is (some? @(:streaming-atom ch))
+            "the placeholder with streamed text is kept")
+        (handler {:type :auto-retry-start :attempt 2 :max-attempts 3
+                  :delay-ms 1000 :error-message "network error: request timed out"})
+        (let [errs (filterv #(= :error (:role %)) @(:messages-atom ch))]
+          (is (= 2 (count errs)) "the second failure records its own reason")
+          (is (= "network error: request timed out" (:content (last errs))))))
+      (testing "a clean message-end stays a no-op"
+        (let [before (count @(:messages-atom ch))]
+          (handler {:type :message-end
+                    :message {:role :assistant
+                              :content [{:type :text :text "done"}]}})
+          (is (= before (count @(:messages-atom ch)))
+              "no error line for a successful message"))))))

@@ -1729,11 +1729,15 @@ Be precise and concise in your responses."}}]
                                         (let [err (str "LLM call timed out after "
                                                        (retry/llm-total-timeout-ms @(:cfg agent)) "ms")]
                                           ;; The deref sentinel (:timeout) carries no
-                                          ;; partials — synthesize an errored result so
-                                          ;; the abandoned-attempt recording and the
-                                          ;; retry classifier see a normal error map.
+                                          ;; partials, but the in-flight call's partials
+                                          ;; snapshot does — keep whatever streamed
+                                          ;; before the deadline (pi: a failed stream's
+                                          ;; partial becomes the final message) so a
+                                          ;; stalled attempt never loses its
+                                          ;; text/thinking, while the retry classifier
+                                          ;; still sees a normal error map.
                                           (record-abandoned-attempt!
-                                           agent (assoc {} :error err) :error)
+                                           agent (merge ((:partials call)) {:error err}) :error)
                                           (let [{:keys [kind] :as action}
                                                 (retry/retry-decision
                                                  {:err err
