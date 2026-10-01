@@ -538,6 +538,15 @@ Rules:
   `border/bottom-line`, `border/mid-line` (with an optional edge-styling fn
   so the sides can take a different colour than the content) and
   `border/rule-line` rather than inlining glyphs.
+- **Frame glyphs are unstyled.** A table's rules and its `│` separators draw
+  in the terminal's own colour; only the cells are themed (headers bold).
+  There is no theme token for them. A cell that *wraps* therefore has to
+  close its text styles after each non-final fragment — `wrap-text-with-ansi`
+  re-opens a style on the next fragment but leaves the previous one open, so
+  an unclosed code or bold span would tint the pad spaces and the `│` after
+  it, and a narrow table's borders would come out the same colour as the text
+  they enclose (pi: `Markdown.wrapCellText` resets
+  `22;23;24;25;27;28;29;39` and re-applies the cell's style prefix).
 - A scrolled editor's rule carries a **centered** ` ↑ N more ` / ` ↓ N more `
   label (pi: createScrollBorder); when the centered label cannot fit, the
   truncated `─── ↑ N more ` prefix form is used, and when even that cannot,

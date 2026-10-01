@@ -220,13 +220,38 @@
                                blocks))))))
     token))
 
+(def ^:private cell-style-reset
+  "SGR reset that closes the text attributes pi's wrapCellText leaves to
+   the caller between two wrapped cell fragments: bold, dim, italic,
+   underline, blink, inverse, hidden, strikethrough and fg. Background and
+   an open OSC 8 hyperlink are deliberately not reset, matching pi."
+  "\u001b[22;23;24;25;27;28;29;39m")
+
+(defn- wrap-cell-text
+  "Wrap CELL to MAX-WIDTH, closing text styles after every non-final
+   fragment and re-applying STYLE-PREFIX, the cell's surrounding
+   default-style opener. pi's wrapCellText does this: without the close a
+   style the wrapper left open (a code or bold span broken across lines)
+   tints the cell's pad spaces and the border glyph after them, so a
+   wrapped cell draws its │ in the span's color instead of the terminal's
+   own. The next fragment re-opens what it needs itself, so the close
+   between two fragments changes no visible cell text."
+  [cell max-width style-prefix]
+  (let [frags (u/wrap-text-with-ansi cell (max 1 max-width))
+        last-i (dec (count frags))]
+    (mapv (fn [i frag]
+            (str frag (if (< i last-i) cell-style-reset "") style-prefix))
+          (range) frags)))
+
 (defn- emit-table-row!
   "Push the visual lines of one table ROW onto RESULT: each cell wrapped to
    its COLUMN-WIDTHS entry, padded, joined with cell separators taken from B
-   (a kmet.tui.border set). Header cells render bold when BOLD?."
-  [result row column-widths theme bold? left-pad b]
+   (a kmet.tui.border set). Header cells render bold when BOLD?; STYLE-PREFIX
+   is the cell's surrounding default-style opener, restored after each
+   non-final fragment's style reset (pi: wrapCellText)."
+  [result row column-widths theme style-prefix bold? left-pad b]
   (let [v (:left b)
-        wrapped (mapv (fn [c w] (u/wrap-text-with-ansi c (max 1 w))) row column-widths)
+        wrapped (mapv (fn [c w] (wrap-cell-text c w style-prefix)) row column-widths)
         height (reduce max 1 (map count wrapped))]
     (dotimes [i height]
       (let [cells (mapv (fn [wl w]
@@ -258,6 +283,7 @@
         border-overhead (inc (* 3 num-cols))
         available-for-cells (- content-width border-overhead)
         style-context (make-style-context default-style)
+        style-prefix (:style-prefix style-context "")
         cell-style (fn [c]
                      (render-inlines c theme style-context))]
     (if (< available-for-cells num-cols)
@@ -313,10 +339,10 @@
             sep (table-line (:top b) (:tee-right b) (:cross b) (:tee-left b) column-widths)
             bot (table-line (:bottom b) (:bottom-left b) (:tee-up b) (:bottom-right b) column-widths)]
         (vswap! result conj (str left-pad top))
-        (emit-table-row! result header-styled column-widths theme true left-pad b)
+        (emit-table-row! result header-styled column-widths theme style-prefix true left-pad b)
         (vswap! result conj (str left-pad sep))
         (doseq [[i row] (map-indexed vector row-styled)]
-          (emit-table-row! result row column-widths theme false left-pad b)
+          (emit-table-row! result row column-widths theme style-prefix false left-pad b)
           (when (< i (dec (count row-styled)))
             (vswap! result conj (str left-pad sep))))
         (vswap! result conj (str left-pad bot))))))

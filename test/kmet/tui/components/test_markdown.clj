@@ -427,6 +427,101 @@
     (t/is (some #(.contains % "\u001b[1ma\u001b[22m") lines) "headers stay bold")
     (t/is (some #(.contains % "│ 1") (map strip-ansi lines)) "cells render")))
 
+(defn- active-styles-at
+  "The SGR attributes in effect at index POS of LINE — what the terminal
+   has active when it draws the character there, so a border glyph can be
+   asserted to draw in the terminal's own color. An extended color
+   (38;5;n / 38;2;r;g;b) counts as one fg attribute; a bare \"0\" clears
+   everything. Codes that turn a style off are dropped from the set rather
+   than added — 22 is normal intensity (bold AND dim off), 23 italic, 24
+   underline, 25 blink, 27 inverse, 28 hidden, 29 strikethrough, 39 default
+   fg — so a reset that carries no explicit \"off\" for an active style
+   leaves that style set, exactly as the terminal treats it."
+  [line pos]
+  (let [;; which styles each off-code clears
+        clears (fn [code]
+                 (case code
+                   "22" #{"bold" "dim"}
+                   "23" #{"italic"}
+                   "24" #{"underline"}
+                   "25" #{"blink"}
+                   "27" #{"inverse"}
+                   "28" #{"hidden"}
+                   "29" #{"strikethrough"}
+                   "39" #{"fg"}
+                   #{}))
+        sets (fn [codes]
+               (into #{} (keep (fn [c]
+                                 (case c
+                                   "1" "bold"
+                                   "2" "dim"
+                                   "3" "italic"
+                                   "4" "underline"
+                                   "5" "blink"
+                                   "7" "inverse"
+                                   "8" "hidden"
+                                   "9" "strikethrough"
+                                   "38" "fg"
+                                   nil))
+                               codes)))]
+    (loop [i 0 active #{}]
+      (let [esc (str/index-of line "\u001b" i)]
+        (cond
+          (or (nil? esc) (>= esc pos)) active
+          ;; only a sequence STARTING at the escape counts: re-find on the
+          ;; rest of the line would otherwise match a LATER escape and skip
+          ;; the one in front of it
+          (not= esc i) (recur (inc i) active)
+          :else
+          (let [m (re-find #"\u001b\[[0-9;]*m" (subs line i))]
+            (if (nil? m)
+              (recur (inc i) active)
+              (let [body (subs m 2 (dec (count m)))
+                    codes (if (seq body) (str/split body #";") ["0"])
+                    ;; an extended color (38;2;r;g;b / 38;5;n) carries a mode
+                    ;; and channels after its opening code — those are not
+                    ;; attributes of their own, so the "38" that opened it
+                    ;; is the attribute and the rest is skipped
+                    extended? (and (contains? #{"38" "48"} (first codes))
+                                   (< 1 (count codes)))
+                    attrs (if extended?
+                            (cons (first codes) (drop 2 codes))
+                            codes)
+                    cleared (into #{} (mapcat clears) (filter clears attrs))
+                    next-active (if (= "0" (first codes))
+                                  #{}
+                                  (into (apply disj active cleared) (sets attrs)))]
+                (recur (+ i (count m)) next-active)))))))))
+
+(t/deftest test-markdown-table-wrapped-cell-closes-styles-before-borders
+  ;; A cell that wraps mid-span used to leak that style onto its pad spaces
+  ;; and the │ after it, so a wrapped code or bold cell drew its pipe in
+  ;; the span's color instead of the terminal's own white. pi's wrapCellText
+  ;; closes text styles after every non-final fragment and re-opens the
+  ;; cell's surrounding style for the next one; without it the borders of a
+  ;; narrow table come out the same color as the text they enclose.
+  ;; dark-theme's colors resolve to whatever the terminal reports (empty
+  ;; under a test runner), so the theme is built with real colors here —
+  ;; otherwise there is no style to leak and the test proves nothing.
+  (let [thm (theme/make-theme {:md-code "#a798d7" :md-heading "#ffcc66" :text "#dddddd"}
+                              nil
+                              :truecolor)
+        source "| dep | where |\n|---|---|\n| `dev.weavejester/cljfmt` | `deps.edn`, `bb.edn` |"
+        lines (core/render (md/make-markdown source
+                                             :theme (theme/get-markdown-theme thm)
+                                             :padding-x 0)
+                           30)
+        positions (fn [line]
+                    ;; every │ in the line, as indices into it
+                    (keep-indexed (fn [i c] (when (= \│ c) i)) line))]
+    (t/is (< 5 (count lines)) "the cell wrapped, so the reset is exercised")
+    (t/is (some #(str/includes? % "\u001b[") lines) "the cells carry real colors")
+    (doseq [line lines
+            pos (positions line)]
+      (let [active (active-styles-at line pos)]
+        (t/is (empty? active)
+              (str "a │ would inherit " (pr-str active) " in " (pr-str line)))))))
+
 (t/deftest test-markdown-table-emoji-alignment
   ;; Emoji graphemes (ZWJ families, flags, skin tones) measure as ONE width-2
   ;; glyph, so columns size correctly and every table line has the same
