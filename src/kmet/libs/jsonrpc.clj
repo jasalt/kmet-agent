@@ -321,8 +321,10 @@
   "Sends METHOD/PARAMS and blocks for the matching response (up to
    TIMEOUT-MS, default 30000). Returns the response's :result; throws
    ex-info on a JSON-RPC error (::request-error), timeout (::timeout) or
-   transport death (::transport-dead). Late responses after a timeout are
-   dropped as stale."
+   transport death (::transport-dead); every failure carries the request
+   :id and :method in ex-data (MCP correlates a notifications/cancelled
+   on the abandoned id). Late responses after a timeout are dropped as
+   stale."
   ([conn method params] (request! conn method params {}))
   ([conn method params {:keys [timeout-ms]}]
    (bump-last-used! conn)
@@ -339,7 +341,8 @@
          (mark-dead! conn)
          (throw (ex-info* ::transport-dead
                           (str "jsonrpc write failed: "
-                               (or (ex-message e) (str e)))))))
+                               (or (ex-message e) (str e)))
+                          {:id id :method method}))))
      (let [res (deref p (or timeout-ms default-timeout-ms) ::timeout)]
        (cond
          (= res ::timeout)
@@ -347,17 +350,20 @@
              (throw (ex-info* ::timeout
                               (str "jsonrpc request timed out after "
                                    (or timeout-ms default-timeout-ms)
-                                   "ms: " method))))
+                                   "ms: " method)
+                              {:id id :method method})))
 
          (= res eof-marker)
          (throw (ex-info* ::transport-dead
                           (str "jsonrpc connection closed before response: "
-                               method)))
+                               method)
+                          {:id id :method method}))
 
          (:error res)
          (throw (ex-info (str "jsonrpc error " (-> res :error :code) ": "
                               (-> res :error :message))
-                         {:type ::request-error :error (:error res)}))
+                         {:type ::request-error :id id :method method
+                          :error (:error res)}))
 
          :else (:result res))))))
 

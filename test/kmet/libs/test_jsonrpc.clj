@@ -123,23 +123,28 @@
 ;; ─── Connection: correlation & dispatch ──────────────────────────────────
 
 (deftest request-round-trip-and-error-path
-  (run-with-conn
-   :content-length
-   (fn [{:keys [id method params]} send!]
-     (case method
-       "echo" (send! {:jsonrpc "2.0" :id id :result params})
-       "ping" (send! {:jsonrpc "2.0" :id id :result {:pong true}})
-       "boom" (send! {:jsonrpc "2.0" :id id
-                      :error {:code -32000 :message "nope"}})
-       nil))
-   (fn [conn]
-     (is (= {:x 1} (jsonrpc/request! conn "echo" {:x 1})))
-     (is (= {:pong true} (jsonrpc/request! conn "ping" {} {:timeout-ms 2000})))
-     (let [e (try (jsonrpc/request! conn "boom" {}) nil
-                  (catch Exception e e))]
-       (is (some? e) "json-rpc error surfaces as exception")
-       (is (= :kmet.libs.jsonrpc/request-error (:type (ex-data e))))
-       (is (re-find #"-32000" (ex-message e)))))))
+  (let [seen (atom {})]
+    (run-with-conn
+     :content-length
+     (fn [{:keys [id method params]} send!]
+       (swap! seen assoc method id)
+       (case method
+         "echo" (send! {:jsonrpc "2.0" :id id :result params})
+         "ping" (send! {:jsonrpc "2.0" :id id :result {:pong true}})
+         "boom" (send! {:jsonrpc "2.0" :id id
+                        :error {:code -32000 :message "nope"}})
+         nil))
+     (fn [conn]
+       (is (= {:x 1} (jsonrpc/request! conn "echo" {:x 1})))
+       (is (= {:pong true} (jsonrpc/request! conn "ping" {} {:timeout-ms 2000})))
+       (let [e (try (jsonrpc/request! conn "boom" {}) nil
+                    (catch Exception e e))
+             data (ex-data e)]
+         (is (some? e) "json-rpc error surfaces as exception")
+         (is (= :kmet.libs.jsonrpc/request-error (:type data)))
+         (is (= (get @seen "boom") (:id data)) "ex-data carries the request id")
+         (is (= "boom" (:method data)))
+         (is (re-find #"-32000" (ex-message e))))))))
 
 (deftest out-of-order-responses-correlate-by-id
   (let [received (atom [])
@@ -247,14 +252,18 @@
 ;; ─── Connection: lifecycle ───────────────────────────────────────────────
 
 (deftest ^:slow timeout-vs-death-distinction
-  (run-with-conn
-   :content-length
-   (fn [_msg _send!] nil)
-   (fn [conn]
-     (let [e (try (jsonrpc/request! conn "never" {} {:timeout-ms 80})
-                  nil (catch Exception e e))]
-       (is (some? e))
-       (is (= :kmet.libs.jsonrpc/timeout (:type (ex-data e))))))))
+  (let [seen (atom nil)]
+    (run-with-conn
+     :content-length
+     (fn [{:keys [id]} _send!] (reset! seen id))
+     (fn [conn]
+       (let [e (try (jsonrpc/request! conn "never" {} {:timeout-ms 80})
+                    nil (catch Exception e e))
+             data (ex-data e)]
+         (is (some? e))
+         (is (= :kmet.libs.jsonrpc/timeout (:type data)))
+         (is (= @seen (:id data)) "the id identifies the abandoned request")
+         (is (= "never" (:method data))))))))
 
 (deftest ^:slow eof-fails-pending-as-transport-dead-not-timeout
   (let [c2s (pipe-pair)
@@ -271,6 +280,8 @@
               elapsed (- (System/currentTimeMillis) t0)]
           (is (instance? Exception res))
           (is (= :kmet.libs.jsonrpc/transport-dead (:type (ex-data res))))
+          (is (= "slow" (:method (ex-data res))))
+          (is (integer? (:id (ex-data res))))
           (is (< elapsed 3500) "fails promptly, not at the 8s timeout")))
       (finally (jsonrpc/close! conn)))))
 
