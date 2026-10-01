@@ -9,7 +9,8 @@
                          stderr tail for diagnostics, process-tree kill on
                          close (kmet.libs.process).
      :streamable-http — per-request POST (kmet.libs.http, :as :stream);
-                         initialize captures Mcp-Session-Id;
+                         initialize captures Mcp-Session-Id, and later
+                         POSTs carry the negotiated MCP-Protocol-Version;
                          responses parsed by content type (application/json
                          or text/event-stream).
      :sse             — GET stream with a background reader (endpoint +
@@ -38,7 +39,15 @@
 (def default-request-timeout-ms 120000)
 (def initialize-timeout-ms 60000)
 (def list-page-timeout-ms 30000)
-(def protocol-version "2025-06-18")
+(def protocol-version "2025-11-25")
+
+(def supported-protocol-versions
+  "Protocol revisions this client speaks. A server that answers
+   `initialize` with a version outside this list is rejected — servers on
+   older SDKs answer with their own latest revision, so all handshake-based
+   revisions stay usable (2026-07-28 and later drop the handshake and are
+   not reachable from here)."
+  ["2025-11-25" "2025-06-18" "2025-03-26" "2024-11-05"])
 (def client-info {:name "kmet-mcp-adapter" :version "0.1.0"})
 
 (defn- mcp-error
@@ -135,11 +144,14 @@
 (defn- connect-streamable-http
   "HTTP conn: per-request POSTs. OPTS: :auth-headers (fn [] → headers map
    or nil, called per request), :on-401 (fn [] → fresh headers; called once
-   per request when the first attempt answers 401)."
+   per request when the first attempt answers 401). :protocol-version is
+   filled in by initialize! (nil until the handshake) — see
+   base-http-headers."
   [url opts]
   {:transport :streamable-http
    :url url
    :session-id (atom nil)
+   :protocol-version (atom nil)
    :id-counter (atom 0)
    :closed (atom false)
    :last-used (atom (System/currentTimeMillis))
@@ -147,11 +159,14 @@
    :on-401 (:on-401 opts)})
 
 (defn- base-http-headers
-  "Static headers for an MCP POST (Mcp-Session-Id after initialize)."
+  "Static headers for an MCP POST: Mcp-Session-Id and the negotiated
+   MCP-Protocol-Version (both present only after initialize!)."
   [conn]
   (cond-> {"Content-Type" "application/json"
            "Accept" "application/json, text/event-stream"}
-    @(:session-id conn) (assoc "Mcp-Session-Id" @(:session-id conn))))
+    @(:session-id conn) (assoc "Mcp-Session-Id" @(:session-id conn))
+    (and (:protocol-version conn) @(:protocol-version conn))
+    (assoc "MCP-Protocol-Version" @(:protocol-version conn))))
 
 (defn- http-request-headers
   [conn]
@@ -584,16 +599,28 @@
 
 (defn initialize!
   "Run the MCP handshake: initialize (60s timeout) → notifications/
-   initialized. Returns {:protocol-version str :server-info map
+   initialized. The revision the server selects is validated against
+   supported-protocol-versions (an answer outside that list is an error)
+   and recorded in the conn :protocol-version atom, so streamable-HTTP
+   requests after the handshake carry the negotiated MCP-Protocol-Version
+   header. Returns {:protocol-version str :server-info map
    :capabilities map}."
   [conn]
   (let [result (request! conn "initialize"
                          {:protocolVersion protocol-version
                           :capabilities {}
                           :clientInfo client-info}
-                         {:timeout-ms initialize-timeout-ms})]
+                         {:timeout-ms initialize-timeout-ms})
+        version (or (:protocolVersion result) protocol-version)]
+    (when-not (some #{version} supported-protocol-versions)
+      (throw (mcp-error (str "MCP server selected unsupported protocol version "
+                             version)
+                        {:protocol-version version
+                         :supported supported-protocol-versions})))
+    (when-let [pv (:protocol-version conn)]
+      (reset! pv version))
     (notify! conn "notifications/initialized" {})
-    {:protocol-version (or (:protocolVersion result) protocol-version)
+    {:protocol-version version
      :server-info (:serverInfo result)
      :capabilities (or (:capabilities result) {})}))
 

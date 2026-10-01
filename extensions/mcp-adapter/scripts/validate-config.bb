@@ -32,7 +32,10 @@
   [f]
   (let [global (temp-file "global")
         project (temp-file "project")]
-    (with-redefs [config/global-config-path (delay global)
+    ;; both path fns are plain 0-arg fns in config.clj — the redefs must
+    ;; stay callables (a delay here fails the (global-config-path) call
+    ;; inside load-config)
+    (with-redefs [config/global-config-path (fn [] global)
                   config/project-config-path (fn [& _] project)]
       (try
         (f global project)
@@ -86,7 +89,7 @@
   (io/delete-file global true)
   (check "template created when missing" (config/ensure-global-template!))
   (check "template not re-created" (nil? (config/ensure-global-template!)))
-  (io/delete-file @config/global-config-path)
+  (io/delete-file (config/global-config-path))
 
   (let [{:keys [path changed]} (config/set-server-disabled! "alpha" true)]
     (check "disable writes project file" (and path changed))
@@ -99,7 +102,7 @@
   (let [{:keys [changed]} (config/set-server-disabled! "alpha" false)]
     (check "enable idempotent" (not changed)))
   ;; enable when the LOWER source has it disabled → writes :disabled false
-  (spit @config/global-config-path "{:mcp-servers {\"alpha\" {:command \"x\" :disabled true}}}")
+  (spit (config/global-config-path) "{:mcp-servers {\"alpha\" {:command \"x\" :disabled true}}}")
   (spit project "{:mcp-servers {\"alpha\" {:command \"x\"}}}")
   (let [{:keys [changed]} (config/set-server-disabled! "alpha" false)
         raw (read-string (slurp project))]

@@ -5,9 +5,10 @@
 ;;
 ;;   bb validate-client.bb <fake-stdio.bb> <fake-http.bb> [--no-sse]
 ;;
-;; Covers: connect/handshake, tools/list pagination, tools/call (echo +
-;; error), a notification mid-request, request timeout, process-exit
-;; error, and disconnect kills the process tree.
+;; Covers: connect/handshake, protocol version negotiation + rejection,
+;; tools/list pagination, tools/call (echo + error), a notification
+;; mid-request, request timeout, process-exit error, and disconnect kills
+;; the process tree.
 (require '[babashka.process :as proc]
          '[clojure.string :as str]
          '[clojure.java.io :as io]
@@ -48,7 +49,7 @@
   (let [definition {:command "bb" :args [fake-stdio] :lifecycle :lazy}
         {:keys [conn tools protocol-version server-info]}
         (client/connect! definition {})]
-    (check "handshake protocol-version" (= "2025-06-18" protocol-version))
+    (check "handshake protocol-version" (= "2025-11-25" protocol-version))
     (check "handshake server-info" (= "fake-mcp-server" (:name server-info)))
     (check "tools/list pagination" (= 5 (count tools)))
     (check "tool names" (= #{"echo" "add" "slow" "boom" "ping-mid"}
@@ -129,9 +130,15 @@
     (try
       (let [{:keys [conn tools protocol-version]}
             (client/connect! definition {})]
-        (check "http handshake" (= "2025-06-18" protocol-version))
-        (check "http tools/list" (= 3 (count tools)))
+        (check "http handshake" (= "2025-11-25" protocol-version))
+        (check "http tools/list" (= 4 (count tools)))
         (check "http session-id captured" (string? @(:session-id conn)))
+        (check "http protocol-version on conn" (= "2025-11-25" @(:protocol-version conn)))
+        ;; the negotiated revision rides on every POST after the handshake
+        (let [result (client/request! conn "tools/call"
+                                      {:name "http-headers" :arguments {}})]
+          (check "MCP-Protocol-Version header sent"
+                 (= "2025-11-25" (:text (client/format-result result)))))
         (let [result (client/request! conn "tools/call"
                                       {:name "http-echo" :arguments {:message "hey"}})]
           (check "http tools/call" (str/includes? (:text (client/format-result result))
@@ -198,7 +205,7 @@
             (client/connect! {:url (str "http://127.0.0.1:" port "/sse")
                               :http-transport :sse}
                              {})]
-        (check "sse tools/list" (= 3 (count tools)))
+        (check "sse tools/list" (= 4 (count tools)))
         (check "sse endpoint resolved" (str/ends-with? @(:endpoint-atom conn) "/sse"))
         (let [result (client/request! conn "tools/call"
                                       {:name "http-echo" :arguments {:message "stream"}})]
@@ -206,6 +213,43 @@
                                                  "http-echo: stream")))
         (client/close! conn)
         (check "sse closed" (not (client/alive? conn))))
+      (finally
+        (stop-server! {:proc proc})))))
+
+;; ─── protocol version negotiation ────────────────────────────────────────
+
+(defn test-version-negotiation [fake-http]
+  (println "\n── protocol version negotiation ──")
+  (let [{:keys [proc port]} (spawn-server! fake-http)
+        base (str "http://127.0.0.1:" port "/mcp")]
+    (try
+      ;; a server on an older SDK answers with its own latest revision —
+      ;; that stays usable, and the header carries the negotiated revision
+      (let [{:keys [conn protocol-version]}
+            (client/connect! {:url (str base "?version=2025-06-18")
+                              :http-transport :streamable-http}
+                             {})]
+        (check "downgrade accepted" (= "2025-06-18" protocol-version))
+        (check "downgrade stored on conn" (= "2025-06-18" @(:protocol-version conn)))
+        (let [result (client/request! conn "tools/call"
+                                      {:name "http-headers" :arguments {}})]
+          (check "downgrade header" (= "2025-06-18"
+                                       (:text (client/format-result result)))))
+        (client/close! conn))
+      (let [oldest (client/connect! {:url (str base "?version=2024-11-05")
+                                     :http-transport :streamable-http}
+                                    {})]
+        (check "oldest supported revision" (= "2024-11-05" (:protocol-version oldest)))
+        (client/close! (:conn oldest)))
+      ;; a revision outside the supported list is rejected outright
+      (check "unsupported revision rejected"
+             (try (client/connect! {:url (str base "?version=2026-07-28")
+                                    :http-transport :streamable-http}
+                                   {})
+                  false
+                  (catch Exception e
+                    (str/includes? (ex-message e)
+                                   "unsupported protocol version 2026-07-28"))))
       (finally
         (stop-server! {:proc proc})))))
 
@@ -219,5 +263,6 @@
   (test-http fake-http)
   (test-http-sse-response fake-http)
   (test-sse fake-http)
+  (test-version-negotiation fake-http)
   (println "\n" (if (zero? @failures) "ALL PASS" (str @failures " FAILURES")))
   (System/exit (if (zero? @failures) 0 1)))

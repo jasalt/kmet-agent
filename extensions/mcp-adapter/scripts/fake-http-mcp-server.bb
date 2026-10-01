@@ -9,6 +9,8 @@
 ;;                         Mcp-Session-Id on initialize and echoes it back
 ;;   POST /mcp?slow=1   — sleeps before answering (exercises the timeout
 ;;                         path when the client timeout is short)
+;;   POST /mcp?version=X — initialize answers with protocol revision X
+;;                         (version negotiation / rejection)
 ;;   GET  /sse          — legacy SSE stream (endpoint + message events)
 ;;   POST /sse          — request endpoint for the legacy SSE transport
 ;;                         (answers 202; the result arrives on the stream)
@@ -39,10 +41,14 @@
                   :properties {"a" {:type "number"} "b" {:type "number"}}
                   :required ["a" "b"]}}
    {:name "http-slow" :description "Sleeeeps (2s)"
+    :inputSchema {:type "object" :properties {} :required []}}
+   {:name "http-headers"
+    :description "Echo the MCP-Protocol-Version header of the last request"
     :inputSchema {:type "object" :properties {} :required []}}])
 
 (def state (atom {:session-id nil
-                  :sse-chan nil}))
+                  :sse-chan nil
+                  :last-headers nil}))
 
 (defn- http-response
   ([status body] (http-response status body {"Content-Type" "application/json"}))
@@ -86,21 +92,24 @@
 
 (defn- handle-json-rpc
   "Handle one JSON-RPC message; returns the response map or nil for
-   notifications."
-  [body session-id]
-  (let [msg (json/parse-string body true)
-        id (:id msg)
-        method (:method msg)]
+   notifications. VERSION-OVERRIDE, when set, is answered to initialize
+   instead of the revision the client requested."
+  ([body session-id] (handle-json-rpc body session-id nil))
+  ([body session-id version-override]
+   (let [msg (json/parse-string body true)
+         id (:id msg)
+         method (:method msg)]
 
-    (case method
-      "initialize"
-      (do (reset! state (assoc @state :session-id (or session-id "sess-1")))
-          {:jsonrpc "2.0" :id id
-           :result {:protocolVersion (get-in msg [:params :protocolVersion])
-                    :capabilities {:tools {}
-                                   :prompts {:listChanged false}
-                                   :resources {:listChanged false}}
-                    :serverInfo {:name "fake-http-mcp-server" :version "1.0.0"}}})
+     (case method
+       "initialize"
+       (do (reset! state (assoc @state :session-id (or session-id "sess-1")))
+           {:jsonrpc "2.0" :id id
+            :result {:protocolVersion (or version-override
+                                         (get-in msg [:params :protocolVersion]))
+                     :capabilities {:tools {}
+                                    :prompts {:listChanged false}
+                                    :resources {:listChanged false}}
+                     :serverInfo {:name "fake-http-mcp-server" :version "1.0.0"}}})
       "notifications/initialized" nil
       "tools/list"
       {:jsonrpc "2.0" :id id :result {:tools tools}}
@@ -117,6 +126,12 @@
           "http-slow" (do (Thread/sleep 2000)
                           {:jsonrpc "2.0" :id id
                            :result {:content [{:type "text" :text "finally"}]}})
+          "http-headers"
+          {:jsonrpc "2.0" :id id
+           :result {:content [{:type "text"
+                               :text (str (get-in @state
+                                                  [:last-headers
+                                                   "mcp-protocol-version"]))}]}}
           {:jsonrpc "2.0" :id id
            :result {:content [{:type "text" :text "unknown"}]
                     :isError true}}))
@@ -140,18 +155,25 @@
        :result {:contents [{:type "text" :uri (get-in msg [:params :uri])
                             :text "http resource content"}]}}
       {:jsonrpc "2.0" :id id
-       :error {:code -32601 :message (str "Method not found: " method)}})))
+       :error {:code -32601 :message (str "Method not found: " method)}}))))
 
 (defn- handle-streamable
-  "POST /mcp — JSON or SSE response per the Accept header."
+  "POST /mcp — JSON or SSE response per the Accept header. The last
+   request's headers are kept so the http-headers tool can echo them."
   [req]
-  (let [session-id (get-in req [:headers "mcp-session-id"])
-        slow? (str/includes? (or (:query req) "") "slow")
+  (reset! state (assoc @state :last-headers (:headers req)))
+  (let [query (or (:query req) "")
+        session-id (get-in req [:headers "mcp-session-id"])
+        slow? (str/includes? query "slow")
+        ;; ?version=<rev> makes initialize answer with that revision
+        ;; instead of the one the client requested
+        version-override (when-let [[_ v] (re-find #"version=([^&]+)" query)]
+                           v)
         body-msg (json/parse-string (:body req) true)
         is-initialize? (= "initialize" (:method body-msg))
         is-slow-call? (and (= "tools/call" (:method body-msg))
                            (= "http-slow" (get-in body-msg [:params :name])))
-        response (handle-json-rpc (:body req) session-id)]
+        response (handle-json-rpc (:body req) session-id version-override)]
     ;; notifications get an empty 200 (never close without a response —
     ;; java.net.http reports that as an error)
     (if (nil? response)

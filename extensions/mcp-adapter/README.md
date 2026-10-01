@@ -9,6 +9,17 @@ burning your context window, you get one `mcp` proxy tool (~200 tokens).
 The agent discovers what it needs on demand with `search`/`describe`, and
 servers connect lazily — only when a tool is actually called.
 
+## Protocol
+
+Requests `2025-11-25` (the current handshake-based revision) and accepts
+the older handshake revisions `2025-06-18`, `2025-03-26` and `2024-11-05` —
+a server on an older SDK answers `initialize` with its own latest revision
+and stays usable. A server that selects anything else fails the connect with
+*unsupported protocol version*. After the handshake, streamable-HTTP POSTs
+carry the negotiated `MCP-Protocol-Version` header alongside
+`Mcp-Session-Id`. The stateless `2026-07-28` revision removes the
+`initialize` handshake entirely, so it is not reachable from here.
+
 ## Enabling
 
 Extensions load from `~/.kmet/agent/extensions/` (global) and

@@ -358,8 +358,9 @@
 
 (defn status-text
   "§9.5 status text: per server — name, lifecycle, state, auth state when
-   configured, tool count (from cache or live), error tail when failed,
-   cache age. Plus the global settings line and cache file age."
+   configured, tool count (from cache or live), negotiated protocol
+   revision when connected, error tail when failed, cache age. Plus the
+   global settings line and cache file age."
   [state]
   (let [config (:config state)
         lines (atom [])]
@@ -369,6 +370,10 @@
             error (:error (server-state state server-name))
             tool-count (count (or (cached-tools state server-name) []))
             auth-label (auth-state-label server-name definition)
+            ;; the revision the server selected at handshake, live conn only
+            proto (some-> @(:conn (server-state state server-name))
+                          :protocol-version
+                          deref)
             age (when-let [entry (get-in (:cache state) [:servers server-name])]
                   (quot (- (System/currentTimeMillis) (:fetched-at entry)) 60000))
             state-part (if failed-ago
@@ -380,6 +385,7 @@
                (str server-name " (" (lifecycle-label definition) ", " state-part
                     (when (and tool-count (not= :connected slabel)) (str ", " tool-count " tools"))
                     (when auth-label (str ", " auth-label))
+                    (when proto (str ", proto " proto))
                     (when age (str ", cache " age "m old"))
                     ")"))))
     (let [s (settings state)]
