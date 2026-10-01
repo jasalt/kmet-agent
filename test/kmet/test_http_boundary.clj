@@ -10,11 +10,20 @@
             [babashka.fs :as fs]))
 
 (defn- source-files
-  "Every .clj file under the given dirs (src, scripts, extensions, test)."
+  "Every .clj/.cljc file under the given dirs (src, scripts, extensions,
+   test), at any depth — a recursive walk, not `fs/glob` with `**/`: the glob
+   does not match files directly in a base dir, so it was silently skipping
+   the scripts/ top level and `extensions/*.clj`, and it only looked at .clj,
+   missing every .cljc (run_code, context, the win clipboard shim)."
   []
-  (->> ["src" "scripts" "extensions" "test"]
-       (mapcat #(when (fs/directory? %) (fs/glob % "**/*.clj")))
-       (map str)))
+  (letfn [(walk [dir]
+            (mapcat (fn [f] (if (fs/directory? f) (walk f) [f]))
+                    (fs/list-dir dir)))]
+    (->> ["src" "scripts" "extensions" "test"]
+         (mapcat #(when (fs/directory? %) (walk %)))
+         (map str)
+         (filter #(re-find #"\.clj[ca]?$" %))
+         (sort))))
 
 (defn- ns-sym [path]
   (try
@@ -37,14 +46,17 @@
 
 (defn- offending-requires
   "The forbidden libs required by a file: babashka.http-client (only
-   kmet.libs.http may use it) and the deleted kmet.*.proxy namespaces."
+   kmet.libs.http may use it) and the deleted kmet.*.proxy namespaces.
+   A vector, so a failure message lists the namespaces instead of printing
+   the lazy seq's default toString."
   [path]
   (let [n (ns-sym path)]
     (when-not (= n 'kmet.libs.http)
       (->> (required-libs path)
            (filter #(or (= % 'babashka.http-client)
                         (= % 'kmet.libs.proxy)
-                        (= % 'kmet.ai.proxy)))))))
+                        (= % 'kmet.ai.proxy)))
+           (vec)))))
 
 (defn- spawns-curl?
   "True when the file invokes curl directly (outside kmet.libs.http):

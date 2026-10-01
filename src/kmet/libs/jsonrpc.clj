@@ -26,8 +26,8 @@
    input pipe stalls writers indefinitely; bounded by close! closing the
    streams underneath.
 
-   Self-contained: only babashka.process and clojure.* (JSON via
-   kmet.libs.json, a sibling lib) — no kmet.* requires
+   Self-contained: no requires outside kmet.libs.* — JSON via kmet.libs.json,
+   the monotonic duration clock via kmet.libs.concurrent
    (kmet.libs.test-self-contained)."
   (:require [kmet.libs.json :as json]
             [kmet.libs.concurrent :as concurrent]

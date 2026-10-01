@@ -952,6 +952,11 @@ that renders — and may touch widgets and component state directly:
 ```
 
 - `after!` fires once, `every!` repeats until cancelled, both return an id.
+- Timer deadlines are monotonic (`kmet.libs.concurrent/monotonic-ms`): a
+  wall-clock step neither fires timers early nor parks the loop. The
+  wall-clock read in the example is only there because that thunk refreshes
+  a clock display; an elapsed counter should count ticks or read
+  `monotonic-ms`.
 - A repeating timer reschedules from **now**, not from a missed due time: a
   spinner that fell behind must not fire a burst to catch up.
 - A thunk that wants a repaint mutates tracked state (the reactive chain

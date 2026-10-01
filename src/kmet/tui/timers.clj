@@ -19,7 +19,11 @@
    The registry is process-global (like the frame hook) because components
    reach it without a reference to the TUI instance; `tui.core` pumps it
    each tick and calls `cancel-all!` on stop, so no timer outlives the
-   session that created it. Headless tests drive `pump!` by hand."
+   session that created it. Headless tests drive `pump!` by hand.
+
+   Timer deadlines are monotonic (`kmet.libs.concurrent/monotonic-ms`), so a
+   wall-clock step neither fires timers early nor parks the loop for the
+   step's length."
   (:require [kmet.libs.concurrent :as concurrent]))
 
 (defonce ^:private registry

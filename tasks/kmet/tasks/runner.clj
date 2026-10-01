@@ -72,6 +72,7 @@
     kmet.app.test-loop
     kmet.test-theme kmet.test-config
     kmet.test-http-boundary
+    kmet.test-time-boundary
     kmet.tasks.build-test
     kmet.tasks.build-jolt-test
     kmet.app.test-skills
