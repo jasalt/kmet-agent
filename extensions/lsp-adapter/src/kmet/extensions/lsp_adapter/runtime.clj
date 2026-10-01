@@ -9,6 +9,7 @@
    (spawn or handshake error, stderr tail attached). Session switches touch
    nothing here — servers are workspace-scoped; /reload rebuilds."
   (:require [babashka.fs :as fs]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.libs.jsonrpc :as jrpc]
             [kmet.libs.process :as process]
             [kmet.extensions.lsp-adapter.detect :as detect]
@@ -262,7 +263,7 @@
   (let [desc (some (fn [d] (when (= (:id d) name) d))
                    (detect/effective-servers (configured-servers st)))
         min* (setting st name :idle-timeout-minutes idle-timeout-minutes)
-        idle-ms (- (System/currentTimeMillis) (last-used conn))]
+        idle-ms (- (concurrent/monotonic-ms) (last-used conn))]
     (and (pos? min*)
          (> idle-ms (* min* 60 1000))
          (not= :keep-alive (:lifecycle desc)))))

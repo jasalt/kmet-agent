@@ -99,6 +99,19 @@ project root.
   [`src/kmet/README.md`](src/kmet/README.md). Keep that document current
   when those rules change.
 
+### Time and durations
+
+- Durations and deadlines go through `kmet.libs.concurrent/monotonic-ms` —
+  timeouts, sleep slices, backoff, idle reaping, elapsed counters.
+  `System/currentTimeMillis` steps (NTP, Android radio time, VM resume), so a
+  duration measured on it is wrong: a forward step fires timeouts early and
+  kills work that has just started, a backward step stalls them (a TUI timer
+  armed for 50ms can park for the step's length). Never mix the two clocks in
+  one deadline.
+- The wall clock stays right for absolute values and for comparisons against
+  externally-produced wall-clock data: token and JWT expiry, epoch ids and
+  timestamps, file mtimes, persisted cross-process cache TTLs.
+
 ### Errors and logging
 
 - Use `ex-info` with a structured `:cause` or `:type` key. Let errors reach

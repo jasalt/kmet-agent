@@ -142,6 +142,7 @@
     kmet.libs.test-host
     kmet.ai.test-sse
     kmet.libs.test-crypto
+    kmet.libs.test-concurrent
     kmet.libs.test-sse
     kmet.libs.test-terminal
     kmet.libs.test-terminal-image

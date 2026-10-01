@@ -296,7 +296,7 @@
    DEADLINE."
   [socket deadline]
   (fn []
-    (let [remaining (- deadline (System/currentTimeMillis))]
+    (let [remaining (- deadline (concurrent/monotonic-ms))]
       (.setSoTimeout socket (int (max 1 (min remaining max-int)))))))
 
 (defn- send-op!
@@ -565,7 +565,7 @@
         port (or (coerce-port port)
                  (throw (ex-info "No nREPL port given" {:type :nrepl-error})))
         timeout-ms (or (coerce-port timeout-ms) default-timeout-ms)
-        deadline (+ (System/currentTimeMillis) (max 1 timeout-ms))]
+        deadline (+ (concurrent/monotonic-ms) (max 1 timeout-ms))]
     (if (and cancel (cancel))
       (cancelled-result)
       (try

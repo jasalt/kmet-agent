@@ -19,12 +19,13 @@
    The registry is process-global (like the frame hook) because components
    reach it without a reference to the TUI instance; `tui.core` pumps it
    each tick and calls `cancel-all!` on stop, so no timer outlives the
-   session that created it. Headless tests drive `pump!` by hand.")
+   session that created it. Headless tests drive `pump!` by hand."
+  (:require [kmet.libs.concurrent :as concurrent]))
 
 (defonce ^:private registry
   (atom {:next-id 0 :entries {}}))
 
-(defn- now-ms [] (System/currentTimeMillis))
+(defn- now-ms [] (concurrent/monotonic-ms))
 
 (defn- add!
   "Register F under a fresh id, FIRST due in MS from now (EVERY repeats).

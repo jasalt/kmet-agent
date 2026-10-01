@@ -4,6 +4,7 @@
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.debug :as debug]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.tui.theme :as th]
@@ -418,10 +419,10 @@
         ;; Wait (bounded) for the cancelled run's finally to drain pending bash
         ;; results and for an in-flight compaction to settle — its context sync
         ;; must not run after the swap.
-        (let [deadline (+ (System/currentTimeMillis) 3000)]
+        (let [deadline (+ (concurrent/monotonic-ms) 3000)]
           (loop []
             (when (and (or (seq @(:pending-bash ag)) @(:compacting? ag))
-                       (< (System/currentTimeMillis) deadline))
+                       (< (concurrent/monotonic-ms) deadline))
               (Thread/sleep 10)
               (recur))))
         (when (and (not @(:compacting? ag))

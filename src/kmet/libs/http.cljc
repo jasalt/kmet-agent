@@ -45,6 +45,7 @@
   (:require [babashka.fs :as fs]
             [babashka.http-client :as http]
             [babashka.process :as proc]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.libs.json :as json]
             [clojure.string :as str]
             [kmet.libs.process :as process]))
@@ -545,14 +546,14 @@
   [header-file proc-map opts]
   (let [t (:timeout opts)
         budget-ms (if (and (number? t) (pos? t)) t (* curl-timeout-seconds 1000))
-        deadline (+ (System/currentTimeMillis) budget-ms)]
+        deadline (+ (concurrent/monotonic-ms) budget-ms)]
     (loop []
       (let [[status headers] (parse-dump-header header-file)
             pending? (or (nil? status)
                          (and (redirect-so-far? status headers)
                               (follow-redirects? opts)))
             alive? (try (-> proc-map :proc .isAlive) (catch Exception _ true))]
-        (if (and pending? alive? (< (System/currentTimeMillis) deadline))
+        (if (and pending? alive? (< (concurrent/monotonic-ms) deadline))
           (do (Thread/sleep 100) (recur))
           [status headers])))))
 

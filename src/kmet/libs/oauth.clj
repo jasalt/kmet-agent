@@ -23,6 +23,7 @@
    namespace never touches the TUI or credential stores."
   (:require [kmet.libs.json :as json]
             [clojure.string :as str]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.libs.crypto :as crypto]
             [kmet.libs.http :as http]))
 
@@ -38,26 +39,17 @@
 ;; RFC 8628 section 3.5: `slow_down` means the polling interval must increase by 5 seconds.
 (def ^:private slow-down-interval-increment-ms 5000)
 
-(defn- monotonic-ms
-  "Monotonic milliseconds. Durations — sleep slices and the `expires_in`
-   polling deadline — must not be measured on the wall clock: NTP and
-   Android step `currentTimeMillis` (a forward step aborts a flow that has
-   only just started, and the slow_down hint below is about the same host
-   problem). `nanoTime` has no epoch and cannot step."
-  []
-  (quot (System/nanoTime) 1000000))
-
 (defn abortable-sleep
   "Sleep MS ms, aborting early when SIGNAL (an atom) turns truthy; then throw
    \"Login cancelled\" (pi abortableSleep). Checks in 100ms slices so cancel
    is never blocked by a long sleep."
   [ms signal]
-  (let [end (+ (monotonic-ms) ms)]
+  (let [end (+ (concurrent/monotonic-ms) ms)]
     (loop []
       (cond
         @signal (throw (ex-info cancel-message {:type :login-cancelled}))
-        (< (monotonic-ms) end)
-        (do (Thread/sleep (min 100 (- end (monotonic-ms))))
+        (< (concurrent/monotonic-ms) end)
+        (do (Thread/sleep (min 100 (- end (concurrent/monotonic-ms))))
             (recur))))))
 
 (defn poll-oauth-device-code-flow
@@ -73,9 +65,9 @@
      :signal                — cancel atom (truthy aborts with
                                \"Login cancelled\")
      :now                   — (fn [] → ms) clock for the deadline; defaults
-                               to a monotonic source, because `expires_in`
-                               is a duration (see monotonic-ms). Callers
-                               that inject a clock keep full control.
+                               to kmet.libs.concurrent/monotonic-ms, because
+                               `expires_in` is a duration. Callers that
+                               inject a clock keep full control.
      :sleep                 — (fn [ms signal]) sleep implementation;
                                defaults to abortable-sleep. Callers that need
                                with-redefs-compatible sleeping (kmet.ai.oauth)
@@ -85,7 +77,7 @@
    pi's distinct messages (slow_down timeouts get the clock-drift hint)."
   [{:keys [interval-seconds expires-in-seconds wait-before-first-poll poll signal now sleep]}]
   (let [sleep (or sleep abortable-sleep)
-        now (or now monotonic-ms)
+        now (or now concurrent/monotonic-ms)
         deadline (if (number? expires-in-seconds)
                    (+ (now) (* expires-in-seconds 1000))
                    Double/POSITIVE_INFINITY)
@@ -336,7 +328,7 @@
    | {:source :cancelled} | {:source :timeout}."
   [interaction code-p prompt-map timeout-ms]
   (let [result-p (promise)
-        deadline (+ (System/currentTimeMillis) (or timeout-ms 600000))
+        deadline (+ (concurrent/monotonic-ms) (or timeout-ms 600000))
         manual-future (future
                         (try
                           (deliver result-p {:source :manual
@@ -358,7 +350,7 @@
                 ;; Wait briefly for manual future to settle after abort
                 (let [r (deref result-p 500 :pending)]
                   (if (not= :pending r) r {:source :cancelled})))
-            (< deadline (System/currentTimeMillis)) {:source :timeout}
+            (< deadline (concurrent/monotonic-ms)) {:source :timeout}
             :else (recur))))
       (finally
         (deliver code-p nil)

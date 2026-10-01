@@ -114,7 +114,7 @@
    :session-id (atom nil)
    :id-counter (atom 0)
    :closed (atom false)
-   :last-used (atom (System/currentTimeMillis))
+   :last-used (atom (concurrent/monotonic-ms))
    :auth-headers (:auth-headers opts)
    :on-401 (:on-401 opts)
    :on-notification (:on-notification opts)

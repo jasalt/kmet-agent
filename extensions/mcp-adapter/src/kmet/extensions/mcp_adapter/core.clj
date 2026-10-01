@@ -100,7 +100,7 @@
   [state name message]
   (let [{:keys [error failed-at]} (get-in @state [:servers name])]
     (when error (reset! error message))
-    (when failed-at (reset! failed-at (System/currentTimeMillis)))
+    (when failed-at (reset! failed-at (concurrent/monotonic-ms)))
     (update-status-bar! state)))
 
 (defn- clear-failure!
@@ -1164,7 +1164,7 @@
   (doseq [[name {:keys [conn]}] (:servers @state)]
     (when-let [c @conn]
       (let [timeout-min (idle-timeout-minutes state name)
-            idle-ms (- (System/currentTimeMillis) (client/last-used c))]
+            idle-ms (- (concurrent/monotonic-ms) (client/last-used c))]
         (when (and (pos? timeout-min)
                    (> idle-ms (* timeout-min 60000)))
           (disconnect-server! state name))))))

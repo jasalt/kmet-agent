@@ -7,7 +7,8 @@
    overflow.ts; backoff and timeout resolution follow pi: agent-session
    auto-retry (base-delay-ms * 2^(attempt-1)) and the SDK's
    timeoutMs ?? httpIdleTimeoutMs deadline rule."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [kmet.libs.concurrent :as concurrent]))
 
 ;; ─── Error classification (pi: retry.ts / overflow.ts) ────────────────────
 
@@ -153,11 +154,11 @@
    (an atom) turns truthy. Returns true if the full delay elapsed, false if
    cancelled."
   [signal delay-ms]
-  (let [end-ms (+ (System/currentTimeMillis) delay-ms)]
+  (let [end-ms (+ (concurrent/monotonic-ms) delay-ms)]
     (loop []
       (if @signal
         false
-        (let [remaining (- end-ms (System/currentTimeMillis))]
+        (let [remaining (- end-ms (concurrent/monotonic-ms))]
           (if (<= remaining 0)
             true
             (do (Thread/sleep (min 100 remaining))

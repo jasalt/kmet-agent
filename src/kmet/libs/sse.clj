@@ -7,7 +7,8 @@
    in kmet.ai.api.sse, which drives these primitives. parse-sse-line is the
    public wire-level helper extensions (e.g. the mcp-adapter) use."
   (:require [clojure.string :as str]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io]
+            [kmet.libs.concurrent :as concurrent]))
 
 (defn parse-sse-line
   "Parse one SSE line. Returns [event-name data] — exactly one is non-nil
@@ -63,14 +64,14 @@
     (.setDaemon t true)
     (.start t)
     [(fn []
-       (let [deadline (+ (System/currentTimeMillis) idle-ms)]
+       (let [deadline (+ (concurrent/monotonic-ms) idle-ms)]
          (loop []
            (let [v (.poll q 100 java.util.concurrent.TimeUnit/MILLISECONDS)]
              (cond
                (instance? Exception v) v
                (some? v) (int v)
                (and signal @signal) :aborted
-               (>= (System/currentTimeMillis) deadline) :timeout
+               (>= (concurrent/monotonic-ms) deadline) :timeout
                :else (recur))))))
      (fn [] (.interrupt t))
      t]))

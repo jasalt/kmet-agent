@@ -55,3 +55,26 @@
   [& signals]
   (reify clojure.lang.IDeref
     (deref [_] (boolean (some (fn [s] (when s (boolean @s))) signals)))))
+
+(defn monotonic-ms
+  "Elapsed-time milliseconds — the only clock for durations and deadlines:
+   timeouts, sleep slices, backoff, idle reaping, elapsed counters.
+
+   `System/currentTimeMillis` steps (NTP corrections, Android/Termux radio
+   time, VM resume), and a duration computed on a stepping clock is simply
+   wrong: a forward step fires timeouts early (killing work that has just
+   started) and lets backoff expire instantly, a backward step stalls
+   deadlines — a TUI timer armed for 50ms can park for the step's length.
+
+   The wall clock stays right where the value is an absolute time or is
+   compared against externally-produced wall-clock values: token and JWT
+   expiries, epoch ids/timestamps, file mtimes, persisted cross-process
+   cache TTLs.
+
+   `nanoTime` has no epoch and cannot step. It also excludes suspend/doze
+   time (CLOCK_MONOTONIC), so a deadline does not count the time the host
+   spent asleep — the trade-off Go timers, `deref` timeouts and core.async
+   already make, and the safe direction: never kill work because the clock
+   moved."
+  []
+  (quot (System/nanoTime) 1000000))

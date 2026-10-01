@@ -30,6 +30,7 @@
    kmet.libs.json, a sibling lib) — no kmet.* requires
    (kmet.libs.test-self-contained)."
   (:require [kmet.libs.json :as json]
+            [kmet.libs.concurrent :as concurrent]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.process :as proc]))
@@ -122,7 +123,7 @@
   ([type msg data] (ex-info msg (assoc data :type type))))
 
 (defn- bump-last-used! [conn]
-  (reset! (:last-used conn) (System/currentTimeMillis)))
+  (reset! (:last-used conn) (concurrent/monotonic-ms)))
 
 (defn- write-frame!
   "Serializes MSG to JSON and writes it under CONN's framing + write
@@ -267,7 +268,7 @@
               :id-counter (atom 0)
               :closed (atom false)
               :write-lock (Object.)
-              :last-used (atom (System/currentTimeMillis))
+              :last-used (atom (concurrent/monotonic-ms))
               :stderr-tail (atom [])
               :tail-lines (or tail-lines 20)}]
     (start-reader! conn)
@@ -308,7 +309,8 @@
   (:pid conn))
 
 (defn last-used
-  "Epoch-ms of the last request!/notify! — the idle reaper's feed."
+  "Monotonic-ms of the last request!/notify! — the idle reaper's feed.
+   Compare it against concurrent/monotonic-ms, never the wall clock."
   [conn]
   @(:last-used conn))
 

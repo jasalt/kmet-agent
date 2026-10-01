@@ -117,6 +117,11 @@ registration tables/maps over compile-time multimethod registries. Use
 - Prefer `babashka.fs`, `babashka.process`, `clojure.string`, and
   `clojure.java.io`; avoid `java.io.*`/`java.nio.file.*` imports and Java type
   hints. All outbound HTTP goes through `kmet.libs.http`.
+- Durations and deadlines use `kmet.libs.concurrent/monotonic-ms` (timeouts,
+  sleep slices, backoff, idle reaping, elapsed counters) — never
+  `System/currentTimeMillis`, which steps. The wall clock is only for absolute
+  values and for comparisons with externally-produced wall-clock data
+  (token/JWT expiry, epoch ids, file mtimes, persisted cross-process TTLs).
 - Host reader features are `:bb` and `:jolt`, never `:clj`. For a portable
   host carve-out use `#?(:jolt X :default Y)`.
 - Do not add Maven entries for `babashka.fs` or `babashka.process`; both hosts

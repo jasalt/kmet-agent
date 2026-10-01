@@ -15,7 +15,9 @@
    Common keys:
      :transport        :stdio | :streamable-http | :sse
      :id-counter       atom of the next JSON-RPC id
-     :last-used        atom of the last activity epoch-ms (idle reaper)
+     :last-used        atom of the last activity monotonic-ms (idle reaper —
+                       compare against concurrent/monotonic-ms, never the
+                       wall clock)
      :req-lock         monitor serializing dispatch per conn — the legacy
                        SSE transport matches responses on one shared
                        channel, so two waiters would consume each other's
@@ -63,16 +65,16 @@
           headers)))
 
 (defn last-used
-  "The last activity timestamp (ms) for a connection — the idle reaper
+  "The last activity monotonic-ms for a connection — the idle reaper
    disconnects servers whose conn has been idle past the configured
-   :idle-timeout."
+   :idle-timeout. Compare it against concurrent/monotonic-ms."
   [conn]
   (or (when-let [lu (:last-used conn)] @lu) 0))
 
 (defn touch!
   "Mark the connection active now."
   [conn]
-  (when-let [lu (:last-used conn)] (reset! lu (System/currentTimeMillis)))
+  (when-let [lu (:last-used conn)] (reset! lu (concurrent/monotonic-ms)))
   nil)
 
 ;; ─── Server->client dispatch (channel transports) ─────────────────────────
@@ -141,9 +143,9 @@
    death) before the response arrived. The timeout is an overall deadline
    — notifications do not extend it; on expiry the request is cancelled."
   [conn ch id method timeout-ms on-notification send-async!]
-  (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+  (let [deadline (+ (concurrent/monotonic-ms) timeout-ms)]
     (loop []
-      (let [remaining (- deadline (System/currentTimeMillis))
+      (let [remaining (- deadline (concurrent/monotonic-ms))
             timeout-ch (async/timeout (max 1 remaining))
             [value port] (async/alts!! [ch timeout-ch])]
         (cond

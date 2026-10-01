@@ -7,7 +7,8 @@
   (:require [clojure.string :as str]
             [kmet.app.bash-executor :as bash-exec]
             [kmet.app.tools.tool :as tool]
-            [kmet.app.tools.util :as tool-util]))
+            [kmet.app.tools.util :as tool-util]
+            [kmet.libs.concurrent :as concurrent]))
 
 (defn title
   "Quiet one-liner body for the bash tool: the shell prompt `$ <cmd>`
@@ -91,7 +92,7 @@
                            (recur)))))
         send-update (fn []
                       (when (and on-update (pos? @live-bytes))
-                        (let [now (System/currentTimeMillis)]
+                        (let [now (concurrent/monotonic-ms)]
                           (when (>= (- now @last-update) update-throttle-ms)
                             (reset! last-update now)
                             (on-update {:content (apply str @live-chunks)

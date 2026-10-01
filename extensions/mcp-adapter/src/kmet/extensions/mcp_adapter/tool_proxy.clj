@@ -18,7 +18,8 @@
    Search/describe read the metadata cache only (no spawn); call/connect
    ensure a live connection. Every mode returns the kmet tool result shape
    {:content str :is-error bool}."
-  (:require [kmet.libs.json :as json]
+  (:require [kmet.libs.concurrent :as concurrent]
+            [kmet.libs.json :as json]
             [clojure.string :as str]
             [kmet.extensions.mcp-adapter.auth :as auth]
             [kmet.extensions.mcp-adapter.client :as client]
@@ -51,7 +52,7 @@
    lazy use does not retry inside the window)."
   [state name]
   (when-let [failed-at @(get-in state [:servers name :failed-at])]
-    (let [age (- (System/currentTimeMillis) failed-at)]
+    (let [age (- (concurrent/monotonic-ms) failed-at)]
       (when (< age failure-backoff-ms)
         (quot age 1000)))))
 

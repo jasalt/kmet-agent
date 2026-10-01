@@ -365,7 +365,7 @@
         (when (and abort (nil? @abort) (not @closed?) (> total capture-limit))
           (reset! abort :output-limit))
         (when on-update
-          (let [now (System/currentTimeMillis)]
+          (let [now (concurrent/monotonic-ms)]
             (when (>= (- now @last-at) update-throttle-ms)
               (reset! last-at now)
               (let [out (chunks-text @out-state)
@@ -838,7 +838,7 @@
       (do (reset! abort :aborted)
           (throw (ex-info "run_code interrupted" {:type :run-code/interrupt :reason :aborted})))
 
-      (and deadline (>= (System/currentTimeMillis) deadline))
+      (and deadline (>= (concurrent/monotonic-ms) deadline))
       (do (reset! abort :timeout)
           (throw (ex-info "run_code interrupted" {:type :run-code/interrupt :reason :timeout}))))))
 
@@ -919,7 +919,9 @@
            get-all-tools get-contributed-tools select-tools execute-tool
            generation-fn]}]
   (let [timeout-ms (normalize-timeout timeout)
-        started-at (System/currentTimeMillis)
+        ;; monotonic: this origin measures both the deadline and the
+        ;; :elapsed-ms reported in the result
+        started-at (concurrent/monotonic-ms)
         cwd (tool-util/cwd)
         session-env-fn bash-tool/*session-env-fn*
         hooks *tool-hooks*
@@ -988,7 +990,7 @@
                           :capture-bytes (:capture-bytes limits)
                           :trace trace
                           :abort-reason @abort
-                          :elapsed-ms (- (System/currentTimeMillis) started-at)}))
+                          :elapsed-ms (- (concurrent/monotonic-ms) started-at)}))
       (finally (reset! live? false)))))
 
 ;; ─── Tool record ──────────────────────────────────────────────────────────

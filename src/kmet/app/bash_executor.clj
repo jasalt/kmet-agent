@@ -4,6 +4,7 @@
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
             [babashka.process :as proc]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.libs.process :as process]
             [kmet.debug :as debug]))
 
@@ -303,12 +304,12 @@
             ;; the loop bodies able to see it.
             done (atom false)
             _ (when (and (number? timeout) (pos? timeout) pid)
-                (let [deadline (+ (System/currentTimeMillis)
+                (let [deadline (+ (concurrent/monotonic-ms)
                                   (* timeout 1000))]
                   (future
                     (loop []
                       (when (and (not @done)
-                                 (< (System/currentTimeMillis) deadline))
+                                 (< (concurrent/monotonic-ms) deadline))
                         (Thread/sleep 100)
                         (recur)))
                     (when-not @done
@@ -373,10 +374,10 @@
                             ;; double (or worse) the bounded return time for
                             ;; commands with a detached descendant holding both
                             ;; pipes.
-                            (let [deadline (+ (System/currentTimeMillis) 2000)]
+                            (let [deadline (+ (concurrent/monotonic-ms) 2000)]
                               (doseq [f [out-future err-future]]
                                 (when f
-                                  (try (deref f (max 0 (- deadline (System/currentTimeMillis))) nil)
+                                  (try (deref f (max 0 (- deadline (concurrent/monotonic-ms))) nil)
                                        (catch Exception _ nil)))))
                             ;; Closing the streams releases the pipes, but the
                             ;; JDK's process-pipe close DRAINS the pipe on the
@@ -582,11 +583,11 @@
             exit-code (:exit-code ops-result)]
         ;; Grace polling for pending stream data after operations complete
         (loop [last-bytes @tail-bytes
-               deadline (+ (System/currentTimeMillis) 100)]
-          (when (< (System/currentTimeMillis) deadline)
+               deadline (+ (concurrent/monotonic-ms) 100)]
+          (when (< (concurrent/monotonic-ms) deadline)
             (let [current-bytes @tail-bytes]
               (if (> current-bytes last-bytes)
-                (recur current-bytes (+ (System/currentTimeMillis) 100))
+                (recur current-bytes (+ (concurrent/monotonic-ms) 100))
                 (do (Thread/sleep 10)
                     (recur last-bytes deadline))))))
         ;; Pi: waitForChildProcess finalize — once the output has gone idle,

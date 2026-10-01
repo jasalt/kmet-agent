@@ -5,6 +5,7 @@
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.debug :as debug]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.tui.hiccup :as hiccup]
@@ -788,7 +789,7 @@
       (let [last-ctrl-c (atom 0)]
         (editor/editor-set-on-action! ed "app.clear"
                                       (fn []
-                                        (let [now (System/currentTimeMillis)]
+                                        (let [now (concurrent/monotonic-ms)]
                                           (if (< (- now @last-ctrl-c) 500)
                                             (tui/tui-stop t)
                                             (do (reset! last-ctrl-c now)
