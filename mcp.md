@@ -203,22 +203,22 @@ allocates them), and the client repoints the transport's `:conn-ref` at the
 final conn so internal callbacks see `:capabilities`. `scripts/validate-all.bb`
 and the repo gates are green on both hosts.
 
-### 1.0. `kmet.libs.jsonrpc` additions (stdio substrate, time-boxed)
+### 1.0. `kmet.libs.jsonrpc` additions (stdio substrate)
 
-Use the shared lib instead of the bespoke stdio transport (`stdio-argv`,
-`drain-stdout`, `drain-stderr`, `write-stdio-msg!`, channel wait). It already
-provides line framing, pending map with timeouts, `:on-request`,
-`:on-notification`, stderr tail, `last-used`, `alive?`, `close!`, and the
-`connect-streams` injection seam.
+The stdio transport was to use the shared lib instead of the bespoke stdio
+transport (`stdio-argv`, `drain-stdout`, `drain-stderr`, `write-stdio-msg!`,
+channel wait). It already provides line framing, pending map with timeouts,
+`:on-request`, `:on-notification`, stderr tail, `last-used`, `alive?`,
+`close!`, and the `connect-streams` injection seam.
 
-One additive change: put the request `:id` in the timeout/request-error
-ex-data (`::timeout` / `::request-error`), so the MCP client can send
-`notifications/cancelled` with the abandoned request's id (`request!` allocates
-the id internally today).
+One additive change was needed: put the request `:id` in the
+timeout/request-error ex-data (`::timeout` / `::request-error`), so the MCP
+client can send `notifications/cancelled` with the abandoned request's id.
 
-Per-request progress routing stays in the MCP client layer
-(`progressToken → callback` map installed as the conn-level
-`:on-notification` handler, pi's `progressRequests` pattern).
+Per-request progress routing stays in the MCP client layer — the client
+installs each in-flight request's callback as the conn's
+`:progress-callback` and serializes stdio requests, so one slot is
+unambiguous (pi's `progressRequests`, simplified by that serialization).
 
 If this needs more than the `:id` addition, stop and move the current stdio
 transport into the lib unchanged, then revisit. Outcome: Phase 1's first
@@ -226,10 +226,13 @@ landing did exactly that; the follow-up landing folded stdio onto jsonrpc
 with no further jsonrpc changes — the wrapper passes its own `:kill-fn`,
 `:on-request` and `:on-notification`, and translates `::jsonrpc/*` failures.
 
-Tests in `test/kmet/libs/test_jsonrpc.clj`: id present on timeout; a
-cancellation round-trip against the in-process fake (assert the server sees
-`requestId`). lsp-adapter is unaffected (additive); run
-`extensions/lsp-adapter/scripts/validate.bb`.
+The jsonrpc side is covered in `test/kmet/libs/test_jsonrpc.clj` (the
+`:id`/`:method` payload on every failure kind, next to the existing framing
+and close semantics), and lsp-adapter is unaffected (additive) —
+`extensions/lsp-adapter/scripts/validate.bb` is the check. The cancellation
+itself is the adapter's, tested in `test_transport_stdio.clj`
+(`timeout-cancels-the-abandoned-request`) and end to end by
+`validate-client.bb`'s FAKE_LOG assertion.
 
 ### 1.1. Layout and namespaces
 
@@ -312,8 +315,10 @@ The facade can be deleted in Phase 4 with callers pointed at the lib directly.
   Subprocess cases stay in `scripts/validate-client.bb` / `e2e.bb` or get
   `^:slow`.
 - `test/kmet/libs/mcp/test_transport_stdio.clj` — ping policy, progress
-  routing, error translation, plus a `^:slow` end-to-end run against a real
-  `bb`-spawned JSON-RPC server (initialize → list → server ping auto-reply).
+  routing, error translation, the timeout→`notifications/cancelled` payload,
+  plus a `^:slow` end-to-end run against a real `bb`-spawned JSON-RPC server
+  (initialize → list with a progress event routed to the callback → server
+  ping auto-reply).
 - `test/kmet/libs/mcp/test_transport_http.clj` — JSON and SSE response bodies,
   content-type branching, header lookup, 401 retry hook, via `:request-fn`
   injection. Socket-level end-to-end stays in `validate-client.bb` /

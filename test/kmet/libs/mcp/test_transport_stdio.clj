@@ -3,6 +3,7 @@
    pin the policy (ping replies, progress routing, error translation) and
    one ^:slow end-to-end run against a real subprocess."
   (:require [clojure.test :as t :refer [deftest is testing]]
+            [kmet.libs.jsonrpc :as jrpc]
             [kmet.libs.mcp.client :as mcp]
             [kmet.libs.mcp.transport.stdio :as stdio]))
 
@@ -66,6 +67,23 @@
     (testing "other exceptions pass through unchanged"
       (let [other (ex-info "boom" {:type :something-else})]
         (is (identical? other (translate-exception conn other "x" 1)))))))
+
+(deftest timeout-cancels-the-abandoned-request
+  ;; a dropped connection is not a cancellation: the timeout path must tell
+  ;; the server to stop working on the request we stopped waiting for, on
+  ;; the id jsonrpc allocated for it
+  (let [sent (atom [])
+        conn {:stderr-tail (atom [])}
+        e (with-redefs [jrpc/notify! (fn [_ method params] (swap! sent conj [method params]))]
+            (translate-exception conn
+                                 (ex-info "timed out" {:type :kmet.libs.jsonrpc/timeout
+                                                       :id 7 :method "tools/call"})
+                                 "tools/call" 300))]
+    (is (= [["notifications/cancelled" {:requestId 7
+                                        :reason "kmet: tools/call — timed out"}]]
+           @sent))
+    (is (= :mcp-error (:type (ex-data e))))
+    (is (= 300 (:timeout-ms (ex-data e))))))
 
 (deftest dead-message-shape
   (is (= "MCP connect failed: process exited"
