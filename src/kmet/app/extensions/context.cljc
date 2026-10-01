@@ -242,6 +242,12 @@
     kmet.libs.json
     kmet.libs.jsonrpc
     kmet.libs.markdown
+    kmet.libs.mcp.client
+    kmet.libs.mcp.protocol
+    kmet.libs.mcp.transport
+    kmet.libs.mcp.transport.http
+    kmet.libs.mcp.transport.sse
+    kmet.libs.mcp.transport.stdio
     kmet.libs.oauth
     kmet.libs.process
     kmet.libs.reakt

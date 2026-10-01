@@ -154,6 +154,11 @@
     kmet.libs.test-edit-diff
     kmet.libs.test-process
     kmet.libs.test-jsonrpc
+    kmet.libs.mcp.test-client
+    kmet.libs.mcp.test-protocol
+    kmet.libs.mcp.test-transport-http
+    kmet.libs.mcp.test-transport-sse
+    kmet.libs.mcp.test-transport-stdio
     kmet.libs.test-json
     kmet.libs.test-http
     kmet.libs.test-archive

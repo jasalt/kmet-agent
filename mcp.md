@@ -195,6 +195,14 @@ streamable-http (151), request core (381), handshake/discovery (747), result
 formatting (918) — plus the legacy SSE transport. Behavior preserved; era
 neutrality deliberate (Phase 4 is 2026-07-28).
 
+Status: **landed** (1.0-1.5), with one deliberate deviation — the stdio
+transport moved as-is, not onto `kmet.libs.jsonrpc`: the 1.0 time-box rule
+fired (jsonrpc does not expose host process tracking, best-effort
+notifications, per-request progress hooks, or the pid/stderr-tail surface,
+and MCP needs all four). The `:id`-in-failure-ex-data addition remains the
+groundwork for a later swap. `scripts/validate-all.bb` and the repo gates are
+green on both hosts.
+
 ### 1.0. `kmet.libs.jsonrpc` additions (stdio substrate, time-boxed)
 
 Use the shared lib instead of the bespoke stdio transport (`stdio-argv`,
@@ -261,8 +269,9 @@ src/kmet/libs/mcp/transport/sse.clj       kmet.libs.mcp.transport.sse
   `stream-loop` where its idle/abort/cleanup semantics fit). Migrated as-is, no
   behavior improvements; docstring marks it deprecated and points at streamable
   HTTP.
-- `transport.stdio`: wraps a `kmet.libs.jsonrpc` conn and implements the
-  contract; cancel = `notify!` `notifications/cancelled` with the id.
+- `transport.stdio`: the extension's stdio transport moved as-is
+  (core.async channel, process tracking, stderr tail); the jsonrpc swap
+  was time-boxed out — see the Phase 1 status note.
 
 `uri-escape` stays private to the client.
 
@@ -293,11 +302,11 @@ The facade can be deleted in Phase 4 with callers pointed at the lib directly.
 - `test/kmet/libs/mcp/test_protocol.clj` — versions; `mcp-error` shape;
   `format-result` for text/error/image/`structuredContent`/empty; template
   escaping and expansion (missing var left in place).
-- `test/kmet/libs/mcp/test_client.clj` — stdio over jsonrpc `connect-streams`:
-  handshake, pagination (`nextCursor`), notification dispatch, server→client
-  request reply, timeout + `notifications/cancelled` carrying the id, stale
-  response, transport death. Real subprocess cases stay in
-  `scripts/validate-client.bb` or get `^:slow`.
+- `test/kmet/libs/mcp/test_client.clj` — `expand-uri-template` (escaping,
+  missing vars) and the capability-gated `establish!` flow (request!/notify!
+  redefined): advertised capabilities only, unsupported revision rejection,
+  -32601 template tolerance. Subprocess cases stay in
+  `scripts/validate-client.bb` / `e2e.bb` or get `^:slow`.
 - `test/kmet/libs/mcp/test_transport_http.clj` — JSON and SSE response bodies,
   content-type branching, header lookup, 401 retry hook, via `:request-fn`
   injection. Socket-level end-to-end stays in `validate-client.bb` /
@@ -391,12 +400,12 @@ era-neutral seam and Phase 2's auth plumbing.
 - [x] 0.1 `names.clj` primitives + callers switched + originals deleted (move only)
 - [x] 0.2 `assign-names` + `:tool-names` + proxy `display-name` (the fix)
 - [x] 0.3 `validate-names.bb` + six extension scripts + lint/format
-- [ ] 1.0 jsonrpc `:id` in ex-data (time-boxed) + tests; lsp validation green
-- [ ] 1.1 lib files in landing order: protocol → transport.http → transport.sse → transport.stdio
-- [ ] 1.2 extension facade (pure re-export)
-- [ ] 1.3 whitelist + self-contained guard recursion + test registration
-- [ ] 1.4 lib tests (incl. transport sse/http)
-- [ ] 1.5 full gates + extension scripts + lsp validation
+- [x] 1.0 jsonrpc `:id` in ex-data + tests; lsp validation green (stdio swap time-boxed out)
+- [x] 1.1 lib files: protocol → transport → stdio/http/sse → client
+- [x] 1.2 extension facade (pure re-export)
+- [x] 1.3 whitelist + self-contained guard recursion + test registration
+- [x] 1.4 lib tests (24 tests: protocol, client, http/sse/stdio transports)
+- [x] 1.5 full gates + extension scripts + lsp validation
 - [ ] 2 auth extraction + hardening
 - [ ] 3 optional hygiene
 - [ ] 4 2026-07-28 protocol work (separate plan)

@@ -8,10 +8,15 @@
             [babashka.fs :as fs]))
 
 (defn- lib-files []
-  (->> (fs/list-dir "src/kmet/libs")
-       (mapcat (fn [f] (if (fs/directory? f) (fs/list-dir f) [f])))
-       (filter #(re-find #"\.clj[ca]?$" (str %)))
-       (map str)))
+  ;; recurse: src/kmet/libs/mcp/transport/*.clj is two levels down and the
+  ;; one-level scan this replaces silently stopped checking nested libs
+  (letfn [(walk [dir]
+            (mapcat (fn [f]
+                      (if (fs/directory? f) (walk f) [f]))
+                    (fs/list-dir dir)))]
+    (->> (walk "src/kmet/libs")
+         (filter #(re-find #"\.clj[ca]?$" (str %)))
+         (map str))))
 
 (defn- ns-form [path]
   ;; Read the ns form itself. A regex over the file was the original
