@@ -310,10 +310,10 @@
 ;; the target, and then bidirectional-pumps bytes until both sides close.
 
 (defn- pump
-  "Copy bytes between IN and OUT until EOF, then half-close the other
+  "Copy bytes between IN and OUT until EOF, then half-close SOCKET's output
    direction (sockets are full-duplex; the proxy must keep pumping the
    reverse direction after one side finishes)."
-  [in out]
+  [in out socket]
   (try
     (let [buf (byte-array 8192)]
       (loop []
@@ -323,7 +323,7 @@
             (.flush out)
             (recur)))))
     (catch Exception _ nil))
-  (try (.shutdownOutput out) (catch Exception _ nil)))
+  (try (.shutdownOutput socket) (catch Exception _ nil)))
 
 (defn- read-fully!
   "Fill BUF from IN, blocking until full; throws on EOF."
@@ -386,8 +386,8 @@
                       c-in (.getInputStream client)]
                   (.write out (byte-array [5 0 0 1 127 0 0 1 0 0]))
                   (.flush out)
-                  (let [p1 (doto (Thread. #(pump c-in t-out)) (.setDaemon true))
-                        p2 (doto (Thread. #(pump t-in out)) (.setDaemon true))]
+                  (let [p1 (doto (Thread. #(pump c-in t-out target)) (.setDaemon true))
+                        p2 (doto (Thread. #(pump t-in out client)) (.setDaemon true))]
                     (.start p1)
                     (.start p2)
                     ;; wait only for the target→client direction: when the
@@ -396,19 +396,11 @@
                     ;; proxy connection for the next hop (redirect), which
                     ;; the accept loop serves. Joining p1 would block
                     ;; forever: curl keeps the connection open for reuse.
-                    ;;
-                    ;; Joining it BRIEFLY is what makes the teardown safe
-                    ;; where the runtime has no Socket.shutdownOutput
-                    ;; (jolt#1208), so pump's half-close is a no-op: the
-                    ;; immediate close lands while p1 still owns a pending
-                    ;; recv on the client socket, and Windows answers that
-                    ;; with a reset curl reports as (56) "Connection was
-                    ;; reset". The short join lets curl finish reading and
-                    ;; close its side first; a reused connection just
-                    ;; waits out the timeout. Drop the join for the bare
-                    ;; close when jolt#1208 lands.
+                    ;; pump half-closed the client's output direction (a
+                    ;; real Socket.shutdownOutput, sending FIN) before this
+                    ;; close, so the close is graceful where a bare close
+                    ;; over p1's pending recv would answer with RST.
                     (.join p2)
-                    (.join p1 250)
                     (try (.close client) (catch Exception _ nil))
                     (try (.close target) (catch Exception _ nil)))
                   (recur)))))))

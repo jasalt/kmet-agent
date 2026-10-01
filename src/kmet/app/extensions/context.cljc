@@ -1344,8 +1344,12 @@
          (for [f (->> (concat (fs/list-dir root) (fs/glob root "**/*"))
                       (filter fs/regular-file?)
                       distinct)
-               ;; jolt#1110 is closed upstream; this replace stays until a
-               ;; Windows run checks the tree with and without it.
+               ;; Slash-normalize the rel key: File/Path render with "\" on
+               ;; Windows on both hosts now (jolt#1110 fixed the Jolt side),
+               ;; while the loader's ns/resource names below are "/"-spelled.
+               ;; Verified 2026-10-01 on jolt v0.8.15-46-g005d134b: dropping
+               ;; the replace fails 53 kmet.app.test-extensions assertions
+               ;; on Jolt/Windows.
                :let [rel (str/replace
                           (str (fs/normalize (fs/relativize root (str f))))
                           "\\" "/")]

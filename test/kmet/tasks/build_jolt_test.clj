@@ -91,18 +91,6 @@
           (name key))
       (is (seq (get-in by-name [lib-name key])) lib-name))))
 
-(deftest windows-compiler-wrapper-closes-openssl-link-cycles
-  (let [command (@#'jbuild/compiler-wrapper-command
-                 "C:\\MinGW\\bin\\cc.exe"
-                 "C:\\kmet\\target\\jolt-native\\windows\\libcrypto.a")]
-    (is (str/starts-with? command "#!/bin/sh\n"))
-    (is (str/includes? command "*-shared*libssl.a*)"))
-    (is (str/includes? command
-                       "-Wl,--whole-archive \"C:/kmet/target/jolt-native/windows/libcrypto.a\""))
-    (is (str/includes? command "exec \"C:/MinGW/bin/cc.exe\" \"$@\""))
-    (is (str/includes? command "-L\"C:/kmet/target/jolt-native/windows\""))
-    (is (str/includes? command "-lws2_32 -lcrypt32 -lz"))))
-
 (deftest generated-scheme-proves-natives-were-static
   (let [dir "target/test-jolt-static-natives"
         bin (str dir "/kmet.exe")

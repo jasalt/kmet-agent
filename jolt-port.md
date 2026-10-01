@@ -8,7 +8,26 @@ transport from http-client v0.0.15), packaging (`jolt dist`), and extensions
 **only what is still open**; finished work lives in the code, and upstream
 issues filed or tracked live in `jolt-bugs.md` and are not repeated here.
 
-Status checked against `jolt v0.8.15` (2026-09-30).
+Status checked against `jolt v0.8.15-46-g005d134b` (2026-10-01).
+
+## Dependency pins
+
+Both git pins trail their upstream releases (checked 2026-10-01). They
+interlock through crypto, so bump them together and rerun the full suites:
+
+- `io.github.jolt-lang/crypto` — pinned at PR #10 (`8d821a9d`, 2026-09-18);
+  upstream `v0.0.10` (`feb25f70`) carries the `(bytes, off, len)` overload
+  fixes and the quadratic `MessageDigest.update` fix (PR #13) plus the macOS
+  `:link-libs` change (PR #14). Upstream's lib name is
+  `jolt-lang/jolt-crypto` while kmet declares `io.github.jolt-lang/crypto`;
+  a bump should reconcile the two spellings.
+- `io.github.jolt-lang/http-client` — pinned at the PR #29 merge
+  (`29385f28`); upstream `v0.0.17` (`77d7e310`) adds interrupted-connect
+  handling and TLS stream/context lifecycle fixes (PRs #30, #31). Its
+  `:jolt/provides` still claims `java.util.concurrent.CompletableFuture`,
+  which current Jolt provides and drops with a startup warning ("upgrade
+  io.github.jolt-lang/http-client"); upstream still claims it and has no
+  open issue — worth a one-line upstream report.
 
 ## Tests
 
@@ -20,15 +39,20 @@ Status checked against `jolt v0.8.15` (2026-09-30).
   `app.test-loop/test-loop-cancel-delivers-promise` and
   `test-loop-cancel-records-aborted-attempt` miss their settle windows in
   some full `jolt test` runs (2 of 4) and in one loaded `bb test-changed`
-  run; standalone they pass on both hosts.
+  run; standalone they pass on both hosts. Not reproduced on
+  `v0.8.15-46`: 10/10 filtered reruns green on Jolt; the mechanism is still
+  unpinned.
 - **Flaky under load (Jolt)**:
   `app.test-tools/test-tool-bash-background-pipe-closed` (12.5 s against its
   8 s window) and `app.test-run-code/test-run-code-await-all-honors-timeout`
   (13.7 s against its 1 s window) each missed once in a loaded `jolt
-  test-ext`; both pass standalone and on bb.
+  test-ext`; both pass standalone and on bb. Not retested on `v0.8.15-46`.
 - **Flaky under load**: `libs.test-http/test-curl-redirect-slow-second-hop`
   — curl 97 "Connection reset by peer" through the test SOCKS proxy while
-  the suite is loaded; green standalone (3/3 on v0.8.15).
+  the suite is loaded. Not reproduced on `v0.8.15-46`: 4/4 standalone and
+  6/6 under a full fast-suite load. The test proxy now half-closes each
+  direction with a real `Socket.shutdownOutput` (jolt#1208), which removes
+  the reset path; keep an eye on it.
 - **`modes.test-overlay-input-smoke`** is `^:bb-only` (its driver spawns
   `bb start`, so on Jolt it would exercise bb's TUI); a Jolt-host pty variant
   is the follow-up.

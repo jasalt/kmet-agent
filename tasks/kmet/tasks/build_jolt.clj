@@ -72,32 +72,9 @@
   ["extension loaded: clojure kind=resource-dir loader=jolt bundled=true"
    "extension loaded: deepseek-peak.clj kind=resource-file loader=jolt bundled=true"])
 
-(defn- static-native-root
-  "Project-relative directory for one platform's staged :static archive paths."
-  [platform]
-  (fs/path "target/jolt-native" platform))
-
 (def ^:private openssl-static-libs
   "The complete set of file-backed OpenSSL :jolt/native entries."
   ["libcrypto.a" "libssl.a"])
-
-(def ^:private windows-static-runtime-libs
-  "Static lz4/zlib archives Jolt's Windows launcher link needs. Staging them
-   beside OpenSSL lets its -L prefer .a files over MSYS2 import libraries."
-  ["liblz4.a" "libz.a"])
-
-(def ^:private static-native-system-link-flags
-  "OpenSSL's static archive uses Winsock, CryptoAPI, and zlib. Jolt's Windows
-   runtime link list carries the first and third but not CryptoAPI; append all
-   three after the static native archives so their symbols and transitive
-   dependencies resolve."
-  ["-lws2_32" "-lcrypt32" "-lz"])
-
-(def ^:private static-cc-wrapper-root
-  "Build-only PATH entry whose cc shim delegates to the discovered compiler
-   and appends static-native's system dependencies. It is target/ scratch and
-   never becomes an application resource."
-  "target/jolt-native/windows-toolchain")
 
 (def ^:private static-native-process-line
   "Jolt emits this process-symbol load for a :process native and for every
@@ -143,12 +120,6 @@
   [platform]
   (build/windows-platform? platform))
 
-(defn- static-native-libs
-  "All archives the requested platform's static build must stage."
-  [platform]
-  (cond-> (vec openssl-static-libs)
-    (windows-platform? platform) (into windows-static-runtime-libs)))
-
 (defn- native-platform
   "Jolt's :jolt/native platform key for a dist platform."
   [platform]
@@ -157,6 +128,13 @@
     (str/starts-with? platform "macos-") :darwin
     (str/starts-with? platform "linux-") :linux
     :else nil))
+
+(defn- static-native-root
+  "Project-relative directory for one platform's staged :static archive paths.
+   Named by Jolt's native-platform key (`windows`, `darwin`, `linux`) — the
+   key deps.edn's per-platform :static maps use."
+  [platform]
+  (fs/path "target/jolt-native" (name (native-platform platform))))
 
 (defn- static-link
   "The static link Jolt will choose for SPEC on PLATFORM, or nil. A flat
@@ -260,7 +238,7 @@
             (throw (ex-info (str "static-native builds need cc on PATH; install "
                                  packages)
                             {:type ::missing-static-toolchain :platform platform})))
-        libs (static-native-libs platform)
+        libs openssl-static-libs
         sources (into {}
                       (map (fn [filename]
                              [filename (static-library-source cc filename)]))
@@ -283,58 +261,6 @@
                {:replace-existing true}))
     (println "staged static native archives:" (str/join ", " (map str destinations)))
     destinations))
-
-(defn- compiler-driver
-  "Resolve a cc alias to the real driver beside it. The w64devkit cc.exe (and
-   common cc symlinks) derive their library prefix from argv[0]; calling one
-   through a shim named cc would otherwise make it search target/ instead of
-   the toolchain. A cc that is already a driver is returned unchanged."
-  [cc]
-  (let [siblings (map #(fs/path (fs/parent cc) %) ["gcc.exe" "clang.exe"])]
-    (or (first (filter fs/regular-file? siblings)) cc)))
-
-(defn- compiler-wrapper-command
-  "POSIX-sh command for the compiler shim. \"$@\" preserves Jolt's complete
-   link invocation. The staged directory is added because Jolt's archive
-   preload command has no -L; the SSL preload DLL also receives libcrypto.a
-   because Jolt creates each static preload independently. The final executable
-   already links both archives in order. Paths are slash-normalized before the
-   directory is derived, so a Windows path yields the same -L on either host."
-  [cc crypto-archive]
-  (let [driver (str/replace (str cc) "\\" "/")
-        archive (str/replace (str crypto-archive) "\\" "/")
-        libdir (str/replace (str (fs/parent archive)) "\\" "/")
-        flags (str/join " " static-native-system-link-flags)
-        support (str "-L\"" libdir "\" " flags)]
-    (str "#!/bin/sh\n"
-         "case \" $* \" in\n"
-         "  *-shared*libssl.a*)\n"
-         "    exec \"" driver "\" \"$@\""
-         " -Wl,--whole-archive \"" archive "\" -Wl,--no-whole-archive " support "\n"
-         "    ;;\n"
-         "  *)\n"
-         "    exec \"" driver "\" \"$@\" " support "\n"
-         "    ;;\n"
-         "esac\n")))
-
-(defn- windows-static-build-env
-  "PATH for Jolt's Windows static build subprocess. The wrapper delegates to
-   the same CC used to find the archives and supplies OpenSSL's
-   Winsock/CryptoAPI/zlib dependencies to the final link."
-  [platform]
-  (let [cc (fs/which "cc")
-        root (fs/path static-cc-wrapper-root)
-        wrapper (fs/path root "cc")]
-    (when-not cc
-      (throw (ex-info "Windows static-native builds need cc on PATH"
-                      {:type ::missing-static-toolchain})))
-    (fs/create-dirs root)
-    (spit (str wrapper) (compiler-wrapper-command
-                         (compiler-driver cc)
-                         (fs/absolutize (fs/path (static-native-root platform)
-                                                 "libcrypto.a"))))
-    (p/sh "chmod" "+x" (str wrapper))
-    {"PATH" (str root ";" (System/getenv "PATH"))}))
 
 (defn- verify-static-native-build!
   "Check Jolt's generated Scheme after a static compile. Every validated
@@ -494,14 +420,13 @@
     f))
 
 (defn- run-jolt-build!
-  "Run the compile, streaming jolt's output. ENV is merged into the build
-   subprocess; Windows uses it for the static-native cc shim. Throws ::no-jolt
-   when the executable can't be started and ::build-failed on a non-zero exit."
-  [jolt argv env]
+  "Run the compile, streaming jolt's output. Throws ::no-jolt when the
+   executable can't be started and ::build-failed on a non-zero exit."
+  [jolt argv]
   (println "$" (str/join " " (cons jolt argv)))
   (let [{:keys [exit]}
         (try
-          (apply p/sh {:continue true :out :inherit :err :inherit :extra-env env}
+          (apply p/sh {:continue true :out :inherit :err :inherit}
                  jolt argv)
           (catch Exception e
             (throw (ex-info (str "cannot run " jolt " — is jolt on PATH? (--jolt PATH overrides)")
@@ -866,11 +791,6 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
       (build/stage-bundled-extensions!)
       (when (= :static link-mode)
         (ensure-static-native-libs! platform))
-      ;; Jolt's recursive mkdir reaches a #f parent for a drive-rooted
-      ;; Windows scratch path when <out>.build is absent; precreate it for
-      ;; both native link modes.
-      (when (windows-platform? platform)
-        (fs/create-dirs (fs/path (str bin ".build"))))
       ;; the version resource the build bakes in (kmet --version reports it);
       ;; removed again afterwards so a later direct `jolt build` cannot bake a
       ;; previous run's version from the leftover file
@@ -879,11 +799,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
           (run-jolt-build! jolt-bin
                            (build-argv (assoc opts
                                               :out (str (fs/absolutize bin))
-                                              :native-link link-mode))
-                           (if (and (windows-platform? platform)
-                                    (= :static link-mode))
-                             (windows-static-build-env platform)
-                             {}))
+                                              :native-link link-mode)))
           (finally
             (fs/delete-if-exists baked))))
       (when-not (fs/exists? bin)

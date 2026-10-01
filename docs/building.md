@@ -49,8 +49,9 @@ and override the platform default:
 
 A static build asks `cc` for `libcrypto.a` and `libssl.a`, stages them under
 `target/jolt-native/<platform>/`, and verifies Jolt's generated Scheme uses
-static process-symbol loads for every file-backed `:jolt/native`. Windows
-static builds also stage lz4/zlib and need an MSYS2 MINGW64 toolchain:
+static process-symbol loads for every file-backed `:jolt/native`. A Windows
+static build also needs an MSYS2 MINGW64 toolchain — Jolt's Windows link
+names `-llz4`/`-lz`, which those packages supply:
 
 ```sh
 pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-openssl mingw-w64-x86_64-lz4

@@ -15,7 +15,8 @@
    should write it without parentheses."
   (:require [clojure.test :refer [deftest is]]
             [clojure.string :as str]
-            [babashka.fs :as fs]))
+            [babashka.fs :as fs]
+            [kmet.test-utils :as tu]))
 
 (def ^:private wall-clock-allowed
   "libs files where the wall clock is compared against externally-produced
@@ -32,7 +33,7 @@
             (mapcat (fn [f] (if (fs/directory? f) (walk f) [f]))
                     (fs/list-dir dir)))]
     (->> (walk "src/kmet/libs")
-         (map str)
+         (map #(tu/slash (str %)))
          (filter #(re-find #"\.clj[ca]?$" %))
          (sort))))
 
