@@ -33,8 +33,9 @@
                 (throw (ex-info (str "server did not start: " out)
                                 {:type :server-start-failed})))))))))
 
-(defn stop-server! [{:keys [proc]}]
-  (try (proc/destroy-tree proc) (catch Exception _ nil)))
+(defn stop-server! [{:keys [proc out-file]}]
+  (try (proc/destroy-tree proc) (catch Exception _ nil))
+  (when out-file (io/delete-file out-file true)))
 
 (defn- http-get!
   "Minimal HTTP GET (raw socket) — used to hit the loopback callback."
@@ -386,7 +387,7 @@
   (when-not fake-oauth
     (println "Usage: bb validate-oauth.bb <fake-oauth-server.bb>")
     (System/exit 1))
-  (let [{:keys [proc port]} (spawn-server! fake-oauth)
+  (let [{:keys [proc port] :as server} (spawn-server! fake-oauth)
         store-path (str (System/getProperty "user.dir") "/.mcp-oauth-test-" (System/nanoTime) ".edn")]
     (with-redefs [auth/store-path (constantly store-path)]
       (try
@@ -399,7 +400,7 @@
         (test-jwt-bearer-flow port store-path)
         (test-discovery-and-pkce-verification port store-path)
         (finally
-          (stop-server! {:proc proc})
+          (stop-server! server)
           (io/delete-file store-path true)))))
   (println "\n" (if (zero? @failures) "ALL PASS" (str @failures " FAILURES")))
   (System/exit (if (zero? @failures) 0 1)))

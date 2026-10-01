@@ -23,9 +23,10 @@
   (when-not ok (swap! failures inc)))
 
 (defn spawn-server!
-  "Start a bb script server; returns {:proc :port}. The script prints
-   'PORT <n>' on stdout — captured to a temp file so the caller can poll
-   it while the process keeps running (:out :string would block on exit)."
+  "Start a bb script server; returns {:proc :port :out-file}. The script
+   prints 'PORT <n>' on stdout — captured to a temp file so the caller can
+   poll it while the process keeps running (:out :string would block on
+   exit); stop-server! deletes the file."
   [script & args]
   (let [out-file (str (System/getProperty "user.dir") "/.mcp-fake-" (System/nanoTime) ".out")
         p (proc/process (into ["bb" script] args)
@@ -40,8 +41,9 @@
                 (throw (ex-info (str "server did not start: " out)
                                 {:type :server-start-failed})))))))))
 
-(defn stop-server! [{:keys [proc]}]
-  (try (proc/destroy-tree proc) (catch Exception _ nil)))
+(defn stop-server! [{:keys [proc out-file]}]
+  (try (proc/destroy-tree proc) (catch Exception _ nil))
+  (when out-file (io/delete-file out-file true)))
 
 ;; ─── stdio transport ──────────────────────────────────────────────────────
 
@@ -182,21 +184,24 @@
     ;; must carry notifications/cancelled
     (check "abandoned request cancelled"
            (let [log-file (str (System/getProperty "user.dir") "/.mcp-cancel-"
-                               (System/nanoTime) ".log")
-                 {:keys [conn]} (client/connect!
-                                 {:command "bb" :args [fake-stdio] :env {"FAKE_LOG" log-file}}
-                                 {})]
+                               (System/nanoTime) ".log")]
              (try
-               (client/request! conn "tools/call" {:name "slow" :arguments {:ms 1200}}
-                                {:timeout-ms 200})
-               (catch Exception _ nil))
-             ;; the fake reads stdin on its loop, which is inside the slow
-             ;; call — the cancel lands once that returns
-             (Thread/sleep 1600)
-             (let [logged (try (slurp log-file) (catch Exception _ ""))]
-               (client/close! conn)
-               (and (str/includes? logged "notifications/cancelled")
-                    (str/includes? logged "tools/call")))))
+               (let [{:keys [conn]} (client/connect!
+                                     {:command "bb" :args [fake-stdio] :env {"FAKE_LOG" log-file}}
+                                     {})]
+                 (try
+                   (client/request! conn "tools/call" {:name "slow" :arguments {:ms 1200}}
+                                    {:timeout-ms 200})
+                   (catch Exception _ nil))
+                 ;; the fake reads stdin on its loop, which is inside the slow
+                 ;; call — the cancel lands once that returns
+                 (Thread/sleep 1600)
+                 (let [logged (try (slurp log-file) (catch Exception _ ""))]
+                   (client/close! conn)
+                   (and (str/includes? logged "notifications/cancelled")
+                        (str/includes? logged "tools/call"))))
+               (finally
+                 (io/delete-file log-file true)))))
     ;; process-exit error: kill the server, next request fails with stderr
     (check "alive?" (client/alive? conn))
     (proc/destroy-tree (:proc conn))
@@ -285,13 +290,13 @@
                        (< waits 30) (do (Thread/sleep 100) (recur (inc waits)))
                        :else false))))))
       (finally
-        (stop-server! {:proc proc})))))
+        (stop-server! server)))))
 
 ;; ─── SSE responses on streamable-http (Accept: text/event-stream) ────────
 
 (defn test-http-sse-response [fake-http]
   (println "\n── streamable-http with SSE response bodies ──")
-  (let [{:keys [proc port]} (spawn-server! fake-http)]
+  (let [{:keys [proc port] :as server} (spawn-server! fake-http)]
     (try
       ;; the auth-headers merge overrides the base Accept, forcing the
       ;; server's SSE response path
@@ -304,13 +309,13 @@
                                                       "http-echo: sse")))
         (client/close! conn))
       (finally
-        (stop-server! {:proc proc})))))
+        (stop-server! server)))))
 
 ;; ─── legacy SSE transport ─────────────────────────────────────────────────
 
 (defn test-sse [fake-http]
   (println "\n── legacy SSE transport ──")
-  (let [{:keys [proc port]} (spawn-server! fake-http)]
+  (let [{:keys [proc port] :as server} (spawn-server! fake-http)]
     (try
       (let [{:keys [conn tools]}
             (client/connect! {:url (str "http://127.0.0.1:" port "/sse")
@@ -325,13 +330,13 @@
         (client/close! conn)
         (check "sse closed" (not (client/alive? conn))))
       (finally
-        (stop-server! {:proc proc})))))
+        (stop-server! server)))))
 
 ;; ─── protocol version negotiation ────────────────────────────────────────
 
 (defn test-version-negotiation [fake-http]
   (println "\n── protocol version negotiation ──")
-  (let [{:keys [proc port]} (spawn-server! fake-http)
+  (let [{:keys [proc port] :as server} (spawn-server! fake-http)
         base (str "http://127.0.0.1:" port "/mcp")]
     (try
       ;; a server on an older SDK answers with its own latest revision —
@@ -362,7 +367,7 @@
                     (str/includes? (ex-message e)
                                    "unsupported protocol version 2026-07-28"))))
       (finally
-        (stop-server! {:proc proc})))))
+        (stop-server! server)))))
 
 ;; ─── main ─────────────────────────────────────────────────────────────────
 
