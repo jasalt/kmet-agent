@@ -248,8 +248,8 @@
   "Connection over already-built streams — the seam tests use instead of a
    real subprocess. OPTS: :in (InputStream we read from), :out (OutputStream
    we write to), :framing, :on-notification, :on-request, :err (optional,
-   drained into the tail), :proc (optional), :kill-fn (optional; default
-   babashka.process destroy-tree on :proc), :tail-lines."
+   drained into the tail), :proc (optional), :kill-fn (optional 0-arg fn,
+   default destroys the tree of :proc), :tail-lines."
   [{:keys [in out framing on-notification on-request proc kill-fn tail-lines err]
     :or {framing :content-length
          on-notification (constantly nil)
@@ -260,7 +260,7 @@
               :out out
               :proc proc
               :pid (when proc (try (-> proc :proc .pid) (catch Exception _ nil)))
-              :kill-fn (or kill-fn (when proc #(proc/destroy-tree %)))
+              :kill-fn (or kill-fn (when proc (fn [] (proc/destroy-tree proc))))
               :on-notification on-notification
               :on-request on-request
               :pending (atom {})

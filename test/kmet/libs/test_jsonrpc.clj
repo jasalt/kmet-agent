@@ -2,10 +2,13 @@
   "Tests for kmet.libs.jsonrpc: framing edge cases (byte counts, split
    reads, header tolerance) and connection semantics (correlation,
    server-request auto-replies, EOF vs timeout, graceful close) exercised
-   over in-process piped streams — no subprocesses."
-  (:require [clojure.test :refer [deftest is testing]]
+   over in-process piped streams. One ^:slow case spawns a subprocess to
+   pin the default kill path of close!."
+  (:require [babashka.process :as proc]
+            [clojure.test :refer [deftest is testing]]
             [kmet.libs.json :as json]
-            [kmet.libs.jsonrpc :as jsonrpc]))
+            [kmet.libs.jsonrpc :as jsonrpc]
+            [kmet.libs.process :as process]))
 
 ;; ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -340,3 +343,32 @@
           "shutdown request then exit notification, in order")
       (is (true? @killed) "kill-fn invoked after the dance")
       (is (false? (jsonrpc/alive? conn))))))
+
+;; ─── Default close! kill path (subprocess) ────────────────────────────────
+
+(defn- wait-for-death
+  "Poll until the process behind CONN is gone — kill delivery is async.
+   True when dead within ~3s."
+  [conn]
+  (loop [waits 0]
+    (cond
+      (not (proc/alive? (:proc conn))) true
+      (> waits 30) false
+      :else (do (Thread/sleep 100) (recur (inc waits))))))
+
+(deftest ^:slow close!-kills-the-child-by-default
+  ;; Regression: the default :kill-fn used to be 1-arity while close!
+  ;; calls it with no arguments; the ArityException was swallowed and the
+  ;; child leaked. A child that never reads stdin cannot exit on EOF, so
+  ;; only a real kill ends it.
+  (let [conn (jsonrpc/connect-stdio
+              {:command "bb"
+               :args ["-e" "(Thread/sleep 30000)"]
+               :framing :line-delimited})]
+    (try
+      (is (jsonrpc/alive? conn) "child is alive before close!")
+      (jsonrpc/close! conn)
+      (is (wait-for-death conn) "default close! kills the child")
+      (finally
+        (when (and (:pid conn) (proc/alive? (:proc conn)))
+          (process/kill-process-tree! (:pid conn)))))))
