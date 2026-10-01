@@ -545,36 +545,18 @@ Be precise and concise in your responses."}}]
   (boolean (some #(= :sequential (tool-execution-mode (:name %))) tool-calls)))
 
 (defn- await-all-tool-results!
-  "Poll all pending tool futures concurrently until every future completes.
-   Returns a map tool-call-id → result in approximate completion order
-   (newest completions discovered per 100ms poll batch). Each cycle blocks
-   on the next pending future (max 100ms) instead of a fixed sleep, so fast
-   tools finish without artificial delay. No progress pings are emitted —
-   the UI updates only on real tool output (pi: agent-loop
-   executePreparedToolCall). A failed future turns into an error result so
-   the batch still records a result per tool call (pi:
-   failToolCallsFromTruncatedMessage) instead of leaving the assistant
-   tool calls dangling in the saved context."
+  "Block until every tool future completes; returns tool-call-id → result.
+   A failed future turns into an error result so the batch can still settle
+   a result per tool call (pi: failToolCallsFromTruncatedMessage) instead
+   of leaving the assistant tool calls dangling in the saved context."
   [futures]
-  (let [results (atom {})]
-    (loop []
-      (let [remaining (remove (fn [[id _]] (contains? @results id)) futures)]
-        (if (empty? remaining)
-          @results
-          (do (doseq [[tc-id f] remaining]
-                (when-not (= :pending (deref f 0 :pending))
-                  (swap! results assoc tc-id
-                         ;; belt-and-braces: invoke/execute-tool-call already
-                         ;; turns a throwing tool into an error result, so this
-                         ;; only covers a failure inside the future body itself
-                         (try @f
-                              (catch Exception e
-                                {:content (str "Error executing tool: " (ex-message e))
-                                 :is-error true})))))
-              (when-let [[_ f] (first (filter (fn [[_ f]] (= :pending (deref f 0 :pending)))
-                                              remaining))]
-                (deref f 100 :pending))
-              (recur)))))))
+  (into {}
+        (map (fn [[tc-id f]]
+               [tc-id (try @f
+                           (catch Exception e
+                             {:content (str "Error executing tool: " (ex-message e))
+                              :is-error true}))]))
+        futures))
 
 (defn- tool-on-update
   "Streaming callback for a tool execution (pi: tool onUpdate) — emits
@@ -591,10 +573,36 @@ Be precise and concise in your responses."}}]
 (defn- execute-tool-calls-parallel!
   "Execute tool calls concurrently (pi: executeToolCallsParallel).
    Preparation (start events + before hooks) is sequential; execution is
-   concurrent; tool-execution-end events fire in completion order; results
-   are appended to context in source order. Returns results in source order."
+   concurrent. Each call finalizes (after hook) and emits its
+   tool-execution-end inside its own future, so a tool flips to done — with
+   its own Took duration — the moment it finishes (pi: emitToolExecutionEnd
+   in the concurrent closure) instead of when the slowest sibling does;
+   blocked calls settle during preparation. Context/session results are
+   appended afterwards, in source order. Returns results in source order."
   [agent tool-calls assistant-msg & [append?]]
-  (let [prepared (mapv (fn [tc]
+  (let [finalized (atom {})
+        emit-end! (fn [tc result]
+                    (emit agent {:type :tool-execution-end
+                                 :tool-call-id (:id tc)
+                                 :tool-name (:name tc)
+                                 :args (:arguments tc)
+                                 :result result
+                                 :is-error (:is-error result false)}))
+        finish-call (fn [tc raw]
+                      (invoke/finish-tool-call
+                       {:tool-name (:name tc)
+                        :args (:arguments tc)
+                        :tool-call-id (:id tc)
+                        :assistant-message assistant-msg
+                        :after-hook @(:after-tool-call agent)}
+                       raw))
+        ;; Always record before emitting: the source-order appends below
+        ;; read the map after the futures finish, so a result is never lost
+        ;; to a failed emit.
+        settle! (fn [tc result]
+                  (swap! finalized assoc (:id tc) result)
+                  (emit-end! tc result))
+        prepared (mapv (fn [tc]
                          (let [tc-id (:id tc)
                                tc-name (:name tc)
                                tc-args (:arguments tc)]
@@ -617,78 +625,56 @@ Be precise and concise in your responses."}}]
 
                                :else tc))))
                        tool-calls)
+        ;; Blocked calls settle during preparation (pi: an immediate
+        ;; outcome's end fires right away), not after the batch.
+        _ (doseq [tc prepared :when (contains? tc :kmet/blocked)]
+            (settle! tc (finish-call tc (:kmet/blocked tc))))
         pending (filterv #(not (contains? % :kmet/blocked)) prepared)
         ;; pi: tools receive the session AbortSignal — Escape during a tool
         ;; call must kill the child process, not just abandon the future.
-        ;; Each future records its own completion (the swap! runs before the
-        ;; future is realized), so `completion-order` holds true completion
-        ;; order — a hash-map can't express it, and iterating one gives
-        ;; arbitrary tool-execution-end event order.
-        completion-order (atom [])
         ;; The cancel signal and the session env/cwd bindings come from the
         ;; run-level binding in run-agent-turn (conveyed into these futures),
         ;; so no per-future binding is needed (invoke/execute-tool-call's
         ;; :bindings is the pool-worker path).
         futures (into {} (map (fn [tc]
                                 [(:id tc)
-                                 (future (let [tc-id (:id tc)
-                                               result (invoke/execute-tool-call
-                                                       tools/execute-tool
-                                                       {:tool-name (:name tc)
-                                                        :args (:arguments tc)
-                                                        :tool-call-id tc-id
-                                                        :assistant-message assistant-msg
-                                                        :signal (:signal agent)
-                                                        :ctx (extensions/build-extension-context)
-                                                        :on-update (tool-on-update agent tc-id)})]
-                                           (swap! completion-order conj [tc-id result])
-                                           result))])
+                                 (future
+                                   (let [tc-id (:id tc)
+                                         result (finish-call
+                                                 tc
+                                                 (invoke/execute-tool-call
+                                                  tools/execute-tool
+                                                  {:tool-name (:name tc)
+                                                   :args (:arguments tc)
+                                                   :tool-call-id tc-id
+                                                   :assistant-message assistant-msg
+                                                   :signal (:signal agent)
+                                                   :ctx (extensions/build-extension-context)
+                                                   :on-update (tool-on-update agent tc-id)}))]
+                                     (settle! tc result)
+                                     result))])
                               pending))
         raw-results (await-all-tool-results! futures)
-        finalized (into {}
-                        (map (fn [tc]
-                               (let [tc-id (:id tc)
-                                     raw (or (:kmet/blocked tc) (get raw-results tc-id))]
-                                 [tc-id (invoke/finish-tool-call
-                                         {:tool-name (:name tc)
-                                          :args (:arguments tc)
-                                          :tool-call-id tc-id
-                                          :assistant-message assistant-msg
-                                          :after-hook @(:after-tool-call agent)}
-                                         raw)])))
-                        prepared)]
-    ;; tool-execution-end in completion order: blocked first (prep order), then completion order
-    (doseq [tc prepared :when (contains? tc :kmet/blocked)]
-      (let [result (get finalized (:id tc))]
-        (emit agent {:type :tool-execution-end
-                     :tool-call-id (:id tc)
-                     :tool-name (:name tc)
-                     :args (:arguments tc)
-                     :result result
-                     :is-error (:is-error result false)})))
-    (doseq [[tc-id _] @completion-order]
-      (let [tc (first (filter #(= (:id %) tc-id) prepared))
-            result (get finalized tc-id)]
-        (emit agent {:type :tool-execution-end
-                     :tool-call-id tc-id
-                     :tool-name (:name tc)
-                     :args (:arguments tc)
-                     :result result
-                     :is-error (:is-error result false)})))
+        ;; A future body that threw before settling (await-all already turns
+        ;; it into an error result) still records a result and emits its end
+        ;; event here — the fallback is settled as-is, never by re-running
+        ;; the failed after hook.
+        _ (doseq [tc pending :when (not (contains? @finalized (:id tc)))]
+            (settle! tc (get raw-results (:id tc))))]
     ;; context + session in source order (skipped when the caller appends —
     ;; the repeat-loop guard path appends everything itself in source order)
     (when (not= false append?)
       (doseq [tc prepared]
-        (let [result (get finalized (:id tc))
+        (let [result (get @finalized (:id tc))
               result-msg (tool-result-message (:id tc) (:name tc) result)]
           (swap! (:messages agent) conj result-msg)
           (when (:session agent)
             (session/append-entry (:session agent) result-msg)))))
     ;; pi: terminate stops the run after this batch — only when EVERY
     ;; finalized call (blocked ones carry the hint, executed ones don't)
-    {:results (mapv #(get finalized (:id %)) tool-calls)
-     :terminate (and (seq finalized)
-                     (every? #(true? (:terminate %)) (vals finalized)))}))
+    {:results (mapv #(get @finalized (:id %)) tool-calls)
+     :terminate (and (seq @finalized)
+                     (every? #(true? (:terminate %)) (vals @finalized)))}))
 
 (defn- execute-tool-calls-sequential!
   "Execute tool calls one at a time (pi: executeToolCallsSequential).

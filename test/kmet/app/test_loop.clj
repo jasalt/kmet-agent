@@ -2826,21 +2826,23 @@
 ;; ─── Phase 3: parallel tool execution ────────────────────────────────────
 
 (defn- stub-llm-two-tool-calls-then-text
-  "send-message stub: first call streams two tool calls, subsequent calls a plain reply."
-  [call-count]
-  (fn [opts]
-    (future
-      (if (= 1 (swap! call-count inc))
-        (do (when-let [on-tc (:on-tool-call opts)]
-              (on-tc {:id "tc1" :name "bash" :arguments "{}" :index 0})
-              (on-tc {:id "tc2" :name "bash" :arguments "{}" :index 1}))
-            (when-let [on-done (:on-done opts)]
-              (on-done :tool-calls)))
-        (do (when-let [on-text (:on-text opts)]
-              (on-text "ok"))
-            (when-let [on-done (:on-done opts)]
-              (on-done :stop))))
-      :done)))
+  "send-message stub: first call streams two bash tool calls (ARGS1/ARGS2,
+   JSON strings, defaulting to {}), subsequent calls a plain reply."
+  ([call-count] (stub-llm-two-tool-calls-then-text call-count "{}" "{}"))
+  ([call-count args1 args2]
+   (fn [opts]
+     (future
+       (if (= 1 (swap! call-count inc))
+         (do (when-let [on-tc (:on-tool-call opts)]
+               (on-tc {:id "tc1" :name "bash" :arguments args1 :index 0})
+               (on-tc {:id "tc2" :name "bash" :arguments args2 :index 1}))
+             (when-let [on-done (:on-done opts)]
+               (on-done :tool-calls)))
+         (do (when-let [on-text (:on-text opts)]
+               (on-text "ok"))
+             (when-let [on-done (:on-done opts)]
+               (on-done :stop))))
+       :done))))
 
 (t/deftest test-loop-parallel-tool-execution
   (let [events (atom [])
@@ -2880,6 +2882,74 @@
           (t/is (= 2 (count (:tool-results te))) "turn-end carries both results"))
         (t/is (= 2 (count (filter #(= :tool (:role %)) (loop/get-context agent))))
               "both tool results appended to context")))))
+
+(t/deftest test-loop-parallel-end-events-fire-per-tool
+  ;; Regression: end events for a parallel batch used to wait for every
+  ;; future, so each tool showed the slowest sibling's Took duration and
+  ;; stayed running until the whole batch ended.
+  (let [events (atom [])
+        slow-running (promise)
+        release-slow (promise)
+        fast-ended (promise)
+        agent (loop/make-agent-state
+               :on-event (fn [e]
+                           (swap! events conj e)
+                           (when (and (= :tool-execution-end (:type e))
+                                      (= "tc1" (:tool-call-id e)))
+                             (deliver fast-ended true))))]
+    (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                  llm/send-message
+                  (stub-llm-two-tool-calls-then-text
+                   (atom 0)
+                   "{\"command\":\"fast\"}"
+                   "{\"command\":\"slow\"}")
+                  tools/execute-tool
+                  (fn [_ args _]
+                    (if (= "fast" (:command args))
+                      {:content "fast done" :is-error false}
+                      (do (deliver slow-running true)
+                          (deref release-slow 2000 :timeout)
+                          {:content "slow done" :is-error false})))]
+      (let [run (future
+                  (deref (loop/run-agent-turn agent
+                                              {:message "run" :on-error (fn [_])})
+                         3000
+                         ::timeout))]
+        (try
+          (t/is (true? (deref slow-running 2000 false)) "the slow tool is in flight")
+          (t/is (true? (deref fast-ended 2000 false))
+                "the fast tool's end event fires while its slow sibling still runs")
+          (finally
+            (deliver release-slow true)))
+        (t/is (not= ::timeout (deref run 3000 ::timeout)) "the turn completes")
+        (t/is (= 2 (count (filter #(= :tool-execution-end (:type %)) @events))))
+        (t/is (= ["fast done" "slow done"]
+                 (mapv #(get-in % [:content 0 :content])
+                       (filter #(= :tool (:role %)) (loop/get-context agent))))
+              "results are still appended to context in source order")))))
+
+(t/deftest test-loop-parallel-after-tool-call-error-settles-once
+  ;; An after hook throwing a non-Exception kills the tool's future before
+  ;; it settles; the batch settles await-all's error fallback as-is instead
+  ;; of re-running the failed hook (which would throw again on the loop
+  ;; thread).
+  (let [hook-calls (atom 0)
+        events (atom [])
+        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+    (reset! (:after-tool-call agent)
+            (fn [_]
+              (swap! hook-calls inc)
+              (throw (AssertionError. "after hook boom"))))
+    (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                  llm/send-message (stub-llm-tool-then-text (atom 0))
+                  tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
+      @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
+    (t/is (= 1 @hook-calls) "the failed after hook runs exactly once")
+    (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]
+      (t/is (= "tc1" (:tool-call-id end)))
+      (t/is (true? (:is-error end)) "the future's failure is reported as an error result")
+      (t/is (str/includes? (:content (:result end)) "Error executing tool")))
+    (t/is (= :idle @(:status agent)) "the turn completes")))
 
 (t/deftest test-loop-sequential-tool-execution
   (let [llm-call-count (atom 0)

@@ -799,6 +799,12 @@ for each, the **last non-nil handler result wins**:
     nil))
 ```
 
+Parallel batches run tool bodies concurrently: `on-tool-call` hooks fire
+sequentially during preparation, while `on-tool-result` hooks run when
+their tool finishes, on that tool's worker thread — they may overlap with
+each other, and so may `:tool-execution-end` listeners. Keep shared
+extension state in atoms.
+
 Scripted tool calls run through the same hooks: a `run_code` call's inner
 `tools/call` (and the `tools/bash`/`read`/`write`/`edit` sugars) fires the
 before hook (block with `{:block true :reason ...}`, or rewrite with
