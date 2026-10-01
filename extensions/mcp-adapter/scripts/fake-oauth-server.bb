@@ -218,7 +218,12 @@
                        :user_code "ABCD-EFGH"
                        :verification_uri "http://127.0.0.1:PORT/device-verify"
                        :interval 1
-                       :expires_in 60}))
+                       ;; generous on purpose: the poll sequence below needs
+                       ;; three round trips, and a host stall (or a wall-clock
+                       ;; step, before the monotonic deadline fix) used to
+                       ;; abort a healthy flow at 60s. The timeout paths are
+                       ;; unit-tested in kmet.libs.test-oauth.
+                       :expires_in 300}))
 
       :else (http-response 404 "not found"))))
 
