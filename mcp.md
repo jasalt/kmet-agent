@@ -348,15 +348,37 @@ Also `extensions/lsp-adapter/scripts/validate.bb` (jsonrpc change) and
 
 ---
 
-## Phase 2 — auth (deferred)
+## Phase 2 — auth
 
 `kmet.libs.mcp.auth`: challenge parse/record, RFC 8707 resource
-canonicalization, issuer-keyed credential store incl. keyring backends,
-pre-emptive refresh + 401-once retry header provider — built on
-`kmet.libs.oauth`. Extension keeps config mapping, status, interaction map,
-`/mcp auth|logout`. Include the 2026 hardening: issuer binding (SEP-2352;
-migrate `mcp-oauth.edn` from server-keyed entries), `iss` validation
-(RFC 9207), DCR `application_type` (SEP-837).
+canonicalization, credential store incl. keyring backends, pre-emptive
+refresh + 401-once retry header provider — built on `kmet.libs.oauth`.
+Extension keeps config mapping, status, interaction map, `/mcp auth|logout`.
+Include the 2026 hardening: issuer binding (SEP-2352; migrate
+`mcp-oauth.edn` from server-keyed entries), `iss` validation (RFC 9207),
+DCR `application_type` (SEP-837).
+
+Landing order (same discipline as Phase 1; `validate-oauth.bb` is the
+baseline):
+
+- **2.1 pure policy — landed**: `canonical-resource-uri`,
+  `parse-www-authenticate`, the challenge record plus
+  `challenge`/`clear-challenges!`, `scopes-string`, `effective-scopes`,
+  `effective-resource`, with `test/kmet/libs/mcp/test_auth.clj`. The
+  extension keeps `def` aliases for the two names `validate-oauth.bb`
+  calls (`canonical-resource-uri`, `parse-www-authenticate`) and goes
+  straight to the lib everywhere else.
+- 2.2 the store: `:file`/`:keyring`/`:auto` backends, path/account logic,
+  logout.
+- 2.3 token lifecycle (tokens→store, expiry, bearer, machine grants) and
+  `make-auth-fns` — the transport's `:auth-headers`/`:on-401` seam.
+- 2.4 flow split: lib step functions; the extension keeps `run-flow!`'s
+  interaction map and the status text.
+- 2.5 2026 hardening: issuer-keyed store + `mcp-oauth.edn` read-side
+  migration (SEP-2352), RFC 9207 `iss` validation, SEP-837 DCR
+  `application_type`.
+- 2.6 gates: `validate-oauth.bb` + `validate-client.bb` (401 retry),
+  `bb test`/`test-ext`, jolt, lint/format, `check-bundled-extensions`.
 
 ## Phase 3 — optional hygiene
 
@@ -419,6 +441,7 @@ era-neutral seam and Phase 2's auth plumbing.
 - [x] 1.4 lib tests (24 tests: protocol, client, http/sse/stdio transports)
 - [x] 1.5 full gates + extension scripts + lsp validation
 - [x] 1.6 stdio on `kmet.libs.jsonrpc` (transport-owned ids, `:conn-ref` hand-off)
-- [ ] 2 auth extraction + hardening
+- [x] 2.1 auth policy in the lib (challenge/resource/scope + tests)
+- [ ] 2.2 store, token lifecycle, `make-auth-fns`, flow split, hardening
 - [ ] 3 optional hygiene
 - [ ] 4 2026-07-28 protocol work (separate plan)

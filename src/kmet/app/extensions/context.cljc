@@ -242,6 +242,7 @@
     kmet.libs.json
     kmet.libs.jsonrpc
     kmet.libs.markdown
+    kmet.libs.mcp.auth
     kmet.libs.mcp.client
     kmet.libs.mcp.protocol
     kmet.libs.mcp.transport
