@@ -132,7 +132,12 @@ sys.exit(os.waitstatus_to_exitcode(status) if exited else 124)
         (let [c (term/read-input t 200)]
           (if (pos? c) (recur (conj got c)) (recur got))))))
   (term/stop! t)
-  (println \"STOPPED\" (term/started? t)))
+  (println \"STOPPED\" (term/started? t))
+  ;; Jolt waits for non-daemon threads before exiting, as the JVM does, so
+  ;; the futures' idle pool worker would hold the nested jolt for 60s — past
+  ;; the driver's deadline, which then kills it and reports a nonzero exit.
+  ;; shutdown-agents is the script-end the JVM itself prescribes.
+  (shutdown-agents))
 ")
 
 (deftest ^:slow native-terminal-pty-roundtrip
