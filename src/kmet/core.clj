@@ -387,10 +387,17 @@
               (.printStackTrace e))
             (System/exit 1))
           (finally
-            ;; Jolt waits for non-daemon threads before exiting, as the JVM does:
-            ;; the agent pool behind `future` (render loop, input reader, startup
-            ;; futures) would otherwise hold the process open after /quit — the
-            ;; user's shell needs one more ctrl+c. bb exits on its own and
-            ;; shutdown-agents is harmless there; System/exit paths terminate
-            ;; before this runs.
-            (shutdown-agents)))))))
+            ;; Jolt waits for non-daemon threads before exiting, as the JVM
+            ;; does: the agent pool behind `future` (render loop, input
+            ;; reader, startup futures) would otherwise hold the process open
+            ;; after /quit — the user's shell needs one more ctrl+c. Draining
+            ;; the pool lets in-flight work finish; bb exits on its own and
+            ;; shutdown-agents is harmless there.
+            (shutdown-agents)))
+        ;; Belt and braces after a normal quit: the pool is down, but a
+        ;; thread stuck outside it (a dependency or extension non-daemon
+        ;; thread) would still hold Jolt open. The session is over — exit
+        ;; explicitly. Both hosts run the terminal backend's shutdown hook;
+        ;; Jolt has already run the finally above, and neither host reaches
+        ;; here after the catch's exit.
+        (System/exit 0)))))

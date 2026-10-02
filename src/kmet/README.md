@@ -124,10 +124,11 @@ registration tables/maps over compile-time multimethod registries. Use
   (token/JWT expiry, epoch ids, file mtimes, persisted cross-process TTLs).
 - Host reader features are `:bb` and `:jolt`, never `:clj`. For a portable
   host carve-out use `#?(:jolt X :default Y)`.
-- `kmet.core/-main` ends with `shutdown-agents`: Jolt waits for non-daemon
-  threads before exiting, as the JVM does, so the agent pool behind `future`
-  would otherwise hold the process open after `/quit`. bb exits on its own
-  and the call is harmless there.
+- `kmet.core/-main` ends with `shutdown-agents` + `System/exit 0`: Jolt waits
+  for non-daemon threads before exiting, as the JVM does, so the agent pool
+  behind `future` would otherwise hold the process open after `/quit`; the
+  explicit exit also covers any thread stuck outside that pool. bb exits on
+  its own and both calls are harmless there.
 - Do not add Maven entries for `babashka.fs` or `babashka.process`; both hosts
   provide their built-in equivalents. Tooling-only dependencies belong in
   `bb.edn`/`deps.edn`.
