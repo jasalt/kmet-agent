@@ -32,18 +32,16 @@ The git pins track their upstream releases (checked 2026-10-02):
   `tui.test-compute/compute-change-invalidates-subscriber-and-schedules-frame`
   and `tui.test-hiccup/dep-change-schedules-a-frame-through-the-hook` each
   failed once in ~18 full runs ("rendering itself does not poke the hook",
-  fired = 2); never standalone; mechanism unpinned.
-  `app.test-loop/test-loop-cancel-delivers-promise` and
-  `test-loop-cancel-records-aborted-attempt` miss their settle windows in
-  some full `jolt test` runs (2 of 4) and in one loaded `bb test-changed`
-  run; standalone they pass on both hosts. Not reproduced on
-  `v0.8.15-46`: 10/10 filtered reruns green on Jolt; the mechanism is still
-  unpinned.
+  fired = 2); never standalone. Not reproduced on `v0.8.15-77`: 6 full
+  `jolt test` runs and 4 full `bb test` runs green, plus 10 solo reruns
+  each; mechanism still unpinned.
 - **Flaky under load (Jolt)**:
   `app.test-tools/test-tool-bash-background-pipe-closed` (12.5 s against its
   8 s window) and `app.test-run-code/test-run-code-await-all-honors-timeout`
   (13.7 s against its 1 s window) each missed once in a loaded `jolt
-  test-ext`; both pass standalone and on bb. Not retested on `v0.8.15-46`.
+  test-ext`; both pass standalone and on bb. Not reproduced on
+  `v0.8.15-77`: 5/5 standalone, 5/5 with two concurrent full fast suites,
+  and a full `jolt test-ext` green; the windows stay tight under load.
 - **Flaky under load**: `libs.test-http/test-curl-redirect-slow-second-hop`
   — curl 97 "Connection reset by peer" through the test SOCKS proxy while
   the suite is loaded. Not reproduced on `v0.8.15-46`: 4/4 standalone and
