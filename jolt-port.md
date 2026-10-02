@@ -8,7 +8,7 @@ transport from http-client v0.0.15), packaging (`jolt dist`), and extensions
 **only what is still open**; finished work lives in the code, and upstream
 issues filed or tracked live in `jolt-bugs.md` and are not repeated here.
 
-Status checked against `jolt v0.8.15-46-g005d134b` (2026-10-01).
+Status checked against `jolt v0.8.15-77-ga1f6b669` (2026-10-02).
 
 ## Dependency pins
 
@@ -50,6 +50,3 @@ The git pins track their upstream releases (checked 2026-10-02):
   6/6 under a full fast-suite load. The test proxy now half-closes each
   direction with a real `Socket.shutdownOutput` (jolt#1208), which removes
   the reset path; keep an eye on it.
-- **`modes.test-overlay-input-smoke`** is `^:bb-only` (its driver spawns
-  `bb start`, so on Jolt it would exercise bb's TUI); a Jolt-host pty variant
-  is the follow-up.
