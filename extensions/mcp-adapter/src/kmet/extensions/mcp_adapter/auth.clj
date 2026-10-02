@@ -4,16 +4,16 @@
    mcp-auth-flow.ts / mcp-callback-server.ts, adapted onto the generic
    machinery in kmet.libs.oauth).
 
-   Thin adapter: server config → lib calls, token-store file wiring
-   (<agent-dir>/mcp-oauth.edn, plaintext with 0600 perms — bb has no OS
-   keyring; documented tradeoff; pi uses the keyring), browser open,
-   status text. The extension cannot require kmet.ai.*, so the generic
-   machinery lives in kmet.libs.oauth (RFC 8414 discovery, RFC 7591 DCR,
-   PKCE loopback + RFC 8628 device flows, token exchange/refresh).
+   Thin adapter: server config → lib calls, token-store wiring (the host
+   path for the plaintext fallback; the :file/:keyring backends live in
+   the lib), browser open, status text. The extension cannot require
+   kmet.ai.*, so the generic machinery lives in kmet.libs.oauth (RFC 8414
+   discovery, RFC 7591 DCR, PKCE loopback + RFC 8628 device flows, token
+   exchange/refresh).
 
    The MCP-specific policy lives in kmet.libs.mcp.auth (mcp.md Phase 2):
-   resource canonicalization, the WWW-Authenticate challenge record and
-   scope/resource selection are already there; the token store, the
+   resource canonicalization, the WWW-Authenticate challenge record,
+   scope/resource selection and the credential store are there; the
    request-auth header provider and the 2026 hardening follow.
 
    Flow (per server, §7.8):
@@ -30,9 +30,6 @@
      5. tokens stored; requests attach Authorization: Bearer; 401 with a
         stored refresh token → refresh once + retry once"
   (:require [babashka.fs :as fs]
-            [babashka.process :as proc]
-            [clojure.edn :as edn]
-            [clojure.java.io :as io]
             [clojure.string :as str]
             [kmet.extensions.mcp-adapter.client :as client]
             [kmet.extensions.mcp-adapter.config :as config]
@@ -44,10 +41,6 @@
   (when (fs/exists? path)
     (slurp path)))
 
-(defn- write-text
-  [path text]
-  (spit path (str text)))
-
 ;; ─── MCP authorization policy (kmet.libs.mcp.auth) ────────────────────────
 ;; RFC 8707 resource canonicalization, the RFC 9728 WWW-Authenticate challenge
 ;; record and scope/resource selection live in the lib (mcp.md Phase 2). The
@@ -57,36 +50,11 @@
 (def canonical-resource-uri mcp-auth/canonical-resource-uri)
 (def parse-www-authenticate mcp-auth/parse-www-authenticate)
 
-;; ─── Token store ──────────────────────────────────────────────────────────
-;; Two backends, selected by settings :token-storage (or the MCP_TOKEN_STORAGE
-;; env override):
-;;   :file    — <agent-dir>/mcp-oauth.edn, plaintext with 0600 perms
-;;              (Phase 1 behavior; the only backend on Termux/Android and
-;;              on hosts without a keyring tool)
-;;   :keyring — the OS credential store via platform tools: macOS `security`
-;;              (generic-password), Linux `secret-tool` (libsecret),
-;;              Windows Credential Manager via a PowerShell P/Invoke
-;;              (CredWrite/CredRead/CredDelete). Per-server secrets,
-;;              service "kmet-mcp" / account "oauth:<server>", payload =
-;;              pr-str of the entry map (compact — gnome-keyring's
-;;              GKeyFile backend corrupts multiline secrets, pi parity).
-;;   :auto    — default: keyring when a platform tool is available, else
-;;              the plaintext file (the documented Phase-1 tradeoff holds
-;;              exactly where the OS offers no keyring).
-
-(def ^:private storage-mode (atom nil))
-
-(defn configure-storage!
-  "Set the token-storage mode from the merged SETTINGS (:token-storage;
-   default :auto). The MCP_TOKEN_STORAGE env var wins when set (testing /
-   headless hosts). Call at init and after /mcp refresh."
-  [settings]
-  (let [env (System/getenv "MCP_TOKEN_STORAGE")
-        mode (cond
-               (and env (seq (str/trim env))) (keyword (str/trim env))
-               (contains? (or settings {}) :token-storage) (:token-storage settings)
-               :else :auto)]
-    (reset! storage-mode (if (contains? #{:auto :keyring :file} mode) mode :auto))))
+;; ─── Token store (kmet.libs.mcp.auth) ─────────────────────────────────────
+;; The :file / :keyring / :auto backends, their path/permission handling
+;; and logout live in the lib (mcp.md Phase 2). The extension keeps what is
+;; host policy — where the plaintext store file sits — plus the names
+;; core.clj and the validation scripts call.
 
 (defn store-path
   "The plaintext OAuth token store file (<agent-dir>/mcp-oauth.edn; the
@@ -94,258 +62,21 @@
   []
   (str (fs/path (config/agent-dir) "mcp-oauth.edn")))
 
-(defn- read-edn
-  [path]
-  (try
-    (when (fs/exists? path)
-      (let [raw (edn/read-string {:default (fn [_ _] nil)} (read-text path))]
-        (when (map? raw) raw)))
-    (catch Exception _ nil)))
+(defn configure-storage!
+  "Set the token-storage mode from the merged SETTINGS (:token-storage;
+   default :auto) and the host store path. The MCP_TOKEN_STORAGE env var
+   wins when set (testing / headless hosts). Call at init and after
+   /mcp refresh."
+  [settings]
+  (let [env (System/getenv "MCP_TOKEN_STORAGE")
+        mode (cond
+               (and env (seq (str/trim env))) (keyword (str/trim env))
+               (contains? (or settings {}) :token-storage) (:token-storage settings)
+               :else :auto)]
+    (mcp-auth/configure-storage! {:mode mode :path (store-path)})))
 
-(defn- write-file-0600
-  "Atomic write (temp + rename) with 0600 perms (best-effort — Windows has
-   no posix perms)."
-  [path content]
-  (let [tmp (str path ".tmp")]
-    (fs/create-dirs (fs/parent path))
-    (write-text tmp content)
-    (try (fs/set-posix-file-permissions tmp "rw-------") (catch Exception _ nil))
-    (fs/move tmp path {:replace-existing true})
-    nil))
-
-;; ─── :file backend ────────────────────────────────────────────────────────
-
-(defn- read-file-store
-  []
-  (or (read-edn (store-path)) {:servers {}}))
-
-(defn- write-file-store!
-  [store]
-  (write-file-0600 (store-path) (pr-str store)))
-
-;; ─── :keyring backend ─────────────────────────────────────────────────────
-
-(def ^:private keyring-service "kmet-mcp")
-
-(defn- account-for
-  [name]
-  (str "oauth:" name))
-
-(defn- keyring-tool
-  "The platform keyring tool as an argv vector, or nil when unavailable:
-   macOS security, Linux secret-tool, Windows PowerShell (Credential
-   Manager P/Invoke). Termux has none."
-  []
-  (cond
-    (System/getenv "TERMUX_VERSION") nil
-    (str/includes? (str/lower-case (System/getProperty "os.name" "")) "mac")
-    (if (fs/which "security") ["security"] nil)
-    (str/includes? (str/lower-case (System/getProperty "os.name" "")) "win")
-    (cond
-      (fs/which "powershell.exe") ["powershell.exe" "-NoProfile" "-NonInteractive" "-Command"]
-      (fs/which "pwsh") ["pwsh" "-NoProfile" "-NonInteractive" "-Command"]
-      :else nil)
-    :else (if (fs/which "secret-tool") ["secret-tool"] nil)))
-
-(defn keyring-available?
-  "True when the current platform has a keyring tool (the :auto backend
-   picks :keyring exactly then)."
-  []
-  (boolean (keyring-tool)))
-
-(defn storage-kind
-  "The effective storage backend (:file | :keyring) — for status text."
-  []
-  (let [mode (or @storage-mode :auto)]
-    (if (and (= mode :keyring) (not (keyring-available?)))
-      ;; configured keyring but no tool: report file with a warning marker
-      ;; (callers degrade — reads/writes fall back below)
-      :file
-      (if (= mode :auto)
-        (if (keyring-available?) :keyring :file)
-        mode))))
-
-(defn- run-tool
-  "Run a keyring tool argv; STDIN is the payload when given. Returns
-   {:ok true :out str} or {:ok false :error str}."
-  [argv & [stdin]]
-  (try
-    (let [p (apply proc/process argv
-                   {:in (if stdin :stream :discard)
-                    :out :stream :err :stream})]
-      (when stdin
-        (io/copy stdin (:in p))
-        (try (.close (:in p)) (catch Exception _ nil)))
-      (let [r (deref p 15000 nil)]
-        (if (nil? r)
-          {:ok false :error "keyring tool timed out"}
-          (let [out (or (some-> (:out r) slurp) "")
-                err (or (some-> (:err r) slurp) "")]
-            (if (zero? (:exit r))
-              {:ok true :out out}
-              {:ok false :error (str err " (exit " (:exit r) ")")})))))
-    (catch Exception e
-      {:ok false :error (ex-message e)})))
-
-(defn- shell-quote
-  "Single-quote for PowerShell argument passing (embedded quotes doubled)."
-  [s]
-  (str "'" (str/replace s "'" "''") "'"))
-
-(defn- read-edn-from-string
-  [s]
-  (try
-    (let [parsed (edn/read-string {:default (fn [_ _] nil)} s)]
-      (when (map? parsed) parsed))
-    (catch Exception _ nil)))
-
-(def ^:private windows-cred-script-cache (atom nil))
-
-(def ^:private windows-cred-body
-  ;; PowerShell Credential-Manager P/Invoke (CredWrite/CredRead/
-  ;; CredDelete). The script reads $op/$t/$p; missing read entries exit 0
-  ;; with no output (normal — nothing stored yet). Windows-only; untested
-  ;; on real Windows hosts (no way to run one here — recorded limitation).
-  (str "$ErrorActionPreference='Stop'\n"
-       "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;using System.Text;"
-       "public class KmetCred{"
-       "[StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)]"
-       "public struct CRED{public uint Flags;public uint Type;public IntPtr TargetName;"
-       "public IntPtr Comment;public long LastWritten;public uint BlobSize;public IntPtr Blob;"
-       "public uint Persist;public uint AttrCount;public IntPtr Attrs;public IntPtr Alias;"
-       "public IntPtr UserName;}"
-       "[DllImport(\"advapi32.dll\",SetLastError=true,CharSet=CharSet.Unicode)]"
-       "public static extern bool CredRead(string t,uint ty,uint f,out IntPtr c);"
-       "[DllImport(\"advapi32.dll\",SetLastError=true,CharSet=CharSet.Unicode)]"
-       "public static extern bool CredWrite(ref CRED c,uint f);"
-       "[DllImport(\"advapi32.dll\",SetLastError=true,CharSet=CharSet.Unicode)]"
-       "public static extern bool CredDelete(string t,uint ty,uint f);"
-       "[DllImport(\"advapi32.dll\")]public static extern void CredFree(IntPtr b);}'\n"
-       "if($op -eq 'read'){"
-       "$h=[IntPtr]::Zero;"
-       "if([KmetCred]::CredRead($t,1,0,[ref]$h)){"
-       "$c=[Runtime.InteropServices.Marshal]::PtrToStructure($h,[KmetCred+CRED]);"
-       "$n=[int]$c.BlobSize;"
-       "if($n -gt 0){$b=New-Object byte[] $n;[Runtime.InteropServices.Marshal]::Copy($c.Blob,$b,0,$n);"
-       "[Console]::Out.WriteLine([Text.Encoding]::UTF8.GetString($b))}"
-       "[Runtime.InteropServices.Marshal]::FreeCoTaskMem($c.TargetName);[KmetCred]::CredFree($h)}"
-       "}elseif($op -eq 'write'){"
-       "$c=New-Object KmetCred+CRED;$c.Type=1;$c.Persist=2;"
-       "$c.TargetName=[Runtime.InteropServices.Marshal]::StringToCoTaskMemUni($t);"
-       "$b=[Text.Encoding]::UTF8.GetBytes($p);$c.BlobSize=$b.Length;"
-       "$c.Blob=[Runtime.InteropServices.Marshal]::AllocCoTaskMem($b.Length);"
-       "[Runtime.InteropServices.Marshal]::Copy($b,0,$c.Blob,$b.Length);"
-       "if(-not [KmetCred]::CredWrite([ref]$c,0)){throw 'CredWrite failed'}"
-       "[Runtime.InteropServices.Marshal]::FreeCoTaskMem($c.TargetName);"
-       "[Runtime.InteropServices.Marshal]::FreeCoTaskMem($c.Blob)"
-       "}else{[KmetCred]::CredDelete($t,1,0)|Out-Null}"))
-
-(defn- windows-cred-script
-  "The full PowerShell -Command body for an operation (read/write/delete)
-   on TARGET with optional PAYLOAD (variables inlined — PowerShell -Command
-   does not pass $args reliably across versions). Cached base body."
-  [op target & [payload]]
-  (str "$op=" (shell-quote op) ";$t=" (shell-quote target)
-       ";$p=" (if payload (shell-quote payload) "$null") ";"
-       @windows-cred-script-cache))
-
-;; initialize the cached script body at load (top-level form, after both
-;; defs — sci evaluates in order)
-(reset! windows-cred-script-cache windows-cred-body)
-
-(defn- keyring-read
-  "The stored entry for NAME from the OS keyring, or nil. macOS/Linux print
-   the secret on stdout; Windows PowerShell prints the payload line."
-  [name]
-  (let [tool (keyring-tool)]
-    (cond
-      (nil? tool) nil
-      (= "security" (first tool))
-      (let [r (run-tool (conj tool "find-generic-password" "-a" (account-for name)
-                              "-s" keyring-service "-w"))]
-        (when (:ok r)
-          (let [secret (str/trim (:out r))]
-            (when (seq secret)
-              (read-edn-from-string secret)))))
-
-      (= "secret-tool" (first tool))
-      (let [r (run-tool (conj tool "lookup" "service" keyring-service
-                              "account" (account-for name)))]
-        (when (:ok r)
-          (let [secret (str/trim (:out r))]
-            (when (seq secret)
-              (read-edn-from-string secret)))))
-
-      :else
-      (let [r (run-tool (conj tool (windows-cred-script "read" (account-for name))))]
-        (when (:ok r)
-          (let [secret (str/trim (:out r))]
-            (when (seq secret)
-              (read-edn-from-string secret))))))))
-
-(defn- keyring-write!
-  "Store the ENTRY for NAME in the OS keyring. Returns true on success."
-  [name entry]
-  (let [tool (keyring-tool)
-        payload (pr-str entry)]
-    (cond
-      (nil? tool) false
-      (= "security" (first tool))
-      (:ok (run-tool (conj tool "add-generic-password" "-U" "-a" (account-for name)
-                           "-s" keyring-service "-w" payload)))
-
-      (= "secret-tool" (first tool))
-      (:ok (run-tool (conj tool "store" "--label=kmet-mcp" "service" keyring-service
-                           "account" (account-for name))
-                     payload))
-
-      :else
-      (:ok (run-tool (conj tool (windows-cred-script "write" (account-for name) payload)))))))
-
-(defn- keyring-clear!
-  "Delete the stored entry for NAME. Missing entries are not an error."
-  [name]
-  (let [tool (keyring-tool)]
-    (when tool
-      (cond
-        (= "security" (first tool))
-        (run-tool (conj tool "delete-generic-password" "-a" (account-for name)
-                        "-s" keyring-service))
-
-        (= "secret-tool" (first tool))
-        (run-tool (conj tool "clear" "service" keyring-service
-                        "account" (account-for name)))
-
-        :else
-        (run-tool (conj tool (windows-cred-script "delete" (account-for name)))))))
-  nil)
-
-;; ─── backend dispatch ─────────────────────────────────────────────────────
-
-(defn- keyring-mode?
-  []
-  (= :keyring (storage-kind)))
-
-(defn- server-entry
-  "The stored {:tokens .. :client-info ..} entry for a server, or nil."
-  [name]
-  (if (keyring-mode?)
-    (keyring-read name)
-    (get-in (read-file-store) [:servers name])))
-
-(defn- store-server!
-  [name entry]
-  (if (keyring-mode?)
-    (keyring-write! name entry)
-    (write-file-store! (assoc-in (read-file-store) [:servers name] entry))))
-
-(defn- clear-server!
-  [name]
-  (if (keyring-mode?)
-    (keyring-clear! name)
-    (let [store (read-file-store)]
-      (when (contains? (:servers store) name)
-        (write-file-store! (update store :servers dissoc name))))))
+(def server-entry mcp-auth/server-entry)
+(def store-server! mcp-auth/store-server!)
 
 (defn- token-expired?
   "True when the stored tokens are expired (60s skew, pi's 5-min window
@@ -364,8 +95,7 @@
    any cached machine-grant token or recorded 401 challenge."
   [name]
   (swap! machine-token-cache dissoc name)
-  (mcp-auth/clear-challenges! name)
-  (clear-server! name))
+  (mcp-auth/logout! name))
 
 ;; ─── Discovery (RFC 9728 protected resource + RFC 8414 / OIDC AS) ────────
 

@@ -1,10 +1,90 @@
 (ns kmet.libs.mcp.test-auth
   "Tests for the MCP authorization policy in kmet.libs.mcp.auth —
-   resource canonicalization, the WWW-Authenticate challenge record and
-   scope/resource selection. Store, flow and header provider follow in
-   the rest of Phase 2."
-  (:require [clojure.test :refer [deftest is testing]]
+   resource canonicalization, the WWW-Authenticate challenge record,
+   scope/resource selection and the credential store. The request-auth
+   header provider and the 2026 hardening follow in the rest of Phase 2."
+  (:require [babashka.fs :as fs]
+            [clojure.edn :as edn]
+            [clojure.test :refer [deftest is testing]]
             [kmet.libs.mcp.auth :as auth]))
+
+(defn- temp-dir []
+  (let [dir (str (fs/absolutize (str "target/test-mcp-auth-" (System/nanoTime))))]
+    (fs/create-dirs dir)
+    dir))
+
+(defn- reset-storage! []
+  (auth/configure-storage! {:mode :auto :path nil}))
+
+(deftest file-store-round-trip
+  (let [dir (temp-dir)
+        path (str (fs/path dir "mcp-oauth.edn"))]
+    (try
+      (auth/configure-storage! {:mode :file :path path})
+      (testing "an empty (or missing) store has no entry"
+        (is (nil? (auth/server-entry "srv"))))
+      (testing "store-server! persists and server-entry reads back"
+        (auth/store-server! "srv" {:tokens {:access "a" :refresh "r" :expires 42}
+                                   :client-info {:client-id "c"}})
+        (is (= {:tokens {:access "a" :refresh "r" :expires 42}
+                :client-info {:client-id "c"}}
+               (auth/server-entry "srv")))
+        (testing "the file is EDN on disk, per server"
+          (is (fs/exists? path))
+          (is (= "a" (get-in (edn/read-string (slurp path))
+                             [:servers "srv" :tokens :access])))))
+      (testing "entries are independent"
+        (auth/store-server! "other" {:tokens {:access "b"}})
+        (is (= "a" (get-in (auth/server-entry "srv") [:tokens :access])))
+        (is (= "b" (get-in (auth/server-entry "other") [:tokens :access]))))
+      (testing "logout! forgets the entry and its recorded challenge"
+        (auth/record-challenge! "srv" "Bearer scope=\"x\"")
+        (auth/logout! "srv")
+        (is (nil? (auth/server-entry "srv")))
+        (is (nil? (auth/challenge "srv")))
+        (is (some? (auth/server-entry "other"))))
+      (finally
+        (reset-storage!)
+        (fs/delete-tree dir)))))
+
+(deftest file-store-survives-unreadable-content
+  (let [dir (temp-dir)
+        path (str (fs/path dir "mcp-oauth.edn"))]
+    (try
+      (auth/configure-storage! {:mode :file :path path})
+      (spit path "not edn {")
+      (is (nil? (auth/server-entry "srv")))
+      (auth/store-server! "srv" {:tokens {:access "a"}})
+      (is (= "a" (get-in (auth/server-entry "srv") [:tokens :access])))
+      (finally
+        (reset-storage!)
+        (fs/delete-tree dir)))))
+
+(deftest file-store-without-a-path-throws
+  (try
+    (auth/configure-storage! {:mode :file :path nil})
+    (testing "reads degrade to an empty store with no path"
+      (is (nil? (auth/server-entry "srv"))))
+    (testing "writes fail with the structured unconfigured error"
+      (is (= :mcp-store-unconfigured
+             (try
+               (auth/store-server! "srv" {:tokens {}})
+               (catch Exception e (:type (ex-data e)))))))
+    (finally (reset-storage!))))
+
+(deftest storage-mode-selection
+  (try
+    (testing "an explicit :file mode always reports :file"
+      (auth/configure-storage! {:mode :file :path nil})
+      (is (= :file (auth/storage-kind))))
+    (testing "an unknown mode falls back to :auto"
+      (auth/configure-storage! {:mode :bogus})
+      (is (= (if (auth/keyring-available?) :keyring :file) (auth/storage-kind))))
+    (testing ":keyring without a platform tool degrades to :file"
+      (when-not (auth/keyring-available?)
+        (auth/configure-storage! {:mode :keyring :path nil})
+        (is (= :file (auth/storage-kind)))))
+    (finally (reset-storage!))))
 
 (deftest canonical-resource-uri-normalizes
   (testing "scheme and host are lowercased, path case is kept"

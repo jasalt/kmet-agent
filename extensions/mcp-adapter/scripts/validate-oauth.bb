@@ -390,6 +390,9 @@
   (let [{:keys [proc port] :as server} (spawn-server! fake-oauth)
         store-path (str (System/getProperty "user.dir") "/.mcp-oauth-test-" (System/nanoTime) ".edn")]
     (with-redefs [auth/store-path (constantly store-path)]
+      ;; force the file backend so the temp path is really used on hosts
+      ;; that have a keyring (unless MCP_TOKEN_STORAGE overrides the mode)
+      (auth/configure-storage! {:token-storage :file})
       (try
         ;; the configured :redirect-uri must be the FIRST flow — the
         ;; callback server binds once (port + path), later flows reuse it

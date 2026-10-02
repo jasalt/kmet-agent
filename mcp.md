@@ -369,8 +369,17 @@ baseline):
   extension keeps `def` aliases for the two names `validate-oauth.bb`
   calls (`canonical-resource-uri`, `parse-www-authenticate`) and goes
   straight to the lib everywhere else.
-- 2.2 the store: `:file`/`:keyring`/`:auto` backends, path/account logic,
-  logout.
+- **2.2 the store — landed**: `configure-storage!` (host-supplied
+  `:path`), `storage-kind`/`keyring-available?`, the `:file` backend
+  (atomic write, 0600) and the `:keyring` backend (macOS `security`,
+  Linux `secret-tool`, Windows Credential Manager P/Invoke; `:auto`
+  dispatch), plus `server-entry`/`store-server!`/`logout!` — with store
+  tests in `test/kmet/libs/mcp/test_auth.clj`. The extension keeps
+  `store-path` (agent-dir policy), the `MCP_TOKEN_STORAGE` env override,
+  and the `logout!` wrapper that also drops the in-memory machine-token
+  cache; `def` aliases keep `server-entry`/`store-server!` callable from
+  `validate-oauth.bb`, which now configures `:file` explicitly with the
+  redefined `store-path` (a temp file, never the real keyring).
 - 2.3 token lifecycle (tokens→store, expiry, bearer, machine grants) and
   `make-auth-fns` — the transport's `:auth-headers`/`:on-401` seam.
 - 2.4 flow split: lib step functions; the extension keeps `run-flow!`'s
@@ -443,6 +452,7 @@ era-neutral seam and Phase 2's auth plumbing.
 - [x] 1.5 full gates + extension scripts + lsp validation
 - [x] 1.6 stdio on `kmet.libs.jsonrpc` (transport-owned ids, `:conn-ref` hand-off)
 - [x] 2.1 auth policy in the lib (challenge/resource/scope + tests)
-- [ ] 2.2 store, token lifecycle, `make-auth-fns`, flow split, hardening
+- [x] 2.2 store: file/keyring/auto backends + logout in the lib
+- [ ] 2.3-2.5 token lifecycle, `make-auth-fns`, flow split, hardening
 - [ ] 3 optional hygiene
 - [ ] 4 2026-07-28 protocol work (separate plan)
