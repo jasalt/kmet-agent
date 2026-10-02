@@ -8,7 +8,8 @@
   (:require [babashka.fs :as fs]
             [clojure.edn :as edn]
             [clojure.test :refer [deftest is testing]]
-            [kmet.libs.mcp.auth :as auth]))
+            [kmet.libs.mcp.auth :as auth]
+            [kmet.libs.oauth :as oauth]))
 
 (defn- temp-dir []
   (let [dir (str (fs/absolutize (str "target/test-mcp-auth-" (System/nanoTime))))]
@@ -166,7 +167,54 @@
   (is (= :client-credentials (auth/grant-of {:oauth {:grant :client-credentials}})))
   (is (auth/machine-grant? {:oauth {:grant :jwt-bearer}}))
   (is (not (auth/machine-grant? {:oauth {:grant :authorization-code}})))
-  (is (not (auth/machine-grant? {}))))
+  (is (not (auth/machine-grant? {})))
+  (is (not (auth/machine-token-cached? "nope"))))
+
+(deftest discover-meta-prefers-the-resource-document
+  (let [prm {:authorization_servers ["https://as.example.com"]}]
+    (testing "the RFC 9728 document names the AS and rides along under ::prm"
+      (with-redefs [oauth/protected-resource-metadata (fn [_url _opts] prm)
+                    oauth/discover-authorization-server
+                    (fn [url _opts]
+                      (when (= url "https://as.example.com")
+                        {:issuer url
+                         :token_endpoint (str url "/token")
+                         :authorization_endpoint (str url "/authorize")}))]
+        (let [m (auth/discover-meta "srv" {:url "https://mcp.example.com/mcp" :oauth {}})]
+          (is (= "https://as.example.com" (:issuer m)))
+          (is (= "https://as.example.com/token" (:token_endpoint m)))
+          (is (= prm (::auth/prm m))))))
+    (testing "an issuer that does not match the document URL is rejected"
+      (with-redefs [oauth/protected-resource-metadata (fn [_url _opts] prm)
+                    oauth/discover-authorization-server
+                    (fn [url _opts]
+                      {:issuer (str url ".evil.example")
+                       :token_endpoint "https://evil.example/token"})]
+        (is (= :oauth-issuer-mismatch
+               (try (auth/discover-meta "srv" {:url "https://mcp.example.com/mcp" :oauth {}})
+                    nil
+                    (catch Exception e (:type (ex-data e))))))
+        (testing ":skip-issuer-metadata-validation accepts it"
+          (is (some? (auth/discover-meta
+                      "srv" {:url "https://mcp.example.com/mcp"
+                             :oauth {:skip-issuer-metadata-validation true}}))))))))
+
+(deftest discover-meta-token-endpoint-short-circuits
+  (with-redefs [oauth/protected-resource-metadata
+                (fn [_url _opts] (throw (ex-info "discovery should not run" {})))
+                oauth/discover-authorization-server
+                (fn [_url _opts] (throw (ex-info "discovery should not run" {})))]
+    (let [m (auth/discover-meta "srv" {:url "https://mcp.example.com/mcp"
+                                       :oauth {:token-endpoint "https://as.example.com/token"}})]
+      (is (= "https://as.example.com/token" (:token_endpoint m)))
+      (is (nil? (::auth/prm m)) "no protected-resource document was fetched"))))
+
+(deftest required-endpoint-reports-the-missing-key
+  (is (= "t" (auth/required-endpoint {:token_endpoint "t"} :token_endpoint "srv")))
+  (is (= :oauth-no-endpoint
+         (try (auth/required-endpoint {} :token_endpoint "srv")
+              nil
+              (catch Exception e (:type (ex-data e)))))))
 
 (deftest make-auth-fns-per-auth-kind
   (let [dir (temp-dir)

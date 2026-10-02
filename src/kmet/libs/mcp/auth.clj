@@ -15,7 +15,7 @@
    Hosts: the namespace is loaded by the extension (loader [:jolt :sci]),
    so it stays plain maps and functions — no protocols or records — and
    uses the same host surface as the other libs (System/getenv and
-   System/getProperty, babashka.fs, babashka.process)."
+   System/getProperty, java.net.URI, babashka.fs, babashka.process)."
   (:require [babashka.fs :as fs]
             [babashka.process :as proc]
             [clojure.edn :as edn]
@@ -593,7 +593,8 @@
 
 (defn token-expired?
   "True when the stored tokens are expired (60s skew, pi's 5-min window
-   reduced for MCP's shorter-lived tokens)."
+   reduced for MCP's shorter-lived tokens). An entry without an expiry is
+   not expired."
   [entry]
   (let [expires (get-in entry [:tokens :expires])]
     (and (number? expires)
@@ -767,7 +768,8 @@
   "Auth wiring for a server's HTTP conn (§7.8.5): :auth-headers — called
    per request (pre-emptive refresh on expiry); :on-401 — refresh + fresh
    headers, retried once. Static config :headers are merged in for every
-   HTTP server. Returns {} when the server has no auth configured."
+   HTTP server. Returns nil when the server has no auth and no static
+   :headers."
   [name definition]
   (let [config-headers (:headers definition)
         merge-headers (fn [auth]
