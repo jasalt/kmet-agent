@@ -8,7 +8,7 @@ transport from http-client v0.0.15), packaging (`jolt dist`), and extensions
 **only what is still open**; finished work lives in the code, and upstream
 issues filed or tracked live in `jolt-bugs.md` and are not repeated here.
 
-Status checked against `jolt v0.8.15-77-ga1f6b669` (2026-10-02). The
+Status checked against `jolt v0.8.15-101-g748ddc29` (2026-10-02). The
 declared floor is the latest tagged release (v0.8.15, root `deps.edn`) —
 kmet targets the newest Jolt release; this status tracks a newer dev build.
 
@@ -24,9 +24,9 @@ The git pins track their upstream releases (checked 2026-10-02):
 - `io.github.jolt-lang/http-client` — `v0.0.17` (`77d7e310`): interrupted
   connects are retried and TLS streams/contexts released once a connection
   fails (PRs #30, #31). Its stale `:jolt/provides` claim on
-  `java.util.concurrent.CompletableFuture` is filed upstream
-  ([http-client#32](https://github.com/jolt-lang/http-client/issues/32));
-  jolt-bugs.md carries the pin's move condition.
+  `java.util.concurrent.CompletableFuture` is fixed upstream (PR #34), but
+  the fix floors the library at jolt v0.8.16, which is not tagged yet; the
+  pin stays until that release (jolt-bugs.md carries the move condition).
 
 ## Tests
 

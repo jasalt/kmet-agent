@@ -14,7 +14,12 @@
 ;; core get. A clean compile (and bb) gives (f) => 1. After a partial load +
 ;; recover, (f) => [:shadow {:a 1} :a] and the cache stays poisoned.
 ;;
-;; Jolt: v0.8.15-77-ga1f6b669. Run: bb scripts/repro_jolt_aot_shadow.bb
+;; Reproduces through v0.8.15 (verified v0.8.15-77-ga1f6b669). Fixed on jolt
+;; main in 0bbc15a0 (PR #1220); on v0.8.15-101-g748ddc29 the clean compile
+;; is correct and no truncation tail reproduces, so this exits 1 ("not
+;; reproduced"). Kept as the acceptance check for removing kmet's
+;; clojure.core/get workaround once a tagged release carries the fix
+;; (jolt-bugs.md). Run: bb scripts/repro_jolt_aot_shadow.bb
 
 (require '[babashka.fs :as fs]
          '[babashka.process :as proc]
@@ -50,6 +55,7 @@
 
 (defn wait-for-so [] (wait-for #(str/ends-with? (str %) ".so")))
 
+(when (fs/exists? work) (fs/delete-tree work))
 (fs/create-dirs (fs/path work "src"))
 (fs/spit (fs/path work "deps.edn") "{:paths [\"src\"]}\n")
 (fs/spit (fs/path work "src/shadow_ns.clj")

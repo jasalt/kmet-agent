@@ -747,6 +747,8 @@
 ;; is interned (a :reload, or loader.ss's in-process AOT recovery recompile)
 ;; every form in the namespace picks it up — even ones textually above this
 ;; defn. See env-first and client-for (scripts/repro_jolt_aot_shadow.bb).
+;; Fixed on jolt main (0bbc15a0, PR #1220) but not in v0.8.15: keep the
+;; qualifications until a tagged release carries the fix (jolt-bugs.md).
 (defn get
   "GET url (see request for OPTS)."
   [url opts]
