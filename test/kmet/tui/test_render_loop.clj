@@ -203,6 +203,32 @@
         (finally
           (stop-loop tui))))))
 
+(deftest ^:slow terminal-release-parks-the-cursor-below-the-frame
+  (testing "a final stop and a suspend both end with a line break below the
+            last rendered line (pi: main-screen beforeTerminalStop runs on
+            every ui.stop()), so the shell's prompt and job-control message
+            land below the footer instead of overwriting it"
+    (doseq [[label release] [["stop" core/tui-stop]
+                             ["suspend" core/tui-suspend!]]]
+      (let [vt (make-virtual-terminal)
+            tui (core/create-tui (:terminal vt))]
+        (try
+          (core/tui-add-child tui (test-component (atom ["alpha" "beta"])))
+          (start-loop tui)
+          (wait-for-frames (:writes vt) 1 5000)
+          (let [loop-fut @(:render-loop tui)
+                before (count @(:writes vt))]
+            (release tui)
+            (t/is (not= ::timeout (deref loop-fut 5000 ::timeout))
+                  (str label ": the render loop released the terminal"))
+            (let [after (subvec @(:writes vt) before)]
+              (t/is (some #(= "\r\n" %) after)
+                    (str label ": ends the frame with a line break"))
+              (t/is (= "\u001b[?25h" (peek @(:writes vt)))
+                    (str label ": the cursor is shown after the line break"))))
+          (finally
+            (stop-loop tui)))))))
+
 (deftest ^:slow emitted-lines-carry-segment-reset
   (testing "every emitted non-image content line ends with SEGMENT_RESET
             (pi: applyLineResets) — applied at emit time, on both the full-redraw

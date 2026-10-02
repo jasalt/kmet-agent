@@ -2780,19 +2780,21 @@
         (if @(:stopped? tui)
           (terminal/drain-input! started)
           (terminal/disable-kitty-protocol! started))
-        ;; Pi: on final stop position the cursor at end of content so the
-        ;; shell prompt appears below and the user can scroll up to review
-        ;; the session. On suspend the position is left untouched for the
-        ;; external program that takes over the terminal.
-        (when @(:stopped? tui)
-          (let [prev-lines @(:previous-lines tui)]
-            (when (seq prev-lines)
-              (let [target-row (count prev-lines)  ;; row past last content line
-                    row-delta (- target-row @hardware-cursor-row)]
-                (terminal/write-output started " ")
-                (when (pos? row-delta)
-                  (terminal/write-output started (str "\u001b[" row-delta "B")))
-                (terminal/write-output started "\r\n")))))
+        ;; Pi (main-screen beforeTerminalStop): park the cursor one line below
+        ;; the last rendered line before releasing the terminal, so whatever
+        ;; takes over next — the shell after a quit, a SIGTSTP suspend
+        ;; returning to job control, or the external editor — starts below
+        ;; the frame instead of overwriting its last line. pi runs this on
+        ;; every ui.stop(); running it only on final stop let the shell's
+        ;; "Stopped" job message mix into the footer after ctrl+z.
+        (let [prev-lines @(:previous-lines tui)]
+          (when (seq prev-lines)
+            (let [target-row (count prev-lines)  ;; row past last content line
+                  row-delta (- target-row @hardware-cursor-row)]
+              (terminal/write-output started " ")
+              (when (pos? row-delta)
+                (terminal/write-output started (str "\u001b[" row-delta "B")))
+              (terminal/write-output started "\r\n"))))
         (terminal/show-cursor! started)
         (terminal/stop! started)))))
 (defn tui-start
