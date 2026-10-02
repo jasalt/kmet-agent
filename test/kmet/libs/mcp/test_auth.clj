@@ -147,6 +147,11 @@
         (auth/store-tokens! "bare" {:access "b" :expires-in 10})
         (is (nil? (get-in (auth/server-entry "bare") [:tokens :refresh])))
         (is (nil? (get-in (auth/server-entry "bare") [:tokens :scope]))))
+      (testing "a response without :expires-in gets no expiry (used until a 401)"
+        (auth/store-tokens! "noexp" {:access "n"})
+        (is (= "n" (get-in (auth/server-entry "noexp") [:tokens :access])))
+        (is (nil? (get-in (auth/server-entry "noexp") [:tokens :expires])))
+        (is (not (auth/token-expired? (auth/server-entry "noexp")))))
       (finally
         (reset-storage!)
         (fs/delete-tree dir)))))
@@ -233,6 +238,11 @@
                                                    :auth :bearer :bearer-token "t"
                                                    :headers {"X-Api" "1"}))]
           (is (= {"X-Api" "1" "Authorization" "Bearer t"} ((:auth-headers fns))))))
+      (testing ":bearer without a token fails instead of sending an empty header"
+        (let [fns (auth/make-auth-fns "srv" {:auth :bearer})]
+          (is (= :mcp-auth-required
+                 (try ((:auth-headers fns)) nil
+                      (catch Exception e (:type (ex-data e))))))))
       (testing ":oauth without a stored entry → auth required"
         (let [fns (auth/make-auth-fns "srv" oauth-definition)]
           (is (= :mcp-auth-required
@@ -269,6 +279,39 @@
         (auth/logout! "g")
         (reset-storage!)
         (fs/delete-tree dir)))))
+
+(deftest machine-tokens-are-cached-per-connection-fingerprint
+  ;; the real fetch-machine-token! path with only the network leaves
+  ;; redefined: discovery off the server URL, tokens from a stub
+  (let [calls (atom 0)
+        definition {:auth :oauth
+                    :url "https://a.example.com/mcp"
+                    :oauth {:grant :client-credentials
+                            :client-id "c" :client-secret "s"}}
+        other (assoc definition :url "https://b.example.com/mcp")]
+    (try
+      (with-redefs [oauth/protected-resource-metadata (fn [_url _opts] nil)
+                    oauth/discover-authorization-server
+                    (fn [url _opts] {:token_endpoint (str url "/token")})
+                    oauth/client-credentials-token
+                    (fn [_endpoint _opts]
+                      (swap! calls inc)
+                      {:access (str "token-" @calls) :expires-in 3600})]
+        (let [headers (fn [d] ((:auth-headers (auth/make-auth-fns "fp" d))))]
+          (is (= "Bearer token-1" (get (headers definition) "Authorization")))
+          (is (auth/machine-token-cached? "fp"))
+          (testing "the same connection reuses the cached token"
+            (is (= "Bearer token-1" (get (headers definition) "Authorization")))
+            (is (= 1 @calls)))
+          (testing "a changed :url re-fetches instead of reusing the old token"
+            (is (= "Bearer token-2" (get (headers other) "Authorization")))
+            (is (= 2 @calls)))
+          (testing "the original connection's token is still cached under its own key"
+            (is (= "Bearer token-1" (get (headers definition) "Authorization")))
+            (is (= 2 @calls)))))
+      (finally
+        (auth/clear-machine-tokens! "fp")
+        (auth/clear-challenges! "fp")))))
 
 (deftest canonical-resource-uri-normalizes
   (testing "scheme and host are lowercased, path case is kept"

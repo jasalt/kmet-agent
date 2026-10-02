@@ -396,6 +396,12 @@ baseline):
   `def` aliases for the script surface (`make-auth-fns`, `discover-meta`,
   `machine-token-cached?`, `logout!`); the script's raw
   `machine-token-cache` resolution became `machine-token-cached?`.
+  Hardening on top: the machine cache is keyed by server + connection
+  fingerprint (`:url`/`:oauth`) so a config edit re-fetches instead of
+  reusing a token minted for the old target; a token response without
+  `expires_in` is kept without an expiry (used until a 401); and
+  `:auth :bearer` with no token throws instead of sending
+  `Authorization: Bearer `.
 - 2.4 flow split: lib step functions; the extension keeps `run-flow!`'s
   interaction map and the status text.
 - 2.5 2026 hardening: issuer-keyed store + `mcp-oauth.edn` read-side

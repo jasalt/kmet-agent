@@ -577,10 +577,14 @@
 
 (defn- tokens->store
   "Normalize a lib token map {:access :refresh :expires-in :scope} into the
-   store shape {:access .. :refresh .. :expires ms :scope ..}."
+   store shape {:access .. :refresh .. :expires ms :scope ..}. A response
+   without :expires-in (RFC 6749 makes it RECOMMENDED, not required) gets
+   no :expires — the token is used until the server rejects it and the 401
+   path refreshes."
   [tokens]
-  (cond-> {:access (:access tokens)
-           :expires (+ (System/currentTimeMillis) (* 1000 (:expires-in tokens)))}
+  (cond-> {:access (:access tokens)}
+    (number? (:expires-in tokens))
+    (assoc :expires (+ (System/currentTimeMillis) (* 1000 (:expires-in tokens))))
     (:refresh tokens) (assoc :refresh (:refresh tokens))
     (:scope tokens) (assoc :scope (:scope tokens))))
 
@@ -614,6 +618,12 @@
                 name " to log in.")
            {:type :mcp-auth-required}))
 
+(defn- bearer-required-error
+  [name]
+  (ex-info (str "MCP auth failed: " name " has :auth :bearer but no bearer token — "
+                "set :bearer-token or :bearer-token-env")
+           {:type :mcp-auth-required}))
+
 (defn- oauth-bearer-header
   [tokens]
   {"Authorization" (str "Bearer " (:access tokens))})
@@ -627,8 +637,17 @@
 ;; interactive grants.
 
 ;; in-memory cache for machine-grant tokens (client-credentials /
-;; jwt-bearer — §7.8.6); defined before logout! below
+;; jwt-bearer — §7.8.6): {server-name {connection-fingerprint entry}} so a
+;; config edit re-fetches instead of reusing a token minted for the old
+;; target; defined before logout! below
 (defonce ^:private machine-token-cache (atom {}))
+
+(defn- machine-cache-key
+  "The cache path for a machine token: the server name plus a fingerprint
+   of the connection-defining config (:url and :oauth) — editing either
+   re-fetches rather than reusing a token minted for the old target."
+  [name definition]
+  [name (select-keys definition [:url :oauth])])
 
 (defn clear-machine-tokens!
   "Forget cached machine-grant tokens; with no argument every server
@@ -691,23 +710,24 @@
                      :scope scope
                      :resource resource})))
         stored (tokens->store tokens)]
-    (swap! machine-token-cache assoc name stored)
+    (swap! machine-token-cache assoc-in (machine-cache-key name definition) stored)
     stored))
 
 (defn machine-token-cached?
-  "True when a machine-grant token is cached in memory for NAME (the
-   401 retry path re-fetches regardless)."
+  "True when any machine-grant token is cached in memory for NAME (the 401
+   retry path re-fetches regardless)."
   [name]
-  (some? (get @machine-token-cache name)))
+  (boolean (seq (get @machine-token-cache name))))
 
 (defn- machine-token-header
   "Authorization header for a machine-grant server: the cached token, or
    a fresh fetch when missing/expired. FORCE skips the cache — the 401
    retry path must not resend a rejected token."
   [name definition force]
-  (let [entry (get @machine-token-cache name)
-        expired? (and entry (<= (:expires entry)
-                                (+ (System/currentTimeMillis) 60000)))]
+  (let [entry (get-in @machine-token-cache (machine-cache-key name definition))
+        expired? (and entry
+                      (number? (:expires entry))
+                      (<= (:expires entry) (+ (System/currentTimeMillis) 60000)))]
     (if (and entry (not force) (not expired?))
       (oauth-bearer-header entry)
       (oauth-bearer-header (fetch-machine-token! name definition)))))
@@ -789,8 +809,11 @@
                    (merge-headers (oauth-header-after-401 name definition)))})
 
       (= :bearer (:auth definition))
-      {:auth-headers (fn [] (merge-headers (oauth-bearer-header
-                                            {:access (or (bearer-token definition) "")})))}
+      {:auth-headers (fn []
+                       (let [token (bearer-token definition)]
+                         (if (str/blank? token)
+                           (throw (bearer-required-error name))
+                           (merge-headers (oauth-bearer-header {:access token})))))}
 
       :else
       (when (seq config-headers)
