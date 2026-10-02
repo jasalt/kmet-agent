@@ -143,6 +143,7 @@ active session's project.
 | `Ctrl+T` | Toggle thinking blocks |
 | `Ctrl+O` | Cycle tool display — collapsed / expanded / quiet |
 | `Ctrl+G` | Open the external editor |
+| `Ctrl+Z` | Suspend to background — `fg` resumes (Unix only) |
 | `Alt+Enter` / `Alt+Up` | Queue a follow-up message / restore queued messages |
 | Mouse wheel / terminal scroll | Browse history — the transcript lives in the terminal's own scrollback |
 

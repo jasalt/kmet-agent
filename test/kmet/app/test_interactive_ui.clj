@@ -662,6 +662,7 @@
       (let [ed (editor/make-editor)
             ch (chat-history/make-chat-history)]
         ;; wire one app action; app.suspend / app.message.copy stay unwired
+        ;; on this bare editor (the interactive layout installs app.suspend)
         (editor/editor-set-on-action! ed "app.tools.expand" (fn [] nil))
         ((:handler hotkeys) {:chat-history ch :editor ed} "")
         (let [msg (last @(:messages-atom ch))
@@ -684,7 +685,7 @@
         (t/is (wired? "tui.editor.cursorUp") "TUI ids are the editor's own")
         (t/is (wired? "app.tools.expand") "installed on the editor")
         (t/is (wired? "app.quit") "the global quit listener owns it")
-        (t/is (not (wired? "app.suspend")) "declared, never installed")
+        (t/is (not (wired? "app.suspend")) "not installed on this bare editor")
         (t/is (not (wired? "app.message.copy")) "tree-selector-only in kmet"))
       (testing "no editor: only the global-listener action survives"
         (let [wired? ((var builtins/make-hotkey-wired?) nil)]

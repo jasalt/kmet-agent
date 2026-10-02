@@ -41,6 +41,7 @@
             [kmet.app.ui.pending-messages :as pending-messages]
             [kmet.app.ui.status-indicator :as status-indicator]
             [kmet.app.ui.subs :as subs]
+            [kmet.app.ui.suspend :refer [handle-suspend]]
             [kmet.app.ui.tool-execution :as tool-execution]
             [kmet.app.context :as context]
             [kmet.modes.interactive.commands :as builtins]
@@ -800,6 +801,10 @@
                                     (fn [] (turn/handle-cancel cs)))
       (editor/editor-set-on-action! ed "app.exit"
                                     (fn [] (tui/tui-stop t)))
+      ;; pi: handleCtrlZ — hand the terminal back, stop the process group
+      ;; (SIGTSTP), and restart the TUI when the shell resumes us (SIGCONT)
+      (editor/editor-set-on-action! ed "app.suspend"
+                                    (fn [] (handle-suspend cs)))
       ;; Force a clearing full redraw on demand — the escape hatch for a
       ;; corrupted or stale screen/scrollback, and the same heuristic rebuild
       ;; the suspend/resume path uses (tui-request-render with force).

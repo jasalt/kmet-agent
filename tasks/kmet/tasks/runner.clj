@@ -181,6 +181,7 @@
     kmet.app.ui.test-bash-execution
     kmet.app.ui.test-dialogs
     kmet.app.ui.test-external-editor
+    kmet.app.ui.test-suspend
     kmet.app.ui.test-login-dialog
     kmet.app.ui.test-footer
     kmet.app.ui.test-footer-data-provider

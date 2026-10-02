@@ -311,8 +311,8 @@
    (editor-set-on-action! — read live, so the predicate cannot drift from
    the wiring) or a global input listener owns the id (app.quit, see
    turn/global-quit-listener). /hotkeys shows wired bindings only: a declared
-   pi-parity id whose action was never installed (app.suspend,
-   app.message.copy in the main editor) stays out."
+   pi-parity id whose action was never installed (app.message.copy in the
+   main editor) stays out."
   [cs]
   (let [installed (into #{"app.quit"}
                         (when-let [ed (:editor cs)]

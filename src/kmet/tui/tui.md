@@ -1022,7 +1022,8 @@ Consequences:
     checks `app.models.toggleProvider` (ctrl+p, pi) before navigation.
   - kmet-only ids (pi has the action without a binding, or the action
     itself): `tui.editor.redo` (ctrl+z; pi's undo is one-way, and in the app
-    `app.suspend` still owns ctrl+z — app actions dispatch first),
+    `app.suspend` owns ctrl+z — app actions dispatch first, and the
+    interactive layout installs suspend as a SIGTSTP stop),
     `tui.editor.killLine` (ctrl+w, the whole-line kill — the editor tries it
     before `deleteWordBackward`, which also claims ctrl+w from pi and takes
     over if the user moves killLine away), `tui.select.first`/`last`

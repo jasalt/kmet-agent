@@ -1,7 +1,8 @@
 (ns kmet.libs.process
-  "Process tree management: collect descendants, kill a process tree, and
-   a pid registry for cleanup on shutdown. No project dependencies —
-   mirrors the tree-kill npm package / pkill -P."
+  "Process tree management: collect descendants, kill a process tree,
+   suspend the process group for shell job control, and a pid registry for
+   cleanup on shutdown. No project dependencies — mirrors the tree-kill
+   npm package / pkill -P."
   (:require [clojure.string :as str]
             [babashka.process :as proc]))
 
@@ -93,6 +94,23 @@
   (try
     (-> p :proc .pid)
     (catch Exception _ nil)))
+
+(defn suspend-to-background!
+  "Stop this process group with SIGTSTP (the job-control stop Ctrl+Z means
+   in a shell) and block the calling thread until the shell resumes it —
+   fg/bg send SIGCONT to the whole group, which also releases the `kill`
+   child that delivered the signal. Returns true when the stop was
+   requested, false on Windows (no job-control suspension; callers report
+   that instead). The caller must hand the terminal back before calling
+   (tui-suspend!) and reclaim it after the return (tui-resume!); the stop
+   pauses every thread. pid 0 signals the caller's process group, so a
+   running child (e.g. a bash tool) stops and resumes with kmet."
+  []
+  (if windows-os?
+    false
+    (do
+      @(proc/process ["kill" "-s" "TSTP" "0"] {:out :discard :err :discard})
+      true)))
 
 ;; ─── Pid registry ──────────────────────────────────────────────────────────
 ;; Processes spawned by the app, killed in bulk on shutdown.

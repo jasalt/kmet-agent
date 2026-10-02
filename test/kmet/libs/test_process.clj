@@ -76,3 +76,18 @@
         (when-let [p @spawned]
           (try (proc/destroy-tree p) (catch Exception _ nil)))
         (try (fs/delete-tree dir) (catch Exception _ nil))))))
+
+(t/deftest suspend-to-background-signals-the-caller-process-group
+  (let [spawned (atom nil)]
+    (with-redefs [proc/process (fn [argv opts]
+                                 (reset! spawned [argv opts])
+                                 (delay {:exit 0}))
+                  process/windows-os? false]
+      (t/is (true? (process/suspend-to-background!)))
+      (t/is (= ["kill" "-s" "TSTP" "0"] (first @spawned))
+            "pid 0 targets the job's process group, so children stop too")
+      (t/is (= {:out :discard :err :discard} (second @spawned))))
+    (with-redefs [proc/process (fn [& _] (throw (ex-info "must not spawn" {})))
+                  process/windows-os? true]
+      (t/is (false? (process/suspend-to-background!))
+            "Windows has no job-control stop"))))
