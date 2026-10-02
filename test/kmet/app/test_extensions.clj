@@ -310,26 +310,21 @@
         (t/is (= "embed:extensions/ext-dir" (:native (:artifact resolved))))
         (t/is (= :resource-dir (:kind resolved)))))))
 
-(t/deftest test-resource-dir-native-capability-selects-jolt
+(t/deftest test-resource-dir-native-selects-jolt
   (if (host/jolt?)
     (with-extension-resources
       (fn []
         (let [resolved (@#'ext-context/resolve-extension-descriptor
                         {:name "ext-dir" :kind :resource-dir
                          :prefix "extensions/ext-dir" :path "extensions/ext-dir"
-                         :native "embed:extensions/ext-dir" :bundled? true})
-              probe (requiring-resolve 'kmet.app.extensions.context/embedded-roots?)]
-          (with-redefs-fn {probe (constantly true)}
-            (fn []
-              (t/is (= :jolt (@#'ext-context/forced-loader-kind resolved [:sci :jolt])))
-              (t/is (= :sci (@#'ext-context/forced-loader-kind resolved [:sci]))
-                    "a sci-only bundled directory keeps its required fallback")))
-          (with-redefs-fn {probe (constantly false)}
-            #(t/is (= :sci (@#'ext-context/forced-loader-kind resolved [:sci :jolt])))))))
+                         :native "embed:extensions/ext-dir" :bundled? true})]
+          (t/is (= :jolt (@#'ext-context/forced-loader-kind resolved [:sci :jolt])))
+          (t/is (= :sci (@#'ext-context/forced-loader-kind resolved [:sci]))
+                "a sci-only bundled directory keeps its required fallback"))))
     (t/is true "skipped: embedded loader roots are Jolt-only")))
 
 (t/deftest test-load-resource-file-descriptor
-  ;; without a native target (the Babashka/older-Jolt shape), a bundled
+  ;; without a native target (the Babashka shape), a bundled
   ;; single file stays SCI; its extension identity is the file name (what a
   ;; user's own copy carries)
   (extensions/clear-extensions!)
@@ -357,13 +352,11 @@
                          :path "extensions/ext-single/hello_ext.clj"
                          :native "extensions/ext-single/hello_ext.clj"
                          :bundled? true})
-              artifact (:artifact resolved)
-              probe (requiring-resolve 'kmet.app.extensions.context/embedded-roots?)]
+              artifact (:artifact resolved)]
           (t/is (= 'hello-ext (:entry-ns resolved)))
           (t/is (= 'hello-ext (:entry-ns artifact)))
           (t/is (= (:path resolved) (:path artifact)))
-          (with-redefs-fn {probe (constantly true)}
-            #(t/is (= :jolt (@#'ext-context/forced-loader-kind resolved [:sci :jolt])))))))
+          (t/is (= :jolt (@#'ext-context/forced-loader-kind resolved [:sci :jolt]))))))
     (t/is true "skipped: embedded loader roots are Jolt-only")))
 
 (t/deftest test-resource-dir-deps-lookup

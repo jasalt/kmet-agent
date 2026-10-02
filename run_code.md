@@ -335,9 +335,9 @@ and a policy only covers code that goes through it.
   yet) — prototyped as `jolt.loader/eval-in` in the jolt checkout on branch
   `loader-eval-in-context` (`6c032c0d`, loaderconf cases 38–39); **landed
   upstream** as `a95c0eb5` (PR #1181, 2026-09-29) plus the read-order follow-up
-  `24cb1312` — one day after the v0.8.14 tag, so no release carries it yet and
-  the capability probe `(resolve 'jolt.loader/eval-in)` is the floor (the
-  `embedded-root?` precedent).
+  `24cb1312` — merged before the v0.8.15 tag, which carries `eval-in`, and
+  kmet's floor is the latest release, so no capability probe is needed (the
+  `embedded-root?` precedent, now retired).
 - **What a native path would still cost.** `eval-in` answers the wrapping
   question (a source string evaluated in the context, form by form, last-form
   value) and `run-interruptible` (item 1) answers the abort half, so what

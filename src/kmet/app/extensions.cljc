@@ -1011,10 +1011,9 @@
    load-extension!: in a source checkout the descriptor resolves to the
    real extensions/ path and loads exactly as load-extension! would; in a
    built artifact the files come from the extensions/ resource prefix. On
-   Jolt with embedded loader roots, directory descriptors use their native
-   `embed:<prefix>` root and single-file descriptors map their namespace to
-   the exact embedded key; older Jolt releases use SCI (see
-   forced-loader-kind)."
+   Jolt, directory descriptors use their native `embed:<prefix>` root and
+   single-file descriptors map their namespace to the exact embedded key
+   (embedded roots are part of the Jolt floor; see forced-loader-kind)."
   [descriptor]
   (let [path (:path descriptor)]
     (try

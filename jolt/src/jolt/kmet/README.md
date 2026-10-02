@@ -34,13 +34,14 @@ no provisions.
 
 ## Bundled-extension loader floor
 
-kmet's bundled **directory** extensions use Jolt's native loader over
-`embed:<prefix>` roots when the runtime exposes
-`jolt.loader/embedded-root?`; bundled single-file resources map their
-namespace directly to the exact embedded key. The version floor is therefore
-the first Jolt release carrying that API; until it is tagged, the capability
-probe is the floor. Jolt without it remains supported and kmet falls back to
-SCI.
+kmet targets the **latest tagged Jolt release**: the root `deps.edn`
+`:jolt/min-version` and this lib's floor move to each new release tag (the
+host is young and fast-changing). `jolt.loader/embedded-root?` arrived in
+v0.8.12, below the current v0.8.15 floor, so bundled **directory**
+extensions always use the native loader over `embed:<prefix>` roots and
+bundled single-file resources map their namespace directly to the exact
+embedded key — no capability probe. A manifest declaring `:sci` still loads
+through the declared SCI fallback, and babashka keeps SCI throughout.
 
 ## No `jolt.crypto` require
 

@@ -1,6 +1,10 @@
-{:jolt/min-version "0.8.11"
- ;; 0.8.11 is the first fixed Jolt line for :jolt/native :static archives
- ;; (0.8.9/0.8.10 failed non-PIC Linux links). Static dist builds additionally
+{:jolt/min-version "0.8.15"
+ ;; Jolt's floor is the LATEST tagged release — the host is young and moves
+ ;; fast, so kmet targets the newest release rather than the oldest one a
+ ;; feature needs (jolt/README.md § Bundled-extension loader floor). The
+ ;; line's old 0.8.11 floor was the first fixed one for :jolt/native :static
+ ;; archives; 0.8.12 already carried jolt.loader/embedded-root?, the
+ ;; bundled-extension native loader's floor. Static dist builds additionally
  ;; verify Jolt emitted process-symbol loads for every file-backed native, so
  ;; an older compiler cannot silently produce a dynamic-dependent artifact.
 

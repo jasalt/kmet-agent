@@ -1501,25 +1501,16 @@
   [kind]
   (contains? #{:resource-dir :resource-file} kind))
 
-#?(:jolt
-   (defn- embedded-roots?
-     "Does this Jolt runtime support embedded loader roots? The capability
-      probe is the Phase B gate: without it, bundled resource artifacts
-      stay on the SCI backend."
-     []
-     (loader-jolt/embedded-roots?)))
-
 (defn forced-loader-kind
   "The loader-kind a bundled resource artifact must use, or nil when the
    manifest declares none. A resource descriptor carrying :native prefers
-   Jolt's native loader behind the embedded-root capability probe; any
-   descriptor without a usable native root, or a manifest that does not
-   declare :jolt, falls back to the required :sci backend."
+   Jolt's native loader — embedded roots are part of the Jolt floor
+   (jolt/README.md) — and any descriptor without a native root, or a
+   manifest that does not declare :jolt, falls back to the required :sci
+   backend."
   [{:keys [kind artifact]} declared-loaders]
   (when (resource-kind? kind)
-    (let [native #?(:jolt (if (and (:native artifact) (embedded-roots?))
-                            :jolt
-                            :sci)
+    (let [native #?(:jolt (if (:native artifact) :jolt :sci)
                     :default :sci)]
       (first (filter #(contains? (set declared-loaders) %)
                      [native :sci])))))

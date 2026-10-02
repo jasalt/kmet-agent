@@ -34,6 +34,13 @@ jolt dist --out ~/bin   # additionally copy the executable there
 jolt dist --target tarm64le --target-pack "$TMPDIR/pack"   # Cross-compile (use any writable pack dir)
 ```
 
+kmet's Jolt floor is the **latest tagged release** — `:jolt/min-version` in
+the root `deps.edn`, mirrored by `jolt/deps.edn`; the host is young and moves
+fast, so the floor follows each release tag
+(`jolt/src/jolt/kmet/README.md` § Bundled-extension loader floor). Building
+or running kmet from source therefore needs a Jolt at or above it; a
+`kmetj` artifact embeds its runtime and needs no Jolt on the target.
+
 On Termux, set `TMPDIR` to the Termux temporary directory (or choose another
 writable path); `/tmp` is not available there.
 

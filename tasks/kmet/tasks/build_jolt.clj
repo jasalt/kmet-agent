@@ -265,8 +265,8 @@
 (defn- verify-static-native-build!
   "Check Jolt's generated Scheme after a static compile. Every validated
    native must have become a process-symbol load backed by a static archive;
-   a runtime candidate load would mean an older Jolt, a stale incremental
-   build, or an ignored :static entry produced a non-static artifact."
+   a runtime candidate load would mean a stale incremental build or an
+   ignored :static entry produced a non-static artifact."
   [bin natives]
   (let [flat (fs/path (str bin ".build") "flat.ss")
         expected (count natives)
@@ -275,7 +275,7 @@
                  -1)]
     (when-not (= expected actual)
       (throw (ex-info (str "jolt build did not statically link every native "
-                           "(expected " expected ", found " actual "); retry with --force on Jolt >= 0.8.11")
+                           "(expected " expected ", found " actual "); retry with --force")
                       {:type ::non-static-build
                        :flat (str flat)
                        :expected expected

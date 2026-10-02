@@ -937,9 +937,10 @@ into the resource table baked by `:jolt/build {:embed [...]}`. Namespace and
 resource hits carry the embedded key as their own location; a resource hit
 carries `:embedded? true`, so opening reads that key rather than re-resolving
 the request's relative name. `jolt.loader/embedded-root?` is the public
-capability probe. kmet uses embedded roots for bundled directories and an
-exact namespace-to-key source mapping for bundled single files; Babashka and
-older Jolt releases stay on SCI.
+capability probe; it shipped in v0.8.12 and kmet's floor is the latest
+release, so the probe gate is gone. kmet uses embedded roots for bundled
+directories and an exact namespace-to-key source mapping for bundled single
+files; Babashka stays on SCI.
 
 **What landed, and how it differs from M0–M4.** The substrate is one
 global namespace registry (rt.ss's var-table), so a context is built *out

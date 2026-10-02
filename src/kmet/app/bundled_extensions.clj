@@ -9,10 +9,10 @@
      {:name \"clojure\" :kind :resource-dir  :prefix \"extensions/clojure/src\"}
      {:name \"tools\"   :kind :resource-file :path \"extensions/tools.clj\"}
 
-   On a Jolt runtime with embedded loader roots, an artifact-mode directory
-   descriptor carries `:native \"embed:<prefix>\"`, while a single-file
-   descriptor carries its exact embedded key as `:native`; older Jolt releases
-   keep both on kmet's SCI fallback.
+   On Jolt an artifact-mode directory descriptor carries
+   `:native \"embed:<prefix>\"`, while a single-file descriptor carries its
+   exact embedded key as `:native` (embedded roots are part of the Jolt
+   floor); babashka keeps both on kmet's SCI fallback.
 
    In a source checkout the manifest resource answers a `file:` URL (both
    hosts, verified on jolt dev) and the repo root derives from that URL —
@@ -156,19 +156,20 @@
 (defn- native-resource-target
   "The native source target for a resource artifact: an `embed:<prefix>` root
    for a directory, or the exact embedded key for a single file. nil on
-   babashka and older Jolt releases."
+   babashka — embedded roots are Jolt-only and part of the Jolt floor
+   (jolt/README.md)."
   [kind key]
-  (when (and (find-var 'clojure.core/*jolt-version*)
-             ((requiring-resolve 'kmet.loader.jolt-loader/embedded-roots?)))
+  (when (find-var 'clojure.core/*jolt-version*)
     (if (= kind :dir)
       (str "embed:" key)
       key)))
 
 (defn- resource-descriptor
   "One artifact-mode descriptor, or nil when the resource probe misses.
-   Directory descriptors carry a native embedded root when the host Jolt
-   supports one; single-file descriptors carry their exact embedded key for
-   the native loader's namespace-to-source mapping."
+   Directory descriptors carry a native embedded root on Jolt (embedded
+   roots are part of the declared floor); single-file descriptors carry
+   their exact embedded key for the native loader's namespace-to-source
+   mapping."
   [{:keys [name kind root]}]
   (let [key (str resource-prefix "/" root)
         native (native-resource-target kind key)]

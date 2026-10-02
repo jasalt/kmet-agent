@@ -8,7 +8,9 @@ transport from http-client v0.0.15), packaging (`jolt dist`), and extensions
 **only what is still open**; finished work lives in the code, and upstream
 issues filed or tracked live in `jolt-bugs.md` and are not repeated here.
 
-Status checked against `jolt v0.8.15-77-ga1f6b669` (2026-10-02).
+Status checked against `jolt v0.8.15-77-ga1f6b669` (2026-10-02). The
+declared floor is the latest tagged release (v0.8.15, root `deps.edn`) —
+kmet targets the newest Jolt release; this status tracks a newer dev build.
 
 ## Dependency pins
 
