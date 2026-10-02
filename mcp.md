@@ -383,8 +383,19 @@ baseline):
   robustness rode along: the file backend's read-modify-write is locked
   (concurrent logins no longer lose entries), a blank path is rejected,
   a parentless path is accepted, and a timed-out keyring tool is reaped.
-- 2.3 token lifecycle (tokens→store, expiry, bearer, machine grants) and
-  `make-auth-fns` — the transport's `:auth-headers`/`:on-401` seam.
+- **2.3 discovery + token lifecycle — landed**: discovery moved in too
+  (refresh and machine grants need metadata at request time):
+  `origin-of`/`issuer-matches?`/`server-headers`/`protected-resource-meta`/
+  `discover-document`/`discover-meta`/`required-endpoint`; then
+  `tokens->store`/`store-tokens!`/`token-expired?`, `bearer-token`,
+  `oauth-header`/`refresh-tokens!`/`oauth-header-after-401`, the machine
+  grants (`grant-of`/`machine-grant?`/`fetch-machine-token!`, the cache
+  with `machine-token-cached?`/`clear-machine-tokens!`), and finally
+  `make-auth-fns` — the transport's `:auth-headers`/`:on-401` seam. The
+  extension keeps `auth-status`, the flows and the callback server, plus
+  `def` aliases for the script surface (`make-auth-fns`, `discover-meta`,
+  `machine-token-cached?`, `logout!`); the script's raw
+  `machine-token-cache` resolution became `machine-token-cached?`.
 - 2.4 flow split: lib step functions; the extension keeps `run-flow!`'s
   interaction map and the status text.
 - 2.5 2026 hardening: issuer-keyed store + `mcp-oauth.edn` read-side
@@ -456,6 +467,7 @@ era-neutral seam and Phase 2's auth plumbing.
 - [x] 1.6 stdio on `kmet.libs.jsonrpc` (transport-owned ids, `:conn-ref` hand-off)
 - [x] 2.1 auth policy in the lib (challenge/resource/scope + tests)
 - [x] 2.2 store: file/keyring/auto backends + logout in the lib
-- [ ] 2.3-2.5 token lifecycle, `make-auth-fns`, flow split, hardening
+- [x] 2.3 discovery + token lifecycle + `make-auth-fns` in the lib
+- [ ] 2.4-2.5 flow split + 2026 hardening
 - [ ] 3 optional hygiene
 - [ ] 4 2026-07-28 protocol work (separate plan)

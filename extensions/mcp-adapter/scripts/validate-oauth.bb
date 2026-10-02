@@ -258,8 +258,7 @@
              (str/starts-with? (get headers "Authorization") "Bearer access-cc-")))
     (auth/logout! "cc-server")
     (check "logout clears machine cache"
-           (nil? (get @(resolve 'kmet.extensions.mcp-adapter.auth/machine-token-cache)
-                      "cc-server")))))
+           (not (auth/machine-token-cached? "cc-server")))))
 
 (defn test-discovery-and-pkce-verification [oauth-port store-path]
   (println "\n── RFC 9728 / 8414 discovery + PKCE verification ──")

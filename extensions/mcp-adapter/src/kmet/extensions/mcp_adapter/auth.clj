@@ -6,15 +6,18 @@
 
    Thin adapter: server config → lib calls, token-store wiring (the host
    path for the plaintext fallback; the :file/:keyring backends live in
-   the lib), browser open, status text. The extension cannot require
-   kmet.ai.*, so the generic machinery lives in kmet.libs.oauth (RFC 8414
-   discovery, RFC 7591 DCR, PKCE loopback + RFC 8628 device flows, token
+   the lib), the browser/callback-server interaction for the interactive
+   flows, and status text. The extension cannot require kmet.ai.*, so the
+   generic machinery lives in kmet.libs.oauth (RFC 8414 discovery,
+   RFC 7591 DCR, PKCE loopback + RFC 8628 device flows, token
    exchange/refresh).
 
    The MCP-specific policy lives in kmet.libs.mcp.auth (mcp.md Phase 2):
    resource canonicalization, the WWW-Authenticate challenge record,
-   scope/resource selection and the credential store are there; the
-   request-auth header provider and the 2026 hardening follow.
+   scope/resource selection, the credential store, discovery, the token
+   lifecycle (bearer/machine grants/refresh + make-auth-fns) and the
+   request-auth header provider are there; the interactive flows and the
+   2026 hardening remain here.
 
    Flow (per server, §7.8):
      1. token lookup — expired → refresh; missing/refresh-failed → flow
@@ -31,24 +34,21 @@
         stored refresh token → refresh once + retry once"
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.extensions.mcp-adapter.client :as client]
             [kmet.extensions.mcp-adapter.config :as config]
             [kmet.libs.mcp.auth :as mcp-auth]
             [kmet.libs.oauth :as oauth-lib]))
 
-(defn- read-text
-  [path]
-  (when (fs/exists? path)
-    (slurp path)))
-
-;; ─── MCP authorization policy (kmet.libs.mcp.auth) ────────────────────────
-;; RFC 8707 resource canonicalization, the RFC 9728 WWW-Authenticate challenge
-;; record and scope/resource selection live in the lib (mcp.md Phase 2). The
-;; two aliases keep the validation scripts' call surface (auth/<name>) stable;
-;; the call sites below go straight to the lib.
+;; ─── kmet.libs.mcp.auth re-exports ────────────────────────────────────────
+;; The policy, discovery, request-auth and store machinery lives in the lib
+;; (mcp.md Phase 2). These aliases keep the validation scripts' call surface
+;; (auth/<name>) stable; the extension calls the lib directly where a name
+;; is not part of that surface.
 
 (def canonical-resource-uri mcp-auth/canonical-resource-uri)
 (def parse-www-authenticate mcp-auth/parse-www-authenticate)
+(def discover-meta mcp-auth/discover-meta)
+(def make-auth-fns mcp-auth/make-auth-fns)
+(def machine-token-cached? mcp-auth/machine-token-cached?)
 
 ;; ─── Token store (kmet.libs.mcp.auth) ─────────────────────────────────────
 ;; The :file / :keyring / :auto backends, their path/permission handling
@@ -78,74 +78,12 @@
 (def server-entry mcp-auth/server-entry)
 (def store-server! mcp-auth/store-server!)
 
-(defn- token-expired?
-  "True when the stored tokens are expired (60s skew, pi's 5-min window
-   reduced for MCP's shorter-lived tokens)."
-  [entry]
-  (let [expires (get-in entry [:tokens :expires])]
-    (and (number? expires)
-         (<= expires (+ (System/currentTimeMillis) 60000)))))
+(def logout! mcp-auth/logout!)
 
-;; in-memory cache for machine-grant tokens (client-credentials /
-;; jwt-bearer — §7.8.6); defined before logout! below
-(defonce ^:private machine-token-cache (atom {}))
-
-(defn logout!
-  "Clear the stored OAuth tokens + client info for a server (§10.6), and
-   any cached machine-grant token or recorded 401 challenge."
-  [name]
-  (swap! machine-token-cache dissoc name)
-  (mcp-auth/logout! name))
-
-;; ─── Discovery (RFC 9728 protected resource + RFC 8414 / OIDC AS) ────────
-
-(defn- origin-of
-  "scheme://host of a URL."
-  [url]
-  (try
-    (let [uri (java.net.URI. url)]
-      (str (.getScheme uri) "://" (.getAuthority uri)))
-    (catch Exception _ url)))
-
-(defn- issuer-matches?
-  "Lenient issuer check: the metadata issuer must share the server URL's
-   origin (or be the full server URL) — catches gross mismatches while
-   allowing path variations real servers use."
-  [url issuer]
-  (let [origin (origin-of url)
-        base (str/replace url #"/+$" "")]
-    (or (= issuer origin)
-        (= issuer base)
-        (= origin (origin-of issuer)))))
-
-(defn- server-headers
-  "Static config :headers for a discovery URL, but only when it shares
-   the resource server's origin: the headers may carry an API key or
-   bearer meant for the MCP server itself and must not be forwarded to
-   an authorization server or metadata host the server names (RFC 9728
-   discovery crosses origins by design)."
-  [definition url]
-  (when (and (string? url)
-             (= (origin-of (:url definition)) (origin-of url)))
-    (:headers definition)))
-
-(defn- protected-resource-meta
-  "RFC 9728 protected-resource metadata for a server: the
-   `resource_metadata` URL from a WWW-Authenticate challenge we have
-   seen for this server, else the well-known probes. nil when the
-   server publishes none (older deployments — discovery then falls back
-   to probing the server URL for authorization-server metadata)."
-  [name definition]
-  (let [url (:url definition)
-        challenge (:resource-metadata (mcp-auth/challenge name))]
-    (when (string? url)
-      ;; the lib returns the metadata document itself (nil when nothing
-      ;; answers — an older server that publishes none). The challenge
-      ;; URL may be cross-origin, in which case no config headers go out
-      ;; at all (the well-known probes are best-effort without them).
-      (oauth-lib/protected-resource-metadata
-       url {:headers (server-headers definition (or challenge url))
-            :resource-metadata-url challenge}))))
+;; ─── Discovery (kmet.libs.mcp.auth) ──────────────────────────────────────
+;; RFC 9728 protected-resource probing, RFC 8414 / OIDC authorization-server
+;; discovery and the required-endpoint check live in the lib; only the
+;; flow-level PKCE gate stays here (run-flow! consults it).
 
 (defn- verify-pkce-support!
   "OAuth 2.1 requires PKCE for the authorization-code flow and says a
@@ -166,87 +104,6 @@
                            "server metadata) — refusing to authorize. Set "
                            ":oauth {:skip-pkce-verification true} to override.")
                       {:type :oauth-no-pkce})))))
-
-(defn- discover-document
-  "The authorization-server metadata document and the URL it came from,
-   as [metadata document-url]. An explicit config :token-endpoint or
-   :authorization-server-url short-circuits discovery; otherwise the
-   RFC 9728 protected-resource document names the authorization
-   server(s) and RFC 8414 / OIDC discovery runs against the first that
-   answers, falling back to the MCP server URL when the server
-   publishes no resource document. document-url is the RFC 8414 §3.3
-   issuer-check reference."
-  [definition prm]
-  (let [cfg (:oauth definition)
-        url (:url definition)
-        headers (:headers definition)
-        issuers (let [as (:authorization_servers prm)]
-                  (cond
-                    (sequential? as) as
-                    (string? as) [as]
-                    :else nil))]
-    (cond
-      ;; an explicit token endpoint needs no discovery at all
-      (:token-endpoint cfg) [{:token_endpoint (:token-endpoint cfg)} url]
-
-      ;; an explicit, user-chosen URL keeps the static headers
-      ;; (pre-existing behavior)
-      (:authorization-server-url cfg)
-      [(:body (oauth-lib/fetch-json (:authorization-server-url cfg)
-                                    {:method :get
-                                     :headers headers
-                                     :timeout 5000}))
-       (:authorization-server-url cfg)]
-
-      :else
-      (or (some (fn [issuer]
-                  (when-let [m (oauth-lib/discover-authorization-server
-                                issuer {:headers (server-headers definition issuer)})]
-                    [m issuer]))
-                issuers)
-          (when-let [m (oauth-lib/discover-authorization-server
-                        url {:headers headers})]
-            [m url])))))
-
-(defn- discover-meta
-  "Authorization-server metadata for a server (§7.8.2), via
-   discover-document. Throws when nothing answers. The issuer check
-   (RFC 8414 §3.3) compares the issuer to the URL the document was
-   fetched from — under RFC 9728 that is the authorization server, not
-   the resource server — and is skipped when
-   :skip-issuer-metadata-validation is set. Returns the metadata map;
-   the protected-resource document (for scope selection) rides along
-   under ::prm."
-  [name definition]
-  (let [cfg (:oauth definition)
-        url (:url definition)
-        ;; explicit configs skip discovery entirely: probing the
-        ;; protected-resource metadata for scopes would add up to two
-        ;; 5s-timeout requests to every token fetch
-        prm (when-not (or (:token-endpoint cfg) (:authorization-server-url cfg))
-              (protected-resource-meta name definition))
-        [metadata discovered-from] (discover-document definition prm)]
-    (when-not (map? metadata)
-      (throw (ex-info (str "MCP auth failed: no OAuth authorization server metadata "
-                           "discovered at " url)
-                      {:type :oauth-no-metadata})))
-    (when-not (or (:token-endpoint cfg)
-                  (true? (:skip-issuer-metadata-validation cfg)))
-      (when (and (seq (:issuer metadata))
-                 (not (issuer-matches? discovered-from (:issuer metadata))))
-        (throw (ex-info (str "MCP auth failed: authorization server issuer mismatch ("
-                             (:issuer metadata) " vs " discovered-from "). Set "
-                             ":skip-issuer-metadata-validation true to override.")
-                        {:type :oauth-issuer-mismatch}))))
-    (assoc metadata ::prm prm)))
-
-(defn- required-endpoint
-  "One metadata endpoint or a clear error."
-  [metadata key name]
-  (or (get metadata key)
-      (throw (ex-info (str "MCP auth failed: authorization server metadata for " name
-                           " has no " key)
-                      {:type :oauth-no-endpoint :endpoint key}))))
 
 ;; ─── Callback server (process-wide, OS-assigned port) ─────────────────────
 
@@ -341,7 +198,7 @@
   "Close the callback server and drop machine-token caches (extension
    unload). Idempotent."
   []
-  (reset! machine-token-cache {})
+  (mcp-auth/clear-machine-tokens!)
   (mcp-auth/clear-challenges!)
   (when-let [{:keys [server]} @callback-state]
     (try ((:close server)) (catch Exception _ nil))
@@ -379,199 +236,6 @@
                                        :client-info {:client-id (:client_id client)
                                                      :redirect-uris [redirect-uri]}))
             (:client_id client))))))
-
-;; ─── Token storage ────────────────────────────────────────────────────────
-
-(defn- tokens->store
-  "Normalize a lib token map {:access :refresh :expires-in :scope} into the
-   store shape {:access .. :refresh .. :expires ms :scope ..}."
-  [tokens]
-  (cond-> {:access (:access tokens)
-           :expires (+ (System/currentTimeMillis) (* 1000 (:expires-in tokens)))}
-    (:refresh tokens) (assoc :refresh (:refresh tokens))
-    (:scope tokens) (assoc :scope (:scope tokens))))
-
-(defn- store-tokens!
-  [name tokens]
-  (store-server! name (assoc (or (server-entry name) {}) :tokens tokens)))
-
-(defn- bearer-token
-  "The static bearer token from config (:bearer-token or
-   :bearer-token-env)."
-  [definition]
-  (or (:bearer-token definition)
-      (when-let [env-name (:bearer-token-env definition)]
-        (System/getenv env-name))))
-
-(defn- auth-required-error
-  [name]
-  (ex-info (str "MCP auth failed: " name " is not authenticated. Run /mcp auth "
-                name " to log in.")
-           {:type :mcp-auth-required}))
-
-(defn- oauth-bearer-header
-  [tokens]
-  {"Authorization" (str "Bearer " (:access tokens))})
-
-;; ─── Machine grants (client-credentials / jwt-bearer, §7.8.6) ────────────
-;; Non-interactive grants: a token is fetched on demand from the token
-;; endpoint (discovery, :authorization-server-url, or an explicit
-;; :token-endpoint), cached in memory with its expiry, and re-fetched on
-;; expiry or 401 — the re-fetch IS the refresh (no refresh token is
-;; expected). Nothing is persisted: the token store stays for the
-;; interactive grants.
-
-(defn- grant-of
-  "The configured grant: :authorization-code (default) |
-   :client-credentials | :jwt-bearer."
-  [definition]
-  (or (get-in definition [:oauth :grant]) :authorization-code))
-
-(defn- machine-grant?
-  [definition]
-  (contains? #{:client-credentials :jwt-bearer} (grant-of definition)))
-
-(defn- fetch-machine-token!
-  "Fetch a fresh token for a machine-grant server and cache it. Throws
-   MCP auth failed on any error (§7.7)."
-  [name definition]
-  (let [cfg (:oauth definition)
-        metadata (discover-meta name definition)
-        token-endpoint (required-endpoint metadata :token_endpoint name)
-        scope (mcp-auth/effective-scopes name definition (::prm metadata))
-        resource (mcp-auth/effective-resource definition)
-        tokens (case (grant-of definition)
-                 :client-credentials
-                 (oauth-lib/client-credentials-token
-                  token-endpoint
-                  {:client-id (:client-id cfg)
-                   :client-secret (:client-secret cfg)
-                   :token-endpoint-auth-method (:token-endpoint-auth-method cfg)
-                   :scope scope
-                   :resource resource})
-
-                 :jwt-bearer
-                 (let [key-file (:private-key-file cfg)
-                       jwk (:private-key-jwk cfg)]
-                   (when-not (or key-file jwk)
-                     (throw (ex-info (str "MCP auth failed: " name " jwt-bearer grant "
-                                          "requires :oauth {:private-key-file ...} or "
-                                          ":private-key-jwk ...")
-                                     {:type :oauth-invalid-config})))
-                   (when (and key-file (not (fs/exists? key-file)))
-                     (throw (ex-info (str "MCP auth failed: private key file not found: "
-                                          key-file)
-                                     {:type :oauth-invalid-config})))
-                   (oauth-lib/jwt-bearer-token
-                    token-endpoint
-                    {:private-key (if (and key-file (string? key-file))
-                                    (read-text key-file)
-                                    jwk)
-                     :algorithm (:algorithm cfg)
-                     :issuer (:issuer cfg)
-                     :subject (:subject cfg)
-                     :audience (:audience cfg)
-                     :client-id (:client-id cfg)
-                     :scope scope
-                     :resource resource})))
-        stored (tokens->store tokens)]
-    (swap! machine-token-cache assoc name stored)
-    stored))
-
-(defn- machine-token-header
-  "Authorization header for a machine-grant server: the cached token, or
-   a fresh fetch when missing/expired. FORCE skips the cache — the 401
-   retry path must not resend a rejected token."
-  [name definition force]
-  (let [entry (get @machine-token-cache name)
-        expired? (and entry (<= (:expires entry)
-                                (+ (System/currentTimeMillis) 60000)))]
-    (if (and entry (not force) (not expired?))
-      (oauth-bearer-header entry)
-      (oauth-bearer-header (fetch-machine-token! name definition)))))
-
-;; ─── Request auth (§7.8.5) ────────────────────────────────────────────────
-
-(declare refresh-tokens!)
-
-(defn- oauth-header
-  "Authorization header from the stored tokens; refreshes silently when
-   expired, throws when not authenticated (§7.8.5 pre-emptive refresh)."
-  [name definition]
-  (let [entry (server-entry name)]
-    (cond
-      (nil? entry) (throw (auth-required-error name))
-      (token-expired? entry)
-      (if-let [refreshed (refresh-tokens! name definition)]
-        (oauth-bearer-header refreshed)
-        (throw (auth-required-error name)))
-      :else (oauth-bearer-header (:tokens entry)))))
-
-(defn- refresh-tokens!
-  "Refresh the stored tokens; returns the fresh tokens map or nil when no
-   refresh token is stored / the refresh failed (error recorded in the
-   store state only on success)."
-  [name definition]
-  (let [entry (server-entry name)
-        refresh (get-in entry [:tokens :refresh])]
-    (when (and (seq refresh)
-               (seq (:url definition)))
-      (try
-        (let [metadata (discover-meta name definition)
-              token-endpoint (required-endpoint metadata :token_endpoint name)
-              client-id (or (get-in definition [:oauth :client-id])
-                            (stored-client-id name))
-              tokens (when client-id
-                       (oauth-lib/refresh-access-token
-                        token-endpoint
-                        {:client-id client-id
-                         :refresh-token refresh
-                         :scope (get-in entry [:tokens :scope])
-                         :resource (mcp-auth/effective-resource definition)}))]
-          (when tokens
-            (store-tokens! name (tokens->store tokens))
-            (tokens->store tokens)))
-        (catch Exception _ nil)))))
-
-(defn- oauth-header-after-401
-  "401 retry path: refresh the stored tokens (a stored refresh token is
-   required — the 401 already proved the access token invalid), then
-   return fresh headers. Throws the auth-required message otherwise."
-  [name definition]
-  (if-let [refreshed (refresh-tokens! name definition)]
-    (oauth-bearer-header refreshed)
-    (throw (auth-required-error name))))
-
-(defn make-auth-fns
-  "Auth wiring for a server's HTTP conn (§7.8.5): :auth-headers — called
-   per request (pre-emptive refresh on expiry); :on-401 — refresh + fresh
-   headers, retried once. Static config :headers are merged in for every
-   HTTP server. Returns {} when the server has no auth configured."
-  [name definition]
-  (let [config-headers (:headers definition)
-        merge-headers (fn [auth]
-                        (if (seq config-headers)
-                          (merge config-headers auth)
-                          auth))]
-    (cond
-      (= :oauth (:auth definition))
-      (if (machine-grant? definition)
-        {:auth-headers (fn [] (merge-headers (machine-token-header name definition false)))
-         :on-401 (fn [response]
-                   (when response (mcp-auth/record-challenge! name (client/header-value (:headers response) "WWW-Authenticate")))
-                   (merge-headers (machine-token-header name definition true)))}
-        {:auth-headers (fn [] (merge-headers (oauth-header name definition)))
-         :on-401 (fn [response]
-                   (when response (mcp-auth/record-challenge! name (client/header-value (:headers response) "WWW-Authenticate")))
-                   (merge-headers (oauth-header-after-401 name definition)))})
-
-      (= :bearer (:auth definition))
-      {:auth-headers (fn [] (merge-headers (oauth-bearer-header
-                                            {:access (or (bearer-token definition) "")})))}
-
-      :else
-      (when (seq config-headers)
-        {:auth-headers (fn [] config-headers)}))))
 
 ;; ─── Full flow (/mcp auth, §7.8.4) ────────────────────────────────────────
 
@@ -616,10 +280,10 @@
         state (oauth-lib/random-hex 16)
         redirect-uri (ensure-callback-redirect! cfg)
         client-id (resolve-client-id! name definition metadata)
-        scope (mcp-auth/effective-scopes name definition (::prm metadata))
+        scope (mcp-auth/effective-scopes name definition (::mcp-auth/prm metadata))
         resource (mcp-auth/effective-resource definition)
         code-p (promise)
-        authorize-endpoint (required-endpoint metadata :authorization_endpoint name)]
+        authorize-endpoint (mcp-auth/required-endpoint metadata :authorization_endpoint name)]
     (reset! current-flow {:state state :code-p code-p})
     (try
       (let [url (authorize-url authorize-endpoint client-id redirect-uri
@@ -652,14 +316,14 @@
             (throw (ex-info "Missing authorization code"
                             {:type :oauth-missing-code})))
           (let [tokens (oauth-lib/exchange-authorization-code
-                        (required-endpoint metadata :token_endpoint name)
+                        (mcp-auth/required-endpoint metadata :token_endpoint name)
                         {:client-id client-id
                          :code code
                          :code-verifier verifier
                          :redirect-uri redirect-uri
                          :scope scope
                          :resource resource})]
-            (store-tokens! name (tokens->store tokens))
+            (mcp-auth/store-tokens! name tokens)
             (store-server! name (assoc (server-entry name)
                                        :client-info {:client-id client-id
                                                      :redirect-uris [redirect-uri]}))
@@ -675,12 +339,12 @@
 (defn- run-device-flow
   [name definition metadata interaction]
   (let [client-id (resolve-client-id! name definition metadata)
-        scope (mcp-auth/effective-scopes name definition (::prm metadata))
+        scope (mcp-auth/effective-scopes name definition (::mcp-auth/prm metadata))
         resource (mcp-auth/effective-resource definition)
         device (oauth-lib/start-device-authorization
-                (required-endpoint metadata :device_authorization_endpoint name)
+                (mcp-auth/required-endpoint metadata :device_authorization_endpoint name)
                 {:client-id client-id :scope scope :resource resource})
-        token-endpoint (required-endpoint metadata :token_endpoint name)]
+        token-endpoint (mcp-auth/required-endpoint metadata :token_endpoint name)]
     ((:notify interaction)
      {:type :device-code
       :user-code (:user-code device)
@@ -731,10 +395,10 @@
                          :else
                          {:status :failed
                           :message "Invalid device token response"})))})]
-      (store-tokens! name (tokens->store {:access (:access_token tokens)
-                                          :expires-in (:expires_in tokens)
-                                          :refresh (:refresh_token tokens)
-                                          :scope (:scope tokens)}))
+      (mcp-auth/store-tokens! name {:access (:access_token tokens)
+                                    :expires-in (:expires_in tokens)
+                                    :refresh (:refresh_token tokens)
+                                    :scope (:scope tokens)})
       (store-server! name (assoc (server-entry name)
                                  :client-info {:client-id client-id}))
       :logged-in)))
@@ -747,9 +411,9 @@
    [prompt-map] → string) :open-url (fn [url])}. Returns :logged-in;
    throws on failure/cancel."
   [name definition interaction]
-  (if (machine-grant? definition)
-    (do (fetch-machine-token! name definition) :logged-in)
-    (let [metadata (discover-meta name definition)
+  (if (mcp-auth/machine-grant? definition)
+    (do (mcp-auth/fetch-machine-token! name definition) :logged-in)
+    (let [metadata (mcp-auth/discover-meta name definition)
           flow (resolve-flow (:oauth definition) metadata interaction)]
       ;; only the PKCE flow sends a code challenge — a device-only server
       ;; must not be refused for missing PKCE metadata
@@ -769,10 +433,10 @@
   [name definition]
   (when (and (:url definition) (:auth definition))
     (case (:auth definition)
-      :bearer (if (seq (bearer-token definition)) :bearer :none)
+      :bearer (if (seq (mcp-auth/bearer-token definition)) :bearer :none)
       :oauth (cond
-               (machine-grant? definition) (grant-of definition)
+               (mcp-auth/machine-grant? definition) (mcp-auth/grant-of definition)
                (nil? (server-entry name)) :none
-               (token-expired? (server-entry name)) :expired
+               (mcp-auth/token-expired? (server-entry name)) :expired
                :else :logged-in)
       nil)))

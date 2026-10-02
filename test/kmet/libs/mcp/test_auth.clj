@@ -1,8 +1,10 @@
 (ns kmet.libs.mcp.test-auth
   "Tests for the MCP authorization policy in kmet.libs.mcp.auth —
    resource canonicalization, the WWW-Authenticate challenge record,
-   scope/resource selection and the credential store. The request-auth
-   header provider and the 2026 hardening follow in the rest of Phase 2."
+   scope/resource selection, the credential store and the token lifecycle
+   (bearer/machine grants/refresh plus make-auth-fns). Discovery and the
+   2026 hardening keep their socket-level coverage in the extension's
+   validate-oauth.bb."
   (:require [babashka.fs :as fs]
             [clojure.edn :as edn]
             [clojure.test :refer [deftest is testing]]
@@ -122,6 +124,103 @@
         (auth/configure-storage! {:mode :keyring :path nil})
         (is (= :file (auth/storage-kind)))))
     (finally (reset-storage!))))
+
+(deftest store-tokens-normalizes-the-token-response
+  (let [dir (temp-dir)
+        path (str (fs/path dir "mcp-oauth.edn"))]
+    (try
+      (auth/configure-storage! {:mode :file :path path})
+      (auth/store-server! "srv" {:client-info {:client-id "c"}})
+      (let [before (System/currentTimeMillis)]
+        (auth/store-tokens! "srv" {:access "a" :refresh "r" :expires-in 3600 :scope "read"})
+        (let [entry (auth/server-entry "srv")]
+          (testing "the oauth response shape is normalized into the store shape"
+            (is (= "a" (get-in entry [:tokens :access])))
+            (is (= "r" (get-in entry [:tokens :refresh])))
+            (is (= "read" (get-in entry [:tokens :scope])))
+            (is (<= (+ before 3600000) (get-in entry [:tokens :expires])
+                    (+ (System/currentTimeMillis) 3600000))))
+          (testing "the rest of the entry (client info) survives"
+            (is (= {:client-id "c"} (:client-info entry))))))
+      (testing "a response without refresh/scope leaves those keys absent"
+        (auth/store-tokens! "bare" {:access "b" :expires-in 10})
+        (is (nil? (get-in (auth/server-entry "bare") [:tokens :refresh])))
+        (is (nil? (get-in (auth/server-entry "bare") [:tokens :scope]))))
+      (finally
+        (reset-storage!)
+        (fs/delete-tree dir)))))
+
+(deftest token-expiry-has-a-sixty-second-skew
+  (let [now (System/currentTimeMillis)]
+    (is (auth/token-expired? {:tokens {:expires (- now 1)}}))
+    (is (auth/token-expired? {:tokens {:expires (+ now 30000)}})
+        "inside the skew window counts as expired")
+    (is (not (auth/token-expired? {:tokens {:expires (+ now 120000)}})))
+    (is (not (auth/token-expired? {:tokens {:access "a"}}))
+        "an entry without an expiry is not expired")))
+
+(deftest bearer-and-grant-selection
+  (is (= "t" (auth/bearer-token {:bearer-token "t"})))
+  (is (nil? (auth/bearer-token {})))
+  (is (= :authorization-code (auth/grant-of {})))
+  (is (= :client-credentials (auth/grant-of {:oauth {:grant :client-credentials}})))
+  (is (auth/machine-grant? {:oauth {:grant :jwt-bearer}}))
+  (is (not (auth/machine-grant? {:oauth {:grant :authorization-code}})))
+  (is (not (auth/machine-grant? {}))))
+
+(deftest make-auth-fns-per-auth-kind
+  (let [dir (temp-dir)
+        path (str (fs/path dir "mcp-oauth.edn"))
+        oauth-definition {:auth :oauth :url "https://mcp.example.com/mcp"}]
+    (try
+      (auth/configure-storage! {:mode :file :path path})
+      (testing "no auth and no headers → no auth fns"
+        (is (nil? (auth/make-auth-fns "srv" {}))))
+      (testing "static config headers alone still go out"
+        (let [fns (auth/make-auth-fns "srv" {:headers {"X-Api" "1"}})]
+          (is (= {"X-Api" "1"} ((:auth-headers fns))))
+          (is (nil? (:on-401 fns)))))
+      (testing ":bearer with config headers"
+        (let [fns (auth/make-auth-fns "srv" (assoc oauth-definition
+                                                   :auth :bearer :bearer-token "t"
+                                                   :headers {"X-Api" "1"}))]
+          (is (= {"X-Api" "1" "Authorization" "Bearer t"} ((:auth-headers fns))))))
+      (testing ":oauth without a stored entry → auth required"
+        (let [fns (auth/make-auth-fns "srv" oauth-definition)]
+          (is (= :mcp-auth-required
+                 (try ((:auth-headers fns)) nil
+                      (catch Exception e (:type (ex-data e))))))))
+      (testing ":oauth with a fresh stored token uses it and merges headers"
+        (auth/store-tokens! "srv" {:access "a" :expires-in 3600})
+        (let [fns (auth/make-auth-fns "srv" (assoc oauth-definition :headers {"X-Api" "1"}))]
+          (is (= {"X-Api" "1" "Authorization" "Bearer a"} ((:auth-headers fns))))))
+      (testing ":oauth with an expired token and no refresh token → auth required"
+        (auth/store-tokens! "srv" {:access "old" :expires-in -1})
+        (let [fns (auth/make-auth-fns "srv" oauth-definition)]
+          (is (= :mcp-auth-required
+                 (try ((:auth-headers fns)) nil
+                      (catch Exception e (:type (ex-data e))))))))
+      (testing "the 401 hook records the challenge before failing without a refresh"
+        (let [fns (auth/make-auth-fns "srv" oauth-definition)
+              err (try ((:on-401 fns)
+                        {:headers {"WWW-Authenticate"
+                                   "Bearer scope=\"s\", resource_metadata=\"https://prm\""}})
+                       nil
+                       (catch Exception e (ex-data e)))]
+          (is (= :mcp-auth-required (:type err)))
+          (is (= {:scope "s" :resource-metadata "https://prm"} (auth/challenge "srv")))))
+      (testing "machine grants ask the fetcher for a token"
+        (with-redefs [auth/fetch-machine-token!
+                      (fn [name _] {:access (str "m-" name)
+                                    :expires (+ (System/currentTimeMillis) 3600000)})]
+          (let [fns (auth/make-auth-fns "g" {:auth :oauth :url "https://mcp.example.com/mcp"
+                                             :oauth {:grant :client-credentials}})]
+            (is (= "Bearer m-g" (get ((:auth-headers fns)) "Authorization"))))))
+      (finally
+        (auth/logout! "srv")
+        (auth/logout! "g")
+        (reset-storage!)
+        (fs/delete-tree dir)))))
 
 (deftest canonical-resource-uri-normalizes
   (testing "scheme and host are lowercased, path case is kept"
