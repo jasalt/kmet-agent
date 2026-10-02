@@ -379,7 +379,10 @@ baseline):
   and the `logout!` wrapper that also drops the in-memory machine-token
   cache; `def` aliases keep `server-entry`/`store-server!` callable from
   `validate-oauth.bb`, which now configures `:file` explicitly with the
-  redefined `store-path` (a temp file, never the real keyring).
+  redefined `store-path` (a temp file, not the agent-dir store). Store
+  robustness rode along: the file backend's read-modify-write is locked
+  (concurrent logins no longer lose entries), a blank path is rejected,
+  a parentless path is accepted, and a timed-out keyring tool is reaped.
 - 2.3 token lifecycle (tokens→store, expiry, bearer, machine grants) and
   `make-auth-fns` — the transport's `:auth-headers`/`:on-401` seam.
 - 2.4 flow split: lib step functions; the extension keeps `run-flow!`'s

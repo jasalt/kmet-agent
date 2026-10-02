@@ -180,7 +180,9 @@
    no posix perms)."
   [path content]
   (let [tmp (str path ".tmp")]
-    (fs/create-dirs (fs/parent path))
+    ;; a bare filename has no parent directory to create
+    (when-let [parent (fs/parent path)]
+      (fs/create-dirs parent))
     (write-text tmp content)
     (try (fs/set-posix-file-permissions tmp "rw-------") (catch Exception _ nil))
     (fs/move tmp path {:replace-existing true})
@@ -188,17 +190,26 @@
 
 ;; ─── :file backend ────────────────────────────────────────────────────────
 
+(def ^:private store-lock
+  ;; serializes the file store's read-modify-write — two concurrent logins
+  ;; would otherwise lose one of the entries; reads hold it too so a
+  ;; replace-during-read (Windows) cannot surface as an empty store.
+  ;; Reentrant: store-server!/clear-server! hold it across read + write.
+  (Object.))
+
 (defn- read-file-store
   []
-  (or (read-edn (store-path)) {:servers {}}))
+  (locking store-lock
+    (or (read-edn (store-path)) {:servers {}})))
 
 (defn- write-file-store!
   [store]
-  (let [path (store-path)]
-    (when-not path
-      (throw (ex-info "MCP credential store: no :file path configured"
-                      {:type :mcp-store-unconfigured})))
-    (write-file-0600 path (pr-str store))))
+  (locking store-lock
+    (let [path (store-path)]
+      (when (str/blank? (str path))
+        (throw (ex-info "MCP credential store: no :file path configured"
+                        {:type :mcp-store-unconfigured})))
+      (write-file-0600 path (pr-str store)))))
 
 ;; ─── :keyring backend ─────────────────────────────────────────────────────
 
@@ -255,7 +266,10 @@
         (try (.close (:in p)) (catch Exception _ nil)))
       (let [r (deref p 15000 nil)]
         (if (nil? r)
-          {:ok false :error "keyring tool timed out"}
+          (do
+            ;; never leave the tool running behind a timeout
+            (try (proc/destroy-tree p) (catch Exception _ nil))
+            {:ok false :error "keyring tool timed out"})
           (let [out (or (some-> (:out r) slurp) "")
                 err (or (some-> (:err r) slurp) "")]
             (if (zero? (:exit r))
@@ -416,16 +430,18 @@
   [name entry]
   (if (keyring-mode?)
     (keyring-write! name entry)
-    (write-file-store! (assoc-in (read-file-store) [:servers name] entry))))
+    (locking store-lock
+      (write-file-store! (assoc-in (read-file-store) [:servers name] entry)))))
 
 (defn- clear-server!
   "Forget a server's stored entry (both backends)."
   [name]
   (if (keyring-mode?)
     (keyring-clear! name)
-    (let [store (read-file-store)]
-      (when (contains? (:servers store) name)
-        (write-file-store! (update store :servers dissoc name))))))
+    (locking store-lock
+      (let [store (read-file-store)]
+        (when (contains? (:servers store) name)
+          (write-file-store! (update store :servers dissoc name)))))))
 
 (defn logout!
   "Forget a server's stored credentials and its recorded 401 challenge."

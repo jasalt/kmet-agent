@@ -61,16 +61,53 @@
         (fs/delete-tree dir)))))
 
 (deftest file-store-without-a-path-throws
-  (try
-    (auth/configure-storage! {:mode :file :path nil})
-    (testing "reads degrade to an empty store with no path"
-      (is (nil? (auth/server-entry "srv"))))
-    (testing "writes fail with the structured unconfigured error"
-      (is (= :mcp-store-unconfigured
-             (try
-               (auth/store-server! "srv" {:tokens {}})
-               (catch Exception e (:type (ex-data e)))))))
-    (finally (reset-storage!))))
+  (doseq [path [nil "" "   "]]
+    (testing (str "unconfigured path " (pr-str path))
+      (try
+        (auth/configure-storage! {:mode :file :path path})
+        (testing "reads degrade to an empty store with no path"
+          (is (nil? (auth/server-entry "srv"))))
+        (testing "writes fail with the structured unconfigured error"
+          (is (= :mcp-store-unconfigured
+                 (try
+                   (auth/store-server! "srv" {:tokens {}})
+                   (catch Exception e (:type (ex-data e)))))))
+        (finally (reset-storage!))))))
+
+(deftest file-store-with-a-bare-filename
+  ;; no parent directory to create — the lib accepts any path, the
+  ;; extension just happens to pass <agent-dir>/mcp-oauth.edn
+  (let [path (str ".mcp-auth-parentless-" (System/nanoTime) ".edn")]
+    (try
+      (auth/configure-storage! {:mode :file :path path})
+      (auth/store-server! "srv" {:tokens {:access "a"}})
+      (is (= "a" (get-in (auth/server-entry "srv") [:tokens :access])))
+      (is (fs/exists? path))
+      (finally
+        (reset-storage!)
+        (fs/delete-if-exists path)))))
+
+(deftest file-store-writes-are-serialized
+  ;; concurrent login flows must not lose each other's entries: the
+  ;; read-modify-write is locked, so every server survives
+  (let [dir (temp-dir)
+        path (str (fs/path dir "mcp-oauth.edn"))
+        n 12]
+    (try
+      (auth/configure-storage! {:mode :file :path path})
+      (->> (range n)
+           (map (fn [i]
+                  (future (auth/store-server! (str "srv-" i)
+                                              {:tokens {:access (str "a" i)}}))))
+           (doall)
+           (run! deref))
+      (is (= n (count (:servers (edn/read-string (slurp path))))))
+      (doseq [i (range n)]
+        (is (= (str "a" i)
+               (get-in (auth/server-entry (str "srv-" i)) [:tokens :access]))))
+      (finally
+        (reset-storage!)
+        (fs/delete-tree dir)))))
 
 (deftest storage-mode-selection
   (try
