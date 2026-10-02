@@ -1706,6 +1706,13 @@ Be precise and concise in your responses."}}]
                                         (do (reset! text-buf "")
                                             (call-llm agent (resolve-api-key agent) text-buf on-text on-thinking))]
                                     (reset! (:active-call agent) call)
+                                    ;; A cancel that landed while call-llm was still executing saw no
+                                    ;; active call to deliver (the promise is installed only now, and a
+                                    ;; test's/send-message's very first callback can precede it). Deliver
+                                    ;; here too so the abort cannot be lost: deliver is a no-op once
+                                    ;; realized, so an already-arrived normal result is never overridden.
+                                    (when @(:signal agent)
+                                      (deliver promise (merge {:cancelled true} ((:partials call)))))
                                     (let [result (retry/normalize-llm-result
                                                   (deref promise (retry/llm-total-timeout-ms @(:cfg agent)) :timeout))]
                                       (reset! (:active-call agent) nil)
