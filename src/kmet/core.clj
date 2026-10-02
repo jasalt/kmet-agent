@@ -385,4 +385,12 @@
             (binding [*out* *err*]
               (println "Error:" (ex-message e))
               (.printStackTrace e))
-            (System/exit 1)))))))
+            (System/exit 1))
+          (finally
+            ;; Jolt waits for non-daemon threads before exiting, as the JVM does:
+            ;; the agent pool behind `future` (render loop, input reader, startup
+            ;; futures) would otherwise hold the process open after /quit — the
+            ;; user's shell needs one more ctrl+c. bb exits on its own and
+            ;; shutdown-agents is harmless there; System/exit paths terminate
+            ;; before this runs.
+            (shutdown-agents)))))))
