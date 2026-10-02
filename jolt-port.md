@@ -12,7 +12,7 @@ Status checked against `jolt v0.8.15-46-g005d134b` (2026-10-01).
 
 ## Dependency pins
 
-The git pins track their upstream releases (checked 2026-10-01):
+The git pins track their upstream releases (checked 2026-10-02):
 
 - `jolt-lang/jolt-crypto` — `v0.0.10` (`feb25f70`): the `(bytes, off, len)`
   overload fixes and the quadratic `MessageDigest.update` fix (PR #13)
@@ -21,11 +21,10 @@ The git pins track their upstream releases (checked 2026-10-01):
   depends on, so this root pin supersedes the transitive v0.0.9.
 - `io.github.jolt-lang/http-client` — `v0.0.17` (`77d7e310`): interrupted
   connects are retried and TLS streams/contexts released once a connection
-  fails (PRs #30, #31). Its `:jolt/provides` still claims
-  `java.util.concurrent.CompletableFuture`, which current Jolt provides and
-  drops with a startup warning ("upgrade io.github.jolt-lang/http-client");
-  upstream still claims it and has no open issue — worth a one-line upstream
-  report.
+  fails (PRs #30, #31). Its stale `:jolt/provides` claim on
+  `java.util.concurrent.CompletableFuture` is filed upstream
+  ([http-client#32](https://github.com/jolt-lang/http-client/issues/32));
+  jolt-bugs.md carries the pin's move condition.
 
 ## Tests
 

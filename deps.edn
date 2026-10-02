@@ -112,8 +112,9 @@
         ;; (PR #30) and PR #31: interrupted connects are retried and TLS
         ;; streams/contexts released once a connection fails.
         ;; Its :jolt/provides still claims java.util.concurrent.CompletableFuture,
-        ;; a class current Jolt provides (the claim is dropped with a startup
-        ;; warning); upstream still claims it, with no open issue.
+        ;; a class Jolt main provides — the claim is dropped with a startup
+        ;; warning, filed as jolt-lang/http-client#32 (see jolt-bugs.md). The pin
+        ;; moves once a Jolt release carries the class and the claim is gone.
         io.github.jolt-lang/http-client {:git/url "https://github.com/jolt-lang/http-client.git"
                                          :git/sha "77d7e310a1aab2c7d5ecc9f6cc10f77b7a7f23ba"}
         ;; cljfmt / spec.alpha / rewrite-clj serve the format tasks
