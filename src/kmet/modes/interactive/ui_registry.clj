@@ -594,7 +594,7 @@
                             {:mode :interactive
                              :has-ui true
                              :cwd (fdp/fdp-get-cwd fdp)
-                             :model @(:model ag)
+                             :model (models/get-model @(:provider ag) @(:model ag))
                              :scoped-models @(:scoped-models ag)
                              :thinking-level @(:thinking ag)
                              :is-idle (fn [] (= :idle @(:status @ag-atom)))

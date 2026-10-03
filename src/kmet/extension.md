@@ -1069,10 +1069,17 @@ The same facades are available on the extension **context** as `(:session
 ctx)` (pi: `ctx.sessionManager`) — command and event handlers that only
 receive `ctx` can read session state. The ctx map itself is a fresh merge of
 a headless default and the interactive mode's live `:build-context`
-capability per call (pi: `createContext()`). `get-entries` follows the
-active branch (a settings entry appended before a tree navigation is not
-on the new branch); use `get-all-entries` for extension settings that must
-outlive branch jumps (the review extension's custom instructions do).
+capability per call (pi: `createContext()`). In interactive mode, `(:model
+ctx)` is the resolved Model record, not the model ID string: it includes
+`:provider`, `:id`, `:base-url`, and configured model `:headers`, and can be
+passed directly to `:models :get-api-key-and-headers`. It is nil when the
+selection is not registered (and in the headless default). Each new context
+resolves the current provider/model pair, including after model or session
+switches. Extensions that need only the model ID should read `(:id (:model ctx))`.
+`get-entries` follows the active branch (a settings entry appended before a
+tree navigation is not on the new branch); use `get-all-entries` for extension
+settings that must outlive branch jumps (the review extension's custom
+instructions do).
 
 ### Shell
 
