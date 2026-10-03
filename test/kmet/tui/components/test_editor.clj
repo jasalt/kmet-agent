@@ -5,6 +5,8 @@
             [kmet.tui.components.editor :as editor]
             [kmet.tui.autocomplete :as ac]
             [kmet.tui.components.select-list :as select-list]
+            [kmet.tui.macros :as macros]
+            [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]
             [kmet.tui.keybindings :as kb]
             [kmet.app.keybindings :as app-kb]
@@ -882,6 +884,36 @@
     (core/handle-input e K-ESC)
     (t/is (nil? @(:autocomplete-state e)))
     (t/is (= :none @submitted) "escape does not submit")))
+
+(t/deftest test-autocomplete-list-swaps-dispose-the-old-list
+  ;; every suggestion update builds a fresh SelectList; a replaced or
+  ;; cancelled dropdown must be disposed or its track! registry entry
+  ;; outlives it
+  (let [watchers #(count @(deref #'macros/watch-registry))
+        e (make-ac-editor)
+        pre (watchers)]
+    (core/handle-input e "/")
+    (core/render e 80)
+    (let [with-list (watchers)]
+      (t/is (= (inc pre) with-list) "the open dropdown is tracked")
+      (doseq [c "the"]
+        (core/handle-input e (str c))
+        (core/render e 80)
+        (t/is (= with-list (watchers))
+              "replacing the dropdown disposes the previous list"))
+      (core/handle-input e K-ESC)
+      (core/render e 80)
+      (t/is (= pre (watchers)) "cancelling disposes the dropdown list"))))
+
+(t/deftest test-dispose-disposes-the-open-dropdown
+  (let [watchers #(count @(deref #'macros/watch-registry))
+        e (make-ac-editor)
+        pre (watchers)]
+    (core/handle-input e "/")
+    (core/render e 80)
+    (t/is (= (inc pre) (watchers)))
+    (protocols/dispose e)
+    (t/is (= pre (watchers)) "disposing the editor disposes the dropdown")))
 
 (t/deftest test-autocomplete-at-trigger-file-completion
   (with-ac-files

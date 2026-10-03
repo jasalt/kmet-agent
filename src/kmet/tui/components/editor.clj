@@ -413,10 +413,20 @@
         before (subs line 0 (:cursor-col state))]
     (clojure.string/starts-with? (clojure.string/triml before) "/")))
 
+(defn- set-autocomplete-list!
+  "Install SL as the dropdown list, disposing the list it displaces. The
+   dropdown is a rendered SelectList, so its track! registry entry must not
+   outlive it — every suggestion update builds a fresh list."
+  [editor sl]
+  (when-let [old @(:autocomplete-list editor)]
+    (when-not (identical? old sl)
+      (protocols/dispose old)))
+  (reset! (:autocomplete-list editor) sl))
+
 (defn- cancel-autocomplete
   [editor]
   (reset! (:autocomplete-state editor) nil)
-  (reset! (:autocomplete-list editor) nil)
+  (set-autocomplete-list! editor nil)
   (reset! (:autocomplete-prefix editor) ""))
 
 (defn- get-best-autocomplete-match-index
@@ -453,7 +463,7 @@
       (when (>= idx 0)
         (reset! (:selected-idx-atom sl) idx)))
     (reset! (:autocomplete-prefix editor) (:prefix suggestions))
-    (reset! (:autocomplete-list editor) sl)
+    (set-autocomplete-list! editor sl)
     (reset! (:autocomplete-state editor) state-kw)))
 
 (defn- set-editor-state!
@@ -1287,6 +1297,11 @@
               (vswap! result conj
                       (str left-pad line line-padding right-pad)))))
         @result)))
+
+  (dispose [this]
+    ;; the open dropdown is a rendered SelectList — dispose it so its
+    ;; track! registry entry does not outlive the editor
+    (set-autocomplete-list! this nil))
 
   (handle-input [this data]
     (if (and @jump-mode (:dir @jump-mode) (nil? (:char @jump-mode)))
