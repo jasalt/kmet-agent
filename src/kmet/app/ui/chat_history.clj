@@ -444,36 +444,49 @@
     comp))
 
 (defn- drop-trailing-statuses
-  "Pop trailing :status entries (UI-only status lines) off the end of MSGS."
+  "Split MSGS just before its trailing :status entries (UI-only status
+   lines): [KEPT DROPPED]."
   [msgs]
-  (loop [msgs msgs]
-    (if (= :status (:role (peek msgs)))
-      (recur (pop msgs))
-      msgs)))
+  (let [kept (loop [msgs msgs]
+               (if (= :status (:role (peek msgs)))
+                 (recur (pop msgs))
+                 msgs))]
+    [kept (subvec msgs (count kept))]))
 
 (defn chat-history-remove-streaming-placeholder!
   "Remove the current streaming placeholder from the chat if still present.
    The placeholder is matched by IDENTITY, never by position: a tool
    execution or a consumed steering/follow-up user message can be appended
    after it, and popping the last entry would delete that message instead
-   (pi: agent_end removes the streamingComponent by reference). Returns
-   true when the placeholder was removed (and the streaming state cleared)."
+   (pi: agent_end removes the streamingComponent by reference). Disposes the
+   removed placeholder and any trailing status lines dropped with it — their
+   track! watches must not outlive the transcript. Returns true when the
+   placeholder was removed (and the streaming state cleared)."
   [ch]
   (let [streaming @(:streaming-atom ch)]
     (when streaming
-      (let [removed? (volatile! false)]
+      (let [removed? (volatile! false)
+            dropped (volatile! [])]
         (swap! (:messages-atom ch)
                (fn [msgs]
-                 (let [msgs' (drop-trailing-statuses msgs)]
+                 (let [[msgs' statuses] (drop-trailing-statuses msgs)]
                    (cond
                      (identical? (peek msgs') streaming)
-                     (do (vreset! removed? true) (pop msgs'))
+                     (do (vreset! removed? true)
+                         (vreset! dropped (conj statuses streaming))
+                         (pop msgs'))
 
                      (some #(identical? % streaming) msgs')
                      (do (vreset! removed? true)
+                         (vreset! dropped (conj statuses streaming))
                          (vec (remove #(identical? % streaming) msgs')))
 
                      :else msgs))))
+        ;; only the entries that actually left the transcript are disposed
+        (doseq [m @dropped
+                :let [c (:component m)]
+                :when c]
+          (try (protocols/dispose c) (catch Exception _)))
         (when @removed?
           (reset! (:streaming-atom ch) nil)
           true)))))

@@ -393,6 +393,22 @@
       (is (nil? (ch/chat-history-remove-streaming-placeholder! ch)))
       (is (= 1 (count (ch/chat-history-get-messages ch)))))))
 
+(deftest test-remove-streaming-placeholder-disposes-removed-components
+  ;; the placeholder and any trailing status lines dropped with it leave the
+  ;; transcript — their track! registry entries must leave with them
+  (let [watchers #(count @(deref #'macros/watch-registry))
+        ch (ch/make-chat-history)]
+    (ch/chat-history-add-message! ch {:role :user :content "hi"})
+    (plain-lines ch 80)
+    (let [baseline (watchers)]
+      (ch/chat-history-start-streaming! ch)
+      (ch/chat-history-show-status! ch "Working...")
+      (plain-lines ch 80)
+      (is (> (watchers) baseline) "the placeholder and status are tracked")
+      (is (true? (ch/chat-history-remove-streaming-placeholder! ch)))
+      (is (= baseline (watchers))
+          "the placeholder and dropped trailing statuses are disposed"))))
+
 (deftest test-rebuild
   (testing "rebuild replaces all messages and preserves the info banner"
     (let [ch (ch/make-chat-history)
