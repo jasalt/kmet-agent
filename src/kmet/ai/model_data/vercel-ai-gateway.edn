@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-02T10:35:48Z"
+ :generated-at "2026-10-03T13:19:51Z"
  :provider {:id :vercel-ai-gateway
             :name "Vercel AI Gateway"
             :env-vars ["AI_GATEWAY_API_KEY"]
@@ -813,6 +813,17 @@
     :cost {:input 0.3 :output 1.2 :cache-read 0.007 :cache-write 0}
     :context-window 1048576
     :max-tokens 32768}
+   "deepseek/deepseek-v4.1-flash-fast"
+   {:id "deepseek/deepseek-v4.1-flash-fast"
+    :name "DeepSeek V4.1 Flash Fast"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 0.3 :output 1.2 :cache-read 0.006 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 1000000}
    "fireworks/ember-1"
    {:id "fireworks/ember-1"
     :name "Ember-1"
