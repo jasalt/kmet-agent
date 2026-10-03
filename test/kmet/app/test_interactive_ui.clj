@@ -1540,6 +1540,36 @@
         (finally
           (clear-installed-context!))))))
 
+(deftest test-set-model-capability
+  (testing "the registry :set-model capability follows the Model record"
+    (let [old (m/map->Model {:provider :test-native :id "old"})
+          model (m/map->Model {:provider :test-adapter :id "test-model"})
+          ag (agent/make-agent-state :provider :test-native :model "old")
+          cs {:agent-state (atom ag)
+              :config cfg/default-config
+              :session-atom (atom nil)}
+          auth? (atom true)]
+      (with-redefs [m/providers-atom (atom {:test-native {:models [old]}
+                                            :test-adapter {:models [model]}})
+                    m/has-configured-auth (fn [_] @auth?)
+                    model-selector/sync-footer-model! (fn [_] nil)
+                    state/update-editor-border-color! (fn [& _] nil)
+                    cfg/set-default-model! (fn [& _] nil)
+                    tui/tui-request-render (fn [& _] nil)]
+        (try
+          (let [registry ((var ui-registry/build-extension-ui-registry)
+                          {:tui nil :cs cs}
+                          {:fdp (fdp/make-footer-data-provider)}
+                          nil)]
+            (t/is (true? ((:set-model registry) model)))
+            (t/is (= :test-adapter @(:provider ag)) "the provider follows the record")
+            (t/is (= "test-model" @(:model ag)))
+            (reset! auth? false)
+            (t/is (false? ((:set-model registry) model)) "no configured auth → false")
+            (t/is (= "test-model" @(:model ag)) "state unchanged"))
+          (finally
+            (clear-installed-context!)))))))
+
 (deftest test-extension-reset-closes-open-dialogs
   (testing "the registry :reset teardown closes an open ui-custom dialog
             through the ordered leave-then-dispose path on both surfaces:

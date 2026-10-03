@@ -211,7 +211,7 @@ Be precise and concise in your responses."}}]
                     :prepare-next-turn (atom prepare-next-turn)
                     :should-stop-after-turn (atom should-stop-after-turn)
                     :get-api-key (atom get-api-key)
-                    :scoped-models (atom scoped-models)
+                    :scoped-models (atom (vec (distinct scoped-models)))
                     :overflow-recovered (atom false)
                     :compact-token-threshold compact-token-threshold
                     :compact-reserve-tokens compact-reserve-tokens
@@ -1994,26 +1994,30 @@ Be precise and concise in your responses."}}]
   "Set the active model from a Model record (the provider follows the
    record), emitting :model-select with the resolved records and persisting
    a :model-change session entry (pi: setModel → appendModelChange). A call
-   selecting the current provider/id is a no-op (no entry, no event)."
+   selecting the current provider/id is a no-op (no entry, no event); nil is
+   ignored."
   [agent model]
-  (let [previous (models/get-model @(:provider agent) @(:model agent))]
-    (when-not (and (= (:provider model) @(:provider agent))
-                   (= (:id model) @(:model agent)))
-      (reset! (:provider agent) (:provider model))
-      (reset! (:model agent) (:id model))
-      (when-let [sess (:session agent)]
-        (session/append-model-change! sess (:provider model) (:id model)))
-      (emit agent {:type :model-select
-                   :model model
-                   :previous-model previous
-                   :source :set}))))
+  (when model
+    (let [previous (models/get-model @(:provider agent) @(:model agent))]
+      (when-not (and (= (:provider model) @(:provider agent))
+                     (= (:id model) @(:model agent)))
+        (reset! (:provider agent) (:provider model))
+        (reset! (:model agent) (:id model))
+        (when-let [sess (:session agent)]
+          (session/append-model-change! sess (:provider model) (:id model)))
+        (emit agent {:type :model-select
+                     :model model
+                     :previous-model previous
+                     :source :set})))))
 
 (defn set-scoped-models!
   "Set the session scoped model list used by cycle-model! (pi:
    session.setScopedModels — the list holds \"provider/id\" full ids; empty
-   = no scoping, cycle over all available models)."
+   = no scoping, cycle over all available models). Duplicate entries are
+   dropped (order-preserving): cycling steps one entry at a time, so a
+   duplicate would stall it."
   [agent models]
-  (reset! (:scoped-models agent) (vec models)))
+  (reset! (:scoped-models agent) (vec (distinct models))))
 
 (defn init-scoped-models!
   "Seed the session scoped model list from the config at startup (pi:

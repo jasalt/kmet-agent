@@ -432,7 +432,7 @@
                              (do (doseq [w warnings]
                                    (chat-history/chat-history-add-message!
                                     (:chat-history cs) {:role :assistant :content w}))
-                                 (vec acc)))))
+                                 (vec (distinct acc))))))
         initial (cond
                   (seq session-scoped) session-scoped
                   (seq patterns) (configured-ids)

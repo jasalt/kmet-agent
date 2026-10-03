@@ -261,13 +261,14 @@
             agent (loop/make-agent-state :session sess
                                          :provider :anthropic
                                          :model "claude-sonnet")
-            model (models/map->Model {:provider :anthropic :id "gpt-4o"})]
+            model (models/map->Model {:provider :openai :id "gpt-4o"})]
         (loop/set-model! agent model)
         (let [branch (session/get-branch sess)]
           (t/is (= [:model-change] (mapv :role branch)))
           (t/is (= "gpt-4o" (:model (last branch))))
-          (t/is (= :anthropic (:provider (last branch)))
-                "entry records the model's provider"))
+          (t/is (= :openai (:provider (last branch)))
+                "entry records the model's provider, not the previous provider")
+          (t/is (= :openai @(:provider agent))))
         (loop/set-model! agent model)
         (t/is (= 1 (count (session/get-branch sess)))
               "unchanged model: no duplicate entry"))
@@ -2580,6 +2581,19 @@
           (t/is (= "c" (:id (:previous-model ev))))
           (t/is (= :test-prov (:provider (:previous-model ev)))))))))
 
+(t/deftest test-loop-set-scoped-models-deduplicates
+  (t/testing "duplicate scoped entries are dropped so cycling never stalls"
+    (with-test-provider
+      (fn []
+        (let [agent (loop/make-agent-state :provider :test-prov :model "a")]
+          (loop/set-scoped-models! agent ["test-prov/a" "test-prov/a" "test-prov/b"])
+          (t/is (= ["test-prov/a" "test-prov/b"] @(:scoped-models agent)))
+          (t/is (= "b" (loop/cycle-model! agent 1))
+                "the duplicate would otherwise consume the next cycle slot")))))
+  (t/testing "the initial scoped list is deduplicated too"
+    (let [agent (loop/make-agent-state :scoped-models ["test-prov/a" "test-prov/a"])]
+      (t/is (= ["test-prov/a"] @(:scoped-models agent))))))
+
 (t/deftest test-loop-cycle-model-falls-back-to-available
   ;; pi: no session scoped models → cycle over all available models
   (with-test-provider
@@ -2741,6 +2755,10 @@
         (t/is (= :set (:source ev))))
       ;; setting the same model is a no-op (no event)
       (loop/set-model! agent b)
+      ;; nil is ignored (no state change, no event)
+      (loop/set-model! agent nil)
+      (t/is (= "b" @(:model agent)))
+      (t/is (= :p @(:provider agent)))
       (t/is (= 1 (count (filter #(= :model-select (:type %)) @events)))))))
 
 ;; ─── Phase 3: transform-context ──────────────────────────────────────────
