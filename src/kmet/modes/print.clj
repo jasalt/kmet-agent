@@ -6,6 +6,7 @@
             [kmet.app.loop :as agent]
             [kmet.app.session :as session]
             [kmet.ai.models :as models]
+            [kmet.app.model-resolver :as resolver]
             [kmet.app.skills :as skills]
             [kmet.app.tools.core :as tools]
             [kmet.app.context :as context]
@@ -103,10 +104,29 @@
         message (-> (str/join " " messages)
                     (skills/expand-skill-command)
                     (prompts/expand-prompt-template (prompts/get-prompt-templates)))]
-    (agent/run-agent-turn ag
-                          {:message message
-                           :on-text (fn [t] (print t) (flush))
-                           :on-done (fn [text] (println) (deliver result-promise text))
-                           :on-error (fn [e] (binding [*out* *err*] (println "Error:" e))
-                                       (deliver result-promise nil))})
-    @result-promise))
+    ;; Extension runtime wiring (pi: runner.bindCore binds the print-mode
+    ;; session and the live context getters like interactive): the session
+    ;; facades and the ctx :model/:scoped-models/:thinking-level read the
+    ;; running agent for the duration of the one-shot run.
+    (extensions/set-session! session)
+    (extensions/set-context-sink! (fn [msg] (agent/add-context-message! ag msg)))
+    (extensions/set-ui-registry!
+     {:build-context
+      (fn []
+        {:model (models/get-model @(:provider ag) @(:model ag))
+         :scoped-models (resolver/scoped-models-for-context
+                         @(:scoped-models ag) @(:provider ag))
+         :thinking-level @(:thinking ag)})})
+    (try
+      (agent/run-agent-turn ag
+                            {:message message
+                             :on-text (fn [t] (print t) (flush))
+                             :on-done (fn [text] (println) (deliver result-promise text))
+                             :on-error (fn [e] (binding [*out* *err*] (println "Error:" e))
+                                         (deliver result-promise nil))})
+      @result-promise
+      (finally
+        ;; the run owns the globals it installed (one-shot mode)
+        (extensions/set-session! nil)
+        (extensions/set-context-sink! nil)
+        (extensions/clear-ui-registry!)))))

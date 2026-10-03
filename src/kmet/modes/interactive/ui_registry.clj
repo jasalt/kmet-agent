@@ -192,21 +192,6 @@
                  (vec (:get-trigger-characters x []))))
     :else nil))
 
-(defn- context-scoped-models
-  "The extension context's :scoped-models value (pi: ExtensionContext
-   .scopedModels): the session scoped entry list resolved to {:model Model}
-   maps against the registered catalogue (not the auth-filtered available
-   view cycling uses), dropping entries that no longer resolve and
-   deduplicating by model. kmet drops scoped thinking levels, so the maps
-   never carry :thinking-level."
-  [ag]
-  (into []
-        (comp (keep (fn [entry]
-                      (when-let [m (resolver/resolve-scoped-model entry @(:provider ag))]
-                        {:model m})))
-              (distinct))
-        @(:scoped-models ag)))
-
 (defn build-extension-ui-registry
   "Create the ExtensionUIContext implementation for the live layout
    (pi: createExtensionUIContext). Returns the capability map installed via
@@ -610,7 +595,8 @@
                              :has-ui true
                              :cwd (fdp/fdp-get-cwd fdp)
                              :model (models/get-model @(:provider ag) @(:model ag))
-                             :scoped-models (context-scoped-models ag)
+                             :scoped-models (resolver/scoped-models-for-context
+                                             @(:scoped-models ag) @(:provider ag))
                              :thinking-level @(:thinking ag)
                              :is-idle (fn [] (= :idle @(:status @ag-atom)))
                              :has-pending-messages (fn []

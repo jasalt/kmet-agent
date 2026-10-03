@@ -3,7 +3,9 @@
    the agent loop and returns the final text via :on-done (nil on error)."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [kmet.modes.print :as print-mode]
-            [kmet.app.loop :as agent]))
+            [kmet.ai.models :as m]
+            [kmet.app.loop :as agent]
+            [kmet.app.extensions :as extensions]))
 
 (defn- opts
   "Minimal run opts — :model/:provider bypass catalog resolution."
@@ -51,3 +53,28 @@
                                            ((:on-done ag-opts) "ok"))]
         (print-mode/run (opts))
         (is (false? @seen) "default off")))))
+
+(deftest test-run-wires-the-extension-context
+  (testing "print-mode handlers see the running agent (pi: runner-bound ctx)"
+    (let [model (m/map->Model {:provider :opencode-go :id "deepseek-v4-flash"})
+          seen (atom nil)]
+      (with-redefs [m/providers-atom (atom {:opencode-go {:models [model]}})
+                    agent/run-agent-turn (fn [_ag ag-opts]
+                                           (reset! seen
+                                                   {:ctx (extensions/build-extension-context)
+                                                    :session (extensions/get-session)})
+                                           ((:on-done ag-opts) "ok"))]
+        (is (= "ok" (print-mode/run
+                     (assoc (opts) :config {:provider :opencode-go
+                                            :model "deepseek-v4-flash"
+                                            :models ["opencode-go/deepseek-v4-flash"]}))))
+        (let [{:keys [ctx session]} @seen]
+          (is (= :print (:mode ctx)))
+          (is (identical? model (:model ctx)))
+          (is (= [{:model model}] (:scoped-models ctx)))
+          (is (= :off (:thinking-level ctx)))
+          (is (some? session) "the run's session is bound for extensions")
+          (is (string? (:id session)))))
+      (is (nil? (extensions/get-session))
+          "the print run tears its extension wiring down"))))
+

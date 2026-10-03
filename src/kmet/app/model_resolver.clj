@@ -117,6 +117,20 @@
       (or (models/get-model current-provider s)
           (find-exact-model-reference-match s (models/get-models))))))
 
+(defn scoped-models-for-context
+  "The extension context's :scoped-models value (pi: ExtensionContext
+   .scopedModels): scoped ENTRIES resolved to {:model Model} maps against the
+   registered catalogue (not the auth-filtered available view cycling uses),
+   dropping entries that no longer resolve and deduplicating by model. kmet
+   drops scoped thinking levels, so the maps never carry :thinking-level."
+  [entries current-provider]
+  (into []
+        (comp (keep (fn [entry]
+                      (when-let [m (resolve-scoped-model entry current-provider)]
+                        {:model m})))
+              (distinct))
+        entries))
+
 (defn resolve-model-scope-models
   "Resolve --models PATTERNS to Model records (pi resolveModelScopeFromModels
    — the scoped list carries provider refs, unlike resolve-model-scope's bare
