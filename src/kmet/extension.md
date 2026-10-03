@@ -1002,18 +1002,18 @@ handlers (`:interactive` vs headless) and fall back to `ui-notify`.
 
 ```clojure
 (def models (ext/models api))
-(models/get-all api)                      ; all registered models
-(models/get-available api)                ; models with configured auth
-(models/find api provider-id model-id)
-(models/has-configured-auth api model)
-(models/get-provider-auth-status api provider-id)
-(models/get-api-key-and-headers api model)
-(models/get-registered-provider-config api provider-id)
-(models/get-registered-provider-ids api)
-(models/register-provider! api :my-provider
-                           {:base-url "https://..." :api :openai-completions
-                            :api-key "sk-..." :models [{:id "my-model"}]})
-(models/unregister-provider! api :my-provider)
+((:get-all models))                       ; all registered models
+((:get-available models))                 ; models with configured auth
+((:find models) provider-id model-id)
+((:has-configured-auth models) model)
+((:get-provider-auth-status models) provider-id)
+((:get-api-key-and-headers models) model)
+((:get-registered-provider-config models) provider-id)
+((:get-registered-provider-ids models))
+(ext/models-register-provider! api :my-provider
+                               {:base-url "https://..." :api :openai-completions
+                                :api-key "sk-..." :models [{:id "my-model"}]})
+(ext/models-unregister-provider! api :my-provider)
 ```
 
 Provider registrations are removed automatically when the extension
@@ -1064,8 +1064,17 @@ momentarily resolve the old model id under the new provider (usually nil).
 
 `(:scoped-models ctx)` is the session's scoped entry list resolved to
 `[{:model Model} ...]` (pi: `ScopedModel[]`) — empty when no scoping is
-configured, and entries that no longer resolve drop out. kmet drops scoped
-thinking levels, so the maps carry no `:thinking-level` key.
+configured, deduplicated by model, and entries that no longer resolve drop
+out. Resolution uses the registered catalogue, not the auth-filtered set
+Ctrl+P cycles over, so a configured model without credentials still appears.
+kmet drops scoped thinking levels, so the maps carry no `:thinking-level`
+key.
+
+The context carries the read-only registry facade as `(:models ctx)` (pi:
+`ctx.modelRegistry`): the same read fns as `(ext/models api)` — `:get-all`,
+`:get-available`, `:find`, `:has-configured-auth`, `:get-provider-auth-status`,
+`:get-api-key-and-headers`, `:get-registered-provider-config`,
+`:get-registered-provider-ids` — in both interactive and headless modes.
 
 ### Session
 
