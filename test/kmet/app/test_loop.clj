@@ -241,9 +241,11 @@
     (t/is (= "new prompt" @(:system agent)))))
 
 (t/deftest test-loop-set-model
-  (let [agent (loop/make-agent-state)]
-    (loop/set-model! agent "gpt-4")
-    (t/is (= "gpt-4" @(:model agent)))))
+  (let [agent (loop/make-agent-state)
+        model (models/map->Model {:provider :anthropic :id "gpt-4"})]
+    (loop/set-model! agent model)
+    (t/is (= "gpt-4" @(:model agent)))
+    (t/is (= :anthropic @(:provider agent)) "the provider follows the record")))
 
 (t/deftest test-loop-set-provider
   (let [agent (loop/make-agent-state)]
@@ -258,14 +260,15 @@
       (let [sess (session/create-session dir)
             agent (loop/make-agent-state :session sess
                                          :provider :anthropic
-                                         :model "claude-sonnet")]
-        (loop/set-model! agent "gpt-4o")
+                                         :model "claude-sonnet")
+            model (models/map->Model {:provider :anthropic :id "gpt-4o"})]
+        (loop/set-model! agent model)
         (let [branch (session/get-branch sess)]
           (t/is (= [:model-change] (mapv :role branch)))
           (t/is (= "gpt-4o" (:model (last branch))))
           (t/is (= :anthropic (:provider (last branch)))
-                "entry records the current provider"))
-        (loop/set-model! agent "gpt-4o")
+                "entry records the model's provider"))
+        (loop/set-model! agent model)
         (t/is (= 1 (count (session/get-branch sess)))
               "unchanged model: no duplicate entry"))
       (finally
@@ -2572,8 +2575,10 @@
         (let [ev (last @events)]
           (t/is (= :model-select (:type ev)) "cycle emits :model-select")
           (t/is (= :cycle (:source ev)))
-          (t/is (= "b" (:model ev)))
-          (t/is (= "c" (:previous-model ev))))))))
+          (t/is (= "b" (:id (:model ev))))
+          (t/is (= :test-prov (:provider (:model ev))))
+          (t/is (= "c" (:id (:previous-model ev))))
+          (t/is (= :test-prov (:provider (:previous-model ev)))))))))
 
 (t/deftest test-loop-cycle-model-falls-back-to-available
   ;; pi: no session scoped models → cycle over all available models
@@ -2723,16 +2728,20 @@
 
 (t/deftest test-loop-set-model-emits-model-select
   (let [events (atom [])
-        agent (loop/make-agent-state :model "a" :on-event (fn [e] (swap! events conj e)))]
-    (loop/set-model! agent "b")
-    (let [ev (last @events)]
-      (t/is (= :model-select (:type ev)))
-      (t/is (= "b" (:model ev)))
-      (t/is (= "a" (:previous-model ev)))
-      (t/is (= :set (:source ev))))
-    ;; setting the same model is a no-op (no event)
-    (loop/set-model! agent "b")
-    (t/is (= 1 (count (filter #(= :model-select (:type %)) @events))))))
+        a (models/map->Model {:provider :p :id "a"})
+        b (models/map->Model {:provider :p :id "b"})
+        agent (loop/make-agent-state :provider :p :model "a"
+                                     :on-event (fn [e] (swap! events conj e)))]
+    (with-redefs [models/providers-atom (atom {:p {:models [a b]}})]
+      (loop/set-model! agent b)
+      (let [ev (last @events)]
+        (t/is (= :model-select (:type ev)))
+        (t/is (identical? b (:model ev)))
+        (t/is (identical? a (:previous-model ev)) "previous resolves against the old selection")
+        (t/is (= :set (:source ev))))
+      ;; setting the same model is a no-op (no event)
+      (loop/set-model! agent b)
+      (t/is (= 1 (count (filter #(= :model-select (:type %)) @events)))))))
 
 ;; ─── Phase 3: transform-context ──────────────────────────────────────────
 
@@ -2795,12 +2804,16 @@
 (t/deftest test-loop-prepare-next-turn-updates-state
   (let [agent (loop/make-agent-state :model "model-a" :thinking :off)]
     (reset! (:prepare-next-turn agent)
-            (fn [_] {:model "model-b" :thinking :high :system-prompt-override "custom"}))
+            (fn [_] {:model (models/map->Model {:provider :anthropic :id "model-b"})
+                     :thinking :high
+                     :system-prompt-override "custom"}))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (stub-llm-tool-then-text (atom 0))
                   tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= "model-b" @(:model agent)) "prepare-next-turn swaps the model")
+    (t/is (= :anthropic @(:provider agent))
+          "prepare-next-turn follows the record's provider")
     (t/is (= :high @(:thinking agent)) "prepare-next-turn updates thinking level")
     (t/is (= "custom" @(:system-prompt-override agent))
           "prepare-next-turn sets the system prompt override for later turns")))
@@ -3710,10 +3723,13 @@
   (let [events (atom [])
         ag (loop/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
                                   :thinking :off
-                                  :on-event (fn [evt] (swap! events conj (:type evt))))]
+                                  :on-event (fn [evt] (swap! events conj evt)))]
     (loop/set-thinking-level! ag :high)
     (loop/set-thinking-level! ag :high) ;; no change → no event
-    (t/is (= [:thinking-level-select] @events))))
+    (t/is (= 1 (count @events)))
+    (t/is (= :thinking-level-select (:type (first @events))))
+    (t/is (= :high (:level (first @events))))
+    (t/is (= :off (:previous-level (first @events))))))
 
 ;; ─── Pure phase helpers of run-agent-turn ─────────────────────────────────
 

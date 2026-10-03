@@ -107,27 +107,30 @@
 (defn resolve-scoped-model
   "Resolve a scoped-list entry (full \"provider/id\" or bare id) to a Model
    record. Bare ids (the legacy --models/`:models` form) prefer the current
-   provider, then the unique cross-provider match."
+   provider, then an unambiguous cross-provider match (ambiguity → nil, like
+   find-exact-model-reference-match)."
   [entry current-provider]
   (let [s (str entry)
         slash (str/index-of s "/")]
     (if slash
       (models/get-model (keyword (subs s 0 slash)) (subs s (inc slash)))
       (or (models/get-model current-provider s)
-          (first (filter #(= s (:id %)) (models/get-models)))))))
+          (find-exact-model-reference-match s (models/get-models))))))
 
 (defn resolve-model-scope-models
   "Resolve --models PATTERNS to Model records (pi resolveModelScopeFromModels
    — the scoped list carries provider refs, unlike resolve-model-scope's bare
    ids). Each pattern via parse-model-pattern; patterns carrying a thinking
-   level resolve to the model only (kmet drops scoped thinking levels).
-   Returns {:models [Model] :warnings [str]}."
+   level resolve to the model only (kmet drops scoped thinking levels);
+   duplicate models collapse to the first occurrence (pi modelsAreEqual
+   dedupe). Returns {:models [Model] :warnings [str]}."
   [patterns models]
   (loop [ps patterns acc [] warnings []]
     (if-let [p (first ps)]
       (let [{:keys [model warning]} (parse-model-pattern p models)]
         (if model
-          (recur (rest ps) (conj acc model)
+          (recur (rest ps)
+                 (if (some #(= model %) acc) acc (conj acc model))
                  (cond-> warnings warning (conj warning)))
           (recur (rest ps) acc
                  (conj warnings (str "No models match pattern \"" p "\"")))))

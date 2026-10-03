@@ -357,7 +357,7 @@
   (when-let [f (get @ui-registry capability)]
     (apply f args)))
 
-(declare api-session)
+(declare api-session read-model-facades)
 
 (defn- default-extension-context
   "Static context for headless/print mode (pi: ExtensionContext): the
@@ -371,6 +371,9 @@
    :cwd (System/getProperty "user.dir")
    :model nil
    :scoped-models []
+   ;; pi: ctx.modelRegistry — read-only registry facades (same fns as the
+   ;; extension api's :models map, without the tracked register/unregister)
+   :models read-model-facades
    :thinking-level nil
    :is-idle (fn [] true)
    :has-pending-messages (fn [] false)
@@ -495,6 +498,18 @@
 (defn get-registered-provider-ids [] (models/get-registered-provider-ids))
 (defn register-provider! [provider-id config] (models/register-provider-config! provider-id config))
 (defn unregister-provider! [provider-id] (models/unregister-provider-config! provider-id))
+
+(def ^:private read-model-facades
+  "Read-only model registry facades shared by the extension api's :models map
+   and the context's :models (pi: ctx.modelRegistry reads)."
+  {:get-all get-all-models
+   :get-available get-available-models
+   :find find-model
+   :has-configured-auth has-configured-auth
+   :get-provider-auth-status get-provider-auth-status
+   :get-api-key-and-headers get-api-key-and-headers
+   :get-registered-provider-config get-registered-provider-config
+   :get-registered-provider-ids get-registered-provider-ids})
 
 (defn- exec
   "Execute a shell command and return {:exit n :out str :err str}
@@ -625,21 +640,14 @@
    global extension-providers atom, unlike ephemeral UI state which
    reload resets in bulk)."
   [track]
-  {:get-all get-all-models
-   :get-available get-available-models
-   :find find-model
-   :has-configured-auth has-configured-auth
-   :get-provider-auth-status get-provider-auth-status
-   :get-api-key-and-headers get-api-key-and-headers
-   :get-registered-provider-config get-registered-provider-config
-   :get-registered-provider-ids get-registered-provider-ids
-   :register-provider! (fn [provider-id config]
-                         (let [result (register-provider! provider-id config)]
-                           ;; track only after a successful register — a broken
-                           ;; config throws without touching stored state
-                           (track (fn [] (unregister-provider! provider-id)))
-                           result))
-   :unregister-provider! unregister-provider!})
+  (assoc read-model-facades
+         :register-provider! (fn [provider-id config]
+                               (let [result (register-provider! provider-id config)]
+                                 ;; track only after a successful register — a broken
+                                 ;; config throws without touching stored state
+                                 (track (fn [] (unregister-provider! provider-id)))
+                                 result))
+         :unregister-provider! unregister-provider!))
 
 (defn- api-session
   "The :session capability map — live session facades (pi:

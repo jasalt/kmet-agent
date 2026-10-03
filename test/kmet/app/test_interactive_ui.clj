@@ -1399,6 +1399,9 @@
             (t/is (string? (:cwd ctx)))
             (t/is (identical? model (:model ctx)))
             (t/is (= :test-provider (:provider (:model ctx))))
+            (t/is (identical? model ((:find (:models (extensions/build-extension-context)))
+                                     :test-provider "test-model"))
+                  "ctx :models reads the live registry (pi ctx.modelRegistry)")
             (t/is (= [] (:scoped-models ctx)))
             (t/is (true? ((:is-idle ctx))))
             (t/is (false? ((:has-pending-messages ctx))))
@@ -1512,6 +1515,12 @@
                   "no :thinking-level — kmet drops scoped thinking levels")
             (t/is (identical? native (:model (first scoped))))
             (t/is (identical? foreign (:model (second scoped))))))
+        (testing "duplicate entries collapse (pi modelsAreEqual dedupe)"
+          (reset! (:scoped-models ag) ["test-native/test-model"
+                                       "test-native/test-model"])
+          (let [scoped (:scoped-models (extensions/build-extension-context))]
+            (t/is (= 1 (count scoped)))
+            (t/is (identical? native (:model (first scoped))))))
         (testing "bare ids resolve against the current provider"
           (reset! (:scoped-models ag) ["test-model"])
           (t/is (identical? native

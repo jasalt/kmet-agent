@@ -195,13 +195,16 @@
 (defn- context-scoped-models
   "The extension context's :scoped-models value (pi: ExtensionContext
    .scopedModels): the session scoped entry list resolved to {:model Model}
-   maps, dropping entries that no longer resolve. kmet drops scoped thinking
-   levels, so the maps never carry :thinking-level."
+   maps against the registered catalogue (not the auth-filtered available
+   view cycling uses), dropping entries that no longer resolve and
+   deduplicating by model. kmet drops scoped thinking levels, so the maps
+   never carry :thinking-level."
   [ag]
   (into []
-        (keep (fn [entry]
-                (when-let [m (resolver/resolve-scoped-model entry @(:provider ag))]
-                  {:model m})))
+        (comp (keep (fn [entry]
+                      (when-let [m (resolver/resolve-scoped-model entry @(:provider ag))]
+                        {:model m})))
+              (distinct))
         @(:scoped-models ag)))
 
 (defn build-extension-ui-registry
@@ -499,8 +502,7 @@
                       (if (and model (models/has-configured-auth model))
                         (let [ag @(:agent-state cs)
                               old-model (models/get-model @(:provider ag) @(:model ag))]
-                          (reset! (:provider ag) (:provider model))
-                          (agent/set-model! ag (:id model))
+                          (agent/set-model! ag model)
                           (let [new-thinking (agent/switch-thinking-level old-model model @(:thinking ag) nil)]
                             (agent/set-thinking-level! ag new-thinking)
                             (cfg/set-default-model! (:provider model) (:id model))

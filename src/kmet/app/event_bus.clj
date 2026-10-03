@@ -114,12 +114,13 @@
 
    :model-select
    "Model was changed (pi: model_select).
-    Payload: :model, :previous-model, :source (:set | :cycle)."
+    Payload: :model, :previous-model (resolved Model records; :previous-model
+    nil when the previous model is not registered), :source (:set | :cycle)."
 
    :thinking-level-select
    "Thinking level changed (pi: thinking_level_select, emitted by
     loop/set-thinking-level! on an actual change).
-    Payload: :level."
+    Payload: :level, :previous-level."
 
    :session-info-changed
    "Session display name changed (pi: session_info_changed, emitted by the

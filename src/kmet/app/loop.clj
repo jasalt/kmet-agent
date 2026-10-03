@@ -1368,14 +1368,18 @@ Be precise and concise in your responses."}}]
 
 (defn- apply-next-turn-update!
   "Apply a prepare-next-turn update map to the agent state.
-   Supported keys: :model, :system, :thinking, :system-prompt-override, :context
-   (:context replaces the conversation and rebuilds the session to match)."
+   Supported keys: :model (a Model record, pi AgentLoopTurnUpdate.model —
+   the provider follows the record), :system, :thinking,
+   :system-prompt-override, :context (:context replaces the conversation and
+   rebuilds the session to match)."
   [agent update]
   (when update
     (when-let [m (:model update)]
-      (let [previous @(:model agent)]
-        (when-not (= previous m)
-          (reset! (:model agent) m)
+      (let [previous (models/get-model @(:provider agent) @(:model agent))]
+        (when-not (and (= (:provider m) @(:provider agent))
+                       (= (:id m) @(:model agent)))
+          (reset! (:provider agent) (:provider m))
+          (reset! (:model agent) (:id m))
           (emit agent {:type :model-select :model m :previous-model previous :source :set}))))
     (when-let [s (:system update)] (reset! (:system agent) s))
     (when-let [th (:thinking update)]
@@ -1987,14 +1991,18 @@ Be precise and concise in your responses."}}]
       @changed)))
 
 (defn set-model!
-  "Set the active model, emitting :model-select and persisting a
-   :model-change session entry (pi: setModel → appendModelChange)."
+  "Set the active model from a Model record (the provider follows the
+   record), emitting :model-select with the resolved records and persisting
+   a :model-change session entry (pi: setModel → appendModelChange). A call
+   selecting the current provider/id is a no-op (no entry, no event)."
   [agent model]
-  (let [previous @(:model agent)]
-    (when-not (= previous model)
-      (reset! (:model agent) model)
+  (let [previous (models/get-model @(:provider agent) @(:model agent))]
+    (when-not (and (= (:provider model) @(:provider agent))
+                   (= (:id model) @(:model agent)))
+      (reset! (:provider agent) (:provider model))
+      (reset! (:model agent) (:id model))
       (when-let [sess (:session agent)]
-        (session/append-model-change! sess @(:provider agent) model))
+        (session/append-model-change! sess (:provider model) (:id model)))
       (emit agent {:type :model-select
                    :model model
                    :previous-model previous
@@ -2098,21 +2106,25 @@ Be precise and concise in your responses."}}]
           (session/append-model-change! sess (:provider next) (:id next)))
         (set-thinking-level! agent new-thinking)
         (emit agent {:type :model-select
-                     :model (:id next)
-                     :previous-model previous
+                     :model next
+                     :previous-model old-model
                      :source :cycle})
         (:id next)))))
 
 (defn set-thinking-level!
   "Set the thinking level, persisting a :thinking-level-change session entry
    only when the level actually changes (pi: setThinkingLevel — only
-   persisted on change)."
+   persisted on change) and emitting :thinking-level-select with both
+   levels (pi ThinkingLevelSelectEvent)."
   [agent level]
   (when-not (= level @(:thinking agent))
-    (reset! (:thinking agent) level)
-    (when-let [sess (:session agent)]
-      (session/append-thinking-level-change! sess level))
-    (emit agent {:type :thinking-level-select :level level})))
+    (let [previous @(:thinking agent)]
+      (reset! (:thinking agent) level)
+      (when-let [sess (:session agent)]
+        (session/append-thinking-level-change! sess level))
+      (emit agent {:type :thinking-level-select
+                   :level level
+                   :previous-level previous}))))
 
 (defn switch-thinking-level
   "Thinking level when switching OLD-MODEL → NEW-MODEL (kmet-specific rule;

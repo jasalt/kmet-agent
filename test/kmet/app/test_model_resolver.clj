@@ -153,7 +153,26 @@
       (t/is (= ["alpha-model"] (mapv :id models)))))
   (t/testing "resolve-model-scope delegates with bare ids"
     (let [{:keys [models]} (r/resolve-model-scope ["alpha-model"] all-models)]
-      (t/is (= ["alpha-model"] models)))))
+      (t/is (= ["alpha-model"] models))))
+  (t/testing "duplicate patterns collapse to the first occurrence (pi dedupe)"
+    (let [{:keys [models]} (r/resolve-model-scope-models
+                            ["alpha-model" "alpha/alpha-model"] all-models)]
+      (t/is (= ["alpha-model"] (mapv :id models))))))
+
+(t/deftest test-resolve-scoped-model
+  (register-test-providers!)
+  (t/testing "full provider/id entries resolve exactly"
+    (let [r (r/resolve-scoped-model "alpha/alpha-model" :beta)]
+      (t/is (= :alpha (:provider r)))
+      (t/is (= "alpha-model" (:id r)))))
+  (t/testing "bare ids prefer the current provider"
+    (t/is (= :alpha (:provider (r/resolve-scoped-model "shared" :alpha))))
+    (t/is (= :beta (:provider (r/resolve-scoped-model "shared" :beta)))))
+  (t/testing "a bare id with no current-provider match must be unambiguous"
+    (t/is (nil? (r/resolve-scoped-model "shared" :gamma))
+          "the same id under two providers → nil, not first-match")
+    (t/is (= :beta (:provider (r/resolve-scoped-model "beta-model" :gamma))))
+    (t/is (nil? (r/resolve-scoped-model "nope" :alpha)))))
 
 ;; ─── resolve-cli-model (--provider/--model) ────────────────────────────────
 

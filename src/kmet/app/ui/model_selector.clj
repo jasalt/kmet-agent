@@ -63,8 +63,7 @@
   (let [ag @(:agent-state cs)
         old-model (models/get-model @(:provider ag) @(:model ag))
         clamped (agent/switch-thinking-level old-model model @(:thinking ag) thinking-level)]
-    (reset! (:provider ag) (:provider model))
-    (agent/set-model! ag (:id model))
+    (agent/set-model! ag model)
     (cfg/set-default-model! (:provider model) (:id model))
     (agent/set-thinking-level! ag clamped)
     (chat-history/chat-history-add-message! (:chat-history cs)
