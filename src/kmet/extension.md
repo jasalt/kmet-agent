@@ -1052,15 +1052,21 @@ key used for provider requests (pi `getApiKey`). A config missing
 oauth block goes away with it.
 
 The extension **context** carries the current selection as `(:model ctx)`:
-in interactive mode it is the registered Model record — not the model ID
-string — so `:provider`, `:base-url` and the model's configured `:headers`
-are available, and the value can be passed straight to
+in interactive and print mode it is the registered Model record — not the
+model ID string — so `:provider`, `:base-url` and the model's configured
+`:headers` are available, and the value can be passed straight to
 `:get-api-key-and-headers`. Read the ID with `(:id (:model ctx))`. Each new
 context resolves the current provider/model pair at build time, so it follows
 model and session switches; it is nil when the selection is not registered
-(and always in the headless default). Because the provider and model are
-stored separately, a context built while a switch is being applied can
-momentarily resolve the old model id under the new provider (usually nil).
+(and in a bare headless context with no running agent). Because the provider
+and model are stored separately, a context built while a switch is being
+applied can momentarily resolve the old model id under the new provider
+(usually nil).
+
+The `:model-select` event carries the same records for `:model` and
+`:previous-model` (`:previous-model` nil when the previous model is not
+registered), so event handlers get provider and id without a registry
+lookup.
 
 `(:scoped-models ctx)` is the session's scoped entry list resolved to
 `[{:model Model} ...]` (pi: `ScopedModel[]`) — empty when no scoping is
@@ -1097,7 +1103,7 @@ through `:get-provider-auth-status` / `:get-api-key-and-headers`.
 The same facades are available on the extension **context** as `(:session
 ctx)` (pi: `ctx.sessionManager`) — command and event handlers that only
 receive `ctx` can read session state. The ctx map itself is a fresh merge of
-a headless default and the interactive mode's live `:build-context`
+a headless default and the running mode's live `:build-context`
 capability per call (pi: `createContext()`; the ctx `:model` contract is
 under Models). `get-entries` follows the active branch (a settings entry
 appended before a tree navigation is not on the new branch); use
