@@ -1,4 +1,4 @@
-{:jolt/min-version "0.8.15"
+{:jolt/min-version "0.8.16"
  ;; Jolt's floor is the LATEST tagged release — the host is young and moves
  ;; fast, so kmet targets the newest release rather than the oldest one a
  ;; feature needs (jolt/README.md § Bundled-extension loader floor). The
@@ -109,19 +109,21 @@
         ;; The shims behind babashka.http-client on Jolt. PR #25 dropped
         ;; the libz shims and stale java.util.zip claims; PR #27 fixed body
         ;; timeouts; PR #29 added the Windows Winsock transport (http-client
-        ;; v0.0.15, fixing http-client#28). Pin the merge so the default
-        ;; :platform transport works on Windows too. OpenSSL comes from
-        ;; jolt-crypto; java.util.zip is runtime surface from Jolt 0.8.9.
-        ;; v0.0.17 (77d7e310, 2026-09-30) adds the crypto v0.0.9 dependency
-        ;; (PR #30) and PR #31: interrupted connects are retried and TLS
-        ;; streams/contexts released once a connection fails.
-        ;; Its :jolt/provides still claims java.util.concurrent.CompletableFuture,
-        ;; a class Jolt main provides (not v0.8.15) — the claim is dropped with a
-        ;; startup warning. Fixed upstream in PR #34, but that revision floors
-        ;; the library at Jolt 0.8.16, untagged; the pin moves with that release
+        ;; v0.0.15, fixing http-client#28); PR #31 (v0.0.17, 77d7e310) retried
+        ;; interrupted connects and released TLS streams/contexts once a
+        ;; connection fails. Pin the merge so the default :platform transport
+        ;; works on Windows too. OpenSSL comes from jolt-crypto;
+        ;; java.util.zip is runtime surface from Jolt 0.8.9.
+        ;; Pinned to unreleased main (d99af98, PR #34's merge) until the
+        ;; first release carrying it: PR #34 drops the stale
+        ;; java.util.concurrent.CompletableFuture claim and floors the
+        ;; library at Jolt 0.8.16 (now the floor here), and PR #33 exits its
+        ;; test runners via jolt's wait and bumps crypto to v0.0.10 (kmet
+        ;; pins that revision already). On v0.0.17 every Jolt run printed
+        ;; the dropped-claim warning. Move to the v0.0.18+ tag when it ships
         ;; (jolt-lang/http-client#32, jolt-bugs.md).
         io.github.jolt-lang/http-client {:git/url "https://github.com/jolt-lang/http-client.git"
-                                         :git/sha "77d7e310a1aab2c7d5ecc9f6cc10f77b7a7f23ba"}
+                                         :git/sha "d99af98cc97dcb2e4afc3eee142166585a26b859"}
         ;; cljfmt / spec.alpha / rewrite-clj serve the format tasks
         ;; (kmet.tasks.format — one code path on both hosts) AND the fixed
         ;; bundled extension set (kmet.app.extension-libs, src/kmet/extension.md §

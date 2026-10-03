@@ -25,7 +25,7 @@
  ;; The floor tracks the root deps.edn's: the latest tagged Jolt release
  ;; (jolt/README.md § Bundled-extension loader floor) — one Jolt version
  ;; story for the repo, even while the lib provides nothing.
- :jolt/min-version "0.8.15"
+ :jolt/min-version "0.8.16"
 
  :paths ["src"]
 
