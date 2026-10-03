@@ -1075,6 +1075,10 @@ The context carries the read-only registry facade as `(:models ctx)` (pi:
 `:get-available`, `:find`, `:has-configured-auth`, `:get-provider-auth-status`,
 `:get-api-key-and-headers`, `:get-registered-provider-config`,
 `:get-registered-provider-ids` — in both interactive and headless modes.
+The facade deliberately omits pi's `getProvider(s)`, `refresh()` and
+`getError()`: provider records carry raw configured keys, a refresh is a full
+catalogue reload, and config errors surface at startup — auth lookups go
+through `:get-provider-auth-status` / `:get-api-key-and-headers`.
 
 ### Session
 
