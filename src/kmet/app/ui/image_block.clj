@@ -50,12 +50,13 @@
             theme (deref s/theme-sub)
             style (or fallback-style (fn [_ s] s))]
         (if (images-enabled? settings)
-          (protocols/render
-           (ic/make-image data mime-type
-                          {:fallback-color #(style theme %)}
-                          :max-width-cells (:image-width-cells settings)
-                          :filename filename)
-           width)
+          (let [image (ic/make-image data mime-type
+                                     {:fallback-color #(style theme %)}
+                                     :max-width-cells (:image-width-cells settings)
+                                     :filename filename)]
+            (try
+              (protocols/render image width)
+              (finally (protocols/dispose image))))
           [(utils/truncate-to-width
             (style theme (timg/image-fallback mime-type
                                               :dimensions dimensions

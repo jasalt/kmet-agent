@@ -5,6 +5,8 @@
             [kmet.app.ui.subs :as subs]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.core :as core]
+            [kmet.tui.protocols :as protocols]
+            [kmet.tui.macros :as macros]
             [kmet.tui.utils :as utils]))
 
 (def ^:private png
@@ -75,6 +77,22 @@
         (is (= "20" (second (re-find #"c=(\d+)" seq-line)))
             "the configured :image-width-cells caps the rendered width")
         (is (not-any? #(str/includes? % "[Image:") (mapv strip-ansi lines)))))))
+
+(deftest image-reflow-does-not-retain-temporary-components
+  (with-image-env
+    {:show-images true :image-width-cells 20}
+    {:images :kitty :true-color true :hyperlinks true}
+    (fn []
+      (let [watchers #(count @(deref #'macros/watch-registry))
+            baseline (watchers)
+            b (ib/make-image-block png "image/png")]
+        (try
+          (doseq [width [40 60 80]]
+            (is (some #(str/includes? % "\u001b_G") (core/render b width)))
+            (is (= (inc baseline) (watchers))
+                "only the ImageBlock, not its temporary Image, stays tracked"))
+          (finally (protocols/dispose b)))
+        (is (= baseline (watchers)))))))
 
 (deftest resubscribes-to-settings-changes
   (testing "a settings change re-renders the block (shared sub subscription)"
