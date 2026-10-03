@@ -28,8 +28,10 @@
 (defn run
   "Start the interactive TUI with the given config and CLI opts.
    Loads extensions, resolves the session (:resume/:continue/new), builds the
-   layout, and runs the TUI loop until quit. Cleans up the TUI and tracked
-   child processes on error, then rethrows for the top-level handler.
+   layout, and runs the TUI loop until quit. Releases the mode when it
+   ends: tracked child processes, the TUI on error, and (finally, on every
+   path) the extension UI registry, which closes over the whole mode.
+   Error paths rethrow for the top-level handler.
    pi: cli.js dispatch to interactive mode."
   [config opts]
   (let [tui-ref (atom nil)]
@@ -147,4 +149,10 @@
         (process/kill-tracked-children!)
         (when-let [t @tui-ref]
           (try (tui/tui-stop t) (catch Exception _)))
-        (throw e)))))
+        (throw e))
+      (finally
+        ;; The extension UI registry closes over the whole mode (TUI, chat
+        ;; history, editor, session); a stopped mode must not stay reachable
+        ;; through the global registry until the next one installs. The CLI
+        ;; exits right after this, but embedded hosts and tests keep going.
+        (extensions/clear-ui-registry!)))))

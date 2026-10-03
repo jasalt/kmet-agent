@@ -34,6 +34,7 @@
             [kmet.app.prompts :as prompts]
             [kmet.app.context :as context]
             [kmet.libs.host :as host]
+            [kmet.libs.process :as process]
             [kmet.app.extensions :as extensions]
             [kmet.app.theme-controller :as theme-ctrl]
             [kmet.ai.models :as models]
@@ -1098,6 +1099,33 @@
               (is (= {:consume true} (listener "\u001bx"))
                   "the override key quits"))))
         (finally (tui-kb/set-global-keybindings! prev-global))))))
+
+(deftest run-clears-the-extension-ui-registry-on-mode-end
+  (testing "interactive/run releases the mode when it ends: the extension UI
+            registry closes over the TUI, chat history, editor and session,
+            so a stopped mode must not stay reachable through the global
+            registry (the CLI exits right after; embedded hosts and tests
+            keep running)"
+    (let [noop (fn [& _] nil)
+          tui-stub {:running? (atom false) :stopped? (atom true)}
+          sess {}]
+      (extensions/set-ui-registry! {:probe (fn [] :alive)})
+      (try
+        (is (= :alive (extensions/ui-call :probe))
+            "sanity: the registry is installed")
+        (with-redefs [state/set-global-config! noop
+                      state/resolve-session-arg (fn [_ _] "target/fake-session.jsonl")
+                      state/format-resume-command (fn [_ _] nil)
+                      session/load-session (fn [_] sess)
+                      layout/build-layout (fn [_ _] {:tui tui-stub
+                                                     :session-atom (atom sess)})
+                      tui/tui-start noop
+                      process/kill-tracked-children! noop]
+          (inter/run {} {:session "fake"}))
+        (is (nil? (extensions/ui-call :probe))
+            "the registry is cleared when the mode ends")
+        (finally
+          (extensions/clear-ui-registry!))))))
 
 (deftest session-info-shows-per-tool-usage
   (testing "/session's Tool Results section: per-tool calls + estimated result tokens, highest first, with a TOTAL (run_code.md T0)"
