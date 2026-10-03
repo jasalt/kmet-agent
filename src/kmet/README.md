@@ -185,3 +185,11 @@ bb format-check-changed # (or bb format-changed to write the fix)
 The full gates — `bb test`, `bb test-ext`, `bb lint` (0 findings required) and
 `bb format-check` — are slow. Use the changed-file tasks while iterating and
 run the full gates when requested or before release.
+
+The attribution gate is shell-only and standalone — the script needs the
+message text, not a checkout: `scripts/attribution_check.sh` reads a commit
+message from a file argument (the commit-msg hook's call) or stdin, and
+refuses co-author trailers, AI session links, machine addresses and
+generated-with footers. `sh scripts/install_hooks.sh` installs the hook; the
+attribution workflow (`.github/workflows/attribution.yml`) runs the same
+script over a pushed or PR range. It is the repository's only CI check.

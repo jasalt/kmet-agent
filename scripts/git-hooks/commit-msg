@@ -1,0 +1,5 @@
+#!/bin/sh
+# git commit-msg hook: refuse a message carrying AI attribution at commit time
+# — the earliest stop, before CI. Install with scripts/install_hooks.sh
+# (copies scripts/git-hooks/* into the git directory's hooks/).
+exec sh "$(git rev-parse --show-toplevel)/scripts/attribution_check.sh" "$1"

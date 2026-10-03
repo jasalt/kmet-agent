@@ -1,0 +1,44 @@
+name: attribution
+
+# The repository's only CI check: no AI-assistant attribution in what a push or
+# a PR adds. The same standalone message check the commit-msg hook runs
+# (scripts/attribution_check.sh) is fed the pushed or PR range here, so no bb,
+# no Clojure and no extra tooling are needed.
+on:
+  push:
+  pull_request:
+
+jobs:
+  attribution:
+    name: No AI attribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # the range's history; a shallow checkout has none
+
+      - name: Commits in range
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -o pipefail
+          if [ "$EVENT" = pull_request ]; then
+            range="origin/$BASE_REF..HEAD"
+          elif [ -n "$BEFORE" ] && ! echo "$BEFORE" | grep -q '^0*$' && git cat-file -e "$BEFORE" 2>/dev/null; then
+            range="$BEFORE..HEAD"
+          elif git rev-parse --verify -q HEAD~20 >/dev/null; then
+            range="HEAD~20..HEAD"   # a new branch or a force-push: the recent commits
+          else
+            range="HEAD"            # fewer than 20 commits: what there is
+          fi
+          echo "scanning $range"
+          git log --format=%B "$range" | sh scripts/attribution_check.sh
+
+      - name: PR description
+        if: github.event_name == 'pull_request'
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n' "$BODY" | sh scripts/attribution_check.sh

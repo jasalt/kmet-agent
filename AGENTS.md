@@ -49,6 +49,10 @@ project root.
 - `bb check` verifies source namespaces. Do not hand-edit generated provider
   or image-model catalogs: use `bb generate-models` / `bb check-model-data`
   and `kmet --generate-models` for the user-level caches.
+- `sh scripts/install_hooks.sh` installs the commit-msg hook; it runs
+  `scripts/attribution_check.sh`, a standalone commit-message check (a file
+  argument or stdin, no checkout). The attribution workflow runs the same
+  script over a pushed or PR range — it is the repository's only CI check.
 
 ### Interactive development
 
@@ -158,7 +162,11 @@ project root.
 
 ## Git and instruction hierarchy
 
-- Do not add `Co-authored-by` trailers.
+- Commit messages describe the change and nothing else: no `Co-authored-by`
+  trailers and no AI-assistant session links, machine addresses, or
+  generated-with footers. `scripts/attribution_check.sh` — the commit-msg hook
+  `scripts/install_hooks.sh` installs, and the attribution workflow — enforces
+  this.
 - When instructions conflict, use this order: explicit user instructions,
   this file, the coding-agent defaults, then general best practices. Explain a
   conflict and ask for confirmation rather than silently overriding it.

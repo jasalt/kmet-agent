@@ -84,6 +84,7 @@ jolt/           — Jolt provider scaffolding
 docs/           — user-facing documentation
 test/           — test suites
 tasks/          — development and packaging tasks
+scripts/        — repo tooling (git hooks, attribution check, repros)
 ```
 
 Implementation and development references are kept close to their packages;
