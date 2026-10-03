@@ -6,24 +6,38 @@
    kmet.ai.proxy namespaces are deleted, so any require of them (or of
    babashka.http-client) fails the build — preventing the abstraction
    from eroding later."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is]]
             [babashka.fs :as fs]))
 
+(def ^:private build-dir-names
+  "Directories the walk never descends into. Their .clj files are build
+   output or test residue (extension target/ fixtures, AOT output), so
+   scanning them would make the guard's file set depend on whatever ran in
+   the checkout before — and a stale fixture could trip the checks."
+  #{"target" "dist" "node_modules" ".cpcache" ".jolt" ".git"})
+
 (defn- source-files
-  "Every .clj/.cljc file under the given dirs (src, scripts, extensions,
-   test), at any depth — a recursive walk, not `fs/glob` with `**/`: the glob
-   does not match files directly in a base dir, so it was silently skipping
-   the scripts/ top level and `extensions/*.clj`, and it only looked at .clj,
-   missing every .cljc (run_code, context, the win clipboard shim)."
-  []
-  (letfn [(walk [dir]
-            (mapcat (fn [f] (if (fs/directory? f) (walk f) [f]))
-                    (fs/list-dir dir)))]
-    (->> ["src" "scripts" "extensions" "test"]
-         (mapcat #(when (fs/directory? %) (walk %)))
-         (map str)
-         (filter #(re-find #"\.clj[ca]?$" %))
-         (sort))))
+  "Every .clj/.cljc file under the given ROOTS (default: src, scripts,
+   extensions, test), at any depth — a recursive walk, not `fs/glob` with
+   `**/`: the glob does not match files directly in a base dir, so it was
+   silently skipping the scripts/ top level and `extensions/*.clj`, and it
+   only looked at .clj, missing every .cljc (run_code, context, the win
+   clipboard shim). Build output and cache dirs are skipped
+   (build-dir-names)."
+  ([] (source-files ["src" "scripts" "extensions" "test"]))
+  ([roots]
+   (letfn [(walk [dir]
+             (mapcat (fn [f]
+                       (when-not (and (fs/directory? f)
+                                      (build-dir-names (fs/file-name f)))
+                         (if (fs/directory? f) (walk f) [f])))
+                     (fs/list-dir dir)))]
+     (->> roots
+          (mapcat #(when (fs/directory? %) (walk %)))
+          (map str)
+          (filter #(re-find #"\.clj[ca]?$" %))
+          (sort)))))
 
 (defn- ns-sym [path]
   (try
@@ -77,3 +91,20 @@
                " — outbound HTTP must go through kmet.libs.http")))
     (is (not (spawns-curl? path))
         (str path " invokes curl directly — only kmet.libs.http may spawn curl"))))
+
+(deftest source-files-skips-build-residue
+  (let [root (fs/create-temp-dir {:dir (doto (fs/path "target") fs/create-dirs)
+                                  :prefix "http-boundary-"})
+        keep (fs/path root "extensions" "pkg" "keep.clj")
+        residue (fs/path root "extensions" "pkg" "target" "residue.clj")]
+    (try
+      (fs/create-dirs (fs/parent keep))
+      (fs/create-dirs (fs/parent residue))
+      (spit (str keep) "(ns pkg.keep)")
+      (spit (str residue) "(ns pkg.residue (:require [babashka.http-client :as http]))")
+      (let [files (mapv str (source-files [(str root)]))]
+        (is (some #(str/includes? % "keep.clj") files)
+            "real sources under the root are still scanned")
+        (is (not-any? #(str/includes? % "residue.clj") files)
+            "build-output residue is skipped"))
+      (finally (fs/delete-tree root)))))
