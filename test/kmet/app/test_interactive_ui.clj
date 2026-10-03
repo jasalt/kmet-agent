@@ -60,6 +60,17 @@
   (fn [_ component & [opts]]
     (reset! ref (or (:focus-target opts) component))))
 
+(defn- clear-installed-context!
+  "Reset the global extension wiring a `build-extension-ui-registry` install
+   leaves behind: the installed registry plus the session/context/entry
+   sinks, which close over the installing test's fake cs. Call from a test's
+   finally so later tests never see the fake context."
+  []
+  (extensions/set-session! nil)
+  (extensions/set-context-sink! nil)
+  (extensions/set-entry-sink! nil)
+  (extensions/clear-ui-registry!))
+
 (def ^:private no-image-caps
   "Capabilities stub for the /settings tests: the image rows (Show images /
   Image width) exist only when the terminal reports image support
@@ -1370,72 +1381,115 @@
 
 (deftest test-build-context-capability
   (testing "the interactive ui registry's :build-context captures live state"
-    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
-          cs {:agent-state (atom ag)
-              :config cfg/default-config
-              :session-atom (atom nil)}
-          registry ((var ui-registry/build-extension-ui-registry)
-                    {:tui nil :cs cs}
-                    {:fdp (fdp/make-footer-data-provider)}
-                    nil)
-          ctx ((:build-context registry))]
-      (t/is (= :interactive (:mode ctx)))
-      (t/is (true? (:has-ui ctx)))
-      (t/is (string? (:cwd ctx)))
-      (t/is (= "deepseek-v4-flash" (:model ctx)))
-      (t/is (= [] (:scoped-models ctx)))
-      (t/is (true? ((:is-idle ctx))))
-      (t/is (false? ((:has-pending-messages ctx))))
-      (t/is (false? ((:signal ctx))))
-      (t/is (string? ((:get-system-prompt ctx))))
-      (t/is (nil? ((:wait-for-idle ctx))) "already idle → nil, not a promise")
-      (t/is (nil? ((:get-context-usage ctx))) "no active session → nil (pi parity)")
-      (t/is (= {:cancelled true} ((:fork ctx) nil)))
-      (t/is (= {:cancelled true} ((:navigate-tree ctx) "missing-leaf")))
-      (t/is (= {:cancelled true} ((:switch-session ctx) "/nonexistent-file.edn")))
-      (t/is (false? ((:is-project-trusted ctx))))
-      (testing ":navigate-tree opts reach the extension context. The
+    (let [model (m/map->Model {:provider :test-provider :id "test-model"
+                               :context-window 32768})]
+      (with-redefs [m/providers-atom (atom {:test-provider {:models [model]}})]
+        (try
+          (let [ag (agent/make-agent-state :provider :test-provider :model "test-model")
+                cs {:agent-state (atom ag)
+                    :config cfg/default-config
+                    :session-atom (atom nil)}
+                registry ((var ui-registry/build-extension-ui-registry)
+                          {:tui nil :cs cs}
+                          {:fdp (fdp/make-footer-data-provider)}
+                          nil)
+                ctx ((:build-context registry))]
+            (t/is (= :interactive (:mode ctx)))
+            (t/is (true? (:has-ui ctx)))
+            (t/is (string? (:cwd ctx)))
+            (t/is (identical? model (:model ctx)))
+            (t/is (= :test-provider (:provider (:model ctx))))
+            (t/is (= [] (:scoped-models ctx)))
+            (t/is (true? ((:is-idle ctx))))
+            (t/is (false? ((:has-pending-messages ctx))))
+            (t/is (false? ((:signal ctx))))
+            (t/is (string? ((:get-system-prompt ctx))))
+            (t/is (nil? ((:wait-for-idle ctx))) "already idle → nil, not a promise")
+            (t/is (nil? ((:get-context-usage ctx))) "no active session → nil (pi parity)")
+            (t/is (= {:cancelled true} ((:fork ctx) nil)))
+            (t/is (= {:cancelled true} ((:navigate-tree ctx) "missing-leaf")))
+            (t/is (= {:cancelled true} ((:switch-session ctx) "/nonexistent-file.edn")))
+            (t/is (false? ((:is-project-trusted ctx))))
+            (testing ":navigate-tree opts reach the extension context. The
                 full navigate-tree flow needs an editor + LLM; here we
                 only test the wrapper's short-circuit: a missing target
                 id returns :cancelled without emitting
                 :session-before-tree (the prep-event contract is
                 exercised by the manual /review run, not here)."
-        (let [seen (atom nil)
-              dereg (event-bus/on-event :session-before-tree
-                                        (fn [ev] (reset! seen ev)))
-              result ((:navigate-tree ctx) "missing-target"
-                                           {:summarize false
-                                            :custom-instructions "ci"
-                                            :replace-instructions true
-                                            :label "my-label"})]
-          (t/is (= {:cancelled true} result)
-                "navigate-tree with a missing target id returns :cancelled")
-          (t/is (nil? @seen)
-                "no :session-before-tree event was emitted for a missing target")
-          (dereg)))
-      (t/is (not (contains? ctx :cs)) "CoreState never leaks into the ctx")
-      (testing "fns stay live across an agent swap (session swaps assoc a
+              (let [seen (atom nil)
+                    dereg (event-bus/on-event :session-before-tree
+                                              (fn [ev] (reset! seen ev)))
+                    result ((:navigate-tree ctx) "missing-target"
+                                                 {:summarize false
+                                                  :custom-instructions "ci"
+                                                  :replace-instructions true
+                                                  :label "my-label"})]
+                (t/is (= {:cancelled true} result)
+                      "navigate-tree with a missing target id returns :cancelled")
+                (t/is (nil? @seen)
+                      "no :session-before-tree event was emitted for a missing target")
+                (dereg)))
+            (t/is (not (contains? ctx :cs)) "CoreState never leaks into the ctx")
+            (testing "fns stay live across an agent swap (session swaps assoc a
                 new record; only the :session field goes stale)"
-        (let [sess (session/create-session (str (fs/cwd) "/target"))]
-          (reset! (:agent-state cs) (assoc ag :session sess))
-          (t/is (true? ((:is-idle ctx))))
-          (t/is (nil? ((:wait-for-idle ctx))))))
-      (testing "get-context-usage reports the active session (pi parity)"
-        (let [fdp-provider (fdp/make-footer-data-provider)
-              _ (fdp/fdp-set-session! fdp-provider
-                                      (session/create-session
-                                       (str (fs/cwd) "/target")))
-              registry ((var ui-registry/build-extension-ui-registry)
-                        {:tui nil :cs cs}
-                        {:fdp fdp-provider}
-                        nil)
-              usage ((:get-context-usage ((:build-context registry))))]
-          (t/is (contains? usage :tokens))
-          (t/is (contains? usage :context-window))
-          (t/is (contains? usage :percent)))))
-      ;; the registry install is a side effect — don't leak the fake cs
-      ;; registry into later tests (build-extension-context would merge it)
-    (extensions/clear-ui-registry!)))
+              (let [sess (session/create-session (str (fs/cwd) "/target"))]
+                (reset! (:agent-state cs) (assoc ag :session sess))
+                (t/is (true? ((:is-idle ctx))))
+                (t/is (nil? ((:wait-for-idle ctx))))))
+            (testing "get-context-usage reports the active session (pi parity)"
+              (let [fdp-provider (fdp/make-footer-data-provider)
+                    _ (fdp/fdp-set-session! fdp-provider
+                                            (session/create-session
+                                             (str (fs/cwd) "/target")))
+                    registry ((var ui-registry/build-extension-ui-registry)
+                              {:tui nil :cs cs}
+                              {:fdp fdp-provider}
+                              nil)
+                    usage ((:get-context-usage ((:build-context registry))))]
+                (t/is (contains? usage :tokens))
+                (t/is (contains? usage :context-window))
+                (t/is (contains? usage :percent)))))
+          ;; Registry installation is a side effect: clean up even if a
+          ;; capability throws, so later contexts cannot see the fake cs.
+          (finally (clear-installed-context!)))))))
+
+(deftest test-build-context-resolves-current-model
+  (let [native (m/map->Model {:provider :test-native :id "test-model"
+                              :base-url "https://native.test/v1"})
+        adapter (m/map->Model {:provider :test-adapter :id "test-model"
+                               :base-url "https://adapter.test/v1"
+                               :headers {"X-Test" "yes"}})
+        alternate (assoc adapter :id "other")
+        ag (agent/make-agent-state :provider :test-native :model "test-model")
+        cs {:agent-state (atom ag)
+            :config cfg/default-config
+            :session-atom (atom nil)}]
+    (with-redefs [m/providers-atom (atom {:test-native {:models [native]}
+                                          :test-adapter {:models [adapter alternate]}})]
+      (try
+        (ui-registry/build-extension-ui-registry
+         {:tui nil :cs cs} {:fdp (fdp/make-footer-data-provider)} nil)
+        (t/is (identical? native (:model (extensions/build-extension-context))))
+        (testing "a provider switch resolves the record even when the model ID is unchanged"
+          (reset! (:provider ag) :test-adapter)
+          (let [model (:model (extensions/build-extension-context))]
+            (t/is (identical? adapter model))
+            (t/is (= "https://adapter.test/v1" (:base-url model)))
+            (t/is (= {"X-Test" "yes"} (:headers model)))))
+        (testing "model and session changes are read from the current agent"
+          (reset! (:model ag) "other")
+          (t/is (identical? alternate (:model (extensions/build-extension-context))))
+          (reset! (:agent-state cs)
+                  (agent/make-agent-state :provider :test-native :model "test-model"))
+          (t/is (identical? native (:model (extensions/build-extension-context)))))
+        (testing "unregistered selections have no resolved model"
+          (reset! (:model @(:agent-state cs)) "missing")
+          (t/is (nil? (:model (extensions/build-extension-context))))
+          (reset! (:model @(:agent-state cs)) "test-model")
+          (reset! (:provider @(:agent-state cs)) :missing)
+          (t/is (nil? (:model (extensions/build-extension-context)))))
+        (finally
+          (clear-installed-context!))))))
 
 (deftest test-extension-reset-closes-open-dialogs
   (testing "the registry :reset teardown closes an open ui-custom dialog
@@ -1484,10 +1538,7 @@
           (t/is (false? (tui/tui-has-overlay? ui)) "the overlay stack is empty")
           (t/is (empty? @logged) "no disposed-while-mounted violation"))
         (finally
-          (extensions/set-session! nil)
-          (extensions/set-context-sink! nil)
-          (extensions/set-entry-sink! nil)
-          (extensions/clear-ui-registry!))))))
+          (clear-installed-context!))))))
 
 ;; ─── DSL stage 4 review: dock generation gate + widget-area reactivity ────
 
