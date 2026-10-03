@@ -2,6 +2,8 @@
   (:require [clojure.test :as t]
             [kmet.tui.core :as core]
             [kmet.tui.components.expandable-text :as et]
+            [kmet.tui.macros :as macros]
+            [kmet.tui.protocols :as protocols]
             [kmet.test-utils :as tu]))
 
 (defn- render-plain [c width]
@@ -46,3 +48,16 @@
   (let [c (et/make-expandable-text (fn [] "hi") (fn [] "hi") :padding-x 1)
         line (first (render-plain c 10))]
     (t/is (.startsWith line " hi"))))
+
+(t/deftest test-dispose-disposes-the-inner-text
+  ;; the wrapper renders an inner Text that registers its own track! watches;
+  ;; it is not a container child, so the wrapper's dispose must reach it
+  (let [watchers #(count @(deref #'macros/watch-registry))
+        pre (watchers)
+        c (et/make-expandable-text (fn [] "collapsed") (fn [] "expanded"))]
+    (core/render c 40)
+    (t/is (= (+ 2 pre) (watchers))
+          "the wrapper and its inner Text are tracked")
+    (protocols/dispose c)
+    (t/is (= pre (watchers))
+          "disposing the wrapper disposes the inner Text")))

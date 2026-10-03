@@ -16,7 +16,12 @@
         (track-deps @(:text-atom tc))
         (protocols/render tc width))))
   (invalidate [_this]
-    (protocols/invalidate @text-comp)))
+    (protocols/invalidate @text-comp))
+
+  (dispose [_this]
+    ;; the inner Text renders inside this component (registering its own
+    ;; track! watches) but is not a container child — dispose it explicitly
+    (protocols/dispose @text-comp)))
 
 (defn make-expandable-text
   "Create an ExpandableText.
