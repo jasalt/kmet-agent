@@ -20,6 +20,7 @@
             [kmet.app.context :as context]
             [kmet.libs.reakt :as r]
             [kmet.ai.models :as models]
+            [kmet.app.model-resolver :as resolver]
             [kmet.app.loop :as agent]
             [kmet.app.session :as session]
             [kmet.app.commands :as commands]
@@ -190,6 +191,18 @@
                (get-trigger-characters [_]
                  (vec (:get-trigger-characters x []))))
     :else nil))
+
+(defn- context-scoped-models
+  "The extension context's :scoped-models value (pi: ExtensionContext
+   .scopedModels): the session scoped entry list resolved to {:model Model}
+   maps, dropping entries that no longer resolve. kmet drops scoped thinking
+   levels, so the maps never carry :thinking-level."
+  [ag]
+  (into []
+        (keep (fn [entry]
+                (when-let [m (resolver/resolve-scoped-model entry @(:provider ag))]
+                  {:model m})))
+        @(:scoped-models ag)))
 
 (defn build-extension-ui-registry
   "Create the ExtensionUIContext implementation for the live layout
@@ -595,7 +608,7 @@
                              :has-ui true
                              :cwd (fdp/fdp-get-cwd fdp)
                              :model (models/get-model @(:provider ag) @(:model ag))
-                             :scoped-models @(:scoped-models ag)
+                             :scoped-models (context-scoped-models ag)
                              :thinking-level @(:thinking ag)
                              :is-idle (fn [] (= :idle @(:status @ag-atom)))
                              :has-pending-messages (fn []

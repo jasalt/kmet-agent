@@ -1491,6 +1491,46 @@
         (finally
           (clear-installed-context!))))))
 
+(deftest test-build-context-resolves-scoped-models
+  (let [native (m/map->Model {:provider :test-native :id "test-model"})
+        alternate (m/map->Model {:provider :test-native :id "other"})
+        foreign (m/map->Model {:provider :test-adapter :id "test-model"})
+        ag (agent/make-agent-state :provider :test-native :model "test-model"
+                                   :scoped-models ["test-native/test-model"
+                                                   "test-adapter/test-model"])
+        cs {:agent-state (atom ag)
+            :config cfg/default-config
+            :session-atom (atom nil)}]
+    (with-redefs [m/providers-atom (atom {:test-native {:models [native alternate]}
+                                          :test-adapter {:models [foreign]}})]
+      (try
+        (ui-registry/build-extension-ui-registry
+         {:tui nil :cs cs} {:fdp (fdp/make-footer-data-provider)} nil)
+        (testing "full ids resolve to pi ScopedModel-shaped entries"
+          (let [scoped (:scoped-models (extensions/build-extension-context))]
+            (t/is (= #{:model} (set (keys (first scoped))))
+                  "no :thinking-level — kmet drops scoped thinking levels")
+            (t/is (identical? native (:model (first scoped))))
+            (t/is (identical? foreign (:model (second scoped))))))
+        (testing "bare ids resolve against the current provider"
+          (reset! (:scoped-models ag) ["test-model"])
+          (t/is (identical? native
+                            (:model (first (:scoped-models (extensions/build-extension-context))))))
+          (reset! (:provider ag) :test-adapter)
+          (t/is (identical? foreign
+                            (:model (first (:scoped-models (extensions/build-extension-context)))))))
+        (testing "entries that no longer resolve drop out"
+          (reset! (:scoped-models ag) ["test-native/missing" "also-missing"
+                                       "test-native/test-model"])
+          (let [scoped (:scoped-models (extensions/build-extension-context))]
+            (t/is (= 1 (count scoped)))
+            (t/is (identical? native (:model (first scoped))))))
+        (testing "no scoping configured stays empty"
+          (reset! (:scoped-models ag) [])
+          (t/is (= [] (:scoped-models (extensions/build-extension-context)))))
+        (finally
+          (clear-installed-context!))))))
+
 (deftest test-extension-reset-closes-open-dialogs
   (testing "the registry :reset teardown closes an open ui-custom dialog
             through the ordered leave-then-dispose path on both surfaces:

@@ -1062,6 +1062,11 @@ model and session switches; it is nil when the selection is not registered
 stored separately, a context built while a switch is being applied can
 momentarily resolve the old model id under the new provider (usually nil).
 
+`(:scoped-models ctx)` is the session's scoped entry list resolved to
+`[{:model Model} ...]` (pi: `ScopedModel[]`) — empty when no scoping is
+configured, and entries that no longer resolve drop out. kmet drops scoped
+thinking levels, so the maps carry no `:thinking-level` key.
+
 ### Session
 
 ```clojure

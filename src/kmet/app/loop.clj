@@ -2053,18 +2053,6 @@ Be precise and concise in your responses."}}]
 
 (declare switch-thinking-level set-thinking-level!)
 
-(defn- resolve-scoped-model
-  "Resolve a scoped-list entry (full \"provider/id\" or bare id) to a Model
-   record. Bare ids (the legacy --models/`:models` form) prefer the current
-   provider, then the unique cross-provider match."
-  [entry current-provider]
-  (let [s (str entry)
-        slash (str/index-of s "/")]
-    (if slash
-      (models/get-model (keyword (subs s 0 slash)) (subs s (inc slash)))
-      (or (models/get-model current-provider s)
-          (first (filter #(= s (:id %)) (models/get-models)))))))
-
 (defn- scoped-model-entries
   "Resolve scoped-list entries to available Model records (pi
    _cycleScopedModel — filtered to the available snapshot; entries with no
@@ -2074,7 +2062,7 @@ Be precise and concise in your responses."}}]
                             (models/get-available)))]
     (into []
           (keep (fn [entry]
-                  (let [m (resolve-scoped-model entry current-provider)]
+                  (let [m (resolver/resolve-scoped-model entry current-provider)]
                     (when (and m (contains? available [(name (:provider m)) (:id m)])) m))))
           entries)))
 

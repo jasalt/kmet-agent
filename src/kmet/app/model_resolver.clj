@@ -104,6 +104,18 @@
 
 ;; ─── Scoped models (pi resolveModelScopeFromModels essentials) ────────────
 
+(defn resolve-scoped-model
+  "Resolve a scoped-list entry (full \"provider/id\" or bare id) to a Model
+   record. Bare ids (the legacy --models/`:models` form) prefer the current
+   provider, then the unique cross-provider match."
+  [entry current-provider]
+  (let [s (str entry)
+        slash (str/index-of s "/")]
+    (if slash
+      (models/get-model (keyword (subs s 0 slash)) (subs s (inc slash)))
+      (or (models/get-model current-provider s)
+          (first (filter #(= s (:id %)) (models/get-models)))))))
+
 (defn resolve-model-scope-models
   "Resolve --models PATTERNS to Model records (pi resolveModelScopeFromModels
    — the scoped list carries provider refs, unlike resolve-model-scope's bare
