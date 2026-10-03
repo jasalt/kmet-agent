@@ -94,6 +94,26 @@
           (finally (protocols/dispose b)))
         (is (= baseline (watchers)))))))
 
+(deftest image-reflow-reuses-the-kitty-image-id
+  (with-image-env
+    {:show-images true :image-width-cells 20}
+    {:images :kitty :true-color true :hyperlinks true}
+    (fn []
+      (let [b (ib/make-image-block png "image/png")
+            id-at (fn [width]
+                    (first (timg/extract-kitty-image-ids
+                            (first (core/render b width)))))]
+        (try
+          (let [id (id-at 40)]
+            (is (some? id) "the rendered line carries a kitty image id")
+            (is (= id (id-at 60)) "reflowing at a new width reuses the id")
+            (reset! subs/image-settings-atom {:show-images false :image-width-cells 20})
+            (is (not-any? #(str/includes? % "\u001b_G") (core/render b 40))
+                "hiding images renders the fallback")
+            (reset! subs/image-settings-atom {:show-images true :image-width-cells 20})
+            (is (= id (id-at 40)) "re-showing images keeps the block's id"))
+          (finally (protocols/dispose b)))))))
+
 (deftest resubscribes-to-settings-changes
   (testing "a settings change re-renders the block (shared sub subscription)"
     (with-image-env

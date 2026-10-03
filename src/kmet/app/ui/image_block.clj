@@ -40,10 +40,23 @@
   (and (:show-images settings)
        (boolean (:images (timg/get-capabilities)))))
 
+(defn- kitty-image-id
+  "The block's Kitty image id, allocated on the first terminal-image render
+   and reused by every later one. A fresh id per reflow would make the TUI
+   diff delete and re-transmit the image each time. Read through a fn, not
+   inside the track! body: the one-time allocation must not self-invalidate
+   the render cache (ImageComponent's current-image-id rule)."
+  [comp]
+  (or @(:image-id-atom comp)
+      (let [id (timg/allocate-image-id)]
+        (reset! (:image-id-atom comp) id)
+        id)))
+
 ;; ─── Record ────────────────────────────────────────────────────────────────
 
 (defcomponent ImageBlock nil
-              [data mime-type filename dimensions fallback-style cache-atom]
+              [data mime-type filename dimensions fallback-style image-id-atom
+               cache-atom]
   (render [this width]
     (track! this width
       (let [settings (deref s/image-settings-sub)
@@ -53,7 +66,8 @@
           (let [image (ic/make-image data mime-type
                                      {:fallback-color #(style theme %)}
                                      :max-width-cells (:image-width-cells settings)
-                                     :filename filename)]
+                                     :filename filename
+                                     :image-id (kitty-image-id this))]
             (core/render-and-dispose image width))
           [(utils/truncate-to-width
             (style theme (timg/image-fallback mime-type
@@ -76,4 +90,5 @@
                     :dimensions (or (timg/get-image-dimensions data mime-type)
                                     {:width-px 800 :height-px 600})
                     :fallback-style fallback-style
+                    :image-id-atom (atom nil)
                     :cache-atom (atom nil)}))
