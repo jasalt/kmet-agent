@@ -43,9 +43,10 @@
     (let [mc (md/make-markdown text
                                :theme (theme/get-markdown-theme theme)
                                :transform transform
-                               :padding-x 0)
-          md-lines (protocols/render mc cw)]
-      (mapv #(str left-pad %) md-lines))))
+                               :padding-x 0)]
+      (try
+        (mapv #(str left-pad %) (protocols/render mc cw))
+        (finally (protocols/dispose mc))))))
 
 (defn- render-thinking-to-width
   "Render thinking text as markdown tinted thinkingText + italic (pi:
@@ -62,9 +63,10 @@
                                  :default-style (fn [s]
                                                   (theme/italic (theme/fg theme :thinking-text s)))
                                  :transform transform
-                                 :padding-x 0)
-            md-lines (protocols/render mc cw)]
-        (mapv #(str left-pad %) md-lines)))))
+                                 :padding-x 0)]
+        (try
+          (mapv #(str left-pad %) (protocols/render mc cw))
+          (finally (protocols/dispose mc)))))))
 
 ;; The rendered-* atoms are the render body's OWN outputs — reflow-all!
 ;; writes them on a cache miss, after the values the cache recorded. A
@@ -89,9 +91,9 @@
 
 ;; ─── Record ────────────────────────────────────────────────────────────────
 
-;; No custom dispose: stores no child components (transient markdown per
-;; render, plain string lines), so the generated dispose (track-watch
-;; teardown) is the complete cleanup.
+;; No custom dispose: stores only plain string lines. Each transient
+;; Markdown is disposed in the reflow helpers, immediately after rendering;
+;; otherwise the global track! registry retains every streaming prefix.
 (defcomponent AssistantMessageComponent :assistant
               [text-atom thinking-text-atom
                output-pad-atom hide-thinking-atom hidden-label-atom

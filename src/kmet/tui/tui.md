@@ -762,6 +762,13 @@ overlay close, reconcile removal, shutdown; implementations must be
   include `dispose` — there is no universal default under SCI.
 - `defcomponent` prepends track-watch teardown to every dispose: watches
   must never outlive the component ("zombie watchers").
+- Temporary components rendered only to obtain lines must also be disposed,
+  in `try`/`finally` immediately around the render. The global `track!`
+  registry strongly retains rendered components even when their atoms are
+  private. Assistant text/thinking reflow and inline image rendering follow
+  this rule: keeping only the returned lines does not release the temporary
+  Markdown/Image. Missing cleanup on streaming reflows retains every prefix,
+  not just the final message; replay, resize and visibility changes leak too.
 - Timers/intervals belong in `dispose` — a dropped component must not keep
   a ticker invalidating forever.
 - Trees compiled outside a mount are disposed by their holder via

@@ -3,10 +3,37 @@
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.tui.core :as core]
             [kmet.tui.theme :as theme]
+            [kmet.tui.protocols :as protocols]
+            [kmet.tui.macros :as macros]
             [kmet.app.ui.assistant-message :as am]))
 
 (defn- strip-ansi [s]
   (clojure.string/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))
+
+(deftest test-reflow-does-not-retain-temporary-markdown
+  (let [watchers #(count @(deref #'macros/watch-registry))
+        baseline (watchers)]
+    ;; Repeated construction models resume; changing both content and width
+    ;; models streaming and terminal reflow. Only the owner may stay tracked.
+    (dotimes [_ 3]
+      (let [c (am/make-assistant-message :text "response" :thinking "reasoning")]
+        (try
+          (am/assistant-message-set-streaming! c true)
+          (dotimes [i 5]
+            (swap! (:text-atom c) str " more text")
+            (swap! (:thinking-text-atom c) str " more thinking")
+            (core/render c (+ 40 i))
+            (is (= (inc baseline) (watchers))
+                "temporary text/thinking Markdown must not survive reflow"))
+          (am/assistant-message-set-hide-thinking! c true)
+          (core/render c 60)
+          (am/assistant-message-set-hide-thinking! c false)
+          (am/assistant-message-set-streaming! c false)
+          (core/render c 60)
+          (is (= (inc baseline) (watchers)))
+          (finally (protocols/dispose c))))
+      (is (= baseline (watchers))
+          "disposing the message returns the registry to its baseline"))))
 
 (deftest test-create
   (testing "create assistant message component"
