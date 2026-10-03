@@ -60,6 +60,17 @@
   (fn [_ component & [opts]]
     (reset! ref (or (:focus-target opts) component))))
 
+(defn- clear-installed-context!
+  "Reset the global extension wiring a `build-extension-ui-registry` install
+   leaves behind: the installed registry plus the session/context/entry
+   sinks, which close over the installing test's fake cs. Call from a test's
+   finally so later tests never see the fake context."
+  []
+  (extensions/set-session! nil)
+  (extensions/set-context-sink! nil)
+  (extensions/set-entry-sink! nil)
+  (extensions/clear-ui-registry!))
+
 (def ^:private no-image-caps
   "Capabilities stub for the /settings tests: the image rows (Show images /
   Image width) exist only when the terminal reports image support
@@ -1440,7 +1451,7 @@
                 (t/is (contains? usage :percent)))))
           ;; Registry installation is a side effect: clean up even if a
           ;; capability throws, so later contexts cannot see the fake cs.
-          (finally (extensions/clear-ui-registry!)))))))
+          (finally (clear-installed-context!)))))))
 
 (deftest test-build-context-resolves-current-model
   (let [native (m/map->Model {:provider :test-native :id "test-model"
@@ -1478,7 +1489,7 @@
           (reset! (:provider @(:agent-state cs)) :missing)
           (t/is (nil? (:model (extensions/build-extension-context)))))
         (finally
-          (extensions/clear-ui-registry!))))))
+          (clear-installed-context!))))))
 
 (deftest test-extension-reset-closes-open-dialogs
   (testing "the registry :reset teardown closes an open ui-custom dialog
@@ -1527,10 +1538,7 @@
           (t/is (false? (tui/tui-has-overlay? ui)) "the overlay stack is empty")
           (t/is (empty? @logged) "no disposed-while-mounted violation"))
         (finally
-          (extensions/set-session! nil)
-          (extensions/set-context-sink! nil)
-          (extensions/set-entry-sink! nil)
-          (extensions/clear-ui-registry!))))))
+          (clear-installed-context!))))))
 
 ;; ─── DSL stage 4 review: dock generation gate + widget-area reactivity ────
 
