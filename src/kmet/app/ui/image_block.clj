@@ -11,7 +11,7 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.components.image :as ic]
             [kmet.tui.macros :refer [track! defcomponent]]
-            [kmet.tui.protocols :as protocols]
+            [kmet.tui.core :as core]
             [kmet.tui.utils :as utils]))
 
 ;; ─── Content helper ────────────────────────────────────────────────────────
@@ -54,9 +54,7 @@
                                      {:fallback-color #(style theme %)}
                                      :max-width-cells (:image-width-cells settings)
                                      :filename filename)]
-            (try
-              (protocols/render image width)
-              (finally (protocols/dispose image))))
+            (core/render-and-dispose image width))
           [(utils/truncate-to-width
             (style theme (timg/image-fallback mime-type
                                               :dimensions dimensions

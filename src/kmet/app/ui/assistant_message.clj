@@ -11,7 +11,7 @@
    StatusIndicator in a dedicated layout layer between chat and editor (Pi-style)."
   (:require [clojure.string :as str]
             [kmet.app.ui.subs :as s]
-            [kmet.tui.protocols :as protocols]
+            [kmet.tui.core :as core]
             [kmet.tui.theme :as theme]
             [kmet.tui.components.markdown :as md]
             [kmet.tui.macros :refer [track! defcomponent]]
@@ -44,9 +44,7 @@
                                :theme (theme/get-markdown-theme theme)
                                :transform transform
                                :padding-x 0)]
-      (try
-        (mapv #(str left-pad %) (protocols/render mc cw))
-        (finally (protocols/dispose mc))))))
+      (mapv #(str left-pad %) (core/render-and-dispose mc cw)))))
 
 (defn- render-thinking-to-width
   "Render thinking text as markdown tinted thinkingText + italic (pi:
@@ -64,9 +62,7 @@
                                                   (theme/italic (theme/fg theme :thinking-text s)))
                                  :transform transform
                                  :padding-x 0)]
-        (try
-          (mapv #(str left-pad %) (protocols/render mc cw))
-          (finally (protocols/dispose mc)))))))
+        (mapv #(str left-pad %) (core/render-and-dispose mc cw))))))
 
 ;; The rendered-* atoms are the render body's OWN outputs — reflow-all!
 ;; writes them on a cache miss, after the values the cache recorded. A
@@ -91,9 +87,10 @@
 
 ;; ─── Record ────────────────────────────────────────────────────────────────
 
-;; No custom dispose: stores only plain string lines. Each transient
-;; Markdown is disposed in the reflow helpers, immediately after rendering;
-;; otherwise the global track! registry retains every streaming prefix.
+;; No custom dispose: stores no child components — only string lines and
+;; data atoms. Each transient Markdown is disposed by the reflow helpers
+;; (core/render-and-dispose) immediately after rendering; otherwise the
+;; global track! registry retains every streaming prefix.
 (defcomponent AssistantMessageComponent :assistant
               [text-atom thinking-text-atom
                output-pad-atom hide-thinking-atom hidden-label-atom

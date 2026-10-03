@@ -13,8 +13,9 @@
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]))
 
-(defcomponent DisposalProbe nil [flag-atom]
-  (render [_this _width] [])
+(defcomponent DisposalProbe nil [flag-atom render-fn]
+  (render [_this _width]
+    (if render-fn (render-fn) []))
   (dispose [this] (swap! (:flag-atom this) conj :probe)))
 
 (t/deftest defcomponent-synthesizes-no-op-dispose
@@ -101,3 +102,22 @@
     (protocols/dispose p)
     (t/is (= [:probe] @flag)
           "the prepended cleanup did not displace the custom body")))
+
+(t/deftest render-and-dispose-returns-lines-and-disposes
+  (let [flag (atom [])
+        p (map->DisposalProbe {:kind nil :flag-atom flag
+                               :render-fn (fn [] ["rendered"])})]
+    (t/is (= ["rendered"] (core/render-and-dispose p 10))
+          "the render result is returned")
+    (t/is (= [:probe] @flag)
+          "the temporary component was disposed after rendering")))
+
+(t/deftest render-and-dispose-disposes-when-render-throws
+  (let [flag (atom [])
+        p (map->DisposalProbe {:kind nil
+                               :flag-atom flag
+                               :render-fn (fn [] (throw (ex-info "render failed" {})))})]
+    (t/is (thrown? Exception (core/render-and-dispose p 10))
+          "the render error propagates")
+    (t/is (= [:probe] @flag)
+          "disposal runs even when the render throws")))
