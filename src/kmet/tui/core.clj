@@ -55,9 +55,10 @@
 
 (defn render-and-dispose
   "Render temporary component C at WIDTH, returning its lines, and dispose C
-   afterwards — even when the render throws. Components rendered through
-   track! land in the process-global watch registry, which strongly retains
-   the component, its inputs and its cached output; dropping the local
+   afterwards — even when the render throws. Like `render`, this flushes
+   the reaction batch queue first. Components rendered through track! land
+   in the process-global watch registry, which strongly retains the
+   component, its inputs and its cached output; dropping the local
    reference is not enough. Use for components created only to obtain lines
    (tui.md §5.1)."
   [c width]
