@@ -114,6 +114,24 @@
   (let [kr (edit/make-kill-ring)]
     (t/is (zero? (edit/kill-ring-length kr)))))
 
+(t/deftest test-kill-ring-bounded
+  ;; kmet-specific bound: pi's KillRing is uncapped, so a long session would
+  ;; otherwise retain every string ever killed (see max-kill-ring-entries).
+  (let [kr (edit/make-kill-ring)
+        max-entries (var-get #'edit/max-kill-ring-entries)]
+    (dotimes [i (+ max-entries 3)]
+      (edit/kill-ring-push kr (str "entry-" i)))
+    (t/is (= max-entries (edit/kill-ring-length kr))
+          "the ring stops growing at the bound")
+    (t/is (not-any? #{"entry-0" "entry-1" "entry-2"} @(:entries kr))
+          "the oldest kills are dropped")
+    (t/is (= (str "entry-" (+ max-entries 2)) (edit/kill-ring-peek kr))
+          "the newest kill is retained")
+    (t/testing "an accumulating push onto the newest entry neither grows nor drops"
+      (edit/kill-ring-push kr "!" :accumulate true)
+      (t/is (= max-entries (edit/kill-ring-length kr)))
+      (t/is (= (str "entry-" (+ max-entries 2) "!") (edit/kill-ring-peek kr))))))
+
 ;; ─── Word navigation (single-line) ────────────────────────────────────────
 
 (t/deftest test-word-boundary-left

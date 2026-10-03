@@ -479,6 +479,13 @@
 
 (defrecord KillRing [entries])
 
+(def ^:private max-kill-ring-entries
+  "Bound on retained kill-ring entries (kmet-specific: pi's KillRing is
+   uncapped, but a long session would otherwise retain every string ever
+   killed). Emacs' kill-ring-max default — yank-pop cycles the retained
+   entries, the oldest dropped first."
+  60)
+
 (defn make-kill-ring []
   (map->KillRing {:entries (atom [])}))
 
@@ -486,16 +493,22 @@
   "Push text onto the kill ring.
    Options:
      :prepend    — prepend text to last entry (instead of append)
-     :accumulate — merge with the last entry instead of creating a new one"
+     :accumulate — merge with the last entry instead of creating a new one
+
+   A non-accumulating push past max-kill-ring-entries drops the oldest
+   entry."
   [kr text & {:keys [prepend accumulate]}]
   (when (seq text)
     (swap! (:entries kr)
            (fn [es]
              (if (and accumulate (seq es))
-               (let [last (peek es)]
+               (let [last-entry (peek es)]
                  (conj (vec (butlast es))
-                       (if prepend (str text last) (str last text))))
-               (conj (vec es) text))))))
+                       (if prepend (str text last-entry) (str last-entry text))))
+               (let [es (conj (vec es) text)]
+                 (if (> (count es) max-kill-ring-entries)
+                   (vec (take-last max-kill-ring-entries es))
+                   es)))))))
 
 (defn kill-ring-peek
   "Return the most recent kill ring entry."
