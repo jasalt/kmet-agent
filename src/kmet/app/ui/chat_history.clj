@@ -443,7 +443,7 @@
                    (vec (concat (subvec msgs 0 idx) [entry] (subvec msgs idx))))))))
     comp))
 
-(defn- drop-trailing-statuses
+(defn- split-trailing-statuses
   "Split MSGS just before its trailing :status entries (UI-only status
    lines): [KEPT DROPPED]."
   [msgs]
@@ -469,7 +469,7 @@
             dropped (volatile! [])]
         (swap! (:messages-atom ch)
                (fn [msgs]
-                 (let [[msgs' statuses] (drop-trailing-statuses msgs)]
+                 (let [[msgs' statuses] (split-trailing-statuses msgs)]
                    (cond
                      (identical? (peek msgs') streaming)
                      (do (vreset! removed? true)
