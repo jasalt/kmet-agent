@@ -95,15 +95,17 @@
 (deftest source-files-skips-build-residue
   (let [root (fs/create-temp-dir {:dir (doto (fs/path "target") fs/create-dirs)
                                   :prefix "http-boundary-"})
-        keep (fs/path root "extensions" "pkg" "keep.clj")
+        real (fs/path root "extensions" "pkg" "real.clj")
         residue (fs/path root "extensions" "pkg" "target" "residue.clj")]
     (try
-      (fs/create-dirs (fs/parent keep))
+      (fs/create-dirs (fs/parent real))
       (fs/create-dirs (fs/parent residue))
-      (spit (str keep) "(ns pkg.keep)")
+      (spit (str real) "(ns pkg.real)")
       (spit (str residue) "(ns pkg.residue (:require [babashka.http-client :as http]))")
+      (is (= ['babashka.http-client] (offending-requires (str residue)))
+          "the fixture is genuinely offending — only the skip keeps it out")
       (let [files (mapv str (source-files [(str root)]))]
-        (is (some #(str/includes? % "keep.clj") files)
+        (is (some #(str/includes? % "real.clj") files)
             "real sources under the root are still scanned")
         (is (not-any? #(str/includes? % "residue.clj") files)
             "build-output residue is skipped"))
