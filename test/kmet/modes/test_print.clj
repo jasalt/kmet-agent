@@ -54,6 +54,27 @@
         (print-mode/run (opts))
         (is (false? @seen) "default off")))))
 
+(deftest test-run-honors-http-timeout-settings
+  (testing "settings.edn http timeouts reach the print-mode agent"
+    (let [seen (atom nil)]
+      (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+                                           (reset! seen @(:cfg ag))
+                                           ((:on-done ag-opts) "ok"))]
+        (print-mode/run (assoc (opts) :config {:provider :opencode-go
+                                               :model "deepseek-v4-flash"
+                                               :http-idle-timeout-ms 1500
+                                               :http-total-timeout-ms 2000}))
+        (is (= 1500 (:http-idle-timeout-ms @seen)))
+        (is (= 2000 (:http-total-timeout-ms @seen)))))
+    (testing "absent settings fall back to the create-agent defaults"
+      (let [seen (atom nil)]
+        (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+                                             (reset! seen @(:cfg ag))
+                                             ((:on-done ag-opts) "ok"))]
+          (print-mode/run (opts))
+          (is (= 120000 (:http-idle-timeout-ms @seen)))
+          (is (= 0 (:http-total-timeout-ms @seen))))))))
+
 (deftest test-run-wires-the-extension-context
   (testing "print-mode handlers see the running agent (pi: runner-bound ctx)"
     (let [model (m/map->Model {:provider :opencode-go :id "deepseek-v4-flash"})

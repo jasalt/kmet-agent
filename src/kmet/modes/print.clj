@@ -101,6 +101,15 @@
             :loop-guard-enabled (:enabled (cfg/get-loop-guard-settings config))
             :loop-guard-threshold (:threshold (cfg/get-loop-guard-settings config))
             :thinking-loop-guard-enabled (get config :thinking-loop-guard-enabled true)
+            ;; LLM transport deadlines from settings.edn — a one-shot print run
+            ;; honors the same user timeout settings interactive mode passes.
+            ;; get-with-default (not plain :kw): an absent key must keep
+            ;; make-agent-state's default, and an explicit nil stays
+            ;; meaningful (nil total follows the idle timeout). Without this,
+            ;; the agent's 120s/0 defaults silently won over the user's
+            ;; settings.
+            :http-idle-timeout-ms (get config :http-idle-timeout-ms 120000)
+            :http-total-timeout-ms (get config :http-total-timeout-ms 0)
             ;; pi: images.blockImages — stripped per request in call-llm (pi
             ;; applies it at the SDK level, so --print honors it too)
             :block-images (cfg/get-block-images config))
