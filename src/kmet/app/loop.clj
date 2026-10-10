@@ -1414,10 +1414,12 @@ Be precise and concise in your responses."}}]
    level to request (pi: a compaction passes the session's thinking level,
    branch summarization passes none). Returns the result map retry-call!
    classifies: {:stop-reason kw :error-message str :tool-calls [...] :text
-   str :usage map}, :stop-reason :aborted when a cancel signal fired, or
-   :stop-reason :error when the call threw synchronously (auth resolution,
-   the context hook, request setup) — the stream function reports failures,
-   it never throws into the retry driver (pi: completeSummarization)."
+   str :usage map}, :stop-reason :aborted when a cancel signal fired (a
+   signal that already fired short-circuits before auth resolution and the
+   request), or :stop-reason :error when the call threw synchronously (auth
+   resolution, the context hook, request setup) — the stream function
+   reports failures, it never throws into the retry driver (pi:
+   completeSummarization)."
   [agent messages {:keys [signals thinking max-tokens]}]
   (let [ep (resolve-endpoint agent)
         signal (apply concurrent/or-signal signals)
@@ -1444,30 +1446,39 @@ Be precise and concise in your responses."}}]
       (when s
         (add-watch s watch-key (fn [_ _ _ v] (when v (deliver! (partial :aborted)))))))
     (try
-      (llm/send-message
-       (cond-> {:provider @(:provider agent)
-                :api-type (:api-type ep)
-                :model @(:model agent)
-                :api-key (resolve-api-key agent)
-                :base-url (:base-url ep)
-                :messages messages
-                :signal signal
-                :idle-timeout-ms (:http-idle-timeout-ms @(:cfg agent))
-                :total-timeout-ms deadline
-                :session-id (some-> (:session agent) :id)
-                :cache-retention :none
-                :max-tokens max-tokens
-                :on-text (fn [t] (swap! text-buf str t))
-                :on-tool-call (fn [tc] (swap! tc-buf conj tc))
-                :on-usage (fn [u] (reset! usage-buf u))
-                :on-done (fn [reason] (deliver! (partial (or reason :stop))))
-                :on-error (fn [msg] (deliver! (partial :error msg)))}
-         thinking (assoc :thinking thinking)))
-      (when @signal (deliver! (partial :aborted)))
-      (let [result (if (pos? deadline) (deref done deadline :timeout) @done)]
-        (if (map? result)
-          result
-          (partial :error (str "Stream timed out after " deadline "ms"))))
+      (if @signal
+        ;; A signal that already fired needs no call: report the abort
+        ;; without resolving auth or opening a request. send-message's own
+        ;; no-key error delivery is asynchronous, so without this check it
+        ;; can win the race against the post-call abort below and report
+        ;; the missing key instead of the abort (pi: an aborted stream
+        ;; never starts).
+        (partial :aborted)
+        (do
+          (llm/send-message
+           (cond-> {:provider @(:provider agent)
+                    :api-type (:api-type ep)
+                    :model @(:model agent)
+                    :api-key (resolve-api-key agent)
+                    :base-url (:base-url ep)
+                    :messages messages
+                    :signal signal
+                    :idle-timeout-ms (:http-idle-timeout-ms @(:cfg agent))
+                    :total-timeout-ms deadline
+                    :session-id (some-> (:session agent) :id)
+                    :cache-retention :none
+                    :max-tokens max-tokens
+                    :on-text (fn [t] (swap! text-buf str t))
+                    :on-tool-call (fn [tc] (swap! tc-buf conj tc))
+                    :on-usage (fn [u] (reset! usage-buf u))
+                    :on-done (fn [reason] (deliver! (partial (or reason :stop))))
+                    :on-error (fn [msg] (deliver! (partial :error msg)))}
+             thinking (assoc :thinking thinking)))
+          (when @signal (deliver! (partial :aborted)))
+          (let [result (if (pos? deadline) (deref done deadline :timeout) @done)]
+            (if (map? result)
+              result
+              (partial :error (str "Stream timed out after " deadline "ms"))))))
       (catch Exception e
         ;; A synchronous throw (auth resolution, the context hook, request
         ;; setup) still has to reach the retry driver as a result: the

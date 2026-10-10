@@ -5257,10 +5257,18 @@
                  (loop/generate-branch-summary
                   agent [{:role :user :content [{:type :text :text "x"}]}]))))
       (reset! (:signal agent) true)
-      (t/is (= {:aborted true}
-               (loop/generate-branch-summary
-                agent [{:role :user :content [{:type :text :text "x"}]}]))
-            "an aborted call reports :aborted (pi)")))
+      (let [sent? (atom false)]
+        ;; Deterministic: no ambient auth lookup, and an already-aborted call
+        ;; must not reach the provider at all (a send-message call would race
+        ;; its own async no-key error against the abort).
+        (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                      llm/send-message (fn [_] (reset! sent? true) (future :done))]
+          (t/is (= {:aborted true}
+                   (loop/generate-branch-summary
+                    agent [{:role :user :content [{:type :text :text "x"}]}]))
+                "an aborted call reports :aborted (pi)")
+          (t/is (not @sent?)
+                "an already-aborted call never reaches the provider")))))
   (t/testing "an empty response yields the preamble alone (pi prepends it to
               contentText)"
     (models/load-catalogs!)
