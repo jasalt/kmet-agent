@@ -92,11 +92,11 @@
              ;; stream's end) under a fresh idle deadline. The non-blocking
              ;; poll comes first: Jolt's TIMED poll runs its interruptible-wait
              ;; setup even when the queue already holds an item
-             ;; (jolt-lang/jolt#1303, 4.9x an untimed poll), and the daemon has
-             ;; usually queued the next chunk before the consumer asks — so the
-             ;; common case never enters the wait path. A JVM's timed poll
-             ;; fast-paths this itself; the extra poll is a cheap miss on an
-             ;; empty queue.
+             ;; (jolt-lang/jolt#1303, 4.9x an untimed poll), so a chunk the
+             ;; daemon read ahead — a consumer busy with a frame render, or a
+             ;; fast stream — is served without it. A JVM's timed poll
+             ;; fast-paths this itself; on an empty queue the extra poll is one
+             ;; cheap miss (~1 µs) before the timed wait's park.
              (let [deadline (+ (concurrent/monotonic-ms) idle-ms)]
                (loop []
                  (let [v (or (.poll q)
