@@ -19,7 +19,7 @@
  :thinking-loop-guard-enabled true
  :steering-mode :all
  :follow-up-mode :one-at-a-time
- :http-idle-timeout-ms 120000
+ :http-idle-timeout-ms 120000   ; stream idle gap + response-start wait; 0 disables both
  :http-total-timeout-ms 0       ; 0 disables total timeout; nil follows idle
  :http-transport :platform
  :shell-path nil
