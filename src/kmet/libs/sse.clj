@@ -39,17 +39,118 @@
   [body]
   (io/reader body))
 
+(def ^:private idle-chunk-size
+  "Units (bytes/chars) the daemon reads per queue handoff. The handoff is the
+   point: the per-unit protocol parks the consumer and wakes it for every
+   single byte, which on Jolt is ~100 µs of context switching per byte — so a
+   1 KB/s stream burns a fifth of a core. A chunk costs one wake."
+  8192)
+
+(defn- make-chunk-idle-reader
+  "The chunked core behind make-byte-idle-reader / make-char-idle-reader /
+   make-idle-reader: a daemon thread blocking-reads up to IDLE-CHUNK-SIZE
+   units into NEW-BUF buffers and hands whole chunks to the consumer through
+   a queue. The consumer converts a unit with ELEM and waits for the next
+   chunk under a FRESH idle deadline — the clock measures time between
+   received chunks, undici bodyTimeout semantics at transport granularity.
+
+   NEW-BUF — (fn [len]) -> a fresh buffer to read into
+   FILL!   — (fn [buf len]) -> units read into buf, or throws; a negative
+             count at the end of the stream. Reader/InputStream read with a
+             positive length returns at least one unit or -1, never 0.
+   ELEM    — (fn [buf i]) -> the int at index i (char code / unsigned byte)
+
+   Returns [read stop thread] exactly as make-idle-reader documents."
+  [new-buf fill! elem idle-ms signal]
+  (let [q (java.util.concurrent.LinkedBlockingQueue.)
+        t (Thread.
+           (fn []
+             (try
+               (loop []
+                 (let [buf (new-buf idle-chunk-size)
+                       n (try (fill! buf idle-chunk-size) (catch Exception e e))]
+                   (if (instance? Exception n)
+                     ;; A read failure (e.g. HTTP/2 RST_STREAM) is put on the
+                     ;; queue like data so the caller reports the real error
+                     ;; instead of stalling to the idle deadline.
+                     (.put q n)
+                     (if (neg? n)
+                       (.put q :eof)
+                       (do (.put q [buf n]) (recur))))))
+               (catch Exception _ nil))))]
+    (.setDaemon t true)
+    (.start t)
+    [(let [cur-buf (volatile! nil)
+           cur-n (volatile! 0)
+           cur-idx (volatile! 0)]
+       (fn []
+         (let [i (long @cur-idx)]
+           (if (< i (long @cur-n))
+             (do (vreset! cur-idx (inc i))
+                 (elem @cur-buf i))
+             ;; Buffered units drained — wait for the next chunk (or the
+             ;; stream's end) under a fresh idle deadline. The non-blocking
+             ;; poll comes first: Jolt's TIMED poll runs its interruptible-wait
+             ;; setup even when the queue already holds an item
+             ;; (jolt-lang/jolt#1303, 4.9x an untimed poll), and the daemon has
+             ;; usually queued the next chunk before the consumer asks — so the
+             ;; common case never enters the wait path. A JVM's timed poll
+             ;; fast-paths this itself; the extra poll is a cheap miss on an
+             ;; empty queue.
+             (let [deadline (+ (concurrent/monotonic-ms) idle-ms)]
+               (loop []
+                 (let [v (or (.poll q)
+                             (.poll q 100 java.util.concurrent.TimeUnit/MILLISECONDS))]
+                   (cond
+                     (instance? Exception v) v
+                     (nil? v) (cond
+                                (and signal @signal) :aborted
+                                (>= (concurrent/monotonic-ms) deadline) :timeout
+                                :else (recur))
+                     (= :eof v) -1
+                     :else (let [[buf n] v]
+                             (vreset! cur-buf buf)
+                             (vreset! cur-n n)
+                             (vreset! cur-idx 1)
+                             (elem buf 0))))))))))
+     (fn [] (.interrupt t))
+     t]))
+
+(defn make-char-idle-reader
+  "Idle-timeout int reader over a java.io.Reader: a daemon reads chunks of
+   chars (READER.read(char[], int, int)), the consumer serves char codes.
+   See make-idle-reader for the [read stop thread] contract."
+  [rdr idle-ms signal]
+  (make-chunk-idle-reader
+   #(char-array %)
+   (fn [buf len] (.read ^java.io.Reader rdr ^chars buf 0 len))
+   (fn [buf i] (int (aget ^chars buf i)))
+   idle-ms signal))
+
+(defn make-byte-idle-reader
+  "Idle-timeout int reader over an InputStream: a daemon reads chunks of
+   bytes (INPUT-STREAM.read(byte[], int, int)), the consumer serves unsigned
+   bytes (0-255). See make-idle-reader for the [read stop thread] contract."
+  [is idle-ms signal]
+  (make-chunk-idle-reader
+   #(byte-array %)
+   (fn [buf len] (.read ^java.io.InputStream is ^bytes buf 0 len))
+   (fn [buf i] (bit-and (aget ^bytes buf i) 0xff))
+   idle-ms signal))
+
 (defn make-idle-reader
   "Idle-timeout int reader over a no-arg read fn (undici bodyTimeout
    semantics — the clock measures time between received values and resets on
-   every value). A daemon thread performs the blocking reads and hands ints
+   every value). A daemon thread performs the blocking reads and hands values
    to a queue; the caller polls with the idle deadline, so a stalled stream
    yields :timeout while clean EOF still yields -1 (EOF is only observable
    through a blocking read — ready()/available() stay 0 at EOF on
    java.net.http streams).
 
    read-fn — no-arg fn returning the next int (char or byte, -1 at EOF) or
-   throwing.
+   throwing. This is the single-unit wrapper over the chunked core; stream
+   readers should use the typed constructors above (char/byte), which hand
+   off whole read bursts instead of parking per byte.
 
    Returns [read stop thread]:
      read      — no-arg fn: next int, -1 at EOF, the read exception when the
@@ -60,33 +161,13 @@
                   in flight on java.net.http streams)
      thread    — the daemon thread, for join-before-close"
   [read-fn idle-ms signal]
-  (let [q (java.util.concurrent.LinkedBlockingQueue.)
-        t (Thread.
-           (fn []
-             (try
-               (loop []
-                 (let [c (try (read-fn) (catch Exception e e))]
-                   (.put q c)
-                   ;; A read failure (e.g. HTTP/2 RST_STREAM) is put on the
-                   ;; queue like data so the caller reports the real error
-                   ;; instead of stalling to the idle deadline.
-                   (when-not (or (neg? c) (instance? Exception c))
-                     (recur))))
-               (catch Exception _ nil))))]
-    (.setDaemon t true)
-    (.start t)
-    [(fn []
-       (let [deadline (+ (concurrent/monotonic-ms) idle-ms)]
-         (loop []
-           (let [v (.poll q 100 java.util.concurrent.TimeUnit/MILLISECONDS)]
-             (cond
-               (instance? Exception v) v
-               (some? v) (int v)
-               (and signal @signal) :aborted
-               (>= (concurrent/monotonic-ms) deadline) :timeout
-               :else (recur))))))
-     (fn [] (.interrupt t))
-     t]))
+  (make-chunk-idle-reader
+   #(int-array %)
+   (fn [^ints buf _len]
+     (let [c (read-fn)]
+       (if (neg? c) -1 (do (aset buf 0 c) 1))))
+   (fn [^ints buf i] (aget buf i))
+   idle-ms signal))
 
 (defn- strip-trailing-cr
   "Drop a single trailing CR so the idle arm's .read loop matches .readLine
@@ -120,7 +201,7 @@
    when the idle timeout is disabled)."
   [rdr idle-ms signal]
   (if (and idle-ms (pos? idle-ms))
-    (let [[read-char stop thread] (make-idle-reader #(.read rdr) idle-ms signal)]
+    (let [[read-char stop thread] (make-char-idle-reader rdr idle-ms signal)]
       {:read-line #(read-line-from read-char)
        :stop stop
        :thread thread})

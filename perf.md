@@ -1672,4 +1672,49 @@ same-machine A/Bs against the previous commit (`target/watching-ab.clj`,
 - **`make-reaction` costs ~20 µs to construct** — relevant at
   replay/cold-render scale, hard to shrink.
 
+---
+
+## 15. SSE streaming CPU (2026-10-10, phone, `jolt v0.8.20-15-g1c6da859`, bb 1.13.225)
+
+The "Jolt burns a core while streaming" report was kmet's own reader, not the
+host: `kmet.libs.sse/make-idle-reader` handed the stream across a
+`LinkedBlockingQueue` **one byte at a time**, so a 1 KB/s response paid ~1000
+park/wake cycles per second. A parked handoff measures ~0.045 ticks/item on
+jolt and ~0.035 on bb (1000 items 3 ms apart, `LinkedBlockingQueue` +
+`Thread/sleep`) — so the per-byte design cost ~40 % of a core at 1 KB/s on
+*both* hosts. The reader now reads up to 8 KiB per handoff
+(`make-char-idle-reader` / `make-byte-idle-reader`), one queue wake per read
+burst; the single-unit `make-idle-reader` is kept as the wrapper. The same
+change fixed `process-bedrock-stream`'s idle arm, which read the
+`[read stop thread]` vector as a `{:read …}` map and NPE'd whenever a bedrock
+idle timeout was set.
+
+Repro: a local SSE server (300 events 30 ms apart, 200 B each) against the
+TUI in a tmux pty and against a no-TUI `llm/send-message`; process ticks from
+`/proc/<pid>/stat` fields 14+15 sampled across the stream window (the §1
+recipe). No settlement change: the TUI needs its usual ~30 s startup settle.
+
+| scenario (ticks/s in the stream window) | before | after |
+|---|---:|---:|
+| TUI `jolt start` | 86.7 | **23.8** |
+| TUI `bb start` | — | 60.9 |
+| no-TUI `llm/send-message` (jolt) | 31.9 | **10.7** |
+| no-TUI (bb) | 19.3 | 15.4 |
+
+Not a regression: the 2026-10-09 tip and HEAD both measured 76–87 ticks/s in
+the TUI before the fix, and the per-byte reader dates to 2026-08. After the
+fix jolt is **2.6x cheaper than bb** on the same TUI stream; what remains is
+~10 ticks/s of SSE (HTTP body framing roughly half, decode/parse the rest)
+plus the TUI's whole-message Markdown re-parse per frame (§3.5). Layer
+checks on the same 300-event stream: a direct body `.read` drain costs jolt
+48 ticks vs bb 32; draining chars through the chunked reader costs jolt 33
+vs bb 53; a fast stream (3000 events ≈ 700 KB, no gaps) costs jolt
+167 ticks/1.56 s vs bb 90/0.90 s. No host is the outlier on the full path, so
+the remaining work is kmet-side (§6.3), not a Jolt ticket — except for the
+queue finding recorded in `jolt-bugs.md` as
+[jolt#1303](https://github.com/jolt-lang/jolt/issues/1303) (a timed `poll`
+on a non-empty `LinkedBlockingQueue` costs 4.9x the untimed poll; after
+chunking it is no longer the streaming bottleneck, and the reader takes the
+untimed `poll` first as the accommodation).
+
 

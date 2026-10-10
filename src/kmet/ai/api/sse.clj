@@ -854,14 +854,16 @@
    without a stop reason')."
   [response handler signal & [idle-timeout-ms abort-fn]]
   (let [is (io/input-stream (:body response))
-        idle (if (and idle-timeout-ms (pos? idle-timeout-ms))
-               (sse-lib/make-idle-reader #(.read is) idle-timeout-ms signal)
-               {:read (fn [] (.read is)) :stop (fn []) :thread nil})
+        ;; make-idle-reader returns [read stop thread]; the non-idle arm
+        ;; matches that shape so the loop below is transport-agnostic.
+        [read-byte stop thread] (if (and idle-timeout-ms (pos? idle-timeout-ms))
+                                  (sse-lib/make-byte-idle-reader is idle-timeout-ms signal)
+                                  [(fn [] (.read is)) (fn []) nil])
         saw-stop (atom false)]
     (try
       (let [end-reason
             (loop []
-              (let [frame (read-bedrock-frame (:read idle))]
+              (let [frame (read-bedrock-frame read-byte)]
                 (cond
                   (= :aborted frame) :aborted
                   (= :timeout frame)
@@ -884,7 +886,7 @@
         (when (and (= :eof end-reason) (not @saw-stop) (not (and signal @signal)))
           (handler {:type :error :message "Bedrock stream ended without a stop reason"})))
       (finally
-        ((:stop idle))
-        (when-let [t (:thread idle)] (.join t 2000))
+        (stop)
+        (when thread (.join thread 2000))
         (.close is)))))
 
