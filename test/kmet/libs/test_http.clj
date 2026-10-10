@@ -280,6 +280,51 @@
         (t/is (str/includes? (ex-message e) "network error")))
       (finally (close)))))
 
+(deftest-transports test-headers-timeout
+  ;; A server that accepts the request but never sends response headers:
+  ;; :headers-timeout bounds the response start (pi: undici headersTimeout =
+  ;; httpIdleTimeoutMs) so a stalled request fails instead of hanging even
+  ;; when :timeout is absent — the disabled-total default. The stream's own
+  ;; idle deadline only starts once the headers have arrived.
+  (let [[base close] (start-server
+                      (fn [s _ _ _]
+                        (Thread/sleep 10000)
+                        (respond s "200 OK" "late" {})))]
+    (try
+      (let [t0 (System/currentTimeMillis)
+            e (try (http/get (str base "/") {:as :stream :headers-timeout 300})
+                   (catch Exception e e))
+            elapsed (- (System/currentTimeMillis) t0)]
+        (t/is (instance? Exception e) "the request must not hang")
+        (t/is (= :transport-error (:type (ex-data e))))
+        (t/is (str/includes? (ex-message e) "timed out")
+              (str "got: " (ex-message e)))
+        (t/is (< elapsed 5000)
+              (str "errored at the headers deadline (took " elapsed "ms)")))
+      (finally (close)))))
+
+(deftest-transports test-headers-timeout-does-not-bound-the-body
+  ;; Headers arrive immediately, then the body dribbles past the
+  ;; :headers-timeout deadline: the request must complete — the response-start
+  ;; deadline bounds the wait for the headers only, never a live stream body.
+  (let [[base close] (start-server
+                      (fn [s _ _ _]
+                        (let [out (.getOutputStream s)]
+                          (.write out (.getBytes "HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\n"))
+                          (.flush out)
+                          (Thread/sleep 400)
+                          (.write out (.getBytes "stream"))
+                          (.flush out))))]
+    (try
+      (let [t0 (System/currentTimeMillis)
+            r (http/get (str base "/") {:as :stream :headers-timeout 200})
+            body (slurp (:body r))]
+        (http/close! r)
+        (t/is (= "stream" body))
+        (t/is (>= (- (System/currentTimeMillis) t0) 400)
+              "the body was read past the headers deadline"))
+      (finally (close)))))
+
 (deftest-transports test-follow-redirects
   ;; one server: /start → 302 Location: /final; /final → 200 with the
   ;; request line echoed. A followed redirect issues both requests.

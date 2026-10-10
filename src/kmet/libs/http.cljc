@@ -8,7 +8,8 @@
 
      (http/request {:url ... :method :get :headers {...} :body ...
                     :as :string          ;; :string | :bytes | :stream
-                    :timeout 30000       ;; ms (nil disables, default 120s on curl path)
+                    :timeout 30000       ;; whole-request ms (nil disables, default 120s on curl path)
+                    :headers-timeout 30000 ;; response-start ms (nil disables)
                     :throw? true         ;; throw on HTTP >= 400
                     :follow-redirects :normal
                     :signal cancel-atom  ;; curl path only
@@ -334,6 +335,22 @@
           (swap! client-cache assoc key c)
           c))))
 
+(defn- positive-ms
+  "V as a deadline in ms when positive, else nil."
+  [v]
+  (when (and (number? v) (pos? v)) v))
+
+(defn- response-timeout-ms
+  "The native transport's HttpRequest.timeout — the response-start deadline
+   (headers; a :stream body is read after the response arrives). The smaller
+   positive of :headers-timeout (pi: headersTimeout — the stream idle
+   deadline bounding the wait for the response to start) and :timeout (the
+   whole-request deadline, which the response start is also subject to).
+   nil when neither is set — the request may then wait forever."
+  [opts]
+  (let [deadlines (keep positive-ms [(:headers-timeout opts) (:timeout opts)])]
+    (when (seq deadlines) (apply min deadlines))))
+
 (defn- native-request
   "One request over java.net.http. THROW? is applied here so both
    transports raise the same http-error shape; transport exceptions are
@@ -341,8 +358,16 @@
    ex-data). P is the resolved proxy (nil = direct) — the request
    routes through the cached client for that proxy."
   [opts throw? p]
-  (let [native-opts (cond-> (dissoc opts :url :throw? :signal :proxy :follow-redirects)
-                      true (assoc :throw false))]
+  (let [native-opts (cond-> (dissoc opts :url :throw? :signal :proxy :follow-redirects :headers-timeout)
+                      true (assoc :throw false))
+        ;; :headers-timeout is a transport-neutral knob — the native path
+        ;; maps response-start deadlines onto the request timeout (see
+        ;; response-timeout-ms). Assigned only when a deadline exists, so an
+        ;; absent :timeout keeps babashka's default and an explicit nil keeps
+        ;; its meaning.
+        native-opts (if-let [t (response-timeout-ms opts)]
+                      (assoc native-opts :timeout t)
+                      native-opts)]
     (try
       (let [resp (http/request (assoc native-opts
                                       :url (:url opts)
@@ -568,14 +593,21 @@
 
 (defn- wait-for-headers
   "Block until curl has written the response headers (the dump-header file
-   is non-empty) or the process died (connect failure, --max-time). Returns
-   true on headers; the caller then reports the transport failure."
-  [header-file proc-map]
-  (loop []
-    (cond
-      (pos? (.length header-file)) true
-      (not (-> proc-map :proc .isAlive)) false
-      :else (do (Thread/sleep 50) (recur)))))
+   is non-empty), the process died (connect failure, --max-time), or the
+   response-start deadline expired. Returns :ok, :dead or :timeout; the
+   caller reports the failure (and kills the process on :timeout).
+   HEADERS-TIMEOUT-MS is the request's :headers-timeout (pi: headersTimeout
+   — the stream idle deadline): a response start that never arrives fails
+   instead of hanging, while a slow stream body is unaffected."
+  [header-file proc-map headers-timeout-ms]
+  (let [deadline (when-let [t (positive-ms headers-timeout-ms)]
+                   (+ (concurrent/monotonic-ms) t))]
+    (loop []
+      (cond
+        (pos? (.length header-file)) :ok
+        (not (-> proc-map :proc .isAlive)) :dead
+        (and deadline (>= (concurrent/monotonic-ms) deadline)) :timeout
+        :else (do (Thread/sleep 50) (recur))))))
 
 (defn- curl-transport-error
   "Structured transport error for a failed curl run (connect refused, DNS,
@@ -595,6 +627,25 @@
   (when pid (process/untrack-pid! pid))
   (doseq [f [header-file config-file]]
     (try (.delete f) (catch Exception _ nil))))
+
+(defn- await-headers!
+  "The response-start wait, throwing on failure: returns nil once curl wrote
+   the response headers; on :timeout (the request's :headers-timeout expired
+   — pi: headersTimeout = the stream idle deadline) kills the still-alive
+   process so the reap cannot block, cleans up the temp files, and throws the
+   transport error; :dead reports curl's own exit (connect failure,
+   --max-time). A slow stream body is unaffected."
+  [header-file config-file proc-map pid headers-timeout-ms]
+  (let [status (wait-for-headers header-file proc-map headers-timeout-ms)]
+    (when (not= :ok status)
+      (let [timeout? (= :timeout status)]
+        (when (and timeout? pid) (process/kill-process-tree! pid))
+        (let [e (if timeout?
+                  (ex-info "network error: request timed out"
+                           {:type :transport-error :timeout true})
+                  (curl-transport-error proc-map))]
+          (cleanup-curl! pid header-file config-file)
+          (throw e))))))
 
 (defn- curl-request
   "One request over curl (:curl mode, SOCKS / https-scheme proxies), with
@@ -618,42 +669,40 @@
             :http/curl {:proc proc-map :pid pid
                         :header-file header-file :config-file config-file
                         :signal (:signal opts)}}]
-    (if (wait-for-headers header-file proc-map)
-      (let [[status headers] (wait-for-final-headers header-file proc-map opts)
-            st (assoc st :status status :headers headers)
-            as (or (:as opts) :string)]
-        (if (and throw? (>= status 400))
-          ;; HTTP error up front (native parity): read the error body
-          ;; (--fail-with-body put it on stdout) and throw. The slurp can
-          ;; throw on a mid-body I/O failure — cleanup must still run.
+    ;; The response start is bounded by :headers-timeout — throws (killing a
+    ;; stalled curl) when the headers never arrive.
+    (await-headers! header-file config-file proc-map pid (:headers-timeout opts))
+    (let [[status headers] (wait-for-final-headers header-file proc-map opts)
+          st (assoc st :status status :headers headers)
+          as (or (:as opts) :string)]
+      (if (and throw? (>= status 400))
+        ;; HTTP error up front (native parity): read the error body
+        ;; (--fail-with-body put it on stdout) and throw. The slurp can
+        ;; throw on a mid-body I/O failure — cleanup must still run.
+        (let [text (try (slurp (:body st))
+                        (finally (cleanup-curl! pid header-file config-file)))
+              result @proc-map
+              exit (:exit result)]
+          (if (and (not (zero? exit)) (not= 22 exit))
+            (throw (curl-transport-error proc-map))
+            (throw (http-error status headers text))))
+        (if (= :stream as)
+          st
           (let [text (try (slurp (:body st))
                           (finally (cleanup-curl! pid header-file config-file)))
                 result @proc-map
                 exit (:exit result)]
-            (if (and (not (zero? exit)) (not= 22 exit))
-              (throw (curl-transport-error proc-map))
-              (throw (http-error status headers text))))
-          (if (= :stream as)
-            st
-            (let [text (try (slurp (:body st))
-                            (finally (cleanup-curl! pid header-file config-file)))
-                  result @proc-map
-                  exit (:exit result)]
-              (cond
-                (zero? exit)
-                {:status status :headers headers
-                 :body (if (= :bytes as) (.getBytes text "UTF-8") text)}
+            (cond
+              (zero? exit)
+              {:status status :headers headers
+               :body (if (= :bytes as) (.getBytes text "UTF-8") text)}
 
-                (= 22 exit)
-                (if throw?
-                  (throw (http-error status headers text))
-                  {:status status :headers headers :body text})
+              (= 22 exit)
+              (if throw?
+                (throw (http-error status headers text))
+                {:status status :headers headers :body text})
 
-                :else (throw (curl-transport-error proc-map)))))))
-      ;; Process died before headers: transport failure.
-      (let [e (curl-transport-error proc-map)]
-        (cleanup-curl! pid header-file config-file)
-        (throw e)))))
+              :else (throw (curl-transport-error proc-map)))))))))
 
 ;; ─── Transport selection (user setting) ──────────────────────────────────
 
@@ -701,6 +750,13 @@
      :body             — string / bytes / InputStream; a map is JSON-encoded
      :as               — :string (default) | :bytes | :stream
      :timeout          — total timeout in ms (nil disables, default 120s on the curl path)
+     :headers-timeout  — response-start deadline in ms (nil disables): bounds
+                          the wait for the response headers/status. The native
+                          transport maps it (and :timeout) onto
+                          HttpRequest.timeout; the curl transport aborts the
+                          header wait (pi: undici headersTimeout). A slow
+                          stream body is unaffected — it has its own idle
+                          deadline.
      :throw?           — true (default): HTTP >= 400 throws
                           {:type :http-error}; false returns the response
      :follow-redirects — :normal (default, follow) | :always | :never

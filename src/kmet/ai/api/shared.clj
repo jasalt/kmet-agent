@@ -47,6 +47,16 @@
     (when (pos? total-timeout-ms) total-timeout-ms)
     (when (pos? (or idle-timeout-ms 0)) idle-timeout-ms)))
 
+(defn headers-timeout-ms
+  "The response-start deadline for a streaming LLM request (pi: undici
+   headersTimeout = httpIdleTimeoutMs): the idle deadline that bounds the
+   SSE body also bounds the wait for the response headers, so a server that
+   accepts the request and never responds fails after ~idle instead of
+   hanging the turn forever. nil or non-positive disables it (the explicit
+   \"no deadline\" user choice)."
+  [idle-timeout-ms]
+  (when (pos? (or idle-timeout-ms 0)) idle-timeout-ms))
+
 (def getenv
   "Process env lookup (System/getenv returns nil for unset vars)."
   (fn [k] (System/getenv k)))

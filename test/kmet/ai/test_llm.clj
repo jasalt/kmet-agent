@@ -1605,48 +1605,63 @@
   (t/is (nil? (shared/effective-total-timeout-ms nil 0))
         "no total or idle timeout leaves the transport unlimited"))
 
+(t/deftest test-headers-timeout-ms
+  ;; the idle deadline doubles as the response-start deadline (pi:
+  ;; headersTimeout = httpIdleTimeoutMs) — the SSE reader's own idle clock
+  ;; only starts once the headers have arrived
+  (t/is (= 60000 (shared/headers-timeout-ms 60000)))
+  (t/is (nil? (shared/headers-timeout-ms 0)) "0 disables the headers deadline")
+  (t/is (nil? (shared/headers-timeout-ms nil))))
+
 (t/deftest ^:slow test-llm-request-timeout-follows-idle
   (m/load-catalogs!)
   ;; A server that accepts the request but never responds: the request must
-  ;; error via the configured total timeout (~idle-timeout-ms), not the old
-  ;; hardcoded 120s (pi: SDK timeoutMs ?? httpIdleTimeoutMs).
-  (let [ss (java.net.ServerSocket. 0)
-        port (.getLocalPort ss)
-        _ (doto (Thread.
-                 (fn []
-                   (try
-                     (let [s (.accept ss)
-                           rdr (java.io.BufferedReader.
-                                (java.io.InputStreamReader. (.getInputStream s)))]
-                       ;; drain request headers, then stall — never respond
-                       (while (seq (or (.readLine rdr) "")) nil)
-                       (Thread/sleep 5000)
-                       (.close s))
-                     (catch Exception _ nil))))
-            (.setDaemon true)
-            (.start))
-        t0 (System/currentTimeMillis)
-        errors (atom [])
-        fut (llm/send-message {:provider :opencode-go
-                               :api-key "sk-test"
-                               :base-url (str "http://127.0.0.1:" port "/v1/chat/completions")
-                               :model "deepseek-v4-flash"
-                               :messages [{:role "user" :content "hi"}]
-                               :idle-timeout-ms 1500
-                               :on-error (fn [e] (swap! errors conj e))})]
-    (try
-      @fut
-      (t/is (= 1 (count @errors)))
-      (let [elapsed (- (System/currentTimeMillis) t0)]
-        ;; Window 20s: the error message assertion below guards the mechanism
-        ;; (must contain "timed out" — a broken total timeout yields the EOF
-        ;; error instead); this window only allows for scheduling delay on
-        ;; loaded hosts while still rejecting the old 120s hardcoded timeout.
-        (t/is (< elapsed 20000)
-              (str "errored via the configured timeout (took " elapsed "ms)"))
-        (t/is (str/includes? (first @errors) "timed out")))
-      (finally
-        (.close ss)))))
+  ;; error via the configured idle timeout (pi: undici bodyTimeout AND
+  ;; headersTimeout are both httpIdleTimeoutMs), both when the total deadline
+  ;; follows idle (nil) and when it is explicitly disabled (0 — the default),
+  ;; where the response start would otherwise hang the turn until Escape (the
+  ;; SSE idle reader only starts after the headers arrive). The window rejects
+  ;; the old hardcoded 120s too.
+  (doseq [total-timeout-ms [nil 0]]
+    (t/testing (str "total-timeout-ms " (pr-str total-timeout-ms))
+      (let [ss (java.net.ServerSocket. 0)
+            port (.getLocalPort ss)
+            _ (doto (Thread.
+                     (fn []
+                       (try
+                         (let [s (.accept ss)
+                               rdr (java.io.BufferedReader.
+                                    (java.io.InputStreamReader. (.getInputStream s)))]
+                           ;; drain request headers, then stall — never respond
+                           (while (seq (or (.readLine rdr) "")) nil)
+                           (Thread/sleep 5000)
+                           (.close s))
+                         (catch Exception _ nil))))
+                (.setDaemon true)
+                (.start))
+            t0 (System/currentTimeMillis)
+            errors (atom [])
+            fut (llm/send-message {:provider :opencode-go
+                                   :api-key "sk-test"
+                                   :base-url (str "http://127.0.0.1:" port "/v1/chat/completions")
+                                   :model "deepseek-v4-flash"
+                                   :messages [{:role "user" :content "hi"}]
+                                   :idle-timeout-ms 1500
+                                   :total-timeout-ms total-timeout-ms
+                                   :on-error (fn [e] (swap! errors conj e))})]
+        (try
+          @fut
+          (t/is (= 1 (count @errors)))
+          (let [elapsed (- (System/currentTimeMillis) t0)]
+            ;; Window 20s: the error message assertion below guards the mechanism
+            ;; (must contain "timed out" — a broken deadline yields the EOF
+            ;; error instead); this window only allows for scheduling delay on
+            ;; loaded hosts while still rejecting the old 120s hardcoded timeout.
+            (t/is (< elapsed 20000)
+                  (str "errored via the configured timeout (took " elapsed "ms)"))
+            (t/is (str/includes? (first @errors) "timed out")))
+          (finally
+            (.close ss)))))))
 
 ;; guards the java.net.http body-stream deadlock
 (t/deftest ^:slow test-llm-body-stall-idle-timeout-completes

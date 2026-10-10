@@ -6,7 +6,7 @@
    [kmet.ai.api.sse :as sse]
    [clojure.string :as str]
    [kmet.ai.constrained-sampling :as cs]
-   [kmet.ai.api.shared :refer [bash-execution-text content-text copilot-dynamic-headers effort-value endpoint-url image-block? off-explicitly-null? apply-before-provider-request-hook request-headers responses-events-handler effective-total-timeout-ms transport-error-message]]))
+   [kmet.ai.api.shared :refer [bash-execution-text content-text copilot-dynamic-headers effort-value endpoint-url image-block? off-explicitly-null? apply-before-provider-request-hook request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (defn normalize-id-part
   "pi normalizeIdPart: sanitize a tool-call id to [a-zA-Z0-9_-], cap at 64
@@ -265,7 +265,8 @@
                                        :as :stream
                                          ;; Shared resolution keeps nil (follow idle)
                                          ;; distinct from an explicit disabled total.
-                                       :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)}
+                                       :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)
+                                       :headers-timeout (headers-timeout-ms idle-timeout-ms)}
                                       signal)]
         (let [[dispatch finalize] (responses-events-handler opts model-record)]
           (sse/process-responses-stream response

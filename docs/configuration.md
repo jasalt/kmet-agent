@@ -126,12 +126,15 @@ kmet has no CLI equivalent of pi's `--tools`/`--exclude-tools`/`--no-tools`/
 
 `:http-idle-timeout-ms` (default 120000, pi: `httpIdleTimeoutMs`) is the LLM
 stream idle deadline: a stream that receives no bytes for this long errors
-retryably (undici bodyTimeout semantics). `0` disables the idle deadline.
+retryably (undici bodyTimeout semantics). It also bounds the wait for the
+response itself (pi: undici headersTimeout = `httpIdleTimeoutMs`), so a
+provider that accepts the request but never starts responding fails after the
+idle deadline instead of hanging the turn. `0` disables both.
 
 `:http-total-timeout-ms` is the whole-request deadline. The default `0`
 disables it; `nil` tracks the idle timeout, and a positive value sets an
 independent deadline. Disabling the total deadline does not disable the
-per-byte idle timeout.
+per-byte idle timeout or the response-start deadline.
 
 `/reload` re-reads settings, reloads extensions/skills/prompts/themes, re-discovers
 context files, and rebuilds the system prompt (pi: `session.reload`). It refuses

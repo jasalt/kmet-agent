@@ -4,7 +4,7 @@
    [kmet.libs.json :as json]
    [kmet.ai.http :as ai-http]
    [kmet.ai.api.sse :as sse]
-   [kmet.ai.api.shared :refer [copilot-dynamic-headers endpoint-url max-tokens-key openai-messages openai-messages-with-reasoning openai-thinking-params resolved-openai-compat apply-before-provider-request-hook request-headers responses-events-handler tool->openai-schema effective-total-timeout-ms transport-error-message]]))
+   [kmet.ai.api.shared :refer [copilot-dynamic-headers endpoint-url max-tokens-key openai-messages openai-messages-with-reasoning openai-thinking-params resolved-openai-compat apply-before-provider-request-hook request-headers responses-events-handler tool->openai-schema effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (defn openai-payload
   "Request body for an openai-completions request (pi buildParams):
@@ -68,7 +68,8 @@
                                        :as :stream
                                          ;; Shared resolution keeps nil (follow idle)
                                          ;; distinct from an explicit disabled total.
-                                       :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)}
+                                       :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)
+                                       :headers-timeout (headers-timeout-ms idle-timeout-ms)}
                                       signal)
             ;; The shared handler defers the terminal :done until the whole
             ;; stream is consumed (see its docstring): openai-completions

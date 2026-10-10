@@ -6,7 +6,7 @@
    [kmet.ai.api.sse :as sse]
    [clojure.string :as str]
    [kmet.ai.api.openai-responses :refer [clamp-prompt-cache-key responses-messages responses-tools]]
-   [kmet.ai.api.shared :refer [content-text effort-value apply-before-provider-request-hook request-headers responses-events-handler effective-total-timeout-ms transport-error-message]]))
+   [kmet.ai.api.shared :refer [content-text effort-value apply-before-provider-request-hook request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (def codex-default-base-url
   "pi DEFAULT_CODEX_BASE_URL: the ChatGPT backend the codex endpoint
@@ -119,7 +119,8 @@
                                        :as :stream
                                          ;; Shared resolution keeps nil (follow idle)
                                          ;; distinct from an explicit disabled total.
-                                       :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)}
+                                       :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)
+                                       :headers-timeout (headers-timeout-ms idle-timeout-ms)}
                                       signal)]
         (let [[dispatch finalize] (responses-events-handler opts model-record)]
           (sse/process-responses-stream response

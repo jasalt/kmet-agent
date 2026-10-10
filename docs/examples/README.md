@@ -50,7 +50,7 @@ global agent directory can be changed with `KMET_CODING_AGENT_DIR`.
 | `:retry` | Agent-level transient-error retry policy. |
 | `:steering-mode`, `:follow-up-mode` | Queue drain behavior. Defaults: steering `:all`, follow-up `:one-at-a-time`. |
 | `:loop-guard`, `:thinking-loop-guard-enabled` | Circuit breakers for repeated tool calls and repeated thinking output. |
-| `:http-idle-timeout-ms`, `:http-total-timeout-ms` | Provider-stream idle and whole-request deadlines in milliseconds. Defaults: idle 120 seconds, total disabled (`0`). Total `nil` follows idle. |
+| `:http-idle-timeout-ms`, `:http-total-timeout-ms` | Provider-stream idle, response-start, and whole-request deadlines in milliseconds. Defaults: idle 120 seconds, total disabled (`0`). Total `nil` follows idle. |
 | `:http-transport` | `:platform` uses the built-in HTTP client where possible and curl for proxy cases; `:curl` sends all requests through curl. |
 | `:terminal`, `:images` | Inline-image display, image width, clear-on-shrink, and whether images are sent to providers. |
 | `:shell-path`, `:shell-command-prefix` | Custom bash executable and a line prepended to every bash command. |

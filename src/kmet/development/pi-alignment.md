@@ -279,6 +279,9 @@ classification (429/5xx/timeouts retryable, quota/billing terminal) and
 bounded backoff, and `:http-total-timeout-ms` is the per-request deadline
 pi's `timeoutMs` sets (`retry.provider.timeoutMs ?? httpIdleTimeoutMs`): `nil`
 follows the idle deadline, while an explicit `0` disables the total deadline.
+Like pi's dispatcher (`headersTimeout` = `httpIdleTimeoutMs`), the idle
+deadline also bounds the wait for the response headers, so disabling the total
+deadline never leaves a stalled response start (or the turn's spinner) hung.
 
 ### 5. Extension API
 

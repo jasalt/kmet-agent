@@ -7,7 +7,7 @@
    [clojure.string :as str]
    [kmet.libs.aws-sigv4 :as aws-sigv4]
    [kmet.ai.constrained-sampling :as cs]
-   [kmet.ai.api.shared :refer [anthropic-adaptive-effort bash-execution-text clamp-reasoning content-text getenv image-block? min-answer-tokens apply-before-provider-request-hook request-headers responses-events-handler thinking-budgets effective-total-timeout-ms transport-error-message]]))
+   [kmet.ai.api.shared :refer [anthropic-adaptive-effort bash-execution-text clamp-reasoning content-text getenv image-block? min-answer-tokens apply-before-provider-request-hook request-headers responses-events-handler thinking-budgets effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (defn bedrock-is-claude?
   "pi isAnthropicClaudeModel: id/name mention Anthropic Claude (also matches
@@ -311,7 +311,8 @@
                                            :as :stream
                                              ;; Shared resolution keeps nil (follow idle)
                                              ;; distinct from an explicit disabled total.
-                                           :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)}
+                                           :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)
+                                           :headers-timeout (headers-timeout-ms idle-timeout-ms)}
                                           signal)]
             (let [[dispatch finalize] (responses-events-handler opts model-record)]
               (sse/process-bedrock-stream response
