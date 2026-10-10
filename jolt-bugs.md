@@ -76,6 +76,35 @@ every library.
 Repro: `jolt scripts/kmet_reakt_bench.clj` — the four `instance?` rows at
 the top of the sweep.
 
+### [jolt#1303](https://github.com/jolt-lang/jolt/issues/1303) — a timed `LinkedBlockingQueue` poll pays the wait setup on a non-empty queue
+
+Measured 2026-10-10 on Jolt `v0.8.20-15-g1c6da859` (Termux/aarch64, 8 cores,
+100 Hz ticks) against bb 1.13.225. 200k dequeues from a pre-filled
+`LinkedBlockingQueue`: `poll()` 130 ms / 12 ticks, `take()` 146 ms / 14 ticks,
+`poll(100, MILLISECONDS)` **631 ms / 63 ticks** (bb's timed poll: 115 ms /
+11). A timed poll that finds an element never waits, yet `abq-take-wait`
+(`host/chez/java/concurrency.ss`) always calls `jolt-cv-wait-interruptibly` —
+`ms->deadline-millis` (a wall-clock read), the ibox, the exception handler,
+the closure and the wait registration, per call. `ArrayBlockingQueue` shares
+the table, so the bounded queue has the same gap, and a hot producer/consumer
+loop shows it too (~0.006 ms/op against bb's ~0.001, a 7x gap). The JVM checks the count
+under the lock and dequeues without entering the wait path; a non-empty fast
+arm in the timed `poll` (and in `take`) would close the ~5x gap. Secondary:
+the deadline comes off the wall clock, so a clock step mis-times a queue wait
+(the monotonic-clock rule).
+
+The finding came out of the streaming-CPU investigation: the primary cause
+there was kmet's own byte-at-a-time SSE handoff, fixed kmet-side (the chunked
+idle reader in `kmet.libs.sse` now hands off 8 KiB per wake, and the TUI's
+stream-window CPU fell ~3.6x). The kmet-side accommodation for this issue is
+the untimed-poll-first pattern: the reader takes `(.poll q)` before its timed
+poll, so a chunk already queued is served without the wait setup — cheap to
+keep once Jolt fast-paths it itself. It matters most if the transport
+trickles tiny chunks; with 8 KiB bursts it is measurement noise.
+
+Repro: the `poll()` / `take()` / `poll(100ms)` script in the issue, run with
+`jolt` and `bb`.
+
 ## Resolved in the pinned releases
 
 These issues no longer need kmet-side workarounds:
