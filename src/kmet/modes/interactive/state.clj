@@ -95,7 +95,7 @@
    persisted (no file yet), or the file is missing."
   [sess config]
   (when (and sess (:file sess) (fs/exists? (:file sess)))
-    (when (some? (System/console))
+    (when (host/stdout-tty?)
       (let [base-dir (cfg/get-session-dir config)
             default-base (cfg/expand-path "~/.kmet/sessions")
             base-is-default? (try

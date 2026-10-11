@@ -16,6 +16,18 @@
         "only babashka and jolt have badges")
     (is (= (subs (host/runtime-name) 0 1) (host/mark)))))
 
+(deftest stdout-tty?-answers-on-this-host
+  (testing "the predicate is safe to call on either host — Jolt's
+            System/console is permanently nil, so the native shim must
+            actually resolve there"
+    (is (boolean? (host/stdout-tty?))))
+  (if (host/jolt?)
+    (testing "the Jolt path is the native shim, not a swallowed load error"
+      (is (some? (requiring-resolve 'kmet.libs.host-native/stdout-tty?))
+          "kmet.libs.host-native resolves as a .jolt source"))
+    (testing "babashka parity with System/console (the check stdout-tty? replaces)"
+      (is (= (some? (System/console)) (host/stdout-tty?))))))
+
 (deftest finite?-parity
   (is (true? (host/finite? 1)))
   (is (true? (host/finite? 1.5)))

@@ -1,0 +1,47 @@
+(ns kmet.libs.host-native
+  "Jolt-only native host probes: standard-output attachment for
+   kmet.libs.host/stdout-tty?. Jolt's System/console answers nil by design
+   (host-static.ss marks it unimplemented), so the check is the OS's own:
+   libc isatty(1) on POSIX, the console mode of GetStdHandle(STD_OUTPUT_HANDLE)
+   on Windows (the CRT's isatty does not describe the std handle).
+
+   A .jolt file — the runtime's own source extension — so neither babashka
+   nor the JVM can load it; kmet.libs.host resolves it at call time via
+   requiring-resolve. Symbol lookups happen on the first call, never at
+   load, so a Windows process never resolves the libc binding and vice
+   versa."
+  (:require [clojure.string :as str]
+            [jolt.ffi :as ffi]))
+
+;; ─── POSIX ───────────────────────────────────────────────────────────────
+
+(ffi/defcfn ^:private c-isatty "isatty" [:int] :int)
+
+;; ─── Windows ─────────────────────────────────────────────────────────────
+
+(ffi/defcfn ^:private win-get-std-handle "GetStdHandle" [:int] :pointer)
+(ffi/defcfn ^:private win-get-console-mode
+  "GetConsoleMode" [:pointer :pointer] :int)
+(def ^:private win-std-output -11)
+
+(defn- windows?
+  "True when this Jolt runs on Windows (the same os.name probe the terminal
+   backends use: a Windows kernel32 load)."
+  []
+  (str/includes? (str (System/getProperty "os.name")) "Windows"))
+
+(defn- windows-console?
+  "True when stdout is a console handle: GetConsoleMode succeeds on
+   STD_OUTPUT_HANDLE (a redirected stdout is a file or pipe and fails)."
+  []
+  (when-let [h (win-get-std-handle win-std-output)]
+    (when-not (ffi/null? h)
+      (ffi/with-out [mode :uint]
+        (pos? (win-get-console-mode h mode))))))
+
+(defn stdout-tty?
+  "True when this process's standard output is attached to a terminal."
+  []
+  (if (windows?)
+    (boolean (windows-console?))
+    (pos? (c-isatty 1))))

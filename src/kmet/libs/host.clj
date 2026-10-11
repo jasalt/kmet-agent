@@ -9,7 +9,9 @@
    footer's К mark) share this one detection instead of repeating it, and
    platform-specific branches (the terminal backend pick, app seams) share
    windows?. finite? is the same kind of shim: Double/isFinite is unshimmed
-   on Jolt, so the isNaN/isInfinite statics compose it portably."
+   on Jolt, so the isNaN/isInfinite statics compose it portably; stdout-tty?
+   papers over Jolt's permanently-nil System/console with the native OS
+   check."
   (:require [babashka.fs :as fs]))
 
 (defn jolt?
@@ -25,6 +27,30 @@
    `(not (windows?))`."
   []
   (fs/windows?))
+
+(defn stdout-tty?
+  "True when standard output is attached to a terminal (pi:
+   process.stdout.isTTY) — the condition behind the exit resume hint, so a
+   redirected stdout never collects it. bb/JVM answers from System/console
+   (non-nil exactly when stdin and stdout are attached). Jolt answers nil
+   from System/console by design (host-static.ss marks it unimplemented), so
+   the native shim asks the OS instead: libc isatty(1) on POSIX, the
+   kernel32 console mode of STD_OUTPUT_HANDLE on Windows. The shim is a
+   .jolt source — the runtime's own extension — resolved at call time, so
+   neither host loads the other's FFI surface. A shim that cannot load logs
+   and answers false: a missing hint must not break the exit path."
+  []
+  (if (jolt?)
+    (boolean
+     (try
+       ((requiring-resolve 'kmet.libs.host-native/stdout-tty?))
+       (catch Exception e
+         (try
+           ((requiring-resolve 'kmet.debug/log)
+            "host: stdout-tty? native check failed: " (ex-message e))
+           (catch Throwable _ nil))
+         false)))
+    (some? (System/console))))
 
 (defn runtime-name
   "Name of the hosting runtime: \"jolt\" or \"babashka\"."

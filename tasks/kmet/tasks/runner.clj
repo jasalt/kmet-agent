@@ -92,6 +92,7 @@
     kmet.app.test-keybindings
     kmet.modes.test-print
     kmet.modes.test-interactive
+    kmet.modes.interactive.test-state
     kmet.modes.test-overlay-input-smoke
     kmet.test-editing
     kmet.tui.test-fuzzy
