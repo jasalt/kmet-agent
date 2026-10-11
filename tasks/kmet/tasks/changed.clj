@@ -217,24 +217,41 @@
                set))
         #{}))))
 
+(defonce ^:private scan-cache (atom nil))
+
+(defn- source-stamp
+  "[[path mtime-ms] ...] identifying the scanned source tree — the cache
+   validity key for scan-graph."
+  [files]
+  (mapv (fn [f] [(str f) (.toMillis (fs/last-modified-time f))]) files))
+
 (defn- scan-graph
   "The require graph (ns → set of required kmet.* nss) and ns → file path,
    from every .clj file under the source roots. Extension namespaces join the
    graph so changes to the extension contract (kmet.extension, kmet.tui.*,
-   kmet.libs.*) pull dependent extension files into the lint closure."
+   kmet.libs.*) pull dependent extension files into the lint closure.
+   Cached per source-tree stamp: the affected-* helpers scan repeatedly in
+   one process (bb test-changed/test-ext-changed and their tests) and the
+   read/parse is the expensive part."
   []
-  (reduce (fn [acc f]
-            (let [path (str f)
-                  ns-sym (path->ns path)
-                  form (read-ns-form path)
-                  reqs (and form (ns-requires form))]
-              (if reqs
-                (-> acc
-                    (update :graph assoc ns-sym reqs)
-                    (update :paths assoc ns-sym path))
-                acc)))
-          {:graph {} :paths {}}
-          (source-clj-files)))
+  (let [files (source-clj-files)
+        stamp (source-stamp files)]
+    (if (= stamp (:stamp @scan-cache))
+      (:scan @scan-cache)
+      (let [scan (reduce (fn [acc f]
+                           (let [path (str f)
+                                 ns-sym (path->ns path)
+                                 form (read-ns-form path)
+                                 reqs (and form (ns-requires form))]
+                             (if reqs
+                               (-> acc
+                                   (update :graph assoc ns-sym reqs)
+                                   (update :paths assoc ns-sym path))
+                               acc)))
+                         {:graph {} :paths {}}
+                         files)]
+        (reset! scan-cache {:stamp stamp :scan scan})
+        scan))))
 
 (defn- reverse-graph
   "ns → set of namespaces that require it."
