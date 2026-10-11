@@ -931,3 +931,33 @@
               "the tail line rendered the final state")
         (finally
           (stop-loop tui))))))
+
+(deftest ^:slow over-wide-lines-are-clamped-on-every-write-path
+  (testing "a line wider than the window would wrap in the terminal, leaving it
+            with more rows than the model and every later relative move off by
+            the wrapped rows; emit-line! clamps it on the full-redraw and the
+            diff path alike"
+    (let [filler (fn [ch] (apply str (repeat 200 ch)))
+          lines (atom [(filler "x") "tail"])
+          vt (make-virtual-terminal)
+          tui (core/create-tui (:terminal vt))]
+      (try
+        (core/tui-add-child tui (test-component lines))
+        (start-loop tui)
+        (wait-for-frames (:writes vt) 1 5000)
+        (let [frame (first (frame-writes (:writes vt)))]
+          (t/is (not (str/includes? frame (filler "x")))
+                "the full redraw does not write the over-wide line verbatim")
+          (t/is (str/includes? frame (apply str (repeat 80 "x")))
+                "the full redraw writes it clamped to the window width"))
+        (let [before (count (frame-writes (:writes vt)))]
+          (swap! lines assoc 0 (filler "y"))
+          (core/tui-request-render tui)
+          (wait-for-frames (:writes vt) (inc before) 5000)
+          (let [frame (last (frame-writes (:writes vt)))]
+            (t/is (not (str/includes? frame (filler "y")))
+                  "the diff does not write the over-wide line verbatim")
+            (t/is (str/includes? frame (apply str (repeat 80 "y")))
+                  "the diff writes it clamped to the window width")))
+        (finally
+          (stop-loop tui))))))

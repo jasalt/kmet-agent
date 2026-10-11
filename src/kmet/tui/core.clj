@@ -2553,7 +2553,19 @@
                       emit-line! (fn [line]
                                    (emit! (if (img/is-image-line line)
                                             line
-                                            (str line utils/SEGMENT-RESET))))
+           ;; A line wider than the window wraps in the terminal, so the
+           ;; terminal ends up holding more rows than the model does and
+           ;; every later relative move is off by the wrapped rows. Clamp
+           ;; here, the one choke point both the diff and the full redraw
+           ;; write through: a component cannot desync the terminal
+           ;; whatever width its line claims (the renderer already clamps
+           ;; its own content slices; this covers the rest). pi throws in
+           ;; this case — truncating keeps the app alive and the rows
+           ;; aligned.
+                                            (str (if (> (utils/visible-width line) w)
+                                                   (:text (utils/slice-with-width line 0 w :strict? true))
+                                                   line)
+                                                 utils/SEGMENT-RESET))))
                       debug-redraw? @(:debug-redraw? tui)
                       log-redraw! (fn [reason]
                                     (when debug-redraw?
