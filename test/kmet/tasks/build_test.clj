@@ -186,10 +186,17 @@
         (testing "the entry point is the test runner"
           (is (str/includes? manifest "Main-Class: kmet.tasks.test-main")))))))
 
+;; ─── App artifact ─────────────────────────────────────────────────────────
+
+(def ^:private app-uberjar
+  "The app artifact shared by the uberjar content tests — one build instead
+   of one per test."
+  (delay (build/uberjar*)))
+
 (deftest ^:bb-only test-classes-are-only-in-a-test-build
   ;; the app artifact is src/ and only src/ — test/ and tasks/ (the runner and
   ;; the generated entry) exist solely in a --test build
-  (let [app (build/uberjar*)]
+  (let [app @app-uberjar]
     (with-open [zf (java.util.zip.ZipFile. (fs/file app))]
       (let [entries (set (map (fn [e] (.getName ^java.util.zip.ZipEntry e))
                               (enumeration-seq (.entries zf))))]
@@ -372,7 +379,7 @@
       (is (not (fs/exists? "target/kmet-bundled/extensions/clojure/test"))))))
 
 (deftest ^:bb-only uberjar-carries-the-bundled-extensions
-  (let [jar (build/uberjar*)]
+  (let [jar @app-uberjar]
     (with-open [zf (java.util.zip.ZipFile. (fs/file jar))]
       (let [entries (set (map (fn [e] (.getName ^java.util.zip.ZipEntry e))
                               (enumeration-seq (.entries zf))))]

@@ -661,12 +661,16 @@
 (t/deftest test-session-get-tree-large-session
   ;; get-tree builds correct structure at scale: a long chain plus a
   ;; fan-out branch (regression guard for the per-parent full scan this
-  ;; replaced — group-by keeps construction linear in entry count)
+  ;; replaced — group-by keeps construction linear in entry count).
+  ;; replace-entries! builds the chain in one publication: the append path
+  ;; would write 2000 lines to disk, which is setup cost, not behavior.
   (let [session (s/create-session test-dir)
         n 2000]
-    (dotimes [i n]
-      (s/append-entry session {:role (if (even? i) :user :assistant)
-                               :content [{:type :text :text (str "m" i)}]}))
+    (s/replace-entries! session
+                        (mapv (fn [i]
+                                {:role (if (even? i) :user :assistant)
+                                 :content [{:type :text :text (str "m" i)}]})
+                              (range n)))
     (s/branch! session (:id (first @(:entries session))))
     (s/append-entry session {:role :user :content [{:type :text :text "fork"}]})
     ;; iterative: the chain is 2000 deep, a recursive walk overflows

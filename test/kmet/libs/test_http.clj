@@ -292,7 +292,7 @@
                         (respond s "200 OK" "late" {})))]
     (try
       (let [t0 (System/currentTimeMillis)
-            e (try (http/get (str base "/") {:as :stream :headers-timeout 300})
+            e (try (http/get (str base "/") {:as :stream :headers-timeout 150})
                    (catch Exception e e))
             elapsed (- (System/currentTimeMillis) t0)]
         (t/is (instance? Exception e) "the request must not hang")

@@ -9,7 +9,8 @@
             [clojure.string :as str]
             [clojure.test :as t :refer [deftest is]]
             [kmet.libs.crypto :as crypto]
-            [kmet.libs.oauth :as oauth]))
+            [kmet.libs.oauth :as oauth]
+            [kmet.test-utils :as tu]))
 
 ;; ─── Poll state machine (directly on the lib) ─────────────────────────────
 
@@ -314,14 +315,6 @@
 
 ;; ─── JWT-bearer grant (RFC 7523; signing lives in kmet.libs.crypto) ──────
 
-(defn- pem-of
-  "PEM armor for DER bytes (runtime-generated keys)."
-  [label der]
-  (let [body (.encodeToString (java.util.Base64/getEncoder) der)]
-    (str "-----BEGIN " label "-----\n"
-         (str/join "\n" (map #(apply str %) (partition-all 64 body)))
-         "\n-----END " label "-----\n")))
-
 (defn- jwt-parts
   [jwt]
   (let [[h p s] (str/split jwt #"\." 3)]
@@ -330,35 +323,36 @@
      :signature s}))
 
 (deftest test-jwt-bearer-token
-  (let [kg (java.security.KeyPairGenerator/getInstance "RSA")]
-    (.initialize kg 2048)
-    (let [pem (pem-of "PRIVATE KEY" (.getEncoded (.getPrivate (.generateKeyPair kg))))
-          captured (atom nil)]
-      (with-redefs [oauth/fetch-json
-                    (fn [url opts]
-                      (reset! captured {:url url :body (:body opts)})
-                      {:status 200 :body {:access_token "jb-access" :expires_in 300}})]
-        (let [tokens (oauth/jwt-bearer-token
-                      "https://as.example/token"
-                      {:private-key pem
-                       :issuer "svc@example.com"
-                       :scope "read"})]
-          (is (= "jb-access" (:access tokens)))
-          (is (= 300 (:expires-in tokens)))
-          (is (= "https://as.example/token" (:url @captured)))
-          (let [body (get-in @captured [:body])
-                grant (some-> (re-find #"grant_type=([^&]+)" body) second
-                              (java.net.URLDecoder/decode "UTF-8"))
-                assertion (some-> (re-find #"assertion=([^&]+)" body) second
-                                  (java.net.URLDecoder/decode "UTF-8"))]
-            (is (= "urn:ietf:params:oauth:grant-type:jwt-bearer" grant))
-            (is (str/includes? body "scope=read"))
-            (let [{:keys [payload]} (jwt-parts assertion)]
-              (is (= "svc@example.com" (:iss payload)))
-              (is (= "svc@example.com" (:sub payload)))
-              ;; the audience defaults to the token endpoint
-              (is (= "https://as.example/token" (:aud payload)))
-              (is (seq (:jti payload))))))))))
+  ;; An embedded throwaway key: this test only needs a valid RSA PEM —
+  ;; signature verification is kmet.libs.test-crypto's job, so a runtime
+  ;; keygen would only add RSA key generation here.
+  (let [pem tu/throwaway-rsa-pkcs8-pem
+        captured (atom nil)]
+    (with-redefs [oauth/fetch-json
+                  (fn [url opts]
+                    (reset! captured {:url url :body (:body opts)})
+                    {:status 200 :body {:access_token "jb-access" :expires_in 300}})]
+      (let [tokens (oauth/jwt-bearer-token
+                    "https://as.example/token"
+                    {:private-key pem
+                     :issuer "svc@example.com"
+                     :scope "read"})]
+        (is (= "jb-access" (:access tokens)))
+        (is (= 300 (:expires-in tokens)))
+        (is (= "https://as.example/token" (:url @captured)))
+        (let [body (get-in @captured [:body])
+              grant (some-> (re-find #"grant_type=([^&]+)" body) second
+                            (java.net.URLDecoder/decode "UTF-8"))
+              assertion (some-> (re-find #"assertion=([^&]+)" body) second
+                                (java.net.URLDecoder/decode "UTF-8"))]
+          (is (= "urn:ietf:params:oauth:grant-type:jwt-bearer" grant))
+          (is (str/includes? body "scope=read"))
+          (let [{:keys [payload]} (jwt-parts assertion)]
+            (is (= "svc@example.com" (:iss payload)))
+            (is (= "svc@example.com" (:sub payload)))
+            ;; the audience defaults to the token endpoint
+            (is (= "https://as.example/token" (:aud payload)))
+            (is (seq (:jti payload)))))))))
 
 (deftest test-jwt-bearer-requires-issuer
   (is (thrown-with-msg? Exception #"issuer"

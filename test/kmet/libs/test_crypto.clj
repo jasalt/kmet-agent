@@ -8,7 +8,8 @@
   (:require [kmet.libs.json :as json]
             [clojure.string :as str]
             [clojure.test :as t :refer [deftest is]]
-            [kmet.libs.crypto :as crypto]))
+            [kmet.libs.crypto :as crypto]
+            [kmet.test-utils :as tu]))
 
 ;; ─── Test key fixtures (throwaway RSA-2048 + P-256 keypair, generated
 ;;    offline and embedded as literals) ────────────────────────────────────
@@ -42,35 +43,7 @@ NxfwKRzaK9ua8nar7NZAJ1i8fSxuKajU5yHkmhtaNnwCaKU4znzEo7lwRr+Rq1G2
 GarvMn/oLkaqYB5qx5M8Zjoq6aqWB0FnYgCps7ejH2DsdtkOdBap
 -----END RSA PRIVATE KEY-----")
 
-(def ^:private rsa-pkcs8-pem
-  "-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCpdAxfCPdeAsCi
-xyUaiUjddK7U4Sz0N6uWI0An23JWClamCRgEZh+cNlqr0vkRTbmKCPqetqYK52CZ
-23iJVJEHsDYvE6pdz9s0T3Q8452PYTzd/WC/yhakAMOY4/OwqiXfRzsgmVxYzhdw
-7KLEFr/zjWS5ak206ilWXnJGsDA5/PmxU6E1J7M47NpHyY0rf6OnTULSR6sbliaM
-H6RIgqo0JaPn8DROK4kskT1wUJ9rTtXW2pkUT7M0gRTviglK7sX0zrNQyxUdQAfS
-VZiZdwm1OB7rCAVoAy8a1CWeF6WaGxPqvSNV/Gd8oghNxyjH6l6hOdrguvTMRqNO
-WCydEoMnAgMBAAECggEARl9kd99QY+F+wNs1hIS5FwdLSCtPsQihoNN45FSVcjgO
-7htetwz2WbiVBUCzoUUHJdU+x8UQxfx7OMpVj6roJCpBBmIDYbxdy6annlXk7FO0
-pHiCwoOZzXhnwsoAPUEcQ1LgslQebt8ACyyrGAZepzX0O7BzHwwUKMNGcCbhkGLb
-CJBkFzJN5eHWTKKaYxQkGXw1juJ7Lh5NmOMySi05LE5qP45uiCp+DAVHuS9/p+Ks
-PHjygqWJrhAqUSjLyKzA9lhy8egOCVcHqvx34PvbiPQBFW+t7hxUezqsDT14zC0w
-jac05hFvNbf6/9XkDlSObYroC8VFM2TLTbY3wbB8uQKBgQDTIn5opffVnbfCMvmT
-Df4VUj3mOwNzabwatj0vR4bftCQt0zC9W6o34fuaE3ZO+rCRQYMYCzObqJxRehRg
-JJxCO5xSkmFRGH6BnTUDPxWd/fgacDkiYHzsXut35bkDpmuh3NEnsYjRgz4vF5am
-ufUWNe2vMayrWE8jGAlll5tPcwKBgQDNdiEJHrLBz2TMjC71GtuppoV/y9XqA+ne
-np4X6QgGWD3SsRE9E59/wGizABSYNm4qQULIdVLxrDa0OkbWueevl29o86jtQBGf
-7E49qGBrOn6mpHgTkzyuqUsPv8k12nV4XgF6yd/YT/z9BYiroF+xpriFWmjFlewO
-hLg9wLJofQKBgQC7sb14oJq7D3Ots41FGrpXD/6xLqM5tbSgdoPcBRU0x7sl9cot
-fFDNTxtR9J1HRvsylm/JLyQY7ALTN9jnQ4SaKM4mZbUX19OWvD/FfA5mnsEyF7Pj
-CK3ln9hqhRE92nNyuJBDXkNIJglg6fJmk4f6z8RV664ZwO7RPuwToXxTWwKBgC+J
-ZE1S3/L9hAnbaUXmZ+pRj9Oomp6hNyv9sQBBN00Yf31O4HksIBwTrWW04A7zkPuP
-y97LXlxyBtoeHaOysYsr02gJ8AysZSeGKfgUC/LjPshZhzqoN0MGAkrriac/Gyy1
-O0xohrTqlNMJw7xJx7o3o7ue1lzYuhwF0wbenaiVAoGAZH/30L9vOmosxj3/RSNU
-HyVpn/Xy1FBH+ksziAmWKTw2doapMfzLNwU3F/ApHNor25rydqvs1kAnWLx9LG4p
-qNTnIeSaG1o2fAJopTjOfMSjuXBGv5GrUbYZqu8yf+guRqpgHmrHkzxmOirpqpYH
-QWdiAKmzt6MfYOx22Q50Fqk=
------END PRIVATE KEY-----")
+(def ^:private rsa-pkcs8-pem tu/throwaway-rsa-pkcs8-pem)
 
 (def ^:private rsa-spki-pem
   "-----BEGIN PUBLIC KEY-----
