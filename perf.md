@@ -28,6 +28,15 @@ The frame bench cannot see any of it: its harness mounts no fn components
 (a call-counted probe reports zero `ComponentFn` renders on a replayed
 session, §14.1).**
 
+**§16 re-checks the paths those two fixes touched, on the installed
+`jolt v0.8.21` / `bb` 1.13.225 (2026-10-11): the reakt layer's jolt
+primitive deficit is gone — `tracked-deref` in a scope is now 1.9x faster
+than bb's, an invalidation storm 2.8x cheaper — the timed `poll` costs the
+untimed one, and §15's SSE table holds (reader accommodation removal
+cost-neutral). The one surviving reakt deficit is a many-dep `force-run!`
+(5.5x at 50 deps), traced to Jolt's constant `hash` for objects (§16.2,
+filed as [jolt#1313](https://github.com/jolt-lang/jolt/issues/1313)).**
+
 **TL;DR** — it is not a busy loop and not the terminal backend. Idle CPU is
 *lower* on jolt than on bb. The frame gap was (a) every keystroke/frame
 re-renders the whole component tree + re-normalizes every line + diffs/emits,
@@ -1548,7 +1557,7 @@ Reading:
   `case-string`; filed as
   [jolt#1299](https://github.com/jolt-lang/jolt/issues/1299), fixed in Jolt
   `v0.8.21`/[PR #1302](https://github.com/jolt-lang/jolt/pull/1302) — the
-  modeled-class checks now measure 0.06–0.22 µs). bb's SCI
+  modeled-class checks now measure 0.06–0.22 µs; re-measured in §16.1). bb's SCI
   checks are flat ~0.16 µs. This lands twice per
   tracked read inside a scope, so `tracked-deref` on a plain atom is
   1.36 µs bb but **4.06 µs jolt** — and jolt's atom path is the slow one
@@ -1718,6 +1727,175 @@ the remaining work is kmet-side (§6.3). The queue finding recorded in
 [jolt#1303](https://github.com/jolt-lang/jolt/issues/1303) (a timed `poll`
 on a non-empty `LinkedBlockingQueue` cost 4.9x the untimed poll) is fixed
 in Jolt `v0.8.21` ([PR #1305](https://github.com/jolt-lang/jolt/pull/1305));
-the reader's untimed-poll-first accommodation is gone.
+the reader's untimed-poll-first accommodation is gone — cost-neutral
+(§16.3/§16.4).
+
+---
+
+## 16. Re-check at `jolt v0.8.21` after #1299/#1303 (phone, 2026-10-11)
+
+v0.8.21 closed the two perf tickets §14/§15 filed upstream —
+[#1299](https://github.com/jolt-lang/jolt/issues/1299) (`instance?` against
+the modeled class hierarchy, [PR #1302](https://github.com/jolt-lang/jolt/pull/1302))
+and [#1303](https://github.com/jolt-lang/jolt/issues/1303) (a timed `poll`
+on a non-empty `LinkedBlockingQueue`, [PR #1305](https://github.com/jolt-lang/jolt/pull/1305))
+— and kmet dropped the companion work (aedfae90: `kmet.libs.sse`'s
+untimed-poll-first, the reakt comments' stale cost claims). This section
+re-runs the affected harnesses on the same Termux/aarch64 phone (`jolt
+v0.8.21`, `bb` 1.13.225) and records what moved. Method and caveats are
+§1/§6.2b; reakt rows are medians of 3 runs (each script's own median of 5),
+and absolutes are phone-specific like every phone table here.
+
+Caveat: a live `jolt start` app ran in another terminal for the whole
+session (~25 % of a core). That is exactly the §6.2b "never measure while
+something burns CPU" condition; the numbers reproduced §13/§14/§15 within
+the phone's usual noise, so it is recorded rather than corrected for.
+
+### 16.1 reakt primitives — §14.2's jolt deficit is gone
+
+Steady-state medians (µs; J/B = jolt/bb) with §14.2's as-found jolt values
+alongside:
+
+| op | bb | jolt | J/B | §14.2 jolt |
+|---|---:|---:|---:|---:|
+| `instance?` String / Object | 0.161 / 0.162 | 0.043 / 0.173 | 0.27 / 1.07 | 0.042 / 0.140 |
+| `instance?` Atom | 0.160 | **0.059** | 0.37 | 1.060 |
+| `instance?` IRef | 0.163 | 0.205 | 1.26 | 1.838 |
+| `instance?` IDeref | 0.485 | **0.266** | 0.55 | 1.815 |
+| `trackable-ref?` atom / reaction | 0.307 / 0.412 | 0.315 / 0.420 | ~1.0 / ~1.0 | 1.798 / 0.321 |
+| `tracked-deref` atom, no scope | 0.700 | **0.461** | 0.66 | 1.967 |
+| `tracked-deref` atom, scope bound | 1.434 | **0.741** | 0.52 | 4.061 |
+| `tracked-deref` reaction, scope bound | 3.513 | **1.654** | 0.47 | 2.071 |
+| `deref` idle reaction | 2.043 | **0.794** | 0.39 | 0.642 |
+| `force-run!` 0-dep body | 11.110 | **3.598** | 0.32 | 3.483 |
+| `deref` `:rerun-without-deps?` body | 12.448 | **4.597** | 0.37 | 4.188 |
+| `make-reaction` (never run) | 22.453 | 21.141 | 0.94 | 16.637 |
+| `force-run!` 1 / 5 deps | 14.6 / 21.1 | **8.2** / 24.4 | 0.56 / 1.16 | 15.0 / 39.8 |
+| `force-run!` 20 / 50 deps | 47.6 / 103.0 | 130.2 / 567.8 | **2.74 / 5.51** | 204.0 / 781.8 |
+| dirty 1 / 50 / 500 + settle | 31.8 / 1193.8 / 12723.5 | **13.2 / 438.7 / 4508.1** | 0.42 / 0.37 / 0.35 | 26.3 / 1021 / 12506 |
+| `some identical?` over 500 | 44.7 | 37.6 | 0.84 | 37.0 |
+| `weak/register!` refresh | 2.388 | **0.875** | 0.37 | 1.723 |
+| `weak/sweep!` empty | 0.636 | **0.102** | 0.16 | 0.517 |
+| `weak/subject` | 0.581 | **0.163** | 0.28 | 0.562 |
+
+Reading:
+
+- Every modeled-class `instance?` dropped to a native-check cost (Atom
+  1.06 → 0.059, IRef 1.84 → 0.205, IDeref 1.82 → 0.266 µs); only `IRef`
+  still costs jolt a little more than bb (0.205 vs 0.163).
+- `tracked-deref` is jolt-favored in every shape, so §14.2's "jolt's atom
+  path is the slow one" is dead: no scope 0.46 vs 0.70, scope-bound atom
+  0.74 vs 1.43 (was 4.06), scope-bound reaction 1.65 vs 3.51.
+  `trackable-ref?` on an atom is parity (0.315 vs 0.307; was 1.80).
+- The reaction lifecycle flipped with it: idle deref 0.79 vs 2.04,
+  0-dep force-run 3.6 vs 11.1, `:rerun-without-deps?` 4.6 vs 12.4;
+  `make-reaction` is near parity (~21 vs ~22). Invalidation storms are
+  2.7–2.8x *cheaper* on jolt now (50 watched atoms 439 vs 1,194 µs; 500
+  atoms 4.51 vs 12.72 ms).
+- The one surviving deficit is the many-dep `force-run!` (2.7x at 20 deps,
+  5.5x at 50) and it is genuinely superlinear (jolt 8 → 24 → 130 → 568 µs
+  for 1 → 5 → 20 → 50 deps). §14.4 item 1's identity fast path is in place;
+  §16.2 traces the cost below reakt.
+
+### 16.2 The many-dep residual is Jolt's constant object `hash`
+
+A focused probe (`target/perf-recheck/force-run-probe.clj`, 50 deps): on
+jolt `r/-force-run` costs **604 µs**, the body called directly (no reaction
+frame) **20 µs**, and the body *in a frame* — i.e. with `record-dep!`
+capturing each read — **582 µs** (bb: 90 / 31 / 73). `record-dep!` is a
+`(swap! pending assoc ref v)` per dep, so the pending map is keyed by refs,
+and building a 50-entry map keyed by atoms is where the time goes:
+
+| 50 chained assocs | bb | jolt |
+|---|---:|---:|
+| atom keys | 20.2 µs | **495.8 µs** |
+| keyword keys | 20.6 µs | 19.1 µs |
+
+The cause is below Clojure: on jolt, `(hash x)` for a modeled object or a
+`reify` (Atom, Delay, Volatile, `Object`, `StringBuilder`, reactions —
+which `make-reaction` builds with `reify`) returns the **same constant for
+every instance**; 50 distinct atoms hash to 1 distinct value (bb: 50). The
+map degrades to a single collision bucket scanned per assoc — O(n²) in the
+dep count. `System/identityHashCode` does return distinct per-object values,
+so the host can fix it; records and deftypes already hash correctly. This is
+not reakt-specific: any jolt hash map keyed by refs/objects (kmet's
+tracking-scope buckets, third-party caches) pays it. **Filed upstream as
+[jolt#1313](https://github.com/jolt-lang/jolt/issues/1313)**: "`hash` of
+modeled/reify objects is a fixed constant, making maps keyed by them
+O(n²)".
+
+### 16.3 #1303: the timed poll costs the untimed one
+
+`target/bench_poll.clj` (scratch, from the §15 investigation), 200k dequeues
+from a pre-filled `LinkedBlockingQueue`:
+
+| | `poll()` | `poll(100 ms)` | `take()` |
+|---|---:|---:|---:|
+| jolt v0.8.21 | 61 ms | **62 ms** | 53 ms |
+| bb 1.13.225 | 82 ms | 115 ms | 79 ms |
+
+The timed poll on a non-empty queue was 4.9x the untimed one when §15 filed
+#1303; it now costs the same. The reader's untimed-first accommodation is
+gone (aedfae90) and the parked handoff (`target/bench_handoff.clj`, 1000
+items 3 ms apart, timed poll) is unchanged: jolt 0.043 ticks/item (was
+~0.045), bb 0.033 (was ~0.035). Removal measured cost-neutral.
+
+### 16.4 SSE streaming — §15's table holds
+
+Same probe server and TUI tmux harness as §15 (300 events, 30 ms apart,
+200 B; ticks/s in the stream window):
+
+| scenario | pre-fix | §15 after | v0.8.21 |
+|---|---:|---:|---:|
+| TUI `jolt start` | 86.7 | 23.8 | **25.0** |
+| TUI `bb start` | — | 60.9 | **63.3** |
+| no-TUI jolt | 31.9 | 10.7 | **10.3** |
+| no-TUI bb | 19.3 | 15.4 | **12.3** |
+
+jolt stays ~2.5x cheaper than bb on the TUI stream (63.3 / 25.0), idle is
+2.4 (jolt) vs 4.0 (bb) ticks/s, and the remaining work is kmet-side (§6.3). Harness
+note: the scratch probe agent's `:http-idle-timeout-ms 1500` (added after
+§15 for the headers-timeout work) is below jolt's first-chunk latency in
+this environment — a no-TUI series with 1500/2000/3000/5000 ms reproduces
+it (jolt errors before the first chunk at 1500, completes at 2000+; bb
+completes at 1500) — so the runs above used 120000 like §15. That latency
+is a separate, non-CPU observation about the jolt HTTP path, worth its own
+look.
+
+### 16.5 Frame and typing CPU — unregressed
+
+Frame bench (§13's harness and fixture, 100x30, one run per host — §13
+reports medians of 3–5; the frame path is untouched by the two fixes and the
+bench mounts no fn components (§14.1), so this is a sanity check):
+
+| scenario | bb | jolt | jolt/bb |
+|---|---:|---:|---:|
+| cold (first frame) | 3.11 s | 3.97 s | 1.28 |
+| typing (editor tick) | 4.4 ms | 7.6 ms | 1.74 |
+| stream (append/frame) | 8.9 ms | 12.5 ms | 1.40 |
+| calm (no change) | 5.0 ms | 9.6 ms | 1.93 |
+| redraw (resize -> clearing) | 3.36 s | 4.15 s | 1.24 |
+
+All inside §13.5/§13.6's post-fix range. Typing CPU (`perf_typing.sh`, 300
+keys @ 20 ms, fresh session, 30/40 s settle; net ticks): bb 196 / 214 / 188,
+jolt 167 / 189 / 190 / 180 / 173 — medians **196 / 180**, parity. bb matches
+§13.3; jolt's spread against §13.3's ~138 is the phone's run-to-run state
+under the background app's load, not a regression — neither fix adds per-key
+work (the reader accommodation removal measured neutral, §16.3).
+
+### 16.6 What this changes in the file
+
+- §14.2's as-found table stands as history; §16.1 supersedes its reading:
+  jolt is ahead on every reakt row except multi-dep `force-run!` (and `IRef`
+  `instance?` by 0.04 µs).
+- The §14.4 applied fixes remain the end state; nothing there needs
+  revisiting now that `instance?` is cheap. The dropped RXRef-first reorder
+  stays dropped (IRef-first is still the atom's short-circuit), and the
+  §14.4 item 1 identity fast path now has a new bottleneck below it (§16.2).
+- §15's table holds and its accommodation removal is confirmed neutral;
+  "remaining work is §6.3" still stands.
+- The §16.2 finding is filed upstream as
+  [jolt#1313](https://github.com/jolt-lang/jolt/issues/1313) (constant object
+  `hash`); drop this note's caveat once a tagged Jolt release carries the fix.
 
 
