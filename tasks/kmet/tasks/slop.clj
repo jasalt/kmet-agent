@@ -22,11 +22,16 @@
        with CC > 10 divided by the mass of all functions. Cyclomatic
        complexity is a Clojure adaptation: +1 per `if`/`if-let`/`when`/
        `and`/`or`/`loop`/`doseq`/`dotimes`/`for`/`some->` family head and
-       per `cond`/`condp`/`case` clause, per `cond->` pair and per `catch`
-       clause. Nested functions (`fn`, `defn`, `defmacro`, `defmethod`,
-       `deftype`/`defrecord`/`reify` method bodies) are counted as their
-       own functions; multi-arity definitions count as one function.
-       Reader conditionals are read with the #{:clj :bb} feature view.
+       per `cond`/`condp`/`case` clause, per `cond->` pair (direct or
+       threaded through `->`) and per `catch` clause. Nested functions
+       (`fn`, `defn`, `defmacro`, `defmethod`, `deftype`/`defrecord`/
+       `reify` method bodies) are counted as their own functions;
+       multi-arity definitions count as one function. Quoted and `comment`
+       forms are not code and contribute nothing. Known limitation:
+       `extend-type`/`extend-protocol`/`specify!`/`letfn`/`proxy` method
+       bodies are not collected as functions, so decisions inside them do
+       not contribute to the metric. Reader conditionals are read with the
+       #{:clj :bb} feature view.
 
    Reference rows for verbosity/erosion are the paper's calibration panel:
    473 maintained human Python repositories and 2,869 agent checkpoints.
@@ -164,19 +169,37 @@
 (defn- fn-form? [f] (and (seq? f) (contains? fn-heads (first f))))
 (defn- type-form? [f] (and (seq? f) (contains? type-heads (first f))))
 
+(defn- suppressed-form?
+  "True for reader-level non-code (`quote` and `comment`) forms."
+  [f]
+  (and (seq? f) (contains? '#{quote comment} (first f))))
+
+(defn- condp-clauses
+  "Number of `condp` clauses in ARGS (predicate and expression first): the
+   `test result` pairs and `test :>> f` triples. A trailing default form is
+   not a clause."
+  [args]
+  (loop [cs (drop 2 args), n 0]
+    (cond
+      (empty? cs) n
+      (nil? (next cs)) n
+      (= :>> (second cs)) (recur (drop 3 cs) (inc n))
+      :else (recur (drop 2 cs) (inc n)))))
+
 (defn cc
   "Cyclomatic complexity increment of a form. Nested functions contribute 0
-   (they are counted as their own function)."
+   (they are counted as their own function); quoted and commented forms are
+   not code and contribute 0 as well."
   [form]
   (cond
-    (or (fn-form? form) (type-form? form)) 0
+    (or (fn-form? form) (type-form? form) (suppressed-form? form)) 0
     (seq? form)
     (let [h (first form) args (rest form)]
       (+ (cond
            (= h 'cond) (quot (count args) 2)
-           (= h 'condp) (quot (count (drop 2 args)) 2)
+           (= h 'condp) (condp-clauses args)
            (= h 'case) (quot (count (rest args)) 2)
-           (or (= h 'cond->) (= h 'cond->>)) (quot (count (rest args)) 2)
+           (or (= h 'cond->) (= h 'cond->>)) (quot (count args) 2)
            (= h 'try) (count (filter #(and (seq? %) (= 'catch (first %))) args))
            (contains? simple-decisions h) 1
            :else 0)
@@ -184,20 +207,22 @@
     (coll? form) (reduce + 0 (map cc form))
     :else 0))
 
-(defn- collect-method-forms [form]
-  (when (coll? form)
-    (if (and (seq? form) (symbol? (first form)) (vector? (second form)))
-      (cons form nil)
-      (mapcat collect-method-forms form))))
+(defn- method-form?
+  "True for a method definition `(name [args] body...)`, the shape used by
+   deftype/defrecord/reify method bodies."
+  [form]
+  (and (seq? form) (symbol? (first form)) (vector? (second form))))
 
 (defn- collect-fns [form]
   (cond
+    (suppressed-form? form) nil
     (fn-form? form) (cons form (mapcat collect-fns (rest form)))
     (type-form? form) (let [children (rest form)
-                            methods (mapcat collect-method-forms children)]
+                            methods (filter method-form? children)
+                            other (remove method-form? children)]
                         (concat methods
                                 (mapcat collect-fns methods)
-                                (mapcat collect-fns children)))
+                                (mapcat collect-fns other)))
     (coll? form) (mapcat collect-fns form)
     :else nil))
 

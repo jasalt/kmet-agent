@@ -27,6 +27,13 @@
       (thunk dir)
       (finally (fs/delete-tree dir)))))
 
+(defn- parsed-fns
+  "Functions of a single source string, in `file-fns` shape."
+  [src]
+  (slop/file-fns {:file "t.clj"
+                  :lines (str/split-lines src)
+                  :forms (slop/parse-text src)}))
+
 (deftest tokenize-drops-comments-keeps-literals
   (let [{:keys [tokens lines]} (slop/tokenize ";; lead\n(def x \"a;b\") ; tail\n")]
     (is (= ["(" "def" "x" "\"a;b\"" ")"] tokens))
@@ -141,6 +148,29 @@
              (let [report (slop/scan dir {})]
                (is (= 2 (:functions report)))
                (is (= 3 (:max-cc report)))))))
+
+(deftest cc-counts-threaded-cond->-pairs
+  (let [direct (parsed-fns "(defn f [x] (cond-> x a 1 b 2))")
+        threaded (parsed-fns "(defn f [x] (-> x (cond-> a 1 b 2)))")]
+    (is (= 3 (:cc (first direct))))
+    (is (= 3 (:cc (first threaded))))))
+
+(deftest cc-counts-condp->>-clauses
+  (let [plain (parsed-fns "(defn f [x] (condp = x 1 :a 2 :b :other))")
+        shift (parsed-fns "(defn f [x] (condp = x 1 :>> inc 2 :b :other))")]
+    (is (= 3 (:cc (first plain))))
+    (is (= 3 (:cc (first shift))))))
+
+(deftest nested-fns-in-type-methods-count-once
+  (let [fns (parsed-fns "(defn outer [] (reify P (foo [this] (fn [x] (if x 1 2)))))")]
+    (is (= ["outer" "fn@1" "fn@1"] (mapv :label fns)))
+    (is (= [1 1 2] (mapv :cc fns)))))
+
+(deftest quoted-and-commented-forms-are-not-code
+  (is (= 1 (:cc (first (parsed-fns "(defn f [] '(if a b c))")))))
+  (is (= 1 (:cc (first (parsed-fns "(defn f [] (comment (if a b c)) 1)")))))
+  (is (empty? (parsed-fns "'(defn dead [x] (if x 1 2))")))
+  (is (empty? (parsed-fns "(comment (defn dead [x] (if x 1 2)))"))))
 
 (deftest sloc-skips-blank-and-comment-lines
   (in-tree {"s.clj" ";; comment\n(ns s)\n\n(defn f [x]\n  ;; inner\n  (inc x))\n"}
