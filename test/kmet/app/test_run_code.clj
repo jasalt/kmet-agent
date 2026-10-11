@@ -405,17 +405,17 @@
 (t/deftest ^:slow test-run-code-timeout-kills-inner-bash
   ;; the combined signal reaches the bash tool's poller, so the inner process
   ;; tree dies at the script's timeout: the child's side effect never lands
-  ;; (a 2s sleep would beat the marker check below if it survived)
+  ;; (a 1s sleep would beat the marker check below if it survived)
   (let [dir (temp-dir)
         marker (str dir "/marker")]
     (try
       (let [r (run (str "(deref (tools/call \"bash\" {:command "
-                        (pr-str (str "sleep 2; touch '" marker "'"))
+                        (pr-str (str "sleep 1; touch '" marker "'"))
                         "}))")
                    {:timeout 0.4})]
         (t/is (:is-error r))
         (t/is (= :timeout (get-in r [:details :error])))
-        (Thread/sleep 2500)
+        (Thread/sleep 1200)
         (t/is (not (fs/exists? marker))
               "the killed child never touched the marker"))
       (finally (fs/delete-tree dir)))))

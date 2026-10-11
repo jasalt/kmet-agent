@@ -1646,7 +1646,7 @@
                                    :base-url (str "http://127.0.0.1:" port "/v1/chat/completions")
                                    :model "deepseek-v4-flash"
                                    :messages [{:role "user" :content "hi"}]
-                                   :idle-timeout-ms 1500
+                                   :idle-timeout-ms 500
                                    :total-timeout-ms total-timeout-ms
                                    :on-error (fn [e] (swap! errors conj e))})]
         (try
