@@ -32,8 +32,10 @@
    run-render-loop!, mirroring pi's VirtualTerminal-based render tests."
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest testing]]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.tui.core :as core]
             [kmet.tui.terminal :as term]
+            [kmet.tui.timers :as timers]
             [kmet.tui.utils :as utils]
             [kmet.app.ui.tool-execution :as te]))
 
@@ -961,3 +963,20 @@
                   "the diff writes it clamped to the window width")))
         (finally
           (stop-loop tui))))))
+
+(deftest ^:slow render-loop-stamps-the-frame-clock
+  ;; The quiet gate (timers/frame-due?) probes a process-global clock; the
+  ;; render loop must stamp it at every frame start, or a bucket-paced driver
+  ;; would see a stale clock and never fire.
+  (let [vt (make-virtual-terminal)
+        tui (core/create-tui (:terminal vt))]
+    (try
+      (timers/mark-frame! (- (concurrent/monotonic-ms) 100000))
+      (core/tui-add-child tui (test-component (atom ["alpha"])))
+      (start-loop tui)
+      (core/tui-request-render tui)
+      (wait-for-frames (:writes vt) 1 5000)
+      (t/is (< (timers/frame-quiet-ms) 5000)
+            "the loop stamped the frame clock at the frame start")
+      (finally
+        (stop-loop tui)))))

@@ -44,6 +44,7 @@
             [kmet.tui.components.container :as container]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.expandable-text :as expandable-text]
+            [kmet.tui.components.spinner :as spinner]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
@@ -1349,3 +1350,24 @@
       (finally
         (reakt/dispose! rx)
         (timers/cancel! timer-id)))))
+
+(deftest ^:slow anim-timer-quiet-gate
+  ;; The anim driver must consult timers/frame-due? — a frame painted by
+  ;; streaming output or a keystroke within the last half bucket already
+  ;; carries the current animation frame, so the driver's request would only
+  ;; buy another whole-tree walk.
+  (testing "the anim driver consults the quiet gate before requesting a frame"
+    (let [requested (atom 0)
+          tui {:running? (atom true)}
+          cs {:tui tui :running-turn? (atom true) :anim-timer (atom nil)}
+          driver (fn [gate]
+                   (reset! requested 0)
+                   (with-redefs [tui/tui-request-render (fn [_] (swap! requested inc))
+                                 timers/frame-due? (constantly gate)
+                                 spinner/default-interval-ms 20]
+                     (status/start-anim-timer! cs)
+                     (Thread/sleep 80)
+                     (status/stop-anim-timer! cs))
+                   @requested)]
+      (is (pos? (driver true)) "an open gate requests frames")
+      (is (zero? (driver false)) "a closed gate suppresses the request"))))

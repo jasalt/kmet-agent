@@ -21,9 +21,6 @@
             [kmet.tui.components.spinner :as spinner]
             [kmet.tui.macros :refer [defcomponent]]))
 
-(def ^:private SPINNER-FRAMES
-  ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
-
 (defn- frame-at
   "Braille frame for the given elapsed millis — self-animating on re-render
    (no timer needed; the interactive mode's anim timer drives renders).
@@ -31,9 +28,9 @@
    bucket, so a driver sampling at that bucket shows every frame exactly
    once."
   [elapsed]
-  (nth SPINNER-FRAMES
+  (nth spinner/default-frames
        (mod (quot (max 0 elapsed) spinner/default-interval-ms)
-            (count SPINNER-FRAMES))))
+            (count spinner/default-frames))))
 
 (defcomponent StatusIndicator nil [spinner active-atom border-color-fn]
   (render [this width]
@@ -85,7 +82,7 @@
             :text text
             :active false
             :prefix ""
-            :frames SPINNER-FRAMES
+            :frames spinner/default-frames
             :interval-ms spinner/default-interval-ms)
         indicator (map->StatusIndicator {:spinner sp
                                          :active-atom (atom false)

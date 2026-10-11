@@ -6,9 +6,9 @@
    Hiccup implementation: a thin uncached record owns a state atom and a
    mounted fn-component root. The body re-derives only when the state (or
    the shared expansion toggle / theme) changes; the spliced spinner leaf
-   re-renders fresh on every driven frame, so an 80ms frame driver animates
-   it like pi's Loader setInterval while output chunks stream through the
-   reaction."
+   re-renders fresh on every driven frame, so a frame driver at the shared
+   spinner bucket (spinner/default-interval-ms) animates it like pi's Loader
+   setInterval while output chunks stream through the reaction."
   (:require [kmet.libs.reakt :as r]
             [kmet.tui.border :as border]
             [kmet.tui.hiccup :as hiccup]
@@ -26,9 +26,6 @@
 
 ;; ─── Preview line limit ────────────────────────────────────────────────────
 (def ^:private PREVIEW-LINES 20)
-
-;; ─── Frame driver cadence ──────────────────────────────────────────────────
-(def ^:private FRAME-INTERVAL-MS 80) ;; pi Loader: 80ms setInterval
 
 ;; ─── Tree helpers ──────────────────────────────────────────────────────────
 
@@ -109,7 +106,7 @@
                               "s")))]))
 
 (defn- stop-tickers!
-  "Cancel the 80ms frame driver and the 1s elapsed ticker, if present.
+  "Cancel the frame driver and the 1s elapsed ticker, if present.
    Shared by set-complete! and dispose. timers/cancel! is idempotent, so a
    double stop is harmless."
   [comp]
@@ -255,7 +252,7 @@
             :text (str "Running... (" cancel-key " to cancel)")
             :active true
             :prefix ""
-            :interval-ms FRAME-INTERVAL-MS
+            :interval-ms spinner/default-interval-ms
             :spinner-color-fn (fn [x] (theme/fg (theme/get-current-theme) color-key x))
             :message-color-fn (fn [x] (theme/fg (theme/get-current-theme) :muted x)))
         now-atom (atom (System/currentTimeMillis))
@@ -274,21 +271,25 @@
                :elapsed-ticker-id-atom (atom nil)
                :done-atom done-atom
                :border-atom (atom (border/resolve border))})]
-    ;; Pi Loader parity: drive frames at 80ms while :running, on the loop's
-    ;; own timer registry (§6.1) instead of a parked thread. The root's
-    ;; reaction stays idle (no body re-runs) — each driven frame just
-    ;; re-renders the uncached spinner leaf, so output chunks and the
-    ;; animation paint promptly even with no output. The thunk self-cancels
-    ;; on completion; set-complete!/dispose cancel it promptly, and the
-    ;; done check stops the 80ms wakeups once the component leaves the chat
-    ;; (e.g. /new while a run is in flight) instead of poking a cleared
-    ;; frame hook until the bash process exits.
+    ;; Drive frames at the shared spinner bucket (spinner/default-interval-ms)
+    ;; while :running, on the loop's own timer registry (§6.1) instead of a
+    ;; parked thread. The wake is quiet-gated (timers/frame-due?): a frame
+    ;; painted by streaming output within the last half bucket already carries
+    ;; the current animation frame, so the driver skips instead of buying
+    ;; another whole-tree walk. The root's reaction stays idle (no body
+    ;; re-runs) — each driven frame just re-renders the uncached spinner
+    ;; leaf, so output chunks and the animation paint promptly even with no
+    ;; output. The thunk self-cancels on completion; set-complete!/dispose
+    ;; cancel it promptly, and the done check stops the frame wakeups once the
+    ;; component leaves the chat (e.g. /new while a run is in flight)
+    ;; instead of poking a cleared frame hook until the bash process exits.
     (reset! (:ticker-id-atom comp)
-            (timers/every! FRAME-INTERVAL-MS
+            (timers/every! spinner/default-interval-ms
                            (fn []
                              (if (or @done-atom (not= :running (:status @state-atom)))
                                (timers/cancel! @(:ticker-id-atom comp))
-                               (macros/schedule-frame!)))))
+                               (when (timers/frame-due? spinner/default-interval-ms)
+                                 (macros/schedule-frame!))))))
     ;; Pi renderResult parity: re-stamp :now-ms once a second while
     ;; running so the Elapsed line ticks during silent runs (the body
     ;; reads it tracked, so only these stamps re-derive the tree).
@@ -357,7 +358,7 @@
   "Dispose pending bash components parked outside the chat (e.g. /new while
    the agent streams: the comps live in the pending-messages container, not
    in the chat history, so chat-history-clear! never sees them). Stops their
-   80ms frame drivers — otherwise they fire into the TUI until the bash
+   frame drivers — otherwise they fire into the TUI until the bash
    process exits. Idempotent; individual dispose failures are swallowed."
   [comps]
   (doseq [c comps]

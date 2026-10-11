@@ -1406,8 +1406,19 @@ instead of a hardcoded 80 ms, matching the 100 ms bucket the braille frame
 and the transient indicators' elapsed frame derive from. Each wake is a
 distinct frame: even 100 ms on-screen durations and **20 % fewer frames**
 during a turn (12 vs 15 per 1.25 s at the driver, measured on bb and jolt),
-each of which would otherwise pay a §13.1 typing/calm frame. The Bash tool
-progress spinner keeps its own 80 ms pi beat (`bash_execution.clj`).
+each of which would otherwise pay a §13.1 typing/calm frame.
+
+(Note — later changes on top of this: the bucket default moved to 240 ms and
+the braille set was decimated to every other frame of the 10-frame pinwheel
+(5 × 240 ms = the same 1.2 s revolution, **half the repaints**); the Bash
+tool's progress spinner dropped its own 80 ms pi beat for the same var; and
+all bucket-paced drivers are now **quiet-gated**
+(`kmet.tui.timers/frame-due?` against the process-global `mark-frame!`
+clock): a frame painted by streaming output, a keystroke or the elapsed
+ticker within the last half bucket already carries the current animation
+frame, so a due wake schedules nothing. During streaming the drivers now add
+~0 frames; on a quiet screen they request at the bucket. The counts above
+are the 100 ms measurement.)
 
 ### 13.5 Applied: one document pass
 

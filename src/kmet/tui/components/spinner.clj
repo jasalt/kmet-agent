@@ -9,20 +9,28 @@
    [kmet.tui.utils :as u]))
 
 (def ^:private DEFAULT-FRAMES
-  ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
+  ;; Every other frame of the classic 10-frame braille pinwheel: a uniform
+  ;; 72° step at twice the per-frame hold, so the revolution still takes
+  ;; 1.2s with half the repaints (the quiet-gated drivers sleep
+  ;; default-interval-ms).
+  ["⠋" "⠹" "⠼" "⠦" "⠇"])
 
 (def default-frames
-  "The default braille indicator frames — the :frames default of
-   make-spinner, public so the hiccup :spinner tag can apply it
-   explicitly (an explicit nil prop bypasses make-spinner's :or)."
+  "The default braille indicator frames — the decimated 5-frame pinwheel
+   (see DEFAULT-FRAMES), the :frames default of make-spinner, public so the
+   hiccup :spinner tag can apply it explicitly (an explicit nil prop
+   bypasses make-spinner's :or)."
   DEFAULT-FRAMES)
 
 (def default-interval-ms
-  "The default animation bucket: one braille frame per 100 ms. The
-   interactive mode's status drivers sample at this period
-   (kmet.modes.interactive.status), and the transient indicators' elapsed
-   frames use it too — keep them from drifting apart."
-  100)
+  "The default animation bucket: one braille frame per 240 ms (5 frames ×
+   240 ms = the classic 1.2 s revolution). The interactive mode's status
+   drivers sample at this period (kmet.modes.interactive.status) and
+   quiet-gate the request (kmet.tui.timers/frame-due?), so a frame another
+   source painted within the last half bucket serves as the sample; the
+   transient indicators' elapsed frames use it too — keep them from
+   drifting apart."
+  240)
 
 (def ^:private CYN "\u001b[36m")
 (def ^:private RST "\u001b[0m")
@@ -79,7 +87,7 @@
      :active          — whether to show the spinner initially
      :prefix          — string prepended before the spinner (default \"  \")
      :frames          — vector of frame strings (default braille spinner)
-     :interval-ms     — animation interval in ms (default 100)
+     :interval-ms     — animation interval in ms (default 240)
      :spinner-color-fn — (fn [frame-str] colored-frame-str) (default cyan)
      :message-color-fn — (fn [message-str] colored-message-str) (default identity)"
   [& {:keys [text active prefix frames interval-ms spinner-color-fn message-color-fn]
@@ -150,7 +158,7 @@
   (if (nil? options)
     (do (reset! (:verbatim-atom spinner) false)
         (reset! (:frames-atom spinner) DEFAULT-FRAMES)
-        (reset! (:interval-ms-atom spinner) 100)
+        (reset! (:interval-ms-atom spinner) default-interval-ms)
         spinner)
     (let [{:keys [frames interval-ms]} options]
       (reset! (:verbatim-atom spinner) true)

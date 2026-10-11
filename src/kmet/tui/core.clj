@@ -2465,6 +2465,10 @@
                 ;; tui-heal-scrollback!) qualifies on the first frame that
                 ;; starts after the request, never on one already in flight.
                 (swap! (:frame-count tui) inc)
+                ;; Frame clock: the quiet gate (timers/frame-due?) that
+                ;; bucket-paced spinner drivers probe — a frame is starting
+                ;; now, so it will carry the current animation frame.
+                (timers/mark-frame!)
                 ;; Forced render (tui-request-render with force: tui-resume!,
                 ;; the scrollback heal): clear the previous-frame state here, on
                 ;; the loop thread, so it cannot tear against this frame's reads.

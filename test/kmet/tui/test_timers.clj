@@ -2,6 +2,7 @@
   "Tests for kmet.tui.timers — the loop-owned timer registry (tui.md
    §6.1). Headless: pump! is driven by hand instead of by the frame loop."
   (:require [clojure.test :as t]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.tui.macros :as macros]
             [kmet.tui.timers :as timers]))
 
@@ -112,3 +113,27 @@
   (t/is (zero? (timers/next-due-ms)) "a timer due now reports 0")
   (timers/cancel-all!)
   (t/is (nil? (timers/next-due-ms)) "cancel-all clears it"))
+
+;; ─── Frame clock (quiet gate) ──────────────────────────────────────────────
+
+(t/deftest frame-quiet-gate
+  (t/testing "a frame starts, then ages: the gate opens at half the bucket"
+    (with-redefs [concurrent/monotonic-ms (constantly 1000)]
+      (timers/mark-frame!))
+    (with-redefs [concurrent/monotonic-ms (constantly 1030)]
+      (t/is (= 30 (timers/frame-quiet-ms)) "age since the frame")
+      (t/is (false? (timers/frame-due? 100)) "30ms < the 50ms half bucket")
+      (with-redefs [concurrent/monotonic-ms (constantly 1050)]
+        (t/is (timers/frame-due? 100)) "exactly half the bucket opens the gate"))
+    (with-redefs [concurrent/monotonic-ms (constantly 1200)]
+      (t/is (timers/frame-due? 100)) "well past the bucket stays open")))
+
+(t/deftest frame-due?-without-a-frame
+  (t/testing "no frame yet (or a headless TUI) answers due"
+    ;; age the clock far into the past so the assertion holds whatever ran
+    ;; before this test (the clock is process-global)
+    (timers/mark-frame! (- (concurrent/monotonic-ms) 100000))
+    (t/is (timers/frame-due? 100))
+    (timers/mark-frame! (+ (concurrent/monotonic-ms) 100000))
+    (t/is (false? (timers/frame-due? 100)))
+    (t/is (zero? (timers/frame-quiet-ms)) "a future stamp clamps to zero")))

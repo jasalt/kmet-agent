@@ -7,6 +7,7 @@
             [kmet.tui.core :as tui]
             [kmet.tui.components.spinner :as spinner]
             [kmet.tui.protocols :as protocols]
+            [kmet.tui.timers :as timers]
             [kmet.app.loop :as agent]
             [kmet.app.ui.pending-messages :as pending-messages]
             [kmet.app.ui.status-indicator :as status-indicator]
@@ -21,28 +22,39 @@
 
 (defn- frame-driver!
   "A future requesting a render every spinner/default-interval-ms — the
-   animation bucket — while (ACTIVE? TUI) holds, then exiting. TAG labels
-   unexpected failures. Stop the driver with future-cancel: the interrupt
-   it raises on Thread/sleep is expected, not an error."
+   animation bucket — while (ACTIVE? TUI) holds, then exiting. The request
+   is quiet-gated (timers/frame-due?): when streaming output, a keystroke
+   or the elapsed ticker painted a frame within the last half bucket, that
+   frame already carries the current animation frame, so the driver skips
+   its request instead of buying another whole-tree walk. Frames are a pure
+   function of elapsed time, so a closed gate delays a sample but never
+   drops one from the cycle. TAG labels unexpected failures. Stop the
+   driver with future-cancel: the interrupt it raises on Thread/sleep is
+   expected, not an error."
   [tui active? tag]
   (future
     (try
       (loop []
         (when (active? tui)
           (Thread/sleep spinner/default-interval-ms)
-          (tui/tui-request-render tui)
+          (when (timers/frame-due? spinner/default-interval-ms)
+            (tui/tui-request-render tui))
           (recur)))
       (catch InterruptedException _)
       (catch Exception e
         (debug/log tag e)))))
 
 (defn start-anim-timer!
-  "Start requesting renders every 100ms while the agent turn runs — the
-   spinner's animation bucket (spinner/default-interval-ms). Sampling at
-   the bucket shows every braille frame exactly once; an 80ms beat
-   oversampled it (12.5 requests/s for 10 distinct frames, one of them
-   held 160ms). Powers the StatusIndicator spinner animation (Pi-style:
-   separate layer between chat and editor)."
+  "Start requesting renders every 240ms while the agent turn runs — the
+   spinner's animation bucket (spinner/default-interval-ms), quiet-gated
+   (timers/frame-due?): a frame painted by streaming output, a keystroke or
+   the elapsed ticker within the last half bucket already carries the
+   current animation frame, so the driver skips instead of buying another
+   whole-tree walk. When the screen is otherwise quiet, sampling at the
+   bucket shows every braille frame exactly once (the earlier 80ms beat
+   oversampled the then-100ms bucket: 12.5 requests/s for 10 distinct
+   frames, one of them held 160ms). Powers the StatusIndicator spinner
+   animation (Pi-style: separate layer between chat and editor)."
   [cs]
   (reset! (:anim-timer cs)
           (frame-driver! (:tui cs)
@@ -50,9 +62,10 @@
                          "anim timer: ")))
 
 (defn- start-indicator-driver!
-  "Request renders every 100ms while a TRANSIENT status indicator is up —
+  "Request renders every 240ms while a TRANSIENT status indicator is up —
    the elapsed-frame bucket (spinner/default-interval-ms; frame-at), so
-   each wake is a distinct frame.
+   each quiet wake is a distinct frame; the quiet gate skips a wake that
+   another source's frame (streaming output, a keystroke) already covers.
    Covers indicators shown outside agent turns (manual /compact, /share)
    — the elapsed-time/countdown indicators render from wall-clock time per
    pass and otherwise sit on a single static frame when no anim timer is
@@ -125,7 +138,7 @@
    for kind-gated clears. No manual render request for the SWAP itself —
    the tracked :status-current read schedules that frame (§3.4) — but the
    transient indicators animate from wall-clock time, so the entry carries
-   a 100ms frame driver (start-indicator-driver!; during turns the anim
+   a 240ms frame driver (start-indicator-driver!; during turns the anim
    timer already drives frames)."
   [cs kind indicator]
   (cancel-indicator-driver! cs)

@@ -2,6 +2,8 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [kmet.app.ui.bash-execution :as be]
+            [kmet.libs.concurrent :as concurrent]
+            [kmet.tui.components.spinner :as spinner]
             [kmet.tui.core :as core]
             [kmet.tui.macros :as macros]
             [kmet.tui.timers :as timers]
@@ -85,7 +87,7 @@
       (t/is (some #(clojure.string/includes? % "cancelled") lines) "cancelled status shown"))))
 
 (t/deftest test-bash-execution-frame-driver
-  (t/testing "80ms frame driver (pi Loader setInterval parity) runs while :running; completion cancels it"
+  (t/testing "shared-bucket frame driver (spinner/default-interval-ms) runs while :running; completion cancels it"
     (let [c (be/make-bash-execution :command "sleep 1")
           driver @(:ticker-id-atom c)]
       (t/is (some? driver) "driver armed with the component")
@@ -171,7 +173,10 @@
     (macros/set-frame-hook! #(swap! fired inc))
     (try
       (t/is (zero? @fired) "nothing fired before a pump")
-      (Thread/sleep 90)
+      ;; open the quiet gate (a frame long ago), then wait out the driver's
+      ;; bucket so the due tick is pumped
+      (timers/mark-frame! (- (concurrent/monotonic-ms) 100000))
+      (Thread/sleep (+ 60 spinner/default-interval-ms))
       (timers/pump!)
       (t/is (pos? @fired) "driver fires while running")
       (protocols/dispose c)
@@ -182,13 +187,38 @@
       (finally
         (macros/set-frame-hook! nil)))))
 
+(t/deftest ^:slow test-frame-driver-quiet-gate
+  ;; The driver consults the quiet gate: a frame painted within the last half
+  ;; bucket already carries the current animation frame, so the due tick
+  ;; must not schedule another whole-tree walk.
+  (let [c (be/make-bash-execution :command "sleep 10")
+        fired (atom 0)]
+    (core/render c 40)
+    ;; isolate the frame driver from the 1s elapsed ticker
+    (when-let [ticker @(:elapsed-ticker-id-atom c)]
+      (timers/cancel! ticker)
+      (reset! (:elapsed-ticker-id-atom c) nil))
+    (macros/set-frame-hook! #(swap! fired inc))
+    (try
+      (Thread/sleep (+ 60 spinner/default-interval-ms))
+      (timers/mark-frame!)                          ;; fresh frame: gate closed
+      (timers/pump!)
+      (t/is (zero? @fired) "a fresh frame closes the gate")
+      (timers/mark-frame! (- (concurrent/monotonic-ms) 100000))
+      (Thread/sleep (+ 60 spinner/default-interval-ms))
+      (timers/pump!)
+      (t/is (pos? @fired) "an aged frame opens the gate")
+      (finally
+        (macros/set-frame-hook! nil)
+        (protocols/dispose c)))))
+
 (t/deftest test-append-output-schedules-frame
   ;; The on-chunk path retired its manual request-render — the state swap
   ;; must dirty the root's reaction, which schedules the frame (edge-triggered:
   ;; the first swap schedules; further swaps coalesce until the frame flush
   ;; re-arms, exactly like chat-history's streaming appends). Requires a
   ;; rendered-once component so the reaction's watches are installed. The
-  ;; 80ms driver is cancelled first so its ticks can't race the counts.
+  ;; frame driver is cancelled first so its ticks can't race the counts.
   (let [c (be/make-bash-execution :command "sleep 10")
         fired (atom 0)]
     (core/render c 40)

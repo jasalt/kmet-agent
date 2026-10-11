@@ -115,3 +115,40 @@
    observability (`:f` is omitted so the map prints)."
   []
   (update-vals (:entries @registry) #(dissoc % :f)))
+
+;; ─── Frame clock (quiet gate) ──────────────────────────────────────────────
+;; The render loop stamps every frame start; a bucket-paced frame driver (a
+;; spinner animator) asks frame-due? before requesting its own frame. The
+;; clock is process-global like the frame hook: the app runs one TUI, and a
+;; loop-owned timer thunk (the Bash spinner's driver) has no TUI reference
+;; to ask.
+
+(defonce ^:private last-frame-at-ms (atom nil))
+
+(defn mark-frame!
+  "Record that a frame is starting. The render loop calls the 0-arity at
+   every frame start; AT-MS (a monotonic-ms stamp) lets tests age the clock
+   deliberately."
+  ([] (mark-frame! (now-ms)))
+  ([at-ms] (reset! last-frame-at-ms at-ms) nil))
+
+(defn frame-quiet-ms
+  "Milliseconds since the most recent frame started — nil before the first
+   frame. The quiet gate's probe (frame-due?)."
+  []
+  (when-some [at @last-frame-at-ms]
+    (max 0 (- (now-ms) at))))
+
+(defn frame-due?
+  "Quiet gate for a bucket-paced frame driver (a spinner animator): true
+   when no frame has started within the last half bucket — or none has
+   started yet — so the driver should request one. A frame younger than half
+   the bucket already carries the animation's current frame (the frame is a
+   pure function of elapsed time), so the request would only buy another
+   whole-tree walk. The half-bucket margin keeps a driver from seeing the
+   frame it just requested and halving its beat: that frame starts a little
+   after the driver's wake, so comparing against the full bucket would
+   always look too recent. INTERVAL-MS is the driver's bucket."
+  [interval-ms]
+  (let [age (frame-quiet-ms)]
+    (or (nil? age) (>= age (quot interval-ms 2)))))

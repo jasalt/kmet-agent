@@ -1116,6 +1116,15 @@ that renders — and may touch widgets and component state directly:
   spinner that fell behind must not fire a burst to catch up.
 - A thunk that wants a repaint mutates tracked state (the reactive chain
   schedules the frame) or calls `macros/schedule-frame!`.
+- A bucket-paced frame driver — a spinner animator — should not ask for a
+  frame the loop just painted: `frame-due?` is the quiet gate (`true` when no
+  frame started within the last half bucket, or none has started), fed by the
+  process-global clock the render loop stamps with `mark-frame!` at every
+  frame start. Frames are a pure function of elapsed time, so a closed gate
+  delays a sample but never drops one from the cycle; the half-bucket margin
+  keeps a driver from seeing the frame it just requested and halving its
+  beat (`kmet.modes.interactive.status/frame-driver!`, the Bash spinner
+  driver).
 - A throwing thunk is logged and swallowed; its repeating timer keeps its
   next tick — the `schedule-frame!` policy.
 - `tui-stop` calls `cancel-all!`, so no timer outlives the session; a
