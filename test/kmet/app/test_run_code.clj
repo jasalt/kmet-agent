@@ -176,6 +176,17 @@
     (t/is (not (:is-error r)) (:content r))
     (t/is (= "Y" (:content r)))))
 
+(t/deftest test-run-code-bundled-extension-libraries
+  ;; the fixed bundled extension set (kmet.app.extension-libs) is available
+  ;; to scripts as to extension contexts — rewrite-clj on both hosts
+  (t/is (= "(c d)"
+           (:content (run (str "(require '[rewrite-clj.zip :as z])"
+                               " (emit (z/root-string (z/replace (z/of-string \"(a b)\") '(c d))))")))))
+  (t/is (= "(defn  g [x] x)"
+           (:content (run "(require '[cljfmt.core :as f]) (emit (f/reformat-string \"(defn  g [x]x)\"))"))))
+  (t/is (= "[1 2 3]"
+           (:content (run "(require '[edamame.core :as e]) (emit (e/parse-string \"[1 2 3]\"))")))))
+
 (t/deftest test-run-code-reload-is-noop
   ;; SCI consults the sandbox :load-fn even for a :reload; a known namespace
   ;; stays available (the pre-simplification loader returned its handle)

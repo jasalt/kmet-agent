@@ -490,22 +490,16 @@
   [n]
   (str/starts-with? n "kmet.libs."))
 
-(def ^:private bundled-extension-lib-prefixes
-  "The third-party roots of the fixed bundled extension set
-   (kmet.app.extension-libs) that are not already covered by the
-   clojure.*/babashka.* clauses or the bb port sets. Shared by reference on
-   both hosts: the SCI path injects them into the base context, the Jolt
-   host view passes them through."
-  ["cljfmt" "edamame" "parinferish" "rewrite-clj"])
-
-(defn- bundled-extension-lib?
-  "Is namespace name N part of the fixed bundled extension set? (The set's
-   clojure.* members — spec.alpha, tools.reader, core.async, rrb-vector —
-   are admitted by shared-namespace?'s host clauses and port sets; see
-   bundled-extension-lib-prefixes for the rest.)"
-  [n]
-  (boolean (some #(or (= n %) (str/starts-with? n (str % ".")))
-                 bundled-extension-lib-prefixes)))
+(def ^:private bundled-extension-lib-predicate
+  "Is namespace name N part of the fixed bundled extension set? The set's
+   membership rule lives beside its enumeration (kmet.app.extension-libs,
+   bundled-library-namespace?); the lazy resolve keeps the set's libraries
+   off the extension machinery's load path — host-requires! loads them on
+   the first extension (run_code's require-host-namespaces! on the first
+   script). The set's clojure.* members — spec.alpha, tools.reader,
+   core.async, rrb-vector — are admitted by shared-namespace?'s host clauses
+   and port sets instead."
+  (delay @(requiring-resolve 'kmet.app.extension-libs/bundled-library-namespace?)))
 
 (defn- shared-namespace?
   "Is NS-OBJ a host namespace extension contexts share? The scan's rule,
@@ -525,7 +519,7 @@
          ;; provided at all. The adapted ports (core.async,
          ;; bundled-port-namespaces, bb-shared-namespaces),
          ;; the fixed bundled extension set
-         ;; (bundled-extension-lib?) and the kmet layers stay
+         ;; (bundled-extension-lib-predicate) and the kmet layers stay
          ;; injected: their Maven copies fail under SCI, so
          ;; the bundled copy is the only working one.
          (not (or (str/starts-with? n "clojure.data.")
@@ -535,7 +529,7 @@
          (or (str/starts-with? n "clojure.")
              (str/starts-with? n "babashka.")
              (contains? bb-shared-namespaces (ns-name ns-obj))
-             (bundled-extension-lib? n)
+             (@bundled-extension-lib-predicate n)
              (tui-layer? n)
              (libs-layer? n)))))
 
@@ -1480,7 +1474,7 @@
                   ;; copy still wins per the set's contract
                   {:also (fn [nm]
                            (or (jolt-host-builtin? nm)
-                               (bundled-extension-lib? nm)))})}))))
+                               (@bundled-extension-lib-predicate nm)))})}))))
 
 (defn host-loader-preference
   "Loader backends available on this host, most preferred first: Jolt has

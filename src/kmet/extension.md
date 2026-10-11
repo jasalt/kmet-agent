@@ -345,12 +345,13 @@ a clear error unless it is part of the fixed bundled set below.
 ### Bundled extension libraries (fixed set)
 
 kmet ships a fixed set of libraries in **both** artifacts and shares them by
-reference with every extension context: bb's bundled ports serve the names on
-babashka, and `jolt dist` AOT-compiles kmet's pinned Maven deps into the Jolt
-binary — on both hosts the library is already loaded, so it costs nothing per
-extension and keeps `identical?`/protocol identity. Requiring a set member
-needs **no `deps.edn`** and no host-conditional code. The set is enumerated in
-`kmet.app.extension-libs`:
+reference with every extension context and `run_code` script: bb's bundled
+ports serve the names on babashka, and `jolt dist` AOT-compiles kmet's pinned
+Maven deps into the Jolt binary. On both hosts the library is loaded once
+(extensions through `host-requires!`, scripts on the first `run_code` call),
+so sharing costs nothing per user and keeps `identical?`/protocol identity.
+Requiring a set member needs **no `deps.edn`** and no host-conditional code.
+The set is enumerated in `kmet.app.extension-libs`:
 
 | Library | Namespaces | Notes |
 |---|---|---|

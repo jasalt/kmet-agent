@@ -32,7 +32,10 @@ The sandbox now builds its per-call SCI context from the host's loaded
 `clojure.*`/`babashka.*` namespaces (public vars re-wrapped as fresh sci vars,
 so macros survive) plus babashka's class table on the bb host — a script
 `require`s `clojure.pprint`/`clojure.java.io`/… and resolves `System`,
-`java.io.*`, `Throwable`, `future` as in a babashka script. kmet's own
+`java.io.*`, `Throwable`, `future` as in a babashka script. The fixed
+bundled extension set (`kmet.app.extension-libs` — `rewrite-clj.*`,
+`edamame.core`, `cljfmt.*`, `parinferish.core`) is copied too, so a script
+requires the same shared copies extension contexts get. kmet's own
 namespaces stay blocked (the boundary error below), and jolt's SCI exposes no
 class table, so classes remain bb-only. The fixed capability table below is
 superseded for the bb host. Output is **`emit`-only**: `(emit value)` (also
@@ -684,8 +687,10 @@ values still work, and are harmless without class resolution),
 `kmet.app.*`/`kmet.tui.*`/`kmet.extension` (the extension contract is not the
 script contract), `kmet.loader`, arbitrary `require` of Maven deps (dependency
 resolution is an extension-manifest feature — a missing require fails with the
-boundary error), and network (`kmet.libs.http` stays out until
-measured; the single-boundary rule would still apply if it lands).
+boundary error; the fixed bundled extension set is not arbitrary — it is
+copied by value like in extension contexts), and network (`kmet.libs.http`
+stays out until measured; the single-boundary rule would still apply if it
+lands).
 
 Mechanics: one fresh `sci/init` per call with the capability map, the
 per-call bridge and the surface's discovery fns merged in — no cached base,

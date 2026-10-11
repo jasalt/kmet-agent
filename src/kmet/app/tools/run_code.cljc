@@ -458,15 +458,29 @@
                   :content (str "Unknown tool: " name ". Active tools: "
                                 (str/join ", " (keys surface)))}))})
 
+(def ^:private bundled-lib-namespace?
+  "The fixed bundled extension set's membership predicate
+   (kmet.app.extension-libs, bundled-library-namespace?), resolved lazily:
+   require-host-namespaces! loads the set on the first script call, and the
+   delay keeps its libraries off the app's startup path. A script can then
+   require the same copies extension contexts share — rewrite-clj.*,
+   edamame.core, cljfmt.*, parinferish.core (the set's clojure.* members ride
+   copyable-namespace?'s clojure.* clause)."
+  (delay @(requiring-resolve 'kmet.app.extension-libs/bundled-library-namespace?)))
+
 (defn- copyable-namespace?
   "True for a loaded host namespace the full-babashka surface copies: the
    babashka/clojure vocabulary, minus clojure.core (SCI's builtin core is the
    interpreter's own and must not be shadowed) and babashka.nrepl (a host
-   server, not a script API). kmet's own namespaces are never in this set."
+   server, not a script API), plus the fixed bundled extension set
+   (kmet.app.extension-libs — the same shared copies extension contexts get,
+   so a script's structural-editing and formatting vocabulary matches an
+   extension's). kmet's own namespaces are never in this set."
   [ns-sym]
   (let [n (str ns-sym)]
     (and (or (str/starts-with? n "clojure.")
-             (str/starts-with? n "babashka."))
+             (str/starts-with? n "babashka.")
+             (@bundled-lib-namespace? n))
          (not= n "clojure.core")
          (not (str/starts-with? n "babashka.nrepl")))))
 
@@ -542,10 +556,13 @@
 
 (defn- require-host-namespaces!
   "Host-require before value-sharing: babashka preloads babashka.fs/process,
-   Jolt does not."
+   Jolt does not. kmet.app.extension-libs is the fixed bundled extension set
+   (its requires are the enumeration), loaded here so the copy sees it; the
+   set's membership rule rides copyable-namespace?'s lazy resolve."
   []
   (require 'babashka.fs)
   (require 'babashka.process)
+  (require 'kmet.app.extension-libs)
   nil)
 
 (defn- unreadable-namespace
@@ -981,7 +998,7 @@
   (str "Run a Clojure script with the active tools bridged in: one call can do a whole task — data work, loops over many files, chained or fanned-out tool calls — while every inner result stays out of the conversation. Only values you pass to (emit value) come back — stdout/stderr and the final value are discarded.\n\n"
        "Use it for general scripting and multi-step work — parse/transform/generate data, scan or filter many files with fs/slurp/sh, run a search→read→verify chain, or fan out N tool calls and reduce them. Use bash for one small command and read for one file.\n\n"
        "Tools: (tools/call \"name\" args) returns a promise — start independent calls before derefing. Batch with (tools/await-all (tools/call-many [{:name ... :args ...} ...])); discover with (tools/list) and (tools/describe \"name\"). Results are {:content :is-error :details :truncation :images}; branch on :is-error. (emit value) returns nil and may be called as often as needed — the emitted values are returned in order.\n\n"
-       "Sandbox: Clojure; on babashka a full babashka surface — you can require clojure.*/babashka.* namespaces and resolve System/java.io.*/Throwable. Aliases: fs, str/set/edn/walk, json, p, sh, tools, sandbox. :timeout is seconds (0/omitted = none). Output is capped at 16 KiB/2000 lines; :max-output-bytes raises it to 50 KiB."))
+       "Sandbox: Clojure; on babashka a full babashka surface. Require clojure.*/babashka.* namespaces or the bundled libs (rewrite-clj, cljfmt, edamame, parinferish); on babashka you can also resolve System/java.io.*/Throwable. Aliases: fs, str/set/edn/walk, json, p, sh, tools, sandbox. :timeout is seconds (0/omitted = none). Output is capped at 16 KiB/2000 lines; :max-output-bytes raises it to 50 KiB."))
 
 (defn title
   "Quiet one-liner body for the run_code tool: `run $ ` and the first code
