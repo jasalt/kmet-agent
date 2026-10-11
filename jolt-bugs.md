@@ -27,3 +27,17 @@ every ref-keyed capture map, negligible for the usual handful of deps and
 dominant in the many-dep case. Correctness is unaffected. No kmet workaround
 applied — the kmet-side fix, if the ticket stalls, is to stop keying capture
 maps by ref identity.
+
+### [jolt#1316](https://github.com/jolt-lang/jolt/issues/1316) — `clojure.java.io/writer`/`reader`/`input-stream` reject the `:append` / `:encoding` opts
+
+Filed 2026-10-11 from the debug-logging work. `(io/writer path :append true)`
+throws `ArityException` on Jolt — only the plain truncating 1-arity form
+exists — and `reader`/`input-stream` have the same gap for `:encoding`, so an
+append-mode writer cannot be opened at all. `(io/output-stream path :append
+true)` *does* work and appends correctly, so the opts plumbing exists and the
+arity is what is missing on the other three; `clojure.core/spit` with
+`:append`/`:encoding` works on both hosts. Consequence on master: the
+append-based log helpers (`kmet.tui.core/append-log!` and the write/input logs
+in `kmet.libs.terminal`) swallow the throw, so `KMET_TUI_DEBUG`-style logging
+silently produces nothing on Jolt. kmet-side workaround: write those logs with
+`spit` (carried on the `status-fast-path` branch, `1f19fe97`).
