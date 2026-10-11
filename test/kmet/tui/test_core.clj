@@ -1,5 +1,6 @@
 (ns kmet.tui.test-core
   (:require [clojure.test :as t :refer [testing]]
+            [babashka.fs :as fs]
             [clojure.string :as str]
             [kmet.tui.core :as core]
             [kmet.libs.reakt :as reakt]
@@ -1341,3 +1342,20 @@
         (while (and (empty? @dispatched) (< (System/currentTimeMillis) deadline))
           (Thread/sleep 5)))
       (t/is (= ["\u001b"] @dispatched) "genuine Escape still works"))))
+
+(t/deftest test-append-log-appends
+  ;; Jolt's clojure.java.io/writer has no opts arity, so the historical
+  ;; (io/writer path :append true) form threw there and every append-based
+  ;; KMET_* debug log was silently empty; the writer must use spit, which is
+  ;; portable on both hosts.
+  (let [f (fs/create-temp-file {:dir (fs/create-dirs "target")
+                                :prefix "kmet-append-log-"
+                                :suffix ".log"})
+        path (str f)
+        append! (var core/append-log!)]
+    (try
+      (append! path "one\n")
+      (append! path "two\n")
+      (t/is (= "one\ntwo\n" (slurp path)))
+      (finally
+        (fs/delete-if-exists f)))))

@@ -988,11 +988,13 @@
   (str (io/file (System/getProperty "user.dir") filename)))
 
 (defn- append-log!
-  "Append TEXT to a file at PATH, ignoring errors (pi: appendFileSync)."
+  "Append TEXT to a file at PATH, ignoring errors (pi: appendFileSync).
+   spit, not io/writer: Jolt's clojure.java.io/writer has no opts arity, so
+   the io/writer :append form throws there and every debug log would be
+   silently empty on Jolt (spit's :append works on both hosts)."
   [path text]
   (try
-    (with-open [w (io/writer path :append true)]
-      (.write w text))
+    (spit path text :append true)
     (catch Exception _)))
 
 (defn- log-scrollback-heal!
