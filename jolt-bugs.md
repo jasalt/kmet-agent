@@ -1,8 +1,7 @@
 # jolt-bugs — reported upstream issues
 
 A ticket remains live here until its fix reaches a tagged release. Status
-checked on 2026-10-10 against Jolt `v0.8.20` (`143c371`, still the latest tag;
-the #1292 and #1294 fixes merged into `main` after it) and
+checked on 2026-10-11 against Jolt `v0.8.21` (`5b46858a`, the latest tag) and
 `jolt-lang/http-client` `v0.1.2` (`00455b8`), the versions now pinned by the
 project.
 
@@ -15,95 +14,6 @@ and copy or implement host protocols; shipped extensions using Jolt's native
 loader are not blocked. `jolt/deps.edn` pins the SCI revision from
 [babashka/sci#1093](https://github.com/babashka/sci/pull/1093) for the `:sci`
 fallback. Keep the pin until the change is released by Jolt.
-
-### [jolt#1292](https://github.com/jolt-lang/jolt/issues/1292) — make the GC stall report opt-in
-
-Closed 2026-10-09 by [PR #1293](https://github.com/jolt-lang/jolt/pull/1293)
-(merge `123157fd`, on `main` after the pinned `v0.8.20`), which keeps the
-entry live until a tag carries it. The report — stderr, once per collection
-that waits two seconds for a thread parked in a foreign call that is not
-`:blocking` (`host/chez/rt.ss`, installed by `sa-gc-install-stall-watch!`) —
-interleaved with a full-screen TUI's frames, and a program could not
-intercept it: the reporting thread is the rendezvous waiter, so a
-thread-level `(parameterize ((current-error-port …)))` did not reach it, and
-on Windows the console error port is a console HANDLE rather than the CRT
-stderr fd. The watch still installs and the collection still stalls; only
-the report needs `JOLT_GC_STALL=1` for the two-second threshold, or
-`JOLT_GC_STALL=<seconds>` for another. The runtime's other warnings (provider
-claim, duplicate native symbol, data-reader load failure, AOT worker) need
-`JOLT_WARNINGS=1`; the entropy fallback still warns unconditionally.
-`jolt.ffi/on-gc-stall` hands the report to a callback instead, for a host
-whose stderr is not jolt's — it runs with every other thread stopped, so it
-may write to a file but must not wait. The companion
-[PR #1294](https://github.com/jolt-lang/jolt/pull/1294) (merge `83db9530`,
-also `main`-only) patches Chez so a collect-safe `:blocking` call no longer
-takes the tc mutex — the cost behind the stall itself.
-
-No kmet-side workaround to remove: the `target/jolt-test-ext.log` sighting
-predates the pinned `v0.8.20` and was the Windows pipe-close shape fixed
-there (#1283), and kmet's own Windows terminal FFI already marks every
-parking call `:blocking`. Bump the floor when the next tag lands — the TUI
-then stays quiet by default, and `on-gc-stall` is the seam if a stall should
-still reach `kmet.debug`.
-
-### [jolt#1299](https://github.com/jolt-lang/jolt/issues/1299) — `instance?` against modeled ref types costs 1–2 µs
-
-Measured 2026-10-10 on Jolt `v0.8.20-13-gb0b3355b` (Termux/aarch64). A type
-check against a native class is fast — `(instance? String "x")` 0.04 µs,
-`(instance? Object x)` 0.14 — but the modeled Clojure core types go through
-the synthesized class graph and cost ~30–45x more: `clojure.lang.Atom`
-**1.06 µs**, `clojure.lang.IRef` **1.84**, `clojure.lang.IDeref` **1.82**
-(bb's SCI: `IRef` ~0.16 µs, `IDeref` ~0.49). The work happens in
-`instance-check`'s registry arms → `instance-check-base` / `case-string`
-(`host/chez/java/records-interop.ss`), which walks the hierarchy as string
-comparisons per call; the `Atom`/`IRef` arm order is part of the cost.
-
-kmet hit this on the reakt hot path: `trackable-ref?` is
-`(or (instance? clojure.lang.IRef ref) (satisfies? RXRef ref))`, and
-`tracked-deref` calls it twice per tracked read inside a tracking scope, so
-a plain-atom read costs 4.06 µs on jolt against 1.36 on bb (perf.md §14.2).
-Filed 2026-10-10 with the reduced repro, the kind-key control group
-(vector/seq/map answers 0.25–0.29 µs against the atom's 1.06) and a
-suggested fix: `class-fast-name` returns `#f` for atom/var/ref/delay, so
-`instance-kind-key` has no key — every check re-walks the arm chain and
-the per-site inline cache is skipped. The kmet-side workaround has landed
-(classify once per deref and keep IRef first: both checks run on a miss,
-so RXRef-first is actually slower for the common atom; perf.md §14.4
-item 3), bringing a plain-atom read in a tracking scope from 4.9 to
-2.3 µs. An upstream fast path for the core-type arms would fix it for
-every library.
-
-Repro: `jolt scripts/kmet_reakt_bench.clj` — the four `instance?` rows at
-the top of the sweep.
-
-### [jolt#1303](https://github.com/jolt-lang/jolt/issues/1303) — a timed `LinkedBlockingQueue` poll pays the wait setup on a non-empty queue
-
-Measured 2026-10-10 on Jolt `v0.8.20-15-g1c6da859` (Termux/aarch64, 8 cores,
-100 Hz ticks) against bb 1.13.225. 200k dequeues from a pre-filled
-`LinkedBlockingQueue`: `poll()` 130 ms / 12 ticks, `take()` 146 ms / 14 ticks,
-`poll(100, MILLISECONDS)` **631 ms / 63 ticks** (bb's timed poll: 115 ms /
-11). A timed poll that finds an element never waits, yet `abq-take-wait`
-(`host/chez/java/concurrency.ss`) always calls `jolt-cv-wait-interruptibly` —
-`ms->deadline-millis` (a wall-clock read), the ibox, the exception handler,
-the closure and the wait registration, per call. `ArrayBlockingQueue` shares
-the table, so the bounded queue has the same gap, and a hot producer/consumer
-loop shows it too (~0.006 ms/op against bb's ~0.001, a 7x gap). The JVM checks the count
-under the lock and dequeues without entering the wait path; a non-empty fast
-arm in the timed `poll` (and in `take`) would close the ~5x gap. Secondary:
-the deadline comes off the wall clock, so a clock step mis-times a queue wait
-(the monotonic-clock rule).
-
-The finding came out of the streaming-CPU investigation: the primary cause
-there was kmet's own byte-at-a-time SSE handoff, fixed kmet-side (the chunked
-idle reader in `kmet.libs.sse` now hands off 8 KiB per wake, and the TUI's
-stream-window CPU fell ~3.6x). The kmet-side accommodation for this issue is
-the untimed-poll-first pattern: the reader takes `(.poll q)` before its timed
-poll, so a chunk already queued is served without the wait setup — cheap to
-keep once Jolt fast-paths it itself. It matters most if the transport
-trickles tiny chunks; with 8 KiB bursts it is measurement noise.
-
-Repro: the `poll()` / `take()` / `poll(100ms)` script in the issue, run with
-`jolt` and `bb`.
 
 ## Resolved in the pinned releases
 
@@ -122,9 +32,30 @@ These issues no longer need kmet-side workarounds:
   ([PR #36](https://github.com/jolt-lang/http-client/pull/36)). Its existing
   v0.0.14 behavior also keeps request deadlines from
   cutting off an SSE body after response headers arrive.
+- [jolt#1292](https://github.com/jolt-lang/jolt/issues/1292) and
+  [jolt#1294](https://github.com/jolt-lang/jolt/issues/1294), the GC stall
+  report and the collect-safe `:blocking` cost behind the stall, are fixed
+  in Jolt `v0.8.21`
+  ([PR #1293](https://github.com/jolt-lang/jolt/pull/1293),
+  [PR #1294](https://github.com/jolt-lang/jolt/pull/1294)): the stall report
+  needs `JOLT_GC_STALL`, the runtime's other warnings `JOLT_WARNINGS`, and
+  `jolt.ffi/on-gc-stall` remains the seam for a host with its own log. No
+  kmet-side workaround to remove.
+- [jolt#1299](https://github.com/jolt-lang/jolt/issues/1299), `instance?`
+  against the modeled reference/deferred types, is fixed in Jolt `v0.8.21`
+  ([PR #1302](https://github.com/jolt-lang/jolt/pull/1302)): the hot checks
+  measure 0.06–0.22 µs against 1.1–1.9 before. The kmet-side classify-once
+  shape in `kmet.libs.reakt` stays (it halves the classification work on
+  both hosts); only its comments citing the old jolt cost went.
+- [jolt#1303](https://github.com/jolt-lang/jolt/issues/1303), the timed
+  `LinkedBlockingQueue` poll, is fixed in Jolt `v0.8.21`
+  ([PR #1305](https://github.com/jolt-lang/jolt/pull/1305)); the same batch
+  put runtime deadlines on the monotonic clock. `kmet.libs.sse` dropped its
+  untimed-poll-first accommodation and takes the plain timed poll again.
 
 Regression coverage includes runtime-cwd canonicalization
 (`kmet.app.test-extensions/test-exec-runs-in-the-runtime-cwd`), HTTP request
 and SSE idle timeouts (`kmet.ai.test-llm/test-llm-request-timeout-follows-idle`,
-`test-llm-body-stall-idle-timeout-completes`), and the detached-process pipe
-drain (`kmet.app.test-tools/test-tool-bash-background-pipe-closed`).
+`test-llm-body-stall-idle-timeout-completes`, and the idle reader's
+`kmet.libs.test-sse/test-char-idle-reader-times-out`), and the detached-process
+pipe drain (`kmet.app.test-tools/test-tool-bash-background-pipe-closed`).

@@ -109,9 +109,9 @@
    *tracking-scope* bucket the read lands in, so one classification here
    serves every capture frame — track-render consumes the buckets as-is.
 
-   IRef stays first on both hosts: an atom short-circuits on one class
-   check, while RXRef-first pays the class check after its protocol miss —
-   and on jolt that check is 1.8 µs (perf.md §14.2)."
+   IRef stays first on both hosts: the common value is a plain atom, which
+   short-circuits on one class check, while RXRef-first pays the class
+   check after its protocol miss."
   [ref]
   (cond
     (instance? clojure.lang.IRef ref) :plain
@@ -149,9 +149,7 @@
    This is the entry point for reactive reads outside component render
    bodies (which route through the track! rewrite).
 
-   Classified once per call and shared by both capture frames, which
-   matters most on jolt, where each classification is a 1-2 µs `instance?`
-   against the modeled class graph."
+   Classified once per call and shared by both capture frames."
   [ref]
   (let [v (deref ref)
         kind (ref-kind ref)]

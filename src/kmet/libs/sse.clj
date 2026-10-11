@@ -89,18 +89,12 @@
              (do (vreset! cur-idx (inc i))
                  (elem @cur-buf i))
              ;; Buffered units drained — wait for the next chunk (or the
-             ;; stream's end) under a fresh idle deadline. The non-blocking
-             ;; poll comes first: Jolt's TIMED poll runs its interruptible-wait
-             ;; setup even when the queue already holds an item
-             ;; (jolt-lang/jolt#1303, 4.9x an untimed poll), so a chunk the
-             ;; daemon read ahead — a consumer busy with a frame render, or a
-             ;; fast stream — is served without it. A JVM's timed poll
-             ;; fast-paths this itself; on an empty queue the extra poll is one
-             ;; cheap miss (~1 µs) before the timed wait's park.
+             ;; stream's end) under a fresh idle deadline, in 100 ms slices so
+             ;; the cancel flag and deadline are re-checked while the stream is
+             ;; quiet.
              (let [deadline (+ (concurrent/monotonic-ms) idle-ms)]
                (loop []
-                 (let [v (or (.poll q)
-                             (.poll q 100 java.util.concurrent.TimeUnit/MILLISECONDS))]
+                 (let [v (.poll q 100 java.util.concurrent.TimeUnit/MILLISECONDS)]
                    (cond
                      (instance? Exception v) v
                      (nil? v) (cond

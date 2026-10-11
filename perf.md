@@ -22,7 +22,8 @@ to `bb start`.**
 engine and the algorithmic candidates it points at — the watch-set diff is
 O(deps²) per reaction run, the enqueue dedup is O(queue) (O(N²) across a
 storm), and jolt's `instance?` against the modeled class hierarchy costs
-1–1.8 µs per call (a perf finding tracked in [`jolt-bugs.md`](jolt-bugs.md)).
+1–1.8 µs per call (a perf finding tracked in [`jolt-bugs.md`](jolt-bugs.md),
+fixed in `v0.8.21`).
 The frame bench cannot see any of it: its harness mounts no fn components
 (a call-counted probe reports zero `ComponentFn` renders on a replayed
 session, §14.1).**
@@ -1545,7 +1546,9 @@ Reading:
   class (`String`): the class graph is walked as string comparisons per
   call (`host/chez/java/records-interop.ss`, `instance-check-base` /
   `case-string`; filed as
-  [jolt#1299](https://github.com/jolt-lang/jolt/issues/1299)). bb's SCI
+  [jolt#1299](https://github.com/jolt-lang/jolt/issues/1299), fixed in Jolt
+  `v0.8.21`/[PR #1302](https://github.com/jolt-lang/jolt/pull/1302) — the
+  modeled-class checks now measure 0.06–0.22 µs). bb's SCI
   checks are flat ~0.16 µs. This lands twice per
   tracked read inside a scope, so `tracked-deref` on a plain atom is
   1.36 µs bb but **4.06 µs jolt** — and jolt's atom path is the slow one
@@ -1710,11 +1713,11 @@ checks on the same 300-event stream: a direct body `.read` drain costs jolt
 48 ticks vs bb 32; draining chars through the chunked reader costs jolt 33
 vs bb 53; a fast stream (3000 events ≈ 700 KB, no gaps) costs jolt
 167 ticks/1.56 s vs bb 90/0.90 s. No host is the outlier on the full path, so
-the remaining work is kmet-side (§6.3), not a Jolt ticket — except for the
-queue finding recorded in `jolt-bugs.md` as
+the remaining work is kmet-side (§6.3). The queue finding recorded in
+`jolt-bugs.md` as
 [jolt#1303](https://github.com/jolt-lang/jolt/issues/1303) (a timed `poll`
-on a non-empty `LinkedBlockingQueue` costs 4.9x the untimed poll; after
-chunking it is no longer the streaming bottleneck, and the reader takes the
-untimed `poll` first as the accommodation).
+on a non-empty `LinkedBlockingQueue` cost 4.9x the untimed poll) is fixed
+in Jolt `v0.8.21` ([PR #1305](https://github.com/jolt-lang/jolt/pull/1305));
+the reader's untimed-poll-first accommodation is gone.
 
 
