@@ -55,6 +55,13 @@ the anchored match at every start position, so a match at position k costs
 to jolt are fixed: `truncate-to-width` **1630 → 93 µs** on a styled line
 (17.5x; 700 → 272 on bb) and `wrap-single-line`'s strip 16.9 → 1.3 µs (§18).**
 
+**§19 sweeps the rest of the regex-on-hot-path surface. The bash/tool output
+sanitizers now use the shared scanner and skip the CR passes when a chunk has
+no CR: on a 1.8 KB chunk jolt 75.8 → 39.6 µs plain and 164.3 → 46.4 styled,
+bb 86.7 → 56.9 plain. The markdown table lookbehind split, regex line
+splitting, and the diff-line parse measured fine (or would regress bb) and
+are left alone; the wrap tracker remains on the raw regex (§19).**
+
 **TL;DR** — it is not a busy loop and not the terminal backend. Idle CPU is
 *lower* on jolt than on bb. The frame gap was (a) every keystroke/frame
 re-renders the whole component tree + re-normalizes every line + diffs/emits,
@@ -2153,3 +2160,57 @@ ms across runs) — so the function-level A/B is the evidence.
 Still on the raw regex on jolt, not applied: the wrap tracker
 (`ansi-process-text!`'s `re-seq`, `ansi-process-range!`'s `re-find`) — a
 follow-up candidate, needs its own scanner carve-out and corpus pin.
+
+---
+
+## 19. Remaining regex-on-hot-path candidates (x86_64, 2026-10-12)
+
+A sweep of `src/` for regexes on per-frame / per-line / per-chunk paths after
+§18, with the candidates measured rather than guessed (scratch probes
+`target/perf-check-17/hot-regex-probe.clj` and `sanitize-probe.clj`).
+
+### 19.1 Fixed: the bash/tool output sanitizers
+
+`kmet.app.bash-executor/sanitize-output` ran a private copy of
+`ANSI-CODE-RE` plus two unconditional CR replaces on every decoded bash
+chunk (the streaming path, so once per process read);
+`kmet.app.ui.tool-renderers/sanitize-display-text` and
+`kmet.app.ui.bash-execution/bash-execution-append-output!` repeated the CR
+passes. The private ANSI regex is gone — the shared host-branched
+`kmet.tui.utils/strip-ansi-codes` does the strip (scanner on Jolt) — and the
+CR passes are guarded with `str/includes? "\r"`. Real function, 1.8 KB
+chunk (µs; medians; output equal on a plain/styled/CRLF/private-CSI/OSC-8/
+NUL/tab corpus):
+
+| input | old jolt | new jolt | old bb | new bb |
+|---|---:|---:|---:|---:|
+| plain LF | 75.8 | **39.6** | 86.7 | **56.9** |
+| ANSI-styled | 164.3 | **46.4** | 84.6 | **57.6** |
+| CRLF | 92.0 | **53.4** | 79.7 | 86.2 |
+
+CRLF data pays the extra `includes?` scan on bb (~8%) and everything else
+wins on both hosts; LF-only chunks are the common case. The control-class
+replace (`[^\t\n\r\u0020-\uFFF8\uFFFC-\uFFFF]`, ~30 ns/char on both
+hosts) stays: a `re-find` guard scans the same bytes, so it does not pay.
+
+### 19.2 Measured and left alone
+
+| candidate | measurement | verdict |
+|---|---|---|
+| markdown `split-table-row` lookbehind `(?<!\\)\|` | jolt 4.5 µs, bb 4.6 (parity) | no — the editor's lookbehind pathology does not apply here; a hand scan is 8.2 µs on jolt |
+| `str/split #"\n" -1` (40 lines) | jolt 6.5 µs, bb 13.9 | no — a `nth`-loop scanner is 56/108 µs |
+| diff-line parse `^([ +-])(\s*\d*)\s(.*)$` | jolt 0.96 vs hand 0.42; bb 0.52 vs 1.58 | no — host-split, cold path, ~1 ms per 2000-line diff |
+| combined CR+control single pass | jolt 37.6 vs 44.2; bb 60.9 vs 45.9 | no — jolt-only win, loses on bb once the CR guard is in |
+| `plain-char-width` `re-seq` scans | jolt already 7x faster than bb on box lines (§17.6) | no |
+| fuzzy `word-boundary?` 1-char `re-find` | per matched query char | left — the §5.3 tiny-re-find class |
+
+### 19.3 Still on the regex on jolt
+
+The wrap tracker: `ansi-process-text!`'s `re-seq ANSI-CODE-RE` (~6.3 µs per
+2-match styled line on jolt against bb's forced ~1.8) and
+`ansi-process-range!`'s `re-find ANSI-CODE-RE (subs word j)` (3-4x bb even
+for a match at the start; the §18.1 late-match cost applies when it is not)
+— both can walk `ansi-sequence-end` instead, per the §18.3 pattern. Needs its
+own host carve-out and corpus pin. Smaller, only when a sequence is present:
+`apply-sgr-code`'s anchored `re-find` and `active-osc-8-close`'s `re-seq
+osc-8-link-re`.
