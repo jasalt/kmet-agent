@@ -13,7 +13,10 @@
 ;; (ESC ]8;;url ESC\) are zero-width metadata but must be recognized so they
 ;; don't count toward visible width. OSC is terminated by BEL, ESC\ or 0x9C
 ;; (pi: ansi-regex).
-(def ^:private ANSI-CODE-RE
+(def ANSI-CODE-RE
+  "ANSI CSI (ESC [ … final byte) and OSC (ESC ] … BEL/ST/0x9C) sequences.
+   Public like the scanners: its production callers sit in :default reader
+   branches, which the bb lint view does not read."
   #"\u001b\[[0-9;]*[a-zA-Z]|\u001b\][^\u0007\u001b\u009c]*(?:\u001b\\|\u0007|\u009c)")
 
 ;; ansi-code-at lives in the ANSI-window-slicing section below; the
@@ -25,9 +28,11 @@
    S when one starts there, nil otherwise. Hand-rolled equivalent of
    ANSI-CODE-RE anchored at I (same accepted CSI/OSC language, including
    what the regex does NOT match: private-parameter CSI like \"ESC[?25l\"
-   has no regex match and must stay literal text). Used on Jolt only, where
-   the regex engine is the slowest primitive; the utils test suite pins
-   this scanner and the regex against each other on a corpus."
+   and an OSC body interrupted by a bare ESC have no regex match and must
+   stay literal text). Used by the scanner paths on both hosts; the utils
+   test suite pins this scanner and the regex against each other on a
+   corpus (all strings up to length 4 over the escape alphabet plus a
+   longer sample)."
   [s i]
   (let [n (count s)]
     (when (and (< i n) (= \u001b (nth s i)) (< (inc i) n))
@@ -43,16 +48,29 @@
                   (or (= ch 0x3b) (<= 0x30 ch 0x39)) (recur (inc j))
                   (or (<= 0x41 ch 0x5a) (<= 0x61 ch 0x7a)) (inc j)
                   :else nil))))
-          ;; OSC: ESC ] … BEL | ST | 0x9c
+          ;; OSC: ESC ] … BEL | ST | 0x9c. The regex body excludes ESC, so a
+          ;; bare ESC inside fails the match (an ESC at the end cannot start
+          ;; ST either). BEL/ESC are found with str/index-of, native on both
+          ;; hosts; the rare single-byte ST is searched only inside the body
+          ;; before the first BEL/ESC, so a long OSC body never becomes an
+          ;; interpreted per-character walk (the old loop was slower than
+          ;; the regex on a 16 KB unterminated OSC on both hosts).
           (= c \])
-          (loop [j (+ i 2)]
-            (if (>= j n)
-              nil
-              (let [ch (int (nth s j))]
-                (cond
-                  (or (= ch 0x07) (= ch 0x9c)) (inc j)
-                  (and (= ch 0x1b) (< (inc j) n) (= 0x5c (int (nth s (inc j))))) (+ j 2)
-                  :else (recur (inc j))))))
+          (let [j (+ i 2)
+                bel (str/index-of s "\u0007" j)
+                esc (str/index-of s "\u001b" j)
+                cand (cond (nil? bel) esc (nil? esc) bel :else (min bel esc))
+                st9c (if cand
+                       (when-let [k (str/index-of (subs s j cand) "\u009c")]
+                         (+ j k))
+                       (str/index-of s "\u009c" j))]
+            (cond
+              (and st9c (or (nil? cand) (< st9c cand))) (inc st9c)
+              (and cand (= cand bel)) (inc bel)
+              cand (when (and (< (inc cand) n)
+                              (= 0x5c (int (nth s (inc cand)))))
+                     (+ cand 2))
+              :else nil))
           :else nil)))))
 
 (defn strip-ansi-native
@@ -631,24 +649,48 @@
     (ansi-process-sgr! st code)
     (ansi-process-osc8! st code)))
 
+(defn- ansi-codes-scan
+  "All ANSI sequences in S in order, found with the hand-rolled scanner:
+   str/index-of seeds each search and ansi-sequence-end consumes the
+   sequence — exactly the sequences ANSI-CODE-RE matches. Feeds the wrap
+   tracker on both hosts."
+  [s]
+  (let [n (count s)]
+    (loop [pos 0 out (transient [])]
+      (if (>= pos n)
+        (persistent! out)
+        (let [idx (str/index-of s "\u001b" pos)]
+          (if (nil? idx)
+            (persistent! out)
+            (if-let [end (ansi-sequence-end s idx)]
+              (recur end (conj! out (subs s idx end)))
+              (recur (inc idx) out))))))))
+
+(defn- ansi-codes-scan-range
+  "All ANSI sequences of S whose start index is in [i, stop), in order; a
+   sequence found just before STOP may extend past it (the regex loop
+   consumes it the same way). Feeds ansi-process-range! on both hosts."
+  [s i stop]
+  (loop [j i out (transient [])]
+    (let [idx (str/index-of s "\u001b" j)]
+      (if (or (nil? idx) (>= idx stop))
+        (persistent! out)
+        (if-let [end (ansi-sequence-end s idx)]
+          (recur end (conj! out (subs s idx end)))
+          (recur (inc idx) out))))))
+
 (defn- ansi-process-text!
   "Process all ANSI sequences in TEXT into the tracker state."
   [st text]
   (when (clojure.string/includes? text "\u001b")
-    (doseq [code (re-seq ANSI-CODE-RE text)]
+    (doseq [code (ansi-codes-scan text)]
       (ansi-process-code! st code))))
 
 (defn- ansi-process-range!
   "Process ANSI sequences found in word[i, stop) into the tracker state."
   [st word i stop]
-  (loop [j i]
-    (when (< j stop)
-      (let [m (when (= \u001b (nth word j))
-                (re-find ANSI-CODE-RE (subs word j)))]
-        (if (and m (clojure.string/starts-with? (subs word j) m))
-          (do (ansi-process-code! st m)
-              (recur (+ j (count m))))
-          (recur (inc j)))))))
+  (doseq [code (ansi-codes-scan-range word i stop)]
+    (ansi-process-code! st code)))
 
 (defn- ansi-active-codes
   "The currently active SGR attributes (and open hyperlink) as a single
@@ -684,8 +726,7 @@
    count), avoiding per-character work — crucial for streaming long
    tokens under SCI where per-char interop is slow."
   [word max-width st]
-  (let [n (count word)
-        ansi-re ANSI-CODE-RE]
+  (let [n (count word)]
     (if (not (re-find #"[^\u0020-\u007e]" word))
       ;; ASCII fast path — no ANSI codes possible (ESC 0x1b is non-ASCII).
       ;; NOTE (jolt perf): was (re-seq (re-pattern "(?s).{1,N}") word) — a
@@ -712,19 +753,18 @@
                 stop (loop [j i total 0]
                        (if (>= j n)
                          j
-                         (let [m (when (= \u001b (nth word j))
-                                   (re-find ansi-re (subs word j)))]
-                           (if (and m (clojure.string/starts-with? (subs word j) m))
-                             (recur (+ j (count m)) total)
-                             (let [cp (code-point-at word j)
-                                   w (char-width cp)
-                                   nchars (codepoint-len word j)]
-                               ;; Stop only once the piece has visible content —
-                               ;; never emit an empty piece (e.g. a styled word
-                               ;; starting with a 2-wide char at max-width 1).
-                               (if (and (pos? total) (> (+ total w) max-width))
-                                 j
-                                 (recur (+ j nchars) (+ total w))))))))]
+                         (if-let [[_ clen] (and (= \u001b (nth word j))
+                                                (ansi-code-at word j))]
+                           (recur (+ j clen) total)
+                           (let [cp (code-point-at word j)
+                                 w (char-width cp)
+                                 nchars (codepoint-len word j)]
+                             ;; Stop only once the piece has visible content —
+                             ;; never emit an empty piece (e.g. a styled word
+                             ;; starting with a 2-wide char at max-width 1).
+                             (if (and (pos? total) (> (+ total w) max-width))
+                               j
+                               (recur (+ j nchars) (+ total w)))))))]
             (ansi-process-range! st word i stop)
             (recur stop
                    (conj pieces

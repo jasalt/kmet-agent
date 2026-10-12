@@ -90,14 +90,18 @@ QWdiAKmzt6MfYOx22Q50Fqk=
 
 (def ^:private ansi-corpus
   "Strings the scanner/regex equivalence tests walk at every index: matched
-   CSI/OSC, private-parameter CSI, unterminated OSC, a lone ESC, CJK, tabs."
+   CSI/OSC, private-parameter CSI, unterminated OSC, an OSC body interrupted
+   by a bare ESC, a lone ESC, CJK, tabs."
   ["" "plain" "a\tb" "中文"
    "\u001b[31mred\u001b[0m"
    "\u001b[38;5;196mx\u001b[39m"
    "\u001b[?25lprivate\u001b[?25h"
    "\u001b]8;;https://x.example/\u0007link\u001b]8;;\u0007"
    "\u001b]0;title\u001b\\after"
+   "\u001b]0;title\u009cafter"
    "\u001b]0;unterminated"
+   "\u001b]0;x\u001bY\u0007"
+   "\u001b]8;;https://x.example/\u001bY\u0007link\u001b]8;;\u0007"
    "\u001b["
    "\u001b"
    "\u001bX"
@@ -107,6 +111,76 @@ QWdiAKmzt6MfYOx22Q50Fqk=
    "\u001b[?2026h\u001b[1;1H\u001b[?2026l"
    (str "你好" "\u001b[31m" "你好")])
 
+(def ^:private ansi-re
+  #"\u001b\[[0-9;]*[a-zA-Z]|\u001b\][^\u0007\u001b\u009c]*(?:\u001b\\|\u0007|\u009c)")
+
+(def ^:private ansi-alphabet
+  "The escape-grammar alphabet: both introducers, CSI parameter and final
+   characters, the private-parameter `?`, ST's backslash and both OSC
+   terminators (BEL, 0x9C)."
+  [\u001b \[ \] \; \? \1 \m \\ \u0007 \u009c])
+
+(defn- ansi-strings-up-to
+  "All strings of length 0..MAX over ansi-alphabet — every escape-grammar
+   interaction (and near-miss) of that size."
+  [max]
+  (letfn [(step [n]
+            (if (zero? n)
+              [""]
+              (for [p (step (dec n)) c ansi-alphabet] (str p c))))]
+    (for [n (range (inc max)) s (step n)] s)))
+
+(defn- ansi-random-strings
+  "Deterministic LCG sample of N strings up to MAX-LEN long, so longer
+   interactions are covered without enumerating every combination."
+  [n max-len]
+  (let [m (count ansi-alphabet)
+        next-seed (fn [seed] (mod (+ (* seed 1103515245) 12345) 2147483648))
+        build (fn [seed len]
+                (loop [i 0 seed seed sb (StringBuilder.)]
+                  (if (>= i len)
+                    (str sb)
+                    (let [seed (next-seed seed)]
+                      (recur (inc i) seed
+                             (.append sb ^Character
+                                      (nth ansi-alphabet (mod seed m))))))))]
+    (loop [k n seed 42 out []]
+      (if (zero? k)
+        out
+        (let [seed (next-seed seed)
+              len (mod seed (inc max-len))]
+          (recur (dec k) (next-seed seed)
+                 (conj out (build seed len))))))))
+
+(def ^:private ansi-pin-corpus
+  "Curated sequences plus every string up to length 4 over the escape
+   alphabet plus a deterministic sample of longer strings."
+  (concat ansi-corpus
+          (ansi-strings-up-to 4)
+          (ansi-random-strings 1200 16)))
+
+(defn- regex-code-at
+  "ANSI-CODE-RE anchored at I — ansi-code-at's :default side."
+  [s i]
+  (when (and (< i (count s)) (= \u001b (nth s i)))
+    (let [m (re-matcher ansi-re s)]
+      (when (and (.find m i) (= i (.start m)))
+        [(.group m) (- (.end m) i)]))))
+
+(defn- regex-codes [s] (vec (re-seq ansi-re s)))
+
+(defn- regex-codes-range
+  "The old re-find loop of ansi-process-range!."
+  [s i stop]
+  (loop [j i out []]
+    (if (>= j stop)
+      out
+      (let [m (when (= \u001b (nth s j))
+                (re-find ansi-re (subs s j)))]
+        (if (and m (str/starts-with? (subs s j) m))
+          (recur (+ j (count m)) (conj out m))
+          (recur (inc j) out))))))
+
 (t/deftest test-strip-ansi-host-equivalence
   ;; The Jolt path strips ANSI with a hand-rolled scanner (strip-ansi-native)
   ;; while bb/JVM keep the regex strip. The scanner must accept exactly the
@@ -114,14 +188,10 @@ QWdiAKmzt6MfYOx22Q50Fqk=
   ;; (private-parameter CSI, unterminated OSC, a lone ESC), which must stay
   ;; in the output as literal text. Both implementations run on both hosts,
   ;; so this test pins them against each other wherever the suite runs.
-  (let [regex-strip (fn [s]
-                      (str/replace s
-                                   #"\u001b\[[0-9;]*[a-zA-Z]|\u001b\][^\u0007\u001b\u009c]*(?:\u001b\\|\u0007|\u009c)"
-                                   ""))
-        native-strip (var-get #'u/strip-ansi-native)
+  (let [native-strip (var-get #'u/strip-ansi-native)
         corpus ansi-corpus]
     (doseq [s corpus]
-      (t/is (= (regex-strip s) (native-strip s)) (pr-str s))))
+      (t/is (= (str/replace s ansi-re "") (native-strip s)) (pr-str s))))
   ;; and the public width path agrees on strip-needing input
   (t/is (= 3 (u/visible-width "\u001b[31mabc\u001b[0m")))
   ;; private-parameter CSI is NOT ANSI-CODE-RE: ESC measures 0, the rest
@@ -131,19 +201,50 @@ QWdiAKmzt6MfYOx22Q50Fqk=
 (t/deftest test-ansi-code-at-host-equivalence
   ;; ansi-code-at's Jolt side is the hand-rolled scanner
   ;; (ansi-code-at-native); bb/JVM keep the anchored regex matcher (match-at +
-  ;; ANSI-CODE-RE). Both must agree at every index of every corpus string —
+  ;; ANSI-CODE-RE). Both must agree at every index of every curated string —
   ;; including the indices where neither matches.
-  (let [ansi-re #"\u001b\[[0-9;]*[a-zA-Z]|\u001b\][^\u0007\u001b\u009c]*(?:\u001b\\|\u0007|\u009c)"
-        regex-code (fn [s i]
-                     (when (and (< i (count s)) (= \u001b (nth s i)))
-                       (let [m (re-matcher ansi-re s)]
-                         (when (and (.find m i) (= i (.start m)))
-                           [(.group m) (- (.end m) i)]))))
-        native-code (var-get #'u/ansi-code-at-native)]
+  (let [native-code (var-get #'u/ansi-code-at-native)]
     (doseq [s ansi-corpus
             i (range (inc (count s)))]
-      (t/is (= (regex-code s i) (native-code s i))
+      (t/is (= (regex-code-at s i) (native-code s i))
             (str (pr-str s) " @" i)))))
+
+(t/deftest test-ansi-scanner-regex-equivalence
+  ;; The scanners must accept exactly ANSI-CODE-RE's language in every case:
+  ;; the curated corpus, every string up to length 4 over the escape alphabet
+  ;; and a deterministic sample of longer strings, compared on strip, the
+  ;; anchored code-at, the full code scan and the [i, stop) scan. Each
+  ;; property reports over the whole corpus at once (first mismatches shown)
+  ;; so the exhaustive walk stays fast.
+  (let [native-strip (var-get #'u/strip-ansi-native)
+        native-code (var-get #'u/ansi-code-at-native)
+        native-codes (var-get #'u/ansi-codes-scan)
+        native-range (var-get #'u/ansi-codes-scan-range)
+        corpus ansi-pin-corpus
+        show (fn [label bad]
+               (t/is (empty? bad)
+                     (str label ": " (count bad) " mismatch(es), first: "
+                          (pr-str (vec (take 6 bad))))))]
+    (show "strip"
+          (for [s corpus
+                :when (not= (str/replace s ansi-re "") (native-strip s))]
+            (pr-str s)))
+    (show "codes"
+          (for [s corpus
+                :when (not= (regex-codes s) (native-codes s))]
+            (pr-str s)))
+    (show "code-at"
+          (for [s corpus
+                i (range (inc (count s)))
+                :when (not= (regex-code-at s i) (native-code s i))]
+            [s i]))
+    (show "range"
+          (for [s corpus
+                i (range (count s))
+                stop (range i (count s))
+                :when (not= (regex-codes-range s i stop)
+                            (native-range s i stop))]
+            [s i stop]))))
 
 (t/deftest test-visible-width-narrow-dingbats
   ;; Regression: the coarse emoji block ranges (0x2600-0x27BF etc.) counted
