@@ -2003,7 +2003,9 @@
    :thinking-level-map/:max-tokens transfer from canonical data instead of
    guesses. Identity mapping only -- wire api is NOT transferred (canonical
    :openai is responses-api; CommandCode speaks completions/messages).
-   tencent/hy3-paid has no canonical entry anywhere -> conservative defaults."
+   tencent/hy3-paid has no canonical entry anywhere -> conservative defaults;
+   Qwen/Qwen3.6-Max-Preview's canonical was retired upstream, so its profile
+   is pinned in commandcode-overrides."
   (array-map
    "claude-fable-5"                    [:anthropic "claude-fable-5"]
    "claude-haiku-4-5-20251001"         [:anthropic "claude-haiku-4-5-20251001"]
@@ -2048,7 +2050,6 @@
    "moonshotai/Kimi-K3"                [:moonshotai "kimi-k3"]
    "nvidia/nemotron-3-ultra-550b-a55b" [:nvidia "nvidia/nemotron-3-ultra-550b-a55b"]
    "poolside/laguna-s-2.1-free"        [:openrouter "poolside/laguna-s-2.1:free"]
-   "Qwen/Qwen3.6-Max-Preview"          [:openrouter "qwen/qwen3.6-max-preview"]
    "Qwen/Qwen3.6-Plus"                 [:qwen-token-plan "qwen3.6-plus"]
    "Qwen/Qwen3.7-Flash"                [:openrouter "qwen/qwen3.7-flash"]
    "Qwen/Qwen3.7-Max"                  [:qwen-token-plan "qwen3.7-max"]
@@ -2087,11 +2088,16 @@
   {"claude-haiku-4-5-20251001" "claude-haiku-4-5"})
 
 (def ^:private commandcode-overrides
-  "Explicit capability wins over refs. Empty today — stealth/ox-alpha, the
-   only entry, is no longer served by the CommandCode endpoint. Kept as the
-   hook for models whose capabilities are endpoint-bound rather than
-   model-bound."
-  {})
+  "Explicit capability wins over refs. The hook for models whose
+   capabilities are endpoint-bound rather than model-bound, and for endpoint
+   ids whose canonical catalog home has retired the entry while the endpoint
+   still serves it: OpenRouter dropped qwen/qwen3.6-max-preview in the
+   2026-10-12 model bump, so its last committed profile is pinned here
+   (reproducing what the ref used to transfer)."
+  {"Qwen/Qwen3.6-Max-Preview" {:reasoning true
+                               :input [:text]
+                               :max-tokens 65536
+                               :compat {:thinking-format :openrouter}}})
 
 (defn- warn-unresolved-commandcode-ref!
   "Warn when a LISTED canonical ref resolves to nil in this run's catalogs:

@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-12T08:23:36Z"
+ :generated-at "2026-10-12T10:35:43Z"
  :provider {:id :openrouter
             :name "OpenRouter"
             :env-vars ["OPENROUTER_API_KEY"]
@@ -1110,7 +1110,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 1.32 :output 3.96 :cache-read 0.044 :cache-write 0}
+    :cost {:input 0.66 :output 1.98 :cache-read 0.022 :cache-write 0}
     :context-window 1048576
     :max-tokens 393216
     :compat {:supports-developer-role false
@@ -1132,9 +1132,9 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text :image]
-    :cost {:input 0.3 :output 1.2 :cache-read 0.006 :cache-write 0}
+    :cost {:input 0.15 :output 0.6 :cache-read 0.003 :cache-write 0}
     :context-window 1048576
-    :max-tokens 943718
+    :max-tokens 393216
     :compat {:supports-developer-role false
              :requires-reasoning-content-on-assistant-messages true
              :thinking-format :openrouter
@@ -6151,9 +6151,9 @@
                          :off nil
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.15 :output 0.5 :cache-read 0.03 :cache-write 0}
-    :context-window 1048575
-    :max-tokens 943717
+    :cost {:input 0.0232 :output 1.2 :cache-read 0.0232 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 943718
     :compat {:supports-developer-role false
              :thinking-format :openrouter
              :supports-strict-mode true}}
@@ -6460,7 +6460,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.72 :output 22 :cache-read 0.3 :cache-write 0}
+    :cost {:input 0.73 :output 10 :cache-read 0.55 :cache-write 0}
     :context-window 1048576
     :max-tokens 131072
     :compat {:supports-developer-role false
@@ -6607,7 +6607,7 @@
                          :off nil
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.032 :output 1.2 :cache-read 0.032 :cache-write 0}
+    :cost {:input 0.0232 :output 1.2 :cache-read 0.0232 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
