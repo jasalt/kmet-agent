@@ -71,6 +71,42 @@
   (t/is (= [{:type :text :s "[broken"}]
            (md/parse-inline "[broken"))))
 
+(t/deftest test-inline-email-after-marker-char
+  ;; The email local part class includes markup punctuation, so a run that
+  ;; begins just after a consumed marker can still start a match: the email
+  ;; attempt is due at the run's first plain position, not only at the line
+  ;; start (regression: the failed-attempt hint used to skip positions after
+  ;; the first ruled-out run and lose this link).
+  (t/is (= [{:type :text :s "~"}
+            {:type :link :url "mailto:~user@example.com"
+             :text [{:type :text :s "~user@example.com"}]}]
+           (md/parse-inline "~~user@example.com"))))
+
+(t/deftest test-inline-multiple-emails
+  ;; One email attempt per local-part run, not per character; the second
+  ;; address still becomes a link.
+  (t/is (= [{:type :text :s "Contact "}
+            {:type :link :url "mailto:user@example.com"
+             :text [{:type :text :s "user@example.com"}]}
+            {:type :text :s " or "}
+            {:type :link :url "mailto:sales@example.com"
+             :text [{:type :text :s "sales@example.com"}]}]
+           (md/parse-inline "Contact user@example.com or sales@example.com"))))
+
+(t/deftest test-inline-url-scheme-case
+  ;; The scheme gate is case-insensitive and must not require the URL to
+  ;; start at a word boundary.
+  (t/is (= [{:type :link :url "HTTP://EXAMPLE.COM"
+             :text [{:type :text :s "HTTP://EXAMPLE.COM"}]}
+            {:type :text :s " and "}
+            {:type :link :url "FTP://x.y"
+             :text [{:type :text :s "FTP://x.y"}]}]
+           (md/parse-inline "HTTP://EXAMPLE.COM and FTP://x.y")))
+  (t/is (= [{:type :text :s "see ht"}
+            {:type :link :url "https://x.com"
+             :text [{:type :text :s "https://x.com"}]}]
+           (md/parse-inline "see hthttps://x.com"))))
+
 ;; ─── parse: blocks ─────────────────────────────────────────────────────────
 
 (t/deftest test-parse-paragraph

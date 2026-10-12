@@ -21,6 +21,13 @@
 (def ^:private sep-cell-re #":?-+:?")
 (def ^:private escaped-pipe-re #"\\\|")
 
+(def ^:private marker-first-chars
+  "First characters (of a trimmed line) that can start a thematic break or a
+   list item: the hr/ul markers plus the ordered-list digits. Necessary-prefix
+   gate for the hr/ul/ol regexes on the block path; a plain line skips all
+   three regexes with one set lookup."
+  #{\- \* \+ \_ \0 \1 \2 \3 \4 \5 \6 \7 \8 \9})
+
 ;; ─── Inline tokenizer ──────────────────────────────────────────────────────
 
 (def ^:private angle-url-re
@@ -42,12 +49,57 @@
     \a \b \c \d \e \f \g \h \i \j \k \l \m \n \o \p \q \r \s \t \u \v \w \x \y \z
     \0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \. \! \# \$ \% \& \' \* \+ \/ \= \? \^ \_ \` \{ \| \} \~ \-})
 
-(def ^:private bare-url-start-chars
-  "First-char set gating the bare-url autolink regex in parse-inline.
-   The regex is case-insensitive ((?i)) over the schemes http://, https://,
-   ftp:// and www. — every alternative starts with h/H, f/F or w/W, so any
-   other first char fails fast. Perf gate only — the regex still decides."
-  #{\h \H \f \F \w \W})
+(def ^:private inline-special-re
+  "Characters that stop a plain run in parse-inline's chunked fast path: the
+   markup openers, plus the literal bare-url schemes (so the regex engine
+   finds real candidates — stopping at every h/f/w in ordinary prose costs
+   ~1 us per stop on bb, more than the per-char loop it replaces). A match
+   here is either a hard special or a URL whose remaining scheme/domain the
+   dispatch still validates with bare-url-re."
+  #"(?i)https?://|ftp://|www\.|[\\`*~<\[]")
+
+(def ^:private inline-special-in-link-re
+  "In-link? variant of INLINE-SPECIAL-RE: < and [ are plain text inside a link
+   label, and autolinks are disabled there, so only the markup openers stop a
+   run."
+  #"[\\`*~]")
+
+(def ^:private bare-url-prefixes
+  "Scheme prefixes (after the first char) gating the bare-url autolink regex
+   in parse-inline: a URL can only start where the remaining characters begin
+   case-insensitively with one of these. Perf gate only — the regex still
+   decides. The old first-char set (h/H/f/F/w/W) fired on every h/f/w in
+   ordinary prose, and each attempt paid a (subs line i) copy plus an irregex
+   miss; checking the literal scheme first keeps the regex off ordinary words.
+   h/H lists both spellings (https?://)."
+  {\h ["ttp://" "ttps://"] \H ["ttp://" "ttps://"]
+   \f ["tp://"] \F ["tp://"]
+   \w ["ww."] \W ["ww."]})
+
+(def ^:private ascii-lower->upper
+  (zipmap "abcdefghijklmnopqrstuvwxyz" "ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+
+(defn- ci-prefix-at?
+  "True when LINE[I...] starts with the lowercase ASCII PREFIX, ignoring case,
+   without allocating a substring."
+  [line i ^String prefix]
+  (let [pn (count prefix)
+        n (count line)]
+    (and (<= (+ i pn) n)
+         (loop [k 0]
+           (if (= k pn)
+             true
+             (let [c (nth line (+ i k))
+                   e (nth prefix k)]
+               (if (or (= c e) (= c (ascii-lower->upper e)))
+                 (recur (inc k))
+                 false)))))))
+
+(defn- ci-prefix-any-at?
+  "True when LINE[I...] starts with any of the lowercase ASCII PREFIXES,
+   ignoring case."
+  [line i prefixes]
+  (boolean (some #(ci-prefix-at? line i %) prefixes)))
 
 (def ^:private markdown-escape-re
   #"[!\"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~]")
@@ -193,6 +245,47 @@
   (vswap! out conj! tok)
   out)
 
+(defn- matcher-next
+  "Start index of the first matcher match at or after FROM, or nil when the
+   matcher has no match left. The matcher is stateful: matches already found
+   behind FROM (left there by a branch that consumed past them) are skipped,
+   and the scan never restarts, so a line costs one regex pass plus one call
+   per special character."
+  [m from]
+  (loop []
+    (when (.find m)
+      (let [j (.start m)]
+        (if (>= j from) j (recur))))))
+
+(defn- next-special-index
+  "Next INLINE-SPECIAL match start at or after I, or nil when the matcher has
+   no match left. PENDING (a volatile) caches the match MATCHER-NEXT found for
+   a previous position: the chunk step stops at that index, so the following
+   iteration must dispatch it before the matcher advances again."
+  [m pending i]
+  (let [p @pending]
+    (if (and p (>= p i))
+      p
+      (let [q (matcher-next m i)]
+        (vreset! pending q)
+        q))))
+
+(defn- email-attempt-limit
+  "First index at which another bare-email attempt could succeed, given a
+   failed attempt at LINE[I]. The scan walks the local-part characters after I
+   and returns the index past the first character that is not one of them (an
+   @ or anything else). Every start in [I, limit) fails for the same reason:
+   its local part ends at that same first non-local character, so the regex
+   sees the same @ and domain. Bounds the retry attempts to one per local-part
+   run instead of one per character (an @-bearing prose line otherwise pays a
+   (subs line i) + regex miss at every alphanumeric char)."
+  [line i]
+  (let [n (count line)]
+    (loop [k i]
+      (if (and (< k n) (contains? bare-email-start-chars (nth line k)))
+        (recur (inc k))
+        (min n (inc k))))))
+
 (defn parse-inline
   "Parse inline Markdown into pure-data tokens. The one-argument form parses
    ordinary text; the private second argument disables nested links/autolinks
@@ -201,128 +294,162 @@
    Accumulation (jolt perf): OUT is a transient vector behind a volatile and
    SB buffers the pending :text run, so a plain char is one StringBuilder
    append instead of a per-char token + peek/pop/conj merge (~3x on bb,
-   ~1.4x on jolt for prose lines). Every branch ends in (recur (inc i)) or
-   (recur next-i) — a single loop arg, so SCI never has to reason about
-   tail position of a multi-arg recur inside if-let.
+   ~1.4x on jolt for prose lines). Every dispatch branch ends in
+   (recur (inc i)) or (recur next-i) — a single loop arg, so SCI never has to
+   reason about tail position of a multi-arg recur inside if-let.
 
-   Per-iteration cost is the whole game here (~1.5 us/char on bb, measured):
-   the loop reads a Character with (nth line i) and compares characters —
-   never building a 1-char string; the `remaining' substring is built only
-   in the branches that feed it to a regex; the closing-delimiter searches
-   run str/index-of on LINE with an absolute start index (equivalent offsets
-   to searching the remainder); the bare-email regex is reachable only when
-   the line holds an @ at all (an @ before I fails the anchored regex
-   anyway). Each of those was 0.2-0.6 us per character."
+   Chunked plain runs (bb perf): the loop asks a stateful matcher for the
+   next INLINE-SPECIAL index J (MATCHER-NEXT / NEXT-SPECIAL-INDEX). When J is
+   ahead, every char in [I, J) is appended with one (subs line i j) instead of
+   one character at a time; when J is nil the rest of the line goes in one
+   append. The per-char iteration is ~0.9 us/char on bb and prose is mostly
+   plain chars, so this is where the loop cost drops. Lines holding an @ keep
+   the per-char loop (AT? below): an email match can start at any local-part
+   char, and a run chunk would skip one.
+
+   Per-iteration cost is the whole game here: the loop reads a Character with
+   (nth line i) and compares characters — never building a 1-char string; the
+   `remaining' substring is built only in the branches that feed it to a
+   regex; the closing-delimiter searches run str/index-of on LINE with an
+   absolute start index (equivalent offsets to searching the remainder); the
+   bare-email regex is reachable only when the line holds an @ at all, the
+   current char can start its local part and no earlier attempt has ruled the
+   run out (EMAIL-FROM); the bare-url regex runs only when the literal scheme
+   prefix follows the start char."
   ([line]
    (parse-inline line false))
   ([line in-link?]
-   (if (or (empty? line) (nil? line))
+   (if (empty? line)
      []
      (let [n (count line)
            at? (some? (str/index-of line "@"))
-           out (volatile! (transient []))
-           sb (StringBuilder.)]
-       (loop [i 0]
-         (if (>= i n)
-           (do (flush-text out sb)
-               (persistent! @out))
-           (let [ch (nth line i)]
-             (cond
-               (and (not in-link?) (= ch \<))
-               (let [remaining (subs line i)]
-                 (if-let [[raw target] (re-find angle-url-re remaining)]
-                   (do (push-token out sb (link-token target target))
-                       (recur (+ i (count raw))))
-                   (if-let [[raw email] (re-find angle-email-re remaining)]
-                     (do (push-token out sb (link-token email (str "mailto:" email)))
-                         (recur (+ i (count raw))))
-                     (do (.append sb ch) (recur (inc i))))))
+           matcher (when-not at?
+                     (re-matcher (if in-link? inline-special-in-link-re
+                                     inline-special-re)
+                                 line))
+           first-j (when matcher (matcher-next matcher 0))]
+       (if (and matcher (nil? first-j))
+         ;; The whole line is one plain run: one text token, no accumulator
+         ;; machinery (volatiles, StringBuilder) beyond the matcher scan.
+         [{:type :text :s line}]
+         (let [email-from (volatile! 0)
+               out (volatile! (transient []))
+               sb (StringBuilder.)
+               pending (volatile! first-j)]
+           (loop [i 0]
+             (if (>= i n)
+               (do (flush-text out sb)
+                   (persistent! @out))
+               (let [j (when matcher (next-special-index matcher pending i))
+                     stop (or j n)]
+                 (if (and matcher (> stop i))
+                   ;; plain run: one append for [i, stop)
+                   (do (.append sb ^String (subs line i stop))
+                       (recur stop))
+                   (let [ch (nth line i)]
+                     (cond
+                       (and (not in-link?) (= ch \<))
+                       (let [remaining (subs line i)]
+                         (if-let [[raw target] (re-find angle-url-re remaining)]
+                           (do (push-token out sb (link-token target target))
+                               (recur (+ i (count raw))))
+                           (if-let [[raw email] (re-find angle-email-re remaining)]
+                             (do (push-token out sb (link-token email (str "mailto:" email)))
+                                 (recur (+ i (count raw))))
+                             (do (.append sb ch) (recur (inc i))))))
 
-               (and (not in-link?) (= ch \[))
-               (if-let [{:keys [token end]} (explicit-link line i)]
-                 (do (push-token out sb token)
-                     (recur end))
-                 (do (.append sb ch) (recur (inc i))))
+                       (and (not in-link?) (= ch \[))
+                       (if-let [{:keys [token end]} (explicit-link line i)]
+                         (do (push-token out sb token)
+                             (recur end))
+                         (do (.append sb ch) (recur (inc i))))
 
-               (= ch \\)
-               (if (and (< (inc i) n) (escaped-punctuation? (nth line (inc i))))
-                 (do (.append sb ^String (str (nth line (inc i))))
-                     (recur (+ i 2)))
-                 (do (.append sb ch) (recur (inc i))))
+                       (= ch \\)
+                       (if (and (< (inc i) n) (escaped-punctuation? (nth line (inc i))))
+                         (do (.append sb ^String (str (nth line (inc i))))
+                             (recur (+ i 2)))
+                         (do (.append sb ch) (recur (inc i))))
 
-               (= ch \`)
-               (let [end (str/index-of line "`" (inc i))]
-                 (if end
-                   (do (push-token out sb {:type :code
-                                           :s (subs line (inc i) end)})
-                       (recur (inc end)))
-                   (do (.append sb ch) (recur (inc i)))))
+                       (= ch \`)
+                       (let [end (str/index-of line "`" (inc i))]
+                         (if end
+                           (do (push-token out sb {:type :code
+                                                   :s (subs line (inc i) end)})
+                               (recur (inc end)))
+                           (do (.append sb ch) (recur (inc i)))))
 
-               (and (= ch \*) (< (inc i) n) (= (nth line (inc i)) \*))
-               (let [end (str/index-of line "**" (+ i 2))]
-                 (if (and end (> end (+ i 2)))
-                   (do (push-token out sb {:type :strong
-                                           :content (parse-inline
-                                                     (subs line (+ i 2) end)
-                                                     in-link?)})
-                       (recur (+ end 2)))
-                   (do (.append sb ch) (recur (inc i)))))
+                       (and (= ch \*) (< (inc i) n) (= (nth line (inc i)) \*))
+                       (let [end (str/index-of line "**" (+ i 2))]
+                         (if (and end (> end (+ i 2)))
+                           (do (push-token out sb {:type :strong
+                                                   :content (parse-inline
+                                                             (subs line (+ i 2) end)
+                                                             in-link?)})
+                               (recur (+ end 2)))
+                           (do (.append sb ch) (recur (inc i)))))
 
-               (= ch \*)
-               (let [end (str/index-of line "*" (inc i))]
-                 (if (and end (> end (inc i)))
-                   (do (push-token out sb {:type :em
-                                           :content (parse-inline
-                                                     (subs line (inc i) end)
-                                                     in-link?)})
-                       (recur (inc end)))
-                   (do (.append sb ch) (recur (inc i)))))
+                       (= ch \*)
+                       (let [end (str/index-of line "*" (inc i))]
+                         (if (and end (> end (inc i)))
+                           (do (push-token out sb {:type :em
+                                                   :content (parse-inline
+                                                             (subs line (inc i) end)
+                                                             in-link?)})
+                               (recur (inc end)))
+                           (do (.append sb ch) (recur (inc i)))))
 
-               (and (= ch \~)
-                    (>= n (+ i 2))
-                    (= (nth line (inc i)) \~))
-               (let [end (str/index-of line "~~" (+ i 2))]
-                 (if (and end (> end (+ i 2)))
-                   (do (push-token out sb {:type :del
-                                           :content (parse-inline
-                                                     (subs line (+ i 2) end)
-                                                     in-link?)})
-                       (recur (+ end 2)))
-                   (do (.append sb ch) (recur (inc i)))))
+                       (and (= ch \~)
+                            (>= n (+ i 2))
+                            (= (nth line (inc i)) \~))
+                       (let [end (str/index-of line "~~" (+ i 2))]
+                         (if (and end (> end (+ i 2)))
+                           (do (push-token out sb {:type :del
+                                                   :content (parse-inline
+                                                             (subs line (+ i 2) end)
+                                                             in-link?)})
+                               (recur (+ end 2)))
+                           (do (.append sb ch) (recur (inc i)))))
 
-               (not in-link?)
-               ;; Perf gates (jolt irregex is ~25x bb on a miss): the email
-               ;; regex only runs when the line holds an @ anywhere and the
-               ;; first char can start its local part; the url regex only
-               ;; runs on h/H/f/F/w/W (all its schemes' first chars, (?i)).
-               ;; Both gates fail only calls the regex would.
-               (if-let [matched (or (when (and at? (contains? bare-email-start-chars ch))
-                                      (re-find bare-email-re (subs line i)))
-                                    (when (contains? bare-url-start-chars ch)
-                                      (re-find bare-url-re (subs line i))))]
-                 (let [raw (loop [s matched]
-                             (if (or (re-find #"[!?.,:;*_~]$" s)
-                                     (and (str/ends-with? s ")")
-                                          (> (count (re-seq #"\)" s))
-                                             (count (re-seq #"\(" s)))))
-                               (recur (subs s 0 (dec (count s))))
-                               s))
-                       lower (str/lower-case raw)
-                       url (if (str/includes? raw "@")
-                             (str "mailto:" raw)
-                             (if (str/starts-with? lower "www.")
-                               (str "http://" raw)
-                               raw))
-                       label (if (str/starts-with? url "mailto:")
-                               (subs url (count "mailto:"))
-                               raw)]
-                   (push-token out sb (with-meta (link-token label url)
-                                        {:raw-label raw}))
-                   (recur (+ i (count raw))))
-                 (do (.append sb ch) (recur (inc i))))
+                       (not in-link?)
+                       ;; Perf gates (jolt irregex is ~25x bb on a miss): the
+                       ;; email regex only runs where an earlier miss has not
+                       ;; ruled the local-part run out (EMAIL-FROM) and the
+                       ;; first char can begin its local part; the url regex
+                       ;; only runs when the literal scheme prefix follows
+                       ;; the start char. Both gates fail only calls the
+                       ;; regex would.
+                       (if-let [matched (or (when (and at? (>= i @email-from)
+                                                       (contains? bare-email-start-chars ch))
+                                              (let [m (re-find bare-email-re (subs line i))]
+                                                (when-not m
+                                                  (vreset! email-from (email-attempt-limit line i)))
+                                                m))
+                                            (when-let [prefixes (get bare-url-prefixes ch)]
+                                              (when (ci-prefix-any-at? line (inc i) prefixes)
+                                                (re-find bare-url-re (subs line i)))))]
+                         (let [raw (loop [s matched]
+                                     (if (or (re-find #"[!?.,:;*_~]$" s)
+                                             (and (str/ends-with? s ")")
+                                                  (> (count (re-seq #"\)" s))
+                                                     (count (re-seq #"\(" s)))))
+                                       (recur (subs s 0 (dec (count s))))
+                                       s))
+                               lower (str/lower-case raw)
+                               url (if (str/includes? raw "@")
+                                     (str "mailto:" raw)
+                                     (if (str/starts-with? lower "www.")
+                                       (str "http://" raw)
+                                       raw))
+                               label (if (str/starts-with? url "mailto:")
+                                       (subs url (count "mailto:"))
+                                       raw)]
+                           (push-token out sb (with-meta (link-token label url)
+                                                {:raw-label raw}))
+                           (recur (+ i (count raw))))
+                         (do (.append sb ch) (recur (inc i))))
 
-               :else
-               (do (.append sb ch) (recur (inc i)))))))))))
+                       :else
+                       (do (.append sb ch) (recur (inc i)))))))))))))))
 
 ;; ─── List nesting state ──────────────────────────────────────────────────────
 ;; Lists are built on an indent-based stack: each entry is {:indent n
@@ -368,7 +495,7 @@
             parent-pos (dec (count @stack))]
         (vswap! stack update-in [parent-pos :list :items idx :blocks]
                 (fnil conj []) list-tok))
-      (vswap! result conj list-tok))))
+      (vswap! result conj! list-tok))))
 
 (defn- close-lists-above!
   "Close lists whose indent is strictly greater than INDENT."
@@ -458,7 +585,7 @@
   (if (seq @stack)
     (vswap! stack update-in [(dec (count @stack)) :list :items]
             conj {:type :blank})
-    (vswap! result conj {:type :blank})))
+    (vswap! result conj! {:type :blank})))
 
 (defn- add-continuation!
   "An indented non-list line continues the innermost list's last real item:
@@ -516,7 +643,7 @@
         cell-tokens (fn [line]
                       (mapv parse-inline
                             (take n (concat (split-table-row line) (repeat "")))))]
-    (vswap! result conj
+    (vswap! result conj!
             {:type :table
              :header (cell-tokens (nth lines i))
              :rows (mapv cell-tokens (subvec lines (+ i 2) j))
@@ -525,6 +652,12 @@
     (- j i)))
 
 ;; ─── Block tokenizer ────────────────────────────────────────────────────────
+
+(defn- code-token
+  "Assemble a :code block token from an open code-state map: the raw interior
+   lines joined once (see the fence-close and EOF flushes in parse)."
+  [{:keys [lang lines]}]
+  {:type :code :lang lang :text (str/join "\n" lines)})
 
 (defn parse
   "Parse Markdown TEXT into a vector of block tokens (the AST).
@@ -555,13 +688,14 @@
    All tokens are plain data — no ANSI styling, no terminal-width dependence."
   [text]
   (let [lines (str/split-lines (or text ""))
-        result (volatile! [])
+        result (volatile! (transient []))
         code-state (volatile! nil)
         stack (volatile! [])]
     (loop [i 0]
       (when (< i (count lines))
         (let [line (nth lines i)
               trimmed (str/trim line)
+              fc (when (pos? (count trimmed)) (nth trimmed 0))
               indent (leading-indent line)
               next-i (cond
                        ;; Inside a code block: accumulate raw lines (leading
@@ -569,52 +703,55 @@
                        ;; closing fence, then emit (or attach to a list item).
                        @code-state
                        (if (re-matches code-fence-re trimmed)
-                         (let [code-tok {:type :code
-                                         :lang (:lang @code-state)
-                                         :text (:text @code-state)}]
+                         (let [code-tok (code-token @code-state)]
                            (if (:in-item? @code-state)
                              (attach-block! stack code-tok)
-                             (vswap! result conj code-tok))
+                             (vswap! result conj! code-tok))
                            (vreset! code-state nil)
                            (inc i))
-                         (let [l (strip-indent (:indent @code-state) line)]
-                           (if (:started? @code-state)
-                             (vswap! code-state update :text str (str "\n" l))
-                             (vswap! code-state assoc :text l :started? true))
-                           (inc i)))
+                         ;; conj the raw line; joining once at the close keeps
+                         ;; this linear (str-concatenating per line copied the
+                         ;; whole accumulated block each time — O(n^2)).
+                         (do (vswap! code-state update :lines conj
+                                     (strip-indent (:indent @code-state) line))
+                             (inc i)))
 
                        ;; Code fence open: inside a list item when indented
-                       ;; deeper than the innermost list
-                       (re-matches code-fence-re trimmed)
-                       (do (if (and (seq @stack) (> indent (:indent (peek @stack))))
-                             (vreset! code-state {:lang (or (second (re-find code-fence-re trimmed)) "")
-                                                  :text "" :started? false :indent indent :in-item? true})
-                             (do (close-all-lists! stack result)
-                                 (vreset! code-state {:lang (or (second (re-find code-fence-re trimmed)) "")
-                                                      :text "" :started? false :indent indent})))
-                           (inc i))
+                       ;; deeper than the innermost list. The fc gates before
+                       ;; each regex are necessary-prefix checks (a line that
+                       ;; fails them cannot match), so plain prose lines skip
+                       ;; fence/hr/heading/quote/list/empty in one set lookup.
+                       (and (= fc \`) (re-matches code-fence-re trimmed))
+                       (let [lang (or (second (re-find code-fence-re trimmed)) "")]
+                         (if (and (seq @stack) (> indent (:indent (peek @stack))))
+                           (vreset! code-state {:lang lang :lines [] :indent indent :in-item? true})
+                           (do (close-all-lists! stack result)
+                               (vreset! code-state {:lang lang :lines [] :indent indent})))
+                         (inc i))
 
-                       (re-matches hr-re trimmed)
+                       (and (contains? marker-first-chars fc)
+                            (re-matches hr-re trimmed))
                        (do (close-all-lists! stack result)
-                           (vswap! result conj {:type :hr})
+                           (vswap! result conj! {:type :hr})
                            (inc i))
 
-                       (re-matches heading-re trimmed)
+                       (and (= fc \#) (re-matches heading-re trimmed))
                        (do (close-all-lists! stack result)
                            (let [[_ level-str content] (re-find heading-re trimmed)]
-                             (vswap! result conj {:type :heading :level (count level-str)
-                                                  :content (parse-inline content)}))
+                             (vswap! result conj! {:type :heading :level (count level-str)
+                                                   :content (parse-inline content)}))
                            (inc i))
 
-                       (re-matches quote-re trimmed)
+                       (and (= fc \>) (re-matches quote-re trimmed))
                        (do (close-all-lists! stack result)
                            (let [[_ content] (re-find quote-re trimmed)]
-                             (vswap! result conj {:type :quote :content (parse-inline content)}))
+                             (vswap! result conj! {:type :quote :content (parse-inline content)}))
                            (inc i))
 
                        ;; List line (before tables: a pipe in list content must
                        ;; not turn the item into a table header)
-                       (or (re-matches ul-re trimmed) (re-matches ol-re trimmed))
+                       (and (contains? marker-first-chars fc)
+                            (or (re-matches ul-re trimmed) (re-matches ol-re trimmed)))
                        (do (add-list-line! stack result indent trimmed)
                            (inc i))
 
@@ -626,7 +763,7 @@
                        (do (close-all-lists! stack result)
                            (+ i (parse-table! lines i result)))
 
-                       (re-matches empty-re line)
+                       (and (zero? (count trimmed)) (re-matches empty-re line))
                        (do (add-blank-line! stack result)
                            (inc i))
 
@@ -637,14 +774,14 @@
 
                        :else
                        (do (close-all-lists! stack result)
-                           (vswap! result conj {:type :paragraph :content (parse-inline line)})
+                           (vswap! result conj! {:type :paragraph :content (parse-inline line)})
                            (inc i)))]
           (recur next-i))))
     ;; Flush an unclosed code block at end of input (attach when inside a list)
     (when-let [cs @code-state]
-      (let [code-tok {:type :code :lang (:lang cs) :text (:text cs)}]
+      (let [code-tok (code-token cs)]
         (if (:in-item? cs)
           (attach-block! stack code-tok)
-          (vswap! result conj code-tok))))
+          (vswap! result conj! code-tok))))
     (close-all-lists! stack result)
-    @result))
+    (persistent! @result)))
