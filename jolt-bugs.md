@@ -82,8 +82,10 @@ styled line whose reset escape sits at the end makes the 2-match
 leftmost-start recovery; a "prefer the backtracker" change would regress the
 DFA's no-match scans and patterns like `tool_renderers`'s diff tokenizer.
 kmet workarounds: the existing scanner carve-outs (`strip-ansi`,
-`visible-width`, `ansi-code-at`) already avoid it on the frame path, and the
-§18 pass removed the last two raw uses (`truncate-to-width`,
-`wrap-single-line`). The wrap tracker (`ansi-process-text!` /
-`ansi-process-range!`) still uses `re-seq`/`re-find` — candidate follow-up.
-Do not remove the scanners when the ticket closes: they beat both engines.
+`visible-width`, `ansi-code-at`) avoid it on the frame path, the §18 pass
+removed the last two raw uses (`truncate-to-width`, `wrap-single-line`), and
+the §20 pass moved the wrap tracker (`ansi-process-text!` /
+`ansi-process-range!`) and `split-long-word`'s walker onto the scanners. No
+raw `ANSI-CODE-RE` use is left on the frame path. Do not remove the scanners
+when the ticket closes: they beat both engines (the tracker scanner is ~10x
+the regex for a match at the end of a styled line).

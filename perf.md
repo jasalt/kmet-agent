@@ -60,7 +60,14 @@ sanitizers now use the shared scanner and skip the CR passes when a chunk has
 no CR: on a 1.8 KB chunk jolt 75.8 → 39.6 µs plain and 164.3 → 46.4 styled,
 bb 86.7 → 56.9 plain. The markdown table lookbehind split, regex line
 splitting, and the diff-line parse measured fine (or would regress bb) and
-are left alone; the wrap tracker remains on the raw regex (§19).**
+are left alone (§19).**
+
+**§20 moves the wrap tracker's ANSI scan onto the scanners on both hosts.
+`ansi-process-text!` / `ansi-process-range!` and `split-long-word`'s walker
+no longer touch the regex engine, and `ansi-sequence-end`'s OSC branch swaps
+its per-character loop (slower than the regex itself on a long OSC) for
+`str/index-of`. Styled-line tracker: jolt 40.5 → 4.2 µs, bb 15.8 → 6.8; a
+12k-string exhaustive corpus now pins every scanner against the regex (§20).**
 
 **TL;DR** — it is not a busy loop and not the terminal backend. Idle CPU is
 *lower* on jolt than on bb. The frame gap was (a) every keystroke/frame
@@ -2157,9 +2164,8 @@ and `jolt test-changed` 13,248 green, `bb lint-changed` 0 findings,
 single runs on this box swing up to 1.5x on identical logic (bb cold 402–696
 ms across runs) — so the function-level A/B is the evidence.
 
-Still on the raw regex on jolt, not applied: the wrap tracker
-(`ansi-process-text!`'s `re-seq`, `ansi-process-range!`'s `re-find`) — a
-follow-up candidate, needs its own scanner carve-out and corpus pin.
+Still on the raw regex at §18 time: the wrap tracker (`ansi-process-text!`'s
+`re-seq`, `ansi-process-range!`'s `re-find`) — scannerized in §20.
 
 ---
 
@@ -2204,13 +2210,70 @@ hosts) stays: a `re-find` guard scans the same bytes, so it does not pay.
 | `plain-char-width` `re-seq` scans | jolt already 7x faster than bb on box lines (§17.6) | no |
 | fuzzy `word-boundary?` 1-char `re-find` | per matched query char | left — the §5.3 tiny-re-find class |
 
-### 19.3 Still on the regex on jolt
+### 19.3 The wrap tracker (fixed in §20)
 
-The wrap tracker: `ansi-process-text!`'s `re-seq ANSI-CODE-RE` (~6.3 µs per
-2-match styled line on jolt against bb's forced ~1.8) and
-`ansi-process-range!`'s `re-find ANSI-CODE-RE (subs word j)` (3-4x bb even
-for a match at the start; the §18.1 late-match cost applies when it is not)
-— both can walk `ansi-sequence-end` instead, per the §18.3 pattern. Needs its
-own host carve-out and corpus pin. Smaller, only when a sequence is present:
+The wrap tracker and `split-long-word`'s walker moved onto the scanners in
+§20. Still on the regex on jolt, small and only when a sequence is present:
 `apply-sgr-code`'s anchored `re-find` and `active-osc-8-close`'s `re-seq
 osc-8-link-re`.
+
+---
+
+## 20. The wrap tracker's ANSI scan (x86_64, 2026-10-12)
+
+§19.3's remaining candidate. `ansi-process-text!` / `ansi-process-range!`
+fed the tracker from `re-seq` / `re-find ANSI-CODE-RE`, and
+`split-long-word`'s walker re-found codes the same way. All three now walk
+the hand-rolled scanners on both hosts (`ansi-codes-scan` /
+`ansi-codes-scan-range` over `ansi-sequence-end`; the walker uses
+`ansi-code-at`), so no regex runs on the wrap path.
+
+Function-level A/B (µs, medians; probe `target/perf-check-17/
+wrap-tracker-probe.clj`, after-probe `wrap-tracker-after.clj`):
+
+| scan | jolt regex | jolt scanner | bb regex | bb scanner |
+|---|---:|---:|---:|---:|
+| `ansi-process-text!`, 800-char styled line | 40.5 | **4.2** | 15.8 | **6.8** |
+| `ansi-process-text!`, OSC 8 hyperlink | 4.1 | **2.1** | **2.2** | 2.9 |
+| `ansi-process-range!`, styled CJK piece | 4.6 | **2.1** | 7.3 | **5.7** |
+| `ansi-process-range!`, plain CJK piece | 1.7 | **0.21** | 4.4 | **0.61** |
+
+The 800-char styled line is the DFA's worst case (§18.1): the closing reset
+sits at the end, so `re-seq` pays the late-match walk at every match. A
+4338-char styled line makes the tracker 270.0 → 9.4 µs (~36% of that line's
+`wrap-text-with-ansi`). bb's one loss is the short OSC 8 string (2.2 →
+2.9 µs): a hyperlink-heavy line pays ~2.5 µs extra, against ~9 µs saved on
+a styled one (`bb-tracker-ab.clj` counts it inside one process).
+
+### 20.1 The OSC scan is index-of now
+
+Using the scanner on bb forced a look at `ansi-sequence-end`'s OSC branch:
+the per-character loop was *slower than the regex itself* on a long
+unterminated OSC on both hosts (jolt 391.8 vs 308.8 µs; bb 1364.3 vs
+688.6 µs at 16 KB) and on a 0x9C-terminated body (290.4 vs 506.3 µs on
+jolt; 1165.6 vs 106.3 on bb), because it walked the whole tail one char at
+a time. It now finds BEL and ESC with `str/index-of` (native on both hosts)
+and searches the rare single-byte ST only inside the body before the first
+BEL/ESC — best or near-best on both hosts across short hyperlinks,
+10-link lines, 16 KB tails and both long-OSC shapes
+(`osc-indexof-probe.clj`), and still exactly ANSI-CODE-RE's language.
+
+### 20.2 Parity pins
+
+`test/kmet/test_utils.clj` walks a 12,332-string corpus — the curated
+`ansi-corpus`, every string up to length 4 over the escape alphabet
+(`ESC [ ] ; ? 1 m \ BEL 0x9C`) and a deterministic 1200-string LCG sample up
+to length 16 — comparing the scanner against the regex reference on strip,
+anchored code-at at every index, the full scan and every `[i, stop)` scan
+(~0.3 s on both hosts).
+
+Writing that pin surfaced a latent parity gap in `ansi-sequence-end`: its
+OSC walk continued past a bare ESC inside an OSC body to a later BEL, where
+`ANSI-CODE-RE` (both engines) fails the match and can only match a later
+OSC. It predates §20 — `strip-ansi` and `ansi-code-at` already diverged
+from the regex on Jolt for that input — and is fixed to return nil.
+
+`ANSI-CODE-RE` is now public: its remaining production callers sit in
+`:default` reader branches, which the bb lint view does not read, so a
+private var reads as unused there (the `match-at` / `ansi-code-at-native`
+precedent).
