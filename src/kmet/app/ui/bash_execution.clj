@@ -309,9 +309,11 @@
    when a chunk doesn't end with a newline (matching pi's appendOutput).
    The state swap dirties the root's reaction, which schedules the frame."
   [comp chunk]
-  (let [clean (-> chunk
-                  (str/replace #"\r\n" "\n")
-                  (str/replace #"\r" "\n"))
+  (let [clean (if (str/includes? chunk "\r")
+                (-> chunk
+                    (str/replace #"\r\n" "\n")
+                    (str/replace #"\r" "\n"))
+                chunk)
         ;; Pi: split(\"\n\") keeps a trailing \"\" for newline-terminated chunks;
         ;; split-lines drops it, which breaks line-continuation detection.
         new-lines (str/split clean #"\n" -1)]

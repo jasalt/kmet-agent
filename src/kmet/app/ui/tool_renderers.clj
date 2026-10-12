@@ -53,13 +53,14 @@
 
 (defn- sanitize-display-text
   "Pi: getTextOutput — strip ANSI codes and control characters
-   (except \t \n \r) before display."
+   (except \t \n \r) before display. The CR pass is guarded: tool text
+   without a CR (the common case) skips both replaces."
   [text]
-  (-> text
-      (utils/strip-ansi-codes)
-      (str/replace #"\r\n" "\n")
-      (str/replace #"\r" "\n")
-      (str/replace #"[^\t\n\r\u0020-\uFFF8\uFFFC-\uFFFF]" "")))
+  (let [text (utils/strip-ansi-codes text)
+        text (if (str/includes? text "\r")
+               (-> text (str/replace #"\r\n" "\n") (str/replace #"\r" "\n"))
+               text)]
+    (str/replace text #"[^\t\n\r\u0020-\uFFF8\uFFFC-\uFFFF]" "")))
 
 (defn- shorten-path
   "Pi: shortenPath — replace the home directory prefix with ~."

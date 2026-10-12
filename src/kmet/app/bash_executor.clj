@@ -7,6 +7,7 @@
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.process :as process]
             [kmet.libs.host :as host]
+            [kmet.tui.utils :as utils]
             [kmet.debug :as debug]))
 
 (def DEFAULT-MAX-LINES 2000)
@@ -91,18 +92,19 @@
             sliced (java.util.Arrays/copyOfRange bs start n)]
         (String. sliced "UTF-8")))))
 
-(def ^:private ANSI-PATTERN
-  #"\u001b\[[0-9;]*[a-zA-Z]|\u001b\][^\u0007\u001b\u009c]*(?:\u001b\\|\u0007|\u009c)")
-(defn- strip-ansi [s] (str/replace s ANSI-PATTERN ""))
 (defn- sanitize-output
-  "Pi: sanitizeBinaryOutput() — strips control chars (except \\t \\n \\r)
-   and Unicode format characters (U+FFF9-U+FFFB)."
+  "Pi: sanitizeBinaryOutput() — strips ANSI codes and control chars (except
+   \\t \\n \\r) and Unicode format characters (U+FFF9-U+FFFB). The ANSI
+   strip is the shared host-branched scanner
+   (kmet.tui.utils/strip-ansi-codes); the CR pass is guarded so a LF-only
+   chunk (the common case) skips both replaces."
   [s]
-  (-> s strip-ansi
-      (str/replace #"\r\n" "\n")
-      (str/replace #"\r" "\n")
-      ;; Pi: filter out control chars + Unicode format characters
-      (str/replace #"[^\t\n\r\u0020-\uFFF8\uFFFC-\uFFFF]" "")))
+  (let [s (utils/strip-ansi-codes s)
+        s (if (str/includes? s "\r")
+            (-> s (str/replace #"\r\n" "\n") (str/replace #"\r" "\n"))
+            s)]
+    ;; Pi: filter out control chars + Unicode format characters
+    (str/replace s #"[^\t\n\r\u0020-\uFFF8\uFFFC-\uFFFF]" "")))
 
 (defn truncate-head
   "Pi: truncateHead — keep first N lines/bytes, never partial lines."
