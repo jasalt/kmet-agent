@@ -69,6 +69,15 @@ its per-character loop (slower than the regex itself on a long OSC) for
 `str/index-of`. Styled-line tracker: jolt 40.5 → 4.2 µs, bb 15.8 → 6.8; a
 12k-string exhaustive corpus now pins every scanner against the regex (§20).**
 
+**§21 profiles the markdown tokenizer (`kmet.libs.markdown/parse`) and removes
+four costs from the whole-message re-parse: the per-character inline loop now
+chunks plain runs between a stateful matcher's specials, the URL/email gates
+check real candidates instead of first characters, code blocks accumulate
+lines and join once (they were O(n²)), and the block dispatch gates its six
+per-line regexes behind first-char checks. Output-identical (780k/220k-string
+differential fuzz across seeds, §21.6): `md/parse` 2 KB 5.1x bb / 2.9x jolt, a
+110 KB fenced block 30x/18.5x, `perf.md` itself 2.5x/1.56x (§21).**
+
 **TL;DR** — it is not a busy loop and not the terminal backend. Idle CPU is
 *lower* on jolt than on bb. The frame gap was (a) every keystroke/frame
 re-renders the whole component tree + re-normalizes every line + diffs/emits,
@@ -2277,3 +2286,124 @@ from the regex on Jolt for that input — and is fixed to return nil.
 `:default` reader branches, which the bb lint view does not read, so a
 private var reads as unused there (the `match-at` / `ansi-code-at-native`
 precedent).
+
+---
+
+## 21. The markdown tokenizer: chunked runs, gates, linear code blocks (phone, 2026-10-12, `jolt v0.8.21-61-g4d665200`, bb 1.13.225)
+
+`md/parse` is the whole-message re-parse §6.3 has carried since the first
+profiles (assistant text and thinking re-parse per streamed delta and theme
+switch), and the inline tokenizer was still a per-character loop. This pass
+profiled `kmet.libs.markdown` itself and removed four independent costs,
+all output-identical. A/B probe: `target/mdbench/final_ab.clj` against a
+frozen copy of HEAD's parser (`mdbench.orig-markdown`), same process,
+alternating rounds, medians:
+
+```sh
+bb   -cp src:target target/mdbench/final_ab.clj
+jolt -Sdeps '{:paths ["src" "target"]}' -e "(require 'mdbench.final-ab)"
+```
+
+### 21.1 Chunked plain runs (bb: 0.9 µs/char loop → 0.09 µs/char chunked)
+
+A plain character walked the whole `cond` every iteration; on bb that
+iteration measures ~0.85–0.9 µs/char, so a 17 KB prose line is a 27 ms
+`parse-inline` call even with no markup. `parse-inline` now asks a stateful
+matcher (`MATCHER-NEXT` behind `NEXT-SPECIAL-INDEX`, `re-matcher` +
+`.find`/`.start`, the JVM-branch idiom of `kmet.tui.utils/match-at`, verified
+on both hosts) for the next
+`INLINE-SPECIAL-RE` index, and appends `(subs line i j)` for the whole run
+up to it; when there is no match left the rest of the line is one append.
+The matcher only advances (consumed-token positions behind the cursor are
+skipped), so a line costs one regex pass plus one call per special.
+
+The first attempt stopped at every h/H/f/F/w/W (the bare-url first chars)
+and *lost* on prose: a stop is worth ~1 µs on bb, English hits one every
+~4 chars, and the per-char loop it replaced costs ~0.9 µs. The matcher
+pattern therefore spells out the literal schemes
+(`(?i)https?://|ftp://|www\.|[...]`) and lets the regex engine skip the
+ordinary words. The same pattern costs ~0.06 µs/char to scan versus
+~0.014 µs/char for a bare class (`find_cost` probe), which is the price of
+not stopping at h/f/w. Lines holding an `@` keep the per-char loop: an
+email match can start at any local-part char, so a run chunk would skip
+one. A whole-line fast path returns `[{:type :text :s line}]` without the
+accumulator machinery when the first scan finds nothing.
+
+### 21.2 The candidate gates ran the regex too often
+
+The old gates only checked the *first* character. Two consequences:
+
+- every h/f/w in prose paid `(subs line i)` (a copy of the whole line
+  remainder) plus a `bare-url-re` miss. The gate is now the literal scheme
+  prefix (`ci-prefix-at?`, no allocation); the regex still decides.
+- on a line containing any `@`, every alphanumeric char paid a
+  `(subs line i)` + `bare-email-re` miss. `EMAIL-FROM` bounds attempts to
+  one per local-part run: after a failed attempt the scanner walks the
+  run's local chars and the next attempt is allowed only past its first
+  non-local char (the same `@`/domain make every start inside the run fail
+  the same way). Success at a run's earliest position is equivalent to
+  success at any later one, so the regex results are unchanged.
+
+The differential fuzz caught an inverted `<=`/`>=` in that condition during
+the pass (`~~user@example.com` lost its link); the fixed version is pinned
+by `test-inline-email-after-marker-char` and `test-inline-multiple-emails`.
+`at-prose` (100 `@user mentioned this…` segments, 4.4 KB) is the shape:
+bb 8.9 → 8.3 ms, jolt 21.0 → 8.0 ms (jolt's irregex miss was the bigger
+loss).
+
+### 21.3 Code blocks were O(n²)
+
+`code-state` accumulated the block with `(vswap! code-state update :text str
+(str "\n" l))` — a copy of the whole accumulated block *per interior line*.
+It now conjs raw lines and joins once at the closing fence (or at EOF). A
+110 KB fenced block: **bb 358 → 11.9 ms (30x), jolt 168 → 9.1 ms (18.5x)**.
+
+### 21.4 Block dispatch and the result vector
+
+A plain 50-char line ran fence/hr/heading/quote/ul/ol/empty — 6–7 regexes —
+before falling through to the paragraph branch. Each is now behind a
+necessary-prefix `fc` gate (`marker-first-chars` for hr/lists, `` ` ``/`#`/`>`
+for fence/heading/quote; `^\s*$` behind an empty `trimmed`), and the `:blank`
+case still runs the regex when the gate passes. `parse`'s result vector is a
+transient behind its volatile (all appends). 4000 lines × 50 chars:
+**bb 252 → 36 ms (7x)**; the block loop alone (stubbed `parse-inline`) is
+~4.2 µs/line on that fixture.
+
+### 21.5 Totals
+
+Medians of 5 alternating rounds; `orig` is the frozen pre-pass parser
+(`md2k` mixed, `md-prose` one 17 KB plain line, `corpus` 20
+assistant-style sections, `md-code` the 21.3 block, `at-prose` above;
+`perf.md` itself as a real long document):
+
+| fixture | bb old | bb new | jolt old | jolt new |
+|---|---:|---:|---:|---:|
+| `md/parse` 2 KB | 1408 µs | **278 µs** (5.1x) | 1144 µs | **397 µs** (2.9x) |
+| `md/parse` 21.6 KB | 15.3 ms | **3.08 ms** (5.0x) | 11.8 ms | **3.95 ms** (3.0x) |
+| prose 17 KB, one line | 27.2 ms | **1.64 ms** (16.6x) | 46.2 ms | **2.16 ms** (21x) |
+| corpus 8 KB | 10.2 ms | **6.6 ms** (1.55x) | 10.2 ms | **8.0 ms** (1.27x) |
+| code 110 KB | 358 ms | **11.9 ms** (30x) | 168 ms | **9.1 ms** (18.5x) |
+| `perf.md` 119 KB (at capture) | 148.6 ms | **60.2 ms** (2.5x) | 160.4 ms | **103.0 ms** (1.56x) |
+
+The remaining inversion in the mixed fixtures is the `corpus` row: it is
+markup-dense (a link, a bare URL, backticks and emphasis in every ~400-char
+section), so the runs between specials are short, the per-call matcher scan
+is paid often, and the URL regex itself runs on real URLs. The added
+`bb scripts/kmet_perf_bench.clj` rows read 275.8 µs / 2.99 ms / 1.71 ms /
+11.81 ms on bb and 458.2 µs / 5.82 ms / 2.37 ms / 9.69 ms on jolt (the
+sweep runs after minutes of other benches, so trust the A/B ratios, not
+those absolutes).
+
+### 21.6 Parity pins
+
+`parse` must be bit-identical to the pre-pass parser, so the frozen HEAD
+copy stays as the reference: ~780,000 random/fragment strings on bb and
+~220,000 on jolt across eight seeds (the final code was re-checked with
+seeds 3/5/11/42/99, hard strings to 300 chars) produce equal ASTs
+(0 mismatches), and the existing 74
+`kmet.libs.test-markdown` tests pass on both hosts (145 assertions, run
+directly under jolt's `clojure.test`). Three tests pin the cases the fuzz
+exercised: an email starting after a marker char (`~~user@example.com`),
+multiple emails per line, and case-insensitive/mid-word URL schemes.
+`bb test-changed` 1728 tests / 11,001 assertions green, `bb lint-changed`
+0 findings, `bb format-check-changed` clean.

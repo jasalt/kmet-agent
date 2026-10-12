@@ -80,6 +80,15 @@
 
 (def md21k (apply str (repeat 11 md2k)))
 
+;; Shapes the §21 chunked-parser pass targets: plain prose (one long line, so
+;; the whole cost is parse-inline) and a large fenced block (raw line
+;; accumulation + join).
+(def md-prose (str/join " " (repeat 400 "the quick brown fox with which the weather")))
+(def md-code
+  (str "```clojure\n"
+       (str/join "\n" (map #(str "(defn f" % " [x] (* x " % "))") (range 4000)))
+       "\n```\n"))
+
 ;; ─── Editor / markdown components ───────────────────────────────────────────
 
 (def ed-single (editor/make-editor :height 12))
@@ -143,6 +152,8 @@
   (per-call "editor render 20 lines" 500 #(protocols/render ed-20 80))
   (per-call "md/parse 2KB" 20 #(md/parse md2k))
   (per-call "md/parse 21.6KB" 5 #(md/parse md21k))
+  (per-call "md/parse prose 17KB (one line)" 5 #(md/parse md-prose))
+  (per-call "md/parse code 110KB (fenced)" 2 #(md/parse md-code))
   (per-call "markdown render 2KB (cache-miss)" 50 #(render-md2k))
   (println "── pure compute ──────────────────────────────────────────────")
   (per-call "fib 27" 1 #(fib 27) {:rounds 3})
