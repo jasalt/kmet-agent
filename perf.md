@@ -37,6 +37,24 @@ cost-neutral). The one surviving reakt deficit is a many-dep `force-run!`
 (5.5x at 50 deps), traced to Jolt's constant `hash` for objects (§16.2,
 filed as [jolt#1313](https://github.com/jolt-lang/jolt/issues/1313)).**
 
+**§17 re-checks the filed tickets on the installed `v0.8.21-61-g4d665200`
+dev build (`bb` 1.13.226, x86_64, 2026-10-12): #1313's identity hash is in
+and the surviving deficit is closed — the many-dep `force-run!` is linear
+again (1.66x bb at 50 deps, was 5.5x and superlinear on the phone; 1.2–1.7x
+out to 200 deps); #1316's io opts work, so the `spit` workaround can go at the
+next floor bump. Typing CPU, frame phases, queue drains and the parked handoff
+are unchanged or better (§17).**
+
+**§18 chases the two remaining jolt outliers. The `str/replace
+ANSI-CODE-RE` loss is a jolt/irregex DFA defect — its leftmost search re-runs
+the anchored match at every start position, so a match at position k costs
+~60 ns×k (24 µs at k=400, 14x the same pattern on the backtracker); filed as
+[jolt#1327](https://github.com/jolt-lang/jolt/issues/1327). The
+`normalize-terminal-output` guard is a wash, not a bug (guarded 0.50 vs
+0.51 µs full unguarded on jolt). Two kmet call sites that still fed the regex
+to jolt are fixed: `truncate-to-width` **1630 → 93 µs** on a styled line
+(17.5x; 700 → 272 on bb) and `wrap-single-line`'s strip 16.9 → 1.3 µs (§18).**
+
 **TL;DR** — it is not a busy loop and not the terminal backend. Idle CPU is
 *lower* on jolt than on bb. The frame gap was (a) every keystroke/frame
 re-renders the whole component tree + re-normalizes every line + diffs/emits,
@@ -1909,4 +1927,229 @@ work (the reader accommodation removal measured neutral, §16.3).
   [jolt#1313](https://github.com/jolt-lang/jolt/issues/1313) (constant object
   `hash`); drop this note's caveat once a tagged Jolt release carries the fix.
 
+---
 
+## 17. Re-check at `jolt v0.8.21-61-g4d665200` after #1313/#1316 (x86_64, 2026-10-12)
+
+The installed toolchain is now a dev build **61 commits past the v0.8.21
+tag** (`bb` 1.13.226, x86_64/14 cores), carrying #1314/#1313 (identity hash
+for modeled/reify objects), #1320/#1316 (io opener opts), and the
+condition-variable perf PRs #1315/#1317 plus #1318 (socket bulk write) that
+landed after §16. No tag carries them yet. This re-runs §16's harnesses on
+this box; §16 was the phone, so read same-run host ratios and movement
+against §16's ratios, not absolutes across sections (§12's x86 table is one
+toolchain generation older). Caveat, as in §16: a live `jolt start` ran in
+another terminal at ~20 % of a core for the whole session — the recorded
+§6.2b condition, not corrected for; the numbers landed inside the expected
+bands.
+
+Harnesses: `scripts/kmet_reakt_bench.clj`, `scripts/kmet_perf_bench.clj`,
+`scripts/kmet_frame_bench.clj` (`19fdb60dc61-b305.ednl`, 9,067 rendered
+lines), `scripts/perf_typing.sh`, and scratch probes under
+`target/perf-check-17/` (map-key, scaling, queue, handoff, io).
+
+### 17.1 reakt layer — the many-dep deficit is gone
+
+`scripts/kmet_reakt_bench.clj`, both hosts, medians of 5 rounds (µs; J/B =
+jolt/bb; §16.1's phone ratio alongside):
+
+| op | bb | jolt | J/B | §16.1 J/B |
+|---|---:|---:|---:|---:|
+| `tracked-deref` atom, scope bound | 0.530 | **0.177** | 0.33 | 0.52 |
+| `tracked-deref` reaction, scope bound | 1.250 | **0.454** | 0.36 | 0.47 |
+| `deref` idle reaction | 0.708 | **0.233** | 0.33 | 0.39 |
+| `force-run!` 0-dep body | 3.244 | **1.058** | 0.33 | 0.32 |
+| `force-run!` 1 / 5 deps | 3.9 / 6.2 | **1.6** / **4.2** | 0.42 / 0.68 | 0.56 / 1.16 |
+| `force-run!` 20 / 50 deps | 15.7 / 32.4 | 23.2 / 53.7 | **1.48 / 1.66** | 2.74 / 5.51 |
+| dirty 1 / 50 / 500 + settle | 9.6 / 395 / 4433 | **2.4 / 111 / 1177** | 0.25 / 0.28 / 0.27 | 0.42 / 0.37 / 0.35 |
+| `some identical?` over 500 | 17.1 | 16.2 | 0.95 | 0.84 |
+
+Every reakt row is at parity or jolt-favored except the many-dep
+`force-run!`, and that moved from superlinear — the phone went 8 → 24 → 130
+→ 568 µs for 1 → 5 → 20 → 50 deps, 2.7x/5.5x bb — to **linear** (1.6 → 4.2
+→ 23.2 → 53.7 µs, 1.2–1.7x bb out to 200 deps, §17.2). The invalidation
+storms stay 2.7–4x cheaper on jolt. §16.1's "one surviving reakt deficit"
+is closed, and §16.2's caveat can be dropped when a tag carries #1313.
+
+### 17.2 #1313: identity hash, and the flat cost left below it
+
+`hash` is distinct per instance on the dev build (50 of 50 atoms, both
+`reify` objects; §16.2 measured one constant for every instance). §16.2's
+probe, re-run both hosts (µs):
+
+| probe | bb | jolt | §16.2 jolt (phone) |
+|---|---:|---:|---:|
+| 50 chained assocs, atom keys | 5.3 | **42.1** | 495.8 |
+| 50 chained assocs, keyword keys | 6.0 | 8.7 | 19.1 |
+| full `force-run!` 50 deps | 35.7 | 56.0 | 604 |
+| body direct (no frame) | 11.0 | 7.0 | 20 |
+| body in a capture frame | 28.0 | 49.2 | 582 |
+
+The O(n²) is gone: assoc with atom keys is linear in n — per-entry 1.02 /
+0.82 / 0.74 / 0.76 / 0.65 µs at 10 / 50 / 100 / 200 / 400 keys against
+bb's flat ~0.13 — and `force-run!` grows ~0.75 µs/dep (jolt 13 / 28 / 39 /
+78 / 149 µs at 10 / 25 / 50 / 100 / 200 deps vs bb 8 / 16 / 28 / 65 / 103).
+What remains is a **flat per-ref-key cost**: a ref-keyed assoc is ~5x a
+keyword-keyed one on jolt (bb is parity), and `(hash obj)` costs 0.275 µs
+against `identityHashCode`'s 0.044 and a keyword's 0.013 — so the 50-dep
+capture is ~42–49 µs of the 56 µs run. That is a constant factor, not a
+scaling cliff: many-dep reactions are rare in kmet and now cost 1.7x bb
+instead of 5.5x. Recorded as understood; not an action item.
+
+### 17.3 Frame path and typing CPU — unregressed
+
+Frame bench (§13's harness, `19fdb60dc61-b305.ednl`, 100x30, one run per
+host; §16.5 used the phone's 2.63 MB fixture, so compare this table's ratios
+with §16.5's band, not the absolutes):
+
+| scenario | bb | jolt | J/B | §16.5 J/B |
+|---|---:|---:|---:|---:|
+| cold (first frame) | 464 ms | 721 ms | 1.55 | 1.28 |
+| typing (editor tick) | 1.37 ms | 1.39 ms | 1.02 | 1.74 |
+| stream (append/frame) | 2.67 ms | 3.78 ms | 1.42 | 1.40 |
+| calm (no change) | 2.30 ms | 1.97 ms | 0.86 | 1.93 |
+| redraw (resize -> clearing) | 428 ms | 723 ms | 1.69 | 1.24 |
+
+The frame bench mounts no fn components (§14.1), so it cannot see the hash
+fix; this is the sanity check that the 61 commits did not move the frame
+path. Cold stays render-stack-bound (jolt 541 ms stack / 169 ms diff+emit vs
+bb 402 / 60); typing and calm are at parity, stream stays ~1.4x. Typing CPU
+on the live app (`perf_typing.sh`, 300 keys @ 20 ms, fresh session, 30 s bb /
+40 s jolt settle, net ticks): bb 38 / 37 / 36, jolt 37 / 32 / 35 — medians
+**37 / 35, ~0.95x**, the parity of §12.3/§16.5 held.
+
+### 17.4 Queue drains and the parked handoff — the CV work holds
+
+200k dequeue rounds and a 1000-item, 3 ms-apart parked handoff (§15/§16.3
+probes); jolt's timed poll is at or below its untimed one, and the handoff
+is 0.008 ticks/item against bb's 0.006 (phone §16.3: 0.043 / 0.033):
+
+| probe | bb | jolt |
+|---|---:|---:|
+| drain 200k `poll()` | 20.7 ms | **16.4 ms** |
+| drain 200k `poll(100ms)` | 30.6 ms | **13.5 ms** |
+| drain 200k `take()` | 20.4 ms | **13.5 ms** |
+| parked handoff, `take` / timed | 0.006 / 0.006 ticks/item | 0.008 / 0.008 |
+
+No regression from the waiter-table rework (#1315/#1317); jolt's timed poll
+no longer separates from the untimed one, the §16.3 conclusion held. The SSE
+stream itself (§15/§16.4) was not re-run — its probe server was scratch — so
+#1318's socket bulk write is in the build but unmeasured here.
+
+### 17.5 #1316: the io workaround can go at the next floor bump
+
+`(io/writer f :append true)`, `(io/reader f :encoding "UTF-8")` and
+`(io/input-stream f)` all work in the installed dev build, and the append
+reads back correctly (scratch probe `target/perf-check-17/io-probe.clj`).
+kmet's `spit` workaround (`c56e80f7`) stays for now — the fix is on `main`,
+the declared floor is the v0.8.21 tag, and the workaround is a handful of
+lines. Remove it with the floor.
+
+### 17.6 Primitives — stable against §12.1
+
+`scripts/kmet_perf_bench.clj` (same sweep as §12.1, medians of 5 rounds).
+Nothing regressed in shape; the notable movers since §12.1 are all better on
+jolt: `ansi-code-at` 1.374 → **0.332 µs** (the §12.5 scanner, kmet-side),
+editor 20-line render 169.5 → **75.7** (J/B 2.7 → 1.28) and 500-char 384 →
+**265**, markdown render 2 KB 1030 → **860**. The unchanged rows still read
+like §11.1: jolt wins widths/strings/parse (`strip-ansi-codes` 0.76 vs
+1.93, box-drawing 5.2 vs 38.9), loses seq/allocation (`mapv identity` 2.85
+vs 1.04, `mapv inc` 21.5 vs 13.2 ms) and the normalize guard (0.476 vs
+0.099 µs), and `str/replace ANSI-CODE-RE` stays jolt's 4.2x loss while the
+scanner path is 0.76. `fib 27` 1.8 ms vs bb 31.8.
+
+### 17.7 What this changes in the file
+
+- §16.1's reakt reading is superseded by §17.1: the many-dep `force-run!`
+  deficit is fixed on the dev build and needs no kmet change. The flat
+  ref-key map cost below it is the residual (§17.2).
+- §16.2's caveat (drop the note once a tag carries #1313) is now waiting on
+  the tag only; `jolt-bugs.md` carries the re-check.
+- §15/§16.3's queue conclusion holds under the CV rework; §17.4 adds the
+  x86 reference points.
+- The top levers are unchanged: incremental markdown (§6.3, cold and
+  streaming), virtualization (§10.6), and the tool renderers' seq/allocation
+  work (§11.2/§12.1).
+
+---
+
+## 18. The two remaining jolt outliers, chased (x86_64, 2026-10-12)
+
+§17.6's widest jolt losses were `str/replace ANSI-CODE-RE` styled (7.0 vs
+1.7 µs, 4.2x) and the guarded `normalize-terminal-output` (0.476 vs 0.099,
+4.8x). This pass finds one is a jolt/irregex defect (filed as
+[jolt#1327](https://github.com/jolt-lang/jolt/issues/1327)), the other is not
+a bug, and fixes the two kmet call sites that still fed the regex to jolt hot
+paths.
+
+### 18.1 The regex outlier is the DFA's leftmost search
+
+`re-find` with a group-free pattern (here `#"\u001b\[[0-9;]*[a-zA-Z]"`), one
+match at position k in an otherwise plain string (precomputed; µs, medians;
+same machine as §17):
+
+| match at | jolt DFA (group-free) | jolt backtracker (1 capture) | bb |
+|---:|---:|---:|---:|
+| 0 | 0.28 | 0.20 | 0.13 |
+| 100 | 6.09 | 0.66 | 0.58 |
+| 200 | 11.75 | 0.93 | 1.01 |
+| 400 | 24.21 | 1.62 | 2.08 |
+
+The cost is not the scan: a no-match input of the same length costs 2.0 µs
+(bb 2.0), and the same pattern with one capture group — which routes to the
+backtracker — matches at 400 in **1.62 µs against the DFA's 24.21** (bb 2.08
+for the backtracker). The DFA path in `irregex-search/matches` runs the
+search DFA to the earliest possible end and then re-runs the anchored
+`dfa-match/longest` at every start position back to the search origin (the
+`lp2` loop, `vendor/irregex/irregex.scm`), allocating match memory per
+attempt — ~60 ns per position before the match. `re-seq` and `str/replace`
+pay it once per match plus once to fail: a styled line's second escape (at
+index ~114) makes the 2-match replace 6.8 µs on jolt against bb's 1.7.
+
+**Verdict: worth reporting**, with the caveat that the fix is in the DFA's
+leftmost-start recovery — a "prefer the backtracker" change would regress
+what the DFA wins (no-match scans are 2.0 vs 6.4, and §9.1's diff tokenizer).
+Filed 2026-10-12 as
+[jolt#1327](https://github.com/jolt-lang/jolt/issues/1327); the scratch repro
+is `target/perf-check-17/prefix-scaling.clj` and `retry-probe.clj`.
+
+### 18.2 `normalize-terminal-output` — the guard is a wash, not a bug
+
+Full-function A/B (µs):
+
+| input | guarded (current) | unguarded, full | bb guarded | bb unguarded |
+|---|---:|---:|---:|---:|
+| plain 100-char | 0.497 | 0.507 | 0.141 | 0.156 |
+| 100-char with tab | 4.932 | 4.566 | 3.593 | 3.727 |
+
+§11.1/§12.1's "the guard no longer pays" compared the guarded form against
+*two replaces without the tab check*; adding the tab test back makes the two
+forms equal. The 4–5x ratio to bb is jolt's per-call string primitives —
+`str/includes?` 0.19 vs 0.05, a no-match literal `str/replace` 0.185 vs 0.064
+— the same primitive gap as the rest of the table. Nothing to file, nothing
+to change in kmet.
+
+### 18.3 Fixed: two kmet sites fed the raw regex to jolt
+
+Applied (`src/kmet/tui/utils.cljc`):
+
+- **`truncate-to-width` called `match-at ANSI-CODE-RE` at *every index* of a
+  styled line** — a fresh matcher per character — instead of the
+  ESC-guarded `ansi-code-at` (scanner on jolt). A 300-char styled line
+  truncated to 100 columns: **1630 → 93 µs on jolt** (17.5x), **700 → 272 µs
+  on bb** (2.6x). This was the widest single-call loss found in the pass.
+- **`wrap-single-line` stripped with the raw `str/replace ANSI-CODE-RE`**;
+  it now uses the host-branched `strip-ansi` (scanner on jolt, regex
+  elsewhere). On jolt: 16.9 → 1.3 µs styled, 5.6 → 0.7 µs plain; bb is
+  unchanged (same regex path as before).
+
+Both changes are output-identical mechanisms, pinned by the existing
+`kmet.test-utils` corpus tests. Gates: `bb test-changed` 13,358 assertions
+and `jolt test-changed` 13,248 green, `bb lint-changed` 0 findings,
+`bb format-check-changed` clean. A frame-bench A/B cannot resolve the win —
+single runs on this box swing up to 1.5x on identical logic (bb cold 402–696
+ms across runs) — so the function-level A/B is the evidence.
+
+Still on the raw regex on jolt, not applied: the wrap tracker
+(`ansi-process-text!`'s `re-seq`, `ansi-process-range!`'s `re-find`) — a
+follow-up candidate, needs its own scanner carve-out and corpus pin.

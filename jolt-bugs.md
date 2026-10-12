@@ -3,7 +3,9 @@
 Open tickets only: a ticket is dropped once its fix reaches a tagged release.
 Status checked on 2026-10-12 against Jolt `v0.8.21` (`5b46858a`, still the
 latest tag; the #1313 and #1316 fixes merged into `main` after it, verified on
-the `v0.8.21-39-g03494c0e` dev build) and `jolt-lang/http-client` `v0.1.2`
+the `v0.8.21-39-g03494c0e` and the installed `v0.8.21-61-g4d665200` dev
+builds — the #1313 effect re-measured in [`perf.md`](perf.md) §17, and #1327
+filed from the §18 pass) and `jolt-lang/http-client` `v0.1.2`
 (`00455b8`, unchanged; `HEAD` is that same revision), the versions now pinned
 by the project.
 
@@ -34,7 +36,13 @@ every ref-keyed capture map, negligible for the usual handful of deps and
 dominant in the many-dep case. Correctness is unaffected. No kmet workaround
 applied, so there is nothing to remove when the floor moves; the kmet-side
 mitigation, if the single-bucket cost matters on `v0.8.21`, is to stop keying
-capture maps by ref identity.
+capture maps by ref identity. Re-checked 2026-10-12 on the installed
+`v0.8.21-61-g4d665200` dev build (perf.md §17.2): all instances hash
+distinctly, the O(n²) assoc is gone, and the many-dep `force-run!` is linear
+again — 53.7 µs at 50 deps, 1.66x bb (was 5.5x on the phone), 1.2–1.7x out to
+200 deps. A flat per-ref-key assoc cost remains (~5x a keyword key;
+`(hash obj)` 0.275 µs against `identityHashCode`'s 0.044) — understood and not
+an action item.
 
 ### [jolt#1316](https://github.com/jolt-lang/jolt/issues/1316) — `clojure.java.io/writer`/`reader`/`input-stream` reject the `:append` / `:encoding` opts
 
@@ -54,4 +62,28 @@ in `kmet.libs.terminal`) swallow the throw, so `KMET_TUI_DEBUG`-style logging
 silently produces nothing on Jolt. kmet-side workaround: write those logs with
 `spit` (`kmet.tui.core/append-log!` and `kmet.libs.terminal`'s `write-log!` /
 `input-log!`, commit `c56e80f7`, cherry-picked from `status-fast-path`).
-Remove it and move the floor when the next tag lands.
+Remove it and move the floor when the next tag lands. Re-checked 2026-10-12 on
+the installed `v0.8.21-61-g4d665200` dev build (perf.md §17.5):
+`(io/writer f :append true)`, `(io/reader f :encoding ...)` and
+`(io/input-stream f)` all work and append correctly; the `spit` workaround
+stays until the floor moves past `v0.8.21`.
+
+### [jolt#1327](https://github.com/jolt-lang/jolt/issues/1327) — DFA search: a late match costs ~60 ns per preceding position
+
+Open, filed 2026-10-12 from the perf.md §18 pass (x86_64, installed
+`v0.8.21-61-g4d665200`). `re-find` on a group-free pattern whose match sits
+late in the string re-runs the anchored DFA at every start position before
+the match — ~60 ns per position, so 24.2 µs for a match at k=400 against the
+same pattern's backtracker (one capture group) at 1.62 µs and bb's 2.08.
+No-match scans are unaffected (2.0 µs on both hosts). `re-seq`,
+`clojure.string/replace` and `Matcher.find` loops pay it once per match; a
+styled line whose reset escape sits at the end makes the 2-match
+`str/replace` 6.8–8.2 µs against bb's 1.7–2.2. The fix belongs in the DFA's
+leftmost-start recovery; a "prefer the backtracker" change would regress the
+DFA's no-match scans and patterns like `tool_renderers`'s diff tokenizer.
+kmet workarounds: the existing scanner carve-outs (`strip-ansi`,
+`visible-width`, `ansi-code-at`) already avoid it on the frame path, and the
+§18 pass removed the last two raw uses (`truncate-to-width`,
+`wrap-single-line`). The wrap tracker (`ansi-process-text!` /
+`ansi-process-range!`) still uses `re-seq`/`re-find` — candidate follow-up.
+Do not remove the scanners when the ticket closes: they beat both engines.
