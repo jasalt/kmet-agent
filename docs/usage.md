@@ -48,6 +48,13 @@ bb start @tasks.md "summarize the tasks"
 Positional `@file` args attach file content to the initial message; the
 remaining positional args form it. Unknown `--flags` are exposed to extensions.
 
+`--print` resolves sessions like the TUI: `-c/--continue` resumes the most
+recent session for the current directory (falling back to a fresh one when
+none exists) and `--session <id|path>` resumes a specific session, by id,
+id prefix, or file path. A resumed session continues with its history and
+its recorded working directory. `-r/--resume` browses sessions interactively
+and is TUI-only.
+
 ### Package subcommands
 
 Install, remove, list and configure **packages** — extensions, skills,

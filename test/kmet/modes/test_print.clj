@@ -2,9 +2,12 @@
   "Print-mode tests (pi: print-mode.ts) — run() sends the message through
    the agent loop and returns the final text via :on-done (nil on error)."
   (:require [clojure.test :as t :refer [deftest is testing]]
+            [clojure.string :as str]
+            [babashka.fs :as fs]
             [kmet.modes.print :as print-mode]
             [kmet.ai.models :as m]
             [kmet.app.loop :as agent]
+            [kmet.app.session :as session]
             [kmet.app.extensions :as extensions]))
 
 (defn- opts
@@ -14,6 +17,14 @@
    :provider :opencode-go
    :messages ["hi"]
    :config {:provider :opencode-go :model "deepseek-v4-flash"}})
+
+(defn- opts-with-session-dir
+  "Run opts whose sessions live under DIR (test-scoped)."
+  [dir]
+  (update (opts) :config assoc :session-dir dir))
+
+(defn- tmp-session-dir [prefix]
+  (str "target/" prefix "-" (System/currentTimeMillis)))
 
 (deftest test-run-delivers-final-text
   (testing "run returns the agent's final text delivered via :on-done"
@@ -99,3 +110,126 @@
       (is (nil? (extensions/get-session))
           "the print run tears its extension wiring down"))))
 
+(deftest test-run-resumes-session-arg
+  (testing "--session resolves an id/prefix or path and loads that session"
+    (let [dir (tmp-session-dir "test-print-session")
+          sess (session/create-session dir {:cwd (str (fs/cwd))})
+          _ (session/append-entry sess {:role :assistant :content "prior"})]
+      (try
+        (doseq [arg [(:id sess) (:file sess)]]
+          (let [seen (atom nil)]
+            (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+                                                 (reset! seen (:session ag))
+                                                 ((:on-done ag-opts) "ok"))]
+              (is (= "ok" (print-mode/run (assoc (opts-with-session-dir dir)
+                                                 :session arg))))
+              (is (= (:file sess) (:file @seen)) (str "loaded via " arg))
+              (is (= "prior" (:content (first @(:entries @seen))))))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-run-session-arg-wins-over-continue
+  (testing "--session takes precedence over --continue (pi: main.ts order)"
+    (let [dir (tmp-session-dir "test-print-session-wins")
+          cwd (str (fs/cwd))
+          cdir (session/session-dir-for-cwd dir cwd)
+          older (session/create-session dir {:cwd cwd})
+          _ (session/append-entry older {:role :assistant :content "older"})
+          newer (session/create-session cdir {:cwd cwd})
+          _ (session/append-entry newer {:role :assistant :content "newer"})
+          now (System/currentTimeMillis)]
+      ;; --continue alone would find NEWER (newest cwd session); the explicit
+      ;; --session id must win
+      (fs/set-last-modified-time (:file older) (- now 20))
+      (fs/set-last-modified-time (:file newer) (- now 10))
+      (try
+        (let [seen (atom nil)]
+          (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+                                               (reset! seen (:session ag))
+                                               ((:on-done ag-opts) "ok"))]
+            (print-mode/run (assoc (opts-with-session-dir dir)
+                                   :session (:id older)
+                                   :continue true))
+            (is (= (:file older) (:file @seen)))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-run-continues-most-recent-session
+  (testing "-c/--continue loads the most recent session recorded for the cwd"
+    (let [dir (tmp-session-dir "test-print-continue")
+          cwd (str (fs/cwd))
+          cdir (session/session-dir-for-cwd dir cwd)
+          older (session/create-session cdir {:cwd cwd})
+          _ (session/append-entry older {:role :assistant :content "older"})
+          newer (session/create-session cdir {:cwd cwd})
+          _ (session/append-entry newer {:role :assistant :content "newer"})
+          now (System/currentTimeMillis)]
+      (fs/set-last-modified-time (:file older) (- now 20))
+      (fs/set-last-modified-time (:file newer) (- now 10))
+      (try
+        (let [seen (atom nil)]
+          (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+                                               (reset! seen (:session ag))
+                                               ((:on-done ag-opts) "ok"))]
+            (print-mode/run (assoc (opts-with-session-dir dir) :continue true))
+            (is (= (:file newer) (:file @seen)))
+            (is (= "newer" (:content (first @(:entries @seen)))))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-run-continue-without-session-starts-fresh
+  (testing "-c with no session for the cwd starts a fresh one in the cwd dir"
+    (let [dir (tmp-session-dir "test-print-continue-empty")]
+      (try
+        (let [seen (atom nil)]
+          (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+                                               (reset! seen (:session ag))
+                                               ((:on-done ag-opts) "ok"))]
+            (print-mode/run (assoc (opts-with-session-dir dir) :continue true))
+            (is (some? @seen))
+            (is (empty? @(:entries @seen)))
+            (is (= (some-> (session/session-dir-for-cwd dir (str (fs/cwd))) fs/canonicalize str)
+                   (str (fs/parent (:file @seen)))))
+            (is (= (str (fs/cwd)) (get-in @seen [:header :cwd])))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-run-default-session-lands-in-the-cwd-dir
+  (testing "a plain --print run creates its session in the cwd-encoded dir"
+    (let [dir (tmp-session-dir "test-print-default")]
+      (try
+        (let [seen (atom nil)]
+          (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+                                               (reset! seen (:session ag))
+                                               ((:on-done ag-opts) "ok"))]
+            (print-mode/run (opts-with-session-dir dir))
+            (is (= (some-> (session/session-dir-for-cwd dir (str (fs/cwd))) fs/canonicalize str)
+                   (str (fs/parent (:file @seen)))))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-run-resumed-session-cwd-drives-the-prompt
+  (testing "a resumed session's recorded cwd reaches the system prompt"
+    (let [dir (tmp-session-dir "test-print-cwd")
+          project (str dir "/project")
+          _ (fs/create-dirs project)
+          sess (session/create-session dir {:cwd project})
+          _ (session/append-entry sess {:role :assistant :content "prior"})]
+      (try
+        (let [seen (atom nil)]
+          (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+                                               (reset! seen ag)
+                                               ((:on-done ag-opts) "ok"))]
+            (print-mode/run (assoc (opts-with-session-dir dir) :session (:id sess)))
+            (is (str/includes? @(:system @seen)
+                               (str (session/session-cwd (:session @seen)))))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-run-session-not-found
+  (testing "--session matching nothing reports to stderr and returns nil"
+    (let [dir (tmp-session-dir "test-print-missing")
+          err (java.io.StringWriter.)]
+      (fs/create-dirs dir)
+      (try
+        (binding [*err* err]
+          (with-redefs [agent/run-agent-turn (fn [_ _]
+                                               (throw (ex-info "must not run" {})))]
+            (is (nil? (print-mode/run (assoc (opts-with-session-dir dir)
+                                             :session "no-such-session"))))))
+        (is (str/includes? (str err) "No session found matching 'no-such-session'"))
+        (finally (fs/delete-tree dir))))))

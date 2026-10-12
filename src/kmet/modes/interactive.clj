@@ -117,7 +117,7 @@
             session (cond
                       (:session opts)
                       (let [base-dir (cfg/get-session-dir config)
-                            path (state/resolve-session-arg (:session opts) base-dir)]
+                            path (session/resolve-session-path (:session opts) base-dir)]
                         (if path
                           (session/load-session path)
                           (do (binding [*out* *err*]

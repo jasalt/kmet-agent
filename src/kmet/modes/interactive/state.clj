@@ -130,27 +130,6 @@
                    true (into ["--session" (:id sess)]))]
         (str/join " " args)))))
 
-(defn resolve-session-arg
-  "Resolve a --session arg to a session file path. Path-like values
-   (containing / \\ or ending with .ednl/.jsonl) resolve relative to cwd;
-   otherwise the arg is treated as a session id or id prefix and searched
-   among all sessions under BASE-DIR (pi: resolveSessionPath). Returns the
-   canonical path or nil when not found."
-  [arg base-dir]
-  (let [arg (cfg/expand-path (str arg))
-        cwd (str (fs/cwd))]
-    (if (or (str/includes? arg "/")
-            (str/includes? arg "\\")
-            (str/ends-with? arg ".ednl")
-            (str/ends-with? arg ".jsonl"))
-      (let [p (if (fs/absolute? arg) arg (str (fs/path cwd arg)))]
-        (when (fs/exists? p)
-          (str (fs/canonicalize p))))
-      (let [infos (session/list-sessions-info base-dir)
-            exact (some #(when (= (:id %) arg) (:path %)) infos)
-            prefix (some #(when (str/starts-with? (:id %) arg) (:path %)) infos)]
-        (or exact prefix)))))
-
 ;; ─── Core state ────────────────────────────────────────────────────────────
 
 (defrecord CoreState [tui

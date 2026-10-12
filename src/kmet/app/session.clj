@@ -4,6 +4,7 @@
    Port of @earendil-works/pi-agent session storage."
   (:require [kmet.ai.usage :as usage]
             [kmet.libs.fs :as kfs]
+            [kmet.libs.edn-store :as eds]
             [clojure.java.io :as io]
             [clojure.edn :as edn]
             [clojure.string :as str]
@@ -1584,6 +1585,28 @@
                        path))))
            (sort-by #(.toMillis (fs/last-modified-time %)) >)
            first))))
+
+(defn resolve-session-path
+  "Resolve a --session argument to a session file path (pi: main.ts
+   resolveSessionPath). Path-like values (containing / \\ or ending with
+   .ednl/.jsonl) resolve relative to the process cwd; anything else is a
+   full session id or id prefix searched among all sessions under BASE-DIR
+   (cwd-encoded subdirectories and legacy flat files; an exact id wins over
+   a prefix). Returns the canonical path, or nil when nothing matches."
+  [arg base-dir]
+  (let [arg (eds/expand-path (str arg))
+        cwd (str (fs/cwd))]
+    (if (or (str/includes? arg "/")
+            (str/includes? arg "\\")
+            (str/ends-with? arg ".ednl")
+            (str/ends-with? arg ".jsonl"))
+      (let [p (if (fs/absolute? arg) arg (str (fs/path cwd arg)))]
+        (when (fs/exists? p)
+          (str (fs/canonicalize p))))
+      (let [infos (list-sessions-info base-dir)
+            exact (some #(when (= (:id %) arg) (:path %)) infos)
+            prefix (some #(when (str/starts-with? (:id %) arg) (:path %)) infos)]
+        (or exact prefix)))))
 
 (defn delete-session!
   "Delete a session file."
