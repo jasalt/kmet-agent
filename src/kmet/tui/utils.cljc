@@ -16,6 +16,10 @@
 (def ^:private ANSI-CODE-RE
   #"\u001b\[[0-9;]*[a-zA-Z]|\u001b\][^\u0007\u001b\u009c]*(?:\u001b\\|\u0007|\u009c)")
 
+;; ansi-code-at lives in the ANSI-window-slicing section below; the
+;; truncation walk reaches it through this declaration.
+(declare ansi-code-at)
+
 (defn- ansi-sequence-end
   "End index (exclusive) of the ANSI escape sequence starting at index I of
    S when one starts there, nil otherwise. Hand-rolled equivalent of
@@ -79,10 +83,12 @@
   #?(:jolt (strip-ansi-native s)
      :default (str/replace s ANSI-CODE-RE "")))
 
-(defn- match-at
+(defn match-at
   "Match RE in S starting exactly at index I — the anchored-scan idiom
    (.find m i) + (= (.start m) i). Returns [match-text end] with END
-   absolute in S, nil when nothing starts at I."
+   absolute in S, nil when nothing starts at I. Public like
+   ansi-code-at-native: its only caller now sits in ansi-code-at's :default
+   reader branch, which the bb lint view does not read."
   [re s i]
   (when (< i (count s))
     (let [m (re-matcher re s)]
@@ -504,7 +510,13 @@
                 (str @sb ellipsis))
               (let [sb (StringBuilder.)
                     n (count s)
-                    ansi-at (fn [i] (match-at ANSI-CODE-RE s i))]
+                    ;; ansi-code-at, not the raw matcher: it checks for ESC
+                    ;; before building a matcher, and Jolt takes its scanner
+                    ;; — the per-character matcher setup was the whole cost of
+                    ;; this walk on ANSI lines (pi: truncateFragmentToWidth).
+                    ansi-at (fn [i]
+                              (when-let [[code len] (ansi-code-at s i)]
+                                [code (+ i len)]))]
                 (loop [i 0 total 0 pending ""]
                   (if (or (>= i n) (>= total target))
                     (str sb (active-osc-8-close (str sb)) ellipsis)
@@ -728,7 +740,7 @@
   [line max-width]
   (if (or (empty? line) (<= max-width 0))
     [""]
-    (let [clean (clojure.string/replace line ANSI-CODE-RE "")]
+    (let [clean (strip-ansi line)]
       (if (<= (visible-width-plain clean) max-width)
         [line]
         (let [words ;; NOTE (jolt perf): was (str/split line #"(?<=\s)" -1).
