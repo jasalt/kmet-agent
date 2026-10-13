@@ -76,9 +76,9 @@ src/kmet/
 │   │                     extensions/grep-tool.clj, find-tool.clj,
 │   │                     ls-tool.clj, powershell.clj)
 │   └── ui/             — app TUI components (chat history, footer, ...)
-├── gui/                — GUI backends, Jolt-only: the Tk backend for the
-│                         hiccup engine (tk.clj) and its jolt.ffi Tcl
-│                         adapter (tcl.jolt) — see gui/README.md
+├── gui/                — GUI backends on babashka and Jolt: the Tk backend
+│                         for the hiccup engine (tk.clj) and its host FFI
+│                         Tcl adapter (tcl.cljc) — see gui/README.md
 ├── tui/                — Generic TUI library (pi: @earendil-works/pi-tui;
 │   │                     usage docs in src/kmet/tui/tui.md)
 │   └── components/     — text, input, editor, markdown, select/settings

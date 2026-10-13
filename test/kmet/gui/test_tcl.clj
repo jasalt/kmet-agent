@@ -1,27 +1,24 @@
 (ns kmet.gui.test-tcl
-  "Real jolt.ffi Tcl adapter tests — Jolt-only.
+  "Real host FFI Tcl adapter tests (babashka.ffi / jolt.ffi).
 
-   The adapter is a .jolt source (not loadable on bb/JVM), so this
-   namespace loads on both hosts and every test skips where there is no
-   Jolt. When libtcl itself is missing the one test skips too, with the
-   Jolt-side start-up covered by `jolt test` on a machine that has Tcl
-   installed."
+   The adapter loads libtcl at call time, so this namespace loads on both
+   hosts and the one test skips where libtcl is absent (and on the JVM).
+   The libtcl-absent start-up is covered by running it on a machine that
+   has Tcl/Tk installed."
   (:require [clojure.test :as t]
-            [kmet.gui.tk :as tk]
-            [kmet.libs.host :as host]))
+            [kmet.gui.tk :as tk]))
 
 (defn- live-adapter
-  "The real Tcl adapter with libtcl loaded, or nil (bb/JVM, or no libtcl)."
+  "The real Tcl adapter with libtcl loaded, or nil (JVM, or no libtcl)."
   []
-  (when (host/jolt?)
+  (try
     (require 'kmet.gui.tcl)
-    (try
-      (let [make (deref (ns-resolve 'kmet.gui.tcl 'adapter))
-            a (make)]
-        ;; Forces the libtcl load; a missing library must skip, not fail.
-        ((:eval a) "expr {1 + 2}")
-        a)
-      (catch Throwable _ nil))))
+    (let [make (deref (ns-resolve 'kmet.gui.tcl 'adapter))
+          a (make)]
+      ;; Forces the libtcl load; a missing library must skip, not fail.
+      ((:eval a) "expr {1 + 2}")
+      a)
+    (catch Throwable _ nil)))
 
 (t/deftest tcl-eval-command-and-quoting
   (if-let [a (live-adapter)]
@@ -37,4 +34,26 @@
             "a Tcl error is rethrown as ExceptionInfo")
       (finally
         ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
-    (t/is true "skipped: the Tcl adapter is Jolt-only (or libtcl is absent)")))
+    (t/is true "skipped: libtcl is absent (or this is the JVM)")))
+
+(t/deftest vwait-pump-and-nested-eval
+  ;; The parked-eval path: Tcl_Eval (vwait) blocks while Tcl's timer calls
+  ;; back into the trampoline, and the handler re-enters Tcl — exactly the
+  ;; shape kmet.gui.tcl/run-loop! uses for the UI pump.
+  (if-let [a (live-adapter)]
+    (try
+      (let [pumps (atom 0)]
+        ((:command! a) "kmet::test-pump"
+                       (fn [_argv]
+                         (swap! pumps inc)
+                         ((:eval a) "set ::nested [expr {2 + 3}]")
+                         ""))
+        (t/is (= "5" ((:eval a) (str "set ::done 0\n"
+                                     "after 5 kmet::test-pump\n"
+                                     "after 30 {set ::done 1}\n"
+                                     "vwait ::done\n"
+                                     "set ::nested"))))
+        (t/is (= 1 @pumps)))
+      (finally
+        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+    (t/is true "skipped: libtcl is absent (or this is the JVM)")))

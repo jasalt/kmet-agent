@@ -2,7 +2,7 @@
   "A small hiccup-tk demo: a Tk window rendered from hiccup through
    kmet.gui.tk, with a background thread streaming lines into the view.
 
-   Run with:  jolt scripts/gui_tk_demo.clj
+   Run with:  bb scripts/gui_tk_demo.clj     (or jolt scripts/gui_tk_demo.clj)
 
    Needs Tcl/Tk and a display. The interesting parts to copy:
    - the component tree is ordinary hiccup (fn component + host tags);

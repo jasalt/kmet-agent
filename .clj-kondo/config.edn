@@ -22,6 +22,10 @@
  ;; plain deftests so the defined test vars resolve.
  :lint-as {kmet.libs.test-http/deftest-transports clojure.test/deftest
            kmet.libs.test-http/deftest-curl clojure.test/deftest
+           ;; babashka.ffi's defcfn defines a var like def; without this the
+           ;; defs stay invisible and every use is an unresolved symbol. The
+           ;; jolt view's overlay maps jolt.ffi/defcfn the same way.
+           babashka.ffi/defcfn clojure.core/def
            ;; defalias is defn-shaped (name, docstring?, [attrs children],
            ;; body) but binds the var to the alias KEYWORD, not a fn —
            ;; linting it as defn resolves the var and its params, and tree

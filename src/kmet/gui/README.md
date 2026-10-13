@@ -1,9 +1,10 @@
 # kmet GUI backends (`kmet.gui.*`)
 
-Jolt-only GUI frontends for the toolkit-agnostic hiccup engine. The first
-backend is **Tk** (Tcl/Tk 8.6+): `kmet.gui.tk` is "hiccup-tk" — the tag
-table, widget records and Tcl script generation — and `kmet.gui.tcl` is
-the `jolt.ffi` adapter that owns a real Tcl interpreter and the Tk event
+bb/Jolt GUI frontends for the toolkit-agnostic hiccup engine. The first
+backend is **Tk** (Tcl/Tk 9.1 preferred, 9.0 and 8.6 accepted): `kmet.gui.tk`
+is "hiccup-tk" — the tag table, widget records and Tcl script generation —
+and `kmet.gui.tcl` is the host FFI adapter (`babashka.ffi` under babashka,
+`jolt.ffi` under Jolt) that owns a real Tcl interpreter and the Tk event
 loop.
 
 ## Where the layers sit
@@ -16,7 +17,7 @@ kmet.libs.hikap.component track! render cache, with-let stores, frame hook
 kmet.libs.hikap.alias     the qualified-keyword alias registry
 kmet.tui.hiccup           the TUI backend (tag table, *width*, IComponent)
 kmet.gui.tk               the Tk backend (tag table, Tcl scripts, run! loop)
-kmet.gui.tcl              the jolt.ffi Tcl/Tk adapter
+kmet.gui.tcl              the host FFI Tcl/Tk adapter (babashka.ffi / jolt.ffi)
 ```
 
 The pre-split `kmet.tui.hiccup` was one namespace; it is now a facade over
@@ -47,12 +48,22 @@ plus a pump on the UI thread. See `kmet.gui.tk/run!`.
 
 ## Running the Tk backend
 
-Requirements: Jolt, plus Tcl/Tk installed (`apt install tcl tk`,
-`brew install tcl-tk`, or MSYS2/Windows DLLs). There is no display support
-on Termux without Termux:X11.
+Requirements: babashka or Jolt, plus Tcl/Tk installed — 9.1 is preferred,
+and the adapter warns on stderr and falls back through the 9.0 and 8.6
+sonames when it is absent (`apt install tcl tk`, `brew install tcl-tk`, or
+MSYS2/Windows DLLs). Tk is a Tcl package: the adapter loads libtcl for the
+interpreter, then libtk and loads it through Tcl, so one Tcl/Tk
+installation supplies both libraries (the Tk version must match Tcl's);
+the Tk load prefers the ABI the interpreter loaded. The Tk DLL is resolved
+on PATH and the zipfs library its build appended to the DLL is mounted
+before the load, so the Windows DLLs are standalone — `tcl91.dll`,
+`tcl9tk91.dll` and their two dependencies can be dropped next to the
+executable or anywhere on PATH, with no installed Tcl/Tk and no compiled-in
+prefix. There is no display support on Termux without Termux:X11.
 
 ```sh
-jolt scripts/gui_tk_demo.clj     # opens a small demo window
+bb scripts/gui_tk_demo.clj       # opens a small demo window
+jolt scripts/gui_tk_demo.clj     # the same on Jolt
 ```
 
 The adapter scripts the UI as Tcl (`ttk::label`, `ttk::entry`, `text`,
@@ -64,9 +75,9 @@ trampoline (`kmet.gui.tk/dispatch-callback!`).
 
 `kmet.gui.test-tk` (bb or Jolt) exercises the whole engine → backend →
 script path against a recording adapter — no display needed.
-`kmet.gui.test-tcl` is Jolt-only and smoke-tests the real interpreter:
-eval, the command trampoline, and `tcl-quote` round-tripping through the
-Tcl parser.
+`kmet.gui.test-tcl` (bb or Jolt, skipping where libtcl is absent)
+smoke-tests the real interpreter: eval, the command trampoline, and
+`tcl-quote` round-tripping through the Tcl parser.
 
 ## Status
 

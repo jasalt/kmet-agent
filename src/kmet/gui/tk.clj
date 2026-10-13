@@ -1,5 +1,6 @@
 (ns kmet.gui.tk
-  "Tk (Tcl/Tk 8.6+) backend for the generic hiccup engine — \"hiccup-tk\".
+  "Tk (Tcl/Tk 8.6+; the adapter prefers 9.1) backend for the generic
+   hiccup engine — \"hiccup-tk\".
 
    Toolkit code only: the tag table, widget records and Tcl script building.
    The Tcl interpreter itself is reached through *adapter* (an
@@ -11,8 +12,8 @@
       :run-loop (fn [pump-fn] -> nil)        ; blocks; pump on the UI thread
       :destroy! (fn [] -> nil)}              ; optional teardown
 
-   kmet.gui.tcl supplies the real jolt.ffi adapter (kmet.gui.tk/run! loads
-   it on Jolt); tests bind a recording stub.
+   kmet.gui.tcl supplies the real host FFI adapter (babashka.ffi on
+   babashka, jolt.ffi on Jolt); tests bind a recording stub.
 
    The engine's :render-items/:render-all hooks exist for output-producing
    toolkits; Tk widgets are live the moment reconcile constructs them, so
@@ -369,7 +370,7 @@
 (defn run!
   "Mount TREE in a Tk window and run the Tk event loop until the window is
    closed. OPTIONS: :title :width :height. Requires an adapter (bound by
-   the caller — kmet.gui.tcl/run! installs the jffi one). Blocks."
+   the caller — kmet.gui.tcl/run! installs the host FFI one). Blocks."
   [tree & [options]]
   (require-adapter!)
   (when-let [prepare! (:prepare! *adapter*)]
