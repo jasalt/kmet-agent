@@ -3,7 +3,7 @@
    starts the render loop, and emits the session-start event.
    pi: modes/interactive/interactive-mode.ts."
   (:require [kmet.tui.core :as tui]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.terminal :as term]
             [kmet.tui.theme :as th]
@@ -75,7 +75,7 @@
    because an armed timer roots a mode on its own — both counters can read
    zero while a ticker still holds it. nil when everything released."
   []
-  (let [components (macros/live-watch-count)
+  (let [components (component/live-watch-count)
         reactions (reakt/live-reaction-count)
         timer-ids (vec (keys (timers/scheduled)))]
     (when (or (pos? components) (pos? reactions) (seq timer-ids))

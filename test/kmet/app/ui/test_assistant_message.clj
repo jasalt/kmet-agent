@@ -4,14 +4,14 @@
             [kmet.tui.core :as core]
             [kmet.tui.theme :as theme]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.app.ui.assistant-message :as am]))
 
 (defn- strip-ansi [s]
   (clojure.string/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))
 
 (deftest test-reflow-does-not-retain-temporary-markdown
-  (let [watchers macros/live-watch-count
+  (let [watchers component/live-watch-count
         baseline (watchers)]
     ;; Repeated construction models resume; changing both content and width
     ;; models streaming and terminal reflow. Only the owner may stay tracked.
@@ -23,7 +23,7 @@
             (swap! (:text-atom c) str " more text")
             (swap! (:thinking-text-atom c) str " more thinking")
             (core/render c (+ 40 i))
-            (is (macros/tracked? c) "the owner stays tracked")
+            (is (component/tracked? c) "the owner stays tracked")
             (is (<= (watchers) (inc baseline))
                 "temporary text/thinking Markdown must not survive reflow"))
           (am/assistant-message-set-hide-thinking! c true)
@@ -31,7 +31,7 @@
           (am/assistant-message-set-hide-thinking! c false)
           (am/assistant-message-set-streaming! c false)
           (core/render c 60)
-          (is (macros/tracked? c) "the owner stays tracked")
+          (is (component/tracked? c) "the owner stays tracked")
           (is (<= (watchers) (inc baseline)))
           (finally (protocols/dispose c))))
       (is (<= (watchers) baseline)

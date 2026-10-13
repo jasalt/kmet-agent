@@ -6,7 +6,7 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kmet.app.ui.login-dialog :as ld]
-            [kmet.tui.hiccup :as h]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]
             [kmet.libs.reakt :as r]))
@@ -120,12 +120,12 @@
             rebuild both (the tag has no :apply) and retire the old ones"
     (let [d (make-dialog)]
       (try
-        (h/reset-counters!)
+        (engine/reset-counters!)
         (render-plain d 40)
-        (let [first-render (h/counters)]
+        (let [first-render (engine/counters)]
           (is (= 3 (:constructs first-render)) "two borders + the title")
           (render-plain d 40)
-          (let [idle (h/counters)]
+          (let [idle (engine/counters)]
             (is (= (:constructs first-render) (:constructs idle))
                 "an idle re-render constructs nothing")
             (is (= (:disposals first-render) (:disposals idle)) "and retires nothing")
@@ -133,12 +133,12 @@
                 "the body itself is memoized"))
           (ld/login-dialog-show-info! d "hi")
           (render-plain d 40)
-          (let [after (h/counters)]
+          (let [after (engine/counters)]
             (is (zero? (:disposals after))
                 "nothing was retired — the borders survived the rows change")
             (is (>= (:reuses after) 3) "borders + title matched their instances")))
         (finally (protocols/dispose d)
-                 (h/reset-counters!))))))
+                 (engine/reset-counters!))))))
 
 (deftest test-dispose-unwinds-reaction  (testing "dispose disposes the root: its reaction dies and later row swaps
             no longer re-derive (the watcher is gone)"

@@ -11,9 +11,10 @@
    hint chrome AND the interactive content (the `[:select-list]` /
    `[:input]` element) are DSL-owned, so the dialog disposes the frame
    once. The tree constructs the content record — the dialog reaches it
-   through the `hiccup/ref` handle it declared, read right after
+   through the `kmet.libs.hikap/ref` handle it declared, read right after
    `compile-tree` (tui.md §2.4)."
   (:require [clojure.string :as str]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as h]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
@@ -82,7 +83,7 @@
    the chosen string; ON-CANCEL fires on escape. TH — theme map."
   [title options on-select on-cancel th]
   (let [items (mapv (fn [o] {:value o :label o}) options)
-        sl-ref (h/ref)
+        sl-ref (engine/ref)
         container (frame th title
                          [:select-list {:ref sl-ref
                                         :items items
@@ -121,7 +122,7 @@
    theme map. PREFILL — optional initial text (default \"\") with the
    cursor placed after it (pi: LabelInput)."
   [title on-submit on-cancel th & [prefill]]
-  (let [inp-ref (h/ref)
+  (let [inp-ref (engine/ref)
         container (frame th title
                          ;; :value/:cursor are construction inputs here —
                          ;; the frame is compiled once, never re-applied

@@ -6,7 +6,7 @@
             [clojure.java.io :as io]
             [kmet.tui.border :as border]
             [kmet.tui.theme :as theme]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.libs.reakt :as reakt]
             [kmet.libs.weak :as weak]
@@ -2166,7 +2166,7 @@
   ;; components' reactions may still fire watches during teardown. The reakt
   ;; enqueue hook is detached with it — a late dep change must not poke a
   ;; dead loop.
-  (macros/set-frame-hook! nil)
+  (component/set-frame-hook! nil)
   (reakt/set-enqueue-hook! nil)
   ;; §6.1: no timer outlives the session it was armed in. Components may
   ;; still cancel their own ids afterwards — cancel! is idempotent.
@@ -3092,7 +3092,7 @@
   ;; can't poke a dead loop. The reakt enqueue hook is the same idea one
   ;; level down: a reaction dirtied with no frame requested yet wakes the
   ;; parked loop to flush (its watchers then schedule the frame).
-  (macros/set-frame-hook! #(tui-request-render tui))
+  (component/set-frame-hook! #(tui-request-render tui))
   (reakt/set-enqueue-hook! #(when-let [w (:waker tui)] (wake/wake! w)))
   (start-input-reader tui)
   (reset! (:render-loop tui) (future
@@ -3371,4 +3371,3 @@
 (def entry-component stack/entry-component)
 (def visible-stack-entries stack/visible-stack-entries)
 (def allocate-stack-sizes stack/allocate-stack-sizes)
-

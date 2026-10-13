@@ -5,7 +5,8 @@
   (:require [kmet.tui.protocols :as protocols]
             [kmet.libs.terminal-image :as img]
             [kmet.tui.utils :as utils]
-            [kmet.tui.macros :refer [track! defcomponent]]))
+            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.tui.macros :refer [defcomponent]]))
 
 (defn image-get-id
   "The component's image id — read WITHOUT tracking: the render body

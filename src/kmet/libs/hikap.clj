@@ -212,12 +212,12 @@
                                     (or (not props-map?)
                                         (nil? (:lens spec)))))
         ;; a ref handle in the PRIMARY slot is almost certainly
-        ;; [:widget (h/ref)] missing the props map — every other child
+        ;; [:widget (kmet.libs.hikap/ref)] missing the props map — every other child
         ;; position rejects refs loudly, so must this one too (checked
         ;; against PRE-split children: take-primary consumes the head)
         _ (when (and take-primary? (satisfies? DslRef (first children)))
             (throw (ex-info
-                    (str "kmet.libs.hikap: bare (hiccup/ref) as the value "
+                    (str "kmet.libs.hikap: bare (kmet.libs.hikap/ref) as the value "
                          "child of " tag " — did you mean [" (name tag)
                          " {:ref ...} ...]?")
                     {:tag tag})))
@@ -249,12 +249,12 @@
      :tag tag :spec spec :props props :nodes children}))
 
 (defn- check-ref!
-  ":ref must be a handle from hiccup/ref — anything else (a keyword, a
+  ":ref must be a handle from kmet.libs.hikap/ref — anything else (a keyword, a
    string) is a typo that would otherwise detonate later at fill time."
   [where r]
   (when (and (some? r) (not (satisfies? DslRef r)))
     (throw (ex-info
-            (str "kmet.libs.hikap: :ref must be a (hiccup/ref) handle, got "
+            (str "kmet.libs.hikap: :ref must be a (kmet.libs.hikap/ref) handle, got "
                  (pr-str r) (when (keyword? where) (str " on tag " where)))
             {:ref r}))))
 

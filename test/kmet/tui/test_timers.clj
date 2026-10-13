@@ -3,7 +3,7 @@
    §6.1). Headless: pump! is driven by hand instead of by the frame loop."
   (:require [clojure.test :as t]
             [kmet.libs.concurrent :as concurrent]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.timers :as timers]))
 
 (t/use-fixtures :each (fn [f] (timers/cancel-all!) (f) (timers/cancel-all!)))
@@ -58,7 +58,7 @@
 
 (t/deftest ^:slow a-throwing-thunk-is-swallowed-and-its-timer-survives
   ;; the loop must not die on a bad thunk, and a repeating timer keeps its
-  ;; next tick (same policy as macros/schedule-frame!)
+  ;; next tick (same policy as component/schedule-frame!)
   (let [fired (atom 0)
         _ (timers/every! 10 (fn [] (swap! fired inc) (throw (ex-info "boom" {}))))]
     (Thread/sleep 15)
@@ -93,12 +93,12 @@
 (t/deftest a-thunk-can-schedule-a-frame
   ;; the documented way a timer asks for a repaint
   (let [frames (atom 0)]
-    (macros/set-frame-hook! #(swap! frames inc))
+    (component/set-frame-hook! #(swap! frames inc))
     (try
-      (timers/after! 0 macros/schedule-frame!)
+      (timers/after! 0 component/schedule-frame!)
       (timers/pump!)
       (t/is (= 1 @frames) "schedule-frame! was wired to the hook from a thunk")
-      (finally (macros/set-frame-hook! nil)))))
+      (finally (component/set-frame-hook! nil)))))
 
 (t/deftest next-due-ms-tracks-the-earliest-armed-timer
   ;; the render loop caps its idle park by this, so a parked loop fires

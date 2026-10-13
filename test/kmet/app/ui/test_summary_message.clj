@@ -11,7 +11,7 @@
             [kmet.app.ui.summary-message :as sm]
             [kmet.tui.core :as core]
             [kmet.tui.keybindings :as kb]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.theme :as theme]))
 
 (defn- strip-ansi [s]
@@ -154,7 +154,7 @@
   ;; rebuild-content! replaces the label/content children on every toggle;
   ;; the replaced children must be disposed (their track! watches would
   ;; otherwise accumulate per toggle)
-  (let [watchers macros/live-watch-count
+  (let [watchers component/live-watch-count
         expand! (fn [comp expanded?]
                   (reset! (:expanded-atom comp) expanded?)
                   ((var-get #'kmet.app.ui.summary-message/rebuild-content!) comp expanded?)

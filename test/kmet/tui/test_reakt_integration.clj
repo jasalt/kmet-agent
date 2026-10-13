@@ -11,7 +11,7 @@
             [kmet.tui.components.text :as text]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.hiccup :as hicc]
-            [kmet.tui.macros :as macros :refer [with-let]]
+            [kmet.libs.hikap.component :as component :refer [with-let]]
             [kmet.libs.reakt :as r]))
 
 (defn- rd
@@ -664,44 +664,44 @@
 ;; ═══════════════════════════════════════════════════════════════════════════
 
 (t/deftest test-store-fetch-initializes-once-per-site
-  (let [store (macros/new-store)
+  (let [store (component/new-store)
         inits (atom 0)
         init #(do (swap! inits inc) :value)
         site 'site-1]
     ;; each pass may read the site; the init runs only on the first
     (dotimes [_ 3]
-      (macros/begin-pass! store)
-      (macros/with-store store
-        (t/is (= :value (macros/fetch-local site init)))
+      (component/begin-pass! store)
+      (component/with-store store
+        (t/is (= :value (component/fetch-local site init)))
         ;; a different site gets its own slot within the same pass
-        (t/is (= :other (macros/fetch-local 'site-2 (constantly :other))))))
+        (t/is (= :other (component/fetch-local 'site-2 (constantly :other))))))
     (t/is (= 1 @inits) "body re-runs per pass, init does not")))
 
 (t/deftest same-site-twice-in-one-pass-throws
   ;; reagent's generation warning (ratom.clj with-let), loud per the v1
   ;; contract: two instances of one expansion sharing a state slot is
   ;; always a bug — give each instance its own element/component
-  (let [store (macros/new-store)]
-    (macros/begin-pass! store)
-    (macros/with-store store
-      (t/is (= :v (macros/fetch-local 'dup-site (constantly :v))))
+  (let [store (component/new-store)]
+    (component/begin-pass! store)
+    (component/with-store store
+      (t/is (= :v (component/fetch-local 'dup-site (constantly :v))))
       (t/is (thrown-with-msg?
              Exception #"more than once in the same render pass"
-             (macros/fetch-local 'dup-site (constantly :v)))))
+             (component/fetch-local 'dup-site (constantly :v)))))
     ;; the next pass frees the site again
-    (macros/begin-pass! store)
-    (macros/with-store store
-      (t/is (= :v (macros/fetch-local 'dup-site (constantly :v)))))))
+    (component/begin-pass! store)
+    (component/with-store store
+      (t/is (= :v (component/fetch-local 'dup-site (constantly :v)))))))
 
 (t/deftest throwing-init-retries-next-pass-and-holds-body-out
   ;; reagent issue 525: a binding whose init throws must retry on the next
   ;; pass, and later bindings/the body must not run until it succeeds
-  (let [store (macros/new-store)
+  (let [store (component/new-store)
         attempts (atom 0)
         body-runs (atom 0)
-        run-pass #(macros/with-store store
+        run-pass #(component/with-store store
                     (try
-                      (macros/begin-pass! store)
+                      (component/begin-pass! store)
                       (with-let [x (let [n (swap! attempts inc)]
                                      (when (= 1 n)
                                        (throw (ex-info "boom" {})))
@@ -719,80 +719,80 @@
     (t/is (= 2 @attempts))))
 
 (t/deftest with-let-initializes-once-and-cleans-up-on-destroy
-  (let [store (macros/new-store)
+  (let [store (component/new-store)
         inits (atom 0)
         cleanups (atom 0)
         render (fn []
-                 (macros/begin-pass! store)
-                 (macros/with-store store
+                 (component/begin-pass! store)
+                 (component/with-store store
                    (with-let [conn (do (swap! inits inc) ::conn)]
                      (identity conn)
                      (finally (swap! cleanups inc)))))]
     (render) (render) (render)
     (t/is (= 1 @inits) "three passes, one init")
     (t/is (zero? @cleanups) "cleanup fires at destroy, not per pass")
-    (macros/destroy-store! store)
+    (component/destroy-store! store)
     (t/is (= 1 @cleanups))))
 
 (t/deftest with-let-sibling-bindings-of-same-name-cannot-collide
   ;; keys are per-expansion-site gensyms — two with-lets binding x get
   ;; separate slots by construction
-  (let [store (macros/new-store)]
-    (macros/begin-pass! store)
+  (let [store (component/new-store)]
+    (component/begin-pass! store)
     (t/is (= [:outer-x :inner-x]
-             (macros/with-store store
+             (component/with-store store
                [(with-let [x :outer-x] x)
                 (with-let [x :inner-x] x)])))))
 
 (t/deftest with-let-nested-cleanups-run-lifo
-  (let [store (macros/new-store)
+  (let [store (component/new-store)
         log (atom [])]
-    (macros/begin-pass! store)
-    (macros/with-store store
+    (component/begin-pass! store)
+    (component/with-store store
       (with-let [a (swap! log conj :init-a)]
         (identity a)
         (finally (swap! log conj :dispose-a)))
       (with-let [b (swap! log conj :init-b)]
         (identity b)
         (finally (swap! log conj :dispose-b))))
-    (macros/destroy-store! store)
+    (component/destroy-store! store)
     (t/is (= [:init-a :init-b :dispose-b :dispose-a] @log))))
 
 (t/deftest test-stores-are-isolated
-  (let [s1 (macros/new-store)
-        s2 (macros/new-store)]
-    (macros/with-store s1
-      (macros/fetch-local 'k (constantly :one)))
-    (macros/with-store s2
-      (t/is (= :two (macros/fetch-local 'k (constantly :two)))))))
+  (let [s1 (component/new-store)
+        s2 (component/new-store)]
+    (component/with-store s1
+      (component/fetch-local 'k (constantly :one)))
+    (component/with-store s2
+      (t/is (= :two (component/fetch-local 'k (constantly :two)))))))
 
 (t/deftest test-cleanup-registers-once-runs-lifo
-  (let [store (macros/new-store)
+  (let [store (component/new-store)
         log (atom [])]
-    (macros/with-store store
+    (component/with-store store
       (dotimes [_ 50] ; body reruns must not grow the cleanup list
-        (macros/register-cleanup! 'conn #(swap! log conj :close-conn)))
-      (macros/register-cleanup! 'timer #(swap! log conj :stop-timer)))
+        (component/register-cleanup! 'conn #(swap! log conj :close-conn)))
+      (component/register-cleanup! 'timer #(swap! log conj :stop-timer)))
     (t/is (empty? @log) "cleanups fire only at destroy")
-    (macros/destroy-store! store)
+    (component/destroy-store! store)
     (t/is (= [:stop-timer :close-conn] @log) "LIFO, registered once despite 50 passes")
-    (macros/destroy-store! store)
+    (component/destroy-store! store)
     (t/is (= [:stop-timer :close-conn] @log) "destroy is idempotent")))
 
 (t/deftest test-store-outside-binding-throws
-  (t/is (thrown? Exception (macros/fetch-local 'k (constantly 1))))
-  (t/is (thrown? Exception (macros/register-cleanup! 'k (fn [])))))
+  (t/is (thrown? Exception (component/fetch-local 'k (constantly 1))))
+  (t/is (thrown? Exception (component/register-cleanup! 'k (fn [])))))
 
 (t/deftest test-destroy-store-survives-throwing-cleanup
-  (let [store (macros/new-store)
+  (let [store (component/new-store)
         log (atom [])]
-    (macros/with-store store
-      (macros/register-cleanup! 'good #(swap! log conj :good))
-      (macros/register-cleanup! 'bad #(throw (ex-info "cleanup boom" {}))))
+    (component/with-store store
+      (component/register-cleanup! 'good #(swap! log conj :good))
+      (component/register-cleanup! 'bad #(throw (ex-info "cleanup boom" {}))))
     ;; The throwing cleanup prints to stderr — suppress it (hosts without
     ;; per-var output capture, e.g. jolt, would leak it).
     (binding [*err* (java.io.StringWriter.)]
-      (macros/destroy-store! store))
+      (component/destroy-store! store))
     (t/is (= [:good] @log) "throwing cleanup doesn't block the rest")))
 
 (t/deftest invalidate-forces-next-deref-past-equal-deps

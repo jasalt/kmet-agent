@@ -9,7 +9,8 @@
    in the same container."
   (:require [kmet.tui.theme :as theme]
             [kmet.tui.utils :as u]
-            [kmet.tui.macros :refer [track! defcomponent]]))
+            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.tui.macros :refer [defcomponent]]))
 
 (defcomponent PendingMessages nil [steering-atom follow-up-atom hint-atom cache-atom]
   (render [this width]
@@ -44,4 +45,3 @@
   (reset! (:steering-atom comp) (vec steering))
   (reset! (:follow-up-atom comp) (vec follow-up))
   nil)
-

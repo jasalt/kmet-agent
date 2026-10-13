@@ -10,7 +10,8 @@
   (:require [kmet.app.ui.subs :as s]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.components.image :as ic]
-            [kmet.tui.macros :refer [track! defcomponent]]
+            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.core :as core]
             [kmet.tui.utils :as utils]))
 

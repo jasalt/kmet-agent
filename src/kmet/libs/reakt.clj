@@ -3,7 +3,7 @@
    — auto-dependency-discovering reactions, cursors, batching — with plain
    clojure.lang.Atoms as first-class inputs. Generic by design: no terminal,
    rendering, or component concepts (the TUI render-cache layer that rides
-   on it lives in kmet.tui.macros/track!; kmet.tui.core drains flush! on
+   on it lives in kmet.libs.hikap.component/track!; kmet.tui.core drains flush! on
    every render-loop wake and installs set-enqueue-hook! so a dirty reaction
    wakes the parked loop instead of waiting for its idle heartbeat).
 
@@ -24,7 +24,7 @@
    unreachable reaction is collected and the next sweep unsubscribes its dep
    watches. Owned liveness is the flip side — a reaction
    nothing derefs could never be invalidated usefully — so holders that are
-   themselves weak (kmet.tui.macros/track-render's per-width cache) pin the
+   themselves weak (kmet.libs.hikap.component/track-render's per-width cache) pin the
    reactions they validate.
 
    Coverage contract: tracked reads are explicit tracked-deref calls and
@@ -66,7 +66,7 @@
    builds its cache from, each an atom of a map — ATOMS is {ref value} for
    plain IRefs, RX is {ref value} for library refs. tracked-deref files
    each read into the bucket ref-kind selects. Bound by
-   kmet.tui.macros/track-render around render bodies; nil outside one."
+   kmet.libs.hikap.component/track-render around render bodies; nil outside one."
   nil)
 
 (def ^:dynamic *reaction-frame*
@@ -208,7 +208,7 @@
    frame loop and drain the batch — without it, a derived ref's re-run waits
    for the host's own flush cadence. nil restores the no-op default. Runs
    inside a dep watch: a failure is logged and swallowed, never thrown into
-   the write that dirtied the dep (the macros/set-frame-hook! policy).
+   the write that dirtied the dep (the kmet.libs.hikap.component/set-frame-hook! policy).
    Process-global and host-owned: the TUI installs and clears its own hook
    (kmet.tui.core), so other consumers must not replace it."
   [f]
@@ -265,7 +265,7 @@
   "Live reactions in the weak registry (tests and guards): reactions whose
    subject is still reachable. Dead-but-unswept entries are excluded.
    track! components share the registry with a different payload shape and
-   are counted by kmet.tui.macros/live-watch-count instead."
+   are counted by kmet.libs.hikap.component/live-watch-count instead."
   []
   (weak/live-count (fn [payload] (contains? payload :rx-watch-key))))
 

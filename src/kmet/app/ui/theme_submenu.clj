@@ -6,6 +6,7 @@
    automatic setting."
   (:require [clojure.string :as str]
             [kmet.app.ui.settings-submenu :as submenu]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as h]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
@@ -177,7 +178,7 @@
                 :description "Switch to one theme for light and dark"
                 :value "switch to single theme"
                 :values ["switch to single theme"]}]
-        sl-ref (h/ref)
+        sl-ref (engine/ref)
         on-change (fn [id _value]
                     (case id
                       :theme-apply

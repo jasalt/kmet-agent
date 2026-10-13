@@ -13,7 +13,7 @@
             [kmet.tui.components.spinner :as spinner]
             [kmet.tui.components.text :as text]
             [kmet.tui.hiccup :as hiccup]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.theme :as theme]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.terminal :as terminal]
@@ -1991,7 +1991,7 @@
      [:container {}
       [:text {:padding-x 0 :padding-y 0} "w"]
       [(fn [_props]
-         (macros/with-let [_ (swap! cleanups inc)]
+         (component/with-let [_ (swap! cleanups inc)]
            [:text {:padding-x 0 :padding-y 0} "owned"]
            (finally (swap! cleanups dec)))) {}]])))
 
@@ -2086,7 +2086,7 @@
   (testing "50 widget set+render+reset cycles keep
             live-watch-count flat and unwind every with-let cleanup — a
             regression guard for the /reload drop sites"
-    (let [baseline (macros/live-watch-count)
+    (let [baseline (component/live-watch-count)
           {:keys [registry above cleanups widget] :as fixture} (make-reload-fixture)]
       (try
         (dotimes [_ 50]
@@ -2097,7 +2097,7 @@
         (t/is (empty? @above))
         ;; <=, not =: the baseline is registry-wide, and a GC during the
         ;; cycles can clear unrelated stale entries from earlier tests.
-        (t/is (<= (macros/live-watch-count) baseline)
+        (t/is (<= (component/live-watch-count) baseline)
               "no watch entry survived the cycles")
         (finally
           (dispose-reload-fixture! fixture))))))
@@ -2235,7 +2235,7 @@
             hook's contract)"
     (let [cleanups (atom 0)
           cleanup-fn (fn [_props]
-                       (macros/with-let [_ (swap! cleanups inc)]
+                       (component/with-let [_ (swap! cleanups inc)]
                          [:text {:padding-x 0 :padding-y 0} "owned"]
                          (finally (swap! cleanups dec))))
           w ((var ui-registry/make-extension-widget-component)
@@ -2256,7 +2256,7 @@
             dispose unwinds owned cleanups"
     (let [cleanups (atom 0)
           cleanup-fn (fn [_props]
-                       (macros/with-let [_ (swap! cleanups inc)]
+                       (component/with-let [_ (swap! cleanups inc)]
                          [:text {:padding-x 0 :padding-y 0} "dialog body"]
                          (finally (swap! cleanups dec))))
           comp (var-get #'ui-registry/normalize-custom-component)

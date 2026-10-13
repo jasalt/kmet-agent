@@ -1,16 +1,17 @@
 (ns kmet.tui.test-alias
   "Headless tests for qualified-keyword tag aliases (tui.md §2.9):
-   resolution through kmet.tui.alias, attrs/children delivery, the
+   resolution through kmet.libs.hikap.alias, attrs/children delivery, the
    fn-component behaviors an alias inherits (keyed reuse, with-let state,
    reactions, refs, dispose), registration lifecycle (last-wins, identity-
    guarded deregistration, call-time re-resolution), defalias, and the
    loud unknown/unregistered errors."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.tui.alias :as alias]
+            [kmet.libs.hikap.alias :as alias]
             [kmet.tui.core :as core]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as h]
-            [kmet.tui.macros :refer [with-let]]
+            [kmet.libs.hikap.component :refer [with-let]]
             [kmet.libs.reakt :as r]))
 
 ;; restore the load-time registry (the defalias below) after each test so
@@ -81,7 +82,7 @@
                      (fn [attrs _]
                        (reset! seen attrs)
                        [:text {:padding-x 0 :padding-y 0} "x"]))
-    (h/render-lines [:container {} [:test/keys {:key :k :ref (h/ref) :a 1}]] 20)
+    (h/render-lines [:container {} [:test/keys {:key :k :ref (engine/ref) :a 1}]] 20)
     (t/is (= {:a 1} @seen))))
 
 ;; ── inherits fn-component behavior ────────────────────────────────────────
@@ -125,10 +126,10 @@
                        [:text {:padding-x 0 :padding-y 0} (r/tracked-deref s)]))
     (let [root (h/root [:container {} [:test/reactive]])]
       (t/is (= ["a"] (rendered root 20)))
-      (h/reset-counters!)
+      (engine/reset-counters!)
       (reset! s "b")
       (t/is (= ["b"] (rendered root 20)))
-      (t/is (= 2 (:bodies-run (h/counters)))
+      (t/is (= 2 (:bodies-run (engine/counters)))
             "the root body re-derives (uncached) and the alias body re-runs"))))
 
 (t/deftest nested-alias-elements-compose
@@ -138,7 +139,7 @@
 
 (t/deftest refs-inside-alias-children-fill
   (alias/register! :test/ref-host (fn [_ children] (into [:container {}] children)))
-  (let [r (h/ref)
+  (let [r (engine/ref)
         show? (atom true)
         root (h/root (fn [_]
                        [:test/ref-host {}
@@ -178,18 +179,18 @@
   ;; alias is reused across a prop change (match kind = the alias keyword)
   (alias/register! :test/stable (fn [_ _] [:text {:padding-x 0 :padding-y 0} "static"]))
   (let [n (atom 0)
-        r (h/ref)
+        r (engine/ref)
         root (h/root (fn [_]
                        [:container {} [:test/stable {:ref r :n (r/tracked-deref n)}]]))]
     (core/render root 20)
     (let [w1 (deref r)]
       (t/is (some? w1) "the alias element's ref filled")
-      (h/reset-counters!)
+      (engine/reset-counters!)
       (swap! n inc)
       (core/render root 20)
       (t/is (identical? w1 (deref r)) "the prop change reused the alias instance")
-      (t/is (zero? (:constructs (h/counters))))
-      (t/is (zero? (:disposals (h/counters)))))))
+      (t/is (zero? (:constructs (engine/counters))))
+      (t/is (zero? (:disposals (engine/counters)))))))
 
 (t/deftest cached-body-picks-up-a-reregistration-on-its-next-run
   ;; registry resolution happens at body-run time: an idle reaction keeps

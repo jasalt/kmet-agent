@@ -2,7 +2,7 @@
   "Sample single-file extension for tests."
   (:require [kmet.extension :as ext]))
 
-;; Tag alias contributed by the extension (kmet.tui.alias): the var holds
+;; Tag alias contributed by the extension (kmet.libs.hikap.alias): the var holds
 ;; the KEYWORD so the extension's own tree sites can write [chip …], and
 ;; registration goes through the api so unload removes it (a defalias would
 ;; register directly and survive the unload).

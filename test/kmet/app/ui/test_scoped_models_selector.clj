@@ -8,9 +8,9 @@
             [kmet.app.keybindings :as kb]
             [kmet.app.ui.scoped-models-selector :as sms]
             [kmet.ai.models :as models]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.keybindings :as tui-kb]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]))
 
@@ -117,7 +117,7 @@
   ;; re-derived rows must be disposed — a dropped Text keeps its track!
   ;; watch registered, which would grow the registry per keypress
   (let [sel (selector nil)
-        watchers macros/live-watch-count]
+        watchers component/live-watch-count]
     (protocols/render sel 120)
     (let [baseline (watchers)]
       (dotimes [_ 6] (press sel "down") (protocols/render sel 120))
@@ -129,14 +129,14 @@
   ;; back the cached tree (0 bodies run) and a state change re-derives once.
   (let [sel (selector nil)]
     (protocols/render sel 120)
-    (hiccup/reset-counters!)
+    (engine/reset-counters!)
     (protocols/render sel 120)
-    (t/is (zero? (:bodies-run (hiccup/counters))) "idle frame: body cached")
-    (t/is (= 1 (:bodies-skipped (hiccup/counters))))
-    (hiccup/reset-counters!)
+    (t/is (zero? (:bodies-run (engine/counters))) "idle frame: body cached")
+    (t/is (= 1 (:bodies-skipped (engine/counters))))
+    (engine/reset-counters!)
     (press sel "down")
     (protocols/render sel 120)
-    (t/is (= 1 (:bodies-run (hiccup/counters))) "state change re-derives once")))
+    (t/is (= 1 (:bodies-run (engine/counters))) "state change re-derives once")))
 
 (t/deftest test-enter-toggles-selected
   (let [changed (atom ::none)
@@ -265,4 +265,3 @@
             "marked unavailable")
       (t/is (not-any? #(str/includes? % "Cost:") lines)
             "unavailable row renders the name line only, no cost line"))))
-

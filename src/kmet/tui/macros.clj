@@ -1,58 +1,26 @@
 (ns kmet.tui.macros
-  "TUI component facade: the host-agnostic runtime lives in
-   kmet.libs.hikap.component (track!/with-let, stores, the frame-scheduler hook);
-   this namespace re-exports it and adds defcomponent — the TUI record
-   boilerplate over kmet.tui.protocols/IComponent.
+  "TUI component record boilerplate: defcomponent builds a defrecord
+   implementing kmet.tui.protocols/IComponent, wiring in track! cache
+   invalidation and track-watch teardown.
 
-   App code and extensions keep requiring this namespace unchanged."
-  (:require [kmet.libs.hikap.component :as c]))
+   The compiled expansion depends on kmet.libs.hikap.component
+   (invalidate-cache and watch teardown), so this namespace requires it;
+   the runtime macros/vars — track!/with-let, stores, the frame-scheduler
+   hook, the track-watch registry — are required directly by their users."
+  (:require [kmet.libs.hikap.component]))
 
-;; ─── Re-exports from kmet.libs.hikap.component ───────────────────────────────────
-
-(def track-render c/track-render)
-(def invalidate-cache c/invalidate-cache)
-(def remove-track-watches! c/remove-track-watches!)
-(def sweep-dead-watches! c/sweep-dead-watches!)
-(def live-watch-count c/live-watch-count)
-(def tracked? c/tracked?)
-(def track-deps c/track-deps)
-(def new-store c/new-store)
-(def begin-pass! c/begin-pass!)
-(def fetch-local c/fetch-local)
-(def register-cleanup! c/register-cleanup!)
-(def destroy-store! c/destroy-store!)
-(def set-frame-hook! c/set-frame-hook!)
-(def schedule-frame! c/schedule-frame!)
-
-(defmacro track!
-  "Reactive cache wrapper for IComponent render methods — see
-   kmet.libs.hikap.component/track!."
-  [component width & body]
-  `(c/track! ~component ~width ~@body))
-
-(defmacro with-let
-  "Form-2 local state for fn components — see kmet.libs.hikap.component/with-let."
-  [bindings & body]
-  `(c/with-let ~bindings ~@body))
-
-(defmacro with-store
-  "Bind STORE as the ambient with-let store for BODY."
-  [store & body]
-  `(c/with-store ~store ~@body))
-
-;; ─── defcomponent ──────────────────────────────────────────────────────────
-
-;; ═════════════════════════════════════════════════════════════════
-;; defcomponent — record + IComponent + IComponentKind boilerplate
+;; ═══════════════════════════════════════════════════════════════════════════
+;; defcomponent — record + IComponent boilerplate
 ;; ═══════════════════════════════════════════════════════════════════════════
 
 (defn- track!-form?
-  "True when FORM is a (track! ...) call (referred or fully qualified)."
+  "True when FORM is a (track! ...) call — recognized however the macro is
+   reached: bare/referred, or through any namespace alias of
+   kmet.libs.hikap.component."
   [form]
   (and (seq? form)
-       (or (= 'track! (first form))
-           (= 'kmet.tui.macros/track! (first form))
-           (= 'kmet.libs.hikap.component/track! (first form)))))
+       (let [h (first form)]
+         (and (symbol? h) (= "track!" (name h))))))
 
 (defn- render-uses-track?
   "True when the render method calls track! lexically (the body must contain
@@ -120,7 +88,7 @@
    (their own ns need not require it — clj-kondo would flag that as
    unused); the symbol is inserted literally (`~'`) so a template bare
    `kmet.tui.protocols` cannot be resolved by syntax-quote at
-   macro-definition time into `kmet.tui.macros/kmet.tui.protocols` when
+   macro-definition time into `kmet.libs.hikap.component/kmet.tui.protocols` when
    this namespace is compiled before protocols is loaded (jolt's all-ns
    exposes vendored namespaces before they are loaded)."
   [name _kind fields & body]

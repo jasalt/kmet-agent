@@ -5,7 +5,7 @@
             [kmet.libs.concurrent :as concurrent]
             [kmet.tui.components.spinner :as spinner]
             [kmet.tui.core :as core]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.timers :as timers]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
@@ -170,7 +170,7 @@
   (let [c (be/make-bash-execution :command "sleep 10")
         fired (atom 0)]
     (core/render c 40)
-    (macros/set-frame-hook! #(swap! fired inc))
+    (component/set-frame-hook! #(swap! fired inc))
     (try
       (t/is (zero? @fired) "nothing fired before a pump")
       ;; open the quiet gate (a frame long ago), then wait out the driver's
@@ -185,7 +185,7 @@
         (timers/pump!)
         (t/is (= n @fired) "no frames scheduled after dispose"))
       (finally
-        (macros/set-frame-hook! nil)))))
+        (component/set-frame-hook! nil)))))
 
 (t/deftest ^:slow test-frame-driver-quiet-gate
   ;; The driver consults the quiet gate: a frame painted within the last half
@@ -198,7 +198,7 @@
     (when-let [ticker @(:elapsed-ticker-id-atom c)]
       (timers/cancel! ticker)
       (reset! (:elapsed-ticker-id-atom c) nil))
-    (macros/set-frame-hook! #(swap! fired inc))
+    (component/set-frame-hook! #(swap! fired inc))
     (try
       (Thread/sleep (+ 60 spinner/default-interval-ms))
       (timers/mark-frame!)                          ;; fresh frame: gate closed
@@ -209,7 +209,7 @@
       (timers/pump!)
       (t/is (pos? @fired) "an aged frame opens the gate")
       (finally
-        (macros/set-frame-hook! nil)
+        (component/set-frame-hook! nil)
         (protocols/dispose c)))))
 
 (t/deftest test-append-output-schedules-frame
@@ -225,7 +225,7 @@
     (when-let [driver @(:ticker-id-atom c)]
       (timers/cancel! driver)
       (reset! (:ticker-id-atom c) nil))
-    (macros/set-frame-hook! #(swap! fired inc))
+    (component/set-frame-hook! #(swap! fired inc))
     (try
       (be/bash-execution-append-output! c "hello\n")
       (t/is (= 1 @fired) "first chunk scheduled the frame")
@@ -235,6 +235,6 @@
         (t/is (some #(clojure.string/includes? % "hello") lines))
         (t/is (some #(clojure.string/includes? % "world") lines)))
       (finally
-        (macros/set-frame-hook! nil)
+        (component/set-frame-hook! nil)
         (be/bash-execution-set-complete! c 0 false)
         (protocols/dispose c)))))

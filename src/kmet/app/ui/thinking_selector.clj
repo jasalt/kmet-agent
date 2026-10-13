@@ -17,6 +17,7 @@
             [kmet.tui.components.input :as input]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as h]
             [kmet.tui.keys :as keys]
             [kmet.tui.keybindings :as kb]
@@ -237,7 +238,7 @@
         focused? (atom false)
         sel (map->ThinkingSelector
              {:root nil
-              :search-ref (h/ref)
+              :search-ref (engine/ref)
               :state-atom st
               :on-select-atom (atom on-select)
               :on-persist-atom (atom on-persist)

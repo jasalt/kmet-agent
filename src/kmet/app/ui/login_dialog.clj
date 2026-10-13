@@ -19,6 +19,7 @@
             [kmet.tui.components.input :as input]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.core :as tui]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as hiccup]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
@@ -297,7 +298,7 @@
   (let [th (theme/get-current-theme)
         d (map->LoginDialog
            {:rows-atom (atom [])
-            :input-ref (hiccup/ref)
+            :input-ref (engine/ref)
             :tui tui
             :input-resolver-atom (atom nil)
             :input-rejecter-atom (atom nil)

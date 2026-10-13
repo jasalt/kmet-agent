@@ -8,7 +8,8 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.border :as border]
             [kmet.tui.utils :as u]
-            [kmet.tui.macros :refer [track! defcomponent]]
+            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.tui.macros :refer [defcomponent]]
             [kmet.libs.markdown :as md]))
 
 ;; ─── Theme ──────────────────────────────────────────────────────────────────

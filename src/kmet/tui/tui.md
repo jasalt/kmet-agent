@@ -128,12 +128,12 @@ atom change → reaction dirty → queued → frame flush runs it →
 | `kmet.tui.terminal` | backend abstraction: the lean `ITerminal` protocol (raw mode, bounded reads, live size, writes, progress) + shared ANSI verbs, Kitty/query wrappers and drain; `create-terminal` resolves the host backend at runtime |
 | `kmet.tui.terminal-jline` / `kmet.tui.terminal-native-unix` / `kmet.tui.terminal-native-win` | the three backends — JLine on bb/JVM, termios (Unix) / kernel32 console (Windows) FFI over `jolt.ffi` on Jolt; only these namespaces touch platform deps |
 | `kmet.tui.protocols` | `IComponent`, `IFocusable`, `IEditorComponent` |
-| `kmet.tui.macros` | `defcomponent` (TUI record boilerplate over `kmet.tui.protocols/IComponent`) + re-exports of the host-agnostic runtime in `kmet.libs.hikap.component` |
+| `kmet.tui.macros` | `defcomponent` — TUI record boilerplate over `kmet.tui.protocols/IComponent` |
 | `kmet.libs.reakt` | reactions/track/cursor/batching over plain atoms |
 | `kmet.libs.hikap.component` | host-agnostic `track!` render cache, `with-let` stores, track-watch registry, frame-scheduler hook |
 | `kmet.libs.hikap` | toolkit-agnostic hiccup engine: parse, keyed reconcile, ComponentFn, refs, compute — parameterized by a backend map (tag table, string leaf, render/dispose hooks) |
-| `kmet.tui.hiccup` | the TUI backend + facade: tag table, `*width*`/`*comp*`, IComponent extension for the engine's ComponentFn, `root`, `ref`, `compute`, `render-lines` |
-| `kmet.tui.alias` | qualified-keyword tag aliases: facade over `kmet.libs.hikap.alias` (§2.9) |
+| `kmet.libs.hikap.alias` | qualified-keyword tag aliases: process-global registry, resolution, `defalias` (§2.9) |
+| `kmet.tui.hiccup` | the TUI backend: tag table, `*width*`/`*comp*`, IComponent extension for the engine's ComponentFn, and the TUI-bound entry points (`root`, `compile-tree`, `reconcile!`, `render-lines`, `materialize-ref!`) |
 | `kmet.tui.components.*` | host elements (see §10) |
 | `kmet.tui.theme` | color/styling API, active theme atom, theme files |
 | `kmet.tui.keys` / `keybindings` | key names, Kitty protocol decoding, keybinding manager |
@@ -191,7 +191,7 @@ Children rules:
 
 Tags are keywords from the closed tag table (§2.2), function heads
 (`[status-area {:mode :normal}]` is valid Reagent-style usage), or
-**aliases**: a qualified keyword resolves through the `kmet.tui.alias`
+**aliases**: a qualified keyword resolves through the `kmet.libs.hikap.alias`
 registry (§2.9) to a named tag-level component — the one way to add a
 reusable tag without touching the host table. A qualified keyword is
 never a host tag. Two more normalizer rules keep call sites terse:
@@ -376,7 +376,7 @@ records. A tree that declares such an element reaches its instantiated
 record through a ref — a second pseudo-prop beside `:key`:
 
 ```clojure
-(def editor-ref (hiccup/ref))
+(def editor-ref (kmet.libs.hikap/ref))
 
 [:editor-container {:ref editor-ref}]
 
@@ -386,7 +386,7 @@ record through a ref — a second pseudo-prop beside `:key`:
 
 Rules:
 
-- refs are created with `(hiccup/ref)`; reconcile fills them on construct
+- refs are created with `(kmet.libs.hikap/ref)`; reconcile fills them on construct
   and clears them when the element is disposed — or when the element stops
   declaring that handle (a replaced or dropped `:ref` prop), so an
   abandoned handle never derefs a live component; treat as read-only.
@@ -431,7 +431,7 @@ its search field — when that field is a tag-owned `[:input]`, the ref is
 how the wrapper reaches it:
 
 ```clojure
-(def search-ref (hiccup/ref))
+(def search-ref (kmet.libs.hikap/ref))
 
 (hiccup/root (fn [_] [:container {} ... [:input {:ref search-ref}] ...]))
 
@@ -615,7 +615,7 @@ Rules:
 ### 2.9 Aliases — named tag-level components
 
 A hiccup element whose head is a **qualified keyword** resolves through
-the process-global registry in `kmet.tui.alias`:
+the process-global registry in `kmet.libs.hikap.alias`:
 
 ```clojure
 (defalias chip                       ; registers :my.ns/chip; defs chip = the keyword
@@ -765,7 +765,7 @@ requesting renders).
   A child's internal state affecting output means the parent must deref it
   too.
 
-### 3.3 Derived state — `hiccup/compute`
+### 3.3 Derived state — `kmet.libs.hikap/compute`
 
 Derived refs over the atoms the app already owns — sugar over a reaction
 whose body reads each listed dep tracked and applies F to their current
@@ -788,17 +788,17 @@ Two usage patterns over the one primitive:
 ;; Per-instance — compute under with-let: created once, disposed with
 ;; the instance (automatic when created during a render pass):
 (defn message [props]
-  (with-let [content (hiccup/compute [(:messages-atom props)]
+  (with-let [content (kmet.libs.hikap/compute [(:messages-atom props)]
                           #(get-in % [(:idx props) :content]))]
     [:text {:text @content}]))
 
 ;; Shared — def'd top-level computes; (def ...) IS the registry:
-(def agent-status-sub (hiccup/compute [agent-state] :status))
+(def agent-status-sub (kmet.libs.hikap/compute [agent-state] :status))
 (defn status-line [_props] [:text {:text (str @agent-status-sub)}])
 ```
 
 A shared sub whose body would be a pure alias of one atom —
-`(hiccup/compute [a] identity)` — should be the atom itself: a reaction
+`(kmet.libs.hikap/compute [a] identity)` — should be the atom itself: a reaction
 buys nothing there (no derivation), and its cache-hit verification costs
 roughly twice a plain atom deref, paid by every subscriber every frame.
 `kmet.app.ui.subs/theme-sub` and `image-settings-sub` are such atoms.
@@ -1042,7 +1042,7 @@ regression test for the round trip this shape was built from is
 **A dependency change schedules the render** — the other half of the
 reactive loop:
 
-- All invalidation funnels through `kmet.tui.macros/invalidate-cache`;
+- All invalidation funnels through `kmet.libs.hikap.component/invalidate-cache`;
   track!'s watches, generated invalidate methods and subscription teardown
   all reach it, and it fires the frame hook (installed by `tui.core` on
   start, cleared on stop; a no-op default keeps headless tests pure).
@@ -1512,10 +1512,10 @@ Hiccup keeps process-wide counters, collected always and readable any
 time (tests assert on them):
 
 ```clojure
-(hiccup/counters)
+(kmet.libs.hikap/counters)
 ;; {:bodies-run 2 :bodies-skipped 37 :constructs 0 :reuses 5
 ;;  :applies 1 :disposals 0 :computes 4 :skips 2}
-(hiccup/reset-counters!)   ;; back to zero (tests)
+(kmet.libs.hikap/reset-counters!)   ;; back to zero (tests)
 ```
 
 Reading them: `bodies-run` climbing on frames where nothing the body derefs
@@ -1788,7 +1788,7 @@ Two ways to embed a stateful leaf, both keep its state across passes:
   `IFocusable.set-focused!` to it and disposes it in its own `dispose`
   (§13.1).
 
-A wrapper reaches a DSL-owned instance through a `hiccup/ref` (§2.4) — deref
+A wrapper reaches a DSL-owned instance through a `kmet.libs.hikap/ref` (§2.4) — deref
 only in handlers/effects, never a render body. Forwarding input to a ref'd
 leaf is the canonical second case: input is delivered to the focused leaf
 only (§7), so the wrapper keeps focus and pushes each keystroke into the

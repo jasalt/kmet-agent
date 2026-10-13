@@ -9,7 +9,8 @@
             [kmet.tui.keys :as keys]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.utils :as u]
-            [kmet.tui.macros :refer [track! defcomponent]]))
+            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.tui.macros :refer [defcomponent]]))
 
 ;; ─── Key dispatch ─────────────────────────────────────────────────────────
 

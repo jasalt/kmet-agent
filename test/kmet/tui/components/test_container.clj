@@ -4,7 +4,7 @@
             [kmet.tui.core :as core]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.text :as text]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]))
 
 (t/deftest test-container-create
@@ -43,17 +43,17 @@
         dropped (text/make-text "drop" 0 0)
         c (container/make-container [kept dropped])]
     (core/render c 10)
-    (t/is (macros/tracked? kept))
-    (t/is (macros/tracked? dropped))
+    (t/is (component/tracked? kept))
+    (t/is (component/tracked? dropped))
     ;; replace: KEPT is re-added (same instance), a new child takes DROPPED's
     ;; place — the dropped child is disposed, its watches torn down
     (let [fresh (text/make-text "fresh" 0 0)]
       (container/container-replace-children! c [kept fresh])
       (t/is (= 2 (count @(:children c))))
-      (t/is (not (macros/tracked? dropped)) "dropped child disposed (no zombie watches)")
-      (t/is (macros/tracked? kept) "kept child untouched")
+      (t/is (not (component/tracked? dropped)) "dropped child disposed (no zombie watches)")
+      (t/is (component/tracked? kept) "kept child untouched")
       (core/render c 10)
-      (t/is (macros/tracked? fresh)))))
+      (t/is (component/tracked? fresh)))))
 
 (t/deftest test-container-replace-children-empty
   (let [t1 (text/make-text "a" 0 0)
@@ -61,7 +61,7 @@
     (core/render c 5)
     (container/container-replace-children! c [])
     (t/is (empty? @(:children c)))
-    (t/is (not (macros/tracked? t1)) "clearing disposes every child")
+    (t/is (not (component/tracked? t1)) "clearing disposes every child")
     (t/is (empty? (core/render c 5)))))
 
 (t/deftest test-container-replace-children-keeps-reordered-instances
@@ -72,9 +72,9 @@
     (core/render cont 5)
     (container/container-replace-children! cont [c a b])
     (t/is (= [c a b] @(:children cont)))
-    (t/is (macros/tracked? a))
-    (t/is (macros/tracked? b))
-    (t/is (macros/tracked? c))
+    (t/is (component/tracked? a))
+    (t/is (component/tracked? b))
+    (t/is (component/tracked? c))
     (t/is (= ["c" "a" "b"] (mapv str/trim (core/render cont 5))))))
 
 (defn- spy-component

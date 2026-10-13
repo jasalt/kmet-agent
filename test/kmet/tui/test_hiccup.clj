@@ -18,8 +18,10 @@
             [kmet.tui.components.settings-list :as settings-list]
             [kmet.tui.components.text :as text]
             [kmet.tui.core :as core]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as h]
-            [kmet.tui.macros :as macros :refer [with-let defcomponent]]
+            [kmet.libs.hikap.component :as component :refer [with-let]]
+            [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.components.stack :as stack]
             [kmet.tui.utils :as u]
@@ -112,7 +114,7 @@
 
 (t/deftest key-and-ref-pseudo-props-are-stripped
   ;; ctors never see them; no unknown-key crash, no behavior change vs the
-  ;; same tree without them. :ref must be a real (hiccup/ref) handle.
+  ;; same tree without them. :ref must be a real (kmet.libs.hikap/ref) handle.
   (let [tree (fn [extra]
                [:box extra
                 [:text (merge {:padding-x 0 :padding-y 0} extra) "hi"]])]
@@ -123,7 +125,7 @@
     (t/is (= ["" " hi" ""]
              (mapv str/trimr (h/render-lines (tree {:key 1}) 20))))
     ;; non-ref :ref values are rejected loudly at parse
-    (t/is (thrown-with-msg? Exception #"hiccup/ref"
+    (t/is (thrown-with-msg? Exception #"kmet\.libs\.hikap/ref"
                             (h/render-lines [:text {:ref :fake} "x"] 10)))))
 
 ;; ── contents are concatenated / lazy & eager seqs (hiccup core_test) ────
@@ -248,7 +250,7 @@
 (t/deftest input-tag
   ;; :value pre-fills; :on-submit is wired; props are live (the apply path,
   ;; tui.md §2.2) and the :ref + setter path stays valid
-  (let [r (h/ref)
+  (let [r (engine/ref)
         submitted (atom nil)
         on-submit (fn [v] (reset! submitted v))
         r2 (h/root (fn [_]
@@ -283,7 +285,7 @@
   ;; primary :items; callbacks wired on the instance
   (let [chosen (atom nil)
         on-select (fn [item] (reset! chosen item))
-        r (h/ref)
+        r (engine/ref)
         lines (h/render-lines
                [:select-list [{:label "one" :value 1} {:label "two" :value 2}]]
                20)
@@ -316,7 +318,7 @@
 (t/deftest alt-screen-flash-tag
   ;; :request-render patches through the apply path (tui.md §2.2) — a fresh
   ;; closure per pass keeps the instance and its pending entries
-  (let [r (h/ref)
+  (let [r (engine/ref)
         cb (atom (fn []))
         root (h/root (fn [_] [:alt-screen-flash {:request-render @cb :ref r}]))]
     (core/render root 30)
@@ -350,7 +352,7 @@
 (t/deftest stateful-leaf-identity-stable-props
   ;; a stateful host leaf keeps its instance (and state) across passes
   ;; while its props stay =-equal — a fresh closure prop would rebuild it
-  (let [r (h/ref)
+  (let [r (engine/ref)
         r2 (h/root (fn [_] [:select-list {:items [{:label "a" :value :a}]
                                           :ref r}]))]
     (core/render r2 20)
@@ -366,29 +368,29 @@
 (t/deftest stateful-tag-props-patch-in-place
   ;; a changed prop on an :apply tag patches the live instance — identity,
   ;; state and focus survive; only a prop the tag cannot express rebuilds
-  (let [iref (h/ref)
+  (let [iref (engine/ref)
         v (atom "a")
         root (h/root (fn [_] [:input {:ref iref :value (rag/tracked-deref v)}]))]
     (core/render root 40)
     (let [i1 (deref iref)]
-      (h/reset-counters!)
+      (engine/reset-counters!)
       (reset! v "ab")
       (core/render root 40)
       (t/is (identical? i1 (deref iref)) "live prop change patches, no rebuild")
       (t/is (= "ab" (input/input-get-value (deref iref))))
-      (t/is (= 1 (:applies (h/counters))))
-      (t/is (zero? (:constructs (h/counters))) "no fresh construction")
+      (t/is (= 1 (:applies (engine/counters))))
+      (t/is (zero? (:constructs (engine/counters))) "no fresh construction")
       ;; the patched instance remembers the new props — an equal pass is
       ;; the plain reuse fast path again
       (core/render root 40)
       (t/is (identical? i1 (deref iref)))
-      (t/is (= 1 (:applies (h/counters))) "no re-apply on unchanged props"))))
+      (t/is (= 1 (:applies (engine/counters))) "no re-apply on unchanged props"))))
 
 (t/deftest materialize-ref-compiles-on-demand
   ;; an element's ref fills during a render pass; a handler that needs the
   ;; instance before the host painted compiles the tree itself instead of
   ;; dropping the key (the dialog/selector input-forwarding path)
-  (let [iref (h/ref)
+  (let [iref (engine/ref)
         root (h/root (fn [_] [:container {} [:input {:ref iref}]]))]
     (t/is (nil? (deref iref)) "unrendered tree: the ref is empty")
     (let [i (h/materialize-ref! root iref)]
@@ -396,7 +398,7 @@
       (t/is (identical? i (deref iref)) "and fills the ref")
       (t/is (some? (h/materialize-ref! root iref)) "second call is a plain deref")))
   ;; an element genuinely absent from the tree stays nil — callers decide
-  (let [iref (h/ref)
+  (let [iref (engine/ref)
         present? (atom false)
         root (h/root (fn [_]
                        (if (rag/tracked-deref present?)
@@ -411,20 +413,20 @@
   ;; :focused? is the element's own emphasis flag (cursor + key
   ;; eligibility) — set on construct, patched in place when it changes,
   ;; never a rebuild trigger. Routing stays imperative (tui-set-focus).
-  (let [iref (h/ref)
+  (let [iref (engine/ref)
         on (atom false)
         root (h/root (fn [_] [:input {:ref iref
                                       :focused? (rag/tracked-deref on)}]))]
     (core/render root 40)
     (let [i1 (deref iref)]
       (t/is (false? (protocols/focused i1)) "construct applies the false prop")
-      (h/reset-counters!)
+      (engine/reset-counters!)
       (reset! on true)
       (core/render root 40)
       (t/is (identical? i1 (deref iref)) "a focus change patches, no rebuild")
       (t/is (true? (protocols/focused i1)))
-      (t/is (= 1 (:applies (h/counters))))
-      (t/is (zero? (:constructs (h/counters))) "no fresh construction")
+      (t/is (= 1 (:applies (engine/counters))))
+      (t/is (zero? (:constructs (engine/counters))) "no fresh construction")
       ;; an unchanged prop never fights an imperative write
       (protocols/set-focused! i1 false)
       (core/render root 40)
@@ -436,7 +438,7 @@
   ;; disposed and rebuilt as a fresh instance; :focused? restores the
   ;; emphasis the rebuilt instance would otherwise lose (the host would have
   ;; to re-focus it by hand — the session selector's list⇄rename switch).
-  (let [iref (h/ref)
+  (let [iref (engine/ref)
         mode (atom :list)
         root (h/root (fn [_]
                        (if (= :rename (rag/tracked-deref mode))
@@ -446,7 +448,7 @@
                           [:text {:text "list"}]])))]
     (core/render root 40)
     (t/is (nil? (deref iref)) "no input in list mode")
-    (h/reset-counters!)
+    (engine/reset-counters!)
     (reset! mode :rename)
     (core/render root 40)
     (let [i1 (deref iref)]
@@ -456,12 +458,12 @@
     (reset! mode :list)
     (core/render root 40)
     (t/is (nil? (deref iref)) "leaving the branch retires it")
-    (t/is (pos? (:disposals (h/counters))) "retirement disposes the instance")))
+    (t/is (pos? (:disposals (engine/counters))) "retirement disposes the instance")))
 
 (t/deftest input-tag-uncontrolled-text-survives-prop-change
   ;; an absent :value prop is not a write — typed text survives an
   ;; unrelated prop change (the construct-equivalent patch contract)
-  (let [iref (h/ref)
+  (let [iref (engine/ref)
         submit (atom (fn [_]))
         root (h/root (fn [_] [:input {:ref iref
                                       :on-submit (rag/tracked-deref submit)}]))]
@@ -479,7 +481,7 @@
   ;; a static :value plus typing survives an unrelated prop change, while a
   ;; real :value change is an instruction and wins (nil ⇒ the construct
   ;; default, an empty input)
-  (let [iref (h/ref)
+  (let [iref (engine/ref)
         v (atom "abc")
         submit (atom (fn [_]))
         root (h/root (fn [_] [:input {:ref iref
@@ -506,7 +508,7 @@
   ;; :on-change has editor parity: a value-changing edit fires it with the
   ;; current value, a cursor-only move does not, and an unrelated prop pass
   ;; neither fires it nor clobbers the typed text
-  (let [iref (h/ref)
+  (let [iref (engine/ref)
         submit (atom (fn [_]))
         seen (atom [])
         on-change (fn [v] (swap! seen conj v))
@@ -533,7 +535,7 @@
   ;; at construction (dialog prefills), a changed value patches the live
   ;; instance, and an unchanged one never clobbers a user-moved cursor
   ;; (nil = unmanaged, as at construction)
-  (let [iref (h/ref)
+  (let [iref (engine/ref)
         cur (atom 3)
         cb (atom (fn [_]))
         root (h/root (fn [_] [:input {:ref iref
@@ -560,7 +562,7 @@
 (t/deftest editor-tag-unchanged-text-never-clobbers-typing
   ;; the same gate on :text: an unrelated prop change (:height) patches the
   ;; live editor without resetting what the user typed
-  (let [eref (h/ref)
+  (let [eref (engine/ref)
         h (atom 3)
         root (h/root (fn [_] [:editor {:ref eref
                                        :text "draft"
@@ -579,7 +581,7 @@
 (t/deftest editor-tag-props-patch-in-place
   ;; :text patches =-gated; structural props (border/keybindings) have no
   ;; setters — the apply fn declines and the leaf rebuilds
-  (let [eref (h/ref)
+  (let [eref (engine/ref)
         draft (atom "x")
         border (atom :normal)
         root (h/root (fn [_] [:editor {:ref eref
@@ -602,7 +604,7 @@
   ;; the typed filter, and an items REFRESH (the declarative patch) keeps
   ;; the filter and the selection — same question re-asked, not a wholesale
   ;; replacement (that is select-list-set-items!'s resetting default)
-  (let [sref (h/ref)
+  (let [sref (engine/ref)
         items (atom [{:label "one"} {:label "two"}])
         on-esc (atom (fn []))
         root (h/root (fn [_] [:select-list {:ref sref
@@ -656,7 +658,7 @@
     (t/is (= 1 @(:selected-idx-atom sl)) "preserve kept the selection")))
 
 (t/deftest settings-list-tag-props-patch-in-place
-  (let [gref (h/ref)
+  (let [gref (engine/ref)
         rows (atom [{:id :a :label "A" :value true :values [true false]}])
         search (atom false)
         root (h/root (fn [_] [:settings-list {:ref gref
@@ -677,7 +679,7 @@
   ;; an items refresh must not eat the user's query — the search box text
   ;; and the filter atom both stay (the resetting set-items! default is the
   ;; wholesale-replacement variant)
-  (let [gref (h/ref)
+  (let [gref (engine/ref)
         rows (atom [{:id :a :label "Alpha" :value "x" :values ["x" "y"]}
                     {:id :b :label "Beta" :value "z" :values ["z" "w"]}])
         root (h/root (fn [_] [:settings-list {:ref gref
@@ -712,7 +714,7 @@
 (t/deftest expandable-text-tag-props-patch-in-place
   (let [col (fn [] "collapsed")
         exp (fn [] "expanded")
-        xref (h/ref)
+        xref (engine/ref)
         open? (atom false)
         root (h/root (fn [_] [:expandable-text {:ref xref
                                                 :collapsed-fn col
@@ -731,7 +733,7 @@
   ;; neither rebuilds nor collapses a programmatic toggle
   (let [col (fn [] "collapsed")
         exp (fn [] "expanded")
-        xref (h/ref)
+        xref (engine/ref)
         extra (atom nil)
         root (h/root (fn [_] [:expandable-text
                               (merge {:ref xref
@@ -754,7 +756,7 @@
   ;; :active flips start/stop; :frames has no faithful setter (the only one,
   ;; set-indicator!, switches the spinner to verbatim rendering), so a
   ;; change there rebuilds
-  (let [sref (h/ref)
+  (let [sref (engine/ref)
         msg (atom "a")
         active (atom true)
         root (h/root (fn [_] [:spinner {:ref sref
@@ -779,7 +781,7 @@
       (t/is (spinner/spinner-active? (deref sref))))))
 
 (t/deftest spinner-tag-frames-change-rebuilds
-  (let [sref (h/ref)
+  (let [sref (engine/ref)
         frames (atom nil)
         root (h/root (fn [_] [:spinner {:ref sref :text "x" :active true
                                         :prefix ""
@@ -795,7 +797,7 @@
   ;; :on-abort patches (the abort signal survives); a changed :spinner child
   ;; cannot be swapped — it rebuilds (and the retired loader's dispose stops
   ;; the old spinner, pi: CancellableLoader.dispose → Loader.stop)
-  (let [cref (h/ref)
+  (let [cref (engine/ref)
         cb (atom (fn []))
         root (h/root (fn [_] [:cancellable-loader
                               {:ref cref :text "loading"
@@ -808,7 +810,7 @@
       (t/is (false? (cancellable-loader/cancellable-loader-aborted? (deref cref)))
             "the abort signal survived the patch")
       (let [sp (atom (spinner/make-spinner :text "one" :active true))
-            sref (h/ref)
+            sref (engine/ref)
             lroot (h/root (fn [_] [:cancellable-loader
                                    {:ref sref
                                     :spinner (rag/tracked-deref sp)}]))]
@@ -884,7 +886,7 @@
   ;; the motivating case: prepending must not rebuild the other keyed
   ;; siblings — identity rides the key (dsl.md §2.3). Refs are STABLE
   ;; handles created once, outside the body.
-  (let [ref0 (h/ref) ref1 (h/ref) ref2 (h/ref)
+  (let [ref0 (engine/ref) ref1 (engine/ref) ref2 (engine/ref)
         refs {0 ref0 1 ref1 2 ref2}
         msgs (atom [{:id 1 :text "one"} {:id 2 :text "two"}])
         r (h/root (fn [_]
@@ -912,7 +914,7 @@
   ;; previous, the bucket-cursor contract): an unchanged re-derive reuses
   ;; every instance without constructing, and a shrink keeps the head while
   ;; the removed tail clears its ref
-  (let [refs (mapv (fn [_] (h/ref)) (range 4))
+  (let [refs (mapv (fn [_] (engine/ref)) (range 4))
         n (atom 4)
         r (h/root (fn [_]
                     [:container
@@ -924,11 +926,11 @@
     (core/render r 20)
     (let [live (mapv deref refs)]
       (t/is (every? some? live) "all four rows mounted")
-      (h/reset-counters!)
+      (engine/reset-counters!)
       (core/render r 20)
-      (t/is (zero? (:constructs (h/counters)))
+      (t/is (zero? (:constructs (engine/counters)))
             "an unchanged pass constructs nothing (every sibling reused)")
-      (t/is (zero? (:disposals (h/counters))))
+      (t/is (zero? (:disposals (engine/counters))))
       (reset! n 2)
       (core/render r 20)
       (t/is (identical? (nth live 0) (deref (refs 0)))
@@ -939,7 +941,7 @@
 (t/deftest metadata-key-behaves-as-a-key
   ;; reagent-style ^{:key k} on the element vector, as an alternative to the
   ;; :key prop — same reuse contract, same duplicate detection
-  (let [refs {0 (h/ref) 1 (h/ref)}
+  (let [refs {0 (engine/ref) 1 (engine/ref)}
         msgs (atom [1])
         r (h/root (fn [_]
                     [:container
@@ -1010,18 +1012,18 @@
                       [:container {}
                        [:text {:padding-x 0 :padding-y 0} "deep"]]]]))]
     (core/render r 30)
-    (h/reset-counters!)
+    (engine/reset-counters!)
     (core/render r 30)
-    (t/is (= 1 (:skips (h/counters))) "one skip per unchanged component root")
-    (t/is (zero? (:reuses (h/counters))) "the subtree was never walked")
-    (t/is (zero? (:constructs (h/counters))))
-    (t/is (zero? (:disposals (h/counters))))
-    (t/is (= 1 (:bodies-run (h/counters))) "the body still re-derived")))
+    (t/is (= 1 (:skips (engine/counters))) "one skip per unchanged component root")
+    (t/is (zero? (:reuses (engine/counters))) "the subtree was never walked")
+    (t/is (zero? (:constructs (engine/counters))))
+    (t/is (zero? (:disposals (engine/counters))))
+    (t/is (= 1 (:bodies-run (engine/counters))) "the body still re-derived")))
 
 (t/deftest changed-child-diffs-unchanged-siblings-skip
   ;; a change inside one branch still walks the tree; an unchanged sibling
   ;; container takes the skip at its own level and keeps its instances
-  (let [stable (h/ref)
+  (let [stable (engine/ref)
         label (atom "a")
         r (h/root (fn [_]
                     [:v-stack {:gap 0}
@@ -1031,14 +1033,14 @@
                       (rag/tracked-deref label)]]))]
     (t/is (= "stablea" (apply str (mapv str/trimr (core/render r 20)))))
     (let [s1 (deref stable)]
-      (h/reset-counters!)
+      (engine/reset-counters!)
       (reset! label "b")
       (t/is (= "stableb" (apply str (mapv str/trimr (core/render r 20)))))
       (t/is (identical? s1 (deref stable))
             "the skipped container kept its child")
-      (t/is (= 1 (:skips (h/counters))) "the unchanged container skipped")
-      (t/is (pos? (:constructs (h/counters))) "the changed leaf rebuilt")
-      (t/is (pos? (:disposals (h/counters)))))))
+      (t/is (= 1 (:skips (engine/counters))) "the unchanged container skipped")
+      (t/is (pos? (:constructs (engine/counters))) "the changed leaf rebuilt")
+      (t/is (pos? (:disposals (engine/counters)))))))
 
 (t/deftest metadata-key-change-defeats-the-skip
   ;; ^{:key k} is identity; =-equal content with a changed key must remount,
@@ -1049,18 +1051,18 @@
                     [:text {:padding-x 0 :padding-y 0} "same"]))]
     (core/render r 20)
     (let [t1 (:c (first @(:kids r)))]
-      (h/reset-counters!)
+      (engine/reset-counters!)
       (swap! k inc)
       (core/render r 20)
       (t/is (not (identical? t1 (:c (first @(:kids r)))))
             "a metadata key change must not keep the old instance")
-      (t/is (pos? (:disposals (h/counters)))))))
+      (t/is (pos? (:disposals (engine/counters)))))))
 
 (t/deftest ref-survives-a-key-change-remount
   ;; diff-items constructs the keyed remount (filling the ref) before
   ;; retiring the leftover; the retire must not clear a handle that now
   ;; points at the fresh instance
-  (let [r (h/ref)
+  (let [r (engine/ref)
         k (atom 0)
         root (h/root (fn [_] [:text {:key (rag/tracked-deref k) :ref r
                                      :padding-x 0 :padding-y 0} "same"]))]
@@ -1078,8 +1080,8 @@
 (t/deftest ref-handles-swapped-between-elements
   ;; two live elements trading handles: the first element's stale-handle
   ;; clear must not wipe the handle it just handed to the second
-  (let [r1 (h/ref)
-        r2 (h/ref)
+  (let [r1 (engine/ref)
+        r2 (engine/ref)
         swapped (atom false)
         root (h/root (fn [_]
                        (let [swap? (rag/tracked-deref swapped)]
@@ -1103,7 +1105,7 @@
 (t/deftest abandoned-ref-handle-still-clears
   ;; the guard must not disable clearing: an element that drops its :ref
   ;; while staying mounted releases the handle it owned
-  (let [r (h/ref)
+  (let [r (engine/ref)
         show? (atom true)
         root (h/root (fn [_] [:text {:key :x
                                      :ref (when (rag/tracked-deref show?) r)
@@ -1122,13 +1124,13 @@
                     [:box {:padding-x (rag/tracked-deref pad) :padding-y 0}
                      [:text {:padding-x 0 :padding-y 0} "hi"]]))
         before (core/render r 30)]
-    (h/reset-counters!)
+    (engine/reset-counters!)
     (reset! pad 2)
     (let [after (core/render r 30)]
       (t/is (not= before after) "the padding change is visible")
-      (t/is (= 1 (:skips (h/counters))) "children unchanged → skip")
-      (t/is (= 1 (:applies (h/counters))) "the prop still patched")
-      (t/is (zero? (:constructs (h/counters))) "nothing rebuilt"))))
+      (t/is (= 1 (:skips (engine/counters))) "children unchanged → skip")
+      (t/is (= 1 (:applies (engine/counters))) "the prop still patched")
+      (t/is (zero? (:constructs (engine/counters))) "nothing rebuilt"))))
 
 (t/deftest skip-still-rerenders-at-a-new-width
   ;; the skip is a diff skip, never a render cache: items re-render at the
@@ -1137,9 +1139,9 @@
                     [:text {:padding-x 0 :padding-y 0}
                      (apply str (repeat 30 "x"))]))
         narrow (core/render r 10)]
-    (h/reset-counters!)
+    (engine/reset-counters!)
     (let [wide (core/render r 40)]
-      (t/is (= 1 (:skips (h/counters))) "the equal tree skipped the diff")
+      (t/is (= 1 (:skips (engine/counters))) "the equal tree skipped the diff")
       (t/is (not= narrow wide) "lines still reflowed at the new width"))))
 
 (t/deftest skipped-subtree-still-updates-tracked-fn-children
@@ -1150,10 +1152,10 @@
                      (rag/tracked-deref s)])
         r (h/root (fn [_] [:container {} [kid {}]]))]
     (t/is (= "a" (apply str (mapv str/trimr (core/render r 20)))))
-    (h/reset-counters!)
+    (engine/reset-counters!)
     (reset! s "b")
     (t/is (= "b" (apply str (mapv str/trimr (core/render r 20)))))
-    (t/is (= 1 (:skips (h/counters))) "the unchanged parent skipped its diff")))
+    (t/is (= 1 (:skips (engine/counters))) "the unchanged parent skipped its diff")))
 
 (t/deftest removed-keyed-children-are-disposed-root-teardown-cascades
   (let [log (atom [])
@@ -1258,7 +1260,7 @@
   ;; display leaves rebuild when props change (identity-free); equal props
   ;; keep the instance for free
   (let [txt (atom "a")
-        ref (h/ref)
+        ref (engine/ref)
         r (h/root (fn [_]
                     [:container
                      [:text {:key :t :padding-x 0 :padding-y 0 :ref ref}
@@ -1286,7 +1288,7 @@
         fired (atom 0)
         r (h/root (fn [_] [:text {:padding-x 0} (str (rag/tracked-deref s))]))]
     (core/render r 20)
-    (macros/set-frame-hook! #(swap! fired inc))
+    (component/set-frame-hook! #(swap! fired inc))
     (try
       (reset! s 1)
       (t/is (= 1 @fired) "dep change fires the hook immediately")
@@ -1298,17 +1300,17 @@
             "next render brought the reaction current")
       (t/is (= 1 @fired) "rendering itself does not poke the hook")
       (finally
-        (macros/set-frame-hook! nil)))))
+        (component/set-frame-hook! nil)))))
 
 (t/deftest counters-track-bodies-and-cache-hits
-  (h/reset-counters!)
+  (engine/reset-counters!)
   (let [s (atom "x")
         r (h/root (fn [_] [:text {:padding-x 0} (rag/tracked-deref s)]))]
     (core/render r 20)
-    (t/is (= 1 (:bodies-run (h/counters))))
+    (t/is (= 1 (:bodies-run (engine/counters))))
     (core/render r 20)
-    (t/is (= 1 (:bodies-run (h/counters))) "clean pass skipped the body")
-    (t/is (= 1 (:bodies-skipped (h/counters))) "counted as cache hit")))
+    (t/is (= 1 (:bodies-run (engine/counters))) "clean pass skipped the body")
+    (t/is (= 1 (:bodies-skipped (engine/counters))) "counted as cache hit")))
 
 ;; ═══════════════════════════════════════════════════════════════════════
 ;; Stage-3 review pass — edge-case pins (dsl.md review notes)
@@ -1380,8 +1382,8 @@
   ;; a ref the element stops declaring is abandoned: the old handle must
   ;; clear, or it would deref a live component forever (inline refs are
   ;; the anti-pattern, but neither abandon path may leave a stale handle)
-  (let [r1 (h/ref)
-        r2 (h/ref)
+  (let [r1 (engine/ref)
+        r2 (engine/ref)
         n (atom 0)
         root (h/root (fn [_] [:text {:padding-x 0
                                      :ref (if (even? @n) r1 r2)} "x"]))]
@@ -1397,7 +1399,7 @@
     (core/render root 10)
     (t/is (some? @r2)))
   ;; and dropping the ref prop entirely clears it too
-  (let [r (h/ref)
+  (let [r (engine/ref)
         n (atom 0)
         root (h/root (fn [_] (if (zero? @n)
                                [:text {:padding-x 0 :ref r} "x"]
@@ -1417,8 +1419,8 @@
   ;; prop patches the container in place — the instance (and its children's
   ;; state) survives AND the layout follows, instead of being ignored
   (let [px (atom 1)
-        bref (h/ref)
-        tref (h/ref)
+        bref (engine/ref)
+        tref (engine/ref)
         root (h/root (fn [_]
                        [:box {:key :b :ref bref :padding-x (rag/tracked-deref px)}
                         [:text {:padding-x 0 :padding-y 0 :ref tref} "hi"]]))]
@@ -1437,7 +1439,7 @@
 (t/deftest stack-gap-and-align-are-live
   ;; the same migration on the stacks: :gap / :align patch in place
   (let [gap (atom 0)
-        vref (h/ref)
+        vref (engine/ref)
         vroot (h/root (fn [_] [:v-stack {:ref vref :gap (rag/tracked-deref gap)}
                                [:text {:padding-x 0 :padding-y 0} "a"]
                                [:text {:padding-x 0 :padding-y 0} "b"]]))]
@@ -1464,7 +1466,7 @@
 (t/deftest scroll-view-props-are-live
   ;; every :scroll-view prop patches through its setter — the instance and
   ;; its child survive, the behavior follows
-  (let [sref (h/ref)
+  (let [sref (engine/ref)
         follow (atom true)
         sb (atom :hidden)
         delay (atom 1000)
@@ -1490,7 +1492,7 @@
   ;; pre-existing bug: the ctor's (or follow-end true) coerced an explicit
   ;; false back to true — the shared prop resolver keys off the prop's
   ;; presence instead
-  (let [sref (h/ref)
+  (let [sref (engine/ref)
         root (h/root (fn [_] [:scroll-view {:ref sref :follow-end false}
                               [:text {:padding-x 0 :padding-y 0} "x"]]))]
     (core/render root 10)
@@ -1523,11 +1525,11 @@
       (t/is (not (str/includes? lines "count-5")) "stale computed string gone"))))
 
 (t/deftest bare-ref-as-primary-value-throws
-  ;; [:widget (h/ref)] missing the props map — every other child position
+  ;; [:widget (engine/ref)] missing the props map — every other child position
   ;; rejects refs; the primary slot must not swallow one either
   (t/is (thrown-with-msg? Exception #"missing|did you mean \[text"
-                          (h/render-lines [:text (h/ref)] 10)))
-  (t/is (thrown? Exception (h/render-lines [:container [(h/ref)]] 10))))
+                          (h/render-lines [:text (engine/ref)] 10)))
+  (t/is (thrown? Exception (h/render-lines [:container [(engine/ref)]] 10))))
 
 (t/deftest props-only-bodies-rederive-tracked-bodies-memoize
   ;; the valve contract, both sides: framework reads (props/ctree) are
@@ -1537,20 +1539,20 @@
   ;; per-frame re-derivation is the documented batched fallback). A body
   ;; reading app state through tracked-deref/cursors/slices HAS a real
   ;; dep and memoizes until it changes.
-  (h/reset-counters!)
+  (engine/reset-counters!)
   (let [r (h/root (fn [{:keys [label]}]
                     [:text {:padding-x 0} label]))]
     (core/render r 20)
     (core/render r 20)
-    (t/is (= 2 (:bodies-run (h/counters))) "props-only: rederived")
-    (t/is (zero? (:bodies-skipped (h/counters))) "nothing cached"))
-  (h/reset-counters!)
+    (t/is (= 2 (:bodies-run (engine/counters))) "props-only: rederived")
+    (t/is (zero? (:bodies-skipped (engine/counters))) "nothing cached"))
+  (engine/reset-counters!)
   (let [s (atom "x")
         r (h/root (fn [_] [:text {:padding-x 0} (rag/tracked-deref s)]))]
     (core/render r 20)
     (core/render r 20)
-    (t/is (= 1 (:bodies-run (h/counters))) "tracked: ran once")
-    (t/is (= 1 (:bodies-skipped (h/counters))) "tracked: cached")))
+    (t/is (= 1 (:bodies-run (engine/counters))) "tracked: ran once")
+    (t/is (= 1 (:bodies-skipped (engine/counters))) "tracked: cached")))
 
 ;; ── stage-3 review fixes ──────────────────────────────────────────────────
 
@@ -1596,12 +1598,12 @@
                     [:text {:padding-x 0}
                      (str (rag/tracked-deref st) "/w" h/*width*)]))]
     (core/render r 20)
-    (h/reset-counters!)
+    (engine/reset-counters!)
     (t/is (str/includes? (str/join "\n" (core/render r 60)) "S/w60")
           "resize alone re-derives the body at the new width")
-    (t/is (= 1 (:bodies-run (h/counters))) "exactly one forced run")
+    (t/is (= 1 (:bodies-run (engine/counters))) "exactly one forced run")
     (core/render r 60)
-    (t/is (= 1 (:bodies-run (h/counters))) "same width stays memoized")
+    (t/is (= 1 (:bodies-run (engine/counters))) "same width stays memoized")
     (reset! st "T")
     (t/is (str/includes? (str/join "\n" (core/render r 60)) "T/w60"))
-    (t/is (= 2 (:bodies-run (h/counters))) "dep change still re-derives")))
+    (t/is (= 2 (:bodies-run (engine/counters))) "dep change still re-derives")))

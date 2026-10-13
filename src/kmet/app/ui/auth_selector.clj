@@ -9,6 +9,7 @@
             [kmet.app.keybindings :as app-kb]
             [kmet.app.ui.subs :as s]
             [kmet.libs.reakt :as r]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as h]
             [kmet.tui.components.input :as input]
             [kmet.tui.fuzzy :as fuzzy]
@@ -208,7 +209,7 @@
         focused? (atom false)
         sel (map->AuthSelector
              {:root nil
-              :search-ref (h/ref)
+              :search-ref (engine/ref)
               :state-atom st
               :mode mode
               :on-select-atom (atom on-select)

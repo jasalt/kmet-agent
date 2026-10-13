@@ -14,7 +14,8 @@
             [kmet.tui.core :as core]
             [kmet.tui.theme :as theme]
             [kmet.tui.components.markdown :as md]
-            [kmet.tui.macros :refer [track! defcomponent]]
+            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.tui.macros :refer [defcomponent]]
             [kmet.app.extensions :as extensions]))
 
 ;; ─── Helpers ───────────────────────────────────────────────────────────────
@@ -279,4 +280,3 @@
   (reset! (:hide-thinking-atom comp) hide?)
   (when-let [w @(:last-render-width-atom comp)]
     (reflow-all! comp w)))
-

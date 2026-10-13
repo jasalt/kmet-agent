@@ -10,9 +10,9 @@
             [babashka.fs :as fs]
             [kmet.app.keybindings :as kb]
             [kmet.app.ui.session-selector :as ss]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.keybindings :as tui-kb]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]))
 
@@ -807,20 +807,20 @@
   (let [sel (new-sel :current [(info "/tmp/s/a.ednl")
                                (info "/tmp/s/b.ednl")])]
     (render-text sel 100)
-    (hiccup/reset-counters!)
+    (engine/reset-counters!)
     (render-text sel 100)
-    (t/is (zero? (:bodies-run (hiccup/counters))) "idle frame: body cached")
-    (t/is (= 1 (:bodies-skipped (hiccup/counters))))
-    (hiccup/reset-counters!)
+    (t/is (zero? (:bodies-run (engine/counters))) "idle frame: body cached")
+    (t/is (= 1 (:bodies-skipped (engine/counters))))
+    (engine/reset-counters!)
     (press sel "down")
     (render-text sel 100)
-    (t/is (= 1 (:bodies-run (hiccup/counters))) "state change re-derives once")))
+    (t/is (= 1 (:bodies-run (engine/counters))) "state change re-derives once")))
 
 (t/deftest dispose-unwinds-the-root-and-inputs
   ;; the close path (hide!) disposes the panel: the root reaction and the two
   ;; foreign inputs must unwind — the dock drops records without disposing
   (let [sel (new-sel :current [(info "/tmp/s/a.ednl")])
-        watchers macros/live-watch-count
+        watchers component/live-watch-count
         before (watchers)]
     (render-text sel 100)
     (protocols/dispose sel)

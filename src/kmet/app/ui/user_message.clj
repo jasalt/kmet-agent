@@ -14,7 +14,8 @@
             [kmet.tui.components.markdown :as md]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.spacer :as spacer]
-            [kmet.tui.macros :refer [track! track-deps defcomponent]]
+            [kmet.libs.hikap.component :refer [track! track-deps]]
+            [kmet.tui.macros :refer [defcomponent]]
             [kmet.app.extensions :as extensions]))
 
 (declare apply-theme!)

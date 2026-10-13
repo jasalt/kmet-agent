@@ -1,5 +1,5 @@
 (ns hooks.kmet-macros
-  "clj-kondo analysis hooks for kmet.tui.macros custom macros."
+  "clj-kondo analysis hooks for kmet.tui.macros and kmet.libs.hikap.component custom macros."
   (:require [clj-kondo.hooks-api :as api]))
 
 (defn defcomponent

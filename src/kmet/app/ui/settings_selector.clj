@@ -25,6 +25,7 @@
             [kmet.libs.http :as http]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.components.expandable-text :as expandable-text]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as h]
             [kmet.tui.core :as tui]
             [kmet.tui.protocols :as protocols]
@@ -411,7 +412,7 @@
         ;; The frame is a compiled hiccup tree (dsl.md): the border chrome
         ;; and the settings list are both DSL-owned, and the instance is read
         ;; back through the ref right after compile (tui.md §2.4).
-        sl-ref (h/ref)
+        sl-ref (engine/ref)
         frame (h/compile-tree
                [:container {}
                 ;; the border color is read at render time: the frame is

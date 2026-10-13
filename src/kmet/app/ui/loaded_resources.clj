@@ -9,7 +9,8 @@
   (:require [clojure.string :as str]
             [kmet.tui.theme :as theme]
             [kmet.tui.utils :as u]
-            [kmet.tui.macros :refer [track! defcomponent]]))
+            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.tui.macros :refer [defcomponent]]))
 
 (defcomponent LoadedResources nil [sections-atom expanded?-atom theme-atom cache-atom]
   (render [this width]

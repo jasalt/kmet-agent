@@ -11,7 +11,7 @@
             [kmet.app.tools.config :as tools-config]
             [kmet.app.ui.resource-config :as rc]
             [kmet.config :as cfg]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]
@@ -723,22 +723,22 @@
       (fn [_]
         (let [screen (rc/make-resource-config-screen :rows 40)]
           (render-lines screen 80)
-          (hiccup/reset-counters!)
+          (engine/reset-counters!)
           (render-lines screen 80)
-          (t/is (zero? (:bodies-run (hiccup/counters)))
+          (t/is (zero? (:bodies-run (engine/counters)))
                 "an idle frame runs no body")
-          (t/is (zero? (:constructs (hiccup/counters)))
+          (t/is (zero? (:constructs (engine/counters)))
                 "…and rebuilds no element")
-          (hiccup/reset-counters!)
+          (engine/reset-counters!)
           (protocols/handle-input screen K-DOWN)
           (render-lines screen 80)
-          (t/is (= 1 (:bodies-run (hiccup/counters)))
+          (t/is (= 1 (:bodies-run (engine/counters)))
                 "one selection change re-derives the body once")
-          (hiccup/reset-counters!)
+          (engine/reset-counters!)
           (protocols/handle-input screen K-DOWN)
           (protocols/handle-input screen K-DOWN)
           (render-lines screen 80)
-          (t/is (= 1 (:bodies-run (hiccup/counters)))
+          (t/is (= 1 (:bodies-run (engine/counters)))
                 "any number of keys between frames still settles in one run")))
       {:user {:packages [dir]}})))
 

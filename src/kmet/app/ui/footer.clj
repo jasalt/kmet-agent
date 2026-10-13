@@ -18,7 +18,8 @@
             [kmet.tui.utils :as u]
             [kmet.tui.theme :as theme]
             [kmet.app.ui.footer-data-provider :as fdp]
-            [kmet.tui.macros :refer [track! track-deps defcomponent]]))
+            [kmet.libs.hikap.component :refer [track! track-deps]]
+            [kmet.tui.macros :refer [defcomponent]]))
 
 (defn format-tokens
   "Format token counts for compact footer display (pi: formatTokens).

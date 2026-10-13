@@ -5,7 +5,7 @@
             [kmet.tui.components.editor :as editor]
             [kmet.tui.autocomplete :as ac]
             [kmet.tui.components.select-list :as select-list]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]
             [kmet.tui.keybindings :as kb]
@@ -889,13 +889,13 @@
   ;; every suggestion update builds a fresh SelectList; a replaced or
   ;; cancelled dropdown must be disposed or its track! registry entry
   ;; outlives it
-  (let [watchers macros/live-watch-count
+  (let [watchers component/live-watch-count
         e (make-ac-editor)
         pre (watchers)]
     (core/handle-input e "/")
     (core/render e 80)
     (let [with-list (watchers)]
-      (t/is (macros/tracked? @(:autocomplete-list e)) "the open dropdown is tracked")
+      (t/is (component/tracked? @(:autocomplete-list e)) "the open dropdown is tracked")
       (doseq [c "the"]
         (core/handle-input e (str c))
         (core/render e 80)
@@ -906,12 +906,12 @@
       (t/is (<= (watchers) pre) "cancelling disposes the dropdown list"))))
 
 (t/deftest test-dispose-disposes-the-open-dropdown
-  (let [watchers macros/live-watch-count
+  (let [watchers component/live-watch-count
         e (make-ac-editor)
         pre (watchers)]
     (core/handle-input e "/")
     (core/render e 80)
-    (t/is (macros/tracked? @(:autocomplete-list e)))
+    (t/is (component/tracked? @(:autocomplete-list e)))
     (protocols/dispose e)
     (t/is (<= (watchers) pre) "disposing the editor disposes the dropdown")))
 
@@ -1408,9 +1408,3 @@
         (core/handle-input e "ab")
         (core/handle-input e "\u001b[97;5u")  ;; kitty ctrl+a
         (t/is (= "ab" (editor/editor-get-text e)) "ctrl+a is a chord")))))
-
-
-
-
-
-

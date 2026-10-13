@@ -6,7 +6,7 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.core :as core]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.utils :as utils]))
 
 (def ^:private png
@@ -83,13 +83,13 @@
     {:show-images true :image-width-cells 20}
     {:images :kitty :true-color true :hyperlinks true}
     (fn []
-      (let [watchers macros/live-watch-count
+      (let [watchers component/live-watch-count
             baseline (watchers)
             b (ib/make-image-block png "image/png")]
         (try
           (doseq [width [40 60 80]]
             (is (some #(str/includes? % "\u001b_G") (core/render b width)))
-            (is (macros/tracked? b) "the ImageBlock is tracked")
+            (is (component/tracked? b) "the ImageBlock is tracked")
             (is (<= (watchers) (inc baseline))
                 "only the ImageBlock, not its temporary Image, stays tracked"))
           (finally (protocols/dispose b)))

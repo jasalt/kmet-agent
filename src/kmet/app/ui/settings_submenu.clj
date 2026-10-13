@@ -6,8 +6,9 @@
    to it through the child's ref."
   (:require [kmet.app.ui.subs :as s]
             [kmet.libs.reakt :as r]
-            [kmet.tui.alias :refer [defalias]]
+            [kmet.libs.hikap.alias :refer [defalias]]
             [kmet.tui.components.select-list :as select-list]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as h]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
@@ -78,7 +79,7 @@
    switch, where a compiled tree would keep the construction-time palette."
   [title description items current-value
    & {:keys [on-select on-cancel on-selection-change]}]
-  (let [list-ref (h/ref)
+  (let [list-ref (engine/ref)
         items (vec items)
         on-select-fn (fn [item]
                        (when-let [cb on-select]

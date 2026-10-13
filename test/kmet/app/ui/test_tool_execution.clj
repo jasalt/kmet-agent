@@ -6,7 +6,7 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.theme :as theme]
             [kmet.tui.timers :as timers]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.app.ui.subs :as subs]
             [kmet.app.ui.tool-execution :as te]
             [kmet.app.ui.tool-renderers :as renderers]
@@ -768,14 +768,14 @@
         (let [c (image-tool)]
           (core/render c 60)
           (let [[_old-spacer old-img] @(:image-children-atom c)]
-            (is (macros/tracked? old-img) "the rendered image block is watched")
+            (is (component/tracked? old-img) "the rendered image block is watched")
             (reset! (:expanded-atom c) true)  ;; cache miss → children rebuilt
             (core/render c 60)
             (let [[_new-spacer new-img] @(:image-children-atom c)]
               (is (not (identical? old-img new-img)))
-              (is (not (macros/tracked? old-img))
+              (is (not (component/tracked? old-img))
                   "the previous image block's watches are torn down")
-              (is (macros/tracked? new-img) "the new image block is watched"))))))))
+              (is (component/tracked? new-img) "the new image block is watched"))))))))
 
 ;; ─── Renderer-child lifecycle (track! zombie-watch regression) ────────────
 
@@ -791,11 +791,11 @@
                                  comp)))]
       (core/render c 40)
       (let [first-call (last @made)]
-        (is (macros/tracked? first-call) "the first pass's call component is watched")
+        (is (component/tracked? first-call) "the first pass's call component is watched")
         (reset! (:expanded-atom c) true)  ;; cache miss → rebuild
         (core/render c 40)
         (is (not (identical? first-call (last @made))))
-        (is (not (macros/tracked? first-call))
+        (is (not (component/tracked? first-call))
             "the replaced call component's watches are torn down")))))
 
 (deftest test-renderer-reused-component-survives-rebuild
@@ -816,7 +816,7 @@
         (core/render c 40)
         (is (identical? first-call (last @made)) "only one component was made")
         (is (= first-call @(:last-call-component-atom c)))
-        (is (macros/tracked? first-call)
+        (is (component/tracked? first-call)
             "the reused instance was not disposed (its watches survive)")))))
 
 (deftest test-nil-call-component-renders
@@ -832,7 +832,7 @@
   (testing "repeated cache-miss renders do not grow the watch registry — the
             dropped children are disposed each pass"
     (let [c (te/make-tool-execution :name "read" :args {:path "a.clj"} :content "x")
-          watchers (fn [] (kmet.tui.macros/live-watch-count))]
+          watchers (fn [] (kmet.libs.hikap.component/live-watch-count))]
       (core/render c 60)
       (let [baseline (watchers)]
         (dotimes [i 5]
@@ -846,7 +846,7 @@
             no zombie track! watches (the 1s ticker rebuilds it every second
             while a tool runs)"
     (let [c (te/make-tool-execution :name "bash" :args {:command "echo hi"} :status true)
-          watchers (fn [] (kmet.tui.macros/live-watch-count))]
+          watchers (fn [] (kmet.libs.hikap.component/live-watch-count))]
       (te/tool-execution-mark-execution-started! c)
       (reset! (:content-atom c) "out -1")  ;; result body present → steady state
       (core/render c 60)
@@ -903,7 +903,7 @@
             (is (= [] (core/render c 60)) "component hides")
             (is (empty? @(:children @(:inner-container c)))
                 "the inner container is emptied")
-            (is (not (macros/tracked? (first img-children)))
+            (is (not (component/tracked? (first img-children)))
                 "the dropped image children are disposed")))))))
 
 (deftest test-dispose-disposes-image-children
@@ -917,9 +917,9 @@
           (core/render c 60)
           (let [img-children @(:image-children-atom c)]
             (is (seq img-children))
-            (is (macros/tracked? (last img-children)))
+            (is (component/tracked? (last img-children)))
             (protocols/dispose c)
-            (is (not (macros/tracked? (last img-children)))
+            (is (not (component/tracked? (last img-children)))
                 "dispose tears down the image children's watches")))))))
 
 (deftest test-duck-typed-renderer-output

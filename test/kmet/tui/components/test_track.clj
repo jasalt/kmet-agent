@@ -5,7 +5,6 @@
             [clojure.test :as t]
             [kmet.tui.core :as core]
             [kmet.libs.hikap.component :as component]
-            [kmet.tui.macros :as macros]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.text :as text]
@@ -116,24 +115,24 @@
 (t/deftest test-live-watch-count-follows-render-and-dispose
   (t/testing "the track! registry is weak-registry backed: a live component
             counts, dispose unregisters, both idempotently"
-    (let [pre (macros/live-watch-count)
+    (let [pre (component/live-watch-count)
           c (text/make-text "a" 0 0)]
-      (t/is (not (macros/tracked? c)) "nothing is registered before the first render")
+      (t/is (not (component/tracked? c)) "nothing is registered before the first render")
       (core/render c 5)
-      (t/is (macros/tracked? c))
+      (t/is (component/tracked? c))
       (protocols/dispose c)
-      (t/is (not (macros/tracked? c)) "the entry is gone")
-      (t/is (<= (macros/live-watch-count) pre))
+      (t/is (not (component/tracked? c)) "the entry is gone")
+      (t/is (<= (component/live-watch-count) pre))
       (t/is (nil? (protocols/dispose c)) "dispose again is a no-op"))))
 
 (t/deftest test-dispose-before-any-render-is-a-no-op
   (t/testing "teardown must not mint a key for a component that never ran
             a track! body"
-    (let [pre (macros/live-watch-count)
+    (let [pre (component/live-watch-count)
           c (text/make-text "a" 0 0)]
-      (t/is (not (macros/tracked? c)))
+      (t/is (not (component/tracked? c)))
       (t/is (nil? (protocols/dispose c)))
-      (t/is (<= (macros/live-watch-count) pre)))))
+      (t/is (<= (component/live-watch-count) pre)))))
 
 (defn- make-droppable-text
   "A rendered text component with only non-component references escaping
@@ -157,20 +156,20 @@
   (t/testing "a component dropped without dispose (the third-party
             drop-site case) is reclaimed once collected — the sweep unwatches
             its refs and removes the registry entry"
-    (let [pre (macros/live-watch-count)
+    (let [pre (component/live-watch-count)
           {:keys [wref key text-atom]} (make-droppable-text)]
       (t/is (live-subject? key) "live while referenced")
       (t/is (test-utils/await-collected #(nil? (.get wref)))
             "the component was collected")
       (t/is (contains? (.getWatches text-atom) key)
             "the atom watch is still installed until the sweep")
-      (macros/sweep-dead-watches!)
+      (component/sweep-dead-watches!)
       (t/is (not (contains? (.getWatches text-atom) key))
             "the sweep removed the atom watch")
       (t/is (not (live-subject? key)) "the registry entry is gone")
       ;; <=, not =: the forced GC may also clear unrelated stale entries from
       ;; earlier tests, which lowers the registry-wide live count.
-      (t/is (<= (macros/live-watch-count) pre)))))
+      (t/is (<= (component/live-watch-count) pre)))))
 
 (t/deftest test-tracker-keys-are-unique-and-meta-owned
   (t/testing "finding 4: the watch key lives in the component's cache atom
@@ -249,23 +248,23 @@
     (let [a (atom 1)
           rx (reakt/make-reaction (fn [] (reakt/tracked-deref a)))
           c {:cache (atom nil)}]
-      (t/is (= 1 (macros/track-render c 10 (fn [] (reakt/tracked-deref rx)))))
+      (t/is (= 1 (component/track-render c 10 (fn [] (reakt/tracked-deref rx)))))
       (let [entry (get (:rx @(:cache c)) (reakt/-cell rx))]
         (t/is (vector? entry) "the entry holds [reaction value]")
         (t/is (identical? rx (first entry)) "the reaction is pinned")
         (t/is (= 1 (second entry)) "with the value as read"))
-      (t/is (= 1 (macros/track-render c 10 (fn [] :not-run)))
+      (t/is (= 1 (component/track-render c 10 (fn [] :not-run)))
             "the cache still hits through the pinned reaction")
-      (macros/remove-track-watches! c)
+      (component/remove-track-watches! c)
       (reakt/dispose! rx))))
 
 (t/deftest test-counts-are-per-kind
   (t/testing "components and reactions share the weak registry but count
             separately"
-    (let [watches (macros/live-watch-count)
+    (let [watches (component/live-watch-count)
           rx (reakt/make-reaction (fn [] 1))]
       @rx
-      (t/is (<= (macros/live-watch-count) watches)
+      (t/is (<= (component/live-watch-count) watches)
             "a reaction does not inflate the track! component count")
       (reakt/dispose! rx))
     (let [reactions (reakt/live-reaction-count)
@@ -284,16 +283,16 @@
   []
   (let [a (atom 0)
         c {:cache (atom nil)}]
-    (macros/track-render c 5
-                         (fn [] (reakt/tracked-deref
-                                 (reakt/make-reaction
-                                  (fn [] (reakt/tracked-deref a))))))
+    (component/track-render c 5
+                            (fn [] (reakt/tracked-deref
+                                    (reakt/make-reaction
+                                     (fn [] (reakt/tracked-deref a))))))
     (let [wref ((fn [] (java.lang.ref.WeakReference.
                         (first (val (first (:rx @(:cache c))))))))
           cache (:cache c)]
       ;; Unregister the component's weak entry: only the cache pins the
       ;; reaction now.
-      (macros/remove-track-watches! c)
+      (component/remove-track-watches! c)
       (dotimes [_ 5]
         (System/gc)
         (Thread/sleep 20))

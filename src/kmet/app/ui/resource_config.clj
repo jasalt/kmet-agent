@@ -51,6 +51,7 @@
             [kmet.config :as cfg]
             [kmet.libs.reakt :as r]
             [kmet.tui.components.input :as input]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as hiccup]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.keys :as keys]
@@ -761,7 +762,7 @@
                           :rows []})
         screen (map->ResourceConfigScreen
                 {:state-atom state-atom
-                 :search-ref (hiccup/ref)
+                 :search-ref (engine/ref)
                  :on-close-atom (atom on-close)
                  :rows-count (atom (or rows 24))
                  :project-mode? (boolean project-mode?)

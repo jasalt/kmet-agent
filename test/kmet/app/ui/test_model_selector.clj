@@ -9,9 +9,9 @@
             [kmet.app.ui.model-selector :as ms]
             [kmet.ai.models :as models]
             [kmet.tui.core :as core]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.keybindings :as tui-kb]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]
             [kmet.tui.utils :as u]))
@@ -195,7 +195,7 @@
   ;; disposed — a dropped Text keeps its track! watch registered, which
   ;; would grow the registry per keypress and pin the components.
   (let [sel (selector)
-        watchers macros/live-watch-count]
+        watchers component/live-watch-count]
     (core/render sel 80)
     (let [baseline (watchers)]
       (dotimes [_ 6] (press sel "down") (core/render sel 80))
@@ -207,14 +207,14 @@
   ;; back the cached tree (0 bodies run) and a state change re-derives once.
   (let [sel (selector)]
     (protocols/render sel 120)
-    (hiccup/reset-counters!)
+    (engine/reset-counters!)
     (protocols/render sel 120)
-    (t/is (zero? (:bodies-run (hiccup/counters))) "idle frame: body cached")
-    (t/is (= 1 (:bodies-skipped (hiccup/counters))))
-    (hiccup/reset-counters!)
+    (t/is (zero? (:bodies-run (engine/counters))) "idle frame: body cached")
+    (t/is (= 1 (:bodies-skipped (engine/counters))))
+    (engine/reset-counters!)
     (press sel "down")
     (protocols/render sel 120)
-    (t/is (= 1 (:bodies-run (hiccup/counters))) "state change re-derives once")))
+    (t/is (= 1 (:bodies-run (engine/counters))) "state change re-derives once")))
 
 (t/deftest test-theme-switch-re-derives-the-body
   ;; the body tracks the theme sub: a palette switch re-derives the panel
@@ -226,19 +226,19 @@
       (th/init-theme! "dark")
       (let [sel (selector)
             dark (str/join "\n" (core/render sel 120))]
-        (hiccup/reset-counters!)
+        (engine/reset-counters!)
         (th/init-theme! "light")
         (let [light (str/join "\n" (core/render sel 120))]
-          (t/is (= 1 (:bodies-run (hiccup/counters)))
+          (t/is (= 1 (:bodies-run (engine/counters)))
                 "the theme switch re-derived the body once")
           (t/is (not= dark light) "the panel restyled")
           (t/is (str/includes? light (th/get-fg-ansi (th/get-theme "light") :accent)))
           (t/is (not (str/includes? light
                                     (th/get-fg-ansi (th/get-theme "dark") :accent)))
                 "no construction-time accent survives"))
-        (hiccup/reset-counters!)
+        (engine/reset-counters!)
         (core/render sel 120)
-        (t/is (zero? (:bodies-run (hiccup/counters))) "and it is memoized again"))
+        (t/is (zero? (:bodies-run (engine/counters))) "and it is memoized again"))
       (finally
         (th/set-theme-instance! orig-theme)
         (th/init-theme! orig-name)))))

@@ -15,7 +15,8 @@
             [kmet.libs.reakt :as r]
             [kmet.tui.hiccup :as h]
             [kmet.tui.keybindings :as kb]
-            [kmet.tui.macros :refer [defcomponent track!]]
+            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
             [kmet.tui.utils :as u]))

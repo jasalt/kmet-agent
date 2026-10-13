@@ -1,14 +1,14 @@
 (ns kmet.tui.hiccup
-  "TUI backend for the generic hiccup engine (kmet.libs.hikap) — the
-   public facade app code, kmet.tui.core and extensions have always
-   required.
+  "TUI backend for the generic hiccup engine (kmet.libs.hikap): the entry
+   points bound to the TUI backend — compile-element/compile-tree/root,
+   reconcile!, materialize-ref!, and the headless render-lines surface —
+   plus what the engine takes from this backend: the closed host tag
+   table, the width-bound render context (*width*/*comp*), and the
+   IComponent protocol extension for the engine's ComponentFn.
 
-   Everything toolkit-independent (parsing, the keyed reconcile, the
-   ComponentFn wrapper, refs) lives in kmet.libs.hikap; this namespace
-   supplies what is TUI: the closed host tag table, the width-bound render
-   context (*width*/*comp*), the IComponent protocol extension for the
-   engine's ComponentFn, and the headless render-lines surface. The public
-   API is unchanged from the pre-split namespace."
+   Backend-independent engine surface stays in kmet.libs.hikap and is
+   required directly: ref handles (kmet.libs.hikap/ref), derived refs
+   (kmet.libs.hikap/compute), counters. This namespace forwards nothing."
   (:refer-clojure :exclude [ref])
   (:require
    [kmet.libs.hikap :as engine]
@@ -530,10 +530,8 @@
   (dispose [this] (engine/dispose-component this)))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
-;; Public facade — the API app code, core and extensions require
+;; Public facade — the TUI-bound entry points
 ;; ═══════════════════════════════════════════════════════════════════════════
-
-(def ref engine/ref)
 
 (defn compile-element
   "Compile one tree node into a live component (fresh construction —
@@ -584,18 +582,10 @@
   ([owner ref width]
    (engine/materialize-ref! tui-backend owner ref width)))
 
-(defn compute
-  "A derived reactive ref over DEPS: kmet.libs.reakt/derive plus creation
-   counting and auto-disposal when created during a component render pass.
-   See kmet.libs.hikap/compute."
-  [deps f]
-  (engine/compute deps f))
-
 (defn root
   "Mount TREE-OR-FN as an IComponent — the one way trees enter the TUI.
    See kmet.libs.hikap/root."
   [tree-or-fn]
   (engine/root tui-backend tree-or-fn))
 
-(def counters engine/counters)
-(def reset-counters! engine/reset-counters!)
+

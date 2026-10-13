@@ -8,9 +8,9 @@
             [kmet.app.keybindings :as kb]
             [kmet.app.ui.thinking-selector :as ts]
             [kmet.tui.core :as core]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.keybindings :as tui-kb]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]))
 
@@ -140,7 +140,7 @@
   ;; Rows re-derive per navigation (pi updateList) — the retired rows must
   ;; be disposed or each keypress leaks a row-set of track! watches.
   (let [sel (selector)
-        watchers macros/live-watch-count]
+        watchers component/live-watch-count]
     (core/render sel 60)
     (let [baseline (watchers)]
       (dotimes [_ 6] (press sel "down") (core/render sel 60))
@@ -153,18 +153,18 @@
   ;; only the rows whose text changed rebuild.
   (let [sel (selector)]
     (protocols/render sel 80)
-    (hiccup/reset-counters!)
+    (engine/reset-counters!)
     (protocols/render sel 80)
-    (t/is (zero? (:bodies-run (hiccup/counters))) "idle frame: body cached")
-    (t/is (= 1 (:bodies-skipped (hiccup/counters))))
-    (hiccup/reset-counters!)
+    (t/is (zero? (:bodies-run (engine/counters))) "idle frame: body cached")
+    (t/is (= 1 (:bodies-skipped (engine/counters))))
+    (engine/reset-counters!)
     (press sel "down")
     (protocols/render sel 80)
-    (t/is (= 1 (:bodies-run (hiccup/counters))) "state change re-derives once")
+    (t/is (= 1 (:bodies-run (engine/counters))) "state change re-derives once")
     ;; :text carries no patch lens — the two rows whose text changed (the
     ;; arrow moving) rebuild; unchanged rows are reused as-is
-    (t/is (= 2 (:constructs (hiccup/counters))))
-    (t/is (= 2 (:disposals (hiccup/counters))) "dropped rows are disposed")))
+    (t/is (= 2 (:constructs (engine/counters))))
+    (t/is (= 2 (:disposals (engine/counters))) "dropped rows are disposed")))
 
 (t/deftest test-thinking-save-and-cancel-resolve-through-the-manager
   (t/testing "app.thinking.save is a real id (pi) — a rebind moves Ctrl+S"
@@ -191,4 +191,3 @@
         (t/is (true? @cancelled) "ctrl+x cancels")
         (finally
           (tui-kb/set-user-bindings! (tui-kb/get-global-keybindings) {}))))))
-

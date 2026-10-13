@@ -2,8 +2,8 @@
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.tui.core :as core]
-            [kmet.tui.hiccup :as hiccup]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.libs.terminal-image :as timg]
             [kmet.app.ui.bash-execution :as be]
@@ -147,7 +147,7 @@
         fired (atom 0)]
     (ch/chat-history-start-streaming! ch)
     (core/render ch 40)
-    (macros/set-frame-hook! #(swap! fired inc))
+    (component/set-frame-hook! #(swap! fired inc))
     (try
       (ch/chat-history-append-streaming-text! ch "Hello")
       (is (= 1 @fired) "first append scheduled exactly one frame")
@@ -155,7 +155,7 @@
       (is (= 2 @fired) "second append scheduled another frame")
       (is (= "Hello world" (ch/chat-history-get-streaming-text ch)))
       (finally
-        (macros/set-frame-hook! nil)))))
+        (component/set-frame-hook! nil)))))
 
 (deftest test-finalize-streaming
   (testing "finalize streaming text into a message"
@@ -413,7 +413,7 @@
 (deftest test-remove-streaming-placeholder-disposes-removed-components
   ;; the placeholder and any trailing status lines dropped with it leave the
   ;; transcript — their track! registry entries must leave with them
-  (let [watchers macros/live-watch-count
+  (let [watchers component/live-watch-count
         ch (ch/make-chat-history)]
     (ch/chat-history-add-message! ch {:role :user :content "hi"})
     (plain-lines ch 80)
@@ -421,9 +421,9 @@
       (ch/chat-history-start-streaming! ch)
       (ch/chat-history-show-status! ch "Working...")
       (plain-lines ch 80)
-      (is (macros/tracked? (:component (first @(:messages-atom ch))))
+      (is (component/tracked? (:component (first @(:messages-atom ch))))
           "the user message is tracked")
-      (is (macros/tracked? (:component @(:streaming-atom ch)))
+      (is (component/tracked? (:component @(:streaming-atom ch)))
           "the streaming placeholder is tracked")
       (is (true? (ch/chat-history-remove-streaming-placeholder! ch)))
       (is (<= (watchers) baseline)
@@ -645,22 +645,22 @@
     (let [ch (ch/make-chat-history)]
       (ch/chat-history-add-message! ch {:role :error :content "boom"})
       (protocols/render ch 40)
-      (hiccup/reset-counters!)
+      (engine/reset-counters!)
       (protocols/render ch 40)
-      (is (zero? (:constructs (hiccup/counters))) "no element rebuilt")
-      (is (zero? (:disposals (hiccup/counters))) "nothing disposed")))
+      (is (zero? (:constructs (engine/counters))) "no element rebuilt")
+      (is (zero? (:disposals (engine/counters))) "nothing disposed")))
   (testing "an in-place status rewrite re-derives exactly one body"
     (let [ch (ch/make-chat-history)
           _ (ch/chat-history-add-message! ch {:role :user :content "hi"})]
       (ch/chat-history-show-status! ch "one")
       (protocols/render ch 40)
-      (hiccup/reset-counters!)
+      (engine/reset-counters!)
       (protocols/render ch 40)
-      (is (zero? (:bodies-run (hiccup/counters))) "idle status frame runs no bodies")
-      (hiccup/reset-counters!)
+      (is (zero? (:bodies-run (engine/counters))) "idle status frame runs no bodies")
+      (engine/reset-counters!)
       (ch/chat-history-show-status! ch "two")
       (protocols/render ch 40)
-      (is (= 1 (:bodies-run (hiccup/counters))) "the rewrite re-derives once")
+      (is (= 1 (:bodies-run (engine/counters))) "the rewrite re-derives once")
       (is (some #(re-find #"two" %) (plain-lines ch 40))))))
 
 (deftest test-info-collapsible
@@ -916,14 +916,14 @@
 (deftest test-info-banner-replacement-disposes-previous
   (testing "replacing the info banner disposes the previous component — its
             children's track! watches must not outlive it"
-    (let [watchers macros/live-watch-count
+    (let [watchers component/live-watch-count
           h (ch/make-chat-history)]
       (ch/chat-history-set-info-msg! h {:label "a" :content "one"})
       (core/render h 60)
       (let [first-banner @(:info-comp-atom h)
             baseline (watchers)]
         (is (some? first-banner))
-        (is (macros/tracked? first-banner) "the banner is tracked")
+        (is (component/tracked? first-banner) "the banner is tracked")
         (ch/chat-history-set-info-msg! h {:label "b" :content "two"})
         (core/render h 60)
         (is (not (identical? first-banner @(:info-comp-atom h))))
@@ -935,16 +935,16 @@
             transcript and the banner, so a tui-clear/container cascade
             cannot leave message components (and their track! watches)
             rooted"
-    (let [watchers macros/live-watch-count
+    (let [watchers component/live-watch-count
           before (watchers)
           ch (ch/make-chat-history)]
       (ch/chat-history-add-message! ch {:role :user :content "hello"})
       (ch/chat-history-add-message! ch {:role :assistant :content "hi there"})
       (ch/chat-history-set-info-msg! ch {:label "banner" :content "info"})
       (core/render ch 60)
-      (is (every? macros/tracked? (keep :component @(:messages-atom ch)))
+      (is (every? component/tracked? (keep :component @(:messages-atom ch)))
           "the messages are tracked")
-      (is (macros/tracked? @(:info-comp-atom ch)) "the banner is tracked")
+      (is (component/tracked? @(:info-comp-atom ch)) "the banner is tracked")
       (protocols/dispose ch)
       (is (empty? (ch/chat-history-get-messages ch)) "messages cleared")
       (is (nil? @(:info-comp-atom ch)) "banner cleared")

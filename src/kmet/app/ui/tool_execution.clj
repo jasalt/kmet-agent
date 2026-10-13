@@ -23,7 +23,8 @@
             [kmet.app.ui.custom-dialog-adapter :as cda]
             [kmet.app.ui.image-block :as image-block]
             [kmet.tui.components.spacer :as spacer]
-            [kmet.tui.macros :refer [track! defcomponent]]))
+            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.tui.macros :refer [defcomponent]]))
 
 ;; ─── Renderer dispatch ─────────────────────────────────────────────────────
 ;; Built-in renderer functions live in kmet.app.ui.tool-renderers so supported
@@ -496,4 +497,3 @@
   [comp images]
   (let [image-data (mapv (fn [img] {:data (:data img) :mime-type (:mime-type img)}) images)]
     (reset! (:image-data-atom comp) image-data)))
-

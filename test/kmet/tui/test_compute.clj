@@ -1,5 +1,5 @@
 (ns kmet.tui.test-compute
-  "Headless tests for hiccup/compute (dsl.md §3.1, Stage 5): derived refs —
+  "Headless tests for kmet.libs.hikap/compute (dsl.md §3.1, Stage 5): derived refs —
    sugar over reactions with the dep list seeding tracking — with equal-value
    no-op notification, auto-disposal for per-instance computes, record
    components subscribing through the track!/RXRef bridge, and the
@@ -8,8 +8,10 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [kmet.tui.core :as core]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as h]
-            [kmet.tui.macros :as macros :refer [with-let defcomponent track!]]
+            [kmet.libs.hikap.component :as component :refer [with-let track!]]
+            [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.libs.reakt :as rag]
             [kmet.libs.weak :as weak]))
@@ -23,7 +25,7 @@
 (t/deftest compute-derived-ref
   (let [a (atom 1)
         b (atom 10)
-        c (h/compute [a b] +)]
+        c (engine/compute [a b] +)]
     ;; lazy: nothing ran until read; first deref brings it current
     (t/is (= 11 @c) "first deref computes")
     (reset! a 2)
@@ -35,7 +37,7 @@
   ;; the payoff: recomputing to the SAME value notifies nobody — fine-grained
   ;; invalidation for free (component caches stay valid, no frame requested)
   (let [a (atom 1)
-        c (h/compute [a] (fn [x] (mod x 3)))
+        c (engine/compute [a] (fn [x] (mod x 3)))
         _ @c
         fired (atom 0)]
     (rag/watch-ref c :w (fn [_ _ _ _] (swap! fired inc)))
@@ -50,8 +52,8 @@
   ;; each compute instance owns its dependency watches — two computes over
   ;; the same dep don't interfere
   (let [a (atom 1)
-        c1 (h/compute [a] (fn [x] (* x 2)))
-        c2 (h/compute [a] (fn [x] (* x 3)))]
+        c1 (engine/compute [a] (fn [x] (* x 2)))
+        c2 (engine/compute [a] (fn [x] (* x 3)))]
     (reset! a 5)
     (t/is (= 10 @c1))
     (t/is (= 15 @c2))))
@@ -61,10 +63,10 @@
   ;; automatically (auto-discovery is the default under compute)
   (let [a (atom 1)
         hidden (atom 100)
-        c (h/compute [a]
-                     (fn [x]
-                       (+ x
-                          (rag/tracked-deref hidden))))]
+        c (engine/compute [a]
+                          (fn [x]
+                            (+ x
+                               (rag/tracked-deref hidden))))]
     (t/is (= 101 @c))
     (reset! hidden 200)
     (t/is (= 201 @c) "unlisted but tracked read re-derives")))
@@ -75,7 +77,7 @@
   (let [a (atom 1)
         log (atom [])
         r (h/root (fn [_]
-                    (with-let [c (h/compute [a] inc)]
+                    (with-let [c (engine/compute [a] inc)]
                       [:text {:padding-x 0 :padding-y 0} (str "v" @c)]
                       (finally (swap! log conj :disposed)))))]
     (t/is (str/includes? (str/join "\n" (core/render r 20)) "v2"))
@@ -94,7 +96,7 @@
         calls (atom 0)
         r (h/root (fn [_]
                     (swap! calls inc)
-                    (with-let [c (h/compute [a] (fn [x] (* x 2)))]
+                    (with-let [c (engine/compute [a] (fn [x] (* x 2)))]
                       [:text {:padding-x 0 :padding-y 0} (str "v" @c)])))]
     (core/render r 20)
     (core/render r 20)
@@ -115,7 +117,7 @@
   ;; the reactive ref joins the tracked set, so an upstream change
   ;; invalidates the record's cache without any manual invalidate call
   (let [a (atom 5)
-        c (h/compute [a] (fn [x] (* x 2)))
+        c (engine/compute [a] (fn [x] (* x 2)))
         renders (atom 0)
         probe (map->Probe {:cache-atom (atom nil)
                            :render-count-atom renders
@@ -135,7 +137,7 @@
   ;; consumes), and writes to the dropped source change nothing
   (let [a (atom 1)
         b (atom 0)
-        c (h/compute [a] (fn [x] (+ x 100)))
+        c (engine/compute [a] (fn [x] (+ x 100)))
         renders (atom 0)
         probe (map->Probe {:cache-atom (atom nil)
                            :render-count-atom renders
@@ -162,13 +164,13 @@
   ;; invalidates, and invalidate-cache requests EXACTLY ONE frame through
   ;; the hook (installed here like tui.core does)
   (let [a (atom 1)
-        c (h/compute [a] (fn [x] (* x 2)))
+        c (engine/compute [a] (fn [x] (* x 2)))
         fired (atom 0)
         r (h/root (fn [_]
                     [:text {:padding-x 0 :padding-y 0}
                      (str "c" (rag/tracked-deref c))]))]
     (core/render r 20)
-    (macros/set-frame-hook! #(swap! fired inc))
+    (component/set-frame-hook! #(swap! fired inc))
     (try
       (reset! a 5)
       (t/is (zero? @fired) "queued model: nothing fired before the flush")
@@ -180,17 +182,17 @@
             "new value rendered")
       (t/is (= 1 @fired) "rendering itself does not poke the hook")
       (finally
-        (macros/set-frame-hook! nil)))))
+        (component/set-frame-hook! nil)))))
 
 (t/deftest compute-creation-counted
   ;; leak observability (dsl.md §3.1): every creation bumps :computes —
   ;; per-instance computes create once, bare-in-body computes climb per pass
-  (h/reset-counters!)
+  (engine/reset-counters!)
   (let [a (atom 1)
-        _ (h/compute [a] inc)
-        _ (h/compute [a] (fn [x] (* x 2)))]
-    (t/is (= 2 (:computes (h/counters))) "two creations counted")
-    (h/reset-counters!)))
+        _ (engine/compute [a] inc)
+        _ (engine/compute [a] (fn [x] (* x 2)))]
+    (t/is (= 2 (:computes (engine/counters))) "two creations counted")
+    (engine/reset-counters!)))
 
 (t/deftest compute-dirty-at-dispose
   ;; swap the dep (compute enqueued) then dispose BEFORE any flush: dispose
@@ -199,7 +201,7 @@
   (let [a (atom 1)
         log (atom [])
         r (h/root (fn [_]
-                    (with-let [c (h/compute [a] #(+ % 10))]
+                    (with-let [c (engine/compute [a] #(+ % 10))]
                       [:text {:padding-x 0 :padding-y 0} (str "v" @c)]
                       (finally (swap! log conj :cleanup)))))]
     (core/render r 20)
@@ -214,7 +216,7 @@
   ;; exactly one-per-dep-per-kind per pass, no stale invalidation either way
   (let [a (atom 0)
         mode (atom :atom)
-        c (h/compute [a] (fn [x] (str "compute-" x)))
+        c (engine/compute [a] (fn [x] (str "compute-" x)))
         renders (atom 0)
         probe (map->Probe {:cache-atom (atom nil)
                            :render-count-atom renders
@@ -240,7 +242,7 @@
   ;; no enclosing store → the reaction keeps its dep watches (the shared
   ;; def'd compute pattern)
   (let [a (atom 1)
-        c (h/compute [a] (fn [x] (* x 2)))]
+        c (engine/compute [a] (fn [x] (* x 2)))]
     (t/is (= 2 @c))
     (reset! a 4)
     (t/is (= 8 @c) "still live after no dispose path")))

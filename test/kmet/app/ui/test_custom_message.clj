@@ -6,7 +6,7 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.app.ui.subs :as subs]
             [kmet.app.ui.custom-message :as cm]
-            [kmet.tui.macros :as macros]))
+            [kmet.libs.hikap.component :as component]))
 
 (defn- strip-ansi [s]
   (clojure.string/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))
@@ -129,7 +129,7 @@
 (deftest test-collapsible-rebuild-no-watch-leak
   (testing "expand/collapse rebuilds dispose the replaced children — watch
             registry stays flat across toggles"
-    (let [watchers macros/live-watch-count
+    (let [watchers component/live-watch-count
           c (cm/make-custom-message :label "ext" :content "collapsed text")]
       (cm/custom-message-set-collapsible-content! c "collapsed text" "expanded text")
       (core/render c 60)
@@ -140,7 +140,7 @@
 
 (deftest test-theme-switch-rebuild-no-watch-leak
   (testing "a theme switch rebuilds the children once and re-caches"
-    (let [watchers macros/live-watch-count
+    (let [watchers component/live-watch-count
           c (cm/make-custom-message :label "ext" :content "note")]
       (core/render c 60)
       (let [baseline (watchers)]
@@ -155,7 +155,7 @@
   (testing "a pad change patches the live box — the inner container and
             its children are reused, so nothing is disposed and the watch
             registry does not move"
-    (let [watchers macros/live-watch-count
+    (let [watchers component/live-watch-count
           pad (atom 1)
           c (cm/make-custom-message :label "ext" :content "note"
                                     :output-pad-atom pad)

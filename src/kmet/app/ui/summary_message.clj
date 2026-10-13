@@ -29,7 +29,8 @@
             [kmet.tui.components.markdown :as md]
             [kmet.tui.components.spacer :as spacer]
             [kmet.tui.components.text :as text]
-            [kmet.tui.macros :refer [track! defcomponent]]
+            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]))
 

@@ -16,6 +16,7 @@
             [kmet.app.ui.subs :as s]
             [kmet.config :as cfg]
             [kmet.libs.reakt :as r]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as h]
             [kmet.tui.components.input :as input]
             [kmet.tui.core :as tui]
@@ -371,7 +372,7 @@
         focused? (atom false)
         sel (map->ScopedModelsSelector
              {:root nil
-              :search-ref (h/ref)
+              :search-ref (engine/ref)
               :state-atom st
               :on-change-atom (atom on-change)
               :on-persist-atom (atom on-persist)

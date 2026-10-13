@@ -52,7 +52,8 @@ caching behave identically, and there is nothing to reimplement.
             [kmet.tui.components.container :as container]
             [kmet.tui.components.text :as text]
             [kmet.tui.theme :as theme]
-            [kmet.tui.macros :refer [defcomponent track!]]))
+            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.tui.macros :refer [defcomponent]]))
 
 (defcomponent MyDialog [this width]
   (protocols/render [_ w]
@@ -65,8 +66,9 @@ What is available: the core protocol records (`container`, `box`, `text`,
 `spacer`, `markdown`, `input`, `editor`, `editing`, `select-list`,
 `settings-list`, `stack`, `v-stack`, `h-stack`, `expandable-text`, `image`,
 `spinner`, ...), `kmet.tui.theme` (styling — including
-`theme/get-settings-list-theme` for the selector look), `kmet.tui.macros`
-(`track!`/`track-deps` reactive caching), `kmet.tui.keybindings`, `kmet.tui.keys`,
+`theme/get-settings-list-theme` for the selector look),
+`kmet.libs.hikap.component` (`track!`/`track-deps` reactive caching,
+`with-let`), `kmet.tui.macros` (`defcomponent`), `kmet.tui.keybindings`, `kmet.tui.keys`,
 `kmet.tui.fuzzy` and `kmet.tui.autocomplete`. Extension components must follow
 the duck-typed `{:render :handle-input :invalidate}` contract accepted by
 `ui/custom` (returning a real record is also fine). Extension components are
@@ -1133,7 +1135,7 @@ handlers (`:interactive` vs headless) and fall back to `ui-notify`.
 #### Tag aliases — named tag-level components
 
 `ext/register-alias!` registers a **qualified-keyword tag** for any hiccup
-tree the host or another extension parses (`kmet.tui.alias`, tui.md §2.9).
+tree the host or another extension parses (`kmet.libs.hikap.alias`, tui.md §2.9).
 Use it to contribute UI by name: a tree site embeds
 `[:my-ext/chip {:label "ready"}]` without requiring the provider.
 
@@ -1163,7 +1165,7 @@ Use it to contribute UI by name: a tree site embeds
   the new fn takes effect on the component's next body run.
 - The registration is removed automatically when the extension unloads
   (the returned deregister fn is tracked like every other registration).
-  Do **not** use `kmet.tui.alias/defalias` in an extension — it registers
+  Do **not** use `kmet.libs.hikap.alias/defalias` in an extension — it registers
   directly and would survive the unload.
 - Names must be qualified keywords; unqualified keywords are host tags,
   and there is no `.class`/`#id` tag-suffix syntax. A body run after the

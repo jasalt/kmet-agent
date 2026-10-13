@@ -69,7 +69,7 @@
 ;;   :register-shortcut! :register-markdown-transformer! :send-message!
 ;;   :register-entry-renderer! :register-message-renderer!
 ;;   :register-alias!                                   — tag aliases
-;;     (kmet.tui.alias): register a qualified-keyword tag into the hiccup
+;;     (kmet.libs.hikap.alias): register a qualified-keyword tag into the hiccup
 ;;     tree; removed automatically on unload
 ;;   :register-skill! :register-prompt!                 — bundled resources
 ;;   :set-model :get-thinking-level :set-thinking-level :send-user-message
@@ -180,7 +180,7 @@
   ((:register-message-renderer! api) custom-type renderer))
 
 (defn register-alias!
-  "Register a tag alias (kmet.tui.alias): a qualified keyword usable as a
+  "Register a tag alias (kmet.libs.hikap.alias): a qualified keyword usable as a
    hiccup element head, resolving to F — (fn [attrs children] tree); attrs
    is the element's props map without :key/:ref, children a flat vector of
    raw child nodes ([] when none). Trees elsewhere then embed

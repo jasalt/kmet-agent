@@ -24,7 +24,7 @@
             [kmet.app.skills :as skills]
             [kmet.app.tools.core :as tools]
             [kmet.ai.hooks :as ai-hooks]
-            [kmet.tui.alias :as alias]
+            [kmet.libs.hikap.alias :as alias]
             [kmet.tui.theme :as theme]))
 
 ;; ─── Extension exec (extension api: exec) ────────────────────────────────
@@ -88,7 +88,7 @@
 
 (t/deftest test-nullable-api-alias-registration
   ;; register-alias!/deregister replay for extensions that contribute tag
-  ;; aliases (kmet.tui.alias)
+  ;; aliases (kmet.libs.hikap.alias)
   (let [{:keys [api state]} (ext/create-nullable-api)
         f (fn [_attrs _children] [:text {:padding-x 0 :padding-y 0} "x"])
         dereg (ext/register-alias! api :test/nullable-chip f)]

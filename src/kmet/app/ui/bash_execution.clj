@@ -12,7 +12,8 @@
   (:require [kmet.libs.reakt :as r]
             [kmet.tui.border :as border]
             [kmet.tui.hiccup :as hiccup]
-            [kmet.tui.macros :as macros :refer [defcomponent]]
+            [kmet.libs.hikap.component :as component]
+            [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
             [kmet.tui.timers :as timers]
@@ -289,7 +290,7 @@
                              (if (or @done-atom (not= :running (:status @state-atom)))
                                (timers/cancel! @(:ticker-id-atom comp))
                                (when (timers/frame-due? spinner/default-interval-ms)
-                                 (macros/schedule-frame!))))))
+                                 (component/schedule-frame!))))))
     ;; Pi renderResult parity: re-stamp :now-ms once a second while
     ;; running so the Elapsed line ticks during silent runs (the body
     ;; reads it tracked, so only these stamps re-derive the tree).

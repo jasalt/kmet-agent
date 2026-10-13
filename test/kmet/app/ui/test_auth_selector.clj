@@ -9,9 +9,9 @@
             [babashka.fs :as fs]
             [kmet.app.keybindings :as kb]
             [kmet.app.ui.auth-selector :as auth-selector]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.keybindings :as tui-kb]
-            [kmet.tui.macros :as macros]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]))
 
@@ -157,20 +157,20 @@
 (t/deftest test-root-body-memoizes-idle-frames
   (let [sel (selector)]
     (protocols/render sel 120)
-    (hiccup/reset-counters!)
+    (engine/reset-counters!)
     (protocols/render sel 120)
-    (t/is (zero? (:bodies-run (hiccup/counters))) "idle frame: body cached")
-    (t/is (= 1 (:bodies-skipped (hiccup/counters))))
-    (hiccup/reset-counters!)
+    (t/is (zero? (:bodies-run (engine/counters))) "idle frame: body cached")
+    (t/is (= 1 (:bodies-skipped (engine/counters))))
+    (engine/reset-counters!)
     (press sel "down")
     (protocols/render sel 120)
-    (t/is (= 1 (:bodies-run (hiccup/counters))) "state change re-derives once")))
+    (t/is (= 1 (:bodies-run (engine/counters))) "state change re-derives once")))
 
 (t/deftest test-navigation-does-not-leak-watches
   ;; re-derived rows must be disposed — a dropped Text keeps its track! watch
   ;; registered, which would grow the registry per keypress
   (let [sel (selector)
-        watchers macros/live-watch-count]
+        watchers component/live-watch-count]
     (protocols/render sel 120)
     (let [baseline (watchers)]
       (dotimes [_ 6] (press sel "down") (protocols/render sel 120))
@@ -183,7 +183,7 @@
   ;; without disposing them, so an unwired root would keep the reaction and
   ;; its children alive forever.
   (let [sel (selector)
-        watchers macros/live-watch-count
+        watchers component/live-watch-count
         before (watchers)]
     (protocols/render sel 120)
     (protocols/dispose sel)
@@ -229,11 +229,11 @@
 (t/deftest test-method-selector-memoizes-idle-frames
   (let [sel (method-selector)]
     (protocols/render sel 120)
-    (hiccup/reset-counters!)
+    (engine/reset-counters!)
     (protocols/render sel 120)
-    (t/is (zero? (:bodies-run (hiccup/counters))) "idle frame: body cached")
-    (hiccup/reset-counters!)
+    (t/is (zero? (:bodies-run (engine/counters))) "idle frame: body cached")
+    (engine/reset-counters!)
     (press sel "down")
     (protocols/render sel 120)
-    (t/is (= 1 (:bodies-run (hiccup/counters)))
+    (t/is (= 1 (:bodies-run (engine/counters)))
           "selection change re-derives once")))

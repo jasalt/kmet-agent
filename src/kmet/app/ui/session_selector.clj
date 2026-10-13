@@ -33,6 +33,7 @@
             [kmet.tui.components.input :as input]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]
+            [kmet.libs.hikap :as engine]
             [kmet.tui.hiccup :as hiccup]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.macros :refer [defcomponent]]
@@ -939,8 +940,8 @@
                                  :rename-target nil
                                  :rename-value ""
                                  :rename-caret 0})
-              :search-ref (hiccup/ref)
-              :rename-ref (hiccup/ref)
+              :search-ref (engine/ref)
+              :rename-ref (engine/ref)
               :loaders (or loaders {:current (fn [_ _] []) :all (fn [_ _] [])})
               :current-session-file (some-> current-session-file canon-path)
               :rename-session-fn (or rename-session default-rename-session!)
