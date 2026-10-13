@@ -8,7 +8,7 @@
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.spinner :as spinner]
             [kmet.tui.core :as core]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.tui.hikap :as hiccup]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
             [kmet.tui.utils :as u]

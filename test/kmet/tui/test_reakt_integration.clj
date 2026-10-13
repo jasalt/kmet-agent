@@ -10,7 +10,7 @@
             [kmet.tui.core :as core]
             [kmet.tui.components.text :as text]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.hiccup :as hicc]
+            [kmet.tui.hikap :as hicc]
             [kmet.libs.hikap.component :as component :refer [with-let]]
             [kmet.libs.reakt :as r]))
 

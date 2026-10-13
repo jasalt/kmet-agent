@@ -16,7 +16,7 @@
             [kmet.tui.keys :as keys]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.macros :refer [defcomponent]]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
             [kmet.tui.utils :as u]

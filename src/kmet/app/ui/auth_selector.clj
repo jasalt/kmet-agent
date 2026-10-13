@@ -10,7 +10,7 @@
             [kmet.app.ui.subs :as s]
             [kmet.libs.reakt :as r]
             [kmet.libs.hikap :as engine]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.components.input :as input]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]

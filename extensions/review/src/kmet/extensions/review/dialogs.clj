@@ -19,7 +19,7 @@
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.components.input :as input]
             [kmet.tui.components.select-list :as select-list]))
@@ -30,7 +30,7 @@
   "Compile a top/bottom-bordered dialog tree. TH is the live theme map.
    TITLE is the dialog title (pi: accent-bold for ExtensionSelector /
    pi-review custom frames, plain accent for ExtensionInput /
-   ExtensionEditor frames). BODY and HINT are kmet.tui.hiccup elements
+   ExtensionEditor frames). BODY and HINT are kmet.tui.hikap elements
    that compile-tree will turn into real components.
 
    The kmet frame carries a blank line between border and title (a

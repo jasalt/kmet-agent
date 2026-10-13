@@ -13,7 +13,7 @@
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.subs :as s]
             [kmet.libs.reakt :as r]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.keybindings :as kb]
             [kmet.libs.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]

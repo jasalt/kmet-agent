@@ -8,7 +8,7 @@
    invalidate call. It must be a macro because deref rewriting happens at
    compile time. Also hosts with-let — per-instance component state — the
    frame-scheduler hook, and the track! watch registry. Every backend
-   (kmet.tui.hiccup, kmet.gui.tk) builds its component records on top of
+   (kmet.tui.hikap, kmet.gui.tk) builds its component records on top of
    this namespace; nothing here knows a toolkit."
   (:require [kmet.libs.reakt :as reakt]
             [kmet.libs.weak :as weak]))

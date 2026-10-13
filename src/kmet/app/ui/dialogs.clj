@@ -15,7 +15,7 @@
    `compile-tree` (tui.md §2.4)."
   (:require [clojure.string :as str]
             [kmet.libs.hikap :as engine]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]

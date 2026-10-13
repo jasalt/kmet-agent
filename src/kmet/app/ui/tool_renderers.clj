@@ -12,7 +12,7 @@
             [kmet.libs.highlight :as hl]
             [kmet.app.keybindings :as app-kb]
             [kmet.app.ui.skill-message :as skill-message]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.app.bash-executor :as bash-exec]))
 
 ;; ─── Shared render helpers (pi: render-utils.ts) ────────────────────────────

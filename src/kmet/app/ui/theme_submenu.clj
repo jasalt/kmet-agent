@@ -7,7 +7,7 @@
   (:require [clojure.string :as str]
             [kmet.app.ui.settings-submenu :as submenu]
             [kmet.libs.hikap :as engine]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]))

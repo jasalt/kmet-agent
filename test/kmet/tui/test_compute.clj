@@ -9,7 +9,7 @@
             [clojure.test :as t]
             [kmet.tui.core :as core]
             [kmet.libs.hikap :as engine]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.libs.hikap.component :as component :refer [with-let track!]]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]

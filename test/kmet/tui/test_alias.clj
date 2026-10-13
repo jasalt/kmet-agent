@@ -10,7 +10,7 @@
             [kmet.libs.hikap.alias :as alias]
             [kmet.tui.core :as core]
             [kmet.libs.hikap :as engine]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.libs.hikap.component :refer [with-let]]
             [kmet.libs.reakt :as r]))
 

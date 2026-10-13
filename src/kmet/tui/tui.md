@@ -39,7 +39,7 @@ components sit above them**, exactly like React components above `[:div]`.
   Container, VStack, HStack, Markdown, Editor, Input, SelectList, … — the
   terminal's primitives.
 - **Components** (plain fns): `(fn [props] tree)` — the composition layer.
-- **Reconciler** (`kmet.libs.hikap` + the `kmet.tui.hiccup` TUI backend):
+- **Reconciler** (`kmet.libs.hikap` + the `kmet.tui.hikap` TUI backend):
   compiles trees to records and diffs them by key. The engine is
   toolkit-agnostic; the TUI supplies the tag table, the `*width*` render
   context and the IComponent wiring (see §13).
@@ -133,7 +133,7 @@ atom change → reaction dirty → queued → frame flush runs it →
 | `kmet.libs.hikap.component` | host-agnostic `track!` render cache, `with-let` stores, track-watch registry, frame-scheduler hook |
 | `kmet.libs.hikap` | toolkit-agnostic hiccup engine: parse, keyed reconcile, ComponentFn, refs, compute — parameterized by a backend map (tag table, string leaf, render/dispose hooks) |
 | `kmet.libs.hikap.alias` | qualified-keyword tag aliases: process-global registry, resolution, `defalias` (§2.9) |
-| `kmet.tui.hiccup` | the TUI backend: tag table, `*width*`/`*comp*`, IComponent extension for the engine's ComponentFn, and the TUI-bound entry points (`root`, `compile-tree`, `reconcile!`, `render-lines`, `materialize-ref!`) |
+| `kmet.tui.hikap` | the TUI backend: tag table, `*width*`/`*comp*`, IComponent extension for the engine's ComponentFn, and the TUI-bound entry points (`root`, `compile-tree`, `reconcile!`, `render-lines`, `materialize-ref!`) |
 | `kmet.tui.components.*` | host elements (see §10) |
 | `kmet.tui.theme` | color/styling API, active theme atom, theme files |
 | `kmet.tui.keys` / `keybindings` | key names, Kitty protocol decoding, keybinding manager |
@@ -222,7 +222,7 @@ throw.
 
 ### 2.2 Host elements — the tag table
 
-Host elements are a **closed set** — the TUI backend (`kmet.tui.hiccup`)
+Host elements are a **closed set** — the TUI backend (`kmet.tui.hikap`)
 hardcodes the tag → ctor table (no registry). Custom composition uses fn
 heads `[my-fn props]` or qualified-keyword aliases (§2.9 — a separate
 namespace: an alias never adds to this table); extensions never add host
@@ -1481,7 +1481,7 @@ The fastest way to see what a component produces: render it headless and
 print the lines —
 
 ```clojure
-(require '[kmet.tui.hiccup :as hiccup])
+(require '[kmet.tui.hikap :as hiccup])
 
 ;; any tree data …
 (doseq [l (hiccup/render-lines [:box {:padding-x 1} [:text "hi"]] 40)]

@@ -9,7 +9,7 @@
             [kmet.libs.hikap.alias :refer [defalias]]
             [kmet.tui.components.select-list :as select-list]
             [kmet.libs.hikap :as engine]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]))

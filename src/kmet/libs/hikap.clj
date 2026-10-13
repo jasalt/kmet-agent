@@ -1,7 +1,7 @@
 (ns kmet.libs.hikap
   "Backend-agnostic hiccup component engine — the toolkit-independent half
-   of the former kmet.tui.hiccup (the TUI backend now lives there; the Tk
-   backend in kmet.gui.tk).
+   of the former kmet.tui.hiccup (the TUI backend now lives in
+   kmet.tui.hikap; the Tk backend in kmet.gui.tk).
 
    Trees are plain data: [:tag {props} children...] or [my-fn {props}]
    function heads. Compilation walks the tree through the BACKEND's closed
@@ -455,7 +455,7 @@
   "Run one render pass for the ComponentFn THIS at context CTX: re-derive
    its reaction when a tracked dep changed, reconcile its tree, then hand
    the kept children to the backend's :render-items. Backends wrap this in
-   their own component protocol (kmet.tui.hiccup extends IComponent to
+   their own component protocol (kmet.tui.hikap extends IComponent to
    ComponentFn; a toolkit that paints no output just calls it)."
   [this ctx]
   (let [backend (:backend this)

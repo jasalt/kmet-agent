@@ -7,7 +7,7 @@
             [kmet.debug :as debug]
             [kmet.config :as cfg]
             [kmet.tui.core :as tui]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.tui.hikap :as hiccup]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]
             [kmet.tui.terminal :as term]

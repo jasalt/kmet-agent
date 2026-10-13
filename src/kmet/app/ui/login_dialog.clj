@@ -20,7 +20,7 @@
             [kmet.tui.keybindings :as kb]
             [kmet.tui.core :as tui]
             [kmet.libs.hikap :as engine]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.tui.hikap :as hiccup]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.libs.reakt :as r]

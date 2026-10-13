@@ -3,7 +3,7 @@
             [clojure.string :as str]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.core :as core]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.theme :as theme]
             [kmet.tui.utils :as u]
             [kmet.tui.components.markdown :as md]))

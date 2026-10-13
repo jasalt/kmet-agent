@@ -15,15 +15,18 @@ kmet.libs.hikap           the hiccup engine: parse, keyed reconcile,
                           ComponentFn, refs — parameterized by a backend map
 kmet.libs.hikap.component track! render cache, with-let stores, frame hook
 kmet.libs.hikap.alias     the qualified-keyword alias registry
-kmet.tui.hiccup           the TUI backend (tag table, *width*, IComponent)
+kmet.tui.hikap            the TUI backend (tag table, *width*, IComponent)
 kmet.gui.tk               the Tk backend (tag table, Tcl scripts, run! loop)
 kmet.gui.tcl              the host FFI Tcl/Tk adapter (babashka.ffi / jolt.ffi)
 ```
 
-The pre-split `kmet.tui.hiccup` was one namespace; it is now a facade over
-the engine that keeps the public API (`root`, `ref`, `compile-tree`,
-`render-lines`, `compute`, `dispose-tree!`, `counters`) unchanged for app
-code and extensions.
+The pre-split `kmet.tui.hiccup` was one namespace; the toolkit-agnostic
+half is now `kmet.libs.hikap` (+ `.component` / `.alias`), and
+`kmet.tui.hikap` is the TUI backend over it: the tag table, the
+width-bound render context, the `IComponent` extension, and the TUI-bound
+entry points (`root`, `compile-tree`, `render-lines`, `materialize-ref!`).
+Backend-independent pieces (`ref`, `compute`, the counters) are required
+from `kmet.libs.hikap`.
 
 ## The backend map
 

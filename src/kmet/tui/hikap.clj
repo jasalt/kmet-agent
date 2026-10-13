@@ -1,4 +1,4 @@
-(ns kmet.tui.hiccup
+(ns kmet.tui.hikap
   "TUI backend for the generic hiccup engine (kmet.libs.hikap): the entry
    points bound to the TUI backend — compile-element/compile-tree/root,
    reconcile!, materialize-ref!, and the headless render-lines surface —

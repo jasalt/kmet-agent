@@ -52,7 +52,7 @@
             [kmet.libs.reakt :as r]
             [kmet.tui.components.input :as input]
             [kmet.libs.hikap :as engine]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.tui.hikap :as hiccup]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.keys :as keys]
             [kmet.tui.macros :refer [defcomponent]]

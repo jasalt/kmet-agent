@@ -3,7 +3,7 @@
             [clojure.test :as t :refer [testing]]
             [kmet.tui.components.dynamic-border :as db]
             [kmet.tui.core :as core]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.utils :as utils]))
 
 (defn- plain

@@ -12,7 +12,7 @@
   (:require [clojure.string :as str]
             [kmet.app.keybindings :as app-kb]
             [kmet.libs.process :as process]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.tui.hikap :as hiccup]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.theme :as theme]))
 

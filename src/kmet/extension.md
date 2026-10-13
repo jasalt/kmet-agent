@@ -1067,9 +1067,9 @@ from the api.
 
 ;; richer/reactive widgets: return a factory whose result is a compiled
 ;; hiccup tree — the host disposes it automatically on replace and removal
-;; (with-let cleanups and reactions unwind via kmet.tui.hiccup ownership):
+;; (with-let cleanups and reactions unwind via kmet.tui.hikap ownership):
 ;;
-;;   (require '[kmet.tui.hiccup :as h])
+;;   (require '[kmet.tui.hikap :as h])
 ;;   (ext/ui-set-widget api "clock"
 ;;     (fn [tui theme]
 ;;       (h/compile-tree [:container {}

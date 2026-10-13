@@ -26,7 +26,7 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.components.expandable-text :as expandable-text]
             [kmet.libs.hikap :as engine]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.core :as tui]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]))

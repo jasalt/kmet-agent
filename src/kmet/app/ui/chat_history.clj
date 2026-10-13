@@ -9,7 +9,7 @@
             [kmet.libs.reakt :as r]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.app.ui.subs :as subs]
             [kmet.app.ui.user-message :as um]
             [kmet.app.ui.assistant-message :as am]

@@ -11,7 +11,7 @@
    setInterval while output chunks stream through the reaction."
   (:require [kmet.libs.reakt :as r]
             [kmet.tui.border :as border]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.tui.hikap :as hiccup]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]

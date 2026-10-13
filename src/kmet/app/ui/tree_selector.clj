@@ -23,7 +23,7 @@
             [kmet.config :as cfg]
             [kmet.libs.clipboard :as clipboard]
             [kmet.tui.components.input :as input]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.core :as tui]
             [kmet.tui.keys :as keys]
             [kmet.tui.keybindings :as tui-kb]

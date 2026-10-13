@@ -187,7 +187,7 @@
     kmet.tui.border
     kmet.tui.core
     kmet.tui.fuzzy
-    kmet.tui.hiccup
+    kmet.tui.hikap
     kmet.tui.keybindings
     kmet.tui.keys
     kmet.tui.macros

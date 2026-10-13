@@ -21,7 +21,7 @@
             [kmet.extensions.review.git :as git]
             [kmet.extensions.review.prompts :as prompts]
             [kmet.libs.concurrent :as concurrent]
-            [kmet.tui.hiccup :as h]
+            [kmet.tui.hikap :as h]
             [kmet.tui.theme :as theme]))
 
 (def ^:private spawn concurrent/spawn)

@@ -25,7 +25,7 @@
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
             [kmet.tui.components.settings-list :as settings-list]
-            [kmet.tui.hiccup :as h]))
+            [kmet.tui.hikap :as h]))
 
 ;; ─── Extension state ───────────────────────────────────────────────────────
 

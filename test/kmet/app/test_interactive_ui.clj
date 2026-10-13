@@ -12,7 +12,7 @@
             [kmet.tui.components.settings-list :as settings-list]
             [kmet.tui.components.spinner :as spinner]
             [kmet.tui.components.text :as text]
-            [kmet.tui.hiccup :as hiccup]
+            [kmet.tui.hikap :as hiccup]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.theme :as theme]
             [kmet.tui.protocols :as protocols]
