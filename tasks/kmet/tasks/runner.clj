@@ -174,6 +174,7 @@
     kmet.libs.test-aws-sigv4
     kmet.app.test-context
     kmet.app.ui.test-chat-history
+    kmet.app.ui.gui.test-transcript
     kmet.app.ui.test-user-message
     kmet.app.ui.test-image-block
     kmet.app.ui.test-assistant-message

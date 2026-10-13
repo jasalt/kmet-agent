@@ -1,8 +1,7 @@
 (ns kmet.gui.tcl
   "The host FFI Tcl/Tk adapter for kmet.gui.tk (the \"hiccup-tk\" backend).
 
-   Loads libtcl/libtk — Tcl/Tk 9.1 first; when only an older ABI loads it
-   warns on stderr and falls back through 9.0 and 8.6 — creates one
+   Loads libtcl 9.1 and libtk 9.1 — the supported pair — creates one
    interpreter, and exposes it to the portable backend through the adapter
    map:
 
@@ -47,10 +46,8 @@
 ;; ─── Bindings ─────────────────────────────────────────────────────────────
 
 ;; Tcl 9 keeps Tcl_Eval / Tcl_GetString / Tcl_GetStringResult as macros over
-;; these calls, so the adapter binds the real symbols and works against
-;; both 8.6 and 9.1. TCL_INDEX_NONE/string lengths are a Tcl_Size (ptrdiff_t
-;; since Tcl 9), hence :int64 — the low 32 bits are the int length Tcl 8.6
-;; reads.
+;; these calls, so the adapter binds the real symbols. TCL_INDEX_NONE and
+;; string lengths are a Tcl_Size (ptrdiff_t since Tcl 9), hence :int64.
 (ffi/defcfn ^:private tcl-find-executable "Tcl_FindExecutable" [:string] :void)
 (ffi/defcfn ^:private tcl-create-interp "Tcl_CreateInterp" [] :pointer)
 (ffi/defcfn ^:private tcl-delete-interp "Tcl_DeleteInterp" [:pointer] :void)
@@ -121,27 +118,16 @@
        "load " (tk/tcl-quote path) " Tk"))
 
 (def ^:private tcl-libs
-  "Tcl shared libraries by ABI, newest first; :generic is a bare soname."
-  {:9.1 ["libtcl9.1.so" "libtcl9.1.dylib" "libtcl9.1.dll" "libtcl91.dll"
-         "tcl91.dll" "tcl91t.dll"]
-   :9.0 ["libtcl9.0.so" "libtcl9.0.dylib" "libtcl9.0.dll" "libtcl90.dll"
-         "tcl90.dll" "tcl90t.dll"]
-   :8.6 ["libtcl8.6.so" "libtcl8.6.dylib" "libtcl8.6.dll" "libtcl86.dll"
-         "tcl86.dll" "tcl86t.dll"]
-   :generic ["libtcl.so" "libtcl.dylib"]})
+  "The Tcl 9.1 shared-library names, by platform. Tcl 9 textually prefixes
+   its Windows DLLs with the size (tcl91.dll)."
+  ["libtcl9.1.so" "libtcl9.1.dylib" "libtcl9.1.dll" "libtcl91.dll"
+   "tcl91.dll"])
 
 (def ^:private tk-libs
-  "Tk shared libraries, the same ABI keys as tcl-libs. Tk 9.x's Windows
-   build names the DLL tcl9tk<ver>.dll beside the plain tk<ver>.dll."
-  {:9.1 ["libtk9.1.so" "libtk9.1.dylib" "libtk9.1.dll" "libtk91.dll"
-         "tcl9tk91.dll" "tk91.dll" "tk91t.dll"]
-   :9.0 ["libtk9.0.so" "libtk9.0.dylib" "libtk9.0.dll" "libtk90.dll"
-         "tcl9tk90.dll" "tk90.dll" "tk90t.dll"]
-   :8.6 ["libtk8.6.so" "libtk8.6.dylib" "libtk8.6.dll" "libtk86.dll"
-         "tk86.dll" "tk86t.dll"]
-   :generic ["libtk.so" "libtk.dylib"]})
-
-(def ^:private abi-order [:9.1 :9.0 :8.6 :generic])
+  "The Tk 9.1 shared-library names, by platform. Tk 9's Windows build names
+   the DLL tcl9tk<ver>.dll beside the plain tk<ver>.dll."
+  ["libtk9.1.so" "libtk9.1.dylib" "libtk9.1.dll" "libtk91.dll"
+   "tcl9tk91.dll" "tk91.dll"])
 
 (defn- try-load
   "The first of NAMES whose shared library loads, or nil."
@@ -153,36 +139,20 @@
             (catch Throwable _ nil)))
         names))
 
-(defn- warn!
-  "Write a one-line loader warning to stderr."
-  [message]
-  (binding [*out* *err*]
-    (println message)))
-
 (defn- load-lib
-  "Load a Tcl/Tk shared library for WHAT (either Tcl or Tk) and return
-   [abi name]. ABIS are keys into LIBS, most-preferred first; the first
-   ABI that is not :9.1 warns — 9.1 is the target, older libraries are a
-   fallback. Throws when nothing loads."
-  [what libs abis]
-  (if-let [[abi n] (some (fn [abi]
-                           (when-let [n (try-load (get libs abi))]
-                             [abi n]))
-                         abis)]
-    (do (when-not (= abi :9.1)
-          (warn! (str "kmet.gui.tcl: Tcl/Tk 9.1 " what " library not found; "
-                      "falling back to " n)))
-        [abi n])
-    (throw (ex-info (str "kmet.gui.tcl: no " what " shared library could be "
-                         "loaded — install Tcl/Tk 9.1 (8.6 also works)")
-                    {:type :kmet.gui.tcl/missing-library
-                     :tried (mapcat #(get libs %) abis)}))))
+  "Load the Tcl/Tk 9.1 shared library for WHAT (either Tcl or Tk) and
+   return its name. Throws when none of NAMES loads."
+  [what names]
+  (or (try-load names)
+      (throw (ex-info (str "kmet.gui.tcl: no " what " 9.1 shared library could be "
+                           "loaded — install Tcl/Tk 9.1")
+                      {:type :kmet.gui.tcl/missing-library
+                       :tried names}))))
 
 ;; ─── Interpreter state ────────────────────────────────────────────────────
 
 (defonce ^:private interp (atom nil))
 (defonce ^:private handlers (atom {}))
-(defonce ^:private tcl-abi (atom nil))
 
 (defonce ^:private trampoline-arena (atom nil))
 (defonce ^:private trampoline-callable (atom nil))
@@ -237,8 +207,7 @@
   []
   (or @interp
       (do
-        (let [[abi _] (load-lib "Tcl" tcl-libs abi-order)]
-          (reset! tcl-abi abi))
+        (load-lib "Tcl" tcl-libs)
         (tcl-find-executable "kmet")
         (let [i (tcl-create-interp)
               rc (tcl-init i)]
@@ -277,8 +246,7 @@
     nil))
 
 (defn- prepare!
-  "Load Tk into the interpreter (needs a display). Tk must match the
-   interpreter's Tcl ABI, so the Tcl-loaded ABI is tried first.
+  "Load Tk into the interpreter (needs a display).
 
    The Tk DLL is looked up on PATH and loaded through Tcl's `load`, with
    its appended zipfs library mounted first, so a standalone Tk DLL works
@@ -288,11 +256,7 @@
   []
   (when-not @tk-ready?
     (let [i (ensure-interp!)
-          abi @tcl-abi
-          abis (if (contains? tk-libs abi)
-                 (into [abi] (remove #(= % abi) abi-order))
-                 abi-order)
-          [_ tk-name] (load-lib "Tk" tk-libs abis)
+          tk-name (load-lib "Tk" tk-libs)
           path (find-library tk-name)]
       (when-not (and path (= tcl-ok (eval-script i (load-tk-script path))))
         (let [rc (tk-init i)]
@@ -326,6 +290,18 @@
    :command! command!
    :run-loop run-loop!})
 
+(defn mount!
+  "REPL entry point: install the host FFI adapter (interpreter + Tk), mount
+   TREE in a live window and return the handle (see kmet.gui.tk/mount!).
+
+   Development loop: mount on the thread that will own the interpreter, run
+   kmet.gui.tk/run-loop! there, then edit a component namespace, reload it
+   and kmet.gui.tk/render! to repaint with the new code."
+  [tree & [options]]
+  (ensure-interp!)
+  (tk/set-adapter! (adapter))
+  (tk/mount! tree options))
+
 (defn run!
   "Install the host FFI adapter and run the Tk backend on TREE, blocking
    until the window closes. OPTIONS: :title :width :height."
@@ -341,7 +317,6 @@
     (tcl-delete-interp i)
     (reset! interp nil)
     (reset! tk-ready? false)
-    (reset! tcl-abi nil)
     (reset! handlers {})
     (reset! trampoline-callable nil)
     (reset! trampoline-arena nil)))
