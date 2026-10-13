@@ -108,6 +108,8 @@
     kmet.tui.test-hiccup
     kmet.tui.test-alias
     kmet.tui.test-dispose
+    kmet.gui.test-tk
+    kmet.gui.test-tcl
     kmet.tui.components.test-text
     kmet.tui.components.test-spacer
     kmet.tui.components.test-container

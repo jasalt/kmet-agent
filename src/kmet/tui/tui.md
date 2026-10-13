@@ -39,8 +39,10 @@ components sit above them**, exactly like React components above `[:div]`.
   Container, VStack, HStack, Markdown, Editor, Input, SelectList, … — the
   terminal's primitives.
 - **Components** (plain fns): `(fn [props] tree)` — the composition layer.
-- **Reconciler** (`kmet.tui.hiccup`): compiles trees to records and diffs
-  them by key.
+- **Reconciler** (`kmet.libs.hikap` + the `kmet.tui.hiccup` TUI backend):
+  compiles trees to records and diffs them by key. The engine is
+  toolkit-agnostic; the TUI supplies the tag table, the `*width*` render
+  context and the IComponent wiring (see §13).
 - **Root** (`hiccup/root`): the one constructor from a tree to a mounted,
   disposable record.
 - **Reactivity** (`kmet.libs.reakt` + `track!`): dependency-discovering
@@ -126,10 +128,12 @@ atom change → reaction dirty → queued → frame flush runs it →
 | `kmet.tui.terminal` | backend abstraction: the lean `ITerminal` protocol (raw mode, bounded reads, live size, writes, progress) + shared ANSI verbs, Kitty/query wrappers and drain; `create-terminal` resolves the host backend at runtime |
 | `kmet.tui.terminal-jline` / `kmet.tui.terminal-native-unix` / `kmet.tui.terminal-native-win` | the three backends — JLine on bb/JVM, termios (Unix) / kernel32 console (Windows) FFI over `jolt.ffi` on Jolt; only these namespaces touch platform deps |
 | `kmet.tui.protocols` | `IComponent`, `IFocusable`, `IEditorComponent` |
-| `kmet.tui.macros` | `defcomponent`, `track!`, `with-let`, `invalidate-cache`, deref-capture runtime |
+| `kmet.tui.macros` | `defcomponent` (TUI record boilerplate over `kmet.tui.protocols/IComponent`) + re-exports of the host-agnostic runtime in `kmet.libs.hikap.component` |
 | `kmet.libs.reakt` | reactions/track/cursor/batching over plain atoms |
-| `kmet.tui.hiccup` | tag table, compile/reconcile, `root`, `ref`, `compute`, `render-lines` |
-| `kmet.tui.alias` | qualified-keyword tag aliases: registry, `register!`/`defalias` (§2.9) |
+| `kmet.libs.hikap.component` | host-agnostic `track!` render cache, `with-let` stores, track-watch registry, frame-scheduler hook |
+| `kmet.libs.hikap` | toolkit-agnostic hiccup engine: parse, keyed reconcile, ComponentFn, refs, compute — parameterized by a backend map (tag table, string leaf, render/dispose hooks) |
+| `kmet.tui.hiccup` | the TUI backend + facade: tag table, `*width*`/`*comp*`, IComponent extension for the engine's ComponentFn, `root`, `ref`, `compute`, `render-lines` |
+| `kmet.tui.alias` | qualified-keyword tag aliases: facade over `kmet.libs.hikap.alias` (§2.9) |
 | `kmet.tui.components.*` | host elements (see §10) |
 | `kmet.tui.theme` | color/styling API, active theme atom, theme files |
 | `kmet.tui.keys` / `keybindings` | key names, Kitty protocol decoding, keybinding manager |
@@ -218,10 +222,11 @@ throw.
 
 ### 2.2 Host elements — the tag table
 
-Host elements are a **closed set** — `hiccup.clj` hardcodes the tag → ctor
-table (no registry). Custom composition uses fn heads `[my-fn props]` or
-qualified-keyword aliases (§2.9 — a separate namespace: an alias never
-adds to this table); extensions never add host elements. Tags and props:
+Host elements are a **closed set** — the TUI backend (`kmet.tui.hiccup`)
+hardcodes the tag → ctor table (no registry). Custom composition uses fn
+heads `[my-fn props]` or qualified-keyword aliases (§2.9 — a separate
+namespace: an alias never adds to this table); extensions never add host
+elements. Tags and props:
 
 | tag | props | children |
 |---|---|---|
@@ -1628,13 +1633,19 @@ The repository capture helpers are:
 kmet.app        owns atoms, pure data updates (no component knowledge)
 kmet.app.ui     fn components (shared def'd computes, with-let local state)
                 + hiccup/root mount points
-kmet.tui        reagent, hiccup, macros, protocols, components — generic;
-                no app/chat/session concepts; may depend on kmet.libs.*
-kmet.libs.*     self-contained (terminal protocol lives here too)
+kmet.tui        the TUI backend: hiccup facade, macros, protocols, components
+                — generic; no app/chat/session concepts
+kmet.gui        GUI backends, Jolt-only (kmet.gui.tk = the Tk hiccup
+                backend, kmet.gui.tcl = its jolt.ffi adapter)
+kmet.libs.*     self-contained helpers bottom layer (terminal protocol,
+                HTTP, markdown, reakt, ...) — includes the toolkit-agnostic
+                hiccup framework kmet.libs.hikap (+ .component / .alias)
 ```
 
-`kmet.tui.*` must never require `kmet.app.*`, `kmet.modes.*` or
-`kmet.ai.*`; app-specific components belong in `kmet.app.ui.*`.
+`kmet.libs.hikap` may require `kmet.libs.*` only; `kmet.tui.*` and
+`kmet.gui.*` build on `kmet.libs.hikap` + `kmet.libs.*`. `kmet.tui.*` must never require
+`kmet.app.*`, `kmet.modes.*` or `kmet.ai.*`; app-specific components belong
+in `kmet.app.ui.*`.
 
 ## 13.1 Foreign component cleanup — `defcomponent` + spliced records
 

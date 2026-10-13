@@ -259,7 +259,7 @@
         c1 (make-probe dep-a)
         c2 (make-probe dep-b)]
     (t/is (= ["0"] (protocols/render c1 40)))
-    (let [key (:kmet.tui.macros/watch-key (meta shared))]
+    (let [key (:kmet.libs.hikap.component/watch-key (meta shared))]
       (t/is (contains? (.getWatches dep-a) key))
       ;; width 41 busts c1's cache, so c2 reaches the register path
       (t/is (thrown? clojure.lang.ExceptionInfo (protocols/render c2 41)))

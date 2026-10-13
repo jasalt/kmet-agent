@@ -4,6 +4,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [kmet.tui.core :as core]
+            [kmet.libs.hikap.component :as component]
             [kmet.tui.macros :as macros]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.components.container :as container]
@@ -20,7 +21,7 @@
   "The track! watch key COMPONENT's cache allocated, or nil before its first
    render."
   [component]
-  (:kmet.tui.macros/watch-key (meta (:cache component))))
+  (:kmet.libs.hikap.component/watch-key (meta (:cache component))))
 
 (t/deftest test-set!-auto-invalidates
   ;; text-set! no longer calls invalidate — the watch must do it
@@ -191,7 +192,7 @@
             lost update would leave one thread watching under a key the
             others can never unwatch"
     (let [c (text/make-text "x" 0 0)
-          key-fn (var-get #'macros/tracker-key)
+          key-fn (var-get #'component/tracker-key)
           ks (->> (range 32)
                   (mapv (fn [_] (future (key-fn c))))
                   (mapv deref))]

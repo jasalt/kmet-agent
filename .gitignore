@@ -50,6 +50,8 @@ Thumbs.db
 # root a lazily-attached LSP server picks (e.g. src/kmet/libs)
 /.lsp/
 /.clj-kondo/imports/
+/.clj-kondo/inline-configs/
 /**/.lsp/
 /**/.clj-kondo/.cache/
 /**/.clj-kondo/imports/
+/**/.clj-kondo/inline-configs/

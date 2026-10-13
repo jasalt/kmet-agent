@@ -24,6 +24,9 @@ src/kmet/
 │                         writes (atomic publish + Windows AV retry),
 │                         highlighting,
 │                         markdown, crypto, AWS SigV4, ...)
+│                         hikap.clj / hikap/ is the toolkit-agnostic
+│                         hiccup framework (engine, component runtime,
+│                         alias registry) the TUI and GUI backends build on
 ├── modes/              — Entry modes: interactive TUI + print mode
 │   ├── interactive.clj — interactive TUI entry: run + session start-up
 │   │                     (pi: modes/interactive/interactive-mode.ts)
@@ -73,6 +76,9 @@ src/kmet/
 │   │                     extensions/grep-tool.clj, find-tool.clj,
 │   │                     ls-tool.clj, powershell.clj)
 │   └── ui/             — app TUI components (chat history, footer, ...)
+├── gui/                — GUI backends, Jolt-only: the Tk backend for the
+│                         hiccup engine (tk.clj) and its jolt.ffi Tcl
+│                         adapter (tcl.jolt) — see gui/README.md
 ├── tui/                — Generic TUI library (pi: @earendil-works/pi-tui;
 │   │                     usage docs in src/kmet/tui/tui.md)
 │   └── components/     — text, input, editor, markdown, select/settings
@@ -105,10 +111,20 @@ listed in the root `AGENTS.md` topic map.
   `test/kmet/libs/test_self_contained.clj` enforces exactly this.
   `kmet.libs.weak` is the one namespace allowed to touch `java.lang.ref` —
   a platform exception like the terminal backends.
+- `kmet.libs.hikap` is the toolkit-agnostic UI framework inside libs: the
+  hiccup engine (`kmet.libs.hikap`), the component runtime
+  (`kmet.libs.hikap.component`) and the alias registry
+  (`kmet.libs.hikap.alias`). Being a lib it may require only `kmet.libs.*`;
+  `kmet.tui.*` and `kmet.gui.*` are backends over it — they pass their
+  backend map in, the engine never requires them.
 - `kmet.ai.*` is a standalone provider/auth library and depends only on
   `kmet.libs.*` plus standard/third-party code.
-- `kmet.tui.*` is the generic UI layer. It may depend on `kmet.libs.*`, never
-  on app, LLM, or session concepts.
+- `kmet.tui.*` is the generic UI layer (the terminal backend for
+  `kmet.libs.hikap`). It may depend on `kmet.libs.*`, never on app, LLM, or
+  session concepts.
+- `kmet.gui.*` is the GUI backends (Jolt-only; the Tk backend and its
+  jolt.ffi adapter). Like `kmet.tui.*`, it builds on `kmet.libs.*` and
+  nothing above it.
 - `kmet.modes.*` is the entry-mode layer; `kmet.app.*` is business logic;
   `kmet.app.ui.*` is app-specific UI; `kmet.core` only parses arguments and
   dispatches.

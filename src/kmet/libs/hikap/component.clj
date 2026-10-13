@@ -1,0 +1,454 @@
+(ns kmet.libs.hikap.component
+  "Host-agnostic component runtime over the standalone reactive engine
+   (kmet.libs.reakt — reactions, cursors, batching).
+
+   track! — reactive render cache: rewrites @atom reads in the render body
+   to tracked derefs (kmet.libs.reakt/tracked-deref), so any atom change
+   invalidates the cache automatically and setters need no manual
+   invalidate call. It must be a macro because deref rewriting happens at
+   compile time. Also hosts with-let — per-instance component state — the
+   frame-scheduler hook, and the track! watch registry. Every backend
+   (kmet.tui.hiccup, kmet.gui.tk) builds its component records on top of
+   this namespace; nothing here knows a toolkit."
+  (:require [kmet.libs.reakt :as reakt]
+            [kmet.libs.weak :as weak]))
+
+(def ^:private deref-form?
+  "Only the 1-arg (deref x) form — @x reads as (clojure.core/deref x).
+   Multi-arg deref (timeout variants) is left untouched."
+  (fn [f]
+    (and (seq? f)
+         (symbol? (first f))
+         (or (= 'clojure.core/deref (first f))
+             (= 'deref (first f)))
+         (= 2 (count f)))))
+
+(defn- rewrite-derefs
+  "Replace every @atom / (deref atom) form in FORM with a tracked-deref call,
+   so derefs during a track! render are recorded. Quoted forms are skipped
+   (quoted deref symbols are data, not reads)."
+  [form]
+  (cond
+    (or (symbol? form) (not (coll? form))) form
+    (and (seq? form) (= 'quote (first form))) form
+    (deref-form? form) (list 'kmet.libs.reakt/tracked-deref (rewrite-derefs (second form)))
+    (seq? form) (apply list (map rewrite-derefs form))
+    (vector? form) (mapv rewrite-derefs form)
+    (map? form) (into (empty form) (map (fn [[k v]] [(rewrite-derefs k) (rewrite-derefs v)]) form))
+    (set? form) (into (empty form) (map rewrite-derefs form))
+    :else form))
+
+(defn- component-cache-atom
+  "The render cache field: :cache-atom (current) or legacy :cache (Text/Box)."
+  [component]
+  (or (:cache-atom component) (:cache component)))
+
+(defn- tracker-key
+  "The component's stable watch key, allocated once in its cache atom's
+   metadata. The cache atom is the component's one per-instance cell, so the
+   key dies with the component and can never collide with another live
+   component's key (System/identityHashCode could: a 32-bit hash over
+   thousands of live components). add-watch replaces an existing watch with
+   the same key, so re-registration after re-renders is idempotent. Returns
+   nil for a component with no cache atom (Container, Spacer, …) — track!
+   itself requires one."
+  [component]
+  (when-let [a (component-cache-atom component)]
+    (or (::watch-key (meta a))
+        (let [k (keyword (gensym "track!"))]
+          ;; alter-meta! is atomic, and the fn preserves a key another thread
+          ;; already installed — both allocators converge on the first key
+          ;; (an unconditional assoc would let a later writer overwrite it
+          ;; after an earlier reader had already returned it)
+          (alter-meta! a (fn [m] (if (::watch-key m) m (assoc m ::watch-key k))))
+          (::watch-key (meta a))))))
+
+(defn- existing-tracker-key
+  "The key already allocated for COMPONENT's cache atom, or nil. Never
+   allocates: teardown must not mint a key for a component that never ran
+   track! or for a cache-less record."
+  [component]
+  (when-let [a (component-cache-atom component)]
+    (::watch-key (meta a))))
+
+(defn- unwatch-all!
+  "Remove KEY's watches from every ref in REFS (an entry payload's
+   :watched — plain atoms and library refs)."
+  [key refs]
+  (doseq [ref refs]
+    (reakt/unwatch-ref ref key))
+  nil)
+
+(declare invalidate-cache schedule-frame!)
+
+(defn- atoms-unchanged?
+  "reduce-kv hit check over a cache's plain refs: true while ATOM still
+   holds the value it was read with. identical? first (an untouched atom
+   IS the recorded object), structural = for fresh-but-equal persistent
+   copies."
+  [_acc a v]
+  (let [cur (deref a)]
+    (if (or (identical? cur v) (= cur v))
+      true
+      (reduced false))))
+
+(defn- rx-unchanged?
+  "reduce-kv hit check over a cache's reactive entries, keyed by the
+   reaction's cell (a reaction's state atom — see track-render); the key IS
+   the cell, so it is read directly — never through a reaction deref, which
+   would settle the batch queue on every cache hit. The entry value is
+   [REACTION value]: holding the reaction pins it, so this cache can never
+   keep validating a collected reaction — the cell key alone would not.
+   True while the reaction is settled (:idle/:busy/:disposed) and still
+   holds the recorded value. :unrun and :dirty must run — the re-render's
+   deref settles them — and :failed must rethrow there, so those miss. Runs
+   once per component per frame."
+  [_acc cell [_ v]]
+  (let [{:keys [state value]} @cell]
+    (if (and (case state (:idle :busy :disposed) true false)
+             (or (identical? value v) (= value v)))
+      true
+      (reduced false))))
+
+(defn- cell-keyed-rx
+  "The :rx cache half for RX-REFS — reactive reads captured as
+   {ref value}: keyed by each reaction's state cell, entries [ref value],
+   the shape rx-unchanged? reads back on a hit. Written once per miss body
+   over the reactive reads only, so an atom-only render (the common case)
+   pays nothing here."
+  [rx-refs]
+  (reduce-kv (fn [m ref v] (assoc m (reakt/-cell ref) [ref v])) {} rx-refs))
+
+(defn track-render
+  "Runtime implementation of track!. Runs RENDER-FN within a tracking scope
+   and caches the result under WIDTH. Returns the cached result while every
+   tracked ref still holds the value it was read with: plain atoms/vars
+   re-deref (atoms-unchanged?), library reactions read their cell's cached
+   value (rx-unchanged?) — never the reaction's own deref, which would
+   settle the batch queue on every hit. Watches invalidate on actual value
+   changes (equal-value resets are no-ops), and the cache records the
+   values AS READ (not a post-body snapshot), so an atom that changed
+   mid-render makes the stored values disagree with the current ones on the
+   next hit check and forces a re-render.
+   Requires COMPONENT to have a :cache-atom (or legacy :cache) field.
+   A body that invalidates itself mid-run (a render fn calling :invalidate)
+   is not cached — the next render re-runs it with the fresh state.
+   Atom handlers capture the component's watch KEY only and find the
+   component through the weak registry, so a watch never roots a component;
+   a collected component's watches are removed by the next sweep
+   (kmet.libs.weak). A reaction entry is
+   [REACTION value]: the entry pins the reaction, so the cache can never
+   keep validating a reaction the GC already collected."
+  [component width render-fn]
+  (let [cache-atom (component-cache-atom component)
+        cache @cache-atom]
+    (if (and cache
+             ;; New-shape caches only: a cache written before this shape
+             ;; existed (an nREPL session reloading this namespace) has
+             ;; neither half, and `reduce-kv` over nil is vacuously true —
+             ;; without this guard it would serve unverified. Rebuild it
+             ;; once instead.
+             (contains? cache :atoms)
+             (= (:width cache) width)
+             ;; Two reduce-kv passes (plain refs / reactive cells), not one
+             ;; every? over the entry seq: this hit check runs once per
+             ;; component per frame, and reduce-kv hands key/value straight
+             ;; to the fn — same comparisons, same short-circuit, no
+             ;; per-entry allocation.
+             (reduce-kv atoms-unchanged? true (:atoms cache))
+             (reduce-kv rx-unchanged? true (:rx cache)))
+      (:result cache)
+      (let [atoms (atom {})
+            rx (atom {})
+            watch-key (tracker-key component)]
+        (binding [reakt/*tracking-scope* [atoms rx]]
+          (let [cache-watch-key (keyword (str (name watch-key) "-cache"))
+                invalidated? (atom false)
+                ;; Watch the cache atom itself: an invalidate mid-body (a
+                ;; render fn calling :invalidate, or a tracked atom changing
+                ;; while the body runs) resets it — a signal that this result
+                ;; was built from stale state, so it must not be cached; the
+                ;; next render re-runs the body with the fresh state.
+                _ (add-watch cache-atom cache-watch-key
+                             (fn [_ _ _ _] (reset! invalidated? true)))]
+            (try
+              (let [result (render-fn)
+                    atom-vals @atoms
+                    rx-refs @rx
+                    rx-vals (cell-keyed-rx rx-refs)
+                    ;; Everything the body tracked, reactions included:
+                    ;; the payload's :watched is what teardown and the sweep
+                    ;; must unwatch later. (The cache splits the same refs:
+                    ;; :atoms plain keyed by ref, :rx reactions keyed by
+                    ;; their state cell.)
+                    watched (into (set (keys atom-vals)) (keys rx-refs))
+                    prev-watched (:watched (weak/payload watch-key))
+                    ;; KEY only — the atom watch must not root the component.
+                    handler (let [k watch-key]
+                              (fn [_ _ old new]
+                                ;; equal-value resets are no-ops: identical?
+                                ;; fast path, structural = for persistent copies
+                                (when-not (or (identical? old new)
+                                              (= old new))
+                                  (when-let [c (weak/subject k)]
+                                    (invalidate-cache c)))))]
+                ;; Register FIRST: a throw here (a shared cache atom) must
+                ;; not leave watches installed under a key
+                ;; remove-track-watches! cannot find.
+                (weak/register! watch-key component {:watched watched}
+                                (fn [k {:keys [watched]}]
+                                  (unwatch-all! k watched)))
+                (doseq [r watched]
+                  (reakt/watch-ref r watch-key handler))
+                ;; A previous pass's refs this pass no longer reads (branch
+                ;; switch) lose their watches here — otherwise they fire
+                ;; invalidate-cache forever on writes nobody consumes.
+                (doseq [r prev-watched]
+                  (when-not (contains? watched r)
+                    (reakt/unwatch-ref r watch-key)))
+                (when-not @invalidated?
+                  (reset! cache-atom {:width width
+                                      :atoms atom-vals
+                                      :rx rx-vals
+                                      :result result}))
+                result)
+              (finally
+                (remove-watch cache-atom cache-watch-key)))))))))
+
+(defmacro track!
+  "Reactive cache wrapper for IComponent render methods.
+
+   Usage:
+     (render [this width]
+       (track! this width
+         ;; render body — every @atom read is tracked automatically
+         ...))
+
+   Runs BODY, recording every atom deref'd. When any recorded atom changes,
+   the component's cache is invalidated automatically, so setters become
+   plain (reset! atom val) / (swap! atom f) with no manual
+   (protocols/invalidate comp) call. While all tracked values are unchanged,
+   the cached result is returned without re-running BODY."
+  [component width & body]
+  `(track-render ~component ~width (fn [] ~@(rewrite-derefs body))))
+
+(defn invalidate-cache
+  "Invalidate a component's cache. Call from your invalidate method.
+   Equivalent to (reset! (:cache-atom component) nil). Also requests a frame
+   through the scheduler hook (tui.md §6) — the gate that closes the
+   reactive loop: every invalidation funnels through here, and an atom
+   change that invalidates a subscriber schedules the next render. The hook
+   is a no-op by default (headless tests, library use); kmet.tui.core
+   installs tui-request-render on start and clears it on stop."
+  [component]
+  (when-let [cache (component-cache-atom component)]
+    (reset! cache nil))
+  (schedule-frame!))
+
+(defn remove-track-watches!
+  "Deterministic teardown: unregister COMPONENT's weak registry entry and
+   unwatch the refs its last pass tracked. Called from the dispose
+   defcomponent generates — without it the watches outlive the component
+   and keep firing invalidate-cache on each source write. Idempotent; a
+   no-op for components that never ran a track! body or whose entry a sweep
+   already claimed."
+  [component]
+  (when-some [k (existing-tracker-key component)]
+    (when-some [{:keys [watched]} (weak/unregister! k)]
+      (unwatch-all! k watched)))
+  nil)
+
+(defn sweep-dead-watches!
+  "Run the weak registry's sweep now: claim collected components and run
+   their on-dead unsubscribes. The render loop and reakt/flush! call this
+   themselves; tests and debug tools call it directly to make reclamation
+   deterministic. Returns the number of claimed entries."
+  []
+  (weak/sweep!))
+
+(defn live-watch-count
+  "Live track! registry entries (tests/guards): components whose render ran
+   with track! and are still reachable. Reactions share the weak registry
+   (their payload carries :rx-watch-key, the components' :watched) and are
+   counted by kmet.libs.reakt/live-reaction-count instead. Dead-but-unswept
+   entries are excluded; (weak/entry-count) includes them."
+  []
+  (weak/live-count (fn [payload] (contains? payload :watched))))
+
+(defn tracked?
+  "True when COMPONENT owns a live weak registry entry — its render ran with
+   track! and it has not been disposed (or collected)."
+  [component]
+  (identical? component (weak/subject (existing-tracker-key component))))
+
+;; ═══════════════════════════════════════════════════════════════════════════
+;; ═════════════════════════════════════════════════════════════════════
+;; with-let store — generation-keyed locals + LIFO cleanups (Stage-1
+;; primitive; the with-let macro lands here over this in Stage 3)
+;; ═════════════════════════════════════════════════════════════════════
+
+(def ^:dynamic *store*
+  "The per-instance with-let store bound around a component body. Nil
+   outside one (fetch-local/register-cleanup! throw)."
+  nil)
+
+(defn new-store
+  "A fresh with-let store: holds once-initialized locals and LIFO cleanups.
+   :pass-sites tracks which expansion sites ran in the CURRENT render pass,
+   for the double-use guard (see fetch-local)."
+  []
+  (atom {:locals {} :cleanups () :cleanup-sites #{} :pass-sites #{}}))
+
+(defn begin-pass!
+  "Mark the start of a render pass over STORE: expansion sites consumed in
+   the previous pass become usable again. Called by ComponentFn before the
+   body runs; hand-written with-store users call it at the top of each
+   simulated pass."
+  [store]
+  (swap! store assoc :pass-sites #{})
+  nil)
+
+(defn fetch-local
+  "Value for SITE in the bound store, initialized by INIT-FN exactly once
+   per store (per component instance — the body may re-run every pass, the
+   init does not). A THROWING init stores nothing, so the next pass retries
+   it and the body stays out until every binding is set (reagent issue 525).
+   Using the SAME expansion site twice in one render pass throws — two
+   instances silently sharing one state slot is always a bug; give each
+   instance its own element instead."
+  [site init-fn]
+  (when (nil? *store*)
+    (throw (ex-info "kmet.libs.hikap.component/fetch-local called outside a with-let store" {:site site})))
+  (when (contains? (:pass-sites @*store*) site)
+    (throw (ex-info
+            (str "kmet.libs.hikap.component: the same with-let is being used more "
+                 "than once in the same render pass (site " site ") — each "
+                 "instance needs its own element/component")
+            {:site site})))
+  (if (contains? (:locals @*store*) site)
+    (do (swap! *store* update :pass-sites conj site)
+        (get (:locals @*store*) site))
+    (let [v (init-fn)]
+      (swap! *store* (fn [s]
+                       (-> s
+                           (assoc-in [:locals site] v)
+                           (update :pass-sites conj site))))
+      v)))
+
+(defn register-cleanup!
+  "Register F to run when the bound store is destroyed. Registration is
+   once-per-SITE: the body re-runs every render pass, and a bare conj would
+   grow the cleanup list per frame. Cleanups run LIFO at destroy-store!."
+  [site f]
+  (when (nil? *store*)
+    (throw (ex-info "kmet.libs.hikap.component/register-cleanup! called outside a with-let store" {:site site})))
+  (when-not (contains? (:cleanup-sites @*store*) site)
+    (swap! *store* (fn [s]
+                     (-> s
+                         (update :cleanups conj f)
+                         (update :cleanup-sites conj site)))))
+  nil)
+
+(defn destroy-store!
+  "Run STORE's cleanups in reverse registration order (each isolated — a
+   throwing cleanup logs to stderr and lets the rest run), then empty it."
+  [store]
+  (doseq [f (:cleanups @store)]
+    (try
+      (f)
+      (catch Throwable e
+        (binding [*out* *err*]
+          (println "kmet.libs.hikap.component with-let cleanup error:" (ex-message e))))))
+  (swap! store assoc :cleanups () :cleanup-sites #{} :locals {})
+  nil)
+
+(defmacro with-store
+  "Bind STORE as the ambient with-let store for BODY (dynamic *store*)."
+  [store & body]
+  `(binding [*store* ~store]
+     ~@body))
+
+(defmacro with-let
+  "Form-2 local state for fn components (Reagent's with-let, tui.md §5.2).
+
+     (with-let [x (init) y (other-init)]
+       body...
+       (finally (cleanup x)))
+
+   BINDINGS initialize exactly once per component instance; BODY re-runs
+   on every render pass with the same bound values. A top-level
+   (finally ...) form is stolen as the cleanup — it runs once when the
+   component is disposed (LIFO across nested with-lets), never per pass.
+
+   Only valid inside a component body (the wrapper binds the store;
+   elsewhere fetch-local throws loudly). State keys are per-expansion-site
+   gensyms, so sibling with-lets binding the same names cannot collide.
+   Same footgun as Reagent's: a TOP-LEVEL (try ... (finally ...)) in the
+   body will be captured by the finally extractor — nest the try inside
+   a let when you need both."
+  [bindings & body]
+  (when-not (vector? bindings)
+    (throw (ex-info "with-let requires a binding vector" {:bindings bindings})))
+  (when (odd? (count bindings))
+    (throw (ex-info "with-let bindings must be name/init pairs" {:bindings bindings})))
+  (let [cleanup (first (filter #(and (seq? %) (= 'finally (first %))) body))
+        body-forms (remove #(identical? cleanup %) body)
+        ;; One gensym per expansion site: stable across render passes (the
+        ;; symbol is baked into the compiled fn), unique per with-let —
+        ;; sibling bindings of the same name get separate state slots.
+        pairs (partition 2 bindings)
+        binding-sites (map (fn [[s _]] (gensym (str "with-let-" s "-")))
+                           pairs)
+        cleanup-site (gensym "with-let-cleanup-")]
+    `(let [~@(mapcat (fn [[s init] site]
+                       [s `(kmet.libs.hikap.component/fetch-local '~site (fn [] ~init))])
+                     pairs binding-sites)]
+       ~@(when cleanup
+           [`(kmet.libs.hikap.component/register-cleanup! '~cleanup-site
+                                                          (fn [] ~@(rest cleanup)))])
+       ~@body-forms)))
+
+;; ═════════════════════════════════════════════════════════════════
+;; Frame scheduler hook — dependency changes schedule the render (tui.md §6)
+;; ═════════════════════════════════════════════════════════════════
+
+;; kmet.tui.core installs #(tui-request-render tui) on start and clears it
+;; on stop; default nil keeps headless tests and library use pure. macros
+;; never requires core — core pushes the callback down.
+(defonce ^:private frame-hook (atom nil))
+
+(defn set-frame-hook!
+  "Install F as the frame scheduler (called when a reactive dep changes);
+   nil restores the no-op default. Called from tui start/stop."
+  [f]
+  (reset! frame-hook f)
+  nil)
+
+(defn schedule-frame!
+  "Request a render because a reactive dependency changed. Runs inside a
+  watch on the MUTATING thread — must never throw: a failure is logged to
+  stderr and swallowed, mirroring the render loop's crash policy.
+  Coalescing is the caller's job (tui-request-render sets an idempotent
+  flag the loop polls)."
+  []
+  (when-some [f @frame-hook]
+    (try
+      (f)
+      (catch Throwable e
+        (binding [*out* *err*]
+          (println "kmet.libs.hikap.component schedule-frame! error:" (.getMessage e))))))
+  nil)
+
+;; ═════════════════════════════════════════════════════════════════
+;; Tracked-dependency declarations
+;; ═══════════════════════════════════════════════════════════════════════════
+
+(defn track-deps
+  "Declare tracked dependencies inside a track! body: deref atoms whose
+   changes must invalidate the render cache even though their values don't
+   otherwise appear in the body (wrapper components whose output comes from
+   cached children, e.g. a message component re-rendering its Box). Call
+   with @atom forms — the track! deref rewrite records them like any other
+   read. Returns nil."
+  [& _]
+  nil)
