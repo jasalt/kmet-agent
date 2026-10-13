@@ -1,9 +1,9 @@
 (ns kmet.gui.tcl
   "The host FFI Tcl/Tk adapter for kmet.gui.tk (the \"hiccup-tk\" backend).
 
-   Loads libtcl 9.1 and libtk 9.1 — the supported pair — creates one
-   interpreter, and exposes it to the portable backend through the adapter
-   map:
+   Loads one matching Tcl/Tk pair — 9.1, 9.0 or 8.6, newest first —
+   creates one interpreter, and exposes it to the portable backend
+   through the adapter map:
 
      :prepare! (fn [] nil)              ; load libtk + Tk_Init (needs a display)
      :eval     (fn [script] -> string)  ; Tcl_Eval, throws on TCL_ERROR
@@ -14,15 +14,23 @@
    Tk is a Tcl package, not a standalone toolkit: libtk imports libtcl
    and contributes its widget commands to the interpreter libtcl creates,
    so both libraries are loaded (libtk in `prepare!`, after the
-   interpreter exists) from the one Tcl/Tk installation. The Tk major
-   version must match Tcl's — Tk 9.x runs only on Tcl 9.x.
+   interpreter exists) from one Tcl/Tk installation — always as a pair,
+   because the Tk major version must match Tcl's (Tk 8.6 links libtcl8.6,
+   Tk 9.x links Tcl 9.x) and mixing them would put two Tcl runtimes in
+   one process.
 
-   `prepare!` resolves the Tk DLL on PATH, mounts the zipfs library its
-   build appended to the DLL, and loads it through Tcl's `load`; Tk_Init
-   then finds tk.tcl with no compiled-in install prefix, so the DLLs are
-   standalone and PATH-resolved. A system installation whose library
-   Tk_Init finds through its own paths needs none of that: the name-level
-   FFI preload is left to Tk_Init when the absolute path is not found.
+   `prepare!` resolves the Tk library in the install directories (PATH,
+   the working directory, Termux's $PREFIX/lib — see `install-dirs`),
+   mounts the zipfs library a Tcl 9 build appended to it, and loads it
+   through Tcl's `load`; Tk_Init then finds tk.tcl with no compiled-in
+   install prefix, so the DLLs are standalone. A system installation
+   whose library Tk_Init finds through its own paths needs none of that:
+   the name-level FFI preload is left to Tk_Init when the absolute path
+   is not found (on Tcl 8.6 the zipfs mount is an invalid command, which
+   the script's catch swallows).
+
+   KMET_TCL_LIB and KMET_TK_LIB override the pair — both together, or a
+   Tcl library whose Tk sibling is derived from its spelling.
 
    The trampoline is one C-callable fn held for the process; each
    registered command answers as `(handler argv)` with the returned string
@@ -85,27 +93,30 @@
 
 ;; ─── Library search ───────────────────────────────────────────────────────
 
-(defn- path-dirs
-  "The directories a bare library name is searched in: PATH entries in
-   order, then the process's working directory."
+(defn- install-dirs
+  "The directories a shared library is looked for beyond the loader's own
+   search paths: PATH entries in order, the process's working directory,
+   and Termux's $PREFIX/lib, which its loader does not search."
   []
   (let [sep (re-pattern (java.util.regex.Pattern/quote
                          (System/getProperty "path.separator")))
-        path (System/getenv "PATH")]
+        path (System/getenv "PATH")
+        prefix (System/getenv "PREFIX")]
     (concat (when (seq path) (str/split path sep))
-            [(System/getProperty "user.dir")])))
+            [(System/getProperty "user.dir")]
+            (when (seq prefix) [(str prefix "/lib")]))))
 
 (defn- find-library
-  "The absolute path of a shared library NAME found on PATH (or in the
-   working directory), or nil. The Windows loader also searches the
-   executable's directory, which PATH covers in kmet's deployments."
+  "The absolute path of a shared library NAME found in the install
+   directories, or nil. The Windows loader also searches the executable's
+   directory, which PATH covers in kmet's deployments."
   [name]
   (some (fn [dir]
           (when (seq dir)
             (let [f (fs/path (str/replace dir #"^\"|\"$" "") name)]
               (when (fs/regular-file? f)
                 (str (fs/absolutize f))))))
-        (path-dirs)))
+        (install-dirs)))
 
 (defn- load-tk-script
   "A Tcl script that mounts PATH's appended zipfs library at
@@ -117,42 +128,105 @@
   (str "catch {zipfs mount " (tk/tcl-quote path) " //zipfs:/lib/tk}\n"
        "load " (tk/tcl-quote path) " Tk"))
 
-(def ^:private tcl-libs
-  "The Tcl 9.1 shared-library names, by platform. Tcl 9 textually prefixes
-   its Windows DLLs with the size (tcl91.dll)."
-  ["libtcl9.1.so" "libtcl9.1.dylib" "libtcl9.1.dll" "libtcl91.dll"
-   "tcl91.dll"])
+(def ^:private library-pairs
+  "Tcl/Tk shared-library candidate PAIRS, newest first, by platform. The
+   pair is chosen as a unit: libtk links its own libtcl (Tk 8.6 pulls in
+   libtcl8.6, Tk 9.x pulls Tcl 9.x), so trying versions independently
+   could load two Tcl runtimes into one process, both exporting
+   Tcl_CreateInterp. The first Tcl name that loads wins and only its
+   pair's Tk names are then tried.
 
-(def ^:private tk-libs
-  "The Tk 9.1 shared-library names, by platform. Tk 9's Windows build names
-   the DLL tcl9tk<ver>.dll beside the plain tk<ver>.dll."
-  ["libtk9.1.so" "libtk9.1.dylib" "libtk9.1.dll" "libtk91.dll"
-   "tcl9tk91.dll" "tk91.dll"])
+   Tcl 9 textually prefixes its Windows DLLs with the size (tcl91.dll);
+   Tk 9's Windows build names the DLL tcl9tk<ver>.dll beside the plain
+   tk<ver>.dll; Tcl/Tk 8.6 Windows builds use the t suffix."
+  [;; Tcl 9.1
+   ["libtcl9.1.so"    ["libtk9.1.so"]]
+   ["libtcl9.1.dylib" ["libtk9.1.dylib"]]
+   ["libtcl9.1.dll"   ["libtk9.1.dll"]]
+   ["libtcl91.dll"    ["libtk91.dll"]]
+   ["tcl91.dll"       ["tcl9tk91.dll" "tk91.dll"]]
+   ["tcl91t.dll"      ["tk91t.dll"]]
+   ;; Tcl 9.0
+   ["libtcl9.0.so"    ["libtk9.0.so"]]
+   ["libtcl9.0.dylib" ["libtk9.0.dylib"]]
+   ["libtcl9.0.dll"   ["libtk9.0.dll"]]
+   ["libtcl90.dll"    ["libtk90.dll"]]
+   ["tcl90.dll"       ["tcl9tk90.dll" "tk90.dll"]]
+   ["tcl90t.dll"      ["tk90t.dll"]]
+   ;; Tcl 8.6
+   ["libtcl8.6.so"    ["libtk8.6.so"]]
+   ["libtcl8.6.dylib" ["libtk8.6.dylib"]]
+   ["libtcl8.6.dll"   ["libtk8.6.dll"]]
+   ["libtcl86.dll"    ["libtk86.dll"]]
+   ["tcl86t.dll"      ["tk86t.dll"]]
+   ["tcl86.dll"       ["tk86.dll"]]])
+
+(defn- load-options
+  "The values to hand ffi/load-library for library NAME: NAME itself
+   first (the loader's own search paths), then the absolute path for
+   every install directory that holds it."
+  [name]
+  (into [name]
+        (keep (fn [dir]
+                (when (seq dir)
+                  (let [f (fs/path (str/replace dir #"^\"|\"$" "") name)]
+                    (when (fs/regular-file? f)
+                      (str (fs/absolutize f))))))
+              (install-dirs))))
 
 (defn- try-load
-  "The first of NAMES whose shared library loads, or nil."
+  "The first of NAMES whose shared library loads, or nil. Each name is
+   tried bare and then by install-directory path (see `load-options`)."
   [names]
   (some (fn [n]
-          (try
-            (ffi/load-library n)
-            n
-            (catch Throwable _ nil)))
+          (when (some (fn [option]
+                        (try
+                          (ffi/load-library option)
+                          true
+                          (catch Throwable _ nil)))
+                      (load-options n))
+            n))
         names))
 
-(defn- load-lib
-  "Load the Tcl/Tk 9.1 shared library for WHAT (either Tcl or Tk) and
-   return its name. Throws when none of NAMES loads."
-  [what names]
-  (or (try-load names)
-      (throw (ex-info (str "kmet.gui.tcl: no " what " 9.1 shared library could be "
-                           "loaded — install Tcl/Tk 9.1")
-                      {:type :kmet.gui.tcl/missing-library
-                       :tried names}))))
+(defn- derived-tk-names
+  "The Tk library candidates derived from the spelling of the Tcl library
+   at PATH: libtcl<ver> -> libtk<ver>, tcl<ver> -> tk<ver> and Tk 9's
+   tcl9tk<ver> Windows spelling, as siblings when PATH names a directory."
+  [path]
+  (let [dir (fs/parent path)
+        base (str (fs/file-name path))
+        names (cond
+                (str/starts-with? base "libtcl") [(str "libtk" (subs base 6))]
+                (str/starts-with? base "tcl") (cond-> [(str "tk" (subs base 3))]
+                                                (re-matches #"tcl9\d.*" base)
+                                                (conj (str "tcl9tk" (subs base 3))))
+                :else [])]
+    (mapv (fn [n] (if dir (str (fs/path dir n)) n)) names)))
+
+(defn- override-pair
+  "The KMET_TCL_LIB/KMET_TK_LIB candidate pair, or nil when neither is
+   set. A Tcl override alone pairs with the Tk names derived from its
+   spelling; a Tk override alone is an error — the pair is loaded as a
+   unit, so there is no Tcl to pair it with."
+  []
+  (let [tcl (System/getenv "KMET_TCL_LIB")
+        tk (System/getenv "KMET_TK_LIB")]
+    (cond
+      (and tcl tk) [[tcl [tk]]]
+      tcl [[tcl (derived-tk-names tcl)]]
+      tk (throw (ex-info (str "kmet.gui.tcl: KMET_TK_LIB requires "
+                              "KMET_TCL_LIB (the Tcl/Tk pair is loaded as a unit)")
+                         {:type :kmet.gui.tcl/bad-override}))
+      :else nil)))
 
 ;; ─── Interpreter state ────────────────────────────────────────────────────
 
 (defonce ^:private interp (atom nil))
 (defonce ^:private handlers (atom {}))
+
+;; The loaded pair: {:tcl name :tk-candidates [names]} at load time, plus
+;; :tk once the Tk library loads.
+(defonce ^:private libraries (atom nil))
 
 (defonce ^:private trampoline-arena (atom nil))
 (defonce ^:private trampoline-callable (atom nil))
@@ -202,12 +276,44 @@
         (reset! trampoline-arena arena)
         (reset! trampoline-callable callable))))
 
+(defn- load-tcl!
+  "Load the newest candidate Tcl pair that loads and record it, the
+   overrides first. Returns the pair. The choice is a unit: once a Tcl is
+   loaded, its matching Tk is the only Tk that may be."
+  []
+  (let [pairs (or (override-pair) library-pairs)]
+    (or (some (fn [[tcl tk :as pair]]
+                (when (try-load [tcl])
+                  (reset! libraries {:tcl tcl :tk-candidates tk})
+                  pair))
+              pairs)
+        (throw (ex-info (str "kmet.gui.tcl: no Tcl 9.1/9.0/8.6 shared library "
+                             "could be loaded — install Tcl/Tk, or set "
+                             "KMET_TCL_LIB and KMET_TK_LIB")
+                        {:type :kmet.gui.tcl/missing-library
+                         :tried (mapv first pairs)})))))
+
+(defn- load-tk!
+  "Load the Tk library paired with the recorded Tcl and record its name.
+   Only the pair's candidates are tried: Tk must match the Tcl major."
+  []
+  (let [{:keys [tcl tk-candidates]} @libraries
+        tk (try-load tk-candidates)]
+    (if (some? tk)
+      (do (swap! libraries assoc :tk tk) tk)
+      (throw (ex-info (str "kmet.gui.tcl: Tcl loaded (" tcl ") but no matching "
+                           "Tk library could be loaded — install the matching "
+                           "Tk, or set KMET_TCL_LIB and KMET_TK_LIB")
+                      {:type :kmet.gui.tcl/missing-library
+                       :tcl tcl
+                       :tried tk-candidates})))))
+
 (defn- ensure-interp!
-  "Create the interpreter once (libtcl loaded). Returns it."
+  "Create the interpreter once (a Tcl library loaded). Returns it."
   []
   (or @interp
       (do
-        (load-lib "Tcl" tcl-libs)
+        (load-tcl!)
         (tcl-find-executable "kmet")
         (let [i (tcl-create-interp)
               rc (tcl-init i)]
@@ -248,15 +354,16 @@
 (defn- prepare!
   "Load Tk into the interpreter (needs a display).
 
-   The Tk DLL is looked up on PATH and loaded through Tcl's `load`, with
-   its appended zipfs library mounted first, so a standalone Tk DLL works
-   from PATH with no compiled-in install prefix. When the path cannot be
-   resolved, the FFI-preloaded DLL is left to Tk_Init's own install-path
-   search (a system installation)."
+   The Tk library paired with the loaded Tcl is resolved in the install
+   directories and loaded through Tcl's `load`, with the zipfs library a
+   Tcl 9 build appended to it mounted first, so a standalone Tk DLL works
+   with no compiled-in install prefix (on Tcl 8.6 the mount is a caught
+   no-op). When the path cannot be resolved, the FFI-preloaded library is
+   left to Tk_Init's own install-path search (a system installation)."
   []
   (when-not @tk-ready?
     (let [i (ensure-interp!)
-          tk-name (load-lib "Tk" tk-libs)
+          tk-name (load-tk!)
           path (find-library tk-name)]
       (when-not (and path (= tcl-ok (eval-script i (load-tk-script path))))
         (let [rc (tk-init i)]
@@ -319,4 +426,5 @@
     (reset! tk-ready? false)
     (reset! handlers {})
     (reset! trampoline-callable nil)
-    (reset! trampoline-arena nil)))
+    (reset! trampoline-arena nil)
+    (reset! libraries nil)))

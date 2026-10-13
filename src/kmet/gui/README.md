@@ -1,7 +1,7 @@
 # kmet GUI backends (`kmet.gui.*`)
 
 bb/Jolt GUI frontends for the toolkit-agnostic hiccup engine. The first
-backend is **Tk** (Tcl/Tk **9.1 only**): `kmet.gui.tk`
+backend is **Tk** (Tcl/Tk **8.6 or newer**; 9.1 preferred): `kmet.gui.tk`
 is "hiccup-tk" — the tag table, widget records and Tcl script generation —
 and `kmet.gui.tcl` is the host FFI adapter (`babashka.ffi` under babashka,
 `jolt.ffi` under Jolt) that owns a real Tcl interpreter and the Tk event
@@ -51,17 +51,25 @@ plus a pump on the UI thread. See `kmet.gui.tk/run!`.
 
 ## Running the Tk backend
 
-Requirements: babashka or Jolt, plus Tcl/Tk **9.1** (`apt install tcl tk`,
-`brew install tcl-tk`, or the MSYS2/Windows DLLs); the adapter throws with
-the names it tried when libtcl 9.1 or libtk 9.1 is missing. Tk is a Tcl
-package: the adapter loads libtcl for the interpreter, then libtk and
-loads it through Tcl, so one Tcl/Tk installation supplies both libraries.
-The Tk DLL is resolved
-on PATH and the zipfs library its build appended to the DLL is mounted
-before the load, so the Windows DLLs are standalone — `tcl91.dll`,
-`tcl9tk91.dll` and their two dependencies can be dropped next to the
-executable or anywhere on PATH, with no installed Tcl/Tk and no compiled-in
-prefix. There is no display support on Termux without Termux:X11.
+Requirements: babashka or Jolt, plus Tcl/Tk **8.6 or newer** (`apt install
+tcl tk`, `brew install tcl-tk`, or the MSYS2/Windows DLLs). The adapter
+tries the newest pair whose Tcl loads — 9.1, 9.0, then 8.6 — and throws
+with the names it tried when none is found. `KMET_TCL_LIB`/`KMET_TK_LIB`
+force a pair (both together, or a Tcl library whose Tk sibling is derived
+from its spelling) — the escape hatch for a Homebrew keg or a mixed
+installation. Tk is a Tcl package: the adapter loads libtcl for the
+interpreter, then libtk and loads it through Tcl, so one Tcl/Tk
+installation supplies both libraries — always as a matching pair, since
+Tk 8.6 links libtcl8.6 and Tk 9.x links Tcl 9.x. The Tk library is
+resolved in PATH, the working directory and Termux's `$PREFIX/lib`, and
+the zipfs library a Tcl 9 build appended to the DLL is mounted before the
+load, so the Windows DLLs are standalone — `tcl91.dll`, `tcl9tk91.dll`
+and their two dependencies can be dropped next to the executable or
+anywhere on PATH, with no installed Tcl/Tk and no compiled-in prefix.
+Tcl 8.6 has no zipfs, so a dropped-in 8.6 DLL needs an installed Tcl/Tk
+(or `TCL_LIBRARY`) to supply tk.tcl. There is no display support on Termux
+without Termux:X11; on Termux, jolt (bionic) can use the system Tcl/Tk
+while the glibc babashka build needs a glibc Tcl/Tk.
 
 ```sh
 bb scripts/gui_tk_demo.clj       # opens a small demo window
@@ -133,8 +141,9 @@ read caches the tree and a click repaints nothing).
 `kmet.gui.test-tk` (bb or Jolt) exercises the whole engine → backend →
 script path against a recording adapter — no display needed.
 `kmet.gui.test-tcl` (bb or Jolt, skipping where libtcl is absent)
-smoke-tests the real interpreter: eval, the command trampoline, and
-`tcl-quote` round-tripping through the Tcl parser.
+smoke-tests the real interpreter: eval, the command trampoline,
+`tcl-quote` round-tripping through the Tcl parser, and the recorded
+Tcl/Tk pair with the interpreter's own patchlevel.
 
 ## Status
 
