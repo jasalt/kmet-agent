@@ -3,11 +3,14 @@
    hiccup engine — \"hiccup-tk\": the backend itself plus the classic-widget
    tag set (`:tk/…`). The themed widgets are kmet.gui.ttk's `:ttk/…` set,
    the machinery both are written against is kmet.gui.tk.dsl, and the Tk
-   option vocabulary is kmet.gui.tk.options. Tag names follow Tcl's own
-   namespace split, so a widget's toolkit is in its name: `:tk/frame` is the
-   classic frame, `:ttk/frame` the themed one, and `:tk/text` has no ttk
-   counterpart. The contract — props and callbacks, the option families and
-   the run loop — is gui/README.md.
+   option vocabulary is kmet.gui.tk.options. Every tag here is a Tk widget
+   class; kmet's own widgets and composites are a separate UI namespace
+   over this backend (kmet.gui.ui), which mounts through mount-backend! /
+   run-backend!. Tag names follow Tcl's own namespace split, so a widget's
+   toolkit is in its name: `:tk/frame` is the classic frame, `:ttk/frame`
+   the themed one, and `:tk/text` has no ttk counterpart. The contract —
+   props and callbacks, the option families and the run loop — is
+   gui/README.md.
 
    The Tcl interpreter is reached through *adapter* (an implementation-
    detail seam so the backend is testable headlessly): an adapter is a map
@@ -95,50 +98,6 @@
 ;; The classic widget set (:tk/…)
 ;; ═══════════════════════════════════════════════════════════════════════════
 
-;; ─── Transcript stack (the :tk/transcript tag) ───────────────────────────
-;; One text widget hosts every child as an embedded window (each message is
-;; its own widget, on its own stretched line), so the chat scrolls natively
-;; — no canvas, and no drawing lines. `:attach` in the widget's :styles is
-;; how kmet.gui.tk.dsl/make-widget learns to embed instead of pack.
-
-(defn- make-transcript
-  "Construct the :tk/transcript composite: one text widget whose embedded
-   windows are the child widgets (each on its own line), plus its
-   scrollbar. Text scrolling has no canvas coordinate limit, so this is the
-   scroll container for long stacks (a chat transcript)."
-  [spec props]
-  (let [parent (dsl/parent-widget)
-        text (dsl/alloc-path! parent)
-        sb (dsl/alloc-path! parent)
-        font (dsl/resolve-base-font props)
-        w (dsl/->TkWidget text (:tag spec) (atom []) (atom {}) (atom {}))]
-    (dsl/eval! (dsl/widget-script "text" text
-                                  (merge {:wrap :none :height 1 :width 1 :padx 0 :pady 0
-                                          :highlightthickness 0 :borderwidth 0 :takefocus 0
-                                          :font (dsl/font-spec font {})}
-                                         (dsl/tcl-options props (:options spec)))))
-    (dsl/check-options! spec :tk/transcript text props)
-    (dsl/eval! (str "ttk::scrollbar " sb " -orient vertical -command \"" text " yview\""))
-    (dsl/eval! (str text " configure -yscrollcommand \"" sb " set\""))
-    (when (:see-end props)
-      (dsl/eval! (str "bind " text " <Map> {after idle {"
-                      text " see end"
-                      (when (:read-only props)
-                        (str "; " text " configure -state disabled"))
-                      "}}")))
-    (swap! (:styles w) assoc
-           :scrollbar sb
-           :attach (fn [p _props]
-                     (dsl/eval! (str text " window create end -window " p " -pady 2"))
-                     (dsl/eval! (str text " insert end \"\\n\""))))
-    (dsl/apply-bindings! w {} props (:bindings spec))
-    (when parent
-      (dsl/eval! (str "pack " sb " -side right -fill y"))
-      (dsl/eval! (str "pack " text " -side left -fill "
-                      (dsl/tcl-quote (dsl/tcl-word (or (:fill props) :both)))
-                      (when-not (false? (:expand props)) " -expand 1"))))
-    w))
-
 (defn- canvas-items!
   "Replace canvas W's items with PROPS' :items — `{:type :line :coords [x y …]}`
    plus the item's own Tcl canvas options (`-fill`, `-width`, `-text`,
@@ -193,15 +152,15 @@
     (dsl/eval! (str ". configure -menu " (:path w)))))
 
 (def ^:private text-options
-  "The options both text tags take — the transcript is a text widget."
+  "The options the text widget takes."
   (opt/options-for [:standard :geometry :bordered :highlighted :spaced :selectable
                     :fonted :text-body]
                    [:bg :fg :locale]))
 
 (def ^:private classic-specs
-  "The classic widget set: the backend's own window, card frame, text
-   display and transcript stack, then the rest of Tk's classic widgets —
-   each a dsl/widget-spec or, for the two composites, a ctor of its own."
+  "The classic widget set: Tk's classic widget classes as dsl/widget-specs,
+   plus the root window (`:tk/toplevel`), whose ctor is its own. kmet's own
+   widgets and composites live in kmet.gui.ui, not here."
   {:tk/toplevel
    {:ctor (fn [spec props]
             (when-let [title (:title props)]
@@ -218,11 +177,6 @@
               w))
     :options (opt/options-for [:standard :classed :creation :surface :bordered
                                :highlighted :spaced :window])
-    :lens (dsl/child-lens)}
-
-   :tk/transcript
-   {:ctor make-transcript
-    :options text-options
     :lens (dsl/child-lens)}
 
    :tk/frame
@@ -418,7 +372,8 @@
 
 (def ^:private tags
   "The backend's closed host tag table: the classic (:tk/…) and themed
-   (:ttk/…) widget sets, completed with the shared live-patching :apply."
+   (:ttk/…) widget sets — every tag a Tk widget class — completed with the
+   shared live-patching :apply."
   (dsl/widget-specs (merge classic-specs ttk/specs)))
 
 (defn- text-leaf
@@ -454,6 +409,26 @@
   (reset! dirty? true)
   nil)
 
+(defn- mount-tree!
+  "The mount! body for BACKEND: prepare the adapter, register the
+   trampoline, and build the window, root and pump over the backend map."
+  [backend tree options]
+  (require-adapter!)
+  (when-let [prepare! (:prepare! *adapter*)]
+    (prepare!))
+  ;; the one command handler every callback rides
+  (command! "kmet::cb" dispatch-callback!)
+  (let [window (engine/compile-element backend [:tk/toplevel (or options {})])
+        root (engine/root backend tree)
+        pump (fn []
+               (when (compare-and-set! dirty? true false)
+                 (binding [engine/*construct-context* {:parent window}]
+                   (engine/render-component root nil))))]
+    (reset! dirty? true)
+    (component/set-frame-hook! request-render!)
+    (pump)
+    {:window window :root root :pump pump}))
+
 (defn mount!
   "Prepare the adapter and mount TREE (a tree, or a component fn that is
    re-run by every pass) in a fresh Tk window. Returns a handle for
@@ -467,21 +442,14 @@
    captured at mount time, so a change inside kmet.gui.tk itself still
    needs a remount. One window per process (the dirty flag is global)."
   [tree & [options]]
-  (require-adapter!)
-  (when-let [prepare! (:prepare! *adapter*)]
-    (prepare!))
-  ;; the one command handler every callback rides
-  (command! "kmet::cb" dispatch-callback!)
-  (let [window (engine/compile-element tk-backend [:tk/toplevel (or options {})])
-        root (engine/root tk-backend tree)
-        pump (fn []
-               (when (compare-and-set! dirty? true false)
-                 (binding [engine/*construct-context* {:parent window}]
-                   (engine/render-component root nil))))]
-    (reset! dirty? true)
-    (component/set-frame-hook! request-render!)
-    (pump)
-    {:window window :root root :pump pump}))
+  (mount-tree! tk-backend tree options))
+
+(defn mount-backend!
+  "Mount TREE with BACKEND — kmet.gui.tk/tk-backend, or one whose :tags add
+   kmet's own widgets on top of it (kmet.gui.ui/backend). Same contract as
+   mount!."
+  [backend tree & [options]]
+  (mount-tree! backend tree options))
 
 (defn render!
   "Request a render pass for HANDLE's tree at the pump's next tick, so a
@@ -510,4 +478,10 @@
    :bg :bind). Requires an adapter (bound by the caller — kmet.gui.tcl/run!
    installs the host FFI one). Blocks."
   [tree & [options]]
-  (run-loop! (mount! tree options)))
+  (run-loop! (mount-tree! tk-backend tree options)))
+
+(defn run-backend!
+  "run! with BACKEND (see mount-backend!): mount TREE with its tag table
+   and run the Tk event loop until the window closes."
+  [backend tree & [options]]
+  (run-loop! (mount-tree! backend tree options)))

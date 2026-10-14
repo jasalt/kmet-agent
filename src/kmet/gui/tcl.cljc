@@ -397,6 +397,15 @@
    :command! command!
    :run-loop run-loop!})
 
+(defn install!
+  "Install the host FFI adapter (interpreter + Tk) without mounting, for a
+   caller that mounts with its own tag table (kmet.gui.ui/backend through
+   kmet.gui.tk/mount-backend! and run-backend!)."
+  []
+  (ensure-interp!)
+  (tk/set-adapter! (adapter))
+  nil)
+
 (defn mount!
   "REPL entry point: install the host FFI adapter (interpreter + Tk), mount
    TREE in a live window and return the handle (see kmet.gui.tk/mount!).
@@ -405,8 +414,7 @@
    kmet.gui.tk/run-loop! there, then edit a component namespace, reload it
    and kmet.gui.tk/render! to repaint with the new code."
   [tree & [options]]
-  (ensure-interp!)
-  (tk/set-adapter! (adapter))
+  (install!)
   (tk/mount! tree options))
 
 (defn run!
@@ -414,8 +422,7 @@
    until the window closes. OPTIONS are the :toplevel tag's props
    (:title :width :height :bg :bind)."
   [tree & [options]]
-  (ensure-interp!)
-  (tk/set-adapter! (adapter))
+  (install!)
   (tk/run! tree options))
 
 (defn stop!

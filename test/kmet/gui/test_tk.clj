@@ -521,10 +521,10 @@
 
 (t/deftest every-tk-widget-class-is-a-tag
   ;; the classic and themed sets together cover every widget class the
-  ;; interpreter has (minus the aliases: :tk/transcript is a text widget,
+  ;; interpreter has (the classic text widget hosts embedded child windows,
   ;; :tk/toplevel the window)
   (let [tags (:tags tk/tk-backend)]
-    (t/is (= 38 (count tags)))
+    (t/is (= 37 (count tags)))
     (t/is (every? tags [:tk/button :tk/canvas :tk/checkbutton :tk/entry :tk/label
                         :tk/labelframe :tk/listbox :tk/menu :tk/menubutton :tk/message
                         :tk/panedwindow :tk/radiobutton :tk/scale :tk/scrollbar
@@ -736,37 +736,3 @@
       (t/is (some #(str/includes? % (str "destroy " sb)) (scripts rec))
             "dispose destroys the sibling scrollbar"))))
 
-;; ─── the :transcript stack ───────────────────────────────────────────────
-
-(t/deftest transcript-embeds-each-child-as-a-window
-  (with-fake [rec nil]
-    (let [{:keys [root]} (mounted [:ttk/frame {}
-                                   [:tk/transcript {:see-end true :read-only true}
-                                    [:tk/text {:text "a"}]
-                                    [:tk/text {:text "b"}]]])
-          ss (scripts rec)
-          text (second (re-find #"^text (\.w[\w.]+)" (first (scripts-like rec #"^text \."))))
-          sb (second (re-find #"^ttk::scrollbar (\.w[\w.]+) -orient vertical -command \""
-                              (first (scripts-like rec #"^ttk::scrollbar "))))]
-      (t/is (some #(and (str/includes? % "-wrap none")
-                        (str/includes? % "-height 1")
-                        (str/includes? % "-width 1"))
-                  ss)
-            "the transcript text widget is one line deep and unwrapped")
-      (t/is (some #(str/includes? % (str "ttk::scrollbar " sb " -orient vertical -command \""
-                                         text " yview\""))
-                  ss))
-      (t/is (some #(str/includes? % (str text " configure -yscrollcommand \"" sb " set\"")) ss))
-      (t/is (some #(str/includes? % (str text " window create end -window ")) ss)
-            "every child is embedded as a window on its own line")
-      (t/is (some #(str/includes? % "insert end") ss)
-            "the embedded window is followed by a newline")
-      (t/is (some #(str/includes? % "see end") ss)
-            "the transcript scrolls to the end once mapped")
-      (t/is (some #(str/includes? % "configure -state disabled") ss)
-            ":read-only disables the host after the first map")
-      (t/is (some true? (map #(= (str "pack " sb " -side right -fill y") %) ss)))
-      (t/is (some true? (map #(= (str "pack " text " -side left -fill both -expand 1") %) ss)))
-      (engine/dispose-component root)
-      (t/is (some #(str/includes? % (str "destroy " sb)) (scripts rec))
-            "dispose destroys the sibling scrollbar"))))

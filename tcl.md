@@ -7,13 +7,17 @@ package's design document; this file is the open-work list beside it.
 ## What is complete
 
 Every widget class Tk 9.1 has is a tag — classic `:tk/…` (window, frames,
-text, transcript, button, label, labelframe, message, checkbutton,
+text, button, label, labelframe, message, checkbutton,
 radiobutton, entry, spinbox, listbox, menu, menubutton, panedwindow, scale,
 scrollbar, canvas) and themed `:ttk/…` (frame, labelframe, label, button,
 checkbutton, radiobutton, entry, combobox, spinbox, scale, scrollbar,
 sizegrip, toggleswitch, menubutton, notebook, panedwindow, progressbar,
 separator, treeview) — and each tag reaches its widget's whole option set
 minus four kinds of option, listed below.
+
+kmet's own widgets are not part of those sets: they are `:ui/…` tags in
+`kmet.gui.ui` (today `:ui/transcript`, the chat scroll container), added to
+the backend through `kmet.gui.tk/mount-backend!`/`run-backend!`.
 
 Two guards keep that honest, and are the place to start from when adding a
 widget:
@@ -47,7 +51,7 @@ KMET_TCL_LIB=…/tcl86.dll KMET_TK_LIB=…/tk86.dll bb scripts/tk_option_audit.c
 | `:tk/entry` `:tk/spinbox` `:ttk/entry` `:ttk/combobox` `:ttk/spinbox` | `-locale`, `-placeholder`, `-placeholderforeground` |
 | `:tk/frame` `:tk/toplevel` | `-backgroundimage`, `-tile` |
 | `:tk/label` `:ttk/label` | `-textangle` |
-| `:tk/text` `:tk/transcript` | `-locale` |
+| `:tk/text` | `-locale` |
 | `:tk/listbox` | `-inactiveselectbackground`, `-inactiveselectforeground` |
 | `:tk/menu` | `-activerelief` |
 | `:ttk/button` `:ttk/checkbutton` `:ttk/radiobutton` `:ttk/menubutton` | `-justify` |
@@ -109,8 +113,9 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
   (`kmet.gui.tk/message-box!`, `open-file!`), blocking in Tcl's event loop,
   so they must run on the Tk thread — mount!/run-loop!'s thread — not from a
   component body, which renders on the same thread and may call them.
-- **An editable text tag.** `:tk/text` and `:tk/transcript` own `-state`:
-  they are read-only display surfaces. A multi-line input (a chat composer
+- **An editable text tag.** `:tk/text` owns `-state`: it is a read-only
+  display surface (`:ui/transcript` in kmet.gui.ui hosts the embedded-window
+  chat stack). A multi-line input (a chat composer
   with the TUI's editing keys) needs a second tag with insert/delete from
   Clojure, marks, `edit undo` (the `:undo`/`:maxundo` props are already
   there), a `see` target, `:on-change` and focus handling.
@@ -174,7 +179,7 @@ be; each group needs machinery:
 ## 5. Rendering
 
 - **Incremental append.** The transcript re-renders its whole stack as a
-  session grows; appending a card should add one widget (`:tk/transcript`
+  session grows; appending a card should add one widget (`:ui/transcript`
   already hosts each card as its own embedded window, so the missing piece
   is an append path in the component rather than a re-render).
 - **Virtualization.** Mount only the visible rows of a long list; the

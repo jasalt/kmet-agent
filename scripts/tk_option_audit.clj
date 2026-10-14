@@ -16,7 +16,7 @@
 
 (def ^:private tag-widget
   "Our tags → the Tk creation command they script."
-  {:tk/toplevel "toplevel" :tk/transcript "text" :tk/frame "frame" :tk/text "text"
+  {:tk/toplevel "toplevel" :tk/frame "frame" :tk/text "text"
    :tk/button "button" :tk/label "label" :tk/labelframe "labelframe"
    :tk/message "message" :tk/checkbutton "checkbutton" :tk/radiobutton "radiobutton"
    :tk/entry "entry" :tk/spinbox "spinbox" :tk/listbox "listbox" :tk/scale "scale"

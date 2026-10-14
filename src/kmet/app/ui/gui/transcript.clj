@@ -4,8 +4,9 @@
 
    The layout mirrors the TUI transcript — mono lines, the TUI palette, the
    TUI markdown renderer — but every message is its own Tk widget (a
-   read-only `:text` block of styled lines), stacked in a `:transcript`
-   container so the chat scrolls as one. Components are plain hiccup fns
+   read-only `:text` block of styled lines), stacked in a `:ui/transcript`
+   container (kmet.gui.ui's embedded-window text host) so the chat scrolls
+   as one. Components are plain hiccup fns
    (`user-message`, `assistant-message`, `tool-execution`,
    `custom-message`), dispatched by `message-component`; `chat` is the
    scrollable stack and `page` adds the header/footer around it.
@@ -367,11 +368,13 @@
   "The scrollable chat: one card widget per session entry on the canvas
    surface, scrolled to the end once the window is mapped.
 
-   The entries are read through `r/tracked-deref`: appending to the session
-   (a streaming assistant, a new tool result) is what invalidates the
-   mounted body, so the transcript repaints as the conversation grows."
+   The cards are the `:ui/transcript` host's embedded child windows, one
+   per line, so the stack scrolls as one. The entries are read through
+   `r/tracked-deref`: appending to the session (a streaming assistant, a
+   new tool result) is what invalidates the mounted body, so the transcript
+   repaints as the conversation grows."
   [session ctx]
-  (into [:tk/transcript {:see-end true :read-only true
+  (into [:ui/transcript {:see-end true :read-only true
                          :fill :both :expand true
                          :bg (surface ctx :canvas)}]
         (map #(message-component % ctx) (r/tracked-deref (:entries session)))))
@@ -404,7 +407,7 @@
    A static hiccup vector is parsed once, so nothing a click does can reach
    the tree again; a fn root is re-run whenever an atom its body derefed
    (the session's entries, CTX's collapse set) changes, which is what makes
-   the card titles live. Mount this with kmet.libs.hikap/root or
-   kmet.gui.tcl/run!."
+   the card titles live. Mount this with kmet.gui.ui/run!, or
+   kmet.libs.hikap/root over kmet.gui.ui/backend."
   [session ctx]
   (fn [_props] (page session ctx)))

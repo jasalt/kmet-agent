@@ -127,7 +127,7 @@
                      :content [{:type :tool_result :content "x"}]}])
         el (transcript/chat s (ctx))
         kids (children el)]
-    (t/is (= :tk/transcript (first el)))
+    (t/is (= :ui/transcript (first el)))
     (t/is (true? (:see-end (second el))) "the chat scrolls to the end once mapped")
     (t/is (= 3 (count kids)))
     (t/is (every? #(= :tk/frame (first %)) kids))
@@ -142,6 +142,6 @@
     (t/is (= :ttk/frame (first el)))
     (t/is (= 2 (count kids)))
     (t/is (= :tk/text (first (first kids))))
-    (t/is (= :tk/transcript (first (second kids))))
+    (t/is (= :ui/transcript (first (second kids))))
     (t/is (str/includes? (apply str (map :text (:content (second (first kids))))) "kmet"))
     (t/is (str/includes? (apply str (map :text (:content (second (first kids))))) "1a135a01"))))

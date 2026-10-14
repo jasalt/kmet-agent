@@ -482,8 +482,8 @@
     (apply-bindings! w {} props (:bindings spec))
     (when (and parent (not (false? (:pack? spec))))
       (if-let [attach (:attach @(:styles parent))]
-        ;; containers that own their child placement (a transcript window,
-        ;; a notebook tab, a pane) — and read the child's props for it
+        ;; containers that own their child placement (kmet.gui.ui's embedded
+        ;; text window, a notebook tab, a pane) — and read the child's props for it
         (attach path props)
         (eval! (str "pack " path
                     " -side " (tcl-quote (tcl-word (or (:side props) :top)))
@@ -502,7 +502,7 @@
 
 (defn- dispose-widget-extras!
   "Release resources a widget created outside its Tk path — the sibling
-   scrollbar the :text/:transcript tags pack next to the widget."
+   scrollbar the :text tag packs next to the widget."
   [w]
   (when-some [sb (:scrollbar @(:styles w))]
     (eval! (str "destroy " (tcl-quote sb)))))

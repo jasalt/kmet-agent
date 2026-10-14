@@ -128,9 +128,10 @@ listed in the root `AGENTS.md` topic map.
   session concepts.
 - `kmet.gui.*` is the GUI backends (Jolt-only; the Tk backend — kmet.gui.tk
   with the classic `:tk/…` widget set, kmet.gui.ttk with the `:ttk/…` set,
-  kmet.gui.tk.dsl as their shared machinery and kmet.gui.tk.options as the
-  Tk option vocabulary — and its jolt.ffi adapter). Like `kmet.tui.*`, it
-  builds on `kmet.libs.*` and nothing above it.
+  kmet.gui.ui with kmet's own `:ui/…` widgets over both, kmet.gui.tk.dsl as
+  their shared machinery and kmet.gui.tk.options as the Tk option
+  vocabulary — and its jolt.ffi adapter). Like `kmet.tui.*`, it builds on
+  `kmet.libs.*` and nothing above it.
 - `kmet.modes.*` is the entry-mode layer; `kmet.app.*` is business logic;
   `kmet.app.ui.*` is app-specific UI; `kmet.core` only parses arguments and
   dispatches.

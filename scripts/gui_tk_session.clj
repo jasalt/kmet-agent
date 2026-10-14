@@ -16,6 +16,7 @@
             [kmet.app.session :as session]
             [kmet.app.ui.gui.transcript :as transcript]
             [kmet.gui.tcl :as tcl]
+            [kmet.gui.ui :as ui]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.theme :as theme]))
 
@@ -82,11 +83,12 @@
         (println (str "kmet session viewer — " file))
         (println (str "  " (count @(:entries s)) " entries, "
                       family " " size ", " char-px "px/char")))
-      (tcl/run! (transcript/live-page s ctx)
-                {:title (str "kmet session "
-                             (subs (str (:id s)) 0 (min 8 (count (str (:id s))))))
-                 :width (max 640 (int (+ (* width char-px) 48)))
-                 :height 780
-                 :bg (transcript/palette :window)}))))
+      (tcl/install!)
+      (ui/run! (transcript/live-page s ctx)
+               {:title (str "kmet session "
+                            (subs (str (:id s)) 0 (min 8 (count (str (:id s))))))
+                :width (max 640 (int (+ (* width char-px) 48)))
+                :height 780
+                :bg (transcript/palette :window)}))))
 
 (apply -main *command-line-args*)
