@@ -20,7 +20,8 @@ kmet's own widgets are not part of those sets: they are `:ui/…` tags in
 the backend through `kmet.gui.tk/mount-backend!`/`run-backend!`.
 
 Two guards keep that honest, and are the place to start from when adding a
-widget:
+widget (the `:ui/…` widgets have their own guard, `bb test
+kmet.gui.test-ui`):
 
 ```sh
 bb scripts/tk_option_audit.clj          # declared vs. the live widget, per tag
@@ -34,8 +35,8 @@ a new tag starts from an audit line rather than from guessing.
 
 ## Tk 8.6 vs 9.1 — what the running version changes
 
-The tag table is kmet's, not Tk's: the 38 tags and their names are the same
-on every supported Tk (8.6, 9.0, 9.1). What a version changes is which
+The tag table is kmet's, not Tk's: the tag names are the same on every
+supported Tk (8.6, 9.0, 9.1). What a version changes is which
 *options* exist and whether a widget *class* is there at all. Measured here
 against both interpreters on one machine (Tk 9.1.0 from the kmet bundle, Tk
 8.6.18 from the Git for Windows bundle):
@@ -198,3 +199,5 @@ be; each group needs machinery:
   Tk; it skips where there is no display.
 - `bb test kmet.gui.test-tk` — the headless recording adapter: tag
   construction, patching, callbacks, the value slots and disposal.
+- `bb test kmet.gui.test-ui` — the same for the kmet-widget set (`:ui/…`),
+  mounted through `kmet.gui.ui/backend`.
