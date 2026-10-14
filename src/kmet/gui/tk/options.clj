@@ -12,26 +12,35 @@
    where four props set one option (-font).
 
    Reached values are plain data: words (keywords, booleans, numbers,
-   colours, names), Tcl lists (:padding [6 12], :tabs [40 80]) and the
-   font family (:font-family/:font-size/:bold/:italic). Options that are
-   not a plain value are deliberately absent, each because it needs
-   machinery a prop cannot be:
+   colours, names), Tcl lists (:padding [6 12], :tabs [40 80], :values,
+   :scrollregion, :show), and the font family
+   (:font-family/:font-size/:bold/:italic). Options that are not a plain
+   value are deliberately absent, each because it needs machinery a prop
+   cannot be:
 
      - script-typed: -command (declare it in :bindings with
-       {:option :command}, as :on-toggled does), -validatecommand,
+       {:option :command}, as :on-click does), -validatecommand,
        -invalidcommand, -xscrollcommand, -yscrollcommand (the :scrollbar
-       prop wires those), -postcommand, -browsecmd, -invokecommand;
+       prop wires those), -postcommand, -browsecmd, -invokecommand,
+       -tearoffcommand;
      - variable-backed: -variable, -textvariable, -listvariable (kmet
-       would have to own the Tcl variable and trace it);
-     - image-backed: -image, -bitmap, -disabledimage (kmet does no image
-       loading), -labelwidget;
-     - another widget: -menu.
+       would have to own the Tcl variable and trace it — a checkable
+       widget's values are the tag's own: it gives the widget a private
+       variable holding 1/0, or its :value when it is a radiobutton, so
+       -onvalue/-offvalue/-tristatevalue are not props either);
+     - image-backed: -image, -bitmap, -disabledimage, -selectimage,
+       -tristateimage (kmet does no image loading), -labelwidget;
+     - another widget: -menu (a menubutton's :items build their own menu),
+       -displaycolumns? no, that is a list;
+     - only meaningful with one of the above: -selecttype, -title,
+       -titlecolumns, -titleitems, -type, -tearoffcommand.
 
    Tk 9 additions (-locale, -placeholder, -placeholderforeground,
-   -textangle, -backgroundimage, -tile) are listed: the backend checks a
-   prop's option against the running widget (dsl/check-options!), so on a
-   Tk 8.6 host they fail with a message naming the option instead of
-   silently doing nothing."
+   -textangle, -backgroundimage, -tile, -textangle, -striped, -rowheight,
+   -headingheight, -size) are listed: the backend checks a prop's option
+   against the running widget (dsl/check-options!), so on a Tk 8.6 host
+   they fail with a message naming the option instead of silently doing
+   nothing."
   (:require [clojure.set :as set]))
 
 (def options
@@ -69,13 +78,17 @@
    :state :state
    :activebackground :activebackground
    :activeforeground :activeforeground
+   :activeborderwidth :activeborderwidth
+   :activerelief :activerelief
    :disabledforeground :disabledforeground
    :default :default
    :exportselection :exportselection
    :selectbackground :selectbackground
    :selectforeground :selectforeground
    :selectborderwidth :selectborderwidth
+   :selectcolor :selectcolor
    :inactiveselectbackground :inactiveselectbackground
+   :inactiveselectforeground :inactiveselectforeground
    :font-family :font
    :font-size :font
    :bold :font
@@ -85,16 +98,64 @@
    :placeholderforeground :placeholderforeground
    :validate :validate
    :locale :locale
-   :onvalue :onvalue
-   :offvalue :offvalue
+   :disabledbackground :disabledbackground
+   :readonlybackground :readonlybackground
+   :indicatoron :indicatoron
+   :offrelief :offrelief
+   :overrelief :overrelief
    :value :value
    :maximum :maximum
    :mode :mode
    :orient :orient
    :phase :phase
    :length :length
-   :labelanchor :labelanchor
+   :from :from
+   :to :to
+   :resolution :resolution
+   :digits :digits
+   :increment :increment
+   :format :format
+   :values :values
    :wrap :wrap
+   :showvalue :showvalue
+   :sliderlength :sliderlength
+   :sliderrelief :sliderrelief
+   :tickinterval :tickinterval
+   :bigincrement :bigincrement
+   :label :label
+   :troughcolor :troughcolor
+   :jump :jump
+   :elementborderwidth :elementborderwidth
+   :repeatdelay :repeatdelay
+   :repeatinterval :repeatinterval
+   :buttonbackground :buttonbackground
+   :buttoncursor :buttoncursor
+   :buttondownrelief :buttondownrelief
+   :buttonuprelief :buttonuprelief
+   :labelanchor :labelanchor
+   :activestyle :activestyle
+   :selectmode :selectmode
+   :setgrid :setgrid
+   :scrollregion :scrollregion
+   :xscrollincrement :xscrollincrement
+   :yscrollincrement :yscrollincrement
+   :closeenough :closeenough
+   :confine :confine
+   :offset :offset
+   :handlepad :handlepad
+   :handlesize :handlesize
+   :opaqueresize :opaqueresize
+   :sashpad :sashpad
+   :sashrelief :sashrelief
+   :sashwidth :sashwidth
+   :showhandle :showhandle
+   :tearoff :tearoff
+   :aspect :aspect
+   :direction :direction
+   :size :size
+   :rowheight :rowheight
+   :headingheight :headingheight
+   :striped :striped
    :autoseparators :autoseparators
    :blockcursor :blockcursor
    :endline :endline
@@ -106,7 +167,6 @@
    :insertunfocussed :insertunfocussed
    :insertwidth :insertwidth
    :maxundo :maxundo
-   :setgrid :setgrid
    :spacing1 :spacing1
    :spacing2 :spacing2
    :spacing3 :spacing3
@@ -120,8 +180,9 @@
   #{:class :colormap :container :visual :screen :use})
 
 (def list-valued
-  "Props whose option is a Tcl list: a sequence renders as one."
-  #{:padding :tabs})
+  "Props whose option is a Tcl list: a sequence renders as one (a single
+   value stays the word it is)."
+  #{:padding :tabs :values :scrollregion :show})
 
 (def font-props
   "The font family: all four props set the widget's -font, so a font is
@@ -147,13 +208,31 @@
    :labelled    #{:text :textangle :underline}
    :layout      #{:justify :anchor :wraplength :compound}
    :stateful    #{:state :activebackground :activeforeground
-                  :disabledforeground :default}
+                  :disabledforeground}
+   ;; the classic text-and-graphics widgets: label, button, checkbutton,
+   ;; radiobutton, menubutton — every one of them has all of these
+   :classic-text #{:activebackground :activeforeground :anchor :compound
+                   :disabledforeground :justify :underline :wraplength}
    :selectable  #{:exportselection :selectbackground :selectforeground
                   :selectborderwidth :inactiveselectbackground}
    :fonted      #{:font-family :font-size :bold :italic}
-   :localized   #{:placeholder :placeholderforeground :locale}
-   :checkable   #{:onvalue :offvalue}
    :editable    #{:show :validate}
+   :localized   #{:placeholder :placeholderforeground :locale}
+   ;; the classic entry/ttk entry/spinbox editing block (-show is not in
+   ;; Tk's classic spinbox, so it is a prop of its own)
+   :entry-body  #{:exportselection :justify :selectbackground
+                  :selectforeground :selectborderwidth :insertbackground
+                  :insertborderwidth :insertofftime :insertontime
+                  :insertwidth :validate :disabledbackground
+                  :disabledforeground :readonlybackground :placeholder
+                  :placeholderforeground :locale}
+   :scrollbar-body #{:orient :troughcolor :jump :elementborderwidth
+                     :activerelief :activebackground :repeatdelay
+                     :repeatinterval :width}
+   ;; the classic scale's own block (ttk's scale has only from/to/orient)
+   :scale-body  #{:from :to :resolution :digits :showvalue :sliderlength
+                  :sliderrelief :tickinterval :bigincrement :label
+                  :repeatdelay :repeatinterval :troughcolor :orient :length}
    :progress    #{:value :maximum :mode :orient :phase :length}
    ;; the text widget's editing body
    :text-body   #{:wrap :autoseparators :blockcursor :endline :startline

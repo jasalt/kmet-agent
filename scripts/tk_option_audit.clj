@@ -17,9 +17,20 @@
 (def ^:private tag-widget
   "Our tags → the Tk creation command they script."
   {:tk/toplevel "toplevel" :tk/transcript "text" :tk/frame "frame" :tk/text "text"
+   :tk/button "button" :tk/label "label" :tk/labelframe "labelframe"
+   :tk/message "message" :tk/checkbutton "checkbutton" :tk/radiobutton "radiobutton"
+   :tk/entry "entry" :tk/spinbox "spinbox" :tk/listbox "listbox" :tk/scale "scale"
+   :tk/scrollbar "scrollbar" :tk/canvas "canvas" :tk/menubutton "menubutton"
+   :tk/menu "menu" :tk/panedwindow "panedwindow"
    :ttk/frame "::ttk::frame" :ttk/labelframe "::ttk::labelframe" :ttk/label "::ttk::label"
-   :ttk/button "::ttk::button" :ttk/entry "::ttk::entry" :ttk/checkbutton "::ttk::checkbutton"
-   :ttk/separator "::ttk::separator" :ttk/progressbar "::ttk::progressbar"})
+   :ttk/button "::ttk::button" :ttk/checkbutton "::ttk::checkbutton"
+   :ttk/radiobutton "::ttk::radiobutton" :ttk/entry "::ttk::entry"
+   :ttk/combobox "::ttk::combobox" :ttk/spinbox "::ttk::spinbox" :ttk/scale "::ttk::scale"
+   :ttk/scrollbar "::ttk::scrollbar" :ttk/sizegrip "::ttk::sizegrip"
+   :ttk/toggleswitch "::ttk::toggleswitch" :ttk/menubutton "::ttk::menubutton"
+   :ttk/notebook "::ttk::notebook" :ttk/panedwindow "::ttk::panedwindow"
+   :ttk/progressbar "::ttk::progressbar" :ttk/separator "::ttk::separator"
+   :ttk/treeview "::ttk::treeview"})
 
 (def ^:private classic-candidates
   "The documented classic Tk widget classes (dialogs such as tk_messageBox
@@ -45,6 +56,12 @@
        "  return [join $out \"\\n\"]\n"
        "}\n"))
 
+(def ^:private option-aliases
+  "Tk's option aliases: its configure output lists them as options too, so
+   they are dropped from the canonical set (most carry the canonical name
+   with a dash in the dbName column, canvas and scrollbar do not)."
+  #{"-bd" "-bg" "-fg" "-bgimg"})
+
 (defn- probe!
   "Create CREATOR's widget once at PATH: {:class str :options #{opt}
    :aliases #{opt}} — or {:error str} / {:nowin true}. Tk lists an option's
@@ -60,7 +77,8 @@
                                  (let [parts (str/split (subs l 4) #"\t")
                                        opt (first parts)
                                        db (second parts)]
-                                   {:opt opt :alias? (str/starts-with? (or db "") "-")})))
+                                   {:opt opt :alias? (or (contains? option-aliases opt)
+                                                        (str/starts-with? (or db "") "-"))})))
                              (str/split-lines out))]
               {:class (some->> (str/split-lines out)
                                (some #(when (str/starts-with? % "CLASS\t") (subs % 6))))
@@ -118,6 +136,12 @@
         _ (e probe-src)
         {:keys [rows widgets missing-widgets accepted patchlevel]} (audit e)
         broken (filter (comp seq :missing) rows)
+        declared (into #{} (mapcat (fn [{:keys [tag]}]
+                                     (let [spec (get (:tags tk/tk-backend) tag)]
+                                       (concat (map #(str "-" (name %)) (vals (:options spec)))
+                                               (keep #(some-> % :option name (as-> n (str "-" n)))
+                                                     (vals (:bindings spec))))))
+                                   rows))
         widget-dump? (some #{"--widgets"} args)]
     (println "Tk" patchlevel "—" (count widgets) "widget classes\n")
     (println "tag                    widget               declared  missing  unreached")
@@ -136,7 +160,7 @@
       (println (format "  %-8s %-24s %3d options" (name set) creator n)))
     (println "\noptions of no tag (widget count):"
              (str/join " " (for [[o n] (sort-by (comp - val) accepted)
-                                 :when (>= n 5)]
+                                 :when (and (>= n 5) (not (declared o)))]
                              (str o "(" n ")"))))
     (when widget-dump?
       (println "\nper-widget options:")

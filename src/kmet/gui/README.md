@@ -109,17 +109,53 @@ classic widgets are `:tk/…` and the themed ones `:ttk/…`, so the toolkit
 is part of the name — `:tk/frame` is the classic frame (a card needs
 `-background` and the highlight ring), `:ttk/frame` is `ttk::frame`, and
 `:tk/text` has no ttk counterpart because Tk has no `ttk::text`.
-`:tk/toplevel` is the root window; the themed set is `:ttk/labelframe`,
-`:ttk/label`, `:ttk/button`, `:ttk/entry`, `:ttk/checkbutton`,
-`:ttk/separator`, `:ttk/progressbar` and `:ttk/frame`. `:tk/transcript`
-is the one composite — a text widget whose children are embedded windows,
-plus a scrollbar.
+`:tk/toplevel` is the root window, and `:tk/transcript` is the one
+composite — a text widget whose children are embedded windows, plus a
+scrollbar.
 
-The classic specs are `kmet.gui.tk`'s `classic-specs`, the themed ones
+**Every widget class the interpreter has is a tag**: the classic
+`button canvas checkbutton entry frame label labelframe listbox menu
+menubutton message panedwindow radiobutton scale scrollbar spinbox text
+toplevel` (plus `:tk/transcript`) and the themed `ttk::button
+checkbutton combobox entry frame label labelframe menubutton notebook
+panedwindow progressbar radiobutton scale scrollbar separator sizegrip
+spinbox toggleswitch treeview`. `scripts/tk_option_audit.clj` reports
+that coverage against a live Tk.
+
+Three shapes of tag, on top of the plain leaves:
+
+- **Text fields** (`:tk/entry`, `:tk/spinbox`, `:ttk/entry`,
+  `:ttk/combobox`, `:ttk/spinbox`) take `:text` as a prop set through the
+  widget's own subcommands — patchable, and never an option.
+- **Data widgets** take their content as props rather than children:
+  `:tk/listbox` `:items`/`:selected`, `:ttk/treeview` `:columns`/`:rows`/
+  `:selected`, `:tk/canvas` `:items` (each a `{:type :line :coords [x y …]}`
+  map plus that item's own canvas options), `:tk/menu`/`:tk/menubutton`/
+  `:ttk/menubutton` `:items`, `:ttk/combobox`/`:ttk/spinbox` `:values`.
+- **Containers** place their children themselves: `:ttk/notebook` adds
+  each child as a tab (the child's `:tab` names it, `:selected` picks one),
+  `:ttk/panedwindow` as a pane (the child's `:weight`), `:tk/panedwindow`
+  as a pane (the child's `:minsize`/`:stretch`). A `:tk/menu` with
+  `:menubar true` wires itself onto the window, and a menubutton's
+  `:items` build the menu it pops.
+
+A checkable widget (`:tk/checkbutton`, `:tk/radiobutton`,
+`:ttk/checkbutton`, `:ttk/radiobutton`, `:ttk/toggleswitch`) shows its
+`:active` state and reports it through `:on-toggled`: Tk's `-variable` is
+not a prop, so the tag owns a private Tcl variable per widget — which is
+also the only state a classic Tk checkbutton can be read from (it has
+`select`/`deselect` and no query). A radiobutton compares that variable
+against its own `:value`, so `:active` on each button is what makes a
+group exclusive.
+
+The classic specs are `kmet.gui.tk`'s `classic-specs` (its four core
+widgets `classic-base`, the rest `classic-widgets`), the themed ones
 `kmet.gui.ttk/specs`; `kmet.gui.tk` completes both through
 `kmet.gui.tk.dsl/widget-specs` into the backend's closed tag table, which
 is why the qualified `:tk/…`/`:ttk/…` keywords are host tags and never
-fall through to the alias registry.
+fall through to the alias registry. A spec that is just its Tk command is
+`dsl/leaf-spec`; the shared `dsl/entry-spec` and `dsl/checkable-spec`
+build the text-field and checkable shapes.
 
 Pack geometry is the child's, like Tk's own pack options: `:side`
 (`-side`, default `top`), `:fill` (default `both` inside a pane container,
@@ -146,16 +182,24 @@ set to nil is absent, so a `configure` only carries what changed.
 
 The callback slots and what the handler receives:
 
-| prop | tag | handler receives |
+| prop | tags | handler receives |
 |---|---|---|
-| `:on-click` | `:ttk/label` (`<Button-1>`), `:ttk/button` (`-command`) | nothing |
-| `:on-change` | `:ttk/entry` (`<KeyRelease>`) | the entry's text |
-| `:on-submit` | `:ttk/entry` (`<Return>`) | the entry's text |
-| `:on-toggled` | `:ttk/checkbutton` (`-command`) | the checked boolean |
+| `:on-click` | `:ttk/label` (`<Button-1>`), `:ttk/button` (`-command`), `:tk/button`, `:tk/menubutton`, `:ttk/menubutton` | nothing |
+| `:on-change` | the text fields (`<KeyRelease>`) | the text |
+| `:on-change` | `:tk/scale`/`:ttk/scale` (`-command`, the value Tk passes) | the value, as a number |
+| `:on-submit` | the text fields (`<Return>`) | the text |
+| `:on-spin` | `:tk/spinbox`/`:ttk/spinbox` (`-command`) | the text |
+| `:on-toggled` | the checkable widgets (`-command`) | the new boolean |
+| `:on-select` | `:tk/listbox` (`<<ListboxSelect>>`) | a vector of indices |
+| `:on-select` | `:ttk/treeview` (`<<TreeviewSelect>>`) | a vector of row ids |
+| `:on-scroll` | `:tk/scrollbar`/`:ttk/scrollbar` (`-command`) | Tk's scroll arguments (`"moveto" "0.5"`) |
+| `:on-tab-changed` | `:ttk/notebook` (`<<NotebookTabChanged>>`) | the tab index |
 
-The value slots read the widget when the event fires, so a controlled
-component writes the value back from the callback. A callback set to nil
-is unbound in Tk and released from the trampoline.
+`:on-change`/`:on-submit`/`:on-spin` read the text back, and the scales'
+`:on-change` receives the number. The value slots read the widget when the
+event fires, so a controlled component writes the value back from the
+callback. A callback set to nil is unbound in Tk and released from the
+trampoline.
 
 `:bind` binds arbitrary events on any tag — `:tk/toplevel` included — by
 kmet chord (`:ctrl+enter`, `"ctrl+shift+p"`) or a raw Tk pattern
@@ -188,9 +232,14 @@ widget and lists the odd options itself:
 | `:geometry` `:surface` | `:width :height`; `:bg :backgroundimage :tile` |
 | `:bordered` `:highlighted` `:spaced` `:padded` | `:relief :borderwidth`; `:highlightbackground :highlightcolor :highlightthickness`; `:padx :pady`; `:padding` |
 | `:labelled` `:layout` | `:text :textangle :underline`; `:justify :anchor :wraplength :compound` |
-| `:stateful` `:selectable` `:editable` `:localized` `:checkable` | `:state :activebackground :activeforeground :disabledforeground :default`; the `-select*` and `-exportselection` block; `:show :validate`; `:placeholder :placeholderforeground :locale`; `:onvalue :offvalue` |
+| `:stateful` | `:state :activebackground :activeforeground :disabledforeground` |
+| `:classic-text` | the classic text-and-graphics block: `:activebackground :activeforeground :anchor :compound :disabledforeground :justify :underline :wraplength` |
+| `:selectable` | `:exportselection :selectbackground :selectforeground :selectborderwidth :inactiveselectbackground` |
 | `:fonted` | `:font-family :font-size :bold :italic` → `-font` |
 | `:progress` | `:value :maximum :mode :orient :phase :length` |
+| `:entry-body` | the entry/spinbox editing block: `:insert*`, `:select*`, `:validate`, `:disabled*`, `:readonlybackground`, `:placeholder*`, `:locale` |
+| `:scrollbar-body` | `:orient :troughcolor :jump :elementborderwidth :activerelief :activebackground :repeatdelay :repeatinterval :width` |
+| `:scale-body` | the classic scale's own block: `:from :to :resolution :digits :showvalue :sliderlength :sliderrelief :tickinterval :bigincrement :label :repeatdelay :repeatinterval :troughcolor :orient :length` |
 | `:text-body` | the text widget's editing body (`:wrap`, `:undo`, `:tabs`, `:spacing*`, `:insert*`, `:select*` where they fit) |
 
 ```clojure
@@ -224,10 +273,12 @@ Two consequences worth knowing:
 
 Options that are not a plain value are deliberately not props, each
 because it needs machinery a prop cannot be: script-typed (`-command` is
-`:on-click`/`:on-toggled`, `-validatecommand`, `-xscrollcommand`), the
-variable-backed `-variable`/`-textvariable`/`-listvariable`, the
-image-backed `-image`/`-bitmap`, and `-menu`/`-labelwidget`, which name
-other widgets.
+`:on-click`/`:on-toggled`/`:on-scroll`, `-validatecommand`,
+`-xscrollcommand`), the variable-backed `-variable`/`-textvariable`/
+`-listvariable` — a checkable widget's state is the tag's own private
+variable, so `-onvalue`/`-offvalue`/`-tristatevalue` are not props either —
+the image-backed `-image`/`-bitmap`/`-selectimage`, and the options that
+name another widget, `-menu` and `-labelwidget`.
 
 ### Rich text (`:tk/text`)
 
@@ -301,17 +352,24 @@ exercised against a real interpreter.
 
 ## Status
 
-v1 widget set: classic `:tk/toplevel :tk/frame :tk/text :tk/transcript`
-plus themed `:ttk/frame :ttk/labelframe :ttk/label :ttk/button :ttk/entry
-:ttk/checkbutton :ttk/separator :ttk/progressbar`, and bare-string labels.
-Every tag accepts the Tk options its widget has, through the families in
-`kmet.gui.tk.options` (see *Options* above); the options Tk gives to no
-plain prop — script-, variable- and image-backed — are the ones still
-missing, and the widget classes with no tag yet are the classic
-button/canvas/checkbutton/entry/label/labelframe/listbox/menu/menubutton/
-message/panedwindow/radiobutton/scale/scrollbar/spinbox and the themed
-combobox/menubutton/notebook/panedwindow/radiobutton/scale/scrollbar/
-sizegrip/spinbox/toggleswitch/treeview.
+v1 widget set: **every widget class the Tk interpreter has is a tag** —
+the classic `:tk/…` set (window, frames, text, transcript, buttons,
+labels, fields, list, menu, panes, scale, scrollbar, canvas) and the
+themed `:ttk/…` set (frames, labels, buttons, fields, notebook, panes,
+progress, separator, sizegrip, toggleswitch, treeview), plus bare-string
+labels. Every tag accepts the Tk options its widget has, through the
+families in `kmet.gui.tk.options` (see *Options* above); the options Tk
+gives to no plain prop — script-, variable- and image-backed — are the
+ones still missing, and `scripts/tk_option_audit.clj` reports both sides
+against a live Tk.
+
+The first cuts that remain: the treeview shows flat tables (its tree mode
+needs row children), canvas items are redrawn wholesale on a change (no
+per-item identity), a menu item is a command/separator/cascade (a check
+item needs a Tcl variable), and `:tk/text`/`:tk/transcript` own their
+`-state` (they are read-only surfaces; an editable text tag is a
+follow-up).
+
 The `:tk/text` tag carries the displayed content — styled segments in
 Tk tags, an optional scrollbar, generated mono fonts, wrapping.
 `:tk/transcript` is the scroll container: one text widget whose children
@@ -327,4 +385,4 @@ reusing the TUI markdown renderer and palette, and
 kmet's own application UI is still written against `kmet.tui` (line-oriented
 components) and is not ported to this backend yet; the next steps are
 incremental transcript append (instead of re-rendering the whole stack),
-keyed-list virtualization (`ttk::treeview`), and an extension-UI bridge.
+keyed-list virtualization over `ttk::treeview`, and an extension-UI bridge.

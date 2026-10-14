@@ -517,6 +517,176 @@
       (t/is (some #(= "destroy ." %) (scripts rec))
             "the loop's exit disposes the tree"))))
 
+;; ─── the added widgets ───────────────────────────────────────────────────
+
+(t/deftest every-tk-widget-class-is-a-tag
+  ;; the classic and themed sets together cover every widget class the
+  ;; interpreter has (minus the aliases: :tk/transcript is a text widget,
+  ;; :tk/toplevel the window)
+  (let [tags (:tags tk/tk-backend)]
+    (t/is (= 38 (count tags)))
+    (t/is (every? tags [:tk/button :tk/canvas :tk/checkbutton :tk/entry :tk/label
+                        :tk/labelframe :tk/listbox :tk/menu :tk/menubutton :tk/message
+                        :tk/panedwindow :tk/radiobutton :tk/scale :tk/scrollbar
+                        :tk/spinbox :ttk/combobox :ttk/menubutton :ttk/notebook
+                        :ttk/panedwindow :ttk/radiobutton :ttk/scale :ttk/scrollbar
+                        :ttk/sizegrip :ttk/spinbox :ttk/toggleswitch :ttk/treeview]))
+    (t/is (false? (get-in tags [:tk/menu :pack?]))
+          "Tk refuses to let pack manage a menu")))
+
+(t/deftest the-added-widgets-script-their-options
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:tk/button {:text "go" :default :active :repeatdelay 300}]
+                                   [:tk/label {:text "hi" :wraplength 200}]
+                                   [:tk/canvas {:scrollregion [0 0 100 100] :confine true}]
+                                   [:tk/scale {:from 0 :to 10 :value 3 :orient :horizontal}]
+                                   [:tk/scrollbar {:orient :vertical :position [0.2 0.4]}]
+                                   [:ttk/scale {:from 0 :to 5 :value 2}]
+                                   [:ttk/scrollbar {:orient :vertical :position [0.1 0.5]}]
+                                   [:ttk/sizegrip {}]])]
+      (t/is (some #(str/includes? % "-default active") (scripts rec)))
+      (t/is (some #(str/includes? % "-repeatdelay 300") (scripts rec)))
+      (t/is (some #(str/includes? % "-wraplength 200") (scripts rec)))
+      (t/is (some #(str/includes? % "-scrollregion 0\\ 0\\ 100\\ 100") (scripts rec))
+            "a canvas :scrollregion is one Tcl list word")
+      (t/is (some #(str/includes? % "-confine 1") (scripts rec)))
+      (t/is (some #(str/includes? % "-to 10") (scripts rec)))
+      (t/is (some #(str/includes? % "set 0.2 0.4") (scripts rec))
+            ":position sets the scrollbar's thumb")
+      (engine/dispose-component root))))
+
+(t/deftest a-checkable-widgets-state-lives-in-its-private-variable
+  ;; Tk's -variable is not a prop: the tag owns one, which is the only state
+  ;; a classic checkbutton can be read from (select/deselect, no query)
+  (with-fake [rec nil]
+    (let [active (atom false)
+          m (mounted (fn [_] [:ttk/frame {} [:ttk/checkbutton {:text "agree"
+                                                               :active @active}]]))]
+      (t/is (some #(re-find #"-variable ::kmet_check_\S+" %) (scripts rec)))
+      (t/is (some #(re-find #"set ::kmet_check_\S+ 0" %) (scripts rec))
+            "an unchecked button's variable says so")
+      (reset! active true)
+      (rerender! m)
+      (t/is (zero? (count (scripts-like rec #"^destroy ")))
+            "flipping :active patches, it does not rebuild")
+      (t/is (some #(re-find #"set ::kmet_check_\S+ 1" %) (scripts rec)))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-listbox-carries-items-and-a-selection
+  (with-fake [rec nil]
+    (let [items (atom ["alpha" "beta"])
+          selected (atom [1])
+          m (mounted (fn [_] [:tk/listbox {:items @items :selected @selected}]))]
+      (t/is (some #(re-find #"insert end alpha beta" %) (scripts rec)))
+      (t/is (some #(re-find #"selection set 1 1" %) (scripts rec)))
+      (reset! items ["gamma"])
+      (reset! selected [0])
+      (rerender! m)
+      (t/is (some #(re-find #"insert end gamma" %) (scripts rec)))
+      (t/is (some #(re-find #"selection clear 0 end" %) (scripts rec)))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-treeview-takes-columns-rows-and-a-selection
+  (with-fake [rec nil]
+    (let [rows (atom [["a" "1"] ["b" "2"]])
+          selected (atom "r1")
+          m (mounted (fn [_] [:ttk/treeview {:columns [{:id :name :heading "Name" :width 120}
+                                                       :count]
+                                             :rows @rows
+                                             :selected @selected}]))]
+      (t/is (some #(re-find #"ttk::treeview \S+ -columns name\\ count" %) (scripts rec))
+            "the column ids become Tk's -columns")
+      (t/is (some #(re-find #"heading name -text Name" %) (scripts rec)))
+      (t/is (some #(re-find #"column name -width 120" %) (scripts rec)))
+      (t/is (some #(re-find #"insert \{\} end -id r1 -values \{a 1\}" %) (scripts rec)))
+      (t/is (some #(re-find #"insert \{\} end -id r2 -values \{b 2\}" %) (scripts rec)))
+      (t/is (some #(re-find #"selection set r1" %) (scripts rec)))
+      (reset! rows [["c" "3"]])
+      (rerender! m)
+      (t/is (some #(re-find #"delete \[\S+ children \{\}\]" %) (scripts rec))
+            "a rows change rebuilds the rows, not the widget")
+      (t/is (zero? (count (scripts-like rec #"^destroy "))))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-notebook-adds-tabs-and-a-panedwindow-panes
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:ttk/notebook {}
+                                    [:ttk/frame {:tab "One"}]
+                                    [:ttk/frame {:tab "Two"}]]
+                                   [:ttk/panedwindow {:orient :horizontal}
+                                    [:ttk/frame {:weight 2}]
+                                    [:ttk/frame {:weight 1}]]
+                                   [:tk/panedwindow {:orient :horizontal}
+                                    [:tk/frame {:minsize 40}]]])]
+      (t/is (some #(re-find #"^\S+ add \S+ -text One" %) (scripts rec)))
+      (t/is (some #(re-find #"-text Two" %) (scripts rec)))
+      (t/is (some #(re-find #"add \S+ -weight 2" %) (scripts rec)))
+      (t/is (some #(re-find #"add \S+ -weight 1" %) (scripts rec)))
+      (t/is (some #(re-find #"add \S+ -minsize 40" %) (scripts rec)))
+      (let [added (into #{} (keep #(second (re-find #" add (\S+) " %)) (scripts rec)))
+            packed (into #{} (keep #(second (re-find #"^pack (\S+)" %)) (scripts rec)))]
+        (t/is (seq added))
+        (t/is (empty? (filter added packed))
+              "a child of a pane container is added, never packed"))
+      (engine/dispose-component root))))
+
+(t/deftest menus-carry-their-items
+  (with-fake [rec nil]
+    (let [clicked (atom nil)
+          menu-props {:items [{:label "Open…" :accelerator "Ctrl-O"
+                               :on-click (fn [] (reset! clicked :open))}
+                              :separator
+                              {:label "More" :items [{:label "Deep"}]}]}
+          m (mounted (fn [_] [:ttk/frame {}
+                              [:tk/menu menu-props]
+                              [:ttk/menubutton {:text "File"
+                                                :items [{:label "Quit"
+                                                         :on-click identity}]}]]))]
+      (t/is (some #(re-find #"add command -label Open.*-accelerator Ctrl-O" %) (scripts rec)))
+      (t/is (some #(re-find #"add separator" %) (scripts rec)))
+      (t/is (some #(re-find #"add cascade -label More -menu" %) (scripts rec)))
+      (t/is (some #(re-find #"-tearoff 0" %) (scripts rec)))
+      (t/is (some #(re-find #"add command -label Quit" %) (scripts rec)))
+      (let [ids (mapv #(second (re-find #"kmet::cb (\d+)" %))
+                      (scripts-like rec #"add command -label"))]
+        (t/is (= 3 (count ids)) "one trampoline per command item")
+        (t/is (nil? @clicked))
+        (tk/dispatch-callback! ["kmet::cb" (first ids)])
+        (t/is (= :open @clicked) "the item's handler fires on dispatch"))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-menu-item-change-releases-the-old-trampolines
+  (with-fake [rec nil]
+    (let [f (atom (fn [] :first))
+          m (mounted (fn [_] [:tk/menu {:items [{:label "x" :on-click @f}]}]))]
+      (reset! f (fn [] :second))
+      (rerender! m)
+      (t/is (zero? (count (scripts-like rec #"^destroy ")))
+            "an items change patches the menu")
+      (let [ids (mapv #(second (re-find #"kmet::cb (\d+)" %))
+                      (scripts-like rec #"add command -label"))
+            [old new] (mapv parse-long ids)]
+        (t/is (= 2 (count ids)))
+        (t/is (not= old new))
+        (t/is (= "" (tk/dispatch-callback! ["kmet::cb" (str old)]))
+              "the replaced item's handler is released"))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-canvas-draws-its-items
+  (with-fake [rec nil]
+    (let [items (atom [{:type :line :coords [0 0 10 10] :fill "#ff0000"}
+                       {:type :text :coords [5 5] :text "hi" :anchor :w}])
+          m (mounted (fn [_] [:tk/canvas {:items @items}]))]
+      (t/is (some #(re-find #"create line 0 0 10 10 -fill \\#ff0000" %) (scripts rec)))
+      (t/is (some #(re-find #"create text 5 5 -anchor w -text hi" %) (scripts rec)))
+      (reset! items [{:type :rect :coords [1 1 2 2]}])
+      (rerender! m)
+      (t/is (some #(str/includes? % "delete all") (scripts rec)))
+      (t/is (some #(re-find #"create rect 1 1 2 2" %) (scripts rec)))
+      (engine/dispose-component (:root m)))))
+
 ;; ─── rich text (:text :content segments) ─────────────────────────────────
 
 (t/deftest text-content-segments-reuse-style-tags

@@ -75,6 +75,14 @@
 ;; Widget records + callback registry
 ;; ═══════════════════════════════════════════════════════════════════════════
 
+(defn- check-var
+  "A Tcl variable name private to the widget at PATH. A classic Tk
+   checkbutton has select/deselect and no state query, so a checkable
+   widget's state lives in its own variable — and a radiobutton's own
+   -value is what its variable is compared against."
+  [path]
+  (str "::kmet_check_" (str/replace path #"[^A-Za-z0-9]" "_")))
+
 (defrecord TkWidget [path tag kids callbacks styles]
   ;; Records are maps, so the engine can stamp :dsl/meta onto the instance.
   ;; CALLBACKS maps a binding slot to the trampoline id bound for it (the
@@ -118,32 +126,43 @@
 (defn- set-callback!
   "Register F as W's SLOT handler (releasing whatever the slot held) and
    return the `kmet::cb <id>` argument; nil F just releases the slot.
+   VALUE is the fragment kind the bound script reads the widget with (nil
+   when Tk hands the value over itself, as a scale's -command does) and
+   ARG how the handler wants the arguments Tk passes.
    Rebinding matters: Tk's bind (and -command) replaces the script, so
    without the release the old command would stay dispatchable."
-  [w slot f value]
+  [w slot f value arg]
   (release-slot! w slot)
   (when (some? f)
     (let [id (swap! next-callback inc)]
-      (swap! callbacks assoc id {:handler f :value value})
+      (swap! callbacks assoc id {:handler f :value value :arg (or arg value)})
       (swap! (:callbacks w) assoc slot id)
       (str "kmet::cb " id))))
 
 (defn- value-fragment
   "The Tcl fragment Tk evaluates when the slot's event fires, handing the
    handler the widget's live VALUE; nil means the handler takes no
-   arguments."
+   arguments. The list-valued kinds expand ({*}) so the handler receives
+   one argument per selected item."
   [w value]
   (case value
     :text (str "[" (:path w) " get]")
     :checked (str "[" (:path w) " instate selected]")
+    :number (str "[" (:path w) " get]")
+    :index (str "{*}[" (:path w) " curselection]")
+    :ids (str "{*}[" (:path w) " selection]")
+    :tab-index (str "[" (:path w) " index current]")
+    ;; the private variable a checkable widget's state lives in
+    :variable (str "[set " (check-var (:path w)) "]")
+    :radio (str "[expr {[set " (check-var (:path w)) "] eq [" (:path w) " cget -value]}]")
     nil))
 
 (defn- bind-slot!
   "Point W's SLOT at F (nil unbinds), through the slot spec's Tcl -OPTION
    or EVENT. The value fragment sits inside the bound script, so Tcl
    evaluates it when the event fires, not at bind time."
-  [w slot {:keys [event option value]} f]
-  (let [callback (set-callback! w slot f value)
+  [w slot {:keys [event option value arg]} f]
+  (let [callback (set-callback! w slot f value arg)
         script (when (some? callback)
                  (str callback (when-let [frag (value-fragment w value)] (str " " frag))))
         body (str "{" (or script "") "}")]
@@ -182,19 +201,30 @@
 
 (defn- coerce-value
   "ARGV's values as the handler's arguments, per SLOT's :value kind — Tcl
-   answers `instate` with \"0\"/\"1\", the Clojure contract is a boolean."
+   answers a state query with \"0\"/\"1\" and an index list with strings,
+   while the Clojure contract is a boolean, a number, and one vector."
   [value args]
-  (if (= :checked value) (mapv #(= "1" %) args) args))
+  (case value
+    :checked (mapv #(= "1" %) args)
+    (:variable :radio) (mapv #(= "1" %) args)
+    :number [(let [s (first args)]
+               (if (re-matches #"[-+]?\d+(\.0*)?" (str s))
+                 (parse-long (re-find #"[-+]?\d+" (str s)))
+                 (or (parse-double (str s)) s)))]
+    :index [(mapv #(or (parse-long %) %) args)]
+    :tab-index [(or (parse-long (first args)) (first args))]
+    :ids [(vec args)]
+    args))
 
 (defn dispatch-callback!
   "The single command handler behind `kmet::cb`: ARGV is
    [\"kmet::cb\" id & values]. Returns the handler's result string (\"\")."
   [argv]
   (let [id (some-> (second argv) parse-long)
-        {:keys [handler value]} (get @callbacks id)]
+        {:keys [handler arg]} (get @callbacks id)]
     (if (nil? handler)
       ""
-      (str (or (apply handler (coerce-value value (drop 2 argv))) "")))))
+      (str (or (apply handler (coerce-value arg (drop 2 argv))) "")))))
 
 (defn- release-callbacks!
   [widget]
@@ -420,10 +450,11 @@
     (eval! (ctor-script path))
     (check-options! spec tag path props)
     (apply-bindings! w {} props (:bindings spec))
-    (when parent
+    (when (and parent (not (false? (:pack? spec))))
       (if-let [attach (:attach @(:styles parent))]
-        ;; containers that own their child placement (the :transcript text)
-        (attach path)
+        ;; containers that own their child placement (a transcript window,
+        ;; a notebook tab, a pane) — and read the child's props for it
+        (attach path props)
         (eval! (str "pack " path
                     " -side " (tcl-quote (tcl-word (or (:side props) :top)))
                     " -fill " (tcl-word (or (:fill props)
@@ -612,3 +643,166 @@
   (eval! (str (:path w) " delete 0 end"))
   (when (some? text)
     (eval! (str (:path w) " insert 0 " (tcl-quote text)))))
+
+(defn set-listbox-items!
+  "Replace listbox W's items with ITEMS (a sequence of strings)."
+  [w items]
+  (eval! (str (:path w) " delete 0 end"))
+  (when (seq items)
+    (eval! (str (:path w) " insert end "
+                (str/join " " (map #(tcl-quote (str %)) items))))))
+
+(defn set-listbox-selection!
+  "Select the 0-based INDICES in listbox W (nil or empty clears it)."
+  [w indices]
+  (eval! (str (:path w) " selection clear 0 end"))
+  (doseq [i indices]
+    (eval! (str (:path w) " selection set " i " " i))))
+
+;; ─── Menus (the :tk/menu tag and the menubuttons) ─────────────────────────
+
+(defn- release-menu-slots!
+  "Drop W's menu-item callbacks (slot keys [:menu …]): rebuilding a menu's
+   items must release the trampolines the old items held."
+  [w]
+  (doseq [k (keys @(:callbacks w))
+          :when (and (vector? k) (= :menu (first k)))]
+    (release-slot! w k))
+  nil)
+
+(defn- menu-add!
+  "Add ITEMS to the menu at PATH in W, giving each item its own slot
+   [:=menu …] so a rebuild can release them."
+  [w path items slot]
+  (doseq [[i item] (map-indexed vector items)
+          :let [slot (conj slot i)]]
+    (cond
+      (or (= item :separator) (= (:kind item) :separator))
+      (eval! (str path " add separator"))
+
+      (:items item)
+      (let [sub (alloc-path! w)]
+        (eval! (str "menu " sub " -tearoff 0"))
+        (eval! (str path " add cascade -label " (tcl-quote (or (:label item) ""))
+                    " -menu " sub))
+        (menu-add! w sub (:items item) slot))
+
+      :else
+      (eval! (str path " add command -label " (tcl-quote (or (:label item) ""))
+                  (when-some [acc (:accelerator item)]
+                    (str " -accelerator " (tcl-quote acc)))
+                  (when (some? (:on-click item))
+                    (str " -command {" (set-callback! w slot (:on-click item) nil nil) "}")))))))
+
+(defn set-menu-items!
+  "Replace the ITEMS of the menu at PATH, whose callbacks W owns (a menu is
+   a widget of its own: a menubutton's is not W's path). `[:separator]` (or
+   {:kind :separator}) is a rule, a map with :items is a cascade (its nested
+   items become a child menu), anything else a command whose :on-click fires
+   through the trampoline; :accelerator shows a shortcut hint. Rebuilding
+   releases the trampolines the old items held."
+  [w path items]
+  (release-menu-slots! w)
+  (eval! (str path " delete 0 end"))
+  (menu-add! w path items [:menu])
+  nil)
+
+;; ─── Leaf specs ───────────────────────────────────────────────────────────
+
+(defn leaf-spec
+  "The spec of a widget that is exactly its Tk command: COMMAND constructs
+   it with the props' :options, FIXED options the tag always passes (merged
+   under the props, so a prop overrides a default), and :bindings for its
+   callback slots. Add :lens for a container, :primary for the prop a bare
+   string child fills, :patchable for extra live-patchable props, and
+   :pack? false for a widget Tk will not let pack manage (a menu)."
+  [command {:keys [options fixed bindings primary patchable lens pack?]}]
+  (into {}
+        (remove (comp nil? val))
+        {:options options
+         :fixed fixed
+         :bindings bindings
+         :primary primary
+         :patchable patchable
+         :lens lens
+         :pack? pack?
+         :ctor (fn [spec props]
+                 (make-widget spec
+                              (fn [p] (widget-script
+                                       command p
+                                       (merge fixed (tcl-options props (:options spec)))))
+                              props))}))
+
+(defn- select!
+  "Point W's private variable at ON when ACTIVE, else OFF: the state the
+   widget shows, and what a radiobutton's own -value is compared against."
+  [w active on off]
+  (eval! (str "set " (check-var (:path w)) " "
+              (tcl-quote (tcl-word (if active on off))))))
+
+(defn checkable-spec
+  "The spec of a checkable widget — a checkbutton, a radiobutton, a
+   toggleswitch (KIND :check or :radio). :active is its selected state and
+   :on-toggled receives the new boolean; a radiobutton compares its private
+   variable against its own -value, so :active on each button is what makes a
+   group exclusive. Tk's -variable is not a prop: the tag owns a private Tcl
+   variable per widget, which is the only state a classic Tk checkbutton can
+   be read from (it has select/deselect and no state query)."
+  [command kind {:keys [options fixed bindings primary patchable]
+                 :or {fixed {} bindings {}}}]
+  (let [radio? (= kind :radio)]
+    {:options options
+     :fixed fixed
+     :bindings bindings
+     :primary (or primary :text)
+     :patchable (into #{:active} patchable)
+     :ctor (fn [spec {:keys [active] :as props}]
+             (let [w (make-widget spec
+                                  (fn [p] (widget-script
+                                           command p
+                                           (merge fixed
+                                                  (if radio?
+                                                    {:variable (check-var p)
+                                                     :value (or (:value props) 1)}
+                                                    {:variable (check-var p)
+                                                     :onvalue 1 :offvalue 0})
+                                                  (tcl-options props (:options spec)))))
+                                  props)]
+               (select! w active
+                        (if radio? (or (:value props) 1) 1)
+                        (if radio? "" 0))
+               w))
+     :apply (fn [spec w prev props]
+              (when (patchable? spec prev props)
+                (when (not= (:active prev) (:active props))
+                  (select! w (:active props)
+                           (if radio? (or (:value props) 1) 1)
+                           (if radio? "" 0)))
+                (apply-live! spec w prev props)))}))
+
+(defn entry-spec
+  "The spec of a text field — an entry, a spinbox, a combobox: :text is set
+   through the widget's own subcommands (so it is patchable and never an
+   option), and BINDINGS' slots read the text back."
+  [command {:keys [options fixed bindings primary patchable]
+            :or {fixed {} bindings {}}}]
+  {:options options
+   :fixed fixed
+   :bindings bindings
+   :primary (or primary :text)
+   :patchable (into #{:text} patchable)
+   :ctor (fn [spec {:keys [text] :as props}]
+           (let [w (make-widget spec
+                                (fn [p] (widget-script command p
+                                                       (merge fixed
+                                                              (tcl-options props (:options spec)))))
+                                props)]
+             (when (some? text)
+               (set-entry-text! w text))
+             w))
+   :apply (fn [spec w prev props]
+            (when (patchable? spec prev props)
+              (when (not= (:text prev) (:text props))
+                (set-entry-text! w (:text props)))
+              (apply-live! spec w prev props)))})
+

@@ -97,12 +97,22 @@
 ;; ─── the tag table against a real Tk ──────────────────────────────────────
 
 (def ^:private tag-widget
-  "Our tags → the Tk creation command they script (the mapping the GUI
-   README's option audit records)."
+  "Our tags → the Tk creation command they script. (the mapping the GUI README's option audit records)."
   {:tk/toplevel "toplevel" :tk/transcript "text" :tk/frame "frame" :tk/text "text"
+   :tk/button "button" :tk/label "label" :tk/labelframe "labelframe"
+   :tk/message "message" :tk/checkbutton "checkbutton" :tk/radiobutton "radiobutton"
+   :tk/entry "entry" :tk/spinbox "spinbox" :tk/listbox "listbox" :tk/scale "scale"
+   :tk/scrollbar "scrollbar" :tk/canvas "canvas" :tk/menubutton "menubutton"
+   :tk/menu "menu" :tk/panedwindow "panedwindow"
    :ttk/frame "::ttk::frame" :ttk/labelframe "::ttk::labelframe" :ttk/label "::ttk::label"
-   :ttk/button "::ttk::button" :ttk/entry "::ttk::entry" :ttk/checkbutton "::ttk::checkbutton"
-   :ttk/separator "::ttk::separator" :ttk/progressbar "::ttk::progressbar"})
+   :ttk/button "::ttk::button" :ttk/checkbutton "::ttk::checkbutton"
+   :ttk/radiobutton "::ttk::radiobutton" :ttk/entry "::ttk::entry"
+   :ttk/combobox "::ttk::combobox" :ttk/spinbox "::ttk::spinbox" :ttk/scale "::ttk::scale"
+   :ttk/scrollbar "::ttk::scrollbar" :ttk/sizegrip "::ttk::sizegrip"
+   :ttk/toggleswitch "::ttk::toggleswitch" :ttk/menubutton "::ttk::menubutton"
+   :ttk/notebook "::ttk::notebook" :ttk/panedwindow "::ttk::panedwindow"
+   :ttk/progressbar "::ttk::progressbar" :ttk/separator "::ttk::separator"
+   :ttk/treeview "::ttk::treeview"})
 
 (defn- live-tk
   "The real adapter with Tk initialized (a display), or nil: no libtcl, no
@@ -175,3 +185,43 @@
         ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
 
+(def ^:private find-class-src
+  "A Tcl helper: the first descendant of W whose class is CLASS."
+  (str "proc kmetfind {w class} {\n"
+       "  foreach c [winfo children $w] {\n"
+       "    if {[winfo class $c] eq $class} { return $c }\n"
+       "    set r [kmetfind $c $class]\n"
+       "    if {$r ne \"\"} { return $r }\n"
+       "  }\n"
+       "  return \"\"\n"
+       "}\n"))
+
+(t/deftest a-checkable-and-a-scale-hand-their-value-to-the-handler
+  ;; The value slots of the widgets added later: a checkable widget's private
+  ;; variable is what its -command reads, and a scale's -command receives the
+  ;; number Tk's set put there (Tk's own invoke/set drive both here).
+  (if-let [a (live-tk)]
+    (try
+      (let [e (:eval a)
+            got (atom nil)]
+        (e find-class-src)
+        (binding [tk/*adapter* a]
+          (let [h (tk/mount! [:ttk/frame {}
+                              [:ttk/checkbutton {:text "agree"
+                                                 :on-toggled (fn [v] (reset! got v))}]
+                              [:ttk/scale {:from 0 :to 10
+                                           :on-change (fn [v] (reset! got v))}]] {})
+                check (e "kmetfind . TCheckbutton")
+                scale (e "kmetfind . TScale")]
+            (t/is (seq check) "the checkbutton is in the window")
+            (t/is (seq scale) "the scale is in the window")
+            (e (str check " invoke"))
+            (t/is (true? @got) "a click hands over the new checked state")
+            (e (str check " invoke"))
+            (t/is (false? @got) "and the next one flips it back")
+            (e (str scale " set 7"))
+            (t/is (= 7 @got) "a scale reports its value as a number")
+            (engine/dispose-component (:root h)))))
+      (finally
+        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))
