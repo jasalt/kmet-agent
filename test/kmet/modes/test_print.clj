@@ -115,6 +115,22 @@
               (is (= "t1" (:tool-call-id (second events)))))))
         (finally (fs/delete-tree dir))))))
 
+(deftest test-run-edn-mode-prints-a-readable-error-event
+  (testing "an exception :error payload is a string on the edn wire"
+    (let [dir (tmp-session-dir "test-print-edn-error")]
+      (try
+        (with-redefs [agent/run-agent-turn
+                      (fn [ag _]
+                        (emit! ag {:type :error :message (ex-info "boom" {})})
+                        (settle! ag :error nil))]
+          (let [out (java.io.StringWriter.)
+                result (binding [*out* out]
+                         (print-mode/run (assoc (opts-with-session-dir dir) :mode :edn)))
+                events (map edn/read-string (rest (str/split-lines (str/trim (str out)))))]
+            (is (nil? result) "an errored run exits 1")
+            (is (= "boom" (:message (first (filter #(= :error (:type %)) events)))))))
+        (finally (fs/delete-tree dir))))))
+
 (deftest test-run-passes-message
   (testing "the joined user message reaches the agent"
     (let [seen (atom nil)]

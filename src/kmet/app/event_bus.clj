@@ -352,16 +352,31 @@
    handler must consume every one of these."
   (apply dissoc event-types app-event-types))
 
+(defn wire-error
+  "An event's error payload as plain data: a Throwable becomes its message
+   string — the wire carries no exception type and pr-str of a Throwable is
+   not EDN-readable (in-process events keep the object). Other values pass
+   through."
+  [error]
+  (if (instance? Exception error)
+    (or (ex-message error) (str error))
+    error))
+
 (defn wire-event
   "The wire projection of EVENT for a headless consumer (print mode's edn
    output, a future RPC mode): the event as emitted, minus the cumulative
    assistant snapshot :message-update carries — the delta already names a
    tool call's id/name, and the finalized message follows as :message-end,
-   so the snapshot only repeats bytes per delta (pi: toJsonEvent). Every
-   other event passes through unchanged."
+   so the snapshot only repeats bytes per delta (pi: toJsonEvent) — with
+   error payloads stringified (see wire-error). Every other event passes
+   through unchanged."
   [event]
-  (if (= :message-update (:type event))
-    (dissoc event :message)
+  (case (:type event)
+    :message-update (dissoc event :message)
+    :error (cond-> event
+             (contains? event :message) (update :message wire-error))
+    :auto-retry-end (cond-> event
+                      (contains? event :final-error) (update :final-error wire-error))
     event))
 
 (defn known-event-type?

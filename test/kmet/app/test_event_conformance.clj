@@ -146,17 +146,27 @@
         "every loop event type needs a renderer decision (render or ignore)"))
 
 (t/deftest test-wire-events-are-edn-round-trippable
-  (t/is (every? #(map? (event-bus/wire-event {:type %}))
-                (keys event-bus/loop-event-types))
-        "every loop event type has a wire projection")
+  (doseq [type (keys event-bus/loop-event-types)]
+    (let [event {:type type :message {:role :assistant}}]
+      (if (= :message-update type)
+        (t/is (not (contains? (event-bus/wire-event event) :message))
+              "the cumulative assistant snapshot is dropped")
+        (t/is (= event (event-bus/wire-event event))
+              (str "passes through unchanged: " type)))))
+  (t/is (= "boom" (:message (event-bus/wire-event {:type :error
+                                                   :message (ex-info "boom" {})})))
+        "an exception error payload becomes its message string")
+  (t/is (= "boom" (get (event-bus/wire-event
+                        {:type :auto-retry-end :final-error (Exception. "boom")})
+                       :final-error)))
+  (t/is (= "no auth" (:message (event-bus/wire-event {:type :error :message "no auth"})))
+        "a string payload is left alone")
+  (t/is (nil? (get (event-bus/wire-event {:type :error :message nil}) :message))
+        "a nil payload stays nil")
   (doseq [event (run-scenario (stub-tool-then-text (atom 0)))]
     (let [wire (event-bus/wire-event event)]
       (t/is (= wire (edn/read-string (pr-str wire)))
-            (str "round-trips through EDN: " (:type event)))
-      (when (= :message-update (:type event))
-        (t/is (not (contains? wire :message))
-              "the cumulative assistant snapshot is dropped")
-        (t/is (contains? wire :delta) "the delta stays")))))
+            (str "round-trips through EDN: " (:type event))))))
 
 (t/deftest test-headless-renderer-consumes-a-live-stream
   (let [events (run-scenario (stub-tool-then-text (atom 0)))

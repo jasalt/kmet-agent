@@ -53,7 +53,7 @@
     (if (= :edn mode) :completed (or (message-text message) ""))
     (do (when (= :text mode)
           (binding [*out* *err*]
-            (println "Error:" (or error
+            (println "Error:" (or (event-bus/wire-error error)
                                   (:error-message message)
                                   (case outcome
                                     :aborted "Request aborted"

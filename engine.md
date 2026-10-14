@@ -557,7 +557,8 @@ every `loop-event-types` event and each round-trips through EDN.
 `:message-update` text deltas and reports failure from the `:agent-settled`
 outcome (`:error` / `:aborted` → stderr, exit 1), and `--mode edn` (implies
 `--print`) writes the session header plus one EDN map per event, with
-`event-bus/wire-event` dropping the cumulative `:message-update` snapshot.
+`event-bus/wire-event` dropping the cumulative `:message-update` snapshot
+and stringifying error payloads (`wire-error`).
 The session-directory helpers (`ensure-cwd-session-dir`,
 `find-recent-session`) moved from the mode to the runtime, leaving
 `session-for-run` as policy only.
