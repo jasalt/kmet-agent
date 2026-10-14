@@ -22,6 +22,11 @@
  ;; plain deftests so the defined test vars resolve.
  :lint-as {kmet.libs.test-http/deftest-transports clojure.test/deftest
            kmet.libs.test-http/deftest-curl clojure.test/deftest
+           ;; the GUI tests' recording adapter binds like let ([rec nil]
+           ;; body); the macro is defined in kmet.gui.test-support, away
+           ;; from its call sites, so the metadata alone is not enough on
+           ;; a cold cache.
+           kmet.gui.test-support/with-fake clojure.core/let
            ;; babashka.ffi's defcfn defines a var like def; without this the
            ;; defs stay invisible and every use is an unresolved symbol. The
            ;; jolt view's overlay maps jolt.ffi/defcfn the same way.

@@ -178,6 +178,7 @@
     kmet.app.test-context
     kmet.app.ui.test-chat-history
     kmet.app.ui.gui.test-transcript
+    kmet.app.ui.gui.test-style
     kmet.app.ui.test-user-message
     kmet.app.ui.test-image-block
     kmet.app.ui.test-assistant-message

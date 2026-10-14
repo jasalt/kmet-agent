@@ -7,6 +7,7 @@
    has Tcl/Tk installed."
   (:require [clojure.string :as str]
             [clojure.test :as t]
+            [kmet.gui.test-support :refer [live-tk]]
             [kmet.gui.tk :as tk]
             [kmet.gui.tk.options :as opt]
             [kmet.libs.hikap :as engine]))
@@ -113,17 +114,6 @@
    :ttk/notebook "::ttk::notebook" :ttk/panedwindow "::ttk::panedwindow"
    :ttk/progressbar "::ttk::progressbar" :ttk/separator "::ttk::separator"
    :ttk/treeview "::ttk::treeview"})
-
-(defn- live-tk
-  "The real adapter with Tk initialized (a display), or nil: no libtcl, no
-   libtk, or no display (a headless machine)."
-  []
-  (try
-    (require 'kmet.gui.tcl)
-    (let [a ((deref (ns-resolve 'kmet.gui.tcl 'adapter)))]
-      ((:prepare! a))
-      a)
-    (catch Throwable _ nil)))
 
 (t/deftest every-tag-scripts-only-options-this-tk-has
   ;; The strongest check of the option catalogue: for every tag, the Tcl

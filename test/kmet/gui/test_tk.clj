@@ -8,6 +8,7 @@
    machine with Tcl/Tk."
   (:require [clojure.string :as str]
             [clojure.test :as t]
+            [kmet.gui.test-support :refer [mounted rerender! scripts scripts-like with-fake]]
             [kmet.gui.tk :as tk]
             [kmet.gui.tk.dsl :as dsl]
             [kmet.gui.tk.options :as opt]
@@ -15,41 +16,6 @@
             [kmet.libs.hikap.alias :as alias]
             [kmet.libs.hikap.component :as component]
             [kmet.libs.reakt :as r]))
-
-(defn- with-fake*
-  [f]
-  (let [scripts (atom [])
-        commands (atom {})
-        pumps (atom [])
-        adapter {:eval (fn [s] (swap! scripts conj s) "")
-                 :command! (fn [n h] (swap! commands assoc n h) nil)
-                 :run-loop (fn [pump] (swap! pumps conj pump) nil)}]
-    (dsl/forget-widget-options!)
-    (binding [tk/*adapter* adapter]
-      (f {:scripts scripts :commands commands :pumps pumps}))))
-
-(defmacro ^{:clj-kondo/lint-as 'clojure.core/let} with-fake
-  [binding & body]
-  (let [rec (first binding)]
-    `(with-fake* (fn [~rec] ~@body))))
-
-(defn- mounted
-  "Mount TREE under a fresh window through the engine, returning the window
-   record and the root component."
-  [tree]
-  (let [window (engine/compile-element tk/tk-backend [:tk/toplevel {:title "t"}])
-        root (engine/root tk/tk-backend tree)]
-    (binding [engine/*construct-context* {:parent window}]
-      (engine/render-component root nil))
-    {:window window :root root}))
-
-(defn- rerender!
-  [{:keys [window root]}]
-  (binding [engine/*construct-context* {:parent window}]
-    (engine/render-component root nil)))
-
-(defn- scripts [rec] @(:scripts rec))
-(defn- scripts-like [rec re] (filterv #(re-find re %) (scripts rec)))
 
 ;; ─── Tcl quoting ──────────────────────────────────────────────────────────
 

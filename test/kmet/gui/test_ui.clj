@@ -1,30 +1,13 @@
 (ns kmet.gui.test-ui
-  "Headless tests for kmet.gui.ui — kmet's own Tk widgets — against the same
-   recording adapter as kmet.gui.test-tk: the engine → UI spec → widget
-   script path, no display needed."
+  "Tests for kmet.gui.ui — kmet's own Tk widgets — against the recording
+   adapter (headless), plus one live Tk mount of :ui/transcript under a
+   display (skipped where there is none)."
   (:require [clojure.string :as str]
             [clojure.test :as t]
+            [kmet.gui.test-support :refer [live-tk scripts scripts-like with-fake]]
             [kmet.gui.tk :as tk]
-            [kmet.gui.tk.dsl :as dsl]
             [kmet.gui.ui :as ui]
             [kmet.libs.hikap :as engine]))
-
-(defn- with-fake* [f]
-  (let [scripts (atom [])
-        adapter {:eval (fn [s] (swap! scripts conj s) "")
-                 :command! (fn [_n _h] nil)
-                 :run-loop (fn [_pump] nil)}]
-    (dsl/forget-widget-options!)
-    (binding [tk/*adapter* adapter]
-      (f {:scripts scripts}))))
-
-(defmacro ^{:clj-kondo/lint-as 'clojure.core/let} with-fake
-  [binding & body]
-  (let [rec (first binding)]
-    `(with-fake* (fn [~rec] ~@body))))
-
-(defn- scripts [rec] @(:scripts rec))
-(defn- scripts-like [rec re] (filterv #(re-find re %) (scripts rec)))
 
 ;; ─── the backend's tag table ─────────────────────────────────────────────
 
@@ -73,3 +56,42 @@
       (tk/run-loop! h)
       (t/is (some #(str/includes? % (str "destroy " sb)) (scripts rec))
             "dispose destroys the sibling scrollbar"))))
+
+;; ─── the live Tk ─────────────────────────────────────────────────────────
+
+(def ^:private find-class-src
+  "A Tcl helper: the first descendant of W whose class is CLASS."
+  (str "proc kmetfind {w class} {\n"
+       "  foreach c [winfo children $w] {\n"
+       "    if {[winfo class $c] eq $class} { return $c }\n"
+       "    set r [kmetfind $c $class]\n"
+       "    if {$r ne \"\"} { return $r }\n"
+       "  }\n"
+       "  return \"\"\n"
+       "}\n"))
+
+(t/deftest transcript-embeds-on-a-live-tk
+  ;; The headless test checks the scripts; here the real Tk hosts the card
+  ;; as an embedded window and :see-end/:read-only take effect on map.
+  (if-let [a (live-tk)]
+    (try
+      (binding [tk/*adapter* a]
+        (let [h (ui/mount! [:ttk/frame {}
+                            [:ui/transcript {:see-end true :read-only true}
+                             [:ttk/label {:text "card"}]]]
+                           {:title "t"})
+              e (:eval a)]
+          (e find-class-src)
+          (let [text (e "kmetfind . Text")
+                sb (e "kmetfind . TScrollbar")]
+            (t/is (seq text) "the transcript text host is in the window")
+            (t/is (seq sb) "and its scrollbar")
+            (t/is (seq (e (str text " window names")))
+                  "the card is embedded as a text window")
+            (e "update")
+            (t/is (= "disabled" (e (str text " cget -state")))
+                  ":read-only disables the host once mapped"))
+          (engine/dispose-component (:root h))))
+      (finally
+        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))

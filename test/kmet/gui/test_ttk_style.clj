@@ -1,32 +1,12 @@
 (ns kmet.gui.test-ttk-style
-  "Tests for the GUI's ttk style data: the kmet.gui.ttk.style scripts
-   against a recording adapter (headless), and the app palette set
-   (kmet.app.ui.gui.style) both recorded and round-tripped through a real
-   Tk under a display (skipped where there is none)."
-  (:require [clojure.string :as str]
-            [clojure.test :as t]
-            [kmet.app.ui.gui.style :as gui-style]
-            [kmet.app.ui.gui.transcript :as transcript]
+  "Tests for kmet.gui.ttk.style: the ttk::style scripts against a recording
+   adapter (headless), and one round trip through a real Tk under a display
+   (skipped where there is none). The app palette set has its own namespace,
+   kmet.app.ui.gui.test-style."
+  (:require [clojure.test :as t]
+            [kmet.gui.test-support :refer [live-tk scripts with-fake]]
             [kmet.gui.tk :as tk]
-            [kmet.gui.tk.dsl :as dsl]
-            [kmet.gui.ttk.style :as style]
-            [kmet.tui.theme :as theme]))
-
-(defn- with-fake* [f]
-  (let [scripts (atom [])
-        adapter {:eval (fn [s] (swap! scripts conj s) "")
-                 :command! (fn [_n _h] nil)
-                 :run-loop (fn [_pump] nil)}]
-    (dsl/forget-widget-options!)
-    (binding [tk/*adapter* adapter]
-      (f {:scripts scripts}))))
-
-(defmacro ^{:clj-kondo/lint-as 'clojure.core/let} with-fake
-  [binding & body]
-  (let [rec (first binding)]
-    `(with-fake* (fn [~rec] ~@body))))
-
-(defn- scripts [rec] @(:scripts rec))
+            [kmet.gui.ttk.style :as style]))
 
 ;; ─── the scripts ─────────────────────────────────────────────────────────
 
@@ -86,56 +66,7 @@
     (t/is (= ["ttk::style configure TEntry -fieldbackground \\#1f2735"] (scripts rec))
           "no theme, no switch")))
 
-;; ─── the app palette set ─────────────────────────────────────────────────
-
-(t/deftest the-dark-set-takes-its-colors-from-the-theme-and-palette
-  (let [palette transcript/palette
-        s (gui-style/style-set theme/dark-theme palette)]
-    (t/is (= "clam" (:theme s)) "clam is the themable built-in")
-    (t/is (= (:window palette) (get-in s [:styles "TFrame" :background])))
-    (t/is (= (:card palette) (get-in s [:styles "TEntry" :fieldbackground])))
-    (t/is (= (:canvas palette) (get-in s [:styles "Treeview" :background])))
-    (t/is (= (transcript/token-hex theme/dark-theme :fg :text)
-             (get-in s [:styles "TLabel" :foreground]))
-          "text colors come from the theme's tokens")
-    (t/is (= (transcript/token-hex theme/dark-theme :bg :selected-bg)
-             (get-in s [:styles "Treeview" :selectbackground])))
-    (t/is (= {:active (:card-user palette) :pressed (:card-tool palette)
-              :disabled (:canvas palette)}
-             (get-in s [:maps "TButton" :background])))
-    (t/is (= "#010101"
-             (get-in (gui-style/style-set theme/dark-theme
-                                          (assoc palette :window "#010101"))
-                     [:styles "TFrame" :background]))
-          "an alternate palette drives the surfaces")))
-
-(t/deftest apply-theme-scripts-the-palette-set
-  (with-fake [rec nil]
-    (gui-style/apply-theme! theme/dark-theme)
-    (let [ss (scripts rec)]
-      (t/is (= "ttk::setTheme clam" (first ss)))
-      (t/is (some #(str/includes? % (str "ttk::style configure TFrame -background "
-                                         (dsl/tcl-quote (:window transcript/palette))))
-                  ss))
-      (t/is (some #(and (str/starts-with? % "ttk::style configure TEntry ")
-                        (str/includes? % (str "-fieldbackground "
-                                              (dsl/tcl-quote (:card transcript/palette)))))
-                  ss))
-      (t/is (some #(str/includes? % "ttk::style map TButton -background active") ss))
-      (t/is (some #(str/includes? % "ttk::style map Treeview -background selected") ss)))))
-
 ;; ─── the real Tk ─────────────────────────────────────────────────────────
-
-(defn- live-tk
-  "The real adapter with Tk initialized (a display), or nil: no libtcl, no
-   libtk, or no display (a headless machine)."
-  []
-  (try
-    (require 'kmet.gui.tcl)
-    (let [a ((deref (ns-resolve 'kmet.gui.tcl 'adapter)))]
-      ((:prepare! a))
-      a)
-    (catch Throwable _ nil)))
 
 (t/deftest style-database-round-trips-on-a-live-tk
   (if-let [a (live-tk)]
@@ -158,24 +89,6 @@
                          :styles {"TFrame" {:background "#10141b"}}})
           (t/is (= "default" (e "ttk::style theme use")))
           (t/is (= "#10141b" (e "ttk::style lookup TFrame -background")))))
-      (finally
-        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
-    (t/is true "skipped: libtcl, libtk or a display is absent")))
-
-(t/deftest the-dark-set-round-trips-on-a-live-tk
-  (if-let [a (live-tk)]
-    (try
-      (binding [tk/*adapter* a]
-        (gui-style/apply-theme! theme/dark-theme)
-        (let [e (:eval a)]
-          (t/is (= "clam" (e "ttk::style theme use")))
-          (t/is (= (:card transcript/palette)
-                   (e "ttk::style lookup TEntry -fieldbackground")))
-          (t/is (= (:card-user transcript/palette)
-                   (e "ttk::style lookup TButton -background active"))
-                "the state map is a shade of the palette")
-          (t/is (= (:window transcript/palette)
-                   (e "ttk::style lookup TFrame -background")))))
       (finally
         ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
