@@ -95,15 +95,13 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
 ## 1. Visible in a themed app
 
-- **ttk styles and themes.** The database layer exists
-  (`kmet.gui.ttk.style`: `use-theme!`, `define-style!`, `map-style!`,
-  `apply!`; the style model is in gui/README.md's *Styles and themes*),
-  but nothing calls it at startup yet. The ttk widgets kmet uses for input
-  (entry, combobox, spinbox, scale, progressbar, notebook, treeview,
-  scrollbar) therefore still follow the *system* theme: a dark kmet palette
-  has light-grey entry fields and scrollbars. What is left is the app's own
-  style set — the TUI theme tokens compiled to `TFrame`/`TEntry`/… values —
-  applied once at startup (and re-applied on a theme switch).
+- **ttk styles and themes.** Wired for the GUI surfaces: the database layer
+  is `kmet.gui.ttk.style` (`use-theme!`, `define-style!`, `map-style!`,
+  `apply!`) and `kmet.app.ui.gui.style` compiles the TUI theme + the
+  transcript palette to a dark set; `scripts/gui_tk_session.clj` applies it
+  after `tcl/install!`, so the viewer no longer follows the system theme.
+  Still open: a runtime theme switch re-applying the set (the GUI app
+  isn't ported yet).
 - **Images.** No photo-image support at all: `-image`/`-bitmap`/`-selectimage`
   are not props, the canvas cannot draw one, and a markdown image (which the
   TUI renders) is a gap in a GUI transcript. Needs `image create photo`, a

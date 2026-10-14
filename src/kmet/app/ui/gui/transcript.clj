@@ -151,8 +151,9 @@
   [lines]
   (vec (apply concat (interpose [{:text "\n"}] (mapv ansi-segments lines)))))
 
-(defn- token-hex
-  "The #rrggbb value behind a theme token's ANSI escape, or nil."
+(defn token-hex
+  "The #rrggbb value behind a theme token's ANSI escape, or nil. The GUI
+   style set (kmet.app.ui.gui.style) uses this to color ttk styles."
   [t kind token]
   (let [esc (try ((if (= kind :bg) theme/get-bg-ansi theme/get-fg-ansi) t token)
                  (catch Exception _ nil))]

@@ -14,6 +14,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [kmet.app.session :as session]
+            [kmet.app.ui.gui.style :as gui-style]
             [kmet.app.ui.gui.transcript :as transcript]
             [kmet.gui.tcl :as tcl]
             [kmet.gui.ui :as ui]
@@ -84,6 +85,7 @@
         (println (str "  " (count @(:entries s)) " entries, "
                       family " " size ", " char-px "px/char")))
       (tcl/install!)
+      (gui-style/apply-theme! (:theme ctx))
       (ui/run! (transcript/live-page s ctx)
                {:title (str "kmet session "
                             (subs (str (:id s)) 0 (min 8 (count (str (:id s))))))

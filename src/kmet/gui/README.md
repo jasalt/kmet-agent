@@ -344,9 +344,14 @@ a check is wanted. Widget options still win over style values, so the
 existing `:font-family`/`:font-size` props keep working.
 
 Styles are defined on the Tk thread once the adapter has Tk
-(`kmet.gui.tcl/install!`). The app call site and the palette — the TUI
-theme tokens compiled to `TFrame`/`TEntry`/`TNotebook`/`TTreeview`/
-`TScrollbar` values — are not wired yet.
+(`kmet.gui.tcl/install!`), and re-applied after a theme switch.
+`kmet.app.ui.gui.style` is the app's set: `style-set` compiles the TUI
+theme's colors and `kmet.app.ui.gui.transcript`'s surfaces to the values
+above (frames and labels on the window surface, fields on the card
+surface, notebook, treeview, scrollbars, and the active/pressed/disabled
+maps), and `apply-theme!` applies it. `scripts/gui_tk_session.clj` calls
+`(gui-style/apply-theme! (:theme ctx))` right after `tcl/install!`; the
+app's own startup and a runtime theme switch land with the GUI app port.
 
 ### Rich text (`:tk/text`)
 
