@@ -78,16 +78,16 @@ class in the table is in both.
   tag): `kmet.gui.tk: :ttk/entry has no -placeholder on this Tk (prop
   :placeholder)` — a kmet message naming tag, prop and option.
 - **A widget class that does not exist** fails inside Tcl at creation,
-  before any option can be checked: `kmet.gui.tcl: invalid command name
-  "::ttk::toggleswitch"`. That is the one hole in the error story — the
-  check cannot run when there is no widget to ask, so the message is Tcl's
-  own. Catching it in `make-widget` and rethrowing with the tag and the
-  interpreter's patchlevel would close it.
+  before any option can be checked; `dsl/make-widget` catches that error
+  and rethrows it with the tag and the interpreter's patchlevel:
+  `kmet.gui.tk: :ttk/toggleswitch (ttk::toggleswitch) does not exist on
+  this Tk (8.6.16)`.
 - **The test suite is version-aware on purpose**: on 8.6, `bb test
   kmet.gui.test-tcl` reports 19 failures and 1 error — the failures are its
   own option-membership assertions (the table above, one per tag), the error
-  is `ttk::toggleswitch`. It asserts the *running* Tk rather than a version
-  range, so a version's gap is discovered rather than assumed.
+  is the missing `:ttk/toggleswitch` class. It asserts the *running* Tk
+  rather than a version range, so a version's gap is discovered rather than
+  assumed.
 
 So a kmet tree that stays inside the 8.6 option set runs unchanged on
 8.6/9.0/9.1; a Tk 9 prop fails loudly at the first widget of its tag on an

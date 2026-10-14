@@ -298,6 +298,12 @@ Two consequences worth knowing:
   `-placeholder`, `-textangle`; 9.1 `-backgroundimage`, `-tile`). The check
   covers what a tag declares; a prop no tag declares is still ignored, so
   adding a widget means declaring its options (see *Status*).
+- **A widget class this Tk lacks fails with the tag.** A class newer than
+  the interpreter (`ttk::toggleswitch` before Tk 9.0) fails inside Tcl at
+  creation, before an option can be checked; `make-widget` rethrows it
+  with the tag and the interpreter's patchlevel:
+  `kmet.gui.tk: :ttk/toggleswitch (ttk::toggleswitch) does not exist on
+  this Tk (8.6.16)`.
 
 Options that are not a plain value are deliberately not props, each
 because it needs machinery a prop cannot be: script-typed (`-command` is

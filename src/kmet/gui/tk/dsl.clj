@@ -465,19 +465,46 @@
                          :tag tag :prop prop :option named})))))
   nil)
 
+(defn- unknown-widget-command
+  "The command name in E's Tcl unknown-command error, or nil: a widget
+   class the running Tk does not have (ttk::toggleswitch before Tk 9.0)
+   fails with `invalid command name \"…\"`."
+  [e]
+  (second (re-find #"invalid command name \"([^\"]+)\"" (str (ex-message e)))))
+
+(defn- create-widget!
+  "Evaluate the widget-construction SCRIPT for SPEC, rethrowing a Tcl
+   unknown-command error with the tag and the interpreter's patchlevel — so
+   a class this Tk lacks names itself instead of reporting Tcl's raw
+   message."
+  [spec script]
+  (try
+    (eval! script)
+    (catch Exception e
+      (if-let [command (unknown-widget-command e)]
+        (throw (ex-info (str "kmet.gui.tk: " (:tag spec) " (" command
+                             ") does not exist on this Tk ("
+                             (eval! "info patchlevel") ")")
+                        {:type :kmet.gui.tk/missing-widget
+                         :tag (:tag spec) :command command}
+                        e))
+        (throw e)))))
+
 (defn make-widget
   "Construct a TkWidget at a fresh path under the current construction
    parent, run the ctor SCRIPT (a fn of the path), wire SPEC's bindings and
    pack it into the parent. PROPS (optional) also carry the pack geometry —
    Tk's own pack options on the child: :side (default :top), :fill (default
-   both for pane containers, x for leaves) and :expand."
+   both for pane containers, x for leaves) and :expand. A creation command
+   this Tk does not have is rethrown as a kmet error naming the tag (see
+   create-widget!)."
   [spec ctor-script & [props]]
   (let [props (or props {})
         tag (:tag spec)
         parent (parent-widget)
         path (alloc-path! parent)
         w (->TkWidget path tag (atom []) (atom {}) (atom {}))]
-    (eval! (ctor-script path))
+    (create-widget! spec (ctor-script path))
     (check-options! spec tag path props)
     (apply-bindings! w {} props (:bindings spec))
     (when (and parent (not (false? (:pack? spec))))

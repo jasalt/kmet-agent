@@ -277,6 +277,28 @@
       (t/is (some? (mounted [:ttk/label {:text "ok" :cursor "hand2"}]))
             "a prop whose option exists is accepted"))))
 
+(t/deftest a-widget-class-this-tk-lacks-fails-with-the-tag
+  ;; ttk::toggleswitch is Tk 9.0+; on 8.6 creation fails inside Tcl, before
+  ;; any option check. make-widget rethrows it with the tag and patchlevel.
+  (let [adapter {:eval (fn [s]
+                         (cond
+                           (str/includes? s "ttk::toggleswitch")
+                           (throw (ex-info "kmet.gui.tcl: invalid command name \"ttk::toggleswitch\""
+                                           {:type :kmet.gui.tcl/eval-failed}))
+                           (str/includes? s "info patchlevel") "8.6.16"
+                           :else ""))
+                 :command! (fn [_ _] nil)}]
+    (dsl/forget-widget-options!)
+    (binding [tk/*adapter* adapter]
+      (let [e (try
+                (mounted [:ttk/frame {} [:ttk/toggleswitch {}]])
+                nil
+                (catch Exception e e))]
+        (t/is (= :kmet.gui.tk/missing-widget (:type (ex-data e))))
+        (t/is (str/includes? (ex-message e) ":ttk/toggleswitch"))
+        (t/is (str/includes? (ex-message e) "ttk::toggleswitch"))
+        (t/is (str/includes? (ex-message e) "8.6.16"))))))
+
 (t/deftest the-newly-declared-options-reach-their-widgets  (with-fake [rec nil]
                                                              (let [{:keys [root]} (mounted [:ttk/frame {}
                                                                                             [:ttk/entry {:bg "#101014" :show "*" :justify :right
