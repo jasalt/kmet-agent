@@ -70,6 +70,7 @@
     kmet.ai.test-constrained-sampling
     kmet.ai.test-api-tools
     kmet.app.test-loop
+    kmet.app.test-session-runtime
     kmet.test-theme kmet.test-config
     kmet.test-http-boundary
     kmet.test-time-boundary

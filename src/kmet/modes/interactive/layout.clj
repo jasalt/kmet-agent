@@ -21,14 +21,13 @@
             [kmet.ai.api.shared :as shared]
             [kmet.app.loop :as agent]
             [kmet.app.session :as session]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.commands :as commands]
             [kmet.app.extensions :as extensions]
             [kmet.app.keybindings :as app-kb]
-            [kmet.app.packages :as packages]
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
             [kmet.app.theme-controller :as theme-ctrl]
-            [kmet.app.tools.core :as tools]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.external-editor :refer [handle-external-editor]]
@@ -43,7 +42,6 @@
             [kmet.app.ui.subs :as subs]
             [kmet.app.ui.suspend :refer [handle-suspend]]
             [kmet.app.ui.tool-execution :as tool-execution]
-            [kmet.app.context :as context]
             [kmet.modes.interactive.commands :as builtins]
             [kmet.modes.interactive.resources :as resources]
             [kmet.modes.interactive.session-admin :as session-admin]
@@ -469,25 +467,8 @@
         cwd (or (session/session-cwd session) (str (fs/cwd)))
         cwd-atom (atom cwd)
 
-        ;; Load skills and prompt templates (pi: the unified resolution —
-        ;; top-level entries, auto roots, then packages)
-        _ (packages/load-skills!)
-        _ (packages/load-prompts!)
-        ;; pi: defaultTools — the built-in tools active at startup; extension
-        ;; tools stay enabled and a later set-active-tools! wins over it
-        default-tools (tools/resolve-default-tools (cfg/get-default-tools config))
-        system-prompt-opts {:custom-prompt (cfg/get-custom-prompt config)
-                            :append-prompt (cfg/get-append-system-prompt config)
-                            ;; the prompt's cwd line is the runtime cwd (the
-                            ;; resumed session's), but everything project-scoped —
-                            ;; context files included — stays with the launch dir
-                            :cwd cwd
-                            :context-files (context/load-project-context-files
-                                            (cfg/get-agent-dir) (str (fs/cwd)))
-                            :tools (agent/active-tools-for
-                                    {:default-tools default-tools})}
-        system-prompt (apply skills/build-system-prompt
-                             (mapcat identity system-prompt-opts))
+        ;; The runtime builds the system prompt and the config-derived run
+        ;; options (kmet.app.session-runtime/bootstrap) below.
 
         ;; Migrate legacy keybinding ids in keybindings.edn (pi: migrations
         ;; runner calls migrateKeybindingsConfigFile at startup)
@@ -525,95 +506,12 @@
         ctx-window (or (:context-window (models/get-model provider model))
                        (:context-window config))
 
-        ;; Agent state
-        ag (agent/make-agent-state
-            :model model
-            :provider provider
-            :system system-prompt
-            :system-prompt-opts system-prompt-opts
-            :session session
-            :default-tools default-tools
-            :context-window ctx-window
-            :compact-reserve-tokens (or (:compact-reserve-tokens config) 16384)
-            :compact-model-overrides (:compact-model-overrides config)
-            :branch-summary-reserve-tokens (or (:reserve-tokens
-                                                (cfg/get-branch-summary-settings config))
-                                               16384)
-            :compact-token-threshold (:compact-token-threshold config)
-            ;; get (not :kw) — an absent key must hit make-agent-state's
-            ;; :or default, not be overridden with nil
-            :auto-compact (get config :auto-compact true)
-            :steering-mode (or (:steering-mode config) :all)
-            :follow-up-mode (or (:follow-up-mode config) :one-at-a-time)
-            :keep-recent-tokens (or (:keep-recent-tokens config) 20000)
-            :http-idle-timeout-ms (:http-idle-timeout-ms config)
-            :http-total-timeout-ms (get config :http-total-timeout-ms)
-            ;; pi: images.blockImages — strip image blocks from provider calls
-            :block-images (cfg/get-block-images config)
-            :thinking (let [model-rec (models/get-model provider model)
-                            raw-level (:thinking config :off)]
-                        (if (:reasoning model-rec)
-                          (shared/clamp-thinking-level model-rec raw-level)
-                          raw-level))
-            ;; pi: retry settings (settings.edn :retry block — enabled gates
-            ;; max-retries to 0)
-            :max-retries (let [retry (cfg/get-retry-settings config)]
-                           (if (:enabled retry) (:max-retries retry) 0))
-            :base-delay-ms (:base-delay-ms (cfg/get-retry-settings config))
-            :max-agent-delay-ms (:max-agent-delay-ms (cfg/get-retry-settings config))
-            ;; Repeat-loop guard (kmet-specific): settings.edn :loop-guard
-            ;; block — enabled gates threshold to 0 (off)
-            :loop-guard-enabled (:enabled (cfg/get-loop-guard-settings config))
-            :loop-guard-threshold (:threshold (cfg/get-loop-guard-settings config))
-            :thinking-loop-guard-enabled (get config :thinking-loop-guard-enabled true)
-            ;; Extension tool hooks (pi: tool_call / tool_result transforms):
-            ;; chained in registration order; later hooks see earlier
-            ;; rewrites. Captured at layout build — extensions register at
-            ;; load, before the agent state exists.
-            :before-tool-call (fn [ctx]
-                                (loop [hooks (extensions/get-tool-call-hooks)
-                                       blocked nil
-                                       args (:args ctx)]
-                                  (if-let [hook (first hooks)]
-                                    (let [r (try (hook (assoc ctx :args args))
-                                                 (catch Exception e
-                                                   {:block true
-                                                    :reason (str "tool-call hook error: "
-                                                                 (ex-message e))}))]
-                                      (cond
-                                        (:block r)
-                                        (recur (next hooks)
-                                               (or blocked {:block true :reason (:reason r)})
-                                               args)
-                                        (contains? r :args)
-                                        (recur (next hooks) blocked (:args r))
-                                        :else
-                                        (recur (next hooks) blocked args)))
-                                    (or blocked
-                                        (when (not= args (:args ctx)) {:args args})))))
-            :after-tool-call (fn [ctx]
-                               (reduce (fn [result hook]
-                                         (if-let [r (try (hook (assoc ctx :result result
-                                                                      :is-error (:is-error result false)))
-                                                         (catch Exception e
-                                                           {:content (str "tool-result hook error: "
-                                                                          (ex-message e))
-                                                            :is-error true}))]
-                                           (cond-> result
-                                             (:content r) (assoc :content (:content r))
-                                             (contains? r :is-error) (assoc :is-error (:is-error r)))
-                                           result))
-                                       (:result ctx)
-                                       (extensions/get-tool-result-hooks)))
-            :on-event (make-agent-event-handler
-                       {:chat-history ch :tui t :cs-ref cs-ref
-                        :pending-tool-comps pending-tool-comps}))
-            ;; Session scoped model list for cycle-model! / the scoped-models
-            ;; selector / the /model scope toggle (pi: resolveModelScope →
-            ;; session.scopedModels at startup — parsed.models ?? settings
-            ;; enabledModels, full "provider/id" refs so cycling can switch
-            ;; providers)
-        _ (agent/init-scoped-models! ag config)
+        ;; Runtime engine (kmet.app.session-runtime): it owns the agent state,
+        ;; the system prompt, the config-derived run options and the
+        ;; extension handle. The layout owns view state and subscribes
+        ;; its own event handler once the widgets exist.
+        engine (runtime/bootstrap config {:session session})
+        ag @(:agent-state engine)
         ;; B.1: welcome header — ExpandableText with compact/full variants
         ;; (pi: builtInHeader), toggled by app.tools.expand
         hdr (let [mode (cfg/get-tool-display-mode config)]
@@ -661,7 +559,8 @@
         current-editor-atom (atom ed)
         dock-stack (atom [])
         cs (state/map->CoreState {:tui t
-                                  :agent-state (atom ag)
+                                  :engine engine
+                                  :agent-state (:agent-state engine)
                                   :chat-history ch
                                   :editor ed
                                   :current-editor-atom current-editor-atom
@@ -674,7 +573,7 @@
                                   :status-current (atom nil)
                                   :status-root nil
                                   :pending-messages-comp pm
-                                  :session-atom (atom session)
+                                  :session-atom (:session engine)
                                   :running-turn? (atom false)
                                   :compaction-queued (atom [])
                                   :config config
@@ -990,6 +889,15 @@
       ;; :status events) — after the layout assocs so the status
       ;; indicator/container and theme controller are present
       (reset! cs-ref cs)
+
+      ;; The interactive event handler is one subscriber on the runtime's
+      ;; stream (pi: the TUI session's event handlers). Subscribing here,
+      ;; after cs-ref is set, means a :status event can resolve the built
+      ;; CoreState.
+      (runtime/subscribe! engine
+                          (make-agent-event-handler
+                           {:chat-history ch :tui t :cs-ref cs-ref
+                            :pending-tool-comps pending-tool-comps}))
 
       ;; Restore a --continue session into the chat history AND the agent
       ;; context (pi: renderInitialMessages from buildContextEntries) — the

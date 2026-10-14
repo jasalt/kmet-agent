@@ -157,7 +157,11 @@
                       pending-messages-container
                       dock-root
                       dock-stack
-                      theme-controller])
+                      theme-controller
+                      ;; the kmet.app.session-runtime engine; the layout owns
+                      ;; view state and subscribes to the engine's stream
+                      ;; (step 3 shrinks the rest into the runtime)
+                      engine])
 
 ;; ─── Formatting helpers ────────────────────────────────────────────────────
 

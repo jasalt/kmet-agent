@@ -66,6 +66,10 @@ src/kmet/
 ├── app/                — App business logic (pi: dist/core/)
 │   ├── loop.clj        — the agent loop; retry.clj — retry/error policy;
 │   │                     loop_guard.clj — repeat-loop guard; session.clj — EDNL sessions
+│   ├── session_runtime.clj — the session runtime front ends drive:
+│   │                     bootstrap (agent state, system prompt, run
+│   │                     options, extension handle), prompts/queues,
+│   │                     subscribers, lifecycle (engine.md §4.1)
 │   ├── commands.clj / keybindings.clj / packages.clj / extensions.cljc —
 │   │                     slash commands, keymap, package + extension loading;
 │   │                     extensions/context.cljc — per-extension SCI isolation

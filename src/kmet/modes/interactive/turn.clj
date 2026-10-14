@@ -12,6 +12,7 @@
             [kmet.tui.terminal :as term]
             [kmet.tui.components.container :as container]
             [kmet.app.loop :as agent]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.bash-execution :as be]
             [kmet.app.bash-executor :as bash-exec]
@@ -494,12 +495,17 @@
   (status/start-anim-timer! cs)
   (state/update-footer! cs)
   (tui/tui-request-render (:tui cs))
-  (agent/run-agent-turn @(:agent-state cs)
-                        (cond-> {:on-text #(on-agent-text cs %)
-                                 :on-thinking #(on-agent-thinking cs %)
-                                 :on-done (fn [_] (on-agent-done cs))
-                                 :on-error #(on-agent-error cs %)}
-                          message (assoc :message message))))
+  (let [run-opts (cond-> {:on-text #(on-agent-text cs %)
+                          :on-thinking #(on-agent-thinking cs %)
+                          :on-done (fn [_] (on-agent-done cs))
+                          :on-error #(on-agent-error cs %)}
+                   message (assoc :message message))]
+    (if-let [engine (:engine cs)]
+      ;; the runtime records the run so dispose! can cancel an exit while
+      ;; streaming and wait for the terminal :agent-settled
+      (runtime/prompt! engine run-opts)
+      ;; test stubs build a CoreState without the runtime engine
+      (agent/run-agent-turn @(:agent-state cs) run-opts))))
 
 (defn- send-message
   "Send text to the agent: steer while streaming, else start a new turn.

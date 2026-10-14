@@ -13,6 +13,7 @@
             [kmet.app.event-bus :as event-bus]
             [kmet.app.extensions :as extensions]
             [kmet.app.session :as session]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.theme-controller :as theme-ctrl]
             [kmet.app.ui.bash-execution :as bash-execution]
             [kmet.app.ui.chat-history :as chat-history]
@@ -58,8 +59,12 @@
    extension surfaces → tree → process-global roots. Idempotent, so a
    second call is a no-op."
   [cs]
-  (try (when-let [ag (some-> (:agent-state cs) deref)]
-         (reset! (:signal ag) true))
+  (try (if-let [engine (:engine cs)]
+         ;; cancel an in-flight run and wait briefly for the terminal
+         ;; :agent-settled to reach subscribers before they are cleared
+         (runtime/dispose! engine)
+         (when-let [ag (some-> (:agent-state cs) deref)]
+           (reset! (:signal ag) true)))
        (catch Throwable _))
   (try (reset! (:bash-signal cs) true) (catch Throwable _))
   (try (extensions/ui-reset!) (catch Throwable _))
