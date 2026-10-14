@@ -417,9 +417,9 @@ read caches the tree and a click repaints nothing).
 script path against a recording adapter — no display needed — and
 `kmet.gui.test-ui` does the same for the `:ui/…` widgets over the UI
 backend, and `kmet.gui.test-ttk-style` records the `ttk::style` scripts
-headlessly and round-trips `use-theme!`/`define-style!`/`map-style!`/
-`apply!` through a real Tk when a display is there (on Termux, under jolt +
-Xvfb).
+headlessly and round-trips them — `use-theme!`/`define-style!`/
+`map-style!`/`apply!`, and the app palette set (`kmet.app.ui.gui.style`) —
+through a real Tk when a display is there (on Termux, under jolt + Xvfb).
 `kmet.gui.test-tcl` (bb or Jolt, skipping where libtcl is absent)
 smoke-tests the real interpreter: eval, the command trampoline,
 `tcl-quote` round-tripping through the Tcl parser, and the recorded

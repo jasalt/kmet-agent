@@ -399,11 +399,14 @@
 
 (defn install!
   "Install the host FFI adapter (interpreter + Tk) without mounting, for a
-   caller that mounts with its own tag table (kmet.gui.ui/backend through
-   kmet.gui.tk/mount-backend! and run-backend!)."
+   caller that scripts Tk itself (kmet.gui.ttk.style) or mounts with its
+   own tag table (kmet.gui.ui/backend through kmet.gui.tk/mount-backend!
+   and run-backend!)."
   []
   (ensure-interp!)
-  (tk/set-adapter! (adapter))
+  (let [a (adapter)]
+    (tk/set-adapter! a)
+    ((:prepare! a)))
   nil)
 
 (defn mount!

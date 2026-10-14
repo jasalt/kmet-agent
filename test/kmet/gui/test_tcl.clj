@@ -225,3 +225,16 @@
       (finally
         ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
+
+(t/deftest install-leaves-tk-loaded-for-a-non-mounting-caller
+  ;; kmet.gui.ttk.style scripts ttk::style between install! and mount, so
+  ;; install! must load Tk itself instead of leaving it to the first mount.
+  (if-let [a (live-tk)]
+    (try
+      ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))
+      ((deref (ns-resolve 'kmet.gui.tcl 'install!)))
+      (t/is (seq ((:eval a) "ttk::style theme use"))
+            "Tk answers after install! alone")
+      (finally
+        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))

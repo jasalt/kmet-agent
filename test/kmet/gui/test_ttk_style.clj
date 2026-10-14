@@ -102,7 +102,12 @@
              (get-in s [:styles "Treeview" :selectbackground])))
     (t/is (= {:active (:card-user palette) :pressed (:card-tool palette)
               :disabled (:canvas palette)}
-             (get-in s [:maps "TButton" :background])))))
+             (get-in s [:maps "TButton" :background])))
+    (t/is (= "#010101"
+             (get-in (gui-style/style-set theme/dark-theme
+                                          (assoc palette :window "#010101"))
+                     [:styles "TFrame" :background]))
+          "an alternate palette drives the surfaces")))
 
 (t/deftest apply-theme-scripts-the-palette-set
   (with-fake [rec nil]

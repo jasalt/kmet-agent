@@ -5,9 +5,9 @@
    its own `:ui/…` tags, and kmet.gui.ui/backend adds the whole set to the
    Tk backend's tag table — mount!/run! mount through it.
 
-   A UI tag is a dsl/widget-spec like any backend widget: the Tcl its ctor
-   scripts, its :options, and its :lens/:attach when it places children
-   itself."
+   A UI tag's spec has the same shape as a backend tag's: a :ctor, its
+   :options, and a :lens/:attach when it places children itself — a custom
+   :ctor where dsl/widget-spec is not enough."
   (:require [kmet.gui.tk :as tk]
             [kmet.gui.tk.dsl :as dsl]
             [kmet.gui.tk.options :as opt])
