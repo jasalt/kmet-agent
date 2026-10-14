@@ -6,36 +6,55 @@ questions. It is not user documentation and it is not authoritative for
 behavior — the topic map in `AGENTS.md` still points at the behavior docs.
 Fold this into `src/kmet/README.md` (or delete it) when the work lands.
 
-Scope: one agent engine usable unchanged by the interactive TUI, print mode,
-a future RPC mode, and a future GUI. Namespaces are **not renamed** while the
-seam is built; a rename stage is described at the end but is optional and
-mechanical.
+Scope: one session runtime usable unchanged by the interactive TUI, print
+mode (text and event output), and the GUI front end under construction. RPC
+mode is a later, optional consumer. Namespaces are not renamed.
 
 Decisions already taken in discussion:
 
 - **EDN is the event format** — in-process and on the wire. No JSON
-  projection; the internal shape and the wire shape are one thing.
-- **malli** is the schema tool for data contracts.
-- Engine work precedes renames.
+  encoding; the internal shape and the wire shape are one thing. A thin
+  wire *projection* (shape, not encoding — pi strips cumulative streaming
+  snapshots from `message_update`) may be added for event-output modes if
+  a measurement justifies it.
+- **The engine is the session runtime, not a new layer.** The work moves
+  ownership of session, turn, and bootstrap behavior from
+  `modes/interactive` into `kmet.app.*`; it does not add an abstract facade
+  over the existing code. If the runtime does not delete code from
+  `modes/interactive`, the step failed.
+- **No namespace renames.** `kmet.app.*` keeps its names; the split is
+  ownership, not naming. (The former step R is dropped.)
+- **The GUI is the next front end and the proof.** It already exists as a
+  display-only viewer (`scripts/gui_tk_session.clj`,
+  `app/ui/gui/transcript.clj`); the live-run milestone is what exercises
+  the seam. RPC is deferred until a real consumer exists.
+- **malli is a boundary tool.** It describes file formats (session
+  entries, config, auth) and, later, a wire protocol. In-process events and
+  the bootstrap map are shaped by code and tests — pi types its event union
+  and schemas only the wire.
 
 ---
 
 ## 1. Goal and non-goals
 
-Goal: any front end can drive a session through one facade and one event
-stream without touching loop, session, tools, provider, or extension
-internals.
+Goal: any front end can drive a session through one session runtime and
+one event stream without touching loop, session, tools, provider, or
+extension internals.
 
 Non-goals (v1):
 
-- **Multi-engine processes.** One engine per process. The extension runtime
-  (`kmet.app.extensions` globals) is process-global; the facade wraps it so
-  per-engine scoping stays possible later, but nothing in this plan requires
-  it.
+- **Multi-engine processes.** One runtime per process. The extension
+  runtime (`kmet.app.extensions` globals) is process-global; the runtime
+  wraps it so per-engine scoping stays possible later, but nothing in this
+  plan requires it.
 - **Sharing view code between front ends.** TUI components, `app/ui/*`, and
-  GUI widgets stay per-front-end. What is shared is the engine, the event
-  stream, and the data providers.
-- **A distributed/network protocol.** RPC is stdin/stdout EDN lines first.
+  GUI widgets stay per-front-end. What is shared is the session runtime,
+  the event stream, and the data providers.
+- **A schema program.** malli lands at file boundaries and a future wire
+  protocol, not on every event, config section, catalog, or in-memory
+  value.
+- **A distributed/network protocol.** A later RPC consumer would be
+  stdin/stdout EDN lines first.
 
 ## 2. Baseline: what already separates
 
@@ -48,6 +67,11 @@ The seam mostly exists today; the plan sharpens it rather than inventing it.
   (extensions).
 - `kmet.modes.print` drives the loop headlessly with no TUI — the proof that
   a second front end is viable.
+- The GUI front end is already started: `scripts/gui_tk_session.clj` renders
+  a saved session through `app/ui/gui/transcript.clj` and `kmet.gui.*`
+  (display-only, no loop). The live-run milestone is the plan's real proof.
+  The transcript reuses the TUI renderers (markdown, theme, ANSI) on
+  purpose — the terminal renderers stay the single source of styling.
 - `kmet.ai.*` is a standalone provider/auth library; `kmet.app.tools/*`
   contain no TUI requires.
 - `app/ui/*` (~12.1k lines, 36 files) is already fenced as app-specific
@@ -59,16 +83,16 @@ The seam mostly exists today; the plan sharpens it rather than inventing it.
 1. **No engine bootstrap.** `make-agent-state` wiring is duplicated in
    `modes/print.clj` and `modes/interactive/layout.clj`: system prompt,
    default tools, retry/loop-guard settings, HTTP timeouts, scoped models,
-   extension session/context wiring. Every new mode copies 50+ lines and can
-   silently miss a key (the print-mode comments about
+   extension session/context wiring. A GUI mode would be the next copy:
+   50+ lines and a key silently missed (the print-mode comments about
    `get-with-default` vs `get` document exactly such a near-miss).
 2. **No session owner.** Resume/fork/tree/import live in
    `modes/interactive/session_admin.clj`; submit/steer/cancel/queue lives in
    `modes/interactive/turn.clj`; session-dir helpers plus a global config
-   atom live in `modes/interactive/state.clj`. These are engine behavior.
+   atom live in `modes/interactive/state.clj`. These are runtime behavior.
 3. **One `:on-event` callback, no subscription.** `AgentState` holds a
-   single callback; a GUI, RPC client, and automation listener cannot
-   coexist, and there is no unsubscribe.
+   single callback; a GUI, a future wire client, and an automation listener
+   cannot coexist, and there is no unsubscribe.
 4. **Engine state and view state share one record.** `CoreState` holds
    `agent-state`, `session-atom`, `running-turn?` next to editors, docks,
    footers, and selectors.
@@ -103,31 +127,37 @@ The seam mostly exists today; the plan sharpens it rather than inventing it.
 ```
                     kmet.modes.interactive ─┐
                     kmet.modes.print       ─┤   front ends: input, rendering,
-                    kmet.modes.rpc         ─┼─  session UX, extension UI port
-                    kmet.modes.gui         ─┘
+                    kmet.modes.gui (next)  ─┼─  session UX, extension UI port
+                    kmet.modes.rpc (later) ─┘
                                 │ subscribe / prompt! / respond!
-                    ┌───────────┴────────────┐
-                    │      kmet.engine       │  facade: session, prompts,
-                    │  (kmet.app.* today)    │  commands, extensions, schema
-                    └───────────┬────────────┘
+                   ┌────────────┴───────────────┐
+                   │  kmet.app.session-runtime  │  owns: session lifecycle,
+                   │   (moved from modes +      │  prompts, queues, commands,
+                   │    make-agent-state)       │  extension runtime handle
+                   └────────────┬───────────────┘
              kmet.ai (provider lib) · kmet.app.tools · kmet.libs.*
                                 │
                     kmet.tui.* / kmet.gui.* (per-front-end view backends)
 ```
 
-Dependency rule (enforced by a test, §8): the engine package may require
+Dependency rule (enforced by a test, §8): the runtime may require
 `kmet.libs.*` and `kmet.ai.*`, and **never** `kmet.tui.*`, `kmet.gui.*`,
 `kmet.modes.*`, or `kmet.app.ui.*`. While `kmet.app.ui` still lives inside
 `kmet.app`, the guard excludes that subtree explicitly.
 
-### 4.1 Engine facade
+### 4.1 The session runtime
 
-The facade owns a **session runtime**: `AgentState`, the `Session` record,
-the config, the extension runtime handle, and subscribers. One constructor,
-one lifecycle.
+The runtime owns `AgentState`, the `Session` record, the config, the
+extension runtime handle, and subscribers. One constructor, one lifecycle.
+It is the existing mode code **moved**, not a parallel implementation:
+
+- `modes/interactive/session_admin.clj` + `turn.clj` + `state.clj` and the
+  `make-agent-state` wiring become one `kmet.app.*` namespace (provisional
+  name: `kmet.app.session-runtime`).
+- The operations below are the contract; the namespace name is not.
 
 ```clojure
-;; kmet.engine (namespace name is stage-R; function names are the contract)
+;; kmet.app.session-runtime (provisional name; operations are the contract)
 (bootstrap config opts)     ; {:session Session|nil :resume? bool ...}
                             ; -> engine
 (dispose! engine)           ; signals runs, clears subscribers + runtime refs
@@ -156,23 +186,23 @@ Rules:
 
 - `prompt!` returns immediately. Completion is observed through
   `:agent-settled` (§4.2), not through a return value; a mode that needs
-  blocking (`print` / `rpc` one-shots) uses its own promise.
+  blocking (`print`, and a future RPC one-shot) uses its own promise.
 - `bootstrap` takes the **resolved** session or a resolution request. Session
   *policy* stays per mode: `--resume` opens the TUI selector, print mode
-  errors on no match, RPC takes an explicit path. `app.session` already
-  provides the mechanics (`resolve-session-path`,
-  `find-most-recent-session`, `session-dir-for-cwd`); the engine adds the
+  errors on no match, a wire mode would take an explicit path.
+  `app.session` already provides the mechanics (`resolve-session-path`,
+  `find-most-recent-session`, `session-dir-for-cwd`); the runtime adds the
   helpers that today live in `modes/interactive/state.clj`
   (`ensure-cwd-session-dir`, `runtime-cwd`, `find-session`).
-- The facade wraps `run-agent-turn` unchanged in step 1. `:on-text`,
+- The runtime wraps `run-agent-turn` unchanged in step 1. `:on-text`,
   `:on-thinking`, `:on-done`, `:on-error` stay as sugar **derived from the
   same emission path**, so they cannot drift from the event stream (print
   mode keeps working while it migrates).
 - `snapshot` returns plain data; it may mix per-field atom values (the agent
   uses independent atoms). Display-only consumers are fine with that;
   anything needing a consistent cut must document it.
-- `dispose!` cancels any in-flight run, then clears subscribers and engine
-  runtime refs. Write the terminal-event contract down: the settle path
+- `dispose!` cancels any in-flight run, then clears subscribers and runtime
+  refs. Write the terminal-event contract down: the settle path
   runs in a `finally`, so `:agent-settled` with finding A's `:outcome`
   should reach subscribers before they are cleared.
 
@@ -190,7 +220,7 @@ Contract rules:
    thread; `emit` calls the callback directly). They must be fast and must
    not block. TUI already marshals via `tui-request-render`; a GUI marshals
    to its toolkit thread; a socket-backed subscriber queues.
-3. **Subscribers never block the engine.** If async buffering or coalescing
+3. **Subscribers never block the runtime.** If async buffering or coalescing
    is ever needed (high-rate `:message-update`), it is per-subscriber and
    opt-in, not a global queue in the loop.
 4. **Extension handlers are different.** They may block (a dialog waits for
@@ -203,66 +233,67 @@ Contract rules:
    unqualified (`:assistant`, `:completed`) and payload keys are plain
    keys; namespaced keys are reserved for stable extension payloads.
 
-### 4.3 Data schemas (malli)
+### 4.3 Data schemas (malli) — boundaries only
 
 malli schemas describe values that **cross a boundary or outlive the
-process**. Schemas are data, keyed by type/role/version in explicit
-registries next to the format they describe.
+process**. That means the session file, config, auth, and (only if a wire
+mode is ever built) protocol records. In-process events, view models, and
+the bootstrap map are shaped by code and tests — pi types its event union
+and schemas only its wire.
 
 ```clojure
-;; kmet.engine.event-schema
-(def event-schemas
-  {:agent-start [:map {:description "..."} [:type [:= :agent-start]]]
-   :message-update
-   [:map [:type [:= :message-update]]
-    [:message :kmet.ai.message/assistant]
-    [:delta [:map [:type [:enum :text :thinking :tool-call]]]]]
-   ;; ...
+;; kmet.app.session-schema (provisional)
+(def entry-schemas
+  {:user      [:map {:description "..."} [:type [:= :user]] [:role [:= :user]] ...]
+   :assistant [:map {:description "..."} [:type [:= :assistant]] ...]
+   ;; one entry per :role, ~15 today
    })
 
-(def Event (into [:multi {:dispatch :type}] event-schemas))
+(def Entry (into [:multi {:dispatch :role}] entry-schemas))
 ```
 
-- Payload maps are **open** by default; extensions attach keys. `:closed
-  true` only where an extra key is a bug.
-- Unions are derived from the registries (`:multi`, per-version dispatch)
-  so adding a type/role is one entry. A keyset-parity test keeps the schema
-  map and the vocabulary/`event-types` map from drifting.
+- Schemas are **open** where the format is forward-compatible (unknown
+  keys survive); `:closed true` only where an extra key is a bug.
+- The session load path distinguishes "unparseable" (skip, as today) from
+  "wrong shape" (report line + `malli.error/humanize`).
+- The vocabulary test runs on the keyword sets (`event-types` /
+  `app-event-types` / `loop-event-types`), not on a schema map. Event
+  schemas exist only if an event-output or wire mode needs them.
 - Prose stays in the docs; schema maps carry `:description` and a coverage
   test asserts every schema has one.
 
 The `:kmet.ai.message/*` schemas need a new `kmet.ai.message` namespace.
 Messages are plain maps built across the loop and the provider builders
 today, so this is a new artifact to schedule, not an existing home to
-reference. It is the shared home for provider builders, session
-persistence, and (later) the RPC wire.
+reference. Its first consumer is the session-entry schema (entries store
+messages); provider builders and a future wire reuse it.
 
 ### 4.4 Session and state ownership
 
 - `Session` (record with `:header`, `:entries` atom, `:leaf-id` atom, lock)
-  stays in `kmet.app.session`; the engine owns its lifecycle. The mode gets
+  stays in `kmet.app.session`; the runtime owns its lifecycle. The mode gets
   it via `(snapshot engine)` and listens for session events.
 - Session-dir helpers move out of `modes/interactive/state.clj` into the
-  engine (or into `kmet.app.session`), with config injected rather than read
+  runtime (or into `kmet.app.session`), with config injected rather than read
   from a mode-global atom.
 - `AgentState`, `CoreState`, and TUI component records are **not** schema
-  targets. Their contract is the facade API and tests.
+  targets. Their contract is the runtime API and tests.
 - Session switching keeps its two-phase contract: before-events
   (`:session-before-switch`, `:session-before-fork`, `:session-before-tree`)
-  are emitted by the engine and may be cancelled by extensions; the swap
+  are emitted by the runtime and may be cancelled by extensions; the swap
   happens only when no handler cancels. The mode owns the UX around it
   (selectors), not the swap. Today they go straight to
   `event-bus/emit-event!` from `modes/interactive/session_admin.clj`
   (lines 427, 765, 881, 938) — extension-only, not the UI stream; moving
-  them under the engine should decide whether the UI stream sees them too.
+  them under the runtime should decide whether the UI stream sees them too.
 
 ### 4.5 Extension runtime and the UI port
 
 Extensions are loaded by the process, but their UI surfaces belong to the
 active front end. Split the capability map:
 
-- **Engine capabilities** (session facade, context sink, tool hooks, event
-  bus, command/tool/renderer registries): engine-scoped, installed by
+- **Runtime capabilities** (session handle, context sink, tool hooks, event
+  bus, command/tool/renderer registries): runtime-scoped, installed by
   `bootstrap`, cleared by `dispose!`.
 - **UI port** (`ExtensionUIContext`: widgets, dialogs, editor, statuses):
   installed by the front end. `modes/interactive/ui-registry.clj` is the TUI
@@ -277,7 +308,7 @@ active front end. Split the capability map:
   `:ui-request` through `subscribe!`, or the TUI would have to block inside
   a subscriber.
 - **Async UI requests.** Synchronous dialogs cannot cross a socket. The
-  engine-level contract is a request/response pair of events:
+  runtime-level contract is a request/response pair of events:
   `{:type :ui-request :id ... :kind :select|:confirm|:input|:editor ...}`
   answered by `(respond! engine id value)`. TUI implementations may still
   answer synchronously (the request emission can resolve an in-process
@@ -286,24 +317,28 @@ active front end. Split the capability map:
   widgets/dialogs the host renders, not the components an extension builds
   itself (§3.8). A headless front end therefore loads the TUI component
   library whenever an extension loads; a front end that must avoid that
-  waits for the shared-component-library split (`kmet.libs.hikap` model,
-  §7 step 6).
+  needs the shared-component-library split (an unscheduled extraction; the
+  GUI does not need it — its transcript reuses the TUI renderers on
+  purpose).
 - Extension reload semantics (`ui-reset!`, `clear-runtime!`,
-  `session-shutdown` before unload) stay as they are; the facade exposes the
-  lifecycle instead of the mode calling the globals directly.
+  `session-shutdown` before unload) stay as they are; the runtime exposes
+  the lifecycle instead of the mode calling the globals directly.
 
 ### 4.6 Modes
 
 - `interactive`: subscribes for rendering; `CoreState` shrinks to view state
-  plus the engine reference; `turn.clj`/`session_admin.clj` logic moves
-  under the engine, leaving the handlers and widgets.
+  plus the runtime reference; `turn.clj`/`session_admin.clj` logic moves
+  under the runtime, leaving the handlers and widgets.
 - `print`: migrates in step 2 to prove the seam (smallest consumer). Keeps
-  its `:on-done` semantics via the settled outcome (§5, finding A).
-- `rpc` (new): `kmet.modes.rpc`, EDN lines on stdin/stdout. Commands in with
-  an `:id`; responses correlated; engine events out as-is. Extension UI
-  requests are forwarded and answered with `respond!`.
-- `gui` (new): subscribes and renders through `kmet.gui.*`; marshals to the
-  toolkit thread.
+  its `:on-done` semantics via the settled outcome (§5, finding A), and
+  grows an event-output variant (`--mode text|json`, pi's one-consumer
+  trick) — the cheapest headless conformance test for the stream.
+- `gui` (next): the display-only viewer exists
+  (`scripts/gui_tk_session.clj`); the live mode subscribes to the runtime,
+  renders through `kmet.gui.*` and `app/ui/gui/*`, and binds the UI port.
+  This is the proof the plan is written against.
+- `rpc` (later, optional): `kmet.modes.rpc`, EDN lines on stdin/stdout.
+  Deferred until a consumer exists; the design sketch is step 6.
 
 ## 5. Review findings (things the sketch got wrong or must fix)
 
@@ -347,7 +382,7 @@ Record the number in this document.
 
 **D. Session resolution stays in the mode.** `bootstrap` cannot own
 `--resume`-opens-a-selector vs print-errors-on-no-match; only the mechanics
-move down. The facade takes a *resolved* session, and a `:session-resolver`
+move down. The runtime takes a *resolved* session, and a `:session-resolver`
 hook may cover the shared `--continue` path.
 
 **E. Tool `:params` is a lossy mini-language.** `app/tools/tool.clj`
@@ -360,7 +395,7 @@ worth doing. Treat as a follow-up, not part of the split.
 **F. The theme/package coupling is a view concern.** `app/themes` are
 loaded by `app/packages.clj` via `tui.theme`, and extension resource paths
 are applied by `app/extensions.cljc` via `theme/load-themes-from-dir`
-(extensions.cljc:1180). The engine should own resource *discovery*;
+(extensions.cljc:1180). The runtime should own resource *discovery*;
 parsing/rendering belongs to the front end. Same for `app/bash_executor`'s
 ANSI stripping (move to `kmet.libs`) and `app/theme_controller` (move up).
 `app/keybindings` is a similar call: keymap definitions are arguably app
@@ -382,29 +417,31 @@ payload. Decide with finding A's payload.
 | Surface | Today | Schema buys |
 |---|---|---|
 | Session entries (`app/session.clj`) | EDNL lines; header `{:type :session :version 1 ...}`; malformed → skip with warning; torn-tail repair via `parseable-line?` | `:multi` over the `:role` union (≈15 roles); distinguishes "unparseable" from "wrong shape"; per-version dispatch makes `:version` load-bearing |
-| Message / content blocks | shapes restated across loop, session, provider builders | Highest-value schema; shared by events, persistence, wire; validate provider SSE parses in tests. New `kmet.ai.message` namespace (none exists today), reused upward |
+| Message / content blocks | shapes restated across loop, session, provider builders | Highest-value schema; shared by session persistence and, later, the wire; validate provider SSE parses in tests. New `kmet.ai.message` namespace (none exists today), reused upward |
 | Config (`kmet.config`) | `load-edn` → nil on invalid; `invalid-compaction-setting!` throws for a few keys | `m/decode` defaults/coercion for sections already validated (`:retry`, `:loop-guard`, compaction, `:images`, timeouts). File stays forgiving and open |
 | `auth.edn` | `valid-credential?` predicate (`ai/auth.clj`) | Drop-in, better errors |
-| Custom themes (`tui/theme.clj`) | `validate-theme-data!` (private, line 913 — export or move it) | User-authored files; token types/required keys as data |
-| Model catalogs + manifest | `model_gen/validate-committed!` hand-rolled | One definition for `bb check-model-data` and runtime catalog loading; also the `~/.kmet/agent/models-cache` cache |
-| `extension.edn` / bundled set | checks in `tasks/build.clj` and `app/extensions.cljc` | Same definition at build time and load time |
+
+Later, only if it deletes existing hand-rolled code (not part of the
+split): custom themes (`validate-theme-data!`, private at
+`tui/theme.clj:913`), model catalogs + manifest
+(`model_gen/validate-committed!`), and `extension.edn` (checks in
+`tasks/build.clj` and `app/extensions.cljc`).
 
 ### Tier 2 — contracts the split exposes
 
 | Surface | Why |
 |---|---|
-| `make-agent-state` bootstrap opts | The exact map duplicated between print and interactive; schema documents defaults and catches a mode that forgot a key |
-| Event payloads | See §4.3 |
-| RPC commands/responses | Validate at the transport edge; derive command docs from the registry |
-| Extension ABI return shapes | Boundary returns `{:entries [...] :continue bool}`, input hooks `{:action :handled|:transform}`, tool-call hooks `{:block true :reason}` / `{:args ...}`, after-tool-call `{:content ... :is-error}`, `resources-discover` `{:skill-paths [...]}`. A schema lets the runner report a malformed handler result at the boundary |
-| Tool definitions | See finding E |
 | Session import | Reuses the session schema at the `:session-import/*` boundary |
+| Wire commands/responses (only if RPC is built) | Validate at the transport edge; derive command docs from the registry |
+| Extension ABI return shapes (optional, later) | Boundary returns `{:entries [...] :continue bool}`, input hooks `{:action :handled|:transform}`, tool-call hooks `{:block true :reason}` / `{:args ...}`, after-tool-call `{:content ... :is-error}`, `resources-discover` `{:skill-paths [...]}`; a schema lets the runner report a malformed handler result at the boundary |
 
 ### Tier 3 — do not schema
 
 - `AgentState`, `CoreState`, TUI/GUI component records (atoms, protocols,
   derived caches).
 - View-model shapes (footer, dock, selectors).
+- In-process events and the `make-agent-state` bootstrap map — shaped by
+  code and tests; pi types its event union and schemas only the wire.
 - Anything `map->Record` already enforces at construction.
 
 ### Validation policy
@@ -414,8 +451,8 @@ payload. Decide with finding A's payload.
 | Session load | Validate (subject to finding C): header always, entries per the measured policy; failures report line + `malli.error/humanize` |
 | Session append | Validate the single appended entry in tests; optional debug assert; never re-validate the file |
 | Config load | Decode with defaults; throw only where the code throws today; unknown keys ignored |
-| Events | Tests validate recorded scenarios; `--debug` may validate at `emit`; never in the hot path by default |
-| RPC edge | Validate every command and response |
+| Events | EDN round-trip only (tests and the event-output encoder); no schema validation in the hot path |
+| Wire edge (only if RPC is built) | Validate every command and response |
 | Hot paths (`:message-update` per delta) | Never; if ever needed, memoized `m/validator` per type |
 
 ## 7. Staged plan
@@ -426,30 +463,32 @@ Each step is shippable alone and keeps the TUI working. Gates for every step:
 
 ### Step 0 — contract harness (no behavior change)
 
-- Add the EDN round-trip test and the event-vocabulary keyset-parity test
-  (schema map ↔ `event-types`) — schemas may start as a stub registry.
+- Add the EDN round-trip test and the event-vocabulary parity test
+  (`event-types` / `app-event-types` / `loop-event-types` keysets agree).
 - Add a headless conformance renderer: consumes the loop's events in a test
   scenario and renders plain text. Any view data not in the stream surfaces
   here.
 - Drive scenarios through the existing test harness (`test/kmet/app/
   test_loop.clj` fake-provider pattern; `test/kmet/modes/test_print.clj`).
 - Finding A decision + implementation (settle outcome) lands here or in
-  step 1; it blocks print/RPC parity.
+  step 1; it blocks print and every later front end.
 
 Acceptance: a scripted prompt run emits a stream that the conformance
 renderer fully consumes; every event round-trips through EDN.
 
-### Step 1 — engine facade and bootstrap
+### Step 1 — session runtime and bootstrap
 
-- Add the facade namespace (`kmet.engine` name is stage R; functions per
-  §4.1) wrapping `run-agent-turn`, `make-agent-state`, `cancel-turn`, the
-  queue helpers, and `app.session` mechanics.
+- Add the runtime under `kmet.app.*` (provisional name
+  `kmet.app.session-runtime`; operations per §4.1) wrapping
+  `run-agent-turn`, `make-agent-state`, `cancel-turn`, the queue helpers,
+  and `app.session` mechanics. It is moved code, not a parallel facade; if
+  it does not shrink `modes/interactive`, the step failed.
 - Add `bootstrap` with the single wiring map; print mode and interactive
   layout call it. Interactive keeps its own event handler as a subscriber.
 - Subscriptions: `:on-event` becomes a subscriber list internally
   (extension bus untouched). Callbacks stay as sugar (finding B).
-- Engine-scoped extension wiring: `set-session!`/`set-context-sink!` become
-  facade lifecycle calls; `set-ui-registry!` gains a documented
+- Runtime-scoped extension wiring: `set-session!`/`set-context-sink!`
+  become runtime lifecycle calls; `set-ui-registry!` gains a documented
   front-end-owned install point.
 
 Acceptance: print mode and TUI both run through `bootstrap`; the duplicated
@@ -461,87 +500,103 @@ unchanged.
 
 - Print mode commutes its callbacks to subscriptions where practical;
   `:on-done` semantics come from the settle outcome (finding A).
-- Delete `session-for-run` duplication in favor of the engine helper.
+- Delete `session-for-run` duplication in favor of the runtime helper.
+- Add the event-output variant: one consumer, `--mode text|json` (pi's
+  `runPrintMode` trick). Keep EDN as the format; if `:message-update`
+  snapshots prove heavy, add a single `wire-event` projection function
+  (pi's `toJsonEvent`: strip cumulative snapshots, keep usage and tool-call
+  id/name) and test it.
 
-Acceptance: print mode has no direct `make-agent-state` call; all `test_print`
-cases pass.
+Acceptance: print mode has no direct `make-agent-state` call; all
+`test_print` cases pass; a scenario piped through the event output emits
+every `loop-event-types` event and each round-trips through EDN.
 
-### Step 3 — move session/turn ownership under the engine
+### Step 3 — move session/turn ownership under the runtime
 
 - Move `modes/interactive/session_admin.clj` switching/creation and
   `turn.clj` submission (input hooks, skill/prompt expansion, queueing) into
-  the engine; modes keep selectors, rendering, and UX policy.
-- Split slash commands into engine commands (return intents) and UI
-  commands. `app.commands` handlers currently take `CoreState`; introduce an
-  engine+effects context, migrate in place.
-- `CoreState` shrinks to view state + engine reference.
+  the runtime; modes keep selectors, rendering, and UX policy.
+- Split slash commands into runtime commands (return intents) and UI
+  commands. `app.commands` handlers currently take `CoreState`; introduce a
+  runtime+effects context, migrate in place.
+- `CoreState` shrinks to view state + runtime reference.
 
 Acceptance: `/new`, `/resume`, `/fork`, `/tree`, `/compact`, `/model`,
-submit/steer/cancel work with the mode holding no engine atoms; the TUI test
+submit/steer/cancel work with the mode holding only view state; the TUI test
 suite passes.
 
 ### Step 4 — extension UI port + request/response
 
 - Define the UI port capability map and the `:ui-request`/`respond!` pair.
+  Bind it through a `bind-extensions`-style call that passes the front-end
+  kind (pi: `bindExtensions({uiContext, mode, commandContextActions,
+  abortHandler, shutdownHandler, onError})`), so extensions can branch on
+  `ctx.mode` / `ctx.has-ui`.
 - Interactive implements it as today (possibly via an in-process promise);
-  print installs auto-answers; the global registry gains engine-scoped
-  install/clear.
+  print installs auto-answers; the global registry gains runtime-scoped
+  install/clear. A future RPC mode answers asynchronously with `respond!`.
+- Document the degraded set for front ends without a terminal (pi's RPC
+  table: dialog methods work, TUI-only methods become no-ops, dialog
+  timeouts auto-resolve).
 
 Acceptance: extensions using `ctx.ui` still pass `test/kmet/app/
 test_extensions_ui.clj`; a print-mode extension dialog test answers with the
-default.
+default; the GUI can install its port.
 
-### Step 5 — RPC mode
-
-- `kmet.modes.rpc`: EDN lines in/out; commands (`prompt`, `steer`, `cancel`,
-  `compact`, `set-model`, `new-session`, `respond`, `state`, `subscribe`),
-  correlated responses, events forwarded as-is; extension UI requests
-  forwarded.
-- Reuse the conformance renderer as the RPC event encoder test.
-
-Acceptance: an end-to-end test drives a prompt over pipes and observes the
-event stream and a final response; no TUI *front end* is started in the RPC
-process (the graph assertion is scoped by §8: extensions load the shared
-`kmet.tui.*` layer by contract).
-
-### Step 6 — GUI mode
+### Step 5 — GUI mode (the proof)
 
 The backend already exists — `src/kmet/gui/` ships the Tk/Tcl backend
 (`kmet.gui.tk`, `kmet.gui.ttk`, `kmet.gui.tk.dsl`, `kmet.gui.tk.options`,
-`kmet.gui.tcl`) with its own `README.md`, and the `kmet.libs.hikap` /
-`kmet.libs.reakt` split is the in-repo precedent for sharing the UI engine
-across backends. What is missing is the mode:
+`kmet.gui.tcl`) with its own `README.md`, and the display-only viewer
+(`scripts/gui_tk_session.clj` + `app/ui/gui/transcript.clj`) already
+renders a saved session. What is missing is the live run:
 
-- Subscribe and render through `kmet.gui.*`, marshaling to the toolkit
-  thread. Shares only the engine, events, and data providers — not
-  `app/ui/*`.
+- Subscribe to the runtime, marshal to the toolkit thread, and drive
+  prompt/stream/cancel through the same operations the TUI uses.
+- The mode constructs no `AgentState`, no session atoms, and no
+  `make-agent-state` map; everything comes from the runtime and the stream.
+- Reuse `app/ui/gui/*` for rendering; the transcript's TUI-renderer reuse
+  is intentional and stays.
 
-### Step R — renames (optional, late)
+Acceptance: the viewer becomes live — prompt, streamed assistant text, tool
+cards, and cancel — with the mode holding only view state and the runtime
+reference; every update it renders arrives through `subscribe!`.
 
-- `kmet.app.*` minus `ui` → `kmet.engine.*`; `kmet.app.ui.*` →
-  `kmet.ui.tui.*` (or `kmet.modes.interactive.view.*`); `kmet.modes.rpc`
-  as named. Mechanical, docs+tests, no behavior change. Do it after steps
-  0–4 so the diff is renames only.
+### Step 6 — RPC mode (deferred)
+
+Not scheduled. Trigger: a real consumer (an IDE integration, a scripted
+controller, remote sessions). When one exists:
+
+- `kmet.modes.rpc`: EDN lines in/out; commands (`prompt`, `steer`,
+  `cancel`, `compact`, `set-model`, `new-session`, `respond`, `state`,
+  `subscribe`), correlated responses, events forwarded as-is; extension UI
+  requests forwarded, answered with `respond!`.
+- Reuse the print event-output encoder test; no TUI front end is started
+  (the graph assertion is scoped by §8).
+- Copy pi's protocol discipline: optional ids; a malformed record yields a
+  parse response without an id; stdout carries protocol only, diagnostics
+  go to stderr; accepted (`started`/`queued`/`handled`) is not completed;
+  stdin close is shutdown, dispose after settle.
 
 ## 8. Enforcement
 
 - **Layer guard** modeled on `test/kmet/libs/test_self_contained.clj`
   (which reads the `ns` form, not a regex): every `src/kmet/app/**` file —
-  excluding `app/ui/**` until it moves — must not require `kmet.tui.*`,
+  excluding `app/ui/**` (app-specific view code) — must not require `kmet.tui.*`,
   `kmet.gui.*`, or `kmet.modes.*`. Seed the allowlist with the six known
   violations (§3.6: `bash_executor`, `theme_controller`, `packages`,
   `keybindings`, `extensions.cljc`, `extensions/context.cljc`) and shrink
-  it as they are fixed; a second guard runs after step R for the renamed
-  tree.
-- **Front-end guard caveat (RPC).** A `require`-graph assertion that *no*
+  it as they are fixed.
+- **Headless guard caveat.** A `require`-graph assertion that *no*
   `kmet.tui.*` namespace loads is not achievable while extensions are
   enabled: the extension ABI admits `kmet.tui.*` and `host-requires!`
   requires the whole layer on the first extension (§3.8). Assert instead
-  that the RPC entry point does not load `kmet.modes.interactive.*`, does
-  not construct a terminal, and does not itself require `kmet.tui.*`; the
-  stricter assertion waits for the shared-component-library split (the
-  `kmet.libs.hikap` model, §7 step 6).
-- **Vocabulary parity**: `event-schemas`, `event-types`, `app-event-types`,
+  that a headless front end (the future RPC mode) does not load
+  `kmet.modes.interactive.*` and does not construct a terminal; the
+  stricter assertion needs the shared-component-library split (an
+  unscheduled extraction). The GUI is not under this guard — `kmet.gui.*`
+  plus the deliberate TUI-renderer reuse is its intended stack.
+- **Vocabulary parity**: `event-types`, `app-event-types`, and
   `loop-event-types` keysets agree (test).
 - **EDN contract**: recorded scenarios round-trip; the conformance renderer
   consumes every `loop-event-types` event with no internal-state access.
@@ -561,9 +616,11 @@ malli probes (scratch dirs under `target/`, removed by `bb clean`):
 | `malli.transform` string transformer | ✅ | ✅ only with the existing `io.github.jolt-lang/time` dep (without it: `No matching ctor found for class DateTimeFormatterBuilder`) |
 | unknown `:type` rejected by `:multi` | ✅ | ✅ |
 
-- malli is **not bundled** by either host (checked); add it to `deps.edn`
+- malli is **not bundled** by either host (checked). Add it to `deps.edn`
   and `bb.edn` and pin one version (0.20.1 was verified; re-verify with
-  `bb check`, `bb lint` both reader views, and a `jolt -e` require probe).
+  `bb check`, `bb lint` both reader views, and a `jolt -e` require probe)
+  **in the step that lands the first boundary schema** (session load), not
+  now.
 - Prefer `malli.core` + `malli.error` only. `malli.transform` is optional;
   if used, it rides on the already-pinned `jolt-lang/time`.
 - malli is not added to the fixed extension set (`kmet.app.extension-libs`);
@@ -579,27 +636,35 @@ malli probes (scratch dirs under `target/`, removed by `bb clean`):
    cancel queue-drop reason (finding G) in the same payload.
 2. Session load validation policy (finding C) — measure first; target
    < 100 ms for 10k entries, else validate-only-on-skip.
-3. Multi-engine future: is per-engine extension scoping ever needed (RPC
-   server with parallel sessions), or does single-engine-per-process stay
-   permanent? This decides how hard to work on §4.5 scoping.
-4. Command split granularity: intents/effects map vs direct engine calls
+3. Multi-engine future: is per-engine extension scoping ever needed (a
+   headless server with parallel sessions), or does single-engine-per-
+   process stay permanent? This decides how hard to work on §4.5 scoping.
+4. Command split granularity: intents/effects map vs direct runtime calls
    with UI capabilities injected.
 5. Does `:resume`'s selector remain a TUI-only policy hook, or does the
-   engine expose a generic `:session-resolver` for RPC clients?
-6. GUI mode timing: the Tk backend already exists (§7 step 6); does
-   `kmet.modes.gui` land after RPC (which proves headless conformance) or
-   earlier against the TUI?
+   runtime expose a generic `:session-resolver` for a future headless
+   front end?
+6. GUI scope: which interactive features must the first live GUI run
+   support (prompt/stream/cancel only, or session admin, selectors, and
+   extension dialogs too)? The display-only viewer (§2) settles the
+   rendering half; the live half defines what step 3 must move.
+7. RPC trigger: what consumer would justify `kmet.modes.rpc` (an IDE
+   integration, a scripted controller, remote sessions)? Until one exists,
+   step 6 stays unscheduled.
 
 ## 11. What not to do
 
-- Do not rename namespaces before the facade and schema exist; the diff must
-  stay reviewable.
-- Do not build a network protocol or a plugin system first; EDN lines over
-  stdin/stdout is enough to prove headless operation.
-- Do not share TUI component trees with the GUI; share events and data
-  providers.
+- Do not rename `kmet.app.*`. The split is ownership, not naming; a
+  rename stage buys nothing and inflates the diff.
+- Do not build RPC before a consumer exists. Print's event-output variant
+  proves headless conformance cheaper, and the GUI is the planned second
+  front end.
+- Do not share TUI component *instances* with the GUI; share the renderers,
+  events, and data. The GUI transcript reusing the TUI markdown/theme/ANSI
+  output is intended — it converts ANSI to Tk segments (see §2).
 - Do not close payload maps or validate the hot path.
-- Do not schema internal mutable records or view models.
+- Do not schema in-process events, the bootstrap map, or view models —
+  type them and test them. Schema the files now and the wire if it exists.
 - Do not let `:on-text`/`:on-done` callbacks and the event stream grow as
   two independent APIs.
 - Do not add extension-scoped exotic schemas (tool params, provider JSON
