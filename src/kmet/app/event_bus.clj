@@ -362,6 +362,13 @@
     (or (ex-message error) (str error))
     error))
 
+(defn- update-error-slot
+  "Apply the wire-error projection to K when EVENT carries it; an event
+   without the slot passes through untouched."
+  [event k]
+  (cond-> event
+    (contains? event k) (update k wire-error)))
+
 (defn wire-event
   "The wire projection of EVENT for a headless consumer (print mode's edn
    output, a future RPC mode): the event as emitted, minus the cumulative
@@ -373,10 +380,8 @@
   [event]
   (case (:type event)
     :message-update (dissoc event :message)
-    :error (cond-> event
-             (contains? event :message) (update :message wire-error))
-    :auto-retry-end (cond-> event
-                      (contains? event :final-error) (update :final-error wire-error))
+    :error (update-error-slot event :message)
+    :auto-retry-end (update-error-slot event :final-error)
     event))
 
 (defn known-event-type?

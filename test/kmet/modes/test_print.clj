@@ -31,6 +31,14 @@
 (defn- tmp-session-dir [prefix]
   (str "target/" prefix "-" (System/currentTimeMillis)))
 
+(defn- run-edn
+  "Run OPTS in :edn mode, returning [result lines]: the run's exit result
+   and the parsed stdout lines (the first is the session header)."
+  [opts]
+  (let [out (java.io.StringWriter.)
+        result (binding [*out* out] (print-mode/run opts))]
+    [result (mapv edn/read-string (str/split-lines (str/trim (str out))))]))
+
 (defn- emit!
   "Emit EVENT through the stubbed agent's own stream — the path the real
    loop uses."
@@ -98,15 +106,12 @@
                                    :message {:role :assistant
                                              :content [{:type :text :text "hi"}]}})
                         (settle! ag :completed nil))]
-          (let [out (java.io.StringWriter.)
-                result (binding [*out* out]
-                         (print-mode/run (assoc (opts-with-session-dir dir) :mode :edn)))
-                lines (str/split-lines (str/trim (str out)))]
+          (let [[result lines] (run-edn (assoc (opts-with-session-dir dir) :mode :edn))]
             (is (= :completed result))
             (is (= 5 (count lines)) "header + four events")
-            (is (= :session (:type (edn/read-string (first lines))))
+            (is (= :session (:type (first lines)))
                 "the session header line comes first")
-            (let [events (mapv edn/read-string (rest lines))]
+            (let [events (subvec lines 1)]
               (is (= [:message-update :tool-execution-start :message-end :agent-settled]
                      (mapv :type events)))
               (is (not (contains? (first events) :message))
@@ -123,12 +128,10 @@
                       (fn [ag _]
                         (emit! ag {:type :error :message (ex-info "boom" {})})
                         (settle! ag :error nil))]
-          (let [out (java.io.StringWriter.)
-                result (binding [*out* out]
-                         (print-mode/run (assoc (opts-with-session-dir dir) :mode :edn)))
-                events (map edn/read-string (rest (str/split-lines (str/trim (str out)))))]
+          (let [[result lines] (run-edn (assoc (opts-with-session-dir dir) :mode :edn))
+                error-event (first (filter #(= :error (:type %)) lines))]
             (is (nil? result) "an errored run exits 1")
-            (is (= "boom" (:message (first (filter #(= :error (:type %)) events)))))))
+            (is (= "boom" (:message error-event)))))
         (finally (fs/delete-tree dir))))))
 
 (deftest test-run-passes-message
