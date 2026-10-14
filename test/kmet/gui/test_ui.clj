@@ -4,7 +4,7 @@
    display (skipped where there is none)."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.gui.test-support :refer [live-tk scripts scripts-like with-fake]]
+            [kmet.gui.test-support :refer [find-class-src live-tk scripts scripts-like with-fake]]
             [kmet.gui.tk :as tk]
             [kmet.gui.ui :as ui]
             [kmet.libs.hikap :as engine]))
@@ -58,17 +58,6 @@
             "dispose destroys the sibling scrollbar"))))
 
 ;; ─── the live Tk ─────────────────────────────────────────────────────────
-
-(def ^:private find-class-src
-  "A Tcl helper: the first descendant of W whose class is CLASS."
-  (str "proc kmetfind {w class} {\n"
-       "  foreach c [winfo children $w] {\n"
-       "    if {[winfo class $c] eq $class} { return $c }\n"
-       "    set r [kmetfind $c $class]\n"
-       "    if {$r ne \"\"} { return $r }\n"
-       "  }\n"
-       "  return \"\"\n"
-       "}\n"))
 
 (t/deftest transcript-embeds-on-a-live-tk
   ;; The headless test checks the scripts; here the real Tk hosts the card

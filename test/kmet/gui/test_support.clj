@@ -57,3 +57,15 @@
       ((:prepare! a))
       a)
     (catch Throwable _ nil)))
+
+(def find-class-src
+  "Tcl source defining `kmetfind W CLASS`: the first descendant of W whose
+   window class is CLASS (\"\" when none)."
+  (str "proc kmetfind {w class} {\n"
+       "  foreach c [winfo children $w] {\n"
+       "    if {[winfo class $c] eq $class} { return $c }\n"
+       "    set r [kmetfind $c $class]\n"
+       "    if {$r ne \"\"} { return $r }\n"
+       "  }\n"
+       "  return \"\"\n"
+       "}\n"))

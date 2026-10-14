@@ -7,7 +7,7 @@
    has Tcl/Tk installed."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.gui.test-support :refer [live-tk]]
+            [kmet.gui.test-support :refer [find-class-src live-tk]]
             [kmet.gui.tk :as tk]
             [kmet.gui.tk.options :as opt]
             [kmet.libs.hikap :as engine]))
@@ -174,17 +174,6 @@
       (finally
         ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
-
-(def ^:private find-class-src
-  "A Tcl helper: the first descendant of W whose class is CLASS."
-  (str "proc kmetfind {w class} {\n"
-       "  foreach c [winfo children $w] {\n"
-       "    if {[winfo class $c] eq $class} { return $c }\n"
-       "    set r [kmetfind $c $class]\n"
-       "    if {$r ne \"\"} { return $r }\n"
-       "  }\n"
-       "  return \"\"\n"
-       "}\n"))
 
 (t/deftest a-checkable-and-a-scale-hand-their-value-to-the-handler
   ;; The value slots of the widgets added later: a checkable widget's private
