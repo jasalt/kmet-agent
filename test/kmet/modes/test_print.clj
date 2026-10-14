@@ -1,7 +1,10 @@
 (ns kmet.modes.test-print
-  "Print-mode tests (pi: print-mode.ts) — run() sends the message through
-   the agent loop and returns the final text via :on-done (nil on error)."
+  "Print-mode tests (pi: print-mode.ts) — run() drives the runtime and
+   consumes its event stream: :text streams and returns the final
+   assistant text (nil on a failed or aborted run), :edn prints the
+   header plus every event as EDN."
   (:require [clojure.test :as t :refer [deftest is testing]]
+            [clojure.edn :as edn]
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.modes.print :as print-mode]
@@ -26,51 +29,121 @@
 (defn- tmp-session-dir [prefix]
   (str "target/" prefix "-" (System/currentTimeMillis)))
 
-(deftest test-run-delivers-final-text
-  (testing "run returns the agent's final text delivered via :on-done"
-    (with-redefs [agent/run-agent-turn (fn [_ ag-opts]
-                                         ((:on-done ag-opts) "hello world"))]
-      (is (= "hello world" (print-mode/run (opts)))))))
+(defn- emit!
+  "Emit EVENT through the stubbed agent's own stream — the path the real
+   loop uses."
+  [ag event]
+  ((:on-event ag) event))
+
+(defn- settle!
+  "Finish a stubbed run: when TEXT is given, its final assistant message,
+   then :agent-settled with OUTCOME. Returns nil (the loop's run end)."
+  ([ag] (settle! ag :completed "ok"))
+  ([ag outcome text]
+   (when text
+     (emit! ag {:type :message-end
+                :message {:role :assistant
+                          :content [{:type :text :text text}]}}))
+   (emit! ag {:type :agent-settled :outcome outcome})
+   nil))
+
+(deftest test-run-streams-and-returns-the-final-text
+  (testing "text mode streams :message-update deltas and returns the final message text"
+    (with-redefs [agent/run-agent-turn
+                  (fn [ag _]
+                    (emit! ag {:type :message-update
+                               :delta {:type :text :content "hello "}})
+                    (emit! ag {:type :message-update
+                               :delta {:type :text :content "world"}})
+                    (settle! ag :completed "hello world"))]
+      (let [out (java.io.StringWriter.)
+            result (binding [*out* out] (print-mode/run (opts)))]
+        (is (= "hello world" result))
+        (is (= "hello world" (str out)) "the text streamed as it arrived")))))
 
 (deftest test-run-error-returns-nil
-  (testing "run returns nil when the agent reports an error"
-    ;; print-mode surfaces the error to stderr — capture it in the test.
-    (binding [*err* (java.io.StringWriter.)]
-      (with-redefs [agent/run-agent-turn (fn [_ ag-opts]
-                                           ((:on-error ag-opts) (ex-info "boom" {})))]
-        (is (nil? (print-mode/run (opts))))))))
+  (testing "a failed run reports the :error event to stderr and returns nil"
+    (let [err (java.io.StringWriter.)]
+      (with-redefs [agent/run-agent-turn
+                    (fn [ag _]
+                      (emit! ag {:type :error :message (ex-info "boom" {})})
+                      (settle! ag :error nil))]
+        (binding [*err* err]
+          (is (nil? (print-mode/run (opts))))))
+      (is (str/includes? (str err) "boom")))))
+
+(deftest test-run-abort-returns-nil
+  (testing "an aborted run reports Request aborted and returns nil"
+    (let [err (java.io.StringWriter.)]
+      (with-redefs [agent/run-agent-turn (fn [ag _] (settle! ag :aborted nil))]
+        (binding [*err* err]
+          (is (nil? (print-mode/run (opts))))))
+      (is (str/includes? (str err) "Request aborted")))))
+
+(deftest test-run-edn-mode-emits-the-header-and-every-event
+  (testing "--mode edn prints the session header first, then every event as EDN"
+    (let [dir (tmp-session-dir "test-print-edn")]
+      (try
+        (with-redefs [agent/run-agent-turn
+                      (fn [ag _]
+                        (emit! ag {:type :message-update
+                                   :message {:role :assistant
+                                             :content [{:type :text :text "hi"}]}
+                                   :delta {:type :text :content "hi"}})
+                        (emit! ag {:type :tool-execution-start
+                                   :tool-call-id "t1" :tool-name "read" :args {}})
+                        (emit! ag {:type :message-end
+                                   :message {:role :assistant
+                                             :content [{:type :text :text "hi"}]}})
+                        (settle! ag :completed nil))]
+          (let [out (java.io.StringWriter.)
+                result (binding [*out* out]
+                         (print-mode/run (assoc (opts-with-session-dir dir) :mode :edn)))
+                lines (str/split-lines (str/trim (str out)))]
+            (is (= :completed result))
+            (is (= 5 (count lines)) "header + four events")
+            (is (= :session (:type (edn/read-string (first lines))))
+                "the session header line comes first")
+            (let [events (mapv edn/read-string (rest lines))]
+              (is (= [:message-update :tool-execution-start :message-end :agent-settled]
+                     (mapv :type events)))
+              (is (not (contains? (first events) :message))
+                  "the cumulative assistant snapshot is dropped from the wire event")
+              (is (= {:type :text :content "hi"} (:delta (first events))))
+              (is (= "t1" (:tool-call-id (second events)))))))
+        (finally (fs/delete-tree dir))))))
 
 (deftest test-run-passes-message
   (testing "the joined user message reaches the agent"
     (let [seen (atom nil)]
-      (with-redefs [agent/run-agent-turn (fn [_ ag-opts]
+      (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
                                            (reset! seen (:message ag-opts))
-                                           ((:on-done ag-opts) "ok"))]
+                                           (settle! ag))]
         (print-mode/run (assoc (opts) :messages ["hello" "world"]))
         (is (= "hello world" @seen))))))
 
 (deftest test-run-seeds-block-images
   (testing "images.blockImages reaches the print-mode agent (pi: SDK-level)"
     (let [seen (atom nil)]
-      (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+      (with-redefs [agent/run-agent-turn (fn [ag _]
                                            (reset! seen (:block-images @(:cfg ag)))
-                                           ((:on-done ag-opts) "ok"))]
+                                           (settle! ag))]
         (print-mode/run (assoc (opts) :config {:provider :opencode-go
                                                :model "deepseek-v4-flash"
                                                :images {:block-images true}}))
         (is (true? @seen)))
-      (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+      (with-redefs [agent/run-agent-turn (fn [ag _]
                                            (reset! seen (:block-images @(:cfg ag)))
-                                           ((:on-done ag-opts) "ok"))]
+                                           (settle! ag))]
         (print-mode/run (opts))
         (is (false? @seen) "default off")))))
 
 (deftest test-run-honors-http-timeout-settings
   (testing "settings.edn http timeouts reach the print-mode agent"
     (let [seen (atom nil)]
-      (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+      (with-redefs [agent/run-agent-turn (fn [ag _]
                                            (reset! seen @(:cfg ag))
-                                           ((:on-done ag-opts) "ok"))]
+                                           (settle! ag))]
         (print-mode/run (assoc (opts) :config {:provider :opencode-go
                                                :model "deepseek-v4-flash"
                                                :http-idle-timeout-ms 1500
@@ -79,9 +152,9 @@
         (is (= 2000 (:http-total-timeout-ms @seen)))))
     (testing "absent settings fall back to the create-agent defaults"
       (let [seen (atom nil)]
-        (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+        (with-redefs [agent/run-agent-turn (fn [ag _]
                                              (reset! seen @(:cfg ag))
-                                             ((:on-done ag-opts) "ok"))]
+                                             (settle! ag))]
           (print-mode/run (opts))
           (is (= 120000 (:http-idle-timeout-ms @seen)))
           (is (= 0 (:http-total-timeout-ms @seen))))))))
@@ -91,11 +164,11 @@
     (let [model (m/map->Model {:provider :opencode-go :id "deepseek-v4-flash"})
           seen (atom nil)]
       (with-redefs [m/providers-atom (atom {:opencode-go {:models [model]}})
-                    agent/run-agent-turn (fn [_ag ag-opts]
+                    agent/run-agent-turn (fn [ag _]
                                            (reset! seen
                                                    {:ctx (extensions/build-extension-context)
                                                     :session (extensions/get-session)})
-                                           ((:on-done ag-opts) "ok"))]
+                                           (settle! ag))]
         (is (= "ok" (print-mode/run
                      (assoc (opts) :config {:provider :opencode-go
                                             :model "deepseek-v4-flash"
@@ -118,9 +191,9 @@
       (try
         (doseq [arg [(:id sess) (:file sess)]]
           (let [seen (atom nil)]
-            (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+            (with-redefs [agent/run-agent-turn (fn [ag _]
                                                  (reset! seen (:session ag))
-                                                 ((:on-done ag-opts) "ok"))]
+                                                 (settle! ag))]
               (is (= "ok" (print-mode/run (assoc (opts-with-session-dir dir)
                                                  :session arg))))
               (is (= (:file sess) (:file @seen)) (str "loaded via " arg))
@@ -143,9 +216,9 @@
       (fs/set-last-modified-time (:file newer) (- now 10))
       (try
         (let [seen (atom nil)]
-          (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+          (with-redefs [agent/run-agent-turn (fn [ag _]
                                                (reset! seen (:session ag))
-                                               ((:on-done ag-opts) "ok"))]
+                                               (settle! ag))]
             (print-mode/run (assoc (opts-with-session-dir dir)
                                    :session (:id older)
                                    :continue true))
@@ -166,9 +239,9 @@
       (fs/set-last-modified-time (:file newer) (- now 10))
       (try
         (let [seen (atom nil)]
-          (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+          (with-redefs [agent/run-agent-turn (fn [ag _]
                                                (reset! seen (:session ag))
-                                               ((:on-done ag-opts) "ok"))]
+                                               (settle! ag))]
             (print-mode/run (assoc (opts-with-session-dir dir) :continue true))
             (is (= (:file newer) (:file @seen)))
             (is (= "newer" (:content (first @(:entries @seen)))))))
@@ -179,9 +252,9 @@
     (let [dir (tmp-session-dir "test-print-continue-empty")]
       (try
         (let [seen (atom nil)]
-          (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+          (with-redefs [agent/run-agent-turn (fn [ag _]
                                                (reset! seen (:session ag))
-                                               ((:on-done ag-opts) "ok"))]
+                                               (settle! ag))]
             (print-mode/run (assoc (opts-with-session-dir dir) :continue true))
             (is (some? @seen))
             (is (empty? @(:entries @seen)))
@@ -195,9 +268,9 @@
     (let [dir (tmp-session-dir "test-print-default")]
       (try
         (let [seen (atom nil)]
-          (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+          (with-redefs [agent/run-agent-turn (fn [ag _]
                                                (reset! seen (:session ag))
-                                               ((:on-done ag-opts) "ok"))]
+                                               (settle! ag))]
             (print-mode/run (opts-with-session-dir dir))
             (is (= (some-> (session/session-dir-for-cwd dir (str (fs/cwd))) fs/canonicalize str)
                    (str (fs/parent (:file @seen)))))))
@@ -212,9 +285,9 @@
           _ (session/append-entry sess {:role :assistant :content "prior"})]
       (try
         (let [seen (atom nil)]
-          (with-redefs [agent/run-agent-turn (fn [ag ag-opts]
+          (with-redefs [agent/run-agent-turn (fn [ag _]
                                                (reset! seen ag)
-                                               ((:on-done ag-opts) "ok"))]
+                                               (settle! ag))]
             (print-mode/run (assoc (opts-with-session-dir dir) :session (:id sess)))
             (is (str/includes? @(:system @seen)
                                (str (session/session-cwd (:session @seen)))))))

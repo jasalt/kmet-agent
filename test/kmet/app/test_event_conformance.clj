@@ -6,6 +6,7 @@
    renderer (and by extension every front end) decides what the transcript
    does with it."
   (:require [clojure.test :as t]
+            [clojure.edn :as edn]
             [clojure.string :as str]
             [kmet.ai.llm :as llm]
             [kmet.app.event-bus :as event-bus]
@@ -143,6 +144,19 @@
   (t/is (= (set (keys event-bus/loop-event-types))
            (set (keys renderers)))
         "every loop event type needs a renderer decision (render or ignore)"))
+
+(t/deftest test-wire-events-are-edn-round-trippable
+  (t/is (every? #(map? (event-bus/wire-event {:type %}))
+                (keys event-bus/loop-event-types))
+        "every loop event type has a wire projection")
+  (doseq [event (run-scenario (stub-tool-then-text (atom 0)))]
+    (let [wire (event-bus/wire-event event)]
+      (t/is (= wire (edn/read-string (pr-str wire)))
+            (str "round-trips through EDN: " (:type event)))
+      (when (= :message-update (:type event))
+        (t/is (not (contains? wire :message))
+              "the cumulative assistant snapshot is dropped")
+        (t/is (contains? wire :delta) "the delta stays")))))
 
 (t/deftest test-headless-renderer-consumes-a-live-stream
   (let [events (run-scenario (stub-tool-then-text (atom 0)))

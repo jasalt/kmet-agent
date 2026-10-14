@@ -77,6 +77,13 @@
   (t/is (nil? (:version (core/parse-args ["hello"]))))
   (t/is (nil? (get-in (core/parse-args ["--version"]) [:ext-flags "version"]))))
 
+(t/deftest test-parse-args-mode-flag
+  ;; --mode selects print mode's output format (pi: cli/args.ts --mode)
+  (t/is (= :edn (:mode (core/parse-args ["--mode" "edn" "hi"]))))
+  (t/is (= ["hi"] (:messages (core/parse-args ["--mode" "edn" "hi"]))))
+  (t/is (contains? (core/parse-args ["--mode"]) :mode)
+        "a missing value is recorded (and rejected at dispatch)"))
+
 (t/deftest test-kmet-version
   (t/testing "a packaged kmet reports the version it was built as"
     (with-redefs [core/baked-version (constantly "v1.2.3-4-gabc1234")

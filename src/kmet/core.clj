@@ -69,6 +69,13 @@
           (#{"-p" "--print"} arg)
           (recur rest-args (assoc opts :print true))
 
+          (#{"--mode"} arg)
+          ;; Output mode for non-interactive runs; implies --print (pi:
+          ;; cli/args.ts --mode text|json|rpc). Validated at dispatch.
+          (if (seq rest-args)
+            (recur (rest rest-args) (assoc opts :mode (keyword (first rest-args))))
+            (recur rest-args (assoc opts :mode nil)))
+
           (#{"-c" "--continue"} arg)
           (recur rest-args (assoc opts :continue true))
 
@@ -173,6 +180,7 @@
   (println "Options:")
   (println "  -d, --debug           Log to debug.log")
   (println "  -p, --print           Print response and exit (non-interactive)")
+  (println "  --mode <format>       Print output: text (default) or edn; implies --print")
   (println "  -c, --continue        Continue most recent session")
   (println "  -r, --resume          Browse sessions")
   (println "  --session <id|path>   Resume session by id/prefix or file path")
@@ -367,14 +375,19 @@
       ;; CLI --model/--models patterns resolve against the registry (pi
       ;; resolveCliModel at dispatch) before mode dispatch
       (let [opts (resolve-cli-model-opts opts)]
-        (when (:print opts)
-          (let [msg (str/join " " (:messages opts))]
-            (if (empty? msg)
-              (do (println "No message provided. Usage: kmet -p \"your message\"")
+        (when (or (:print opts) (contains? opts :mode))
+          (let [mode (:mode opts :text)]
+            (if-not (contains? #{:text :edn} mode)
+              (do (binding [*out* *err*]
+                    (println "--mode requires text or edn"))
                   (System/exit 1))
-              (let [result (print-mode/run (assoc opts :messages [msg]))]
-                ;; exit 1 when the run errored (nil result = no response text)
-                (System/exit (if (nil? result) 1 0))))))
+              (let [msg (str/join " " (:messages opts))]
+                (if (empty? msg)
+                  (do (println "No message provided. Usage: kmet -p \"your message\"")
+                      (System/exit 1))
+                  (let [result (print-mode/run (assoc opts :messages [msg] :mode mode))]
+                    ;; exit 1 when the run errored (nil result = no response text)
+                    (System/exit (if (nil? result) 1 0))))))))
 
         (println "Starting kmet...")
 

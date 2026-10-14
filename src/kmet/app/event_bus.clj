@@ -352,6 +352,18 @@
    handler must consume every one of these."
   (apply dissoc event-types app-event-types))
 
+(defn wire-event
+  "The wire projection of EVENT for a headless consumer (print mode's edn
+   output, a future RPC mode): the event as emitted, minus the cumulative
+   assistant snapshot :message-update carries — the delta already names a
+   tool call's id/name, and the finalized message follows as :message-end,
+   so the snapshot only repeats bytes per delta (pi: toJsonEvent). Every
+   other event passes through unchanged."
+  [event]
+  (if (= :message-update (:type event))
+    (dissoc event :message)
+    event))
+
 (defn known-event-type?
   "True if the keyword is part of the documented vocabulary."
   [type]

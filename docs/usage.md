@@ -23,6 +23,7 @@ bb start @tasks.md "summarize the tasks"
 ```
   -d, --debug           Log to debug.log
   -p, --print           Print response and exit (non-interactive)
+  --mode <format>       Print output: text (default) or edn; implies --print
   -c, --continue        Continue most recent session
   -r, --resume          Browse sessions
   --session <id|path>   Resume session by id/prefix or file path
@@ -54,6 +55,12 @@ none exists) and `--session <id|path>` resumes a specific session, by id,
 id prefix, or file path. A resumed session continues with its history and
 its recorded working directory. `-r/--resume` browses sessions interactively
 and is TUI-only.
+
+`--mode edn` (implies `--print`) writes the machine-readable variant to
+stdout: the session header line, then every event as one EDN map per line.
+Streaming `:message-update` events carry only the delta — no cumulative
+message snapshot — and `:agent-settled` ends the stream with the run's
+outcome; the exit code follows it (0 completed, 1 error or aborted).
 
 ### Package subcommands
 
