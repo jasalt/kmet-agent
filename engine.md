@@ -43,10 +43,12 @@ extension internals.
 
 Non-goals (v1):
 
-- **Multi-engine processes.** One runtime per process. The extension
-  runtime (`kmet.app.extensions` globals) is process-global; the runtime
-  wraps it so per-engine scoping stays possible later, but nothing in this
-  plan requires it.
+- **Multi-engine processes.** One runtime per process for now, but
+  multi-engine is a confirmed future direction (a headless server with
+  parallel sessions). The extension runtime (`kmet.app.extensions` globals)
+  stays process-global in v1; the runtime holds its handle and installs it
+  at `bootstrap`, so per-engine scoping later is a re-plumbing, not a
+  redesign — and no new process-global assumptions are added meanwhile.
 - **Sharing view code between front ends.** TUI components, `app/ui/*`, and
   GUI widgets stay per-front-end. What is shared is the session runtime,
   the event stream, and the data providers.
@@ -293,8 +295,10 @@ Extensions are loaded by the process, but their UI surfaces belong to the
 active front end. Split the capability map:
 
 - **Runtime capabilities** (session handle, context sink, tool hooks, event
-  bus, command/tool/renderer registries): runtime-scoped, installed by
-  `bootstrap`, cleared by `dispose!`.
+  bus, command/tool/renderer registries): held on the runtime, installed by
+  `bootstrap`, cleared by `dispose!`. The `kmet.app.extensions` globals stay
+  process-global in v1; passing the runtime's handle explicitly (no new
+  globals) is what keeps a future per-engine scope a re-plumbing (§1).
 - **UI port** (`ExtensionUIContext`: widgets, dialogs, editor, statuses):
   installed by the front end. `modes/interactive/ui-registry.clj` is the TUI
   implementation; print mode installs auto-answer defaults; RPC forwards
@@ -516,9 +520,10 @@ every `loop-event-types` event and each round-trips through EDN.
 - Move `modes/interactive/session_admin.clj` switching/creation and
   `turn.clj` submission (input hooks, skill/prompt expansion, queueing) into
   the runtime; modes keep selectors, rendering, and UX policy.
-- Split slash commands into runtime commands (return intents) and UI
-  commands. `app.commands` handlers currently take `CoreState`; introduce a
-  runtime+effects context, migrate in place.
+- Split slash commands by capability: engine work through the runtime,
+  dialogs through the UI port, view-only commands staying in the mode.
+  `app.commands` handlers currently take `CoreState`; introduce a
+  `[ctx args]` handler contract and migrate in place (decided in §10).
 - `CoreState` shrinks to view state + runtime reference.
 
 Acceptance: `/new`, `/resume`, `/fork`, `/tree`, `/compact`, `/model`,
@@ -628,29 +633,32 @@ malli probes (scratch dirs under `target/`, removed by `bb clean`):
   extension-facing validator is wanted, `kmet.extension` can re-export a
   small `validate` helper later.
 
-## 10. Open questions
+## 10. Deferred questions
 
-1. Settle outcome shape (finding A): extend `:agent-settled` (recommended)
-   or add a distinct terminal event? Recommendation: extend it with the
-   existing `:completed | :error | :aborted` vocabulary and carry the
-   cancel queue-drop reason (finding G) in the same payload.
-2. Session load validation policy (finding C) — measure first; target
-   < 100 ms for 10k entries, else validate-only-on-skip.
-3. Multi-engine future: is per-engine extension scoping ever needed (a
-   headless server with parallel sessions), or does single-engine-per-
-   process stay permanent? This decides how hard to work on §4.5 scoping.
-4. Command split granularity: intents/effects map vs direct runtime calls
-   with UI capabilities injected.
-5. Does `:resume`'s selector remain a TUI-only policy hook, or does the
-   runtime expose a generic `:session-resolver` for a future headless
-   front end?
-6. GUI scope: which interactive features must the first live GUI run
-   support (prompt/stream/cancel only, or session admin, selectors, and
-   extension dialogs too)? The display-only viewer (§2) settles the
-   rendering half; the live half defines what step 3 must move.
-7. RPC trigger: what consumer would justify `kmet.modes.rpc` (an IDE
-   integration, a scripted controller, remote sessions)? Until one exists,
-   step 6 stays unscheduled.
+Multi-engine scoping (§1, §4.5) and command split granularity are settled.
+The rest are parked with the step that resolves them.
+
+1. **Settle outcome shape (finding A)** — step 0. Extend `:agent-settled`
+   with the existing `:completed | :error | :aborted` vocabulary and carry
+   the cancel queue-drop reason (finding G) in the same payload.
+2. **Session load validation policy (finding C)** — step 0 measurement;
+   target < 100 ms for 10k entries, else validate-only-on-skip.
+3. **Command split granularity** — decided; step 3 implements it. One
+   handler shape, two implementation homes, no intent language. A handler
+   is `(fn [ctx args])` with `ctx = {:runtime ... :ui ... :frontend ...}`;
+   engine work calls the runtime directly, dialogs go through the UI port,
+   and a handler returns nil or a small result (`{:message s}` /
+   `{:stop true}`), never an intent to interpret. Engine-portable
+   implementations live in `kmet.app.*`; view-only ones stay in the mode
+   and register with a front-end tag so dispatch and autocomplete filter by
+   the installed capabilities. Extension commands keep the same `ctx`
+   shape. Intents/effects would only pay off for a front end that executes
+   commands in another process; a future wire mode should instead expose
+   the operations as protocol commands (pi's `new_session`/`fork`/…), not
+   serialize slash-command intents.
+4. **`:resume` selector** — step 3.
+5. **GUI scope** — step 5.
+6. **RPC trigger** — step 6 (a real consumer).
 
 ## 11. What not to do
 
