@@ -294,6 +294,25 @@
                opts)]
     opts))
 
+(defn- run-print-mode!
+  "Validate OPTS' --mode and run print mode, never returning: exits 1 on an
+   invalid mode, a missing message, or a nil result (the run errored).
+   A valid --mode without -p still runs non-interactively (pi: --mode
+   text|json selects print mode)."
+  [opts]
+  (let [mode (:mode opts :text)]
+    (if-not (contains? #{:text :edn} mode)
+      (do (binding [*out* *err*]
+            (println "--mode requires text or edn"))
+          (System/exit 1))
+      (let [msg (str/join " " (:messages opts))]
+        (if (empty? msg)
+          (do (println "No message provided. Usage: kmet -p \"your message\"")
+              (System/exit 1))
+          (let [result (print-mode/run (assoc opts :messages [msg] :mode mode))]
+            ;; exit 1 when the run errored (nil result = no response text)
+            (System/exit (if (nil? result) 1 0))))))))
+
 (defn -main
   "Entry point. Parses CLI args and dispatches to the requested mode."
   [& args]
@@ -376,18 +395,7 @@
       ;; resolveCliModel at dispatch) before mode dispatch
       (let [opts (resolve-cli-model-opts opts)]
         (when (or (:print opts) (contains? opts :mode))
-          (let [mode (:mode opts :text)]
-            (if-not (contains? #{:text :edn} mode)
-              (do (binding [*out* *err*]
-                    (println "--mode requires text or edn"))
-                  (System/exit 1))
-              (let [msg (str/join " " (:messages opts))]
-                (if (empty? msg)
-                  (do (println "No message provided. Usage: kmet -p \"your message\"")
-                      (System/exit 1))
-                  (let [result (print-mode/run (assoc opts :messages [msg] :mode mode))]
-                    ;; exit 1 when the run errored (nil result = no response text)
-                    (System/exit (if (nil? result) 1 0))))))))
+          (run-print-mode! opts))
 
         (println "Starting kmet...")
 
