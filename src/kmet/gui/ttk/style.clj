@@ -1,27 +1,14 @@
 (ns kmet.gui.ttk.style
-  "The ttk style database: style names, option values, state maps and theme
-   switching, as Clojure data.
+  "The ttk style database as Clojure data: ttk::style configure/map and
+   theme switching.
 
-   A ttk *style* is not a widget class and not a data structure of ours: it
-   is a name in the interpreter's per-theme style database. Every ttk
-   widget has a class (`ttk::entry` -> `TEntry`); a widget's style is its
-   class name unless its `:style` prop names another, and a style name
-   inherits from itself without the first component (`Kmet.TEntry` falls
-   back to `TEntry` for layout and options). Under one name Tk keeps
-
-     - static option values      (ttk::style configure)
-     - per-state option values   (ttk::style map — one state->value table
-                                  per option: disabled, active, focus, …)
-     - a layout and element options, usually inherited
-
-   and resolves each option as: the widget's own option, the style's map
-   for the widget's current state, the style's static value, the inherited
-   style's value, the theme default (`ttk::style lookup`).
-
-   The database is per theme: a theme switch (`ttk::setTheme`) makes the
-   new theme's values current and hides the values set under the old one.
-   Switch first, define the styles after, and re-apply a set on every
-   switch — which is what apply! does."
+   A style is a name, not a class: a widget's style is its class name
+   (`TEntry`) unless its `:style` prop names another, and a name inherits
+   from itself without its first component (`Kmet.TEntry` falls back to
+   `TEntry`). Tk resolves an option as widget option, state map, static
+   value, inherited style, then theme default — and the database is per
+   theme, so switch first, define after, and re-apply a set on every
+   switch (apply! does). gui/README.md has the whole model."
   (:require [clojure.string :as str]
             [kmet.gui.tk.dsl :as dsl]))
 
@@ -33,22 +20,30 @@
 (defn- style-word
   "V as one Tcl word of a style option: a sequence joins into a Tcl list."
   [v]
-  (if (sequential? v)
-    (str/join " " (map dsl/tcl-word v))
-    (dsl/tcl-word v)))
+  (if (sequential? v) (str/join " " (map dsl/tcl-word v)) (dsl/tcl-word v)))
 
-(defn- option-args
-  "OPTS ({:option value}) as `-option value` words, in option-name order so
-   a style script is stable."
-  [opts]
-  (for [[option v] (sort-by (comp name key) opts)
-        :when (some? v)]
-    (str "-" (name option) " " (dsl/tcl-quote (style-word v)))))
+(defn- style!
+  "Evaluate one `ttk::style SUBCOMMAND STYLE ARGS…` (nothing when ARGS is
+   empty) and return nil."
+  [subcommand style args]
+  (when (seq args)
+    (dsl/eval! (str "ttk::style " subcommand " " (dsl/tcl-quote (tcl-name style))
+                    " " (str/join " " args))))
+  nil)
+
+(defn- state-table
+  "STATES ({:state value}) as the Tcl dict of one style-map option: state
+   names and values in state-name order, nil values absent."
+  [states]
+  (str/join " " (mapcat (fn [[state v]] [(name state) (style-word v)])
+                        (->> states
+                             (remove (comp nil? val))
+                             (sort-by (comp name key))))))
 
 (defn use-theme!
   "Switch the interpreter to ttk theme THEME (\"clam\", \"alt\", \"default\",
    \"classic\", a platform theme, or a pixmap theme package Tk can load).
-   A switch makes the new theme's values current: define styles after it."
+   A switch makes the new theme's database current: define styles after it."
   [theme]
   (dsl/eval! (str "ttk::setTheme " (dsl/tcl-quote (tcl-name theme))))
   nil)
@@ -58,10 +53,10 @@
    (`:fieldbackground`, `:padding`, `:relief`, …) to its value; a sequence
    is a Tcl list (`:padding [6 2]`)."
   [style options]
-  (when-let [args (seq (option-args options))]
-    (dsl/eval! (str "ttk::style configure " (dsl/tcl-quote (tcl-name style))
-                    " " (str/join " " args))))
-  nil)
+  (style! "configure" style
+          (for [[option v] (sort-by (comp name key) options)
+                :when (some? v)]
+            (str "-" (name option) " " (dsl/tcl-quote (style-word v))))))
 
 (defn map-style!
   "Set STYLE's per-state option values. MAPS maps a Tk option name to a
@@ -69,17 +64,9 @@
    `{:background {:disabled \"#333\" :active \"#444\"}}`.
    An empty table clears that option's map."
   [style maps]
-  (let [args (for [[option states] (sort-by (comp name key) maps)]
-               (str "-" (name option) " "
-                    (dsl/tcl-quote
-                     (str/join " " (mapcat (fn [[state v]]
-                                             [(name state) (style-word v)])
-                                           (sort-by (comp name key)
-                                                    (remove (comp nil? val) states)))))))]
-    (when (seq args)
-      (dsl/eval! (str "ttk::style map " (dsl/tcl-quote (tcl-name style))
-                      " " (str/join " " args)))))
-  nil)
+  (style! "map" style
+          (for [[option states] (sort-by (comp name key) maps)]
+            (str "-" (name option) " " (dsl/tcl-quote (state-table states))))))
 
 (defn apply!
   "Apply a whole style set in one call:
@@ -96,5 +83,4 @@
   (doseq [[style options] styles]
     (define-style! style options))
   (doseq [[style states] maps]
-    (map-style! style states))
-  nil)
+    (map-style! style states)))

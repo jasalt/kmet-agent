@@ -97,7 +97,7 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
 - **ttk styles and themes.** The database layer exists
   (`kmet.gui.ttk.style`: `use-theme!`, `define-style!`, `map-style!`,
-  `apply!`, with the name/class/map and per-theme rules in its docstring),
+  `apply!`; the style model is in gui/README.md's *Styles and themes*),
   but nothing calls it at startup yet. The ttk widgets kmet uses for input
   (entry, combobox, spinbox, scale, progressbar, notebook, treeview,
   scrollbar) therefore still follow the *system* theme: a dark kmet palette
