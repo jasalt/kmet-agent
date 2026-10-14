@@ -38,7 +38,7 @@
   (let [parent (fs/path dir "parent.sh")]
     (spit (str parent)
           (str "#!/bin/sh\n"
-               "(touch \"$2\"; sleep 1; touch \"$1\") &\n"
+               "(touch \"$2\"; sleep 2; touch \"$1\") &\n"
                "sleep 30\n"))
     parent))
 
@@ -68,8 +68,8 @@
           (process/kill-process-tree! pid)
           (t/is (not= ::timeout (deref p 5000 ::timeout))
                 "the killed parent exited")
-          ;; a survivor would touch the marker ~1s after reporting in
-          (Thread/sleep 1500)
+          ;; a survivor would touch the marker ~2s after reporting in
+          (Thread/sleep 3000)
           (t/is (not (fs/exists? marker))
                 "the killed descendant never touched the marker")))
       (finally

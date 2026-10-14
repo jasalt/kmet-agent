@@ -27,7 +27,7 @@ The default `opencode-go` provider reads `OPENCODE_API_KEY`:
 ```sh
 export OPENCODE_API_KEY='your-api-key'
 bb start --list-models
-bb start --provider opencode-go --model deepseek-v4-flash
+bb start --provider opencode-go --model deepseek-v4.1-flash
 ```
 
 You can also start kmet and use `/login` to store a credential in

@@ -316,10 +316,9 @@
    before a terminal response event')."
   [response handler signal & [idle-timeout-ms abort-fn]]
   (try
-    (let [rdr (sse-lib/body->reader (:body response))
-          state (atom {:event-name nil :buf "" :slots {} :saw-terminal? false})
+    (let [state (atom {:event-name nil :buf "" :slots {} :saw-terminal? false})
           saw-done (atom false)
-          end-reason (sse-lib/stream-loop rdr idle-timeout-ms signal abort-fn
+          end-reason (sse-lib/stream-loop (:body response) idle-timeout-ms signal abort-fn
                                           (fn [line]
                                             (let [[ev data] (sse-lib/parse-sse-line line)
                                                   {:keys [event-name buf]} @state]
@@ -439,8 +438,7 @@
    'Anthropic stream ended before message_stop')."
   [response handler signal & [idle-timeout-ms abort-fn]]
   (try
-    (let [rdr (sse-lib/body->reader (:body response))
-          state (atom {:event-name nil :buf ""})
+    (let [state (atom {:event-name nil :buf ""})
           ;; pi: message_delta carries the real stop_reason (tool_use /
           ;; max_tokens / ...); message_stop only says the stream ended.
           ;; Captured here and folded into the terminal :done so the
@@ -451,7 +449,7 @@
           ;; error message on the terminal :error result
           delta-error-message (atom nil)
           saw-message-stop (atom false)
-          end-reason (sse-lib/stream-loop rdr idle-timeout-ms signal abort-fn
+          end-reason (sse-lib/stream-loop (:body response) idle-timeout-ms signal abort-fn
                                           (fn [line]
                                             (let [[ev data] (sse-lib/parse-sse-line line)
                                                   {:keys [event-name buf]} @state]

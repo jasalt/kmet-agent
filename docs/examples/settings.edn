@@ -1,5 +1,5 @@
 {:provider :opencode-go
- :model "deepseek-v4-flash"
+ :model "deepseek-v4.1-flash"
  :theme "light/dark"
  :thinking :off
  :session-dir "~/.kmet/sessions"

@@ -1323,7 +1323,7 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
+    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4.1-flash"
                                      :thinking :off)
           cs {:agent-state (atom ag)
               :chat-history nil

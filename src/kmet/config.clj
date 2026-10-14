@@ -16,7 +16,7 @@
 
 (def default-config
   {:provider :opencode-go
-   :model "deepseek-v4-flash"
+   :model "deepseek-v4.1-flash"
    :theme "dark"
    :session-dir "~/.kmet/sessions"
    ;; pi: auto-compaction is token-based against the context window

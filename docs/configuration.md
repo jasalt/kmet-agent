@@ -22,7 +22,7 @@ Example `~/.kmet/agent/settings.edn`:
 
 ```clojure
 {:provider :opencode-go
- :model "deepseek-v4-flash"
+ :model "deepseek-v4.1-flash"
  :theme "dark"
  :thinking :off
  :session-dir "~/.kmet/sessions"
@@ -155,7 +155,7 @@ many recent tokens to keep. The summary's own output is capped at
 when the model reasons, bounded by the model's maximum output tokens (pi:
 `adjustMaxTokensForThinking`). The token budgets can be tuned per model
 with `:compact-model-overrides`, a map keyed by the exact
-`"provider/modelId"` (e.g. `"opencode-go/deepseek-v4-flash"`; internal
+`"provider/modelId"` (e.g. `"opencode-go/deepseek-v4.1-flash"`; internal
 slashes are part of the key). Each entry takes `:reserve-tokens` and/or
 `:keep-recent-tokens` and falls back per field to the ordinary setting and
 then the built-in default (pi: `compaction.modelOverrides`) — a 1M-window

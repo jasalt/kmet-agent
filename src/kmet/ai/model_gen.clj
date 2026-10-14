@@ -34,7 +34,7 @@
   (array-map
    :opencode-go {:name "OpenCode Go"
                  :env-vars ["OPENCODE_API_KEY"]
-                 :default-model "deepseek-v4-flash"}
+                 :default-model "deepseek-v4.1-flash"}
    :opencode {:name "OpenCode (Zen)"
               :env-vars ["OPENCODE_API_KEY"]
               :default-model "kimi-k2.6"}

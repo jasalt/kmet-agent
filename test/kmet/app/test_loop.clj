@@ -4931,7 +4931,7 @@
           agent (loop/make-agent-state
                  :session sess
                  :provider :opencode-go
-                 :model "deepseek-v4-flash"
+                 :model "deepseek-v4.1-flash"
                  :thinking :xhigh
                  :compact-token-threshold 10
                  :compact-reserve-tokens 1000
@@ -4991,13 +4991,13 @@
               agent (loop/make-agent-state
                      :session sess
                      :provider :opencode-go
-                     :model "deepseek-v4-flash"
+                     :model "deepseek-v4.1-flash"
                      :on-event (fn [e] (swap! events conj e))
                      :context-window 10000
                      :compact-reserve-tokens 1000
                      :keep-recent-tokens 40
                      :compact-model-overrides
-                     {"opencode-go/deepseek-v4-flash"
+                     {"opencode-go/deepseek-v4.1-flash"
                       {:reserve-tokens 8000 :keep-recent-tokens 40}})]
           (seed-context! sess 6)
           (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -5021,12 +5021,12 @@
               agent (loop/make-agent-state
                      :session sess
                      :provider :opencode-go
-                     :model "deepseek-v4-flash"
+                     :model "deepseek-v4.1-flash"
                      :context-window 10000
                      :compact-reserve-tokens 1000
                      :keep-recent-tokens 40
                      :compact-model-overrides
-                     {"opencode-go/deepseek-v4-flash" {:reserve-tokens 8000}})]
+                     {"opencode-go/deepseek-v4.1-flash" {:reserve-tokens 8000}})]
           (dotimes [i 50]
             (session/append-entry sess
                                   {:role :user :content [{:type :text :text (str "msg " i)}]}))
@@ -5040,7 +5040,7 @@
               agent (loop/make-agent-state
                      :session sess
                      :provider :opencode-go
-                     :model "deepseek-v4-flash"
+                     :model "deepseek-v4.1-flash"
                      :context-window 10000
                      :compact-reserve-tokens 1000
                      :keep-recent-tokens 40

@@ -22,7 +22,7 @@
     (t/is (= :all (:steering-mode c)))
     (t/is (= :one-at-a-time (:follow-up-mode c)))
     (t/is (contains? c :session-dir))
-    (t/is (= "deepseek-v4-flash" (:model c)))))
+    (t/is (= "deepseek-v4.1-flash" (:model c)))))
 
 (t/deftest test-default-config-has-no-provider-map
   ;; Phase 0: the :providers map is replaced by the models registry — the
@@ -66,7 +66,7 @@
     (t/is (= :opencode-go (cfg/get-provider c)))))
 
 (t/deftest test-get-model-from-default
-  (t/is (= "deepseek-v4-flash" (cfg/get-model cfg/default-config))))
+  (t/is (= "deepseek-v4.1-flash" (cfg/get-model cfg/default-config))))
 
 (t/deftest test-get-model-explicit
   (let [c (assoc cfg/default-config :model "gpt-4o-mini")]

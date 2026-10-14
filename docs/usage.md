@@ -9,7 +9,7 @@ jolt start                # ...or on the Jolt host
 bb kmet
 
 # With options
-bb start --model deepseek-v4-flash --provider opencode-go
+bb start --model deepseek-v4.1-flash --provider opencode-go
 
 # Non-interactive mode
 bb start --print "list files in current directory"

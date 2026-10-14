@@ -89,3 +89,28 @@ the §20 pass moved the wrap tracker (`ansi-process-text!` /
 raw `ANSI-CODE-RE` use is left on the frame path. Do not remove the scanners
 when the ticket closes: they beat both engines (the tracker scanner is ~10x
 the regex for a match at the end of a styled line).
+
+### [jolt#1364](https://github.com/jolt-lang/jolt/issues/1364) — `Reader.read(char[], off, len)` blocks until the buffer is full
+
+Open, filed 2026-10-14 from the SSE idle-reader work on the installed
+`v0.8.21-184-gd17f10f9` (`d17f10f9`). Jolt's `char-reader` fills the
+destination with blocking `get-string-n!` calls and treats a short read as
+EOF, so `Reader.read(char[], off, len)` over a pipe, socket or terminal does
+not return the characters already available; the JVM contract is "block
+until at least one character is available, then return what is available"
+(the byte `in-stream.read` already follows it, and the source comment on
+`char-reader-fill-string!` records that the char side never did).
+`Reader.ready()` on the same host is hardcoded `#t` — true on an empty
+source — and `read(CharBuffer)` is missing, throwing
+`ClassCastException: ja-len … HeapCharBuffer … is not of type …`; both
+findings ride the ticket. Consequence on master: the SSE idle reader read
+char chunks through a `Reader`, so a slow-but-alive stream appeared stalled
+and the per-byte idle timeout fired on Jolt (babashka/JVM behaved). kmet
+workarounds in `src/kmet/libs/sse.clj`: InputStream bodies take the chunked
+byte-reader path with UTF-8 line assembly, and Reader bodies fill one char
+per read on Jolt (`make-char-idle-reader`). Remove both — and the
+`kmet.libs.host` require they alone need — once #1364 is fixed and the floor
+moves past the release carrying it. The slow idle tests
+(`kmet.ai.test-sse/test-openai-stream-idle-timeout`,
+`test-openai-stream-idle-resets-on-flow`) and `kmet.libs.test-sse` cover the
+behavior on both hosts.

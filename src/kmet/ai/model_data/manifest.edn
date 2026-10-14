@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-14T10:13:53Z"
+ :generated-at "2026-10-14T21:35:31Z"
  :structure-hash "c7442f45d057a7e6287472de89dc8ed168acdaafd9aa56f499f5da8c530458d8"
  :files {"amazon-bedrock.edn" "e319337008032c629f9df5f39894c418d2c73c68af9de60b742c759b354f7894"
          "ant-ling.edn" "7bc966a01f888c13d2bf6adc673e94f6ff15ee6f63d0781468eb9e95054b230f"
@@ -26,7 +26,7 @@
          "nvidia.edn" "f74e4009f47c058fad0027c6a3d53f5c8064e437561ee21809222bf2ed1c46c2"
          "openai-codex.edn" "3360ff2e4fa4d3276fbf7d2fd6ee36f8f3a59ae9266a6c87c56235a324f0cdaa"
          "openai.edn" "9c277241246bd2ef153224760bbdb3a04fc7157dd36e4c1e59e8df386cd27b51"
-         "opencode-go.edn" "746485df972578cc5c4fb5855574b5f8916080a0ac50a383f4977cb3b647b31d"
+         "opencode-go.edn" "15331a09cbabb424bdeb503e33bc9d88b5689a7529515149245099f2487b854c"
          "opencode.edn" "c73441b616d5f266eb268ec57067711f9b54152373af3ded1a89283c59eaac7b"
          "openrouter.edn" "38f0290c46b70d6c70d1c882efee10824948ac4e22bdc344097d109d20140d3c"
          "qwen-token-plan-cn.edn" "8f154d689581bfcd4b00abea474108a0323e31464c630d2b6c744d2b27fa64c1"

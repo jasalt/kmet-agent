@@ -1,9 +1,9 @@
 {:schema-version 1
- :generated-at "2026-10-14T10:10:31Z"
+ :generated-at "2026-10-14T21:35:31Z"
  :provider {:id :opencode-go
             :name "OpenCode Go"
             :env-vars ["OPENCODE_API_KEY"]
-            :default-model "deepseek-v4-flash"}
+            :default-model "deepseek-v4.1-flash"}
  :models
  {:anthropic-messages
   {"claude-haiku-5-5"

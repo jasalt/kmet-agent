@@ -112,8 +112,9 @@
       (let [og (m/get-provider :opencode-go)]
         (t/is (= "OpenCode Go" (:name og)))
         (t/is (= ["OPENCODE_API_KEY"] (:env-vars og)))
-        (t/is (= "deepseek-v4-flash" (:default-model og)))
-        (t/is (= #{:openai-completions :anthropic-messages :openai-responses}
+        (t/is (= "deepseek-v4.1-flash" (:default-model og)))
+        (t/is (= #{:openai-completions :anthropic-messages :google-generative-ai
+                   :openai-responses}
                  (:api-types og))))
       (t/is (= #{:openai-completions :anthropic-messages :google-generative-ai
                  :openai-responses}
@@ -187,7 +188,7 @@
       (t/is (= [] (:env-vars (m/get-provider :amazon-bedrock)))
             "bedrock auth is ambient AWS credentials — no api-key var"))
     (t/testing "default provider/model resolves against the opencode-go catalog"
-      (t/is (= "deepseek-v4-flash" (:id (m/default-model-for :opencode-go)))))))
+      (t/is (= "deepseek-v4.1-flash" (:id (m/default-model-for :opencode-go)))))))
 
 (t/deftest test-catalog-edn-shape
   ;; Per-model structural validation of the committed catalogs lives in
@@ -300,7 +301,7 @@
     (t/is (= "custom" (m/resolve-config-model {:provider :opencode-go
                                                :model "custom"}))))
   (t/testing "no :model → provider default from the registry"
-    (t/is (= "deepseek-v4-flash" (m/resolve-config-model {:provider :opencode-go})))
+    (t/is (= "deepseek-v4.1-flash" (m/resolve-config-model {:provider :opencode-go})))
     (t/is (= "deepseek-v4-pro" (m/resolve-config-model {:provider :deepseek}))))
   (t/testing "unknown provider → nil"
     (t/is (nil? (m/resolve-config-model {:provider :nosuch-provider})))))
@@ -495,7 +496,7 @@
         (fs/copy path (str agent-dir "/models.edn"))
         (with-redefs [fs/cwd (fn [] tmp)]
           (m/load-models-config! agent-dir)))
-      (t/is (= (class (m/get-model :opencode-go "deepseek-v4-flash"))
+      (t/is (= (class (m/get-model :opencode-go "deepseek-v4.1-flash"))
                (class (m/get-model :custom "cm")))
             "custom models are Model records like builtin ones")
       (finally

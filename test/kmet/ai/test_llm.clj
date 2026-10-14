@@ -567,7 +567,7 @@
 
 (t/deftest test-llm-send-message-returns-future
   (m/load-catalogs!)
-  (let [fut (llm/send-message {:provider :opencode-go :model "deepseek-v4-flash"
+  (let [fut (llm/send-message {:provider :opencode-go :model "deepseek-v4.1-flash"
                                :api-key "test" :on-error (fn [_])})]
     (t/is (future? fut))))
 
@@ -577,7 +577,7 @@
   (let [errors (atom [])
         fut (llm/send-message
              {:provider :opencode-go
-              :model "deepseek-v4-flash"
+              :model "deepseek-v4.1-flash"
               :tools []
               :on-error (fn [e] (swap! errors conj e))})]
     @fut
@@ -1529,7 +1529,7 @@
   (t/is (true? (:requires-reasoning-content-on-assistant-messages
                 (:compat (m/get-model :deepseek "deepseek-flash")))))
   (t/is (true? (:requires-reasoning-content-on-assistant-messages
-                (:compat (m/get-model :opencode-go "deepseek-v4-flash")))))
+                (:compat (m/get-model :opencode-go "deepseek-v4.1-flash")))))
   (t/is (nil? (:requires-reasoning-content-on-assistant-messages
                (:compat (m/get-model :opencode "glm-5.2")))))
   (t/is (nil? (:requires-reasoning-content-on-assistant-messages
@@ -1644,7 +1644,7 @@
             fut (llm/send-message {:provider :opencode-go
                                    :api-key "sk-test"
                                    :base-url (str "http://127.0.0.1:" port "/v1/chat/completions")
-                                   :model "deepseek-v4-flash"
+                                   :model "deepseek-v4.1-flash"
                                    :messages [{:role "user" :content "hi"}]
                                    :idle-timeout-ms 500
                                    :total-timeout-ms total-timeout-ms
@@ -1691,7 +1691,7 @@
         fut (llm/send-message {:provider :opencode-go
                                :api-key "sk-test"
                                :base-url (str "http://127.0.0.1:" port "/v1/chat/completions")
-                               :model "deepseek-v4-flash"
+                               :model "deepseek-v4.1-flash"
                                :messages [{:role "user" :content [{:type :text :text "hi"}]}]
                                :idle-timeout-ms 1000
                                :on-error (fn [e] (swap! errors conj e))})]
@@ -1816,7 +1816,7 @@
                 auth/getenv (fn [_] nil)]
     (let [errors (atom [])]
       @(llm/send-message {:provider :opencode-go
-                          :model "deepseek-v4-flash"
+                          :model "deepseek-v4.1-flash"
                           :on-error (fn [e] (swap! errors conj e))})
       (t/is (not-any? #(str/includes? (or % "") "No API key") @errors)
             "proceeds with the auth.edn key (fails on the network, not on auth)"))))
