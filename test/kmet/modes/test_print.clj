@@ -134,6 +134,27 @@
             (is (= "boom" (:message error-event)))))
         (finally (fs/delete-tree dir))))))
 
+(deftest test-run-exits-when-stdout-fails
+  (testing "a stdout failure mid-stream exits with nil instead of hanging"
+    ;; The runtime isolates a throwing subscriber, so a consumer throw before
+    ;; the settle delivery would leave run blocked on the result promise
+    ;; forever — :edn mode writes each line before consuming the event.
+    (let [flushes (atom 0)
+          w (proxy [java.io.Writer] []
+              (write
+                ([_] nil)
+                ([_ _ _] nil))
+              (flush []
+                (when (>= (swap! flushes inc) 3)
+                  (throw (java.io.IOException. "broken pipe"))))
+              (close [] nil))]
+      (with-redefs [agent/run-agent-turn
+                    (fn [ag _]
+                      (emit! ag {:type :message-update :delta {:type :text :content "hi"}})
+                      (settle! ag :completed "hi"))]
+        (binding [*out* w]
+          (is (nil? (print-mode/run (assoc (opts) :mode :edn)))))))))
+
 (deftest test-run-passes-message
   (testing "the joined user message reaches the agent"
     (let [seen (atom nil)]

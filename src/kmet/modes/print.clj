@@ -64,31 +64,41 @@
   "The print run's subscriber for MODE: streams text deltas in :text mode,
    prints every wire event in :edn mode, and delivers the run's result at
    :agent-settled. The last :message-end and :error payloads decide the
-   result's text and error detail."
+   result's text and error detail.
+
+   A throw from the consumer must not leave the result promise undelivered
+   — the runtime isolates a throwing subscriber, so run would block on the
+   promise forever (a stdout write failing mid-stream, e.g. a closed pipe
+   in :edn mode, is the reachable case). Deliver the failure, then rethrow
+   for the dispatcher's log."
   [mode result-promise]
   (let [last-message (atom nil)
         last-error (atom nil)]
     (fn [event]
-      (when (= :edn mode)
-        (prn (event-bus/wire-event event))
-        (flush))
-      (case (:type event)
-        :message-update
-        (when (and (= :text mode) (= :text (get-in event [:delta :type])))
-          (print (get-in event [:delta :content]))
+      (try
+        (when (= :edn mode)
+          (prn (event-bus/wire-event event))
           (flush))
+        (case (:type event)
+          :message-update
+          (when (and (= :text mode) (= :text (get-in event [:delta :type])))
+            (print (get-in event [:delta :content]))
+            (flush))
 
-        :message-end
-        (reset! last-message (:message event))
+          :message-end
+          (reset! last-message (:message event))
 
-        :error
-        (reset! last-error (:message event))
+          :error
+          (reset! last-error (:message event))
 
-        :agent-settled
-        (deliver result-promise
-                 (settle-result mode @last-message @last-error (:outcome event)))
+          :agent-settled
+          (deliver result-promise
+                   (settle-result mode @last-message @last-error (:outcome event)))
 
-        nil))))
+          nil)
+        (catch Exception e
+          (deliver result-promise nil)
+          (throw e))))))
 
 (defn run
   "Run in non-interactive mode: send message, print response, exit.
