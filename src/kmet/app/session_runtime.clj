@@ -43,17 +43,12 @@
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?])
 
-(defn- ag
-  "The live AgentState. The engine holds it in an atom because a session
-   switch replaces the record (session_admin assoc's :session) — the
-   layout's CoreState :agent-state is this same atom."
+(defn agent-state
+  "The live AgentState record. The engine holds it in an atom because a
+   session switch replaces the record (the mode assoc's :session and resets
+   the atom) — the layout's CoreState :agent-state is this same atom."
   [engine]
   @(:agent-state engine))
-
-(defn agent-state
-  "The live AgentState record."
-  [engine]
-  (ag engine))
 
 (defn- extension-before-tool-call
   "Chain extension tool-call hooks (pi: beforeToolCall) — the runtime wires
@@ -103,7 +98,7 @@
   [engine]
   {:build-context
    (fn []
-     (let [agent-state (ag engine)]
+     (let [agent-state (agent-state engine)]
        {:model (models/get-model @(:provider agent-state) @(:model agent-state))
         :scoped-models (resolver/scoped-models-for-context
                         @(:scoped-models agent-state) @(:provider agent-state))
@@ -160,14 +155,9 @@
         retry-settings (cfg/get-retry-settings config)
         loop-guard-settings (cfg/get-loop-guard-settings config)
         subscribers (atom [])
-        ;; absent settings must keep make-agent-state's own defaults (an
-        ;; explicit nil stays meaningful), so these keys are merged only
-        ;; when the config carries them
-        timeout-opts (cond-> {}
-                       (contains? config :http-idle-timeout-ms)
-                       (assoc :http-idle-timeout-ms (:http-idle-timeout-ms config))
-                       (contains? config :http-total-timeout-ms)
-                       (assoc :http-total-timeout-ms (:http-total-timeout-ms config)))
+        ;; select-keys omits an absent setting but keeps an explicit nil, so
+        ;; make-agent-state's own defaults survive an absent one
+        timeout-opts (select-keys config [:http-idle-timeout-ms :http-total-timeout-ms])
         agent-state (apply agent/make-agent-state
                            (mapcat identity
                                    (merge
@@ -217,17 +207,17 @@
                                     timeout-opts
                                     agent-opts)))
         _ (agent/init-scoped-models! agent-state config)
-        engine (->Engine (atom agent-state)
-                         (atom (:session agent-state))
-                         config
-                         subscribers
-                         (atom nil)
-                         (atom false))]
+        engine (map->Engine {:agent-state (atom agent-state)
+                             :session (atom (:session agent-state))
+                             :config config
+                             :subscribers subscribers
+                             :last-run (atom nil)
+                             :disposed? (atom false)})]
     ;; Runtime-scoped extension handle: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent. The UI
     ;; registry is the default unless the front end installs its own later.
     (extensions/set-session! (:session agent-state))
-    (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (ag engine) msg)))
+    (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (agent-state engine) msg)))
     (extensions/set-ui-registry! (or ui-registry (default-ui-registry engine)))
     engine))
 
@@ -247,7 +237,7 @@
    Fields are read from independent atoms, so the snapshot is not one
    atomic cut (engine.md §4.1) — display consumers are fine with that."
   [engine]
-  (let [agent-state (ag engine)]
+  (let [agent-state (agent-state engine)]
     {:session @(:session engine)
      :status @(:status agent-state)
      :model @(:model agent-state)
@@ -259,7 +249,7 @@
 (defn last-outcome
   "The outcome of the last settled prompt (:completed | :error | :aborted)."
   [engine]
-  @(:last-outcome (ag engine)))
+  @(:last-outcome (agent-state engine)))
 
 (defn subscribe!
   "Register F as an event subscriber. Returns an unsubscribe fn. F runs on
@@ -280,32 +270,32 @@
   [engine opts]
   (reset! (:last-run engine)
           (agent/run-agent-turn
-           (ag engine)
+           (agent-state engine)
            (cond-> (select-keys opts [:images :on-text :on-thinking :on-done :on-error])
              (:text opts) (assoc :message (:text opts)))))
   nil)
 
-(defn steer! [engine text] (agent/steer! (ag engine) text))
-(defn follow-up! [engine text] (agent/follow-up! (ag engine) text))
-(defn queues [engine] (agent/queued-messages (ag engine)))
-(defn cancel! [engine] (agent/cancel-turn (ag engine)))
+(defn steer! [engine text] (agent/steer! (agent-state engine) text))
+(defn follow-up! [engine text] (agent/follow-up! (agent-state engine) text))
+(defn queues [engine] (agent/queued-messages (agent-state engine)))
+(defn cancel! [engine] (agent/cancel-turn (agent-state engine)))
 
 (defn compact!
   "Compact the session (manual /compact path); custom-instructions and
    reason are loop/pi-shaped (see kmet.app.loop/compact-context!)."
-  ([engine] (agent/compact-context! (ag engine)))
+  ([engine] (agent/compact-context! (agent-state engine)))
   ([engine custom-instructions reason]
-   (agent/compact-context! (ag engine) custom-instructions reason)))
+   (agent/compact-context! (agent-state engine) custom-instructions reason)))
 
-(defn set-model! [engine model] (agent/set-model! (ag engine) model))
+(defn set-model! [engine model] (agent/set-model! (agent-state engine) model))
 (defn cycle-model!
   "Cycle the session model forward (1-arity) or in a direction (-1/1)."
   ([engine] (cycle-model! engine 1))
-  ([engine direction] (agent/cycle-model! (ag engine) direction)))
-(defn set-thinking-level! [engine level] (agent/set-thinking-level! (ag engine) level))
-(defn scoped-models [engine] @(:scoped-models (ag engine)))
+  ([engine direction] (agent/cycle-model! (agent-state engine) direction)))
+(defn set-thinking-level! [engine level] (agent/set-thinking-level! (agent-state engine) level))
+(defn scoped-models [engine] @(:scoped-models (agent-state engine)))
 (defn set-scoped-models! [engine models]
-  (agent/set-scoped-models! (ag engine) models))
+  (agent/set-scoped-models! (agent-state engine) models))
 
 (defn dispose!
   "Release the engine: cancel an in-flight run or compaction, wait (bounded,
@@ -314,10 +304,10 @@
    handle. Idempotent."
   [engine]
   (when (compare-and-set! (:disposed? engine) false true)
-    (let [agent-state (ag engine)
+    (let [agent-state (agent-state engine)
           run @(:last-run engine)
           run-pending? (and run (not (realized? run)))]
-      (when (or run-pending? (boolean @(:compacting? agent-state)))
+      (when (or run-pending? @(:compacting? agent-state))
         (agent/cancel-turn agent-state)
         (when run-pending?
           (deref run 2000 nil))))
