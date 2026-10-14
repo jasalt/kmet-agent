@@ -5,8 +5,11 @@
    hosts and the tests skip where libtcl is absent (and on the JVM).
    The libtcl-absent start-up is covered by running it on a machine that
    has Tcl/Tk installed."
-  (:require [clojure.test :as t]
-            [kmet.gui.tk :as tk]))
+  (:require [clojure.string :as str]
+            [clojure.test :as t]
+            [kmet.gui.tk :as tk]
+            [kmet.gui.tk.options :as opt]
+            [kmet.libs.hikap :as engine]))
 
 (defn- live-adapter
   "The real Tcl adapter with libtcl loaded, or nil (JVM, or no libtcl)."
@@ -90,3 +93,85 @@
       (finally
         ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
     (t/is true "skipped: libtcl is absent (or this is the JVM)")))
+
+;; ─── the tag table against a real Tk ──────────────────────────────────────
+
+(def ^:private tag-widget
+  "Our tags → the Tk creation command they script (the mapping the GUI
+   README's option audit records)."
+  {:tk/toplevel "toplevel" :tk/transcript "text" :tk/frame "frame" :tk/text "text"
+   :ttk/frame "::ttk::frame" :ttk/labelframe "::ttk::labelframe" :ttk/label "::ttk::label"
+   :ttk/button "::ttk::button" :ttk/entry "::ttk::entry" :ttk/checkbutton "::ttk::checkbutton"
+   :ttk/separator "::ttk::separator" :ttk/progressbar "::ttk::progressbar"})
+
+(defn- live-tk
+  "The real adapter with Tk initialized (a display), or nil: no libtcl, no
+   libtk, or no display (a headless machine)."
+  []
+  (try
+    (require 'kmet.gui.tcl)
+    (let [a ((deref (ns-resolve 'kmet.gui.tcl 'adapter)))]
+      ((:prepare! a))
+      a)
+    (catch Throwable _ nil)))
+
+(t/deftest every-tag-scripts-only-options-this-tk-has
+  ;; The strongest check of the option catalogue: for every tag, the Tcl
+  ;; options its :options declares must be options of the widget class in
+  ;; the running Tk (a family that does not fit the widget, a typo, or an
+  ;; option newer than this Tk fails here), and a widget built with every
+  ;; declared prop present — each set to the value Tk itself reports — must
+  ;; be accepted, which exercises the value shapes too (lists, fonts,
+  ;; keywords, booleans).
+  (if-let [a (live-tk)]
+    (try
+      (let [e (:eval a)
+            _ (e (str "proc optnames {w} { join [lmap o [$w configure] "
+                      "{lindex $o 0}] \"\\n\" }"))
+            n (atom 0)
+            path (fn [] (str ".opt" (swap! n inc)))
+            option-names (fn [p] (into #{} (filter #(str/starts-with? % "-")
+                                                   (str/split-lines (e (str "optnames " p))))))
+            samples (fn [spec creator]
+                      ;; a prop value Tk accepts by definition: the option's
+                      ;; own current value; the font props get a real family
+                      (let [p (path)]
+                        (e (str creator " " p))
+                        (let [vals (into {}
+                                         (keep (fn [[prop option]]
+                                                 (when-not (contains? opt/font-props prop)
+                                                   [prop (e (str p " cget -" (name option)))])))
+                                         (:options spec))]
+                          (e (str "destroy " p))
+                          (merge vals
+                                 (when (some opt/font-props (keys (:options spec)))
+                                   {:font-family "Courier" :font-size 9
+                                    :bold false :italic false})))))
+            tags (:tags tk/tk-backend)]
+        (doseq [[tag spec] (sort-by (comp str key) tags)]
+          (let [creator (tag-widget tag)
+                p (path)
+                _ (e (str creator " " p))
+                names (option-names p)
+                _ (e (str "destroy " p))
+                missing (sort (remove names (map #(str "-" (name %))
+                                                 (vals (:options spec)))))]
+            (t/is (seq names) (str tag ": " creator " answers configure"))
+            (t/is (empty? missing)
+                  (str tag " declares options " creator " does not have: "
+                       (pr-str (vec missing))))))
+        ;; one mount with every tag and every declared prop present
+        (let [props (fn [tag] (samples (get tags tag) (tag-widget tag)))
+              tree (into [:ttk/frame {}]
+                         (for [tag (sort-by str (remove #{:tk/toplevel :ttk/frame}
+                                                        (keys tags)))]
+                           [tag (props tag)]))]
+          (binding [tk/*adapter* a]
+            (let [h (tk/mount! tree (props :tk/toplevel))]
+              (t/is (some? h))
+              (engine/dispose-component (:root h))))
+          (t/is true "every tag accepted a widget with all its props set")))
+      (finally
+        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))
+

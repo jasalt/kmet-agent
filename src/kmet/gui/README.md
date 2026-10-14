@@ -21,6 +21,8 @@ kmet.tui.hikap            the TUI backend (tag table, *width*, IComponent)
 kmet.gui.tk.dsl           the Tk widget machinery: Tcl quoting and script
                           building, widget records, the callback/binding
                           registry, live-patch decisions, rich text
+kmet.gui.tk.options       the Tk option vocabulary: props, value shapes,
+                          and the families a spec composes :options from
 kmet.gui.tk               the Tk backend + the classic widget set (:tk/…),
                           tag-table assembly, run! loop
 kmet.gui.ttk              the themed widget set (:ttk/…)
@@ -170,6 +172,63 @@ A prop that is not in a tag spec's `:options`/`:bindings`/`:patchable`
 sets declines the live patch, so the engine rebuilds the widget instead of
 silently dropping the change.
 
+### Options: the catalogue and its families
+
+Which props a tag takes is its widget's Tk option set. `kmet.gui.tk.options`
+is the vocabulary: prop → the Tcl option it names, the value shape, and the
+families a spec composes from. A family is a named prop set whose members
+co-occur on a widget population, so a spec adds the families that fit its
+widget and lists the odd options itself:
+
+| family | options |
+|---|---|
+| `:standard` | `:cursor :takefocus` |
+| `:classed` `:creation` `:window` | `:class`; `:colormap :container :visual`; `:use :screen` |
+| `:themed` | `:style` |
+| `:geometry` `:surface` | `:width :height`; `:bg :backgroundimage :tile` |
+| `:bordered` `:highlighted` `:spaced` `:padded` | `:relief :borderwidth`; `:highlightbackground :highlightcolor :highlightthickness`; `:padx :pady`; `:padding` |
+| `:labelled` `:layout` | `:text :textangle :underline`; `:justify :anchor :wraplength :compound` |
+| `:stateful` `:selectable` `:editable` `:localized` `:checkable` | `:state :activebackground :activeforeground :disabledforeground :default`; the `-select*` and `-exportselection` block; `:show :validate`; `:placeholder :placeholderforeground :locale`; `:onvalue :offvalue` |
+| `:fonted` | `:font-family :font-size :bold :italic` → `-font` |
+| `:progress` | `:value :maximum :mode :orient :phase :length` |
+| `:text-body` | the text widget's editing body (`:wrap`, `:undo`, `:tabs`, `:spacing*`, `:insert*`, `:select*` where they fit) |
+
+```clojure
+;; a tag's whole vocabulary, in one line per widget
+:options (opt/options-for [:standard :classed :themed :geometry :bordered :padded])
+:options (opt/options-for [:standard :classed :themed :progress :fonted]
+                          [:fg :anchor :justify :text :wraplength])
+```
+
+`options-for` checks every family and prop against the catalogue at load,
+so a typo fails there. Values keep their shape per prop: keywords and
+booleans render as Tcl words and flags, a sequence is one Tcl list
+(`:padding [6 12]`, `:tabs [40 80]`), and the font props build `-font`
+from the four of them. An empty string is `{}` — not nothing, which would
+hand the next option to Tk as its value.
+
+Two consequences worth knowing:
+
+- **Creation-only options.** Tk takes `-class`, `-colormap`, `-container`,
+  `-visual`, `-use`, `-screen` only at creation, so `check-options!` and the
+  patch script leave them out: changing one declines the live patch and the
+  widget is rebuilt with the new value. Everything else in `:options`
+  patches through `configure`.
+- **A prop this Tk lacks fails loudly.** Before a widget is used, the
+  backend asks it for its own option list (`configure`, cached per tag) and
+  throws naming tag, prop and option — a family that does not fit the
+  widget, or an option newer than the running Tk (Tk 9 added `-locale`,
+  `-placeholder`, `-textangle`; 9.1 `-backgroundimage`, `-tile`). The check
+  covers what a tag declares; a prop no tag declares is still ignored, so
+  adding a widget means declaring its options (see *Status*).
+
+Options that are not a plain value are deliberately not props, each
+because it needs machinery a prop cannot be: script-typed (`-command` is
+`:on-click`/`:on-toggled`, `-validatecommand`, `-xscrollcommand`), the
+variable-backed `-variable`/`-textvariable`/`-listvariable`, the
+image-backed `-image`/`-bitmap`, and `-menu`/`-labelwidget`, which name
+other widgets.
+
 ### Rich text (`:tk/text`)
 
 `:tk/text` takes a plain `:text` string or a `:content` vector of styled
@@ -194,11 +253,13 @@ width. `:fill`/`:expand` control packing for any tag, not just `:tk/text`.
 
 ### Surfaces, borders and wrapping
 
-`:tk/frame` takes `:border` (thickness), `:border-color`, `:bg`, `:padx`,
-`:pady`; its labeled sibling is `:ttk/labelframe` (`ttk::labelframe`,
-taking `:text`). The border is drawn with the highlight ring rather than
-`-relief solid`: the relief paints in the widget's own background, which
-is invisible for a panel sitting on a similar canvas.
+`:tk/frame` takes `:border` (thickness) and `:border-color`, plus its
+widget's Tk options (`:bg`, `:relief`, `:borderwidth`, the `-highlight*`
+ring, `:padx`/`:pady`, `:width`/`:height`, …); its labeled sibling is
+`:ttk/labelframe` (`ttk::labelframe`, taking `:text`). The border is drawn
+with the highlight ring rather than `-relief solid`: the relief paints in
+the widget's own background, which is invisible for a panel sitting on a
+similar canvas.
 
 Wrapping belongs to the component, not the widget: the transcript wraps
 its styled lines to the transcript width before they reach Tk (`:wrap
@@ -229,11 +290,28 @@ smoke-tests the real interpreter: eval, the command trampoline,
 `tcl-quote` round-tripping through the Tcl parser, and the recorded
 Tcl/Tk pair with the interpreter's own patchlevel.
 
+`scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
+the interpreter's widget classes and their options and diffs them against
+the tag table: the options a tag declares that its widget lacks, and the
+options it does not reach yet. `kmet.gui.test-tcl`'s
+`every-tag-scripts-only-options-this-tk-has` is the same check in test
+form, and additionally builds a widget with *every* declared prop present
+(each set to the value Tk itself reports) so the value shapes are
+exercised against a real interpreter.
+
 ## Status
 
 v1 widget set: classic `:tk/toplevel :tk/frame :tk/text :tk/transcript`
 plus themed `:ttk/frame :ttk/labelframe :ttk/label :ttk/button :ttk/entry
 :ttk/checkbutton :ttk/separator :ttk/progressbar`, and bare-string labels.
+Every tag accepts the Tk options its widget has, through the families in
+`kmet.gui.tk.options` (see *Options* above); the options Tk gives to no
+plain prop — script-, variable- and image-backed — are the ones still
+missing, and the widget classes with no tag yet are the classic
+button/canvas/checkbutton/entry/label/labelframe/listbox/menu/menubutton/
+message/panedwindow/radiobutton/scale/scrollbar/spinbox and the themed
+combobox/menubutton/notebook/panedwindow/radiobutton/scale/scrollbar/
+sizegrip/spinbox/toggleswitch/treeview.
 The `:tk/text` tag carries the displayed content — styled segments in
 Tk tags, an optional scrollbar, generated mono fonts, wrapping.
 `:tk/transcript` is the scroll container: one text widget whose children

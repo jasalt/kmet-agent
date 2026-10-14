@@ -9,6 +9,8 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [kmet.gui.tk :as tk]
+            [kmet.gui.tk.dsl :as dsl]
+            [kmet.gui.tk.options :as opt]
             [kmet.libs.hikap :as engine]
             [kmet.libs.hikap.alias :as alias]
             [kmet.libs.hikap.component :as component]
@@ -22,6 +24,7 @@
         adapter {:eval (fn [s] (swap! scripts conj s) "")
                  :command! (fn [n h] (swap! commands assoc n h) nil)
                  :run-loop (fn [pump] (swap! pumps conj pump) nil)}]
+    (dsl/forget-widget-options!)
     (binding [tk/*adapter* adapter]
       (f {:scripts scripts :commands commands :pumps pumps}))))
 
@@ -132,23 +135,31 @@
         (t/is (some #(re-find #"insert 0 two" %) (scripts rec))))
       (engine/dispose-component (:root m)))))
 
-(t/deftest label-patches-text-and-declines-what-it-cannot-express
+(t/deftest label-patches-what-it-can-and-declines-what-it-cannot
   (with-fake [rec nil]
     (let [text (atom "one")
           bold (atom false)
-          m (mounted (fn [_] [:ttk/frame {} [:ttk/label {:text @text :bold @bold}]]))]
+          fill (atom :both)
+          m (mounted (fn [_] [:ttk/frame {} [:ttk/label {:text @text :bold @bold
+                                                         :fill @fill}]]))]
       ;; a text change is a Tcl option → patch in place, keep the instance
       (reset! text "two")
       (rerender! m)
       (t/is (zero? (count (scripts-like rec #"^destroy ")))
             "a patchable prop change keeps the widget")
       (t/is (some #(re-find #"-text two" %) (scripts rec)))
-      ;; a font is baked into the widget at construction → decline, rebuild
+      ;; the font is an option too → a bold flip is a live configure
       (reset! bold true)
       (rerender! m)
+      (t/is (zero? (count (scripts-like rec #"^destroy ")))
+            "a font change patches the label in place")
+      (t/is (some #(re-find #"configure -font" %) (scripts rec)))
+      ;; pack geometry is applied at construction only → decline, rebuild
+      (reset! fill :y)
+      (rerender! m)
       (t/is (pos? (count (scripts-like rec #"^destroy ")))
-            "a font change declines and rebuilds the label")
-      (t/is (some #(re-find #"-font" %) (scripts-like rec #"ttk::label ")))
+            "a pack change declines and rebuilds the label")
+      (t/is (some #(re-find #"-fill y" %) (scripts rec)))
       (engine/dispose-component (:root m)))))
 
 (t/deftest label-rebinds-a-changed-click-callback
@@ -192,6 +203,107 @@
           (t/is (not (contains? destroyed (nth paths 0))) "first child reused")
           (t/is (not (contains? destroyed (nth paths 2))) "third child reused")
           (t/is (contains? destroyed (nth paths 1)) "removed child destroyed")))
+      (engine/dispose-component (:root m)))))
+
+;; ─── the option catalogue ─────────────────────────────────────────────────
+
+(t/deftest a-tags-options-are-its-widgets-tk-option-set
+  ;; :options composes families from kmet.gui.tk.options with the widget's
+  ;; own options, so a tag accepts exactly the options its widget has.
+  (let [tags (:tags tk/tk-backend)]
+    (t/is (= {:class :class :cursor :cursor :takefocus :takefocus
+              :style :style :orient :orient}
+             (:options (tags :ttk/separator)))
+          "three families plus :orient")
+    (t/is (= {:colormap :colormap :class :class :container :container
+              :visual :visual :cursor :cursor :takefocus :takefocus
+              :width :width :height :height :bg :background
+              :backgroundimage :backgroundimage :tile :tile :relief :relief
+              :borderwidth :borderwidth :highlightbackground :highlightbackground
+              :highlightcolor :highlightcolor
+              :highlightthickness :highlightthickness :padx :padx :pady :pady}
+             (:options (tags :tk/frame))))
+    (t/is (= :background (get-in (tags :ttk/entry) [:options :bg]))
+          "the themed entry reaches Tk's -background/-foreground")
+    (t/is (= :mode (get-in (tags :ttk/progressbar) [:options :mode])))
+    (t/is (not (contains? (:options (tags :tk/text)) :state))
+          "the :text tags own -state (they are read-only surfaces)")))
+
+(t/deftest families-and-props-are-checked-at-load
+  (t/is (thrown-with-msg? Exception #"unknown families"
+                          (opt/options-for [:standard :nope])))
+  (t/is (thrown-with-msg? Exception #"outside the catalogue"
+                          (opt/options-for [:standard] [:nope]))))
+
+(t/deftest list-valued-props-render-as-tcl-lists
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {:padding [6 12]}
+                                   [:tk/text {:tabs [40 80]}]])]
+      (t/is (some #(str/includes? % "-padding 6\\ 12") (scripts rec))
+            "a :padding pair is one Tcl list word")
+      (t/is (some #(str/includes? % "-tabs 40\\ 80") (scripts rec)))
+      (engine/dispose-component root))))
+
+(t/deftest an-empty-value-is-a-tcl-word-not-nothing
+  ;; no whitespace is an option's value in Tcl: an empty one must be an
+  ;; explicit empty word, or the option after it becomes its value
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/entry {:show "" :state :normal}])]
+      (t/is (some #(str/includes? % "-show {} -state normal") (scripts rec)))
+      (engine/dispose-component root))))
+
+(t/deftest creation-only-props-rebuild-while-options-patch
+  (let [spec (get (:tags tk/tk-backend) :tk/frame)]
+    (t/is (not (dsl/patchable? spec {:class "A"} {:class "B"}))
+          "-class is creation-only in Tk: a change rebuilds")
+    (t/is (dsl/patchable? spec {:bg "#111111"} {:bg "#222222"}))
+    (t/is (dsl/patchable? spec {:width 10} {:width 20}))
+    (t/is (not (dsl/patchable? spec {:side :top} {:side :left}))
+          "pack geometry is not a Tk option: a change rebuilds")))
+
+(t/deftest options-this-tk-lacks-fail-loudly
+  ;; check-options! asks the widget for its own option list, so a prop whose
+  ;; option this Tk does not have fails with tag, prop and option named
+  ;; instead of scripting a broken widget.
+  (let [adapter {:eval (fn [s] (if (str/includes? s " configure]")
+                                 "-text\n-cursor\n-takefocus\n-class\n-style\n"
+                                 ""))
+                 :command! (fn [_ _] nil)}]
+    (dsl/forget-widget-options!)
+    (binding [tk/*adapter* adapter]
+      (t/is (thrown-with-msg? Exception #"no -background"
+                              (mounted [:ttk/label {:text "ok" :bg "#101014"}])))
+      (dsl/forget-widget-options!)
+      (t/is (some? (mounted [:ttk/label {:text "ok" :cursor "hand2"}]))
+            "a prop whose option exists is accepted"))))
+
+(t/deftest the-newly-declared-options-reach-their-widgets  (with-fake [rec nil]
+                                                             (let [{:keys [root]} (mounted [:ttk/frame {}
+                                                                                            [:ttk/entry {:bg "#101014" :show "*" :justify :right
+                                                                                                         :state :readonly}]
+                                                                                            [:ttk/separator {:orient :horizontal}]
+                                                                                            [:ttk/progressbar {:mode :indeterminate :length 120}]
+                                                                                            [:tk/text {:undo false :selectbackground "#333333"}]])]
+                                                               (t/is (some #(str/includes? % "-background \\#101014") (scripts rec)))
+                                                               (t/is (some #(str/includes? % "-show *") (scripts rec)))
+                                                               (t/is (some #(str/includes? % "-state readonly") (scripts rec)))
+                                                               (t/is (some #(str/includes? % "-orient horizontal") (scripts rec)))
+                                                               (t/is (some #(str/includes? % "-mode indeterminate") (scripts rec)))
+                                                               (t/is (some #(str/includes? % "-selectbackground \\#333333") (scripts rec)))
+                                                               (t/is (some #(str/includes? % "-undo 0") (scripts rec)))
+                                                               (engine/dispose-component root))))
+
+(t/deftest a-text-font-change-patches-and-rebases-the-generated-tags
+  ;; the :tk/text widget's mono font is an option like any other, and the
+  ;; Tk tags it generates for styled segments derive from it
+  (with-fake [rec nil]
+    (let [size (atom 12)
+          m (mounted (fn [_] [:tk/text {:text "hi" :font-size @size}]))]
+      (reset! size 14)
+      (rerender! m)
+      (t/is (zero? (count (scripts-like rec #"^destroy ")))
+            "a font change patches the text widget in place")
+      (t/is (some #(re-find #"configure -font" %) (scripts rec)))
       (engine/dispose-component (:root m)))))
 
 ;; ─── callbacks ────────────────────────────────────────────────────────────

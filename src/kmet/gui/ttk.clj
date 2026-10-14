@@ -11,17 +11,15 @@
    A spec is written against kmet.gui.tk.dsl: its :ctor and :apply receive
    the spec itself (so :options, :bindings and :patchable stay the single
    source of truth for what the widget can and cannot patch), and a spec
-   without an :apply gets the shared live patcher."
-  (:require [kmet.gui.tk.dsl :as dsl]))
-
-(def ^:private frame-options
-  "The :ttk/frame tag's props as Tcl options."
-  {:padding :padding})
-
-(def ^:private label-options
-  "The :ttk/label tag's props as Tcl options. ttk::label is one of the ttk
-   widgets that accept -background/-foreground per widget."
-  {:text :text :fg :foreground :bg :background})
+   without an :apply gets the shared live patcher. Its :options are the Tk
+   options its widget accepts, composed from kmet.gui.tk.options: the
+   families that fit the widget (options-for) plus the individual options
+   that widget has on its own. The families are additive and a widget's
+   odd option is listed directly, so what a tag scripts is exactly the
+   widget's option set minus the script-, variable- and image-backed
+   options the catalogue leaves out (and minus -labelwidget, a widget)."
+  (:require [kmet.gui.tk.dsl :as dsl]
+            [kmet.gui.tk.options :as opt]))
 
 (def ^:private entry-bindings
   "The :ttk/entry tag's callbacks; both receive the entry's text."
@@ -38,52 +36,59 @@
    {:ctor (fn [spec props]
             (dsl/make-widget spec
                              (fn [p] (dsl/widget-script "ttk::frame" p
-                                                        (dsl/tcl-options props frame-options)))
+                                                        (dsl/tcl-options props (:options spec))))
                              props))
-    :options frame-options
+    :options (opt/options-for [:standard :classed :themed :geometry :bordered :padded])
     :lens (dsl/child-lens)}
 
    :ttk/labelframe
    {:ctor (fn [spec props]
             (dsl/make-widget spec
                              (fn [p] (dsl/widget-script "ttk::labelframe" p
-                                                        (dsl/tcl-options props {:text :text})))
+                                                        (dsl/tcl-options props (:options spec))))
                              props))
-    :options {:text :text}
+    :options (opt/options-for [:standard :classed :themed :geometry :bordered :padded]
+                              [:text :underline :labelanchor])
     :lens (dsl/child-lens)}
 
    :ttk/label
-   {:ctor (fn [spec {:keys [bold italic] :as props}]
+   {:ctor (fn [spec props]
             (dsl/make-widget spec
-                             (fn [p]
-                               (dsl/widget-script
-                                "ttk::label" p
-                                (cond-> (merge {:anchor :w :justify :left}
-                                               (dsl/tcl-options props label-options))
-                                  (or bold italic (some? (:font-size props)))
-                                  (assoc :font (dsl/font-spec (dsl/resolve-base-font props) props)))))
+                             (fn [p] (dsl/widget-script
+                                      "ttk::label" p
+                                      (merge {:anchor :w :justify :left}
+                                             (dsl/tcl-options props (:options spec)))))
                              props))
-    :options label-options
+    :options (opt/options-for [:standard :classed :themed :bordered :padded
+                               :labelled :layout :fonted]
+                              [:width :bg :fg :state])
     :bindings {:on-click {:event "<Button-1>"}}
     :primary :text}
 
    :ttk/button
    {:ctor (fn [spec props]
             (dsl/make-widget spec
-                             (fn [p] (dsl/widget-script "ttk::button" p
-                                                        (merge {:text ""}
-                                                               (dsl/tcl-options props {:text :text}))))
+                             (fn [p] (dsl/widget-script
+                                      "ttk::button" p
+                                      (merge {:text ""}
+                                             (dsl/tcl-options props (:options spec)))))
                              props))
-    :options {:text :text}
+    :options (opt/options-for [:standard :classed :themed :padded]
+                              [:width :text :underline :justify :compound :state :default])
     :bindings {:on-click {:option :command}}
     :primary :text}
 
    :ttk/entry
    {:ctor (fn [spec {:keys [text] :as props}]
-            (let [w (dsl/make-widget spec (fn [p] (dsl/widget-script "ttk::entry" p {})) props)]
+            (let [w (dsl/make-widget spec
+                                     (fn [p] (dsl/widget-script "ttk::entry" p
+                                                                (dsl/tcl-options props (:options spec))))
+                                     props)]
               (when (some? text)
                 (dsl/set-entry-text! w text))
               w))
+    :options (opt/options-for [:standard :classed :themed :editable :fonted :localized]
+                              [:width :bg :fg :exportselection :justify :state])
     :bindings entry-bindings
     :patchable #{:text}
     :primary :text
@@ -99,11 +104,12 @@
                                      (fn [p] (dsl/widget-script
                                               "ttk::checkbutton" p
                                               (merge {:text ""}
-                                                     (dsl/tcl-options props {:text :text}))))
+                                                     (dsl/tcl-options props (:options spec)))))
                                      props)]
               (dsl/eval! (str (:path w) " state " (if active "selected" "!selected")))
               w))
-    :options {:text :text}
+    :options (opt/options-for [:standard :classed :themed :padded :checkable]
+                              [:width :text :underline :justify :compound :state])
     :bindings checkbutton-bindings
     :patchable #{:active}
     :primary :text
@@ -116,7 +122,11 @@
 
    :ttk/separator
    {:ctor (fn [spec props]
-            (dsl/make-widget spec (fn [p] (dsl/widget-script "ttk::separator" p {})) props))}
+            (dsl/make-widget spec
+                             (fn [p] (dsl/widget-script "ttk::separator" p
+                                                        (dsl/tcl-options props (:options spec))))
+                             props))
+    :options (opt/options-for [:standard :classed :themed] [:orient])}
 
    :ttk/progressbar
    {:ctor (fn [spec props]
@@ -124,7 +134,7 @@
                              (fn [p] (dsl/widget-script
                                       "ttk::progressbar" p
                                       (merge {:maximum 100}
-                                             (dsl/tcl-options
-                                              props {:value :value :maximum :maximum}))))
+                                             (dsl/tcl-options props (:options spec)))))
                              props))
-    :options {:value :value :maximum :maximum}}})
+    :options (opt/options-for [:standard :classed :themed :progress :fonted]
+                              [:fg :anchor :justify :text :wraplength])}})

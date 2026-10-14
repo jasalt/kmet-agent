@@ -2,8 +2,13 @@
   "The widget-building machinery the Tk backends' tag tables are written
    in: Tcl quoting and script building, the TkWidget record and path
    allocation, the callback/binding registry (including the :bind chord to
-   Tk event translation), the live-patch decisions, widget construction and
+   Tk event translation), the live-patch decisions (with the check that a
+   prop's option exists on the running widget), widget construction and
    disposal, and the rich-text/:text helpers.
+
+   The option vocabulary itself — which props exist, which Tcl option each
+   names, and the families a spec composes its :options from — is
+   kmet.gui.tk.options; this namespace executes it.
 
    It is deliberately below the widget namespaces (kmet.gui.tk's classic
    set and kmet.gui.ttk) and above nothing: the Tcl evaluator is installed
@@ -11,6 +16,7 @@
    completed by kmet.gui.tk/widget-specs, so a widget namespace only needs
    this one require."
   (:require [clojure.string :as str]
+            [kmet.gui.tk.options :as opt]
             [kmet.libs.hikap :as engine]))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
@@ -57,9 +63,13 @@
 
 (defn tcl-quote
   "Quote X as a single Tcl word (always backslash-escaped; safe in any
-   substitution context)."
+   substitution context). An empty string is {} — a bare empty word would
+   not exist for Tcl, so the next option would take its place."
   [x]
-  (apply str (map escape-char (str x))))
+  (let [s (str x)]
+    (if (empty? s)
+      "{}"
+      (apply str (map escape-char s)))))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; Widget records + callback registry
@@ -259,12 +269,13 @@
 (defn patchable?
   "True when every prop that changed between PREV and PROPS is one SPEC
    can express on the live widget — its :options, its :bindings, the
-   universal :bind, plus its :patchable extras. A prop it cannot (a font, a
-   geometry, a re-wrap width) must decline so the engine rebuilds instead
-   of silently dropping the change."
+   universal :bind, plus its :patchable extras. A prop it cannot (a
+   creation-only option, a geometry, a re-wrap width) must decline so the
+   engine rebuilds instead of silently dropping the change."
   [spec prev props]
-  (let [{:keys [options bindings patchable]} spec]
-    (every? (into (set (concat (keys options) (keys bindings) patchable)) [:bind])
+  (let [{:keys [options bindings patchable]} spec
+        live (into #{} (comp (map key) (remove opt/creation-only?)) options)]
+    (every? (into (into live (keys bindings)) (concat patchable [:bind]))
             (props-diff prev props))))
 
 ;; apply-live!/default-apply/widget-specs sit at the end of this namespace:
@@ -292,14 +303,32 @@
     (boolean? x) (if x "1" "0")
     :else x))
 
+;; option-value builds a widget's font from the font props, so it reaches
+;; forward to the rich-text helpers below (the same base font the :text tag
+;; caches on its widget).
+(declare ^:private resolve-base-font font-spec)
+
+(defn- option-value
+  "V as the Tcl value PROP's option takes, per the catalogue's shape: a
+   sequence joins into a Tcl list (-padding/-tabs), the font props build
+   the widget's font from PROPS (so any of the four determines it), and
+   anything else is the word it names."
+  [props prop v]
+  (case (opt/coerce prop)
+    :list (if (sequential? v) (str/join " " (map tcl-word v)) v)
+    :font (font-spec (resolve-base-font props) props)
+    v))
+
 (defn tcl-options
   "PROPS through OPTIONS ({:prop :tcl-option}) as a Tcl option map
-   ({:text \"hi\" :foreground \"#fff\"}); a nil prop is absent."
+   ({:text \"hi\" :foreground \"#fff\"}); a nil prop is absent. Values take
+   the shape their prop's catalogue entry names (kmet.gui.tk.options/coerce):
+   a Tcl list joins a sequence, the font props build the widget's font."
   [props options]
   (into {} (for [[prop option] options
                  :let [v (get props prop)]
                  :when (some? v)]
-             [option v])))
+             [option (option-value props prop v)])))
 
 (defn- option-args
   "A Tcl option map as `-option value` words, in option-name order so a
@@ -317,11 +346,18 @@
   [command path options & extra]
   (str/join " " (concat [command path] (option-args options) (remove nil? extra))))
 
+(defn- configurable-options
+  "OPTIONS without its creation-only props: Tk refuses -class and friends
+   on configure, so a patch must not send them (the change rebuilds the
+   widget instead, see patchable?)."
+  [options]
+  (into {} (remove (fn [[prop _]] (opt/creation-only? prop))) options))
+
 (defn- configure-script
   "A `PATH configure -option value …` script for PROPS through OPTIONS, or
-   nil when nothing is set."
+   nil when nothing is patchable is set."
   [path props options]
-  (when-let [args (seq (option-args (tcl-options props options)))]
+  (when-let [args (seq (option-args (tcl-options props (configurable-options options))))]
     (str/join " " (concat [path "configure"] args))))
 
 (defn parent-widget
@@ -329,6 +365,45 @@
    context (nil at the root)."
   []
   (:parent engine/*construct-context*))
+
+(defonce ^:private tcl-option-cache (atom {}))
+
+(defn forget-widget-options!
+  "Drop the per-tag option lists cached from an interpreter: a new
+   interpreter may be a different Tk (a test's stub, a remounted one)."
+  []
+  (reset! tcl-option-cache {}))
+
+(defn- widget-class-options
+  "The Tcl options a widget at PATH accepts, asked of Tk itself and cached
+   per TAG (a tag names one widget class in a backend's table). An empty
+   answer — a stub evaluator in a headless test — is not cached and skips
+   the check."
+  [tag path]
+  (or (get @tcl-option-cache tag)
+      (let [out (eval! (str "join [lmap o [" path " configure] {lindex $o 0}] \"\\n\""))
+            opts (into #{} (filter #(str/starts-with? % "-")) (str/split-lines out))]
+        (when (seq opts)
+          (swap! tcl-option-cache assoc tag opts))
+        opts)))
+
+(defn check-options!
+  "Throw when PROPS sets an option SPEC scripts that the widget at PATH
+   does not have — a family that does not fit this widget, a typo, or an
+   option newer than the running Tk (which would otherwise fail inside a
+   generated script, or on a later patch)."
+  [spec tag path props]
+  (let [known (widget-class-options tag path)]
+    (when (seq known)
+      (doseq [[prop option] (sort-by (comp name key) (:options spec))
+              :when (and (some? option) (some? (get props prop)))
+              :let [named (str "-" (name option))]
+              :when (not (contains? known named))]
+        (throw (ex-info (str "kmet.gui.tk: " tag " has no " named
+                             " on this Tk (prop " prop ")")
+                        {:type :kmet.gui.tk/unknown-option
+                         :tag tag :prop prop :option named})))))
+  nil)
 
 (defn make-widget
   "Construct a TkWidget at a fresh path under the current construction
@@ -343,6 +418,7 @@
         path (alloc-path! parent)
         w (->TkWidget path tag (atom []) (atom {}) (atom {}))]
     (eval! (ctor-script path))
+    (check-options! spec tag path props)
     (apply-bindings! w {} props (:bindings spec))
     (when parent
       (if-let [attach (:attach @(:styles parent))]

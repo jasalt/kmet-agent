@@ -31,11 +31,20 @@
    live value (:on-change/:on-submit the entry text, :on-toggled the
    checked boolean).
 
+   Which props a tag takes is its widget's Tk option set: each spec's
+   :options composes option families from kmet.gui.tk.options (the standard
+   options, the bordered/graphic blocks, the text blocks, …) with the
+   options its widget has on its own, so a prop is accepted exactly where
+   Tk has the option — and a prop whose option this Tk does not have fails
+   with kmet.gui.tk.dsl/check-options! (naming tag, prop and option)
+   instead of scripting a broken widget.
+
    The engine's :render-items/:render-all hooks exist for output-producing
    toolkits; Tk widgets are live the moment reconcile constructs them, so
    they return nil and kmet.gui.tcl drives re-renders with a pump armed
    through kmet.libs.hikap.component/set-frame-hook!."
   (:require [kmet.gui.tk.dsl :as dsl]
+            [kmet.gui.tk.options :as opt]
             [kmet.gui.ttk :as ttk]
             [kmet.libs.hikap.component :as component]
             [kmet.libs.hikap :as engine])
@@ -51,8 +60,11 @@
   nil)
 
 (defn set-adapter!
-  "Install ADAPTER as the process adapter (kmet.gui.tcl calls this)."
+  "Install ADAPTER as the process adapter (kmet.gui.tcl calls this). The
+   option lists cached from a previous interpreter are dropped: a new
+   adapter may be a different Tk."
   [adapter]
+  (dsl/forget-widget-options!)
   (alter-var-root #'*adapter* (constantly adapter))
   nil)
 
@@ -113,10 +125,9 @@
 ;; The classic widget set (:tk/…)
 ;; ═══════════════════════════════════════════════════════════════════════════
 
-(def ^:private text-options
-  "The :tk/text tag's patchable Tcl options."
-  {:wrap :wrap :height :height :bg :background :fg :foreground
-   :padx :padx :pady :pady})
+;; ═══════════════════════════════════════════════════════════════════════════
+;; The classic widget set (:tk/…)
+;; ═══════════════════════════════════════════════════════════════════════════
 
 ;; ─── Transcript stack (the :tk/transcript tag) ───────────────────────────
 ;; One text widget hosts every child as an embedded window (each message is
@@ -139,7 +150,8 @@
                                   (merge {:wrap :none :height 1 :width 1 :padx 0 :pady 0
                                           :highlightthickness 0 :borderwidth 0 :takefocus 0
                                           :font (dsl/font-spec font {})}
-                                         (dsl/tcl-options props {:bg :background}))))
+                                         (dsl/tcl-options props (:options spec)))))
+    (dsl/check-options! spec :tk/transcript text props)
     (dsl/eval! (str "ttk::scrollbar " sb " -orient vertical -command \"" text " yview\""))
     (dsl/eval! (str text " configure -yscrollcommand \"" sb " set\""))
     (when (:see-end props)
@@ -167,18 +179,25 @@
    {:ctor (fn [spec props]
             (when-let [title (:title props)]
               (dsl/eval! (str "wm title . " (dsl/tcl-quote title))))
-            (when-let [bg (:bg props)]
-              (dsl/eval! (str ". configure -background " (dsl/tcl-quote bg))))
             (when-let [width (:width props)]
               (dsl/eval! (str "wm geometry . " (dsl/tcl-quote (dsl/tcl-word width)) "x"
                               (dsl/tcl-quote (dsl/tcl-word (or (:height props) 400))))))
             (let [w (dsl/->TkWidget "." :tk/toplevel (atom []) (atom {}) (atom {}))]
-              (dsl/apply-bindings! w {} props (:bindings spec))
+              ;; the window is Tk's own ".": its options are configured, not
+              ;; created (and :width/:height above are the window's, not the
+              ;; widget's, so they are not in :options)
+              (dsl/check-options! spec :tk/toplevel "." props)
+              (dsl/apply-live! spec w {} props)
               w))
+    :options (opt/options-for [:standard :classed :creation :surface :bordered
+                               :highlighted :spaced :window])
     :lens (dsl/child-lens)}
 
    :tk/transcript
    {:ctor make-transcript
+    :options (opt/options-for [:standard :geometry :bordered :highlighted :spaced
+                               :selectable :fonted :text-body]
+                              [:bg :fg :locale])
     :lens (dsl/child-lens)}
 
    :tk/frame
@@ -187,7 +206,7 @@
                              (fn [p]
                                (dsl/widget-script
                                 "frame" p
-                                (dsl/tcl-options props {:bg :background :padx :padx :pady :pady})
+                                (dsl/tcl-options props (:options spec))
                                 ;; -relief solid draws its border in the
                                 ;; widget's own background, which on a
                                 ;; card sitting on a same-toned canvas
@@ -200,6 +219,8 @@
                                          (str " -highlightbackground " (dsl/tcl-quote c)
                                               " -highlightcolor " (dsl/tcl-quote c)))))))
                              props))
+    :options (opt/options-for [:standard :classed :creation :geometry :surface
+                               :bordered :highlighted :spaced])
     :lens (dsl/child-lens)}
 
    :tk/text
@@ -212,17 +233,23 @@
                                         (merge {:wrap :word :height 10 :width 80
                                                 :borderwidth 0 :highlightthickness 0
                                                 :font (dsl/font-spec font {})}
-                                               (dsl/tcl-options props text-options))))
+                                               (dsl/tcl-options props (:options spec)))))
                                      props)]
               (swap! (:styles w) assoc :font font)
               (dsl/set-text-content! w props)
               (when (:scrollbar props)
                 (dsl/attach-scrollbar! w (dsl/parent-widget)))
               w))
-    :options text-options
+    :options (opt/options-for [:standard :geometry :bordered :highlighted :spaced
+                               :selectable :fonted :text-body]
+                              [:bg :fg :locale])
     :patchable #{:content :text}
     :apply (fn [spec w prev props]
              (when (dsl/patchable? spec prev props)
+               ;; the generated text tags derive from the base font, so a
+               ;; font the patch applied must be the one they derive from
+               (when (some #(not= (get prev %) (get props %)) opt/font-props)
+                 (swap! (:styles w) assoc :font (dsl/resolve-base-font props)))
                (when (or (contains? props :content) (contains? props :text))
                  (dsl/set-text-content! w props))
                (dsl/apply-live! spec w prev props)))}})

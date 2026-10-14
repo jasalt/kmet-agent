@@ -1643,6 +1643,7 @@ kmet.tui        the TUI backend: hiccup facade, macros, protocols, components
 kmet.gui        GUI backends, Jolt-only (kmet.gui.tk = the Tk backend
                 with the classic :tk/… widget set, kmet.gui.ttk = the
                 :ttk/… set, kmet.gui.tk.dsl = their shared machinery,
+                kmet.gui.tk.options = the Tk option vocabulary,
                 kmet.gui.tcl = the host FFI adapter)
 kmet.libs.*     self-contained helpers bottom layer (terminal protocol,
                 HTTP, markdown, reakt, ...) — includes the toolkit-agnostic
