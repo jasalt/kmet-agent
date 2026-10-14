@@ -18,9 +18,9 @@ change when behavior changes.
 | Building and distribution | [`docs/building.md`](docs/building.md) |
 
 User-facing documentation belongs in `docs/`. Implementation notes belong next
-to their source package. The temporary notes `run_code.md`, `perf.md`,
-`jolt-bugs.md`, `windows.md`, `pi-tools.md`, and `tcl.md` intentionally remain
-at the project root.
+to their source package. The temporary notes `engine.md`, `run_code.md`,
+`perf.md`, `jolt-bugs.md`, `windows.md`, `pi-tools.md`, and `tcl.md`
+intentionally remain at the project root.
 
 ## Basic development flow
 

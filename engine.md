@@ -50,9 +50,9 @@ The seam mostly exists today; the plan sharpens it rather than inventing it.
   a second front end is viable.
 - `kmet.ai.*` is a standalone provider/auth library; `kmet.app.tools/*`
   contain no TUI requires.
-- `app/ui/*` (~10k lines) is already fenced as app-specific presentation,
-  and the layer rules in `src/kmet/README.md` state the direction
-  (`libs` → `tui`/`gui` → `app` → `modes`).
+- `app/ui/*` (~12.1k lines, 36 files) is already fenced as app-specific
+  presentation, and the layer rules in `src/kmet/README.md` state the
+  direction (`libs` → `tui`/`gui` → `app` → `modes`).
 
 ## 3. Findings: what actually blocks the split
 
@@ -75,14 +75,28 @@ The seam mostly exists today; the plan sharpens it rather than inventing it.
 5. **Extension runtime is process-global atoms** (`app/extensions.cljc`:
    `ui-registry`, `session-atom`, `context-sink-atom`). Print mode stubs a
    UI registry to satisfy the same globals.
-6. **Four engine-adjacent namespaces require TUI**:
-   `app/bash_executor.clj` (`tui.utils`), `app/theme_controller.clj`,
-   `app/packages.clj` (`tui.theme`), `app/keybindings.clj`
-   (`tui.keybindings`). Small, but they are the ones that would drag the
-   terminal into a GUI process.
+6. **Six `app/**` namespaces require TUI** (excluding `app/ui`):
+   `app/bash_executor.clj` (`tui.utils`), `app/theme_controller.clj`
+   (`tui.core`, `tui.theme`), `app/packages.clj` (`tui.theme`),
+   `app/keybindings.clj` (`tui.keybindings`), `app/extensions.cljc`
+   (`tui.theme`, used by applied resource paths at
+   `theme/load-themes-from-dir`, line 1180), and
+   `app/extensions/context.cljc` (`tui-library-namespaces` injection —
+   §3.8). Small, but they are the ones that would drag the terminal into a
+   GUI process. The leak is already live headless: `modes/print.clj`
+   requires `app.packages`, and a cold `(require 'kmet.modes.print)` loads
+   `kmet.tui.theme` and `kmet.tui.utils`.
 7. **No serialization contract.** Events carry partial message snapshots;
    session files are read leniently (malformed line → skip with a warning);
    nothing asserts that an emitted event is plain EDN data.
+8. **The extension ABI hard-requires the TUI layer.** `src/kmet/extension.md`
+   tells extensions they may depend on `kmet.extension`, `kmet.tui.*`, and
+   `kmet.libs.*`; `app/extensions/context.cljc` enforces that allowlist
+   (`validate-entry-requires!`) and injects the whole
+   `tui-library-namespaces` list into every extension context.
+   `host-requires!` (line 1169) `require`s all of them before the first
+   per-extension context is built, so any process that loads an extension
+   loads the TUI component library — print mode already does (see §3.6).
 
 ## 4. Target architecture
 
@@ -134,7 +148,7 @@ one lifecycle.
 
 ;; streams
 (subscribe! engine f)       ; -> unsubscribe fn
-(last-outcome engine)       ; {:outcome :completed|:error|:cancelled}
+(last-outcome engine)       ; {:outcome :completed|:error|:aborted}
 (respond! engine id value)  ; answers a :ui-request (4.5)
 ```
 
@@ -157,6 +171,10 @@ Rules:
 - `snapshot` returns plain data; it may mix per-field atom values (the agent
   uses independent atoms). Display-only consumers are fine with that;
   anything needing a consistent cut must document it.
+- `dispose!` cancels any in-flight run, then clears subscribers and engine
+  runtime refs. Write the terminal-event contract down: the settle path
+  runs in a `finally`, so `:agent-settled` with finding A's `:outcome`
+  should reach subscribers before they are cleared.
 
 ### 4.2 The event stream (EDN)
 
@@ -181,10 +199,9 @@ Contract rules:
 5. **The stream is the whole truth for a front end.** If a view needs data
    that is not in the stream, the event gains a field rather than the view
    reaching into `AgentState`. A headless renderer test (§8) enforces this.
-6. **Fully-qualified keywords for wire-relevant keys.** Event `:type` and
-   value keywords stay unqualified (`:assistant`, `:completed`); payload
-   keys are plain keys. Namespaced keys should be reserved for stable
-   extension payloads.
+6. **Keyword discipline.** Event `:type` and value keywords stay
+   unqualified (`:assistant`, `:completed`) and payload keys are plain
+   keys; namespaced keys are reserved for stable extension payloads.
 
 ### 4.3 Data schemas (malli)
 
@@ -214,6 +231,12 @@ registries next to the format they describe.
 - Prose stays in the docs; schema maps carry `:description` and a coverage
   test asserts every schema has one.
 
+The `:kmet.ai.message/*` schemas need a new `kmet.ai.message` namespace.
+Messages are plain maps built across the loop and the provider builders
+today, so this is a new artifact to schedule, not an existing home to
+reference. It is the shared home for provider builders, session
+persistence, and (later) the RPC wire.
+
 ### 4.4 Session and state ownership
 
 - `Session` (record with `:header`, `:entries` atom, `:leaf-id` atom, lock)
@@ -228,7 +251,10 @@ registries next to the format they describe.
   (`:session-before-switch`, `:session-before-fork`, `:session-before-tree`)
   are emitted by the engine and may be cancelled by extensions; the swap
   happens only when no handler cancels. The mode owns the UX around it
-  (selectors), not the swap.
+  (selectors), not the swap. Today they go straight to
+  `event-bus/emit-event!` from `modes/interactive/session_admin.clj`
+  (lines 427, 765, 881, 938) — extension-only, not the UI stream; moving
+  them under the engine should decide whether the UI stream sees them too.
 
 ### 4.5 Extension runtime and the UI port
 
@@ -242,12 +268,26 @@ active front end. Split the capability map:
   installed by the front end. `modes/interactive/ui-registry.clj` is the TUI
   implementation; print mode installs auto-answer defaults; RPC forwards
   requests to the client; GUI builds its own.
+- **Requests go to the port, not to subscribers.** §4.2's non-blocking rule
+  applies to `subscribe!` callbacks; a dialog waits on the loop thread
+  inside the extension handler (today's semantics, §4.2 rule 4). A
+  `:ui-request` must reach the front end's UI port directly (a synchronous
+  in-process answer for TUI/print), while an async front end (RPC) queues
+  the request to its client and answers later with `respond!`. Do not route
+  `:ui-request` through `subscribe!`, or the TUI would have to block inside
+  a subscriber.
 - **Async UI requests.** Synchronous dialogs cannot cross a socket. The
   engine-level contract is a request/response pair of events:
   `{:type :ui-request :id ... :kind :select|:confirm|:input|:editor ...}`
   answered by `(respond! engine id value)`. TUI implementations may still
   answer synchronously (the request emission can resolve an in-process
   promise); RPC answers when the client responds.
+- **The component surface stays `kmet.tui.*`.** The UI port covers the
+  widgets/dialogs the host renders, not the components an extension builds
+  itself (§3.8). A headless front end therefore loads the TUI component
+  library whenever an extension loads; a front end that must avoid that
+  waits for the shared-component-library split (`kmet.libs.hikap` model,
+  §7 step 6).
 - Extension reload semantics (`ui-reset!`, `clear-runtime!`,
   `session-shutdown` before unload) stay as they are; the facade exposes the
   lifecycle instead of the mode calling the globals directly.
@@ -268,24 +308,42 @@ active front end. Split the capability map:
 ## 5. Review findings (things the sketch got wrong or must fix)
 
 **A. `:agent-settled` has no outcome.** `run-agent-turn` emits
-`{:type :agent-settled}` with no payload (loop.clj ~2950) and `cancel-turn`
-emits only `:status :idle`. A headless consumer cannot reliably distinguish
-completed / errored / cancelled settle from the stream alone. Print mode
-sidesteps this with the `:on-done`/`:on-error` callbacks, which is exactly
-the parallel API the split should remove. **Required:** add an outcome to
-`:agent-settled` (e.g. `{:outcome :completed|:error|:cancelled}`) or emit a
-dedicated terminal event, and make the event-bus docs match. Small, early,
-and unblocks every headless mode.
+`{:type :agent-settled}` with no payload (loop.clj:2950) and `cancel-turn`
+emits only `:status :idle` (loop.clj:2960-2970). A headless consumer cannot
+reliably distinguish completed / errored / cancelled settle from the stream
+alone. This is partly solved one event earlier: `:agent-before-settle`
+carries `:outcome @(:last-outcome agent)` (loop.clj:2694-2695) and reaches
+the UI callback through `emit-boundary` (loop.clj:2207-2214), so
+completed/error *are* visible; only a cancel skips the boundary
+(`continue-prompt?` short-circuits on the signal), and the settle event
+itself is always bare. Print mode sidesteps all of it with the
+`:on-done`/`:on-error` callbacks, which is exactly the parallel API the
+split should remove. **Required:** add `:outcome` to `:agent-settled` and
+make the event-bus docs match. Two rules for the implementation:
+
+- Reuse the existing vocabulary: `:completed | :error | :aborted`
+  (loop.clj:149; `turn-outcome`, loop.clj:2040-2046). The `:cancelled`
+  spelling proposed earlier would be a second word for `:aborted` — exactly
+  the drift §4.2 rule 6 warns against.
+- The naive payload (`@(:last-outcome agent)`) is wrong on cancel:
+  `cancel-turn` does not set it, so it would report the previous turn's
+  outcome. Either `cancel-turn` records `:aborted` or the settle site
+  derives the outcome from the signal.
+
+Small, early, and unblocks every headless mode.
 
 **B. Callbacks vs events.** `:on-text`/`:on-done`/`:on-error` are a second
 API. Step 1 keeps them as derived sugar; a later step either deletes them or
 implements them strictly on top of events. Do not let both grow.
 
 **C. Session validation cost is unmeasured.** Default load currently skips
-malformed lines cheaply. Validate-every-entry at load could add noticeable
-startup time on large sessions. Decide with a measurement (malli
-`m/validate` per entry on a generated 10k-entry session): always-validate,
-validate-only-on-skip, or debug-only. Record the number in this document.
+malformed lines cheaply (`parseable-line?`, session.clj:220).
+Validate-every-entry at load could add noticeable startup time on large
+sessions. Decide with a measurement (malli `m/validate` per entry on a
+generated 10k-entry session): always-validate, validate-only-on-skip, or
+debug-only. Target: < 100 ms for the 10k-entry session; above that, validate
+the header always and the full entries only on skip (or behind `--debug`).
+Record the number in this document.
 
 **D. Session resolution stays in the mode.** `bootstrap` cannot own
 `--resume`-opens-a-selector vs print-errors-on-no-match; only the mechanics
@@ -300,16 +358,22 @@ enforced by `ai/constrained-sampling.clj` — needs a parity test before it is
 worth doing. Treat as a follow-up, not part of the split.
 
 **F. The theme/package coupling is a view concern.** `app/themes` are
-loaded by `app/packages.clj` via `tui.theme`. The engine should own resource
-*discovery*; parsing/rendering belongs to the front end. Same for
-`app/bash_executor`'s ANSI stripping (move to `kmet.libs`) and
-`app/theme_controller` (move up). `app/keybindings` is a similar call:
-keymap definitions are arguably app policy, their formatting is TUI.
+loaded by `app/packages.clj` via `tui.theme`, and extension resource paths
+are applied by `app/extensions.cljc` via `theme/load-themes-from-dir`
+(extensions.cljc:1180). The engine should own resource *discovery*;
+parsing/rendering belongs to the front end. Same for `app/bash_executor`'s
+ANSI stripping (move to `kmet.libs`) and `app/theme_controller` (move up).
+`app/keybindings` is a similar call: keymap definitions are arguably app
+policy, their formatting is TUI.
 
-**G. `:agent-settled` and queue semantics on cancel.** `cancel-turn` clears
-steering/follow-up queues silently. A client (RPC) needs to know its queued
-message was dropped; either the queue-update event is emitted on cancel or
-the outcome event carries it. Add to finding A's payload decision.
+**G. Queue drops are indistinguishable from drains.** `cancel-turn` calls
+`clear-queues!` (loop.clj:2968), which *does* emit
+`{:type :queue-update :steering [] :follow-up []}` (loop.clj:1212-1218) —
+nothing is silent. But the emission is identical to a normal drain that
+delivered the messages, so a client (RPC) cannot tell its queued message
+was dropped. Add a reason (`:reason :cancelled`, or a `:dropped` count) to
+the cancel-path `:queue-update`, or carry the drop in the settle outcome's
+payload. Decide with finding A's payload.
 
 ## 6. Data contract inventory
 
@@ -318,10 +382,10 @@ the outcome event carries it. Add to finding A's payload decision.
 | Surface | Today | Schema buys |
 |---|---|---|
 | Session entries (`app/session.clj`) | EDNL lines; header `{:type :session :version 1 ...}`; malformed → skip with warning; torn-tail repair via `parseable-line?` | `:multi` over the `:role` union (≈15 roles); distinguishes "unparseable" from "wrong shape"; per-version dispatch makes `:version` load-bearing |
-| Message / content blocks | shapes restated across loop, session, provider builders | Highest-value schema; shared by events, persistence, wire; validate provider SSE parses in tests. Lives in `kmet.ai`, reused upward |
+| Message / content blocks | shapes restated across loop, session, provider builders | Highest-value schema; shared by events, persistence, wire; validate provider SSE parses in tests. New `kmet.ai.message` namespace (none exists today), reused upward |
 | Config (`kmet.config`) | `load-edn` → nil on invalid; `invalid-compaction-setting!` throws for a few keys | `m/decode` defaults/coercion for sections already validated (`:retry`, `:loop-guard`, compaction, `:images`, timeouts). File stays forgiving and open |
 | `auth.edn` | `valid-credential?` predicate (`ai/auth.clj`) | Drop-in, better errors |
-| Custom themes (`tui/theme.clj`) | `validate-theme-data!` | User-authored files; token types/required keys as data |
+| Custom themes (`tui/theme.clj`) | `validate-theme-data!` (private, line 913 — export or move it) | User-authored files; token types/required keys as data |
 | Model catalogs + manifest | `model_gen/validate-committed!` hand-rolled | One definition for `bb check-model-data` and runtime catalog loading; also the `~/.kmet/agent/models-cache` cache |
 | `extension.edn` / bundled set | checks in `tasks/build.clj` and `app/extensions.cljc` | Same definition at build time and load time |
 
@@ -436,10 +500,17 @@ default.
 - Reuse the conformance renderer as the RPC event encoder test.
 
 Acceptance: an end-to-end test drives a prompt over pipes and observes the
-event stream and a final response; no TUI namespace is loaded in the RPC
-process (`require`-graph assertion).
+event stream and a final response; no TUI *front end* is started in the RPC
+process (the graph assertion is scoped by §8: extensions load the shared
+`kmet.tui.*` layer by contract).
 
-### Step 6 — GUI mode (deferred)
+### Step 6 — GUI mode
+
+The backend already exists — `src/kmet/gui/` ships the Tk/Tcl backend
+(`kmet.gui.tk`, `kmet.gui.ttk`, `kmet.gui.tk.dsl`, `kmet.gui.tk.options`,
+`kmet.gui.tcl`) with its own `README.md`, and the `kmet.libs.hikap` /
+`kmet.libs.reakt` split is the in-repo precedent for sharing the UI engine
+across backends. What is missing is the mode:
 
 - Subscribe and render through `kmet.gui.*`, marshaling to the toolkit
   thread. Shares only the engine, events, and data providers — not
@@ -457,9 +528,19 @@ process (`require`-graph assertion).
 - **Layer guard** modeled on `test/kmet/libs/test_self_contained.clj`
   (which reads the `ns` form, not a regex): every `src/kmet/app/**` file —
   excluding `app/ui/**` until it moves — must not require `kmet.tui.*`,
-  `kmet.gui.*`, or `kmet.modes.*`. Seed the allowlist with the four known
-  violations (§3.6) and shrink it as they are fixed; a second guard runs
-  after step R for the renamed tree.
+  `kmet.gui.*`, or `kmet.modes.*`. Seed the allowlist with the six known
+  violations (§3.6: `bash_executor`, `theme_controller`, `packages`,
+  `keybindings`, `extensions.cljc`, `extensions/context.cljc`) and shrink
+  it as they are fixed; a second guard runs after step R for the renamed
+  tree.
+- **Front-end guard caveat (RPC).** A `require`-graph assertion that *no*
+  `kmet.tui.*` namespace loads is not achievable while extensions are
+  enabled: the extension ABI admits `kmet.tui.*` and `host-requires!`
+  requires the whole layer on the first extension (§3.8). Assert instead
+  that the RPC entry point does not load `kmet.modes.interactive.*`, does
+  not construct a terminal, and does not itself require `kmet.tui.*`; the
+  stricter assertion waits for the shared-component-library split (the
+  `kmet.libs.hikap` model, §7 step 6).
 - **Vocabulary parity**: `event-schemas`, `event-types`, `app-event-types`,
   `loop-event-types` keysets agree (test).
 - **EDN contract**: recorded scenarios round-trip; the conformance renderer
@@ -467,13 +548,14 @@ process (`require`-graph assertion).
 - **Docs**: update `src/kmet/README.md` (layer map, state conventions),
   `src/kmet/extension.md` (UI port, async UI requests), and
   `src/kmet/app/event_bus.clj` descriptions in the change that alters them.
-  Add this file to the root-note list in `AGENTS.md` while it exists.
+  This file is listed among the temporary root notes in `AGENTS.md` while
+  it exists.
 
 ## 9. Dependency and portability notes
 
 malli probes (scratch dirs under `target/`, removed by `bb clean`):
 
-| Probe | bb v1.13.226 | jolt v0.8.21-179-g53218ea6 |
+| Probe (re-verified 2026-10-14) | bb v1.13.226 | jolt v0.8.21-184-gd17f10f9 |
 |---|---|---|
 | `malli.core` require, validate, `:multi`, `m/explain` + `humanize` (0.19.1 and 0.20.1) | ✅ | ✅ |
 | `malli.transform` string transformer | ✅ | ✅ only with the existing `io.github.jolt-lang/time` dep (without it: `No matching ctor found for class DateTimeFormatterBuilder`) |
@@ -491,9 +573,12 @@ malli probes (scratch dirs under `target/`, removed by `bb clean`):
 
 ## 10. Open questions
 
-1. Settle outcome shape (finding A): extend `:agent-settled` or add a
-   distinct terminal event? Payload for queue drops on cancel (finding G)?
-2. Session load validation policy (finding C) — measure first.
+1. Settle outcome shape (finding A): extend `:agent-settled` (recommended)
+   or add a distinct terminal event? Recommendation: extend it with the
+   existing `:completed | :error | :aborted` vocabulary and carry the
+   cancel queue-drop reason (finding G) in the same payload.
+2. Session load validation policy (finding C) — measure first; target
+   < 100 ms for 10k entries, else validate-only-on-skip.
 3. Multi-engine future: is per-engine extension scoping ever needed (RPC
    server with parallel sessions), or does single-engine-per-process stay
    permanent? This decides how hard to work on §4.5 scoping.
@@ -501,7 +586,8 @@ malli probes (scratch dirs under `target/`, removed by `bb clean`):
    with UI capabilities injected.
 5. Does `:resume`'s selector remain a TUI-only policy hook, or does the
    engine expose a generic `:session-resolver` for RPC clients?
-6. GUI timing: build after RPC (which proves headless conformance) or
+6. GUI mode timing: the Tk backend already exists (§7 step 6); does
+   `kmet.modes.gui` land after RPC (which proves headless conformance) or
    earlier against the TUI?
 
 ## 11. What not to do
