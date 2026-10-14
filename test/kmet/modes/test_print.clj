@@ -14,12 +14,14 @@
             [kmet.app.extensions :as extensions]))
 
 (defn- opts
-  "Minimal run opts — :model/:provider bypass catalog resolution."
+  "Minimal run opts — :model/:provider bypass catalog resolution;
+   sessions land under target/ so test runs leave the checkout clean."
   []
   {:model "deepseek-v4-flash"
    :provider :opencode-go
    :messages ["hi"]
-   :config {:provider :opencode-go :model "deepseek-v4-flash"}})
+   :config {:provider :opencode-go :model "deepseek-v4-flash"
+            :session-dir "target/test-print-sessions"}})
 
 (defn- opts-with-session-dir
   "Run opts whose sessions live under DIR (test-scoped)."
@@ -130,6 +132,7 @@
                                            (settle! ag))]
         (print-mode/run (assoc (opts) :config {:provider :opencode-go
                                                :model "deepseek-v4-flash"
+                                               :session-dir "target/test-print-sessions"
                                                :images {:block-images true}}))
         (is (true? @seen)))
       (with-redefs [agent/run-agent-turn (fn [ag _]
@@ -146,6 +149,7 @@
                                            (settle! ag))]
         (print-mode/run (assoc (opts) :config {:provider :opencode-go
                                                :model "deepseek-v4-flash"
+                                               :session-dir "target/test-print-sessions"
                                                :http-idle-timeout-ms 1500
                                                :http-total-timeout-ms 2000}))
         (is (= 1500 (:http-idle-timeout-ms @seen)))
@@ -172,6 +176,7 @@
         (is (= "ok" (print-mode/run
                      (assoc (opts) :config {:provider :opencode-go
                                             :model "deepseek-v4-flash"
+                                            :session-dir "target/test-print-sessions"
                                             :models ["opencode-go/deepseek-v4-flash"]}))))
         (let [{:keys [ctx session]} @seen]
           (is (= :print (:mode ctx)))
