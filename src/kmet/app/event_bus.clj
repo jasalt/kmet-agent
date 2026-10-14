@@ -333,7 +333,6 @@
     :session-before-tree
     :session-before-switch
     :session-before-fork
-    :session-before-compact
     :session-tree
     :session-info-changed
     :resources-discover

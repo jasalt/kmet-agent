@@ -422,6 +422,7 @@
       :agent-settled nil
       :session-compact-failed nil
       :session-compact nil
+      :session-before-compact nil
       :error nil
       :model-select nil
       :thinking-level-select nil

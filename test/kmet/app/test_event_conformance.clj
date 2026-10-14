@@ -1,0 +1,165 @@
+(ns kmet.app.test-event-conformance
+  "Headless conformance harness (engine/UI split step 0): a text renderer
+   driven by the loop's event stream alone. It proves a front end can be
+   built from events, and its dispatch table must cover every
+   loop-event-type — a new event type fails the coverage test until the
+   renderer (and by extension every front end) decides what the transcript
+   does with it."
+  (:require [clojure.test :as t]
+            [clojure.string :as str]
+            [kmet.ai.llm :as llm]
+            [kmet.app.event-bus :as event-bus]
+            [kmet.app.loop :as loop]
+            [kmet.app.tools.core :as tools]
+            [kmet.config :as cfg]))
+
+;; ─── The headless renderer ────────────────────────────────────────────────
+
+(defn- ignore
+  "Consume a structural/lifecycle event without a transcript line."
+  [state _event]
+  state)
+
+(defn- message-text
+  "The concatenated text blocks of MESSAGE."
+  [message]
+  (->> (:content message)
+       (keep #(when (= :text (:type %)) (:text %)))
+       (str/join)))
+
+(defn- on-message-start
+  [state event]
+  (let [message (:message event)]
+    (case (:role message)
+      :assistant (assoc state :assistant "")
+      :user (update state :lines conj (str "user: " (message-text message)))
+      state)))
+
+(defn- on-message-update
+  [state event]
+  (let [delta (:delta event)]
+    (if (= :text (:type delta))
+      (update state :assistant str (:content delta))
+      state)))
+
+(defn- on-message-end
+  [state event]
+  (let [text (or (not-empty (:assistant state)) (message-text (:message event)))]
+    (cond-> (assoc state :assistant "")
+      (seq text) (update :lines conj (str "assistant: " text)))))
+
+(defn- on-tool-start
+  [state event]
+  (update state :lines conj (str "tool " (:tool-name event))))
+
+(defn- on-tool-end
+  [state event]
+  (update state :lines conj (str "tool " (:tool-name event)
+                                 (if (:is-error event) " error" " ok"))))
+
+(defn- on-error
+  [state event]
+  (update state :lines conj (str "error: " (:message event))))
+
+(defn- on-settled
+  [state event]
+  (update state :lines conj (str "settled: " (name (:outcome event)))))
+
+(def ^:private renderers
+  "Loop event type -> (fn [state event] -> state). Exactly one entry per
+   loop-event-type: test-renderer-covers-the-vocabulary fails until a new
+   event type gets a decision here."
+  {:agent-start ignore
+   :agent-end ignore
+   :agent-before-settle ignore
+   :agent-settled on-settled
+   :auto-retry-start ignore
+   :auto-retry-end ignore
+   :compaction-start ignore
+   :compaction-end ignore
+   :context-replaced ignore
+   :error on-error
+   :loop-guard ignore
+   :message-start on-message-start
+   :message-update on-message-update
+   :message-end on-message-end
+   :model-select ignore
+   :queue-update ignore
+   :session-before-compact ignore
+   :session-compact ignore
+   :session-compact-failed ignore
+   :status ignore
+   :summarization-retry-scheduled ignore
+   :summarization-retry-attempt-start ignore
+   :summarization-retry-finished ignore
+   :thinking-level-select ignore
+   :tool-execution-start on-tool-start
+   :tool-execution-update ignore
+   :tool-execution-end on-tool-end
+   :turn-start ignore
+   :turn-end ignore})
+
+(defn- render-events
+  "Render EVENTS to a transcript (a vector of lines), reading only the
+   events — never an AgentState. Throws on an event type with no renderer."
+  [events]
+  (:lines
+   (reduce (fn [state event]
+             (if-let [renderer (get renderers (:type event))]
+               (renderer state event)
+               (throw (ex-info "no renderer for loop event" {:type (:type event)}))))
+           {:lines [] :assistant ""}
+           events)))
+
+;; ─── Tests ────────────────────────────────────────────────────────────────
+
+(defn- stub-tool-then-text
+  "send-message stub: the first call streams one tool call, later calls
+   stream text and finish."
+  [calls]
+  (fn [opts]
+    (future
+      (if (= 1 (swap! calls inc))
+        (do (when-let [on-tool-call (:on-tool-call opts)]
+              (on-tool-call {:id "t1" :name "read" :arguments "{}" :index 0}))
+            (when-let [on-done (:on-done opts)] (on-done :tool-calls)))
+        (do (when-let [on-text (:on-text opts)] (on-text "hello"))
+            (when-let [on-done (:on-done opts)] (on-done :stop))))
+      :done)))
+
+(defn- run-scenario
+  "Run a scripted prompt through the real loop and return the captured
+   events."
+  [stub]
+  (let [events (atom [])
+        agent (loop/make-agent-state :on-event (fn [event] (swap! events conj event)))]
+    (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                  llm/send-message stub
+                  tools/execute-tool (fn [_ _ _] {:content "file body" :is-error false})]
+      @(loop/run-agent-turn agent {:message "hi" :on-error (fn [_])}))
+    @events))
+
+(t/deftest test-renderer-covers-the-vocabulary
+  (t/is (= (set (keys event-bus/loop-event-types))
+           (set (keys renderers)))
+        "every loop event type needs a renderer decision (render or ignore)"))
+
+(t/deftest test-headless-renderer-consumes-a-live-stream
+  (let [events (run-scenario (stub-tool-then-text (atom 0)))
+        text (str/join "\n" (render-events events))]
+    (t/is (seq events) "the scenario emitted events")
+    (t/is (str/includes? text "user: hi"))
+    (t/is (str/includes? text "tool read"))
+    (t/is (str/includes? text "tool read ok"))
+    (t/is (str/includes? text "assistant: hello"))
+    (t/is (str/includes? text "settled: completed"))))
+
+(t/deftest test-headless-renderer-renders-failures
+  (let [events (run-scenario
+                (fn [opts]
+                  (future
+                    (when-let [on-error (:on-error opts)] (on-error "boom"))
+                    :done)))
+        text (str/join "\n" (render-events events))]
+    (t/is (str/includes? text "error: boom"))
+    (t/is (str/includes? text "settled: error"))))
