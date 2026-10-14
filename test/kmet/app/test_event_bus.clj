@@ -149,3 +149,12 @@
   (binding [*err* (java.io.StringWriter.)]
     (t/is (= {:continue true} (event-bus/emit-boundary! {:type :b3}))
           "an errored boundary handler is skipped, later handlers still run")))
+
+(t/deftest test-event-vocabulary-partition
+  (t/is (every? #(contains? event-bus/event-types %) event-bus/app-event-types)
+        "every app event type is documented in event-types")
+  (t/is (not-any? #(contains? event-bus/loop-event-types %) event-bus/app-event-types)
+        "app and loop vocabularies do not overlap")
+  (t/is (= (set (keys event-bus/event-types))
+           (into (set event-bus/app-event-types) (keys event-bus/loop-event-types)))
+        "app-event-types and loop-event-types partition event-types"))

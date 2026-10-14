@@ -1,6 +1,7 @@
 (ns kmet.app.test-loop
   (:require [clojure.test :as t]
             [clojure.string :as str]
+            [clojure.edn :as edn]
             [babashka.fs :as fs]
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
@@ -6469,3 +6470,76 @@
               "appended exactly once")
         (finally
           (event-bus/clear-event-listeners!))))))
+
+(t/deftest test-loop-events-are-plain-edn
+  (t/testing "every event the loop emits is documented and round-trips through EDN"
+    (let [events (atom [])
+          calls (atom 0)
+          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+      (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                    llm/send-message (stub-llm-tool-then-text calls)
+                    tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
+        @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
+      (t/is (seq @events) "the scenario emitted events")
+      (doseq [ev @events]
+        (t/is (contains? event-bus/loop-event-types (:type ev))
+              (str "event type outside the loop vocabulary: " (:type ev)))
+        (t/is (= ev (edn/read-string (pr-str ev)))
+              (str "event did not round-trip through EDN: " (:type ev)))))))
+
+;; ─── Settle outcome (:agent-settled :outcome) ─────────────────────────────
+
+(t/deftest test-loop-agent-settled-outcome
+  (t/testing "a completed run settles :completed"
+    (let [events (atom [])
+          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+      (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                    llm/send-message
+                    (fn [o]
+                      (future
+                        (when-let [on-text (:on-text o)] (on-text "ok"))
+                        (when-let [on-done (:on-done o)] (on-done :stop))
+                        :done))]
+        @(loop/run-agent-turn agent {:message "hi" :on-error (fn [_])}))
+      (t/is (= :completed (:outcome (event-of events :agent-settled))))))
+
+  (t/testing "a terminal error settles :error"
+    (let [events (atom [])
+          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+      (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                    llm/send-message
+                    (fn [opts]
+                      (future
+                        (when-let [on-error (:on-error opts)] (on-error "boom"))
+                        :done))]
+        @(loop/run-agent-turn agent {:message "hi" :on-error (fn [_])}))
+      (t/is (= :error (:outcome (event-of events :agent-settled))))))
+
+  (t/testing "an unhandled exception settles :error"
+    (let [events (atom [])
+          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+      (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                    llm/send-message (fn [_] (throw (ex-info "kaboom" {})))]
+        (binding [*err* (java.io.StringWriter.)]
+          @(loop/run-agent-turn agent {:message "hi" :on-error (fn [_])})))
+      (t/is (= :error (:outcome (event-of events :agent-settled))))))
+
+  (t/testing "a cancelled run settles :aborted"
+    (let [events (atom [])
+          started (promise)
+          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+      (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                    llm/send-message (fn [_] (deliver started true) (promise))]
+        (let [fut (loop/run-agent-turn agent {:message "hi" :on-error (fn [_])})]
+          (t/is (true? (deref started 2000 false)) "the LLM call is in flight")
+          (loop/cancel-turn agent)
+          (t/is (not= ::timeout (deref fut 2000 ::timeout)) "run settles after cancel")))
+      (t/is (= :aborted (:outcome (event-of events :agent-settled))))))
+
+  (t/testing "a prompt that cannot start still settles :error"
+    (let [events (atom [])
+          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+      (with-redefs [cfg/get-api-key (fn [_] nil)
+                    auth/configured? (fn [_] false)]
+        @(loop/run-agent-turn agent {:message "hi" :on-error (fn [_])}))
+      (t/is (= :error (:outcome (event-of events :agent-settled)))))))

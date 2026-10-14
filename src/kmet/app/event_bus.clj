@@ -140,6 +140,31 @@
     (when :user-wants-summary) supplies the branch summary, and
     :custom-instructions/:label override the inputs."
 
+   :session-before-switch
+   "Actionable: fired before /new or /resume replaces the active session
+    (pi: emitBeforeSwitch). Payload: :reason (:new | :resume),
+    :target-session-file (optional; the destination path, or the outgoing
+    file for :new). Handlers may return {:cancel true} to abort the switch
+    — the session stays untouched."
+
+   :session-before-fork
+   "Actionable: fired before forking or cloning at a message (pi:
+    session_before_fork). Payload: :entry-id, :position (:at). Handlers may
+    return {:cancel true} to abort the fork."
+
+   :session-before-compact
+   "Actionable: fired before context compaction — manual, threshold, or
+    overflow (pi: session_before_compact). Payload: :preparation (the
+    projection-aware CompactionPreparation: :messages, :tokens-before,
+    :settings), :branch-entries, :custom-instructions, :reason
+    (:manual | :threshold | :overflow), :will-retry (true for overflow
+    recovery), :signal (the run's abort atom). Handlers may return
+    {:cancel true} to skip the compaction, or {:compaction {:summary ..
+    :first-kept-id .. :tokens-before .. :usage .. :details ..}} to supply
+    the content instead of the summarizer (pi:
+    SessionBeforeCompactResult) — the entry then records :from-hook and the
+    compaction events carry :from-extension."
+
    :session-tree
    "Fired after a session-tree navigation branched (pi: session_tree).
     Payload: :new-leaf-id, :old-leaf-id, :summary-entry (optional),
@@ -249,7 +274,10 @@
     :agent-end, once per prompt, after any retries, overflow recovery,
     post-run compaction, error, timeout, or cancel. The agent is idle and no
     further events for this prompt will be emitted (pi: agent_settled,
-    emitted from a finally block after the whole prompt loop)."
+    emitted from a finally block after the whole prompt loop). Payload:
+    :outcome (:completed | :error | :aborted — :aborted when the run's
+    cancel signal fired; a prompt that cannot start, e.g. no configured
+    auth, also settles, with :error)."
 
    ;; ─── Provider events (pi: context / context_with_system /
    ;; ─── before_provider_request / before_provider_headers /

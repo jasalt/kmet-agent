@@ -2757,7 +2757,10 @@ Be precise and concise in your responses."}}]
    (no on-error, no on-done) and the prompt settles.
 
    Emits lifecycle events (see kmet.app.event-bus) to the UI callback and the
-   extension system via emit.
+   extension system via emit. The prompt settles exactly once with
+   :agent-settled, which carries :outcome (:completed | :error | :aborted —
+   :aborted when the cancel signal fired; a prompt that cannot start also
+   settles, with :error).
    Returns: future that completes when the prompt is done."
   [agent {:keys [message images on-text on-thinking on-done on-error]}]
   (reset! (:signal agent) false)
@@ -2776,6 +2779,9 @@ Be precise and concise in your responses."}}]
           (when on-error
             (on-error (str "No API key for " (name provider)
                            ". Set the key in ~/.kmet/agent/auth.edn or the appropriate environment variable.")))
+          ;; The prompt cannot start, but a streaming consumer waits for
+          ;; :agent-settled — settle it like any other failed prompt.
+          (emit agent {:type :agent-settled :outcome :error})
           (future))
       ;; Bind the run's cancel signal for the whole prompt: it conveys into the
       ;; tool futures AND into synchronous extension code (custom tool
@@ -2925,6 +2931,9 @@ Be precise and concise in your responses."}}]
                                     {:outcome outcome})))))
               (catch Exception e
                 (reset! (:status agent) :error)
+                ;; The settle event reports the run's outcome; an exception
+                ;; bypasses the turn-end bookkeeping that normally sets it.
+                (reset! (:last-outcome agent) :error)
                 ;; Report to the UI first — the :error emit goes to the
                 ;; extension event bus, which must not be able to skip the
                 ;; user-visible error path.
@@ -2947,7 +2956,13 @@ Be precise and concise in your responses."}}]
                 ;; pi: agent_settled fires once in a finally, after the
                 ;; pending-bash flush — success, retry, error, timeout, or
                 ;; abort; the prompt is fully settled (agent-session.js).
-                (emit agent {:type :agent-settled})
+                ;; :outcome lets a headless consumer tell how the prompt
+                ;; ended: a fired cancel signal is :aborted, otherwise the
+                ;; last turn's outcome.
+                (emit agent {:type :agent-settled
+                             :outcome (if @(:signal agent)
+                                        :aborted
+                                        @(:last-outcome agent))})
                 ;; Drop this prompt's accumulator entries: a newer prompt may
                 ;; already own the map (cancel clears the running flag before
                 ;; this finally runs).
