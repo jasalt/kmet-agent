@@ -26,6 +26,8 @@ kmet.gui.tk.options       the Tk option vocabulary: props, value shapes,
 kmet.gui.tk               the Tk backend + the classic widget set (:tk/…),
                           tag-table assembly, run-backend!/run! loop
 kmet.gui.ttk              the themed widget set (:ttk/…)
+kmet.gui.ttk.style        the ttk style database: ttk::style configure/map
+                          and theme switching, as Clojure data
 kmet.gui.ui               kmet's own widget set (:ui/…), over kmet.gui.tk:
                           the backend plus the kmet tag table
 kmet.gui.tcl              the host FFI Tcl/Tk adapter (babashka.ffi / jolt.ffi)
@@ -306,6 +308,46 @@ variable, so `-onvalue`/`-offvalue`/`-tristatevalue` are not props either —
 the image-backed `-image`/`-bitmap`/`-selectimage`, and the options that
 name another widget, `-menu` and `-labelwidget`.
 
+### Styles and themes (`kmet.gui.ttk.style`)
+
+`kmet.gui.ttk.style` writes ttk's style database as Clojure data. A ttk
+*style* is a **name** — not a class, not a data structure of ours: a
+widget's style is its class name (`TEntry`) unless its `:style` prop names
+another, and a name inherits from itself without its first component
+(`Kmet.TEntry` falls back to `TEntry` for layout and options). Under a name
+Tk keeps static option values, per-state values (one state→value "map" per
+option: `disabled`, `active`, `focus`, …), and a layout:
+
+```clojure
+(style/use-theme! "clam")            ; ttk::setTheme; a switch makes the
+                                     ; new theme's database current
+(style/define-style! "Kmet.TEntry"   ; ttk::style configure
+                     {:fieldbackground "#1f2735"
+                      :padding [6 2]})
+(style/map-style! "Kmet.TEntry"      ; ttk::style map
+                  {:fieldbackground {:disabled "#161a20" :focus "#20242c"}})
+;; or the whole set in one call — theme first, then styles, then maps:
+(style/apply! {:theme "clam"
+               :styles {"TFrame" {:background "#10141b"}}
+               :maps {"Kmet.TButton" {:background {:active "#2f3a4f"}}}})
+```
+
+Tk resolves an option as: the widget's own option, then the style's map
+for the widget's current state, then its static value, then the inherited
+style's value, then the theme default (`ttk::style lookup`). The database
+is **per theme**: values set under one theme are hidden after a switch and
+return when switching back, so `use-theme!` comes first and `apply!` is
+what a theme change re-runs. Tk accepts unknown option names in
+`configure`/`map` silently (only state names are checked), so a typo is
+silent — `ttk::style configure STYLE` with no options dumps the names when
+a check is wanted. Widget options still win over style values, so the
+existing `:font-family`/`:font-size` props keep working.
+
+Styles are defined on the Tk thread once the adapter has Tk
+(`kmet.gui.tcl/install!`). The app call site and the palette — the TUI
+theme tokens compiled to `TFrame`/`TEntry`/`TNotebook`/`TTreeview`/
+`TScrollbar` values — are not wired yet.
+
 ### Rich text (`:tk/text`)
 
 `:tk/text` takes a plain `:text` string or a `:content` vector of styled
@@ -363,7 +405,10 @@ read caches the tree and a click repaints nothing).
 `kmet.gui.test-tk` (bb or Jolt) exercises the whole engine → backend →
 script path against a recording adapter — no display needed — and
 `kmet.gui.test-ui` does the same for the `:ui/…` widgets over the UI
-backend.
+backend, and `kmet.gui.test-ttk-style` records the `ttk::style` scripts
+headlessly and round-trips `use-theme!`/`define-style!`/`map-style!`/
+`apply!` through a real Tk when a display is there (on Termux, under jolt +
+Xvfb).
 `kmet.gui.test-tcl` (bb or Jolt, skipping where libtcl is absent)
 smoke-tests the real interpreter: eval, the command trampoline,
 `tcl-quote` round-tripping through the Tcl parser, and the recorded

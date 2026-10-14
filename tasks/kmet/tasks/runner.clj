@@ -110,6 +110,7 @@
     kmet.tui.test-dispose
     kmet.gui.test-tk
     kmet.gui.test-ui
+    kmet.gui.test-ttk-style
     kmet.gui.test-tcl
     kmet.tui.components.test-text
     kmet.tui.components.test-spacer

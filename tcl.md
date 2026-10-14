@@ -95,14 +95,15 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
 ## 1. Visible in a themed app
 
-- **ttk styles and themes.** `:style` is a prop, but nothing defines a style
-  (`ttk::style configure/layout/map`) or switches a theme (`ttk::setTheme`).
-  The ttk widgets kmet uses for input (entry, combobox, spinbox, scale,
-  progressbar, notebook, treeview, scrollbar) therefore follow the *system*
-  theme: a dark kmet palette currently has light-grey entry fields and
-  scrollbars. A `kmet.gui.ttk.style` layer — a Clojure map of
-  `{:TEntry {:fieldbackground …}}` compiled to `style configure`, plus a
-  `define-style!`/`use-theme!` pair called once at startup — closes it.
+- **ttk styles and themes.** The database layer exists
+  (`kmet.gui.ttk.style`: `use-theme!`, `define-style!`, `map-style!`,
+  `apply!`, with the name/class/map and per-theme rules in its docstring),
+  but nothing calls it at startup yet. The ttk widgets kmet uses for input
+  (entry, combobox, spinbox, scale, progressbar, notebook, treeview,
+  scrollbar) therefore still follow the *system* theme: a dark kmet palette
+  has light-grey entry fields and scrollbars. What is left is the app's own
+  style set — the TUI theme tokens compiled to `TFrame`/`TEntry`/… values —
+  applied once at startup (and re-applied on a theme switch).
 - **Images.** No photo-image support at all: `-image`/`-bitmap`/`-selectimage`
   are not props, the canvas cannot draw one, and a markdown image (which the
   TUI renders) is a gap in a GUI transcript. Needs `image create photo`, a
@@ -201,3 +202,6 @@ be; each group needs machinery:
   construction, patching, callbacks, the value slots and disposal.
 - `bb test kmet.gui.test-ui` — the same for the kmet-widget set (`:ui/…`),
   mounted through `kmet.gui.ui/backend`.
+- `jolt test kmet.gui.test-ttk-style` under a display (on Termux, `xvfb-run
+  -a`) — the ttk style database round-trips through a real Tk; the same
+  tests record the scripts headlessly on babashka.
