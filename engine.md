@@ -530,6 +530,14 @@ wiring blocks in `modes/print.clj` and `modes/interactive/layout.clj` are
 gone; `test/kmet/app/test_interactive_ui.clj` and `test_print.clj` pass
 unchanged.
 
+**Landed**: `kmet.app.session-runtime` provides `bootstrap`, subscriber
+dispatch, bounded `dispose!` and runtime-scoped extension wiring; print
+and the TUI both construct the engine, and the layout keeps its handler
+as one subscriber. The remaining §4.1 session ops (`new-session!`,
+`resume!`, `fork!`, `switch-session!`) and turn submission stay in the
+mode until step 3 — the test-stub fallback to `agent/run-agent-turn`
+retires with them.
+
 ### Step 2 — port print mode
 
 - Print mode commutes its callbacks to subscriptions where practical;
