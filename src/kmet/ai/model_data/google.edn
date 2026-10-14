@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-24T07:02:29Z"
+ :generated-at "2026-10-14T10:10:31Z"
  :provider {:id :google
             :name "Google"
             :env-vars ["GEMINI_API_KEY"]
@@ -248,6 +248,17 @@
     :cost {:input 0.75 :output 3.75 :cache-read 0.075 :cache-write 0}
     :context-window 1048576
     :max-tokens 65536}
+   "gemini-4-argon"
+   {:id "gemini-4-argon"
+    :name "Gemini 4 Argon"
+    :provider :google
+    :api :google-generative-ai
+    :base-url "https://generativelanguage.googleapis.com/v1beta"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 2 :output 10 :cache-read 0.1 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 32768}
    "gemini-flash-latest"
    {:id "gemini-flash-latest"
     :name "Gemini Flash Latest"

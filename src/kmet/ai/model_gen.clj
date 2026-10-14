@@ -2016,12 +2016,13 @@
    "claude-sonnet-5"                   [:anthropic "claude-sonnet-5"]
    "deepseek/deepseek-v4-flash"        [:deepseek "deepseek-flash"]
    "deepseek/deepseek-v4-flash-fast"   [:deepseek "deepseek-flash"]
-   "deepseek/deepseek-v4-flash-vision-exp" [:opencode-go "deepseek-v4-flash-vision-exp"]
+   "deepseek/deepseek-v4-flash-vision-exp" [:deepseek "deepseek-flash"]
    "deepseek/deepseek-v4-pro"          [:deepseek "deepseek-v4-pro"]
-   ;; pi 12f59336a: the retired v4-flash aliases collapse into DeepSeek's
-   ;; canonical `deepseek-flash` (V4.1 Flash, text+image); clamping to
-   ;; :deepseek keeps the ref off rename-prone aggregator ids (opencode-go
-   ;; renamed its copy to "deepseek-v4.1-flash" and broke the old ref).
+   ;; pi 12f59336a: the retired v4-flash / v4-flash-vision-exp aliases
+   ;; collapse into DeepSeek's canonical `deepseek-flash` (V4.1 Flash,
+   ;; text+image); clamping to :deepseek keeps the refs off rename-prone
+   ;; aggregator ids (opencode-go renamed its copies to "deepseek-v4.1-flash"
+   ;; and broke both old refs).
    "deepseek/deepseek-v4.1-flash"      [:deepseek "deepseek-flash"]
    "google/gemini-3.1-flash-lite"      [:google "gemini-3.1-flash-lite"]
    "google/gemini-3.5-flash"           [:google "gemini-3.5-flash"]

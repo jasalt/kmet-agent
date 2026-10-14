@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-09T09:05:00Z"
+ :generated-at "2026-10-14T10:10:31Z"
  :provider {:id :cloudflare-ai-gateway
             :name "Cloudflare AI Gateway"
             :env-vars ["CLOUDFLARE_API_KEY" "CLOUDFLARE_ACCOUNT_ID" "CLOUDFLARE_GATEWAY_ID"]
@@ -43,6 +43,22 @@
     :cost {:input 1 :output 5 :cache-read 0.1 :cache-write 1.25}
     :context-window 200000
     :max-tokens 64000
+    :compat {:send-session-affinity-headers true}}
+   "claude-haiku-5.5"
+   {:id "claude-haiku-5.5"
+    :name "Claude Haiku 5.5"
+    :provider :cloudflare-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 0.1
+           :tiers [{:input 0.5 :input-tokens-above 100000 :output 2.5 :cache-read 0.05 :cache-write 0.625}]
+           :output 0.5
+           :cache-read 0.01
+           :cache-write 0.125}
+    :context-window 1000000
+    :max-tokens 128000
     :compat {:send-session-affinity-headers true}}
    "claude-opus-4.5"
    {:id "claude-opus-4.5"

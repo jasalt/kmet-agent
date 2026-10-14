@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-09T09:05:00Z"
+ :generated-at "2026-10-14T10:10:31Z"
  :provider {:id :opencode
             :name "OpenCode (Zen)"
             :env-vars ["OPENCODE_API_KEY"]
@@ -328,6 +328,17 @@
     :input [:text :image]
     :cost {:input 1.5 :output 7.5 :cache-read 0.15 :cache-write 0}
     :context-window 1048576
+    :max-tokens 65536}
+   "gemini-4-argon"
+   {:id "gemini-4-argon"
+    :name "Gemini 4 Argon"
+    :provider :opencode
+    :api :google-generative-ai
+    :base-url "https://opencode.ai/zen/v1"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 2 :output 10 :cache-read 0.1 :cache-write 0}
+    :context-window 1048576
     :max-tokens 65536}}
   :openai-completions
   {"big-pickle"
@@ -341,6 +352,28 @@
     :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
     :context-window 200000
     :max-tokens 32000
+    :compat {:supports-store false
+             :supports-developer-role false
+             :max-tokens-field :max-tokens
+             :supports-strict-mode true}}
+   "cat-jam-free"
+   {:id "cat-jam-free"
+    :name "Cat Jam Free"
+    :provider :opencode
+    :api :openai-completions
+    :base-url "https://opencode.ai/zen/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium "medium"
+                         :minimal nil
+                         :off nil
+                         :xhigh "xhigh"}
+    :input [:text]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 262144
+    :max-tokens 131072
     :compat {:supports-store false
              :supports-developer-role false
              :max-tokens-field :max-tokens

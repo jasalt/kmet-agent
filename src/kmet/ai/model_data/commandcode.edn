@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-12T10:30:04Z"
+ :generated-at "2026-10-14T10:13:53Z"
  :provider {:id :commandcode
             :name "Command Code"
             :env-vars ["CMD_API_KEY"]
@@ -347,12 +347,10 @@
     :base-url "https://api.commandcode.ai/provider/v1"
     :reasoning true
     :thinking-level-map {:high "high"
-                         :low nil
+                         :low "low"
                          :max "max"
                          :medium nil
-                         :minimal nil
-                         :off nil
-                         :xhigh nil}
+                         :minimal nil}
     :input [:text :image]
     :cost {:input 0.15 :output 0.6 :cache-read 0.003 :cache-write 0}
     :context-window 1000000
@@ -477,6 +475,17 @@
     :reasoning false
     :input [:text]
     :cost {:input 1.5 :output 7.5 :cache-read 0.15 :cache-write 0}
+    :context-window 1000000
+    :max-tokens 32768}
+   "google/gemini-4-argon"
+   {:id "google/gemini-4-argon"
+    :name "Gemini 4 Argon"
+    :provider :commandcode
+    :api :openai-completions
+    :base-url "https://api.commandcode.ai/provider/v1"
+    :reasoning false
+    :input [:text]
+    :cost {:input 2 :output 10 :cache-read 0.1 :cache-write 0}
     :context-window 1000000
     :max-tokens 32768}
    "gpt-5.3-codex"
@@ -775,6 +784,17 @@
     :cost {:input 0.1 :output 0.2 :cache-read 0.002 :cache-write 0}
     :context-window 1048576
     :max-tokens 131072}
+   "meta/muse-wonder-1.0"
+   {:id "meta/muse-wonder-1.0"
+    :name "Muse Wonder"
+    :provider :commandcode
+    :api :openai-completions
+    :base-url "https://api.commandcode.ai/provider/v1"
+    :reasoning false
+    :input [:text]
+    :cost {:input 4 :output 20 :cache-read 0.2 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 32768}
    "mistral/mistral-large-4"
    {:id "mistral/mistral-large-4"
     :name "Mistral Large 4"
