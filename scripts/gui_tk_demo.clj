@@ -21,13 +21,14 @@
   (component/schedule-frame!))
 
 (defn app [_props]
-  [:vbox {:padding 8}
-   [:label "kmet — hiccup-tk demo (close the window to exit)"]
-   [:text {:text (str/join "\n" @log)}]
-   [:hbox {}
-    [:button {:label "Add line"
+  [:ttk/frame {:padding 8}
+   [:ttk/label "kmet — hiccup-tk demo (close the window to exit)"]
+   [:tk/text {:text (str/join "\n" @log)}]
+   [:ttk/frame {}
+    ;; pack geometry is the child's: :side is Tk's pack -side
+    [:ttk/button {:text "Add line" :side :left
               :on-click #(append-line! (str "line " (inc (count @log))))}]
-    [:button {:label "Clear"
+    [:ttk/button {:text "Clear" :side :left
               :on-click #(do (reset! log []) (component/schedule-frame!))}]]])
 
 (defn -main [& _]

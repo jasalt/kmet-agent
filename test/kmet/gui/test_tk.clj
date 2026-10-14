@@ -10,6 +10,7 @@
             [clojure.test :as t]
             [kmet.gui.tk :as tk]
             [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.alias :as alias]
             [kmet.libs.hikap.component :as component]
             [kmet.libs.reakt :as r]))
 
@@ -33,7 +34,7 @@
   "Mount TREE under a fresh window through the engine, returning the window
    record and the root component."
   [tree]
-  (let [window (engine/compile-element tk/tk-backend [:window {:title "t"}])
+  (let [window (engine/compile-element tk/tk-backend [:tk/toplevel {:title "t"}])
         root (engine/root tk/tk-backend tree)]
     (binding [engine/*construct-context* {:parent window}]
       (engine/render-component root nil))
@@ -63,14 +64,14 @@
 
 (t/deftest run-builds-a-widget-tree
   (with-fake [rec nil]
-    (tk/run! (fn [_] [:vbox {:padding 4}
-                      [:label "hello"]
-                      [:button {:label "Go" :on-click (constantly nil)}]])
+    (tk/run! (fn [_] [:ttk/frame {:padding 4}
+                      [:ttk/label "hello"]
+                      [:ttk/button {:text "Go" :on-click (constantly nil)}]])
              {:title "kmet" :width 320 :height 200})
     (let [ss (scripts rec)]
       (t/is (some #(= "wm title . kmet" %) ss))
-      (t/is (some #(re-find #"ttk::frame \.w\d+$" %) ss))
-      (t/is (some #(re-find #"ttk::label \.w\d+\.w\d+ -text hello" %) ss))
+      (t/is (some #(re-find #"ttk::frame \.w\d+ -padding 4" %) ss))
+      (t/is (some #(re-find #"ttk::label \.w\d+\.w\d+ .*-text hello" %) ss))
       (t/is (some #(re-find #"ttk::button" %) ss))
       (t/is (some #(re-find #"pack .* -side top" %) ss))
       (t/is (some #(re-find #"-command \{kmet::cb \d+\}" %) ss))
@@ -78,16 +79,50 @@
 
 (t/deftest bare-strings-become-labels
   (with-fake [rec nil]
-    (let [{:keys [root]} (mounted [:vbox {} "hi"])]
+    (let [{:keys [root]} (mounted [:ttk/frame {} "hi"])]
       (t/is (some #(re-find #"ttk::label .* -text hi" %) (scripts rec)))
       (engine/dispose-component root))))
+
+(t/deftest tag-names-follow-tk
+  ;; :tk/toplevel is the root window, :ttk/frame a ttk::frame, :ttk/labelframe
+  ;; a ttk::labelframe, and pack geometry stays the child's (:side/:fill).
+  (with-fake [rec nil]
+    (let [m (mounted [:ttk/frame {}
+                      [:ttk/labelframe {:text "Title"} "x"]
+                      [:ttk/label {:text "row" :side :left :fill :y}]])
+          ss (scripts rec)]
+      (t/is (some #(re-find #"^ttk::labelframe \.w[\w.]+ -text Title" %) ss))
+      (t/is (some #(re-find #"^pack \.w[\w.]+ -side left -fill y" %) ss)
+            "the child's :side is Tk's pack -side")
+      (engine/dispose-component (:root m)))))
+
+(t/deftest qualified-tags-are-host-tags-not-aliases
+  ;; kmet.gui's tags carry Tcl's namespace split, so they are qualified: a
+  ;; keyword the backend declares is a host tag and wins over the alias
+  ;; registry; every other qualified keyword is still an alias lookup.
+  (let [called (atom nil)
+        unregister (alias/register! :tk/frame
+                                    (fn [_ _] (reset! called true) nil))]
+    (try
+      (with-fake [rec nil]
+        (let [{:keys [root]} (mounted [:tk/frame {}])]
+          (t/is (some #(re-find #"^frame " %) (scripts rec))
+                "the declared :tk/frame renders the classic frame")
+          (t/is (nil? @called) "the alias fn never ran")
+          (engine/dispose-component root)))
+      (finally (unregister))))
+  (with-fake [_rec nil]
+    (t/is (= :ttk/nope
+             (try (mounted [:ttk/nope {}]) nil
+                  (catch Exception e (:alias (ex-data e)))))
+          "an undeclared qualified keyword is still an alias")))
 
 ;; ─── props, patching and rebuilds ─────────────────────────────────────────
 
 (t/deftest entry-text-patches-in-place
   (with-fake [rec nil]
     (let [a (atom "one")
-          m (mounted (fn [_] [:vbox {} [:entry {:text @a}]]))]
+          m (mounted (fn [_] [:ttk/frame {} [:ttk/entry {:text @a}]]))]
       (t/is (some #(re-find #"insert 0 one" %) (scripts rec)))
       (let [before (count (scripts-like rec #"^destroy "))]
         (reset! a "two")
@@ -101,7 +136,7 @@
   (with-fake [rec nil]
     (let [text (atom "one")
           bold (atom false)
-          m (mounted (fn [_] [:vbox {} [:label {:text @text :bold @bold}]]))]
+          m (mounted (fn [_] [:ttk/frame {} [:ttk/label {:text @text :bold @bold}]]))]
       ;; a text change is a Tcl option → patch in place, keep the instance
       (reset! text "two")
       (rerender! m)
@@ -119,7 +154,7 @@
 (t/deftest label-rebinds-a-changed-click-callback
   (with-fake [rec nil]
     (let [a (atom (fn [] :first))
-          m (mounted (fn [_] [:vbox {} [:label {:text "x" :on-click @a}]]))]
+          m (mounted (fn [_] [:ttk/frame {} [:ttk/label {:text "x" :on-click @a}]]))]
       (t/is (some #(re-find #"<Button-1>" %) (scripts rec)))
       (let [before (count (scripts-like rec #"^destroy "))]
         (reset! a (fn [] :second))
@@ -140,10 +175,10 @@
   (with-fake [rec nil]
     (let [a (atom ["a" "b" "c"])
           m (mounted (fn [_]
-                       [:vbox {}
+                       [:ttk/frame {}
                         (map-indexed (fn [_i s]
                                        ^{:key s}
-                                       [:label {:text (str s "!")}])
+                                       [:ttk/label {:text (str s "!")}])
                                      @a)]))]
       (let [labels (scripts-like rec #"ttk::label")
             paths (mapv #(second (re-find #"(\.w[\w.]+)" %)) labels)]
@@ -164,8 +199,8 @@
 (t/deftest click-dispatches-through-the-trampoline
   (with-fake [rec nil]
     (let [clicked (atom nil)]
-      (mounted [:vbox {}
-                [:button {:label "Go" :on-click #(reset! clicked :yes)}]])
+      (mounted [:ttk/frame {}
+                [:ttk/button {:text "Go" :on-click #(reset! clicked :yes)}]])
       (let [script (first (scripts-like rec #"-command \{kmet::cb \d+\}"))
             id (second (re-find #"kmet::cb (\d+)" script))]
         (t/is (some? id))
@@ -176,11 +211,108 @@
 
 ;; ─── dispose ──────────────────────────────────────────────────────────────
 
+(t/deftest removing-a-callback-unbinds-it
+  ;; A callback that leaves the tree must stop firing: the Tk binding is
+  ;; cleared and its trampoline entry released.
+  (with-fake [rec nil]
+    (let [f (atom (fn [] :live))
+          m (mounted (fn [_] [:ttk/frame {} [:ttk/label {:text "x" :on-click @f}]]))
+          script (first (scripts-like rec #"bind "))
+          path (second (re-find #"bind (\.w[\w.]+) <Button-1>" script))
+          id (second (re-find #"kmet::cb (\d+)" script))]
+      (t/is (= ":live" (tk/dispatch-callback! ["kmet::cb" id])))
+      (reset! f nil)
+      (rerender! m)
+      (t/is (some #(= (str "bind " path " <Button-1> {}") %) (scripts rec))
+            "the removed callback is unbound in Tk")
+      (t/is (= "" (tk/dispatch-callback! ["kmet::cb" id]))
+            "and released from the trampoline")
+      (engine/dispose-component (:root m)))))
+
+(t/deftest value-slots-receive-the-widget-value
+  ;; :on-change/:on-submit get the entry's text — Tcl reads it when the
+  ;; event fires — and :on-toggled gets the checked state as a boolean.
+  (with-fake [rec nil]
+    (let [typed (atom nil)
+          sent (atom nil)
+          m (mounted (fn [_] [:ttk/frame {}
+                              [:ttk/entry {:text "abc"
+                                           :on-change (fn [t] (reset! typed t) nil)
+                                           :on-submit (fn [t] (reset! sent t) nil)}]]))
+          id (fn [re] (second (re-find #"kmet::cb (\d+)" (first (scripts-like rec re)))))]
+      (t/is (re-find #"\[(\.w[\w.]+) get\]" (first (scripts-like rec #"<KeyRelease>")))
+            "the change event passes the entry's live text")
+      (tk/dispatch-callback! ["kmet::cb" (id #"<KeyRelease>") "abcd"])
+      (t/is (= "abcd" @typed))
+      (tk/dispatch-callback! ["kmet::cb" (id #"<Return>") "abcd"])
+      (t/is (= "abcd" @sent))
+      (engine/dispose-component (:root m))))
+  (with-fake [rec nil]
+    (let [checked (atom ::none)
+          m (mounted (fn [_] [:ttk/frame {}
+                              [:ttk/checkbutton {:text "x" :active false
+                                                 :on-toggled (fn [v] (reset! checked v) nil)}]]))
+          script (first (scripts-like rec #"-command \{kmet::cb"))
+          id (second (re-find #"kmet::cb (\d+)" script))]
+      (t/is (re-find #"instate selected" script)
+            "the command reads the toggled state")
+      (tk/dispatch-callback! ["kmet::cb" id "1"])
+      (t/is (true? @checked))
+      (tk/dispatch-callback! ["kmet::cb" id "0"])
+      (t/is (false? @checked))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest bind-takes-chords-and-tracks-the-map
+  ;; :bind binds arbitrary events by kmet chord (or a raw Tk pattern); a
+  ;; chord that leaves the map is unbound again.
+  (with-fake [rec nil]
+    (let [hits (atom [])
+          bs (atom {:ctrl+enter (fn [] (swap! hits conj :send) nil)
+                    :escape (fn [] (swap! hits conj :cancel) nil)
+                    "<Double-Button-1>" (fn [] nil)})
+          m (mounted (fn [_] [:ttk/frame {} [:ttk/entry {:text "x" :bind @bs}]]))
+          slot (fn [ev] (first (filter #(str/includes? % (str ev " ")) (scripts rec))))
+          id (fn [ev] (second (re-find #"kmet::cb (\d+)" (slot ev))))]
+      (t/is (some #(re-find #"<Control-Return>" %) (scripts rec)))
+      (t/is (some #(str/includes? % "<Double-Button-1>") (scripts rec))
+            "a Tk event pattern passes through")
+      (tk/dispatch-callback! ["kmet::cb" (id "<Control-Return>")])
+      (t/is (= [:send] @hits))
+      (let [dropped (id "<Control-Return>")
+            path (second (re-find #"bind (\.w[\w.]+) <Control-Return>" (slot "<Control-Return>")))]
+        (reset! bs {:escape (fn [] nil)})
+        (rerender! m)
+        (t/is (some #(= (str "bind " path " <Control-Return> {}") %) (scripts rec))
+              "the dropped chord is unbound")
+        (t/is (= "" (tk/dispatch-callback! ["kmet::cb" dropped]))))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest window-bind-binds-the-toplevel
+  (with-fake [rec nil]
+    (tk/run! (fn [_] [:ttk/frame {}]) {:title "k" :bind {:ctrl+q (fn [] nil)}})
+    (t/is (some #(re-find #"^bind \. <Control-q> \{kmet::cb \d+\}$" %) (scripts rec)))))
+
+(t/deftest keyword-prop-values-render-as-tcl-words
+  ;; :wrap :none and :fill :both are Clojure data, not Tcl strings.
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {} [:tk/text {:text "x" :wrap :none :fill :both}]])]
+      (t/is (some #(str/includes? % "-wrap none") (scripts rec)))
+      (t/is (some #(str/includes? % "-fill both") (scripts rec)))
+      (engine/dispose-component root))))
+
+(t/deftest unknown-bind-chords-fail-loudly
+  (with-fake [_rec nil]
+    (t/is (= :kmet.gui.tk/bad-chord
+             (try
+               (mounted [:ttk/frame {} [:ttk/label {:text "x" :bind {:hyper+unknown (fn [] nil)}}]])
+               nil
+               (catch Exception e (:type (ex-data e))))))))
+
 (t/deftest dispose-destroys-the-widget-and-releases-callbacks
   (with-fake [rec nil]
-    (let [{:keys [root]} (mounted [:vbox {}
-                                   [:label "bye"]
-                                   [:button {:label "x" :on-click (constantly nil)}]])]
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:ttk/label "bye"]
+                                   [:ttk/button {:text "x" :on-click (constantly nil)}]])]
       (engine/dispose-component root)
       (t/is (>= (count (scripts-like rec #"^destroy \.w")) 2)
             "container and children destroyed"))))
@@ -200,15 +332,15 @@
                              (component/schedule-frame!)
                              (pump))}]
     (binding [tk/*adapter* adapter]
-      (tk/run! (fn [_] [:vbox {} [:label @a]]) {:title "p"}))
+      (tk/run! (fn [_] [:ttk/frame {} [:ttk/label @a]]) {:title "p"}))
     (t/is (some #(re-find #"-text start" %) @scripts))
     (t/is (some #(re-find #"-text later" %) @scripts)
           "the scheduled pump re-rendered the tree")))
 
 (t/deftest text-wrap-and-height
   (with-fake [rec nil]
-    (let [m (mounted [:vbox {}
-                      [:text {:text "one two three" :width 40 :height 1 :wrap "word"}]])
+    (let [m (mounted [:ttk/frame {}
+                      [:tk/text {:text "one two three" :width 40 :height 1 :wrap "word"}]])
           ss (scripts rec)]
       (t/is (some #(str/includes? % "-wrap word") ss)
             "the widget wraps rather than clipping")
@@ -217,7 +349,7 @@
       (engine/dispose-component (:root m)))
     ;; a line longer than the widget wraps in Tk: the height must follow it
     (let [long (apply str (repeat 90 "x"))
-          m (mounted [:vbox {} [:text {:text long :width 40 :height 1 :wrap "word"}]])
+          m (mounted [:ttk/frame {} [:tk/text {:text long :width 40 :height 1 :wrap "word"}]])
           ss (scripts rec)]
       (t/is (some #(str/includes? % "count -displaylines") ss)
             "a wrapped line re-sets -height from the display lines")
@@ -227,7 +359,7 @@
   ;; -relief solid draws its border in the widget's own background, which is
   ;; invisible on a card over a similar canvas; the ring takes a colour.
   (with-fake [rec nil]
-    (let [m (mounted [:vbox {} [:frame {:border 1 :border-color "#3b4757"} "x"]])
+    (let [m (mounted [:ttk/frame {} [:tk/frame {:border 1 :border-color "#3b4757"} "x"]])
           ss (scripts-like rec #"^frame ")]
       (t/is (some #(str/includes? % "-highlightthickness 1") ss))
       (t/is (some #(str/includes? % "-highlightbackground \\#3b4757") ss))
@@ -243,7 +375,7 @@
           bodies (atom 0)
           h (tk/mount! (fn [_]
                          (swap! bodies inc)
-                         [:vbox {} [:label (r/tracked-deref a)]]))]
+                         [:ttk/frame {} [:ttk/label (r/tracked-deref a)]]))]
       (t/is (= 1 @bodies))
       (reset! a "two")
       ((:pump h))
@@ -255,7 +387,7 @@
 (t/deftest mount-render-loop-splits-the-loop-for-the-repl
   (with-fake [rec nil]
     (let [a (atom "one")
-          h (tk/mount! (fn [_] [:vbox {} [:label @a]]))]
+          h (tk/mount! (fn [_] [:ttk/frame {} [:ttk/label @a]]))]
       (t/is (some #(re-find #"-text one" %) (scripts rec))
             "mount! renders the tree once")
       (let [before (count (scripts rec))]
@@ -278,11 +410,11 @@
 (t/deftest text-content-segments-reuse-style-tags
   (with-fake [rec nil]
     (let [{:keys [root]} (mounted
-                          [:vbox {}
-                           [:text {:content [{:text "plain "}
-                                             {:text "red " :fg "#ff0000"}
-                                             {:text "bold" :bold true}
-                                             {:text "red2" :fg "#ff0000"}]}]])]
+                          [:ttk/frame {}
+                           [:tk/text {:content [{:text "plain "}
+                                                {:text "red " :fg "#ff0000"}
+                                                {:text "bold" :bold true}
+                                                {:text "red2" :fg "#ff0000"}]}]])]
       (let [ss (scripts rec)
             configs (scripts-like rec #"tag configure")
             inserts (into [] (comp (filter #(re-find #" insert end " %))
@@ -304,7 +436,7 @@
 
 (t/deftest text-scrollbar-is-wired
   (with-fake [rec nil]
-    (let [{:keys [root]} (mounted [:vbox {} [:text {:text "hi" :scrollbar true}]])
+    (let [{:keys [root]} (mounted [:ttk/frame {} [:tk/text {:text "hi" :scrollbar true}]])
           path (second (re-find #"^text (\.w[\w.]+)" (first (scripts-like rec #"^text \.w"))))
           sb (second (re-find #"^ttk::scrollbar (\.w[\w.]+) -orient vertical -command \""
                               (first (scripts-like rec #"^ttk::scrollbar "))))]
@@ -326,15 +458,19 @@
 
 (t/deftest transcript-embeds-each-child-as-a-window
   (with-fake [rec nil]
-    (let [{:keys [root]} (mounted [:vbox {}
-                                   [:transcript {:see-end true :read-only true}
-                                    [:text {:text "a"}]
-                                    [:text {:text "b"}]]])
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:tk/transcript {:see-end true :read-only true}
+                                    [:tk/text {:text "a"}]
+                                    [:tk/text {:text "b"}]]])
           ss (scripts rec)
           text (second (re-find #"^text (\.w[\w.]+)" (first (scripts-like rec #"^text \."))))
           sb (second (re-find #"^ttk::scrollbar (\.w[\w.]+) -orient vertical -command \""
                               (first (scripts-like rec #"^ttk::scrollbar "))))]
-      (t/is (some #(str/includes? % "-wrap none -height 1 -width 1") ss))
+      (t/is (some #(and (str/includes? % "-wrap none")
+                        (str/includes? % "-height 1")
+                        (str/includes? % "-width 1"))
+                  ss)
+            "the transcript text widget is one line deep and unwrapped")
       (t/is (some #(str/includes? % (str "ttk::scrollbar " sb " -orient vertical -command \""
                                          text " yview\""))
                   ss))

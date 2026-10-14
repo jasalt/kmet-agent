@@ -193,8 +193,10 @@ Tags are keywords from the closed tag table (§2.2), function heads
 (`[status-area {:mode :normal}]` is valid Reagent-style usage), or
 **aliases**: a qualified keyword resolves through the `kmet.libs.hikap.alias`
 registry (§2.9) to a named tag-level component — the one way to add a
-reusable tag without touching the host table. A qualified keyword is
-never a host tag. Two more normalizer rules keep call sites terse:
+reusable tag without touching the host table. A keyword the rendering
+backend declares as a host tag is never an alias, qualified or not (the
+TUI names its tags unqualified; kmet.gui's sets are `:tk/…` and `:ttk/…`).
+Two more normalizer rules keep call sites terse:
 
 - **Props map optional** — `[:v-stack child…]` compiles with `{}`; the map
   slot is needed only when props exist (`:key`, `:ref`, options).
@@ -641,9 +643,12 @@ the process-global registry in `kmet.libs.hikap.alias`:
   next dep change. A body run with the alias unregistered throws loudly.
   `registered` is the registry snapshot for tests and tooling;
   `reset-registry!` is test isolation only.
-- Unqualified keywords stay host tags — the tag table remains closed. A
-  qualified keyword never falls back to it: an unregistered alias throws,
-  naming the registered aliases and suggesting the nearest one.
+- A backend's declared tags are host tags — the tag table stays closed. It
+  may name them unqualified (`kmet.tui.hikap` does) or qualified
+  (`kmet.gui`'s `:tk/…`/`:ttk/…`), and a declared tag wins over the
+  registry. Any other qualified keyword never falls back to a host tag: an
+  unregistered alias throws, naming the registered aliases and suggesting
+  the nearest one.
 - Underneath, an alias element is an ordinary fn component (ComponentFn):
   reactions, `with-let` state, refs on children, keyed reuse and the
   unchanged-tree skip all apply. Its match kind is the alias keyword (the
@@ -1635,8 +1640,10 @@ kmet.app.ui     fn components (shared def'd computes, with-let local state)
                 + hiccup/root mount points
 kmet.tui        the TUI backend: hiccup facade, macros, protocols, components
                 — generic; no app/chat/session concepts
-kmet.gui        GUI backends, Jolt-only (kmet.gui.tk = the Tk hiccup
-                backend, kmet.gui.tcl = its jolt.ffi adapter)
+kmet.gui        GUI backends, Jolt-only (kmet.gui.tk = the Tk backend
+                with the classic :tk/… widget set, kmet.gui.ttk = the
+                :ttk/… set, kmet.gui.tk.dsl = their shared machinery,
+                kmet.gui.tcl = the host FFI adapter)
 kmet.libs.*     self-contained helpers bottom layer (terminal protocol,
                 HTTP, markdown, reakt, ...) — includes the toolkit-agnostic
                 hiccup framework kmet.libs.hikap (+ .component / .alias)

@@ -26,7 +26,10 @@
 
    A backend is a map:
      :name            keyword identifying the backend
-     :tags            the closed host tag table (tag -> spec map)
+     :tags            the closed host tag table (tag -> spec map); a
+                      declared keyword is a host tag even when qualified
+                      (kmet.gui's :tk/… / :ttk/…), and wins over the alias
+                      registry
      :text-leaf       (fn [text props] component) — a bare string child
      :component?      (fn [x] bool) — a foreign spliced component?
      :entry-component (fn [entry] component) — stack-entry payload, or nil
@@ -261,7 +264,8 @@
 (defn- unknown-alias!
   "Throw the unknown-alias error: names the alias, lists the registered
    aliases, and suggests the nearest one (did-you-mean, mirroring
-   unknown-tag!). Qualified keywords never fall back to a host table."
+   unknown-tag!). Only keywords the backend does not declare as host tags
+   reach here."
   [backend tag]
   (let [known (vec (sort (keys (alias/registered))))]
     (throw (ex-info (str "kmet.libs.hikap: unknown alias " tag
@@ -318,9 +322,13 @@
           content (vec (rest node))
           meta-key (:key (meta node))]
       (cond
-        (keyword? tag) (if (namespace tag)
-                         (parse-alias backend tag content meta-key)
-                         (parse-host backend tag content meta-key))
+        ;; a backend's closed tag table owns its keywords: a qualified
+        ;; keyword it declares is a host tag, so only the rest resolve
+        ;; through the alias registry (kmet.libs.hikap.alias)
+        (keyword? tag) (if (or (contains? (:tags backend) tag)
+                               (nil? (namespace tag)))
+                         (parse-host backend tag content meta-key)
+                         (parse-alias backend tag content meta-key))
         (fn? tag)
         (let [props-map? (and (map? (first content))
                               (not (record? (first content))))

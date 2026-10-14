@@ -1167,8 +1167,9 @@ Use it to contribute UI by name: a tree site embeds
   (the returned deregister fn is tracked like every other registration).
   Do **not** use `kmet.libs.hikap.alias/defalias` in an extension — it registers
   directly and would survive the unload.
-- Names must be qualified keywords; unqualified keywords are host tags,
-  and there is no `.class`/`#id` tag-suffix syntax. A body run after the
+- Names must be qualified keywords that no rendering backend declares as
+  a host tag (unqualified keywords are always host tags), and there is no
+  `.class`/`#id` tag-suffix syntax. A body run after the
   registration is gone (unload) throws loudly; a cached body keeps its
   last output until its next run.
 

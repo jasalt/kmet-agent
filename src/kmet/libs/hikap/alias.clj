@@ -3,8 +3,11 @@
    the hiccup engine (kmet.libs.hikap).
 
    A hiccup element whose head is a QUALIFIED keyword resolves through this
-   registry to a fn `(fn [attrs children] tree)`; an UNQUALIFIED keyword is
-   a host tag of whichever backend renders the tree. Unlike a fn head the
+   registry to a fn `(fn [attrs children] tree)` — unless the rendering
+   backend declares that keyword as a host tag, which wins: a backend's
+   closed tag table may use qualified keywords (kmet.gui's `:tk/…` and
+   `:ttk/…` do). An UNQUALIFIED keyword is always a host tag of whichever
+   backend renders the tree. Unlike a fn head the
    tag is data — a keyword, never a var or symbol — so no *ns* resolution
    happens at reconcile time and a tree site can embed
    `[:my.ns/chip {:model m} child]` without requiring the provider.
@@ -43,8 +46,9 @@
 (declare unregister!)
 
 (defn register!
-  "Register (or replace) ALIAS-KW — a QUALIFIED keyword; unqualified
-   keywords are host tags and are rejected — with F,
+  "Register (or replace) ALIAS-KW — a QUALIFIED keyword that the rendering
+   backend does not declare as a host tag; unqualified keywords are host
+   tags and are rejected — with F,
    `(fn [attrs children] tree)`: attrs is the element's props map without
    :key/:ref, children a flat vector of the element's raw child nodes ([]
    when none). Returns a deregister fn that removes the alias only while it

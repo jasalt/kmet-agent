@@ -411,7 +411,8 @@
 
 (defn run!
   "Install the host FFI adapter and run the Tk backend on TREE, blocking
-   until the window closes. OPTIONS: :title :width :height."
+   until the window closes. OPTIONS are the :toplevel tag's props
+   (:title :width :height :bg :bind)."
   [tree & [options]]
   (ensure-interp!)
   (tk/set-adapter! (adapter))

@@ -274,28 +274,28 @@
    reaches the widget longer than its width, Tk wraps it instead of
    clipping it."
   [ctx lines & [opts]]
-  [:text (merge {:content (lines->segments lines)
-                 :height (max 1 (count lines))
-                 :width (:width ctx)
-                 :wrap "word"
-                 :font-family (:font-family ctx)
-                 :font-size (:font-size ctx)
-                 :bg (or (:bg ctx) (surface ctx :canvas))
-                 :fg (:fg ctx)}
-                opts)])
+  [:tk/text (merge {:content (lines->segments lines)
+                    :height (max 1 (count lines))
+                    :width (:width ctx)
+                    :wrap "word"
+                    :font-family (:font-family ctx)
+                    :font-size (:font-size ctx)
+                    :bg (or (:bg ctx) (surface ctx :canvas))
+                    :fg (:fg ctx)}
+                   opts)])
 
 (defn- card-title
   "The clickable title bar of a message card: the collapse marker, the role
    glyph and label, on the card background."
   [ctx {:keys [id text fg bg collapsed?]}]
-  [:label (cond-> {:text (str (if collapsed? "▸ " "▾ ") text)
-                   :fg fg
-                   :bg bg
-                   :bold true
-                   :font-family (:font-family ctx)
-                   :font-size (:font-size ctx)}
-            (and (:collapsed ctx) (:toggle ctx))
-            (assoc :on-click (fn [] ((:toggle ctx) id))))])
+  [:ttk/label (cond-> {:text (str (if collapsed? "▸ " "▾ ") text)
+                       :fg fg
+                       :bg bg
+                       :bold true
+                       :font-family (:font-family ctx)
+                       :font-size (:font-size ctx)}
+                (and (:collapsed ctx) (:toggle ctx))
+                (assoc :on-click (fn [] ((:toggle ctx) id))))])
 
 (defn- card
   "A bordered message card: a distinct panel color against the transcript
@@ -308,8 +308,8 @@
   (let [collapsed? (and (:collapsed ctx)
                         (contains? (r/tracked-deref (:collapsed ctx)) id))
         bg (or body-bg (:bg ctx) (surface ctx :card))]
-    (into [:frame {:border 1 :border-color (surface ctx :border)
-                   :bg bg :padx 2 :pady 2}]
+    (into [:tk/frame {:border 1 :border-color (surface ctx :border)
+                      :bg bg :padx 2 :pady 2}]
           [(card-title ctx {:id id :text title :fg title-fg :bg bg
                             :collapsed? collapsed?})
            (when-not collapsed?
@@ -371,9 +371,9 @@
    (a streaming assistant, a new tool result) is what invalidates the
    mounted body, so the transcript repaints as the conversation grows."
   [session ctx]
-  (into [:transcript {:see-end true :read-only true
-                      :fill :both :expand true
-                      :bg (surface ctx :canvas)}]
+  (into [:tk/transcript {:see-end true :read-only true
+                         :fill :both :expand true
+                         :bg (surface ctx :canvas)}]
         (map #(message-component % ctx) (r/tracked-deref (:entries session)))))
 
 (defn page
@@ -394,7 +394,7 @@
         rule (theme/fg t :border (apply str (repeat (:width ctx) "─")))]
     ;; :expand makes the vbox fill the toplevel, so the transcript's fill
     ;; both/expand 1 gets the whole area under the header.
-    [:vbox {:expand true}
+    [:ttk/frame {:expand true}
      (text-block ctx [title rule] {:bg (surface ctx :canvas)})
      (chat session ctx)]))
 

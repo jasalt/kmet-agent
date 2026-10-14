@@ -2,8 +2,10 @@
 
 bb/Jolt GUI frontends for the toolkit-agnostic hiccup engine. The first
 backend is **Tk** (Tcl/Tk **8.6 or newer**; 9.1 preferred): `kmet.gui.tk`
-is "hiccup-tk" — the tag table, widget records and Tcl script generation —
-and `kmet.gui.tcl` is the host FFI adapter (`babashka.ffi` under babashka,
+is "hiccup-tk" — the backend itself plus the classic-widget tag set
+(`:tk/…`) — `kmet.gui.ttk` is the themed-widget set (`:ttk/…`),
+`kmet.gui.tk.dsl` the widget machinery both are written against, and
+`kmet.gui.tcl` the host FFI adapter (`babashka.ffi` under babashka,
 `jolt.ffi` under Jolt) that owns a real Tcl interpreter and the Tk event
 loop.
 
@@ -16,9 +18,20 @@ kmet.libs.hikap           the hiccup engine: parse, keyed reconcile,
 kmet.libs.hikap.component track! render cache, with-let stores, frame hook
 kmet.libs.hikap.alias     the qualified-keyword alias registry
 kmet.tui.hikap            the TUI backend (tag table, *width*, IComponent)
-kmet.gui.tk               the Tk backend (tag table, Tcl scripts, run! loop)
+kmet.gui.tk.dsl           the Tk widget machinery: Tcl quoting and script
+                          building, widget records, the callback/binding
+                          registry, live-patch decisions, rich text
+kmet.gui.tk               the Tk backend + the classic widget set (:tk/…),
+                          tag-table assembly, run! loop
+kmet.gui.ttk              the themed widget set (:ttk/…)
 kmet.gui.tcl              the host FFI Tcl/Tk adapter (babashka.ffi / jolt.ffi)
 ```
+
+The GUI tag namespaces mirror Tcl's own: classic widgets are `:tk/…`,
+the themed ones `:ttk/…` (Tcl's global namespace vs `ttk::`). A declared
+host tag wins over the alias registry, so `:tk/canvas` and `:ttk/frame`
+are host tags — see kmet.libs.hikap's parse-host — while any other
+qualified keyword still resolves as an alias.
 
 The pre-split `kmet.tui.hiccup` was one namespace; the toolkit-agnostic
 half is now `kmet.libs.hikap` (+ `.component` / `.alias`), and
@@ -87,18 +100,88 @@ The adapter scripts the UI as Tcl (`ttk::label`, `ttk::entry`, `text`,
 — no per-widget C bindings. Callbacks run through one `kmet::cb`
 trampoline (`kmet.gui.tk/dispatch-callback!`).
 
-### Rich text (`:text`)
+### Tags are Tk widgets, in Tcl's two namespaces
 
-`:text` takes a plain `:text` string or a `:content` vector of styled
+A tag names the widget it constructs, in Tcl's own namespace split: the
+classic widgets are `:tk/…` and the themed ones `:ttk/…`, so the toolkit
+is part of the name — `:tk/frame` is the classic frame (a card needs
+`-background` and the highlight ring), `:ttk/frame` is `ttk::frame`, and
+`:tk/text` has no ttk counterpart because Tk has no `ttk::text`.
+`:tk/toplevel` is the root window; the themed set is `:ttk/labelframe`,
+`:ttk/label`, `:ttk/button`, `:ttk/entry`, `:ttk/checkbutton`,
+`:ttk/separator`, `:ttk/progressbar` and `:ttk/frame`. `:tk/transcript`
+is the one composite — a text widget whose children are embedded windows,
+plus a scrollbar.
+
+The classic specs are `kmet.gui.tk`'s `classic-specs`, the themed ones
+`kmet.gui.ttk/specs`; `kmet.gui.tk` completes both through
+`kmet.gui.tk.dsl/widget-specs` into the backend's closed tag table, which
+is why the qualified `:tk/…`/`:ttk/…` keywords are host tags and never
+fall through to the alias registry.
+
+Pack geometry is the child's, like Tk's own pack options: `:side`
+(`-side`, default `top`), `:fill` (default `both` inside a pane container,
+`x` otherwise) and `:expand`.
+
+```clojure
+[:tk/toplevel {:title "kmet"}
+ [:ttk/frame {:padding 8}
+  [:ttk/label "hi"]
+  [:ttk/frame {}
+   [:ttk/button {:text "Go" :side :left :on-click go!}]]
+  [:tk/text {:text "…" :wrap :word}]]]
+```
+
+### Props and bindings
+
+Props are Clojure data; Tcl spelling stays in the backend. A tag spec maps
+each prop to its Tcl option (`{:fg :foreground}` for `:ttk/label`) and each
+callback to how its event reaches Tk (`{:on-click {:event "<Button-1>"}}`
+on `:ttk/label`, `{:on-click {:option :command}}` on `:ttk/button`).
+Keywords and booleans render as Tcl words and flags — `:wrap
+:word`/`:none`/`:char`, `:fill :both`/`:x`/`:y`, `:anchor :w` — and a prop
+set to nil is absent, so a `configure` only carries what changed.
+
+The callback slots and what the handler receives:
+
+| prop | tag | handler receives |
+|---|---|---|
+| `:on-click` | `:ttk/label` (`<Button-1>`), `:ttk/button` (`-command`) | nothing |
+| `:on-change` | `:ttk/entry` (`<KeyRelease>`) | the entry's text |
+| `:on-submit` | `:ttk/entry` (`<Return>`) | the entry's text |
+| `:on-toggled` | `:ttk/checkbutton` (`-command`) | the checked boolean |
+
+The value slots read the widget when the event fires, so a controlled
+component writes the value back from the callback. A callback set to nil
+is unbound in Tk and released from the trampoline.
+
+`:bind` binds arbitrary events on any tag — `:tk/toplevel` included — by
+kmet chord (`:ctrl+enter`, `"ctrl+shift+p"`) or a raw Tk pattern
+(`"<Double-Button-1>"`):
+
+```clojure
+[:ttk/entry {:text @draft
+             :on-change (fn [t] (reset! draft t))
+             :bind {:ctrl+enter send! :escape cancel!}}]
+[:tk/toplevel {:bind {:ctrl+q quit!}}]
+```
+
+A prop that is not in a tag spec's `:options`/`:bindings`/`:patchable`
+sets declines the live patch, so the engine rebuilds the widget instead of
+silently dropping the change.
+
+### Rich text (`:tk/text`)
+
+`:tk/text` takes a plain `:text` string or a `:content` vector of styled
 segments:
 
 ```clojure
-[:text {:scrollbar true :fill :both :expand true
-        :wrap "word" :font-size 12 :bg "#1f2735" :fg "#d7dbe0"
-        :content [{:text "plain "}
-                  {:text "red" :fg "#ff5500"}
-                  {:text " bold" :bold true}
-                  {:text " code" :fg "#8abeb7" :bg "#1e2127"}]}]
+[:tk/text {:scrollbar true :fill :both :expand true
+           :wrap :word :font-size 12 :bg "#1f2735" :fg "#d7dbe0"
+           :content [{:text "plain "}
+                     {:text "red" :fg "#ff5500"}
+                     {:text " bold" :bold true}
+                     {:text " code" :fg "#8abeb7" :bg "#1e2127"}]}]
 ```
 
 Each distinct style gets one generated Tk tag, cached on the widget;
@@ -107,18 +190,19 @@ bold/italic picks one of four named mono fonts derived from Tk's
 them. `:scrollbar true` adds a wired vertical `ttk::scrollbar`. The widget
 is left `-state disabled` (selectable, not editable); with a wrapping mode
 its `-height` follows the wrapped content when a line exceeds the widget
-width. `:fill`/`:expand` control packing for any tag, not just `:text`.
+width. `:fill`/`:expand` control packing for any tag, not just `:tk/text`.
 
 ### Surfaces, borders and wrapping
 
-`:frame` takes `:border` (thickness), `:border-color`, `:bg`, `:padx`,
-`:pady`. The border is drawn with the highlight ring rather than
+`:tk/frame` takes `:border` (thickness), `:border-color`, `:bg`, `:padx`,
+`:pady`; its labeled sibling is `:ttk/labelframe` (`ttk::labelframe`,
+taking `:text`). The border is drawn with the highlight ring rather than
 `-relief solid`: the relief paints in the widget's own background, which
 is invisible for a panel sitting on a similar canvas.
 
 Wrapping belongs to the component, not the widget: the transcript wraps
 its styled lines to the transcript width before they reach Tk (`:wrap
-word` on `:text` is then only a safety net). See
+:word` on `:tk/text` is then only a safety net). See
 `kmet.app.ui.gui.transcript/palette` for the three deliberately distinct
 surfaces — window, transcript canvas, message panel — so a missing paint
 or an overflowing body is obvious at a glance.
@@ -147,12 +231,13 @@ Tcl/Tk pair with the interpreter's own patchlevel.
 
 ## Status
 
-v1 widget set: `:window :vbox :hbox :frame :label :button :entry
-:checkbutton :separator :progressbar :text :transcript`, plus bare-string
-labels. The `:text` tag carries the displayed content — styled segments in
+v1 widget set: classic `:tk/toplevel :tk/frame :tk/text :tk/transcript`
+plus themed `:ttk/frame :ttk/labelframe :ttk/label :ttk/button :ttk/entry
+:ttk/checkbutton :ttk/separator :ttk/progressbar`, and bare-string labels.
+The `:tk/text` tag carries the displayed content — styled segments in
 Tk tags, an optional scrollbar, generated mono fonts, wrapping.
-`:transcript` is the scroll container: one text widget whose children are
-embedded windows (one widget per message) with a sibling scrollbar and
+`:tk/transcript` is the scroll container: one text widget whose children
+are embedded windows (one widget per message) with a sibling scrollbar and
 "scroll to the end" on first map. Text scrolling has no canvas coordinate
 ceiling (a canvas hits Tk's 16-bit limit around 32k pixels, which a long
 transcript reaches quickly), which is why the container is a text widget.

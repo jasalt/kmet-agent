@@ -77,8 +77,11 @@ src/kmet/
 │   │                     ls-tool.clj, powershell.clj)
 │   └── ui/             — app TUI components (chat history, footer, ...)
 ├── gui/                — GUI backends on babashka and Jolt: the Tk backend
-│                         for the hiccup engine (tk.clj) and its host FFI
-│                         Tcl adapter (tcl.cljc) — see gui/README.md
+│                         for the hiccup engine (tk.clj, with the classic
+│                         :tk/… widget set; ttk.clj for the :ttk/… set;
+│                         tk/dsl.clj the machinery both are written
+│                         against) and its host FFI Tcl adapter (tcl.cljc)
+│                         — see gui/README.md
 ├── tui/                — Generic TUI library (pi: @earendil-works/pi-tui;
 │   │                     usage docs in src/kmet/tui/tui.md)
 │   └── components/     — text, input, editor, markdown, select/settings
@@ -122,8 +125,10 @@ listed in the root `AGENTS.md` topic map.
 - `kmet.tui.*` is the generic UI layer (the terminal backend for
   `kmet.libs.hikap`). It may depend on `kmet.libs.*`, never on app, LLM, or
   session concepts.
-- `kmet.gui.*` is the GUI backends (Jolt-only; the Tk backend and its
-  jolt.ffi adapter). Like `kmet.tui.*`, it builds on `kmet.libs.*` and
+- `kmet.gui.*` is the GUI backends (Jolt-only; the Tk backend — kmet.gui.tk
+  with the classic `:tk/…` widget set, kmet.gui.ttk with the `:ttk/…` set
+  and kmet.gui.tk.dsl as their shared machinery — and its jolt.ffi
+  adapter). Like `kmet.tui.*`, it builds on `kmet.libs.*` and
   nothing above it.
 - `kmet.modes.*` is the entry-mode layer; `kmet.app.*` is business logic;
   `kmet.app.ui.*` is app-specific UI; `kmet.core` only parses arguments and
