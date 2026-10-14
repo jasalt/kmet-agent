@@ -91,11 +91,6 @@
   ;; them) the :text tag inserts with.
   )
 
-(defn widget-path
-  "The Tk path of WIDGET (\"\\.\" for the toplevel)."
-  [widget]
-  (:path widget))
-
 (defonce ^:private next-id (atom 0))
 
 (defn alloc-path!
@@ -651,7 +646,7 @@
   (apply-bindings! w prev props (:bindings spec))
   (apply-config! (configure-script (:path w) props (:options spec))))
 
-(defn default-apply
+(defn- default-apply
   "The shared :apply: patch SPEC's live-expressible props and bindings to
    W, else decline so the engine rebuilds the widget."
   [spec w prev props]
@@ -674,27 +669,12 @@
                              :apply (fn [w prev props] (apply-fn spec w prev props)))])))
         specs))
 
-(defn set-entry-text!
+(defn- set-entry-text!
   "Replace W's text with TEXT (nil clears it)."
   [w text]
   (eval! (str (:path w) " delete 0 end"))
   (when (some? text)
     (eval! (str (:path w) " insert 0 " (tcl-quote text)))))
-
-(defn set-listbox-items!
-  "Replace listbox W's items with ITEMS (a sequence of strings)."
-  [w items]
-  (eval! (str (:path w) " delete 0 end"))
-  (when (seq items)
-    (eval! (str (:path w) " insert end "
-                (str/join " " (map #(tcl-quote (str %)) items))))))
-
-(defn set-listbox-selection!
-  "Select the 0-based INDICES in listbox W (nil or empty clears it)."
-  [w indices]
-  (eval! (str (:path w) " selection clear 0 end"))
-  (doseq [i indices]
-    (eval! (str (:path w) " selection set " i " " i))))
 
 (defn set-scrollbar-position!
   "Set scrollbar W's thumb to PROPS' :position [first last] (a no-op when
@@ -738,34 +718,33 @@
                   (when (some? (:on-click item))
                     (str " -command {" (set-callback! w slot (:on-click item) nil nil) "}")))))))
 
-(defn menu-of!
-  "W's popped-down menu, created (tear-off off) and wired to its -menu
-   option on first use; kept on the widget so its items can be replaced."
+(defn- menu-path
+  "The menu W's :items go in: W's own path when W is the menu, else the
+   popped-down menu it keeps (created, tear-off off, and wired to its -menu
+   option on first use)."
   [w]
-  (or (get @(:styles w) :menu)
-      (let [menu (alloc-path! w)]
-        (eval! (str "menu " menu " -tearoff 0"))
-        (eval! (str (:path w) " configure -menu " menu))
-        (swap! (:styles w) assoc :menu menu)
-        menu)))
+  (if (= :tk/menu (:tag w))
+    (:path w)
+    (or (get @(:styles w) :menu)
+        (let [menu (alloc-path! w)]
+          (eval! (str "menu " menu " -tearoff 0"))
+          (eval! (str (:path w) " configure -menu " menu))
+          (swap! (:styles w) assoc :menu menu)
+          menu))))
 
 (defn set-menu-items!
-  "Replace the ITEMS of the menu at PATH, whose callbacks W owns (a menu is
-   a widget of its own: a menubutton's is not W's path). `[:separator]` (or
+  "Replace W's menu items with PROPS' :items, releasing the trampolines the
+   old items held. `[:separator]` (or
    {:kind :separator}) is a rule, a map with :items is a cascade (its nested
    items become a child menu), anything else a command whose :on-click fires
    through the trampoline; :accelerator shows a shortcut hint. Rebuilding
    releases the trampolines the old items held."
-  [w path items]
-  (release-menu-slots! w)
-  (eval! (str path " delete 0 end"))
-  (menu-add! w path items [:menu])
-  nil)
-
-(defn menu-items!
-  "Put PROPS' :items in the popped-down menu of the menubutton W."
   [w props]
-  (set-menu-items! w (menu-of! w) (:items props)))
+  (let [path (menu-path w)]
+    (release-menu-slots! w)
+    (eval! (str path " delete 0 end"))
+    (menu-add! w path (:items props) [:menu])
+    nil))
 
 ;; ─── The spec builder ─────────────────────────────────────────────────────
 

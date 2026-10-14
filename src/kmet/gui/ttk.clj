@@ -8,19 +8,13 @@
    Tcl's `ttk::` namespace, so they are `:ttk/frame`, `:ttk/label`, …;
    classic Tk widgets are `:tk/frame`, `:tk/text`, ….
 
-   Every spec is dsl/widget-spec: the Tk command plus its :options (the
-   families in kmet.gui.tk.options that fit the widget, with its own
-   options), and whatever else the tag needs — :commands for the props Tk
-   sets through subcommands (a treeview's rows), :attach for a container
-   that places its children (a notebook's tabs), :after for what a widget
-   needs once it exists (a menubutton's menu). The families are additive and
-   a widget's odd option is listed directly, so what a tag scripts is
-   exactly the widget's option set minus the script-, variable- and
-   image-backed options the catalogue leaves out.
-
-   Notably absent, because Tk needs a -variable for them: a radiobutton
-   group's shared selection (the caller owns which button is :active) and a
-   menu item that stays down (:items are commands, separators and cascades)."
+   Every spec is dsl/widget-spec: the Tk command, its :options (the families
+   in kmet.gui.tk.options that fit the widget, with its own options), and
+   whatever else the tag needs — :commands for the props Tk sets through
+   subcommands (a treeview's rows), :attach for a container that places its
+   children (a notebook's tabs). The families are additive and a widget's
+   odd option is listed directly, so what a tag scripts is exactly the
+   widget's option set minus the ones the catalogue leaves out."
   (:require [clojure.string :as str]
             [kmet.gui.tk.dsl :as dsl]
             [kmet.gui.tk.options :as opt]))
@@ -207,7 +201,7 @@
                                                 :compound :state :direction])
                      :bindings {:on-click {:event "<Button-1>"}}
                      :primary :text
-                     :commands {:items dsl/menu-items!}})
+                     :commands {:items dsl/set-menu-items!}})
 
    :ttk/notebook
    (dsl/widget-spec "ttk::notebook"

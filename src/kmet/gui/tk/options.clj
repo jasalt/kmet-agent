@@ -143,15 +143,10 @@
                   :setgrid :spacing1 :spacing2 :spacing3 :tabs :tabstyle
                   :undo}})
 
-(defn family-names
+(defn- family-names
   "The family keywords options-for understands."
   []
   (sort (keys families)))
-
-(defn option-of
-  "The Tcl option PROP names, or nil when the catalogue has no such prop."
-  [prop]
-  (get options prop))
 
 (defn coerce
   "PROP's value shape: :word (the default), :list or :font."

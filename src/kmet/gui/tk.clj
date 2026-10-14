@@ -1,12 +1,13 @@
 (ns kmet.gui.tk
   "Tk (Tcl/Tk 8.6+; the adapter prefers 9.1) backend for the generic
-   hiccup engine — \"hiccup-tk\".
-
-   The backend itself plus the classic-widget tag set (`:tk/…`); the themed
-   widgets are kmet.gui.ttk's `:ttk/…` set, and the machinery both are
-   written against is kmet.gui.tk.dsl. Tag names follow Tcl's own namespace
-   split, so a widget's toolkit is in its name: `:tk/frame` is the classic
-   frame, `:ttk/frame` the themed one; `:tk/text` has no ttk counterpart.
+   hiccup engine — \"hiccup-tk\": the backend itself plus the classic-widget
+   tag set (`:tk/…`). The themed widgets are kmet.gui.ttk's `:ttk/…` set,
+   the machinery both are written against is kmet.gui.tk.dsl, and the Tk
+   option vocabulary is kmet.gui.tk.options. Tag names follow Tcl's own
+   namespace split, so a widget's toolkit is in its name: `:tk/frame` is the
+   classic frame, `:ttk/frame` the themed one, and `:tk/text` has no ttk
+   counterpart. The contract — props and callbacks, the option families and
+   the run loop — is gui/README.md.
 
    The Tcl interpreter is reached through *adapter* (an implementation-
    detail seam so the backend is testable headlessly): an adapter is a map
@@ -20,24 +21,6 @@
    babashka, jolt.ffi on Jolt); tests bind a recording stub. The adapter's
    evaluator is installed into kmet.gui.tk.dsl at load, so the widget sets
    script through it without depending on this namespace.
-
-   Props are Clojure data; a Tcl option is never spelled in a tree. A tag
-   spec maps each prop to its Tcl option ({:fg :foreground}) and each
-   callback to how its event reaches Tk ({:on-click {:event \"<Button-1>\"}}),
-   and keywords carry the values Tcl wants as words — :wrap :word/:none/:char,
-   :fill :both/:x, booleans as Tcl's 1/0. A :bind map ({:ctrl+enter f})
-   binds arbitrary events, including on :tk/toplevel, and a callback prop
-   set to nil is unbound. The value-carrying slots receive the widget's
-   live value (:on-change/:on-submit the entry text, :on-toggled the
-   checked boolean).
-
-   Which props a tag takes is its widget's Tk option set: each spec's
-   :options composes option families from kmet.gui.tk.options (the standard
-   options, the bordered/graphic blocks, the text blocks, …) with the
-   options its widget has on its own, so a prop is accepted exactly where
-   Tk has the option — and a prop whose option this Tk does not have fails
-   with kmet.gui.tk.dsl/check-options! (naming tag, prop and option)
-   instead of scripting a broken widget.
 
    The engine's :render-items/:render-all hooks exist for output-producing
    toolkits; Tk widgets are live the moment reconcile constructs them, so
@@ -90,7 +73,7 @@
 ;; evaluator. The fn reads *adapter* per call, so a test's binding is seen.
 (dsl/set-eval-fn! eval!)
 
-;; ─── The public API the DSL implements ───────────────────────────────────
+;; ─── The DSL's entry points (the adapter and tests use these) ────────────
 
 (defn tcl-quote
   "Quote X as a single Tcl word (always backslash-escaped; safe in any
@@ -98,29 +81,11 @@
   [x]
   (dsl/tcl-quote x))
 
-(defn widget-path
-  "The Tk path of WIDGET (\"\\.\" for the toplevel)."
-  [widget]
-  (dsl/widget-path widget))
-
 (defn dispatch-callback!
   "The single command handler behind `kmet::cb`: ARGV is
    [\"kmet::cb\" id & values]. Returns the handler's result string (\"\")."
   [argv]
   (dsl/dispatch-callback! argv))
-
-(defn destroy!
-  "Dispose a TkWidget: recurse into its stored children (releasing their
-   callbacks), then destroy the widget path and any derived resources."
-  [w]
-  (dsl/destroy! w))
-
-(defn install-callback-command!
-  "Register the `kmet::cb` trampoline with the adapter. Idempotent per
-   interpreter; run! calls it at start."
-  []
-  (command! "kmet::cb" dispatch-callback!)
-  nil)
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; The classic widget set (:tk/…)
@@ -193,7 +158,7 @@
                                              (str "-" (name k) " "
                                                   (dsl/tcl-quote (dsl/tcl-word v))))))))))))
 
-(defn- set-scale-value!
+(defn- scale-value!
   "Set classic scale W to PROPS' :value (a scale's value is a subcommand,
    not an option)."
   [w props]
@@ -201,14 +166,19 @@
     (dsl/eval! (str (:path w) " set " (dsl/tcl-quote (dsl/tcl-word (:value props)))))))
 
 (defn- listbox-items!
-  "Put PROPS' :items in listbox W."
+  "Replace listbox W's items with PROPS' :items."
   [w props]
-  (dsl/set-listbox-items! w (:items props)))
+  (dsl/eval! (str (:path w) " delete 0 end"))
+  (when (seq (:items props))
+    (dsl/eval! (str (:path w) " insert end "
+                    (str/join " " (map #(dsl/tcl-quote (str %)) (:items props)))))))
 
 (defn- listbox-selection!
-  "Select PROPS' :selected indices in listbox W."
+  "Select PROPS' :selected indices in listbox W (nil clears it)."
   [w props]
-  (dsl/set-listbox-selection! w (:selected props)))
+  (dsl/eval! (str (:path w) " selection clear 0 end"))
+  (doseq [i (:selected props)]
+    (dsl/eval! (str (:path w) " selection set " i " " i))))
 
 (defn- maybe-scrollbar!
   "Give W a wired vertical scrollbar when PROPS ask for one."
@@ -376,7 +346,7 @@
                                                 :fonted :scale-body]
                                                [:bg :fg :width :state :activebackground])
                      :bindings {:on-change {:option :command :arg :number}}
-                     :commands {:value set-scale-value!}})
+                     :commands {:value scale-value!}})
 
    :tk/scrollbar
    (dsl/widget-spec "scrollbar"
@@ -408,7 +378,7 @@
                                                [:bg :fg :text :direction :indicatoron])
                      :bindings {:on-click {:event "<Button-1>"}}
                      :primary :text
-                     :commands {:items dsl/menu-items!}})
+                     :commands {:items dsl/set-menu-items!}})
 
    :tk/menu
    (dsl/widget-spec "menu"
@@ -421,8 +391,7 @@
                                                 :activeborderwidth :activerelief
                                                 :borderwidth :relief :disabledforeground
                                                 :selectcolor :tearoff])
-                     :commands {:items (fn [w props]
-                                         (dsl/set-menu-items! w (:path w) (:items props)))}
+                     :commands {:items dsl/set-menu-items!}
                      :after wire-menubar!})
 
    :tk/panedwindow
@@ -466,7 +435,7 @@
    :text-leaf text-leaf
    :component? (constantly false)
    :entry-component nil
-   :dispose! destroy!
+   :dispose! dsl/destroy!
    :render-items (fn [_items _ctx] nil)
    :render (fn [_c _ctx] nil)
    :render-all (fn [_cs _ctx] nil)
@@ -501,7 +470,8 @@
   (require-adapter!)
   (when-let [prepare! (:prepare! *adapter*)]
     (prepare!))
-  (install-callback-command!)
+  ;; the one command handler every callback rides
+  (command! "kmet::cb" dispatch-callback!)
   (let [window (engine/compile-element tk-backend [:tk/toplevel (or options {})])
         root (engine/root tk-backend tree)
         pump (fn []
