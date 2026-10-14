@@ -384,6 +384,29 @@ debug-only. Target: < 100 ms for the 10k-entry session; above that, validate
 the header always and the full entries only on skip (or behind `--debug`).
 Record the number in this document.
 
+**Measured (step 0).** Scratch probe `target/engine-probe/measure.clj`
+(removed by `bb clean`), malli 0.20.1: a generated 10k-entry / 22.0 MiB
+(22 523 KiB) session sampled from the local session corpus (mix: 4 988
+tool / 4 847 assistant / 153 user / 12 compaction entries), validated with
+a compiled representative `:multi` over the stored entry roles.
+
+| Measurement | bb v1.13.226 | jolt v0.8.21-205 |
+|---|---|---|
+| `m/validate` every entry | 139.3 ms | 137.8 ms |
+| `m/validate` header only | 0.0 ms | 0.0 ms |
+| `explain` + `humanize` (one bad entry) | 2.2 ms | 2.2 ms |
+| EDN-parse the same 10k lines (baseline) | 1 520 ms | 1 194 ms |
+| per 1k entries: assistant / tool / user | 17.2 / 14.7 / 9.9 ms | 17.0 / 13.0 / 9.3 ms |
+
+Both hosts land above the 100 ms target (1.4x) on this slow Termux device,
+and the parse that already happens costs ~10x more. **Decision (the plan's
+fallback): validate the header always (free); full-validate entries only on
+skip or behind `--debug`.** Normal loads stay as lenient as today: malli runs
+when a dropped line needs a diagnosis (line + `humanize`) and for every entry
+under `--debug`, so a parsed-but-wrong-shape entry is reported in debug only.
+The probe's schema is hand-written from the real entry shapes, not the final
+one — re-measure when the real schema lands (same probe, swap in the schema).
+
 **D. Session resolution stays in the mode.** `bootstrap` cannot own
 `--resume`-opens-a-selector vs print-errors-on-no-match; only the mechanics
 move down. The runtime takes a *resolved* session, and a `:session-resolver`
@@ -406,13 +429,20 @@ ANSI stripping (move to `kmet.libs`) and `app/theme_controller` (move up).
 policy, their formatting is TUI.
 
 **G. Queue drops are indistinguishable from drains.** `cancel-turn` calls
-`clear-queues!` (loop.clj:2968), which *does* emit
-`{:type :queue-update :steering [] :follow-up []}` (loop.clj:1212-1218) —
+`clear-queues!` (loop.clj:2988), which *does* emit
+`{:type :queue-update :steering [] :follow-up []}` (loop.clj:1212-1222) —
 nothing is silent. But the emission is identical to a normal drain that
 delivered the messages, so a client (RPC) cannot tell its queued message
 was dropped. Add a reason (`:reason :cancelled`, or a `:dropped` count) to
 the cancel-path `:queue-update`, or carry the drop in the settle outcome's
 payload. Decide with finding A's payload.
+
+**Settled (step 0).** `clear-queues!` takes an optional reason;
+`cancel-turn` passes it, so the drop emits
+`{:type :queue-update :steering [] :follow-up [] :reason :aborted}` — a
+drain that delivered the messages still emits the same event without
+`:reason`. `:aborted` is the existing outcome word (finding A), not a
+second `:cancelled` spelling.
 
 ## 6. Data contract inventory
 
@@ -638,11 +668,13 @@ malli probes (scratch dirs under `target/`, removed by `bb clean`):
 Multi-engine scoping (§1, §4.5) and command split granularity are settled.
 The rest are parked with the step that resolves them.
 
-1. **Settle outcome shape (finding A)** — step 0. Extend `:agent-settled`
-   with the existing `:completed | :error | :aborted` vocabulary and carry
-   the cancel queue-drop reason (finding G) in the same payload.
-2. **Session load validation policy (finding C)** — step 0 measurement;
-   target < 100 ms for 10k entries, else validate-only-on-skip.
+1. **Settle outcome shape (finding A)** — done in step 0 (`:agent-settled`
+   carries the existing `:completed | :error | :aborted` vocabulary; the
+   cancel queue drop carries `:reason :aborted` on the cancel-path
+   `:queue-update` — findings A and G).
+2. **Session load validation policy (finding C)** — measured in step 0:
+   139 ms (bb) / 138 ms (jolt) per 10k entries, above target; header
+   always, entries only on skip or `--debug`.
 3. **Command split granularity** — decided; step 3 implements it. One
    handler shape, two implementation homes, no intent language. A handler
    is `(fn [ctx args])` with `ctx = {:runtime ... :ui ... :frontend ...}`;
