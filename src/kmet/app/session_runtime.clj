@@ -121,7 +121,8 @@
                      session's recorded cwd, else the process cwd
      :ui-registry  — front-end UI registry; defaults to build-context only
      :agent-opts   — extra/overriding make-agent-state options (escape hatch
-                     for tests and front-end-specific run options)
+                     for tests and front-end-specific run options; the
+                     engine's session follows an overridden :session)
 
    Loads skills + prompt templates, builds the system prompt (custom prompt,
    appended prompt, project context files, active tools), derives every
@@ -129,7 +130,10 @@
    used to wire by hand, seeds the scoped-model list, and installs the
    extension runtime handle (session, context sink, UI registry)."
   [config opts]
-  (let [{:keys [session model provider cwd ui-registry agent-opts]} opts
+  (let [{:keys [model provider cwd ui-registry agent-opts]} opts
+        ;; the resolved session (the layout/print-mode policy output); any
+        ;; :agent-opts override is folded back in below via the agent state
+        sess (:session opts)
         _ (packages/load-skills!)
         _ (packages/load-prompts!)
         provider (or provider (cfg/get-provider config))
@@ -139,7 +143,7 @@
         ;; the prompt's cwd line is the runtime cwd (the resumed session's),
         ;; but everything project-scoped — context files included — stays
         ;; with the launch dir
-        runtime-cwd (or cwd (session/session-cwd session) (str (fs/cwd)))
+        runtime-cwd (or cwd (session/session-cwd sess) (str (fs/cwd)))
         system-prompt-opts {:custom-prompt (cfg/get-custom-prompt config)
                             :append-prompt (cfg/get-append-system-prompt config)
                             :cwd runtime-cwd
@@ -169,7 +173,7 @@
                                      :provider provider
                                      :system system-prompt
                                      :system-prompt-opts system-prompt-opts
-                                     :session session
+                                     :session sess
                                      :default-tools default-tools
                                      :context-window (or (:context-window model-rec)
                                                          (:context-window config))
@@ -214,7 +218,7 @@
                                     agent-opts)))
         _ (agent/init-scoped-models! agent-state config)
         engine (->Engine (atom agent-state)
-                         (atom session)
+                         (atom (:session agent-state))
                          config
                          subscribers
                          (atom nil)
@@ -222,7 +226,7 @@
     ;; Runtime-scoped extension handle: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent. The UI
     ;; registry is the default unless the front end installs its own later.
-    (extensions/set-session! session)
+    (extensions/set-session! (:session agent-state))
     (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (ag engine) msg)))
     (extensions/set-ui-registry! (or ui-registry (default-ui-registry engine)))
     engine))
@@ -270,13 +274,18 @@
 
 (defn prompt!
   "Start a prompt and return nil immediately — completion is observed as
-   :agent-settled. opts are run-agent-turn's callbacks:
-   :message, :images, :on-text, :on-thinking, :on-done, :on-error."
+   :agent-settled. TEXT is the initial user message (nil/absent continues on
+   the existing context); :images attaches image blocks. :on-text,
+   :on-thinking, :on-done and :on-error are run-agent-turn's callbacks,
+   passed straight through."
   [engine opts]
   (reset! (:last-run engine)
           (agent/run-agent-turn (ag engine)
-                                (select-keys opts [:message :images :on-text
-                                                   :on-thinking :on-done :on-error])))
+                                (select-keys (cond-> opts
+                                               (contains? opts :text)
+                                               (assoc :message (:text opts)))
+                                             [:message :images :on-text
+                                              :on-thinking :on-done :on-error])))
   nil)
 
 (defn steer! [engine text] (agent/steer! (ag engine) text))
@@ -292,7 +301,10 @@
    (agent/compact-context! (ag engine) custom-instructions reason)))
 
 (defn set-model! [engine model] (agent/set-model! (ag engine) model))
-(defn cycle-model! [engine direction] (agent/cycle-model! (ag engine) direction))
+(defn cycle-model!
+  "Cycle the session model forward (1-arity) or in a direction (-1/1)."
+  ([engine] (cycle-model! engine 1))
+  ([engine direction] (agent/cycle-model! (ag engine) direction)))
 (defn set-thinking-level! [engine level] (agent/set-thinking-level! (ag engine) level))
 (defn scoped-models [engine] @(:scoped-models (ag engine)))
 (defn set-scoped-models! [engine models]

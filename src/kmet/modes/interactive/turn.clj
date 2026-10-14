@@ -499,13 +499,17 @@
                           :on-thinking #(on-agent-thinking cs %)
                           :on-done (fn [_] (on-agent-done cs))
                           :on-error #(on-agent-error cs %)}
-                   message (assoc :message message))]
+                   message (assoc :text message))]
     (if-let [engine (:engine cs)]
       ;; the runtime records the run so dispose! can cancel an exit while
       ;; streaming and wait for the terminal :agent-settled
       (runtime/prompt! engine run-opts)
-      ;; test stubs build a CoreState without the runtime engine
-      (agent/run-agent-turn @(:agent-state cs) run-opts))))
+      ;; test stubs build a CoreState without the runtime engine; the loop
+      ;; knows the prompt text as :message
+      (agent/run-agent-turn @(:agent-state cs)
+                            (cond-> (dissoc run-opts :text)
+                              (contains? run-opts :text)
+                              (assoc :message (:text run-opts)))))))
 
 (defn- send-message
   "Send text to the agent: steer while streaming, else start a new turn.

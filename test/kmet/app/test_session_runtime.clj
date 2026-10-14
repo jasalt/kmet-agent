@@ -73,7 +73,7 @@
                       (fn [ag run-opts]
                         (reset! seen {:ag ag :opts run-opts})
                         run)]
-          (is (nil? (rt/prompt! engine {:message "hi" :on-done done}))
+          (is (nil? (rt/prompt! engine {:text "hi" :on-done done}))
               "prompt! returns immediately (completion is :agent-settled)")
           (is (identical? (rt/agent-state engine) (:ag @seen)))
           (is (= "hi" (:message (:opts @seen))))
@@ -91,7 +91,7 @@
         (with-redefs [agent/run-agent-turn (fn [ag _]
                                              (reset! seen (:session ag))
                                              (future))]
-          (rt/prompt! engine {:message "hi"})
+          (rt/prompt! engine {:text "hi"})
           (is (= ::switched @seen)))))))
 
 (deftest test-dispose-clears-subscribers-and-wiring

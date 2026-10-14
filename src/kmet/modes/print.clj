@@ -58,7 +58,7 @@
                         (prompts/expand-prompt-template (prompts/get-prompt-templates)))]
         (try
           (runtime/prompt! engine
-                           {:message message
+                           {:text message
                             :on-text (fn [t] (print t) (flush))
                             :on-done (fn [text] (println) (deliver result-promise text))
                             :on-error (fn [e] (binding [*out* *err*] (println "Error:" e))
