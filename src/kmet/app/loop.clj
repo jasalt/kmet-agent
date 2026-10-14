@@ -1210,12 +1210,17 @@ Be precise and concise in your responses."}}]
   (enqueue! agent :follow-up text))
 
 (defn clear-queues!
-  "Drop all pending steering and follow-up messages."
-  [agent]
-  (reset! (:steering agent) [])
-  (reset! (:follow-up agent) [])
-  (emit agent {:type :queue-update :steering [] :follow-up []})
-  nil)
+  "Drop all pending steering and follow-up messages. REASON, when given, is
+   carried on the :queue-update as :reason — cancel-turn passes :aborted so
+   a headless consumer can tell a dropped queue from one the loop drained
+   (a drain that delivered everything also reports empty queues)."
+  ([agent] (clear-queues! agent nil))
+  ([agent reason]
+   (reset! (:steering agent) [])
+   (reset! (:follow-up agent) [])
+   (emit agent (cond-> {:type :queue-update :steering [] :follow-up []}
+                 reason (assoc :reason reason)))
+   nil))
 
 (defn queued-messages
   "Return {:steering [...] :follow-up [...]} of currently queued messages."
@@ -2972,15 +2977,16 @@ Be precise and concise in your responses."}}]
                   (swap! (:run-messages agent) dissoc tok))))))))))
 
 (defn cancel-turn
-  "Cancel the current agent run: signal the LLM stream, drop queued messages,
-   deliver the in-flight LLM call ({:cancelled true} plus the partials
-   snapshot so the abandoned attempt keeps what arrived), return status to
-   :idle. A live compaction is aborted too (pi: abort() calls
-   abortCompaction())."
+  "Cancel the current agent run: signal the LLM stream, drop queued messages
+   (the resulting :queue-update carries :reason :aborted, so a headless
+   client can tell the drop from a drain), deliver the in-flight LLM call
+   ({:cancelled true} plus the partials snapshot so the abandoned attempt
+   keeps what arrived), return status to :idle. A live compaction is aborted
+   too (pi: abort() calls abortCompaction())."
   [agent]
   (reset! (:signal agent) true)
   (reset! (:compaction-signal agent) true)
-  (clear-queues! agent)
+  (clear-queues! agent :aborted)
   (when-let [{:keys [promise partials]} @(:active-call agent)]
     (when-not (realized? promise)
       (deliver promise (merge {:cancelled true} (partials)))))

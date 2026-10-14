@@ -159,8 +159,11 @@
 
    ;; ─── Queue events (emitted by loop.clj) ──────────────────────────────
    :queue-update
-   "Fired when steering/follow-up queues change.
-    Payload: :steering, :follow-up."
+   "Fired when steering/follow-up queues change: a message queued (steer! /
+    follow-up!), drained into a turn, or dropped. Payload: :steering,
+    :follow-up — the complete current queues; :reason :aborted when
+    cancel-turn dropped pending messages, so a headless consumer can tell a
+    drop from a drain that delivered the same (empty) queues."
 
    :model-select
    "Model was changed (pi: model_select).

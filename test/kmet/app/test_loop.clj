@@ -1082,7 +1082,9 @@
     (t/is (empty? @(:follow-up agent)))
     (t/is (not (loop/has-queued-messages? agent)))
     (t/is (= :queue-update (:type (last @events)))
-          "clear-queues! emits :queue-update")))
+          "clear-queues! emits :queue-update")
+    (t/is (not (contains? (last @events) :reason))
+          "a plain clear carries no drop reason")))
 
 (t/deftest test-loop-followup-queues-message
   (let [events (atom [])
@@ -1134,13 +1136,17 @@
           "the preview is exactly what the next drain consumes")))
 
 (t/deftest test-loop-cancel-clears-queues
-  (let [agent (loop/make-agent-state)]
+  (let [events (atom [])
+        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (loop/steer! agent "x")
     (loop/follow-up! agent "y")
     (loop/cancel-turn agent)
     (t/is (empty? @(:steering agent)) "cancel drops steering messages")
     (t/is (empty? @(:follow-up agent)) "cancel drops follow-up messages")
-    (t/is (= :idle @(:status agent)))))
+    (t/is (= :idle @(:status agent)))
+    (t/is (= {:type :queue-update :steering [] :follow-up [] :reason :aborted}
+             (->> @events (filter #(= :queue-update (:type %))) last))
+          "the cancel drop is distinguishable from a drain")))
 
 (t/deftest test-loop-steer-injects-mid-run
   (let [calls (atom 0)
