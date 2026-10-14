@@ -5,6 +5,7 @@
    terminal, so this works with any output stream. Self-contained — no
    kmet.* requires (libs rule); raw ANSI escapes live here by design."
   (:require [babashka.fs :as fs]
+            [clojure.java.io :as io]
             [clojure.string :as str]))
 
 ;; ─── Kitty keyboard protocol state (pi: keys.ts global state) ──────────────
@@ -47,7 +48,8 @@
   [s]
   (when write-log-path
     (try
-      (spit write-log-path s :append true)
+      (with-open [w (io/writer write-log-path :append true)]
+        (.write w s))
       (catch Exception _))))
 
 (defn input-log-enabled?
@@ -57,13 +59,12 @@
 
 (defn input-log!
   "Append one timestamped line to the input trace, ignoring errors. The
-   caller (kmet.tui.core) formats the line; this only stamps and appends.
-   spit, not io/writer :append — Jolt's clojure.java.io/writer has no opts
-   arity (see kmet.tui.core/append-log!)."
+   caller (kmet.tui.core) formats the line; this only stamps and appends."
   [s]
   (when input-log-path
     (try
-      (spit input-log-path (str (java.time.LocalDateTime/now) " " s "\n") :append true)
+      (with-open [w (io/writer input-log-path :append true)]
+        (.write w (str (java.time.LocalDateTime/now) " " s "\n")))
       (catch Exception _))))
 
 ;; ─── Shared escape sequences ────────────────────────────────────────────────

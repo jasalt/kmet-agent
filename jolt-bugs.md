@@ -1,13 +1,16 @@
 # jolt-bugs — reported upstream issues
 
 Open tickets only: a ticket is dropped once its fix reaches a tagged release.
-Status checked on 2026-10-12 against Jolt `v0.8.21` (`5b46858a`, still the
-latest tag; the #1313 and #1316 fixes merged into `main` after it, verified on
-the `v0.8.21-39-g03494c0e` and the installed `v0.8.21-61-g4d665200` dev
-builds — the #1313 effect re-measured in [`perf.md`](perf.md) §17, and #1327
-filed from the §18 pass) and `jolt-lang/http-client` `v0.1.2`
-(`00455b8`, unchanged; `HEAD` is that same revision), the versions now pinned
-by the project.
+Status checked on 2026-10-15 against Jolt `v0.8.21` (`5b46858a`, still the
+latest tag; every listed fix — #1313, #1316, #1327 and #1364 — has since
+merged into `main` after it, verified on the installed
+`v0.8.21-205-gd7dc7972` dev build; #1313 was re-measured in
+[`perf.md`](perf.md) §17, and #1327 filed from the §18 pass) and
+`jolt-lang/http-client` `v0.1.2` (`00455b8`, unchanged; `HEAD` is that same
+revision), the versions now pinned by the project. The #1316 and #1364 kmet
+workarounds were removed 2026-10-15, ahead of the floor move they were gated
+on; `:jolt/min-version` still names `0.8.21`, so until the next tag a source
+build wants a Jolt from `main` carrying #1316 and #1364.
 
 ## Live issues
 
@@ -59,18 +62,21 @@ arity is what is missing on the other three; `clojure.core/spit` with
 `:append`/`:encoding` works on both hosts. Consequence on master: the
 append-based log helpers (`kmet.tui.core/append-log!` and the write/input logs
 in `kmet.libs.terminal`) swallow the throw, so `KMET_TUI_DEBUG`-style logging
-silently produces nothing on Jolt. kmet-side workaround: write those logs with
-`spit` (`kmet.tui.core/append-log!` and `kmet.libs.terminal`'s `write-log!` /
-`input-log!`, commit `c56e80f7`, cherry-picked from `status-fast-path`).
-Remove it and move the floor when the next tag lands. Re-checked 2026-10-12 on
-the installed `v0.8.21-61-g4d665200` dev build (perf.md §17.5):
-`(io/writer f :append true)`, `(io/reader f :encoding ...)` and
-`(io/input-stream f)` all work and append correctly; the `spit` workaround
-stays until the floor moves past `v0.8.21`.
+silently produces nothing on Jolt. kmet-side workaround: those logs wrote
+through `spit` (commit `c56e80f7`, cherry-picked from `status-fast-path`); it
+was removed 2026-10-15 ahead of the tag, so `kmet.tui.core/append-log!` and
+`kmet.libs.terminal`'s `write-log!` / `input-log!` take `io/writer :append`
+again and a Jolt below the release carrying #1316 silently drops those logs.
+Re-checked 2026-10-12 on the installed `v0.8.21-61-g4d665200` dev build
+(perf.md §17.5): `(io/writer f :append true)`, `(io/reader f :encoding ...)`
+and `(io/input-stream f)` all work and append correctly.
 
 ### [jolt#1327](https://github.com/jolt-lang/jolt/issues/1327) — DFA search: a late match costs ~60 ns per preceding position
 
-Open, filed 2026-10-12 from the perf.md §18 pass (x86_64, installed
+Closed 2026-10-12 by [PR #1330](https://github.com/jolt-lang/jolt/pull/1330)
+(merge `26cd9cd0`, on `main` after the pinned `v0.8.21`), which probes the
+start positions before the anchored DFA retry; the entry stays live until a
+tag carries it. Filed 2026-10-12 from the perf.md §18 pass (x86_64, installed
 `v0.8.21-61-g4d665200`). `re-find` on a group-free pattern whose match sits
 late in the string re-runs the anchored DFA at every start position before
 the match — ~60 ns per position, so 24.2 µs for a match at k=400 against the
@@ -92,8 +98,13 @@ the regex for a match at the end of a styled line).
 
 ### [jolt#1364](https://github.com/jolt-lang/jolt/issues/1364) — `Reader.read(char[], off, len)` blocks until the buffer is full
 
-Open, filed 2026-10-14 from the SSE idle-reader work on the installed
-`v0.8.21-184-gd17f10f9` (`d17f10f9`). Jolt's `char-reader` fills the
+Closed 2026-10-15 by [PR #1366](https://github.com/jolt-lang/jolt/pull/1366)
+(merge `df265b20`, on `main` after the pinned `v0.8.21`); `read(char[], off,
+len)` returns the available characters, `ready()` is honest on an empty
+source and `read(CharBuffer)` works — all verified on the installed
+`v0.8.21-205-gd7dc7972` — but the entry stays live until a tag carries it and
+the floor moves. Filed 2026-10-14 from the SSE idle-reader work on the
+installed `v0.8.21-184-gd17f10f9` (`d17f10f9`). Jolt's `char-reader` fills the
 destination with blocking `get-string-n!` calls and treats a short read as
 EOF, so `Reader.read(char[], off, len)` over a pipe, socket or terminal does
 not return the characters already available; the JVM contract is "block
@@ -106,11 +117,13 @@ source — and `read(CharBuffer)` is missing, throwing
 findings ride the ticket. Consequence on master: the SSE idle reader read
 char chunks through a `Reader`, so a slow-but-alive stream appeared stalled
 and the per-byte idle timeout fired on Jolt (babashka/JVM behaved). kmet
-workarounds in `src/kmet/libs/sse.clj`: InputStream bodies take the chunked
-byte-reader path with UTF-8 line assembly, and Reader bodies fill one char
-per read on Jolt (`make-char-idle-reader`). Remove both — and the
-`kmet.libs.host` require they alone need — once #1364 is fixed and the floor
-moves past the release carrying it. The slow idle tests
+workarounds in `src/kmet/libs/sse.clj`: InputStream bodies took the chunked
+byte-reader path with UTF-8 line assembly, and Reader bodies filled one char
+per read on Jolt (`make-char-idle-reader`). Both — and the `kmet.libs.host`
+require they alone needed — were removed 2026-10-15 ahead of the tag: the
+line reader goes through `io/reader` again, so on a Jolt below the release
+carrying #1364 a slow stream's char read blocks to a full chunk and trips
+the idle timeout. The slow idle tests
 (`kmet.ai.test-sse/test-openai-stream-idle-timeout`,
 `test-openai-stream-idle-resets-on-flow`) and `kmet.libs.test-sse` cover the
 behavior on both hosts.

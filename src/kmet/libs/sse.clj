@@ -8,9 +8,7 @@
    public wire-level helper extensions (e.g. the mcp-adapter) use."
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
-            [kmet.libs.concurrent :as concurrent]
-            ;; jolt#1364 workaround only — drop with the char-reader branch
-            [kmet.libs.host :as host]))
+            [kmet.libs.concurrent :as concurrent]))
 
 (defn parse-sse-line
   "Parse one SSE line. Returns [event-name data] — exactly one is non-nil
@@ -112,26 +110,14 @@
      (fn [] (.interrupt t))
      t]))
 
-(def ^:private jolt-char-chunk
-  "The char count the char-reader asks for: jolt's Reader.read(char[], off,
-   len) blocks until LEN chars rather than returning what is available
-   (jolt#1364). Delete this, its use, and the kmet.libs.host require once
-   the fix is released."
-  1)
-
 (defn make-char-idle-reader
   "Idle-timeout int reader over a java.io.Reader: a daemon reads chunks of
    chars (READER.read(char[], int, int)), the consumer serves char codes.
-   See make-idle-reader for the [read stop thread] contract. On jolt the
-   daemon reads one char per fill: jolt's Reader.read(char[], off, len)
-   blocks until LEN chars (or EOF) instead of returning the available
-   chars like a JVM's, so a chunked read of a slow stream would stall
-   (jolt#1364)."
+   See make-idle-reader for the [read stop thread] contract."
   [rdr idle-ms signal]
   (make-chunk-idle-reader
    #(char-array %)
-   (fn [buf len]
-     (.read ^java.io.Reader rdr ^chars buf 0 (if (host/jolt?) jolt-char-chunk len)))
+   (fn [buf len] (.read ^java.io.Reader rdr ^chars buf 0 len))
    (fn [buf i] (int (aget ^chars buf i)))
    idle-ms signal))
 
@@ -201,24 +187,6 @@
           (= c (int \newline)) (strip-trailing-cr (str sb))
           :else (do (.append sb (char c)) (recur)))))))
 
-(defn- byte-line-from
-  "One UTF-8 line assembled from READ-BYTE (an idle-reader read fn). Returns
-   the line string (a trailing CR stripped), nil at EOF, or the reader's
-   exception/:timeout/:aborted value. Bytes accumulate until the newline, so
-   a multi-byte character split across chunks decodes correctly."
-  [read-byte]
-  (let [acc (java.io.ByteArrayOutputStream.)]
-    (loop []
-      (let [b (read-byte)]
-        (cond
-          (instance? Exception b) b
-          (or (= :timeout b) (= :aborted b)) b
-          (neg? b) (when (pos? (.size acc))
-                     (strip-trailing-cr (String. (.toByteArray acc) "UTF-8")))
-          (= b (int \newline))
-          (strip-trailing-cr (String. (.toByteArray acc) "UTF-8"))
-          :else (do (.write acc (int b)) (recur)))))))
-
 (defn- make-idle-line-reader
   "Line reader with a per-byte idle timeout (undici bodyTimeout semantics)
    over BODY (a java.io.InputStream or Reader). Returns
@@ -229,22 +197,12 @@
    disabled)."
   [body idle-ms signal]
   (if (and idle-ms (pos? idle-ms))
-    (if (instance? java.io.InputStream body)
-      ;; Byte path for InputStream bodies: jolt's Reader.read(char[], off,
-      ;; len) over-blocks (jolt#1364), so line assembly from the chunked
-      ;; byte reader keeps one handoff per read burst there too. Delete this
-      ;; branch once the fix is released.
-      (let [[read-byte stop thread] (make-byte-idle-reader body idle-ms signal)]
-        {:read-line #(byte-line-from read-byte)
-         :stop stop
-         :thread thread
-         :close #(.close ^java.io.InputStream body)})
-      (let [rdr (body->reader body)
-            [read-char stop thread] (make-char-idle-reader rdr idle-ms signal)]
-        {:read-line #(read-line-from read-char)
-         :stop stop
-         :thread thread
-         :close #(.close ^java.io.Reader rdr)}))
+    (let [rdr (body->reader body)
+          [read-char stop thread] (make-char-idle-reader rdr idle-ms signal)]
+      {:read-line #(read-line-from read-char)
+       :stop stop
+       :thread thread
+       :close #(.close ^java.io.Reader rdr)})
     ;; A real .readLine: io/reader's BufferedReader ends a line on \n, \r
     ;; or \r\n, so no char-assembly loop (and no CR strip) is needed when
     ;; the idle timeout is off.
@@ -257,8 +215,7 @@
 (defn stream-loop
   "Shared driver for both stream processors. Reads lines via the idle-aware
    line reader and calls handle-line per line. BODY is a java.io.InputStream
-   or Reader (an InputStream body takes the chunked byte path when the idle
-   timeout is on). On a stall the abort-fn (if any) kills the transport
+   or Reader. On a stall the abort-fn (if any) kills the transport
    (curl) so the blocked read releases, then the error is reported via
    error-fn. Cleanup on every exit path: the daemon is interrupted and
    joined before the reader is closed — closing while a read is in flight

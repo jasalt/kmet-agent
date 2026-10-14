@@ -1344,10 +1344,7 @@
       (t/is (= ["\u001b"] @dispatched) "genuine Escape still works"))))
 
 (t/deftest test-append-log-appends
-  ;; Jolt's clojure.java.io/writer has no opts arity, so the historical
-  ;; (io/writer path :append true) form threw there and every append-based
-  ;; KMET_* debug log was silently empty; the writer must use spit, which is
-  ;; portable on both hosts.
+  ;; The KMET_* debug logs must accumulate across calls, on both hosts.
   (let [f (fs/create-temp-file {:dir (fs/create-dirs "target")
                                 :prefix "kmet-append-log-"
                                 :suffix ".log"})
