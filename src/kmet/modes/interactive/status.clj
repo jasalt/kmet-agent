@@ -144,10 +144,13 @@
   (cancel-indicator-driver! cs)
   (dispose-transient-indicator! cs)
   (status-indicator/status-indicator-stop! (:status-indicator cs))
-  (reset! (:status-current cs)
-          {:kind kind
-           :indicator indicator
-           :driver (start-indicator-driver! cs indicator)}))
+  ;; Install the entry BEFORE starting its driver: the driver's liveness
+  ;; predicate reads :status-current, so a driver scheduled between the
+  ;; start and the swap would see the previous entry (or nil), consider
+  ;; itself superseded, and exit immediately — leaving the indicator with
+  ;; no frame driver (a spinner stuck on one frame).
+  (reset! (:status-current cs) {:kind kind :indicator indicator :driver nil})
+  (swap! (:status-current cs) assoc :driver (start-indicator-driver! cs indicator)))
 
 (defn activate-working-indicator!
   "Restore the default working StatusIndicator as the current status and
