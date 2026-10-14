@@ -366,8 +366,8 @@
                                                  :on-toggled (fn [v] (reset! checked v) nil)}]]))
           script (first (scripts-like rec #"-command \{kmet::cb"))
           id (second (re-find #"kmet::cb (\d+)" script))]
-      (t/is (re-find #"instate selected" script)
-            "the command reads the toggled state")
+      (t/is (re-find #"\[set ::kmet_check_" script)
+            "the command reads the widget's private state variable")
       (tk/dispatch-callback! ["kmet::cb" id "1"])
       (t/is (true? @checked))
       (tk/dispatch-callback! ["kmet::cb" id "0"])

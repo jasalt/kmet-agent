@@ -100,6 +100,15 @@
      (for [creator ttk-names]
        {:creator creator :set :ttk :probe (probe! e creator (path))}))))
 
+(defn- declared-options
+  "The Tcl options a spec declares: its :options' values plus the option a
+   callback slot rides (:on-click {:option :command})."
+  [spec]
+  (into #{}
+        (map #(str "-" (name %)))
+        (concat (vals (:options spec))
+                (keep :option (vals (:bindings spec))))))
+
 (defn- audit [e]
   (let [inv (inventory e)
         widgets (into {} (keep (fn [{:keys [creator probe]}]
@@ -111,9 +120,7 @@
                          w (get widgets creator)]]
                (if (nil? w)
                  {:tag tag :creator creator :no-probe true}
-                 (let [declared (into #{} (map #(str "-" (name %)))
-                                      (concat (vals (:options spec))
-                                              (keep :option (vals (:bindings spec)))))
+                 (let [declared (declared-options spec)
                        known (:options w)]
                    {:tag tag :creator creator :class (:class w)
                     :declared (count declared)
@@ -127,6 +134,9 @@
     {:rows rows
      :widgets widgets
      :missing-widgets missing-widgets
+     :declared (into #{} (mapcat (fn [{:keys [tag]}]
+                                   (declared-options (get (:tags tk/tk-backend) tag)))
+                                 rows))
      :accepted accepted
      :patchlevel (str/trim (e "info patchlevel"))}))
 
@@ -134,14 +144,8 @@
   (let [_ (tcl/mount! [:ttk/label {:text "audit"}] {:title "kmet tk option audit"})
         e (:eval (tcl/adapter))
         _ (e probe-src)
-        {:keys [rows widgets missing-widgets accepted patchlevel]} (audit e)
+        {:keys [rows widgets missing-widgets accepted declared patchlevel]} (audit e)
         broken (filter (comp seq :missing) rows)
-        declared (into #{} (mapcat (fn [{:keys [tag]}]
-                                     (let [spec (get (:tags tk/tk-backend) tag)]
-                                       (concat (map #(str "-" (name %)) (vals (:options spec)))
-                                               (keep #(some-> % :option name (as-> n (str "-" n)))
-                                                     (vals (:bindings spec))))))
-                                   rows))
         widget-dump? (some #{"--widgets"} args)]
     (println "Tk" patchlevel "—" (count widgets) "widget classes\n")
     (println "tag                    widget               declared  missing  unreached")

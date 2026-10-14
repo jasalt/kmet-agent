@@ -162,7 +162,6 @@
                         (str "; " text " configure -state disabled"))
                       "}}")))
     (swap! (:styles w) assoc
-           :font font
            :scrollbar sb
            :attach (fn [p _props]
                      (dsl/eval! (str text " window create end -window " p " -pady 2"))
@@ -175,10 +174,64 @@
                       (when-not (false? (:expand props)) " -expand 1"))))
     w))
 
-(def ^:private classic-base
-  "The classic widgets kmet.gui.tk itself is built around: the window, the
-   card frame, the text display and the transcript stack. classic-widgets
-   holds the rest of the classic set."
+(defn- canvas-items!
+  "Replace canvas W's items with PROPS' :items — `{:type :line :coords [x y …]}`
+   plus the item's own Tcl canvas options (`-fill`, `-width`, `-text`,
+   `-anchor`, …), which are Tk's canvas-item vocabulary, not the widget
+   catalogue's."
+  [w props]
+  (dsl/eval! (str (:path w) " delete all"))
+  (doseq [{:keys [type coords] :as item} (or (:items props) [])]
+    (let [opts (dissoc item :type :coords)]
+      (dsl/eval! (str (:path w) " create " (dsl/tcl-word (or type :line))
+                      (when (seq coords)
+                        (str " " (str/join " "
+                                           (map #(dsl/tcl-quote (dsl/tcl-word %)) coords))))
+                      (when (seq opts)
+                        (str " " (str/join " "
+                                           (for [[k v] (sort-by (comp name key) opts)]
+                                             (str "-" (name k) " "
+                                                  (dsl/tcl-quote (dsl/tcl-word v))))))))))))
+
+(defn- set-scale-value!
+  "Set classic scale W to PROPS' :value (a scale's value is a subcommand,
+   not an option)."
+  [w props]
+  (when (some? (:value props))
+    (dsl/eval! (str (:path w) " set " (dsl/tcl-quote (dsl/tcl-word (:value props)))))))
+
+(defn- listbox-items!
+  "Put PROPS' :items in listbox W."
+  [w props]
+  (dsl/set-listbox-items! w (:items props)))
+
+(defn- listbox-selection!
+  "Select PROPS' :selected indices in listbox W."
+  [w props]
+  (dsl/set-listbox-selection! w (:selected props)))
+
+(defn- maybe-scrollbar!
+  "Give W a wired vertical scrollbar when PROPS ask for one."
+  [w props]
+  (when (:scrollbar props)
+    (dsl/attach-scrollbar! w (dsl/parent-widget))))
+
+(defn- wire-menubar!
+  "Wire PROPS' :menubar menu onto the window it belongs to."
+  [w props]
+  (when (:menubar props)
+    (dsl/eval! (str ". configure -menu " (:path w)))))
+
+(def ^:private text-options
+  "The options both text tags take — the transcript is a text widget."
+  (opt/options-for [:standard :geometry :bordered :highlighted :spaced :selectable
+                    :fonted :text-body]
+                   [:bg :fg :locale]))
+
+(def ^:private classic-specs
+  "The classic widget set: the backend's own window, card frame, text
+   display and transcript stack, then the rest of Tk's classic widgets —
+   each a dsl/widget-spec or, for the two composites, a ctor of its own."
   {:tk/toplevel
    {:ctor (fn [spec props]
             (when-let [title (:title props)]
@@ -199,343 +252,200 @@
 
    :tk/transcript
    {:ctor make-transcript
-    :options (opt/options-for [:standard :geometry :bordered :highlighted :spaced
-                               :selectable :fonted :text-body]
-                              [:bg :fg :locale])
+    :options text-options
     :lens (dsl/child-lens)}
 
    :tk/frame
-   {:ctor (fn [spec {:keys [border border-color] :as props}]
-            (dsl/make-widget spec
-                             (fn [p]
-                               (dsl/widget-script
-                                "frame" p
-                                (dsl/tcl-options props (:options spec))
-                                ;; -relief solid draws its border in the
-                                ;; widget's own background, which on a
-                                ;; card sitting on a same-toned canvas
-                                ;; is invisible. The highlight ring takes
-                                ;; a colour, so it is the visible border.
-                                (when (some? border)
-                                  (str "-borderwidth 0 -highlightthickness "
-                                       (dsl/tcl-quote (dsl/tcl-word (if (true? border) 1 border)))
-                                       (when-some [c border-color]
-                                         (str " -highlightbackground " (dsl/tcl-quote c)
-                                              " -highlightcolor " (dsl/tcl-quote c)))))))
-                             props))
-    :options (opt/options-for [:standard :classed :creation :geometry :surface
-                               :bordered :highlighted :spaced])
-    :lens (dsl/child-lens)}
+   (dsl/widget-spec "frame"
+                    {:options (opt/options-for [:standard :classed :creation :geometry
+                                                :surface :bordered :highlighted :spaced])
+                     ;; -relief solid draws its border in the widget's own
+                     ;; background, which on a card sitting on a same-toned
+                     ;; canvas is invisible: :border/:border-color use the
+                     ;; highlight ring, which takes a colour
+                     :fixed (fn [{:keys [border border-color]}]
+                              (when (some? border)
+                                {:borderwidth 0
+                                 :highlightthickness (if (true? border) 1 border)
+                                 :highlightbackground border-color
+                                 :highlightcolor border-color}))
+                     :lens (dsl/child-lens)})
 
    :tk/text
-   {:ctor (fn [spec props]
-            (let [font (dsl/resolve-base-font props)
-                  w (dsl/make-widget spec
-                                     (fn [p]
-                                       (dsl/widget-script
-                                        "text" p
-                                        (merge {:wrap :word :height 10 :width 80
-                                                :borderwidth 0 :highlightthickness 0
-                                                :font (dsl/font-spec font {})}
-                                               (dsl/tcl-options props (:options spec)))))
-                                     props)]
-              (swap! (:styles w) assoc :font font)
-              (dsl/set-text-content! w props)
-              (when (:scrollbar props)
-                (dsl/attach-scrollbar! w (dsl/parent-widget)))
-              w))
-    :options (opt/options-for [:standard :geometry :bordered :highlighted :spaced
-                               :selectable :fonted :text-body]
-                              [:bg :fg :locale])
-    :patchable #{:content :text}
-    :apply (fn [spec w prev props]
-             (when (dsl/patchable? spec prev props)
-               ;; the generated text tags derive from the base font, so a
-               ;; font the patch applied must be the one they derive from
-               (when (some #(not= (get prev %) (get props %)) opt/font-props)
-                 (swap! (:styles w) assoc :font (dsl/resolve-base-font props)))
-               (when (or (contains? props :content) (contains? props :text))
-                 (dsl/set-text-content! w props))
-               (dsl/apply-live! spec w prev props)))}})
+   (dsl/widget-spec "text"
+                    {:options text-options
+                     :fixed (fn [props]
+                              {:wrap :word :height 10 :width 80
+                               :borderwidth 0 :highlightthickness 0
+                               :font (dsl/font-spec (dsl/resolve-base-font props) {})})
+                     :commands {:content dsl/set-text-content!
+                                :text dsl/set-text-content!}
+                     :after maybe-scrollbar!})
 
-;; ─── The rest of the classic set ─────────────────────────────────────────
+   :tk/button
+   (dsl/widget-spec "button"
+                    {:options (opt/options-for [:standard :geometry :highlighted
+                                                :bordered :spaced :fonted
+                                                :classic-text :stateful]
+                                               [:bg :fg :text :default :overrelief
+                                                :repeatdelay :repeatinterval])
+                     :bindings {:on-click {:option :command}}
+                     :primary :text})
 
-(defn- canvas-items!
-  "Replace canvas W's items with ITEMS: {:type :line :coords [x y …]} plus
-   the item's own Tcl canvas options (-fill, -width, -text, -anchor, …),
-   which are Tk's canvas-item vocabulary, not the widget catalogue's."
-  [w items]
-  (dsl/eval! (str (:path w) " delete all"))
-  (doseq [{:keys [type coords] :as item} (or items [])]
-    (let [opts (dissoc item :type :coords)]
-      (dsl/eval! (str (:path w) " create " (dsl/tcl-word (or type :line))
-                      (when (seq coords)
-                        (str " " (str/join " "
-                                           (map #(dsl/tcl-quote (dsl/tcl-word %)) coords))))
-                      (when (seq opts)
-                        (str " " (str/join " "
-                                           (for [[k v] (sort-by (comp name key) opts)]
-                                             (str "-" (name k) " "
-                                                  (dsl/tcl-quote (dsl/tcl-word v))))))))))))
+   :tk/label
+   (dsl/widget-spec "label"
+                    {:options (opt/options-for [:standard :geometry :highlighted
+                                                :bordered :spaced :fonted
+                                                :classic-text :stateful]
+                                               [:bg :fg :text :textangle])
+                     :bindings {:on-click {:event "<Button-1>"}}
+                     :primary :text})
 
-(def ^:private classic-widgets
-  "The classic widgets beyond classic-base: dsl/leaf-spec where the tag is
-   exactly its Tk command, dsl/entry-spec where a text field's :text is set
-   through the widget's own subcommands, dsl/checkable-spec where a
-   checkable widget's state lives in its private variable, and a ctor of its
-   own where the widget carries data (items, a value, a menu, panes)."
-  (merge
-   ;; ── labels, buttons and fields ──
-   {:tk/button
-    (dsl/leaf-spec "button" {:options (opt/options-for [:standard :geometry :highlighted
-                                                        :bordered :spaced :fonted
-                                                        :classic-text :stateful]
-                                                       [:bg :fg :text :default :overrelief
-                                                        :repeatdelay :repeatinterval])
-                             :bindings {:on-click {:option :command}}
-                             :primary :text})
+   :tk/labelframe
+   (dsl/widget-spec "labelframe"
+                    {:options (opt/options-for [:standard :classed :creation :geometry
+                                                :bordered :highlighted :spaced :fonted]
+                                               [:bg :fg :text :labelanchor])
+                     :lens (dsl/child-lens)
+                     :primary :text})
 
-    :tk/label
-    (dsl/leaf-spec "label" {:options (opt/options-for [:standard :geometry :highlighted
-                                                       :bordered :spaced :fonted
-                                                       :classic-text :stateful]
-                                                      [:bg :fg :text :textangle])
-                            :bindings {:on-click {:event "<Button-1>"}}
-                            :primary :text})
+   :tk/message
+   (dsl/widget-spec "message"
+                    {:options (opt/options-for [:standard :bordered :highlighted
+                                                :spaced :fonted]
+                                               [:bg :fg :text :anchor :aspect :justify
+                                                :width])
+                     :primary :text})
 
-    :tk/labelframe
-    (dsl/leaf-spec "labelframe" {:options (opt/options-for [:standard :classed :creation
-                                                            :geometry :bordered :highlighted
-                                                            :spaced :fonted]
-                                                           [:bg :fg :text :labelanchor])
-                                 :lens (dsl/child-lens)
-                                 :primary :text})
+   :tk/checkbutton
+   (dsl/widget-spec "checkbutton"
+                    {:options (opt/options-for [:standard :geometry :highlighted
+                                                :bordered :spaced :fonted
+                                                :classic-text :stateful]
+                                               [:bg :fg :text :selectcolor :indicatoron
+                                                :offrelief :overrelief])
+                     :bindings dsl/check-bindings
+                     :checkable :check})
 
-    :tk/message
-    (dsl/leaf-spec "message" {:options (opt/options-for [:standard :bordered :highlighted
-                                                         :spaced :fonted]
-                                                        [:bg :fg :text :anchor :aspect
-                                                         :justify :width])
-                              :primary :text})
+   :tk/radiobutton
+   (dsl/widget-spec "radiobutton"
+                    {:options (opt/options-for [:standard :geometry :highlighted
+                                                :bordered :spaced :fonted
+                                                :classic-text :stateful]
+                                               [:bg :fg :text :selectcolor :indicatoron
+                                                :offrelief :overrelief :value])
+                     :bindings dsl/radio-bindings
+                     :checkable :radio})
 
-    :tk/checkbutton
-    (dsl/checkable-spec "checkbutton" :check
-                        {:options (opt/options-for [:standard :geometry :highlighted
-                                                    :bordered :spaced :fonted
-                                                    :classic-text :stateful]
-                                                   [:bg :fg :text :selectcolor :indicatoron
-                                                    :offrelief :overrelief])
-                         :bindings {:on-toggled {:option :command :value :variable}}})
-
-    :tk/radiobutton
-    (dsl/checkable-spec "radiobutton" :radio
-                        {:options (opt/options-for [:standard :geometry :highlighted
-                                                    :bordered :spaced :fonted
-                                                    :classic-text :stateful]
-                                                   [:bg :fg :text :selectcolor :indicatoron
-                                                    :offrelief :overrelief :value])
-                         :bindings {:on-toggled {:option :command :value :radio}}})
-
-    :tk/entry
-    (dsl/entry-spec "entry"
+   :tk/entry
+   (dsl/widget-spec "entry"
                     {:options (opt/options-for [:standard :bordered :highlighted
                                                 :fonted :entry-body]
                                                [:bg :fg :width :state :show])
-                     :bindings {:on-change {:event "<KeyRelease>" :value :text}
-                                :on-submit {:event "<Return>" :value :text}}})
+                     :bindings dsl/text-field-bindings
+                     :text-field true})
 
-    :tk/spinbox
-    (dsl/entry-spec "spinbox"
+   :tk/spinbox
+   (dsl/widget-spec "spinbox"
                     {:options (opt/options-for [:standard :bordered :highlighted
                                                 :fonted :entry-body]
                                                [:bg :fg :width :state :activebackground
                                                 :buttonbackground :buttoncursor
-                                                :buttondownrelief :buttonuprelief
-                                                :from :to :increment :format :values :wrap
+                                                :buttondownrelief :buttonuprelief :from :to
+                                                :increment :format :values :wrap
                                                 :repeatdelay :repeatinterval])
-                     :bindings {:on-change {:event "<KeyRelease>" :value :text}
-                                :on-submit {:event "<Return>" :value :text}
-                                :on-spin {:option :command :value :text}}})
+                     :bindings dsl/spinbox-bindings
+                     :text-field true})
 
-    ;; ── the data-bearing widgets ──
-    :tk/listbox
-    {:ctor (fn [spec props]
-             (let [w (dsl/make-widget spec
-                                      (fn [p] (dsl/widget-script
-                                               "listbox" p
-                                               (merge {:height 8}
-                                                      (dsl/tcl-options props (:options spec)))))
-                                      props)]
-               (dsl/set-listbox-items! w (:items props))
-               (dsl/set-listbox-selection! w (:selected props))
-               (when (:scrollbar props)
-                 (dsl/attach-scrollbar! w (dsl/parent-widget)))
-               w))
-     :options (opt/options-for [:standard :geometry :bordered :highlighted
-                                :selectable :fonted]
-                               [:bg :fg :activestyle :justify :selectmode :setgrid :state
-                                :disabledforeground :inactiveselectforeground])
-     :bindings {:on-select {:event "<<ListboxSelect>>" :value :index}}
-     :patchable #{:items :selected}
-     :apply (fn [spec w prev props]
-              (when (dsl/patchable? spec prev props)
-                (when (not= (:items prev) (:items props))
-                  (dsl/set-listbox-items! w (:items props)))
-                (when (not= (:selected prev) (:selected props))
-                  (dsl/set-listbox-selection! w (:selected props)))
-                (dsl/apply-live! spec w prev props)))}
+   :tk/listbox
+   (dsl/widget-spec "listbox"
+                    {:options (opt/options-for [:standard :geometry :bordered :highlighted
+                                                :selectable :fonted]
+                                               [:bg :fg :activestyle :justify :selectmode
+                                                :setgrid :state :disabledforeground
+                                                :inactiveselectforeground])
+                     :fixed {:height 8}
+                     :bindings {:on-select {:event "<<ListboxSelect>>" :value :index}}
+                     :commands {:items listbox-items!
+                                :selected listbox-selection!}
+                     :after maybe-scrollbar!})
 
-    :tk/scale
-    {:ctor (fn [spec props]
-             (let [w (dsl/make-widget spec
-                                      (fn [p] (dsl/widget-script "scale" p
-                                                                 (dsl/tcl-options
-                                                                  props (:options spec))))
-                                      props)]
-               (when (some? (:value props))
-                 (dsl/eval! (str (:path w) " set " (dsl/tcl-quote (dsl/tcl-word (:value props))))))
-               w))
-     :options (opt/options-for [:standard :bordered :highlighted :fonted :scale-body]
-                               [:bg :fg :width :state :activebackground])
-     :bindings {:on-change {:option :command :arg :number}}
-     :patchable #{:value}
-     :apply (fn [spec w prev props]
-              (when (dsl/patchable? spec prev props)
-                (when (and (not= (:value prev) (:value props)) (some? (:value props)))
-                  (dsl/eval! (str (:path w) " set "
-                                  (dsl/tcl-quote (dsl/tcl-word (:value props))))))
-                (dsl/apply-live! spec w prev props)))}
+   :tk/scale
+   (dsl/widget-spec "scale"
+                    {:options (opt/options-for [:standard :bordered :highlighted
+                                                :fonted :scale-body]
+                                               [:bg :fg :width :state :activebackground])
+                     :bindings {:on-change {:option :command :arg :number}}
+                     :commands {:value set-scale-value!}})
 
-    :tk/scrollbar
-    {:ctor (fn [spec props]
-             (let [w (dsl/make-widget spec
-                                      (fn [p] (dsl/widget-script "scrollbar" p
-                                                                 (dsl/tcl-options
-                                                                  props (:options spec))))
-                                      props)]
-               (when-some [[first last] (seq (:position props))]
-                 (dsl/eval! (str (:path w) " set " (dsl/tcl-quote first) " "
-                                 (dsl/tcl-quote last))))
-               w))
-     :options (opt/options-for [:standard :bordered :highlighted :scrollbar-body]
-                               [:bg])
-     :bindings {:on-scroll {:option :command}}
-     :patchable #{:position}
-     :apply (fn [spec w prev props]
-              (when (dsl/patchable? spec prev props)
-                (when (not= (:position prev) (:position props))
-                  (when-some [[first last] (seq (:position props))]
-                    (dsl/eval! (str (:path w) " set " (dsl/tcl-quote first) " "
-                                    (dsl/tcl-quote last)))))
-                (dsl/apply-live! spec w prev props)))}
+   :tk/scrollbar
+   (dsl/widget-spec "scrollbar"
+                    {:options (opt/options-for [:standard :bordered :highlighted
+                                                :scrollbar-body]
+                                               [:bg])
+                     :bindings {:on-scroll {:option :command}}
+                     :commands {:position dsl/set-scrollbar-position!}})
 
-    :tk/canvas
-    {:ctor (fn [spec props]
-             (let [w (dsl/make-widget spec
-                                      (fn [p] (dsl/widget-script
-                                               "canvas" p
-                                               (merge {:borderwidth 0 :highlightthickness 0}
-                                                      (dsl/tcl-options props (:options spec)))))
-                                      props)]
-               (canvas-items! w (:items props))
-               (when (:scrollbar props)
-                 (dsl/attach-scrollbar! w (dsl/parent-widget)))
-               w))
-     :options (opt/options-for [:standard :geometry :bordered :highlighted]
-                               [:bg :scrollregion :closeenough :confine :offset :state
-                                :insertbackground :insertborderwidth :insertofftime
-                                :insertontime :insertwidth :selectbackground
-                                :selectborderwidth :selectforeground
-                                :xscrollincrement :yscrollincrement])
-     :patchable #{:items}
-     :apply (fn [spec w prev props]
-              (when (dsl/patchable? spec prev props)
-                (when (not= (:items prev) (:items props))
-                  (canvas-items! w (:items props)))
-                (dsl/apply-live! spec w prev props)))}
+   :tk/canvas
+   (dsl/widget-spec "canvas"
+                    {:options (opt/options-for [:standard :geometry :bordered :highlighted]
+                                               [:bg :scrollregion :closeenough :confine
+                                                :offset :state :insertbackground
+                                                :insertborderwidth :insertofftime
+                                                :insertontime :insertwidth
+                                                :selectbackground :selectborderwidth
+                                                :selectforeground :xscrollincrement
+                                                :yscrollincrement])
+                     :fixed {:borderwidth 0 :highlightthickness 0}
+                     :commands {:items canvas-items!}
+                     :after maybe-scrollbar!})
 
-    :tk/menubutton
-    {:ctor (fn [spec {:keys [items] :as props}]
-             (let [w (dsl/make-widget spec
-                                      (fn [p] (dsl/widget-script "menubutton" p
-                                                                 (dsl/tcl-options
-                                                                  props (:options spec))))
-                                      props)
-                   menu (dsl/alloc-path! w)]
-               (dsl/eval! (str "menu " menu " -tearoff 0"))
-               (dsl/eval! (str (:path w) " configure -menu " menu))
-               (swap! (:styles w) assoc :menu menu)
-               (dsl/set-menu-items! w menu items)
-               w))
-     :options (opt/options-for [:standard :geometry :highlighted :bordered
-                                :spaced :fonted :classic-text :stateful]
-                               [:bg :fg :text :direction :indicatoron])
-     :bindings {:on-click {:event "<Button-1>"}}
-     :patchable #{:items}
-     :primary :text
-     :apply (fn [spec w prev props]
-              (when (dsl/patchable? spec prev props)
-                (when (not= (:items prev) (:items props))
-                  (dsl/set-menu-items! w (get @(:styles w) :menu) (:items props)))
-                (dsl/apply-live! spec w prev props)))}
+   :tk/menubutton
+   (dsl/widget-spec "menubutton"
+                    {:options (opt/options-for [:standard :geometry :highlighted
+                                                :bordered :spaced :fonted
+                                                :classic-text :stateful]
+                                               [:bg :fg :text :direction :indicatoron])
+                     :bindings {:on-click {:event "<Button-1>"}}
+                     :primary :text
+                     :commands {:items dsl/menu-items!}})
 
-    :tk/menu
-    {:ctor (fn [spec {:keys [items menubar] :as props}]
-             (let [w (dsl/make-widget spec
-                                      (fn [p] (dsl/widget-script
-                                               "menu" p
-                                               (merge {:tearoff false}
-                                                      (dsl/tcl-options props (:options spec)))))
-                                      props)]
-               (dsl/set-menu-items! w (:path w) items)
-               (when menubar
-                 ;; a menubar is the toplevel's -menu, so a :tk/menu with
-                 ;; :menubar true wires itself onto the window
-                 (dsl/eval! (str ". configure -menu " (:path w))))
-               w))
-     ;; Tk refuses to let pack manage a menu: it is placed by the
-     ;; menubutton or the window it belongs to
-     :pack? false
-     :options (opt/options-for [:standard :fonted]
-                               [:bg :fg :activebackground :activeforeground
-                                :activeborderwidth :activerelief :borderwidth :relief
-                                :disabledforeground :selectcolor :tearoff])
-     :patchable #{:items}
-     :apply (fn [spec w prev props]
-              (when (dsl/patchable? spec prev props)
-                (when (not= (:items prev) (:items props))
-                  (dsl/set-menu-items! w (:path w) (:items props)))
-                (dsl/apply-live! spec w prev props)))}
+   :tk/menu
+   (dsl/widget-spec "menu"
+                    {;; Tk refuses to let pack manage a menu: the menubutton or
+                     ;; the window it belongs to places it
+                     :pack? false
+                     :fixed {:tearoff false}
+                     :options (opt/options-for [:standard :fonted]
+                                               [:bg :fg :activebackground :activeforeground
+                                                :activeborderwidth :activerelief
+                                                :borderwidth :relief :disabledforeground
+                                                :selectcolor :tearoff])
+                     :commands {:items (fn [w props]
+                                         (dsl/set-menu-items! w (:path w) (:items props)))}
+                     :after wire-menubar!})
 
-    :tk/panedwindow
-    {:ctor (fn [spec props]
-             (let [w (dsl/make-widget spec
-                                      (fn [p] (dsl/widget-script "panedwindow" p
-                                                                 (dsl/tcl-options
-                                                                  props (:options spec))))
-                                      props)]
-               (swap! (:styles w) assoc
-                      :attach (fn [path child]
-                                (dsl/eval! (str (:path w) " add " path
-                                                (when-some [minsize (:minsize child)]
-                                                  (str " -minsize " (dsl/tcl-quote
-                                                                     (dsl/tcl-word minsize))))
-                                                (when-some [stretch (:stretch child)]
-                                                  (str " -stretch " (dsl/tcl-word stretch)))))))
-               w))
-     :options (opt/options-for []
-                               [:cursor :bg :borderwidth :relief :orient :width :height
-                                :handlepad :handlesize :opaqueresize :sashpad :sashrelief
-                                :sashwidth :showhandle])
-     :lens (dsl/child-lens)}}))
+   :tk/panedwindow
+   (dsl/widget-spec "panedwindow"
+                    {:options (opt/options-for []
+                                               [:cursor :bg :borderwidth :relief :orient
+                                                :width :height :handlepad :handlesize
+                                                :opaqueresize :sashpad :sashrelief
+                                                :sashwidth :showhandle])
+                     :attach (fn [w]
+                               (fn [path props]
+                                 (dsl/eval! (str (:path w) " add " path
+                                                 (when-some [minsize (:minsize props)]
+                                                   (str " -minsize "
+                                                        (dsl/tcl-quote (dsl/tcl-word minsize))))
+                                                 (when-some [stretch (:stretch props)]
+                                                   (str " -stretch "
+                                                        (dsl/tcl-word stretch)))))))
+                     :lens (dsl/child-lens)})})
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; The tag table
 ;; ═══════════════════════════════════════════════════════════════════════════
-
-(def ^:private classic-specs
-  "The classic widget set: the four above plus classic-widgets."
-  (merge classic-base classic-widgets))
 
 (def ^:private tags
   "The backend's closed host tag table: the classic (:tk/…) and themed

@@ -148,14 +148,18 @@ also the only state a classic Tk checkbutton can be read from (it has
 against its own `:value`, so `:active` on each button is what makes a
 group exclusive.
 
-The classic specs are `kmet.gui.tk`'s `classic-specs` (its four core
-widgets `classic-base`, the rest `classic-widgets`), the themed ones
+The classic specs are `kmet.gui.tk`'s `classic-specs`, the themed ones
 `kmet.gui.ttk/specs`; `kmet.gui.tk` completes both through
 `kmet.gui.tk.dsl/widget-specs` into the backend's closed tag table, which
 is why the qualified `:tk/…`/`:ttk/…` keywords are host tags and never
-fall through to the alias registry. A spec that is just its Tk command is
-`dsl/leaf-spec`; the shared `dsl/entry-spec` and `dsl/checkable-spec`
-build the text-field and checkable shapes.
+fall through to the alias registry. A spec is one `dsl/widget-spec`: the Tk
+command, its `:options`, and whatever else the tag needs — `:commands` for
+the props Tk sets through subcommands (a listbox's `:items`, a scrollbar's
+`:position`), `:attach` for a container that places its children (a
+notebook's tabs), `:after` for what a widget needs once it exists (a
+menubutton's menu), `:text-field`/`:checkable` for the two shapes that need
+more than options (a text set through the widget's subcommands; a state in
+a private Tcl variable).
 
 Pack geometry is the child's, like Tk's own pack options: `:side`
 (`-side`, default `top`), `:fill` (default `both` inside a pane container,

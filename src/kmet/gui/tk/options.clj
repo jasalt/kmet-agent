@@ -3,8 +3,8 @@
    prop names, what shape its value takes, and the families that group the
    options sharing a widget population. kmet.gui.tk's classic specs and
    kmet.gui.ttk's themed specs compose their :options from families plus
-   their widget's own additions (options-for), so one declaration drives
-   the construction script, the live patch and the patchable decision.
+   their widget's own additions (options-for), so one declaration drives the
+   construction script, the live patch and the patchable decision.
 
    A prop is Tk's own option name without the dash (`:highlightthickness`
    is -highlightthickness); the exceptions are the short forms we have
@@ -23,156 +23,58 @@
        -invalidcommand, -xscrollcommand, -yscrollcommand (the :scrollbar
        prop wires those), -postcommand, -browsecmd, -invokecommand,
        -tearoffcommand;
-     - variable-backed: -variable, -textvariable, -listvariable (kmet
-       would have to own the Tcl variable and trace it — a checkable
-       widget's values are the tag's own: it gives the widget a private
-       variable holding 1/0, or its :value when it is a radiobutton, so
+     - variable-backed: -variable, -textvariable, -listvariable (a
+       checkable widget's state is the tag's own private variable, so
        -onvalue/-offvalue/-tristatevalue are not props either);
      - image-backed: -image, -bitmap, -disabledimage, -selectimage,
        -tristateimage (kmet does no image loading), -labelwidget;
-     - another widget: -menu (a menubutton's :items build their own menu),
-       -displaycolumns? no, that is a list;
+     - another widget: -menu (a menubutton's :items build their own);
      - only meaningful with one of the above: -selecttype, -title,
-       -titlecolumns, -titleitems, -type, -tearoffcommand.
+       -titlecolumns, -titleitems, -type, -displaycolumns.
 
    Tk 9 additions (-locale, -placeholder, -placeholderforeground,
-   -textangle, -backgroundimage, -tile, -textangle, -striped, -rowheight,
+   -textangle, -backgroundimage, -tile, -striped, -rowheight,
    -headingheight, -size) are listed: the backend checks a prop's option
    against the running widget (dsl/check-options!), so on a Tk 8.6 host
    they fail with a message naming the option instead of silently doing
    nothing."
   (:require [clojure.set :as set]))
 
+(def ^:private option-props
+  "The props that are Tk's own option name without the dash — the bulk of
+   the vocabulary."
+  #{:class :colormap :container :visual :screen :use :cursor :takefocus :style
+    :width :height :backgroundimage :tile :relief :borderwidth
+    :highlightbackground :highlightcolor :highlightthickness :padx :pady
+    :padding :text :textangle :underline :justify :anchor :wraplength :compound
+    :state :activebackground :activeforeground :activeborderwidth :activerelief
+    :disabledforeground :default :exportselection :selectbackground
+    :selectforeground :selectborderwidth :selectcolor :inactiveselectbackground
+    :inactiveselectforeground :indicatoron :offrelief :overrelief :value :maximum
+    :mode :orient :phase :length :from :to :resolution :digits :increment :format
+    :values :wrap :showvalue :sliderlength :sliderrelief :tickinterval
+    :bigincrement :label :troughcolor :jump :elementborderwidth :repeatdelay
+    :repeatinterval :buttonbackground :buttoncursor :buttondownrelief
+    :buttonuprelief :labelanchor :activestyle :selectmode :setgrid :scrollregion
+    :xscrollincrement :yscrollincrement :closeenough :confine :offset :handlepad
+    :handlesize :opaqueresize :sashpad :sashrelief :sashwidth :showhandle
+    :tearoff :aspect :direction :size :rowheight :headingheight :striped
+    :autoseparators :blockcursor :endline :startline :insertbackground
+    :insertborderwidth :insertofftime :insertontime :insertunfocussed
+    :insertwidth :maxundo :spacing1 :spacing2 :spacing3 :tabs :tabstyle :undo
+    :show :placeholder :placeholderforeground :validate :locale
+    :disabledbackground :readonlybackground})
+
 (def options
-  "prop → the Tcl option it names."
-  {:class :class
-   :colormap :colormap
-   :container :container
-   :visual :visual
-   :screen :screen
-   :use :use
-   :cursor :cursor
-   :takefocus :takefocus
-   :style :style
-   :width :width
-   :height :height
-   :bg :background
-   :fg :foreground
-   :backgroundimage :backgroundimage
-   :tile :tile
-   :relief :relief
-   :borderwidth :borderwidth
-   :highlightbackground :highlightbackground
-   :highlightcolor :highlightcolor
-   :highlightthickness :highlightthickness
-   :padx :padx
-   :pady :pady
-   :padding :padding
-   :text :text
-   :textangle :textangle
-   :underline :underline
-   :justify :justify
-   :anchor :anchor
-   :wraplength :wraplength
-   :compound :compound
-   :state :state
-   :activebackground :activebackground
-   :activeforeground :activeforeground
-   :activeborderwidth :activeborderwidth
-   :activerelief :activerelief
-   :disabledforeground :disabledforeground
-   :default :default
-   :exportselection :exportselection
-   :selectbackground :selectbackground
-   :selectforeground :selectforeground
-   :selectborderwidth :selectborderwidth
-   :selectcolor :selectcolor
-   :inactiveselectbackground :inactiveselectbackground
-   :inactiveselectforeground :inactiveselectforeground
-   :font-family :font
-   :font-size :font
-   :bold :font
-   :italic :font
-   :show :show
-   :placeholder :placeholder
-   :placeholderforeground :placeholderforeground
-   :validate :validate
-   :locale :locale
-   :disabledbackground :disabledbackground
-   :readonlybackground :readonlybackground
-   :indicatoron :indicatoron
-   :offrelief :offrelief
-   :overrelief :overrelief
-   :value :value
-   :maximum :maximum
-   :mode :mode
-   :orient :orient
-   :phase :phase
-   :length :length
-   :from :from
-   :to :to
-   :resolution :resolution
-   :digits :digits
-   :increment :increment
-   :format :format
-   :values :values
-   :wrap :wrap
-   :showvalue :showvalue
-   :sliderlength :sliderlength
-   :sliderrelief :sliderrelief
-   :tickinterval :tickinterval
-   :bigincrement :bigincrement
-   :label :label
-   :troughcolor :troughcolor
-   :jump :jump
-   :elementborderwidth :elementborderwidth
-   :repeatdelay :repeatdelay
-   :repeatinterval :repeatinterval
-   :buttonbackground :buttonbackground
-   :buttoncursor :buttoncursor
-   :buttondownrelief :buttondownrelief
-   :buttonuprelief :buttonuprelief
-   :labelanchor :labelanchor
-   :activestyle :activestyle
-   :selectmode :selectmode
-   :setgrid :setgrid
-   :scrollregion :scrollregion
-   :xscrollincrement :xscrollincrement
-   :yscrollincrement :yscrollincrement
-   :closeenough :closeenough
-   :confine :confine
-   :offset :offset
-   :handlepad :handlepad
-   :handlesize :handlesize
-   :opaqueresize :opaqueresize
-   :sashpad :sashpad
-   :sashrelief :sashrelief
-   :sashwidth :sashwidth
-   :showhandle :showhandle
-   :tearoff :tearoff
-   :aspect :aspect
-   :direction :direction
-   :size :size
-   :rowheight :rowheight
-   :headingheight :headingheight
-   :striped :striped
-   :autoseparators :autoseparators
-   :blockcursor :blockcursor
-   :endline :endline
-   :startline :startline
-   :insertbackground :insertbackground
-   :insertborderwidth :insertborderwidth
-   :insertofftime :insertofftime
-   :insertontime :insertontime
-   :insertunfocussed :insertunfocussed
-   :insertwidth :insertwidth
-   :maxundo :maxundo
-   :spacing1 :spacing1
-   :spacing2 :spacing2
-   :spacing3 :spacing3
-   :tabs :tabs
-   :tabstyle :tabstyle
-   :undo :undo})
+  "prop → the Tcl option it names: the bulk are Tk's own option names, plus
+   the short forms kmet keeps and the font family."
+  (merge (zipmap option-props option-props)
+         {:bg :background
+          :fg :foreground
+          :font-family :font
+          :font-size :font
+          :bold :font
+          :italic :font}))
 
 (def creation-only
   "Props whose option Tk takes only at creation: a change to one rebuilds
@@ -218,8 +120,8 @@
    :fonted      #{:font-family :font-size :bold :italic}
    :editable    #{:show :validate}
    :localized   #{:placeholder :placeholderforeground :locale}
-   ;; the classic entry/ttk entry/spinbox editing block (-show is not in
-   ;; Tk's classic spinbox, so it is a prop of its own)
+   ;; the entry/spinbox editing block (-show is not in Tk's classic spinbox,
+   ;; so it is a prop of its own)
    :entry-body  #{:exportselection :justify :selectbackground
                   :selectforeground :selectborderwidth :insertbackground
                   :insertborderwidth :insertofftime :insertontime
