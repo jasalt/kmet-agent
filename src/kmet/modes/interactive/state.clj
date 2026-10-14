@@ -7,6 +7,7 @@
             [babashka.fs :as fs]
             [kmet.config :as cfg]
             [kmet.app.session :as session]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.keybindings :as app-kb]
             [kmet.app.ui.footer-data-provider :as fdp]
             [kmet.app.ui.dock :as dock]
@@ -50,9 +51,7 @@
    project's dir (pi: newSession uses the runtime cwd, not process.cwd)."
   ([] (ensure-cwd-session-dir (str (fs/cwd))))
   ([cwd]
-   (let [d (session/session-dir-for-cwd (get-session-dir) cwd)]
-     (fs/create-dirs d)
-     d)))
+   (runtime/ensure-cwd-session-dir (get-session-dir) cwd)))
 
 (defn runtime-cwd
   "The working directory of CS's runtime (pi: AgentSession._cwd, seeded from
@@ -75,7 +74,7 @@
    legacy headerless sessions and other-cwd files are excluded, no fallback).
    Used by --continue so the current project's last session is resumed."
   []
-  (session/find-most-recent-session (ensure-cwd-session-dir) (str (fs/cwd))))
+  (runtime/find-recent-session (get-session-dir) (str (fs/cwd))))
 
 (defn- quote-if-needed
   "pi quoteIfNeeded — leave safe shell tokens bare, else single-quote with

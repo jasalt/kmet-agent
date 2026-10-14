@@ -226,6 +226,24 @@
   [engine]
   @(:session engine))
 
+(defn ensure-cwd-session-dir
+  "The cwd-encoded sessions dir for CWD under BASE-DIR, created if missing
+   (pi: getDefaultSessionDir — per-project isolation). BASE-DIR is the
+   config's sessions dir; CWD is the process cwd at startup, or the
+   session's runtime cwd after a switch, so a session resumed from another
+   project keeps creating its sessions in that project's dir."
+  [base-dir cwd]
+  (let [dir (session/session-dir-for-cwd base-dir cwd)]
+    (fs/create-dirs dir)
+    dir))
+
+(defn find-recent-session
+  "The most recent session file for CWD under BASE-DIR, or nil (pi:
+   continueRecent → findMostRecentSession). Header-based discovery: legacy
+   headerless sessions and other-cwd files are excluded."
+  [base-dir cwd]
+  (session/find-most-recent-session (ensure-cwd-session-dir base-dir cwd) cwd))
+
 (defn entries
   "The live session's entries (the session's own atom)."
   [engine]

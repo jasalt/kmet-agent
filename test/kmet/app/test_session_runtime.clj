@@ -116,3 +116,20 @@
         (is (= {:steering [] :follow-up []} (:queues snap)))
         (is (= :completed (:last-outcome snap)))
         (is (not (contains? snap :subscribers)) "the snapshot is a view, not the engine")))))
+
+(deftest test-session-directory-helpers
+  (let [dir (str "target/test-session-runtime-dirs-" (System/currentTimeMillis))
+        cwd (str (fs/cwd))]
+    (try
+      (let [sess (session/create-session (rt/ensure-cwd-session-dir dir cwd)
+                                         {:cwd cwd})]
+        (is (= (some-> (session/session-dir-for-cwd dir cwd) fs/canonicalize str)
+               (str (fs/parent (:file sess))))
+            "a new session lands in the cwd-encoded dir under base-dir")
+        (is (nil? (rt/find-recent-session dir cwd))
+            "an empty cwd dir has no session to continue")
+        (session/append-entry sess {:role :assistant :content "prior"})
+        (is (= (str (fs/canonicalize (:file sess)))
+               (str (fs/canonicalize (rt/find-recent-session dir cwd))))
+            "the most recent session for the cwd is found"))
+      (finally (fs/delete-tree dir)))))
