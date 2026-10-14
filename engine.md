@@ -553,6 +553,15 @@ Acceptance: print mode has no direct `make-agent-state` call; all
 `test_print` cases pass; a scenario piped through the event output emits
 every `loop-event-types` event and each round-trips through EDN.
 
+**Landed**: print mode is a pure event-stream consumer — text mode streams
+`:message-update` text deltas and reports failure from the `:agent-settled`
+outcome (`:error` / `:aborted` → stderr, exit 1), and `--mode edn` (implies
+`--print`) writes the session header plus one EDN map per event, with
+`event-bus/wire-event` dropping the cumulative `:message-update` snapshot.
+The session-directory helpers (`ensure-cwd-session-dir`,
+`find-recent-session`) moved from the mode to the runtime, leaving
+`session-for-run` as policy only.
+
 ### Step 3 — move session/turn ownership under the runtime
 
 - Move `modes/interactive/session_admin.clj` switching/creation and
