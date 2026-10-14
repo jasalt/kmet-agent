@@ -495,21 +495,18 @@
   (status/start-anim-timer! cs)
   (state/update-footer! cs)
   (tui/tui-request-render (:tui cs))
-  (let [run-opts (cond-> {:on-text #(on-agent-text cs %)
-                          :on-thinking #(on-agent-thinking cs %)
-                          :on-done (fn [_] (on-agent-done cs))
-                          :on-error #(on-agent-error cs %)}
-                   message (assoc :text message))]
+  (let [callbacks {:on-text #(on-agent-text cs %)
+                   :on-thinking #(on-agent-thinking cs %)
+                   :on-done (fn [_] (on-agent-done cs))
+                   :on-error #(on-agent-error cs %)}]
     (if-let [engine (:engine cs)]
       ;; the runtime records the run so dispose! can cancel an exit while
       ;; streaming and wait for the terminal :agent-settled
-      (runtime/prompt! engine run-opts)
+      (runtime/prompt! engine (cond-> callbacks message (assoc :text message)))
       ;; test stubs build a CoreState without the runtime engine; the loop
       ;; knows the prompt text as :message
       (agent/run-agent-turn @(:agent-state cs)
-                            (cond-> (dissoc run-opts :text)
-                              (contains? run-opts :text)
-                              (assoc :message (:text run-opts)))))))
+                            (cond-> callbacks message (assoc :message message))))))
 
 (defn- send-message
   "Send text to the agent: steer while streaming, else start a new turn.

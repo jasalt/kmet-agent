@@ -157,6 +157,8 @@
                    (if (:reasoning model-rec)
                      (shared/clamp-thinking-level model-rec raw)
                      raw))
+        retry-settings (cfg/get-retry-settings config)
+        loop-guard-settings (cfg/get-loop-guard-settings config)
         subscribers (atom [])
         ;; absent settings must keep make-agent-state's own defaults (an
         ;; explicit nil stays meaningful), so these keys are merged only
@@ -192,18 +194,16 @@
                                      :thinking thinking
                                      ;; pi: retry settings (settings.edn :retry
                                      ;; block — enabled gates max-retries to 0)
-                                     :max-retries (let [retry (cfg/get-retry-settings config)]
-                                                    (if (:enabled retry) (:max-retries retry) 0))
-                                     :base-delay-ms (:base-delay-ms (cfg/get-retry-settings config))
-                                     :max-agent-delay-ms (:max-agent-delay-ms
-                                                          (cfg/get-retry-settings config))
+                                     :max-retries (if (:enabled retry-settings)
+                                                    (:max-retries retry-settings)
+                                                    0)
+                                     :base-delay-ms (:base-delay-ms retry-settings)
+                                     :max-agent-delay-ms (:max-agent-delay-ms retry-settings)
                                      ;; Repeat-loop guard (kmet-specific):
                                      ;; settings.edn :loop-guard block — enabled
                                      ;; gates threshold to 0 (off)
-                                     :loop-guard-enabled (:enabled
-                                                          (cfg/get-loop-guard-settings config))
-                                     :loop-guard-threshold (:threshold
-                                                            (cfg/get-loop-guard-settings config))
+                                     :loop-guard-enabled (:enabled loop-guard-settings)
+                                     :loop-guard-threshold (:threshold loop-guard-settings)
                                      :thinking-loop-guard-enabled
                                      (get config :thinking-loop-guard-enabled true)
                                      :before-tool-call extension-before-tool-call
@@ -239,7 +239,7 @@
 (defn entries
   "The live session's entries (the session's own atom)."
   [engine]
-  (some->> @(:session engine) :entries deref))
+  (some-> @(:session engine) :entries deref))
 
 (defn snapshot
   "A plain-data view of the engine: the session, the agent's status /
@@ -268,8 +268,7 @@
   [engine f]
   (swap! (:subscribers engine) conj f)
   (fn unsubscribe []
-    (swap! (:subscribers engine)
-           (fn [subs] (into [] (remove #(identical? % f)) subs)))
+    (swap! (:subscribers engine) (fn [subs] (filterv #(not (identical? % f)) subs)))
     nil))
 
 (defn prompt!
@@ -280,12 +279,10 @@
    passed straight through."
   [engine opts]
   (reset! (:last-run engine)
-          (agent/run-agent-turn (ag engine)
-                                (select-keys (cond-> opts
-                                               (contains? opts :text)
-                                               (assoc :message (:text opts)))
-                                             [:message :images :on-text
-                                              :on-thinking :on-done :on-error])))
+          (agent/run-agent-turn
+           (ag engine)
+           (cond-> (select-keys opts [:images :on-text :on-thinking :on-done :on-error])
+             (:text opts) (assoc :message (:text opts)))))
   nil)
 
 (defn steer! [engine text] (agent/steer! (ag engine) text))

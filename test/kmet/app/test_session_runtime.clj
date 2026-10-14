@@ -2,16 +2,16 @@
   "Tests for kmet.app.session-runtime: the engine front ends drive
    (engine.md §4.1, step 1)."
   (:require [babashka.fs :as fs]
-            [clojure.test :as t :refer [deftest is]]
+            [clojure.test :refer [deftest is]]
             [kmet.app.extensions :as extensions]
             [kmet.app.loop :as agent]
             [kmet.app.session :as session]
             [kmet.app.session-runtime :as rt]))
 
-(defn- opts
+(defn- test-config
   "A sparse run config — every derived option falls back to its default."
   []
-  {:config {:provider :opencode-go :model "deepseek-v4-flash"}})
+  {:provider :opencode-go :model "deepseek-v4-flash"})
 
 (defn- with-engine
   "Bootstrap an engine over a fresh temp session and call F with it,
@@ -20,7 +20,7 @@
   (let [dir (str "target/test-session-runtime-" (System/currentTimeMillis))
         sess (session/create-session dir {:cwd (str (fs/cwd))})]
     (try
-      (let [engine (rt/bootstrap (:config (opts)) {:session sess})]
+      (let [engine (rt/bootstrap (test-config) {:session sess})]
         (try (f engine sess)
              (finally (rt/dispose! engine))))
       (finally (fs/delete-tree dir)))))

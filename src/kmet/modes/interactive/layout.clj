@@ -506,10 +506,9 @@
         ctx-window (or (:context-window (models/get-model provider model))
                        (:context-window config))
 
-        ;; Runtime engine (kmet.app.session-runtime): it owns the agent state,
-        ;; the system prompt, the config-derived run options and the
-        ;; extension handle. The layout owns view state and subscribes
-        ;; its own event handler once the widgets exist.
+        ;; The runtime owns the agent state, system prompt, run options and
+        ;; extension handle; the layout owns view state and subscribes its
+        ;; event handler once the widgets exist.
         engine (runtime/bootstrap config {:session session})
         ag @(:agent-state engine)
         ;; B.1: welcome header — ExpandableText with compact/full variants
@@ -891,9 +890,8 @@
       (reset! cs-ref cs)
 
       ;; The interactive event handler is one subscriber on the runtime's
-      ;; stream (pi: the TUI session's event handlers). Subscribing here,
-      ;; after cs-ref is set, means a :status event can resolve the built
-      ;; CoreState.
+      ;; stream (pi: the TUI session's event handlers), subscribed after
+      ;; cs-ref so :status events resolve the built CoreState.
       (runtime/subscribe! engine
                           (make-agent-event-handler
                            {:chat-history ch :tui t :cs-ref cs-ref
