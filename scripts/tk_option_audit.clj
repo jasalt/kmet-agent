@@ -44,45 +44,39 @@
   #{"::ttk::paned"})
 
 (def ^:private probe-src
+  "The Tcl side of the audit: create the widget, ask it which options it
+   really has (Tk answers `configure -alias` with the canonical option, so
+   an option stands for itself — -bd answers -borderwidth, -bg -background,
+   -vcmd -validatecommand — and the aliases never reach the report), then
+   the widget's class."
   (str "proc tkoptionprobe {creator path} {\n"
        "  if {[catch {$creator $path} err]} { return \"ERR\\t$err\" }\n"
        "  if {![winfo exists $path]} { return \"NOWIN\" }\n"
        "  set out [list \"CLASS\\t[winfo class $path]\"]\n"
        "  foreach o [$path configure] {\n"
-       "    lappend out \"OPT\\t[lindex $o 0]\\t[lindex $o 1]\"\n"
+       "    set name [lindex $o 0]\n"
+       "    set canon [lindex [$path configure $name] 0]\n"
+       "    if {[string equal $canon $name]} { lappend out \"OPT\\t$name\" }\n"
        "  }\n"
        "  catch {destroy $path}\n"
        "  catch {image delete $path}\n"
        "  return [join $out \"\\n\"]\n"
        "}\n"))
 
-(def ^:private option-aliases
-  "Tk's option aliases: its configure output lists them as options too, so
-   they are dropped from the canonical set (most carry the canonical name
-   with a dash in the dbName column, canvas and scrollbar do not)."
-  #{"-bd" "-bg" "-fg" "-bgimg"})
-
 (defn- probe!
-  "Create CREATOR's widget once at PATH: {:class str :options #{opt}
-   :aliases #{opt}} — or {:error str} / {:nowin true}. Tk lists an option's
-   aliases (-bd/-bg/-fg) as options too; they carry the canonical option in
-   the dbName column, so they are split out."
+  "Create CREATOR's widget once at PATH: {:class str :options #{canonical
+   opt}} — or {:error str} / {:nowin true}. The options are the ones the
+   widget answers for itself, so Tk's aliases (-bd, -bg, -vcmd, …) are
+   already gone."
   [e creator path]
   (let [out (e (str "tkoptionprobe " creator " " path))]
     (cond
       (str/starts-with? out "ERR\t") {:error (subs out 4)}
       (= out "NOWIN") {:nowin true}
-      :else (let [rows (keep (fn [l]
-                               (when (str/starts-with? l "OPT\t")
-                                 (let [parts (str/split (subs l 4) #"\t")
-                                       opt (first parts)
-                                       db (second parts)]
-                                   {:opt opt :alias? (or (contains? option-aliases opt)
-                                                        (str/starts-with? (or db "") "-"))})))
-                             (str/split-lines out))]
-              {:class (some->> (str/split-lines out)
-                               (some #(when (str/starts-with? % "CLASS\t") (subs % 6))))
-               :options (into #{} (comp (remove :alias?) (map :opt)) rows)}))))
+      :else {:class (some->> (str/split-lines out)
+                             (some #(when (str/starts-with? % "CLASS\t") (subs % 6))))
+             :options (into #{} (keep #(when (str/starts-with? % "OPT\t") (subs % 4)))
+                            (str/split-lines out))})))
 
 (defn- inventory
   "Probe every widget class this interpreter has."

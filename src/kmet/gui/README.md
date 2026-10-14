@@ -367,13 +367,12 @@ gives to no plain prop — script-, variable- and image-backed — are the
 ones still missing, and `scripts/tk_option_audit.clj` reports both sides
 against a live Tk.
 
-The first cuts that remain: the treeview shows flat tables (its tree mode
-needs row children), canvas items are redrawn wholesale on a change (no
-per-item identity), a menu item is a command/separator/cascade (a check
-item needs a Tcl variable), and `:tk/text`/`:tk/transcript` own their
-`-state` (they are read-only surfaces; an editable text tag is a
-follow-up).
-
+The first cuts that remain — the treeview's flat tables, canvas items
+without identity, checkable menu items, the read-only text tags, and
+everything Tk offers beside its widgets (dialogs, images, `grid`/`place`,
+window management, ttk styles, the clipboard, variables) — are tracked in
+[`tcl.md`](../../tcl.md) at the repository root, which lists each gap with
+what closing it needs and how the two guards below keep the list honest.
 The `:tk/text` tag carries the displayed content — styled segments in
 Tk tags, an optional scrollbar, generated mono fonts, wrapping.
 `:tk/transcript` is the scroll container: one text widget whose children

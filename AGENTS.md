@@ -19,7 +19,8 @@ change when behavior changes.
 
 User-facing documentation belongs in `docs/`. Implementation notes belong next
 to their source package. The temporary notes `run_code.md`, `perf.md`,
-`jolt-bugs.md`, and `windows.md` intentionally remain at the project root.
+`jolt-bugs.md`, `windows.md`, `pi-tools.md`, and `tcl.md` intentionally remain
+at the project root.
 
 ## Basic development flow
 
