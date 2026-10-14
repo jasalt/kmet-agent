@@ -152,19 +152,6 @@
     session_before_fork). Payload: :entry-id, :position (:at). Handlers may
     return {:cancel true} to abort the fork."
 
-   :session-before-compact
-   "Actionable: fired before context compaction — manual, threshold, or
-    overflow (pi: session_before_compact). Payload: :preparation (the
-    projection-aware CompactionPreparation: :messages, :tokens-before,
-    :settings), :branch-entries, :custom-instructions, :reason
-    (:manual | :threshold | :overflow), :will-retry (true for overflow
-    recovery), :signal (the run's abort atom). Handlers may return
-    {:cancel true} to skip the compaction, or {:compaction {:summary ..
-    :first-kept-id .. :tokens-before .. :usage .. :details ..}} to supply
-    the content instead of the summarizer (pi:
-    SessionBeforeCompactResult) — the entry then records :from-hook and the
-    compaction events carry :from-extension."
-
    :session-tree
    "Fired after a session-tree navigation branched (pi: session_tree).
     Payload: :new-leaf-id, :old-leaf-id, :summary-entry (optional),
@@ -220,6 +207,19 @@
    "Fired once when a summarization retry loop ends — the retried call
     succeeded, failed terminally, or the backoff was aborted (pi:
     summarization_retry_finished). No payload."
+
+   :session-before-compact
+   "Actionable: fired before context compaction — manual, threshold, or
+    overflow (pi: session_before_compact). Payload: :preparation (the
+    projection-aware CompactionPreparation: :messages, :tokens-before,
+    :settings), :branch-entries, :custom-instructions, :reason
+    (:manual | :threshold | :overflow), :will-retry (true for overflow
+    recovery), :signal (the run's abort atom). Handlers may return
+    {:cancel true} to skip the compaction, or {:compaction {:summary ..
+    :first-kept-id .. :tokens-before .. :usage .. :details ..}} to supply
+    the content instead of the summarizer (pi:
+    SessionBeforeCompactResult) — the entry then records :from-hook and the
+    compaction events carry :from-extension."
 
    :compaction-start
    "Fired before session compaction begins (pi: compaction_start).
