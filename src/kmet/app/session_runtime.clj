@@ -346,6 +346,13 @@
     (apply-session-cwd! engine sess)
     sess))
 
+(defn- extension-cancelled?
+  "Emit a before-event (session-before-switch / session-before-fork) and
+   report whether an extension cancelled the pending operation (pi:
+   emitBeforeSwitch/emitBeforeFork → cancel)."
+  [event]
+  (boolean (:cancel (event-bus/emit-event! event))))
+
 (defn- settle-for-switch!
   "Settle an in-flight turn and compaction before a session swap so the
    aborted work persists to the outgoing session and cannot race the swap;
@@ -384,9 +391,9 @@
   ([engine] (new-session! engine nil))
   ([engine {:keys [before-settle]}]
    (let [previous-file (:file (session engine))]
-     (if (:cancel (event-bus/emit-event! {:type :session-before-switch
-                                          :reason :new
-                                          :target-session-file previous-file}))
+     (if (extension-cancelled? {:type :session-before-switch
+                                :reason :new
+                                :target-session-file previous-file})
        {:cancelled true}
        (do
          (when before-settle (before-settle))
@@ -426,9 +433,9 @@
    Returns {:session sess} | {:cancelled true}."
   [engine path]
   (let [previous-file (:file (session engine))]
-    (if (:cancel (event-bus/emit-event! {:type :session-before-switch
-                                         :reason :resume
-                                         :target-session-file path}))
+    (if (extension-cancelled? {:type :session-before-switch
+                               :reason :resume
+                               :target-session-file path})
       {:cancelled true}
       (let [sess (session/load-session path)]
         (switch-session! engine sess {:apply-settings? true})
@@ -480,9 +487,9 @@
         entry (session/get-entry sess entry-id)]
     (cond
       (nil? entry) {:error :unknown-entry}
-      (:cancel (event-bus/emit-event! {:type :session-before-fork
-                                       :entry-id entry-id
-                                       :position :at}))
+      (extension-cancelled? {:type :session-before-fork
+                             :entry-id entry-id
+                             :position :at})
       {:cancelled true}
       :else
       (let [cwd (cwd engine)
@@ -512,9 +519,9 @@
       (nil? sess) {:error :no-session}
       (nil? @(:leaf-id sess)) {:error :no-leaf}
       (not (fs/exists? (:file sess))) {:error :not-persisted}
-      (:cancel (event-bus/emit-event! {:type :session-before-fork
-                                       :entry-id @(:leaf-id sess)
-                                       :position :at}))
+      (extension-cancelled? {:type :session-before-fork
+                             :entry-id @(:leaf-id sess)
+                             :position :at})
       {:cancelled true}
       :else
       (let [clone (session/clone-session sess)]

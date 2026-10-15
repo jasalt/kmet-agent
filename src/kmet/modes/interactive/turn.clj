@@ -96,7 +96,7 @@
   [cs]
   (try
     (status/stop-anim-timer! cs)
-    (when-let [a (:turn-running? (:engine cs))] (reset! a false))
+    (reset! (:turn-running? (:engine cs)) false)
     (status/clear-status-indicator! cs)
     (chat-history/chat-history-finalize-streaming! (:chat-history cs))
     (chat-history/chat-history-finalize-thinking! (:chat-history cs))
@@ -120,7 +120,7 @@
   (try
     (status/stop-anim-timer! cs)
     ;; flag before the status clear — see on-agent-done
-    (when-let [a (:turn-running? (:engine cs))] (reset! a false))
+    (reset! (:turn-running? (:engine cs)) false)
     (status/clear-status-indicator! cs)
     ;; If streaming placeholder is still empty, remove it
     ;; so we don't get a blank assistant entry before the error message.

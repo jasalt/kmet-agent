@@ -1,7 +1,8 @@
 (ns kmet.modes.interactive.test-state
-  "kmet.modes.interactive.state/format-resume-command — the exit hint's
-   conditions (pi formatResumeCommand): a persisted session file, attached
-   stdout, and the --session-dir argument only for a non-default layout."
+  "kmet.modes.interactive.state: the exit-hint conditions (pi
+   formatResumeCommand: a persisted session file, attached stdout, and the
+   --session-dir argument only for a non-default layout) and the shared
+   bash-cancel helper."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [babashka.fs :as fs]
             [kmet.config :as cfg]
@@ -18,6 +19,16 @@
         file (str (fs/path d "1_test-session.ednl"))]
     (spit file "{}")
     {:id "test-session" :file file :header {:type :session :cwd cwd}}))
+
+(deftest cancel-bash-signals-and-reports
+  (testing "cancel-bash! signals a running command, drops its flag, and
+            reports whether one was running — the Escape path and the /new
+            hook gate their UI work on that answer"
+    (let [cs {:bash-running? (atom true) :bash-signal (atom false)}]
+      (is (true? (state/cancel-bash! cs)) "a running command reports true")
+      (is (true? @(:bash-signal cs)) "the executor is signalled")
+      (is (false? @(:bash-running? cs)) "the running flag drops")
+      (is (false? (state/cancel-bash! cs)) "an idle command reports false"))))
 
 (deftest format-resume-command-conditions
   (let [root (str (fs/create-temp-dir {:dir "target" :prefix "resume-hint-"}))

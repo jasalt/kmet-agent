@@ -2647,6 +2647,18 @@
       (t/is (true? @(:compaction-signal (runtime/agent-state (:engine cs)))) "compaction aborted")
       (t/is (false? @(:signal (runtime/agent-state (:engine cs)))) "the run's cancel signal is untouched"))))
 
+(deftest test-cancel-bash-signals-the-running-command
+  (testing "escape with a running bash command signals it and drops the
+            running flag (the executor returns, the bash future records the
+            result)"
+    (let [cs (compaction-cs)]
+      (reset! (:bash-running? cs) true)
+      (reset! (:bash-signal cs) false)
+      (with-redefs [state/update-footer! (fn [_] nil)]
+        ((var turn/handle-cancel) cs))
+      (t/is (true? @(:bash-signal cs)) "the running executor is signalled")
+      (t/is (false? @(:bash-running? cs)) "the running flag drops"))))
+
 (deftest test-follow-up-extension-command-executes-during-compaction
   (testing "Alt+Enter with an extension command during compaction executes
             immediately (pi: handleFollowUp → isExtensionCommand → prompt)"

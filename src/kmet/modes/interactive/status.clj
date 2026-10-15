@@ -8,7 +8,6 @@
             [kmet.tui.components.spinner :as spinner]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.timers :as timers]
-            [kmet.app.loop :as agent]
             [kmet.app.session-runtime :as runtime]
             [kmet.app.ui.pending-messages :as pending-messages]
             [kmet.app.ui.status-indicator :as status-indicator]
@@ -244,7 +243,7 @@
    queues with the compaction queue (pi: getAllQueuedMessages — messages
    queued during compaction display alongside the session queue)."
   [cs]
-  (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))
+  (let [{:keys [steering follow-up]} (runtime/queues (:engine cs))
         cq (runtime/compaction-queued (:engine cs))
         c-steer (mapv :text (filter #(= :steer (:mode %)) cq))
         c-follow (mapv :text (filter #(= :follow-up (:mode %)) cq))]

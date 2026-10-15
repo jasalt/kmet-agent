@@ -73,11 +73,14 @@
 (defn cancel-bash!
   "Ask the mode's running bash command to stop: signal it and drop the
    running flag (the executor returns, the bash future records the result
-   and marks its component complete). True when one was running."
+   and marks its component complete). True when one was running, else
+   false."
   [cs]
-  (when @(:bash-running? cs)
-    (reset! (:bash-signal cs) true)
-    (reset! (:bash-running? cs) false)))
+  (if @(:bash-running? cs)
+    (do (reset! (:bash-signal cs) true)
+        (reset! (:bash-running? cs) false)
+        true)
+    false))
 
 (defn find-session
   "Most recent session for the current cwd (pi: continueRecent →

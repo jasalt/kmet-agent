@@ -19,7 +19,6 @@
             [kmet.tui.components.expandable-text :as expandable-text]
             [kmet.ai.models :as models]
             [kmet.ai.api.shared :as shared]
-            [kmet.app.loop :as agent]
             [kmet.app.session :as session]
             [kmet.app.session-runtime :as runtime]
             [kmet.app.commands :as commands]
@@ -459,6 +458,22 @@
       (turn/handle-submit cs text)
       (tui/tui-request-render (:tui cs)))))
 
+(defn- cycle-model-action!
+  "Cycle the session model in DIRECTION (-1/1) and persist the new default
+   (pi: onAction cycleModelForward/cycleModelBackward). Reports why nothing
+   moved when the session has a single model in scope."
+  [cs direction]
+  (let [engine (:engine cs)
+        ag (runtime/agent-state engine)]
+    (if (runtime/cycle-model! engine direction)
+      (do (cfg/set-default-model! @(:provider ag) @(:model ag))
+          (sync-footer-model! cs))
+      (chat-history/chat-history-show-status!
+       (:chat-history cs)
+       (if (seq (runtime/scoped-models engine))
+         "Only one model in scope"
+         "Only one model available")))))
+
 (defn build-layout
   "Create TUI layout and return CoreState."
   [config session]
@@ -830,7 +845,7 @@
                                                 idx (or (first (keep-indexed (fn [i l] (when (= l current) i)) levels))
                                                         0)
                                                 next-level (nth levels (mod (inc idx) (count levels)))]
-                                            (agent/set-thinking-level! ag next-level)
+                                            (runtime/set-thinking-level! (:engine cs) next-level)
                                             (cfg/save-setting! [:thinking] next-level)
                                             (sync-footer-model! cs)
                                             (state/update-editor-border-color! cs next-level)
@@ -852,27 +867,9 @@
       (editor/editor-set-on-action! ed "app.model.select"
                                     (fn [] (show-model-selector cs)))
       (editor/editor-set-on-action! ed "app.model.cycleForward"
-                                    (fn []
-                                      (if (agent/cycle-model! (runtime/agent-state (:engine cs)) 1)
-                                        (do (cfg/set-default-model! @(:provider (runtime/agent-state (:engine cs)))
-                                                                    @(:model (runtime/agent-state (:engine cs))))
-                                            (sync-footer-model! cs))
-                                        (chat-history/chat-history-show-status!
-                                         (:chat-history cs)
-                                         (if (seq @(:scoped-models (runtime/agent-state (:engine cs))))
-                                           "Only one model in scope"
-                                           "Only one model available")))))
+                                    #(cycle-model-action! cs 1))
       (editor/editor-set-on-action! ed "app.model.cycleBackward"
-                                    (fn []
-                                      (if (agent/cycle-model! (runtime/agent-state (:engine cs)) -1)
-                                        (do (cfg/set-default-model! @(:provider (runtime/agent-state (:engine cs)))
-                                                                    @(:model (runtime/agent-state (:engine cs))))
-                                            (sync-footer-model! cs))
-                                        (chat-history/chat-history-show-status!
-                                         (:chat-history cs)
-                                         (if (seq @(:scoped-models (runtime/agent-state (:engine cs))))
-                                           "Only one model in scope"
-                                           "Only one model available")))))
+                                    #(cycle-model-action! cs -1))
 
       ;; Initialize footer (header content is produced lazily by the
       ;; ExpandableText fns on first render)
