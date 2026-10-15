@@ -192,7 +192,8 @@
                     {:options (opt/options-for [:standard :classed :themed :geometry
                                                 :bordered :padded]
                                                [:text :underline :labelanchor])
-                     :lens (dsl/child-lens)})
+                     :lens (dsl/child-lens)
+                     :label-widget true})
 
    :ttk/label
    (dsl/widget-spec "ttk::label"

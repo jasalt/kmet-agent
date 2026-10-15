@@ -297,7 +297,8 @@
                                                 :bordered :highlighted :spaced :fonted]
                                                [:bg :fg :text :labelanchor])
                      :lens (dsl/child-lens)
-                     :primary :text})
+                     :primary :text
+                     :label-widget true})
 
    :tk/message
    (dsl/widget-spec "message"
