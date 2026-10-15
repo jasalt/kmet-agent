@@ -1,7 +1,8 @@
 # Tcl/Tk backend — what is left
 
 Working notes on the gaps of the Tk backend (`kmet.tk.*`), ordered by what
-would matter first to an app UI built on it. `src/kmet/tk/README.md` is the
+would matter first to an app UI built on it. The app port's own work, which
+waits for these, is listed at the end. `src/kmet/tk/README.md` is the
 package's design document; this file is the open-work list beside it.
 
 ## What is complete
@@ -42,8 +43,7 @@ ttk styles and themes are wired: `kmet.tk.ttk.style` is the style database
 `kmet.app.ui.gui.style` compiles the TUI theme + the transcript palette
 into a dark style set, which `scripts/gui_tk_session.clj` applies after
 `tcl/install!`. Re-applying the set when the *user* changes the theme is
-app work (the GUI app is not ported), so it is deliberately not tracked
-here.
+app work: it is the last item of the app port at the end of this file.
 
 `:tk/text` is both the display surface and the backend's multi-line input.
 `:editable true` keeps `-state normal`, turns Tk's undo on, takes `:text`
@@ -53,9 +53,8 @@ caret; a write resets the undo history, so undo covers only the user's own
 edits) and binds `:on-change` (`<KeyRelease>`: typing, a paste and an undo
 all end in one) and `:on-submit` (`<Return>`, ending in `break` so Tk's
 class binding does not also insert a newline). `:content` is refused on an
-editable text. A composer on top of it (`:ui/composer`: content-sized
-height, focus on mount, the TUI editor's history) is app work and is not
-tracked here, like the runtime theme switch.
+editable text. The composer built on it (`:ui/composer`) is app work too —
+it waits for the app port, listed at the end of this file.
 
 kmet's own widgets are not part of those sets: they are `:ui/…` tags in
 `kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container), added to
@@ -192,8 +191,16 @@ be; each group needs machinery:
   `event add`/`generate` so kmet code can publish an event others bind, and
   focus traversal/`tk_focusNext` helpers.
 
-## 4. Rendering
+## The app port (after the backend list)
 
+The numbered sections above are the `kmet.tk.*` gaps that block the GUI app
+port. This one is the port's own work — the app's input and rendering, plus
+the seam extensions need — and it starts once those gaps are closed.
+Nothing here is a backend gap.
+
+- **`:ui/composer`.** The chat input on the editable `:tk/text`: a
+  content-sized height (Tk's display-line count), focus on mount, and the
+  TUI editor's history.
 - **Incremental append.** The transcript re-renders its whole stack as a
   session grows; appending a card should add one widget (`:ui/transcript`
   already hosts each card as its own embedded window, so the missing piece
@@ -210,6 +217,9 @@ be; each group needs machinery:
 - **The extension-UI bridge.** kmet's own UI is written against `kmet.tui`;
   the GUI backend has no extension-facing seam yet, so no shipped extension
   can render a GUI surface.
+- **The runtime theme switch.** Re-applying `kmet.tk.ttk.style`'s set when
+  the user changes the theme (the set itself is complete — see What is
+  complete).
 
 ## How to keep this list honest
 

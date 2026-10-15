@@ -572,7 +572,8 @@ without identity, checkable menu items, and everything Tk offers beside
 its widgets (`grid`/`place`, window management, the clipboard, variables) —
 are tracked in [`tcl.md`](../../tcl.md) at the repository root, which lists
 each gap with what closing it needs and how the two guards below keep the
-list honest.
+list honest; the GUI app port's own work — the composer, the transcript's
+rendering, the extension seam — is listed after them.
 The `:tk/text` tag carries the displayed content — styled segments in
 Tk tags, an optional scrollbar, generated mono fonts, wrapping — or, with
 `:editable true`, the app's own multi-line input; `:ui/transcript`
