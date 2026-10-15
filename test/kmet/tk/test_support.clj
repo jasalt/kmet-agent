@@ -65,15 +65,17 @@
     ((deref stop))))
 
 (defmacro with-live-tk
-  "Run BODY with BINDING — [adapter eval], the real Tcl adapter and its
-   eval — when a display with a working libtcl/libtk is there, stopping the
-   interpreter afterwards; when there is none, the test reports the skip.
-   Bind `_` for a binding the body does not use."
-  [[adapter eval-fn] & body]
-  `(if-let [~adapter (live-tk)]
+  "Run BODY with BINDING — [eval], the real Tcl adapter's eval — when a
+   display with a working libtcl/libtk is there, stopping the interpreter
+   afterwards; when there is none, the test reports the skip. The adapter
+   is bound for the body, so it mounts and disposes without binding it
+   again."
+  [[eval-fn] & body]
+  `(if-let [a# (live-tk)]
      (try
-       (let [~eval-fn (:eval ~adapter)]
-         ~@body)
+       (binding [tk/*adapter* a#]
+         (let [~eval-fn (:eval a#)]
+           ~@body))
        (finally
          (stop-live-tk!)))
      (clojure.test/is true "skipped: libtcl, libtk or a display is absent")))
