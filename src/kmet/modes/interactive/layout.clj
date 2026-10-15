@@ -614,7 +614,7 @@
     ;; commands + file paths
     (editor/editor-set-autocomplete-provider! ed
                                               (ac/make-combined-provider
-                                               :commands-fn #(vec (concat (commands/get-commands)
+                                               :commands-fn #(vec (concat (commands/get-commands :interactive)
                                                                           (prompts/as-command-maps (prompts/get-prompt-templates))
                                                                           ;; pi: enableSkillCommands — read live,
                                                                           ;; so a /settings toggle takes effect on

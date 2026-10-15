@@ -435,6 +435,37 @@
            previous-file (assoc :previous-session-file previous-file)))
         {:session sess}))))
 
+(defn branch-session!
+  "Branch the live session to TARGET-LEAF (nil = the root), optionally with
+   a branch SUMMARY-RESULT ({:summary str :usage map}), label the summary
+   entry (or the target), rebuild the agent's in-memory context, drop the
+   compaction queue (pi: renderCurrentSessionState on session rebind), and
+   emit :session-tree. Returns the branch-summary entry or nil; the front
+   end keeps the tree UI and replays the new branch into its view."
+  [engine {:keys [old-leaf target-leaf summary-result label from-extension?]}]
+  (let [sess (session engine)
+        summary-entry (if summary-result
+                        (session/branch-with-summary!
+                         sess target-leaf (:summary summary-result)
+                         (when (:usage summary-result)
+                           {:usage (:usage summary-result)}))
+                        (do (if (nil? target-leaf)
+                              (session/reset-leaf! sess)
+                              (session/branch! sess target-leaf))
+                            nil))
+        label-target (if summary-entry (:id summary-entry) target-leaf)]
+    (when (and label label-target)
+      (session/set-label! sess label-target label))
+    (agent/restore-session-context! (agent-state engine))
+    (when-let [q (:compaction-queued engine)] (reset! q []))
+    (event-bus/emit-event!
+     (cond-> {:type :session-tree
+              :new-leaf-id @(:leaf-id sess)
+              :old-leaf-id old-leaf
+              :from-extension? (boolean from-extension?)}
+       summary-entry (assoc :summary-entry summary-entry)))
+    summary-entry))
+
 (defn fork!
   "Fork the session before the user message ENTRY-ID and switch to the fork
    (pi: runtimeHost.fork — the new session starts at the message's parent;

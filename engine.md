@@ -534,9 +534,10 @@ unchanged.
 dispatch, bounded `dispose!` and runtime-scoped extension wiring; print
 and the TUI both construct the engine, and the layout keeps its handler
 as one subscriber. The remaining §4.1 session ops (`new-session!`,
-`resume!`, `fork!`, `switch-session!`) and turn submission stay in the
-mode until step 3 — the test-stub fallback to `agent/run-agent-turn`
-retires with them.
+`resume!`, `fork!`, `switch-session!`) and turn submission stayed in the
+mode until step 3 — they landed there; the test-stub fallback to
+`agent/run-agent-turn` in `turn/start-agent-run!` survives only for
+engine-less test stubs.
 
 ### Step 2 — port print mode
 
@@ -577,6 +578,25 @@ The session-directory helpers (`ensure-cwd-session-dir`,
 Acceptance: `/new`, `/resume`, `/fork`, `/tree`, `/compact`, `/model`,
 submit/steer/cancel work with the mode holding only view state; the TUI test
 suite passes.
+
+**Landed.** The runtime owns the session lifecycle (new-session!, resume!,
+fork!, clone!, switch-session!, branch-session!), the submission chain
+(input hooks, skill/prompt expansion, steer-or-start routing), the
+compaction queue (queue/clear/flush), the turn flag and the runtime cwd;
+`session_admin` and `turn` keep the UI reactions (selectors, replay,
+editor/pending/status presentation) and shrank by roughly a third.
+`CoreState` now holds view state plus `:engine` only — the agent state,
+session atom, turn flag, compaction queue and config are read through the
+runtime accessors. Slash commands dispatch with the ctx shape
+(`{:runtime :ui :frontend}`, still carrying the legacy keys until the UI
+port lands in step 4) and builtins register with the `:interactive`
+front-end tag, which dispatch and autocomplete filter by.
+Two deviations from the sketch, both deliberate: the compaction-queue flush
+receives the front end's run callbacks in its call (the runtime does not
+hold view callbacks), and engine-portable command *implementations* have
+not moved to new homes yet — they call runtime operations, but the split
+into `kmet.app.*` homes waits for the step 4 UI port, when a handler can
+run without a CoreState.
 
 ### Step 4 — extension UI port + request/response
 
@@ -693,19 +713,17 @@ The rest are parked with the step that resolves them.
 2. **Session load validation policy (finding C)** — measured in step 0:
    139 ms (bb) / 138 ms (jolt) per 10k entries, above target; header
    always, entries only on skip or `--debug`.
-3. **Command split granularity** — decided; step 3 implements it. One
-   handler shape, two implementation homes, no intent language. A handler
-   is `(fn [ctx args])` with `ctx = {:runtime ... :ui ... :frontend ...}`;
-   engine work calls the runtime directly, dialogs go through the UI port,
-   and a handler returns nil or a small result (`{:message s}` /
-   `{:stop true}`), never an intent to interpret. Engine-portable
-   implementations live in `kmet.app.*`; view-only ones stay in the mode
-   and register with a front-end tag so dispatch and autocomplete filter by
-   the installed capabilities. Extension commands keep the same `ctx`
-   shape. Intents/effects would only pay off for a front end that executes
-   commands in another process; a future wire mode should instead expose
-   the operations as protocol commands (pi's `new_session`/`fork`/…), not
-   serialize slash-command intents.
+3. **Command split granularity** — decided; the ctx shape and front-end
+tag landed in step 3 (handlers receive `{:runtime :ui :frontend}` plus the
+legacy CoreState keys, and builtins carry a `:frontend` tag). The
+engine-portable *implementations* move into `kmet.app.*` homes in step 4,
+when the UI port replaces the CoreState keys inside the ctx. One handler
+shape, no intent language. A handler returns nil or a small result
+(`{:message s}` / `{:stop true}`), never an intent to interpret. Extension
+commands keep the same `ctx` shape. Intents/effects would only pay off for
+a front end that executes commands in another process; a future wire mode
+should instead expose the operations as protocol commands (pi's
+`new_session`/`fork`/…), not serialize slash-command intents.
 4. **`:resume` selector** — step 3.
 5. **GUI scope** — step 5.
 6. **RPC trigger** — step 6 (a real consumer).

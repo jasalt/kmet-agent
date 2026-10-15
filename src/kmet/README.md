@@ -31,12 +31,16 @@ src/kmet/
 │   ├── interactive.clj — interactive TUI entry: run + session start-up
 │   │                     (pi: modes/interactive/interactive-mode.ts)
 │   └── interactive/    — sections split out of interactive.clj:
-│       ├── state.clj   — CoreState record, config ref, session/format
-│       │                 helpers, footer/title/border updaters
+│       ├── state.clj   — CoreState (view state + the runtime engine),
+│       │                 config ref, session-dir/format helpers,
+│       │                 footer/title/border updaters
 │       ├── auth.clj    — login/logout flows + provider options
 │       ├── status.clj  — anim timer, status indicator, pending messages
-│       ├── turn.clj    — agent events, submit/cancel, compaction queue
-│       ├── session_admin.clj — renderers, resume/import, tree, fork/clone
+│       ├── turn.clj    — agent event reactions, submit/cancel/dequeue,
+│       │                 compaction-queue display (the runtime owns the
+│       │                 submission chain and the queue)
+│       ├── session_admin.clj — renderers, session replay, resume/import,
+│       │                 tree, fork/clone UX (the runtime owns the swaps)
 │       ├── commands.clj — builtin commands, /session, /share, /reload
 │       ├── resources.clj — loaded-resources sections
 │       ├── layout.clj — agent event handler + build-layout widget tree
@@ -68,10 +72,13 @@ src/kmet/
 │   │                     loop_guard.clj — repeat-loop guard; session.clj — EDNL sessions
 │   ├── session_runtime.clj — the session runtime front ends drive:
 │   │                     bootstrap (agent state, system prompt, run
-│   │                     options, extension handle), prompts/queues,
-│   │                     subscribers, lifecycle (engine.md §4.1)
+│   │                     options, extension handle), session lifecycle
+│   │                     (new/resume/fork/clone/switch), the submission
+│   │                     chain and compaction queue, prompts/queues,
+│   │                     subscribers, disposal (engine.md §4.1)
 │   ├── commands.clj / keybindings.clj / packages.clj / extensions.cljc —
-│   │                     slash commands, keymap, package + extension loading;
+│   │                     slash command registry (context-shaped handlers,
+│   │                     front-end tags), keymap, package + extension loading;
 │   │                     extensions/context.cljc — per-extension SCI isolation
 │   ├── model_resolver.clj — model pattern/CLI resolution
 │   ├── tools/          — built-in tools: read, write, edit, bash

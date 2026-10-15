@@ -69,16 +69,15 @@
    selector keeps pi's split: Enter applies the level to the session only,
    Ctrl+S also sets the default."
   [cs level persist?]
-  (let [ag (runtime/agent-state (:engine cs))]
-    (agent/set-thinking-level! ag level)
-    (sync-footer-model! cs)
-    (state/update-editor-border-color! cs level)
-    (chat-history/chat-history-show-status!
-     (:chat-history cs)
-     (str (if persist? "Default thinking level: " "Thinking level: ")
-          (name level)))
-    (when persist?
-      (cfg/save-setting! [:thinking] level))))
+  (runtime/set-thinking-level! (:engine cs) level)
+  (sync-footer-model! cs)
+  (state/update-editor-border-color! cs level)
+  (chat-history/chat-history-show-status!
+   (:chat-history cs)
+   (str (if persist? "Default thinking level: " "Thinking level: ")
+        (name level)))
+  (when persist?
+    (cfg/save-setting! [:thinking] level)))
 
 (defn- handle-thinking-command!
   "pi handleThinkingCommand: a bare /thinking mounts the level selector; an
@@ -113,7 +112,7 @@
                 (str/join ", " (map name levels)) ".")))))))
 
 (defn- help-text
-  "Help message derived from the live command registry."
+  "Help message derived from the live command registry for this front end."
   []
   (let [cmd-lines
         (mapv (fn [c]
@@ -124,7 +123,7 @@
                   (str "  " usage
                        (apply str (repeat (max 1 (- 32 (count usage))) " "))
                        desc)))
-              (commands/get-commands))]
+              (commands/get-commands :interactive))]
     (str "Available commands:\n"
          (clojure.string/join "\n" cmd-lines)
          "\n\nShortcuts:\n"
@@ -307,10 +306,11 @@
    extension registered under a builtin name (e.g. the shipped /tools
    extension replacing the builtin tools listing — pi has no builtin
    /tools; the example extension owns the name there) must not be
-   clobbered."
+   clobbered. Builtins carry the :interactive front-end tag, so a future
+   non-terminal front end's autocomplete and dispatch filter them out."
   [cmd]
   (when-not (commands/find-command (:name cmd))
-    (commands/register-command! cmd)))
+    (commands/register-command! (assoc cmd :frontend :interactive))))
 
 (defn- make-hotkey-wired?
   "Predicate over a keybinding id: is it wired in this interactive mode?
@@ -698,7 +698,7 @@
                    ;; aborted compaction; only the result replies go here.
                    (future
                      (try
-                       (let [result (agent/compact-context! agent-state instructions :manual)]
+                       (let [result (runtime/compact! (:engine cs) instructions :manual)]
                          (when-not (or (= :aborted result) (= :failed result))
                            ;; pi: handleCompactCommand ignores the thrown
                            ;; compaction error — compaction_end surfaces it

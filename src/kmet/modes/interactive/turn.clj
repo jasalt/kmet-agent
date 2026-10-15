@@ -436,8 +436,17 @@
   [cs text mode]
   (if-let [engine (:engine cs)]
     (runtime/queue-compaction-message! engine text mode)
-    (when-let [a (:compaction-queued (:engine cs))]
+    (when-let [a (:compaction-queued cs)]
       (swap! a conj {:text text :mode mode}))))
+
+(defn command-context
+  "The slash-command handler context (engine.md §10.3): :runtime is the
+   session-runtime engine, :ui the front end's UI value, :frontend the
+   front-end kind. While the UI port lands (step 4) the context also
+   carries the legacy CoreState keys handlers still read, so a handler sees
+   one map."
+  [cs]
+  (assoc cs :runtime (:engine cs) :ui cs :frontend :interactive))
 
 (defn handle-submit [cs text]
   (let [trimmed (str/trim text)]
@@ -458,7 +467,7 @@
                   ;; extension commands receive the extension context
                   ;; (pi: handler(args, ctx)); builtins keep CoreState
                   (eh (extensions/build-extension-context) args)
-                  ((:handler c) cs args))
+                  ((:handler c) (command-context cs) args))
                 (state/update-footer! cs))
             ;; pi: input hooks → skill command → prompt template → fall
             ;; through to the agent (unknown /cmd is sent as a message).

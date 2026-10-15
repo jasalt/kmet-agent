@@ -489,41 +489,27 @@
    BranchSummaryEntry.usage)."
   [cs sess old-leaf target-leaf summary-result user-msg-text from-extension? label]
   (try
-    ;; pi: renderCurrentSessionState on session rebind — the compaction
-    ;; queue does not survive navigation
-    (reset! (:compaction-queued (:engine cs)) [])
-    (let [summary-entry (if summary-result
-                          (session/branch-with-summary!
-                           sess target-leaf (:summary summary-result)
-                           (when (:usage summary-result)
-                             {:usage (:usage summary-result)}))
-                          (do (if (nil? target-leaf)
-                                (session/reset-leaf! sess)
-                                (session/branch! sess target-leaf))
-                              nil))
-          label-target (if summary-entry (:id summary-entry) target-leaf)]
-      (when (and label label-target)
-        (session/set-label! sess label-target label))
-      (agent/restore-session-context! (runtime/agent-state (:engine cs)))
-      (replay-branch! cs sess)
-      ;; pi: restore the user message only when the editor is empty — a draft
-      ;; the user is composing is not clobbered by navigation
-      (when (and user-msg-text
-                 (str/blank? (tui/editor-get-text (:editor cs))))
-        (tui/editor-set-text! (:editor cs) user-msg-text))
-      (state/update-footer! cs)
-      (event-bus/emit-event!
-       (cond-> {:type :session-tree
-                :new-leaf-id @(:leaf-id sess)
-                :old-leaf-id old-leaf
-                :from-extension? (boolean from-extension?)}
-         summary-entry (assoc :summary-entry summary-entry)))
-      (chat-history/chat-history-add-message! (:chat-history cs)
-                                              {:role :assistant
-                                               :content (if summary-result
-                                                          "Navigated to the selected point (branch summarized)."
-                                                          "Navigated to the selected point.")})
-      (tui/tui-request-render (:tui cs)))
+    ;; the runtime owns the branch, the context rebuild, the compaction
+    ;; queue drop and the :session-tree event
+    (runtime/branch-session! (:engine cs)
+                             {:old-leaf old-leaf
+                              :target-leaf target-leaf
+                              :summary-result summary-result
+                              :label label
+                              :from-extension? from-extension?})
+    (replay-branch! cs sess)
+    ;; pi: restore the user message only when the editor is empty — a draft
+    ;; the user is composing is not clobbered by navigation
+    (when (and user-msg-text
+               (str/blank? (tui/editor-get-text (:editor cs))))
+      (tui/editor-set-text! (:editor cs) user-msg-text))
+    (state/update-footer! cs)
+    (chat-history/chat-history-add-message! (:chat-history cs)
+                                            {:role :assistant
+                                             :content (if summary-result
+                                                        "Navigated to the selected point (branch summarized)."
+                                                        "Navigated to the selected point.")})
+    (tui/tui-request-render (:tui cs))
     (catch Exception e
       (debug/log "tree navigation failed: " e)
       (chat-history/chat-history-add-message! (:chat-history cs)
