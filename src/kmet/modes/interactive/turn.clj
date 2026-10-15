@@ -370,15 +370,18 @@
   "Send TEXT through the runtime's submission chain (input hooks, skill/
    template expansion, steer-or-start) and record what the front end did:
    the submitted text lands in the active editor's history (pi:
-   editor.addToHistory on submit) and the pending display/footer refresh.
-   Returns the runtime's action keyword (:handled | :started | :steered |
-   :compaction-queued)."
+   editor.addToHistory on submit — see HISTORY? below) and the pending
+   display/footer refresh. HISTORY? is false for the unknown-slash-command
+   fall-through, which the pre-step-3 path never recorded (only regular
+   messages, steers and follow-ups did). Returns the runtime's action
+   keyword (:handled | :started | :steered | :compaction-queued)."
   [cs text opts]
   (if-let [engine (:engine cs)]
     (let [{:keys [action] submitted-text :text}
           (runtime/submit! engine text (assoc opts :run-opts (run-callbacks cs)))]
       (when (not= :handled action)
-        (tui/editor-add-to-history! @(:current-editor-atom cs) (or submitted-text text))
+        (when-not (false? (:history? opts))
+          (tui/editor-add-to-history! @(:current-editor-atom cs) (or submitted-text text)))
         (status/update-pending-messages! cs)
         (state/update-footer! cs)
         (tui/tui-request-render (:tui cs)))
@@ -462,7 +465,7 @@
         (let [space (str/index-of trimmed " ")
               cmd (if (nil? space) (subs trimmed 1) (subs trimmed 1 space))
               args (if (nil? space) "" (str/trim (subs trimmed (inc space))))]
-          (if-let [c (commands/find-command cmd)]
+          (if-let [c (commands/find-command cmd :interactive)]
             (do (if-let [eh (:extension-handler c)]
                   ;; extension commands receive the extension context
                   ;; (pi: handler(args, ctx)); builtins keep CoreState
@@ -478,7 +481,7 @@
             (if @(:compacting? (runtime/agent-state (:engine cs)))
               (do (tui/editor-add-to-history! @(:current-editor-atom cs) trimmed)
                   (queue-compaction-message! cs trimmed :steer))
-              (submit-through-runtime! cs trimmed {:expand? true}))))
+              (submit-through-runtime! cs trimmed {:expand? true :history? false}))))
 
         ;; Bash command (! or !!) — single-line like slash commands
         (and (str/starts-with? trimmed "!")
@@ -582,8 +585,8 @@
         (if-let [engine (:engine cs)]
           (do (runtime/clear-queues! engine)
               (runtime/clear-compaction-queue! engine))
-          (do (agent/clear-queues! (runtime/agent-state (:engine cs)))
-              (reset! (:compaction-queued (:engine cs)) [])))
+          (do (some-> (:agent-state cs) deref agent/clear-queues!)
+              (when-let [a (:compaction-queued cs)] (reset! a []))))
         (tui/editor-set-text! ed combined)
         (status/update-pending-messages! cs)))
     (count all)))

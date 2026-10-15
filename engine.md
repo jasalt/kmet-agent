@@ -584,7 +584,9 @@ fork!, clone!, switch-session!, branch-session!), the submission chain
 (input hooks, skill/prompt expansion, steer-or-start routing), the
 compaction queue (queue/clear/flush), the turn flag and the runtime cwd;
 `session_admin` and `turn` keep the UI reactions (selectors, replay,
-editor/pending/status presentation) and shrank by roughly a third.
+editor/pending/status presentation); `session_admin.clj` fell from 960 to
+799 lines and `turn.clj` from 796 to 663, while the runtime grew from 336
+to 847.
 `CoreState` now holds view state plus `:engine` only — the agent state,
 session atom, turn flag, compaction queue and config are read through the
 runtime accessors. Slash commands dispatch with the ctx shape

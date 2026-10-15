@@ -227,7 +227,7 @@
                                          ;; chain; nil results keep the base
                                          (let [base (ac/make-combined-provider
                                                      :commands-fn #(vec (concat
-                                                                         (commands/get-commands)
+                                                                         (commands/get-commands :interactive)
                                                                          (prompts/as-command-maps (prompts/get-prompt-templates))
                                                                          ;; pi: enableSkillCommands — read live at
                                                                          ;; autocomplete open
@@ -652,7 +652,9 @@
                                         ;; entirely (restoreQueuedMessagesToEditor
                                         ;; {abort:true})
                                         (turn/restore-queued-messages! cs)
-                                        (agent/cancel-turn @ag-atom)))
+                                        (if-let [engine (:engine cs)]
+                                          (runtime/cancel! engine)
+                                          (agent/cancel-turn @ag-atom))))
                              :shutdown (fn [] (tui/tui-stop t))
                              :get-context-usage (fn []
                                                   ;; pi: null without an

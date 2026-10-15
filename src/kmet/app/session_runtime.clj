@@ -367,6 +367,10 @@
     (when (and (not @(:compacting? ag))
                (empty? @(:pending-bash ag)))
       (reset! (:signal ag) false))
+    (when was-running
+      ;; the runtime owns the flag: a cancelled turn never runs the wrapped
+      ;; :on-done, so the switch must drop it itself
+      (when-let [a (:turn-running? engine)] (reset! a false)))
     was-running))
 
 (defn new-session!
@@ -388,35 +392,35 @@
        {:cancelled true}
        (do
          (when before-settle (before-settle))
-         (settle-for-switch! engine)
-        ;; pi: teardownCurrent — after the run is settled, tell extensions the
-        ;; runtime is being torn down (reason :new, destination session file)
-        ;; so they can persist state before the swap.
-         (event-bus/emit-event! {:type :session-shutdown :reason :new
-                                 :target-session-file previous-file})
-         (let [cwd (cwd engine)
-               sessions-dir (cfg/get-session-dir (config engine))
-               new-session (session/create-session (ensure-cwd-session-dir sessions-dir cwd)
-                                                   {:cwd cwd})]
-           (debug/log "new session created: " (:id new-session))
-           (switch-session! engine new-session {:apply-settings? false})
-          ;; Rebuild the in-memory context from the new session — empty — and
-          ;; reset per-run state (pi: createRuntime builds a fresh agent
-          ;; state; the hook/config atoms are kept — not session state).
-           (let [ag (agent-state engine)]
-             (reset! (:status ag) :idle)
-             (reset! (:steering ag) [])
-             (reset! (:follow-up ag) [])
-             (reset! (:pending-bash ag) [])
-             (reset! (:overflow-recovered ag) false)
-             (reset! (:retry-count ag) 0))
-          ;; pi: newSession emits session_start (reason "new",
-          ;; previousSessionFile) — on a future, handlers may block on dialog
-          ;; promises (same as /reload).
-           (emit-session-start-async!
-            (cond-> {:type :session-start :reason :new}
-              previous-file (assoc :previous-session-file previous-file)))
-           {:session new-session}))))))
+         (let [was-running (settle-for-switch! engine)]
+           ;; pi: teardownCurrent — after the run is settled, tell extensions the
+           ;; runtime is being torn down (reason :new, destination session file)
+           ;; so they can persist state before the swap.
+           (event-bus/emit-event! {:type :session-shutdown :reason :new
+                                   :target-session-file previous-file})
+           (let [cwd (cwd engine)
+                 sessions-dir (cfg/get-session-dir (config engine))
+                 new-session (session/create-session (ensure-cwd-session-dir sessions-dir cwd)
+                                                     {:cwd cwd})]
+             (debug/log "new session created: " (:id new-session))
+             (switch-session! engine new-session {:apply-settings? false})
+             ;; Rebuild the in-memory context from the new session — empty — and
+             ;; reset per-run state (pi: createRuntime builds a fresh agent
+             ;; state; the hook/config atoms are kept — not session state).
+             (let [ag (agent-state engine)]
+               (reset! (:status ag) :idle)
+               (reset! (:steering ag) [])
+               (reset! (:follow-up ag) [])
+               (reset! (:pending-bash ag) [])
+               (reset! (:overflow-recovered ag) false)
+               (reset! (:retry-count ag) 0))
+             ;; pi: newSession emits session_start (reason "new",
+             ;; previousSessionFile) — on a future, handlers may block on dialog
+             ;; promises (same as /reload).
+             (emit-session-start-async!
+              (cond-> {:type :session-start :reason :new}
+                previous-file (assoc :previous-session-file previous-file)))
+             {:session new-session :was-running was-running})))))))
 (defn resume!
   "Load PATH and switch to it (pi: switchSession, reason :resume): emit
    :session-before-switch (extensions may cancel), load, switch with the

@@ -401,16 +401,16 @@
 
       :agent-start
       ;; Pi: agent_start → setProgress(true) (showTerminalProgress gated).
-      ;; A run the runtime started on its own (the compaction-queue flush)
-      ;; has no start-agent-run! presentation pass: mark the turn and bring
-      ;; the spinner up like any other start.
+      ;; A run the runtime started on its own (a submit! or the compaction-
+      ;; queue flush) has no start-agent-run! presentation pass: bring the
+      ;; spinner and the animation up like any other start. The anim timer
+      ;; is nil exactly while no presentation is up, so this is idempotent
+      ;; across an explicit start's :agent-start and across retry attempts.
       (when-let [cs @cs-ref]
         (turn/set-terminal-progress! cs true)
         (when (and (runtime/turn-running? (:engine cs))
-                   (not (runtime/turn-running? (:engine cs))))
-          (when-let [a (:turn-running? (:engine cs))] (reset! a true))
-          (when (nil? @(:anim-timer cs))
-            (status/start-anim-timer! cs))
+                   (nil? @(:anim-timer cs)))
+          (status/start-anim-timer! cs)
           (when-not (= :working (:kind @(:status-current cs)))
             (status/activate-working-indicator! cs))
           (state/update-footer! cs)))

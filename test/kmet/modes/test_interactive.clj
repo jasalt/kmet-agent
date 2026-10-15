@@ -149,7 +149,12 @@
           _ (event-bus/on-event :session-shutdown
                                 (fn [ev] (swap! shutdown-events conj ev)))]
       (try
+        ;; a live turn: /new settles it and the runtime drops its turn flag
+        ;; (a cancelled run never reaches the wrapped :on-done)
+        (reset! (:turn-running? engine) true)
         ((var session-admin/handle-new-session) cs)
+        (is (false? (runtime/turn-running? engine))
+            "/new settles the runtime turn flag")
         (let [ag' @ag-atom
               new-sess @sess-atom]
           (is (not= (:id old-sess) (:id new-sess)) "a fresh session is created")
@@ -229,6 +234,41 @@
         (finally
           (event-bus/clear-event-listeners!)
           (fs/delete-tree sess-dir))))))
+
+(deftest runtime-started-run-gets-the-working-presentation
+  (testing "a run the runtime starts without start-agent-run! (a submit! or
+            the compaction-queue flush) brings the anim timer and the working
+            indicator up on :agent-start — once per run, not per attempt"
+    (let [ag (agent/make-agent-state)
+          cs (tu/with-test-engine
+               {:tui {:render-requested? (atom false) :running? (atom false)}
+                :agent-state (atom ag)
+                :chat-history (chat-history/make-chat-history)
+                :status-indicator (status-indicator/make-status-indicator :text "Working")
+                :status-current (atom nil)
+                :current-editor-atom (atom nil)
+                :anim-timer (atom nil)
+                :footer-provider (fdp/make-footer-data-provider
+                                  :cwd-atom (atom (str (fs/cwd)))
+                                  :session (session/create-session
+                                            (str "target/test-agent-start-"
+                                                 (System/currentTimeMillis))))
+                :pending-tool-comps (atom {})})
+          h ((var layout/make-agent-event-handler)
+             {:chat-history (:chat-history cs)
+              :tui (:tui cs)
+              :cs-ref (atom cs)
+              :pending-tool-comps (atom {})})]
+      (reset! (:turn-running? (:engine cs)) true)
+      (h {:type :agent-start})
+      (is (some? @(:anim-timer cs)) "the animation timer runs")
+      (is (status-indicator/status-indicator-active? (:status-indicator cs))
+          "the working indicator is up")
+      (let [timer @(:anim-timer cs)]
+        (h {:type :agent-start})
+        (is (identical? timer @(:anim-timer cs))
+            "a retry attempt does not restart the presentation")
+        (status/stop-anim-timer! cs)))))
 
 (deftest agent-event-handler-consumes-vocabulary
   (testing "every loop event type is consumed by the UI handler without throwing"

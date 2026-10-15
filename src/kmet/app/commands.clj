@@ -47,6 +47,12 @@
      @registry)))
 
 (defn find-command
-  "Look up a slash command by :name, or nil."
-  [name]
-  (first (filter #(= (:name %) name) @registry)))
+  "Look up a slash command by :name, or nil. With FRONTEND, only a command
+   available to that front end is returned (a nil :frontend tag means every
+   front end)."
+  ([name]
+   (first (filter #(= (:name %) name) @registry)))
+  ([name frontend]
+   (first (filter #(and (= (:name %) name)
+                        (or (nil? (:frontend %)) (= frontend (:frontend %))))
+                  @registry))))

@@ -345,15 +345,14 @@
                          (reset! (:bash-running? cs) false)))
         result (runtime/new-session! (:engine cs) {:before-settle cancel-bash!})]
     (when-not (:cancelled result)
-      (when (runtime/turn-running? (:engine cs))
-        (when-let [a (:turn-running? (:engine cs))] (reset! a false))
+      (when (:was-running result)
         (status/stop-anim-timer! cs)
         (status/clear-status-indicator! cs))
       (chat-history/chat-history-clear! (:chat-history cs))
       (be/dispose-pending-bash! @(:pending-bash-components cs))
       (container/container-clear (:pending-messages-container cs))
-      ;; pi: a session switch drops the compaction queue (compactionQueuedMessages = [])
-      (reset! (:compaction-queued (:engine cs)) [])
+      ;; the runtime's switch-session! already dropped the compaction queue
+      ;; (pi: compactionQueuedMessages = [])
       ;; Re-attach the PendingMessages component — container-clear removes
       ;; every child (queued steering/follow-up display included), and the
       ;; display must keep rendering for messages queued after /new
