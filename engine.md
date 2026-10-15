@@ -7,15 +7,18 @@ behavior — the topic map in `AGENTS.md` still points at the behavior docs.
 
 Steps 0–4 and 6a–6d have landed, and their architecture is folded into
 [`src/kmet/README.md`](src/kmet/README.md) ("Session runtime and front
-ends"); RPC mode's user guide is [`docs/rpc.md`](docs/rpc.md). What remains
-here: the malli boundary schemas (§4.3, §6), the app-layer enforcement and
-finding F cleanups (§8), the finding E follow-up, and the parked GUI front
-end (step 5). Fold this file into the README or delete it when those land.
+ends"); RPC mode's user guide is [`docs/rpc.md`](docs/rpc.md). The
+remaining work is ordered so only the GUI waits on the Tk backend: the
+malli boundary schemas (step 7, §4.3/§6), the app-layer enforcement and
+finding F cleanups (step 8, §8), the optional finding E follow-up
+(step 9), then the GUI (step 5) once the Tk backend stabilizes. Fold this
+file into the README or delete it when those land.
 
 Scope: one session runtime usable unchanged by the interactive TUI, print
 mode (text and event output), and the GUI front end. The GUI is postponed
 until the Tk backend stabilizes; RPC mode (step 6) landed as the headless
-front end. Namespaces are not renamed.
+front end, and the remaining GUI-independent steps (7–9) are scheduled
+ahead of it. Namespaces are not renamed.
 
 Decisions already taken in discussion:
 
@@ -35,7 +38,7 @@ Decisions already taken in discussion:
   The GUI already exists as a display-only viewer
   (`scripts/gui_tk_session.clj`, `app/ui/gui/transcript.clj`); its live-run
   milestone is what exercises the render seam, but it is postponed until
-  the Tk backend stabilizes. RPC (step 6) is scheduled instead: the same
+  the Tk backend stabilizes. RPC (step 6) landed instead: the same
   seam from the async-answer side, with no terminal.
 - **malli is a boundary tool.** It describes file formats (session
   entries, config, auth) and, later, a wire protocol. In-process events and
@@ -197,7 +200,7 @@ Rules:
 
 - `prompt!` returns immediately. Completion is observed through
   `:agent-settled` (§4.2), not through a return value; a mode that needs
-  blocking (`print`, and a future RPC one-shot) uses its own promise.
+  blocking (`print`, a one-shot RPC client) uses its own promise.
 - `bootstrap` takes the **resolved** session or a resolution request. Session
   *policy* stays per mode: `--resume` opens the TUI selector, print mode
   errors on no match, a wire mode would take an explicit path.
@@ -346,12 +349,13 @@ active front end. Split the capability map:
   its `:on-done` semantics via the settled outcome (§5, finding A), and
   grows an event-output variant (`--mode text|json`, pi's one-consumer
   trick) — the cheapest headless conformance test for the stream.
-- `gui` (next): the display-only viewer exists
+- `gui` (scheduled last): the display-only viewer exists
   (`scripts/gui_tk_session.clj`); the live mode subscribes to the runtime,
   renders through `kmet.tk.*` and `app/ui/gui/*`, and binds the UI port.
-  This is the proof the plan is written against.
-- `rpc` (step 6): `kmet.modes.rpc`, EDN lines on stdin/stdout; the plan
-  is in step 6.
+  It runs after the GUI-independent steps 7–9, once the Tk backend
+  stabilizes. This is the proof the plan is written against.
+- `rpc` (step 6, landed): `kmet.modes.rpc`, EDN lines on stdin/stdout; the
+  user guide is [`docs/rpc.md`](../../docs/rpc.md).
 
 ## 5. Review findings (things the sketch got wrong or must fix)
 
@@ -475,7 +479,7 @@ split): custom themes (`validate-theme-data!`, private at
 | Surface | Why |
 |---|---|
 | Session import | Reuses the session schema at the `:session-import/*` boundary |
-| Wire commands/responses (when RPC lands, step 6) | Validate at the transport edge; derive command docs from the registry |
+| RPC wire commands/responses (step 6 landed) | Validate at the transport edge; derive command docs from the registry |
 | Extension ABI return shapes (optional, later) | Boundary returns `{:entries [...] :continue bool}`, input hooks `{:action :handled|:transform}`, tool-call hooks `{:block true :reason}` / `{:args ...}`, after-tool-call `{:content ... :is-error}`, `resources-discover` `{:skill-paths [...]}`; a schema lets the runner report a malformed handler result at the boundary |
 
 ### Tier 3 — do not schema
@@ -503,6 +507,10 @@ split): custom themes (`validate-theme-data!`, private at
 Each step is shippable alone and keeps the TUI working. Gates for every step:
 `bb test-changed`, `bb test-ext-changed`, `bb lint-changed`,
 `bb format-check-changed`; `bb test` / `bb lint` at step boundaries.
+
+The remaining steps are ordered by dependency: step 6 landed while the GUI
+waited on the Tk backend, steps 7–9 are independent of it and run next,
+and step 5 (GUI) runs last, once the Tk backend stabilizes.
 
 ### Step 0 — contract harness (no behavior change)
 
@@ -618,7 +626,7 @@ run without a CoreState.
   `ctx.mode` / `ctx.has-ui`.
 - Interactive implements it as today (possibly via an in-process promise);
   print installs auto-answers; the global registry gains runtime-scoped
-  install/clear. A future RPC mode answers asynchronously with `respond!`.
+  install/clear. The RPC mode answers asynchronously with `respond!`.
 - Document the degraded set for front ends without a terminal (pi's RPC
   table: dialog methods work, TUI-only methods become no-ops, dialog
   timeouts auto-resolve).
@@ -674,29 +682,11 @@ through `:info`). `parse-path-argument` moved to `kmet.app.session-export`
 so the portable `/export` needs no mode code. The remaining commands are
 view-bound (`:frontend :interactive`) and stay in the mode.
 
-### Step 5 — GUI mode (the proof)
+### Step 6 — RPC mode (landed 6a–6d)
 
-The backend already exists — `src/kmet/tk/` ships the Tk/Tcl backend
-(`kmet.tk.core`, `kmet.tk.ttk`, `kmet.tk.dsl`, `kmet.tk.options`,
-`kmet.tk.tcl`) with its own `README.md`, and the display-only viewer
-(`scripts/gui_tk_session.clj` + `app/ui/gui/transcript.clj`) already
-renders a saved session. What is missing is the live run:
-
-- Subscribe to the runtime, marshal to the toolkit thread, and drive
-  prompt/stream/cancel through the same operations the TUI uses.
-- The mode constructs no `AgentState`, no session atoms, and no
-  `make-agent-state` map; everything comes from the runtime and the stream.
-- Reuse `app/ui/gui/*` for rendering; the transcript's TUI-renderer reuse
-  is intentional and stays.
-
-Acceptance: the viewer becomes live — prompt, streamed assistant text, tool
-cards, and cancel — with the mode holding only view state and the runtime
-reference; every update it renders arrives through `subscribe!`.
-
-### Step 6 — RPC mode (scheduled; GUI postponed)
-
-Step 5 is postponed until the Tk backend stabilizes (parallel development).
-RPC is the next front end: it exercises the step 4 seam from the side the
+Step 5 was postponed until the Tk backend stabilizes (parallel
+development), so RPC was scheduled next: it exercises the step 4 seam from
+the side the
 GUI cannot yet reach — an out-of-process consumer whose extension dialogs
 are **answered asynchronously** (§4.5, extension.md "UI requests") — and
 it needs no terminal. Reference: pi `modes/rpc/*.ts`, `docs/rpc.md`,
@@ -947,7 +937,92 @@ real stdio on both hosts, and the headless guard covers the RPC require
 graph. Deferred commands (`bash`, `abort_bash`, `set_auto_retry`,
 `abort_retry`) and the pi parity deltas are documented in `docs/rpc.md`.
 
+### Step 7 — malli boundary schemas (Tier 1)
+
+Independent of the GUI, and the first step that adds a dependency. Uses
+§4.3 (malli at boundaries only) and the §6 Tier 1 inventory, under finding
+C's measured load policy.
+
+- Add malli (0.20.1 was verified in §9) to `deps.edn` and `bb.edn`, and
+  re-verify `bb check`, `bb lint` over both reader views, and a `jolt -e`
+  require probe in the same change.
+- Add `kmet.ai.message`: message and content-block schemas. This is the
+  highest-value schema; the session entry schema is its first consumer and
+  a future wire protocol reuses it.
+- Add the session entry schema (provisional home
+  `kmet.app.session-schema`): `Entry` as a `:multi` over `:role` (~15
+  roles today), open where the format is forward-compatible and
+  `:closed true` where an extra key is a bug, every schema carrying a
+  `:description` (coverage test). The load path separates "unparseable"
+  (skip, as today) from "wrong shape" (line + `malli.error/humanize`),
+  validating the header always and entries only on skip or `--debug` per
+  finding C; re-measure with the real schema and record the number here.
+- Add config `m/decode` defaults/coercion for the sections already
+  validated (`:retry`, `:loop-guard`, compaction, `:images`, timeouts) and
+  the `auth.edn` credential predicate; both files stay forgiving and open.
+- Do not schema in-process events, the bootstrap map, or view models (§6
+  Tier 3); the event vocabulary stays keyword-keyed and tested by parity.
+
+Acceptance: session load/append tests cover a wrong-shape entry and a torn
+tail; a 10k-entry load stays within the measured budget; the config and
+auth tests are unchanged or stricter.
+
+### Step 8 — app-layer enforcement and finding F
+
+Independent of the GUI. Lands §8's first bullet and shrinks its allowlist.
+
+- Add the `app/**` layer guard (excluding `app/ui/**`) modeled on
+  `test/kmet/libs/test_self_contained.clj`: no `kmet.tui.*`, `kmet.tk.*`,
+  or `kmet.modes.*` requires. Seed the allowlist with the six known
+  violations (§3.6).
+- Fix the leaks and shrink the allowlist one by one (§5 finding F):
+  - `bash_executor`'s ANSI stripping moves to `kmet.libs`;
+  - theme *discovery* stays in the runtime while parsing and rendering
+    leave `packages.clj` and `extensions.cljc` for the front end;
+  - `theme_controller` moves up out of `app`;
+  - `keybindings` keeps the keymap definitions (app policy) and hands the
+    formatting to the TUI;
+  - `extensions/context.cljc`'s `tui-library-namespaces` injection is the
+    extension ABI (§3.8), so its entry may stay, documented — the
+    shared-component-library extraction remains unscheduled.
+- Update `src/kmet/README.md`'s layer map in the same change.
+
+Acceptance: the guard is green with an empty or documented
+ extension-ABI-only allowlist, and print/RPC stay headless.
+
+### Step 9 — finding E follow-up (optional)
+
+Only if it deletes the hand-rolled code: derive the tool `:params` JSON
+schema from malli (`app/tools/tool.clj`) within
+`ai/constrained-sampling.clj`'s strict-mode subset, gated on a parity test;
+add runtime argument validation only if that test holds. Not part of the
+split — drop it if the parity work outweighs the deletion.
+
+### Step 5 — GUI mode (the proof; scheduled last)
+
+The only remaining step gated on an external project. It runs after steps
+7–9, once the Tk backend stabilizes. The backend already exists —
+`src/kmet/tk/` ships the Tk/Tcl backend (`kmet.tk.core`, `kmet.tk.ttk`,
+`kmet.tk.dsl`, `kmet.tk.options`, `kmet.tk.tcl`) with its own `README.md`,
+and the display-only viewer (`scripts/gui_tk_session.clj` +
+`app/ui/gui/transcript.clj`) already renders a saved session. What is
+missing is the live run:
+
+- Subscribe to the runtime, marshal to the toolkit thread, and drive
+  prompt/stream/cancel through the same operations the TUI uses.
+- The mode constructs no `AgentState`, no session atoms, and no
+  `make-agent-state` map; everything comes from the runtime and the stream.
+- Reuse `app/ui/gui/*` for rendering; the transcript's TUI-renderer reuse
+  is intentional and stays.
+
+Acceptance: the viewer becomes live — prompt, streamed assistant text, tool
+cards, and cancel — with the mode holding only view state and the runtime
+reference; every update it renders arrives through `subscribe!`.
+
 ## 8. Enforcement
+
+Scheduled as step 8 — the first remaining step after the schemas, and
+independent of the GUI.
 
 - **Layer guard** modeled on `test/kmet/libs/test_self_contained.clj`
   (which reads the `ns` form, not a regex): every `src/kmet/app/**` file —
@@ -1021,17 +1096,19 @@ alike). Extension commands keep the same `ctx` shape. Intents/effects would
 only pay off for a front end that executes commands in another process; a
 future wire mode should instead expose the operations as protocol commands
 (pi's `new_session`/`fork`/…), not serialize slash-command intents.
-4. **`:resume` selector** — step 3.
-5. **GUI scope** — step 5.
-6. **RPC trigger** — scheduled; the GUI is postponed (step 6).
+4. **`:resume` selector** — landed in step 3.
+5. **GUI scope** — step 5, scheduled last: the only step gated on an
+   external project (the Tk backend).
+6. **RPC trigger** — landed (step 6). The remaining steps 7–9 are
+   GUI-independent and run before step 5.
 
 ## 11. What not to do
 
 - Do not rename `kmet.app.*`. The split is ownership, not naming; a
   rename stage buys nothing and inflates the diff.
-- Do not build RPC before its transport is worth it. The plan is step 6;
-  print's event-output variant already proves headless conformance, and the
-  GUI's live milestone stays parked until the Tk backend stabilizes.
+- Do not re-open RPC's settled transport choices. Step 6 landed; print's
+  event-output variant proved headless conformance, and the GUI's live
+  milestone stays parked until the Tk backend stabilizes.
 - Do not share TUI component *instances* with the GUI; share the renderers,
   events, and data. The GUI transcript reusing the TUI markdown/theme/ANSI
   output is intended — it converts ANSI to Tk segments (see §2).
