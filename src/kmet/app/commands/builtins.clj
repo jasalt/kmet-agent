@@ -14,6 +14,13 @@
             [kmet.app.session-runtime :as runtime]
             [kmet.app.tools.core :as tools]))
 
+(defn- out
+  "Call a shared command-UI capability; an absent capability is inert (a
+   front end need not implement every output channel)."
+  [ui capability & args]
+  (when-let [f (get ui capability)]
+    (apply f args)))
+
 (defn- handle-continue
   [{:keys [ui] :as ctx} _]
   (let [engine (:runtime ctx)
@@ -26,13 +33,13 @@
       ;; are checked.
       (or (runtime/turn-running? engine)
           (contains? #{:thinking :executing} @(:status agent-state)))
-      ((:info ui) "Continue" "Wait for the current response to finish before continuing.")
+      (out ui :info "Continue" "Wait for the current response to finish before continuing.")
 
       @(:compacting? agent-state)
-      ((:info ui) "Continue" "Wait for the in-progress compaction to finish before continuing.")
+      (out ui :info "Continue" "Wait for the in-progress compaction to finish before continuing.")
 
       (empty? (agent/get-context agent-state))
-      ((:info ui) "Continue" "No conversation to continue.")
+      (out ui :info "Continue" "No conversation to continue.")
 
       :else
       (do (debug/log "/continue command")
@@ -43,7 +50,7 @@
   (let [engine (:runtime ctx)
         sess (runtime/session engine)]
     (if (nil? sess)
-      ((:message ui) "No active session.")
+      (out ui :message "No active session.")
       (if (seq args)
         (let [sanitized (session/sanitize-session-name args)]
           (session/append-session-info! sess sanitized)
@@ -52,15 +59,15 @@
            {:type :session-info-changed
             :session-file (:file sess)
             :name sanitized})
-          ((:set-title ui))
+          (out ui :set-title)
           (when-not (= args sanitized)
             ;; pi: warn when normalization changed the input
-            ((:warning ui) (str "Session name was normalized from " (pr-str args)
-                                " to " (pr-str sanitized))))
-          ((:info ui) "Name" (str "Session name set: " sanitized)))
+            (out ui :warning (str "Session name was normalized from " (pr-str args)
+                                  " to " (pr-str sanitized))))
+          (out ui :info "Name" (str "Session name set: " sanitized)))
         (if-let [current (session/get-session-name sess)]
-          ((:info ui) "Name" (str "Session name: " current))
-          ((:warning ui) "Usage: /name <name>"))))))
+          (out ui :info "Name" (str "Session name: " current))
+          (out ui :warning "Usage: /name <name>"))))))
 
 (defn- handle-export
   [{:keys [ui] :as ctx} args]
@@ -69,10 +76,10 @@
         arg (session-export/parse-path-argument args)]
     (cond
       (nil? sess)
-      ((:info ui) "Export" "No active session.")
+      (out ui :info "Export" "No active session.")
 
       (str/ends-with? (str/lower-case (or arg "")) ".jsonl")
-      ((:info ui) "Export" "JSONL export is not supported — kmet sessions are EDN-only. Use /export or /export <path.html>.")
+      (out ui :info "Export" "JSONL export is not supported — kmet sessions are EDN-only. Use /export or /export <path.html>.")
 
       :else
       (try
@@ -87,10 +94,10 @@
                      system-prompt (assoc :system-prompt system-prompt)
                      (seq tool-defs) (assoc :tools tool-defs))
               path (session-export/export-to-html! sess opts)]
-          ((:info ui) "Export" (str "Session exported to: " path)))
+          (out ui :info "Export" (str "Session exported to: " path)))
         (catch Exception e
-          ((:info ui) "Export" (str "Failed to export session: "
-                                    (or (ex-message e) (str e)))))))))
+          (out ui :info "Export" (str "Failed to export session: "
+                                      (or (ex-message e) (str e)))))))))
 
 (defn- handle-compact
   [{:keys [ui] :as ctx} args]
@@ -99,10 +106,10 @@
         instructions (when (seq args) args)]
     (cond
       (runtime/turn-running? engine)
-      ((:info ui) "Compact" "Wait for the current response to finish before compacting.")
+      (out ui :info "Compact" "Wait for the current response to finish before compacting.")
 
       @(:compacting? agent-state)
-      ((:info ui) "Compact" "Compaction already in progress.")
+      (out ui :info "Compact" "Compaction already in progress.")
 
       :else
       ;; Runs on a future so the input thread stays live and escape can
@@ -116,9 +123,9 @@
               ;; pi: handleCompactCommand ignores the thrown compaction error
               ;; — compaction_end surfaces it (showError for manual); the
               ;; future only replies for success and nothing-to-compact.
-              ((:info ui) "Compact" (if result
-                                      "Session compacted."
-                                      "Nothing to compact (session too small)."))))
+              (out ui :info "Compact" (if result
+                                        "Session compacted."
+                                        "Nothing to compact (session too small)."))))
           (catch Exception e
             ;; pi: handleCompactCommand catches and ignores (the events carry
             ;; the failure) — but a future that swallows the exception hides
