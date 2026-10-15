@@ -607,24 +607,21 @@
 
 (deftest test-unbridged-request-kinds-auto-answer
   (testing ":custom has no client surface (pi limitation): the degraded
-            default resolves it and no record is written"
-    (let [engine-p (promise)
-          resolved (promise)
-          orig-bootstrap runtime/bootstrap]
-      (with-redefs [runtime/bootstrap (fn [config opts]
-                                        (let [engine (orig-bootstrap config opts)]
-                                          (deliver engine-p engine)
-                                          engine))
-                    agent/run-agent-turn
-                    (fn [_ _]
-                      (future
-                        (let [engine (deref engine-p 5000 nil)
-                              p (runtime/request-ui! engine :custom {:title "Component"})]
-                          (deliver resolved (deref p 1000 ::timeout))))
-                      nil)]
-        (let [[_ records] (run-lines [{:type :prompt :id 1 :message "go"}])]
-          (is (nil? (deref resolved 2000 ::timeout)))
-          (is (empty? (filter #(= :ui-request (:type %)) records))))))))
+            default resolves it while the engine is alive, and no record is
+            written"
+    (with-dialog
+      (fn [engine]
+        (deref (runtime/request-ui! engine :custom {:title "Component"})
+               1000 ::timeout))
+      (fn [{:keys [runner out write! end! answered]}]
+        (try
+          (write! "{:type :prompt :id \"p\" :message \"go\"}")
+          (is (nil? (deref answered 2000 ::timeout))
+              "the :custom default (nil) answered in-process")
+          (is (not-any? #(= :ui-request (:type %)) (records-so-far out))
+              "nothing reached the wire")
+          (finally (end!)))
+        (is (= :ok (deref runner 5000 ::timeout)))))))
 
 (deftest test-respond-is-silent-and-validated
   (testing "a valid :respond answers nothing (pi answers no

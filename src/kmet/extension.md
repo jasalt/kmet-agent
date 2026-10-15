@@ -1180,6 +1180,11 @@ bridges the methods the protocol can carry (pi: `rpc-extension-ui.md`):
   `ui-chat-info`, `ui-set-editor-text` and `ui-paste-to-editor` write
   fire-and-forget records. `ui-set-widget` forwards only string lines; a
   hiccup tree cannot cross the wire.
+- **TUI-only (inert no-ops)** — `set-working-message`,
+  `set-working-visible`, `set-working-indicator`,
+  `set-hidden-thinking-label`, `set-footer`, `set-header`,
+  `add-autocomplete-provider`, `set-editor-component`,
+  `set-tools-expanded`.
 - **degraded** — everything else keeps the headless answers: `ui-custom`
   resolves nil, terminal input is a no-op unsubscriber, `get-editor-text`
   returns `""`, theme switching reports no UI, and the tool
@@ -1189,7 +1194,10 @@ bridges the methods the protocol can carry (pi: `rpc-extension-ui.md`):
 The engine-portable builtins (`/continue`, `/name`, `/export`, `/compact`)
 are dispatchable over `prompt`: a single-line `/<name>` runs through the
 command registry with the RPC command-UI value, whose output capabilities
-write the records above.
+write the records above. The transport serves commands serially, so a
+command handler that blocks on a dialog parks the reader until the answer
+(or the request's `:timeout`) — answer dialogs asynchronously, or give the
+request a timeout.
 
 #### Tag aliases — named tag-level components
 

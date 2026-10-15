@@ -1,12 +1,12 @@
 (ns kmet.modes.test-headless-guard
   "Guard (engine.md §8): a headless front end's static require graph must not
-   reach the interactive mode, the TUI view layer, the terminal constructor,
-   or the Tk backend. The stricter claim — no `kmet.tui.*` at all — is not
-   achievable while extensions are enabled: the extension ABI admits
-   `kmet.tui.*` and `host-requires!` pulls the layer in, so `kmet.tui.theme`
-   is what remains reachable from both headless modes. This test pins the
-   things that must never leak; shrink the allowance when the shared split
-   lands."
+   reach the interactive mode, the TUI view layer, or the Tk backend. The
+   stricter claim — no `kmet.tui.*` at all — is not achievable while
+   extensions are enabled: the extension ABI admits `kmet.tui.*` and
+   `host-requires!` pulls the layer in, so `kmet.tui.theme` is the one
+   namespace left reachable from both headless modes. That allowance is
+   pinned exactly (the terminal constructor and every component are
+   forbidden) and shrinks with the shared split."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
             [babashka.fs :as fs]))
@@ -54,16 +54,18 @@
      :loaded? (contains? graph root)
      :interactive (vec (filter #(str/starts-with? % "kmet.modes.interactive") graph))
      :view (vec (filter #(str/starts-with? % "kmet.app.ui") graph))
-     :terminal (vec (filter #(= % "kmet.tui.terminal") graph))
+     :tui (vec (filter #(str/starts-with? % "kmet.tui") graph))
      :tk (vec (filter #(str/starts-with? % "kmet.tk") graph))}))
 
 (deftest headless-front-ends-do-not-reach-the-interactive-stack
   (testing "print and RPC modes require no interactive mode, TUI view layer,
-            terminal constructor, or Tk backend"
-    (doseq [{:keys [root loaded? interactive view terminal tk]}
+            or Tk backend, and no TUI namespace beyond the kmet.tui.theme
+            allowance"
+    (doseq [{:keys [root loaded? interactive view tui tk]}
             (mapv headless-violations ["kmet.modes.print" "kmet.modes.rpc"])]
       (is loaded? (str root " must be part of the graph"))
       (is (empty? interactive) (str root " reaches " interactive))
       (is (empty? view) (str root " reaches the TUI view layer: " view))
-      (is (empty? terminal) (str root " reaches the terminal constructor: " terminal))
+      (is (= ["kmet.tui.theme"] tui)
+          (str root " reaches TUI namespaces beyond the documented allowance: " tui))
       (is (empty? tk) (str root " reaches the Tk backend: " tk)))))
