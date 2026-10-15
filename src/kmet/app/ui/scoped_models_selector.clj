@@ -8,7 +8,6 @@
   (:require [clojure.string :as str]
             [kmet.ai.models :as models]
             [kmet.app.keybindings :as app-kb]
-            [kmet.app.loop :as agent]
             [kmet.app.model-resolver :as resolver]
             [kmet.app.session-runtime :as runtime]
             [kmet.app.ui.chat-history :as chat-history]
@@ -436,8 +435,8 @@
                                          (some available-ids enabled-ids)
                                          (not (every? (set enabled-ids)
                                                       (map model-catalog/model-full-id available))))
-                                  (agent/set-scoped-models! ag enabled-ids)
-                                  (agent/set-scoped-models! ag []))
+                                  (runtime/set-scoped-models! (:engine cs) enabled-ids)
+                                  (runtime/set-scoped-models! (:engine cs) []))
                                 (model-catalog/update-available-provider-count! cs)
                                 (tui/tui-request-render (:tui cs)))
         sel (make-scoped-models-selector

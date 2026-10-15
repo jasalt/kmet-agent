@@ -843,7 +843,7 @@
           (reset! subs/image-settings-atom
                   {:show-images (cfg/get-show-images config)
                    :image-width-cells (cfg/get-image-width-cells config)})
-          (agent/set-block-images! agent-state (cfg/get-block-images config))
+          (runtime/set-block-images! (:engine cs) (cfg/get-block-images config))
           ;; pi: settingsManager.reload() — re-apply the clear-on-shrink knob
           ;; (the /settings row writes both the flag and the runtime)
           (when (:tui cs)

@@ -66,9 +66,9 @@
   (let [ag (runtime/agent-state (:engine cs))
         old-model (models/get-model @(:provider ag) @(:model ag))
         clamped (agent/switch-thinking-level old-model model @(:thinking ag) thinking-level)]
-    (agent/set-model! ag model)
+    (runtime/set-model! (:engine cs) model)
     (cfg/set-default-model! (:provider model) (:id model))
-    (agent/set-thinking-level! ag clamped)
+    (runtime/set-thinking-level! (:engine cs) clamped)
     (chat-history/chat-history-add-message! (:chat-history cs)
                                             {:role :assistant
                                              :content (str "Switched to " (fmt-model (:provider model) (:id model))

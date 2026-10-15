@@ -827,6 +827,11 @@
   ([engine] (cycle-model! engine 1))
   ([engine direction] (agent/cycle-model! (agent-state engine) direction)))
 (defn set-thinking-level! [engine level] (agent/set-thinking-level! (agent-state engine) level))
+(defn set-block-images!
+  "Block or allow image content in provider requests (the /settings row and
+   /reload re-applying the config value)."
+  [engine blocked?]
+  (agent/set-block-images! (agent-state engine) blocked?))
 (defn scoped-models [engine] @(:scoped-models (agent-state engine)))
 (defn set-scoped-models! [engine models]
   (agent/set-scoped-models! (agent-state engine) models))

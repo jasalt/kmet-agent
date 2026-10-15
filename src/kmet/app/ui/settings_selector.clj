@@ -300,7 +300,7 @@
                         (cfg/save-setting! [:terminal :image-width-cells] w))
                       :block-images
                       (let [blocked? (= value "true")]
-                        (agent/set-block-images! ag blocked?)
+                        (runtime/set-block-images! (:engine cs) blocked?)
                         (cfg/save-setting! [:images :block-images] blocked?))
                       :skill-commands
                       ;; the autocomplete provider reads the setting live when
@@ -347,7 +347,7 @@
                           (cfg/save-setting! [:theme] value))
                       :thinking
                       (let [level (keyword value)]
-                        (agent/set-thinking-level! ag level)
+                        (runtime/set-thinking-level! (:engine cs) level)
                         (cfg/save-setting! [:thinking] level)
                         (model-selector/sync-footer-model! cs))
                       :hide-thinking
