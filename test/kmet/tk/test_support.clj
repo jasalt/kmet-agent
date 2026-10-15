@@ -58,6 +58,26 @@
       a)
     (catch Throwable _ nil)))
 
+(defn stop-live-tk!
+  "Stop the interpreter a live adapter installed, if one is running."
+  []
+  (when-let [stop (and (find-ns 'kmet.tk.tcl) (ns-resolve 'kmet.tk.tcl 'stop!))]
+    ((deref stop))))
+
+(defmacro with-live-tk
+  "Run BODY with BINDING — [adapter eval], the real Tcl adapter and its
+   eval — when a display with a working libtcl/libtk is there, stopping the
+   interpreter afterwards; when there is none, the test reports the skip.
+   Bind `_` for a binding the body does not use."
+  [[adapter eval-fn] & body]
+  `(if-let [~adapter (live-tk)]
+     (try
+       (let [~eval-fn (:eval ~adapter)]
+         ~@body)
+       (finally
+         (stop-live-tk!)))
+     (clojure.test/is true "skipped: libtcl, libtk or a display is absent")))
+
 (def find-class-src
   "Tcl source defining `kmetfind W CLASS`: the first descendant of W whose
    window class is CLASS (\"\" when none)."

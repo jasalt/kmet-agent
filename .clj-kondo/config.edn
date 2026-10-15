@@ -27,6 +27,9 @@
            ;; from its call sites, so the metadata alone is not enough on
            ;; a cold cache.
            kmet.tk.test-support/with-fake clojure.core/let
+           ;; with-live-tk binds both symbols of its [adapter eval] vector,
+           ;; which a fn's parameter vector spells to this linter.
+           kmet.tk.test-support/with-live-tk clojure.core/fn
            ;; babashka.ffi's defcfn defines a var like def; without this the
            ;; defs stay invisible and every use is an unresolved symbol. The
            ;; jolt view's overlay maps jolt.ffi/defcfn the same way.
