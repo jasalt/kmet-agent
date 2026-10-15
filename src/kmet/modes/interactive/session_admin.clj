@@ -4,7 +4,6 @@
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.debug :as debug]
-            [kmet.libs.concurrent :as concurrent]
             [kmet.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.tui.theme :as th]
@@ -12,12 +11,12 @@
             [kmet.tui.components.container :as container]
             [kmet.app.loop :as agent]
             [kmet.app.session :as session]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.bash-execution :as be]
             [kmet.app.ui.dialogs :as dialogs]
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.footer :as footer]
-            [kmet.app.ui.footer-data-provider :as fdp]
             [kmet.app.ui.image-block :as image-block]
             [kmet.app.ui.status-indicator :as status-indicator]
             [kmet.app.ui.tool-execution :as tool-execution]
@@ -25,27 +24,12 @@
             [kmet.app.extensions :as extensions]
             [kmet.app.ui.model-selector :refer [sync-footer-model!]]
             [kmet.app.ui.tree-selector :refer [show-session-tree]]
-            [kmet.app.skills :as skills]
             [kmet.ai.usage :as usage]
             [kmet.modes.interactive.state :as state]
             [kmet.modes.interactive.status :as status]))
 
 ;; Forward reference inside this namespace (the tree's custom-summary path).
 (declare ask-branch-summary)
-
-(defn emit-session-start-async!
-  "Emit :session-start away from the input path — pi: AgentSession emits
-   session_start on every runtime creation (startup, resume, new, fork) and
-   extension handlers may block on dialog promises. The resources_discover
-   pass follows (pi: extendResourcesFromExtensions after session_start).
-   Used by the switch paths (new/resume); the startup and /reload emissions
-   live with their callers."
-  [payload]
-  (future
-    (try
-      (event-bus/emit-event! payload)
-      (extensions/discover-resources! :startup)
-      (catch Exception e (debug/log "session-start: " e)))))
 
 (defn parse-path-argument
   "Pi: getPathCommandArgument — strip surrounding quotes, else take the
@@ -301,92 +285,16 @@
              (= role :user) (assoc :images (image-block/content-images (:content e)))
              (= role :info) (assoc :label (:label e)))))))))
 
-(defn- refresh-prompt-cwd!
-  "Point the system prompt's `Current working directory` line at CWD (the
-   session's runtime cwd). Project context files are NOT re-read: everything
-   project-scoped — settings.edn, context files (AGENTS.md/CLAUDE.md),
-   project extensions/skills/prompts/themes, project packages — stays with
-   the launch directory, whatever session is imported; only the transcript
-   (and the working directory its tools run in) crosses the switch."
-  [cs cwd]
-  (let [ag @(:agent-state cs)
-        opts (assoc @(:system-prompt-opts ag) :cwd cwd)]
-    (reset! (:system-prompt-opts ag) opts)
-    (reset! (:system ag) (apply skills/build-system-prompt (mapcat identity opts)))))
-
-(defn- apply-session-cwd!
-  "Point the runtime at SESS's working directory (pi: createRuntime's cwd +
-   footerDataProvider.setCwd — a resumed or imported session brings its
-   recorded cwd): the footer pwd, the extension ctx.cwd, tool components and
-   the tools' relative-path resolution all read the footer provider's cwd,
-   and the system prompt is rebuilt for the new directory. A recorded cwd
-   that no longer exists keeps the current one (pi asks via
-   MissingSessionCwdError; kmet says so and continues). Returns the cwd in
-   effect.
-
-   The session's *configuration* does not move with it: settings.edn,
-   project context files, project-scoped extensions/skills/prompts/themes and
-   project packages stay resolved against the launch directory — a switch
-   imports the session's transcript and working directory only."
-  [cs sess]
-  (let [fdp* (:footer-provider cs)
-        recorded (get-in sess [:header :cwd])
-        cwd (session/session-cwd sess)
-        current (when fdp* (fdp/fdp-get-cwd fdp*))
-        ;; the comparison is spelling-insensitive: session-cwd is normalized
-        ;; (expand-home → absolutize → normalize) while the atom may hold the
-        ;; process cwd's spelling, so a symlinked launch dir is not a switch
-        same? (and cwd current
-                   (= cwd (str (fs/normalize (str current)))))]
-    (cond
-      (or (nil? fdp*) same?)
-      current
-
-      cwd
-      (do (fdp/fdp-set-cwd! fdp* cwd)
-          (refresh-prompt-cwd! cs cwd)
-          cwd)
-
-      :else
-      (do (chat-history/chat-history-show-status!
-           (:chat-history cs)
-           (str "Session cwd " recorded " no longer exists — continuing in " current))
-          current))))
-
-(defn restore-session!
-  "Restore a session into the UI and the agent: swap the active session,
-   rebuild the agent's in-memory context from the session branch (pi: the
-   session is the source of truth — buildContextEntries; steered and
-   follow-up user messages live in the branch and must come back for the
-   next LLM call), and replay the branch into the chat history. session_info
-   entries are metadata — never rendered (pi: only message entries are
-   replayed on resume). When APPLY-SETTINGS? is true (startup resume,
-   /resume — pi: createAgentSession), the session-derived model/thinking are
-   applied to the agent and the footer refreshes; fork and clone pass false
-   (pi: navigateTree keeps the current agent state). A real switch also
-   drops the previous session's runtime tool selection: pi recreates the
-   runtime from settings on resume, so a set-active-tools!/tools-selector
-   selection does not leak into the resumed session (extensions restore
-   their own per-session state on :session-start)."
+(defn replay-session!
+  "Replay a session the runtime has already switched to into the UI: the
+   branch into the chat history (session_info entries are metadata — never
+   rendered; pi: only message entries are replayed on resume), the
+   compaction-count status, the footer/title refresh, and — on the resume
+   paths (startup --continue, /resume) — the editor's prompt history
+   (fork/clone keep the shared editor's existing history; pi: navigateTree/
+   switchSession reuse the same editor instance). A recorded cwd that no
+   longer exists is reported here (the runtime kept the current one)."
   [cs sess apply-settings?]
-  (reset! (:session-atom cs) sess)
-  (extensions/set-session! sess)
-  ;; pi: renderCurrentSessionState — a session switch drops the compaction
-  ;; queue (compactionQueuedMessages = [])
-  (reset! (:compaction-queued cs) [])
-  (let [new-ag (assoc @(:agent-state cs) :session sess)]
-    (reset! (:agent-state cs) new-ag))
-  (agent/restore-session-context! @(:agent-state cs))
-  (when apply-settings?
-    ;; pi: createRuntime builds a fresh session with the config-derived tool
-    ;; set — the outgoing session's set-active-tools!/tools-selector
-    ;; selection must not carry over (the switch also emits :session-start,
-    ;; letting extensions restore their own per-session state). set-active-
-    ;; tools! with nil restores the configured surface and rebuilds the
-    ;; system prompt for it.
-    (agent/set-active-tools! @(:agent-state cs) nil)
-    (agent/apply-session-settings! @(:agent-state cs))
-    (sync-footer-model! cs))
   (replay-branch! cs sess)
   ;; pi: renderInitialMessages — "Session compacted N times" status when
   ;; the session file (any branch) contains compactions
@@ -395,115 +303,69 @@
       (chat-history/chat-history-show-status!
        (:chat-history cs)
        (str "Session compacted " n (if (= n 1) " time" " times")))))
-  ;; pi: createRuntime's cwd + footerDataProvider.setCwd — the session's
-  ;; working directory becomes the runtime's (tools, the prompt's cwd line,
-  ;; the footer pwd and ctx.cwd all follow it)
-  (apply-session-cwd! cs sess)
-  ;; Repopulate the editor's prompt history only on the resume paths
-  ;; (startup --continue, /resume — pi: renderInitialMessages with
-  ;; populateHistory). Fork/clone keep the shared editor's existing history
-  ;; (pi: navigateTree/switchSession reuse the same editor instance).
+  (when (and (get-in sess [:header :cwd])
+             (nil? (session/session-cwd sess)))
+    (chat-history/chat-history-show-status!
+     (:chat-history cs)
+     (str "Session cwd " (get-in sess [:header :cwd])
+          " no longer exists — continuing in " (state/runtime-cwd cs))))
   (when apply-settings?
     (editor/editor-set-history! (:editor cs) (session/get-prompt-history sess)))
   (state/update-footer! cs)
   (state/update-terminal-title! cs))
 
+(defn restore-session!
+  "Restore a session into the UI and the agent: the runtime owns the swap
+   (switch-session! — the session atom, the agent's in-memory context
+   rebuilt from the session branch, and the session-derived settings when
+   APPLY-SETTINGS?); this replays the branch into the chat history.
+   session_info entries are metadata — never rendered (pi: only message
+   entries are replayed on resume). When APPLY-SETTINGS? is true (startup
+   resume, /resume — pi: createAgentSession), the footer refreshes with the
+   applied model/thinking; fork and clone pass false (pi: navigateTree
+   keeps the current agent state)."
+  [cs sess apply-settings?]
+  (runtime/switch-session! (:engine cs) sess {:apply-settings? apply-settings?})
+  (when apply-settings?
+    (sync-footer-model! cs))
+  (replay-session! cs sess apply-settings?))
+
 (defn handle-new-session
-  "Pi: handleClearCommand → runtimeHost.newSession. Fully reset the
-   conversation: settle the in-flight run and compaction first so the
-   aborted turn (incl. pending bash results) persists to the OUTGOING
-   session (pi: teardownCurrent awaits session.abort), then swap in a fresh
-   session, rebuild the agent's in-memory context from it — empty (pi:
-   createRuntime; the session is the source of truth) — reset per-run
-   state, and clear the chat, pending container, and editor (pi:
-   editor.setText(\"\")). Emits :session-before-switch (extensions may
-   cancel), :session-shutdown (reason :new, target-session-file) before the
-   swap and :session-start (reason :new, previous-session-file) after it
-   for extensions (pi: teardownCurrent → session_start on every switch)."
+  "Pi: handleClearCommand → runtimeHost.newSession. The runtime owns the
+   switch (the before/shutdown/start events, settling the in-flight turn
+   and compaction, and creating the fresh session in the runtime cwd); the
+   mode cancels its bash command before the runtime's settle wait so the
+   bash result still lands in the OUTGOING session, then clears the chat,
+   pending container, bash widgets, compaction queue, and editor (pi:
+   editor.setText(\"\"))."
   [cs]
-  (let [previous-file (:file @(:session-atom cs))
-        ;; pi: emitBeforeSwitch — extensions may cancel the switch; the
-        ;; conversation stays completely untouched
-        switch-result (event-bus/emit-event! {:type :session-before-switch
-                                              :reason :new
-                                              :target-session-file previous-file})]
-    (when-not (:cancel switch-result)
-      (let [ag @(:agent-state cs)
-            was-running @(:running-turn? cs)]
-        ;; Settle in-flight work so it lands in the outgoing session and cannot
-        ;; race the swap. Queued steering/follow-up are dropped — a new session
-        ;; discards them (unlike cancel, which restores them to the editor).
-        (when was-running
-          (agent/cancel-turn ag))
-        (when @(:compacting? ag)
-          (reset! (:signal ag) true))
-        (when @(:bash-running? cs)
-          (reset! (:bash-signal cs) true)
-          (reset! (:bash-running? cs) false))
-        ;; Wait (bounded) for the cancelled run's finally to drain pending bash
-        ;; results and for an in-flight compaction to settle — its context sync
-        ;; must not run after the swap.
-        (let [deadline (+ (concurrent/monotonic-ms) 3000)]
-          (loop []
-            (when (and (or (seq @(:pending-bash ag)) @(:compacting? ag))
-                       (< (concurrent/monotonic-ms) deadline))
-              (Thread/sleep 10)
-              (recur))))
-        (when (and (not @(:compacting? ag))
-                   (empty? @(:pending-bash ag)))
-          (reset! (:signal ag) false))
-        (when was-running
-          (reset! (:running-turn? cs) false)
-          (status/stop-anim-timer! cs)
-          (status/clear-status-indicator! cs))
-        ;; pi: teardownCurrent — after the run is settled, tell extensions the
-        ;; runtime is being torn down (reason :new, destination session file)
-        ;; so they can persist state before the swap.
-        (event-bus/emit-event! {:type :session-shutdown :reason :new
-                                :target-session-file previous-file})
-        (let [new-session (session/create-session (state/ensure-cwd-session-dir (state/runtime-cwd cs))
-                                                  ;; the new session belongs to the runtime's
-                                                  ;; project (pi: newSession keeps this.cwd)
-                                                  {:cwd (state/runtime-cwd cs)})]
-          (debug/log "new session created: " (:id new-session))
-          (chat-history/chat-history-clear! (:chat-history cs))
-          (be/dispose-pending-bash! @(:pending-bash-components cs))
-          (container/container-clear (:pending-messages-container cs))
-          ;; pi: a session switch drops the compaction queue
-          ;; (compactionQueuedMessages = [])
-          (reset! (:compaction-queued cs) [])
-          ;; Re-attach the PendingMessages component — container-clear removes
-          ;; every child (queued steering/follow-up display included), and the
-          ;; display must keep rendering for messages queued after /new
-          (when-let [pm (:pending-messages-comp cs)]
-            (container/container-add-child (:pending-messages-container cs) pm))
-          (reset! (:pending-bash-components cs) [])
-          (tui/editor-set-text! @(:current-editor-atom cs) "")
-          (reset! (:session-atom cs) new-session)
-          (extensions/set-session! new-session)
-          (let [new-ag (assoc ag :session new-session)]
-            (reset! (:agent-state cs) new-ag)
-            ;; Rebuild the in-memory context from the new session — empty — and
-            ;; reset per-run state (pi: createRuntime builds a fresh agent
-            ;; state; the hook/config atoms are kept — not session state).
-            (agent/restore-session-context! new-ag)
-            (reset! (:status ag) :idle)
-            (reset! (:steering ag) [])
-            (reset! (:follow-up ag) [])
-            (reset! (:pending-bash ag) [])
-            (reset! (:overflow-recovered ag) false)
-            (reset! (:retry-count ag) 0))
-      ;; pi: newSession emits session_start (reason "new",
-      ;; previousSessionFile) — on a future, handlers may block on dialog
-      ;; promises (same as /reload).
-          (emit-session-start-async!
-           (cond-> {:type :session-start :reason :new}
-             previous-file (assoc :previous-session-file previous-file)))
-          (state/update-footer! cs)
-          (state/update-terminal-title! cs)
-          (tui/tui-request-render (:tui cs))
-          (chat-history/chat-history-add-message! (:chat-history cs)
-                                                  {:role :assistant :content "Started a new session."}))))))
+  (let [cancel-bash! (fn []
+                       (when @(:bash-running? cs)
+                         (reset! (:bash-signal cs) true)
+                         (reset! (:bash-running? cs) false)))
+        result (runtime/new-session! (:engine cs) {:before-settle cancel-bash!})]
+    (when-not (:cancelled result)
+      (when @(:running-turn? cs)
+        (reset! (:running-turn? cs) false)
+        (status/stop-anim-timer! cs)
+        (status/clear-status-indicator! cs))
+      (chat-history/chat-history-clear! (:chat-history cs))
+      (be/dispose-pending-bash! @(:pending-bash-components cs))
+      (container/container-clear (:pending-messages-container cs))
+      ;; pi: a session switch drops the compaction queue (compactionQueuedMessages = [])
+      (reset! (:compaction-queued cs) [])
+      ;; Re-attach the PendingMessages component — container-clear removes
+      ;; every child (queued steering/follow-up display included), and the
+      ;; display must keep rendering for messages queued after /new
+      (when-let [pm (:pending-messages-comp cs)]
+        (container/container-add-child (:pending-messages-container cs) pm))
+      (reset! (:pending-bash-components cs) [])
+      (tui/editor-set-text! @(:current-editor-atom cs) "")
+      (state/update-footer! cs)
+      (state/update-terminal-title! cs)
+      (tui/tui-request-render (:tui cs))
+      (chat-history/chat-history-add-message! (:chat-history cs)
+                                              {:role :assistant :content "Started a new session."}))))
 
 ;; ─── Import (/import — pi: handleImportCommand) ───────────────────────────
 
@@ -559,7 +421,8 @@
    teardownCurrent: an in-flight turn refuses the import (like /fork and
    /clone — the switch path does not abort) and the switch emits
    :session-before-switch, exactly as /resume does. The session's recorded
-   cwd becomes the runtime cwd (restore-session! → apply-session-cwd!), so
+   cwd becomes the runtime cwd (runtime/switch-session! →
+   apply-session-cwd!), so
    the tools, the prompt's cwd line and the footer follow it, as in pi's
    createRuntime."
   [cs args]
@@ -597,11 +460,14 @@
                                 :target-session-file (:path plan)}))
                    (chat-history/chat-history-show-status! chat "Import cancelled")
                    (do (session/copy-imported-session! plan)
-                       (restore-session! cs (session/load-session (:path plan)) true)
+                       (let [sess (session/load-session (:path plan))]
+                         (runtime/switch-session! (:engine cs) sess {:apply-settings? true})
+                         (sync-footer-model! cs)
+                         (replay-session! cs sess true))
                        ;; pi: the import switch emits session_start (reason
                        ;; resume) like /resume — extensions restore from the
                        ;; imported branch
-                       (emit-session-start-async! {:type :session-start :reason :resume})
+                       (runtime/emit-session-start-async! {:type :session-start :reason :resume})
                        (chat-history/chat-history-show-status!
                         chat (str "Session imported from: " (:source plan)))
                        (tui/tui-request-render (:tui cs))))
@@ -861,100 +727,87 @@
 
 (defn fork-at!
   "Fork the session before the given user message and switch to the fork
-   (pi: runtimeHost.fork — the new session starts at the message's parent;
-   the message text is restored to the editor for re-editing). Forking the
-   first user message (no parent) starts an empty session linked to this
-   one."
+   (pi: runtimeHost.fork — the runtime owns the switch; the new session
+   starts at the message's parent) and restore the message text to the
+   editor for re-editing. Forking the first user message (no parent) starts
+   an empty session linked to this one."
   [cs entry-id]
   (if (state/turn-running? cs)
     (chat-history/chat-history-add-message! (:chat-history cs)
                                             {:role :assistant
                                              :content "Wait for the current response to finish before forking."})
-    (let [sess @(:session-atom cs)
-          entry (session/get-entry sess entry-id)]
-      (if (nil? entry)
-        (chat-history/chat-history-add-message! (:chat-history cs)
-                                                {:role :assistant :content "Invalid entry for forking."})
-        (try
-          ;; pi: emitBeforeFork — extensions may cancel the fork; the
-          ;; conversation stays untouched
-          (if (:cancel (event-bus/emit-event! {:type :session-before-fork
-                                               :entry-id entry-id
-                                               :position :at}))
+    (try
+      (let [result (runtime/fork! (:engine cs) entry-id)]
+        (cond
+          (= :unknown-entry (:error result))
+          (chat-history/chat-history-add-message! (:chat-history cs)
+                                                  {:role :assistant :content "Invalid entry for forking."})
+
+          (= :fork-failed (:error result))
+          (chat-history/chat-history-add-message! (:chat-history cs)
+                                                  {:role :assistant :content "Failed to create forked session."})
+
+          (:cancelled result)
+          (chat-history/chat-history-add-message! (:chat-history cs)
+                                                  {:role :assistant
+                                                   :content "Fork cancelled by an extension."})
+
+          :else
+          (let [{:keys [session entry]} result]
+            (replay-session! cs session false)
+            (tui/editor-set-text! (:editor cs) (session/session-entry-text entry))
             (chat-history/chat-history-add-message! (:chat-history cs)
                                                     {:role :assistant
-                                                     :content "Fork cancelled by an extension."})
-            (let [fork (if (:parent-id entry)
-                         (session/fork-session sess (:parent-id entry))
-                         (session/create-session (state/ensure-cwd-session-dir (state/runtime-cwd cs))
-                                                 {:parent-session (:file sess)
-                                                  :cwd (state/runtime-cwd cs)}))]
-              (if (nil? fork)
-                (chat-history/chat-history-add-message! (:chat-history cs)
-                                                        {:role :assistant :content "Failed to create forked session."})
-                (do
-                  (debug/log "forked session " (:id fork) " from " (:id sess))
-                  (restore-session! cs fork false)
-                  (tui/editor-set-text! (:editor cs) (session/session-entry-text entry))
-                  (chat-history/chat-history-add-message! (:chat-history cs)
-                                                          {:role :assistant
-                                                           :content (str "Forked to new session " (subs (:id fork) 0 8) ".")})
-                  (tui/tui-request-render (:tui cs))))))
-          (catch Exception e
-            (debug/log "fork failed: " e)
-            (chat-history/chat-history-add-message! (:chat-history cs)
-                                                    {:role :info :label "Fork"
-                                                     :content (str "Fork failed: " (ex-message e))})
-            (tui/tui-request-render (:tui cs))))))))
+                                                     :content (str "Forked to new session " (subs (:id session) 0 8) ".")})
+            (tui/tui-request-render (:tui cs)))))
+      (catch Exception e
+        (debug/log "fork failed: " e)
+        (chat-history/chat-history-add-message! (:chat-history cs)
+                                                {:role :info :label "Fork"
+                                                 :content (str "Fork failed: " (ex-message e))})
+        (tui/tui-request-render (:tui cs))))))
 
 (defn clone-current-session!
   "Duplicate the session at its current position (pi: /clone → fork at the
-   current leaf) and switch to the clone."
+   current leaf) and switch to the clone (the runtime owns the switch)."
   [cs]
-  (let [sess @(:session-atom cs)]
-    (cond
-      (state/turn-running? cs)
-      (chat-history/chat-history-add-message! (:chat-history cs)
-                                              {:role :assistant
-                                               :content "Wait for the current response to finish before cloning."})
+  (if (state/turn-running? cs)
+    (chat-history/chat-history-add-message! (:chat-history cs)
+                                            {:role :assistant
+                                             :content "Wait for the current response to finish before cloning."})
+    (try
+      (let [result (runtime/clone! (:engine cs))]
+        (case (:error result)
+          :no-session
+          (chat-history/chat-history-add-message! (:chat-history cs)
+                                                  {:role :assistant :content "No active session."})
 
-      (nil? sess)
-      (chat-history/chat-history-add-message! (:chat-history cs)
-                                              {:role :assistant :content "No active session."})
+          :no-leaf
+          (chat-history/chat-history-add-message! (:chat-history cs)
+                                                  {:role :assistant :content "Nothing to clone yet."})
 
-      (nil? @(:leaf-id sess))
-      (chat-history/chat-history-add-message! (:chat-history cs)
-                                              {:role :assistant :content "Nothing to clone yet."})
-
-      (not (fs/exists? (:file sess)))
-      (chat-history/chat-history-add-message! (:chat-history cs)
-                                              {:role :assistant
-                                               :content "Wait for the first assistant response before cloning."})
-
-      :else
-      (try
-        ;; pi: /clone is a fork at the current leaf — session_before_fork
-        ;; applies; extensions may cancel
-        (if (:cancel (event-bus/emit-event! {:type :session-before-fork
-                                             :entry-id @(:leaf-id sess)
-                                             :position :at}))
+          :not-persisted
           (chat-history/chat-history-add-message! (:chat-history cs)
                                                   {:role :assistant
-                                                   :content "Clone cancelled by an extension."})
-          (let [fork (session/clone-session sess)]
-            (if (nil? fork)
-              (chat-history/chat-history-add-message! (:chat-history cs)
-                                                      {:role :assistant :content "Failed to clone session."})
-              (do
-                (debug/log "cloned session " (:id fork) " from " (:id sess))
-                (restore-session! cs fork false)
-                (chat-history/chat-history-add-message! (:chat-history cs)
-                                                        {:role :assistant
-                                                         :content (str "Cloned to new session " (subs (:id fork) 0 8) ".")})
-                (tui/tui-request-render (:tui cs))))))
-        (catch Exception e
-          (debug/log "clone failed: " e)
+                                                   :content "Wait for the first assistant response before cloning."})
+
+          :clone-failed
           (chat-history/chat-history-add-message! (:chat-history cs)
-                                                  {:role :info :label "Clone"
-                                                   :content (str "Clone failed: " (ex-message e))})
-          (tui/tui-request-render (:tui cs)))))))
+                                                  {:role :assistant :content "Failed to clone session."})
+
+          (if (:cancelled result)
+            (chat-history/chat-history-add-message! (:chat-history cs)
+                                                    {:role :assistant
+                                                     :content "Clone cancelled by an extension."})
+            (let [clone (:session result)]
+              (replay-session! cs clone false)
+              (chat-history/chat-history-add-message! (:chat-history cs)
+                                                      {:role :assistant
+                                                       :content (str "Cloned to new session " (subs (:id clone) 0 8) ".")})
+              (tui/tui-request-render (:tui cs))))))
+      (catch Exception e
+        (debug/log "clone failed: " e)
+        (chat-history/chat-history-add-message! (:chat-history cs)
+                                                {:role :info :label "Clone"
+                                                 :content (str "Clone failed: " (ex-message e))})
+        (tui/tui-request-render (:tui cs))))))

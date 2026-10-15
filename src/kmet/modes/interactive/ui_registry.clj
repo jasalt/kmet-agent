@@ -23,8 +23,8 @@
             [kmet.app.model-resolver :as resolver]
             [kmet.app.loop :as agent]
             [kmet.app.session :as session]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.commands :as commands]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.extensions :as extensions]
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
@@ -754,20 +754,13 @@
                                                (if (state/turn-running? cs)
                                                  {:cancelled true}
                                                  (try
-                                                   (let [sess (session/load-session session-path)
-                                                         ;; pi: emitBeforeSwitch (reason :resume) —
-                                                         ;; extensions may cancel the switch
-                                                         result (event-bus/emit-event!
-                                                                 {:type :session-before-switch
-                                                                  :reason :resume
-                                                                  :target-session-file session-path})]
-                                                     (if (:cancel result)
+                                                   ;; pi: switchSession → runtime/resume!
+                                                   ;; (emitBeforeSwitch, load, swap, session_start)
+                                                   (let [result (runtime/resume! (:engine cs) session-path)]
+                                                     (if (:cancelled result)
                                                        {:cancelled true}
-                                                       (do (session-admin/restore-session! cs sess true)
-                                                           ;; pi: switchSession → createRuntime
-                                                           ;; emits session_start (reason resume)
-                                                           (session-admin/emit-session-start-async!
-                                                            {:type :session-start :reason :resume})
+                                                       (do (sync-footer-model! cs)
+                                                           (session-admin/replay-session! cs (:session result) true)
                                                            {:cancelled false})))
                                                    (catch Exception _ {:cancelled true}))))
                              :is-project-trusted (fn [] false)}))

@@ -55,11 +55,13 @@
 
 (defn runtime-cwd
   "The working directory of CS's runtime (pi: AgentSession._cwd, seeded from
-   the active session's recorded cwd): the footer data provider's cwd — the
-   live value the footer pwd, the extension ctx.cwd, and tool components
-   read — else the process cwd (tests, headless)."
+   the active session's recorded cwd): the engine's cwd — the live value the
+   footer pwd, the extension ctx.cwd, and tool components read — else the
+   footer provider's (test stubs without an engine), else the process cwd."
   [cs]
-  (or (some-> (:footer-provider cs) fdp/fdp-get-cwd) (str (fs/cwd))))
+  (or (runtime/cwd (:engine cs))
+      (some-> (:footer-provider cs) fdp/fdp-get-cwd)
+      (str (fs/cwd))))
 
 (defn turn-running?
   "True when a response is streaming (the CoreState turn flag) — the

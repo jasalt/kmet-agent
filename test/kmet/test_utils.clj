@@ -1,7 +1,26 @@
 (ns kmet.test-utils
-  (:require [clojure.string :as str]
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]
             [clojure.test :as t]
+            [kmet.app.session-runtime :as rt]
             [kmet.tui.utils :as u]))
+
+(defn test-engine
+  "A minimal session-runtime engine for mode-level tests: the given
+   :agent-state and :session atoms (exactly as the Engine record holds
+   them), plus optional :config and :cwd. Subscribers, last-run, the turn
+   flag and the compaction queue are fresh. Production builds engines
+   through kmet.app.session-runtime/bootstrap."
+  [{:keys [agent-state session config cwd]}]
+  (rt/map->Engine {:agent-state agent-state
+                   :session session
+                   :config (atom (or config {}))
+                   :subscribers (atom [])
+                   :last-run (atom nil)
+                   :disposed? (atom false)
+                   :cwd (if (instance? clojure.lang.IDeref cwd) cwd (atom (or cwd (str (fs/cwd)))))
+                   :turn-running? (atom false)
+                   :compaction-queued (atom [])}))
 
 (defn slash
   "The /-separated form of path values — strings, Paths/Files, or maps, sets

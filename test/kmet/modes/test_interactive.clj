@@ -110,6 +110,10 @@
           ag (agent/make-agent-state :session old-sess)
           _ (swap! (:messages ag) conj {:role :user :content "old message"})
           _ (swap! (:messages ag) conj {:role :assistant :content "old reply"})
+          ag-atom (atom ag)
+          sess-atom (atom old-sess)
+          engine (tu/test-engine {:agent-state ag-atom :session sess-atom
+                                  :config {:session-dir sess-dir}})
           tui-stub {:render-requested? (atom false)}
           ch (chat-history/make-chat-history)
           fdp (fdp/make-footer-data-provider :session old-sess)
@@ -120,7 +124,8 @@
           pending-bash (atom [parked-bash])
           cs (inter/map->CoreState
               {:tui tui-stub
-               :agent-state (atom ag)
+               :engine engine
+               :agent-state ag-atom
                :chat-history ch
                :editor ed
                :current-editor-atom (atom ed)
@@ -129,7 +134,7 @@
                :compaction-queued (atom [])
                :bash-running? (atom false)
                :bash-signal (atom false)
-               :session-atom (atom old-sess)
+               :session-atom sess-atom
                :pending-messages-container (container/make-container)
                :pending-bash-components pending-bash
                :pending-messages-comp (pending-messages/make-pending-messages)
@@ -144,8 +149,8 @@
                                 (fn [ev] (swap! shutdown-events conj ev)))]
       (try
         ((var session-admin/handle-new-session) cs)
-        (let [ag' @(:agent-state cs)
-              new-sess @(:session-atom cs)]
+        (let [ag' @ag-atom
+              new-sess @sess-atom]
           (is (not= (:id old-sess) (:id new-sess)) "a fresh session is created")
           (is (= new-sess (:session ag')) "agent points at the new session")
           (is (empty? @(:messages ag'))
@@ -175,13 +180,18 @@
           ag (agent/make-agent-state :session old-sess)
           _ (swap! (:messages ag) conj {:role :user :content "old message"})
           _ (swap! (:messages ag) conj {:role :assistant :content "old reply"})
+          ag-atom (atom ag)
+          sess-atom (atom old-sess)
+          engine (tu/test-engine {:agent-state ag-atom :session sess-atom
+                                  :config {:session-dir sess-dir}})
           tui-stub {:render-requested? (atom false)}
           ch (chat-history/make-chat-history)
           ed (editor/make-editor)
           _ (editor/editor-set-text! ed "draft")
           cs (inter/map->CoreState
               {:tui tui-stub
-               :agent-state (atom ag)
+               :engine engine
+               :agent-state ag-atom
                :chat-history ch
                :editor ed
                :current-editor-atom (atom ed)
@@ -190,7 +200,7 @@
                :compaction-queued (atom [])
                :bash-running? (atom false)
                :bash-signal (atom false)
-               :session-atom (atom old-sess)
+               :session-atom sess-atom
                :pending-messages-container (container/make-container)
                :pending-bash-components (atom [])
                :status-current (atom nil)
@@ -209,9 +219,9 @@
                                 (fn [ev] (swap! shutdown-events conj ev)))]
       (try
         ((var session-admin/handle-new-session) cs)
-        (is (= old-sess @(:session-atom cs)) "session NOT swapped")
-        (is (= old-sess (:session @(:agent-state cs))) "agent still points at the old session")
-        (is (= 2 (count @(:messages @(:agent-state cs)))) "conversation untouched")
+        (is (= old-sess @sess-atom) "session NOT swapped")
+        (is (= old-sess (:session @ag-atom)) "agent still points at the old session")
+        (is (= 2 (count @(:messages @ag-atom))) "conversation untouched")
         (is (= "draft" (editor/editor-get-text ed)) "editor untouched")
         (is (= :new (:reason @seen-before-switch)) "before-switch carries the reason")
         (is (empty? @shutdown-events) "no :session-shutdown on a cancelled switch")

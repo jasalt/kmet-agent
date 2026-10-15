@@ -68,7 +68,8 @@
     (fn [engine _]
       (let [seen (atom nil)
             run (future :settled)
-            done (fn [_] nil)]
+            called (atom [])
+            done (fn [t] (swap! called conj t))]
         (with-redefs [agent/run-agent-turn
                       (fn [ag run-opts]
                         (reset! seen {:ag ag :opts run-opts})
@@ -77,7 +78,12 @@
               "prompt! returns immediately (completion is :agent-settled)")
           (is (identical? (rt/agent-state engine) (:ag @seen)))
           (is (= "hi" (:message (:opts @seen))))
-          (is (identical? done (:on-done (:opts @seen))) "callbacks pass through")
+          (is (true? (rt/turn-running? engine)) "the prompt owns the turn flag")
+          (is (fn? (:on-done (:opts @seen))) "the runtime wraps the callback")
+          ((:on-done (:opts @seen)) "answer")
+          (is (= ["answer"] @called) "the front end's :on-done runs after the flag clears")
+          (is (false? (rt/turn-running? engine))
+              "the wrapped :on-done clears the turn flag before the front end runs")
           (is (identical? run @(:last-run engine)) "the run is recorded for dispose!"))))))
 
 (deftest test-prompt-uses-the-live-agent-after-a-session-switch

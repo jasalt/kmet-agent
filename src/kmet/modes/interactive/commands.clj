@@ -18,6 +18,7 @@
             [kmet.ai.api.shared :as shared]
             [kmet.app.loop :as agent]
             [kmet.app.session :as session]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.session-export :as session-export]
             [kmet.app.commands :as commands]
             [kmet.app.extensions :as extensions]
@@ -419,25 +420,16 @@
                                         (fn [path]
                                           ;; pi: emitBeforeSwitch (reason :resume)
                                           ;; — extensions may cancel the switch
-                                          (when-not (:cancel (event-bus/emit-event!
-                                                              {:type :session-before-switch
-                                                               :reason :resume
-                                                               :target-session-file path}))
-                                            (let [previous-file (:file @(:session-atom cs))
-                                                  sess (session/load-session path)
-                                                  short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
-                                              (session-admin/restore-session! cs sess true)
-                                              (chat-history/chat-history-add-message! (:chat-history cs)
-                                                                                      {:role :assistant
-                                                                                       :content (str "Resumed session " short-id ".")})
-                                              ;; pi: switchSession → createRuntime emits
-                                              ;; session_start (reason resume) — extensions
-                                              ;; restore their per-session state (the
-                                              ;; /tools selection lives on the branch)
-                                              (session-admin/emit-session-start-async!
-                                               (cond-> {:type :session-start :reason :resume}
-                                                 previous-file (assoc :previous-session-file previous-file)))
-                                              (tui/tui-request-render (:tui cs))))))))})
+                                          (let [result (runtime/resume! (:engine cs) path)]
+                                            (when-not (:cancelled result)
+                                              (let [sess (:session result)
+                                                    short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
+                                                (sync-footer-model! cs)
+                                                (session-admin/replay-session! cs sess true)
+                                                (chat-history/chat-history-add-message! (:chat-history cs)
+                                                                                        {:role :assistant
+                                                                                         :content (str "Resumed session " short-id ".")})
+                                                (tui/tui-request-render (:tui cs)))))))))})
   (register-builtin-command!
    {:name "continue"
     :description "Continue where the agent left off (e.g. after a network error)"

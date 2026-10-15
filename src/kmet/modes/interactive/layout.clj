@@ -460,15 +460,18 @@
 
         ;; The runtime working directory (pi: AgentSession._cwd — the cwd
         ;; the resumed/continued session was recorded in, else the process
-        ;; cwd). The atom is shared by the footer data provider (the footer
-        ;; pwd, the extension ctx.cwd) and the chat history (tool-component
-        ;; path displays), so apply-session-cwd! switches both with one
-        ;; write.
+        ;; cwd). The runtime owns the atom (bootstrap seeds it, a session
+        ;; switch moves it); the footer data provider (the footer pwd, the
+        ;; extension ctx.cwd) and the chat history (tool-component path
+        ;; displays) share it.
         cwd (or (session/session-cwd session) (str (fs/cwd)))
-        cwd-atom (atom cwd)
 
-        ;; The runtime builds the system prompt and the config-derived run
-        ;; options (kmet.app.session-runtime/bootstrap) below.
+        ;; The runtime owns the agent state, system prompt, run options and
+        ;; extension handle (kmet.app.session-runtime/bootstrap); the layout
+        ;; owns view state and subscribes its event handler once the widgets
+        ;; exist.
+        engine (runtime/bootstrap config {:session session :cwd cwd})
+        cwd-atom (:cwd engine)
 
         ;; Migrate legacy keybinding ids in keybindings.edn (pi: migrations
         ;; runner calls migrateKeybindingsConfigFile at startup)
@@ -505,11 +508,6 @@
         ;; proactive auto-compaction check (pi: state.model.contextWindow)
         ctx-window (or (:context-window (models/get-model provider model))
                        (:context-window config))
-
-        ;; The runtime owns the agent state, system prompt, run options and
-        ;; extension handle; the layout owns view state and subscribes its
-        ;; event handler once the widgets exist.
-        engine (runtime/bootstrap config {:session session})
         ag @(:agent-state engine)
         ;; B.1: welcome header — ExpandableText with compact/full variants
         ;; (pi: builtInHeader), toggled by app.tools.expand

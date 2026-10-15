@@ -19,6 +19,7 @@
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.session-selector :refer [show-session-selector]]
+            [kmet.app.ui.model-selector :refer [sync-footer-model!]]
             [kmet.libs.process :as process]
             [kmet.libs.reakt :as reakt]
             [kmet.modes.interactive.layout :as layout]
@@ -147,17 +148,16 @@
                                  (fn [path]
                                    ;; pi: emitBeforeSwitch (reason :resume) —
                                    ;; extensions may cancel the switch
-                                   (when-not (:cancel (event-bus/emit-event!
-                                                       {:type :session-before-switch
-                                                        :reason :resume
-                                                        :target-session-file path}))
-                                     (let [sess (session/load-session path)
-                                           short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
-                                       (session-admin/restore-session! cs sess true)
-                                       (chat-history/chat-history-add-message! (:chat-history cs)
-                                                                               {:role :assistant
-                                                                                :content (str "Resumed session " short-id ".")})
-                                       (tui/tui-request-render (:tui cs)))))))
+                                   (let [result (runtime/resume! (:engine cs) path)]
+                                     (when-not (:cancelled result)
+                                       (let [sess (:session result)
+                                             short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
+                                         (sync-footer-model! cs)
+                                         (session-admin/replay-session! cs sess true)
+                                         (chat-history/chat-history-add-message! (:chat-history cs)
+                                                                                 {:role :assistant
+                                                                                  :content (str "Resumed session " short-id ".")})
+                                         (tui/tui-request-render (:tui cs))))))))
         ;; start the UI before initializing extensions so session_start
         ;; handlers can use interactive dialogs — kmet loads extensions
         ;; earlier, so the event fires once the layout + UI registry are

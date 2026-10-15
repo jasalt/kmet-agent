@@ -47,13 +47,14 @@
             [kmet.libs.http :as http]
             [kmet.libs.terminal-image :as timg]
             [kmet.app.session :as session]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.skills :as skills]
             [kmet.app.ui.footer-data-provider :as fdp]
             [babashka.fs :as fs]
             [kmet.config :as cfg]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.app.event-bus :as event-bus]
-            [kmet.test-utils :refer [slash strip-ansi]]))
+            [kmet.test-utils :as tu :refer [slash strip-ansi]]))
 
 (defn- capture-mount!
   "A dock/mount! stand-in for tests: records the component that receives
@@ -756,13 +757,17 @@
         ag (agent/make-agent-state
             :session active-sess
             :system-prompt-opts opts
-            :system (apply skills/build-system-prompt (mapcat identity opts)))]
+            :system (apply skills/build-system-prompt (mapcat identity opts)))
+        ag-atom (atom ag)
+        sess-atom (atom active-sess)
+        engine (tu/test-engine {:agent-state ag-atom :session sess-atom :cwd cwd-atom})]
     (inter/map->CoreState
-     {:agent-state (atom ag)
+     {:engine engine
+      :agent-state ag-atom
       :chat-history ch
       :editor ed
       :current-editor-atom (atom ed)
-      :session-atom (atom active-sess)
+      :session-atom sess-atom
       :compaction-queued (atom [])
       :running-turn? (atom false)
       :footer-provider prov
@@ -1194,12 +1199,12 @@
       (try
         (fs/create-dirs project)
         (let [sess (session/create-session (str dir "/sessions") {:cwd project})
-              fdp* (fdp/make-footer-data-provider :cwd-atom (atom spelled))
-              cs (inter/map->CoreState {:footer-provider fdp*
-                                        :agent-state (atom (agent/make-agent-state))})]
-          (t/is (= spelled ((var session-admin/apply-session-cwd!) cs sess))
+              engine (tu/test-engine {:agent-state (atom (agent/make-agent-state))
+                                      :session (atom sess)
+                                      :cwd spelled})]
+          (t/is (= spelled ((var runtime/apply-session-cwd!) engine sess))
                 "the cwd in effect is returned unchanged")
-          (t/is (= spelled @(:cwd-atom fdp*)) "and kept as spelled"))
+          (t/is (= spelled (runtime/cwd engine)) "and kept as spelled"))
         (finally (fs/delete-tree dir))))))
 
 (deftest test-scoped-models-selector-initial-state

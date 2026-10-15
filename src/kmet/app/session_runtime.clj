@@ -30,9 +30,11 @@
   (:require [babashka.fs :as fs]
             [kmet.config :as cfg]
             [kmet.debug :as debug]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.ai.api.shared :as shared]
             [kmet.ai.models :as models]
             [kmet.app.context :as context]
+            [kmet.app.event-bus :as event-bus]
             [kmet.app.extensions :as extensions]
             [kmet.app.loop :as agent]
             [kmet.app.model-resolver :as resolver]
@@ -41,7 +43,10 @@
             [kmet.app.skills :as skills]
             [kmet.app.tools.core :as tools]))
 
-(defrecord Engine [agent-state session config subscribers last-run disposed?])
+(defrecord Engine [agent-state session config subscribers last-run disposed?
+                   cwd turn-running? compaction-queued])
+
+(declare turn-running?)
 
 (defn agent-state
   "The live AgentState record. The engine holds it in an atom because a
@@ -209,10 +214,13 @@
         _ (agent/init-scoped-models! agent-state config)
         engine (map->Engine {:agent-state (atom agent-state)
                              :session (atom (:session agent-state))
-                             :config config
+                             :config (atom config)
                              :subscribers subscribers
                              :last-run (atom nil)
-                             :disposed? (atom false)})]
+                             :disposed? (atom false)
+                             :cwd (atom runtime-cwd)
+                             :turn-running? (atom false)
+                             :compaction-queued (atom [])})]
     ;; Runtime-scoped extension handle: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent. The UI
     ;; registry is the default unless the front end installs its own later.
@@ -244,6 +252,234 @@
   [base-dir cwd]
   (session/find-most-recent-session (ensure-cwd-session-dir base-dir cwd) cwd))
 
+(defn config
+  "The live process config (the engine holds it in an atom because /reload
+   replaces it)."
+  [engine]
+  (some-> engine :config deref))
+
+(defn cwd
+  "The runtime working directory (pi: AgentSession._cwd — the resumed
+   session's recorded cwd, else the process cwd at bootstrap). nil for a
+   bare test engine without a :cwd atom."
+  [engine]
+  (some-> engine :cwd deref))
+
+(defn- refresh-prompt-cwd!
+  "Point the system prompt's `Current working directory` line at CWD (the
+   session's runtime cwd). Project context files are NOT re-read: everything
+   project-scoped — settings.edn, context files, project extensions/skills/
+   prompts/themes/packages — stays with the launch directory, whatever
+   session is imported; only the transcript (and the working directory its
+   tools run in) crosses the switch."
+  [engine cwd]
+  (let [ag (agent-state engine)
+        opts (assoc @(:system-prompt-opts ag) :cwd cwd)]
+    (reset! (:system-prompt-opts ag) opts)
+    (reset! (:system ag) (apply skills/build-system-prompt (mapcat identity opts)))))
+
+(defn apply-session-cwd!
+  "Point the runtime at SESS's working directory (pi: createRuntime's cwd +
+   footerDataProvider.setCwd — a resumed or imported session brings its
+   recorded cwd): the system prompt's cwd line and everything reading the
+   runtime cwd (footer pwd, extension ctx.cwd, tool resolution) follow it.
+   A recorded cwd that no longer exists keeps the current one (the front end
+   reports it); returns the cwd in effect."
+  [engine sess]
+  (let [sess-cwd (session/session-cwd sess)
+        current (cwd engine)
+        same? (and sess-cwd current
+                   (= sess-cwd (str (fs/normalize (str current)))))]
+    (cond
+      same? current
+      sess-cwd (do (when-let [a (:cwd engine)] (reset! a sess-cwd))
+                   (refresh-prompt-cwd! engine sess-cwd)
+                   sess-cwd)
+      :else current)))
+
+(defn emit-session-start-async!
+  "Emit :session-start away from the input path — pi: AgentSession emits
+   session_start on every runtime creation (startup, resume, new, fork) and
+   extension handlers may block on dialog promises. The resources_discover
+   pass follows (pi: extendResourcesFromExtensions after session_start)."
+  [payload]
+  (future
+    (try
+      (event-bus/emit-event! payload)
+      (extensions/discover-resources! :startup)
+      (catch Exception e (debug/log "session-start: " e)))))
+
+(defn switch-session!
+  "Swap the live session to SESS (the runtime owns the swap — engine.md
+   §4.4; front ends keep the UX around it): point the session atom and the
+   extension session handle at it, replace the agent's session and rebuild
+   its in-memory context from the new branch, apply the session-derived
+   model/thinking/tool settings when the opts :apply-settings? is true, drop
+   the compaction queue, and point the runtime cwd at the session's.
+   Callers own the before/after lifecycle events. Returns SESS."
+  [engine sess {:keys [apply-settings?]}]
+  (let [new-ag (assoc (agent-state engine) :session sess)]
+    (reset! (:session engine) sess)
+    (extensions/set-session! sess)
+    (when-let [q (:compaction-queued engine)] (reset! q []))
+    (reset! (:agent-state engine) new-ag)
+    (agent/restore-session-context! new-ag)
+    (when apply-settings?
+      ;; pi: createRuntime builds a fresh session with the config-derived
+      ;; tool set — the outgoing session's set-active-tools!/tools-selector
+      ;; selection must not carry over (the switch also emits :session-start,
+      ;; letting extensions restore their own per-session state).
+      (agent/set-active-tools! new-ag nil)
+      (agent/apply-session-settings! new-ag))
+    (apply-session-cwd! engine sess)
+    sess))
+
+(defn- settle-for-switch!
+  "Settle an in-flight turn and compaction before a session swap so the
+   aborted work persists to the outgoing session and cannot race the swap;
+   waits (bounded, 3s) for the pending bash results to drain and for the
+   compaction to finish. Clears the cancel signal when everything settled."
+  [engine]
+  (let [ag (agent-state engine)
+        was-running (turn-running? engine)]
+    (when was-running
+      (agent/cancel-turn ag))
+    (when @(:compacting? ag)
+      (reset! (:signal ag) true))
+    (let [deadline (+ (concurrent/monotonic-ms) 3000)]
+      (loop []
+        (when (and (or (seq @(:pending-bash ag)) @(:compacting? ag))
+                   (< (concurrent/monotonic-ms) deadline))
+          (Thread/sleep 10)
+          (recur))))
+    (when (and (not @(:compacting? ag))
+               (empty? @(:pending-bash ag)))
+      (reset! (:signal ag) false))
+    was-running))
+
+(defn new-session!
+  "Start a fresh session in the runtime cwd (pi: runtimeHost.newSession):
+   emit :session-before-switch (extensions may cancel), settle the in-flight
+   turn/compaction, emit :session-shutdown, create and switch to the new
+   session, reset the loop's per-run state, and emit :session-start
+   asynchronously. The opts :before-settle fn runs after the cancel check
+   and before the settle wait — the front end cancels its own resources
+   (e.g. a running bash command) there so their results still land in the
+   outgoing session. Returns {:session new} | {:cancelled true}; the front
+   end owns UI cleanup (chat, editors, bash widgets)."
+  ([engine] (new-session! engine nil))
+  ([engine {:keys [before-settle]}]
+   (let [previous-file (:file (session engine))]
+     (if (:cancel (event-bus/emit-event! {:type :session-before-switch
+                                          :reason :new
+                                          :target-session-file previous-file}))
+       {:cancelled true}
+       (do
+         (when before-settle (before-settle))
+         (settle-for-switch! engine)
+        ;; pi: teardownCurrent — after the run is settled, tell extensions the
+        ;; runtime is being torn down (reason :new, destination session file)
+        ;; so they can persist state before the swap.
+         (event-bus/emit-event! {:type :session-shutdown :reason :new
+                                 :target-session-file previous-file})
+         (let [cwd (cwd engine)
+               sessions-dir (cfg/get-session-dir (config engine))
+               new-session (session/create-session (ensure-cwd-session-dir sessions-dir cwd)
+                                                   {:cwd cwd})]
+           (debug/log "new session created: " (:id new-session))
+           (switch-session! engine new-session {:apply-settings? false})
+          ;; Rebuild the in-memory context from the new session — empty — and
+          ;; reset per-run state (pi: createRuntime builds a fresh agent
+          ;; state; the hook/config atoms are kept — not session state).
+           (let [ag (agent-state engine)]
+             (reset! (:status ag) :idle)
+             (reset! (:steering ag) [])
+             (reset! (:follow-up ag) [])
+             (reset! (:pending-bash ag) [])
+             (reset! (:overflow-recovered ag) false)
+             (reset! (:retry-count ag) 0))
+          ;; pi: newSession emits session_start (reason "new",
+          ;; previousSessionFile) — on a future, handlers may block on dialog
+          ;; promises (same as /reload).
+           (emit-session-start-async!
+            (cond-> {:type :session-start :reason :new}
+              previous-file (assoc :previous-session-file previous-file)))
+           {:session new-session}))))))
+(defn resume!
+  "Load PATH and switch to it (pi: switchSession, reason :resume): emit
+   :session-before-switch (extensions may cancel), load, switch with the
+   session-derived settings applied, and emit :session-start asynchronously.
+   Returns {:session sess} | {:cancelled true}."
+  [engine path]
+  (let [previous-file (:file (session engine))]
+    (if (:cancel (event-bus/emit-event! {:type :session-before-switch
+                                         :reason :resume
+                                         :target-session-file path}))
+      {:cancelled true}
+      (let [sess (session/load-session path)]
+        (switch-session! engine sess {:apply-settings? true})
+        (emit-session-start-async!
+         (cond-> {:type :session-start :reason :resume}
+           previous-file (assoc :previous-session-file previous-file)))
+        {:session sess}))))
+
+(defn fork!
+  "Fork the session before the user message ENTRY-ID and switch to the fork
+   (pi: runtimeHost.fork — the new session starts at the message's parent;
+   the front end restores the message text to its editor): emit
+   :session-before-fork (extensions may cancel), fork, or create an empty
+   session linked to this one when the entry has no parent. Returns
+   {:session fork :entry entry} | {:cancelled true} | {:error :unknown-entry}."
+  [engine entry-id]
+  (let [sess (session engine)
+        entry (session/get-entry sess entry-id)]
+    (cond
+      (nil? entry) {:error :unknown-entry}
+      (:cancel (event-bus/emit-event! {:type :session-before-fork
+                                       :entry-id entry-id
+                                       :position :at}))
+      {:cancelled true}
+      :else
+      (let [cwd (cwd engine)
+            sessions-dir (cfg/get-session-dir (config engine))
+            fork (if (:parent-id entry)
+                   (session/fork-session sess (:parent-id entry))
+                   (session/create-session (ensure-cwd-session-dir sessions-dir cwd)
+                                           {:parent-session (:file sess)
+                                            :cwd cwd}))]
+        (if (nil? fork)
+          {:error :fork-failed}
+          (do
+            (debug/log "forked session " (:id fork) " from " (:id sess))
+            (switch-session! engine fork {:apply-settings? false})
+            {:session fork :entry entry}))))))
+
+(defn clone!
+  "Duplicate the live session at its current position (pi: /clone → fork at
+   the current leaf) and switch to the clone: emit :session-before-fork
+   (extensions may cancel), clone, switch without applying settings (pi:
+   navigateTree keeps the current agent state). Returns
+   {:session clone} | {:cancelled true} | {:error :no-session|:no-leaf|
+   :not-persisted|:clone-failed}."
+  [engine]
+  (let [sess (session engine)]
+    (cond
+      (nil? sess) {:error :no-session}
+      (nil? @(:leaf-id sess)) {:error :no-leaf}
+      (not (fs/exists? (:file sess))) {:error :not-persisted}
+      (:cancel (event-bus/emit-event! {:type :session-before-fork
+                                       :entry-id @(:leaf-id sess)
+                                       :position :at}))
+      {:cancelled true}
+      :else
+      (let [clone (session/clone-session sess)]
+        (if (nil? clone)
+          {:error :clone-failed}
+          (do
+            (debug/log "cloned session " (:id clone) " from " (:id sess))
+            (switch-session! engine clone {:apply-settings? false})
+            {:session clone}))))))
+
 (defn entries
   "The live session's entries (the session's own atom)."
   [engine]
@@ -269,6 +505,16 @@
   [engine]
   @(:last-outcome (agent-state engine)))
 
+(defn turn-running?
+  "True while a prompt started by `prompt!` has not settled. The runtime
+   owns the flag: it is set synchronously by `prompt!` so a second
+   submission steers instead of starting a concurrent run, cleared by
+   `cancel!`, and cleared in the wrapped :on-done/:on-error before the
+   front end's callbacks run — a callback interleaved with a background
+   status revival can never see a settled turn as running."
+  [engine]
+  (boolean (some-> engine :turn-running? deref)))
+
 (defn subscribe!
   "Register F as an event subscriber. Returns an unsubscribe fn. F runs on
    the emitting thread, must not block, and receives plain EDN events; a
@@ -284,19 +530,31 @@
    :agent-settled. TEXT is the initial user message (nil/absent continues on
    the existing context); :images attaches image blocks. :on-text,
    :on-thinking, :on-done and :on-error are run-agent-turn's callbacks,
-   passed straight through."
+   with the turn flag (turn-running?) managed around them."
   [engine opts]
-  (reset! (:last-run engine)
-          (agent/run-agent-turn
-           (agent-state engine)
-           (cond-> (select-keys opts [:images :on-text :on-thinking :on-done :on-error])
-             (:text opts) (assoc :message (:text opts)))))
-  nil)
+  (let [on-done (:on-done opts)
+        on-error (:on-error opts)
+        clear! #(when-let [a (:turn-running? engine)] (reset! a false))]
+    (when-let [a (:turn-running? engine)] (reset! a true))
+    (reset! (:last-run engine)
+            (agent/run-agent-turn
+             (agent-state engine)
+             (cond-> (select-keys opts [:images :on-text :on-thinking])
+               true (assoc
+                     :on-done (fn [text] (clear!) (when on-done (on-done text)))
+                     :on-error (fn [err] (clear!) (when on-error (on-error err))))
+               (:text opts) (assoc :message (:text opts)))))
+    nil))
 
 (defn steer! [engine text] (agent/steer! (agent-state engine) text))
 (defn follow-up! [engine text] (agent/follow-up! (agent-state engine) text))
 (defn queues [engine] (agent/queued-messages (agent-state engine)))
-(defn cancel! [engine] (agent/cancel-turn (agent-state engine)))
+(defn cancel!
+  "Cancel the in-flight run (if any): the turn flag drops synchronously and
+   the loop settles the prompt with :outcome :aborted."
+  [engine]
+  (when-let [a (:turn-running? engine)] (reset! a false))
+  (agent/cancel-turn (agent-state engine)))
 
 (defn compact!
   "Compact the session (manual /compact path); custom-instructions and
@@ -330,6 +588,7 @@
         (when run-pending?
           (deref run 2000 nil))))
     (reset! (:subscribers engine) [])
+    (when-let [a (:turn-running? engine)] (reset! a false))
     (extensions/set-session! nil)
     (extensions/set-context-sink! nil)
     (extensions/clear-ui-registry!))
