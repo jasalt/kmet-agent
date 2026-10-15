@@ -1,7 +1,9 @@
 (ns kmet.modes.interactive.commands
-  "Builtin slash commands for the interactive mode: thinking handling,
-   help/tools text, /session and /share, their registration, and
-   /reload."
+  "Builtin slash commands for the interactive mode: the view-bound commands
+   (thinking handling, help/tools text, /session, /share, /reload, and the
+   session/selector flows) and their registration. The engine-portable
+   builtins live in kmet.app.commands.builtins and are registered by
+   register-builtin-commands! first."
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
             [babashka.process :as proc]
@@ -302,12 +304,9 @@
 ;; ─── Builtin command registration ──────────────────────────────────────────
 
 (defn- register-builtin-command!
-  "Register a builtin slash command unless an extension already took the
-   name. Extensions load before the layout is built, so a command an
-   extension registered under a builtin name (e.g. the shipped /tools
-   extension replacing the builtin tools listing — pi has no builtin
-   /tools; the example extension owns the name there) must not be
-   clobbered.
+  "Register an interactive builtin slash command unless an extension
+   already took the name (commands/register-builtin! owns the check — e.g.
+   the shipped /tools extension replaces the builtin tools listing).
 
    The registry calls handlers with the command ctx ({:runtime :ui
    :frontend}); these builtins are written against the interactive UI
@@ -317,14 +316,13 @@
    :interactive front-end tag, so a future non-terminal front end's
    autocomplete and dispatch filter them out."
   [cmd]
-  (when-not (commands/find-command (:name cmd))
-    (commands/register-command!
-     (assoc cmd
-            :frontend :interactive
-            :handler (fn [ctx args]
-                       ((:handler cmd)
-                        (if (contains? ctx :runtime) (:state (:ui ctx)) ctx)
-                        args))))))
+  (commands/register-builtin!
+   (assoc cmd
+          :frontend :interactive
+          :handler (fn [ctx args]
+                     ((:handler cmd)
+                      (if (contains? ctx :runtime) (:state (:ui ctx)) ctx)
+                      args)))))
 
 (defn- make-hotkey-wired?
   "Predicate over a keybinding id: is it wired in this interactive mode?

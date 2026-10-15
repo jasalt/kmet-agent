@@ -27,15 +27,6 @@
   (swap! registry (fn [cmds] (conj (remove #(= (:name %) (:name cmd)) cmds) cmd)))
   nil)
 
-(defn register-builtin!
-  "Register CMD unless an extension already took the name (extensions load
-   before builtins; an extension command owns the name when taken). Used
-   for the engine-portable builtins: no front-end tag, so every front end
-   dispatches them. Returns nil."
-  [cmd]
-  (when-not (first (filter #(= (:name %) (:name cmd)) @registry))
-    (register-command! cmd)))
-
 (defn unregister-command!
   "Remove a slash command by :name. Returns nil."
   [name]
@@ -72,3 +63,12 @@
   ([name frontend]
    (first (filter #(and (= (:name %) name) (available-to? frontend %))
                   @registry))))
+
+(defn register-builtin!
+  "Register CMD unless a command already took the name (extensions load
+   before builtins; an extension command owns the name when taken). Used
+   for the engine-portable builtins: no front-end tag, so every front end
+   dispatches them. Returns nil."
+  [cmd]
+  (when-not (find-command (:name cmd))
+    (register-command! cmd)))

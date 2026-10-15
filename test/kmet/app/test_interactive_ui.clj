@@ -173,6 +173,42 @@
       (t/is (= "Remove provider authentication" (:description logout)))
       (t/is (some? (:handler logout)) "logout has a handler"))))
 
+(deftest test-view-builtin-through-the-command-ctx
+  (testing "the registry adapter unwraps :state for a view-bound builtin:
+            /help dispatched through the real command ctx reaches the chat"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state)
+          msgs (atom [])
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :tui nil})]
+      (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (swap! msgs conj m))]
+        ((:handler (commands/find-command "help")) (turn/command-context cs) ""))
+      (t/is (some #(str/includes? (str (:content %)) "Available commands") @msgs)
+            "the view-bound handler saw the CoreState through :state"))))
+
+(deftest test-name-command-portable
+  (testing "/name runs from the command ctx: it renames the session and
+            reports through the shared UI capabilities (no CoreState)"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [dir (str "target/test-name-command-" (System/currentTimeMillis))
+          sess (session/create-session dir)
+          engine (tu/test-engine {:session (atom sess)})
+          calls (atom [])]
+      (try
+        ((:handler (commands/find-command "name"))
+         {:runtime engine
+          :ui {:info (fn [label content] (swap! calls conj [:info label content]))
+               :set-title (fn [] (swap! calls conj [:set-title]))}}
+         "  my session  ")
+        (t/is (= "my session" (session/get-session-name sess)))
+        (t/is (= [:set-title] (first @calls)) "the title refresh comes first")
+        (t/is (= [:info "Name" "Session name set: my session"] (second @calls)))
+        (t/is (= 2 (count @calls)) "no warning for an already-clean name")
+        (finally (fs/delete-tree dir))))))
+
 (deftest test-builtins-do-not-clobber-extension-commands
   (testing "builtin registration skips names an extension already took
             (extensions load before the layout is built; the shipped /tools
