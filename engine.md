@@ -831,6 +831,16 @@ the namespace graph loads no `kmet.tui.*` (extend the §8 assertion); the
 portable builtins are dispatchable over `prompt`; the pi parity table
 (supported vs deferred) is in the docs.
 
+**Landed (6a)** — `kmet.modes.rpc` (records, dispatch table, line loop,
+event forwarding; `prompt`, `steer`, `follow-up`, `abort`, `clear-queue`,
+`new-session`, `get-state`), `--mode rpc` (`run-non-interactive-mode!`),
+`test/kmet/modes/test_rpc.clj` (11 tests). Two shared pieces landed with
+it: print's session resolution moved to the runtime as
+`resolve-run-session` (both modes call it), and `wait-idle!` (the abort
+discipline). The engine binds `:mode :rpc` but `:has-ui false` until 6c
+wires the port — the headless defaults are the honest degraded surface
+until then.
+
 ## 8. Enforcement
 
 - **Layer guard** modeled on `test/kmet/libs/test_self_contained.clj`

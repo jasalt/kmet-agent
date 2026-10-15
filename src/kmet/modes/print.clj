@@ -5,33 +5,11 @@
    prints the session header and every event as EDN (pi's --mode json, the
    machine-readable variant)."
   (:require [clojure.string :as str]
-            [babashka.fs :as fs]
             [kmet.app.event-bus :as event-bus]
-            [kmet.app.session :as session]
             [kmet.app.session-runtime :as runtime]
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
             [kmet.config :as cfg]))
-
-(defn- session-for-run
-  "Resolve the run's session (pi: main.ts resolveSessionPath/continueRecent —
-   resolved before mode dispatch there and shared by every mode). --session
-   wins over --continue: it takes a session id, id prefix, or path; --continue
-   loads the most recent session for the process cwd, falling back to a fresh
-   one when none exists (pi: continueRecent); otherwise a fresh session starts.
-   New sessions land in the cwd-encoded sessions dir, like interactive mode.
-   Returns the session record, or nil when --session matches nothing. Session
-   *policy* stays here; the runtime takes the resolved session."
-  [config opts]
-  (let [base-dir (cfg/get-session-dir config)
-        cwd (str (fs/cwd))]
-    (if-let [arg (:session opts)]
-      (when-let [path (session/resolve-session-path arg base-dir)]
-        (session/load-session path))
-      (if-let [path (and (:continue opts)
-                         (runtime/find-recent-session base-dir cwd))]
-        (session/load-session path)
-        (session/create-session (runtime/ensure-cwd-session-dir base-dir cwd))))))
 
 (defn- message-text
   "The concatenated text blocks of MESSAGE, or nil when it has none."
@@ -108,7 +86,7 @@
   (let [{:keys [model provider messages config]} opts
         mode (:mode opts :text)
         config (cfg/apply-cli-overrides (or config (cfg/load-config :no-env? true)) opts)
-        session (session-for-run config opts)]
+        session (runtime/resolve-run-session config opts)]
     (if (nil? session)
       ;; --session matched nothing: report like interactive mode and return
       ;; nil — core exits 1 on a nil result

@@ -1,10 +1,12 @@
 (ns kmet.core
   "Main entry point for kmet — minimal coding agent TUI.
    CLI argument parsing and mode dispatch. The interactive TUI lives in
-   kmet.modes.interactive; print mode in kmet.modes.print.
+   kmet.modes.interactive; print mode in kmet.modes.print; RPC mode in
+   kmet.modes.rpc.
    pi: dist/cli.js."
   (:require [kmet.modes.interactive :as interactive]
             [kmet.modes.print :as print-mode]
+            [kmet.modes.rpc :as rpc-mode]
             [kmet.config :as cfg]
             [kmet.app.extensions :as extensions]
             [kmet.app.packages :as packages]
@@ -180,7 +182,8 @@
   (println "Options:")
   (println "  -d, --debug           Log to debug.log")
   (println "  -p, --print           Print response and exit (non-interactive)")
-  (println "  --mode <format>       Print output: text (default) or edn; implies --print")
+  (println "  --mode <format>       Non-interactive mode: text (default) or edn print
+                        output; rpc starts the EDN stdio protocol (long-lived)")
   (println "  -c, --continue        Continue most recent session")
   (println "  -r, --resume          Browse sessions")
   (println "  --session <id|path>   Resume session by id/prefix or file path")
@@ -207,6 +210,7 @@
   (println "Examples:")
   (println "  kmet                    Start interactive TUI")
   (println "  kmet -p \"list files\"    Print response and exit")
+  (println "  kmet --mode rpc      Serve the EDN stdin/stdout protocol")
   (println "  kmet --model deepseek-v4-flash  Start with a specific model")
   (println "  kmet @tasks.md         Start with file content")
   (println "  kmet install ./extensions/my-ext   Install a package"))
@@ -294,24 +298,26 @@
                opts)]
     opts))
 
-(defn- run-print-mode!
-  "Validate OPTS' --mode and run print mode, never returning: exits 1 on an
-   invalid mode, a missing message, or a nil result (the run errored).
-   A valid --mode without -p still runs non-interactively (pi: --mode
-   text|json selects print mode)."
+(defn- run-non-interactive-mode!
+  "Validate OPTS' --mode and run the selected non-interactive mode, never
+   returning: :rpc starts the EDN stdio protocol, :text/:edn are print mode
+   (pi's text/json), anything else exits 1. A valid --mode without -p still
+   runs non-interactively (pi: --mode selects the mode)."
   [opts]
   (let [mode (:mode opts :text)]
-    (if-not (contains? #{:text :edn} mode)
-      (do (binding [*out* *err*]
-            (println "--mode requires text or edn"))
-          (System/exit 1))
+    (case mode
+      :rpc (System/exit (if (nil? (rpc-mode/run opts)) 1 0))
+      (:text :edn)
       (let [msg (str/join " " (:messages opts))]
         (if (empty? msg)
           (do (println "No message provided. Usage: kmet -p \"your message\"")
               (System/exit 1))
           (let [result (print-mode/run (assoc opts :messages [msg] :mode mode))]
             ;; exit 1 when the run errored (nil result = no response text)
-            (System/exit (if (nil? result) 1 0))))))))
+            (System/exit (if (nil? result) 1 0)))))
+      (do (binding [*out* *err*]
+            (println "--mode requires text, edn, or rpc"))
+          (System/exit 1)))))
 
 (defn -main
   "Entry point. Parses CLI args and dispatches to the requested mode."
@@ -395,7 +401,7 @@
       ;; resolveCliModel at dispatch) before mode dispatch
       (let [opts (resolve-cli-model-opts opts)]
         (when (or (:print opts) (contains? opts :mode))
-          (run-print-mode! opts))
+          (run-non-interactive-mode! opts))
 
         (println "Starting kmet...")
 

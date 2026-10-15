@@ -95,6 +95,7 @@
     kmet.app.test-commands
     kmet.app.test-keybindings
     kmet.modes.test-print
+    kmet.modes.test-rpc
     kmet.modes.test-interactive
     kmet.modes.interactive.test-state
     kmet.modes.test-overlay-input-smoke

@@ -272,6 +272,25 @@
   [base-dir cwd]
   (session/find-most-recent-session (ensure-cwd-session-dir base-dir cwd) cwd))
 
+(defn resolve-run-session
+  "Resolve the session a non-interactive run starts from — the policy print
+   mode and RPC mode share (pi: main.ts resolveSessionPath/continueRecent,
+   resolved before mode dispatch there). --session wins over --continue: it
+   takes a session id, id prefix, or path; --continue loads the most recent
+   session for the process cwd, falling back to a fresh one when none
+   exists; otherwise a fresh session starts in the cwd-encoded sessions dir.
+   Returns the session record, or nil when --session matches nothing."
+  [config opts]
+  (let [base-dir (cfg/get-session-dir config)
+        cwd (str (fs/cwd))]
+    (if-let [arg (:session opts)]
+      (when-let [path (session/resolve-session-path arg base-dir)]
+        (session/load-session path))
+      (if-let [path (and (:continue opts)
+                         (find-recent-session base-dir cwd))]
+        (session/load-session path)
+        (session/create-session (ensure-cwd-session-dir base-dir cwd))))))
+
 (defn config
   "The live process config (the engine holds it in an atom because /reload
    replaces it)."
@@ -581,6 +600,21 @@
    status revival can never see a settled turn as running."
   [engine]
   (boolean (some-> engine :turn-running? deref)))
+
+(defn wait-idle!
+  "Wait (bounded, default 2s) until no run and no compaction is in flight —
+   pi's waitForIdle, the abort-response discipline. Returns true when idle,
+   false on timeout. Polls on the monotonic clock."
+  ([engine] (wait-idle! engine 2000))
+  ([engine timeout-ms]
+   (let [deadline (+ (concurrent/monotonic-ms) timeout-ms)
+         idle? #(and (not (turn-running? engine))
+                     (not @(:compacting? (agent-state engine))))]
+     (loop []
+       (cond
+         (idle?) true
+         (< (concurrent/monotonic-ms) deadline) (do (Thread/sleep 10) (recur))
+         :else false)))))
 
 (defn subscribe!
   "Register F as an event subscriber. Returns an unsubscribe fn. F runs on
