@@ -1,4 +1,4 @@
-(ns kmet.gui.tk.dsl
+(ns kmet.tk.dsl
   "The widget-building machinery the Tk backends' tag tables are written
    in: Tcl quoting and script building, the TkWidget record and path
    allocation, the callback/binding registry (including the :bind chord to
@@ -8,24 +8,24 @@
 
    The option vocabulary itself — which props exist, which Tcl option each
    names, and the families a spec composes its :options from — is
-   kmet.gui.tk.options; this namespace executes it.
+   kmet.tk.options; this namespace executes it.
 
-   It is deliberately below the widget namespaces (kmet.gui.tk's classic
-   set and kmet.gui.ttk) and above nothing: the Tcl evaluator is installed
-   by kmet.gui.tk at load (see set-eval-fn!), the tag specs themselves are
-   completed by kmet.gui.tk/widget-specs, so a widget namespace only needs
+   It is deliberately below the widget namespaces (kmet.tk.core's classic
+   set and kmet.tk.ttk) and above nothing: the Tcl evaluator is installed
+   by kmet.tk.core at load (see set-eval-fn!), the tag specs themselves are
+   completed by kmet.tk.core/widget-specs, so a widget namespace only needs
    this one require."
   (:require [clojure.string :as str]
-            [kmet.gui.tk.options :as opt]
+            [kmet.tk.options :as opt]
             [kmet.libs.hikap :as engine]))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; The evaluator seam
 ;; ═══════════════════════════════════════════════════════════════════════════
 
-;; kmet.gui.tk installs its adapter's evaluator here at load; the widget
+;; kmet.tk.core installs its adapter's evaluator here at load; the widget
 ;; namespaces script through it. F must read the adapter per call (never
-;; capture one), so tests binding kmet.gui.tk/*adapter* are honoured.
+;; capture one), so tests binding kmet.tk.core/*adapter* are honoured.
 (defonce ^:private eval-fn (atom nil))
 
 (defn set-eval-fn!
@@ -38,10 +38,10 @@
   [script]
   (if-some [f @eval-fn]
     (f script)
-    (throw (ex-info (str "kmet.gui.tk.dsl: no Tcl evaluator installed — "
-                         "require kmet.gui.tk (which installs the adapter's) "
+    (throw (ex-info (str "kmet.tk.dsl: no Tcl evaluator installed — "
+                         "require kmet.tk.core (which installs the adapter's) "
                          "before scripting widgets")
-                    {:type :kmet.gui.tk/no-adapter}))))
+                    {:type :kmet.tk.core/no-adapter}))))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; Tcl quoting
@@ -283,8 +283,8 @@
 
 (defn- chord-error
   [msg data]
-  (throw (ex-info (str "kmet.gui.tk: " msg)
-                  (assoc data :type :kmet.gui.tk/bad-chord))))
+  (throw (ex-info (str "kmet.tk.core: " msg)
+                  (assoc data :type :kmet.tk.core/bad-chord))))
 
 (defn- chord-keysym
   "CHORD's key part as Tk's keysym: a single character passes through
@@ -452,21 +452,21 @@
    have no copy subcommand to size them)."
   [prop v]
   (when (and (nil? (:file v)) (nil? (:data v)))
-    (throw (ex-info (str "kmet.gui.tk.dsl: an image description needs :file"
+    (throw (ex-info (str "kmet.tk.dsl: an image description needs :file"
                          " or :data (prop " prop ")")
-                    {:type :kmet.gui.tk/image-without-source
+                    {:type :kmet.tk.core/image-without-source
                      :prop prop :description v})))
   (when-some [unknown (seq (remove image-description-keys (keys v)))]
-    (throw (ex-info (str "kmet.gui.tk.dsl: unknown image description keys "
+    (throw (ex-info (str "kmet.tk.dsl: unknown image description keys "
                          (pr-str (vec unknown)) " (prop " prop ")")
-                    {:type :kmet.gui.tk/unknown-image-key
+                    {:type :kmet.tk.core/unknown-image-key
                      :prop prop :keys (vec unknown)})))
   (when-some [sizing (seq (filter #(contains? v %) [:zoom :subsample :fit]))]
     (when (= :bitmap (image-kind prop))
-      (throw (ex-info (str "kmet.gui.tk.dsl: a :bitmap description cannot be"
+      (throw (ex-info (str "kmet.tk.dsl: a :bitmap description cannot be"
                            " sized — " (pr-str (vec sizing))
                            " (Tk bitmaps have no copy; prop " prop ")")
-                      {:type :kmet.gui.tk/bitmap-cannot-be-sized
+                      {:type :kmet.tk.core/bitmap-cannot-be-sized
                        :prop prop :keys (vec sizing) :description v})))))
 
 (defn image-name
@@ -480,9 +480,9 @@
     (do
       (check-image-description! prop v)
       (when (nil? w)
-        (throw (ex-info (str "kmet.gui.tk.dsl: an image description needs the "
+        (throw (ex-info (str "kmet.tk.dsl: an image description needs the "
                              "widget that owns it (prop " prop ")")
-                        {:type :kmet.gui.tk/image-without-widget :prop prop})))
+                        {:type :kmet.tk.core/image-without-widget :prop prop})))
       (let [kind (image-kind prop)
             k [kind v]]
         (or (get-in @(:styles w) [:images k])
@@ -515,7 +515,7 @@
 (defn tcl-options
   "PROPS through OPTIONS ({:prop :tcl-option}) as a Tcl option map
    ({:text \"hi\" :foreground \"#fff\"}); a nil prop is absent. Values take
-   the shape their prop's catalogue entry names (kmet.gui.tk.options/coerce):
+   the shape their prop's catalogue entry names (kmet.tk.options/coerce):
    a Tcl list joins a sequence, the font props build the widget's font, and
    an image prop is created as a resource of W."
   [props options w]
@@ -593,9 +593,9 @@
               :when (and (some? option) (some? (get props prop)))
               :let [named (str "-" (name option))]
               :when (not (contains? known named))]
-        (throw (ex-info (str "kmet.gui.tk: " tag " has no " named
+        (throw (ex-info (str "kmet.tk.core: " tag " has no " named
                              " on this Tk (prop " prop ")")
-                        {:type :kmet.gui.tk/unknown-option
+                        {:type :kmet.tk.core/unknown-option
                          :tag tag :prop prop :option named})))))
   nil)
 
@@ -616,10 +616,10 @@
     (eval! script)
     (catch Exception e
       (if-let [command (unknown-widget-command e)]
-        (throw (ex-info (str "kmet.gui.tk: " (:tag spec) " (" command
+        (throw (ex-info (str "kmet.tk.core: " (:tag spec) " (" command
                              ") does not exist on this Tk ("
                              (eval! "info patchlevel") ")")
-                        {:type :kmet.gui.tk/missing-widget
+                        {:type :kmet.tk.core/missing-widget
                          :tag (:tag spec) :command command}
                         e))
         (throw e)))))
@@ -649,8 +649,8 @@
     (apply-bindings! w {} props (:bindings spec))
     (when (and parent (not (false? (:pack? spec))))
       (if-let [attach (:attach @(:styles parent))]
-        ;; containers that own their child placement (kmet.gui.ui's embedded
-        ;; text window, a notebook tab, a pane) — and read the child's props for it
+        ;; containers that own their child placement (an embedded text
+        ;; window, a notebook tab, a pane) — and read the child's props for it
         (attach path props)
         (eval! (str "pack " path
                     " -side " (tcl-quote (tcl-word (or (:side props) :top)))
@@ -953,7 +953,7 @@
    one place a tag's construction and its live patching are described.
 
      command      the Tk creation command
-     :options     the props it scripts (kmet.gui.tk.options/options-for)
+     :options     the props it scripts (kmet.tk.options/options-for)
      :fixed       options the tag always passes, under the props' values: a
                   map, or a fn of the props when they depend on them
      :commands    {prop (fn [w props])} — props Tk sets through the widget's

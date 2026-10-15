@@ -1,6 +1,6 @@
 (ns kmet.app.ui.gui.style
   "The GUI's ttk style set: the TUI theme's colors and the GUI surfaces
-   compiled to kmet.gui.ttk.style data, so a dark palette stops following
+   compiled to kmet.tk.ttk.style data, so a dark palette stops following
    the system theme (light-grey entries, scrollbars, notebook, treeview).
 
    Apply it once the Tk adapter is installed and the theme is known:
@@ -13,7 +13,7 @@
    database current). The surfaces are kmet.app.ui.gui.transcript's palette
    until the GUI grows a theme module of its own."
   (:require [kmet.app.ui.gui.transcript :as transcript]
-            [kmet.gui.ttk.style :as ttk-style]))
+            [kmet.tk.ttk.style :as ttk-style]))
 
 (defn- colors
   "The style colors THEME and PALETTE resolve to: surfaces from the
@@ -127,7 +127,7 @@
        "TScrollbar"    {:arrowcolor {:disabled dim}}}})))
 
 (defn apply-theme!
-  "Apply (style-set THEME PALETTE) through kmet.gui.ttk.style/apply! — once
+  "Apply (style-set THEME PALETTE) through kmet.tk.ttk.style/apply! — once
    the adapter is installed, and again after a theme switch."
   ([theme] (apply-theme! theme transcript/palette))
   ([theme palette] (ttk-style/apply! (style-set theme palette))))

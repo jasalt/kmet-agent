@@ -5,14 +5,14 @@
    The layout mirrors the TUI transcript — mono lines, the TUI palette, the
    TUI markdown renderer — but every message is its own Tk widget (a
    read-only `:text` block of styled lines), stacked in a `:ui/transcript`
-   container (kmet.gui.ui's embedded-window text host) so the chat scrolls
+   container (kmet.app.ui.gui.ui's embedded-window text host) so the chat scrolls
    as one. Components are plain hiccup fns
    (`user-message`, `assistant-message`, `tool-execution`,
    `custom-message`), dispatched by `message-component`; `chat` is the
    scrollable stack and `page` adds the header/footer around it.
 
    The ANSI the TUI renderers emit is converted to Tk segments here, so
-   `kmet.gui.tk` needs no ANSI knowledge and the terminal renderers stay
+   `kmet.tk.core` needs no ANSI knowledge and the terminal renderers stay
    the single source of the styling."
   (:require [clojure.string :as str]
             [kmet.libs.reakt :as r]
@@ -408,7 +408,7 @@
    A static hiccup vector is parsed once, so nothing a click does can reach
    the tree again; a fn root is re-run whenever an atom its body derefed
    (the session's entries, CTX's collapse set) changes, which is what makes
-   the card titles live. Mount this with kmet.gui.ui/run!, or
-   kmet.libs.hikap/root over kmet.gui.ui/backend."
+   the card titles live. Mount this with kmet.app.ui.gui.ui/run!, or
+   kmet.libs.hikap/root over kmet.app.ui.gui.ui/backend."
   [session ctx]
   (fn [_props] (page session ctx)))

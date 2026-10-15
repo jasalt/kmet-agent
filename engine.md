@@ -70,7 +70,7 @@ The seam mostly exists today; the plan sharpens it rather than inventing it.
 - `kmet.modes.print` drives the loop headlessly with no TUI — the proof that
   a second front end is viable.
 - The GUI front end is already started: `scripts/gui_tk_session.clj` renders
-  a saved session through `app/ui/gui/transcript.clj` and `kmet.gui.*`
+  a saved session through `app/ui/gui/transcript.clj` and `kmet.tk.*`
   (display-only, no loop). The live-run milestone is the plan's real proof.
   The transcript reuses the TUI renderers (markdown, theme, ANSI) on
   purpose — the terminal renderers stay the single source of styling.
@@ -139,11 +139,11 @@ The seam mostly exists today; the plan sharpens it rather than inventing it.
                    └────────────┬───────────────┘
              kmet.ai (provider lib) · kmet.app.tools · kmet.libs.*
                                 │
-                    kmet.tui.* / kmet.gui.* (per-front-end view backends)
+                    kmet.tui.* / kmet.tk.* (per-front-end view backends)
 ```
 
 Dependency rule (enforced by a test, §8): the runtime may require
-`kmet.libs.*` and `kmet.ai.*`, and **never** `kmet.tui.*`, `kmet.gui.*`,
+`kmet.libs.*` and `kmet.ai.*`, and **never** `kmet.tui.*`, `kmet.tk.*`,
 `kmet.modes.*`, or `kmet.app.ui.*`. While `kmet.app.ui` still lives inside
 `kmet.app`, the guard excludes that subtree explicitly.
 
@@ -339,7 +339,7 @@ active front end. Split the capability map:
   trick) — the cheapest headless conformance test for the stream.
 - `gui` (next): the display-only viewer exists
   (`scripts/gui_tk_session.clj`); the live mode subscribes to the runtime,
-  renders through `kmet.gui.*` and `app/ui/gui/*`, and binds the UI port.
+  renders through `kmet.tk.*` and `app/ui/gui/*`, and binds the UI port.
   This is the proof the plan is written against.
 - `rpc` (later, optional): `kmet.modes.rpc`, EDN lines on stdin/stdout.
   Deferred until a consumer exists; the design sketch is step 6.
@@ -620,9 +620,9 @@ default; the GUI can install its port.
 
 ### Step 5 — GUI mode (the proof)
 
-The backend already exists — `src/kmet/gui/` ships the Tk/Tcl backend
-(`kmet.gui.tk`, `kmet.gui.ttk`, `kmet.gui.tk.dsl`, `kmet.gui.tk.options`,
-`kmet.gui.tcl`) with its own `README.md`, and the display-only viewer
+The backend already exists — `src/kmet/tk/` ships the Tk/Tcl backend
+(`kmet.tk.core`, `kmet.tk.ttk`, `kmet.tk.dsl`, `kmet.tk.options`,
+`kmet.tk.tcl`) with its own `README.md`, and the display-only viewer
 (`scripts/gui_tk_session.clj` + `app/ui/gui/transcript.clj`) already
 renders a saved session. What is missing is the live run:
 
@@ -658,7 +658,7 @@ controller, remote sessions). When one exists:
 - **Layer guard** modeled on `test/kmet/libs/test_self_contained.clj`
   (which reads the `ns` form, not a regex): every `src/kmet/app/**` file —
   excluding `app/ui/**` (app-specific view code) — must not require `kmet.tui.*`,
-  `kmet.gui.*`, or `kmet.modes.*`. Seed the allowlist with the six known
+  `kmet.tk.*`, or `kmet.modes.*`. Seed the allowlist with the six known
   violations (§3.6: `bash_executor`, `theme_controller`, `packages`,
   `keybindings`, `extensions.cljc`, `extensions/context.cljc`) and shrink
   it as they are fixed.
@@ -669,7 +669,7 @@ controller, remote sessions). When one exists:
   that a headless front end (the future RPC mode) does not load
   `kmet.modes.interactive.*` and does not construct a terminal; the
   stricter assertion needs the shared-component-library split (an
-  unscheduled extraction). The GUI is not under this guard — `kmet.gui.*`
+  unscheduled extraction). The GUI is not under this guard — `kmet.tk.*`
   plus the deliberate TUI-renderer reuse is its intended stack.
 - **Vocabulary parity**: `event-types`, `app-event-types`, and
   `loop-event-types` keysets agree (test).

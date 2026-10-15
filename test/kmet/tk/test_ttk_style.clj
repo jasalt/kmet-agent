@@ -1,12 +1,12 @@
-(ns kmet.gui.test-ttk-style
-  "Tests for kmet.gui.ttk.style: the ttk::style scripts against a recording
+(ns kmet.tk.test-ttk-style
+  "Tests for kmet.tk.ttk.style: the ttk::style scripts against a recording
    adapter (headless), and one round trip through a real Tk under a display
    (skipped where there is none). The app palette set has its own namespace,
    kmet.app.ui.gui.test-style."
   (:require [clojure.test :as t]
-            [kmet.gui.test-support :refer [live-tk scripts with-fake]]
-            [kmet.gui.tk :as tk]
-            [kmet.gui.ttk.style :as style]))
+            [kmet.tk.test-support :refer [live-tk scripts with-fake]]
+            [kmet.tk.core :as tk]
+            [kmet.tk.ttk.style :as style]))
 
 ;; ─── the scripts ─────────────────────────────────────────────────────────
 
@@ -90,5 +90,5 @@
           (t/is (= "default" (e "ttk::style theme use")))
           (t/is (= "#10141b" (e "ttk::style lookup TFrame -background")))))
       (finally
-        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))

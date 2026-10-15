@@ -1,19 +1,19 @@
-(ns kmet.gui.test-ui
-  "Tests for kmet.gui.ui — kmet's own Tk widgets — against the recording
-   adapter (headless), plus one live Tk mount of :ui/transcript under a
-   display (skipped where there is none)."
+(ns kmet.app.ui.gui.test-ui
+  "Tests for kmet.app.ui.gui.ui — kmet's own Tk widgets — against the
+   recording adapter (headless), plus one live Tk mount of :ui/transcript
+   under a display (skipped where there is none)."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.gui.test-support :refer [find-class-src live-tk scripts scripts-like with-fake]]
-            [kmet.gui.tk :as tk]
-            [kmet.gui.ui :as ui]
+            [kmet.app.ui.gui.ui :as ui]
+            [kmet.tk.test-support :refer [find-class-src live-tk scripts scripts-like with-fake]]
+            [kmet.tk.core :as tk]
             [kmet.libs.hikap :as engine]))
 
 ;; ─── the backend's tag table ─────────────────────────────────────────────
 
 (t/deftest ui-tags-are-kept-out-of-the-tk-backend
-  ;; kmet.gui.tk and kmet.gui.ttk hold only Tk widget classes: the kmet
-  ;; composite is a :ui/… tag, added to the backend by kmet.gui.ui alone.
+  ;; kmet.tk.core and kmet.tk.ttk hold only Tk widget classes: the kmet
+  ;; composite is a :ui/… tag, added to the backend by kmet.app.ui.gui.ui alone.
   (t/is (contains? (:tags ui/backend) :ui/transcript))
   (t/is (contains? (:tags ui/backend) :tk/text) "the Tk widget classes are all there")
   (t/is (not (contains? (:tags tk/tk-backend) :ui/transcript))
@@ -82,5 +82,5 @@
                   ":read-only disables the host once mapped"))
           (engine/dispose-component (:root h))))
       (finally
-        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))

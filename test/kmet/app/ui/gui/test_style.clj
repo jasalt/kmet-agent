@@ -6,9 +6,9 @@
             [clojure.test :as t]
             [kmet.app.ui.gui.style :as gui-style]
             [kmet.app.ui.gui.transcript :as transcript]
-            [kmet.gui.test-support :refer [live-tk scripts with-fake]]
-            [kmet.gui.tk :as tk]
-            [kmet.gui.tk.dsl :as dsl]
+            [kmet.tk.test-support :refer [live-tk scripts with-fake]]
+            [kmet.tk.core :as tk]
+            [kmet.tk.dsl :as dsl]
             [kmet.tui.theme :as theme]))
 
 ;; ─── the set's data ──────────────────────────────────────────────────────
@@ -68,5 +68,5 @@
           (t/is (= (:window transcript/palette)
                    (e "ttk::style lookup TFrame -background")))))
       (finally
-        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))

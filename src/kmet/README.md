@@ -87,13 +87,13 @@ src/kmet/
 │   │                     extensions/grep-tool.clj, find-tool.clj,
 │   │                     ls-tool.clj, powershell.clj)
 │   └── ui/             — app TUI components (chat history, footer, ...)
-├── gui/                — GUI backends on babashka and Jolt: the Tk backend
-│                         for the hiccup engine (tk.clj, with the classic
+├── tk/                 — the Tk GUI backend on babashka and Jolt: the
+│                         hiccup-tk core (core.clj, with the classic
 │                         :tk/… widget set; ttk.clj for the :ttk/… set;
-│                         tk/dsl.clj the machinery both are written
-│                         against, tk/options.clj the Tk option vocabulary
+│                         dsl.clj the machinery both are written
+│                         against, options.clj the Tk option vocabulary
 │                         they compose their props from) and its host FFI
-│                         Tcl adapter (tcl.cljc) — see gui/README.md
+│                         Tcl adapter (tcl.cljc) — see tk/README.md
 ├── tui/                — Generic TUI library (pi: @earendil-works/pi-tui;
 │   │                     usage docs in src/kmet/tui/tui.md)
 │   └── components/     — text, input, editor, markdown, select/settings
@@ -130,19 +130,19 @@ listed in the root `AGENTS.md` topic map.
   hiccup engine (`kmet.libs.hikap`), the component runtime
   (`kmet.libs.hikap.component`) and the alias registry
   (`kmet.libs.hikap.alias`). Being a lib it may require only `kmet.libs.*`;
-  `kmet.tui.*` and `kmet.gui.*` are backends over it — they pass their
+  `kmet.tui.*` and `kmet.tk.*` are backends over it — they pass their
   backend map in, the engine never requires them.
 - `kmet.ai.*` is a standalone provider/auth library and depends only on
   `kmet.libs.*` plus standard/third-party code.
 - `kmet.tui.*` is the generic UI layer (the terminal backend for
   `kmet.libs.hikap`). It may depend on `kmet.libs.*`, never on app, LLM, or
   session concepts.
-- `kmet.gui.*` is the GUI backends (Jolt-only; the Tk backend — kmet.gui.tk
-  with the classic `:tk/…` widget set, kmet.gui.ttk with the `:ttk/…` set,
-  kmet.gui.ui with kmet's own `:ui/…` widgets over both, kmet.gui.tk.dsl as
-  their shared machinery and kmet.gui.tk.options as the Tk option
-  vocabulary — and its jolt.ffi adapter). Like `kmet.tui.*`, it builds on
-  `kmet.libs.*` and nothing above it.
+- `kmet.tk.*` is the Tk GUI backend (Jolt-only; kmet.tk.core with the
+  classic `:tk/…` widget set, kmet.tk.ttk the `:ttk/…` set, kmet.tk.dsl
+  their shared machinery and kmet.tk.options the Tk option vocabulary —
+  plus kmet.tk.tcl, the host FFI adapter). Like `kmet.tui.*`, it builds on
+  `kmet.libs.*` and nothing above it. kmet's own `:ui/…` widgets are app
+  UI over the backend, in `kmet.app.ui.gui.ui`.
 - `kmet.modes.*` is the entry-mode layer; `kmet.app.*` is business logic;
   `kmet.app.ui.*` is app-specific UI; `kmet.core` only parses arguments and
   dispatches.

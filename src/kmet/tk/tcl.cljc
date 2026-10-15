@@ -1,5 +1,5 @@
-(ns kmet.gui.tcl
-  "The host FFI Tcl/Tk adapter for kmet.gui.tk (the \"hiccup-tk\" backend).
+(ns kmet.tk.tcl
+  "The host FFI Tcl/Tk adapter for kmet.tk.core (the \"hiccup-tk\" backend).
 
    Loads one matching Tcl/Tk pair — 9.1, 9.0 or 8.6, newest first —
    creates one interpreter, and exposes it to the portable backend
@@ -48,7 +48,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [#?(:bb babashka.ffi :jolt jolt.ffi) :as ffi]
-            [kmet.gui.tk :as tk])
+            [kmet.tk.core :as tk])
   (:refer-clojure :exclude [run!]))
 
 ;; ─── Bindings ─────────────────────────────────────────────────────────────
@@ -214,9 +214,9 @@
     (cond
       (and tcl tk) [[tcl [tk]]]
       tcl [[tcl (derived-tk-names tcl)]]
-      tk (throw (ex-info (str "kmet.gui.tcl: KMET_TK_LIB requires "
+      tk (throw (ex-info (str "kmet.tk.tcl: KMET_TK_LIB requires "
                               "KMET_TCL_LIB (the Tcl/Tk pair is loaded as a unit)")
-                         {:type :kmet.gui.tcl/bad-override}))
+                         {:type :kmet.tk.tcl/bad-override}))
       :else nil)))
 
 ;; ─── Interpreter state ────────────────────────────────────────────────────
@@ -287,10 +287,10 @@
                   (reset! libraries {:tcl tcl :tk-candidates tk})
                   pair))
               pairs)
-        (throw (ex-info (str "kmet.gui.tcl: no Tcl 9.1/9.0/8.6 shared library "
+        (throw (ex-info (str "kmet.tk.tcl: no Tcl 9.1/9.0/8.6 shared library "
                              "could be loaded — install Tcl/Tk, or set "
                              "KMET_TCL_LIB and KMET_TK_LIB")
-                        {:type :kmet.gui.tcl/missing-library
+                        {:type :kmet.tk.tcl/missing-library
                          :tried (mapv first pairs)})))))
 
 (defn- load-tk!
@@ -301,10 +301,10 @@
         tk (try-load tk-candidates)]
     (if (some? tk)
       (do (swap! libraries assoc :tk tk) tk)
-      (throw (ex-info (str "kmet.gui.tcl: Tcl loaded (" tcl ") but no matching "
+      (throw (ex-info (str "kmet.tk.tcl: Tcl loaded (" tcl ") but no matching "
                            "Tk library could be loaded — install the matching "
                            "Tk, or set KMET_TCL_LIB and KMET_TK_LIB")
-                      {:type :kmet.gui.tcl/missing-library
+                      {:type :kmet.tk.tcl/missing-library
                        :tcl tcl
                        :tried tk-candidates})))))
 
@@ -318,9 +318,9 @@
         (let [i (tcl-create-interp)
               rc (tcl-init i)]
           (when-not (= rc tcl-ok)
-            (throw (ex-info (str "kmet.gui.tcl: Tcl_Init failed: "
+            (throw (ex-info (str "kmet.tk.tcl: Tcl_Init failed: "
                                  (tcl-result i))
-                            {:type :kmet.gui.tcl/init-failed})))
+                            {:type :kmet.tk.tcl/init-failed})))
           (reset! interp i)
           i))))
 
@@ -338,8 +338,8 @@
                             (ffi/free p)))))
              (eval-script i script))]
     (when-not (= rc tcl-ok)
-      (throw (ex-info (str "kmet.gui.tcl: " (tcl-result i))
-                      {:type :kmet.gui.tcl/eval-failed :script script})))
+      (throw (ex-info (str "kmet.tk.tcl: " (tcl-result i))
+                      {:type :kmet.tk.tcl/eval-failed :script script})))
     (or (tcl-result i) "")))
 
 (defn- command!
@@ -368,8 +368,8 @@
       (when-not (and path (= tcl-ok (eval-script i (load-tk-script path))))
         (let [rc (tk-init i)]
           (when-not (= rc tcl-ok)
-            (throw (ex-info (str "kmet.gui.tcl: Tk_Init failed: " (tcl-result i))
-                            {:type :kmet.gui.tcl/init-failed})))))
+            (throw (ex-info (str "kmet.tk.tcl: Tk_Init failed: " (tcl-result i))
+                            {:type :kmet.tk.tcl/init-failed})))))
       (reset! tk-ready? true))))
 
 (defn- run-loop!
@@ -389,7 +389,7 @@
 ;; ─── Public entry ─────────────────────────────────────────────────────────
 
 (defn adapter
-  "The adapter map for kmet.gui.tk."
+  "The adapter map for kmet.tk.core."
   []
   {:id :host-tcl
    :prepare! prepare!
@@ -399,8 +399,8 @@
 
 (defn install!
   "Install the host FFI adapter (interpreter + Tk) without mounting, for a
-   caller that scripts Tk itself (kmet.gui.ttk.style) or mounts with its
-   own tag table (kmet.gui.ui/backend through kmet.gui.tk/mount-backend!
+   caller that scripts Tk itself (kmet.tk.ttk.style) or mounts with its
+   own tag table (kmet.app.ui.gui.ui/backend through kmet.tk.core/mount-backend!
    and run-backend!)."
   []
   (ensure-interp!)
@@ -411,11 +411,11 @@
 
 (defn mount!
   "REPL entry point: install the host FFI adapter (interpreter + Tk), mount
-   TREE in a live window and return the handle (see kmet.gui.tk/mount!).
+   TREE in a live window and return the handle (see kmet.tk.core/mount!).
 
    Development loop: mount on the thread that will own the interpreter, run
-   kmet.gui.tk/run-loop! there, then edit a component namespace, reload it
-   and kmet.gui.tk/render! to repaint with the new code."
+   kmet.tk.core/run-loop! there, then edit a component namespace, reload it
+   and kmet.tk.core/render! to repaint with the new code."
   [tree & [options]]
   (install!)
   (tk/mount! tree options))

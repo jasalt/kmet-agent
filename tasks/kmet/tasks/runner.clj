@@ -110,10 +110,9 @@
     kmet.tui.test-hiccup
     kmet.tui.test-alias
     kmet.tui.test-dispose
-    kmet.gui.test-tk
-    kmet.gui.test-ui
-    kmet.gui.test-ttk-style
-    kmet.gui.test-tcl
+    kmet.tk.test-tk
+    kmet.tk.test-ttk-style
+    kmet.tk.test-tcl
     kmet.tui.components.test-text
     kmet.tui.components.test-spacer
     kmet.tui.components.test-container
@@ -180,6 +179,7 @@
     kmet.app.ui.test-chat-history
     kmet.app.ui.gui.test-transcript
     kmet.app.ui.gui.test-style
+    kmet.app.ui.gui.test-ui
     kmet.app.ui.test-user-message
     kmet.app.ui.test-image-block
     kmet.app.ui.test-assistant-message

@@ -11,8 +11,8 @@
 
    Exits 1 when a tag declares an option its widget lacks."
   (:require [clojure.string :as str]
-            [kmet.gui.tcl :as tcl]
-            [kmet.gui.tk :as tk]))
+            [kmet.tk.tcl :as tcl]
+            [kmet.tk.core :as tk]))
 
 (def ^:private tag-widget
   "Our tags → the Tk creation command they script."

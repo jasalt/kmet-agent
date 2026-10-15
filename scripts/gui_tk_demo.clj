@@ -1,6 +1,6 @@
 (ns gui-tk-demo
   "A small hiccup-tk demo: a Tk window rendered from hiccup through
-   kmet.gui.tk, with a background thread streaming lines into the view.
+   kmet.tk.core, with a background thread streaming lines into the view.
 
    Run with:  bb scripts/gui_tk_demo.clj     (or jolt scripts/gui_tk_demo.clj)
 
@@ -10,7 +10,7 @@
      component/schedule-frame! marks the tree dirty and the Tk pump
      re-renders on the UI thread."
   (:require [clojure.string :as str]
-            [kmet.gui.tcl :as tcl]
+            [kmet.tk.tcl :as tcl]
             [kmet.libs.hikap.component :as component]))
 
 (defonce ^:private log (atom ["hiccup-tk ready"]))

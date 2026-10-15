@@ -1,13 +1,14 @@
-# kmet GUI backends (`kmet.gui.*`)
+# kmet Tk backend (`kmet.tk.*`)
 
-bb/Jolt GUI frontends for the toolkit-agnostic hiccup engine. The first
-backend is **Tk** (Tcl/Tk **8.6 or newer**; 9.1 preferred): `kmet.gui.tk`
-is "hiccup-tk" — the backend itself plus the classic-widget tag set
-(`:tk/…`) — `kmet.gui.ttk` is the themed-widget set (`:ttk/…`),
-`kmet.gui.ui` is kmet's own widget set (`:ui/…`) over both, `kmet.gui.tk.dsl`
-the widget machinery all three are written against, and `kmet.gui.tcl`
-the host FFI adapter (`babashka.ffi` under babashka, `jolt.ffi` under
-Jolt) that owns a real Tcl interpreter and the Tk event loop.
+bb/Jolt GUI backend for the toolkit-agnostic hiccup engine: **Tk**
+(Tcl/Tk **8.6 or newer**; 9.1 preferred). `kmet.tk.core` is "hiccup-tk"
+— the backend itself plus the classic-widget tag set (`:tk/…`) —
+`kmet.tk.ttk` is the themed-widget set (`:ttk/…`),
+`kmet.tk.dsl` the widget machinery both are written against, and
+`kmet.tk.tcl` the host FFI adapter (`babashka.ffi` under babashka,
+`jolt.ffi` under Jolt) that owns a real Tcl interpreter and the Tk event
+loop. kmet's own widget set (`:ui/…`) is app UI over the backend:
+`kmet.app.ui.gui.ui`.
 
 ## Where the layers sit
 
@@ -18,30 +19,29 @@ kmet.libs.hikap           the hiccup engine: parse, keyed reconcile,
 kmet.libs.hikap.component track! render cache, with-let stores, frame hook
 kmet.libs.hikap.alias     the qualified-keyword alias registry
 kmet.tui.hikap            the TUI backend (tag table, *width*, IComponent)
-kmet.gui.tk.dsl           the Tk widget machinery: Tcl quoting and script
+kmet.tk.dsl               the Tk widget machinery: Tcl quoting and script
                           building, widget records, the callback/binding
                           registry, live-patch decisions, rich text
-kmet.gui.tk.options       the Tk option vocabulary: props, value shapes,
+kmet.tk.options           the Tk option vocabulary: props, value shapes,
                           and the families a spec composes :options from
-kmet.gui.tk               the Tk backend + the classic widget set (:tk/…),
+kmet.tk.core              the Tk backend + the classic widget set (:tk/…),
                           tag-table assembly, run-backend!/run! loop
-kmet.gui.ttk              the themed widget set (:ttk/…)
-kmet.gui.ttk.style        the ttk style database: ttk::style configure/map
+kmet.tk.ttk               the themed widget set (:ttk/…)
+kmet.tk.ttk.style         the ttk style database: ttk::style configure/map
                           and theme switching, as Clojure data
-kmet.gui.ui               kmet's own widget set (:ui/…), over kmet.gui.tk:
-                          the backend plus the kmet tag table
-kmet.gui.tcl              the host FFI Tcl/Tk adapter (babashka.ffi / jolt.ffi)
+kmet.tk.tcl               the host FFI Tcl/Tk adapter (babashka.ffi / jolt.ffi)
 ```
 
 The GUI tag namespaces mirror Tcl's own: classic widgets are `:tk/…`,
 the themed ones `:ttk/…` (Tcl's global namespace vs `ttk::`). Those two
 sets hold **only Tk widget classes**; kmet's own widgets and composites
-are `:ui/…` tags in `kmet.gui.ui`, which mounts through the backend's
-extra-tag seam (`kmet.gui.tk/mount-backend!`, `run-backend!`). A declared
-host tag wins over the alias registry, so `:tk/canvas` and `:ttk/frame`
-are host tags — see kmet.libs.hikap's parse-host — while any other
-qualified keyword still resolves as an alias; a `:ui/…` tag is unknown to
-the plain Tk backend on purpose.
+are `:ui/…` tags in `kmet.app.ui.gui.ui` (app UI over this backend),
+which mounts through the backend's extra-tag seam
+(`kmet.tk.core/mount-backend!`, `run-backend!`). A declared host tag wins
+over the alias registry, so `:tk/canvas` and `:ttk/frame` are host tags —
+see kmet.libs.hikap's parse-host — while any other qualified keyword
+still resolves as an alias; a `:ui/…` tag is unknown to the plain Tk
+backend on purpose.
 
 The pre-split `kmet.tui.hiccup` was one namespace; the toolkit-agnostic
 half is now `kmet.libs.hikap` (+ `.component` / `.alias`), and
@@ -70,7 +70,7 @@ from `kmet.libs.hikap`.
 
 Backends whose widgets are live objects (Tk) render nothing: `:render*`
 return nil, and re-renders are driven by `kmet.libs.hikap.component/set-frame-hook!`
-plus a pump on the UI thread. See `kmet.gui.tk/run!`.
+plus a pump on the UI thread. See `kmet.tk.core/run!`.
 
 ## Running the Tk backend
 
@@ -108,7 +108,7 @@ jolt scripts/gui_tk_session.clj [session.ednl] [--width 110]
 The adapter scripts the UI as Tcl (`ttk::label`, `ttk::entry`, `text`,
 `ttk::treeview`, …), so adding widgets is a tag spec plus the Tcl command
 — no per-widget C bindings. Callbacks run through one `kmet::cb`
-trampoline (`kmet.gui.tk/dispatch-callback!`).
+trampoline (`kmet.tk.core/dispatch-callback!`).
 
 ### Tags are Tk widgets, in Tcl's two namespaces
 
@@ -154,9 +154,9 @@ also the only state a classic Tk checkbutton can be read from (it has
 against its own `:value`, so `:active` on each button is what makes a
 group exclusive.
 
-The classic specs are `kmet.gui.tk`'s `classic-specs`, the themed ones
-`kmet.gui.ttk/specs`; `kmet.gui.tk` completes both through
-`kmet.gui.tk.dsl/widget-specs` into the backend's closed tag table, which
+The classic specs are `kmet.tk.core`'s `classic-specs`, the themed ones
+`kmet.tk.ttk/specs`; `kmet.tk.core` completes both through
+`kmet.tk.dsl/widget-specs` into the backend's closed tag table, which
 is why the qualified `:tk/…`/`:ttk/…` keywords are host tags and never
 fall through to the alias registry. A spec is one `dsl/widget-spec`: the Tk
 command, its `:options`, and whatever else the tag needs — `:commands` for
@@ -167,14 +167,15 @@ menubutton's menu), `:text-field`/`:checkable` for the two shapes that need
 more than options (a text set through the widget's subcommands; a state in
 a private Tcl variable).
 
-### kmet's own widgets (`kmet.gui.ui`)
+### kmet's own widgets (`kmet.app.ui.gui.ui`)
 
 The two tag sets above are Tk widget classes only. A kmet widget — a
-composite that scripts Tk itself but reuses widget behavior — is a `:ui/…`
-tag in `kmet.gui.ui`, completed by the same `dsl/widget-specs`.
-`kmet.gui.ui/backend` is the Tk backend with that tag table merged in, and
-`kmet.gui.ui/mount!`/`run!` mount through it; the seam is
-`kmet.gui.tk/mount-backend!`/`run-backend!`, so the plain Tk backend
+composite that scripts Tk itself but reuses widget behavior — is a
+`:ui/…` tag in the app layer's `kmet.app.ui.gui.ui`, completed by the
+same `dsl/widget-specs`. `kmet.app.ui.gui.ui/backend` is the Tk backend
+with that tag table merged in, and `kmet.app.ui.gui.ui/mount!`/`run!`
+mount through it; the seam is
+`kmet.tk.core/mount-backend!`/`run-backend!`, so the plain Tk backend
 still rejects a `:ui/…` tag.
 
 The one kmet widget today is `:ui/transcript`, the chat scroll container:
@@ -246,7 +247,7 @@ silently dropping the change.
 
 ### Options: the catalogue and its families
 
-Which props a tag takes is its widget's Tk option set. `kmet.gui.tk.options`
+Which props a tag takes is its widget's Tk option set. `kmet.tk.options`
 is the vocabulary: prop → the Tcl option it names, the value shape, and the
 families a spec composes from. A family is a named prop set whose members
 co-occur on a widget population, so a spec adds the families that fit its
@@ -305,7 +306,7 @@ Two consequences worth knowing:
   the interpreter (`ttk::toggleswitch` before Tk 9.0) fails inside Tcl at
   creation, before an option can be checked; `make-widget` rethrows it
   with the tag and the interpreter's patchlevel:
-  `kmet.gui.tk: :ttk/toggleswitch (ttk::toggleswitch) does not exist on
+  `kmet.tk.core: :ttk/toggleswitch (ttk::toggleswitch) does not exist on
   this Tk (8.6.16)`.
 
 Options that are not a plain value are deliberately not props, each
@@ -354,9 +355,9 @@ An image prop that holds a name is set as an option like any other, so it
 patches live; a changed description creates the new image and configures the
 widget with its name.
 
-### Styles and themes (`kmet.gui.ttk.style`)
+### Styles and themes (`kmet.tk.ttk.style`)
 
-`kmet.gui.ttk.style` writes ttk's style database as Clojure data. A ttk
+`kmet.tk.ttk.style` writes ttk's style database as Clojure data. A ttk
 *style* is a **name** — not a class, not a data structure of ours: a
 widget's style is its class name (`TEntry`) unless its `:style` prop names
 another, and a name inherits from itself without its first component
@@ -390,7 +391,7 @@ a check is wanted. Widget options still win over style values, so the
 existing `:font-family`/`:font-size` props keep working.
 
 Styles are defined on the Tk thread once the adapter has Tk
-(`kmet.gui.tcl/install!`), and re-applied after a theme switch.
+(`kmet.tk.tcl/install!`), and re-applied after a theme switch.
 `kmet.app.ui.gui.style` is the app's set: `style-set` compiles the TUI
 theme's colors and `kmet.app.ui.gui.transcript`'s surfaces to the values
 above (frames and labels on the window surface, fields on the card
@@ -442,10 +443,10 @@ or an overflowing body is obvious at a glance.
 
 `run!` is `mount!` + `run-loop!`. The split exists for the REPL: mount on
 the thread that will own the interpreter, park `run-loop!` there, edit a
-component namespace, `:reload` it and call `kmet.gui.tk/render!` (safe
+component namespace, `:reload` it and call `kmet.tk.core/render!` (safe
 from any thread — it only marks the tree dirty; all Tcl work stays on the
 loop's thread). The backend map and the mounted structure are captured at
-mount time, so a change inside `kmet.gui.tk` itself needs a remount.
+mount time, so a change inside `kmet.tk.core` itself needs a remount.
 
 A mounted body is memoized by the engine, so state it depends on must be
 declared: read it with `kmet.libs.reakt/tracked-deref` (a plain `@atom`
@@ -453,14 +454,15 @@ read caches the tree and a click repaints nothing).
 
 ## Testing
 
-`kmet.gui.test-tk` (bb or Jolt) exercises the whole engine → backend →
+`kmet.tk.test-tk` (bb or Jolt) exercises the whole engine → backend →
 script path against a recording adapter — no display needed — and
-`kmet.gui.test-ui` does the same for the `:ui/…` widgets over the UI
-backend, and `kmet.gui.test-ttk-style` records the `ttk::style` scripts
+`kmet.app.ui.gui.test-ui` does the same for the `:ui/…` widgets over the
+UI backend, and `kmet.tk.test-ttk-style` records the `ttk::style`
+scripts
 headlessly and round-trips them — `use-theme!`/`define-style!`/
 `map-style!`/`apply!`, and the app palette set (`kmet.app.ui.gui.style`) —
 through a real Tk when a display is there (on Termux, under jolt + Xvfb).
-`kmet.gui.test-tcl` (bb or Jolt, skipping where libtcl is absent)
+`kmet.tk.test-tcl` (bb or Jolt, skipping where libtcl is absent)
 smoke-tests the real interpreter: eval, the command trampoline,
 `tcl-quote` round-tripping through the Tcl parser, the recorded Tcl/Tk
 pair with the interpreter's own patchlevel, and the image layer — real
@@ -469,7 +471,7 @@ photos from data, sized and deleted with their widget.
 `scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
 the interpreter's widget classes and their options and diffs them against
 the tag table: the options a tag declares that its widget lacks, and the
-options it does not reach yet. `kmet.gui.test-tcl`'s
+options it does not reach yet. `kmet.tk.test-tcl`'s
 `every-tag-scripts-only-options-this-tk-has` is the same check in test
 form, and additionally builds a widget with *every* declared prop present
 (each set to the value Tk itself reports) so the value shapes are
@@ -483,11 +485,11 @@ labels, fields, list, menu, panes, scale, scrollbar, canvas) and the
 themed `:ttk/…` set (frames, labels, buttons, fields, notebook, panes,
 progress, separator, sizegrip, toggleswitch, treeview), plus bare-string
 labels. Every tag accepts the Tk options its widget has, through the
-families in `kmet.gui.tk.options` (see *Options* above); the options Tk
+families in `kmet.tk.options` (see *Options* above); the options Tk
 gives to no plain prop — script- and variable-backed — are the
 ones still missing, and `scripts/tk_option_audit.clj` reports both sides
 against a live Tk. kmet's own widgets are the `:ui/…` set in
-`kmet.gui.ui` (today `:ui/transcript`, the chat scroll container).
+`kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container).
 
 The first cuts that remain — the treeview's flat tables, canvas items
 without identity, checkable menu items, the read-only text tags, and
@@ -497,7 +499,7 @@ window management, ttk styles, the clipboard, variables) — are tracked in
 what closing it needs and how the two guards below keep the list honest.
 The `:tk/text` tag carries the displayed content — styled segments in
 Tk tags, an optional scrollbar, generated mono fonts, wrapping — and
-`:ui/transcript` (kmet.gui.ui) is the scroll container over it: one text
+`:ui/transcript` (kmet.app.ui.gui.ui) is the scroll container over it: one text
 widget whose children are embedded windows (one widget per message) with
 a sibling scrollbar and "scroll to the end" on first map.
 

@@ -1,17 +1,17 @@
-(ns kmet.gui.test-tk
+(ns kmet.tk.test-tk
   "Headless tests for the Tk backend (\"hiccup-tk\").
 
    A recording adapter stands in for a Tcl/Tk interpreter: every eval is
    captured as a script string and command registrations go to an atom, so
    the full engine → backend → script path is exercised without a display.
-   The real jolt.ffi adapter (kmet.gui.tcl) is smoke-tested separately on a
+   The real jolt.ffi adapter (kmet.tk.tcl) is smoke-tested separately on a
    machine with Tcl/Tk."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.gui.test-support :refer [mounted rerender! scripts scripts-like with-fake]]
-            [kmet.gui.tk :as tk]
-            [kmet.gui.tk.dsl :as dsl]
-            [kmet.gui.tk.options :as opt]
+            [kmet.tk.test-support :refer [mounted rerender! scripts scripts-like with-fake]]
+            [kmet.tk.core :as tk]
+            [kmet.tk.dsl :as dsl]
+            [kmet.tk.options :as opt]
             [kmet.libs.hikap :as engine]
             [kmet.libs.hikap.alias :as alias]
             [kmet.libs.hikap.component :as component]
@@ -66,7 +66,7 @@
       (engine/dispose-component (:root m)))))
 
 (t/deftest qualified-tags-are-host-tags-not-aliases
-  ;; kmet.gui's tags carry Tcl's namespace split, so they are qualified: a
+  ;; kmet.tk's tags carry Tcl's namespace split, so they are qualified: a
   ;; keyword the backend declares is a host tag and wins over the alias
   ;; registry; every other qualified keyword is still an alias lookup.
   (let [called (atom nil)
@@ -174,7 +174,7 @@
 ;; ─── the option catalogue ─────────────────────────────────────────────────
 
 (t/deftest a-tags-options-are-its-widgets-tk-option-set
-  ;; :options composes families from kmet.gui.tk.options with the widget's
+  ;; :options composes families from kmet.tk.options with the widget's
   ;; own options, so a tag accepts exactly the options its widget has.
   (let [tags (:tags tk/tk-backend)]
     (t/is (= {:class :class :cursor :cursor :takefocus :takefocus
@@ -249,8 +249,8 @@
   (let [adapter {:eval (fn [s]
                          (cond
                            (str/includes? s "ttk::toggleswitch")
-                           (throw (ex-info "kmet.gui.tcl: invalid command name \"ttk::toggleswitch\""
-                                           {:type :kmet.gui.tcl/eval-failed}))
+                           (throw (ex-info "kmet.tk.tcl: invalid command name \"ttk::toggleswitch\""
+                                           {:type :kmet.tk.tcl/eval-failed}))
                            (str/includes? s "info patchlevel") "8.6.16"
                            :else ""))
                  :command! (fn [_ _] nil)}]
@@ -260,7 +260,7 @@
                 (mounted [:ttk/frame {} [:ttk/toggleswitch {}]])
                 nil
                 (catch Exception e e))]
-        (t/is (= :kmet.gui.tk/missing-widget (:type (ex-data e))))
+        (t/is (= :kmet.tk.core/missing-widget (:type (ex-data e))))
         (t/is (str/includes? (ex-message e) ":ttk/toggleswitch"))
         (t/is (str/includes? (ex-message e) "ttk::toggleswitch"))
         (t/is (str/includes? (ex-message e) "8.6.16"))))))
@@ -394,14 +394,14 @@
                   nil
                   (catch Exception e e)))]
       (let [e (err {:image {:zoom 2}})]
-        (t/is (= :kmet.gui.tk/image-without-source (:type (ex-data e))))
+        (t/is (= :kmet.tk.core/image-without-source (:type (ex-data e))))
         (t/is (str/includes? (ex-message e) ":file"))
         (t/is (str/includes? (ex-message e) ":image")))
       (let [e (err {:image {:file "x.png" :fille "y.png"}})]
-        (t/is (= :kmet.gui.tk/unknown-image-key (:type (ex-data e))))
+        (t/is (= :kmet.tk.core/unknown-image-key (:type (ex-data e))))
         (t/is (str/includes? (ex-message e) ":fille")))
       (let [e (err {:bitmap {:file "x.xbm" :zoom 2}})]
-        (t/is (= :kmet.gui.tk/bitmap-cannot-be-sized (:type (ex-data e))))
+        (t/is (= :kmet.tk.core/bitmap-cannot-be-sized (:type (ex-data e))))
         (t/is (str/includes? (ex-message e) ":zoom"))))))
 
 (t/deftest a-failed-construction-releases-the-images-it-created
@@ -583,7 +583,7 @@
 
 (t/deftest unknown-bind-chords-fail-loudly
   (with-fake [_rec nil]
-    (t/is (= :kmet.gui.tk/bad-chord
+    (t/is (= :kmet.tk.core/bad-chord
              (try
                (mounted [:ttk/frame {} [:ttk/label {:text "x" :bind {:hyper+unknown (fn [] nil)}}]])
                nil

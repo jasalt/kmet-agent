@@ -1,4 +1,4 @@
-(ns kmet.gui.ttk.style
+(ns kmet.tk.ttk.style
   "The ttk style database as Clojure data: ttk::style configure/map and
    theme switching.
 
@@ -8,9 +8,9 @@
    `TEntry`). Tk resolves an option as widget option, state map, static
    value, inherited style, then theme default — and the database is per
    theme, so switch first, define after, and re-apply a set on every
-   switch (apply! does). gui/README.md has the whole model."
+   switch (apply! does). tk/README.md has the whole model."
   (:require [clojure.string :as str]
-            [kmet.gui.tk.dsl :as dsl]))
+            [kmet.tk.dsl :as dsl]))
 
 (defn- tcl-name
   "X as the plain name Tcl uses (a string, or a keyword/symbol by name)."

@@ -1,23 +1,24 @@
-(ns kmet.gui.ui
+(ns kmet.app.ui.gui.ui
   "kmet's own Tk widgets: composites built out of the real widget classes of
-   kmet.gui.tk (classic `:tk/…`) and kmet.gui.ttk (themed `:ttk/…`). Those
-   namespaces hold only Tk widget classes; a kmet widget lives here, under
-   its own `:ui/…` tags, and kmet.gui.ui/backend adds the whole set to the
-   Tk backend's tag table — mount!/run! mount through it.
+   kmet.tk.core (classic `:tk/…`) and kmet.tk.ttk (themed `:ttk/…`). Those
+   namespaces hold only Tk widget classes; a kmet widget lives here, in the
+   app layer, under its own `:ui/…` tags, and kmet.app.ui.gui.ui/backend
+   adds the whole set to the Tk backend's tag table — mount!/run! mount
+   through it.
 
    A UI tag's spec has the same shape as a backend tag's: a :ctor, its
    :options, and a :lens/:attach when it places children itself — a custom
    :ctor where dsl/widget-spec is not enough."
-  (:require [kmet.gui.tk :as tk]
-            [kmet.gui.tk.dsl :as dsl]
-            [kmet.gui.tk.options :as opt])
+  (:require [kmet.tk.core :as tk]
+            [kmet.tk.dsl :as dsl]
+            [kmet.tk.options :as opt])
   (:refer-clojure :exclude [run!]))
 
 ;; ─── :ui/transcript ──────────────────────────────────────────────────────
 ;; One text widget hosts every child as an embedded window (each message is
 ;; its own widget, on its own stretched line), so the chat scrolls natively
 ;; — no canvas, and no drawing lines. `:attach` in the widget's :styles is
-;; how kmet.gui.tk.dsl/make-widget learns to embed instead of pack.
+;; how kmet.tk.dsl/make-widget learns to embed instead of pack.
 
 (def ^:private transcript-options
   "The text widget's option families (the transcript host is a `text`)."
@@ -77,11 +78,11 @@
   (update tk/tk-backend :tags merge (dsl/widget-specs specs)))
 
 (defn mount!
-  "kmet.gui.tk/mount! with the kmet UI tag set (the backend above)."
+  "kmet.tk.core/mount! with the kmet UI tag set (the backend above)."
   [tree & [options]]
   (tk/mount-backend! backend tree options))
 
 (defn run!
-  "kmet.gui.tk/run! with the kmet UI tag set (the backend above)."
+  "kmet.tk.core/run! with the kmet UI tag set (the backend above)."
   [tree & [options]]
   (tk/run-backend! backend tree options))

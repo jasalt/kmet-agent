@@ -1,7 +1,7 @@
-(ns kmet.gui.ttk
-  "The themed-widget tag set — `:ttk/…` — of the Tk backend (kmet.gui.tk):
-   the specs of the ttk widgets, which kmet.gui.tk completes (dsl/widget-specs)
-   and merges into its closed tag table. The classic widgets are kmet.gui.tk's
+(ns kmet.tk.ttk
+  "The themed-widget tag set — `:ttk/…` — of the Tk backend (kmet.tk.core):
+   the specs of the ttk widgets, which kmet.tk.core completes (dsl/widget-specs)
+   and merges into its closed tag table. The classic widgets are kmet.tk.core's
    own `:tk/…` set.
 
    Tag names follow Tcl's own namespace split: the ttk widgets live under
@@ -9,15 +9,15 @@
    classic Tk widgets are `:tk/frame`, `:tk/text`, ….
 
    Every spec is dsl/widget-spec: the Tk command, its :options (the families
-   in kmet.gui.tk.options that fit the widget, with its own options), and
+   in kmet.tk.options that fit the widget, with its own options), and
    whatever else the tag needs — :commands for the props Tk sets through
    subcommands (a treeview's rows), :attach for a container that places its
    children (a notebook's tabs). The families are additive and a widget's
    odd option is listed directly, so what a tag scripts is exactly the
    widget's option set minus the ones the catalogue leaves out."
   (:require [clojure.string :as str]
-            [kmet.gui.tk.dsl :as dsl]
-            [kmet.gui.tk.options :as opt]))
+            [kmet.tk.dsl :as dsl]
+            [kmet.tk.options :as opt]))
 
 ;; ─── Containers ───────────────────────────────────────────────────────────
 

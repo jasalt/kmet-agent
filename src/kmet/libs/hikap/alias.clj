@@ -5,7 +5,7 @@
    A hiccup element whose head is a QUALIFIED keyword resolves through this
    registry to a fn `(fn [attrs children] tree)` — unless the rendering
    backend declares that keyword as a host tag, which wins: a backend's
-   closed tag table may use qualified keywords (kmet.gui's `:tk/…` and
+   closed tag table may use qualified keywords (kmet.tk's `:tk/…` and
    `:ttk/…` do). An UNQUALIFIED keyword is always a host tag of whichever
    backend renders the tree. Unlike a fn head the
    tag is data — a keyword, never a var or symbol — so no *ns* resolution

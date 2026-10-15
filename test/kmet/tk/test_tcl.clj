@@ -1,4 +1,4 @@
-(ns kmet.gui.test-tcl
+(ns kmet.tk.test-tcl
   "Real host FFI Tcl adapter tests (babashka.ffi / jolt.ffi).
 
    The adapter loads libtcl at call time, so this namespace loads on both
@@ -7,17 +7,17 @@
    has Tcl/Tk installed."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.gui.test-support :refer [find-class-src live-tk]]
-            [kmet.gui.tk :as tk]
-            [kmet.gui.tk.options :as opt]
+            [kmet.tk.test-support :refer [find-class-src live-tk]]
+            [kmet.tk.core :as tk]
+            [kmet.tk.options :as opt]
             [kmet.libs.hikap :as engine]))
 
 (defn- live-adapter
   "The real Tcl adapter with libtcl loaded, or nil (JVM, or no libtcl)."
   []
   (try
-    (require 'kmet.gui.tcl)
-    (let [make (deref (ns-resolve 'kmet.gui.tcl 'adapter))
+    (require 'kmet.tk.tcl)
+    (let [make (deref (ns-resolve 'kmet.tk.tcl 'adapter))
           a (make)]
       ;; Forces the libtcl load; a missing library must skip, not fail.
       ((:eval a) "expr {1 + 2}")
@@ -37,7 +37,7 @@
       (t/is (= :threw (try ((:eval a) "error boom") (catch Exception _ :threw)))
             "a Tcl error is rethrown as ExceptionInfo")
       (finally
-        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl is absent (or this is the JVM)")))
 
 (t/deftest loaded-pair-and-version
@@ -46,7 +46,7 @@
   ;; supported Tcl lines (8.6/9.0/9.1) this host is exercising.
   (if-let [a (live-adapter)]
     (try
-      (let [libs (-> (ns-resolve 'kmet.gui.tcl 'libraries) deref deref)
+      (let [libs (-> (ns-resolve 'kmet.tk.tcl 'libraries) deref deref)
             patchlevel ((:eval a) "info patchlevel")]
         (t/is (string? (:tcl libs)) "the loaded Tcl library is recorded")
         (t/is (seq (:tk-candidates libs))
@@ -56,7 +56,7 @@
         (t/is (contains? #{"8.6" "9.0" "9.1"} (subs patchlevel 0 3))
               (str "a supported Tcl version, got " patchlevel)))
       (finally
-        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl is absent (or this is the JVM)")))
 
 (t/deftest derived-tk-names-from-tcl-spelling
@@ -64,8 +64,8 @@
   ;; from the Tcl library's own spelling (see the adapter docstring). A
   ;; sibling's separator is the platform's (the adapter joins through
   ;; babashka.fs), so the path case compares slashes-normalized.
-  (if-let [dtk (try (require 'kmet.gui.tcl)
-                    (deref (ns-resolve 'kmet.gui.tcl 'derived-tk-names))
+  (if-let [dtk (try (require 'kmet.tk.tcl)
+                    (deref (ns-resolve 'kmet.tk.tcl 'derived-tk-names))
                     (catch Throwable _ nil))]
     (do
       (t/is (= ["libtk8.6.so"] (dtk "libtcl8.6.so")))
@@ -80,7 +80,7 @@
 (t/deftest vwait-pump-and-nested-eval
   ;; The parked-eval path: Tcl_Eval (vwait) blocks while Tcl's timer calls
   ;; back into the trampoline, and the handler re-enters Tcl — exactly the
-  ;; shape kmet.gui.tcl/run-loop! uses for the UI pump.
+  ;; shape kmet.tk.tcl/run-loop! uses for the UI pump.
   (if-let [a (live-adapter)]
     (try
       (let [pumps (atom 0)]
@@ -96,7 +96,7 @@
                                      "set ::nested"))))
         (t/is (= 1 @pumps)))
       (finally
-        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl is absent (or this is the JVM)")))
 
 ;; ─── the tag table against a real Tk ──────────────────────────────────────
@@ -176,7 +176,7 @@
               (engine/dispose-component (:root h))))
           (t/is true "every tag accepted a widget with all its props set")))
       (finally
-        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
 
 (t/deftest a-checkable-and-a-scale-hand-their-value-to-the-handler
@@ -206,20 +206,20 @@
             (t/is (= 7 @got) "a scale reports its value as a number")
             (engine/dispose-component (:root h)))))
       (finally
-        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
 
 (t/deftest install-leaves-tk-loaded-for-a-non-mounting-caller
-  ;; kmet.gui.ttk.style scripts ttk::style between install! and mount, so
+  ;; kmet.tk.ttk.style scripts ttk::style between install! and mount, so
   ;; install! must load Tk itself instead of leaving it to the first mount.
   (if-let [a (live-tk)]
     (try
-      ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))
-      ((deref (ns-resolve 'kmet.gui.tcl 'install!)))
+      ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))
+      ((deref (ns-resolve 'kmet.tk.tcl 'install!)))
       (t/is (seq ((:eval a) "ttk::style theme use"))
             "Tk answers after install! alone")
       (finally
-        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
 
 (t/deftest image-descriptions-make-real-photos
@@ -254,5 +254,5 @@
           (t/is (empty? (kmet-images))
                 "disposal deletes the photos the widget created")))
       (finally
-        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))

@@ -195,7 +195,7 @@ Tags are keywords from the closed tag table (§2.2), function heads
 registry (§2.9) to a named tag-level component — the one way to add a
 reusable tag without touching the host table. A keyword the rendering
 backend declares as a host tag is never an alias, qualified or not (the
-TUI names its tags unqualified; kmet.gui's sets are `:tk/…` and `:ttk/…`).
+TUI names its tags unqualified; kmet.tk's sets are `:tk/…` and `:ttk/…`).
 Two more normalizer rules keep call sites terse:
 
 - **Props map optional** — `[:v-stack child…]` compiles with `{}`; the map
@@ -645,7 +645,7 @@ the process-global registry in `kmet.libs.hikap.alias`:
   `reset-registry!` is test isolation only.
 - A backend's declared tags are host tags — the tag table stays closed. It
   may name them unqualified (`kmet.tui.hikap` does) or qualified
-  (`kmet.gui`'s `:tk/…`/`:ttk/…`), and a declared tag wins over the
+  (`kmet.tk`'s `:tk/…`/`:ttk/…`), and a declared tag wins over the
   registry. Any other qualified keyword never falls back to a host tag: an
   unregistered alias throws, naming the registered aliases and suggesting
   the nearest one.
@@ -1640,18 +1640,18 @@ kmet.app.ui     fn components (shared def'd computes, with-let local state)
                 + hiccup/root mount points
 kmet.tui        the TUI backend: hiccup facade, macros, protocols, components
                 — generic; no app/chat/session concepts
-kmet.gui        GUI backends, Jolt-only (kmet.gui.tk = the Tk backend
-                with the classic :tk/… widget set, kmet.gui.ttk = the
-                :ttk/… set, kmet.gui.tk.dsl = their shared machinery,
-                kmet.gui.tk.options = the Tk option vocabulary,
-                kmet.gui.tcl = the host FFI adapter)
+kmet.tk         the Tk GUI backend, Jolt-only (kmet.tk.core = the backend
+                with the classic :tk/… widget set, kmet.tk.ttk = the
+                :ttk/… set, kmet.tk.dsl = their shared machinery,
+                kmet.tk.options = the Tk option vocabulary,
+                kmet.tk.tcl = the host FFI adapter)
 kmet.libs.*     self-contained helpers bottom layer (terminal protocol,
                 HTTP, markdown, reakt, ...) — includes the toolkit-agnostic
                 hiccup framework kmet.libs.hikap (+ .component / .alias)
 ```
 
 `kmet.libs.hikap` may require `kmet.libs.*` only; `kmet.tui.*` and
-`kmet.gui.*` build on `kmet.libs.hikap` + `kmet.libs.*`. `kmet.tui.*` must never require
+`kmet.tk.*` build on `kmet.libs.hikap` + `kmet.libs.*`. `kmet.tui.*` must never require
 `kmet.app.*`, `kmet.modes.*` or `kmet.ai.*`; app-specific components belong
 in `kmet.app.ui.*`.
 

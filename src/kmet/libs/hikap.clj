@@ -1,7 +1,7 @@
 (ns kmet.libs.hikap
   "Backend-agnostic hiccup component engine — the toolkit-independent half
    of the former kmet.tui.hiccup (the TUI backend now lives in
-   kmet.tui.hikap; the Tk backend in kmet.gui.tk).
+   kmet.tui.hikap; the Tk backend in kmet.tk.core).
 
    Trees are plain data: [:tag {props} children...] or [my-fn {props}]
    function heads. Compilation walks the tree through the BACKEND's closed
@@ -28,7 +28,7 @@
      :name            keyword identifying the backend
      :tags            the closed host tag table (tag -> spec map); a
                       declared keyword is a host tag even when qualified
-                      (kmet.gui's :tk/… / :ttk/…), and wins over the alias
+                      (kmet.tk's :tk/… / :ttk/…), and wins over the alias
                       registry
      :text-leaf       (fn [text props] component) — a bare string child
      :component?      (fn [x] bool) — a foreign spliced component?

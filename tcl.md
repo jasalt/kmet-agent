@@ -1,7 +1,7 @@
 # Tcl/Tk backend — what is left
 
-Working notes on the gaps of the Tk backend (`kmet.gui.*`), ordered by what
-would matter first to an app UI built on it. `src/kmet/gui/README.md` is the
+Working notes on the gaps of the Tk backend (`kmet.tk.*`), ordered by what
+would matter first to an app UI built on it. `src/kmet/tk/README.md` is the
 package's design document; this file is the open-work list beside it.
 
 ## What is complete
@@ -29,16 +29,16 @@ never touched. Item vocabularies outside the tag specs — a menu item's
 `-image`, a treeview row's — are not props.
 
 kmet's own widgets are not part of those sets: they are `:ui/…` tags in
-`kmet.gui.ui` (today `:ui/transcript`, the chat scroll container), added to
-the backend through `kmet.gui.tk/mount-backend!`/`run-backend!`.
+`kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container), added to
+the backend through `kmet.tk.core/mount-backend!`/`run-backend!`.
 
 Two guards keep that honest, and are the place to start from when adding a
 widget (the `:ui/…` widgets have their own guard, `bb test
-kmet.gui.test-ui`):
+kmet.app.ui.gui.test-ui`):
 
 ```sh
 bb scripts/tk_option_audit.clj          # declared vs. the live widget, per tag
-bb test kmet.gui.test-tcl               # the same claim in test form: every
+bb test kmet.tk.test-tcl               # the same claim in test form: every
                                         # tag's options checked, every tag
                                         # mounted with all its props set
 ```
@@ -88,15 +88,15 @@ class in the table is in both.
 
 - **An option the widget lacks** fails at the first widget of that tag, from
   `dsl/check-options!` (it asks the widget for its own option list once per
-  tag): `kmet.gui.tk: :ttk/entry has no -placeholder on this Tk (prop
+  tag): `kmet.tk.core: :ttk/entry has no -placeholder on this Tk (prop
   :placeholder)` — a kmet message naming tag, prop and option.
 - **A widget class that does not exist** fails inside Tcl at creation,
   before any option can be checked; `dsl/make-widget` catches that error
   and rethrows it with the tag and the interpreter's patchlevel:
-  `kmet.gui.tk: :ttk/toggleswitch (ttk::toggleswitch) does not exist on
+  `kmet.tk.core: :ttk/toggleswitch (ttk::toggleswitch) does not exist on
   this Tk (8.6.16)`.
 - **The test suite is version-aware on purpose**: on 8.6, `bb test
-  kmet.gui.test-tcl` reports 19 failures and 1 error — the failures are its
+  kmet.tk.test-tcl` reports 19 failures and 1 error — the failures are its
   own option-membership assertions (the table above, one per tag), the error
   is the missing `:ttk/toggleswitch` class. It asserts the *running* Tk
   rather than a version range, so a version's gap is discovered rather than
@@ -109,7 +109,7 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 ## 1. Visible in a themed app
 
 - **ttk styles and themes.** Wired for the GUI surfaces: the database layer
-  is `kmet.gui.ttk.style` (`use-theme!`, `define-style!`, `map-style!`,
+  is `kmet.tk.ttk.style` (`use-theme!`, `define-style!`, `map-style!`,
   `apply!`) and `kmet.app.ui.gui.style` compiles the TUI theme + the
   transcript palette to a dark set; `scripts/gui_tk_session.clj` applies it
   after `tcl/install!`, so the viewer no longer follows the system theme.
@@ -117,11 +117,11 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
   isn't ported yet).
 - **Dialogs.** `tk_messageBox`, `tk_getOpenFile`/`tk_getSaveFile`,
   `tk_chooseDirectory`, `tk_chooseColor` have no home. They are imperative
-  (`kmet.gui.tk/message-box!`, `open-file!`), blocking in Tcl's event loop,
+  (`kmet.tk.core/message-box!`, `open-file!`), blocking in Tcl's event loop,
   so they must run on the Tk thread — mount!/run-loop!'s thread — not from a
   component body, which renders on the same thread and may call them.
 - **An editable text tag.** `:tk/text` owns `-state`: it is a read-only
-  display surface (`:ui/transcript` in kmet.gui.ui hosts the embedded-window
+  display surface (`:ui/transcript` in kmet.app.ui.gui.ui hosts the embedded-window
   chat stack). A multi-line input (a chat composer
   with the TUI's editing keys) needs a second tag with insert/delete from
   Clojure, marks, `edit undo` (the `:undo`/`:maxundo` props are already
@@ -148,7 +148,7 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
 ## 3. Options that are not props
 
-The catalogue (`kmet.gui.tk.options`) leaves out what a plain value cannot
+The catalogue (`kmet.tk.options`) leaves out what a plain value cannot
 be; each group needs machinery:
 
 - **Variable-backed**: `-variable`, `-textvariable`, `-listvariable` and
@@ -208,13 +208,13 @@ be; each group needs machinery:
 - `bb scripts/tk_option_audit.clj` — declared vs. live options per tag;
   exits non-zero when a tag declares an option its widget lacks, and prints
   the widget classes without a tag (currently none).
-- `bb test kmet.gui.test-tcl` — the same check in test form plus a mount of
+- `bb test kmet.tk.test-tcl` — the same check in test form plus a mount of
   every tag with every declared prop, and a checkbutton/scale driven through
   Tk; it skips where there is no display.
-- `bb test kmet.gui.test-tk` — the headless recording adapter: tag
+- `bb test kmet.tk.test-tk` — the headless recording adapter: tag
   construction, patching, callbacks, the value slots and disposal.
-- `bb test kmet.gui.test-ui` — the same for the kmet-widget set (`:ui/…`),
-  mounted through `kmet.gui.ui/backend`.
-- `jolt test kmet.gui.test-ttk-style` under a display (on Termux, `xvfb-run
+- `bb test kmet.app.ui.gui.test-ui` — the same for the kmet-widget set (`:ui/…`),
+  mounted through `kmet.app.ui.gui.ui/backend`.
+- `jolt test kmet.tk.test-ttk-style` under a display (on Termux, `xvfb-run
   -a`) — the ttk style database round-trips through a real Tk; the same
   tests record the scripts headlessly on babashka.

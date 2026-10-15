@@ -1,8 +1,8 @@
-(ns kmet.gui.tk.options
+(ns kmet.tk.options
   "The Tk option vocabulary our tags script, as props: which Tcl option a
    prop names, what shape its value takes, and the families that group the
-   options sharing a widget population. kmet.gui.tk's classic specs and
-   kmet.gui.ttk's themed specs compose their :options from families plus
+   options sharing a widget population. kmet.tk.core's classic specs and
+   kmet.tk.ttk's themed specs compose their :options from families plus
    their widget's own additions (options-for), so one declaration drives the
    construction script, the live patch and the patchable decision.
 
@@ -15,7 +15,7 @@
    colours, names), Tcl lists (:padding [6 12], :tabs [40 80], :values,
    :scrollregion, :show), the font family
    (:font-family/:font-size/:bold/:italic), and images (see image-props:
-   a Tk image name, or a description kmet.gui.tk.dsl/image-name turns into
+   a Tk image name, or a description kmet.tk.dsl/image-name turns into
    a widget-owned photo or bitmap). Options that are not a plain value are
    deliberately absent, each because it needs machinery a prop cannot be:
 
@@ -96,7 +96,7 @@
   "The props whose option names an image. A value is either a Tk image name
    — a built-in bitmap such as :questhead, or a name the app created — or a
    description map the DSL turns into a widget-owned image (see
-   kmet.gui.tk.dsl/image-name): :file, :data with :format, and the sizing
+   kmet.tk.dsl/image-name): :file, :data with :format, and the sizing
    :zoom/:subsample/:fit. :bitmap creates a Tk bitmap image, the rest
    photos."
   #{:image :bitmap :selectimage :tristateimage :backgroundimage :tile
@@ -185,14 +185,14 @@
         props (into (apply set/union (map families names)) extra)
         unknown (remove #(contains? options %) props)]
     (when (seq unknown-families)
-      (throw (ex-info (str "kmet.gui.tk.options: unknown families "
+      (throw (ex-info (str "kmet.tk.options: unknown families "
                            (pr-str (vec unknown-families))
                            "; known: " (pr-str (vec (family-names))))
-                      {:type :kmet.gui.tk.options/unknown-family
+                      {:type :kmet.tk.options/unknown-family
                        :families (vec unknown-families)})))
     (when (seq unknown)
-      (throw (ex-info (str "kmet.gui.tk.options: props outside the catalogue: "
+      (throw (ex-info (str "kmet.tk.options: props outside the catalogue: "
                            (pr-str (vec unknown)))
-                      {:type :kmet.gui.tk.options/unknown-prop
+                      {:type :kmet.tk.options/unknown-prop
                        :props (vec unknown)})))
     (into {} (map (fn [p] [p (options p)])) (sort props))))

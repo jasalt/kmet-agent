@@ -1,9 +1,9 @@
-(ns kmet.gui.test-support
+(ns kmet.tk.test-support
   "Shared scaffolding for the GUI test namespaces: a recording Tcl adapter
    (every eval captured as a script, commands and pumps recorded too), the
    engine mount helpers over a backend, and the live-Tk probe."
-  (:require [kmet.gui.tk :as tk]
-            [kmet.gui.tk.dsl :as dsl]
+  (:require [kmet.tk.core :as tk]
+            [kmet.tk.dsl :as dsl]
             [kmet.libs.hikap :as engine]))
 
 (defn with-fake*
@@ -32,7 +32,7 @@
 
 (defn mounted
   "Mount TREE through BACKEND, returning {:window :root}. With no BACKEND,
-   kmet.gui.tk/tk-backend."
+   kmet.tk.core/tk-backend."
   ([tree] (mounted tk/tk-backend tree))
   ([backend tree]
    (let [window (engine/compile-element backend [:tk/toplevel {:title "t"}])
@@ -52,8 +52,8 @@
    libtk, or no display (a headless machine)."
   []
   (try
-    (require 'kmet.gui.tcl)
-    (let [a ((deref (ns-resolve 'kmet.gui.tcl 'adapter)))]
+    (require 'kmet.tk.tcl)
+    (let [a ((deref (ns-resolve 'kmet.tk.tcl 'adapter)))]
       ((:prepare! a))
       a)
     (catch Throwable _ nil)))

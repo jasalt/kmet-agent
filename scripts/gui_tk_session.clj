@@ -16,8 +16,8 @@
             [kmet.app.session :as session]
             [kmet.app.ui.gui.style :as gui-style]
             [kmet.app.ui.gui.transcript :as transcript]
-            [kmet.gui.tcl :as tcl]
-            [kmet.gui.ui :as ui]
+            [kmet.app.ui.gui.ui :as ui]
+            [kmet.tk.tcl :as tcl]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.theme :as theme]))
 

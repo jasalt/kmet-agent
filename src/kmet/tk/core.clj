@@ -1,16 +1,17 @@
-(ns kmet.gui.tk
+(ns kmet.tk.core
   "Tk (Tcl/Tk 8.6+; the adapter prefers 9.1) backend for the generic
    hiccup engine — \"hiccup-tk\": the backend itself plus the classic-widget
-   tag set (`:tk/…`). The themed widgets are kmet.gui.ttk's `:ttk/…` set,
-   the machinery both are written against is kmet.gui.tk.dsl, and the Tk
-   option vocabulary is kmet.gui.tk.options. Every tag here is a Tk widget
+   tag set (`:tk/…`). The themed widgets are kmet.tk.ttk's `:ttk/…` set,
+   the machinery both are written against is kmet.tk.dsl, and the Tk
+   option vocabulary is kmet.tk.options. Every tag here is a Tk widget
    class; kmet's own widgets and composites are a separate UI namespace
-   over this backend (kmet.gui.ui), which mounts through mount-backend! /
-   run-backend!. Tag names follow Tcl's own namespace split, so a widget's
+   over this backend (the app layer's kmet.app.ui.gui.ui), which mounts
+   through mount-backend!/run-backend!. Tag names follow Tcl's own
+   namespace split, so a widget's
    toolkit is in its name: `:tk/frame` is the classic frame, `:ttk/frame`
    the themed one, and `:tk/text` has no ttk counterpart. The contract —
    props and callbacks, the option families and the run loop — is
-   gui/README.md.
+   tk/README.md.
 
    The Tcl interpreter is reached through *adapter* (an implementation-
    detail seam so the backend is testable headlessly): an adapter is a map
@@ -20,19 +21,19 @@
       :run-loop (fn [pump-fn] -> nil)        ; blocks; pump on the UI thread
       :destroy! (fn [] -> nil)}              ; optional teardown
 
-   kmet.gui.tcl supplies the real host FFI adapter (babashka.ffi on
+   kmet.tk.tcl supplies the real host FFI adapter (babashka.ffi on
    babashka, jolt.ffi on Jolt); tests bind a recording stub. The adapter's
-   evaluator is installed into kmet.gui.tk.dsl at load, so the widget sets
+   evaluator is installed into kmet.tk.dsl at load, so the widget sets
    script through it without depending on this namespace.
 
    The engine's :render-items/:render-all hooks exist for output-producing
    toolkits; Tk widgets are live the moment reconcile constructs them, so
-   they return nil and kmet.gui.tcl drives re-renders with a pump armed
+   they return nil and kmet.tk.tcl drives re-renders with a pump armed
    through kmet.libs.hikap.component/set-frame-hook!."
   (:require [clojure.string :as str]
-            [kmet.gui.tk.dsl :as dsl]
-            [kmet.gui.tk.options :as opt]
-            [kmet.gui.ttk :as ttk]
+            [kmet.tk.dsl :as dsl]
+            [kmet.tk.options :as opt]
+            [kmet.tk.ttk :as ttk]
             [kmet.libs.hikap.component :as component]
             [kmet.libs.hikap :as engine])
   (:refer-clojure :exclude [run!]))
@@ -42,12 +43,12 @@
 ;; ═══════════════════════════════════════════════════════════════════════════
 
 (def ^:dynamic *adapter*
-  "The Tcl adapter (see the ns docstring), installed by kmet.gui.tcl's
+  "The Tcl adapter (see the ns docstring), installed by kmet.tk.tcl's
    run!/start! or bound directly by tests."
   nil)
 
 (defn set-adapter!
-  "Install ADAPTER as the process adapter (kmet.gui.tcl calls this). The
+  "Install ADAPTER as the process adapter (kmet.tk.tcl calls this). The
    option lists cached from a previous interpreter are dropped: a new
    adapter may be a different Tk."
   [adapter]
@@ -58,10 +59,10 @@
 (defn- require-adapter! []
   (or *adapter*
       (throw (ex-info
-              (str "kmet.gui.tk: no Tcl adapter installed — call "
-                   "kmet.gui.tk/run! (which loads kmet.gui.tcl) or bind "
+              (str "kmet.tk.core: no Tcl adapter installed — call "
+                   "kmet.tk.core/run! (which loads kmet.tk.tcl) or bind "
                    "*adapter* in tests")
-              {:type :kmet.gui.tk/no-adapter}))))
+              {:type :kmet.tk.core/no-adapter}))))
 
 (defn- eval!
   "Evaluate SCRIPT through the bound adapter."
@@ -72,7 +73,7 @@
   [name handler]
   ((:command! (require-adapter!)) name handler))
 
-;; The widget sets script through kmet.gui.tk.dsl; hand them this adapter's
+;; The widget sets script through kmet.tk.dsl; hand them this adapter's
 ;; evaluator. The fn reads *adapter* per call, so a test's binding is seen.
 (dsl/set-eval-fn! eval!)
 
@@ -172,7 +173,7 @@
 (def ^:private classic-specs
   "The classic widget set: Tk's classic widget classes as dsl/widget-specs,
    plus the root window (`:tk/toplevel`), whose ctor is its own. kmet's own
-   widgets and composites live in kmet.gui.ui, not here."
+   widgets and composites live in kmet.app.ui.gui.ui, not here."
   {:tk/toplevel
    {:ctor (fn [spec props]
             (when-let [title (:title props)]
@@ -453,14 +454,14 @@
    thread that will own the interpreter, park run-loop! on a background
    thread, then edit a component namespace, reload it, and render! to
    repaint with the new code. The backend map and the mounted structure are
-   captured at mount time, so a change inside kmet.gui.tk itself still
+   captured at mount time, so a change inside kmet.tk.core itself still
    needs a remount. One window per process (the dirty flag is global)."
   [tree & [options]]
   (mount-tree! tk-backend tree options))
 
 (defn mount-backend!
-  "Mount TREE with BACKEND — kmet.gui.tk/tk-backend, or one whose :tags add
-   kmet's own widgets on top of it (kmet.gui.ui/backend). Same contract as
+  "Mount TREE with BACKEND — kmet.tk.core/tk-backend, or one whose :tags add
+   kmet's own widgets on top of it (kmet.app.ui.gui.ui/backend). Same contract as
    mount!."
   [backend tree & [options]]
   (mount-tree! backend tree options))
@@ -489,7 +490,7 @@
 (defn run!
   "Mount TREE in a Tk window and run the Tk event loop until the window is
    closed. OPTIONS are the :tk/toplevel tag's props (:title :width :height
-   :bg :bind). Requires an adapter (bound by the caller — kmet.gui.tcl/run!
+   :bg :bind). Requires an adapter (bound by the caller — kmet.tk.tcl/run!
    installs the host FFI one). Blocks."
   [tree & [options]]
   (run-loop! (mount-tree! tk-backend tree options)))
