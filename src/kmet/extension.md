@@ -1043,9 +1043,19 @@ expandPromptTemplates; kmet defaults to no expansion).
 
 ### UI
 
-The `:ui` capability map dispatches through the runtime registry — calls are
-inert before the interactive layout exists and in headless/print mode. There
-are **no host-built dialogs**: dialogs/selectors/editors are components you
+The `:ui` capability map dispatches through the **front-end binding**: one
+map per process, bound by the runtime for headless runs and replaced by a
+front end once its widgets exist (`extensions/bind-extensions!`). Branch on
+`(:mode ctx)` — `:interactive` (TUI), `:gui`, `:rpc`, `:print`, `:json` —
+and on `(:has-ui ctx)`. A headless front end binds a degraded port: widget,
+status and dialog calls are inert, getters return neutral values
+(`:get-editor-text` → `""`, `:get-tools-expanded` → `false`), `:set-theme`
+reports `{:success false :error "UI not available"}`, and `ui-custom`
+returns an already-resolved nil promise instead of mounting anything — an
+extension UI call cannot hang a headless run. Calls made before any
+binding exists (library use outside a runtime) stay inert no-ops.
+
+There are **no host-built dialogs**: dialogs/selectors/editors are components you
 compose yourself from the shared `kmet.tui.*` layer and mount with
 `ui-custom`; theme objects come from `kmet.tui.theme` directly
 (`get-theme`/`get-all-themes`/`get-theme-by-name`/`get-current-theme`), not
@@ -1129,8 +1139,22 @@ from the api.
                 {:overlay true :overlay-options {:anchor :center :width 82}})
 ```
 
-Headless/print mode has no layout: check `(:mode ctx)` in command/event
-handlers (`:interactive` vs headless) and fall back to `ui-notify`.
+Headless/print mode has no layout: check `(:has-ui ctx)` (or `(:mode ctx)`
+for a finer split) in command/event handlers and fall back to `ui-notify` or
+a plain status line.
+
+#### UI requests (front-end plumbing)
+
+A front end answers UI requests through the runtime's request/response pair
+(engine.md §4.5), not through the event stream: the runtime delivers
+`{:type :ui-request :id ... :kind ...}` to the port's `:request` capability,
+and the front end either returns the answer in-process (blocking dialogs are
+allowed inside extension handlers) or forwards it to its client and answers
+later with `kmet.app.session-runtime/respond!`. Kinds without a dedicated
+surface auto-answer — `:select` → nil, `:confirm` → false,
+`:input`/`:editor`/`:custom` → nil — and `dispose!` resolves any request still
+pending with nil. Extensions do not call this directly; it is how a front end
+hosts the dialogs `ui-custom` mounts.
 
 #### Tag aliases — named tag-level components
 

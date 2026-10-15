@@ -171,7 +171,10 @@
 (defonce ^:private markdown-transformers (atom []))
 (defonce ^:private flags (atom {}))
 (defonce ^:private cli-flags (atom {}))
-(defonce ^:private ui-registry (atom {}))
+(defonce ^:private extension-binding
+  ;; {:mode front-end kind, :has-ui bool, :ui capability map} — the
+  ;; front-end surface extensions dispatch through (see bind-extensions!).
+  (atom {:mode :print :has-ui false :ui {}}))
 (defonce ^:private session-atom (atom nil))
 (defonce ^:private context-sink-atom (atom nil))
 (defonce ^:private entry-sink-atom (atom nil))
@@ -372,32 +375,138 @@
           :string (or (when (string? raw) raw) default)
           raw)))))
 
-;; ─── UI registry (the interactive installs live implementations) ─────────
+;; ─── Extension binding (front-end kind + capability map) ─────────────────
+;;
+;; One binding per process (pi: ExtensionRunner's uiContext + mode): the
+;; front-end kind, whether a UI port is available (ctx.has-ui), and the
+;; capability map the front end supplies. The runtime binds the headless
+;; defaults at bootstrap and unbinds at dispose!; a front end with its own
+;; port re-binds after its widgets exist (kmet.modes.interactive installs
+;; its registry through bind-extensions!).
 
-(defn set-ui-registry! [registry]
-  (reset! ui-registry registry)
+(defn bind-extensions!
+  "Bind the front-end extension surface (pi: AgentSession.bindExtensions):
+   MODE is the front-end kind (:interactive | :print | :json | :gui |
+   :rpc), :has-ui tells extensions whether a UI port is available
+   (ctx.has-ui), and :ui is the capability map (nil/absent = a portless
+   front end; ui-call stays inert). Returns nil."
+  [{:keys [mode has-ui ui] :or {mode :print has-ui false}}]
+  (reset! extension-binding {:mode mode :has-ui has-ui :ui (or ui {})})
   nil)
 
-(defn clear-ui-registry! [] (reset! ui-registry {}) nil)
+(defn unbind-extensions!
+  "Restore the headless binding (mode :print, :has-ui false, no
+   capabilities). Returns nil."
+  []
+  (reset! extension-binding {:mode :print :has-ui false :ui {}})
+  nil)
+
+(defn extension-mode
+  "The bound front-end kind — ctx.mode (pi: ExtensionMode)."
+  []
+  (:mode @extension-binding))
+
+(defn extension-has-ui?
+  "Whether the bound front end has a UI port — ctx.has-ui."
+  []
+  (:has-ui @extension-binding))
+
+(defn set-ui-registry!
+  "Install (or replace) the capability map, preserving the bound
+   front-end kind. Prefer bind-extensions! at a front-end install point;
+   this is the port-only swap tests and incremental installs use."
+  [registry]
+  (swap! extension-binding assoc :ui registry)
+  nil)
+
+(defn clear-ui-registry!
+  "Remove the bound capability map, preserving the front-end kind."
+  []
+  (swap! extension-binding assoc :ui {})
+  nil)
+
+(defn ui-capability
+  "The bound fn for CAPABILITY, or nil when the front end has not
+   installed it (headless/print)."
+  [capability]
+  (get (:ui @extension-binding) capability))
 
 (defn ui-call
-  "Dispatch a UI capability call through the registry. No-op (nil) when the
-   interactive mode has not installed the registry yet (headless/print)."
+  "Dispatch a UI capability call through the bound map. No-op (nil) when
+   the front end has not installed the capability (headless/print)."
   [capability & args]
-  (when-let [f (get @ui-registry capability)]
+  (when-let [f (ui-capability capability)]
     (apply f args)))
+
+;; ─── UI requests (the port's async answer protocol, engine.md §4.5) ──────
+
+(def ui-request-defaults
+  "Default answer per :ui-request :kind — what a front end without a
+   terminal auto-answers with (pi: noOpUIContext). Used by the headless
+   port and as the fallback when no port is bound."
+  {:select nil
+   :confirm false
+   :input nil
+   :editor nil
+   :custom nil})
+
+(def request-pending
+  "Port return marker: the request was forwarded to an asynchronous client
+   (or an in-process dialog that has not resolved yet) and is answered
+   later with kmet.app.session-runtime/respond!."
+  ::pending)
+
+(defn ui-request-default
+  "The degraded default answer for request kind KIND (nil for an unknown
+   kind)."
+  [kind]
+  (get ui-request-defaults kind))
+
+(defn headless-ui-port
+  "The degraded capability map a front end without a terminal binds (pi:
+   noOpUIContext): widget/status/dialog calls are inert, getters return
+   neutral values, :set-theme reports the missing UI, and :custom returns
+   an already-resolved promise — an extension cannot hang or crash a
+   headless run. :request answers ui-request-default by kind. The runtime
+   adds the live :build-context capability on top."
+  []
+  {:notify (fn [_message _type] nil)
+   :chat-info (fn [_label _content] nil)
+   :custom (fn [_factory _opts] (doto (promise) (deliver nil)))
+   :on-terminal-input (fn [_handler] (fn [] nil))
+   :set-status (fn [_key _text] nil)
+   :set-widget (fn [_key _content _opts] nil)
+   :set-footer (fn [_factory] nil)
+   :set-header (fn [_factory] nil)
+   :set-title (fn [_title] nil)
+   :set-editor-text (fn [_text] nil)
+   :get-editor-text (fn [] "")
+   :paste-to-editor (fn [_text] nil)
+   :set-working-indicator (fn [_options] nil)
+   :set-working-message (fn [_message] nil)
+   :set-working-visible (fn [_visible?] nil)
+   :set-hidden-thinking-label (fn [_label] nil)
+   :set-editor-component (fn [_factory] nil)
+   :add-autocomplete-provider (fn [_factory] nil)
+   :set-theme (fn [_theme-or-name] {:success false :error "UI not available"})
+   :get-tools-expanded (fn [] false)
+   :set-tools-expanded (fn [_expanded?] nil)
+   :get-tool-display-mode (fn [] :collapsed)
+   :set-tool-display-mode (fn [_mode] nil)
+   :reset (fn [] nil)
+   :request (fn [request] (ui-request-default (:kind request)))})
 
 (declare api-session read-model-facades)
 
 (defn- default-extension-context
-  "Static context for headless/print mode (pi: ExtensionContext): the
-   interactive :build-context capability overrides these per call. Every
-   key is a value or zero-arg fn so handlers always receive a callable
-   map. Built per call so it can reference the session facades (defined
-   below) — the fns read the live session atom at call time."
+  "Default extension context (pi: ExtensionContext): the front end's
+   :build-context capability overrides these per call. Every key is a
+   value or zero-arg fn so handlers always receive a callable map. Built
+   per call so it can reference the session facades (defined below) — the
+   fns read the live session atom at call time."
   []
-  {:mode :print
-   :has-ui false
+  {:mode (extension-mode)
+   :has-ui (extension-has-ui?)
    :cwd (System/getProperty "user.dir")
    :model nil
    :scoped-models []

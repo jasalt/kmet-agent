@@ -230,10 +230,10 @@
         ;; A stopped mode must be fully released: the tree, the runtime
         ;; sinks, the theme callback/watcher and the reakt queue
         ;; (teardown-mode! — findings 2 and 10), then the extension UI
-        ;; registry, which closes over the whole mode. The CLI exits right
+        ;; binding, which closes over the whole mode. The CLI exits right
         ;; after this, but embedded hosts and tests keep going.
         (when-let [cs @cs-ref]
           (teardown-mode! cs)
           (when (:debug opts)
             (log-survivors!)))
-        (extensions/clear-ui-registry!)))))
+        (extensions/unbind-extensions!)))))

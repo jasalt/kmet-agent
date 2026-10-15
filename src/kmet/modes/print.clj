@@ -117,10 +117,13 @@
           (println (str "No session found matching '" (:session opts) "'")))
         nil)
       (let [;; the runtime owns the wiring (agent state, system prompt, run
-            ;; options, extension handle); print mode owns only its consumer
+            ;; options, extension handle); print mode owns only its consumer.
+            ;; The front-end kind extensions see follows the output variant
+            ;; (pi: mode === "json" ? "json" : "print").
             engine (runtime/bootstrap config {:session session
                                               :model model
-                                              :provider provider})
+                                              :provider provider
+                                              :mode (if (= :edn mode) :json :print)})
             result-promise (promise)
             unsubscribe (runtime/subscribe! engine (event-consumer mode result-promise))
             ;; pi: session.prompt expands skill commands + prompt templates

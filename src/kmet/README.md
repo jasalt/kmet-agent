@@ -44,7 +44,9 @@ src/kmet/
 │       ├── commands.clj — builtin commands, /session, /share, /reload
 │       ├── resources.clj — loaded-resources sections
 │       ├── layout.clj — agent event handler + build-layout widget tree
-│       └── ui_registry.clj — ExtensionUIContext (widgets, dialogs, editor)
+│       └── ui_registry.clj — ExtensionUIContext (widgets, dialogs, editor);
+│                         binds the front end's extension surface through
+│                         extensions/bind-extensions! (mode + port)
 ├── ai/                 — Provider/auth subsystem (pi: packages/ai — a standalone
 │   │                     library the agent depends on; self-contained)
 │   ├── models.clj      — Provider/model registry + committed EDN catalogs
@@ -72,10 +74,11 @@ src/kmet/
 │   │                     loop_guard.clj — repeat-loop guard; session.clj — EDNL sessions
 │   ├── session_runtime.clj — the session runtime front ends drive:
 │   │                     bootstrap (agent state, system prompt, run
-│   │                     options, extension handle), session lifecycle
+│   │                     options, extension binding), session lifecycle
 │   │                     (new/resume/fork/clone/switch), the submission
 │   │                     chain and compaction queue, prompts/queues,
-│   │                     subscribers, disposal (engine.md §4.1)
+│   │                     subscribers, UI requests (request-ui!/respond!),
+│   │                     disposal (engine.md §4.1)
 │   ├── commands.clj / keybindings.clj / packages.clj / extensions.cljc —
 │   │                     slash command registry (context-shaped handlers,
 │   │                     front-end tags), keymap, package + extension loading;

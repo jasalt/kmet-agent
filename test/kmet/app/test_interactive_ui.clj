@@ -67,14 +67,15 @@
 
 (defn- clear-installed-context!
   "Reset the global extension wiring a `build-extension-ui-registry` install
-   leaves behind: the installed registry plus the session/context/entry
-   sinks, which close over the installing test's fake cs. Call from a test's
-   finally so later tests never see the fake context."
+   leaves behind: the binding (capability map + front-end kind) plus the
+   session/context/entry sinks, which close over the installing test's fake
+   cs. Call from a test's finally so later tests never see the fake
+   context."
   []
   (extensions/set-session! nil)
   (extensions/set-context-sink! nil)
   (extensions/set-entry-sink! nil)
-  (extensions/clear-ui-registry!))
+  (extensions/unbind-extensions!))
 
 (def ^:private no-image-caps
   "Capabilities stub for the /settings tests: the image rows (Show images /

@@ -19,10 +19,10 @@
      passes them straight to `run-agent-turn`, derived from the same
      emission path, so they cannot drift from the stream.
    - Extension wiring is runtime-scoped: `bootstrap` installs the session
-     handle, the context sink and a default UI registry, and `dispose!`
-     clears them. A front end with its own UI port (interactive) installs
-     it after its widgets exist — `extensions/set-ui-registry!` is the
-     front-end-owned install point.
+     handle, the context sink and the headless UI port (with the front-end
+     kind), and `dispose!` unbinds them. A front end with its own UI port
+     (interactive) re-binds after its widgets exist —
+     `extensions/bind-extensions!` is the front-end-owned install point.
    - `dispose!` cancels an in-flight run and waits (bounded) for it to
      settle before clearing the subscribers, so the terminal
      `:agent-settled` event reaches them; the settle path runs in the
@@ -47,7 +47,7 @@
             [kmet.app.tools.core :as tools]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
-                   cwd turn-running? compaction-queued])
+                   cwd turn-running? compaction-queued pending-ui])
 
 (declare cancel! turn-running?)
 
@@ -99,19 +99,22 @@
           (extensions/get-tool-result-hooks)))
 
 (defn- default-ui-registry
-  "The UI registry a front end without its own UI port gets: the
-   `build-context` callback every registry must provide (the extension ctx
-   :model/:scoped-models/:thinking-level read the live agent). Print mode
-   used exactly this block; interactive replaces the registry from
-   `kmet.modes.interactive.ui-registry` once its widgets exist."
+  "The capability map a front end without its own port gets: the headless
+   auto-answers (extensions/headless-ui-port — widgets/dialogs inert,
+   :request answers the degraded defaults) plus the `build-context`
+   callback every map must provide (the extension ctx
+   :model/:scoped-models/:thinking-level read the live agent). Interactive
+   replaces the map from `kmet.modes.interactive.ui-registry` once its
+   widgets exist."
   [engine]
-  {:build-context
-   (fn []
-     (let [agent-state (agent-state engine)]
-       {:model (models/get-model @(:provider agent-state) @(:model agent-state))
-        :scoped-models (resolver/scoped-models-for-context
-                        @(:scoped-models agent-state) @(:provider agent-state))
-        :thinking-level @(:thinking agent-state)}))})
+  (assoc (extensions/headless-ui-port)
+         :build-context
+         (fn []
+           (let [agent-state (agent-state engine)]
+             {:model (models/get-model @(:provider agent-state) @(:model agent-state))
+              :scoped-models (resolver/scoped-models-for-context
+                              @(:scoped-models agent-state) @(:provider agent-state))
+              :thinking-level @(:thinking agent-state)}))))
 
 (defn bootstrap
   "Build the runtime engine for CONFIG.
@@ -123,7 +126,13 @@
      :provider     — provider override; defaults to the config provider
      :cwd          — runtime cwd override for the prompt; defaults to the
                      session's recorded cwd, else the process cwd
-     :ui-registry  — front-end UI registry; defaults to build-context only
+     :mode         — front-end kind bound to extensions (pi: mode);
+                     defaults to :print
+     :has-ui       — whether the front end has a UI port (ctx.has-ui);
+                     defaults to false
+     :ui-context   — front-end capability map; defaults to the headless
+                     port + build-context (kmet.app.session-runtime/
+                     default-ui-registry)
      :agent-opts   — extra/overriding make-agent-state options (escape hatch
                      for tests and front-end-specific run options; the
                      engine's session follows an overridden :session)
@@ -134,7 +143,7 @@
    used to wire by hand, seeds the scoped-model list, and installs the
    extension runtime handle (session, context sink, UI registry)."
   [config opts]
-  (let [{:keys [model provider cwd ui-registry agent-opts]} opts
+  (let [{:keys [model provider cwd ui-context mode has-ui agent-opts]} opts
         ;; the resolved session (the layout/print-mode policy output); any
         ;; :agent-opts override is folded back in below via the agent state
         sess (:session opts)
@@ -224,13 +233,19 @@
                              :disposed? (atom false)
                              :cwd (atom runtime-cwd)
                              :turn-running? (atom false)
-                             :compaction-queued (atom [])})]
+                             :compaction-queued (atom [])
+                             :pending-ui (atom {})})]
     ;; Runtime-scoped extension handle: the session facades and the ctx
-    ;; :model/:scoped-models/:thinking-level read the live agent. The UI
-    ;; registry is the default unless the front end installs its own later.
+    ;; :model/:scoped-models/:thinking-level read the live agent. The
+    ;; front-end binding is runtime-scoped too (engine.md §4.5): bootstrap
+    ;; installs the headless port and the front-end kind, dispose! unbinds.
+    ;; A front end with its own port re-binds after its widgets exist.
     (extensions/set-session! (:session agent-state))
     (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (agent-state engine) msg)))
-    (extensions/set-ui-registry! (or ui-registry (default-ui-registry engine)))
+    (extensions/bind-extensions!
+     {:mode (or mode :print)
+      :has-ui (boolean has-ui)
+      :ui (or ui-context (default-ui-registry engine))})
     engine))
 
 (defn session
@@ -612,6 +627,52 @@
   (reset! (:turn-running? engine) false)
   (agent/cancel-turn (agent-state engine)))
 
+;; ─── UI requests (the port's async answer protocol, engine.md §4.5) ───────
+
+(defn respond!
+  "Answer the pending :ui-request ID with VALUE (pi: the RPC
+   extension_ui_response). A missing or already-answered id is ignored.
+   Returns nil."
+  [engine id value]
+  (when-let [p (get @(:pending-ui engine) id)]
+    (swap! (:pending-ui engine) dissoc id)
+    (deliver p value))
+  nil)
+
+(defn request-ui!
+  "Ask the bound front end for an answer (engine.md §4.5): builds
+   `{:type :ui-request :id ... :kind ...}` merged with PAYLOAD, delivers it
+   to the port's :request capability, and returns a promise of the answer.
+
+   A port that answers in-process returns the value (a blocking dialog may
+   block — §4.2 rule 4) or `extensions/request-pending` when its in-process
+   dialog has not resolved yet; a port that forwards the request to an
+   asynchronous client returns `request-pending` and the answer arrives
+   through `respond!`. Without a :request capability the degraded default
+   for KIND answers immediately (`:default` in PAYLOAD overrides it)."
+  [engine kind payload]
+  (let [id (str (random-uuid))
+        request (assoc payload :type :ui-request :id id :kind kind)
+        p (promise)
+        request-fn (extensions/ui-capability :request)]
+    (if request-fn
+      (do (swap! (:pending-ui engine) assoc id p)
+          (let [reply (try (request-fn request)
+                           (catch Throwable t
+                             ;; a throwing port still cleans up its
+                             ;; pending entry; the error reaches the caller
+                             (respond! engine id (if (contains? payload :default)
+                                                   (:default payload)
+                                                   (extensions/ui-request-default kind)))
+                             (throw t)))]
+            (if (= extensions/request-pending reply)
+              p
+              (do (respond! engine id reply) p))))
+      (do (deliver p (if (contains? payload :default)
+                       (:default payload)
+                       (extensions/ui-request-default kind)))
+          p))))
+
 ;; ─── Submission + compaction queue ─────────────────────────────────────────
 
 (defn compaction-queued
@@ -826,8 +887,8 @@
 (defn dispose!
   "Release the engine: cancel an in-flight run or compaction, wait (bounded,
    2s) for a run to settle so the terminal :agent-settled reaches the
-   subscribers, then clear the subscribers and the extension runtime
-   handle. Idempotent."
+   subscribers, then clear the subscribers, resolve any pending UI requests
+   with nil, and unbind the extension runtime handle. Idempotent."
   [engine]
   (when (compare-and-set! (:disposed? engine) false true)
     (let [agent-state (agent-state engine)
@@ -839,7 +900,12 @@
           (deref run 2000 nil))))
     (reset! (:subscribers engine) [])
     (reset! (:turn-running? engine) false)
+    ;; no front end is listening after dispose: a waiting extension dialog
+    ;; must not park the shutting-down process
+    (doseq [p (vals @(:pending-ui engine))]
+      (deliver p nil))
+    (reset! (:pending-ui engine) {})
     (extensions/set-session! nil)
     (extensions/set-context-sink! nil)
-    (extensions/clear-ui-registry!))
+    (extensions/unbind-extensions!))
   nil)

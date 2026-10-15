@@ -618,6 +618,27 @@ Acceptance: extensions using `ctx.ui` still pass `test/kmet/app/
 test_extensions_ui.clj`; a print-mode extension dialog test answers with the
 default; the GUI can install its port.
 
+**Landed (the port seam).** `extensions/bind-extensions!` installs the
+front-end kind + capability map; `unbind-extensions!` restores the headless
+defaults. `bootstrap` binds `:print`/`:json` (print mode passes its output
+variant), the interactive registry binds `:interactive`/has-ui true, and
+`dispose!` unbinds. `default-extension-context` reads the bound kind, so
+`ctx.mode`/`ctx.has-ui` are correct per front end. `bootstrap`'s headless
+port is `extensions/headless-ui-port` (pi's `noOpUIContext`): inert setters,
+neutral getters, `:set-theme` failure, `ui-custom` → resolved nil promise,
+and `:request` auto-answers (`:select` nil, `:confirm` false,
+`:input`/`:editor`/`:custom` nil). The runtime adds `request-ui!` and
+`respond!`: a port answers in-process (value, or `extensions/request-pending`
+when its dialog resolves later) or forwards the request and answers with
+`respond!`; `dispose!` resolves anything still pending with nil. Covered by
+`test/kmet/app/test_ui_port.clj`; `extension.md` documents the degraded set
+and the request protocol.
+
+**Still open in this step**: the command-ctx migration — handlers receiving
+`{:runtime :ui :frontend}` with the legacy CoreState keys deleted and the
+engine-portable implementations moved into `kmet.app.*` homes (§10.3). The
+port now exists; that migration is the remaining consumer work.
+
 ### Step 5 — GUI mode (the proof)
 
 The backend already exists — `src/kmet/tk/` ships the Tk/Tcl backend
@@ -717,10 +738,12 @@ The rest are parked with the step that resolves them.
    always, entries only on skip or `--debug`.
 3. **Command split granularity** — decided; the ctx shape and front-end
 tag landed in step 3 (handlers receive `{:runtime :ui :frontend}` plus the
-legacy CoreState keys, and builtins carry a `:frontend` tag). The
-engine-portable *implementations* move into `kmet.app.*` homes in step 4,
-when the UI port replaces the CoreState keys inside the ctx. One handler
-shape, no intent language. A handler returns nil or a small result
+legacy CoreState keys, and builtins carry a `:frontend` tag). The step 4
+port seam landed (`bind-extensions!`, the headless port, `request-ui!`/
+`respond!`); the engine-portable *implementations* move into `kmet.app.*`
+homes when the command-ctx migration replaces the CoreState keys inside the
+ctx — the remaining step 4 consumer work. One handler shape, no intent
+language. A handler returns nil or a small result
 (`{:message s}` / `{:stop true}`), never an intent to interpret. Extension
 commands keep the same `ctx` shape. Intents/effects would only pay off for
 a front end that executes commands in another process; a future wire mode

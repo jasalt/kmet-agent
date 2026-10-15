@@ -811,7 +811,11 @@
                   (reset! current-editor-atom ed)
                   (when (tui/tui-has-overlay? t) (tui/tui-hide-overlay t))
                   (tui/tui-request-render t))}]
-    (extensions/set-ui-registry! registry)
+    ;; Bind the front end's extension surface (engine.md §4.5): the
+    ;; capability map plus the front-end kind extensions branch on
+    ;; (ctx.mode / ctx.has-ui). bootstrap bound the headless defaults; the
+    ;; live widgets replace them here.
+    (extensions/bind-extensions! {:mode :interactive :has-ui true :ui registry})
     ;; Live session + context injection for extensions (pi:
     ;; ctx.sessionManager / custom messages flowing through the agent loop).
     ;; Installed once with the registry; reload mutates the same CoreState

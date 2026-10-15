@@ -86,6 +86,7 @@
     kmet.app.ui.test-resource-config
     kmet.app.ui.test-hotkeys
     kmet.app.test-extensions-ui
+    kmet.app.test-ui-port
     kmet.app.test-interactive-ui
     kmet.app.test-event-bus
     kmet.app.test-event-conformance
