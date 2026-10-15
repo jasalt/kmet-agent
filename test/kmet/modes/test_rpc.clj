@@ -201,6 +201,17 @@
               :error "streaming-behavior must be :steer or :follow-up"}
              (first records))))))
 
+(deftest test-streaming-behavior-is-ignored-when-idle
+  (testing "pi applies streamingBehavior only while streaming: an idle
+            prompt starts a run instead of queueing the message"
+    (with-redefs [agent/run-agent-turn (fn [_ _] nil)]
+      (let [[_ records] (run-lines [{:type :prompt :id 1 :message "hi"
+                                     :streaming-behavior :steer}
+                                    {:type :clear-queue :id 2}])
+            [started cleared] (responses records)]
+        (is (= {:disposition :started} (:data started)))
+        (is (= {:steering [] :follow-up []} (:data cleared)))))))
+
 (deftest test-prompt-passes-images-to-the-run
   (testing "images ride the started path into the run's options"
     (let [received (promise)]

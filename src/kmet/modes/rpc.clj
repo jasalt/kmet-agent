@@ -3,11 +3,9 @@
    on stdout (engine.md step 6; pi: modes/rpc/rpc-mode.ts). A command is a
    map with a :type and an optional string :id the matching response
    repeats; events are the print-mode wire projection
-   (event-bus/wire-event); extension UI dialogs arrive as
-   {:type :ui-request ...} records and are answered with
-   {:type :respond ...} (the runtime's request-ui!/respond! pair). stdout
-   carries protocol only — kmet.debug writes files and nothing else in the
-   runtime prints."
+   (event-bus/wire-event). stdout carries protocol only — kmet.debug writes
+   files and nothing else in the runtime prints. Extension UI dialogs (the
+   runtime's request-ui!/respond! pair) are wired in step 6c."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -30,8 +28,9 @@
       (flush))))
 
 (defn- ok
-  ([command] {:type :response :command command :success true})
-  ([command data] {:type :response :command command :success true :data data}))
+  "A success response carrying DATA as its :data payload."
+  [command data]
+  {:type :response :command command :success true :data data})
 
 (defn- failed
   "A failure response: COMMAND names the command that failed (nil when the
@@ -71,15 +70,31 @@
       (skills/expand-skill-command)
       (prompts/expand-prompt-template (prompts/get-prompt-templates))))
 
-(defn- reject-queue-images!
-  "Image attachments cannot ride the steering/follow-up queues yet (they
-   carry plain text or custom-message maps). Reject rather than drop them."
-  [command verb]
+(defn- command-queue
+  "The shared steer/follow-up path: the queues carry no image blocks, so
+   reject :images rather than drop them; expand skill commands and prompt
+   templates (pi: steer/follow_up — extension commands are not allowed
+   there); queue; answer with the queued disposition."
+  [engine {:keys [type] :as command} enqueue!]
   (when (:images command)
-    (throw (ex-info (str (name verb) " does not support :images yet")
-                    {:type :unsupported}))))
+    (throw (ex-info (str (name type) " does not support :images yet")
+                    {:type :unsupported})))
+  (if-let [text (message-of command)]
+    (do (enqueue! engine (expand-queued-text text))
+        (ok type {:disposition :queued}))
+    (failed type (str (name type) " requires a non-empty :message string"))))
 
 ;; ─── Commands ──────────────────────────────────────────────────────────────
+
+(defn- command-steer
+  "Queue a message for mid-turn injection (pi: steer)."
+  [engine command]
+  (command-queue engine command runtime/steer!))
+
+(defn- command-follow-up
+  "Queue a message for after the run settles (pi: follow_up)."
+  [engine command]
+  (command-queue engine command runtime/follow-up!))
 
 (defn- command-prompt
   "Start, steer, queue, or handle a prompt (pi: prompt). While a run is
@@ -98,12 +113,9 @@
         (and running? (nil? behavior))
         (failed :prompt "The agent is already running; specify :streaming-behavior :steer or :follow-up")
 
-        (= :steer behavior)
-        (do (runtime/steer! engine (expand-queued-text text))
-            (ok :prompt {:disposition :queued}))
-
-        (= :follow-up behavior)
-        (do (runtime/follow-up! engine (expand-queued-text text))
+        (and running? behavior)
+        (do ((if (= :steer behavior) runtime/steer! runtime/follow-up!)
+             engine (expand-queued-text text))
             (ok :prompt {:disposition :queued}))
 
         :else
@@ -115,24 +127,6 @@
                                       :handled :handled
                                       :queued)}))))
     (failed :prompt "prompt requires a non-empty :message string")))
-
-(defn- command-steer
-  "Queue a message for mid-turn injection (pi: steer)."
-  [engine command]
-  (reject-queue-images! command :steer)
-  (if-let [text (message-of command)]
-    (do (runtime/steer! engine (expand-queued-text text))
-        (ok :steer {:disposition :queued}))
-    (failed :steer "steer requires a non-empty :message string")))
-
-(defn- command-follow-up
-  "Queue a message for after the run settles (pi: follow_up)."
-  [engine command]
-  (reject-queue-images! command :follow-up)
-  (if-let [text (message-of command)]
-    (do (runtime/follow-up! engine (expand-queued-text text))
-        (ok :follow-up {:disposition :queued}))
-    (failed :follow-up "follow-up requires a non-empty :message string")))
 
 (defn- command-abort
   "Cancel the in-flight run and wait (bounded) for the session to become
@@ -168,6 +162,7 @@
   [engine _]
   (let [snap (runtime/snapshot engine)
         sess (:session snap)
+        session-name (some-> sess session/get-session-name)
         {:keys [steering follow-up]} (:queues snap)]
     (ok :get-state
         (cond-> {:model (:model snap)
@@ -182,7 +177,7 @@
                                :file (:file sess)
                                :message-count (session/get-message-count sess)}
                         ;; pi omits sessionName when unset
-                        (session/get-session-name sess) (assoc :name (session/get-session-name sess))))))))
+                        session-name (assoc :name session-name)))))))
 
 (def ^:private command-table
   {:prompt command-prompt
@@ -254,12 +249,8 @@
   [opts]
   (let [config (cfg/apply-cli-overrides (or (:config opts) (cfg/load-config :no-env? true)) opts)
         in (or (:in opts) *in*)
-        out (or (:out opts) *out*)
-        session (runtime/resolve-run-session config opts)]
-    (if (nil? session)
-      (do (binding [*out* *err*]
-            (println (str "No session found matching '" (:session opts) "'")))
-          nil)
+        out (or (:out opts) *out*)]
+    (if-let [session (runtime/resolve-run-session config opts)]
       (let [engine (runtime/bootstrap config {:session session
                                               :model (:model opts)
                                               :provider (:provider opts)
@@ -277,4 +268,7 @@
                 (serve engine rdr out))
               (finally (unsubscribe))))
           (finally (runtime/dispose! engine)))
-        :ok))))
+        :ok)
+      (do (binding [*out* *err*]
+            (println (str "No session found matching '" (:session opts) "'")))
+          nil))))
