@@ -234,7 +234,7 @@
                                                [:width :bg :fg :exportselection :textvariable
                                                 :justify :state])
                      :bindings (merge dsl/text-field-bindings dsl/validation-bindings
-                                      (select-keys dsl/scroll-bindings [:xscrollcommand]))
+                                      dsl/scroll-x-bindings)
                      :text-field true})
 
    :ttk/combobox
@@ -245,7 +245,7 @@
                                                 :textvariable :justify :state :values])
                      :bindings (merge dsl/text-field-bindings
                                       dsl/validation-bindings
-                                      (select-keys dsl/scroll-bindings [:xscrollcommand])
+                                      dsl/scroll-x-bindings
                                       {:on-change {:event "<<ComboboxSelected>>"
                                                    :value :text}
                                        :postcommand {:option :postcommand}})
@@ -259,7 +259,7 @@
                                                 :justify :state :values :format :from :to
                                                 :increment :wrap])
                      :bindings (merge dsl/spinbox-bindings dsl/validation-bindings
-                                      (select-keys dsl/scroll-bindings [:xscrollcommand]))
+                                      dsl/scroll-x-bindings)
                      :text-field true})
 
    :ttk/scale

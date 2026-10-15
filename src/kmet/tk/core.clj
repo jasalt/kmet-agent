@@ -337,7 +337,7 @@
                                                 :fonted :entry-body]
                                                [:bg :fg :width :state :show :textvariable])
                      :bindings (merge dsl/text-field-bindings dsl/validation-bindings
-                                      (select-keys dsl/scroll-bindings [:xscrollcommand]))
+                                      dsl/scroll-x-bindings)
                      :text-field true})
 
    :tk/spinbox
@@ -350,7 +350,7 @@
                                                 :increment :format :values :wrap
                                                 :repeatdelay :repeatinterval])
                      :bindings (merge dsl/spinbox-bindings dsl/validation-bindings
-                                      (select-keys dsl/scroll-bindings [:xscrollcommand]))
+                                      dsl/scroll-x-bindings)
                      :text-field true})
 
    :tk/listbox

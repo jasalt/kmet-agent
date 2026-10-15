@@ -115,10 +115,10 @@
 (defonce ^:private callbacks (atom {}))
 
 (defn- register-handler!
-  "Register F in the `kmet::cb` registry and return its id. The registry
-   owns the handler; whatever releases the id stops it being dispatchable.
-   ANSWER marks a slot Tk reads a result from — see dispatch-callback!."
-  [f value arg answer]
+  "Register F with the slot spec SLOT — :value/:arg its read-back kind,
+   :answer whether Tk reads a result — and return its id. The registry owns
+   the handler; whatever releases the id stops it being dispatchable."
+  [f {:keys [value arg answer]}]
   (let [id (swap! next-callback inc)]
     (swap! callbacks assoc id {:handler f :value value :arg (or arg value)
                                :answer answer})
@@ -138,17 +138,18 @@
 
 (defn- set-callback!
   "Register F as W's SLOT handler (releasing whatever the slot held) and
-   return the `kmet::cb <id>` argument; nil F just releases the slot.
-   VALUE is the fragment kind the bound script reads the widget with (nil
-   when Tk hands the value over itself, as a scale's -command does), ARG
-   how the handler wants the arguments Tk passes, and ANSWER whether Tk
-   reads the result (a validatecommand answers a boolean).
+   return the `kmet::cb <id>` argument; nil F just releases the slot. SPEC
+   is the slot's binding spec: its :value is the fragment kind the bound
+   script reads the widget with (nil when Tk hands the value over itself,
+   as a scale's -command does), :arg how the handler wants the arguments
+   Tk passes, and :answer whether Tk reads the result (a validatecommand
+   answers a boolean).
    Rebinding matters: Tk's bind (and -command) replaces the script, so
    without the release the old command would stay dispatchable."
-  [w slot f value arg answer]
+  [w slot f spec]
   (release-slot! w slot)
   (when (some? f)
-    (let [id (register-handler! f value arg answer)]
+    (let [id (register-handler! f spec)]
       (swap! (:callbacks w) assoc slot id)
       (str "kmet::cb " id))))
 
@@ -198,6 +199,11 @@
    app instead — the handler gets [first last] as numbers."
   {:xscrollcommand {:option :xscrollcommand :arg :scroll}
    :yscrollcommand {:option :yscrollcommand :arg :scroll}})
+
+(def scroll-x-bindings
+  "A text field's -xscrollcommand alone: it is entry-like, so it has no
+   vertical scroll command of its own (see scroll-bindings)."
+  (select-keys scroll-bindings [:xscrollcommand]))
 
 (defn- as-number
   "S as a Clojure number: an integral Tcl value (7, 7.0) as a long, else as
@@ -271,7 +277,7 @@
    must not insert a newline. :answer marks a slot Tk reads a result from
    (a validatecommand's boolean)."
   [w slot {:keys [event option value arg stop target answer]} f]
-  (let [callback (set-callback! w slot f value arg answer)
+  (let [callback (set-callback! w slot f {:value value :arg arg :answer answer})
         script (when (some? callback)
                  (str callback
                       (when-let [frag (value-fragment w value)] (str " " frag))
@@ -558,7 +564,7 @@
   ;; Tk appends the variable name, the array element and the operation to a
   ;; variable trace's script, so the trampoline's argv is the new value and
   ;; those three: the watch hands F the value alone.
-  (let [id (register-handler! (fn [value & _] (f value)) nil nil nil)
+  (let [id (register-handler! (fn [value & _] (f value)) {})
         script (trace-script id (:name v))
         watching? @(:materialized v)]
     (swap! (:watches v) assoc id script)
@@ -1439,7 +1445,7 @@
                   ;; word, which expr would read as a bareword
                   :radio (str "[string equal [set " var "] " (tcl-value (:value item)) "]")
                   nil)]
-      (str (set-callback! w slot f nil (when state :variable) nil)
+      (str (set-callback! w slot f {:arg (when state :variable)})
            (when state (str " " state))))))
 
 (defn- menu-add!
