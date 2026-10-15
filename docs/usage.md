@@ -23,7 +23,8 @@ bb start @tasks.md "summarize the tasks"
 ```
   -d, --debug           Log to debug.log
   -p, --print           Print response and exit (non-interactive)
-  --mode <format>       Print output: text (default) or edn; implies --print
+  --mode <mode>         Non-interactive mode: rpc (EDN stdio protocol), or
+                        print output text (default)/edn
   -c, --continue        Continue most recent session
   -r, --resume          Browse sessions
   --session <id|path>   Resume session by id/prefix or file path
@@ -61,6 +62,12 @@ stdout: the session header line, then every event as one EDN map per line.
 Streaming `:message-update` events carry only the delta — no cumulative
 message snapshot — and `:agent-settled` ends the stream with the run's
 outcome; the exit code follows it (0 completed, 1 error or aborted).
+
+`--mode rpc` runs the long-lived EDN protocol instead: commands on stdin,
+responses and the same event stream on stdout, plus extension dialogs and
+output channels. It is the integration surface for editor plugins and test
+harnesses; see the [RPC guide](rpc.md) for the protocol, the command
+reference, and the client library.
 
 ### Package subcommands
 

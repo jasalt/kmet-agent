@@ -11,6 +11,8 @@ describe instead of being mixed into this user guide. The temporary root notes
   provider, and make the first request.
 - [Usage](usage.md) — run the TUI or print mode, use slash commands, and
   navigate sessions.
+- [RPC mode](rpc.md) — drive a long-lived session over EDN stdin/stdout:
+  protocol, commands, extension UI, and the client library.
 - [Configuration](configuration.md) — settings files, prompts, compaction,
   HTTP, and resource locations.
 

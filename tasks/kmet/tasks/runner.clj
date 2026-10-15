@@ -96,6 +96,7 @@
     kmet.app.test-keybindings
     kmet.modes.test-print
     kmet.modes.test-rpc
+    kmet.modes.test-rpc-client
     kmet.modes.test-headless-guard
     kmet.modes.test-interactive
     kmet.modes.interactive.test-state

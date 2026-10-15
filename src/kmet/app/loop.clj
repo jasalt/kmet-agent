@@ -2785,7 +2785,12 @@ Be precise and concise in your responses."}}]
             (on-error (str "No API key for " (name provider)
                            ". Set the key in ~/.kmet/agent/auth.edn or the appropriate environment variable.")))
           ;; The prompt cannot start, but a streaming consumer waits for
-          ;; :agent-settled — settle it like any other failed prompt.
+          ;; :agent-settled — settle it like any other failed prompt. Record
+          ;; the outcome too: the settle event carries it, and a state
+          ;; consumer (get-state / a client's wait-idle) reads it back from
+          ;; :last-outcome, which no finally touches on this early-return
+          ;; path.
+          (reset! (:last-outcome agent) :error)
           (emit agent {:type :agent-settled :outcome :error})
           (future))
       ;; Bind the run's cancel signal for the whole prompt: it conveys into the

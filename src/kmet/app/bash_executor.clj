@@ -311,7 +311,7 @@
             ;; it — the EOF pi's stdio `ignore` gives the other transport.
             _ (when (and use-stdin? (:in p))
                 (try (spit (:in p) command) (catch Exception _ nil))
-                (try (.close (:in p)) (catch Exception _ nil)))
+                (process/close-stdin! p))
             pid (try (-> p :proc .pid) (catch Exception _ nil))
             _ (when pid (process/track-pid! pid))
             ;; Pi: timeout handled manually (setTimeout + killProcessTree) —

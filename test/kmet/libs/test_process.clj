@@ -6,6 +6,7 @@
    fallback."
   (:require [babashka.fs :as fs]
             [babashka.process :as proc]
+            [clojure.java.io :as io]
             [clojure.test :as t]
             [kmet.libs.process :as process]))
 
@@ -76,6 +77,22 @@
         (when-let [p @spawned]
           (try (proc/destroy-tree p) (catch Exception _ nil)))
         (try (fs/delete-tree dir) (catch Exception _ nil))))))
+
+(t/deftest ^:slow write-stdin-sends-utf8-and-close-sends-eof
+  ;; the client's stdin seam must reach the child on both hosts: Jolt's
+  ;; io/writer over a process stream buffers without ever writing
+  (let [p (proc/process ["cat"] {:in :pipe :out :pipe})]
+    (try
+      (process/write-stdin! p "héllo\n")
+      (t/is (= "héllo" (.readLine (io/reader (:out p))))
+            "UTF-8 text reached the child")
+      (process/close-stdin! p)
+      (t/is (nil? (.readLine (io/reader (:out p)))) "close sends EOF")
+      (t/is (nil? (process/close-stdin! p)) "closing again is a no-op")
+      (t/is (thrown? Exception (process/write-stdin! p "ignored"))
+            "a closed stream fails the write rather than swallowing it")
+      (finally
+        (try (proc/destroy p) (catch Exception _ nil))))))
 
 (t/deftest suspend-to-background-signals-the-caller-process-group
   (let [spawned (atom nil)]

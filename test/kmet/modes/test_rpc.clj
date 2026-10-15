@@ -185,6 +185,25 @@
           (is (true? (:has-ui (deref started 1000 nil))))
           (is (map? (:ui-context (deref started 1000 nil))) "the UI port rides along"))))))
 
+(deftest test-eof-streams-the-terminal-settle-of-an-in-flight-run
+  (testing "stdin EOF disposes the engine; a run still active is cancelled
+            and its terminal :agent-settled reaches the stream before the
+            subscriber is dropped (engine.md §4.1's terminal-event
+            contract)"
+    (with-redefs [agent/run-agent-turn
+                  (fn [ag _]
+                    (future
+                      (while (not @(:signal ag))
+                        (Thread/sleep 5))
+                      (emit! ag {:type :agent-settled :outcome :aborted})))]
+      (let [[result records] (run-lines [{:type :prompt :id 1 :message "go"}])]
+        (is (= :ok result))
+        (is (= [:prompt] (mapv :command (responses records))))
+        (is (= :agent-settled (:type (last records)))
+            "the cancelled run's settle was written before dispose dropped the
+             subscriber")
+        (is (= :aborted (:outcome (last records))))))))
+
 (deftest test-prompt-during-a-run-requires-streaming-behavior
   (testing "pi parity: a prompt while a run is active needs an explicit
             :streaming-behavior; the queued prompt lands on that queue"

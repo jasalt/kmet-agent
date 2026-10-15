@@ -485,15 +485,21 @@
 ;; ─── run-agent-turn with no API key ──────────────────────────────────────
 
 (t/deftest test-loop-run-agent-turn-no-api-key
-  (let [agent (loop/make-agent-state)
-        errors (atom [])
+  (let [errors (atom [])
+        events (atom [])
+        agent (loop/make-agent-state {:on-event #(swap! events conj %)})
         done (promise)]
     (loop/run-agent-turn agent
                          {:message "hello"
                           :on-error (fn [e] (swap! errors conj e) (deliver done true))})
     (t/is (true? (deref done 2000 :timeout)) "error callback fires")
     (t/is (pos? (count @errors)))
-    (t/is (.contains (first @errors) "No API key"))))
+    (t/is (.contains (first @errors) "No API key"))
+    (t/is (= :error (:outcome (last (filter #(= :agent-settled (:type %)) @events))))
+          "the settle reports :error")
+    (t/is (= :error @(:last-outcome agent))
+          "the outcome is recorded: a state reader (get-state, a client's
+           wait-idle) sees the failure, not the initial :completed")))
 
 (t/deftest test-loop-run-agent-turn-ambient-auth
   ;; google-vertex (ADC) and amazon-bedrock (AWS credentials) resolve no

@@ -625,10 +625,11 @@
       {:error (or (ex-message e) (str e))})))
 
 (defn- serve
-  "Serve commands from RDR until EOF. Returns nil."
-  [table engine rdr out]
+  "Serve commands from NEXT-LINE (a 0-arg fn returning the next line, nil at
+   EOF) until EOF. Returns nil."
+  [table engine next-line out]
   (loop []
-    (when-let [line (.readLine rdr)]
+    (when-let [line (next-line)]
       (let [{:keys [command error]} (parse-line line)]
         (if error
           ;; a malformed record answers a parse response without an id
@@ -638,6 +639,18 @@
           (when-let [response (handle-command table engine command)]
             (write-record! out (correlated response (:id command))))))
       (recur))))
+
+(defn- serve-input
+  "Serve commands from the configured input: an explicit :in override (a
+   Reader; tests drive the protocol with one) or clojure.core/read-line over
+   *in*. Jolt's *in* is not a java.io.Reader (it is a reify over the host's
+   reader protocol), so the default stdin source cannot be wrapped by
+   io/reader."
+  [table engine in out]
+  (if in
+    (with-open [rdr (io/reader in)]
+      (serve table engine (fn [] (.readLine rdr)) out))
+    (serve table engine read-line out)))
 
 (defn run
   "Run RPC mode: EDN commands on IN, protocol records on OUT. Resolves the
@@ -651,7 +664,6 @@
    exits 1)."
   [opts]
   (let [config (cfg/apply-cli-overrides (or (:config opts) (cfg/load-config :no-env? true)) opts)
-        in (or (:in opts) *in*)
         out (or (:out opts) *out*)]
     ;; the portable builtins this front end dispatches over prompt (6.3) and
     ;; reports through get-commands; registration is idempotent
@@ -669,14 +681,17 @@
                                               :ui-context port})
             table (command-table (command-ui port))]
         (reset! engine-ref engine)
-        (try
-          (let [unsubscribe (runtime/subscribe! engine (fn [event]
-                                                         (write-record! out (event-bus/wire-event event))))]
-            (try
-              (with-open [rdr (io/reader in)]
-                (serve table engine rdr out))
-              (finally (unsubscribe))))
-          (finally (runtime/dispose! engine)))
+        (let [unsubscribe (runtime/subscribe! engine (fn [event]
+                                                       (write-record! out (event-bus/wire-event event))))]
+          (try
+            (serve-input table engine (:in opts) out)
+            (finally
+              ;; dispose first: it cancels an in-flight run and waits for
+              ;; the terminal :agent-settled, which must reach the subscriber
+              ;; before dispose clears it (engine.md §4.1). The unsubscribe
+              ;; after is then a no-op.
+              (runtime/dispose! engine)
+              (unsubscribe))))
         :ok)
       (do (binding [*out* *err*]
             (println (str "No session found matching '" (:session opts) "'")))

@@ -4,12 +4,18 @@ Status: working design note at the repository root (like `run_code.md`,
 `perf.md`, `windows.md`). It records decisions, a staged plan, and open
 questions. It is not user documentation and it is not authoritative for
 behavior — the topic map in `AGENTS.md` still points at the behavior docs.
-Fold this into `src/kmet/README.md` (or delete it) when the work lands.
+
+Steps 0–4 and 6a–6d have landed, and their architecture is folded into
+[`src/kmet/README.md`](src/kmet/README.md) ("Session runtime and front
+ends"); RPC mode's user guide is [`docs/rpc.md`](docs/rpc.md). What remains
+here: the malli boundary schemas (§4.3, §6), the app-layer enforcement and
+finding F cleanups (§8), the finding E follow-up, and the parked GUI front
+end (step 5). Fold this file into the README or delete it when those land.
 
 Scope: one session runtime usable unchanged by the interactive TUI, print
 mode (text and event output), and the GUI front end. The GUI is postponed
-until the Tk backend stabilizes; RPC mode (step 6) goes next. Namespaces
-are not renamed.
+until the Tk backend stabilizes; RPC mode (step 6) landed as the headless
+front end. Namespaces are not renamed.
 
 Decisions already taken in discussion:
 
@@ -902,6 +908,44 @@ print and RPC modes reaches no `kmet.modes.interactive.*`, no
 `kmet.app.ui.*`, no `kmet.tui.terminal` and no `kmet.tk.*` (`kmet.tui.theme`
 remains reachable through the extension ABI — the documented allowance).
 Tests: `test_rpc` 32.
+
+**Landed (6d)** — the client, the end-to-end suite, and the user docs.
+`kmet.modes.rpc-client` is the thin EDN client (`start`/`stop!`, `send!`,
+`request!` by id, `on-event!`, `on-settle!`, `wait-idle!`, and the `stderr` /
+`unparsed-lines` accessors); `test/kmet/modes/test_rpc_client.clj` is the
+`^:slow` subprocess round-trip suite — a real `--mode rpc` child spawned
+through the client, a response round trip, a prompt whose stream and
+`:agent-settled :error` arrive as events, a malformed-line parse response,
+and the closed-client `:rpc-exited` failure. The child runs with a private
+agent dir under `target/` pinning an unauthenticated custom provider, so the
+full prompt path is exercised without touching the network. `docs/rpc.md` is
+the user guide (transport, discipline, the command reference, the extension
+UI records, the client example, and the pi parity table); the landed
+architecture is folded into `src/kmet/README.md` under "Session runtime and
+front ends". Bugs fixed while landing this step (three the e2e test caught,
+one found reviewing the shutdown path):
+
+- Jolt's `*in*` is not a `java.io.Reader`, so `--mode rpc` could not read
+  stdin under `jolt start`; `rpc/serve` now takes a line source
+  (`clojure.core/read-line` by default; an explicit `:in` Reader is wrapped
+  only for tests).
+- Jolt's `io/writer` over a process stdin stream buffers without ever
+  reaching the child; `kmet.libs.process/write-stdin!` owns the portable
+  write (UTF-8 bytes + flush) and the client uses it (the bash executor's
+  one-shot `spit` was unaffected).
+- `run-agent-turn`'s no-credential early return emitted
+  `:agent-settled :error` without recording `:last-outcome`, so `get-state`
+  (and the client's `wait-idle!` state probe) still reported `:completed`.
+- `rpc/run` unsubscribed from the event stream *before* `dispose!`, so a run
+  cancelled at stdin EOF lost its terminal `:agent-settled :aborted` —
+  `dispose!` waits for that settle precisely so subscribers see it (engine.md
+  §4.1). Dispose now runs first, with a `test_rpc` regression test.
+
+The §6.4 acceptance is green: `test_rpc` (36 tests) covers the protocol
+discipline in-process, `test_rpc_client` (4 `^:slow` tests) covers it over
+real stdio on both hosts, and the headless guard covers the RPC require
+graph. Deferred commands (`bash`, `abort_bash`, `set_auto_retry`,
+`abort_retry`) and the pi parity deltas are documented in `docs/rpc.md`.
 
 ## 8. Enforcement
 

@@ -69,3 +69,14 @@
       (is (= ["kmet.tui.theme"] tui)
           (str root " reaches TUI namespaces beyond the documented allowance: " tui))
       (is (empty? tk) (str root " reaches the Tk backend: " tk)))))
+
+(deftest rpc-client-stays-headless
+  (testing "the scripted RPC client loads no view layer at all — not even the
+            kmet.tui.theme extension-ABI allowance (it binds no extensions)"
+    (let [{:keys [root loaded? interactive view tui tk]}
+          (headless-violations "kmet.modes.rpc-client")]
+      (is loaded? (str root " must be part of the graph"))
+      (is (empty? interactive) (str root " reaches " interactive))
+      (is (empty? view) (str root " reaches the TUI view layer: " view))
+      (is (empty? tui) (str root " reaches the TUI layer: " tui))
+      (is (empty? tk) (str root " reaches the Tk backend: " tk)))))

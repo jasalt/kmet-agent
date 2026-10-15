@@ -27,9 +27,17 @@ src/kmet/
 │                         hikap.clj / hikap/ is the toolkit-agnostic
 │                         hiccup framework (engine, component runtime,
 │                         alias registry) the TUI and GUI backends build on
-├── modes/              — Entry modes: interactive TUI + print mode
+├── modes/              — Entry modes: interactive TUI + print + RPC
 │   ├── interactive.clj — interactive TUI entry: run + session start-up
 │   │                     (pi: modes/interactive/interactive-mode.ts)
+│   ├── print.clj       — non-interactive print mode (`--print`;
+│   │                     `--mode text|edn` output)
+│   ├── rpc.clj         — the long-lived EDN stdio protocol (docs/rpc.md):
+│   │                     command dispatch, wire events, and the extension
+│   │                     UI port's asynchronous answers
+│   ├── rpc_client.clj  — the thin client scripts and tests drive RPC mode
+│   │                     with: spawn, send/await by id, event
+│   │                     subscription, wait-idle
 │   └── interactive/    — sections split out of interactive.clj:
 │       ├── state.clj   — CoreState (view state + the runtime engine),
 │       │                 config ref, session-dir/format helpers,
@@ -167,6 +175,38 @@ for mutable state. `AgentState` deliberately uses independent per-field atoms
 rather than one application-database atom. Prefer explicit runtime
 registration tables/maps over compile-time multimethod registries. Use
 `defn-` and `def-` for implementation details that are not public API.
+
+### Session runtime and front ends
+
+The engine/UI split (root `engine.md`) puts one session runtime behind every
+front end:
+
+- `kmet.app.session-runtime` owns the agent state, the session lifecycle
+  (`new-session!`, `resume!`, `fork!`, `clone!`, `switch-session!`), the
+  submission chain, the steer/follow-up queues, compaction, and the
+  extension runtime handle. Front ends call `bootstrap` once and drive the
+  engine through its operations: the TUI keeps its `CoreState` view state
+  plus the engine, and print/RPC modes construct no agent state at all.
+- The event stream is the API. `subscribe!` delivers plain EDN events on the
+  emitting thread (fast, non-blocking) and the vocabulary in
+  `kmet.app.event-bus` (`event-types` / `app-event-types` /
+  `loop-event-types`) is the shared contract; `:agent-settled` carries the
+  run's `:outcome` (`:completed` / `:error` / `:aborted`). A front end that
+  needs data not on the stream extends the event, not the reader.
+- Extension UI splits into runtime capabilities (installed by `bootstrap`,
+  cleared by `dispose!`) and the front-end UI port
+  (`extensions/bind-extensions!`). Dialogs ask through
+  `request-ui!`/`respond!`, so an asynchronous client can answer later; the
+  degraded headless answers and the per-front-end capability table are in
+  [`extension.md`](extension.md).
+- The RPC front end ([`docs/rpc.md`](../../docs/rpc.md)) is the headless
+  consumer and `kmet.modes.rpc-client` is the scripted client;
+  `test/kmet/modes/test_headless_guard.clj` asserts print and RPC reach no
+  interactive, TUI, or Tk namespace (the documented `kmet.tui.theme`
+  extension-ABI allowance aside).
+
+malli boundary schemas and the GUI front end remain scheduled in
+`engine.md`.
 
 ### Portable host rules
 

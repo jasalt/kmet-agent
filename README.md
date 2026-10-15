@@ -61,6 +61,7 @@ Start with the [user documentation](docs/README.md):
 
 - [Getting started](docs/getting-started.md) — requirements, setup, and first run.
 - [Usage](docs/usage.md) — command-line options, slash commands, shortcuts, and sessions.
+- [RPC mode](docs/rpc.md) — drive a session over EDN stdin/stdout.
 - [Configuration](docs/configuration.md) — settings, prompts, compaction, and resource paths.
 - [Providers and authentication](docs/providers.md) — API keys, OAuth, and custom models.
 - [Customization](docs/customization.md) — themes, skills, prompts, packages, and extensions.
