@@ -23,8 +23,10 @@
        -command rides {:on-click {:option :command}}, -validatecommand /
        -invalidcommand / -xscrollcommand / -yscrollcommand / -postcommand
        have slots of their own), and -tearoffcommand is not reached yet;
-     - another widget: -menu (a menubutton's :items build their own),
-       and -labelwidget is not reached yet;
+     - another widget: -menu and -labelwidget. Neither is a plain prop
+       here: a menubutton's :items build its menu, a menu's :menubar true
+       wires it onto the window, and a labelframe child's :labelwidget
+       true makes the child Tk's -labelwidget;
      - only meaningful with one of the above: -selecttype, -title,
        -titlecolumns, -titleitems, -type, -displaycolumns.
 

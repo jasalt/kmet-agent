@@ -910,13 +910,14 @@
 
 (defn- check-attached-props!
   "Throw when PROPS name a geometry manager for a child its container places
-   itself — a notebook tab, a pane, a text widget's embedded window: the
-   container owns that placement, so the map would be silently ignored."
+   itself — a notebook tab, a pane, a text widget's embedded window, a
+   labelframe's label widget: the container owns that placement, so the map
+   would be silently ignored."
   [tag props]
   (when-some [named (seq (filterv #(some? (get props %)) [:grid :place]))]
     (throw (ex-info (str "kmet.tk.core: " tag " names " (first named)
                          " under a container that places it itself (a tab, a"
-                         " pane or an embedded window)")
+                         " pane, an embedded window or a label widget)")
                     {:type :kmet.tk.core/geometry-manager-not-supported
                      :tag tag :managers (vec named)}))))
 
@@ -972,12 +973,28 @@
         (throw e)))
     (apply-bindings! w {} props (:bindings spec))
     (when (and parent (not (false? (:pack? spec))))
-      (if-let [attach (:attach @(:styles parent))]
-        ;; containers that own their child placement (an embedded text
-        ;; window, a notebook tab, a pane) — and read the child's props for it
-        (do (check-attached-props! (:tag spec) props)
-            (attach path props))
-        (manage-child! (:tag spec) path props)))
+      (let [attach (:attach @(:styles parent))]
+        (cond
+          ;; a child that declares itself the parent's label widget is not
+          ;; placed at all: Tk's -labelwidget names it (a labelframe's
+          ;; option, which the parent's spec marks in its styles)
+          (:labelwidget props)
+          (if (get @(:styles parent) :label-widget)
+            (do (check-attached-props! tag props)
+                (eval! (str (:path parent) " configure -labelwidget " path)))
+            (throw (ex-info (str "kmet.tk.core: " tag " names :labelwidget under "
+                                 (:tag parent) " — only a labelframe takes one")
+                            {:type :kmet.tk.core/labelwidget-not-supported
+                             :tag tag :parent (:tag parent)})))
+
+          ;; containers that own their child placement (an embedded text
+          ;; window, a notebook tab, a pane) — and read the child's props for it
+          attach
+          (do (check-attached-props! tag props)
+              (attach path props))
+
+          :else
+          (manage-child! tag path props))))
     w))
 
 (defn child-lens
@@ -1645,9 +1662,12 @@
      :lens        the children lens (a container)
      :pack?       false for a widget Tk will not let pack manage (a menu)
      :text-field  true when :text is set through the widget's subcommands
-     :checkable   :check or :radio: its state is a private Tcl variable"
+     :checkable   :check or :radio: its state is a private Tcl variable
+     :label-widget true when a child may name the widget as its label: the
+                  child's :labelwidget true makes it Tk's -labelwidget
+                  (a labelframe's option) instead of a placed child"
   [command {:keys [options fixed commands attach after bindings primary
-                   patchable lens pack? text-field checkable]}]
+                   patchable lens pack? text-field checkable label-widget]}]
   (let [commands (merge (cond-> {:context-menu set-context-menu!}
                           ;; a container that packs or grids its children owns
                           ;; their rows and columns
@@ -1705,6 +1725,8 @@
                      (run-commands! w {} props)
                      (when attach
                        (swap! (:styles w) assoc :attach (attach w)))
+                     (when label-widget
+                       (swap! (:styles w) assoc :label-widget true))
                      (when after
                        (after w props))
                      w))

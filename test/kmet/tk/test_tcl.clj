@@ -704,3 +704,28 @@
       (e (str m " unpost"))
       (t/is (= 1 @posted) "posting the menu ran the command")
       (engine/dispose-component (:root h)))))
+
+;; ─── the label widget (-labelwidget) ─────────────────────────────────────
+
+(t/deftest a-real-labelframe-takes-a-child-as-its-label-widget
+  ;; A labelframe whose label is a child widget: Tk holds the child as
+  ;; -labelwidget, and the child is placed by no geometry manager — it is
+  ;; the label, drawn in the frame's label position.
+  (with-live-tk [e]
+    (let [h (tk/mount! [:ttk/frame {}
+                        [:ttk/labelframe {:padding 4}
+                         [:ttk/frame {:labelwidget true :padding 2}
+                          [:ttk/label {:text "Options"}]]]]
+                       {})
+          lf (do (e find-class-src) (e "kmetfind . TLabelframe"))
+          label (when (seq lf) (e (str lf " cget -labelwidget")))]
+      (t/is (seq lf) "the labelframe is in the window")
+      (t/is (seq label) "it names a label widget")
+      (t/is (= "TFrame" (e (str "winfo class " label))))
+      (t/is (not (contains? #{"pack" "grid" "place"}
+                            (e (str "winfo manager " label))))
+            "a label widget is not placed by a layout manager")
+      (t/is (= "TLabel" (e (str "winfo class "
+                                (first (str/split (e (str "winfo children " label)) #"\s+")))))
+            "the label frame holds the widget the render put in it")
+      (engine/dispose-component (:root h)))))

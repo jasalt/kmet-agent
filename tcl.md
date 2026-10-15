@@ -58,6 +58,11 @@ numbers; `:postcommand` builds a `:tk/menu` or `:ttk/combobox` when it is
 posted. Tk's `-browsecmd`/`-invokecommand` belong to BWidget/tklib
 widgets, not core Tk, so no tag declares them.
 
+The cross-widget options are reached where they mean something: `-menu`
+through a menubutton's `:items` and a menu's `:menubar true`, and
+`-labelwidget` through a labelframe child's `:labelwidget true` — a
+placement prop like `:tab`, since a hiccup child cannot name a sibling.
+
 Tk's native dialogs are `kmet.tk.core` functions: `message-box!`,
 `open-file!`, `save-file!`, `choose-directory!` and `choose-color!` script
 `tk_messageBox`/`tk_getOpenFile`/… with the props as that command's own
@@ -168,8 +173,6 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 The catalogue (`kmet.tk.options`) leaves out what a plain value cannot
 be; each group needs machinery:
 
-- **Cross-widget**: `-menu` (covered for menubuttons and the menubar),
-  `-labelwidget`.
 - **A value a `:bind` handler cannot read.** A widget's own binding hands
   its handler no arguments, so a drag that leaves its canvas item has no
   coordinates: Tk's pointer grab keeps the events coming to the widget, but

@@ -145,8 +145,11 @@ Three shapes of tag, on top of the plain leaves:
 - **Containers** place their children themselves: `:ttk/notebook` adds
   each child as a tab (the child's `:tab` names it, `:selected` picks one),
   `:ttk/panedwindow` as a pane (the child's `:weight`), `:tk/panedwindow`
-  as a pane (the child's `:minsize`/`:stretch`). A `:tk/menu` with
-  `:menubar true` wires itself onto the window, and a menubutton's
+  as a pane (the child's `:minsize`/`:stretch`). A child of a `:tk/labelframe`
+  or `:ttk/labelframe` carrying `:labelwidget true` is the frame's *label*
+  instead of a placed child (Tk's `-labelwidget`): the tag builds it and
+  names it on the parent, which draws it in the label position. A `:tk/menu`
+  with `:menubar true` wires itself onto the window, and a menubutton's
   `:items` build the menu it pops.
 
 The `:items` of a menu, a menubutton or a `:context-menu` are Tk's own menu
@@ -268,7 +271,8 @@ names two managers at once, or a manager beside pack's own
 `:side`/`:fill`/`:expand`, is an error here; a *container* whose children
 mix grid and pack is Tk's own error, and Tk's `-in` is refused — a child's
 master is the tag it renders under, and a map under a container that places
-its child itself (a tab, a pane, an embedded window) is an error too. A container that packs or grids its
+its child itself (a tab, a pane, an embedded window, a label widget) is an
+error too. A container that packs or grids its
 children also takes `:rowconfigure` and `:columnconfigure` — {index Tk's
 own options}, through `grid columnconfigure` — for its rows and columns.
 
@@ -423,8 +427,9 @@ Two consequences worth knowing:
 Options that are not a plain value are deliberately not props, each
 because it needs machinery a prop cannot be: `-tearoffcommand` (Tk calls
 it when a tear-off menu is created, and kmet menus are tear-off off), and
-the options that name another widget (`-menu` for a menubutton is its
-`:items`; `-labelwidget` is not reached yet). The script-typed options
+the options that name another widget — `-menu` is a menubutton's `:items`
+or a menu's `:menubar true`, `-labelwidget` a labelframe child's
+`:labelwidget true`. The script-typed options
 that are callbacks — `-validatecommand`, `-invalidcommand`,
 `-xscrollcommand`, `-yscrollcommand`, `-postcommand` — are binding slots
 of their tags (see the table above). Tk's `-browsecmd`/`-invokecommand`
@@ -720,10 +725,11 @@ progress, separator, sizegrip, toggleswitch, treeview), plus bare-string
 labels. Every tag accepts the Tk options its widget has, through the
 families in `kmet.tk.options` (see *Options* above), and its script-typed
 options are the tag's binding slots (validation, the scroll commands,
-`-postcommand`); the options that name another widget are the ones still
-missing, and `scripts/tk_option_audit.clj` reports both sides against a
-live Tk. kmet's own widgets are the `:ui/…` set in `kmet.app.ui.gui.ui`
-(today `:ui/transcript`, the chat scroll container).
+`-postcommand`); the cross-widget options are reached through the tag that
+owns them (a menubutton's `:items`, a menu's `:menubar`, a labelframe
+child's `:labelwidget`), and `scripts/tk_option_audit.clj` reports what is
+still missing against a live Tk. kmet's own widgets are the `:ui/…` set in
+`kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container).
 
 The first cuts that remain — everything Tk offers beside its widgets
 (window management, the clipboard) — are tracked

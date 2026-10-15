@@ -1214,6 +1214,49 @@
               "a child of a pane container is added, never packed"))
       (engine/dispose-component root))))
 
+(t/deftest a-labelframe-child-can-be-its-labelwidget
+  ;; Tk's -labelwidget names another widget as a labelframe's label. In a
+  ;; hiccup tree a child cannot name a sibling, so the child declares itself
+  ;; (:labelwidget true, a placement prop like :tab): the tag builds it,
+  ;; configures the parent with it, and places it nowhere else.
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:ttk/labelframe {}
+                                    [:ttk/frame {:labelwidget true :padding 2}
+                                     [:ttk/label "Options"]]]
+                                   [:tk/labelframe {}
+                                    [:ttk/button {:labelwidget true :text "New"}]]])
+          ss (scripts rec)
+          path-for (fn [re] (some #(second (re-find re %)) ss))
+          ttk-frame (path-for #"^ttk::labelframe (\.w[\w.]+)$")
+          classic-frame (path-for #"^labelframe (\.w[\w.]+)$")
+          label (path-for #"^ttk::frame (\.w[\w.]+) -padding 2$")
+          button (path-for #"^ttk::button (\.w[\w.]+) -text New$")]
+      (t/is (every? some? [ttk-frame classic-frame label button]))
+      (t/is (some #(= (str ttk-frame " configure -labelwidget " label) %) ss))
+      (t/is (some #(= (str classic-frame " configure -labelwidget " button) %) ss))
+      (t/is (not-any? #(str/starts-with? % (str "pack " label " ")) ss)
+            "a label widget is not packed as a normal child")
+      (t/is (= 2 (count (scripts-like rec #"configure -labelwidget")))
+            "each labelframe got the widget its child gave it")
+      (engine/dispose-component root))))
+
+(t/deftest a-labelwidget-under-another-container-is-refused
+  (with-fake [_rec nil]
+    (let [e (try (mounted [:ttk/frame {} [:ttk/label {:text "x" :labelwidget true}]])
+                 nil
+                 (catch Exception e e))]
+      (t/is (= :kmet.tk.core/labelwidget-not-supported (:type (ex-data e))))
+      (t/is (= :ttk/frame (:parent (ex-data e))))
+      (t/is (str/includes? (ex-message e) ":labelwidget")))
+    (let [e (try (mounted [:ttk/labelframe {}
+                           [:ttk/label {:text "x" :labelwidget true
+                                        :grid {:row 0}}]])
+                 nil
+                 (catch Exception e e))]
+      (t/is (= :kmet.tk.core/geometry-manager-not-supported (:type (ex-data e)))
+            "the labelframe places its label: a geometry map would be ignored"))))
+
 (t/deftest menus-carry-their-items
   (with-fake [rec nil]
     (let [clicked (atom nil)
