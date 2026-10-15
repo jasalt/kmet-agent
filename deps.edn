@@ -1,4 +1,4 @@
-{:jolt/min-version "0.8.21"
+{:jolt/min-version "0.8.22"
  ;; Jolt's floor is the LATEST tagged release — the host is young and moves
  ;; fast, so kmet targets the newest release rather than the oldest one a
  ;; feature needs (jolt/README.md § Bundled-extension loader floor).
@@ -144,7 +144,7 @@
         parinferish/parinferish {:mvn/version "0.8.0"}
         borkdude/edamame {:mvn/version "1.6.44"}
         ;; kmet's own RFC 0014 provider lib (jolt/ dir): the JDK classes the
-        ;; jolt ecosystem lacks. Empty by design — v0.8.21 supplies every
+        ;; jolt ecosystem lacks. Empty by design — v0.8.22 supplies every
         ;; gap it was built for, so :jolt/provides is {} and install! is a
         ;; no-op; the scaffolding stays for the next gap. Inert on bb/JVM.
         jolt.kmet/providers {:local/root "jolt"}}
