@@ -535,9 +535,9 @@ dispatch, bounded `dispose!` and runtime-scoped extension wiring; print
 and the TUI both construct the engine, and the layout keeps its handler
 as one subscriber. The remaining §4.1 session ops (`new-session!`,
 `resume!`, `fork!`, `switch-session!`) and turn submission stayed in the
-mode until step 3 — they landed there; the test-stub fallback to
-`agent/run-agent-turn` in `turn/start-agent-run!` survives only for
-engine-less test stubs.
+mode until step 3 — they landed there, and the test-stub fallback to
+`agent/run-agent-turn` in `turn/start-agent-run!` retired in the same
+step (tests build engines through `kmet.test-utils`).
 
 ### Step 2 — port print mode
 

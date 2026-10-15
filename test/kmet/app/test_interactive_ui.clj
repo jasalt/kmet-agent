@@ -456,8 +456,8 @@
         ((:handler (commands/find-command "continue")) cs ""))
       (t/is (some? @started) "run-agent-turn called")
       (t/is (identical? ag (first @started)) "runs on the current agent state")
-      (t/is (not (contains? (second @started) :message))
-            "no :message option — no new user message is added")
+      (t/is (nil? (:message (second @started)))
+            "no :message value — no new user message is added")
       (t/is (true? (runtime/turn-running? (:engine cs))) "UI turn flag set"))))
 
 ;; ─── Status indicator swap model (pi: showStatusIndicator/clearStatusIndicator) ──

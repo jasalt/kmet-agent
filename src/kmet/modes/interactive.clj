@@ -19,7 +19,6 @@
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.session-selector :refer [show-session-selector]]
-            [kmet.app.ui.model-selector :refer [sync-footer-model!]]
             [kmet.libs.process :as process]
             [kmet.libs.reakt :as reakt]
             [kmet.modes.interactive.layout :as layout]
@@ -152,7 +151,6 @@
                                      (when-not (:cancelled result)
                                        (let [sess (:session result)
                                              short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
-                                         (sync-footer-model! cs)
                                          (session-admin/replay-session! cs sess true)
                                          (chat-history/chat-history-add-message! (:chat-history cs)
                                                                                  {:role :assistant

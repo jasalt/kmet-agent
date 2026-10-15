@@ -49,7 +49,7 @@
 (defrecord Engine [agent-state session config subscribers last-run disposed?
                    cwd turn-running? compaction-queued])
 
-(declare turn-running?)
+(declare cancel! turn-running?)
 
 (defn agent-state
   "The live AgentState record. The engine holds it in an atom because a
@@ -267,7 +267,7 @@
   "Replace the live process config (/reload re-reads settings.edn and
    extensions); session-dir and run-option lookups follow it."
   [engine config]
-  (when-let [a (:config engine)] (reset! a config))
+  (reset! (:config engine) config)
   nil)
 
 (defn cwd
@@ -304,7 +304,7 @@
                    (= sess-cwd (str (fs/normalize (str current)))))]
     (cond
       same? current
-      sess-cwd (do (when-let [a (:cwd engine)] (reset! a sess-cwd))
+      sess-cwd (do (reset! (:cwd engine) sess-cwd)
                    (refresh-prompt-cwd! engine sess-cwd)
                    sess-cwd)
       :else current)))
@@ -333,7 +333,7 @@
   (let [new-ag (assoc (agent-state engine) :session sess)]
     (reset! (:session engine) sess)
     (extensions/set-session! sess)
-    (when-let [q (:compaction-queued engine)] (reset! q []))
+    (reset! (:compaction-queued engine) [])
     (reset! (:agent-state engine) new-ag)
     (agent/restore-session-context! new-ag)
     (when apply-settings?
@@ -355,7 +355,9 @@
   (let [ag (agent-state engine)
         was-running (turn-running? engine)]
     (when was-running
-      (agent/cancel-turn ag))
+      ;; cancel! drops the turn flag too: a cancelled run never runs the
+      ;; wrapped :on-done
+      (cancel! engine))
     (when @(:compacting? ag)
       (reset! (:signal ag) true))
     (let [deadline (+ (concurrent/monotonic-ms) 3000)]
@@ -367,10 +369,6 @@
     (when (and (not @(:compacting? ag))
                (empty? @(:pending-bash ag)))
       (reset! (:signal ag) false))
-    (when was-running
-      ;; the runtime owns the flag: a cancelled turn never runs the wrapped
-      ;; :on-done, so the switch must drop it itself
-      (when-let [a (:turn-running? engine)] (reset! a false)))
     was-running))
 
 (defn new-session!
@@ -461,7 +459,7 @@
     (when (and label label-target)
       (session/set-label! sess label-target label))
     (agent/restore-session-context! (agent-state engine))
-    (when-let [q (:compaction-queued engine)] (reset! q []))
+    (reset! (:compaction-queued engine) [])
     (event-bus/emit-event!
      (cond-> {:type :session-tree
               :new-leaf-id @(:leaf-id sess)
@@ -581,16 +579,15 @@
   [engine opts]
   (let [on-done (:on-done opts)
         on-error (:on-error opts)
-        clear! #(when-let [a (:turn-running? engine)] (reset! a false))]
-    (when-let [a (:turn-running? engine)] (reset! a true))
+        clear! #(reset! (:turn-running? engine) false)]
+    (reset! (:turn-running? engine) true)
     (reset! (:last-run engine)
             (agent/run-agent-turn
              (agent-state engine)
-             (cond-> (select-keys opts [:images :on-text :on-thinking])
-               true (assoc
-                     :on-done (fn [text] (clear!) (when on-done (on-done text)))
-                     :on-error (fn [err] (clear!) (when on-error (on-error err))))
-               (:text opts) (assoc :message (:text opts)))))
+             (assoc (select-keys opts [:images :on-text :on-thinking])
+                    :on-done (fn [text] (clear!) (when on-done (on-done text)))
+                    :on-error (fn [err] (clear!) (when on-error (on-error err)))
+                    :message (:text opts))))
     nil))
 
 (defn steer! [engine text] (agent/steer! (agent-state engine) text))
@@ -605,7 +602,7 @@
   "Cancel the in-flight run (if any): the turn flag drops synchronously and
    the loop settles the prompt with :outcome :aborted."
   [engine]
-  (when-let [a (:turn-running? engine)] (reset! a false))
+  (reset! (:turn-running? engine) false)
   (agent/cancel-turn (agent-state engine)))
 
 ;; ─── Submission + compaction queue ─────────────────────────────────────────
@@ -621,15 +618,14 @@
   "Queue TEXT typed during compaction for delivery after it
    (pi: queueCompactionMessage); MODE is :steer or :follow-up."
   [engine text mode]
-  (when-let [a (:compaction-queued engine)]
-    (swap! a conj {:text text :mode mode}))
+  (swap! (:compaction-queued engine) conj {:text text :mode mode})
   nil)
 
 (defn clear-compaction-queue!
   "Drop all compaction-queued messages; returns the dropped messages."
   [engine]
   (let [q (compaction-queued engine)]
-    (when-let [a (:compaction-queued engine)] (reset! a []))
+    (reset! (:compaction-queued engine) [])
     q))
 
 (defn- split-command
@@ -771,46 +767,45 @@
    front end's run callbacks for a prompt this starts. A failure restoring
    the queue re-queues the messages so they are not lost; returns nil, or
    {:error e} for the front end to report."
-  ([engine will-retry] (flush-compaction-queue! engine will-retry nil))
-  ([engine will-retry run-opts]
-   (let [msgs (compaction-queued engine)]
-     (when (seq msgs)
-       (clear-compaction-queue! engine)
-       (let [restore! (fn []
+  [engine will-retry run-opts]
+  (let [msgs (compaction-queued engine)]
+    (when (seq msgs)
+      (clear-compaction-queue! engine)
+      (let [restore! (fn []
                         ;; pi: restoreQueue — the session queue is cleared too,
                         ;; so messages already delivered by the failed flush are
                         ;; not delivered again when the queue is re-flushed
-                        (agent/clear-queues! (agent-state engine))
-                        (when-let [a (:compaction-queued engine)] (reset! a msgs)))]
-         (try
-           (if will-retry
+                       (agent/clear-queues! (agent-state engine))
+                       (reset! (:compaction-queued engine) msgs))]
+        (try
+          (if will-retry
              ;; Overflow compaction: the turn retries — queue everything into it
              ;; (pi: flushCompactionQueue willRetry — steer/followUp only, never
              ;; a fresh prompt)
-             (doseq [m msgs] (queue-compaction-message-into-turn! engine m))
+            (doseq [m msgs] (queue-compaction-message-into-turn! engine m))
              ;; Normal completion: first non-extension message prompts, the
              ;; rest queue per mode
-             (let [first-idx (first (keep-indexed
-                                     (fn [i m] (when-not (extension-command? (:text m)) i))
-                                     msgs))]
-               (if first-idx
-                 (do
+            (let [first-idx (first (keep-indexed
+                                    (fn [i m] (when-not (extension-command? (:text m)) i))
+                                    msgs))]
+              (if first-idx
+                (do
                    ;; extension commands before the first prompt execute now
-                   (doseq [m (take first-idx msgs)]
-                     (execute-extension-command! (:text m)))
+                  (doseq [m (take first-idx msgs)]
+                    (execute-extension-command! (:text m)))
                    ;; the first message: prompt when idle, else queue per mode
-                   (deliver-compaction-message! engine (nth msgs first-idx) run-opts)
+                  (deliver-compaction-message! engine (nth msgs first-idx) run-opts)
                    ;; remaining messages queue per mode — never a fresh prompt
                    ;; (pi: the rest go through steer/followUp)
-                   (doseq [m (drop (inc first-idx) msgs)]
-                     (queue-compaction-message-into-turn! engine m)))
+                  (doseq [m (drop (inc first-idx) msgs)]
+                    (queue-compaction-message-into-turn! engine m)))
                  ;; all extension commands — execute them all
-                 (doseq [m msgs] (execute-extension-command! (:text m))))))
-           nil
-           (catch Exception e
-             (restore!)
-             (debug/log "compaction queue flush failed: " e)
-             {:error e :count (count msgs)})))))))
+                (doseq [m msgs] (execute-extension-command! (:text m))))))
+          nil
+          (catch Exception e
+            (restore!)
+            (debug/log "compaction queue flush failed: " e)
+            {:error e :count (count msgs)}))))))
 
 (defn compact!
   "Compact the session (manual /compact path); custom-instructions and
@@ -844,7 +839,7 @@
         (when run-pending?
           (deref run 2000 nil))))
     (reset! (:subscribers engine) [])
-    (when-let [a (:turn-running? engine)] (reset! a false))
+    (reset! (:turn-running? engine) false)
     (extensions/set-session! nil)
     (extensions/set-context-sink! nil)
     (extensions/clear-ui-registry!))

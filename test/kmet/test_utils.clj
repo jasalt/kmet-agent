@@ -5,41 +5,39 @@
             [kmet.app.session-runtime :as rt]
             [kmet.tui.utils :as u]))
 
-(defn with-test-engine
-  "Add a runtime engine to a test cs map (see test-engine), reusing the
-   map's legacy :agent-state/:session-atom/:config/:running-turn?/
-   :compaction-queued values so direct test writes and the runtime
-   accessors share the same atoms. The legacy keys stay in the map for
-   test bodies that read them."
-  [cs]
-  (assoc cs :engine
-         (rt/map->Engine
-          {:agent-state (or (:agent-state cs) (atom nil))
-           :session (or (:session-atom cs) (atom nil))
-           :config (atom (or (:config cs) {}))
-           :subscribers (atom [])
-           :last-run (atom nil)
-           :disposed? (atom false)
-           :cwd (atom (str (fs/cwd)))
-           :turn-running? (or (:running-turn? cs) (atom false))
-           :compaction-queued (or (:compaction-queued cs) (atom []))})))
-
 (defn test-engine
   "A minimal session-runtime engine for mode-level tests: the given
    :agent-state and :session atoms (exactly as the Engine record holds
-   them), plus optional :config and :cwd. Subscribers, last-run, the turn
-   flag and the compaction queue are fresh. Production builds engines
-   through kmet.app.session-runtime/bootstrap."
-  [{:keys [agent-state session config cwd]}]
+   them), plus optional :config, :cwd (a value or an atom) and the
+   :turn-running?/:compaction-queued atoms. Subscribers, last-run and
+   disposal are fresh. Production builds engines through
+   kmet.app.session-runtime/bootstrap."
+  [{:keys [agent-state session config cwd turn-running? compaction-queued]}]
   (rt/map->Engine {:agent-state agent-state
                    :session session
                    :config (atom (or config {}))
                    :subscribers (atom [])
                    :last-run (atom nil)
                    :disposed? (atom false)
-                   :cwd (if (instance? clojure.lang.IDeref cwd) cwd (atom (or cwd (str (fs/cwd)))))
-                   :turn-running? (atom false)
-                   :compaction-queued (atom [])}))
+                   :cwd (if (instance? clojure.lang.IDeref cwd)
+                          cwd
+                          (atom (or cwd (str (fs/cwd)))))
+                   :turn-running? (or turn-running? (atom false))
+                   :compaction-queued (or compaction-queued (atom []))}))
+
+(defn with-test-engine
+  "Add a test engine to a CoreState-like map, reusing the map's legacy
+   :agent-state/:session-atom/:config/:running-turn?/:compaction-queued
+   values as the engine's atoms (see test-engine) so direct test writes and
+   the runtime accessors agree. The legacy keys stay in the map for test
+   bodies that read them."
+  [cs]
+  (assoc cs :engine (test-engine {:agent-state (or (:agent-state cs) (atom nil))
+                                  :session (or (:session-atom cs) (atom nil))
+                                  :config (:config cs)
+                                  :cwd (:cwd cs)
+                                  :turn-running? (:running-turn? cs)
+                                  :compaction-queued (:compaction-queued cs)})))
 
 (defn slash
   "The /-separated form of path values — strings, Paths/Files, or maps, sets

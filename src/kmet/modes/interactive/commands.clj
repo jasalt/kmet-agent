@@ -424,7 +424,6 @@
                                             (when-not (:cancelled result)
                                               (let [sess (:session result)
                                                     short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
-                                                (sync-footer-model! cs)
                                                 (session-admin/replay-session! cs sess true)
                                                 (chat-history/chat-history-add-message! (:chat-history cs)
                                                                                         {:role :assistant

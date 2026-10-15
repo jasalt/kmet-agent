@@ -42,9 +42,7 @@
    installed capabilities)."
   ([] @registry)
   ([frontend]
-   (if frontend
-     (filterv #(or (nil? (:frontend %)) (= frontend (:frontend %))) @registry)
-     @registry)))
+   (filterv #(or (nil? (:frontend %)) (= frontend (:frontend %))) @registry)))
 
 (defn find-command
   "Look up a slash command by :name, or nil. With FRONTEND, only a command

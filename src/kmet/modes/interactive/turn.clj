@@ -353,18 +353,15 @@
    last entry is an unanswered user message or a dangling tool result the
    model must pick up)."
   [cs & [message]]
-  (when-let [a (:turn-running? (:engine cs))] (reset! a true))
-  (status/activate-working-indicator! cs)
-  (status/start-anim-timer! cs)
-  (state/update-footer! cs)
-  (tui/tui-request-render (:tui cs))
-  (let [callbacks (run-callbacks cs)]
-    (if-let [engine (:engine cs)]
-      (runtime/prompt! engine (cond-> callbacks message (assoc :text message)))
-      ;; test stubs build a CoreState without the runtime engine; the loop
-      ;; knows the prompt text as :message
-      (agent/run-agent-turn (runtime/agent-state (:engine cs))
-                            (cond-> callbacks message (assoc :message message))))))
+  (let [engine (:engine cs)]
+    ;; the flag is set before the presentation: activate-working-indicator!
+    ;; stops a spinner with no live turn behind it
+    (reset! (:turn-running? engine) true)
+    (status/activate-working-indicator! cs)
+    (status/start-anim-timer! cs)
+    (state/update-footer! cs)
+    (tui/tui-request-render (:tui cs))
+    (runtime/prompt! engine (cond-> (run-callbacks cs) message (assoc :text message)))))
 
 (defn- submit-through-runtime!
   "Send TEXT through the runtime's submission chain (input hooks, skill/
@@ -376,26 +373,15 @@
    messages, steers and follow-ups did). Returns the runtime's action
    keyword (:handled | :started | :steered | :compaction-queued)."
   [cs text opts]
-  (if-let [engine (:engine cs)]
-    (let [{:keys [action] submitted-text :text}
-          (runtime/submit! engine text (assoc opts :run-opts (run-callbacks cs)))]
-      (when (not= :handled action)
-        (when-not (false? (:history? opts))
-          (tui/editor-add-to-history! @(:current-editor-atom cs) (or submitted-text text)))
-        (status/update-pending-messages! cs)
-        (state/update-footer! cs)
-        (tui/tui-request-render (:tui cs)))
-      action)
-    ;; test stubs without an engine: hooks and expansion live in the runtime,
-    ;; so a bare submit steers or starts directly
-    (if (runtime/turn-running? (:engine cs))
-      (do (agent/steer! (runtime/agent-state (:engine cs)) text)
-          (tui/editor-add-to-history! @(:current-editor-atom cs) text)
-          (status/update-pending-messages! cs)
-          :steered)
-      (do (tui/editor-add-to-history! @(:current-editor-atom cs) text)
-          (start-agent-run! cs text)
-          :started))))
+  (let [{:keys [action] submitted-text :text}
+        (runtime/submit! (:engine cs) text (assoc opts :run-opts (run-callbacks cs)))]
+    (when (not= :handled action)
+      (when-not (false? (:history? opts))
+        (tui/editor-add-to-history! @(:current-editor-atom cs) (or submitted-text text)))
+      (status/update-pending-messages! cs)
+      (state/update-footer! cs)
+      (tui/tui-request-render (:tui cs)))
+    action))
 
 (defn expand-user-message-text
   "pi: prompt() expansion chain (sendUserMessage with
@@ -406,7 +392,8 @@
    consumed the message."
   [cs text]
   (let [result (runtime/expand-user-message-text text)]
-    (when (and (nil? result) (:engine cs))
+    (when (nil? result)
+      ;; an extension command consumed the message
       (state/update-footer! cs))
     result))
 
@@ -437,10 +424,7 @@
   "Queue a message typed during compaction in the runtime's queue (the
    front end display reads it back through runtime/compaction-queued)."
   [cs text mode]
-  (if-let [engine (:engine cs)]
-    (runtime/queue-compaction-message! engine text mode)
-    (when-let [a (:compaction-queued cs)]
-      (swap! a conj {:text text :mode mode}))))
+  (runtime/queue-compaction-message! (:engine cs) text mode))
 
 (defn command-context
   "The slash-command handler context (engine.md §10.3): :runtime is the
@@ -542,9 +526,7 @@
     ;; settles). Not added to the chat here — like steering, it appears
     ;; as a user message when the loop consumes it (:message-start,
     ;; pi: message_start → addMessageToChat).
-    (do (if-let [engine (:engine cs)]
-          (runtime/follow-up! engine text)
-          (agent/follow-up! (runtime/agent-state (:engine cs)) text))
+    (do (runtime/follow-up! (:engine cs) text)
         (status/update-pending-messages! cs)
         :queued)
 
@@ -570,23 +552,16 @@
    → clearAllQueues — the compaction queue is restored alongside the session
    queues). Returns the number of messages restored."
   [cs]
-  (let [{:keys [steering follow-up]} (if-let [engine (:engine cs)]
-                                       (runtime/queues engine)
-                                       (agent/queued-messages (runtime/agent-state (:engine cs))))
-        cq (if-let [engine (:engine cs)]
-             (runtime/compaction-queued engine)
-             (runtime/compaction-queued (:engine cs)))
+  (let [{:keys [steering follow-up]} (runtime/queues (:engine cs))
+        cq (runtime/compaction-queued (:engine cs))
         all (into (vec steering) (concat follow-up (map :text cq)))]
     (when (seq all)
       (let [ed @(:current-editor-atom cs)
             current (tui/editor-get-text ed)
             queued-text (str/join "\n\n" all)
             combined (str/join "\n\n" (remove str/blank? [queued-text current]))]
-        (if-let [engine (:engine cs)]
-          (do (runtime/clear-queues! engine)
-              (runtime/clear-compaction-queue! engine))
-          (do (some-> (:agent-state cs) deref agent/clear-queues!)
-              (when-let [a (:compaction-queued cs)] (reset! a []))))
+        (runtime/clear-queues! (:engine cs))
+        (runtime/clear-compaction-queue! (:engine cs))
         (tui/editor-set-text! ed combined)
         (status/update-pending-messages! cs)))
     (count all)))
@@ -610,57 +585,55 @@
    abortCompaction) — a running turn is NOT cancelled and continues on the
    pre-compaction context."
   [cs]
-  (if @(:compacting? (runtime/agent-state (:engine cs)))
-    ;; Escape during compaction aborts ONLY the summarization (pi: onEscape
-    ;; → abortCompaction — the compaction_start handler swaps the escape
-    ;; handler to abortCompaction, restored at compaction_end). A running
-    ;; turn is NOT cancelled: an aborted mid-run compaction leaves the turn
-    ;; to continue on the pre-compaction context. The compaction-end event
-    ;; clears the indicator and reports the cancellation.
-    (do
-      (debug/log "compaction cancelled by user")
-      ;; no visual change here — compaction-end's clear-status-indicator!
-      ;; schedules the frame when the abort lands
-      (agent/abort-compaction! (runtime/agent-state (:engine cs))))
-    (do
-      (when @(:bash-running? cs)
-        (debug/log "bash command cancelled by user")
-        (reset! (:bash-signal cs) true)
-        (reset! (:bash-running? cs) false)
-        (state/update-footer! cs))
-      (when (runtime/turn-running? (:engine cs))
-        (debug/log "agent turn cancelled by user")
-        ;; flag before the status clear — see on-agent-done: a background
-        ;; revive racing this teardown must see the turn over
-        (when-let [a (:turn-running? (:engine cs))] (reset! a false))
-        (status/stop-anim-timer! cs)
-        (status/clear-status-indicator! cs)
-    ;; pi: restoreQueuedMessagesToEditor({abort: true}) — queued steering/
-    ;; follow-up messages return to the editor instead of vanishing when
-    ;; cancel-turn clears the queues (they reach the chat only once the
-    ;; loop consumes them, so cancel would otherwise lose them entirely).
-        (let [restored (restore-queued-messages! cs)]
-          (if-let [engine (:engine cs)]
-            (runtime/cancel! engine)
-            (agent/cancel-turn (runtime/agent-state (:engine cs))))
-      ;; Remove empty streaming placeholder if present — by identity, so
-      ;; an entry appended after it (steered/follow-up message, tool
-      ;; execution) is never popped in its place
-          (let [ch (:chat-history cs)]
+  (let [ag (runtime/agent-state (:engine cs))]
+    (if @(:compacting? ag)
+      ;; Escape during compaction aborts ONLY the summarization (pi: onEscape
+      ;; → abortCompaction — the compaction_start handler swaps the escape
+      ;; handler to abortCompaction, restored at compaction_end). A running
+      ;; turn is NOT cancelled: an aborted mid-run compaction leaves the turn
+      ;; to continue on the pre-compaction context. The compaction-end event
+      ;; clears the indicator and reports the cancellation.
+      (do
+        (debug/log "compaction cancelled by user")
+        (agent/abort-compaction! ag))
+      (do
+        (when (state/cancel-bash! cs)
+          (debug/log "bash command cancelled by user")
+          (state/update-footer! cs))
+        (when (runtime/turn-running? (:engine cs))
+          (debug/log "agent turn cancelled by user")
+          ;; pi: restoreQueuedMessagesToEditor({abort: true}) — queued
+          ;; steering/follow-up messages return to the editor instead of
+          ;; vanishing when cancel-turn clears the queues (they reach the
+          ;; chat only once the loop consumes them, so cancel would
+          ;; otherwise lose them entirely).
+          (let [restored (restore-queued-messages! cs)
+                ch (:chat-history cs)]
+            ;; cancel before the status teardown: the runtime drops the turn
+            ;; flag, so a background revive racing the teardown sees the turn
+            ;; over (see on-agent-done)
+            (runtime/cancel! (:engine cs))
+            (status/stop-anim-timer! cs)
+            (status/clear-status-indicator! cs)
+            ;; Remove empty streaming placeholder if present — by identity, so
+            ;; an entry appended after it (steered/follow-up message, tool
+            ;; execution) is never popped in its place
             (when-let [s @(:streaming-atom ch)]
               (if (and (empty? @(:text-atom (:component s)))
                        (empty? @(:thinking-text-atom (:component s))))
                 (chat-history/chat-history-remove-streaming-placeholder! ch)
-                (do (chat-history/chat-history-finalize-streaming! ch) (chat-history/chat-history-finalize-thinking! ch)))))
-          (chat-history/chat-history-add-message! (:chat-history cs)
-                                                  {:role :assistant :content (th/dim "(cancelled)")})
-          (when (pos? restored)
-            (chat-history/chat-history-show-status!
-             (:chat-history cs)
-             (str "Restored " restored " queued message"
-                  (when (> restored 1) "s") " to editor"))))
-        ;; A cancel is a turn end too: heal the stale scrollback it left (the
-        ;; Escape keypress itself could not — the input listener ran while the
-        ;; turn was still marked running). Gated + no-op unless dirty.
-        (heal-stale-scrollback-when-idle! cs)
-        (state/update-footer! cs)))))
+                (do (chat-history/chat-history-finalize-streaming! ch)
+                    (chat-history/chat-history-finalize-thinking! ch))))
+            (chat-history/chat-history-add-message! ch
+                                                    {:role :assistant
+                                                     :content (th/dim "(cancelled)")})
+            (when (pos? restored)
+              (chat-history/chat-history-show-status!
+               ch
+               (str "Restored " restored " queued message"
+                    (when (> restored 1) "s") " to editor"))))
+          ;; A cancel is a turn end too: heal the stale scrollback it left (the
+          ;; Escape keypress itself could not — the input listener ran while the
+          ;; turn was still marked running). Gated + no-op unless dirty.
+          (heal-stale-scrollback-when-idle! cs)
+          (state/update-footer! cs))))))

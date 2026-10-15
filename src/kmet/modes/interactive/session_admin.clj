@@ -290,10 +290,12 @@
    branch into the chat history (session_info entries are metadata — never
    rendered; pi: only message entries are replayed on resume), the
    compaction-count status, the footer/title refresh, and — on the resume
-   paths (startup --continue, /resume) — the editor's prompt history
-   (fork/clone keep the shared editor's existing history; pi: navigateTree/
-   switchSession reuse the same editor instance). A recorded cwd that no
-   longer exists is reported here (the runtime kept the current one)."
+   paths (startup --continue, /resume) — the applied model/thinking
+   (APPLY-SETTINGS?, pi: createAgentSession) and the editor's prompt
+   history (fork/clone keep the shared editor's existing history; pi:
+   navigateTree/switchSession reuse the same editor instance). A recorded
+   cwd that no longer exists is reported here (the runtime kept the current
+   one)."
   [cs sess apply-settings?]
   (replay-branch! cs sess)
   ;; pi: renderInitialMessages — "Session compacted N times" status when
@@ -303,13 +305,14 @@
       (chat-history/chat-history-show-status!
        (:chat-history cs)
        (str "Session compacted " n (if (= n 1) " time" " times")))))
-  (when (and (get-in sess [:header :cwd])
-             (nil? (session/session-cwd sess)))
-    (chat-history/chat-history-show-status!
-     (:chat-history cs)
-     (str "Session cwd " (get-in sess [:header :cwd])
-          " no longer exists — continuing in " (state/runtime-cwd cs))))
+  (when-let [recorded (get-in sess [:header :cwd])]
+    (when (nil? (session/session-cwd sess))
+      (chat-history/chat-history-show-status!
+       (:chat-history cs)
+       (str "Session cwd " recorded
+            " no longer exists — continuing in " (state/runtime-cwd cs)))))
   (when apply-settings?
+    (sync-footer-model! cs)
     (editor/editor-set-history! (:editor cs) (session/get-prompt-history sess)))
   (state/update-footer! cs)
   (state/update-terminal-title! cs))
@@ -326,8 +329,6 @@
    keeps the current agent state)."
   [cs sess apply-settings?]
   (runtime/switch-session! (:engine cs) sess {:apply-settings? apply-settings?})
-  (when apply-settings?
-    (sync-footer-model! cs))
   (replay-session! cs sess apply-settings?))
 
 (defn handle-new-session
@@ -339,11 +340,8 @@
    pending container, bash widgets, compaction queue, and editor (pi:
    editor.setText(\"\"))."
   [cs]
-  (let [cancel-bash! (fn []
-                       (when @(:bash-running? cs)
-                         (reset! (:bash-signal cs) true)
-                         (reset! (:bash-running? cs) false)))
-        result (runtime/new-session! (:engine cs) {:before-settle cancel-bash!})]
+  (let [result (runtime/new-session! (:engine cs)
+                                     {:before-settle #(state/cancel-bash! cs)})]
     (when-not (:cancelled result)
       (when (:was-running result)
         (status/stop-anim-timer! cs)

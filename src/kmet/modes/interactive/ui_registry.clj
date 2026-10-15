@@ -652,9 +652,7 @@
                                         ;; entirely (restoreQueuedMessagesToEditor
                                         ;; {abort:true})
                                         (turn/restore-queued-messages! cs)
-                                        (if-let [engine (:engine cs)]
-                                          (runtime/cancel! engine)
-                                          (agent/cancel-turn @ag-atom))))
+                                        (runtime/cancel! (:engine cs))))
                              :shutdown (fn [] (tui/tui-stop t))
                              :get-context-usage (fn []
                                                   ;; pi: null without an
@@ -761,8 +759,7 @@
                                                    (let [result (runtime/resume! (:engine cs) session-path)]
                                                      (if (:cancelled result)
                                                        {:cancelled true}
-                                                       (do (sync-footer-model! cs)
-                                                           (session-admin/replay-session! cs (:session result) true)
+                                                       (do (session-admin/replay-session! cs (:session result) true)
                                                            {:cancelled false})))
                                                    (catch Exception _ {:cancelled true}))))
                              :is-project-trusted (fn [] false)}))
