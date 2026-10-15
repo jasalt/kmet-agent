@@ -101,8 +101,9 @@ kmet.app.ui.gui.test-ui`):
 ```sh
 bb scripts/tk_option_audit.clj          # declared vs. the live widget, per tag
 bb test kmet.tk.test-tcl               # the same claim in test form: every
-                                        # tag's options checked, every tag
-                                        # mounted with all its props set
+                                        # tag's options and callback options
+                                        # checked, every tag mounted with all
+                                        # its props set
 ```
 
 The audit's per-widget dump (`--widgets`) prints each class's option list, so
@@ -163,12 +164,12 @@ class in the table is in both.
   and rethrows it with the tag and the interpreter's patchlevel:
   `kmet.tk.core: :ttk/toggleswitch (ttk::toggleswitch) does not exist on
   this Tk (8.6.16)`.
-- **The test suite is version-aware on purpose**: on 8.6, `bb test
-  kmet.tk.test-tcl` reports 19 failures and 1 error — the failures are its
-  own option-membership assertions (the table above, one per tag), the error
-  is the missing `:ttk/toggleswitch` class. It asserts the *running* Tk
-  rather than a version range, so a version's gap is discovered rather than
-  assumed.
+- **The test suite is version-aware on purpose**: on 8.6.16, `bb test
+  kmet.tk.test-tcl` reports 17 failures and 1 error — the failures are its
+  own option-membership assertions (the table above, one per tag, its
+  binding options included), the error is the missing `:ttk/toggleswitch`
+  class. It asserts the *running* Tk rather than a version range, so a
+  version's gap is discovered rather than assumed.
 
 So a kmet tree that stays inside the 8.6 option set runs unchanged on
 8.6/9.0/9.1; a Tk 9 prop fails loudly at the first widget of its tag on an
