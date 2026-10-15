@@ -898,6 +898,13 @@
 
 ;; ─── Runtime-owned extension capabilities (pi: bindCore) ───────────────────
 
+(defn- reject-compacting!
+  "Extension sends cannot queue into a compaction (pi: prompt() throws)."
+  [ag]
+  (when @(:compacting? ag)
+    (throw (ex-info "Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry."
+                    {:type :compaction-in-progress}))))
+
 (defn- set-model-capability
   "pi: ctx.setModel — auth-gated, with the position-preserving thinking
    switch and the settings default persisted (the front-end view rides the
@@ -915,12 +922,9 @@
 
 (defn- send-user-message-capability
   "pi: ctx.sendUserMessage — the message steers the running turn or starts
-   one, after the optional expansion chain. An extension message cannot
-   queue into a compaction (pi: prompt() throws)."
+   one, after the optional expansion chain."
   [engine text {:keys [deliver-as expand-prompt-templates?]}]
-  (when @(:compacting? (agent-state engine))
-    (throw (ex-info "Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry."
-                    {:type :compaction-in-progress})))
+  (reject-compacting! (agent-state engine))
   (let [text (if expand-prompt-templates? (expand-user-message-text text) text)]
     (when text
       (cond
@@ -931,13 +935,10 @@
 
 (defn- send-message-capability
   "pi: ctx.sendCustomMessage — a custom message follows the deliver-as /
-   trigger-turn branches (see the extension api docs) and never queues
-   into a compaction."
+   trigger-turn branches (see the extension api docs)."
   [engine message {:keys [deliver-as trigger-turn]}]
   (let [ag (agent-state engine)]
-    (when @(:compacting? ag)
-      (throw (ex-info "Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry."
-                      {:type :compaction-in-progress})))
+    (reject-compacting! ag)
     (let [msg {:role :custom
                :custom-type (or (:custom-type message) :custom)
                :content (:content message)
@@ -973,13 +974,16 @@
   [engine]
   {:set-model #(set-model-capability engine %)
    :get-thinking-level #(deref (:thinking (agent-state engine)))
-   :set-thinking-level #(do (when (shared/valid-thinking-level? %)
-                              (agent/set-thinking-level! (agent-state engine) %))
-                            nil)
+   :set-thinking-level (fn [level]
+                         (when (shared/valid-thinking-level? level)
+                           (agent/set-thinking-level! (agent-state engine) level))
+                         nil)
    :send-user-message #(send-user-message-capability engine %1 %2)
    :send-message! #(send-message-capability engine %1 %2)
    :get-active-tools #(mapv :name (agent/active-tools (agent-state engine)))
-   :set-active-tools #(do (agent/set-active-tools! (agent-state engine) %) nil)})
+   :set-active-tools (fn [names]
+                       (agent/set-active-tools! (agent-state engine) names)
+                       nil)})
 
 (defn dispose!
   "Release the engine: cancel an in-flight run or compaction, wait (bounded,

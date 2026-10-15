@@ -432,17 +432,16 @@
       :session-compact nil
       :session-before-compact nil
       :error nil
-      :model-select
-      ;; The runtime owns model switching (extension set-model, cycling,
-      ;; compaction overrides); the footer and the editor border follow the
-      ;; event. /model and the selector sync on their own path too —
-      ;; sync-footer-model! is idempotent.
+      (:model-select :thinking-level-select)
+      ;; The runtime owns model and thinking switching (extension set-model,
+      ;; cycling, compaction overrides); the footer and the editor border
+      ;; follow the event — :thinking-level-select carries the new level,
+      ;; :model-select reads the thinking the switch left in place. /model
+      ;; and the selector sync on their own path too — sync-footer-model!
+      ;; is idempotent.
       (when-let [cs @cs-ref]
-        (state/update-editor-border-color! cs @(:thinking (runtime/agent-state (:engine cs))))
-        (sync-footer-model! cs))
-      :thinking-level-select
-      (when-let [cs @cs-ref]
-        (state/update-editor-border-color! cs (:level evt))
+        (state/update-editor-border-color!
+         cs (or (:level evt) @(:thinking (runtime/agent-state (:engine cs)))))
         (sync-footer-model! cs))
       ;; Trailing default expression (SCI's case rejects the :default keyword)
       nil)))

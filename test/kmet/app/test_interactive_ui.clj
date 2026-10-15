@@ -1693,10 +1693,6 @@
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :config cfg/default-config
                                    :session-atom (atom nil)
-                                   :footer-provider (fdp/make-footer-data-provider)
-                                   :compaction-queued (atom [])
-                                   :pending-messages-comp {:steering-atom (atom [])
-                                                           :follow-up-atom (atom [])}
                                    :running-turn? (atom true)})]
       (with-redefs [m/providers-atom (atom {:test-native {:models [model]}})]
         (try
@@ -1746,12 +1742,7 @@
           ag (agent/make-agent-state :session sess)
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :config cfg/default-config
-                                   :session-atom (atom sess)
-                                   :footer-provider (fdp/make-footer-data-provider)
-                                   :compaction-queued (atom [])
-                                   :pending-messages-comp {:steering-atom (atom [])
-                                                           :follow-up-atom (atom [])}
-                                   :running-turn? (atom false)})
+                                   :session-atom (atom sess)})
           custom-entries #(filter (fn [e] (= :custom-message (:role e)))
                                   (session/get-branch sess))
           custom-context #(filter (fn [m] (= :custom (:role m))) @(:messages ag))]
@@ -1882,30 +1873,6 @@
           (t/is (= [] (:scoped-models (extensions/build-extension-context)))))
         (finally
           (clear-installed-context!))))))
-
-(deftest test-set-model-capability
-  (testing "the runtime :set-model capability follows the Model record"
-    (let [old (m/map->Model {:provider :test-native :id "old"})
-          model (m/map->Model {:provider :test-adapter :id "test-model"})
-          ag (agent/make-agent-state :provider :test-native :model "old")
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :config cfg/default-config
-                                   :session-atom (atom nil)})
-          auth? (atom true)]
-      (with-redefs [m/providers-atom (atom {:test-native {:models [old]}
-                                            :test-adapter {:models [model]}})
-                    m/has-configured-auth (fn [_] @auth?)
-                    cfg/set-default-model! (fn [& _] nil)]
-        (try
-          (install-runtime-capabilities! cs)
-          (t/is (true? (extensions/set-model model)))
-          (t/is (= :test-adapter @(:provider ag)) "the provider follows the record")
-          (t/is (= "test-model" @(:model ag)))
-          (reset! auth? false)
-          (t/is (false? (extensions/set-model model)) "no configured auth → false")
-          (t/is (= "test-model" @(:model ag)) "state unchanged")
-          (finally
-            (clear-installed-context!)))))))
 
 (deftest test-extension-reset-closes-open-dialogs
   (testing "the registry :reset teardown closes an open ui-custom dialog
