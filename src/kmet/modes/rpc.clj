@@ -3,9 +3,11 @@
    on stdout (engine.md step 6; pi: modes/rpc/rpc-mode.ts). A command is a
    map with a :type and an optional string :id the matching response
    repeats; events are the print-mode wire projection
-   (event-bus/wire-event). stdout carries protocol only — kmet.debug writes
-   files and nothing else in the runtime prints. Extension UI dialogs (the
-   runtime's request-ui!/respond! pair) are wired in step 6c."
+   (event-bus/wire-event). Extension UI dialogs and output channels arrive
+   as {:type :ui-request :id ... :method ...} records and a dialog is
+   answered with {:type :respond :id ...} (the runtime's request-ui!/
+   respond! pair). stdout carries protocol only — kmet.debug writes files
+   and nothing else in the runtime prints."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -14,6 +16,7 @@
             [kmet.app.commands :as commands]
             [kmet.app.commands.builtins :as builtins]
             [kmet.app.event-bus :as event-bus]
+            [kmet.app.extensions :as extensions]
             [kmet.app.prompts :as prompts]
             [kmet.app.session :as session]
             [kmet.app.session-runtime :as runtime]
@@ -104,6 +107,102 @@
         (ok type {:disposition :queued}))
     (failed type (str (name type) " requires a non-empty :message string"))))
 
+;; ─── The extension UI port (engine.md §6.2) ────────────────────────────────
+
+(def ^:private dialog-methods
+  "Request kinds the client answers (pi: the dialog extension UI methods)."
+  #{:select :confirm :input :editor})
+
+(defn- write-ui-record!
+  "Write a fire-and-forget extension UI record (the port's output channels);
+   every one carries its own id so clients can correlate or dedupe."
+  [out record]
+  (write-record! out (assoc record :type :ui-request :id (str (random-uuid)))))
+
+(defn- forward-ui-request
+  "The port's :request capability: a dialog becomes a :ui-request record
+   (kind → method) and stays pending until the client answers with :respond
+   or the request's :timeout auto-resolves it (pi:
+   ExtensionUIDialogOptions.timeout). Kinds with no client surface keep the
+   degraded default (pi: :custom is not bridged)."
+  [engine-ref out request]
+  (let [{:keys [kind timeout]} request]
+    (if (contains? dialog-methods kind)
+      (do
+        (write-record! out (-> request
+                               (dissoc :kind)
+                               (assoc :type :ui-request :method kind)))
+        (when (and timeout (pos? timeout))
+          (future
+            (Thread/sleep (long timeout))
+            (when-let [engine @engine-ref]
+              (runtime/respond! engine (:id request)
+                                (runtime/request-default engine (:id request))))))
+        extensions/request-pending)
+      (extensions/ui-request-default kind))))
+
+(defn- ui-port
+  "The RPC UI port (engine.md §6.2): the headless degraded answers plus
+   everything the protocol carries — dialogs through :request and the
+   fire-and-forget output channels. ENGINE-REF holds the engine (the port is
+   built before bootstrap, which installs it). Widget hiccup cannot cross
+   the wire: only nil or string lines are forwarded (pi: component
+   factories are ignored); the other TUI-only capabilities stay degraded."
+  [engine-ref out]
+  (assoc (extensions/headless-ui-port)
+         :request #(forward-ui-request engine-ref out %)
+         :notify (fn [message type]
+                   (write-ui-record! out (cond-> {:method :notify :message message}
+                                           type (assoc :notify-type type))))
+         :set-status (fn [key text]
+                       (write-ui-record! out {:method :set-status
+                                              :status-key key
+                                              :status-text text}))
+         :set-widget (fn [key content {:keys [placement]}]
+                       (when (or (nil? content)
+                                 (and (sequential? content) (every? string? content)))
+                         (write-ui-record! out (cond-> {:method :set-widget
+                                                        :widget-key key
+                                                        :widget-lines content}
+                                                 placement (assoc :widget-placement placement)))))
+         :set-title (fn [title]
+                      (write-ui-record! out {:method :set-title :title title}))
+         :chat-info (fn [label content]
+                      (write-ui-record! out (cond-> {:method :chat-info :content content}
+                                              label (assoc :label label))))
+         :set-editor-text (fn [text]
+                            (write-ui-record! out {:method :set-editor-text :text text}))
+         :paste-to-editor (fn [text]
+                            (write-ui-record! out {:method :set-editor-text :text text}))))
+
+(defn- command-ui
+  "The command-UI value portable builtins receive over RPC (6.3): the shared
+   capabilities mapped onto the port's output channels. :set-title is absent
+   — a terminal title has no RPC meaning (the /name reply carries the
+   name)."
+  [port]
+  {:message (fn [text] ((:chat-info port) nil text))
+   :info (:chat-info port)
+   :warning (fn [text] ((:notify port) text :warning))
+   :status (fn [text] ((:set-status port) "status" text))
+   :notify (:notify port)})
+
+(defn- dispatch-command
+  "Dispatch a slash-command prompt through the registry (engine.md §6.3): a
+   command available to :rpc runs with the command ctx {:runtime :ui
+   :frontend}; an extension command receives the extension context (pi:
+   handler(args, ctx)) and executes immediately, even mid-stream. Returns
+   the handled response, or nil when TEXT is not a known command — an
+   unknown slash stays a normal prompt (skill and template expansion happen
+   in submit!)."
+  [engine command-ui text]
+  (when-let [{:keys [name args]} (commands/parse-command-line text)]
+    (when-let [c (commands/find-command name :rpc)]
+      (if-let [extension-handler (:extension-handler c)]
+        (extension-handler (extensions/build-extension-context) args)
+        ((:handler c) {:runtime engine :ui command-ui :frontend :rpc} args))
+      (ok :prompt {:disposition :handled}))))
+
 ;; ─── Commands ──────────────────────────────────────────────────────────────
 
 (defn- command-steer
@@ -117,36 +216,56 @@
   (command-queue engine command runtime/follow-up!))
 
 (defn- command-prompt
-  "Start, steer, queue, or handle a prompt (pi: prompt). While a run is
-   active the client must choose the :streaming-behavior (:steer or
-   :follow-up) — pi errors without one. The response reports the
-   disposition; accepted is not completed, so the client waits for
-   :agent-settled. :images ride the started path into the run."
-  [engine command]
+  "Start, steer, queue, or handle a prompt (pi: prompt). A slash-command
+   line dispatches through the registry first (6.3) — extension commands
+   run immediately, even mid-stream (pi). Otherwise, while a run is active
+   the client must choose the :streaming-behavior (:steer or :follow-up);
+   pi errors without one. The response reports the disposition; accepted is
+   not completed, so the client waits for :agent-settled. :images ride the
+   started path into the run."
+  [engine command command-ui]
   (if-let [text (message-of command)]
-    (let [behavior (:streaming-behavior command)
-          running? (runtime/turn-running? engine)]
-      (cond
-        (and behavior (not (contains? #{:steer :follow-up} behavior)))
-        (failed :prompt "streaming-behavior must be :steer or :follow-up")
+    (or (dispatch-command engine command-ui text)
+        (let [behavior (:streaming-behavior command)
+              running? (runtime/turn-running? engine)]
+          (cond
+            (and behavior (not (contains? #{:steer :follow-up} behavior)))
+            (failed :prompt "streaming-behavior must be :steer or :follow-up")
 
-        (and running? (nil? behavior))
-        (failed :prompt "The agent is already running; specify :streaming-behavior :steer or :follow-up")
+            (and running? (nil? behavior))
+            (failed :prompt "The agent is already running; specify :streaming-behavior :steer or :follow-up")
 
-        (and running? behavior)
-        (do ((if (= :steer behavior) runtime/steer! runtime/follow-up!)
-             engine (expand-queued-text text))
-            (ok :prompt {:disposition :queued}))
+            (and running? behavior)
+            (do ((if (= :steer behavior) runtime/steer! runtime/follow-up!)
+                 engine (expand-queued-text text))
+                (ok :prompt {:disposition :queued}))
 
-        :else
-        (let [result (runtime/submit! engine text
-                                      (cond-> {:expand? true}
-                                        (:images command) (assoc :run-opts {:images (:images command)})))]
-          (ok :prompt {:disposition (case (:action result)
-                                      :started :started
-                                      :handled :handled
-                                      :queued)}))))
+            :else
+            (let [result (runtime/submit! engine text
+                                          (cond-> {:expand? true}
+                                            (:images command) (assoc :run-opts {:images (:images command)})))]
+              (ok :prompt {:disposition (case (:action result)
+                                          :started :started
+                                          :handled :handled
+                                          :queued)})))))
     (failed :prompt "prompt requires a non-empty :message string")))
+
+(defn- command-respond
+  "Answer the pending :ui-request ID (pi: extension_ui_response). A valid
+   answer is silent — pi writes no response record for one; a malformed
+   answer fails (the id is what correlates an answer, so without one there
+   is nothing to resolve). :cancelled resolves the request's default
+   (nil), :confirmed a boolean, otherwise the answer is :value."
+  [engine command]
+  (let [id (:id command)]
+    (if (and (string? id) (not (str/blank? id)))
+      (do (runtime/respond! engine id
+                            (cond
+                              (:cancelled command) nil
+                              (contains? command :confirmed) (boolean (:confirmed command))
+                              :else (:value command)))
+          nil)
+      (failed :respond "respond requires a string :id"))))
 
 (defn- command-abort
   "Cancel the in-flight run or compaction and wait (bounded) for the
@@ -434,8 +553,12 @@
                               (map #(slash-command :skill %)
                                    (skills/as-command-maps (skills/get-skills)))))}))
 
-(def ^:private command-table
-  {:prompt command-prompt
+(defn- command-table
+  "The dispatch table; the prompt row carries COMMAND-UI (the portable
+   builtin dispatch, nil when there is no UI port)."
+  [command-ui]
+  {:prompt (fn [engine command] (command-prompt engine command command-ui))
+   :respond command-respond
    :steer command-steer
    :follow-up command-follow-up
    :abort command-abort
@@ -465,9 +588,10 @@
    :get-commands command-get-commands})
 
 (defn- handle-command
-  "Handle one parsed command record, returning the response (never nil).
-   A handler throw is the command's failure, not the process's."
-  [engine command]
+  "Handle one parsed command record, returning the response — or nil for a
+   fire-and-forget command (:respond), which pi answers nothing to. A
+   handler throw is the command's failure, not the process's."
+  [table engine command]
   (cond
     (not (map? command))
     (failed nil "A command must be an EDN map")
@@ -476,7 +600,7 @@
     (failed nil "A command record requires a :type")
 
     :else
-    (if-let [handler (get command-table (:type command))]
+    (if-let [handler (get table (:type command))]
       (try
         (handler engine command)
         (catch Exception e
@@ -501,7 +625,7 @@
 
 (defn- serve
   "Serve commands from RDR until EOF. Returns nil."
-  [engine rdr out]
+  [table engine rdr out]
   (loop []
     (when-let [line (.readLine rdr)]
       (let [{:keys [command error]} (parse-line line)]
@@ -509,14 +633,16 @@
           ;; a malformed record answers a parse response without an id
           ;; (pi discipline: there is nothing to correlate it with)
           (write-record! out (failed :parse (str "Failed to parse command: " error)))
-          (write-record! out (correlated (handle-command engine command) (:id command)))))
+          ;; a fire-and-forget command (respond) answers nothing
+          (when-let [response (handle-command table engine command)]
+            (write-record! out (correlated response (:id command))))))
       (recur))))
 
 (defn run
   "Run RPC mode: EDN commands on IN, protocol records on OUT. Resolves the
    session like print mode, bootstraps the engine bound to extensions as
-   :rpc, streams wire events, serves commands until stdin closes, then
-   disposes.
+   :rpc with the RPC UI port, streams wire events, serves commands until
+   stdin closes, then disposes.
 
    opts: :config, :session, :continue, :model, :provider, :in, :out (the
    last two default to *in*/*out*; tests pass a StringReader/StringWriter).
@@ -530,21 +656,24 @@
     ;; reports through get-commands; registration is idempotent
     (builtins/register-runtime-commands!)
     (if-let [session (runtime/resolve-run-session config opts)]
-      (let [engine (runtime/bootstrap config {:session session
+      (let [;; the port is installed by bootstrap but needs the engine for a
+            ;; dialog timeout's auto-answer; the ref closes the cycle
+            engine-ref (atom nil)
+            port (ui-port engine-ref out)
+            engine (runtime/bootstrap config {:session session
                                               :model (:model opts)
                                               :provider (:provider opts)
                                               :mode :rpc
-                                              ;; the RPC UI port (dialog and
-                                              ;; output records) lands with
-                                              ;; step 6c; until then extensions
-                                              ;; see the headless defaults
-                                              :has-ui false})]
+                                              :has-ui true
+                                              :ui-context port})
+            table (command-table (command-ui port))]
+        (reset! engine-ref engine)
         (try
           (let [unsubscribe (runtime/subscribe! engine (fn [event]
                                                          (write-record! out (event-bus/wire-event event))))]
             (try
               (with-open [rdr (io/reader in)]
-                (serve engine rdr out))
+                (serve table engine rdr out))
               (finally (unsubscribe))))
           (finally (runtime/dispose! engine)))
         :ok)

@@ -17,7 +17,8 @@
    Handlers return nil; they act through the runtime and the UI value, never
    through an intent for the caller to interpret.
    The registry is global so builtins, skills, and extensions can all
-   register commands; the editor's autocomplete provider reads it live.")
+   register commands; the editor's autocomplete provider reads it live."
+  (:require [clojure.string :as str]))
 
 (defonce ^:private registry (atom []))
 
@@ -38,6 +39,24 @@
   []
   (reset! registry [])
   nil)
+
+(defn command-line?
+  "True when TEXT is a single-line command line: slash commands and bash
+   bang-lines dispatch only when the whole input is one line (a pasted
+   block whose first line starts with / or ! is a message, not a
+   command)."
+  [text]
+  (not (str/includes? text "\n")))
+
+(defn parse-command-line
+  "Split a single-line slash-command TEXT into {:name NAME :args ARGS}, or
+   nil when TEXT does not start with / or spans lines. NAME is the command
+   without the slash; ARGS is the trimmed remainder (\"\" when absent)."
+  [text]
+  (when (and (str/starts-with? text "/") (command-line? text))
+    (let [space (str/index-of text " ")]
+      {:name (if space (subs text 1 space) (subs text 1))
+       :args (if space (str/trim (subs text (inc space))) "")})))
 
 (defn- available-to?
   "True when CMD runs on FRONTEND (a nil :frontend tag means every

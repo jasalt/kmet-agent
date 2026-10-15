@@ -680,18 +680,23 @@
 
 (deftest submit-command-line-gate
   (testing "multiline submit text (e.g. pasted blocks) is never a command"
-    (let [command-line? @#'turn/command-line?]
-      ;; single-line slash/bang input stays a command
-      (is (true? (command-line? "/model gpt-4o")))
-      (is (true? (command-line? "/model")))
-      (is (true? (command-line? "!ls -la")))
-      (is (true? (command-line? "!!ls -la")))
-      ;; multiline input whose first line starts with a command prefix is a
-      ;; message, not a command (regression: pasting text starting with
-      ;; "/model ..." ran the /model command)
-      (is (false? (command-line? "/model gpt-4o\nsecond line")))
-      (is (false? (command-line? "/model\n\nrest")))
-      (is (false? (command-line? "!ls\n!echo hi"))))))
+    ;; single-line slash/bang input stays a command
+    (is (true? (commands/command-line? "/model gpt-4o")))
+    (is (true? (commands/command-line? "/model")))
+    (is (true? (commands/command-line? "!ls -la")))
+    (is (true? (commands/command-line? "!!ls -la")))
+    ;; multiline input whose first line starts with a command prefix is a
+    ;; message, not a command (regression: pasting text starting with
+    ;; "/model ..." ran the /model command)
+    (is (false? (commands/command-line? "/model gpt-4o\nsecond line")))
+    (is (false? (commands/command-line? "/model\n\nrest")))
+    (is (false? (commands/command-line? "!ls\n!echo hi")))
+    ;; the split parses name and args off a single-line command
+    (is (= {:name "model" :args "gpt-4o"}
+           (commands/parse-command-line "/model gpt-4o")))
+    (is (= {:name "help" :args ""} (commands/parse-command-line "/help")))
+    (is (nil? (commands/parse-command-line "not a command")))
+    (is (nil? (commands/parse-command-line "/model\nnext")))))
 
 (deftest replay-branch-restores-unpaired-tool-images
   (testing "an unpaired tool result (no matching call — legacy sessions,

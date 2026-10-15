@@ -5,11 +5,13 @@
    EOF disposes the engine."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.modes.rpc :as rpc]
             [kmet.ai.models :as models]
             [kmet.app.commands :as commands]
+            [kmet.app.extensions :as extensions]
             [kmet.app.loop :as agent]
             [kmet.app.prompts :as prompts]
             [kmet.app.session :as session]
@@ -166,7 +168,7 @@
 
 (deftest test-eof-disposes-and-binds-rpc-mode
   (testing "stdin EOF disposes the engine after the loop ends, and the
-            engine is bound to extensions as :rpc"
+            engine is bound to extensions as :rpc with the UI port"
     (let [disposed (promise)
           started (promise)
           orig-dispose runtime/dispose!
@@ -179,7 +181,8 @@
           (is (= :ok result))
           (is (some? (deref disposed 1000 nil)) "dispose! ran on EOF")
           (is (= :rpc (:mode (deref started 1000 nil))))
-          (is (false? (:has-ui (deref started 1000 nil)))))))))
+          (is (true? (:has-ui (deref started 1000 nil))))
+          (is (map? (:ui-context (deref started 1000 nil))) "the UI port rides along"))))))
 
 (deftest test-prompt-during-a-run-requires-streaming-behavior
   (testing "pi parity: a prompt while a run is active needs an explicit
@@ -462,6 +465,193 @@
       (finally
         (commands/unregister-command! "ext-demo")
         (commands/unregister-command! "tui-only")))))
+
+(defn- records-so-far
+  "The records OUT holds so far (a thread-safe snapshot: write-record!
+   locks OUT)."
+  [out]
+  (locking out
+    (->> (str/split-lines (str out))
+         (remove str/blank?)
+         (mapv edn/read-string))))
+
+(defn- await-record
+  "Poll OUT for the first record of TYPE, up to ~2s (a piped client answers
+   while the transport is still reading)."
+  [out type]
+  (loop [n 0]
+    (when (< n 200)
+      (if-let [r (first (filter #(= type (:type %)) (records-so-far out)))]
+        r
+        (do (Thread/sleep 10) (recur (inc n)))))))
+
+(defn- blocking-input
+  "A blocking stdin for the round-trip test: neither host ships a
+   java.io.PipedReader, so this is a Reader over a queue — :write! appends a
+   line, :end! signals EOF. The transport keeps reading while the test
+   answers a pending dialog."
+  []
+  (let [q (java.util.concurrent.LinkedBlockingQueue.)
+        state (atom {:text "" :pos 0 :eof false})]
+    {:reader (proxy [java.io.Reader] []
+               (read [cbuf off len]
+                 (loop []
+                   (let [{:keys [text pos eof]} @state]
+                     (if (and (not eof) (< pos (count text)))
+                       (let [n (min len (- (count text) pos))]
+                         (dotimes [i n]
+                           (aset cbuf (+ off i) (.charAt text (+ pos i))))
+                         (swap! state update :pos + n)
+                         n)
+                       (if eof
+                         -1
+                         (let [item (.take q)]
+                           (if (= ::eof item)
+                             (do (swap! state assoc :eof true) -1)
+                             (do (reset! state {:text item :pos 0 :eof false})
+                                 (recur)))))))))
+               (close [] (swap! state assoc :eof true)))
+     :write! (fn [line] (.put q (str line "\n")) nil)
+     :end! (fn [] (.put q ::eof) nil)}))
+
+(deftest test-extension-ui-output-channels
+  (testing "extension output calls become fire-and-forget :ui-request
+            records; widget hiccup cannot cross the wire"
+    (with-redefs [agent/run-agent-turn
+                  (fn [_ _]
+                    (extensions/ui-notify "hello" :warning)
+                    (extensions/ui-chat-info "Label" "content")
+                    (extensions/ui-set-status "key" "text")
+                    (extensions/ui-set-title "kmet")
+                    (extensions/ui-set-editor-text "draft")
+                    (extensions/ui-paste-to-editor "pasted")
+                    (extensions/ui-set-widget "w" ["line 1" "line 2"]
+                                              {:placement :above-editor})
+                    (extensions/ui-set-widget "hiccup" [:text {} "ignored"])
+                    nil)]
+      (let [[_ records] (run-lines [{:type :prompt :id 1 :message "go"}])
+            uis (mapv #(dissoc % :id) (filter #(= :ui-request (:type %)) records))]
+        (is (= [{:type :ui-request :method :notify :message "hello" :notify-type :warning}
+                {:type :ui-request :method :chat-info :label "Label" :content "content"}
+                {:type :ui-request :method :set-status :status-key "key" :status-text "text"}
+                {:type :ui-request :method :set-title :title "kmet"}
+                {:type :ui-request :method :set-editor-text :text "draft"}
+                {:type :ui-request :method :set-editor-text :text "pasted"}
+                {:type :ui-request :method :set-widget :widget-key "w"
+                 :widget-lines ["line 1" "line 2"] :widget-placement :above-editor}]
+               uis))))))
+
+(deftest test-ui-request-dialog-round-trip
+  (testing "a run-driven dialog forwards as a :ui-request and the client's
+            :respond resolves the pending promise (the async answer seam)"
+    (let [{:keys [reader write! end!]} (blocking-input)
+          out (java.io.StringWriter.)
+          engine-p (promise)
+          answered (promise)
+          orig-bootstrap runtime/bootstrap]
+      (with-redefs [runtime/bootstrap (fn [config opts]
+                                        (let [engine (orig-bootstrap config opts)]
+                                          (deliver engine-p engine)
+                                          engine))
+                    agent/run-agent-turn
+                    (fn [_ _]
+                      ;; the dialog runs off the reader thread (the real loop
+                      ;; runs on its own future) so the reader stays free to
+                      ;; serve the :respond line
+                      (future
+                        (let [engine (deref engine-p 5000 nil)
+                              p (runtime/request-ui! engine :confirm
+                                                     {:title "Allow?" :message "Sure?"})]
+                          (deliver answered (deref p 5000 ::timeout))))
+                      nil)]
+        (let [runner (future (rpc/run (merge (opts) {:in (io/reader reader) :out out})))]
+          (try
+            (write! "{:type :prompt :id \"p\" :message \"go\"}")
+            (let [request (await-record out :ui-request)]
+              (is (some? request) "the dialog reached the client")
+              (is (= :confirm (:method request)))
+              (is (= "Allow?" (:title request)))
+              (is (= "Sure?" (:message request)))
+              (write! (pr-str {:type :respond :id (:id request) :confirmed true}))
+              (is (true? (deref answered 3000 ::timeout))
+                  "the client's answer resolved the pending request")
+              ;; a second answer for the same id is ignored (already resolved)
+              (write! (pr-str {:type :respond :id (:id request) :confirmed false})))
+            (finally (end!)))
+          (is (= :ok (deref runner 5000 ::timeout))))))))
+
+(deftest test-respond-is-silent-and-validated
+  (testing "a valid :respond answers nothing (pi answers no
+            extension_ui_response); a shapeless one answers a failure"
+    (let [[_ records] (run-lines [{:type :respond :id "unknown" :value "v"}
+                                  {:type :respond :cancelled true}])]
+      (is (= [{:type :response :command :respond :success false
+               :error "respond requires a string :id"}]
+             (responses records))))))
+
+(deftest test-prompt-dispatches-portable-commands
+  (testing "a known /command runs through the registry with the RPC command
+            ctx and answers handled; unknown slash text stays a prompt"
+    (let [handled (promise)
+          texts (atom [])]
+      (commands/register-command!
+       {:name "rpc-demo" :description "Demo"
+        :handler (fn [ctx args]
+                   (deliver handled {:args args
+                                     :frontend (:frontend ctx)
+                                     :has-runtime? (some? (:runtime ctx))})
+                   ((:info (:ui ctx)) "Demo" (str "ran " args)))})
+      (try
+        (with-redefs [agent/run-agent-turn
+                      (fn [_ opts]
+                        (swap! texts conj (:message opts))
+                        (when-let [done (:on-done opts)] (done "ok"))
+                        nil)]
+          (let [[_ records] (run-lines [{:type :prompt :id 1 :message "/rpc-demo a b"}
+                                        {:type :prompt :id 2 :message "/nope"}
+                                        {:type :prompt :id 3 :message "plain"}])
+                [handled-resp unknown _plain] (responses records)
+                uis (filterv #(= :ui-request (:type %)) records)]
+            (is (= {:disposition :handled} (:data handled-resp)))
+            (is (= {:args "a b" :frontend :rpc :has-runtime? true}
+                   (deref handled 1000 nil)))
+            (is (= {:type :ui-request :method :chat-info :label "Demo" :content "ran a b"}
+                   (dissoc (first uis) :id))
+                "the command's :info capability became a record")
+            (is (= {:disposition :started} (:data unknown)))
+            (is (= ["/nope" "plain"] @texts)
+                "unknown slash and plain text reach the run as prompts")))
+        (finally (commands/unregister-command! "rpc-demo"))))))
+
+(deftest test-prompt-dispatches-extension-commands
+  (testing "an extension command over prompt gets the extension context"
+    (let [seen (promise)]
+      (commands/register-command!
+       {:name "rpc-ext" :description "Ext"
+        :extension-handler (fn [ctx args]
+                             (deliver seen {:mode (:mode ctx)
+                                            :has-ui (:has-ui ctx)
+                                            :args args}))})
+      (try
+        (let [[_ records] (run-lines [{:type :prompt :id 1 :message "/rpc-ext x"}])
+              resp (first (responses records))]
+          (is (= {:disposition :handled} (:data resp)))
+          (is (= {:mode :rpc :has-ui true :args "x"} (deref seen 1000 nil))))
+        (finally (commands/unregister-command! "rpc-ext")))))
+  (testing "extension commands execute immediately, even mid-stream (pi)"
+    (with-redefs [agent/run-agent-turn (fn [_ _] nil)]  ;; never settles
+      (let [seen (atom [])]
+        (commands/register-command!
+         {:name "rpc-ext-mid" :description "Ext"
+          :extension-handler (fn [_ctx args] (swap! seen conj args))})
+        (try
+          (let [[_ records] (run-lines [{:type :prompt :id 1 :message "go"}
+                                        {:type :prompt :id 2 :message "/rpc-ext-mid y"}])
+                [started ext] (responses records)]
+            (is (= {:disposition :started} (:data started)))
+            (is (= {:disposition :handled} (:data ext)))
+            (is (= ["y"] @seen)))
+          (finally (commands/unregister-command! "rpc-ext-mid")))))))
 
 (deftest test-unknown-session-fails-startup
   (testing "--session matching nothing reports to stderr and returns nil"

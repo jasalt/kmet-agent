@@ -411,15 +411,6 @@
           ": " (ex-message error))))
   (status/update-pending-messages! cs))
 
-(defn- command-line?
-  "True when TRIMMED submit text is a single line. Slash and bang commands
-   are single-line by nature; a multiline input — e.g. pasted text whose
-   first line happens to start with / or ! — is a message, never a command
-   (pi: command matching is exact-match or name-then-space, so a newline
-   after the command name never dispatches)."
-  [trimmed]
-  (not (str/includes? trimmed "\n")))
-
 (defn- queue-compaction-message!
   "Queue a message typed during compaction in the runtime's queue (the
    front end display reads it back through runtime/compaction-queued)."
@@ -460,13 +451,11 @@
         ;; (/name), or fall through to the agent (pi: commands dispatch
         ;; first, then skill/template expansion). Only single-line input is
         ;; a command — a pasted block whose first line starts with / must
-        ;; not dispatch (see command-line?).
+        ;; not dispatch (see commands/command-line?).
         (and (str/starts-with? trimmed "/")
-             (command-line? trimmed))
-        (let [space (str/index-of trimmed " ")
-              cmd (if (nil? space) (subs trimmed 1) (subs trimmed 1 space))
-              args (if (nil? space) "" (str/trim (subs trimmed (inc space))))]
-          (if-let [c (commands/find-command cmd :interactive)]
+             (commands/command-line? trimmed))
+        (let [{:keys [name args]} (commands/parse-command-line trimmed)]
+          (if-let [c (commands/find-command name :interactive)]
             (do (if-let [eh (:extension-handler c)]
                   ;; extension commands receive the extension context
                   ;; (pi: handler(args, ctx)); builtins keep CoreState
@@ -486,7 +475,7 @@
 
         ;; Bash command (! or !!) — single-line like slash commands
         (and (str/starts-with? trimmed "!")
-             (command-line? trimmed))
+             (commands/command-line? trimmed))
         (let [exclude-from-context? (str/starts-with? trimmed "!!")
               command (str/trim (subs trimmed (if exclude-from-context? 2 1)))]
           (when (seq command)

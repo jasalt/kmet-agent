@@ -877,6 +877,32 @@ compaction stays escape-cancellable), where pi awaits a `CompactionResult`
 in the response; a run in flight refuses instead of pi's
 abort-then-compact. `test/kmet/modes/test_rpc.clj` grew to 27 tests.
 
+**Landed (6c)** — the extension UI port and the portable prompt dispatch.
+`kmet.modes.rpc` binds `{:mode :rpc :has-ui true}` with a port whose dialogs
+(`:select`/`:confirm`/`:input`/`:editor`) forward as `:ui-request` records
+(`:kind` becomes `:method`), return `extensions/request-pending`, and are
+resolved by a `{:type :respond :id ...}` command through `runtime/respond!`
+— a valid answer is silent (pi writes no `extension_ui_response` record), a
+shapeless one fails. A request's `:timeout` auto-resolves with
+`runtime/request-default`, `:custom` keeps the degraded auto-answer, and
+the output channels (`:notify`, `:set-status`, `:set-widget` — string
+lines only, hiccup cannot cross the wire —, `:set-title`, `:chat-info`,
+`:set-editor-text`/`:paste-to-editor`) write fire-and-forget records.
+`bootstrap` merges a front end's `:ui-context` over the runtime's default
+port, so `:build-context` always rides along. `prompt` dispatches a
+single-line `/<name>` through `commands/find-command name :rpc` with
+`{:runtime engine :ui rpc-command-ui :frontend :rpc}` — portable builtins
+(`/continue`, `/name`, `/export`, `/compact`) and extension commands (the
+latter with the extension context, executing immediately even mid-stream)
+answer `:handled`; unknown slash text stays a normal prompt. The
+`commands/command-line?`/`parse-command-line` split is shared — the
+interactive mode uses it too. §8's headless guard landed as
+`test/kmet/modes/test_headless_guard.clj`: the static require graph of both
+print and RPC modes reaches no `kmet.modes.interactive.*`, no
+`kmet.app.ui.*`, no `kmet.tui.terminal` and no `kmet.tk.*` (`kmet.tui.theme`
+remains reachable through the extension ABI — the documented allowance).
+Tests: `test_rpc` 32.
+
 ## 8. Enforcement
 
 - **Layer guard** modeled on `test/kmet/libs/test_self_contained.clj`

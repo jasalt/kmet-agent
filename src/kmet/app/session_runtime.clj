@@ -245,7 +245,9 @@
     (extensions/bind-extensions!
      {:mode mode
       :has-ui has-ui
-      :ui (or ui-context (default-ui-port engine))})
+      ;; a front end supplies only its own capabilities; the runtime's
+      ;; build-context callback always rides along
+      :ui (merge (default-ui-port engine) ui-context)})
     (extensions/bind-runtime-capabilities! (runtime-capabilities engine))
     engine))
 
@@ -722,6 +724,13 @@
     (swap! (:pending-ui engine) dissoc id)
     (deliver promise value))
   nil)
+
+(defn request-default
+  "The default answer recorded for the pending :ui-request ID (nil when the
+   id is unknown) — a forwarding port's own timeout deadline resolves with
+   it, matching what `dispose!` would answer."
+  [engine id]
+  (:default (get @(:pending-ui engine) id)))
 
 (defn request-ui!
   "Ask the bound front end for an answer (engine.md §4.5): builds

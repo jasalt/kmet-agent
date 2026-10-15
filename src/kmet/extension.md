@@ -1165,6 +1165,32 @@ protocol is what a front end uses for host dialogs (a future wire mode
 forwards the requests and answers asynchronously; such a port owns its own
 timeout policy and answers with the default when its deadline elapses).
 
+##### RPC mode
+
+The RPC front end (`kmet.modes.rpc`) binds `{:mode :rpc :has-ui true}` and
+bridges the methods the protocol can carry (pi: `rpc-extension-ui.md`):
+
+- **dialogs** — `:select`/`:confirm`/`:input`/`:editor` requests become
+  `{:type :ui-request :id ... :method ...}` records; the client answers
+  with `{:type :respond :id ... :value/:confirmed/:cancelled ...}`. A valid
+  answer is silent (pi writes no `extension_ui_response` record). A request
+  carrying `:timeout` auto-resolves with its default when the deadline
+  elapses; `dispose!` does the same for anything still pending.
+- **output channels** — `ui-notify`, `ui-set-status`, `ui-set-title`,
+  `ui-chat-info`, `ui-set-editor-text` and `ui-paste-to-editor` write
+  fire-and-forget records. `ui-set-widget` forwards only string lines; a
+  hiccup tree cannot cross the wire.
+- **degraded** — everything else keeps the headless answers: `ui-custom`
+  resolves nil, terminal input is a no-op unsubscriber, `get-editor-text`
+  returns `""`, theme switching reports no UI, and the tool
+  expansion/display getters are neutral. `:custom` is not a dialog kind
+  either (pi's limitation).
+
+The engine-portable builtins (`/continue`, `/name`, `/export`, `/compact`)
+are dispatchable over `prompt`: a single-line `/<name>` runs through the
+command registry with the RPC command-UI value, whose output capabilities
+write the records above.
+
 #### Tag aliases — named tag-level components
 
 `ext/register-alias!` registers a **qualified-keyword tag** for any hiccup
