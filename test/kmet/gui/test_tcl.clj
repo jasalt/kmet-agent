@@ -61,14 +61,18 @@
 
 (t/deftest derived-tk-names-from-tcl-spelling
   ;; KMET_TCL_LIB without KMET_TK_LIB pairs with the Tk names derived
-  ;; from the Tcl library's own spelling (see the adapter docstring).
+  ;; from the Tcl library's own spelling (see the adapter docstring). A
+  ;; sibling's separator is the platform's (the adapter joins through
+  ;; babashka.fs), so the path case compares slashes-normalized.
   (if-let [dtk (try (require 'kmet.gui.tcl)
                     (deref (ns-resolve 'kmet.gui.tcl 'derived-tk-names))
                     (catch Throwable _ nil))]
     (do
       (t/is (= ["libtk8.6.so"] (dtk "libtcl8.6.so")))
       (t/is (= ["/opt/homebrew/opt/tcl-tk/lib/libtk9.1.dylib"]
-               (dtk "/opt/homebrew/opt/tcl-tk/lib/libtcl9.1.dylib")))
+               (mapv #(str/replace (str %) "\\" "/")
+                     (dtk "/opt/homebrew/opt/tcl-tk/lib/libtcl9.1.dylib")))
+            "the derived sibling keeps the Tcl path's directory")
       (t/is (= ["tk86t.dll"] (dtk "tcl86t.dll")))
       (t/is (= ["tk91.dll" "tcl9tk91.dll"] (dtk "tcl91.dll"))))
     (t/is true "skipped: the FFI adapter is unavailable")))
