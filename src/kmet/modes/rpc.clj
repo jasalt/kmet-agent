@@ -132,7 +132,7 @@
         (write-record! out (-> request
                                (dissoc :kind)
                                (assoc :type :ui-request :method kind)))
-        (when (and timeout (pos? timeout))
+        (when (and (number? timeout) (pos? timeout))
           (future
             (Thread/sleep (long timeout))
             (when-let [engine @engine-ref]
@@ -149,31 +149,32 @@
    the wire: only nil or string lines are forwarded (pi: component
    factories are ignored); the other TUI-only capabilities stay degraded."
   [engine-ref out]
-  (assoc (extensions/headless-ui-port)
-         :request #(forward-ui-request engine-ref out %)
-         :notify (fn [message type]
-                   (write-ui-record! out (cond-> {:method :notify :message message}
-                                           type (assoc :notify-type type))))
-         :set-status (fn [key text]
-                       (write-ui-record! out {:method :set-status
-                                              :status-key key
-                                              :status-text text}))
-         :set-widget (fn [key content {:keys [placement]}]
-                       (when (or (nil? content)
-                                 (and (sequential? content) (every? string? content)))
-                         (write-ui-record! out (cond-> {:method :set-widget
-                                                        :widget-key key
-                                                        :widget-lines content}
-                                                 placement (assoc :widget-placement placement)))))
-         :set-title (fn [title]
-                      (write-ui-record! out {:method :set-title :title title}))
-         :chat-info (fn [label content]
-                      (write-ui-record! out (cond-> {:method :chat-info :content content}
-                                              label (assoc :label label))))
-         :set-editor-text (fn [text]
-                            (write-ui-record! out {:method :set-editor-text :text text}))
-         :paste-to-editor (fn [text]
-                            (write-ui-record! out {:method :set-editor-text :text text}))))
+  (let [set-editor-text (fn [text]
+                          (write-ui-record! out {:method :set-editor-text :text text}))]
+    (assoc (extensions/headless-ui-port)
+           :request #(forward-ui-request engine-ref out %)
+           :notify (fn [message type]
+                     (write-ui-record! out (cond-> {:method :notify :message message}
+                                             type (assoc :notify-type type))))
+           :set-status (fn [key text]
+                         (write-ui-record! out {:method :set-status
+                                                :status-key key
+                                                :status-text text}))
+           :set-widget (fn [key content {:keys [placement]}]
+                         (when (or (nil? content)
+                                   (and (sequential? content) (every? string? content)))
+                           (write-ui-record! out (cond-> {:method :set-widget
+                                                          :widget-key key
+                                                          :widget-lines content}
+                                                   placement (assoc :widget-placement placement)))))
+           :set-title (fn [title]
+                        (write-ui-record! out {:method :set-title :title title}))
+           :chat-info (fn [label content]
+                        (write-ui-record! out (cond-> {:method :chat-info :content content}
+                                                label (assoc :label label))))
+           :set-editor-text set-editor-text
+           ;; pi: pasteToEditor delegates to setEditorText
+           :paste-to-editor set-editor-text)))
 
 (defn- command-ui
   "The command-UI value portable builtins receive over RPC (6.3): the shared
@@ -196,7 +197,7 @@
    unknown slash stays a normal prompt (skill and template expansion happen
    in submit!)."
   [engine command-ui text]
-  (when-let [{:keys [name args]} (commands/parse-command-line text)]
+  (when-let [{:keys [name args]} (commands/parse-command-line (str/trim text))]
     (when-let [c (commands/find-command name :rpc)]
       (if-let [extension-handler (:extension-handler c)]
         (extension-handler (extensions/build-extension-context) args)

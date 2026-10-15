@@ -127,13 +127,16 @@
        {:mode :rpc :has-ui false
         :ui {:request (fn [request] (swap! requests conj request)
                         ex/request-pending)}})
-      (let [p (rt/request-ui! engine :input {:title "name?"})
+      (let [p (rt/request-ui! engine :input {:title "name?" :default "fallback"})
             {:keys [id]} (first @requests)]
         (t/is (not (realized? p)))
         (t/is (= 1 (count @(:pending-ui engine))))
+        (t/is (= "fallback" (rt/request-default engine id))
+              "a forwarding port's own deadline resolves with the recorded default")
         (t/is (nil? (rt/respond! engine id "marko")))
         (t/is (= "marko" (deref p 100 ::timeout)))
         (t/is (empty? @(:pending-ui engine)))
+        (t/is (nil? (rt/request-default engine id)) "unknown once answered")
         (t/is (nil? (rt/respond! engine id "twice"))
               "an already-answered id is ignored")))))
 

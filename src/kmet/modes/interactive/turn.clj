@@ -444,17 +444,17 @@
 
 (defn handle-submit [cs text]
   (let [trimmed (str/trim text)
-        compacting? @(:compacting? (runtime/agent-state (:engine cs)))]
+        compacting? @(:compacting? (runtime/agent-state (:engine cs)))
+        command (commands/parse-command-line trimmed)]
     (when (seq trimmed)
       (cond
         ;; Slash command; else skill command (/skill:name), prompt template
         ;; (/name), or fall through to the agent (pi: commands dispatch
-        ;; first, then skill/template expansion). Only single-line input is
-        ;; a command — a pasted block whose first line starts with / must
-        ;; not dispatch (see commands/command-line?).
-        (and (str/starts-with? trimmed "/")
-             (commands/command-line? trimmed))
-        (let [{:keys [name args]} (commands/parse-command-line trimmed)]
+        ;; first, then skill/template expansion). Only a single-line input
+        ;; parses — a pasted block whose first line starts with / must not
+        ;; dispatch (see commands/parse-command-line).
+        command
+        (let [{:keys [name args]} command]
           (if-let [c (commands/find-command name :interactive)]
             (do (if-let [eh (:extension-handler c)]
                   ;; extension commands receive the extension context

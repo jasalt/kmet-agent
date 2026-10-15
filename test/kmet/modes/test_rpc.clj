@@ -31,13 +31,14 @@
           extra)))
 
 (defn- run-lines
-  "Run the protocol for LINES (maps are pr-str'd), returning
-   [result records]: the run's result and the parsed stdout records —
-   responses and events interleave, so callers filter by :type."
+  "Run the protocol for LINES (maps are pr-str'd, strings are served as-is),
+   returning [result records]: the run's result and the parsed stdout
+   records — responses and events interleave, so callers filter by :type."
   [lines & [extra]]
   (let [out (java.io.StringWriter.)
+        text (str/join "\n" (map #(if (string? %) % (pr-str %)) lines))
         result (rpc/run (merge (opts extra)
-                               {:in (java.io.StringReader. (str (str/join "\n" lines) "\n"))
+                               {:in (java.io.StringReader. (str text "\n"))
                                 :out out}))
         written (str/trim (str out))]
     [result (if (str/blank? written)
@@ -541,13 +542,74 @@
                  :widget-lines ["line 1" "line 2"] :widget-placement :above-editor}]
                uis))))))
 
+(defn- with-dialog
+  "Run RPC mode with a stubbed turn that resolves (DIALOG engine) off the
+   reader thread (the real loop runs on its own future), so the reader stays
+   free to serve later lines. F receives {:runner :out :write! :end!
+   :answered}; :answered holds the dialog's resolved value."
+  [dialog f]
+  (let [{:keys [reader write! end!]} (blocking-input)
+        out (java.io.StringWriter.)
+        engine-p (promise)
+        answered (promise)
+        orig-bootstrap runtime/bootstrap]
+    (with-redefs [runtime/bootstrap (fn [config opts]
+                                      (let [engine (orig-bootstrap config opts)]
+                                        (deliver engine-p engine)
+                                        engine))
+                  agent/run-agent-turn
+                  (fn [_ _]
+                    (future
+                      (let [engine (deref engine-p 5000 nil)]
+                        (deliver answered (dialog engine))))
+                    nil)]
+      (f {:runner (future (rpc/run (opts {:in (io/reader reader) :out out})))
+          :out out :write! write! :end! end! :answered answered}))))
+
 (deftest test-ui-request-dialog-round-trip
   (testing "a run-driven dialog forwards as a :ui-request and the client's
             :respond resolves the pending promise (the async answer seam)"
-    (let [{:keys [reader write! end!]} (blocking-input)
-          out (java.io.StringWriter.)
-          engine-p (promise)
-          answered (promise)
+    (with-dialog
+      (fn [engine]
+        (deref (runtime/request-ui! engine :confirm {:title "Allow?" :message "Sure?"})
+               5000 ::timeout))
+      (fn [{:keys [runner out write! end! answered]}]
+        (try
+          (write! "{:type :prompt :id \"p\" :message \"go\"}")
+          (let [request (await-record out :ui-request)]
+            (is (some? request) "the dialog reached the client")
+            (is (= :confirm (:method request)))
+            (is (= "Allow?" (:title request)))
+            (is (= "Sure?" (:message request)))
+            (write! (pr-str {:type :respond :id (:id request) :confirmed true}))
+            (is (true? (deref answered 3000 ::timeout))
+                "the client's answer resolved the pending request")
+            ;; a second answer for the same id is ignored (already resolved)
+            (write! (pr-str {:type :respond :id (:id request) :confirmed false})))
+          (finally (end!)))
+        (is (= :ok (deref runner 5000 ::timeout)))))))
+
+(deftest test-dialog-timeout-auto-resolves
+  (testing "a request carrying :timeout resolves with its default when the
+            client never answers (pi: ExtensionUIDialogOptions.timeout)"
+    (with-dialog
+      (fn [engine]
+        (deref (runtime/request-ui! engine :confirm {:title "Allow?" :timeout 50})
+               3000 ::timeout))
+      (fn [{:keys [runner out write! end! answered]}]
+        (try
+          (write! "{:type :prompt :id \"p\" :message \"go\"}")
+          (is (some? (await-record out :ui-request)) "the dialog reached the client")
+          (is (false? (deref answered 3000 ::timeout))
+              "the :confirm default resolved it, not a client answer")
+          (finally (end!)))
+        (is (= :ok (deref runner 5000 ::timeout)))))))
+
+(deftest test-unbridged-request-kinds-auto-answer
+  (testing ":custom has no client surface (pi limitation): the degraded
+            default resolves it and no record is written"
+    (let [engine-p (promise)
+          resolved (promise)
           orig-bootstrap runtime/bootstrap]
       (with-redefs [runtime/bootstrap (fn [config opts]
                                         (let [engine (orig-bootstrap config opts)]
@@ -555,30 +617,14 @@
                                           engine))
                     agent/run-agent-turn
                     (fn [_ _]
-                      ;; the dialog runs off the reader thread (the real loop
-                      ;; runs on its own future) so the reader stays free to
-                      ;; serve the :respond line
                       (future
                         (let [engine (deref engine-p 5000 nil)
-                              p (runtime/request-ui! engine :confirm
-                                                     {:title "Allow?" :message "Sure?"})]
-                          (deliver answered (deref p 5000 ::timeout))))
+                              p (runtime/request-ui! engine :custom {:title "Component"})]
+                          (deliver resolved (deref p 1000 ::timeout))))
                       nil)]
-        (let [runner (future (rpc/run (merge (opts) {:in (io/reader reader) :out out})))]
-          (try
-            (write! "{:type :prompt :id \"p\" :message \"go\"}")
-            (let [request (await-record out :ui-request)]
-              (is (some? request) "the dialog reached the client")
-              (is (= :confirm (:method request)))
-              (is (= "Allow?" (:title request)))
-              (is (= "Sure?" (:message request)))
-              (write! (pr-str {:type :respond :id (:id request) :confirmed true}))
-              (is (true? (deref answered 3000 ::timeout))
-                  "the client's answer resolved the pending request")
-              ;; a second answer for the same id is ignored (already resolved)
-              (write! (pr-str {:type :respond :id (:id request) :confirmed false})))
-            (finally (end!)))
-          (is (= :ok (deref runner 5000 ::timeout))))))))
+        (let [[_ records] (run-lines [{:type :prompt :id 1 :message "go"}])]
+          (is (nil? (deref resolved 2000 ::timeout)))
+          (is (empty? (filter #(= :ui-request (:type %)) records))))))))
 
 (deftest test-respond-is-silent-and-validated
   (testing "a valid :respond answers nothing (pi answers no
@@ -622,6 +668,15 @@
             (is (= ["/nope" "plain"] @texts)
                 "unknown slash and plain text reach the run as prompts")))
         (finally (commands/unregister-command! "rpc-demo"))))))
+
+(deftest test-portable-builtin-over-prompt
+  (testing "the real engine-portable builtins dispatch over prompt (the
+            6.3 payoff): /name runs and later state reads see the name"
+    (let [[_ records] (run-lines [{:type :prompt :id 1 :message "/name Portable"}
+                                  {:type :get-state :id 2}])
+          [handled state] (responses records)]
+      (is (= {:disposition :handled} (:data handled)))
+      (is (= "Portable" (get-in state [:data :session :name]))))))
 
 (deftest test-prompt-dispatches-extension-commands
   (testing "an extension command over prompt gets the extension context"
