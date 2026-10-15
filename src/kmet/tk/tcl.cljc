@@ -401,12 +401,16 @@
   "Install the host FFI adapter (interpreter + Tk) without mounting, for a
    caller that scripts Tk itself (kmet.tk.ttk.style) or mounts with its
    own tag table (kmet.app.ui.gui.ui/backend through kmet.tk.core/mount-backend!
-   and run-backend!)."
+   and run-backend!). Registers the `kmet::cb` trampoline too, so a caller
+   that scripts Tk before mounting — a shared variable's trace, a style
+   callback — has it. mount! registers it again for adapters bound
+   without install!."
   []
   (ensure-interp!)
   (let [a (adapter)]
     (tk/set-adapter! a)
-    ((:prepare! a)))
+    ((:prepare! a))
+    ((:command! a) "kmet::cb" tk/dispatch-callback!))
   nil)
 
 (defn mount!

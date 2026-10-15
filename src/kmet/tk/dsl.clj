@@ -447,15 +447,13 @@
 ;; use, read or write materializes it in the running interpreter — and
 ;; watched through `trace add variable`, which is what carries a Tcl-side
 ;; change back to a kmet callback. A watch belongs to the variable, not to
-;; a widget: it fires for every write, Tk's own included.
+;; a widget: it fires for every write, Tk's own included. Its watches map
+;; keeps each trace's Tcl script (what `trace remove` must be handed back),
+;; and :materialized says whether the Tcl variable exists yet.
 
 (defonce ^:private next-var (atom 0))
 
-(defrecord TkVariable [name initial watches materialized]
-  ;; WATCHES: trace id -> the Tcl trace script, which a watch must keep to
-  ;; remove the trace again. MATERIALIZED: whether the Tcl variable and the
-  ;; watches' traces exist yet.
-  )
+(defrecord TkVariable [name initial watches materialized])
 
 (defn variable
   "A kmet-owned Tcl variable, the value a :variable/:textvariable/
@@ -707,18 +705,13 @@
   "PROPS through OPTIONS ({:prop :tcl-option}) as a Tcl option map
    ({:text \"hi\" :foreground \"#fff\"}); a nil prop is absent. Values take
    the shape their prop's catalogue entry names (kmet.tk.options/coerce):
-   a Tcl list joins a sequence, the font props build the widget's font,
-   and an image prop is created as a resource of W. A value the shape
-   resolves to nothing — an empty variable name, say — drops the option,
-   so a tag's own default (a private variable) is not overridden by it."
+   a Tcl list joins a sequence, the font props build the widget's font, and
+   an image prop is created as a resource of W."
   [props options w]
-  (into {}
-        (keep (fn [[prop option]]
-                (let [v (get props prop)]
-                  (when (some? v)
-                    (when-some [resolved (option-value props prop v w)]
-                      [option resolved])))))
-        options))
+  (into {} (for [[prop option] options
+                 :let [v (get props prop)]
+                 :when (some? v)]
+             [option (option-value props prop v w)])))
 
 (defn- option-args
   "A Tcl option map as `-option value` words, in option-name order so a
@@ -1653,7 +1646,11 @@
                                            (merge (if (fn? fixed) (fixed props) fixed)
                                                   (when checkable
                                                     (checkable-options p checkable props))
-                                                  (tcl-options props (:options spec) w))))
+                                                  ;; a checkable tag's variable is the
+                                                  ;; one checkable-options resolved
+                                                  (tcl-options props (cond-> (:options spec)
+                                                                       checkable (dissoc :variable))
+                                                               w))))
                                         props)]
                      (when checkable
                        (select! w checkable props))

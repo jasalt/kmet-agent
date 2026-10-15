@@ -441,7 +441,9 @@ variable`, so a write from any side (the user's typing, Tk's own toggle,
 `variable-set!`) reaches the handler with the value Tcl wrote.
 `variable-value`/`variable-set!` read and write it through Tcl, and
 `variable-dispose!` unsets it and releases its watches. The calls that
-touch Tcl run on the Tk thread, like every Tcl call.
+touch Tcl run on the Tk thread, like every Tcl call; `kmet.tk.tcl/install!`
+registers the callback trampoline a trace needs, so a watched variable can
+be materialized right after installing.
 
 `:onvalue`, `:offvalue` and `:tristatevalue` are plain props beside a
 shared `:variable`: `:active` writes the on/off value into the variable,
