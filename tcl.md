@@ -143,7 +143,7 @@ So a kmet tree that stays inside the 8.6 option set runs unchanged on
 8.6/9.0/9.1; a Tk 9 prop fails loudly at the first widget of its tag on an
 older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
-## 1. Options that are not props
+## 1. What a plain value cannot express
 
 The catalogue (`kmet.tk.options`) leaves out what a plain value cannot
 be; each group needs machinery:
@@ -163,6 +163,11 @@ be; each group needs machinery:
   `-browsecmd`/`-invokecommand`.
 - **Cross-widget**: `-menu` (covered for menubuttons and the menubar),
   `-labelwidget`.
+- **A value a `:bind` handler cannot read.** A widget's own binding hands
+  its handler no arguments, so a drag that leaves its canvas item has no
+  coordinates: Tk's pointer grab keeps the events coming to the widget, but
+  nothing carries `%x %y` into the handler. A binding spec with a value kind
+  (as an item binding has) is what would close it.
 
 ## 2. Tk beyond its widgets
 

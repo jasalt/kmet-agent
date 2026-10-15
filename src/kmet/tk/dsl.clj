@@ -1114,7 +1114,7 @@
   "Point W's item ID at ITEM's handlers: each is Tk's item bind for its own
    event, so it fires while the pointer is over the item and hands the
    handler the event's coordinates — which item it is, the render that made
-   it knows. A handler WAS had and ITEM drops is unbound."
+   it knows. Whatever WAS had and ITEM drops is unbound."
   [w id item was]
   (doseq [[prop event] canvas-item-events
           :when (not= (get item prop) (get was prop))]
@@ -1147,7 +1147,7 @@
   "Whether IDS, some of them REBUILT this render, need raising: a rebuild
    is created on top, so it is out of place anywhere but at the end."
   [rebuilt ids]
-  (some #(and (contains? rebuilt %) (not= % (peek ids))) ids))
+  (some #(not= % (peek ids)) (filter rebuilt ids)))
 
 (defn canvas-items!
   "Reconcile canvas W's items with PROPS' :items — each an item map of Tk's

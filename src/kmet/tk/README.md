@@ -210,14 +210,17 @@ item — the coordinates through Tk's `coords` subcommand, the changed
 options through `itemconfigure`, a changed handler rebound on its own event
 with the trampoline it held released — a new id is drawn, a gone id deleted
 with the callbacks it held, and an item whose type or option set changed is
-rebuilt, since Tk cannot unset an option. The render's order is Tk's
-stacking order, a later item on top: a render that inserts or reorders
-raises the items into place, so the stacking survives a re-render the way
-identity does. Tk directs a mouse event to the *current* item, the topmost
-one under the pointer, so overlapping items shadow each other's handlers
-and each handler gets the event's own coordinates; a drag that leaves the
-item is the canvas's own `:bind`, where Tk's pointer grab keeps the events
-coming.
+rebuilt, since Tk cannot unset an option.
+
+The render's order is Tk's stacking order, a later item on top: a render
+that inserts or reorders raises the items into place, so the stacking
+survives a re-render the way identity does. Tk directs a mouse event to the
+*current* item, the topmost one under the pointer, so overlapping items
+shadow each other's handlers and each handler gets the event's own
+coordinates. Those are the *item's* events: a drag that leaves its item
+reaches the canvas's own `:bind` instead — Tk's pointer grab keeps the
+events coming to the widget, whose handlers hand over no value (a pointer
+reading there is a gap in the plan).
 
 The classic specs are `kmet.tk.core`'s `classic-specs`, the themed ones
 `kmet.tk.ttk/specs`; `kmet.tk.core` completes both through
@@ -299,7 +302,7 @@ The callback slots and what the handler receives:
 | `:on-toggled` | the checkable widgets (`-command`) | the new boolean |
 | `:on-select` | `:tk/listbox` (`<<ListboxSelect>>`) | a vector of indices |
 | `:on-select` | `:ttk/treeview` (`<<TreeviewSelect>>`) | a vector of row ids |
-| an item's `:on-click` | `:tk/canvas` `:items` (Tk's item bind) | the click's coordinates, `[x y]` |
+| an item's `:on-click`/`:on-drag`/`:on-enter`/`:on-leave` | `:tk/canvas` `:items` (Tk's item bind) | the event's coordinates, `[x y]` |
 | `:on-scroll` | `:tk/scrollbar`/`:ttk/scrollbar` (`-command`) | Tk's scroll arguments (`"moveto" "0.5"`) |
 | `:on-tab-changed` | `:ttk/notebook` (`<<NotebookTabChanged>>`) | the tab index |
 

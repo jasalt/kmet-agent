@@ -1098,12 +1098,13 @@
   ;; each has a trampoline of its own — so changing one rebinds one.
   (with-fake [rec nil]
     (let [seen (atom {})
+          note (fn [k] #(swap! seen assoc k %))
           items (atom [{:id "n1" :type :rect :coords [0 0 10 10] :fill "#fff"
                         :tags ["hot"]
-                        :on-click #(swap! seen assoc :on-click %)
-                        :on-drag #(swap! seen assoc :on-drag %)
-                        :on-enter #(swap! seen assoc :on-enter %)
-                        :on-leave #(swap! seen assoc :on-leave %)}])
+                        :on-click (note :on-click)
+                        :on-drag (note :on-drag)
+                        :on-enter (note :on-enter)
+                        :on-leave (note :on-leave)}])
           m (mounted (fn [_] [:tk/canvas {:items @items}]))
           events {:on-click "<Button-1>" :on-drag "<B1-Motion>"
                   :on-enter "<Enter>" :on-leave "<Leave>"}
@@ -1121,8 +1122,7 @@
         (t/is (= [7 9] (get @seen prop))
               (str "the " prop " handler receives the event's coordinates")))
       (let [old-leave (callback :on-leave)]
-        (swap! items assoc 0 (assoc (first @items)
-                                    :on-leave #(swap! seen assoc :left %)))
+        (swap! items assoc 0 (assoc (first @items) :on-leave (note :left)))
         (rerender! m)
         (t/is (not= old-leave (callback :on-leave)) "a changed handler is bound again")
         (tk/dispatch-callback! ["kmet::cb" old-leave "1" "2"])
@@ -1144,57 +1144,55 @@
     (let [line {:type :line :coords [0 0 1 1]}
           items (atom [{:id "a" :type :line :coords [0 0 1 1]}
                        {:id "b" :type :line :coords [0 0 1 1]}])
-          m (mounted (fn [_] [:tk/canvas {:items @items}]))]
+          m (mounted (fn [_] [:tk/canvas {:items @items}]))
+          ;; what one render emits, to assert on that render alone
+          rendered (fn [f]
+                     (let [n (count (scripts rec))]
+                       (f)
+                       (drop n (scripts rec))))]
       (t/is (empty? (scripts-like rec #"raise "))
             "the first render is creation order, so nothing is raised")
-      (swap! items conj (assoc line :id "c"))
-      (rerender! m)
-      (t/is (empty? (scripts-like rec #"raise "))
+      (t/is (empty? (filterv #(re-find #"raise " %)
+                             (rendered #(do (swap! items conj (assoc line :id "c"))
+                                            (rerender! m)))))
             "appending keeps Tk's order — a new item is already on top")
-      (reset! items [(assoc line :id "b") (assoc line :id "a") (assoc line :id "c")])
-      (rerender! m)
       (t/is (some #(re-find #"foreach ::kmet_item b\\ a\\ c \{ .+ raise \$::kmet_item \}$" %)
-                  (scripts rec))
+                  (rendered #(do (reset! items [(assoc line :id "b") (assoc line :id "a") (assoc line :id "c")])
+                                 (rerender! m))))
             "a reorder raises the items in the render's order, in one script")
-      (let [drawn (count (scripts rec))]
-        (rerender! m)
-        (t/is (= drawn (count (scripts rec)))
-              "a render that keeps that order raises nothing again"))
-      (let [drawn (count (scripts rec))]
-        (swap! items conj (assoc line :id "d"))
-        (rerender! m)
-        (t/is (empty? (filterv #(re-find #"foreach ::kmet_item" %)
-                               (drop drawn (scripts rec))))
-              "appending to a reordered render still needs no raise"))
-      (reset! items [(assoc line :id "a") (assoc line :id "x") (assoc line :id "b")])
-      (rerender! m)
+      (t/is (empty? (rendered #(rerender! m)))
+            "a render that keeps that order emits nothing")
+      (t/is (empty? (filterv #(re-find #"raise " %)
+                             (rendered #(do (swap! items conj (assoc line :id "d"))
+                                            (rerender! m)))))
+            "appending to a reordered render still needs no raise")
       (t/is (some #(re-find #"foreach ::kmet_item a\\ x\\ b \{ .+ raise \$::kmet_item \}$" %)
-                  (scripts rec))
+                  (rendered #(do (reset! items [(assoc line :id "a") (assoc line :id "x") (assoc line :id "b")])
+                                 (rerender! m))))
             "an item inserted before an existing one is raised into place")
-      ;; A render both reorders and rebuilds: creation order is not enough
-      ;; even for its new items, so they are drawn in the render's order.
-      (let [drawn (count (scripts rec))]
-        (reset! items [(assoc line :id "p") (assoc line :id "q") (assoc line :id "r")])
-        (rerender! m)
-        (t/is (= ["p" "q" "r"]
-                 (mapv #(second (re-find #"-tags ([a-z]+)$" %))
-                       (filterv #(re-find #" create line " %)
-                                (drop drawn (scripts rec)))))
-              "a render's new items are created in its own order, bottom first"))
+      ;; A render that adds several items draws them in its own order —
+      ;; creation order is the stacking order, so that is what puts a later
+      ;; one on top.
+      (t/is (= ["p" "q" "r"]
+               (mapv #(second (re-find #"-tags ([a-z]+)$" %))
+                     (filterv #(re-find #" create line " %)
+                              (rendered #(do (reset! items [(assoc line :id "p") (assoc line :id "q")
+                                                            (assoc line :id "r")])
+                                             (rerender! m))))))
+            "a render's new items are created in its own order, bottom first")
       ;; A rebuilt item keeps its id, so the order needs nothing — except
       ;; that Tk creates it on top: it is raised back unless it is the last.
-      (let [drawn (count (scripts rec))]
-        (reset! items [(assoc line :id "p" :type :rect) (assoc line :id "q") (assoc line :id "r")])
-        (rerender! m)
-        (t/is (some #(re-find #"foreach ::kmet_item p\\ q\\ r" %)
-                    (drop drawn (scripts rec)))
-              "a rebuilt item that is not last is raised back into place"))
-      (let [drawn (count (scripts rec))]
-        (reset! items [(assoc line :id "p" :type :rect) (assoc line :id "q")
-                       (assoc line :id "r" :type :rect)])
-        (rerender! m)
-        (t/is (empty? (filterv #(re-find #"foreach ::kmet_item" %) (drop drawn (scripts rec))))
-              "rebuilding the topmost item needs no raise"))
+      (t/is (some #(re-find #"foreach ::kmet_item p\\ q\\ r" %)
+                  (rendered #(do (reset! items [(assoc line :id "p" :type :rect)
+                                                (assoc line :id "q") (assoc line :id "r")])
+                                 (rerender! m))))
+            "a rebuilt item that is not last is raised back into place")
+      (t/is (empty? (filterv #(re-find #"foreach ::kmet_item" %)
+                             (rendered #(do (reset! items [(assoc line :id "p" :type :rect)
+                                                           (assoc line :id "q")
+                                                           (assoc line :id "r" :type :rect)])
+                                            (rerender! m)))))
+            "rebuilding the topmost item needs no raise")
       (engine/dispose-component (:root m)))))
 
 (t/deftest a-widget-gets-a-context-menu
