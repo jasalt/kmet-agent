@@ -314,11 +314,11 @@
                       (cfg/set-show-terminal-progress! (= value "true"))
                       :steering-mode
                       (let [mode (keyword value)]
-                        (swap! (:cfg ag) assoc :steering-mode mode)
+                        (agent/set-steering-mode! ag mode)
                         (cfg/save-setting! [:steering-mode] mode))
                       :follow-up-mode
                       (let [mode (keyword value)]
-                        (swap! (:cfg ag) assoc :follow-up-mode mode)
+                        (agent/set-follow-up-mode! ag mode)
                         (cfg/save-setting! [:follow-up-mode] mode))
                       :http-idle-timeout
                       (let [ms (:ms (some #(when (= value (:label %)) %)

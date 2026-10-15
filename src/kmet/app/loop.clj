@@ -3138,6 +3138,34 @@ Be precise and concise in your responses."}}]
   [agent enabled?]
   (swap! (:cfg agent) assoc :auto-compact (boolean enabled?)))
 
+(def queue-batch-modes
+  "The modes :steering-mode / :follow-up-mode accept (pi: queue batch
+   modes)."
+  #{:all :one-at-a-time})
+
+(defn- set-queue-batch-mode!
+  [agent k mode]
+  (when-not (contains? queue-batch-modes mode)
+    (throw (ex-info (str "Unknown queue mode: " (pr-str mode))
+                    {:type :invalid-mode :mode mode})))
+  (swap! (:cfg agent) assoc k mode))
+
+(defn set-steering-mode!
+  "Set how many queued steering messages one injection delivers (pi:
+   setSteeringMode): :all drains the queue, :one-at-a-time delivers the
+   oldest. Live — the next drain reads the new value. Persisting belongs to
+   the caller (the /settings row saves it; the RPC command is
+   session-scoped)."
+  [agent mode]
+  (set-queue-batch-mode! agent :steering-mode mode))
+
+(defn set-follow-up-mode!
+  "Set how many queued follow-up messages one drain delivers (pi:
+   setFollowUpMode): :all drains, :one-at-a-time delivers the oldest.
+   Live, like set-steering-mode!."
+  [agent mode]
+  (set-queue-batch-mode! agent :follow-up-mode mode))
+
 (defn set-http-idle-timeout-ms!
   "Set the SSE idle timeout live (pi: setHttpIdleTimeoutMs); 0 disables."
   [agent ms]
@@ -3215,6 +3243,22 @@ Be precise and concise in your responses."}}]
       (emit agent {:type :thinking-level-select
                    :level level
                    :previous-level previous}))))
+
+(defn cycle-thinking-level!
+  "Advance the thinking level through the current model's supported levels
+   (pi: session.cycleThinkingLevel), applying it via set-thinking-level! and
+   returning the new level. Returns nil when the model offers fewer than
+   two levels (pi: the command/action surfaces a status instead)."
+  [agent]
+  (let [model (models/get-model @(:provider agent) @(:model agent))
+        levels (if model (shared/get-supported-thinking-levels model) [:off])]
+    (when (> (count levels) 1)
+      (let [current @(:thinking agent)
+            idx (or (first (keep-indexed (fn [i l] (when (= l current) i)) levels))
+                    0)
+            next-level (nth levels (mod (inc idx) (count levels)))]
+        (set-thinking-level! agent next-level)
+        next-level))))
 
 (defn switch-thinking-level
   "Thinking level when switching OLD-MODEL → NEW-MODEL (kmet-specific rule;

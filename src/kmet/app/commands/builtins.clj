@@ -7,12 +7,10 @@
   (:require [clojure.string :as str]
             [kmet.debug :as debug]
             [kmet.app.commands :as commands]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.loop :as agent]
             [kmet.app.session :as session]
             [kmet.app.session-export :as session-export]
-            [kmet.app.session-runtime :as runtime]
-            [kmet.app.tools.core :as tools]))
+            [kmet.app.session-runtime :as runtime]))
 
 (defn- out
   "Call a shared command-UI capability; an absent capability is inert (a
@@ -52,13 +50,7 @@
       (out ui :message "No active session.")
 
       (seq args)
-      (let [sanitized (session/sanitize-session-name args)]
-        (session/append-session-info! sess sanitized)
-        ;; pi: session_info_changed — extensions track the display name
-        (event-bus/emit-event!
-         {:type :session-info-changed
-          :session-file (:file sess)
-          :name sanitized})
+      (let [sanitized (runtime/set-session-name! engine args)]
         (out ui :set-title)
         (when-not (= args sanitized)
           ;; pi: warn when normalization changed the input
@@ -84,17 +76,7 @@
 
       :else
       (try
-        (let [ag (runtime/agent-state engine)
-              system-prompt (or @(:system-prompt-override ag) @(:system ag))
-              tool-defs (vals (tools/get-all-tools))
-              opts (cond-> (when arg {:path arg})
-                     ;; without an explicit path the export lands in the
-                     ;; session's runtime cwd (where its tools work), not the
-                     ;; launch directory
-                     (not arg) (assoc :cwd (runtime/cwd engine))
-                     system-prompt (assoc :system-prompt system-prompt)
-                     (seq tool-defs) (assoc :tools tool-defs))
-              path (session-export/export-to-html! sess opts)]
+        (let [path (runtime/export-html! engine {:path arg})]
           (out ui :info "Export" (str "Session exported to: " path)))
         (catch Exception e
           (out ui :info "Export" (str "Failed to export session: "

@@ -43,6 +43,7 @@
             [kmet.app.packages :as packages]
             [kmet.app.prompts :as prompts]
             [kmet.app.session :as session]
+            [kmet.app.session-export :as session-export]
             [kmet.app.skills :as skills]
             [kmet.app.tools.core :as tools]))
 
@@ -571,6 +572,43 @@
   [engine]
   (some-> @(:session engine) :entries deref))
 
+(defn messages
+  "The agent's in-memory context messages (pi: session.messages — what the
+   next request sends, compaction summaries and context edits applied)."
+  [engine]
+  (agent/get-context (agent-state engine)))
+
+(defn set-session-name!
+  "Set the session display name (the /name builtin and RPC set_session_name
+   share this): sanitize, append the session_info entry, emit
+   :session-info-changed. Returns the sanitized name."
+  [engine name]
+  (let [sess (session engine)
+        sanitized (session/sanitize-session-name name)]
+    (session/append-session-info! sess sanitized)
+    (event-bus/emit-event!
+     {:type :session-info-changed
+      :session-file (:file sess)
+      :name sanitized})
+    sanitized))
+
+(defn export-html!
+  "Export the live session to HTML (the /export builtin and RPC export_html
+   share this). PATH, or the session's runtime cwd default; the engine's
+   system prompt and tool definitions are embedded (pi: exportSessionToHtml
+   state). Returns the written path; throws when there is nothing to
+   export."
+  [engine {:keys [path]}]
+  (let [ag (agent-state engine)
+        system-prompt (or @(:system-prompt-override ag) @(:system ag))
+        tool-defs (vals (tools/get-all-tools))]
+    (session-export/export-to-html!
+     (session engine)
+     (cond-> (when path {:path path})
+       (not path) (assoc :cwd (cwd engine))
+       system-prompt (assoc :system-prompt system-prompt)
+       (seq tool-defs) (assoc :tools tool-defs)))))
+
 (defn snapshot
   "A plain-data view of the engine: the session, the agent's status /
    model / provider / thinking, the pending queues and the last outcome.
@@ -921,6 +959,14 @@
   ([engine] (cycle-model! engine 1))
   ([engine direction] (agent/cycle-model! (agent-state engine) direction)))
 (defn set-thinking-level! [engine level] (agent/set-thinking-level! (agent-state engine) level))
+(defn cycle-thinking-level!
+  "Advance the thinking level through the current model's levels; returns
+   the new level, or nil when the model offers fewer than two."
+  [engine]
+  (agent/cycle-thinking-level! (agent-state engine)))
+(defn set-auto-compact! [engine enabled?] (agent/set-auto-compact! (agent-state engine) enabled?))
+(defn set-steering-mode! [engine mode] (agent/set-steering-mode! (agent-state engine) mode))
+(defn set-follow-up-mode! [engine mode] (agent/set-follow-up-mode! (agent-state engine) mode))
 (defn set-block-images!
   "Block or allow image content in provider requests (the /settings row and
    /reload re-applying the config value)."

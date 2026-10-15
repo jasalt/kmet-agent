@@ -9,12 +9,17 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [kmet.ai.api.shared :as shared]
+            [kmet.ai.models :as models]
+            [kmet.app.commands :as commands]
+            [kmet.app.commands.builtins :as builtins]
             [kmet.app.event-bus :as event-bus]
             [kmet.app.prompts :as prompts]
             [kmet.app.session :as session]
             [kmet.app.session-runtime :as runtime]
             [kmet.app.skills :as skills]
-            [kmet.config :as cfg]))
+            [kmet.config :as cfg]
+            [kmet.debug :as debug]))
 
 ;; ─── Records ───────────────────────────────────────────────────────────────
 
@@ -28,9 +33,11 @@
       (flush))))
 
 (defn- ok
-  "A success response carrying DATA as its :data payload."
+  "A success response carrying DATA as its :data payload; a nil data omits
+   the key (pi's data-less success responses)."
   [command data]
-  {:type :response :command command :success true :data data})
+  (cond-> {:type :response :command command :success true}
+    (some? data) (assoc :data data)))
 
 (defn- failed
   "A failure response: COMMAND names the command that failed (nil when the
@@ -51,6 +58,19 @@
   (let [message (:message command)]
     (when (and (string? message) (not (str/blank? message)))
       message)))
+
+(defn- required-string
+  "KEY's non-blank string value, or nil when the key is absent. A present
+   non-string or blank value throws — that is a command-shape error the
+   caller should have prevented (validated at the transport edge)."
+  [command k]
+  (let [v (get command k)]
+    (when (some? v)
+      (if (and (string? v) (not (str/blank? v)))
+        v
+        (throw (ex-info (str (name (:type command)) " requires " k
+                             " to be a non-empty string")
+                        {:type :invalid-command}))))))
 
 (defn- queued-text
   "The text of a queued entry: plain strings queue directly, custom
@@ -166,6 +186,8 @@
   [engine _]
   (let [snap (runtime/snapshot engine)
         sess (:session snap)
+        ag (runtime/agent-state engine)
+        cfg @(:cfg ag)
         session-name (some-> sess session/get-session-name)
         {:keys [steering follow-up]} (:queues snap)]
     (ok :get-state
@@ -173,8 +195,11 @@
                  :provider (:provider snap)
                  :thinking-level (:thinking snap)
                  :turn-running? (runtime/turn-running? engine)
-                 :compacting? @(:compacting? (runtime/agent-state engine))
-                 :queued-count (+ (count steering) (count follow-up))
+                 :compacting? @(:compacting? ag)
+                 :steering-mode (:steering-mode cfg)
+                 :follow-up-mode (:follow-up-mode cfg)
+                 :auto-compaction-enabled (boolean (:auto-compact cfg))
+                 :pending-message-count (+ (count steering) (count follow-up))
                  :last-outcome (:last-outcome snap)}
           sess (assoc :session
                       (cond-> {:id (:id sess)
@@ -183,6 +208,232 @@
                         ;; pi omits sessionName when unset
                         session-name (assoc :name session-name)))))))
 
+;; ─── Model ────────────────────────────────────────────────────────────────
+
+(defn- available-model
+  "The available (authenticated) model record for PROVIDER + MODEL-ID, or
+   nil (pi: modelRuntime.getAvailableSnapshot)."
+  [provider model-id]
+  (first (filter #(and (= (keyword provider) (:provider %))
+                       (= model-id (:id %)))
+                 (models/get-available))))
+
+(defn- command-set-model
+  "Switch the session model (pi: set_model) — the model must be available
+   (authenticated, as in pi's snapshot)."
+  [engine command]
+  (let [provider (:provider command)
+        model-id (:model-id command)]
+    (if (and (string? provider) (seq provider)
+             (string? model-id) (seq model-id))
+      (if-let [model (available-model provider model-id)]
+        (do (runtime/set-model! engine model)
+            (ok :set-model model))
+        (failed :set-model (str "Model not found: " provider "/" model-id)))
+      (failed :set-model "set-model requires :provider and :model-id strings"))))
+
+(defn- command-cycle-model
+  "Cycle to the next scoped/available model (pi: cycle_model); nil data when
+   fewer than two models are available."
+  [engine _]
+  (if-let [model-id (runtime/cycle-model! engine)]
+    (let [ag (runtime/agent-state engine)]
+      (ok :cycle-model {:model (models/get-model @(:provider ag) model-id)
+                        :thinking-level @(:thinking ag)
+                        :scoped? (boolean (seq (runtime/scoped-models engine)))}))
+    (ok :cycle-model nil)))
+
+(defn- command-get-available-models [_ _]
+  (ok :get-available-models {:models (models/get-available)}))
+
+;; ─── Thinking ──────────────────────────────────────────────────────────────
+
+(defn- command-set-thinking-level
+  "Set the thinking level (pi: set_thinking_level)."
+  [engine command]
+  (let [level (:level command)]
+    (if (shared/valid-thinking-level? level)
+      (do (runtime/set-thinking-level! engine level)
+          (ok :set-thinking-level nil))
+      (failed :set-thinking-level (str "Unknown thinking level: " (pr-str level))))))
+
+(defn- command-cycle-thinking-level
+  "Advance the thinking level (pi: cycle_thinking_level); nil data when the
+   model offers fewer than two levels."
+  [engine _]
+  (if-let [level (runtime/cycle-thinking-level! engine)]
+    (ok :cycle-thinking-level {:level level})
+    (ok :cycle-thinking-level nil)))
+
+(defn- command-get-available-thinking-levels
+  "The current model's supported levels (pi:
+   get_available_thinking_levels)."
+  [engine _]
+  (let [ag (runtime/agent-state engine)
+        model (models/get-model @(:provider ag) @(:model ag))]
+    (ok :get-available-thinking-levels
+        {:levels (if model (shared/get-supported-thinking-levels model) [:off])})))
+
+;; ─── Queue modes ───────────────────────────────────────────────────────────
+
+(defn- command-set-queue-mode
+  "The shared steering/follow-up setter path: the runtime setter validates
+   the mode, so an invalid one answers a failure (the handler catch)."
+  [engine {:keys [type] :as command} setter!]
+  (setter! engine (:mode command))
+  (ok type nil))
+
+(defn- command-set-steering-mode [engine command]
+  (command-set-queue-mode engine command runtime/set-steering-mode!))
+
+(defn- command-set-follow-up-mode [engine command]
+  (command-set-queue-mode engine command runtime/set-follow-up-mode!))
+
+;; ─── Compaction ────────────────────────────────────────────────────────────
+
+(defn- command-compact
+  "Start a manual compaction (pi: compact). Accepted is not completed: the
+   response says :accepted and the outcome arrives as :compaction-end /
+   :session-compact(-failed) events. The work runs on a future so the reader
+   stays live — like the /compact builtin, abort can cancel it."
+  [engine command]
+  (let [instructions (:custom-instructions command)]
+    (cond
+      (and (some? instructions) (not (string? instructions)))
+      (failed :compact ":custom-instructions must be a string")
+
+      (runtime/turn-running? engine)
+      (failed :compact "Wait for the current response to finish before compacting")
+
+      @(:compacting? (runtime/agent-state engine))
+      (failed :compact "Compaction already in progress")
+
+      :else
+      (do (future
+            (try
+              (runtime/compact! engine instructions :manual)
+              (catch Exception e
+                (debug/log-error "RPC compaction failed: " e))))
+          (ok :compact {:accepted true})))))
+
+(defn- command-set-auto-compaction
+  "Toggle proactive compaction (pi: set_auto_compaction)."
+  [engine command]
+  (if (boolean? (:enabled command))
+    (do (runtime/set-auto-compact! engine (:enabled command))
+        (ok :set-auto-compaction nil))
+    (failed :set-auto-compaction "set-auto-compaction requires a boolean :enabled")))
+
+;; ─── Session ───────────────────────────────────────────────────────────────
+
+(defn- command-get-session-stats [engine _]
+  (if-let [sess (runtime/session engine)]
+    (ok :get-session-stats (session/get-session-stats sess))
+    (failed :get-session-stats "No active session")))
+
+(defn- command-export-html
+  "Export the session to HTML (pi: export_html); the default path lands in
+   the session's runtime cwd."
+  [engine command]
+  (ok :export-html
+      {:path (runtime/export-html! engine {:path (required-string command :output-path)})}))
+
+(defn- command-switch-session
+  "Load and switch to a session file (pi: switch_session). The switch emits
+   the session lifecycle events."
+  [engine command]
+  (if-let [path (required-string command :session-path)]
+    (let [result (runtime/resume! engine path)]
+      (ok :switch-session {:cancelled (boolean (:cancelled result))}))
+    (failed :switch-session "switch-session requires a non-empty :session-path string")))
+
+(defn- command-fork
+  "Fork the session before the user message ENTRY-ID (pi: fork); :text is
+   the message text for the client to restore to its editor."
+  [engine command]
+  (if-let [entry-id (required-string command :entry-id)]
+    (let [result (runtime/fork! engine entry-id)]
+      (cond
+        (:cancelled result) (ok :fork {:cancelled true})
+        (:error result) (failed :fork (if (= :unknown-entry (:error result))
+                                        (str "Entry not found: " entry-id)
+                                        "Cannot fork session"))
+        :else (ok :fork {:cancelled false
+                         :text (session/session-entry-text (:entry result))})))
+    (failed :fork "fork requires a non-empty :entry-id string")))
+
+(defn- command-clone
+  "Duplicate the session at its current position (pi: clone)."
+  [engine _]
+  (let [result (runtime/clone! engine)]
+    (cond
+      (:cancelled result) (ok :clone {:cancelled true})
+      (:error result) (failed :clone (case (:error result)
+                                       :no-leaf "Cannot clone session: no current entry selected"
+                                       :not-persisted "Cannot clone session: the session is not persisted yet"
+                                       "Cannot clone session"))
+      :else (ok :clone {:cancelled false}))))
+
+(defn- command-get-entries
+  "The session's entries, all of them or those after :since (pi:
+   get_entries), plus the current leaf id."
+  [engine command]
+  (if-let [sess (runtime/session engine)]
+    (let [entries (vec (runtime/entries engine))
+          since (required-string command :since)]
+      (if (and since (not-any? #(= since (:id %)) entries))
+        (failed :get-entries (str "Entry not found: " since))
+        (let [entries (if since
+                        (vec (rest (drop-while #(not= since (:id %)) entries)))
+                        entries)]
+          (ok :get-entries {:entries entries :leaf-id @(:leaf-id sess)}))))
+    (failed :get-entries "No active session")))
+
+(defn- command-get-tree [engine _]
+  (if-let [sess (runtime/session engine)]
+    (ok :get-tree {:tree (session/get-tree sess) :leaf-id @(:leaf-id sess)})
+    (failed :get-tree "No active session")))
+
+(defn- command-get-last-assistant-text [engine _]
+  (ok :get-last-assistant-text
+      {:text (some-> (runtime/session engine) session/get-last-assistant-text)}))
+
+(defn- command-set-session-name
+  "Set the session display name (pi: set_session_name); the append + event
+   logic is shared with the /name builtin."
+  [engine command]
+  (let [name (:name command)]
+    (if (and (string? name) (not (str/blank? name)))
+      (do (runtime/set-session-name! engine name)
+          (ok :set-session-name nil))
+      (failed :set-session-name "Session name cannot be empty"))))
+
+;; ─── Messages ──────────────────────────────────────────────────────────────
+
+(defn- command-get-messages [engine _]
+  (ok :get-messages {:messages (vec (runtime/messages engine))}))
+
+;; ─── Commands (available for invocation via prompt) ────────────────────
+
+(defn- slash-command
+  "A registry/prompt/skill entry in the get_commands shape (pi:
+   RpcSlashCommand — kmet adds :builtin as a source and keeps the
+   :argument-hint). COMMAND sets :extension-handler, which is how the
+   registry distinguishes extension commands from builtins."
+  [source command]
+  (cond-> {:name (:name command) :source source}
+    (:description command) (assoc :description (:description command))
+    (:argument-hint command) (assoc :argument-hint (:argument-hint command))))
+
+(defn- command-get-commands [_ _]
+  (ok :get-commands
+      {:commands (vec (concat (map #(slash-command (if (:extension-handler %) :extension :builtin) %)
+                                   (commands/get-commands :rpc))
+                              (map #(slash-command :prompt %)
+                                   (prompts/as-command-maps (prompts/get-prompt-templates)))
+                              (map #(slash-command :skill %)
+                                   (skills/as-command-maps (skills/get-skills)))))}))
+
 (def ^:private command-table
   {:prompt command-prompt
    :steer command-steer
@@ -190,7 +441,28 @@
    :abort command-abort
    :clear-queue command-clear-queue
    :new-session command-new-session
-   :get-state command-get-state})
+   :get-state command-get-state
+   :set-model command-set-model
+   :cycle-model command-cycle-model
+   :get-available-models command-get-available-models
+   :set-thinking-level command-set-thinking-level
+   :cycle-thinking-level command-cycle-thinking-level
+   :get-available-thinking-levels command-get-available-thinking-levels
+   :set-steering-mode command-set-steering-mode
+   :set-follow-up-mode command-set-follow-up-mode
+   :compact command-compact
+   :set-auto-compaction command-set-auto-compaction
+   :get-session-stats command-get-session-stats
+   :export-html command-export-html
+   :switch-session command-switch-session
+   :fork command-fork
+   :clone command-clone
+   :get-entries command-get-entries
+   :get-tree command-get-tree
+   :get-last-assistant-text command-get-last-assistant-text
+   :set-session-name command-set-session-name
+   :get-messages command-get-messages
+   :get-commands command-get-commands})
 
 (defn- handle-command
   "Handle one parsed command record, returning the response (never nil).
@@ -254,6 +526,9 @@
   (let [config (cfg/apply-cli-overrides (or (:config opts) (cfg/load-config :no-env? true)) opts)
         in (or (:in opts) *in*)
         out (or (:out opts) *out*)]
+    ;; the portable builtins this front end dispatches over prompt (6.3) and
+    ;; reports through get-commands; registration is idempotent
+    (builtins/register-runtime-commands!)
     (if-let [session (runtime/resolve-run-session config opts)]
       (let [engine (runtime/bootstrap config {:session session
                                               :model (:model opts)

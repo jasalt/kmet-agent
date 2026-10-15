@@ -853,6 +853,30 @@ discipline). The engine binds `:mode :rpc` but `:has-ui false` until 6c
 wires the port — the headless defaults are the honest degraded surface
 until then.
 
+**Landed (6b)** — the rest of the command surface: session
+(`get_messages`, `get_last_assistant_text`, `get_session_stats`,
+`export_html`, `switch_session`, `fork`, `clone`, `get_entries`,
+`get_tree`, `set_session_name`), model (`set_model`, `cycle_model`,
+`get_available_models`), thinking (`set_thinking_level`,
+`cycle_thinking_level`, `get_available_thinking_levels`), queue modes
+(`set_steering_mode`, `set_follow_up_mode`), compaction (`compact`,
+`set_auto_compaction`) and `get_commands` (the registry filtered to
+`:rpc`, plus prompt templates and skills, source-tagged
+`:extension`/`:builtin`/`:prompt`/`:skill`). `get_state` carries the queue
+modes, auto-compaction and the pending count (`pendingMessageCount`
+renamed from 6a's `queued-count`). Rather than copying logic into the
+mode, four pieces moved to their shared home and the other callers now
+use them: the queue-mode setters and the thinking cycle in
+`kmet.app.loop` (the TUI's shift-tab action and the /settings rows call
+them), and `set-session-name!` / `export-html!` in the runtime (the
+`/name` and `/export` builtins call them). The RPC mode registers the
+engine-portable builtins itself (as the interactive mode does). `compact`
+launches on a future and answers `{:accepted true}` — the outcome arrives
+as `:compaction-end`/`:session-compact(-failed)` events (kmet's manual
+compaction stays escape-cancellable), where pi awaits a `CompactionResult`
+in the response; a run in flight refuses instead of pi's
+abort-then-compact. `test/kmet/modes/test_rpc.clj` grew to 27 tests.
+
 ## 8. Enforcement
 
 - **Layer guard** modeled on `test/kmet/libs/test_self_contained.clj`

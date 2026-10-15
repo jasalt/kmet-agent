@@ -6,9 +6,15 @@
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.edn :as edn]
             [clojure.string :as str]
+            [babashka.fs :as fs]
             [kmet.modes.rpc :as rpc]
+            [kmet.ai.models :as models]
+            [kmet.app.commands :as commands]
             [kmet.app.loop :as agent]
-            [kmet.app.session-runtime :as runtime]))
+            [kmet.app.prompts :as prompts]
+            [kmet.app.session :as session]
+            [kmet.app.session-runtime :as runtime]
+            [kmet.app.skills :as skills]))
 
 (defn- opts
   "Minimal run opts — :model/:provider bypass catalog resolution; sessions
@@ -258,6 +264,204 @@
           invalid (first records)]
       (is (false? (:success invalid)))
       (is (str/starts-with? (:error invalid) "Failed to parse command:")))))
+
+(defn- session-with
+  "Create a persisted session under target/ with ENTRIES appended; returns
+   {:id id :file path :entries [built entries]}. Include an assistant entry
+   — the file is only written once one exists (lazy creation)."
+  [entries]
+  (let [dir (str "target/test-rpc-sessions/setup-" (System/currentTimeMillis)
+                 "-" (rand-int 100000))
+        sess (session/create-session dir {:cwd (str (fs/cwd))})]
+    {:id (:id sess)
+     :file (:file sess)
+     :entries (mapv #(session/append-entry sess %) entries)}))
+
+(deftest test-get-state-reports-the-queue-modes-and-pending-count
+  (testing "get-state carries the queue modes, auto-compaction and the
+            pending count; the mode setters apply live (pi parity)"
+    (let [[_ records] (run-lines [{:type :get-state :id 1}
+                                  {:type :set-steering-mode :id 2 :mode :one-at-a-time}
+                                  {:type :set-follow-up-mode :id 3 :mode :all}
+                                  {:type :get-state :id 4}
+                                  {:type :set-steering-mode :id 5 :mode :bogus}
+                                  {:type :steer :id 6 :message "queued"}
+                                  {:type :get-state :id 7}])
+          [before steer-set follow-set after bad _ queued] (responses records)]
+      (is (= :all (:steering-mode (:data before))))
+      (is (= :one-at-a-time (:follow-up-mode (:data before))))
+      (is (true? (:success steer-set)))
+      (is (true? (:success follow-set)))
+      (is (= :one-at-a-time (:steering-mode (:data after))))
+      (is (= :all (:follow-up-mode (:data after))))
+      (is (false? (:success bad)))
+      (is (str/includes? (:error bad) "Unknown queue mode"))
+      (is (= 1 (:pending-message-count (:data queued)))))))
+
+(deftest test-set-auto-compaction
+  (testing "set-auto-compaction toggles the live flag with no data payload"
+    (let [[_ records] (run-lines [{:type :get-state :id 1}
+                                  {:type :set-auto-compaction :id 2 :enabled false}
+                                  {:type :get-state :id 3}
+                                  {:type :set-auto-compaction :id 4 :enabled "yes"}])
+          [before set-ok after bad] (responses records)]
+      (is (true? (:success set-ok)))
+      (is (not (contains? set-ok :data)) "pi's set_auto_compaction has no data")
+      (is (not= (:auto-compaction-enabled (:data before))
+                (:auto-compaction-enabled (:data after))))
+      (is (false? (:success bad)))
+      (is (str/includes? (:error bad) "boolean")))))
+
+(deftest test-model-commands
+  (testing "set-model resolves an available record, cycle-model walks the
+            catalog, get-available-models answers the snapshot"
+    (let [m1 {:id "m1" :provider :alpha :name "M1" :reasoning false}
+          m2 {:id "m2" :provider :alpha :name "M2" :reasoning false}
+          by-model (fn [p id] (first (filter #(and (= p (:provider %)) (= id (:id %)))
+                                             [m1 m2])))]
+      (with-redefs [models/get-available (fn [] [m1 m2])
+                    models/get-model by-model]
+        (let [[_ records] (run-lines [{:type :get-available-models :id 1}
+                                      {:type :set-model :id 2 :provider "alpha" :model-id "m2"}
+                                      {:type :set-model :id 3 :provider "alpha" :model-id "nope"}
+                                      {:type :set-model :id 4 :provider "alpha"}
+                                      {:type :cycle-model :id 5}
+                                      {:type :get-state :id 6}])
+              [available set-ok set-miss set-shapeless cycle state] (responses records)]
+          (is (= [m1 m2] (get-in available [:data :models])))
+          (is (= m2 (:data set-ok)) "the switched model record comes back")
+          (is (= "Model not found: alpha/nope" (:error set-miss)))
+          (is (false? (:success set-shapeless)))
+          (is (= "m1" (get-in cycle [:data :model :id])) "cycled off m2")
+          (is (= :off (get-in cycle [:data :thinking-level])))
+          (is (false? (get-in cycle [:data :scoped?])))
+          (is (= "m1" (:model (:data state)))))))))
+
+(deftest test-thinking-commands
+  (testing "thinking levels list the model's supported set; set validates;
+            cycle advances through the list"
+    (let [model {:id "r1" :provider :opencode-go :reasoning true
+                 :thinking-level-map {:xhigh "x" :max "m"}}]
+      (with-redefs [models/get-model (fn [_ _] model)]
+        (let [[_ records] (run-lines [{:type :get-available-thinking-levels :id 1}
+                                      {:type :set-thinking-level :id 2 :level :low}
+                                      {:type :cycle-thinking-level :id 3}
+                                      {:type :set-thinking-level :id 4 :level :bogus}
+                                      {:type :get-state :id 5}])
+              [levels set-ok cycle bad state] (responses records)]
+          (is (= [:off :minimal :low :medium :high :xhigh :max]
+                 (get-in levels [:data :levels])))
+          (is (true? (:success set-ok)))
+          (is (not (contains? set-ok :data)) "pi's set_thinking_level has no data")
+          (is (= :medium (get-in cycle [:data :level])) "cycles on from :low")
+          (is (false? (:success bad)))
+          (is (str/includes? (:error bad) "Unknown thinking level"))
+          (is (= :medium (:thinking-level (:data state)))))))))
+
+(deftest test-messages-stats-and-last-assistant-text
+  (testing "get-messages answers the live context; stats and the last
+            assistant text read the session"
+    (with-redefs [agent/run-agent-turn
+                  (fn [ag _]
+                    (let [sess (:session ag)]
+                      (session/append-entry sess {:role :user :content "hello"})
+                      (session/append-entry sess {:role :assistant
+                                                  :content [{:type :text :text "hi there"}]
+                                                  :usage {:input 10 :output 5}})
+                      (agent/restore-session-context! ag))
+                    nil)]
+      (let [[_ records] (run-lines [{:type :prompt :id 1 :message "hello"}
+                                    {:type :get-messages :id 2}
+                                    {:type :get-last-assistant-text :id 3}
+                                    {:type :get-session-stats :id 4}])
+            [_ messages last-text stats] (responses records)]
+        (is (= [:user :assistant] (mapv :role (get-in messages [:data :messages]))))
+        (is (= "hi there" (get-in last-text [:data :text])))
+        (is (= 1 (:user-messages (:data stats))))
+        (is (= 1 (:assistant-messages (:data stats))))
+        (is (= 2 (:total-messages (:data stats))))
+        (is (= 10 (get-in stats [:data :tokens :input])))
+        (is (= 5 (get-in stats [:data :tokens :output])))))))
+
+(deftest test-session-entries-tree-fork-and-clone
+  (testing "entries/tree read the session; fork switches to the parent,
+            clone duplicates the current position (pi)"
+    (let [{:keys [id file entries]}
+          (session-with [{:role :user :content "first"}
+                         {:role :assistant :content [{:type :text :text "ok"}]}
+                         {:role :user :content "second"}])
+          [e1 _ e3] entries
+          [_ records] (run-lines [{:type :get-entries :id 1}
+                                  {:type :get-tree :id 2}
+                                  {:type :get-entries :id 3 :since (:id e1)}
+                                  {:type :get-entries :id 4 :since "nope"}
+                                  {:type :fork :id 5 :entry-id (:id e3)}
+                                  {:type :get-state :id 6}
+                                  {:type :clone :id 7}
+                                  {:type :fork :id 8 :entry-id "nope"}]
+                                 {:session file})
+          [all tree since missing forked state cloned fork-missing] (responses records)]
+      (is (= 3 (count (get-in all [:data :entries]))))
+      (is (= (:id e3) (get-in all [:data :leaf-id])))
+      (is (= [(:id e1)] (mapv :id (get-in tree [:data :tree]))) "one root")
+      (is (= 2 (count (get-in since [:data :entries]))) "since drops the anchor")
+      (is (false? (:success missing)))
+      (is (= {:cancelled false :text "second"} (:data forked)))
+      (is (not= id (get-in state [:data :session :id])) "the fork is live")
+      (is (= 2 (get-in state [:data :session :message-count]))
+          "the fork starts at the message's parent (user + assistant)")
+      (is (= {:cancelled false} (:data cloned)))
+      (is (= "Entry not found: nope" (:error fork-missing))))))
+
+(deftest test-set-session-name
+  (testing "set-session-name persists the name for later get-state reads"
+    (let [[_ records] (run-lines [{:type :set-session-name :id 1 :name "My Session"}
+                                  {:type :get-state :id 2}
+                                  {:type :set-session-name :id 3 :name "   "}
+                                  {:type :set-session-name :id 4}])
+          [named state blank missing] (responses records)]
+      (is (true? (:success named)))
+      (is (not (contains? named :data)) "pi's set_session_name has no data")
+      (is (= "My Session" (get-in state [:data :session :name])))
+      (is (= "Session name cannot be empty" (:error blank)))
+      (is (= "Session name cannot be empty" (:error missing))))))
+
+(deftest test-export-html
+  (testing "export-html writes the HTML export and reports its path"
+    (let [{:keys [file]} (session-with [{:role :user :content "hi"}
+                                        {:role :assistant :content [{:type :text :text "ok"}]}])
+          path (str "target/test-rpc-export-" (System/currentTimeMillis) "/out.html")
+          [_ records] (run-lines [{:type :export-html :id 1 :output-path path}]
+                                 {:session file})]
+      (is (= path (:path (:data (first (responses records))))))
+      (is (fs/exists? path))))
+  (testing "nothing to export fails as a response"
+    (let [[_ records] (run-lines [{:type :export-html :id 1}])]
+      (is (str/starts-with? (:error (first (responses records)))
+                            "Nothing to export yet")))))
+
+(deftest test-get-commands-lists-the-rpc-surface
+  (testing "get-commands reports registry commands (extension vs builtin),
+            prompt templates and skills, filtered to this front end"
+    (commands/register-command! {:name "ext-demo" :description "An extension command"
+                                 :extension-handler (fn [& _] nil)})
+    (commands/register-command! {:name "tui-only" :description "Interactive only"
+                                 :frontend :interactive
+                                 :handler (fn [& _] nil)})
+    (try
+      (with-redefs [prompts/get-prompt-templates (fn [] [{:name "template" :description "T"}])
+                    skills/get-skills (fn [] [{:name "demo" :description "S"}])]
+        (let [[_ records] (run-lines [{:type :get-commands :id 1}])
+              cmds (get-in (first (responses records)) [:data :commands])
+              by-name (into {} (map (juxt :name identity) cmds))]
+          (is (= :extension (:source (by-name "ext-demo"))))
+          (is (= :builtin (:source (by-name "compact"))) "portable builtins listed")
+          (is (= :prompt (:source (by-name "template"))))
+          (is (= :skill (:source (by-name "skill:demo"))))
+          (is (not (contains? by-name "tui-only")) "interactive-only filtered out")))
+      (finally
+        (commands/unregister-command! "ext-demo")
+        (commands/unregister-command! "tui-only")))))
 
 (deftest test-unknown-session-fails-startup
   (testing "--session matching nothing reports to stderr and returns nil"

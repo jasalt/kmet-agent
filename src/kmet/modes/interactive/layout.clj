@@ -18,7 +18,6 @@
             [kmet.tui.components.container :as container]
             [kmet.tui.components.expandable-text :as expandable-text]
             [kmet.ai.models :as models]
-            [kmet.ai.api.shared :as shared]
             [kmet.app.session :as session]
             [kmet.app.session-runtime :as runtime]
             [kmet.app.commands :as commands]
@@ -843,23 +842,13 @@
       ;; pi: cycleThinkingLevel — Shift+Tab cycles through available levels
       (editor/editor-set-on-action! ed "app.thinking.cycle"
                                     (fn []
-                                      (let [ag (runtime/agent-state (:engine cs))
-                                            model (models/get-model @(:provider ag) @(:model ag))
-                                            levels (if model
-                                                     (shared/get-supported-thinking-levels model)
-                                                     [:off])]
-                                        (if (<= (count levels) 1)
-                                          (chat-history/chat-history-show-status! ch "Current model does not support thinking")
-                                          (let [current @(:thinking ag)
-                                                idx (or (first (keep-indexed (fn [i l] (when (= l current) i)) levels))
-                                                        0)
-                                                next-level (nth levels (mod (inc idx) (count levels)))]
-                                            (runtime/set-thinking-level! (:engine cs) next-level)
-                                            (cfg/save-setting! [:thinking] next-level)
+                                      (if-let [next-level (runtime/cycle-thinking-level! (:engine cs))]
+                                        (do (cfg/save-setting! [:thinking] next-level)
                                             (sync-footer-model! cs)
                                             (state/update-editor-border-color! cs next-level)
                                             (chat-history/chat-history-show-status! ch (str "Thinking level: " (name next-level)))
-                                            (tui/tui-request-render t))))))
+                                            (tui/tui-request-render t))
+                                        (chat-history/chat-history-show-status! ch "Current model does not support thinking"))))
       (editor/editor-set-on-action! ed "app.editor.external"
                                     (fn [] (handle-external-editor cs)))
       ;; B.3: Alt+Enter queues a follow-up (pi: handleFollowUp); Alt+Up
