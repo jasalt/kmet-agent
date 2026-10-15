@@ -634,9 +634,9 @@
    extension_ui_response). A missing or already-answered id is ignored.
    Returns nil."
   [engine id value]
-  (when-let [p (get @(:pending-ui engine) id)]
+  (when-let [{:keys [promise]} (get @(:pending-ui engine) id)]
     (swap! (:pending-ui engine) dissoc id)
-    (deliver p value))
+    (deliver promise value))
   nil)
 
 (defn request-ui!
@@ -649,29 +649,30 @@
    dialog has not resolved yet; a port that forwards the request to an
    asynchronous client returns `request-pending` and the answer arrives
    through `respond!`. Without a :request capability the degraded default
-   for KIND answers immediately (`:default` in PAYLOAD overrides it)."
+   for KIND answers immediately (`:default` in PAYLOAD overrides it); the
+   same default resolves a request still pending at `dispose!`."
   [engine kind payload]
   (let [id (str (random-uuid))
-        request (assoc payload :type :ui-request :id id :kind kind)
+        request (-> payload
+                    (dissoc :default)
+                    (assoc :type :ui-request :id id :kind kind))
+        default (if (contains? payload :default)
+                  (:default payload)
+                  (extensions/ui-request-default kind))
         p (promise)
         request-fn (extensions/ui-capability :request)]
     (if request-fn
-      (do (swap! (:pending-ui engine) assoc id p)
+      (do (swap! (:pending-ui engine) assoc id {:promise p :default default})
           (let [reply (try (request-fn request)
                            (catch Throwable t
                              ;; a throwing port still cleans up its
                              ;; pending entry; the error reaches the caller
-                             (respond! engine id (if (contains? payload :default)
-                                                   (:default payload)
-                                                   (extensions/ui-request-default kind)))
+                             (respond! engine id default)
                              (throw t)))]
             (if (= extensions/request-pending reply)
               p
               (do (respond! engine id reply) p))))
-      (do (deliver p (if (contains? payload :default)
-                       (:default payload)
-                       (extensions/ui-request-default kind)))
-          p))))
+      (do (deliver p default) p))))
 
 ;; ─── Submission + compaction queue ─────────────────────────────────────────
 
@@ -888,7 +889,8 @@
   "Release the engine: cancel an in-flight run or compaction, wait (bounded,
    2s) for a run to settle so the terminal :agent-settled reaches the
    subscribers, then clear the subscribers, resolve any pending UI requests
-   with nil, and unbind the extension runtime handle. Idempotent."
+   with their degraded defaults, and unbind the extension runtime handle.
+   Idempotent."
   [engine]
   (when (compare-and-set! (:disposed? engine) false true)
     (let [agent-state (agent-state engine)
@@ -901,9 +903,10 @@
     (reset! (:subscribers engine) [])
     (reset! (:turn-running? engine) false)
     ;; no front end is listening after dispose: a waiting extension dialog
-    ;; must not park the shutting-down process
-    (doseq [p (vals @(:pending-ui engine))]
-      (deliver p nil))
+    ;; must not park the shutting-down process. Each request resolves with
+    ;; its degraded default (pi: abort resolves a dialog with its default)
+    (doseq [{:keys [promise default]} (vals @(:pending-ui engine))]
+      (deliver promise default))
     (reset! (:pending-ui engine) {})
     (extensions/set-session! nil)
     (extensions/set-context-sink! nil)

@@ -1145,16 +1145,19 @@ a plain status line.
 
 #### UI requests (front-end plumbing)
 
-A front end answers UI requests through the runtime's request/response pair
-(engine.md §4.5), not through the event stream: the runtime delivers
+A front end answers host UI requests through the runtime's request/response
+pair (engine.md §4.5), not through the event stream: the runtime delivers
 `{:type :ui-request :id ... :kind ...}` to the port's `:request` capability,
 and the front end either returns the answer in-process (blocking dialogs are
 allowed inside extension handlers) or forwards it to its client and answers
 later with `kmet.app.session-runtime/respond!`. Kinds without a dedicated
 surface auto-answer — `:select` → nil, `:confirm` → false,
 `:input`/`:editor`/`:custom` → nil — and `dispose!` resolves any request still
-pending with nil. Extensions do not call this directly; it is how a front end
-hosts the dialogs `ui-custom` mounts.
+pending with the request's default. No built-in capability routes through
+this yet: extensions mount their own components with `ui-custom`, and the
+protocol is what a front end uses for host dialogs (a future wire mode
+forwards the requests and answers asynchronously; such a port owns its own
+timeout policy and answers with the default when its deadline elapses).
 
 #### Tag aliases — named tag-level components
 

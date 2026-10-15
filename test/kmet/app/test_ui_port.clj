@@ -55,7 +55,13 @@
     (let [ctx (ex/build-extension-context)]
       (t/is (= :interactive (:mode ctx)))
       (t/is (true? (:has-ui ctx)))
-      (t/is (= "/tmp/x" (:cwd ctx))))))
+      (t/is (= "/tmp/x" (:cwd ctx)))))
+  (testing "the binding wins over a :build-context that restates the kind"
+    (ex/bind-extensions! {:mode :gui :has-ui true
+                          :ui {:build-context (fn [] {:mode :print :has-ui false})}})
+    (let [ctx (ex/build-extension-context)]
+      (t/is (= :gui (:mode ctx)))
+      (t/is (true? (:has-ui ctx))))))
 
 (deftest test-headless-port-auto-answers
   (testing "the degraded port answers every capability without a front end"
@@ -109,6 +115,8 @@
         (t/is (= :confirm kind))
         (t/is (= "ok?" title))
         (t/is (string? id))
+        (t/is (not (contains? (first @seen) :default))
+              "the degraded default is not part of the request payload")
         (t/is (empty? @(:pending-ui engine))
               "a synchronous answer leaves nothing pending")))))
 
@@ -146,10 +154,20 @@
       (let [p (rt/request-ui! engine :confirm {})]
         (t/is (not (realized? p)))
         (rt/dispose! engine)
-        (t/is (nil? (deref p 100 ::timeout)))
+        (t/is (false? (deref p 100 ::timeout))
+              "the kind's degraded default resolves it, not nil")
         (t/is (empty? @(:pending-ui engine)))
         (t/is (= :print (ex/extension-mode))
               "dispose! unbinds the front-end surface")))))
+
+(deftest test-dispose-honors-an-explicit-default
+  (testing "a request with :default resolves with it on dispose"
+    (let [engine (gate-engine)]
+      (ex/bind-extensions! {:mode :rpc :has-ui false
+                            :ui {:request (fn [_] ex/request-pending)}})
+      (let [p (rt/request-ui! engine :select {:default :cancelled})]
+        (rt/dispose! engine)
+        (t/is (= :cancelled (deref p 100 ::timeout)))))))
 
 (deftest test-bootstrap-binds-headless-print-defaults
   (testing "a print-mode engine gets the degraded port, ctx says :print"

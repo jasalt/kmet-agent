@@ -286,11 +286,20 @@ deadline never leaves a stalled response start (or the turn's spinner) hung.
 ### 5. Extension API
 
 Aligned (`app/extensions.cljc` + `app/event_bus.clj`): input + before-agent-start hooks,
-provider registration (incl. OAuth), `ctx.models.*` facades, UI registry
-(select/confirm/input/notify/custom/widgets/footer/header/editor/theme/status/
-working-indicator/terminal-input), session append-entry/message/labels,
+provider registration (incl. OAuth), `ctx.models.*` facades, the front-end
+binding (`extensions/bind-extensions!` — pi `bindExtensions` +
+`ExtensionMode`: `ctx.mode`/`ctx.has-ui` per front end, a headless
+`noOpUIContext`-equivalent port, and the `request-ui!`/`respond!` host-dialog
+pair), UI capabilities (notify/custom/widgets/footer/header/editor/theme/
+status/working-indicator/terminal-input — no host select/confirm/input:
+extensions build dialogs with `:custom`), session append-entry/message/labels,
 entry + message renderers, markdown transformers, shortcuts, CLI flags, and
 all agent/session/provider/resources-discover events (see Appendix).
+
+Still open from step 4's capability split: the agent-control capabilities
+(`sendUserMessage`, `setModel`/thinking, `getActiveTools`/`setActiveTools`)
+dispatch through the front-end capability map, so a headless front end
+(print/json) leaves them inert; engine.md §4.5 moves them onto the runtime.
 
 Full extension API surface (pi `core/extensions/types.ts`) — one remaining gap:
 

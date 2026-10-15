@@ -630,7 +630,9 @@ and `:request` auto-answers (`:select` nil, `:confirm` false,
 `:input`/`:editor`/`:custom` nil). The runtime adds `request-ui!` and
 `respond!`: a port answers in-process (value, or `extensions/request-pending`
 when its dialog resolves later) or forwards the request and answers with
-`respond!`; `dispose!` resolves anything still pending with nil. Covered by
+`respond!`; `dispose!` resolves anything still pending with the request's
+degraded default. `build-extension-context` takes `:mode`/`:has-ui` from the
+binding, so a front end's `:build-context` cannot drift the kind. Covered by
 `test/kmet/app/test_ui_port.clj`; `extension.md` documents the degraded set
 and the request protocol.
 

@@ -389,7 +389,9 @@
    MODE is the front-end kind (:interactive | :print | :json | :gui |
    :rpc), :has-ui tells extensions whether a UI port is available
    (ctx.has-ui), and :ui is the capability map (nil/absent = a portless
-   front end; ui-call stays inert). Returns nil."
+   front end; ui-call stays inert). A bind replaces the whole surface —
+   absent keys fall back to the headless defaults, not to the previous
+   binding; use set-ui-registry! for a port-only swap. Returns nil."
   [{:keys [mode has-ui ui] :or {mode :print has-ui false}}]
   (reset! extension-binding {:mode mode :has-ui has-ui :ui (or ui {})})
   nil)
@@ -536,17 +538,22 @@
 
 (defn build-extension-context
   "Build the extension context (pi: ExtensionContext) for the current
-   runtime: the interactive mode's live :build-context capability merged
-   over the headless default. Returns a fresh map per call — the fns
-   capture live state at call time. Used for command handlers (replacing
-   the internal CoreState leak) and event handler ctx args.
+   runtime: the front end's live :build-context capability merged over the
+   headless default. Returns a fresh map per call — the fns capture live
+   state at call time. Used for command handlers (replacing the internal
+   CoreState leak) and event handler ctx args.
+
+   The bound front-end kind is authoritative: a :build-context capability
+   cannot drift :mode/:has-ui away from bind-extensions!.
 
    Session control fns (new-session/fork/navigate-tree/switch-session/
    reload) run the interactive flows synchronously — call them from
    user-initiated command handlers, never from agent-loop event handlers
    (pi restricts these to the command ctx; they can re-enter the run loop)."
   []
-  (merge (default-extension-context) (ui-call :build-context)))
+  (assoc (merge (default-extension-context) (ui-call :build-context))
+         :mode (extension-mode)
+         :has-ui (extension-has-ui?)))
 
 (defn wrap-event-handler
   "Adapt an extension event handler to the bus: handlers always receive

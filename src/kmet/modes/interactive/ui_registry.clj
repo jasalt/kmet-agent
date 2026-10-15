@@ -193,7 +193,7 @@
 (defn build-extension-ui-registry
   "Create the ExtensionUIContext implementation for the live layout
    (pi: createExtensionUIContext). Returns the capability map installed via
-   extensions/set-ui-registry!."
+   extensions/bind-extensions! (front-end kind :interactive)."
   [{:keys [tui cs]}
    {:keys [ed ftr hdr ch sp1 fdp header-container
            widgets-above-atom widgets-below-atom]}
