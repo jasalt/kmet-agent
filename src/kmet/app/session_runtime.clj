@@ -733,36 +733,22 @@
        {:action :handled}))))
 
 (defn- deliver-compaction-message!
-  "Deliver one compaction-queued message: extension commands execute
-   immediately; otherwise the message queues into the running turn
-   (steer/follow-up per its mode, with skill/template expansion) or, when
-   idle, runs the full submit chain — input hooks, then expansion, then
-   the run (pi: flushCompactionQueue → session.prompt runs the input event
-   + skill/template expansion)."
-  [engine m run-opts]
+  "Deliver one compaction-queued M: extension commands execute immediately;
+   otherwise the message queues into the run per its mode (steer/follow-up,
+   with skill/template expansion). With :allow-prompt? and no run active,
+   the idle path runs the input hooks and starts a prompt instead (pi:
+   flushCompactionQueue → session.prompt); the overflow-retry flush never
+   prompts — every message queues via steer/followUp."
+  [engine m {:keys [allow-prompt? run-opts]}]
   (if (extension-command? (:text m))
     (execute-extension-command! (:text m))
-    (if (turn-running? engine)
+    (if (and allow-prompt? (not (turn-running? engine)))
+      (when-let [text (apply-input-hooks engine (:text m))]
+        (prompt! engine (merge run-opts {:text (expand-compaction-text text)})))
       (let [text (expand-compaction-text (:text m))]
         (if (= :follow-up (:mode m))
           (follow-up! engine text)
-          (steer! engine text)))
-      (when-let [text (apply-input-hooks engine (:text m))]
-        (prompt! engine (merge run-opts {:text (expand-compaction-text text)}))))))
-
-(defn- queue-compaction-message-into-turn!
-  "Queue one compaction-queued message into the (possibly not yet started)
-   run without ever starting a new one: extension commands execute
-   immediately, everything else goes to the steering/follow-up queue per
-   its mode with skill/template expansion (pi: flushCompactionQueue
-   willRetry — every message queues via steer/followUp, never a prompt)."
-  [engine m]
-  (if (extension-command? (:text m))
-    (execute-extension-command! (:text m))
-    (let [text (expand-compaction-text (:text m))]
-      (if (= :follow-up (:mode m))
-        (follow-up! engine text)
-        (steer! engine text)))))
+          (steer! engine text))))))
 
 (defn flush-compaction-queue!
   "Deliver messages queued during compaction (pi: flushCompactionQueue —
@@ -789,7 +775,7 @@
              ;; Overflow compaction: the turn retries — queue everything into it
              ;; (pi: flushCompactionQueue willRetry — steer/followUp only, never
              ;; a fresh prompt)
-            (doseq [m msgs] (queue-compaction-message-into-turn! engine m))
+            (doseq [m msgs] (deliver-compaction-message! engine m nil))
              ;; Normal completion: first non-extension message prompts, the
              ;; rest queue per mode
             (let [first-idx (first (keep-indexed
@@ -801,11 +787,12 @@
                   (doseq [m (take first-idx msgs)]
                     (execute-extension-command! (:text m)))
                    ;; the first message: prompt when idle, else queue per mode
-                  (deliver-compaction-message! engine (nth msgs first-idx) run-opts)
+                  (deliver-compaction-message! engine (nth msgs first-idx)
+                                               {:allow-prompt? true :run-opts run-opts})
                    ;; remaining messages queue per mode — never a fresh prompt
                    ;; (pi: the rest go through steer/followUp)
                   (doseq [m (drop (inc first-idx) msgs)]
-                    (queue-compaction-message-into-turn! engine m)))
+                    (deliver-compaction-message! engine m nil)))
                  ;; all extension commands — execute them all
                 (doseq [m msgs] (execute-extension-command! (:text m))))))
           nil

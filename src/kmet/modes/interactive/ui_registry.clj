@@ -543,10 +543,10 @@
                                     (turn/start-agent-run! cs text)
 
                                     (= :steer deliver-as)
-                                    (agent/steer! ag text)
+                                    (runtime/steer! (:engine cs) text)
 
                                     :else
-                                    (agent/follow-up! ag text)))
+                                    (runtime/follow-up! (:engine cs) text)))
                                 ;; both updates schedule their own frames
                                 (status/update-pending-messages! cs)
                                 (state/update-footer! cs)
@@ -581,8 +581,8 @@
 
                               (and busy? (not (false? (:trigger-turn opts))))
                               (if (= :follow-up (:deliver-as opts))
-                                (agent/follow-up! ag msg)
-                                (agent/steer! ag msg))
+                                (runtime/follow-up! (:engine cs) msg)
+                                (runtime/steer! (:engine cs) msg))
 
                               (:trigger-turn opts)
                               (do (agent/append-custom-message! ag msg)

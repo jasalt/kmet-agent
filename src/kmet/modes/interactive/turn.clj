@@ -436,7 +436,8 @@
   (assoc cs :runtime (:engine cs) :ui cs :frontend :interactive))
 
 (defn handle-submit [cs text]
-  (let [trimmed (str/trim text)]
+  (let [trimmed (str/trim text)
+        compacting? @(:compacting? (runtime/agent-state (:engine cs)))]
     (when (seq trimmed)
       (cond
         ;; Slash command; else skill command (/skill:name), prompt template
@@ -462,7 +463,7 @@
             ;; the flush applies hooks + skill/template expansion at
             ;; delivery like a normal submit (pi: unknown commands fall
             ;; through to the compaction check and queue raw text).
-            (if @(:compacting? (runtime/agent-state (:engine cs)))
+            (if compacting?
               (do (tui/editor-add-to-history! @(:current-editor-atom cs) trimmed)
                   (queue-compaction-message! cs trimmed :steer))
               (submit-through-runtime! cs trimmed {:expand? true :history? false}))))
@@ -497,7 +498,7 @@
         ;; extension commands and builtins already dispatched above, so
         ;; only plain messages land here). Flushed by the :compaction-end
         ;; handler.
-        (if @(:compacting? (runtime/agent-state (:engine cs)))
+        (if compacting?
           (do (tui/editor-add-to-history! @(:current-editor-atom cs) trimmed)
               (queue-compaction-message! cs trimmed :steer))
           (submit-through-runtime! cs trimmed nil))))))

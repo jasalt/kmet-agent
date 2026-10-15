@@ -35,6 +35,12 @@
   (reset! registry [])
   nil)
 
+(defn- available-to?
+  "True when CMD runs on FRONTEND (a nil :frontend tag means every
+   front end)."
+  [frontend cmd]
+  (or (nil? (:frontend cmd)) (= frontend (:frontend cmd))))
+
 (defn get-commands
   "All registered slash commands, or those available to FRONTEND: a command
    with no :frontend tag is available to every front end, one with a tag
@@ -42,7 +48,7 @@
    installed capabilities)."
   ([] @registry)
   ([frontend]
-   (filterv #(or (nil? (:frontend %)) (= frontend (:frontend %))) @registry)))
+   (filterv #(available-to? frontend %) @registry)))
 
 (defn find-command
   "Look up a slash command by :name, or nil. With FRONTEND, only a command
@@ -51,6 +57,5 @@
   ([name]
    (first (filter #(= (:name %) name) @registry)))
   ([name frontend]
-   (first (filter #(and (= (:name %) name)
-                        (or (nil? (:frontend %)) (= frontend (:frontend %))))
+   (first (filter #(and (= (:name %) name) (available-to? frontend %))
                   @registry))))
