@@ -7,8 +7,9 @@ behavior — the topic map in `AGENTS.md` still points at the behavior docs.
 Fold this into `src/kmet/README.md` (or delete it) when the work lands.
 
 Scope: one session runtime usable unchanged by the interactive TUI, print
-mode (text and event output), and the GUI front end under construction. RPC
-mode is a later, optional consumer. Namespaces are not renamed.
+mode (text and event output), and the GUI front end. The GUI is postponed
+until the Tk backend stabilizes; RPC mode (step 6) goes next. Namespaces
+are not renamed.
 
 Decisions already taken in discussion:
 
@@ -24,10 +25,12 @@ Decisions already taken in discussion:
   `modes/interactive`, the step failed.
 - **No namespace renames.** `kmet.app.*` keeps its names; the split is
   ownership, not naming. (The former step R is dropped.)
-- **The GUI is the next front end and the proof.** It already exists as a
-  display-only viewer (`scripts/gui_tk_session.clj`,
-  `app/ui/gui/transcript.clj`); the live-run milestone is what exercises
-  the seam. RPC is deferred until a real consumer exists.
+- **The GUI is the next visual front end, and RPC the next headless one.**
+  The GUI already exists as a display-only viewer
+  (`scripts/gui_tk_session.clj`, `app/ui/gui/transcript.clj`); its live-run
+  milestone is what exercises the render seam, but it is postponed until
+  the Tk backend stabilizes. RPC (step 6) is scheduled instead: the same
+  seam from the async-answer side, with no terminal.
 - **malli is a boundary tool.** It describes file formats (session
   entries, config, auth) and, later, a wire protocol. In-process events and
   the bootstrap map are shaped by code and tests — pi types its event union
@@ -55,8 +58,8 @@ Non-goals (v1):
 - **A schema program.** malli lands at file boundaries and a future wire
   protocol, not on every event, config section, catalog, or in-memory
   value.
-- **A distributed/network protocol.** A later RPC consumer would be
-  stdin/stdout EDN lines first.
+- **A distributed/network protocol.** RPC (step 6) starts at stdin/stdout
+  EDN lines.
 
 ## 2. Baseline: what already separates
 
@@ -341,8 +344,8 @@ active front end. Split the capability map:
   (`scripts/gui_tk_session.clj`); the live mode subscribes to the runtime,
   renders through `kmet.tk.*` and `app/ui/gui/*`, and binds the UI port.
   This is the proof the plan is written against.
-- `rpc` (later, optional): `kmet.modes.rpc`, EDN lines on stdin/stdout.
-  Deferred until a consumer exists; the design sketch is step 6.
+- `rpc` (step 6): `kmet.modes.rpc`, EDN lines on stdin/stdout; the plan
+  is in step 6.
 
 ## 5. Review findings (things the sketch got wrong or must fix)
 
@@ -466,7 +469,7 @@ split): custom themes (`validate-theme-data!`, private at
 | Surface | Why |
 |---|---|
 | Session import | Reuses the session schema at the `:session-import/*` boundary |
-| Wire commands/responses (only if RPC is built) | Validate at the transport edge; derive command docs from the registry |
+| Wire commands/responses (when RPC lands, step 6) | Validate at the transport edge; derive command docs from the registry |
 | Extension ABI return shapes (optional, later) | Boundary returns `{:entries [...] :continue bool}`, input hooks `{:action :handled|:transform}`, tool-call hooks `{:block true :reason}` / `{:args ...}`, after-tool-call `{:content ... :is-error}`, `resources-discover` `{:skill-paths [...]}`; a schema lets the runner report a malformed handler result at the boundary |
 
 ### Tier 3 — do not schema
@@ -486,7 +489,7 @@ split): custom themes (`validate-theme-data!`, private at
 | Session append | Validate the single appended entry in tests; optional debug assert; never re-validate the file |
 | Config load | Decode with defaults; throw only where the code throws today; unknown keys ignored |
 | Events | EDN round-trip only (tests and the event-output encoder); no schema validation in the hot path |
-| Wire edge (only if RPC is built) | Validate every command and response |
+| Wire edge (RPC, step 6) | Validate every command and response |
 | Hot paths (`:message-update` per delta) | Never; if ever needed, memoized `m/validator` per type |
 
 ## 7. Staged plan
@@ -684,21 +687,149 @@ Acceptance: the viewer becomes live — prompt, streamed assistant text, tool
 cards, and cancel — with the mode holding only view state and the runtime
 reference; every update it renders arrives through `subscribe!`.
 
-### Step 6 — RPC mode (deferred)
+### Step 6 — RPC mode (scheduled; GUI postponed)
 
-Not scheduled. Trigger: a real consumer (an IDE integration, a scripted
-controller, remote sessions). When one exists:
+Step 5 is postponed until the Tk backend stabilizes (parallel development).
+RPC is the next front end: it exercises the step 4 seam from the side the
+GUI cannot yet reach — an out-of-process consumer whose extension dialogs
+are **answered asynchronously** (§4.5, extension.md "UI requests") — and
+it needs no terminal. Reference: pi `modes/rpc/*.ts`, `docs/rpc.md`,
+`docs/rpc-commands.md`, `docs/json.md`, `docs/rpc-extension-ui.md`.
 
-- `kmet.modes.rpc`: EDN lines in/out; commands (`prompt`, `steer`,
-  `cancel`, `compact`, `set-model`, `new-session`, `respond`, `state`,
-  `subscribe`), correlated responses, events forwarded as-is; extension UI
-  requests forwarded, answered with `respond!`.
-- Reuse the print event-output encoder test; no TUI front end is started
-  (the graph assertion is scoped by §8).
-- Copy pi's protocol discipline: optional ids; a malformed record yields a
-  parse response without an id; stdout carries protocol only, diagnostics
-  go to stderr; accepted (`started`/`queued`/`handled`) is not completed;
-  stdin close is shutdown, dispose after settle.
+The runtime is already the right shape for this: `bootstrap` builds one
+engine, `subscribe!` broadcasts the event stream, `submit!`/`steer!`/
+`follow-up!`/`cancel!`/`compact!` drive it, `switch-session!`/
+`new-session!`/`fork!`/`clone!`/`entries` own the session, and
+`request-ui!`/`respond!` are the async answer pair. RPC is a transport plus
+a dispatch table over those; almost no new engine code is expected. Two
+small runtime additions are known: a bounded wait-for-idle (pi's `abort`
+waits for the session to settle before responding) and live queue-mode
+setters (the loop owns `:steering-mode`/`:follow-up-mode` in its `:cfg`
+snapshot; nothing sets them after bootstrap today).
+
+#### 6.0 Pinned decisions
+
+- **Transport**: EDN, one map per line (LF-framed), commands on stdin,
+  records on stdout. stdout carries protocol only — `kmet.debug` already
+  writes files, so no output guard is needed. `run` takes `:in`/`:out`
+  overrides (Reader/Writer) so tests drive the protocol in-process.
+- **CLI**: `--mode rpc` (`parse-args` already anticipates pi's
+  `text|json|rpc`; kmet's `:edn` is pi's `json`). Session resolution is
+  the same policy print mode uses (`--session`/`--continue`/fresh); print's
+  private `session-for-run` moves to a shared app home rather than being
+  copied.
+- **Binding**: `{:mode :rpc :has-ui true :ui rpc-port}` — pi sets
+  `ctx.mode === "rpc"` and `hasUI === true` because dialogs and output
+  channels work over the protocol. TUI-only surfaces are absent (inert) or
+  degrade per pi's `rpc-extension-ui.md` limitations table; the list is
+  documented.
+- **No `subscribe` command** (the sketch had one): every client receives
+  the event stream, pi-style. One process, one engine, one session at a
+  time; session commands swap the engine's session and the events report
+  it.
+- **Records**:
+  - command `{:type :prompt :id "req-1" :message "..."}` — `:id` is an
+    optional string, correlated by the client, never by order;
+  - response `{:type :response :id "req-1" :command :prompt :success
+    true :data {...}}`, failures `:success false :error "..."`;
+  - a malformed line answers `{:type :response :command :parse :success
+    false :error "..."}` with no id (pi discipline);
+  - events are the print-mode wire projection, `(wire-event e)` — the
+    same `{:type ...}` family, distinguishable from responses by `:type`;
+  - extension UI: the port emits
+    `{:type :ui-request :id "uuid" :method :select ...}` records
+    (dialogs awaited, fire-and-forget ones not) and the client answers
+    dialogs with `{:type :respond :id "uuid" :value ...}` →
+    `runtime/respond!`. A client that never answers gets the request's
+    default when `dispose!` runs; the port owns any timeout policy
+    (extension.md).
+- **Discipline** (copied from pi's docs): accepted is not completed — a
+  `prompt` response reports the disposition (`started`/`queued`/
+  `handled`) and the client waits for `:agent-settled`; a command failure
+  is a response, a run failure is an event; stdin EOF requests shutdown
+  and `dispose!` runs after the settle.
+- **Validation at the edge** (§9 Tier 2: "validate every command and
+  response"): the transport validates one command against its table row
+  (missing/mistyped fields → an error response, never a crash), and the
+  malli schemas land once the surface is complete — at the single read
+  point and the single encoder, never in the event hot path (Tier 3).
+
+#### 6.1 Command surface (pi names; kmet mapping)
+
+| pi command | kmet |
+|---|---|
+| `prompt` | portable builtin dispatch (6.3) else `runtime/submit!` with `:expand?`; disposition from its action map |
+| `steer`, `follow_up` | skill/template expansion then `runtime/steer!`/`follow-up!`; `{:disposition :queued}` |
+| `abort` | `runtime/cancel!` then bounded wait for idle (the known runtime addition) |
+| `clear_queue` | `runtime/clear-queues!` + report the dropped texts |
+| `new_session` | `runtime/new-session!` (`{:session ...}`/`{:cancelled true}`) |
+| `get_state` | `runtime/snapshot` + session file/name/counts |
+| `get_messages`, `get_last_assistant_text` | session accessors |
+| `set_model`, `cycle_model`, `get_available_models` | runtime capability + model catalog |
+| `set_thinking_level`, `cycle_thinking_level`, `get_available_thinking_levels` | runtime/loop thinking API |
+| `set_steering_mode`, `set_follow_up_mode` | needs the live loop setter (the other known addition) |
+| `compact`, `set_auto_compaction` | `runtime/compact!` (accept → response, outcome → events); `agent/set-auto-compact!` exists |
+| `get_session_stats`, `export_html` | `session/get-session-stats`, `session-export/export-to-html!` |
+| `switch_session`, `fork`, `clone`, `get_entries`, `get_tree` | `runtime/switch-session!`/`fork!`/`clone!`, `session/get-tree` |
+| `set_session_name` | the `/name` builtin's shared logic (one implementation) |
+| `get_commands` | the registry filtered to `:rpc` availability + skills/prompts |
+| `bash`, `abort_bash`, `set_auto_retry`, `abort_retry` | **deferred**: kmet's bash path is the interactive `!` flow, and the retry knobs have no live setter |
+
+#### 6.2 The step 4 seam's first consumer (extension UI)
+
+The RPC port is the first thing that answers the `:request` protocol:
+
+- dialogs: the runtime's `{:kind :select|:confirm|:input|:editor}` request
+  becomes a `:method`-carrying `:ui-request` record; the port returns
+  `extensions/request-pending` and the `:respond` command resolves it via
+  `runtime/respond!`. `:custom` is not bridged (pi limitation).
+- output channels: the extension API's `notify`, `set-status`,
+  `set-widget`, `set-title`, `chat-info`, `set-editor-text` emit
+  fire-and-forget `:ui-request` records; TUI-only capabilities stay
+  inert/degraded and are listed in the docs.
+- extension ctx: commands and event handlers see `:mode :rpc`,
+  `:has-ui true`.
+- extension **dialog API methods** (`ctx.ui.select` etc.) still have no
+  built-in caller (extension.md); wiring this port does not require them.
+  Tests drive `request-ui!` directly for the round trip; adding the API
+  methods is a separate follow-up the port is already shaped for.
+
+#### 6.3 Portable commands over `prompt`
+
+A prompt that reads as `/<name>` dispatches through
+`commands/find-command name :rpc` with the command ctx
+`{:runtime engine :ui rpc-command-ui :frontend :rpc}` — the step 4b payoff:
+`/continue`, `/name`, `/export`, `/compact` work from an RPC client, while
+`:interactive`-tagged view commands are filtered out. Unknown slash text
+stays a normal prompt (pi's `prompt` handles known commands and sends the
+rest to the model). `get_commands` reports this same filtered view.
+
+#### 6.4 Staging
+
+- **6a — transport + prompting**: `kmet.modes.rpc` namespace, `--mode rpc`,
+  line loop, dispatch table, responses, event forwarding, `prompt`,
+  `steer`, `follow_up`, `abort`, `clear_queue`, `new_session`,
+  `get_state`; in-process tests with the stub-turn pattern print mode uses.
+- **6b — the command surface**: session/model/thinking/queue-mode/stats/
+  export/tree commands, `get_commands`; the two runtime additions land
+  here; per-area tests.
+- **6c — extension UI + portable `prompt` commands**: the port, the
+  `:respond` command, degraded-capability docs, round-trip tests; an
+  extension-output test (`ui-notify`/`ui-set-status`).
+- **6d — client, docs, end-to-end**: a thin EDN client
+  (`kmet.modes.rpc-client`: send + await id, event callback, wait-idle)
+  used by the `^:slow` subprocess round-trip test and documented as the
+  scripted-consumer example; `docs/rpc.md` user guide + supported-command
+  reference; fold this note into `src/kmet/README.md` as steps land.
+
+Acceptance: protocol-discipline tests green (ids optional, malformed →
+parse response without id, stdout protocol-only, accepted ≠ completed,
+stdin EOF → dispose after settle); a `--mode rpc` prompt streams events and
+settles; extension output records and a `request-ui!` → `:respond` round
+trip work, and an unanswered request resolves with its default at dispose;
+the namespace graph loads no `kmet.tui.*` (extend the §8 assertion); the
+portable builtins are dispatchable over `prompt`; the pi parity table
+(supported vs deferred) is in the docs.
 
 ## 8. Enforcement
 
@@ -713,7 +844,7 @@ controller, remote sessions). When one exists:
   `kmet.tui.*` namespace loads is not achievable while extensions are
   enabled: the extension ABI admits `kmet.tui.*` and `host-requires!`
   requires the whole layer on the first extension (§3.8). Assert instead
-  that a headless front end (the future RPC mode) does not load
+  that a headless front end (RPC mode) does not load
   `kmet.modes.interactive.*` and does not construct a terminal; the
   stricter assertion needs the shared-component-library split (an
   unscheduled extraction). The GUI is not under this guard — `kmet.tk.*`
@@ -776,15 +907,15 @@ future wire mode should instead expose the operations as protocol commands
 (pi's `new_session`/`fork`/…), not serialize slash-command intents.
 4. **`:resume` selector** — step 3.
 5. **GUI scope** — step 5.
-6. **RPC trigger** — step 6 (a real consumer).
+6. **RPC trigger** — scheduled; the GUI is postponed (step 6).
 
 ## 11. What not to do
 
 - Do not rename `kmet.app.*`. The split is ownership, not naming; a
   rename stage buys nothing and inflates the diff.
-- Do not build RPC before a consumer exists. Print's event-output variant
-  proves headless conformance cheaper, and the GUI is the planned second
-  front end.
+- Do not build RPC before its transport is worth it. The plan is step 6;
+  print's event-output variant already proves headless conformance, and the
+  GUI's live milestone stays parked until the Tk backend stabilizes.
 - Do not share TUI component *instances* with the GUI; share the renderers,
   events, and data. The GUI transcript reusing the TUI markdown/theme/ANSI
   output is intended — it converts ANSI to Tk segments (see §2).
