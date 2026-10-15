@@ -308,12 +308,19 @@ The callback slots and what the handler receives:
 | an item's `:on-click`/`:on-drag`/`:on-enter`/`:on-leave` | `:tk/canvas` `:items` (Tk's item bind) | the event's coordinates, `[x y]` |
 | `:on-scroll` | `:tk/scrollbar`/`:ttk/scrollbar` (`-command`) | Tk's scroll arguments (`"moveto" "0.5"`) |
 | `:on-tab-changed` | `:ttk/notebook` (`<<NotebookTabChanged>>`) | the tab index |
+| `:validatecommand` | the entry-like widgets (`-validatecommand`) | Tk's `%P`, the value the widget would have; the handler answers a boolean (false/nil refuses the edit) |
+| `:invalidcommand` | the entry-like widgets (`-invalidcommand`) | Tk's `%P` |
+| `:xscrollcommand` / `:yscrollcommand` | `:tk/text`, `:tk/canvas`, `:tk/listbox`, `:ttk/treeview` (both); the text fields (`-xscrollcommand`) | `[first last]` as numbers |
+| `:postcommand` | `:tk/menu`, `:ttk/combobox` (`-postcommand`) | nothing |
 
 `:on-change`/`:on-submit`/`:on-spin` read the text back, and the scales'
 `:on-change` receives the number. The value slots read the widget when the
 event fires, so a controlled component writes the value back from the
 callback. A callback set to nil is unbound in Tk and released from the
-trampoline.
+trampoline. `:validate` (Tk's mode: `:key`, `:focus`, `:focusin`,
+`:focusout`, `:all`) is what makes Tk ask `:validatecommand` at all; the
+`:scrollbar` prop and an explicit `:yscrollcommand` are two wirings of
+Tk's one option, so asking for both is an error.
 
 `:bind` binds arbitrary events on any tag — `:tk/toplevel` included — by
 kmet chord (`:ctrl+enter`, `"ctrl+shift+p"`) or a raw Tk pattern
@@ -414,11 +421,15 @@ Two consequences worth knowing:
   this Tk (8.6.16)`.
 
 Options that are not a plain value are deliberately not props, each
-because it needs machinery a prop cannot be: the script-typed ones
-(`-validatecommand`, `-invalidcommand`, `-xscrollcommand`,
-`-yscrollcommand`, `-postcommand`) and the options that name another
-widget (`-menu` for a menubutton is its `:items`; `-labelwidget` is not
-reached yet).
+because it needs machinery a prop cannot be: `-tearoffcommand` (Tk calls
+it when a tear-off menu is created, and kmet menus are tear-off off), and
+the options that name another widget (`-menu` for a menubutton is its
+`:items`; `-labelwidget` is not reached yet). The script-typed options
+that are callbacks — `-validatecommand`, `-invalidcommand`,
+`-xscrollcommand`, `-yscrollcommand`, `-postcommand` — are binding slots
+of their tags (see the table above). Tk's `-browsecmd`/`-invokecommand`
+are not options of any core Tk widget (they belong to BWidget/tklib), so
+no tag declares them.
 
 ### Shared variables
 
@@ -707,15 +718,15 @@ labels, fields, list, menu, panes, scale, scrollbar, canvas) and the
 themed `:ttk/…` set (frames, labels, buttons, fields, notebook, panes,
 progress, separator, sizegrip, toggleswitch, treeview), plus bare-string
 labels. Every tag accepts the Tk options its widget has, through the
-families in `kmet.tk.options` (see *Options* above); the script-typed
-options (validation, the scroll commands, `-postcommand`) and the options
-that name another widget are the ones still missing, and
-`scripts/tk_option_audit.clj` reports both sides against a live Tk. kmet's
-own widgets are the `:ui/…` set in `kmet.app.ui.gui.ui` (today
-`:ui/transcript`, the chat scroll container).
+families in `kmet.tk.options` (see *Options* above), and its script-typed
+options are the tag's binding slots (validation, the scroll commands,
+`-postcommand`); the options that name another widget are the ones still
+missing, and `scripts/tk_option_audit.clj` reports both sides against a
+live Tk. kmet's own widgets are the `:ui/…` set in `kmet.app.ui.gui.ui`
+(today `:ui/transcript`, the chat scroll container).
 
 The first cuts that remain — everything Tk offers beside its widgets
-(window management, the clipboard, the script-typed options) — are tracked
+(window management, the clipboard) — are tracked
 in [`tcl.md`](../../tcl.md) at the repository root, which lists
 each gap with what closing it needs and how the two guards below keep the
 list honest; the GUI app port's own work — the composer, the transcript's

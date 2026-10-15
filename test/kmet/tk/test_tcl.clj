@@ -156,8 +156,9 @@
               _ (e (str creator " " p))
               names (option-names p)
               _ (e (str "destroy " p))
-              missing (sort (remove names (map #(str "-" (name %))
-                                               (vals (:options spec)))))]
+              declared (concat (vals (:options spec))
+                               (keep :option (vals (:bindings spec))))
+              missing (sort (remove names (map #(str "-" (name %)) declared)))]
           (t/is (seq names) (str tag ": " creator " answers configure"))
           (t/is (empty? missing)
                 (str tag " declares options " creator " does not have: "
@@ -627,3 +628,79 @@
             "and a widget edit writes its list back into the variable")
       (engine/dispose-component (:root h))
       (tk/variable-dispose! v))))
+
+;; ─── script-typed options ────────────────────────────────────────────────
+
+(t/deftest a-real-entry-validates-its-edits
+  ;; The validatecommand answers Tk from kmet: an allowed key is inserted,
+  ;; a refused one leaves the entry as it was and runs the invalidcommand.
+  ;; The handler sees %P, the value the entry would have.
+  (with-live-tk [e]
+    (let [proposed (atom [])
+          refused (atom 0)
+          h (tk/mount! (fn [_] [:ttk/frame {}
+                                [:ttk/entry {:text ""
+                                             :validate :key
+                                             :validatecommand
+                                             (fn [v] (swap! proposed conj v)
+                                               (not (str/includes? v " ")))
+                                             :invalidcommand
+                                             (fn [_] (swap! refused inc) nil)}]])
+                       {})
+          w (do (e find-class-src) (e "kmetfind . TEntry"))]
+      (t/is (seq w) "the entry is in the window")
+      (e (str "focus -force " w))
+      (e (str w " icursor end"))
+      (e "update")
+      (e (str "event generate " w " <KeyPress-a> -when tail"))
+      (e (str "event generate " w " <KeyRelease-a> -when tail"))
+      (e "update")
+      (t/is (= "a" (e (str w " get"))))
+      (e (str "event generate " w " <KeyPress-space> -when tail"))
+      (e (str "event generate " w " <KeyRelease-space> -when tail"))
+      (e "update")
+      (t/is (= "a" (e (str w " get")))
+            "the space the validator refused was not inserted")
+      (t/is (= ["a" "a "] @proposed)
+            "the handler saw the value the entry would have had")
+      (t/is (= 1 @refused) "and the refusal ran the invalidcommand")
+      (engine/dispose-component (:root h)))))
+
+(t/deftest a-real-text-reports-its-scroll-fractions
+  ;; A text widget's own -yscrollcommand: Tk calls it with the visible
+  ;; fractions, which reach the handler as numbers.
+  (with-live-tk [e]
+    (let [seen (atom [])
+          h (tk/mount! (fn [_] [:tk/text {:content (mapv (fn [i] {:text (str "line " i "\n")})
+                                                         (range 60))
+                                          :height 3
+                                          :yscrollcommand
+                                          (fn [fractions] (swap! seen conj fractions))}])
+                       {})
+          w (do (e find-class-src) (e "kmetfind . Text"))]
+      (t/is (seq w) "the text is in the window")
+      (t/is (str/includes? (e (str w " cget -yscrollcommand")) "kmet::cb"))
+      (e "update")
+      (e (str w " yview moveto 0.5"))
+      (t/is (seq @seen) "moving the view called the command")
+      (let [[first last] (last @seen)]
+        (t/is (number? first))
+        (t/is (number? last)))
+      (engine/dispose-component (:root h)))))
+
+(t/deftest a-real-menu-runs-its-post-command
+  ;; A posted menu builds itself: tk_popup runs -postcommand, and the
+  ;; handler gets no value (the menu's own state is the app's).
+  (with-live-tk [e]
+    (let [posted (atom 0)
+          h (tk/mount! [:ttk/frame {}
+                        [:tk/menu {:items [{:label "x"}]
+                                   :postcommand (fn [] (swap! posted inc) nil)}]]
+                       {})
+          m (do (e find-class-src) (e "kmetfind . Menu"))]
+      (t/is (seq m) "the menu is in the window")
+      (e "update")
+      (e (str "tk_popup " m " 10 10"))
+      (e (str m " unpost"))
+      (t/is (= 1 @posted) "posting the menu ran the command")
+      (engine/dispose-component (:root h)))))

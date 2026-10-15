@@ -19,11 +19,12 @@
    a widget-owned photo or bitmap). Options that are not a plain value are
    deliberately absent, each because it needs machinery a prop cannot be:
 
-     - script-typed: -validatecommand, -invalidcommand, -xscrollcommand,
-       -yscrollcommand (the :scrollbar prop wires those), -postcommand,
-       -tearoffcommand (a :command/-command callback is a :bindings
-       {:option :command} slot, as :on-click is);
-     - another widget: -menu (a menubutton's :items build their own);
+     - script-typed: a callback option is a tag's binding slot (a Tcl
+       -command rides {:on-click {:option :command}}, -validatecommand /
+       -invalidcommand / -xscrollcommand / -yscrollcommand / -postcommand
+       have slots of their own), and -tearoffcommand is not reached yet;
+     - another widget: -menu (a menubutton's :items build their own),
+       and -labelwidget is not reached yet;
      - only meaningful with one of the above: -selecttype, -title,
        -titlecolumns, -titleitems, -type, -displaycolumns.
 

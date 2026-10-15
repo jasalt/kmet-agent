@@ -48,6 +48,16 @@ is shared with the app and with its radio group, and a second source of
 truth (`:text` beside `:textvariable`, `:items` beside `:listvariable`) is
 refused. `src/kmet/tk/README.md` (Shared variables) is the contract.
 
+The script-typed options are props too — binding slots of the tags whose
+widgets have them. Tk asks `:validatecommand` whether an edit is allowed,
+handing the handler `%P` (the value the widget would have), which answers
+a boolean (false or nil refuses); `:invalidcommand` reports the refusal;
+`:xscrollcommand`/`:yscrollcommand` (outside the `:scrollbar` sugar, with
+which they conflict) hand the visible fractions to the handler as
+numbers; `:postcommand` builds a `:tk/menu` or `:ttk/combobox` when it is
+posted. Tk's `-browsecmd`/`-invokecommand` belong to BWidget/tklib
+widgets, not core Tk, so no tag declares them.
+
 Tk's native dialogs are `kmet.tk.core` functions: `message-box!`,
 `open-file!`, `save-file!`, `choose-directory!` and `choose-color!` script
 `tk_messageBox`/`tk_getOpenFile`/… with the props as that command's own
@@ -158,10 +168,6 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 The catalogue (`kmet.tk.options`) leaves out what a plain value cannot
 be; each group needs machinery:
 
-- **Script-typed**: `-validatecommand`/`-invalidcommand` (entry validation
-  with Tk's `%P`-style substitutions), `-xscrollcommand`/`-yscrollcommand`
-  outside the `:scrollbar` prop, `-postcommand` (a menu built on open),
-  `-browsecmd`/`-invokecommand`.
 - **Cross-widget**: `-menu` (covered for menubuttons and the menubar),
   `-labelwidget`.
 - **A value a `:bind` handler cannot read.** A widget's own binding hands

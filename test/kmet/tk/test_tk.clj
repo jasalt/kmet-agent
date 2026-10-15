@@ -596,6 +596,85 @@
                nil
                (catch Exception e (:type (ex-data e))))))))
 
+;; ─── script-typed options ─────────────────────────────────────────────────
+
+(t/deftest a-validate-command-answers-tk-s-boolean
+  ;; Tk asks the validatecommand whether an edit is allowed, handing it %P
+  ;; (the value the widget would have); the handler's answer is a Tcl
+  ;; boolean — false and nil refuse the edit — and :invalidcommand is called
+  ;; when the answer was no. Both are ordinary binding slots on the
+  ;; trampoline.
+  (with-fake [rec nil]
+    (let [asked (atom [])
+          invalid (atom 0)
+          m (mounted (fn [_] [:ttk/frame {}
+                              [:ttk/entry {:text "ab" :validate :key
+                                           :validatecommand (fn [v]
+                                                              (swap! asked conj v)
+                                                              (when (not= v "abc") true))
+                                           :invalidcommand (fn [_]
+                                                             (swap! invalid inc)
+                                                             nil)}]]))
+          script-id (fn [option]
+                      (second (re-find #"kmet::cb (\d+)"
+                                       (first (scripts-like
+                                               rec (re-pattern (str "configure -" option)))))))]
+      (t/is (some #(re-find #"configure -validatecommand \{kmet::cb \d+ %P\}$" %)
+                  (scripts rec))
+            "the script asks Tk for %P")
+      (t/is (some #(re-find #"configure -invalidcommand \{kmet::cb \d+ %P\}$" %)
+                  (scripts rec)))
+      (t/is (= "1" (tk/dispatch-callback! ["kmet::cb" (script-id "validatecommand") "abcd"]))
+            "a truthy answer allows the edit")
+      (t/is (= "0" (tk/dispatch-callback! ["kmet::cb" (script-id "validatecommand") "abc"]))
+            "nil refuses it")
+      (t/is (= ["abcd" "abc"] @asked) "the handler receives the proposed value")
+      (t/is (= "" (tk/dispatch-callback! ["kmet::cb" (script-id "invalidcommand") "abc"]))
+            "the invalid handler only reports")
+      (t/is (= 1 @invalid))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-scroll-command-hands-over-the-fractions
+  ;; -xscrollcommand/-yscrollcommand outside the :scrollbar sugar: Tk calls
+  ;; the trampoline with the two fractions itself, so the bound script reads
+  ;; nothing and the handler gets them as numbers.
+  (with-fake [rec nil]
+    (let [seen (atom nil)
+          m (mounted (fn [_] [:tk/text {:text "x" :yscrollcommand (fn [v] (reset! seen v))}]))
+          script (first (scripts-like rec #"configure -yscrollcommand"))
+          id (second (re-find #"kmet::cb (\d+)" script))]
+      (t/is (re-find #"configure -yscrollcommand \{kmet::cb \d+\}$" script))
+      (tk/dispatch-callback! ["kmet::cb" id "0.25" "0.75"])
+      (t/is (= [0.25 0.75] @seen))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-scrollbar-and-an-explicit-ycommand-are-refused
+  ;; Both wire Tk's one -yscrollcommand: the scrollbar would silently win.
+  (with-fake [_rec nil]
+    (let [e (try (mounted [:tk/text {:text "x" :scrollbar true
+                                     :yscrollcommand (fn [_])}])
+                 nil
+                 (catch Exception e e))]
+      (t/is (= :kmet.tk.core/scrollbar-and-command (:type (ex-data e))))
+      (t/is (str/includes? (ex-message e) ":yscrollcommand")))))
+
+(t/deftest a-menu-runs-its-post-command
+  ;; -postcommand asks a menu to build itself when it is posted; a combobox
+  ;; takes one too (its popdown). Tk passes no value.
+  (with-fake [rec nil]
+    (let [posted (atom 0)
+          m (mounted (fn [_] [:ttk/frame {}
+                              [:tk/menu {:postcommand (fn [] (swap! posted inc))}]
+                              [:ttk/combobox {:values ["a"]
+                                              :postcommand (fn [] nil)}]]))]
+      (let [script (first (scripts-like rec #"configure -postcommand"))
+            id (second (re-find #"kmet::cb (\d+)" script))]
+        (t/is (re-find #"configure -postcommand \{kmet::cb \d+\}$" script))
+        (tk/dispatch-callback! ["kmet::cb" id])
+        (t/is (= 1 @posted)))
+      (t/is (= 2 (count (scripts-like rec #"configure -postcommand"))))
+      (engine/dispose-component (:root m)))))
+
 (t/deftest dispose-destroys-the-widget-and-releases-callbacks
   (with-fake [rec nil]
     (let [{:keys [root]} (mounted [:ttk/frame {}

@@ -110,15 +110,18 @@
 
 (defonce ^:private next-callback (atom 0))
 
-;; The `kmet::cb` registry: callback id -> {:handler f :value :text/:variable}.
+;; The `kmet::cb` registry: callback id -> {:handler f :value :text/:variable
+;; :arg …, :answer bool}.
 (defonce ^:private callbacks (atom {}))
 
 (defn- register-handler!
   "Register F in the `kmet::cb` registry and return its id. The registry
-   owns the handler; whatever releases the id stops it being dispatchable."
-  [f value arg]
+   owns the handler; whatever releases the id stops it being dispatchable.
+   ANSWER marks a slot Tk reads a result from — see dispatch-callback!."
+  [f value arg answer]
   (let [id (swap! next-callback inc)]
-    (swap! callbacks assoc id {:handler f :value value :arg (or arg value)})
+    (swap! callbacks assoc id {:handler f :value value :arg (or arg value)
+                               :answer answer})
     id))
 
 (defn- release-handler!
@@ -137,14 +140,15 @@
   "Register F as W's SLOT handler (releasing whatever the slot held) and
    return the `kmet::cb <id>` argument; nil F just releases the slot.
    VALUE is the fragment kind the bound script reads the widget with (nil
-   when Tk hands the value over itself, as a scale's -command does) and
-   ARG how the handler wants the arguments Tk passes.
+   when Tk hands the value over itself, as a scale's -command does), ARG
+   how the handler wants the arguments Tk passes, and ANSWER whether Tk
+   reads the result (a validatecommand answers a boolean).
    Rebinding matters: Tk's bind (and -command) replaces the script, so
    without the release the old command would stay dispatchable."
-  [w slot f value arg]
+  [w slot f value arg answer]
   (release-slot! w slot)
   (when (some? f)
-    (let [id (register-handler! f value arg)]
+    (let [id (register-handler! f value arg answer)]
       (swap! (:callbacks w) assoc slot id)
       (str "kmet::cb " id))))
 
@@ -178,6 +182,22 @@
    caller owns which button of the group is :active (Tk's own group
    selection is a -variable)."
   {:on-toggled {:option :command :value :radio}})
+
+(def validation-bindings
+  "An entry-like widget's validation slots: Tk asks :validatecommand whether
+   an edit is allowed — the handler gets Tk's %P, the value the widget would
+   have, and answers a boolean (false or nil refuses the edit) — and calls
+   :invalidcommand when the answer was no. The :validate prop is the mode
+   that makes Tk ask at all."
+  {:validatecommand {:option :validatecommand :value :validate :answer true}
+   :invalidcommand {:option :invalidcommand :value :validate}})
+
+(def scroll-bindings
+  "A widget's own scroll commands. The :scrollbar prop wires Tk's
+   -yscrollcommand to a sibling scrollbar; these hand the fractions to the
+   app instead — the handler gets [first last] as numbers."
+  {:xscrollcommand {:option :xscrollcommand :arg :scroll}
+   :yscrollcommand {:option :yscrollcommand :arg :scroll}})
 
 (defn- as-number
   "S as a Clojure number: an integral Tcl value (7, 7.0) as a long, else as
@@ -218,6 +238,12 @@
    ;; gets [x y] as Tk's %x/%y, relative to the widget
    :pointer   {:fragment (fn [_] "%x %y")
                :args #(vector (mapv as-number %))}
+   ;; Tk's validation substitutions: %P is the value the widget would have
+   ;; (Tk substitutes it where the bound script names it)
+   :validate  {:fragment (fn [_] "%P")
+               :args #(vector (first %))}
+   ;; a scroll command's fractions, which Tk hands over itself
+   :scroll    {:args #(vector (mapv as-number %))}
    ;; a checkable widget's state lives in its variable, whichever one the
    ;; tag gave it: the on value is the widget's own -onvalue
    :variable  {:fragment (fn [w] (str "[expr {[set " (state-var w) "] eq ["
@@ -242,9 +268,10 @@
    inside the bound script, so Tcl evaluates it when the event fires, not
    at bind time. :stop closes the script with `break`, which keeps Tk's
    class binding from running too — the Return slot of an editable text
-   must not insert a newline."
-  [w slot {:keys [event option value arg stop target]} f]
-  (let [callback (set-callback! w slot f value arg)
+   must not insert a newline. :answer marks a slot Tk reads a result from
+   (a validatecommand's boolean)."
+  [w slot {:keys [event option value arg stop target answer]} f]
+  (let [callback (set-callback! w slot f value arg answer)
         script (when (some? callback)
                  (str callback
                       (when-let [frag (value-fragment w value)] (str " " frag))
@@ -295,15 +322,28 @@
     (shape argv)
     argv))
 
+(defn- tcl-result
+  "The handler's RESULT as the string Tk gets back: a slot Tk reads an
+   answer from (a validatecommand) answers a Tcl boolean — false and nil
+   refuse the edit — and every other slot answers the string it always
+   has."
+  [result answer?]
+  (if answer?
+    (cond
+      (boolean? result) (if result "1" "0")
+      (nil? result) "0"
+      :else (str result))
+    (str (or result ""))))
+
 (defn dispatch-callback!
   "The single command handler behind `kmet::cb`: ARGV is
    [\"kmet::cb\" id & values]. Returns the handler's result string (\"\")."
   [argv]
   (let [id (some-> (second argv) parse-long)
-        {:keys [handler arg]} (get @callbacks id)]
+        {:keys [handler arg answer]} (get @callbacks id)]
     (if (nil? handler)
       ""
-      (str (or (apply handler (coerce-value arg (drop 2 argv))) "")))))
+      (tcl-result (apply handler (coerce-value arg (drop 2 argv))) answer))))
 
 (defn- release-callbacks!
   [widget]
@@ -518,7 +558,7 @@
   ;; Tk appends the variable name, the array element and the operation to a
   ;; variable trace's script, so the trampoline's argv is the new value and
   ;; those three: the watch hands F the value alone.
-  (let [id (register-handler! (fn [value & _] (f value)) nil nil)
+  (let [id (register-handler! (fn [value & _] (f value)) nil nil nil)
         script (trace-script id (:name v))
         watching? @(:materialized v)]
     (swap! (:watches v) assoc id script)
@@ -1051,8 +1091,8 @@
                ;; a character count is the backend's safe cheap proxy:
                ;; wide glyphs only ever make Tk wrap earlier
                (some #(> (count %) width) lines))
-      (eval! (str (:path w) " configure -height [expr {max 1 [lindex ["
-                  (:path w) " count -displaylines 1.0 end] 0]}]")))))
+      (eval! (str (:path w) " configure -height [expr {max(1, [lindex ["
+                  (:path w) " count -displaylines 1.0 end] 0])}]")))))
 
 (defn set-text-content!
   "Replace W's content with PROPS' :content segments (or a plain :text
@@ -1399,7 +1439,7 @@
                   ;; word, which expr would read as a bareword
                   :radio (str "[string equal [set " var "] " (tcl-value (:value item)) "]")
                   nil)]
-      (str (set-callback! w slot f nil (when state :variable))
+      (str (set-callback! w slot f nil (when state :variable) nil)
            (when state (str " " state))))))
 
 (defn- menu-add!

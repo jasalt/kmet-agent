@@ -190,9 +190,18 @@
     (dsl/eval! (str (:path w) " selection set " i " " i))))
 
 (defn- maybe-scrollbar!
-  "Give W a wired vertical scrollbar when PROPS ask for one."
+  "Give W a wired vertical scrollbar when PROPS ask for one. A :scrollbar
+   and an explicit :yscrollcommand are two wirings of Tk's one
+   -yscrollcommand option — the scrollbar would silently win — so asking
+   for both is an error."
   [w props]
   (when (:scrollbar props)
+    (when (:yscrollcommand props)
+      (throw (ex-info (str "kmet.tk.core: " (:tag w) " names :scrollbar and"
+                           " :yscrollcommand — Tk's -yscrollcommand takes"
+                           " one")
+                      {:type :kmet.tk.core/scrollbar-and-command
+                       :tag (:tag w) :props [:scrollbar :yscrollcommand]})))
     (dsl/attach-scrollbar! w (dsl/parent-widget))))
 
 (defn- wire-menubar!
@@ -260,7 +269,7 @@
                      ;; renders :text/:content segments and disables itself
                      :commands {:content dsl/set-text!
                                 :text dsl/set-text!}
-                     :bindings dsl/text-bindings
+                     :bindings (merge dsl/text-bindings dsl/scroll-bindings)
                      :after maybe-scrollbar!})
 
    :tk/button
@@ -327,7 +336,8 @@
                     {:options (opt/options-for [:standard :bordered :highlighted
                                                 :fonted :entry-body]
                                                [:bg :fg :width :state :show :textvariable])
-                     :bindings dsl/text-field-bindings
+                     :bindings (merge dsl/text-field-bindings dsl/validation-bindings
+                                      (select-keys dsl/scroll-bindings [:xscrollcommand]))
                      :text-field true})
 
    :tk/spinbox
@@ -339,7 +349,8 @@
                                                 :buttondownrelief :buttonuprelief :from :to
                                                 :increment :format :values :wrap
                                                 :repeatdelay :repeatinterval])
-                     :bindings dsl/spinbox-bindings
+                     :bindings (merge dsl/spinbox-bindings dsl/validation-bindings
+                                      (select-keys dsl/scroll-bindings [:xscrollcommand]))
                      :text-field true})
 
    :tk/listbox
@@ -351,7 +362,8 @@
                                                 :disabledforeground
                                                 :inactiveselectforeground])
                      :fixed {:height 8}
-                     :bindings {:on-select {:event "<<ListboxSelect>>" :value :index}}
+                     :bindings (merge {:on-select {:event "<<ListboxSelect>>" :value :index}}
+                                      dsl/scroll-bindings)
                      :commands {:items listbox-items!
                                 :selected listbox-selection!}
                      :after maybe-scrollbar!})
@@ -383,6 +395,7 @@
                                                 :selectforeground :xscrollincrement
                                                 :yscrollincrement])
                      :fixed {:borderwidth 0 :highlightthickness 0}
+                     :bindings dsl/scroll-bindings
                      :commands {:items dsl/canvas-items!}
                      :after maybe-scrollbar!})
 
@@ -408,6 +421,7 @@
                                                 :activeborderwidth :activerelief
                                                 :borderwidth :relief :disabledforeground
                                                 :selectcolor :tearoff])
+                     :bindings {:postcommand {:option :postcommand}}
                      :commands {:items dsl/set-menu-items!}
                      :after wire-menubar!})
 

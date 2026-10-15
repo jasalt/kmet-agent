@@ -233,7 +233,8 @@
                                                 :fonted :localized]
                                                [:width :bg :fg :exportselection :textvariable
                                                 :justify :state])
-                     :bindings dsl/text-field-bindings
+                     :bindings (merge dsl/text-field-bindings dsl/validation-bindings
+                                      (select-keys dsl/scroll-bindings [:xscrollcommand]))
                      :text-field true})
 
    :ttk/combobox
@@ -242,9 +243,12 @@
                                                 :fonted :localized]
                                                [:width :height :bg :fg :exportselection
                                                 :textvariable :justify :state :values])
-                     :bindings (assoc dsl/text-field-bindings
-                                      :on-change {:event "<<ComboboxSelected>>"
-                                                  :value :text})
+                     :bindings (merge dsl/text-field-bindings
+                                      dsl/validation-bindings
+                                      (select-keys dsl/scroll-bindings [:xscrollcommand])
+                                      {:on-change {:event "<<ComboboxSelected>>"
+                                                   :value :text}
+                                       :postcommand {:option :postcommand}})
                      :text-field true})
 
    :ttk/spinbox
@@ -254,7 +258,8 @@
                                                [:width :bg :fg :exportselection :textvariable
                                                 :justify :state :values :format :from :to
                                                 :increment :wrap])
-                     :bindings dsl/spinbox-bindings
+                     :bindings (merge dsl/spinbox-bindings dsl/validation-bindings
+                                      (select-keys dsl/scroll-bindings [:xscrollcommand]))
                      :text-field true})
 
    :ttk/scale
@@ -327,7 +332,8 @@
                                 (merge {:show :headings}
                                        (when (seq cols)
                                          {:columns (str/join " " cols)}))))
-                     :bindings {:on-select {:event "<<TreeviewSelect>>" :value :ids}}
+                     :bindings (merge {:on-select {:event "<<TreeviewSelect>>" :value :ids}}
+                                      dsl/scroll-bindings)
                      :commands {:rows tree-rows!
                                 :tags tree-tags!
                                 :selected tree-selection!}
