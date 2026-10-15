@@ -1,9 +1,9 @@
 (ns kmet.app.commands.builtins
   "Engine-portable builtin slash commands (engine.md step 4): they run
    against the command ctx's :runtime and the shared command-UI
-   capabilities (:message, :info, :warning), so any front end can dispatch
-   them. The interactive mode registers its view-bound commands itself
-   (kmet.modes.interactive.commands)."
+   capabilities (:message, :info, :warning, :set-title), so any front end
+   can dispatch them. The interactive mode registers its view-bound
+   commands itself (kmet.modes.interactive.commands)."
   (:require [clojure.string :as str]
             [kmet.debug :as debug]
             [kmet.app.commands :as commands]
@@ -22,9 +22,8 @@
     (apply f args)))
 
 (defn- handle-continue
-  [{:keys [ui] :as ctx} _]
-  (let [engine (:runtime ctx)
-        agent-state (runtime/agent-state engine)]
+  [{:keys [ui] engine :runtime} _]
+  (let [agent-state (runtime/agent-state engine)]
     (cond
       ;; A run may have ended in :error (network failure, retries exhausted)
       ;; — that's exactly when /continue is useful, so only actively-running
@@ -46,33 +45,35 @@
           (runtime/prompt! engine {})))))
 
 (defn- handle-name
-  [{:keys [ui] :as ctx} args]
-  (let [engine (:runtime ctx)
-        sess (runtime/session engine)]
-    (if (nil? sess)
+  [{:keys [ui] engine :runtime} args]
+  (let [sess (runtime/session engine)]
+    (cond
+      (nil? sess)
       (out ui :message "No active session.")
-      (if (seq args)
-        (let [sanitized (session/sanitize-session-name args)]
-          (session/append-session-info! sess sanitized)
-          ;; pi: session_info_changed — extensions track the display name
-          (event-bus/emit-event!
-           {:type :session-info-changed
-            :session-file (:file sess)
-            :name sanitized})
-          (out ui :set-title)
-          (when-not (= args sanitized)
-            ;; pi: warn when normalization changed the input
-            (out ui :warning (str "Session name was normalized from " (pr-str args)
-                                  " to " (pr-str sanitized))))
-          (out ui :info "Name" (str "Session name set: " sanitized)))
-        (if-let [current (session/get-session-name sess)]
-          (out ui :info "Name" (str "Session name: " current))
-          (out ui :warning "Usage: /name <name>"))))))
+
+      (seq args)
+      (let [sanitized (session/sanitize-session-name args)]
+        (session/append-session-info! sess sanitized)
+        ;; pi: session_info_changed — extensions track the display name
+        (event-bus/emit-event!
+         {:type :session-info-changed
+          :session-file (:file sess)
+          :name sanitized})
+        (out ui :set-title)
+        (when-not (= args sanitized)
+          ;; pi: warn when normalization changed the input
+          (out ui :warning (str "Session name was normalized from " (pr-str args)
+                                " to " (pr-str sanitized))))
+        (out ui :info "Name" (str "Session name set: " sanitized)))
+
+      :else
+      (if-let [current (session/get-session-name sess)]
+        (out ui :info "Name" (str "Session name: " current))
+        (out ui :warning "Usage: /name <name>")))))
 
 (defn- handle-export
-  [{:keys [ui] :as ctx} args]
-  (let [engine (:runtime ctx)
-        sess (runtime/session engine)
+  [{:keys [ui] engine :runtime} args]
+  (let [sess (runtime/session engine)
         arg (session-export/parse-path-argument args)]
     (cond
       (nil? sess)
@@ -100,9 +101,8 @@
                                       (or (ex-message e) (str e)))))))))
 
 (defn- handle-compact
-  [{:keys [ui] :as ctx} args]
-  (let [engine (:runtime ctx)
-        agent-state (runtime/agent-state engine)
+  [{:keys [ui] engine :runtime} args]
+  (let [agent-state (runtime/agent-state engine)
         instructions (when (seq args) args)]
     (cond
       (runtime/turn-running? engine)

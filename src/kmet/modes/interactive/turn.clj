@@ -429,19 +429,18 @@
 (defn interactive-command-ui
   "The interactive command-UI value (ctx :ui): the shared capabilities the
    engine-portable builtins use — :message, :info (fn [label content]),
-   :warning, :status, :notify, :set-title — plus :state, the CoreState the
-   mode's own view-bound handlers read."
+   :warning, :status, :notify, :set-title (fn []) — plus :state, the
+   CoreState the mode's own view-bound handlers read."
   [cs]
-  {:state cs
-   :message (fn [s] (chat-history/chat-history-add-message! (:chat-history cs)
-                                                            {:role :assistant :content s}))
-   :info (fn [label content] (chat-history/chat-history-add-message!
-                              (:chat-history cs)
-                              {:role :info :label label :content content}))
-   :warning (fn [s] (chat-history/show-warning! (:chat-history cs) s))
-   :status (fn [s] (chat-history/chat-history-show-status! (:chat-history cs) s))
-   :notify (fn [s] (tui/tui-flash! (:tui cs) s))
-   :set-title (fn [] (state/update-terminal-title! cs))})
+  (let [chat (:chat-history cs)
+        tui (:tui cs)]
+    {:state cs
+     :message #(chat-history/chat-history-add-message! chat {:role :assistant :content %})
+     :info #(chat-history/chat-history-add-message! chat {:role :info :label %1 :content %2})
+     :warning #(chat-history/show-warning! chat %)
+     :status #(chat-history/chat-history-show-status! chat %)
+     :notify #(tui/tui-flash! tui %)
+     :set-title #(state/update-terminal-title! cs)}))
 
 (defn command-context
   "The slash-command handler context (engine.md §10.3): :runtime is the
