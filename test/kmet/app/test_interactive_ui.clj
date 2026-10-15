@@ -2374,9 +2374,14 @@
 ;; ─── Compaction queue (pi: queueCompactionMessage / flushCompactionQueue) ──
 
 (defn- compaction-cs
-  "A CoreState-like map for compaction-queue tests."
+  "A CoreState-like map for compaction-queue tests, with a runtime engine
+   sharing its session/turn/queue atoms."
   []
   (let [ag (agent/make-agent-state)
+        ag-atom (atom ag)
+        sess-atom (atom (session/create-session
+                         (str "target/test-compaction-queue-" (System/currentTimeMillis))))
+        engine (tu/test-engine {:agent-state ag-atom :session sess-atom})
         ch (chat-history/make-chat-history)
         ed (editor/make-editor)
         si (status-indicator/make-status-indicator :text "Working")
@@ -2385,12 +2390,13 @@
         ;; the standalone layer renders for these tests
         ced (atom ed)]
     {:tui {:render-requested? (atom false)}
-     :agent-state (atom ag)
+     :engine engine
+     :agent-state ag-atom
      :chat-history ch
      :editor ed
      :current-editor-atom ced
-     :compaction-queued (atom [])
-     :running-turn? (atom false)
+     :compaction-queued (:compaction-queued engine)
+     :running-turn? (:turn-running? engine)
      :bash-running? (atom false)
      :bash-signal (atom false)
      :status-indicator si
@@ -2399,8 +2405,7 @@
      :footer-comp nil
      :footer-provider nil
      :pending-messages-comp (pending-messages/make-pending-messages)
-     :session-atom (atom (session/create-session
-                          (str "target/test-compaction-queue-" (System/currentTimeMillis))))}))
+     :session-atom sess-atom}))
 
 (deftest test-bash-already-running-restores-the-command
   (testing "pi: a bash submit while another command runs warns and puts the

@@ -1,8 +1,10 @@
 (ns kmet.modes.interactive.turn
   "Turn lifecycle for the interactive mode: the agent event handlers,
-   the submit/cancel/queue paths, message submission, the compaction
-   queue, and the terminal-progress indicator (pi: session.prompt input
-   events, agent event handlers, flushCompactionQueue)."
+   the submit/cancel/queue paths, the compaction-queue display, and the
+   terminal-progress indicator (pi: session.prompt input events, agent
+   event handlers, flushCompactionQueue). The runtime owns the submission
+   chain and the compaction queue itself (kmet.app.session-runtime); this
+   namespace keeps the UI reactions."
   (:require [clojure.string :as str]
             [kmet.debug :as debug]
             [kmet.config :as cfg]
@@ -18,8 +20,6 @@
             [kmet.app.bash-executor :as bash-exec]
             [kmet.app.tools.bash :as bash-tool]
             [kmet.app.tools.util :as tools-util]
-            [kmet.app.skills :as skills]
-            [kmet.app.prompts :as prompts]
             [kmet.app.extensions :as extensions]
             [kmet.app.commands :as commands]
             [kmet.app.event-bus :as event-bus]
@@ -27,160 +27,10 @@
             [kmet.modes.interactive.state :as state]
             [kmet.modes.interactive.status :as status]))
 
-;; Forward references inside this namespace (the compaction delivery paths).
-(declare send-message submit-message apply-hooks heal-stale-scrollback-when-idle!)
+;; Forward reference inside this namespace (the turn teardown path).
+(declare heal-stale-scrollback-when-idle!)
 
 ;; ─── Compaction queue + turn progress ───────
-
-(defn- queue-compaction-message!
-  "Queue a message typed during compaction (pi: queueCompactionMessage —
-   non-extension input is queued for after compaction; extension commands
-   execute immediately and never reach here). The message displays in the
-   pending area and is flushed by the :compaction-end handler."
-  [cs text mode]
-  (swap! (:compaction-queued cs) conj {:text text :mode mode})
-  (status/update-pending-messages! cs)
-  (chat-history/chat-history-show-status!
-   (:chat-history cs) "Queued message for after compaction")
-  (tui/tui-request-render (:tui cs)))
-
-(defn- compaction-queued?
-  "True when the compaction queue holds any message."
-  [cs]
-  (seq @(:compaction-queued cs)))
-
-(defn- clear-compaction-queue!
-  "Drop all compaction-queued messages (pi: session switch clears the
-   compaction queue). Returns the dropped messages."
-  [cs]
-  (let [q @(:compaction-queued cs)]
-    (reset! (:compaction-queued cs) [])
-    q))
-
-(defn- split-command
-  "Split a slash-command line into [name args]. Non-command text returns
-   [nil nil]."
-  [text]
-  (when (str/starts-with? text "/")
-    (let [sp (str/index-of text " ")]
-      (if sp
-        [(subs text 1 sp) (subs text (inc sp))]
-        [(subs text 1) ""]))))
-
-(defn- extension-command?
-  "True when TEXT is a registered extension command (pi: isExtensionCommand)."
-  [text]
-  (some? (some-> (split-command text) first commands/find-command :extension-handler)))
-
-(defn- execute-extension-command!
-  "Run a registered extension command with the extension context (pi:
-   prompt() → _tryExecuteExtensionCommand → handler(args, ctx))."
-  [text]
-  (let [[name args] (split-command text)
-        c (commands/find-command name)]
-    ((:extension-handler c) (extensions/build-extension-context) (or args ""))))
-
-(defn- expand-compaction-text
-  "Expand a compaction-queued message's skill commands and prompt templates
-   (pi: steer/followUp expand skill+template before queueing; prompt applies
-   the full chain). Queued text is raw (pre-hook); the flush applies input
-   hooks first (idle path) and expansion here matches pi's steer/followUp
-   for the running-turn path."
-  [text]
-  (-> text
-      (skills/expand-skill-command)
-      (prompts/expand-prompt-template (prompts/get-prompt-templates))))
-
-(defn- deliver-compaction-message!
-  "Deliver one compaction-queued message: extension commands execute
-   immediately; otherwise the message queues into the running turn
-   (steer/follow-up per its mode, with skill/template expansion) or, when
-   idle, runs the full submit chain — input hooks, then expansion, then
-   the run with editor history — like a normal submit (pi:
-   flushCompactionQueue → session.prompt runs the input event +
-   skill/template expansion)."
-  [cs m]
-  (if (extension-command? (:text m))
-    (execute-extension-command! (:text m))
-    (if @(:running-turn? cs)
-      ;; running turn: expand skill/template and queue per mode (pi:
-      ;; steer/followUp expand; no input event)
-      (let [text (expand-compaction-text (:text m))]
-        (if (= :follow-up (:mode m))
-          (agent/follow-up! @(:agent-state cs) text)
-          (agent/steer! @(:agent-state cs) text)))
-      ;; idle: full submit chain — input hooks FIRST, then skill/template
-      ;; expansion, then the run (pi: flushCompactionQueue → prompt runs
-      ;; input event → expansion; editor history like any submit)
-      (when-let [text (apply-hooks cs (:text m))]
-        (tui/editor-add-to-history! @(:current-editor-atom cs) text)
-        (send-message cs (expand-compaction-text text))))))
-
-(defn- queue-compaction-message-into-turn!
-  "Queue one compaction-queued message into the (possibly not yet started)
-   run without ever starting a new one: extension commands execute
-   immediately, everything else goes to the steering/follow-up queue per
-   its mode with skill/template expansion (pi: flushCompactionQueue
-   willRetry — every message queues via steer/followUp, never a prompt)."
-  [cs m]
-  (if (extension-command? (:text m))
-    (execute-extension-command! (:text m))
-    (let [text (expand-compaction-text (:text m))]
-      (if (= :follow-up (:mode m))
-        (agent/follow-up! @(:agent-state cs) text)
-        (agent/steer! @(:agent-state cs) text)))))
-
-(defn flush-compaction-queue!
-  "Deliver messages queued during compaction (pi: flushCompactionQueue —
-   runs on every compaction_end). With WILL-RETRY (overflow compaction: the
-   interrupted turn continues), every message queues into the running turn
-   via steer/follow-up per its mode. Otherwise the first non-extension
-   message becomes a prompt (starts a run when idle), extension commands
-   execute immediately, and the rest queue per mode. A failure restoring the
-   queue re-queues the messages so they are not lost."
-  [cs will-retry]
-  (when (compaction-queued? cs)
-    (let [msgs (clear-compaction-queue! cs)
-          restore! (fn []
-                     ;; pi: restoreQueue — the session queue is cleared too,
-                     ;; so messages already delivered by the failed flush are
-                     ;; not delivered again when the queue is re-flushed
-                     (agent/clear-queues! @(:agent-state cs))
-                     (reset! (:compaction-queued cs) msgs)
-                     (status/update-pending-messages! cs))]
-      (try
-        (if will-retry
-          ;; Overflow compaction: the turn retries — queue everything into it
-          ;; (pi: flushCompactionQueue willRetry — steer/followUp only, never
-          ;; a fresh prompt)
-          (doseq [m msgs] (queue-compaction-message-into-turn! cs m))
-          ;; Normal completion: first non-extension message prompts, the
-          ;; rest queue per mode
-          (let [first-idx (first (keep-indexed
-                                  (fn [i m] (when-not (extension-command? (:text m)) i))
-                                  msgs))]
-            (if first-idx
-              (do
-                ;; extension commands before the first prompt execute now
-                (doseq [m (take first-idx msgs)]
-                  (execute-extension-command! (:text m)))
-                ;; the first message: prompt when idle, else queue per mode
-                (deliver-compaction-message! cs (nth msgs first-idx))
-                ;; remaining messages queue per mode — never a fresh prompt
-                ;; (pi: the rest go through steer/followUp)
-                (doseq [m (drop (inc first-idx) msgs)]
-                  (queue-compaction-message-into-turn! cs m)))
-              ;; all extension commands — execute them all
-              (doseq [m msgs] (execute-extension-command! (:text m))))))
-        (status/update-pending-messages! cs)
-        (catch Exception e
-          (restore!)
-          (chat-history/chat-history-show-status!
-           (:chat-history cs)
-           (str "Failed to send queued message"
-                (when (> (count msgs) 1) "s")
-                ": " (ex-message e)))
-          (debug/log "compaction queue flush failed: " e))))))
 
 (defn compaction-status-message
   "Pi: CompactionStatusIndicator label — reason-specific, with the cancel
@@ -478,13 +328,26 @@
   [cs]
   (tui/tui-request-render (:tui cs) true))
 
+(defn run-callbacks
+  "The run callbacks the interactive front end installs on every prompt
+   (start-agent-run! and the runtime's compaction-queue flush): streaming
+   text/thinking land in the chat, completion/errors run the turn
+   teardown."
+  [cs]
+  {:on-text #(on-agent-text cs %)
+   :on-thinking #(on-agent-thinking cs %)
+   :on-done (fn [_] (on-agent-done cs))
+   :on-error #(on-agent-error cs %)})
+
 (defn start-agent-run!
   "Start an agent run: set turn state, show the working indicator + animation
-   timer, wire the streaming callbacks. The user message and the assistant
-   streaming placeholder are created from the loop's :message-start events
-   (pi: message_start → addMessageToChat / new streaming component), so the
-   initial prompt and consumed steering/follow-up messages all land in the
-   chat at the same lifecycle point.
+   timer, install the streaming callbacks, and hand the prompt to the
+   runtime (which records the run so dispose! can cancel an exit while
+   streaming and wait for the terminal :agent-settled). The user message and
+   the assistant streaming placeholder are created from the loop's
+   :message-start events (pi: message_start → addMessageToChat / new
+   streaming component), so the initial prompt and consumed steering/
+   follow-up messages all land in the chat at the same lifecycle point.
    MESSAGE — optional initial user message; when nil the run continues on the
    existing context without adding a message (the /continue path, where the
    last entry is an unanswered user message or a dangling tool result the
@@ -495,41 +358,41 @@
   (status/start-anim-timer! cs)
   (state/update-footer! cs)
   (tui/tui-request-render (:tui cs))
-  (let [callbacks {:on-text #(on-agent-text cs %)
-                   :on-thinking #(on-agent-thinking cs %)
-                   :on-done (fn [_] (on-agent-done cs))
-                   :on-error #(on-agent-error cs %)}]
+  (let [callbacks (run-callbacks cs)]
     (if-let [engine (:engine cs)]
-      ;; the runtime records the run so dispose! can cancel an exit while
-      ;; streaming and wait for the terminal :agent-settled
       (runtime/prompt! engine (cond-> callbacks message (assoc :text message)))
       ;; test stubs build a CoreState without the runtime engine; the loop
       ;; knows the prompt text as :message
       (agent/run-agent-turn @(:agent-state cs)
                             (cond-> callbacks message (assoc :message message))))))
 
-(defn- send-message
-  "Send text to the agent: steer while streaming, else start a new turn.
-   Input hooks must already have been applied (pi: agent run happens after
-   hook/expansion processing). Returns nil."
-  [cs text]
-  (if @(:running-turn? cs)
-    ;; Agent running: steer the current run (pi: steeringQueue). The message
-    ;; is only queued (and shown in the pending display) — it lands in the
-    ;; chat as a user message when the loop consumes it (:message-start,
-    ;; pi: message_start → addMessageToChat). The in-flight response keeps
-    ;; streaming into its own message until then.
-    (do
-      (debug/log "user steered: " text)
-      (agent/steer! @(:agent-state cs) text)
-      (status/update-pending-messages! cs)
-      (state/update-footer! cs)
-      (tui/tui-request-render (:tui cs)))
-    (do
-      (debug/log "user submitted: " text)
-      (start-agent-run! cs text))))
-
-(declare command-line?)
+(defn- submit-through-runtime!
+  "Send TEXT through the runtime's submission chain (input hooks, skill/
+   template expansion, steer-or-start) and record what the front end did:
+   the submitted text lands in the active editor's history (pi:
+   editor.addToHistory on submit) and the pending display/footer refresh.
+   Returns the runtime's action keyword (:handled | :started | :steered |
+   :compaction-queued)."
+  [cs text opts]
+  (if-let [engine (:engine cs)]
+    (let [{:keys [action] submitted-text :text}
+          (runtime/submit! engine text (assoc opts :run-opts (run-callbacks cs)))]
+      (when (not= :handled action)
+        (tui/editor-add-to-history! @(:current-editor-atom cs) (or submitted-text text))
+        (status/update-pending-messages! cs)
+        (state/update-footer! cs)
+        (tui/tui-request-render (:tui cs)))
+      action)
+    ;; test stubs without an engine: hooks and expansion live in the runtime,
+    ;; so a bare submit steers or starts directly
+    (if @(:running-turn? cs)
+      (do (agent/steer! @(:agent-state cs) text)
+          (tui/editor-add-to-history! @(:current-editor-atom cs) text)
+          (status/update-pending-messages! cs)
+          :steered)
+      (do (tui/editor-add-to-history! @(:current-editor-atom cs) text)
+          (start-agent-run! cs text)
+          :started))))
 
 (defn expand-user-message-text
   "pi: prompt() expansion chain (sendUserMessage with
@@ -539,45 +402,24 @@
    only). Returns the expanded text, or nil when an extension command
    consumed the message."
   [cs text]
-  (let [trimmed (str/trim text)]
-    (if (and (str/starts-with? trimmed "/")
-             (command-line? trimmed))
-      (let [space (str/index-of trimmed " ")
-            cmd (if (nil? space) (subs trimmed 1) (subs trimmed 1 space))
-            args (if (nil? space) "" (str/trim (subs trimmed (inc space))))]
-        (if-let [c (commands/find-command cmd)]
-          (if-let [eh (:extension-handler c)]
-            (do (eh (extensions/build-extension-context) args)
-                (state/update-footer! cs)
-                nil ;; consumed — nothing to send
-                )
-            text) ;; builtin command — not dispatched here (pi parity)
-          (-> text
-              (skills/expand-skill-command)
-              (prompts/expand-prompt-template (prompts/get-prompt-templates)))))
-      text)))
+  (let [result (runtime/expand-user-message-text text)]
+    (when (and (nil? result) (:engine cs))
+      (state/update-footer! cs))
+    result))
 
-(defn- apply-hooks
-  "Run extension input hooks on text; returns the (possibly transformed)
-   text, or nil when a hook consumed the input (pi: session.prompt input
-   event)."
-  [cs text]
-  (let [input (extensions/apply-input-hooks text :interactive
-                                            {:streaming-behavior (when @(:running-turn? cs) :steer)})]
-    (if (= :handled (:action input))
-      (do (debug/log "input handled by extension: " text) nil)
-      (if (contains? input :text) (:text input) text))))
-
-(defn- submit-message
-  "Run input hooks on text, then send it to the agent (pi: session.prompt —
-   input event, then agent run). Records the submitted text in the editor
-   history so Up/Down can browse it (pi: editor.addToHistory on submit —
-   regular messages, steered messages, and follow-ups all land there).
-   Returns nil."
-  [cs text]
-  (when-let [text (apply-hooks cs text)]
-    (tui/editor-add-to-history! @(:current-editor-atom cs) text)
-    (send-message cs text)))
+(defn flush-compaction-queue!
+  "Deliver messages queued during compaction: the runtime owns the queue and
+   the delivery (steer/follow-up/prompt per message mode); a failed delivery
+   is reported as a transcript status line like before."
+  [cs will-retry]
+  (when-let [{:keys [error count]} (runtime/flush-compaction-queue!
+                                    (:engine cs) will-retry (run-callbacks cs))]
+    (chat-history/chat-history-show-status!
+     (:chat-history cs)
+     (str "Failed to send queued message"
+          (when (> count 1) "s")
+          ": " (ex-message error))))
+  (status/update-pending-messages! cs))
 
 (defn- command-line?
   "True when TRIMMED submit text is a single line. Slash and bang commands
@@ -587,6 +429,15 @@
    after the command name never dispatches)."
   [trimmed]
   (not (str/includes? trimmed "\n")))
+
+(defn- queue-compaction-message!
+  "Queue a message typed during compaction in the runtime's queue (the
+   front end display reads it back through runtime/compaction-queued)."
+  [cs text mode]
+  (if-let [engine (:engine cs)]
+    (runtime/queue-compaction-message! engine text mode)
+    (when-let [a (:compaction-queued cs)]
+      (swap! a conj {:text text :mode mode}))))
 
 (defn handle-submit [cs text]
   (let [trimmed (str/trim text)]
@@ -618,11 +469,7 @@
             (if @(:compacting? @(:agent-state cs))
               (do (tui/editor-add-to-history! @(:current-editor-atom cs) trimmed)
                   (queue-compaction-message! cs trimmed :steer))
-              (when-let [text (apply-hooks cs trimmed)]
-                (send-message cs
-                              (-> text
-                                  (skills/expand-skill-command)
-                                  (prompts/expand-prompt-template (prompts/get-prompt-templates))))))))
+              (submit-through-runtime! cs trimmed {:expand? true}))))
 
         ;; Bash command (! or !!) — single-line like slash commands
         (and (str/starts-with? trimmed "!")
@@ -657,7 +504,7 @@
         (if @(:compacting? @(:agent-state cs))
           (do (tui/editor-add-to-history! @(:current-editor-atom cs) trimmed)
               (queue-compaction-message! cs trimmed :steer))
-          (submit-message cs trimmed))))))
+          (submit-through-runtime! cs trimmed nil))))))
 
 (defn queue-follow-up-text!
   "Queue TEXT as a follow-up, exactly like Alt+Enter would with the text
@@ -674,8 +521,8 @@
     ;; → extension commands execute immediately via prompt(), everything
     ;; else queues as followUp).
     @(:compacting? @(:agent-state cs))
-    (if (extension-command? text)
-      (do (execute-extension-command! text) :executed)
+    (if (runtime/extension-command? text)
+      (do (runtime/execute-extension-command! text) :executed)
       (do (queue-compaction-message! cs text :follow-up) :compaction))
 
     @(:running-turn? cs)
@@ -683,7 +530,9 @@
     ;; settles). Not added to the chat here — like steering, it appears
     ;; as a user message when the loop consumes it (:message-start,
     ;; pi: message_start → addMessageToChat).
-    (do (agent/follow-up! @(:agent-state cs) text)
+    (do (if-let [engine (:engine cs)]
+          (runtime/follow-up! engine text)
+          (agent/follow-up! @(:agent-state cs) text))
         (status/update-pending-messages! cs)
         :queued)
 
@@ -709,16 +558,23 @@
    → clearAllQueues — the compaction queue is restored alongside the session
    queues). Returns the number of messages restored."
   [cs]
-  (let [{:keys [steering follow-up]} (agent/queued-messages @(:agent-state cs))
-        cq @(:compaction-queued cs)
+  (let [{:keys [steering follow-up]} (if-let [engine (:engine cs)]
+                                       (runtime/queues engine)
+                                       (agent/queued-messages @(:agent-state cs)))
+        cq (if-let [engine (:engine cs)]
+             (runtime/compaction-queued engine)
+             @(:compaction-queued cs))
         all (into (vec steering) (concat follow-up (map :text cq)))]
     (when (seq all)
       (let [ed @(:current-editor-atom cs)
             current (tui/editor-get-text ed)
             queued-text (str/join "\n\n" all)
             combined (str/join "\n\n" (remove str/blank? [queued-text current]))]
-        (agent/clear-queues! @(:agent-state cs))
-        (reset! (:compaction-queued cs) [])
+        (if-let [engine (:engine cs)]
+          (do (runtime/clear-queues! engine)
+              (runtime/clear-compaction-queue! engine))
+          (do (agent/clear-queues! @(:agent-state cs))
+              (reset! (:compaction-queued cs) [])))
         (tui/editor-set-text! ed combined)
         (status/update-pending-messages! cs)))
     (count all)))
@@ -772,7 +628,9 @@
     ;; cancel-turn clears the queues (they reach the chat only once the
     ;; loop consumes them, so cancel would otherwise lose them entirely).
         (let [restored (restore-queued-messages! cs)]
-          (agent/cancel-turn @(:agent-state cs))
+          (if-let [engine (:engine cs)]
+            (runtime/cancel! engine)
+            (agent/cancel-turn @(:agent-state cs)))
       ;; Remove empty streaming placeholder if present — by identity, so
       ;; an entry appended after it (steered/follow-up message, tool
       ;; execution) is never popped in its place

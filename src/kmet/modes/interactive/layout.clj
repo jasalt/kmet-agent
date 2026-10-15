@@ -400,9 +400,20 @@
       ;; the UI stuck on "Working" forever.
 
       :agent-start
-      ;; Pi: agent_start → setProgress(true) (showTerminalProgress gated)
+      ;; Pi: agent_start → setProgress(true) (showTerminalProgress gated).
+      ;; A run the runtime started on its own (the compaction-queue flush)
+      ;; has no start-agent-run! presentation pass: mark the turn and bring
+      ;; the spinner up like any other start.
       (when-let [cs @cs-ref]
-        (turn/set-terminal-progress! cs true))
+        (turn/set-terminal-progress! cs true)
+        (when (and (runtime/turn-running? (:engine cs))
+                   (not @(:running-turn? cs)))
+          (reset! (:running-turn? cs) true)
+          (when (nil? @(:anim-timer cs))
+            (status/start-anim-timer! cs))
+          (when-not (= :working (:kind @(:status-current cs)))
+            (status/activate-working-indicator! cs))
+          (state/update-footer! cs)))
       :message-update nil
       :message-end
       ;; A failed attempt finalizes empty when the stream delivered
@@ -571,8 +582,11 @@
                                   :status-root nil
                                   :pending-messages-comp pm
                                   :session-atom (:session engine)
-                                  :running-turn? (atom false)
-                                  :compaction-queued (atom [])
+                                  ;; the runtime owns the turn flag and the
+                                  ;; compaction queue; these legacy CoreState
+                                  ;; aliases share the engine's atoms
+                                  :running-turn? (:turn-running? engine)
+                                  :compaction-queued (:compaction-queued engine)
                                   :config config
                                   :pending-tool-comps pending-tool-comps
                                   :bash-running? (atom false)
