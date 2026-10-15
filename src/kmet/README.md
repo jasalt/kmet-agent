@@ -74,7 +74,8 @@ src/kmet/
 │   │                     loop_guard.clj — repeat-loop guard; session.clj — EDNL sessions
 │   ├── session_runtime.clj — the session runtime front ends drive:
 │   │                     bootstrap (agent state, system prompt, run
-│   │                     options, extension binding), session lifecycle
+│   │                     options, extension binding + runtime
+│   │                     capabilities), session lifecycle
 │   │                     (new/resume/fork/clone/switch), the submission
 │   │                     chain and compaction queue, prompts/queues,
 │   │                     subscribers, UI requests (request-ui!/respond!),

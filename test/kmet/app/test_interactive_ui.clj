@@ -77,6 +77,13 @@
   (extensions/set-entry-sink! nil)
   (extensions/unbind-extensions!))
 
+(defn- install-runtime-capabilities!
+  "Install the runtime-owned extension capabilities for CS's test engine
+   (bootstrap does this in production)."
+  [cs]
+  (extensions/bind-runtime-capabilities!
+   (runtime/runtime-capabilities (:engine cs))))
+
 (def ^:private no-image-caps
   "Capabilities stub for the /settings tests: the image rows (Show images /
   Image width) exist only when the terminal reports image support
@@ -1693,22 +1700,19 @@
                                    :running-turn? (atom true)})]
       (with-redefs [m/providers-atom (atom {:test-native {:models [model]}})]
         (try
-          (let [registry ((var ui-registry/build-extension-ui-registry)
-                          {:tui nil :cs cs}
-                          {:fdp (:footer-provider cs)}
-                          nil)
-                started (atom 0)]
-            (with-redefs [turn/start-agent-run! (fn [& _] (swap! started inc))]
+          (install-runtime-capabilities! cs)
+          (let [started (atom 0)]
+            (with-redefs [runtime/prompt! (fn [& _] (swap! started inc))]
               (t/is (= :idle @(:status ag)) "the attempt already reported idle")
-              ((:send-user-message registry) "queued" {:deliver-as :follow-up})
+              (extensions/send-user-message "queued" {:deliver-as :follow-up})
               (t/is (= ["queued"] @(:follow-up ag))
                     "queued for the running prompt")
               (t/is (= 0 @started) "no concurrent prompt")
-              ((:send-user-message registry) "steered" {:deliver-as :steer})
+              (extensions/send-user-message "steered" {:deliver-as :steer})
               (t/is (= ["steered"] @(:steering ag)))
               (let [before (count @(:follow-up ag))]
-                ((:send-message! registry) {:custom-type :note :content "custom"}
-                                           {:trigger-turn true :deliver-as :follow-up})
+                (extensions/send-message! {:custom-type :note :content "custom"}
+                                          {:trigger-turn true :deliver-as :follow-up})
                 (t/is (= (inc before) (count @(:follow-up ag)))
                       "a custom message queues as one message-map entry")
                 (t/is (map? (last @(:follow-up ag)))))
@@ -1716,14 +1720,14 @@
               (testing "with no prompt in flight a send starts the run"
                 (let [queued-before (vec @(:follow-up ag))]
                   (reset! (:turn-running? (:engine cs)) false)
-                  ((:send-user-message registry) "fresh" {:deliver-as :follow-up})
+                  (extensions/send-user-message "fresh" {:deliver-as :follow-up})
                   (t/is (= 1 @started) "idle send starts the run")
                   (t/is (= queued-before @(:follow-up ag))
                         "nothing was queued for the idle send")
                   ;; idle + :steer starts a run too — :steer only means "into
                   ;; the current run" while one is active
                   (let [steered-before (vec @(:steering ag))]
-                    ((:send-user-message registry) "fresh steer" {:deliver-as :steer})
+                    (extensions/send-user-message "fresh steer" {:deliver-as :steer})
                     (t/is (= 2 @started) "idle :steer starts the run")
                     (t/is (= steered-before @(:steering ag))
                           "nothing was steered with no run active"))))))
@@ -1752,15 +1756,12 @@
                                   (session/get-branch sess))
           custom-context #(filter (fn [m] (= :custom (:role m))) @(:messages ag))]
       (try
-        (let [registry ((var ui-registry/build-extension-ui-registry)
-                        {:tui nil :cs cs}
-                        {:fdp (:footer-provider cs)}
-                        nil)
-              send (fn
-                     ([m] ((:send-message! registry) m))
-                     ([m o] ((:send-message! registry) m o)))
+        (install-runtime-capabilities! cs)
+        (let [send (fn
+                     ([m] (extensions/send-message! m))
+                     ([m o] (extensions/send-message! m o)))
               started (atom 0)]
-          (with-redefs [turn/start-agent-run! (fn [& _] (swap! started inc))]
+          (with-redefs [runtime/prompt! (fn [& _] (swap! started inc))]
             (testing "idle, no trigger: appended now, no run"
               (send {:custom-type :note :content "idle"})
               (t/is (= 1 (count (custom-entries))) "persisted")
@@ -1883,7 +1884,7 @@
           (clear-installed-context!))))))
 
 (deftest test-set-model-capability
-  (testing "the registry :set-model capability follows the Model record"
+  (testing "the runtime :set-model capability follows the Model record"
     (let [old (m/map->Model {:provider :test-native :id "old"})
           model (m/map->Model {:provider :test-adapter :id "test-model"})
           ag (agent/make-agent-state :provider :test-native :model "old")
@@ -1894,21 +1895,15 @@
       (with-redefs [m/providers-atom (atom {:test-native {:models [old]}
                                             :test-adapter {:models [model]}})
                     m/has-configured-auth (fn [_] @auth?)
-                    model-selector/sync-footer-model! (fn [_] nil)
-                    state/update-editor-border-color! (fn [& _] nil)
-                    cfg/set-default-model! (fn [& _] nil)
-                    tui/tui-request-render (fn [& _] nil)]
+                    cfg/set-default-model! (fn [& _] nil)]
         (try
-          (let [registry ((var ui-registry/build-extension-ui-registry)
-                          {:tui nil :cs cs}
-                          {:fdp (fdp/make-footer-data-provider)}
-                          nil)]
-            (t/is (true? ((:set-model registry) model)))
-            (t/is (= :test-adapter @(:provider ag)) "the provider follows the record")
-            (t/is (= "test-model" @(:model ag)))
-            (reset! auth? false)
-            (t/is (false? ((:set-model registry) model)) "no configured auth → false")
-            (t/is (= "test-model" @(:model ag)) "state unchanged"))
+          (install-runtime-capabilities! cs)
+          (t/is (true? (extensions/set-model model)))
+          (t/is (= :test-adapter @(:provider ag)) "the provider follows the record")
+          (t/is (= "test-model" @(:model ag)))
+          (reset! auth? false)
+          (t/is (false? (extensions/set-model model)) "no configured auth → false")
+          (t/is (= "test-model" @(:model ag)) "state unchanged")
           (finally
             (clear-installed-context!)))))))
 

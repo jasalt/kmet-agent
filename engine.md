@@ -636,6 +636,20 @@ binding, so a front end's `:build-context` cannot drift the kind. Covered by
 `test/kmet/app/test_ui_port.clj`; `extension.md` documents the degraded set
 and the request protocol.
 
+**Runtime capabilities (pi: bindCore).** The agent-control half of the
+capability map moved to the runtime: `bind-runtime-capabilities!` installs
+`set-model`, `get/set-thinking-level`, `send-user-message`,
+`send-message!`, `get/set-active-tools` from
+`session-runtime/runtime-capabilities` at `bootstrap` and clears them at
+`dispose!`. The extension api dispatches those through
+`extensions/runtime-call`, so they work headless (print/json) instead of
+silently no-oping; `register-shortcut!` stays front-end-only. The
+interactive registry dropped its copies — footer/editor-border view
+updates ride the `:model-select`/`:thinking-level-select` events, and
+runtime-started runs present through `set-run-callbacks!` (the TUI installs
+`turn/run-callbacks`, so an extension send streams and tears down like an
+editor submission).
+
 **Still open in this step**: the command-ctx migration — handlers receiving
 `{:runtime :ui :frontend}` with the legacy CoreState keys deleted and the
 engine-portable implementations moved into `kmet.app.*` homes (§10.3). The

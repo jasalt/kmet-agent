@@ -172,9 +172,9 @@
 (defonce ^:private flags (atom {}))
 (defonce ^:private cli-flags (atom {}))
 (def ^:private headless-binding
-  "The surface of a front end with no UI: pi's default mode (:print) and
-   no capabilities (every ui-call is inert)."
-  {:mode :print :has-ui false :ui {}})
+  "The surface of a front end with no UI: pi's default mode (:print), no
+   capabilities (every ui-call is inert) and no runtime capabilities."
+  {:mode :print :has-ui false :ui {} :runtime {}})
 (defonce ^:private extension-binding (atom headless-binding))
 (defonce ^:private session-atom (atom nil))
 (defonce ^:private context-sink-atom (atom nil))
@@ -391,13 +391,14 @@
    MODE is the front-end kind (:interactive | :print | :json | :gui |
    :rpc), :has-ui tells extensions whether a UI port is available
    (ctx.has-ui), and :ui is the capability map (nil/absent = a portless
-   front end; ui-call stays inert). A bind replaces the whole surface —
-   absent keys fall back to the headless defaults, not to the previous
-   binding; use set-ui-registry! for a port-only swap. Returns nil."
+   front end; ui-call stays inert). A bind replaces the whole front-end
+   surface — absent keys fall back to the headless defaults, not to the
+   previous binding; runtime capabilities (bind-runtime-capabilities!) are
+   left alone. Use set-ui-registry! for a port-only swap. Returns nil."
   [{:keys [mode has-ui ui]}]
-  (reset! extension-binding {:mode (or mode :print)
-                             :has-ui (boolean has-ui)
-                             :ui (or ui {})})
+  (swap! extension-binding merge {:mode (or mode :print)
+                                  :has-ui (boolean has-ui)
+                                  :ui (or ui {})})
   nil)
 
 (defn unbind-extensions!
@@ -441,6 +442,36 @@
    the front end has not installed the capability (headless/print)."
   [capability & args]
   (when-let [f (ui-capability capability)]
+    (apply f args)))
+
+;; ─── Runtime capabilities (pi: bindCore) ───────────────────────────────────
+;;
+;; Agent control the runtime owns for every front end — the runtime installs
+;; it at bootstrap (session-runtime/runtime-capabilities) and clears it at
+;; dispose!; the front end's UI port is a separate binding above. These are
+;; the capabilities that must work headless: an extension sends a message or
+;; switches the model in print/json mode just as in the TUI.
+
+(defn bind-runtime-capabilities!
+  "Install the runtime-owned extension capabilities (pi: bindCore):
+   :set-model, :get-thinking-level, :set-thinking-level,
+   :send-user-message, :send-message!, :get-active-tools,
+   :set-active-tools. Returns nil."
+  [capabilities]
+  (swap! extension-binding assoc :runtime (or capabilities {}))
+  nil)
+
+(defn runtime-capability
+  "The runtime capability fn for CAPABILITY, or nil when the runtime has
+   not installed it."
+  [capability]
+  (get (:runtime @extension-binding) capability))
+
+(defn runtime-call
+  "Dispatch a runtime-owned capability call. Nil when the runtime has not
+   installed CAPABILITY (bare test/library use without an engine)."
+  [capability & args]
+  (when-let [f (runtime-capability capability)]
     (apply f args)))
 
 ;; ─── UI requests (the port's async answer protocol, engine.md §4.5) ──────
@@ -578,11 +609,11 @@
 (defn ui-set-tool-display-mode [mode] (ui-call :set-tool-display-mode mode))
 (defn ui-reset! [] (ui-call :reset))
 
-;; ─── Agent control (dispatches through the ui registry; extension api) ───
+;; ─── Agent control (dispatches through the runtime capabilities; api) ──────
 
-(defn set-model [model] (ui-call :set-model model))
-(defn get-thinking-level [] (ui-call :get-thinking-level))
-(defn set-thinking-level [level] (ui-call :set-thinking-level level) nil)
+(defn set-model [model] (runtime-call :set-model model))
+(defn get-thinking-level [] (runtime-call :get-thinking-level))
+(defn set-thinking-level [level] (runtime-call :set-thinking-level level) nil)
 (defn send-user-message
   "Extension api: send-user-message (pi: sendUserMessage) — send text to
    the agent. OPTIONS: {:deliver-as :steer | :follow-up (queue while
@@ -591,8 +622,8 @@
    consume the message, then skill commands and prompt templates expand;
    kmet defaults to no expansion)."
   [text & [{:keys [deliver-as expand-prompt-templates?]}]]
-  (ui-call :send-user-message text {:deliver-as deliver-as
-                                    :expand-prompt-templates? expand-prompt-templates?})
+  (runtime-call :send-user-message text {:deliver-as deliver-as
+                                         :expand-prompt-templates? expand-prompt-templates?})
   nil)
 
 (declare append-custom-message!)
@@ -609,19 +640,20 @@
    defers it to the end of the turn, so it cannot land between a tool call
    and its result. While idle, :trigger-turn starts a run with the message
    as its prompt; without it the message is appended without running.
-   Headless (no UI registry): persists + injects via the sinks, without
-   queueing. Returns nil."
+   Headless (no runtime capabilities): persists + injects via the sinks,
+   without queueing. Returns nil."
   [message & [opts]]
-  (if (nil? (ui-call :send-message! message opts))
-    ;; headless fallback: persist + inject through the sinks
+  (if (nil? (runtime-call :send-message! message opts))
+    ;; no runtime capability (bare library/test use): persist + inject
+    ;; through the sinks
     (append-custom-message! (or (:custom-type message) :custom)
                             (:content message)
                             (if (nil? (:display message)) true (:display message))
                             (:details message))
     nil)
   nil)
-(defn get-active-tools [] (ui-call :get-active-tools))
-(defn set-active-tools [names] (ui-call :set-active-tools names) nil)
+(defn get-active-tools [] (runtime-call :get-active-tools))
+(defn set-active-tools [names] (runtime-call :set-active-tools names) nil)
 
 ;; ─── Model / session facades (extension api: models / session) ───────────
 

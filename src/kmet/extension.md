@@ -1041,6 +1041,12 @@ chain first — extension commands execute immediately (consuming the
 message), then skill commands and prompt templates expand (pi:
 expandPromptTemplates; kmet defaults to no expansion).
 
+Agent control is **runtime-bound** (pi: `bindCore` actions): the session
+runtime installs it at bootstrap, so it works in every front end —
+including headless print/json mode — and not only inside the interactive
+TUI. The UI capabilities below are the opposite: the front end owns and
+installs them, and they are inert headless.
+
 ### UI
 
 The `:ui` capability map dispatches through the **front-end binding**: one

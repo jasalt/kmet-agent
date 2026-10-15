@@ -46,9 +46,12 @@
    everything the extension registered. Registration calls therefore return
    deregister fns where meaningful (e.g. on-event).
 
-   All api fns are safe to call at any time — the ui/agent-control ones
-   dispatch through a runtime registry and are inert before the interactive
-   layout exists (and in headless/print mode).")
+   All api fns are safe to call at any time. Agent control (send-message!,
+   send-user-message, set-model, thinking level, active tools) dispatches
+   through the runtime capabilities, so it works in every front end —
+   including headless print/json mode. The ui capabilities dispatch through
+   the front-end port and are inert before the interactive layout exists
+   (and in headless mode).")
 
 ;; ─── API key docs ─────────────────────────────────────────────────────────
 ;; The api map passed to init/shutdown carries:
@@ -73,6 +76,8 @@
 ;;     tree; removed automatically on unload
 ;;   :register-skill! :register-prompt!                 — bundled resources
 ;;   :set-model :get-thinking-level :set-thinking-level :send-user-message
+;;     (runtime-bound: owned by the session runtime, work in every front
+;;     end including headless print/json; see bind-runtime-capabilities!)
 ;;   :exec
 ;;   :ui      — map of UI capabilities — only host-owned bridges: :custom
 ;;              (mount extension-built components; pi: ctx.ui.custom),

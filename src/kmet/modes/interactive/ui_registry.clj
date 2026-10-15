@@ -35,7 +35,6 @@
             [kmet.app.ui.footer :as footer]
             [kmet.app.ui.footer-data-provider :as fdp]
             [kmet.app.ui.loaded-resources :as loaded-resources]
-            [kmet.app.ui.model-selector :refer [sync-footer-model!]]
             [kmet.app.ui.status-indicator :as status-indicator]
             [kmet.modes.interactive.commands :as builtins]
             [kmet.modes.interactive.session-admin :as session-admin]
@@ -486,129 +485,6 @@
                                  (fn []
                                    (tui-kb/unregister-definition! kmgr key-id)
                                    (editor/editor-set-priority-action! ed key-id nil))))
-         ;; Agent control (pi: ctx.setModel / getThinkingLevel /
-         ;; setThinkingLevel / sendUserMessage / getActiveTools /
-         ;; setActiveTools)
-         :set-model (fn [model]
-                      (if (and model (models/has-configured-auth model))
-                        (let [ag (runtime/agent-state (:engine cs))
-                              old-model (models/get-model @(:provider ag) @(:model ag))]
-                          (agent/set-model! ag model)
-                          (let [new-thinking (agent/switch-thinking-level old-model model @(:thinking ag) nil)]
-                            (agent/set-thinking-level! ag new-thinking)
-                            (cfg/set-default-model! (:provider model) (:id model))
-                            (sync-footer-model! cs)
-                            (state/update-editor-border-color! cs new-thinking)
-                            (tui/tui-request-render (:tui cs)))
-                          true)
-                        false))
-         :set-thinking-level (fn [level]
-                               (when (contains? #{:off :minimal :low :medium
-                                                  :high :xhigh :max} level)
-                                 (agent/set-thinking-level! (runtime/agent-state (:engine cs)) level)
-                                 (sync-footer-model! cs)
-                                 (state/update-editor-border-color! cs level)
-                                 (tui/tui-request-render (:tui cs)))
-                               nil)
-         :get-thinking-level (fn []
-                               @(:thinking (runtime/agent-state (:engine cs))))
-         :send-user-message (fn [text & [{:keys [deliver-as expand-prompt-templates?]}]]
-                              (let [ag (runtime/agent-state (:engine cs))
-                                    ;; pi: prompt() throws while compaction is
-                                    ;; in progress — extension messages cannot
-                                    ;; queue into the UI compaction queue.
-                                    _ (when @(:compacting? ag)
-                                        (throw (ex-info "Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry."
-                                                        {:type :compaction-in-progress})))
-                                    ;; pi: prompt() with expandPromptTemplates —
-                                    ;; extension commands execute immediately
-                                    ;; (consuming the message), then skill
-                                    ;; commands + prompt templates expand.
-                                    ;; kmet defaults to NO expansion (the
-                                    ;; existing behavior); opt in explicitly.
-                                    text (if expand-prompt-templates?
-                                           (turn/expand-user-message-text cs text)
-                                           text)]
-                                (when text
-                                  ;; pi: prompt() queues while streaming —
-                                  ;; streamingBehavior steer/followUp; the run
-                                  ;; counts as active until the prompt settles,
-                                  ;; so an :agent-end handler that sends here
-                                  ;; extends the prompt instead of starting a
-                                  ;; concurrent one
-                                  (cond
-                                    (not (state/turn-running? cs))
-                                    ;; pi: sendUserMessage always triggers a
-                                    ;; turn when idle
-                                    (turn/start-agent-run! cs text)
-
-                                    (= :steer deliver-as)
-                                    (runtime/steer! (:engine cs) text)
-
-                                    :else
-                                    (runtime/follow-up! (:engine cs) text)))
-                                ;; both updates schedule their own frames
-                                (status/update-pending-messages! cs)
-                                (state/update-footer! cs)
-                                nil))
-         ;; pi: sendCustomMessage — a custom message: persisted as a
-         ;; custom_message session entry (sent to the LLM as a user message;
-         ;; rendered when :display) and optionally triggering a turn. The
-         ;; branches mirror pi's: :next-turn never triggers (it rides the next
-         ;; prompt), a streaming send queues into the run or, without
-         ;; :trigger-turn, defers to the end of the turn so it cannot land
-         ;; between a tool call and its result, and an idle send appends now —
-         ;; starting a run when :trigger-turn is set.
-         :send-message! (fn [message & [opts]]
-                          (let [ag (runtime/agent-state (:engine cs))
-                                ;; pi: sendMessage → prompt — custom messages
-                                ;; cannot be submitted while compaction is in
-                                ;; progress (the compaction queue is UI-only).
-                                _ (when @(:compacting? ag)
-                                    (throw (ex-info "Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry."
-                                                    {:type :compaction-in-progress})))
-                                custom-type (or (:custom-type message) :custom)
-                                display (if (nil? (:display message)) true (:display message))
-                                msg {:role :custom
-                                     :custom-type custom-type
-                                     :content (:content message)
-                                     :display display
-                                     :details (:details message)}
-                                busy? (state/turn-running? cs)]
-                            (cond
-                              (= :next-turn (:deliver-as opts))
-                              (agent/queue-next-turn-message! ag msg)
-
-                              (and busy? (not (false? (:trigger-turn opts))))
-                              (if (= :follow-up (:deliver-as opts))
-                                (runtime/follow-up! (:engine cs) msg)
-                                (runtime/steer! (:engine cs) msg))
-
-                              (:trigger-turn opts)
-                              (do (agent/append-custom-message! ag msg)
-                                  (turn/start-agent-run! cs))
-
-                              busy?
-                              (agent/defer-custom-message! ag msg)
-
-                              :else
-                              (agent/append-custom-message! ag msg))
-                            ;; both updates schedule their own frames
-                            (status/update-pending-messages! cs)
-                            (state/update-footer! cs)
-                            true))
-         :get-active-tools (fn []
-                             ;; the effective active set, not the raw
-                             ;; :enabled-tools filter (nil would read as
-                             ;; "every tool" and hide a :default-tools
-                             ;; selection from extensions; pi: getActiveTools
-                             ;; returns the active names)
-                             (mapv :name (agent/active-tools (runtime/agent-state (:engine cs)))))
-         :set-active-tools (fn [names]
-                             ;; agent state only — no display depends on
-                             ;; this synchronously
-                             (agent/set-active-tools! (runtime/agent-state (:engine cs)) names)
-                             nil)
          ;; Extension context (pi: ExtensionContext) — captures the live
          ;; layout/agent state per call; the headless default in
          ;; extensions.clj covers everything else (mode/has-ui/…)

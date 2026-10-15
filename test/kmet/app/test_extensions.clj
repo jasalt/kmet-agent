@@ -1101,6 +1101,9 @@
 
 (t/deftest test-send-message-headless
   (testing "headless send-message! persists a custom message to the live session"
+    ;; no runtime capabilities bound: the sink fallback is the runtime-less
+    ;; path (kmet.app.test-ui-port covers the engine-backed path)
+    (extensions/unbind-extensions!)
     (let [dir (str "target/test-ext-send-" (System/currentTimeMillis))
           sess (session/create-session dir)]
       (extensions/set-session! sess)

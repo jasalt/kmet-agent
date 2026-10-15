@@ -47,9 +47,9 @@
             [kmet.app.tools.core :as tools]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
-                   cwd turn-running? compaction-queued pending-ui])
+                   cwd turn-running? compaction-queued pending-ui run-callbacks])
 
-(declare cancel! turn-running?)
+(declare cancel! turn-running? runtime-capabilities)
 
 (defn agent-state
   "The live AgentState record. The engine holds it in an atom because a
@@ -232,7 +232,8 @@
                              :cwd (atom runtime-cwd)
                              :turn-running? (atom false)
                              :compaction-queued (atom [])
-                             :pending-ui (atom {})})]
+                             :pending-ui (atom {})
+                             :run-callbacks (atom nil)})]
     ;; Runtime-scoped extension handle: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent. The
     ;; front-end binding is runtime-scoped too (engine.md §4.5): bootstrap
@@ -244,6 +245,7 @@
      {:mode mode
       :has-ui has-ui
       :ui (or ui-context (default-ui-port engine))})
+    (extensions/bind-runtime-capabilities! (runtime-capabilities engine))
     engine))
 
 (defn session
@@ -590,14 +592,26 @@
     (swap! (:subscribers engine) (fn [subs] (filterv #(not (identical? % f)) subs)))
     nil))
 
+(defn set-run-callbacks!
+  "Install the front end's default run presentation callbacks (:on-text,
+   :on-thinking, :on-done, :on-error — see prompt!). A run the runtime
+   starts on its own (an extension send) presents through them; a headless
+   front end installs none. Call-site opts win over the defaults."
+  [engine callbacks]
+  (when-let [a (:run-callbacks engine)]
+    (reset! a callbacks))
+  nil)
+
 (defn prompt!
   "Start a prompt and return nil immediately — completion is observed as
    :agent-settled. TEXT is the initial user message (nil/absent continues on
    the existing context); :images attaches image blocks. :on-text,
-   :on-thinking, :on-done and :on-error are run-agent-turn's callbacks,
-   with the turn flag (turn-running?) managed around them."
+   :on-thinking, :on-done and :on-error are run-agent-turn's callbacks —
+   the front end's defaults (set-run-callbacks!) merged under OPTS — with
+   the turn flag (turn-running?) managed around them."
   [engine opts]
-  (let [on-done (:on-done opts)
+  (let [opts (merge (some-> (:run-callbacks engine) deref) opts)
+        on-done (:on-done opts)
         on-error (:on-error opts)
         clear! #(reset! (:turn-running? engine) false)]
     (reset! (:turn-running? engine) true)
@@ -882,6 +896,91 @@
 (defn set-scoped-models! [engine models]
   (agent/set-scoped-models! (agent-state engine) models))
 
+;; ─── Runtime-owned extension capabilities (pi: bindCore) ───────────────────
+
+(defn- set-model-capability
+  "pi: ctx.setModel — auth-gated, with the position-preserving thinking
+   switch and the settings default persisted (the front-end view rides the
+   :model-select / :thinking-level-select events). Returns true when the
+   model was applied, false when it has no configured auth."
+  [engine model]
+  (if (and model (models/has-configured-auth model))
+    (let [ag (agent-state engine)
+          old-model (models/get-model @(:provider ag) @(:model ag))]
+      (agent/set-model! ag model)
+      (agent/set-thinking-level! ag (agent/switch-thinking-level old-model model @(:thinking ag) nil))
+      (cfg/set-default-model! (:provider model) (:id model))
+      true)
+    false))
+
+(defn- send-user-message-capability
+  "pi: ctx.sendUserMessage — the message steers the running turn or starts
+   one, after the optional expansion chain. An extension message cannot
+   queue into a compaction (pi: prompt() throws)."
+  [engine text {:keys [deliver-as expand-prompt-templates?]}]
+  (when @(:compacting? (agent-state engine))
+    (throw (ex-info "Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry."
+                    {:type :compaction-in-progress})))
+  (let [text (if expand-prompt-templates? (expand-user-message-text text) text)]
+    (when text
+      (cond
+        (not (turn-running? engine)) (prompt! engine {:text text})
+        (= :steer deliver-as) (steer! engine text)
+        :else (follow-up! engine text))))
+  nil)
+
+(defn- send-message-capability
+  "pi: ctx.sendCustomMessage — a custom message follows the deliver-as /
+   trigger-turn branches (see the extension api docs) and never queues
+   into a compaction."
+  [engine message {:keys [deliver-as trigger-turn]}]
+  (let [ag (agent-state engine)]
+    (when @(:compacting? ag)
+      (throw (ex-info "Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry."
+                      {:type :compaction-in-progress})))
+    (let [msg {:role :custom
+               :custom-type (or (:custom-type message) :custom)
+               :content (:content message)
+               :display (if (nil? (:display message)) true (:display message))
+               :details (:details message)}
+          busy? (turn-running? engine)]
+      (cond
+        ;; next-turn never triggers: it rides the next prompt
+        (= :next-turn deliver-as) (agent/queue-next-turn-message! ag msg)
+
+        ;; streaming with a trigger: into the run (steer is the default)
+        (and busy? (not (false? trigger-turn)))
+        (if (= :follow-up deliver-as)
+          (follow-up! engine msg)
+          (steer! engine msg))
+
+        ;; idle with a trigger: append now, then run on the new context
+        trigger-turn (do (agent/append-custom-message! ag msg)
+                         (prompt! engine {}))
+
+        ;; streaming without a trigger: defer to the turn-end flush
+        busy? (agent/defer-custom-message! ag msg)
+
+        ;; idle without a trigger: append only
+        :else (agent/append-custom-message! ag msg)))
+    true))
+
+(defn runtime-capabilities
+  "The runtime-owned extension capabilities (pi: bindCore): agent control
+   every front end shares, independent of the UI port — model/thinking,
+   sending messages, the active tool set. bootstrap installs them;
+   extensions dispatch through extensions/runtime-call."
+  [engine]
+  {:set-model #(set-model-capability engine %)
+   :get-thinking-level #(deref (:thinking (agent-state engine)))
+   :set-thinking-level #(do (when (shared/valid-thinking-level? %)
+                              (agent/set-thinking-level! (agent-state engine) %))
+                            nil)
+   :send-user-message #(send-user-message-capability engine %1 %2)
+   :send-message! #(send-message-capability engine %1 %2)
+   :get-active-tools #(mapv :name (agent/active-tools (agent-state engine)))
+   :set-active-tools #(do (agent/set-active-tools! (agent-state engine) %) nil)})
+
 (defn dispose!
   "Release the engine: cancel an in-flight run or compaction, wait (bounded,
    2s) for a run to settle so the terminal :agent-settled reaches the
@@ -899,6 +998,7 @@
           (deref run 2000 nil))))
     (reset! (:subscribers engine) [])
     (reset! (:turn-running? engine) false)
+    (some-> (:run-callbacks engine) (reset! nil))
     ;; no front end is listening after dispose: a waiting extension dialog
     ;; must not park the shutting-down process. Each request resolves with
     ;; its degraded default (pi: abort resolves a dialog with its default)

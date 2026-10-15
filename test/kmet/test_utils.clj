@@ -24,7 +24,8 @@
                           (atom (or cwd (str (fs/cwd)))))
                    :turn-running? (or turn-running? (atom false))
                    :compaction-queued (or compaction-queued (atom []))
-                   :pending-ui (atom {})}))
+                   :pending-ui (atom {})
+                   :run-callbacks (atom nil)}))
 
 (defn with-test-engine
   "Add a test engine to a CoreState-like map, reusing the map's legacy

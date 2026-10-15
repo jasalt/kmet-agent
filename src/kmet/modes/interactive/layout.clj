@@ -432,8 +432,18 @@
       :session-compact nil
       :session-before-compact nil
       :error nil
-      :model-select nil
-      :thinking-level-select nil
+      :model-select
+      ;; The runtime owns model switching (extension set-model, cycling,
+      ;; compaction overrides); the footer and the editor border follow the
+      ;; event. /model and the selector sync on their own path too —
+      ;; sync-footer-model! is idempotent.
+      (when-let [cs @cs-ref]
+        (state/update-editor-border-color! cs @(:thinking (runtime/agent-state (:engine cs))))
+        (sync-footer-model! cs))
+      :thinking-level-select
+      (when-let [cs @cs-ref]
+        (state/update-editor-border-color! cs (:level evt))
+        (sync-footer-model! cs))
       ;; Trailing default expression (SCI's case rejects the :default keyword)
       nil)))
 
@@ -897,6 +907,13 @@
                           (make-agent-event-handler
                            {:chat-history ch :tui t :cs-ref cs-ref
                             :pending-tool-comps pending-tool-comps}))
+
+      ;; The front end's default run presentation (streaming text/thinking,
+      ;; the done/error teardown) for any run the runtime starts on its own
+      ;; — an extension send-user-message/send-message!, the compaction
+      ;; flush — so those runs present like the editor's start-agent-run!
+      ;; path instead of streaming invisibly.
+      (runtime/set-run-callbacks! engine (turn/run-callbacks cs))
 
       ;; Restore a --continue session into the chat history AND the agent
       ;; context (pi: renderInitialMessages from buildContextEntries) — the
