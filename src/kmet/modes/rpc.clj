@@ -71,24 +71,55 @@
       (skills/expand-skill-command)
       (prompts/expand-prompt-template (prompts/get-prompt-templates))))
 
+(defn- reject-queue-images!
+  "Image attachments cannot ride the steering/follow-up queues yet (they
+   carry plain text or custom-message maps). Reject rather than drop them."
+  [command verb]
+  (when (:images command)
+    (throw (ex-info (str (name verb) " does not support :images yet")
+                    {:type :unsupported}))))
+
 ;; ─── Commands ──────────────────────────────────────────────────────────────
 
 (defn- command-prompt
-  "Start, steer, or handle a prompt (pi: prompt). The response reports the
-   disposition — accepted is not completed; the client waits for
-   :agent-settled."
+  "Start, steer, queue, or handle a prompt (pi: prompt). While a run is
+   active the client must choose the :streaming-behavior (:steer or
+   :follow-up) — pi errors without one. The response reports the
+   disposition; accepted is not completed, so the client waits for
+   :agent-settled. :images ride the started path into the run."
   [engine command]
   (if-let [text (message-of command)]
-    (let [result (runtime/submit! engine text {:expand? true})]
-      (ok :prompt {:disposition (case (:action result)
-                                  :started :started
-                                  :handled :handled
-                                  :queued)}))
+    (let [behavior (:streaming-behavior command)
+          running? (runtime/turn-running? engine)]
+      (cond
+        (and behavior (not (contains? #{:steer :follow-up} behavior)))
+        (failed :prompt "streaming-behavior must be :steer or :follow-up")
+
+        (and running? (nil? behavior))
+        (failed :prompt "The agent is already running; specify :streaming-behavior :steer or :follow-up")
+
+        (= :steer behavior)
+        (do (runtime/steer! engine (expand-queued-text text))
+            (ok :prompt {:disposition :queued}))
+
+        (= :follow-up behavior)
+        (do (runtime/follow-up! engine (expand-queued-text text))
+            (ok :prompt {:disposition :queued}))
+
+        :else
+        (let [result (runtime/submit! engine text
+                                      (cond-> {:expand? true}
+                                        (:images command) (assoc :run-opts {:images (:images command)})))]
+          (ok :prompt {:disposition (case (:action result)
+                                      :started :started
+                                      :handled :handled
+                                      :queued)}))))
     (failed :prompt "prompt requires a non-empty :message string")))
 
 (defn- command-steer
   "Queue a message for mid-turn injection (pi: steer)."
   [engine command]
+  (reject-queue-images! command :steer)
   (if-let [text (message-of command)]
     (do (runtime/steer! engine (expand-queued-text text))
         (ok :steer {:disposition :queued}))
@@ -97,6 +128,7 @@
 (defn- command-follow-up
   "Queue a message for after the run settles (pi: follow_up)."
   [engine command]
+  (reject-queue-images! command :follow-up)
   (if-let [text (message-of command)]
     (do (runtime/follow-up! engine (expand-queued-text text))
         (ok :follow-up {:disposition :queued}))
@@ -145,10 +177,12 @@
                  :compacting? @(:compacting? (runtime/agent-state engine))
                  :queued-count (+ (count steering) (count follow-up))
                  :last-outcome (:last-outcome snap)}
-          sess (assoc :session {:id (:id sess)
-                                :file (:file sess)
-                                :name (session/get-session-name sess)
-                                :message-count (session/get-message-count sess)})))))
+          sess (assoc :session
+                      (cond-> {:id (:id sess)
+                               :file (:file sess)
+                               :message-count (session/get-message-count sess)}
+                        ;; pi omits sessionName when unset
+                        (session/get-session-name sess) (assoc :name (session/get-session-name sess))))))))
 
 (def ^:private command-table
   {:prompt command-prompt
@@ -181,10 +215,16 @@
 ;; ─── Transport ─────────────────────────────────────────────────────────────
 
 (defn- parse-line
-  "Parse one stdin LINE; returns {:command value} or {:error message}."
+  "Parse one stdin LINE as exactly one EDN form (pi: JSON.parse rejects
+   trailing content); returns {:command value} or {:error message}."
   [line]
   (try
-    {:command (edn/read-string line)}
+    (let [rdr (java.io.PushbackReader. (java.io.StringReader. line))
+          value (edn/read {:eof ::eof} rdr)]
+      (cond
+        (= ::eof value) {:error "EOF while reading"}
+        (= ::eof (edn/read {:eof ::eof} rdr)) {:command value}
+        :else {:error "Unexpected content after the command record"}))
     (catch Exception e
       {:error (or (ex-message e) (str e))})))
 

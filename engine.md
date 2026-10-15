@@ -775,6 +775,17 @@ snapshot; nothing sets them after bootstrap today).
 | `get_commands` | the registry filtered to `:rpc` availability + skills/prompts |
 | `bash`, `abort_bash`, `set_auto_retry`, `abort_retry` | **deferred**: kmet's bash path is the interactive `!` flow, and the retry knobs have no live setter |
 
+**Known parity deltas** (documented for clients in 6d): `abort` drops the
+steering/follow-up queues (kmet's cancel semantics persist the drop as an
+`:aborted` queue-update) where pi continues them — the pi recipe applies:
+send `clear-queue` first to capture the texts; `steer`/`follow-up` do not
+run input hooks (kmet's hooks live in `submit!`) and reject `:images` until
+the queues carry image blocks; `get-state`'s model is the id + provider,
+not a full object (`get-available-models` fills that in); commands are
+served serially (a blocking `abort`/`new-session` delays the next line);
+no SIGTERM/SIGHUP handlers yet (the session file is appended as entries
+stream, so an exit loses nothing).
+
 #### 6.2 The step 4 seam's first consumer (extension UI)
 
 The RPC port is the first thing that answers the `:request` protocol:

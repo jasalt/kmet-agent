@@ -175,6 +175,67 @@
           (is (= :rpc (:mode (deref started 1000 nil))))
           (is (false? (:has-ui (deref started 1000 nil)))))))))
 
+(deftest test-prompt-during-a-run-requires-streaming-behavior
+  (testing "pi parity: a prompt while a run is active needs an explicit
+            :streaming-behavior; the queued prompt lands on that queue"
+    (with-redefs [agent/run-agent-turn (fn [_ _] nil)]  ;; never settles
+      (let [[_ records] (run-lines [{:type :prompt :id 1 :message "first"}
+                                    {:type :prompt :id 2 :message "second"}
+                                    {:type :prompt :id 3 :message "third"
+                                     :streaming-behavior :steer}
+                                    {:type :follow-up :id 4 :message "later"}
+                                    {:type :clear-queue :id 5}])
+            [started rejected steered followed cleared] (responses records)]
+        (is (= {:disposition :started} (:data started)))
+        (is (false? (:success rejected)))
+        (is (str/includes? (:error rejected) "already running"))
+        (is (= {:disposition :queued} (:data steered)))
+        (is (= {:disposition :queued} (:data followed)))
+        (is (= {:steering ["third"] :follow-up ["later"]} (:data cleared)))))))
+
+(deftest test-prompt-rejects-an-unknown-streaming-behavior
+  (with-redefs [agent/run-agent-turn (fn [_ _] nil)]
+    (let [[_ records] (run-lines [{:type :prompt :id 1 :message "hi"
+                                   :streaming-behavior :bogus}])]
+      (is (= {:type :response :id 1 :command :prompt :success false
+              :error "streaming-behavior must be :steer or :follow-up"}
+             (first records))))))
+
+(deftest test-prompt-passes-images-to-the-run
+  (testing "images ride the started path into the run's options"
+    (let [received (promise)]
+      (with-redefs [agent/run-agent-turn (fn [_ opts] (deliver received opts) nil)]
+        (let [images [{:type :image :data "AAA" :mime-type "image/png"}]
+              [_ records] (run-lines [{:type :prompt :id 1 :message "look"
+                                       :images images}])]
+          (is (= {:disposition :started} (:data (first (responses records)))))
+          (is (= images (:images (deref received 1000 nil)))))))))
+
+(deftest test-steer-rejects-images
+  (testing "the steering queue carries no image blocks yet — rejecting is
+            honest where dropping would lose data"
+    (let [[_ records] (run-lines [{:type :steer :id 1 :message "look"
+                                   :images [{:type :image :data "AAA"}]}])]
+      (is (= {:type :response :id 1 :command :steer :success false
+              :error "steer does not support :images yet"}
+             (first records))))))
+
+(deftest test-abort-when-idle-is-a-no-op
+  (let [[_ records] (run-lines [{:type :abort :id 1}])]
+    (is (= {:idle true} (:data (first (responses records)))))))
+
+(deftest test-trailing-content-is-a-parse-error
+  (testing "a line must be exactly one EDN form (JSON.parse parity)"
+    (let [[_ records] (run-lines ["{:type :get-state} {:type :get-state}"])
+          trailing (first records)]
+      (is (= :parse (:command trailing)))
+      (is (false? (:success trailing)))
+      (is (str/includes? (:error trailing) "Unexpected content after the command record")))
+    (let [[_ records] (run-lines ["{:type :get-state} ]"])
+          invalid (first records)]
+      (is (false? (:success invalid)))
+      (is (str/starts-with? (:error invalid) "Failed to parse command:")))))
+
 (deftest test-unknown-session-fails-startup
   (testing "--session matching nothing reports to stderr and returns nil"
     (let [err (java.io.StringWriter.)
