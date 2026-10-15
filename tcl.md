@@ -29,13 +29,14 @@ widget and description, and deleted with the widget; a name the app owns is
 never touched. Item vocabularies outside the tag specs — a menu item's
 `-image` — are not props.
 
-Section 1's features follow Tk's own vocabulary: a treeview hierarchy
+The data widgets follow Tk's own vocabulary: a treeview hierarchy
 (`:children`, the `#0` column, row tags and images), canvas items with
-identity (an `:id` written as the item's first Tk tag, reconciled in place),
-`:context-menu` posting through Tk's own `tk_popup`, check and radio menu
-items with the private variables Tk needs, and `grid`/`place` as a child's
-own geometry maps. What each contract is, and what it refuses, is in
-`src/kmet/tk/README.md` (Data widgets, Props and bindings, Geometry).
+identity (an `:id` written as the item's first Tk tag, reconciled in place,
+with Tk's item events and its stacking order), `:context-menu` posting
+through Tk's own `tk_popup`, check and radio menu items with the private
+variables Tk needs, and `grid`/`place` as a child's own geometry maps. What
+each contract is, and what it refuses, is in `src/kmet/tk/README.md` (Data
+widgets, Props and bindings, Geometry).
 
 Tk's native dialogs are `kmet.tk.core` functions: `message-box!`,
 `open-file!`, `save-file!`, `choose-directory!` and `choose-color!` script
@@ -142,14 +143,7 @@ So a kmet tree that stays inside the 8.6 option set runs unchanged on
 8.6/9.0/9.1; a Tk 9 prop fails loudly at the first widget of its tag on an
 older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
-## 1. Data a tag cannot express
-
-- **Canvas item events beyond a click.** An item's `:on-click` is Tk's
-  item bind for `<Button-1>`; `<Enter>`/`<Leave>` (hover), `<B1-Motion>`
-  (drag) and a tag bound as a group need the same target machinery for
-  other sequences, and Tk's `tag raise`/`lower` for item order.
-
-## 2. Options that are not props
+## 1. Options that are not props
 
 The catalogue (`kmet.tk.options`) leaves out what a plain value cannot
 be; each group needs machinery:
@@ -170,7 +164,7 @@ be; each group needs machinery:
 - **Cross-widget**: `-menu` (covered for menubuttons and the menubar),
   `-labelwidget`.
 
-## 3. Tk beyond its widgets
+## 2. Tk beyond its widgets
 
 - **Window management.** `wm` beyond `title`/`geometry`: minimum size,
   `resizable`, `attributes` (fullscreen, topmost, alpha), `iconphoto`,

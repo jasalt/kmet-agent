@@ -137,7 +137,8 @@ Three shapes of tag, on top of the plain leaves:
   `:tk/listbox` `:items`/`:selected`, `:ttk/treeview` `:columns`/`:rows`/
   `:tags`/`:selected`, `:tk/canvas` `:items` (each a `{:type :line
   :coords [x y …]}` map of Tk's own canvas-item options, plus `:id`,
-  `:tags` and `:on-click`),
+  `:tags` and the item handlers `:on-click`/`:on-drag`/`:on-enter`/
+  `:on-leave`),
   `:tk/menu`/`:tk/menubutton`/`:ttk/menubutton` `:items`,
   `:ttk/combobox`/`:ttk/spinbox` `:values`.
 - **Containers** place their children themselves: `:ttk/notebook` adds
@@ -197,18 +198,26 @@ vector's order is the tree's).
 
 A canvas (`:tk/canvas`) draws its `:items` as Tk's own items: each is a map
 of Tk's canvas-item options (`{:type :line :coords [x y …] :fill "#fff"}`)
-plus `:id`, `:tags` and `:on-click`. Tk gives an item a numeric id of its
-own but lets a tag stand for it, so an item's `:id` (`i1`, `i2`, … when the
-render names none) is written as its first Tk tag, and every item command
-addresses it by that — so an id a render repeats is an error, Tk tolerating
-duplicates that would then move and delete together. A re-render *reconciles*: an id it still has keeps
-its item — the coordinates through Tk's `coords` subcommand, the changed
-options through `itemconfigure`, and its `:on-click` binding (Tk's item
-bind, `<Button-1>` on the item's own tag) — a new id is drawn, a gone id
-deleted with the callback it held, and an item whose type or option set
-changed is rebuilt, since Tk cannot unset an option. A click hands the
-handler the click's coordinates and reaches the *topmost* item under the
-pointer, Tk's own rule: overlapping items shadow each other's handlers.
+plus `:id`, `:tags` and the handlers an item takes — `:on-click`,
+`:on-drag`, `:on-enter` and `:on-leave`, which are Tk's item binds for
+`<Button-1>`, motion with the button held, and the crossings. Tk gives an
+item a numeric id of its own but lets a tag stand for it, so an item's
+`:id` (`i1`, `i2`, … when the render names none) is written as its first Tk
+tag, and every item command addresses it by that — so an id a render
+repeats is an error, Tk tolerating duplicates that would then move and
+delete together. A re-render *reconciles*: an id it still has keeps its
+item — the coordinates through Tk's `coords` subcommand, the changed
+options through `itemconfigure`, a changed handler rebound on its own event
+with the trampoline it held released — a new id is drawn, a gone id deleted
+with the callbacks it held, and an item whose type or option set changed is
+rebuilt, since Tk cannot unset an option. The render's order is Tk's
+stacking order, a later item on top: a render that inserts or reorders
+raises the items into place, so the stacking survives a re-render the way
+identity does. Tk directs a mouse event to the *current* item, the topmost
+one under the pointer, so overlapping items shadow each other's handlers
+and each handler gets the event's own coordinates; a drag that leaves the
+item is the canvas's own `:bind`, where Tk's pointer grab keeps the events
+coming.
 
 The classic specs are `kmet.tk.core`'s `classic-specs`, the themed ones
 `kmet.tk.ttk/specs`; `kmet.tk.core` completes both through
@@ -633,9 +642,14 @@ text, typed into with real key events: its value round-trips through
 Tcl's parser, Return submits without a newline, and undo takes back the
 typed key alone, a treeview's hierarchy, row tags and tree column
 read back out of the widget, a canvas whose items a re-render moves in
-place (the very item, by Tk's own numeric id) and clicks to its handler,
+place (the very item, by Tk's own numeric id), keeps its order by raising
+them, and hands a click, a hover and a drag to the handlers its render
+gave it,
 a context menu posted at the click, a menu's check and radio items
-invoked through Tk, and a frame's gridded and placed children read back
+invoked through Tk (the pointer is synthetic — `event generate` — so a
+press picks the item under its point and the events that follow reach it;
+motion with no press behind it only reaches an item when a real pointer
+moves it, which is a manual check), and a frame's gridded and placed children read back
 with `winfo manager`.
 
 `scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates

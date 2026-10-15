@@ -252,13 +252,20 @@
   ;; item runs the handler its render gave it, with the click's coordinates.
   (with-live-tk [e]
     (let [clicked (atom nil)
+          hovered (atom [])
           click #(reset! clicked %)
           items (atom [{:id "n1" :type :rect :coords [0 0 40 30] :fill "red"
-                        :tags ["hot"] :on-click click}
+                        :tags ["hot"] :on-click click
+                        :on-enter #(swap! hovered conj [:enter %])
+                        :on-leave #(swap! hovered conj [:leave %])
+                        :on-drag #(swap! hovered conj [:drag %])}
                        {:id "n2" :type :line :coords [0 0 10 10]}])
           h
           (tk/mount! (fn [_] [:tk/canvas {:width 100 :height 60 :items @items}]) {})
-          c (do (e find-class-src) (e "kmetfind . Canvas"))]
+          c (do (e find-class-src) (e "kmetfind . Canvas"))
+          stack (fn []
+                  (mapv #(first (str/split (e (str c " itemcget " % " -tags")) #"\s+"))
+                        (str/split (e (str c " find all")) #"\s+")))]
       (t/is (seq c) "the canvas is in the window")
       (t/is (= "red" (e (str c " itemcget n1 -fill"))))
       (t/is (= "n1 hot" (e (str c " itemcget n1 -tags")))
@@ -280,6 +287,29 @@
       (e "update")
       (t/is (= [20 20] @clicked)
             "a click on the item runs the handler its render gave it")
+      (t/is (= ["n1" "n3"] (stack))
+            "the render's order is Tk's stacking order, bottom first")
+      (doseq [event ["<Enter>" "<Leave>" "<B1-Motion>"]]
+        (t/is (seq (e (str c " bind n1 " event)))
+              (str event " binds the item's own tag, where Tk directs it")))
+      ;; Tk directs mouse events to the current item: the click made n1
+      ;; current (an Enter, with the click's coordinates), and motion over
+      ;; it reaches :on-drag with the motion's own.
+      (e (str "event generate " c " <Button-1> -x 10 -y 10 -when tail"))
+      (e (str "event generate " c " <B1-Motion> -x 12 -y 14 -when tail"))
+      (e "update")
+      (t/is (some #(= [:enter [20 20]] %) @hovered)
+            "an item the pointer arrives at gets its :on-enter, with the event's point")
+      (t/is (some #(= [:drag [12 14]] %) @hovered)
+            "motion over the item hands :on-drag the motion's own coordinates")
+      ;; Reordering the render restacks Tk's items without rebuilding them.
+      (let [item (e (str c " find withtag n1"))]
+        (swap! items reverse)
+        (rerender! h)
+        (t/is (= ["n3" "n1"] (stack))
+              "a reordered render raises the items into its own order")
+        (t/is (= item (e (str c " find withtag n1")))
+              "and the raised item is still the very item Tk drew"))
       (engine/dispose-component (:root h)))))
 
 (t/deftest a-context-menu-posts-at-the-click

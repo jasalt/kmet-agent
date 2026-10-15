@@ -1025,12 +1025,29 @@
 ;; against what the widget holds: a surviving id keeps its item — the
 ;; coordinates through Tk's `coords` subcommand (there is no -coords item
 ;; option) and the changed options through `itemconfigure` — a new id is
-;; created, a gone id deleted with the callback it held, and an item whose
+;; created, a gone id deleted with the callbacks it held, and an item whose
 ;; type or option set changed is recreated, since Tk cannot unset an option.
+;; Tk's creation order is the render's stacking order (a later item is on
+;; top): items are created in the render's own order, and a render that
+;; reorders, inserts or rebuilds below the top raises them into place. An
+;; item's handlers (canvas-item-events) are Tk's item binds on that tag, so
+;; Tk directs to them the mouse events it gives the current item.
+
+(def ^:private canvas-item-events
+  "An item's handlers and the Tk sequence each is bound to. Tk directs
+   mouse events to the current item — the topmost one under the pointer — so
+   these fire while the pointer is over the item: the button for a click,
+   motion with the button held for a drag, and the crossing for entering and
+   leaving it. A drag that leaves the item is the canvas's own bind, where
+   Tk's pointer grab keeps the events coming."
+  {:on-click "<Button-1>"
+   :on-drag "<B1-Motion>"
+   :on-enter "<Enter>"
+   :on-leave "<Leave>"})
 
 (def ^:private canvas-item-keys
   "The :items entry keys that are not Tcl canvas-item options."
-  #{:id :type :coords :on-click})
+  (into #{:id :type :coords} (keys canvas-item-events)))
 
 (def ^:private canvas-image-options
   "The canvas-item options that name an image: the item's own vocabulary,
@@ -1094,39 +1111,72 @@
                   (str/join " " (option-args changed)))))))
 
 (defn- bind-canvas-item!
-  "Point W's item ID at ITEM's :on-click handler (nil unbinds): Tk's item
-   bind, so a click on the item hands the handler the click's coordinates —
-   which item it is, the render that made it knows."
+  "Point W's item ID at ITEM's handlers: each is Tk's item bind for its own
+   event, so it fires while the pointer is over the item and hands the
+   handler the event's coordinates — which item it is, the render that made
+   it knows. A handler WAS had and ITEM drops is unbound."
   [w id item was]
-  (when (not= (:on-click item) (:on-click was))
-    (bind-slot! w [:item id] {:target id :event "<Button-1>" :value :pointer}
-                (:on-click item))))
+  (doseq [[prop event] canvas-item-events
+          :when (not= (get item prop) (get was prop))]
+    (bind-slot! w [:item id prop] {:target id :event event :value :pointer}
+                (get item prop))))
+
+(defn- restack-items!
+  "Make W's stacking order the render's IDS: a later item draws on top.
+   Tk's raise is by tag, and an item's id tag names just it."
+  [w ids]
+  (eval! (str "foreach ::kmet_item " (tcl-value ids)
+              " { " (:path w) " raise $::kmet_item }")))
+
+(defn- order-stale?
+  "Whether a render's IDS differ from what PREVIOUS's stacking already is: a
+   render that only appends keeps creation order, while an insertion or a
+   reorder does not."
+  [previous ids]
+  (not= previous (vec (take-while (set previous) ids))))
+
+(defn- canvas-rebuild?
+  "Whether a canvas item must be rebuilt rather than updated: it is new, its
+   type changed, or an option it had is gone — Tk cannot unset an option."
+  [was item]
+  (or (nil? was)
+      (not= (:type was) (:type item))
+      (seq (remove #(contains? item %) (remove canvas-item-keys (keys was))))))
+
+(defn- restack-needed?
+  "Whether IDS, some of them REBUILT this render, need raising: a rebuild
+   is created on top, so it is out of place anywhere but at the end."
+  [rebuilt ids]
+  (some #(and (contains? rebuilt %) (not= % (peek ids))) ids))
 
 (defn canvas-items!
   "Reconcile canvas W's items with PROPS' :items — each an item map of Tk's
    own canvas-item options (`{:type :line :coords [x y …] :fill \"#fff\"}`)
-   plus :id (its identity and its first Tk tag), :tags and :on-click (a
-   handler for a click on the item). An id this render keeps is updated in
-   place, a new one created, a gone one deleted with the trampoline its
-   :on-click held."
+   plus :id (its identity and its first Tk tag), :tags, and the handlers an
+   item takes (canvas-item-events: :on-click, :on-drag, :on-enter,
+   :on-leave). An id this render keeps is updated in place, a new one
+   created, a gone one deleted with the trampolines its handlers held; the
+   render's order is Tk's stacking order — a later item draws on top."
   [w props]
   (let [items-list (or (:items props) [])
         ids (mapv canvas-item-id (range) items-list)
         previous (:canvas-items @(:styles w))
-        items (into {} (map vector ids items-list))]
+        order (:canvas-order @(:styles w))
+        pairs (mapv vector ids items-list)
+        items (into {} pairs)
+        ;; the ids this render rebuilt: created, or deleted and created again
+        rebuilt (into #{} (keep (fn [[id item]]
+                                  (when (canvas-rebuild? (get previous id) item) id)))
+                      pairs)]
     (check-unique-ids! (:tag w) ids)
     (doseq [[id was] previous
             :when (not (contains? items id))]
       (bind-canvas-item! w id nil was)
       (eval! (str (:path w) " delete " (tcl-quote id))))
-    (doseq [[id item] items]
-      (let [was (get previous id)
-            recreate? (or (nil? was)
-                          (not= (:type was) (:type item))
-                          ;; a dropped option cannot be unset: rebuild instead
-                          (seq (remove #(contains? item %)
-                                       (keys (dissoc was :id :type :coords :on-click)))))]
-        (if recreate?
+    ;; in render order, so a render's new items are created bottom to top
+    (doseq [[id item] pairs]
+      (let [was (get previous id)]
+        (if (contains? rebuilt id)
           (do (when (some? was)
                 (bind-canvas-item! w id nil was)
                 (eval! (str (:path w) " delete " (tcl-quote id))))
@@ -1134,7 +1184,11 @@
               (bind-canvas-item! w id item nil))
           (do (when (not= was item) (canvas-configure-item! w id was item))
               (bind-canvas-item! w id item was)))))
-    (swap! (:styles w) assoc :canvas-items items)
+    (when (and (some? order)
+               (or (order-stale? order ids)
+                   (restack-needed? rebuilt ids)))
+      (restack-items! w ids))
+    (swap! (:styles w) assoc :canvas-items items :canvas-order ids)
     nil))
 
 ;; ─── Menus (the :tk/menu tag and the menubuttons) ─────────────────────────

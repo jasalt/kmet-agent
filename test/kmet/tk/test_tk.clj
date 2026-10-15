@@ -1091,26 +1091,111 @@
             "the widget itself is never rebuilt")
       (engine/dispose-component (:root m)))))
 
-(t/deftest a-canvas-items-click-is-an-item-bind
+(t/deftest a-canvas-item-binds-each-handler-to-its-own-event
+  ;; An item's handlers are Tk's item binds on the item's own tag: a click
+  ;; is the button, a drag is motion with the button held, entering and
+  ;; leaving are the crossings. Each carries the event's coordinates, and
+  ;; each has a trampoline of its own — so changing one rebinds one.
   (with-fake [rec nil]
-    (let [clicked (atom nil)
+    (let [seen (atom {})
           items (atom [{:id "n1" :type :rect :coords [0 0 10 10] :fill "#fff"
-                        :tags ["hot"] :on-click #(reset! clicked %)}])
+                        :tags ["hot"]
+                        :on-click #(swap! seen assoc :on-click %)
+                        :on-drag #(swap! seen assoc :on-drag %)
+                        :on-enter #(swap! seen assoc :on-enter %)
+                        :on-leave #(swap! seen assoc :on-leave %)}])
           m (mounted (fn [_] [:tk/canvas {:items @items}]))
-          id (second (re-find #"kmet::cb (\d+)" (first (scripts-like rec #"<Button-1>"))))]
-      (t/is (some #(re-find #"create rect 0 0 10 10 -fill \\#fff -tags n1\\ hot$" %) (scripts rec))
+          events {:on-click "<Button-1>" :on-drag "<B1-Motion>"
+                  :on-enter "<Enter>" :on-leave "<Leave>"}
+          bind-script (fn [prop]
+                        (last (scripts-like rec
+                                            (re-pattern (str (get events prop)
+                                                             " \\{kmet::cb \\d+ %x %y\\}$")))))
+          callback (fn [prop] (second (re-find #"kmet::cb (\d+)" (bind-script prop))))]
+      (t/is (some #(re-find #"create rect 0 0 10 10 -fill \\#fff -tags n1\\ hot$" %)
+                  (scripts rec))
             "the app's own tags ride in the item's one -tags list, after its id")
-      (t/is (some #(re-find #"<Button-1> \{kmet::cb \d+ %x %y\}$" %) (scripts rec))
-            "a click on the item is Tk's item bind, on the item's own tag")
-      (tk/dispatch-callback! ["kmet::cb" id "7" "9"])
-      (t/is (= [7 9] @clicked) "the handler receives the click's coordinates")
+      (doseq [[prop event] events]
+        (t/is (bind-script prop) (str prop " is Tk's item bind for " event))
+        (tk/dispatch-callback! ["kmet::cb" (callback prop) "7" "9"])
+        (t/is (= [7 9] (get @seen prop))
+              (str "the " prop " handler receives the event's coordinates")))
+      (let [old-leave (callback :on-leave)]
+        (swap! items assoc 0 (assoc (first @items)
+                                    :on-leave #(swap! seen assoc :left %)))
+        (rerender! m)
+        (t/is (not= old-leave (callback :on-leave)) "a changed handler is bound again")
+        (tk/dispatch-callback! ["kmet::cb" old-leave "1" "2"])
+        (t/is (= [7 9] (get @seen :on-leave))
+              "and its old trampoline is released, not left dangling")
+        (tk/dispatch-callback! ["kmet::cb" (callback :on-leave) "1" "2"])
+        (t/is (= [1 2] (get @seen :left)) "a leave hands over its own coordinates"))
       (swap! items assoc 0 (assoc (first @items) :on-click nil))
       (rerender! m)
       (t/is (some #(re-find #"<Button-1> \{\}$" %) (scripts rec))
             "a dropped handler unbinds the item")
-      (engine/dispose-component (:root m))
-      (t/is (= "" (tk/dispatch-callback! ["kmet::cb" id]))
-            "and disposal releases what the item held"))))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-canvas-keeps-the-renders-order
+  ;; A canvas draws in stacking order, so a later item is on top. Tk keeps
+  ;; creation order: a render that only appends needs nothing, while one
+  ;; that inserts or reorders raises the items into its own order.
+  (with-fake [rec nil]
+    (let [line {:type :line :coords [0 0 1 1]}
+          items (atom [{:id "a" :type :line :coords [0 0 1 1]}
+                       {:id "b" :type :line :coords [0 0 1 1]}])
+          m (mounted (fn [_] [:tk/canvas {:items @items}]))]
+      (t/is (empty? (scripts-like rec #"raise "))
+            "the first render is creation order, so nothing is raised")
+      (swap! items conj (assoc line :id "c"))
+      (rerender! m)
+      (t/is (empty? (scripts-like rec #"raise "))
+            "appending keeps Tk's order — a new item is already on top")
+      (reset! items [(assoc line :id "b") (assoc line :id "a") (assoc line :id "c")])
+      (rerender! m)
+      (t/is (some #(re-find #"foreach ::kmet_item b\\ a\\ c \{ .+ raise \$::kmet_item \}$" %)
+                  (scripts rec))
+            "a reorder raises the items in the render's order, in one script")
+      (let [drawn (count (scripts rec))]
+        (rerender! m)
+        (t/is (= drawn (count (scripts rec)))
+              "a render that keeps that order raises nothing again"))
+      (let [drawn (count (scripts rec))]
+        (swap! items conj (assoc line :id "d"))
+        (rerender! m)
+        (t/is (empty? (filterv #(re-find #"foreach ::kmet_item" %)
+                               (drop drawn (scripts rec))))
+              "appending to a reordered render still needs no raise"))
+      (reset! items [(assoc line :id "a") (assoc line :id "x") (assoc line :id "b")])
+      (rerender! m)
+      (t/is (some #(re-find #"foreach ::kmet_item a\\ x\\ b \{ .+ raise \$::kmet_item \}$" %)
+                  (scripts rec))
+            "an item inserted before an existing one is raised into place")
+      ;; A render both reorders and rebuilds: creation order is not enough
+      ;; even for its new items, so they are drawn in the render's order.
+      (let [drawn (count (scripts rec))]
+        (reset! items [(assoc line :id "p") (assoc line :id "q") (assoc line :id "r")])
+        (rerender! m)
+        (t/is (= ["p" "q" "r"]
+                 (mapv #(second (re-find #"-tags ([a-z]+)$" %))
+                       (filterv #(re-find #" create line " %)
+                                (drop drawn (scripts rec)))))
+              "a render's new items are created in its own order, bottom first"))
+      ;; A rebuilt item keeps its id, so the order needs nothing — except
+      ;; that Tk creates it on top: it is raised back unless it is the last.
+      (let [drawn (count (scripts rec))]
+        (reset! items [(assoc line :id "p" :type :rect) (assoc line :id "q") (assoc line :id "r")])
+        (rerender! m)
+        (t/is (some #(re-find #"foreach ::kmet_item p\\ q\\ r" %)
+                    (drop drawn (scripts rec)))
+              "a rebuilt item that is not last is raised back into place"))
+      (let [drawn (count (scripts rec))]
+        (reset! items [(assoc line :id "p" :type :rect) (assoc line :id "q")
+                       (assoc line :id "r" :type :rect)])
+        (rerender! m)
+        (t/is (empty? (filterv #(re-find #"foreach ::kmet_item" %) (drop drawn (scripts rec))))
+              "rebuilding the topmost item needs no raise"))
+      (engine/dispose-component (:root m)))))
 
 (t/deftest a-widget-gets-a-context-menu
   ;; Tk has no option for a popup menu: the idiom — Tk's own, from the menu
