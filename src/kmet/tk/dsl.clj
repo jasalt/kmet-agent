@@ -269,6 +269,14 @@
    must not insert a newline. :answer marks a slot Tk reads a result from
    (a validatecommand's boolean)."
   [w slot {:keys [event option value stop target] :as spec} f]
+  ;; a widget that attached its own scrollbar wired -yscrollcommand to it, so
+  ;; binding a callback to that option would silently take the wiring over —
+  ;; the same conflict maybe-scrollbar! refuses at construction
+  (when (and (some? f) (= :yscrollcommand option) (get @(:styles w) :scrollbar))
+    (throw (ex-info (str "kmet.tk.core: " (:tag w) " names :scrollbar and"
+                         " :yscrollcommand — Tk's -yscrollcommand takes one")
+                    {:type :kmet.tk.core/scrollbar-and-command
+                     :tag (:tag w) :props [:scrollbar :yscrollcommand]})))
   (let [callback (set-callback! w slot f spec)
         script (when (some? callback)
                  (str callback
@@ -501,9 +509,10 @@
 (defn variable
   "A kmet-owned Tcl variable, the value a :variable/:textvariable/
    :listvariable prop takes. INITIAL is its Tcl value (a sequence is Tcl
-   list syntax). Nothing touches Tcl until the variable is first used,
-   read or written — so one may be created before an interpreter exists —
-   and its name (::kmet_var_<n>) cannot collide with the app's own Tcl."
+   list syntax, nil the empty string). Nothing touches Tcl until the
+   variable is first used, read or written — so one may be created before
+   an interpreter exists — and its name (::kmet_var_<n>) cannot collide
+   with the app's own Tcl."
   [initial]
   (->TkVariable (str "::kmet_var_" (swap! next-var inc)) initial
                 (atom {}) (atom false)))
@@ -526,15 +535,28 @@
   [id name]
   (str "{kmet::cb " id " [set " name "]}"))
 
+(defn- variable-word
+  "VALUE as the Tcl word a variable write takes: nil is the empty string —
+   Tcl has no nil, and every other prop reads nil as absent — everything
+   else the word it names (a sequence is Tcl list syntax)."
+  [value]
+  (tcl-value (if (nil? value) "" value)))
+
 (defn- materialize!
   "Create V's Tcl variable (holding its initial value) and its watchers'
    traces in the running interpreter, once. Returns its name."
   [v]
   (when (compare-and-set! (:materialized v) false true)
-    (eval! (str "set " (:name v) " " (tcl-value (:initial v))))
+    (eval! (str "set " (:name v) " " (variable-word (:initial v))))
     (doseq [script (vals @(:watches v))]
       (eval! (str "trace add variable " (:name v) " write " script))))
   (:name v))
+
+(defn- untrace!
+  "Remove SCRIPT's trace on V (a no-op when V is not materialized)."
+  [v script]
+  (when @(:materialized v)
+    (eval! (str "trace remove variable " (:name v) " write " script))))
 
 (defn variable-value
   "V's current Tcl value as a string. Materializes V when it has not been
@@ -545,11 +567,12 @@
 
 (defn variable-set!
   "Set V's Tcl value (a sequence is Tcl list syntax, a keyword its name, a
-   boolean 1/0). Materializes V first, and writes through Tcl — so the
-   watchers and the widgets bound to V see the change. Returns VALUE."
+   boolean 1/0, nil the empty string). Materializes V first, and writes
+   through Tcl — so the watchers and the widgets bound to V see the change.
+   Returns VALUE."
   [v value]
   (materialize! v)
-  (eval! (str "set " (:name v) " " (tcl-value value)))
+  (eval! (str "set " (:name v) " " (variable-word value)))
   value)
 
 (defn variable-watch!
@@ -570,8 +593,7 @@
     (fn unwatch []
       (when (contains? @(:watches v) id)
         (swap! (:watches v) dissoc id)
-        (when @(:materialized v)
-          (eval! (str "trace remove variable " (:name v) " write " script)))
+        (untrace! v script)
         (release-handler! id)))))
 
 (defn variable-dispose!
@@ -582,7 +604,7 @@
   (let [watches @(:watches v)]
     (when @(:materialized v)
       (doseq [script (vals watches)]
-        (eval! (str "trace remove variable " (:name v) " write " script)))
+        (untrace! v script))
       (eval! (str "unset -nocomplain " (:name v))))
     (doseq [id (keys watches)] (release-handler! id))
     (reset! (:watches v) {})
@@ -1221,6 +1243,17 @@
   (when (some? text)
     (eval! (str (:path w) " insert 0 " (tcl-quote text)))))
 
+(defn- check-text-source!
+  "Throw when PROPS name both a text field's :text and its :textvariable: a
+   widget has one value source, whether it is being constructed or patched
+   (the ctor must not create the pair, and a patch must not introduce it)."
+  [tag props]
+  (when (and (some? (:text props)) (some? (:textvariable props)))
+    (throw (ex-info (str "kmet.tk.core: " tag " takes :text or :textvariable,"
+                         " not both — a widget has one value source")
+                    {:type :kmet.tk.core/text-and-textvariable
+                     :tag tag :props [:text :textvariable]}))))
+
 (defn set-scrollbar-position!
   "Set scrollbar W's thumb to PROPS' :position [first last] (a no-op when
    the prop is absent)."
@@ -1611,6 +1644,12 @@
 ;; that variable (with a radiobutton group, with the app); without one the
 ;; tag owns a private variable per widget.
 
+(defn- prop-or
+  "PROPS' PROP, or DEFAULT when the prop is nil: a boolean false is a
+   value Tk writes into a state variable as itself, not an absence."
+  [props prop default]
+  (if-some [v (get props prop)] v default))
+
 (defn- checkable-options
   "The creation options a checkable widget needs from the tag itself: its
    state VARIABLE — the shared one a :variable prop names, else a private
@@ -1619,7 +1658,7 @@
    default (Tk starts it empty, which compares against nothing)."
   [kind props variable]
   (cond-> {:variable variable}
-    (= kind :radio) (assoc :value (or (:value props) 1))))
+    (= kind :radio) (assoc :value (prop-or props :value 1))))
 
 (defn- select!
   "Apply PROPS' :active to a checkable widget of KIND: its state variable
@@ -1631,8 +1670,8 @@
   [w kind props]
   (let [radio? (= kind :radio)
         shared-radio? (and radio? (some? (get @(:styles w) :variable)))
-        on (if radio? (or (:value props) 1) (or (:onvalue props) 1))
-        off (if radio? "" (or (:offvalue props) 0))]
+        on (if radio? (prop-or props :value 1) (prop-or props :onvalue 1))
+        off (if radio? "" (prop-or props :offvalue 0))]
     (when (or (:active props) (not shared-radio?))
       (eval! (str "set " (state-var w) " "
                   (tcl-value (if (:active props) on off)))))))
@@ -1696,13 +1735,8 @@
            :lens lens
            :pack? pack?
            :ctor (fn [spec props]
-                   (when (and text-field (some? (:text props)) (some? (:textvariable props)))
-                     (throw (ex-info (str "kmet.tk.core: " (:tag spec) " takes"
-                                          " :text or :textvariable, not both — a"
-                                          " widget has one value source")
-                                     {:type :kmet.tk.core/text-and-textvariable
-                                      :tag (:tag spec)
-                                      :props [:text :textvariable]})))
+                   (when text-field
+                     (check-text-source! (:tag spec) props))
                    (let [shared (when checkable (some-> (:variable props) variable-ref))
                          w (make-widget spec
                                         (fn [p w]
@@ -1730,6 +1764,8 @@
                        (after w props))
                      w))
            :apply (fn [spec w prev props]
+                    (when text-field
+                      (check-text-source! (:tag w) props))
                     (when (patchable? spec prev props)
                       (when (and checkable
                                  (some #(not= (get prev %) (get props %))

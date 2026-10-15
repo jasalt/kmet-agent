@@ -698,7 +698,18 @@
                  nil
                  (catch Exception e e))]
       (t/is (= :kmet.tk.core/scrollbar-and-command (:type (ex-data e))))
-      (t/is (str/includes? (ex-message e) ":yscrollcommand")))))
+      (t/is (str/includes? (ex-message e) ":yscrollcommand"))))
+  ;; a patch must refuse it too: the widget's own scrollbar already wired
+  ;; the option, and the binding would silently take it over
+  (with-fake [rec nil]
+    (let [with-command? (atom false)
+          m (mounted (fn [_] [:tk/text (cond-> {:text "x" :scrollbar true}
+                                         @with-command?
+                                         (assoc :yscrollcommand (fn [_] nil)))]))]
+      (t/is (some #(re-find #"^ttk::scrollbar " %) (scripts rec)))
+      (reset! with-command? true)
+      (let [e (try (rerender! m) nil (catch Exception e e))]
+        (t/is (= :kmet.tk.core/scrollbar-and-command (:type (ex-data e))))))))
 
 (t/deftest a-menu-runs-its-post-command
   ;; -postcommand asks a menu to build itself when it is posted; a combobox
@@ -903,6 +914,17 @@
               "the first use materializes it with the initial value")
         (engine/dispose-component root)))))
 
+(t/deftest a-nil-variable-value-is-empty
+  ;; Tcl has no nil: a nil initial value or variable-set! is the empty
+  ;; string, not the word "nil" (every other prop reads nil as absent).
+  (with-fake [rec nil]
+    (let [v (tk/variable nil)]
+      (mounted [:ttk/entry {:textvariable v}])
+      (let [name (tk/variable-name v)]
+        (t/is (some #(= (str "set " name " {}") %) (scripts rec)))
+        (tk/variable-set! v nil)
+        (t/is (= 2 (count (scripts-like rec (re-pattern (str "^set " name " \\{\\}$"))))))))))
+
 (t/deftest a-checkable-widgets-shared-variable-carries-its-state
   ;; A :variable prop shares the state variable (with the app, with a radio
   ;; group): :active writes the variable's on/off value and :on-toggled
@@ -1010,6 +1032,35 @@
             "the rebuilt widget carries the new variable")
       (engine/dispose-component (:root m)))))
 
+(t/deftest a-checkables-low-values-are-values-not-absences
+  ;; A boolean false is a value Tk writes into the variable as itself —
+  ;; tcl-value renders it 0 — not an absence that falls back to the 1/0
+  ;; defaults (or to a radiobutton's 1).
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:ttk/radiobutton {:text "false" :value false
+                                                      :active true}]
+                                   [:ttk/checkbutton {:text "flip" :onvalue false
+                                                      :offvalue true
+                                                      :active true}]])]
+      (let [sets (filterv #(str/starts-with? % "set ::kmet_check_") (scripts rec))
+            [radio check] sets]
+        (t/is (= 2 (count sets)))
+        (t/is (str/ends-with? radio " 0")
+              "the radio writes its own :value false as 0")
+        (t/is (str/ends-with? check " 0")
+              "an active checkbutton writes :onvalue false as 0"))
+      (engine/dispose-component root)))
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:ttk/checkbutton {:text "flip" :onvalue false
+                                                      :offvalue true
+                                                      :active false}]])]
+      (t/is (some #(str/ends-with? % " 1")
+                  (filterv #(str/starts-with? % "set ::kmet_check_") (scripts rec)))
+            "an inactive checkbutton writes :offvalue true as 1")
+      (engine/dispose-component root))))
+
 (t/deftest one-item-source-and-one-value-source
   ;; Tk's -listvariable links a listbox to a variable both ways and a text
   ;; field's -textvariable is its value, so the tags refuse a second source
@@ -1032,7 +1083,16 @@
         (t/is (some #(re-find #"-listvariable ::kmet_var_\d+" %) (scripts rec)))
         (t/is (not-any? #(str/includes? % "insert end") (scripts rec))
               "the variable is the listbox's only item source")
-        (engine/dispose-component root)))))
+        (engine/dispose-component root))))
+  ;; a patch must refuse a second value source too
+  (with-fake [_rec nil]
+    (let [v (tk/variable "b")
+          with-text? (atom false)
+          m (mounted (fn [_] [:ttk/entry (cond-> {:textvariable v}
+                                           @with-text? (assoc :text "a"))]))]
+      (reset! with-text? true)
+      (let [e (try (rerender! m) nil (catch Exception e e))]
+        (t/is (= :kmet.tk.core/text-and-textvariable (:type (ex-data e))))))))
 
 (t/deftest variable-watches-carry-tcl-writes-back
   ;; A watch rides `trace add variable`, so a write from any side — the

@@ -476,11 +476,12 @@ be materialized right after installing.
 
 `:onvalue`, `:offvalue` and `:tristatevalue` are plain props beside a
 shared `:variable`: `:active` writes the on/off value into the variable,
-and `:on-toggled` compares the variable with the widget's own `-onvalue`,
-so either side can move the state. A radiobutton group sharing one
-`:variable` is Tk's own exclusive group. Two props that would be a second
-source of truth are refused: `:text` beside `:textvariable` on a text
-field, and a listbox's `:items` beside its `:listvariable`.
+and `:on-toggled` compares the variable with the widget's own `-onvalue`
+(a radiobutton's `-value`), so either side can move the state. A
+radiobutton group sharing one `:variable` is Tk's own exclusive group.
+Two props that would be a second source of truth are refused: `:text`
+beside `:textvariable` on a text field, and a listbox's `:items` beside
+its `:listvariable`.
 
 ### Images
 
@@ -716,8 +717,14 @@ a context menu posted at the click, a menu's check and radio items
 invoked through Tk (the pointer is synthetic — `event generate` — so a
 press picks the item under its point and the events that follow reach it;
 motion with no press behind it only reaches an item when a real pointer
-moves it, which is a manual check), and a frame's gridded and placed children read back
-with `winfo manager`.
+moves it, which is a manual check), a frame's gridded and placed children read back
+with `winfo manager`, a shared variable's two-way binding through a real
+entry (Tk writes the user's typing back, `variable-set!` reaches the
+widget, and the trace fires for both), a radio group sharing one, a
+validator refusing a key, a text's scroll command called with real
+fractions, a canvas `:bind` keeping a drag's coordinates past the item's
+edge, a posted menu's `-postcommand`, and a labelframe's label widget read
+back with `cget -labelwidget`.
 
 `scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
 the interpreter's widget classes and their options and diffs them against
