@@ -10,6 +10,7 @@
             [kmet.app.keybindings :as app-kb]
             [kmet.app.loop :as agent]
             [kmet.app.model-resolver :as resolver]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.model-catalog :as model-catalog]
@@ -400,9 +401,9 @@
         close! (fn []
                  (dock/close-atom! cs sel-atom))
         available (models/get-available)
-        ag @(:agent-state cs)
+        ag (runtime/agent-state (:engine cs))
         session-scoped (vec @(:scoped-models ag))
-        patterns (cfg/get-enabled-models-live (:config cs))
+        patterns (cfg/get-enabled-models-live (runtime/config (:engine cs)))
         configured-ids (fn []
                          ;; resolve each pattern; unresolved ones survive as
                          ;; [unavailable] rows (pi: no-match diagnostics are

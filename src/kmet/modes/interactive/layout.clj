@@ -57,10 +57,10 @@
    (pi's `missedTokens < 20_000 && missedCost < 0.1` is simplified to the
    token arm — kmet has no per-message price lookup here)."
   [cs run-messages]
-  (when (and (cfg/get-show-cache-miss-notices (:config cs))
+  (when (and (cfg/get-show-cache-miss-notices (runtime/config (:engine cs)))
              ;; the run must have produced an assistant message with usage
              (some #(and (= :assistant (:role %)) (:usage %)) run-messages))
-    (when-let [sess @(:session-atom cs)]
+    (when-let [sess (runtime/session (:engine cs))]
       (when-let [miss (session/detect-cache-miss (session/get-branch sess))]
         (when (>= (:missed-tokens miss) 20000)
           (chat-history/chat-history-add-message!
@@ -195,7 +195,7 @@
       ;; The guarded nil-swap inside activate-working-indicator!
       ;; schedules the frame when a real change happens.
       (when-let [cs @cs-ref]
-        (when (and @(:running-turn? cs)
+        (when (and (runtime/turn-running? (:engine cs))
                    (not= :working (:kind @(:status-current cs))))
           (status/activate-working-indicator! cs)))
       :auto-retry-start
@@ -407,8 +407,8 @@
       (when-let [cs @cs-ref]
         (turn/set-terminal-progress! cs true)
         (when (and (runtime/turn-running? (:engine cs))
-                   (not @(:running-turn? cs)))
-          (reset! (:running-turn? cs) true)
+                   (not (runtime/turn-running? (:engine cs))))
+          (when-let [a (:turn-running? (:engine cs))] (reset! a true))
           (when (nil? @(:anim-timer cs))
             (status/start-anim-timer! cs))
           (when-not (= :working (:kind @(:status-current cs)))
@@ -568,7 +568,6 @@
         dock-stack (atom [])
         cs (state/map->CoreState {:tui t
                                   :engine engine
-                                  :agent-state (:agent-state engine)
                                   :chat-history ch
                                   :editor ed
                                   :current-editor-atom current-editor-atom
@@ -581,13 +580,6 @@
                                   :status-current (atom nil)
                                   :status-root nil
                                   :pending-messages-comp pm
-                                  :session-atom (:session engine)
-                                  ;; the runtime owns the turn flag and the
-                                  ;; compaction queue; these legacy CoreState
-                                  ;; aliases share the engine's atoms
-                                  :running-turn? (:turn-running? engine)
-                                  :compaction-queued (:compaction-queued engine)
-                                  :config config
                                   :pending-tool-comps pending-tool-comps
                                   :bash-running? (atom false)
                                   :bash-signal (atom false)
@@ -827,7 +819,7 @@
       ;; pi: cycleThinkingLevel — Shift+Tab cycles through available levels
       (editor/editor-set-on-action! ed "app.thinking.cycle"
                                     (fn []
-                                      (let [ag @(:agent-state cs)
+                                      (let [ag (runtime/agent-state (:engine cs))
                                             model (models/get-model @(:provider ag) @(:model ag))
                                             levels (if model
                                                      (shared/get-supported-thinking-levels model)
@@ -861,24 +853,24 @@
                                     (fn [] (show-model-selector cs)))
       (editor/editor-set-on-action! ed "app.model.cycleForward"
                                     (fn []
-                                      (if (agent/cycle-model! @(:agent-state cs) 1)
-                                        (do (cfg/set-default-model! @(:provider @(:agent-state cs))
-                                                                    @(:model @(:agent-state cs)))
+                                      (if (agent/cycle-model! (runtime/agent-state (:engine cs)) 1)
+                                        (do (cfg/set-default-model! @(:provider (runtime/agent-state (:engine cs)))
+                                                                    @(:model (runtime/agent-state (:engine cs))))
                                             (sync-footer-model! cs))
                                         (chat-history/chat-history-show-status!
                                          (:chat-history cs)
-                                         (if (seq @(:scoped-models @(:agent-state cs)))
+                                         (if (seq @(:scoped-models (runtime/agent-state (:engine cs))))
                                            "Only one model in scope"
                                            "Only one model available")))))
       (editor/editor-set-on-action! ed "app.model.cycleBackward"
                                     (fn []
-                                      (if (agent/cycle-model! @(:agent-state cs) -1)
-                                        (do (cfg/set-default-model! @(:provider @(:agent-state cs))
-                                                                    @(:model @(:agent-state cs)))
+                                      (if (agent/cycle-model! (runtime/agent-state (:engine cs)) -1)
+                                        (do (cfg/set-default-model! @(:provider (runtime/agent-state (:engine cs)))
+                                                                    @(:model (runtime/agent-state (:engine cs))))
                                             (sync-footer-model! cs))
                                         (chat-history/chat-history-show-status!
                                          (:chat-history cs)
-                                         (if (seq @(:scoped-models @(:agent-state cs)))
+                                         (if (seq @(:scoped-models (runtime/agent-state (:engine cs))))
                                            "Only one model in scope"
                                            "Only one model available")))))
 

@@ -55,20 +55,20 @@
 
 (defn runtime-cwd
   "The working directory of CS's runtime (pi: AgentSession._cwd, seeded from
-   the active session's recorded cwd): the engine's cwd — the live value the
-   footer pwd, the extension ctx.cwd, and tool components read — else the
-   footer provider's (test stubs without an engine), else the process cwd."
+   the active session's recorded cwd): the live value the footer pwd, the
+   extension ctx.cwd, and tool components read. The footer data provider
+   holds the runtime's cwd atom in production; a test CoreState without one
+   falls back to the engine's, else the process cwd."
   [cs]
-  (or (runtime/cwd (:engine cs))
-      (some-> (:footer-provider cs) fdp/fdp-get-cwd)
+  (or (some-> (:footer-provider cs) fdp/fdp-get-cwd)
+      (runtime/cwd (:engine cs))
       (str (fs/cwd))))
 
 (defn turn-running?
-  "True when a response is streaming (the CoreState turn flag) — the
-   condition the switch commands refuse on. Nil-safe: a CS without the flag
-   (test stubs, extension contexts built over reduced state) counts as idle."
+  "True while a prompt started through the runtime has not settled. The
+   runtime owns the turn flag; a nil engine counts as idle."
   [cs]
-  (boolean (some-> (:running-turn? cs) deref)))
+  (runtime/turn-running? (:engine cs)))
 
 (defn find-session
   "Most recent session for the current cwd (pi: continueRecent →
@@ -134,7 +134,6 @@
 ;; ─── Core state ────────────────────────────────────────────────────────────
 
 (defrecord CoreState [tui
-                      agent-state
                       chat-history
                       editor
                       current-editor-atom
@@ -147,10 +146,6 @@
                       status-root
                       status-current
                       pending-messages-comp
-                      session-atom
-                      running-turn?
-                      compaction-queued
-                      config
                       pending-tool-comps
                       bash-running?
                       bash-signal
@@ -161,7 +156,6 @@
                       theme-controller
                       ;; the kmet.app.session-runtime engine; the layout owns
                       ;; view state and subscribes to the engine's stream
-                      ;; (step 3 shrinks the rest into the runtime)
                       engine])
 
 ;; ─── Formatting helpers ────────────────────────────────────────────────────
@@ -240,7 +234,7 @@
    so every change here re-derives the footer and schedules the frame
    reactively (§3.4 hook)."
   [cs]
-  (fdp/fdp-set-session! (:footer-provider cs) @(:session-atom cs))
+  (fdp/fdp-set-session! (:footer-provider cs) (runtime/session (:engine cs)))
   nil)
 
 (defn update-terminal-title!
@@ -251,7 +245,7 @@
    TUI/terminal isn't live (e.g. tests with a stub tui)."
   [cs]
   (let [title (str "kmet"
-                   (when-let [name (session/get-session-name @(:session-atom cs))]
+                   (when-let [name (session/get-session-name (runtime/session (:engine cs)))]
                      (str " - " name))
                    " - " (fs/file-name (runtime-cwd cs)))]
     (when-let [term (:terminal (:tui cs))]

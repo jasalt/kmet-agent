@@ -55,7 +55,7 @@
   (when cs
     (when-let [term (some-> cs :tui :terminal deref)]
       (when (or (not active?)
-                (cfg/get-show-terminal-progress (:config cs)))
+                (cfg/get-show-terminal-progress (runtime/config (:engine cs))))
         (term/set-progress! term active?)))))
 
 ;; ─── Agent response handler ────────────────────────────────────────────────
@@ -96,7 +96,7 @@
   [cs]
   (try
     (status/stop-anim-timer! cs)
-    (reset! (:running-turn? cs) false)
+    (when-let [a (:turn-running? (:engine cs))] (reset! a false))
     (status/clear-status-indicator! cs)
     (chat-history/chat-history-finalize-streaming! (:chat-history cs))
     (chat-history/chat-history-finalize-thinking! (:chat-history cs))
@@ -120,7 +120,7 @@
   (try
     (status/stop-anim-timer! cs)
     ;; flag before the status clear — see on-agent-done
-    (reset! (:running-turn? cs) false)
+    (when-let [a (:turn-running? (:engine cs))] (reset! a false))
     (status/clear-status-indicator! cs)
     ;; If streaming placeholder is still empty, remove it
     ;; so we don't get a blank assistant entry before the error message.
@@ -174,9 +174,9 @@
                        ;; reaches live bash executions too (reactive read)
                        :tools-expanded-atom (:tools-expanded-atom (:chat-history cs)))
             ;; ── Build session env (pi: resolveSpawnContext) ─────────────
-            ag @(:agent-state cs)
+            ag (runtime/agent-state (:engine cs))
             session-env
-            (bash-tool/session-env {:session @(:session-atom cs)
+            (bash-tool/session-env {:session (runtime/session (:engine cs))
                                     :provider @(:provider ag)
                                     :model @(:model ag)
                                     :thinking-level @(:thinking ag)})
@@ -202,7 +202,7 @@
 
         ;; Add to chat (or pending container if agent is streaming)
         ;; Pi: pendingMessagesContainer sits between chat and footer
-        (if @(:running-turn? cs)
+        (if (runtime/turn-running? (:engine cs))
           (do
             (container/container-add-child (:pending-messages-container cs) bash-comp)
             (swap! (:pending-bash-components cs) conj bash-comp))
@@ -242,10 +242,10 @@
               ;; streaming so tool_use/tool_result ordering is preserved
               ;; (pi: recordBashResult queues pending bash messages, flushed
               ;; by run-agent-turn once the run settles)
-              (agent/add-bash-result! @(:agent-state cs) command result exclude-from-context?)
+              (agent/add-bash-result! (runtime/agent-state (:engine cs)) command result exclude-from-context?)
 
               ;; Move pending bash from pending container to chat (pi: pendingMessagesContainer)
-              (when @(:running-turn? cs)
+              (when (runtime/turn-running? (:engine cs))
                 (let [pending (:pending-bash-components cs)]
                   (when (seq @pending)
                     (doseq [comp @pending]
@@ -275,9 +275,9 @@
    full redraw (ESC[3J) may be emitted: landing one mid-stream yanks the
    viewport, which is the scroll-to-top bug."
   [cs]
-  (and (not @(:running-turn? cs))
+  (and (not (runtime/turn-running? (:engine cs)))
        (not @(:bash-running? cs))
-       (not @(:compacting? @(:agent-state cs)))))
+       (not @(:compacting? (runtime/agent-state (:engine cs))))))
 
 (defn heal-stale-scrollback-when-idle!
   "Heal a stale above-window scrollback when the app is streaming-free (see
@@ -353,7 +353,7 @@
    last entry is an unanswered user message or a dangling tool result the
    model must pick up)."
   [cs & [message]]
-  (reset! (:running-turn? cs) true)
+  (when-let [a (:turn-running? (:engine cs))] (reset! a true))
   (status/activate-working-indicator! cs)
   (status/start-anim-timer! cs)
   (state/update-footer! cs)
@@ -363,7 +363,7 @@
       (runtime/prompt! engine (cond-> callbacks message (assoc :text message)))
       ;; test stubs build a CoreState without the runtime engine; the loop
       ;; knows the prompt text as :message
-      (agent/run-agent-turn @(:agent-state cs)
+      (agent/run-agent-turn (runtime/agent-state (:engine cs))
                             (cond-> callbacks message (assoc :message message))))))
 
 (defn- submit-through-runtime!
@@ -385,8 +385,8 @@
       action)
     ;; test stubs without an engine: hooks and expansion live in the runtime,
     ;; so a bare submit steers or starts directly
-    (if @(:running-turn? cs)
-      (do (agent/steer! @(:agent-state cs) text)
+    (if (runtime/turn-running? (:engine cs))
+      (do (agent/steer! (runtime/agent-state (:engine cs)) text)
           (tui/editor-add-to-history! @(:current-editor-atom cs) text)
           (status/update-pending-messages! cs)
           :steered)
@@ -436,7 +436,7 @@
   [cs text mode]
   (if-let [engine (:engine cs)]
     (runtime/queue-compaction-message! engine text mode)
-    (when-let [a (:compaction-queued cs)]
+    (when-let [a (:compaction-queued (:engine cs))]
       (swap! a conj {:text text :mode mode}))))
 
 (defn handle-submit [cs text]
@@ -466,7 +466,7 @@
             ;; the flush applies hooks + skill/template expansion at
             ;; delivery like a normal submit (pi: unknown commands fall
             ;; through to the compaction check and queue raw text).
-            (if @(:compacting? @(:agent-state cs))
+            (if @(:compacting? (runtime/agent-state (:engine cs)))
               (do (tui/editor-add-to-history! @(:current-editor-atom cs) trimmed)
                   (queue-compaction-message! cs trimmed :steer))
               (submit-through-runtime! cs trimmed {:expand? true}))))
@@ -501,7 +501,7 @@
         ;; extension commands and builtins already dispatched above, so
         ;; only plain messages land here). Flushed by the :compaction-end
         ;; handler.
-        (if @(:compacting? @(:agent-state cs))
+        (if @(:compacting? (runtime/agent-state (:engine cs)))
           (do (tui/editor-add-to-history! @(:current-editor-atom cs) trimmed)
               (queue-compaction-message! cs trimmed :steer))
           (submit-through-runtime! cs trimmed nil))))))
@@ -520,19 +520,19 @@
     ;; Queue input during compaction (pi: handleFollowUp → isCompacting
     ;; → extension commands execute immediately via prompt(), everything
     ;; else queues as followUp).
-    @(:compacting? @(:agent-state cs))
+    @(:compacting? (runtime/agent-state (:engine cs)))
     (if (runtime/extension-command? text)
       (do (runtime/execute-extension-command! text) :executed)
       (do (queue-compaction-message! cs text :follow-up) :compaction))
 
-    @(:running-turn? cs)
+    (runtime/turn-running? (:engine cs))
     ;; Pi: handleFollowUp queues a follow-up (processed after the run
     ;; settles). Not added to the chat here — like steering, it appears
     ;; as a user message when the loop consumes it (:message-start,
     ;; pi: message_start → addMessageToChat).
     (do (if-let [engine (:engine cs)]
           (runtime/follow-up! engine text)
-          (agent/follow-up! @(:agent-state cs) text))
+          (agent/follow-up! (runtime/agent-state (:engine cs)) text))
         (status/update-pending-messages! cs)
         :queued)
 
@@ -560,10 +560,10 @@
   [cs]
   (let [{:keys [steering follow-up]} (if-let [engine (:engine cs)]
                                        (runtime/queues engine)
-                                       (agent/queued-messages @(:agent-state cs)))
+                                       (agent/queued-messages (runtime/agent-state (:engine cs))))
         cq (if-let [engine (:engine cs)]
              (runtime/compaction-queued engine)
-             @(:compaction-queued cs))
+             (runtime/compaction-queued (:engine cs)))
         all (into (vec steering) (concat follow-up (map :text cq)))]
     (when (seq all)
       (let [ed @(:current-editor-atom cs)
@@ -573,8 +573,8 @@
         (if-let [engine (:engine cs)]
           (do (runtime/clear-queues! engine)
               (runtime/clear-compaction-queue! engine))
-          (do (agent/clear-queues! @(:agent-state cs))
-              (reset! (:compaction-queued cs) [])))
+          (do (agent/clear-queues! (runtime/agent-state (:engine cs)))
+              (reset! (:compaction-queued (:engine cs)) [])))
         (tui/editor-set-text! ed combined)
         (status/update-pending-messages! cs)))
     (count all)))
@@ -598,7 +598,7 @@
    abortCompaction) — a running turn is NOT cancelled and continues on the
    pre-compaction context."
   [cs]
-  (if @(:compacting? @(:agent-state cs))
+  (if @(:compacting? (runtime/agent-state (:engine cs)))
     ;; Escape during compaction aborts ONLY the summarization (pi: onEscape
     ;; → abortCompaction — the compaction_start handler swaps the escape
     ;; handler to abortCompaction, restored at compaction_end). A running
@@ -609,18 +609,18 @@
       (debug/log "compaction cancelled by user")
       ;; no visual change here — compaction-end's clear-status-indicator!
       ;; schedules the frame when the abort lands
-      (agent/abort-compaction! @(:agent-state cs)))
+      (agent/abort-compaction! (runtime/agent-state (:engine cs))))
     (do
       (when @(:bash-running? cs)
         (debug/log "bash command cancelled by user")
         (reset! (:bash-signal cs) true)
         (reset! (:bash-running? cs) false)
         (state/update-footer! cs))
-      (when @(:running-turn? cs)
+      (when (runtime/turn-running? (:engine cs))
         (debug/log "agent turn cancelled by user")
         ;; flag before the status clear — see on-agent-done: a background
         ;; revive racing this teardown must see the turn over
-        (reset! (:running-turn? cs) false)
+        (when-let [a (:turn-running? (:engine cs))] (reset! a false))
         (status/stop-anim-timer! cs)
         (status/clear-status-indicator! cs)
     ;; pi: restoreQueuedMessagesToEditor({abort: true}) — queued steering/
@@ -630,7 +630,7 @@
         (let [restored (restore-queued-messages! cs)]
           (if-let [engine (:engine cs)]
             (runtime/cancel! engine)
-            (agent/cancel-turn @(:agent-state cs)))
+            (agent/cancel-turn (runtime/agent-state (:engine cs))))
       ;; Remove empty streaming placeholder if present — by identity, so
       ;; an entry appended after it (steered/follow-up message, tool
       ;; execution) is never popped in its place

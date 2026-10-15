@@ -5,6 +5,25 @@
             [kmet.app.session-runtime :as rt]
             [kmet.tui.utils :as u]))
 
+(defn with-test-engine
+  "Add a runtime engine to a test cs map (see test-engine), reusing the
+   map's legacy :agent-state/:session-atom/:config/:running-turn?/
+   :compaction-queued values so direct test writes and the runtime
+   accessors share the same atoms. The legacy keys stay in the map for
+   test bodies that read them."
+  [cs]
+  (assoc cs :engine
+         (rt/map->Engine
+          {:agent-state (or (:agent-state cs) (atom nil))
+           :session (or (:session-atom cs) (atom nil))
+           :config (atom (or (:config cs) {}))
+           :subscribers (atom [])
+           :last-run (atom nil)
+           :disposed? (atom false)
+           :cwd (atom (str (fs/cwd)))
+           :turn-running? (or (:running-turn? cs) (atom false))
+           :compaction-queued (or (:compaction-queued cs) (atom []))})))
+
 (defn test-engine
   "A minimal session-runtime engine for mode-level tests: the given
    :agent-state and :session atoms (exactly as the Engine record holds

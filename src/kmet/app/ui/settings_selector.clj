@@ -11,6 +11,7 @@
    repeat guard toggle), the HTTP transport row (:platform http-client vs
    :curl, applied live to kmet.libs.http), and a theme row."
   (:require [kmet.app.loop :as agent]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.theme-controller :as theme-ctrl]
             [kmet.ai.api.shared :as shared]
             [kmet.ai.models :as models]
@@ -105,11 +106,11 @@
   [cs]
   (let [;; late binding: the escape callback disposes the frame, built below
         frame-atom (atom nil)
-        ag @(:agent-state cs)
+        ag (runtime/agent-state (:engine cs))
         model (models/get-model @(:provider ag) @(:model ag))
         levels (if model (shared/get-supported-thinking-levels model) [:off])
         current (or (some #{(keyword @(:thinking ag))} levels) (first levels))
-        config (:config cs)
+        config (runtime/config (:engine cs))
         retry-atom (atom (cfg/get-retry-settings-live config))
         ;; Repeat-loop guard (kmet-specific): settings.edn :loop-guard block
         lg-atom (atom (cfg/get-loop-guard-settings-live config))

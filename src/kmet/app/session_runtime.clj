@@ -54,9 +54,10 @@
 (defn agent-state
   "The live AgentState record. The engine holds it in an atom because a
    session switch replaces the record (the mode assoc's :session and resets
-   the atom) — the layout's CoreState :agent-state is this same atom."
+   the atom) — the layout's CoreState :agent-state is this same atom. nil
+   for a bare test engine without one."
   [engine]
-  @(:agent-state engine))
+  (some-> engine :agent-state deref))
 
 (defn- extension-before-tool-call
   "Chain extension tool-call hooks (pi: beforeToolCall) — the runtime wires
@@ -233,9 +234,10 @@
     engine))
 
 (defn session
-  "The live session (an atom's value; a session switch replaces it)."
+  "The live session (an atom's value; a session switch replaces it). nil
+   for a context-less engine or a bare test engine."
   [engine]
-  @(:session engine))
+  (some-> engine :session deref))
 
 (defn ensure-cwd-session-dir
   "The cwd-encoded sessions dir for CWD under BASE-DIR, created if missing
@@ -260,6 +262,13 @@
    replaces it)."
   [engine]
   (some-> engine :config deref))
+
+(defn set-config!
+  "Replace the live process config (/reload re-reads settings.edn and
+   extensions); session-dir and run-option lookups follow it."
+  [engine config]
+  (when-let [a (:config engine)] (reset! a config))
+  nil)
 
 (defn cwd
   "The runtime working directory (pi: AgentSession._cwd — the resumed

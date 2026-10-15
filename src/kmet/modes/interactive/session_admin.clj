@@ -272,7 +272,7 @@
              (:chat-history cs)
              (cond-> {:role role :summary (:summary e) :tokens-before (:tokens-before e)}
                (:usage e) (assoc :usage (:usage e))))
-            (when-let [notice (compaction-cost-notice (:config cs) role (:usage e))]
+            (when-let [notice (compaction-cost-notice (runtime/config (:engine cs)) role (:usage e))]
               (chat-history/chat-history-add-message! (:chat-history cs) notice)))
 
           :else
@@ -345,15 +345,15 @@
                          (reset! (:bash-running? cs) false)))
         result (runtime/new-session! (:engine cs) {:before-settle cancel-bash!})]
     (when-not (:cancelled result)
-      (when @(:running-turn? cs)
-        (reset! (:running-turn? cs) false)
+      (when (runtime/turn-running? (:engine cs))
+        (when-let [a (:turn-running? (:engine cs))] (reset! a false))
         (status/stop-anim-timer! cs)
         (status/clear-status-indicator! cs))
       (chat-history/chat-history-clear! (:chat-history cs))
       (be/dispose-pending-bash! @(:pending-bash-components cs))
       (container/container-clear (:pending-messages-container cs))
       ;; pi: a session switch drops the compaction queue (compactionQueuedMessages = [])
-      (reset! (:compaction-queued cs) [])
+      (reset! (:compaction-queued (:engine cs)) [])
       ;; Re-attach the PendingMessages component — container-clear removes
       ;; every child (queued steering/follow-up display included), and the
       ;; display must keep rendering for messages queued after /new
@@ -438,7 +438,7 @@
                                                :content "Wait for the current response to finish before importing."})
 
       :else
-      (let [sess @(:session-atom cs)
+      (let [sess (runtime/session (:engine cs))
             ;; pi: this.session.sessionManager.getSessionDir() — the active
             ;; session's directory; a not-yet-persisted session still carries
             ;; its computed :file (lazy creation)
@@ -491,7 +491,7 @@
   (try
     ;; pi: renderCurrentSessionState on session rebind — the compaction
     ;; queue does not survive navigation
-    (reset! (:compaction-queued cs) [])
+    (reset! (:compaction-queued (:engine cs)) [])
     (let [summary-entry (if summary-result
                           (session/branch-with-summary!
                            sess target-leaf (:summary summary-result)
@@ -504,7 +504,7 @@
           label-target (if summary-entry (:id summary-entry) target-leaf)]
       (when (and label label-target)
         (session/set-label! sess label-target label))
-      (agent/restore-session-context! @(:agent-state cs))
+      (agent/restore-session-context! (runtime/agent-state (:engine cs)))
       (replay-branch! cs sess)
       ;; pi: restore the user message only when the editor is empty — a draft
       ;; the user is composing is not clobbered by navigation
@@ -552,7 +552,7 @@
    cancels the call."
   [cs sess old-leaf target-leaf user-msg-text prep abort-atom
    custom-instructions replace-instructions?]
-  (let [ag @(:agent-state cs)
+  (let [ag (runtime/agent-state (:engine cs))
         ed (:editor cs)
         prev-interrupt (get @(:action-handlers ed) "app.interrupt")
         indicator (status-indicator/make-branch-summary-status-indicator)
@@ -696,7 +696,7 @@
   [cs sess entry]
   ;; pi: branchSummary.skipPrompt — skip the question and default to no
   ;; summary
-  (if (:skip-prompt (cfg/get-branch-summary-settings-live (:config cs)))
+  (if (:skip-prompt (cfg/get-branch-summary-settings-live (runtime/config (:engine cs))))
     (navigate-tree! cs sess entry false nil false nil)
     (let [sel-atom (atom nil)
           on-select (fn [choice]
@@ -712,7 +712,7 @@
                       ;; navigated to (pi showTreeSelector initialSelectedId)
                       (show-session-tree cs
                                          (fn [entry]
-                                           (ask-branch-summary cs @(:session-atom cs) entry))
+                                           (ask-branch-summary cs (runtime/session (:engine cs)) entry))
                                          (:id entry)))
           dlg (dialogs/make-selector-dialog
                "Summarize branch?"

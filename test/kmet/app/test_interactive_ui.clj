@@ -204,12 +204,12 @@
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :footer-comp nil
-              :footer-provider nil
-              :config cfg/default-config
-              :tui nil}]
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})]
       (with-redefs [auth/configured? (fn [_] true)
                     chat-history/chat-history-add-message! (fn [_ _] nil)
                     model-selector/sync-footer-model! (fn [_] nil)
@@ -253,13 +253,13 @@
     (let [ag (agent/make-agent-state :provider :deepseek :model "deepseek-v4-pro")
           status (atom nil)
           saved (atom nil)
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :editor (editor/make-editor)
-              :footer-comp nil
-              :footer-provider nil
-              :config cfg/default-config
-              :tui nil}]
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :editor (editor/make-editor)
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})]
       (with-redefs [chat-history/chat-history-show-status! (fn [_ m] (reset! status m))
                     model-selector/sync-footer-model! (fn [_] nil)
                     cfg/save-setting! (fn [path value] (reset! saved [path value]))
@@ -294,20 +294,20 @@
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [status (atom nil)
           sel-ref (atom nil)
-          reasoning-cs {:agent-state (atom (agent/make-agent-state :provider :deepseek
-                                                                   :model "deepseek-v4-pro"))
-                        :chat-history nil
-                        :editor (editor/make-editor)
-                        :footer-comp nil
-                        :footer-provider nil
-                        :config cfg/default-config
-                        :tui nil}
-          plain-cs {:agent-state (atom (agent/make-agent-state :provider :ghost
-                                                               :model "unknown-model"))
-                    :chat-history nil
-                    :editor (editor/make-editor)
-                    :config cfg/default-config
-                    :tui nil}]
+          reasoning-cs (tu/with-test-engine {:agent-state (atom (agent/make-agent-state :provider :deepseek
+                                                                                        :model "deepseek-v4-pro"))
+                                             :chat-history nil
+                                             :editor (editor/make-editor)
+                                             :footer-comp nil
+                                             :footer-provider nil
+                                             :config cfg/default-config
+                                             :tui nil})
+          plain-cs (tu/with-test-engine {:agent-state (atom (agent/make-agent-state :provider :ghost
+                                                                                    :model "unknown-model"))
+                                         :chat-history nil
+                                         :editor (editor/make-editor)
+                                         :config cfg/default-config
+                                         :tui nil})]
       (with-redefs [chat-history/chat-history-show-status! (fn [_ m] (reset! status m))
                     chat-history/chat-history-add-message! (fn [_ _] nil)
                     ;; deterministic default — must not depend on the real
@@ -335,13 +335,13 @@
     (let [ag (agent/make-agent-state :provider :deepseek :model "deepseek-v4-pro")
           saved (atom nil)
           sel-ref (atom nil)
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :editor (editor/make-editor)
-              :footer-comp nil
-              :footer-provider nil
-              :config cfg/default-config
-              :tui nil}]
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :editor (editor/make-editor)
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})]
       (with-redefs [chat-history/chat-history-show-status! (fn [_ _] nil)
                     thinking-selector/default-thinking-level (fn [_] :off)
                     cfg/save-setting! (fn [path value] (reset! saved [path value]))
@@ -377,10 +377,10 @@
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           msg (atom nil)
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :running-turn? (atom true)
-              :tui nil}]
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :running-turn? (atom true)
+                                   :tui nil})]
       (reset! (:status ag) :thinking)
       (swap! (:messages ag) conj {:role :user :content [{:type :text :text "hi"}]})
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
@@ -395,10 +395,10 @@
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           msg (atom nil)
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :running-turn? (atom false)
-              :tui nil}]
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :running-turn? (atom false)
+                                   :tui nil})]
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
         ((:handler (commands/find-command "continue")) cs ""))
       (t/is (= "No conversation to continue." (:content @msg))))))
@@ -412,10 +412,10 @@
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           msg (atom nil)
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :running-turn? (atom true)
-              :tui nil}]
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :running-turn? (atom true)
+                                   :tui nil})]
       (t/is (= :idle @(:status ag))
             "precondition: the status atom already reads idle")
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
@@ -434,16 +434,16 @@
           _ (swap! (:messages ag) conj
                    {:role :user :content [{:type :text :text "fix the bug"}]})
           started (atom nil)
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :running-turn? (atom false)
-              :tui nil
-              :footer-comp nil
-              :footer-provider nil
-              :status-root nil
-              :status-indicator nil
-              :status-current (atom nil)
-              :anim-timer (atom nil)}]
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :running-turn? (atom false)
+                                   :tui nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :status-root nil
+                                   :status-indicator nil
+                                   :status-current (atom nil)
+                                   :anim-timer (atom nil)})]
       (with-redefs [chat-history/chat-history-add-message! (fn [_ _] nil)
                     chat-history/chat-history-start-streaming! (fn [_] nil)
                     agent/run-agent-turn (fn [a opts]
@@ -458,7 +458,7 @@
       (t/is (identical? ag (first @started)) "runs on the current agent state")
       (t/is (not (contains? (second @started) :message))
             "no :message option — no new user message is added")
-      (t/is (true? @(:running-turn? cs)) "UI turn flag set"))))
+      (t/is (true? (runtime/turn-running? (:engine cs))) "UI turn flag set"))))
 
 ;; ─── Status indicator swap model (pi: showStatusIndicator/clearStatusIndicator) ──
 ;; The working indicator must survive mid-turn transient swaps: after a retry
@@ -476,12 +476,13 @@
   (let [si (status-indicator/make-status-indicator :text "Working")
         cur (atom nil)
         ced (atom nil)]
-    {:tui {:render-requested? (atom false)}
-     :status-indicator si
-     :status-current cur
-     :current-editor-atom ced
-     :status-root (hiccup/root (status-indicator/make-status-area cur si ced))
-     :running-turn? (atom true)}))
+    (tu/with-test-engine
+      {:tui {:render-requested? (atom false)}
+       :status-indicator si
+       :status-current cur
+       :current-editor-atom ced
+       :status-root (hiccup/root (status-indicator/make-status-area cur si ced))
+       :running-turn? (atom true)})))
 
 (defn- status-lines [cs]
   (protocols/render (:status-root cs) 60))
@@ -626,7 +627,7 @@
   (testing "no revive when the turn ended"
     (let [cs (test-status-cs)
           share (spinner/make-spinner :text "Creating gist..." :active true)]
-      (reset! (:running-turn? cs) false)
+      (reset! (:turn-running? (:engine cs)) false)
       ((var status/show-status-indicator!) cs :share share)
       ((var status/release-background-status!) cs :share)
       (t/is (blank-status? cs))))
@@ -763,13 +764,9 @@
         engine (tu/test-engine {:agent-state ag-atom :session sess-atom :cwd cwd-atom})]
     (inter/map->CoreState
      {:engine engine
-      :agent-state ag-atom
       :chat-history ch
       :editor ed
       :current-editor-atom (atom ed)
-      :session-atom sess-atom
-      :compaction-queued (atom [])
-      :running-turn? (atom false)
       :footer-provider prov
       :footer-comp (footer/make-footer :provider prov)})))
 
@@ -833,7 +830,7 @@
                                      "Failed to import session: Not a kmet session file"))))
             (testing "an in-flight turn refuses — kmet's switch commands do
                         not abort (pi: teardownCurrent does)"
-              (reset! (:running-turn? cs) true)
+              (reset! (:turn-running? (:engine cs)) true)
               ((:handler cmd) cs (str dir "/whatever.ednl"))
               (t/is (= "Wait for the current response to finish before importing."
                        (:content (last-message ch)))))))
@@ -876,9 +873,9 @@
                 (protocols/handle-input dlg "\r"))
               (t/is (fs/exists? stored) "the file is copied into the session dir")
               (t/is (= (slurp (:file src)) (slurp stored)) "verbatim copy")
-              (t/is (= (:id src) (:id @(:session-atom cs)))
+              (t/is (= (:id src) (:id (runtime/session (:engine cs))))
                     "the imported session is active")
-              (t/is (= (:id src) (:id (:session @(:agent-state cs))))
+              (t/is (= (:id src) (:id (:session (runtime/agent-state (:engine cs)))))
                     "the agent's session swapped too")
               (t/is (= ["imported question"]
                        (mapv :content (filter #(= :user (:role %))
@@ -891,14 +888,14 @@
               (t/is (= (slash foreign) (slash (fdp/fdp-get-cwd (:footer-provider cs))))
                     "the runtime cwd follows the imported session's")
               (t/is (= (slash foreign)
-                       (slash (get-in @(:system-prompt-opts @(:agent-state cs)) [:cwd])))
+                       (slash (get-in @(:system-prompt-opts (runtime/agent-state (:engine cs))) [:cwd])))
                     "and the system prompt options")
-              (t/is (str/includes? (slash @(:system @(:agent-state cs))) (slash foreign))
+              (t/is (str/includes? (slash @(:system (runtime/agent-state (:engine cs)))) (slash foreign))
                     "the model is told where its tools will run")
               (t/is (= [{:path "AGENTS.md" :content "LAUNCH-PROJECT CONTEXT"}]
-                       (get-in @(:system-prompt-opts @(:agent-state cs)) [:context-files]))
+                       (get-in @(:system-prompt-opts (runtime/agent-state (:engine cs))) [:context-files]))
                     "project context files stay with the launch project")
-              (t/is (str/includes? @(:system @(:agent-state cs)) "LAUNCH-PROJECT CONTEXT")
+              (t/is (str/includes? @(:system (runtime/agent-state (:engine cs))) "LAUNCH-PROJECT CONTEXT")
                     "and stay in the rebuilt prompt"))))
         (finally (fs/delete-tree dir))))))
 
@@ -913,7 +910,7 @@
               incoming (session/create-session (str dir "/in"))
               _ (append-message! incoming "imported question")
               cs (import-test-cs outgoing)
-              ag @(:agent-state cs)
+              ag (runtime/agent-state (:engine cs))
               active-names (fn [] (into #{} (map :name) (agent/active-tools ag)))
               prompt-tool-names (fn []
                                   (into #{}
@@ -965,7 +962,7 @@
                 (protocols/handle-input @sel-ref "\u001b")
                 (t/is (= {:role :status :content "Import cancelled"} (last-message ch)))
                 (t/is (not (fs/exists? stored)) "no copy")
-                (t/is (= (:id active) (:id @(:session-atom cs))) "same session"))
+                (t/is (= (:id active) (:id (runtime/session (:engine cs)))) "same session"))
               (testing "selecting No cancels the same way"
                 (reset! sel-ref nil)
                 ((:handler cmd) cs (:file src))
@@ -982,7 +979,7 @@
                 (protocols/handle-input @sel-ref "\r")
                 (t/is (= {:role :status :content "Import cancelled"} (last-message ch)))
                 (t/is (not (fs/exists? stored)) "the copy is still pending")
-                (t/is (= (:id active) (:id @(:session-atom cs)))))
+                (t/is (= (:id active) (:id (runtime/session (:engine cs))))))
               (testing "a source already in the session dir is not re-copied"
                 (reset! sel-ref nil)
                 (event-bus/clear-event-listeners!)
@@ -990,7 +987,7 @@
                 (protocols/handle-input @sel-ref "\r")
                 (t/is (= 1 (count (fs/list-dir (str dir "/dest"))))
                       "no suffixed duplicate")
-                (t/is (= (:id active) (:id @(:session-atom cs))))))))
+                (t/is (= (:id active) (:id (runtime/session (:engine cs)))))))))
         (finally (fs/delete-tree dir))))))
 
 (deftest test-import-keeps-the-current-cwd-when-the-recorded-one-is-gone
@@ -1016,7 +1013,7 @@
                           dock/mount! (capture-mount! sel-ref)]
               ((:handler (commands/find-command "import")) cs (:file src))
               (protocols/handle-input @sel-ref "\r")
-              (t/is (= (:id src) (:id @(:session-atom cs))) "the session still switches")
+              (t/is (= (:id src) (:id (runtime/session (:engine cs)))) "the session still switches")
               (t/is (= before (fdp/fdp-get-cwd (:footer-provider cs)))
                     "the current cwd is kept")
               (t/is (some #(and (= :status (:role %))
@@ -1081,10 +1078,10 @@
       (try
         (let [ch (chat-history/make-chat-history)
               cs (inter/map->CoreState
-                  {:running-turn? (atom true)
-                   :chat-history ch
-                   :session-atom (atom (session/create-session dir))
-                   :agent-state (atom (agent/make-agent-state))})]
+                  (tu/with-test-engine {:running-turn? (atom true)
+                                        :chat-history ch
+                                        :session-atom (atom (session/create-session dir))
+                                        :agent-state (atom (agent/make-agent-state))}))]
           ((:handler (commands/find-command "resume")) cs "")
           (t/is (= "Wait for the current response to finish before resuming."
                    (:content (last-message ch))))
@@ -1106,8 +1103,8 @@
               entry (session/append-entry sess
                                           {:role :user
                                            :content [{:type :text :text "q"}]})
-              cs {:tui {:render-requested? (atom false)}
-                  :session-atom (atom sess)}]
+              cs (tu/with-test-engine {:tui {:render-requested? (atom false)}
+                                       :session-atom (atom sess)})]
           (with-redefs [dock/mount! (capture-mount! sel-ref)
                         tui/tui-request-render (fn [_])
                         ;; hermetic: no branchSummary.skipPrompt from the
@@ -1146,8 +1143,8 @@
               entry (session/append-entry sess
                                           {:role :user
                                            :content [{:type :text :text "q"}]})
-              cs {:tui {:render-requested? (atom false)}
-                  :session-atom (atom sess)}]
+              cs (tu/with-test-engine {:tui {:render-requested? (atom false)}
+                                       :session-atom (atom sess)})]
           (with-redefs [dock/mount! (capture-mount! sel-ref)
                         tui/tui-request-render (fn [_])
                         cfg/global-settings-path (fn [] settings-file)
@@ -1214,12 +1211,12 @@
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :footer-comp nil
-              :footer-provider nil
-              :config cfg/default-config
-              :tui nil}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
           sel-ref (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
                     chat-history/chat-history-add-message! (fn [_ _] nil)
@@ -1259,12 +1256,12 @@
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :footer-comp nil
-              :footer-provider nil
-              :config cfg/default-config
-              :tui nil}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
           sel-ref (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
                     chat-history/chat-history-add-message! (fn [_ _] nil)
@@ -1295,12 +1292,12 @@
           ag (agent/make-agent-state)
           _ (agent/set-scoped-models! ag ["test-provider/kept"
                                           "test-provider/disappeared"])
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :footer-comp nil
-              :footer-provider nil
-              :config cfg/default-config
-              :tui nil}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
           sel-ref (atom nil)
           saved (atom ::not-saved)]
       ((var builtins/register-builtin-commands!) cfg/default-config)
@@ -1330,12 +1327,12 @@
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4.1-flash"
                                      :thinking :off)
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :footer-comp nil
-              :footer-provider nil
-              :config cfg/default-config
-              :tui nil}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
           sl-ref (atom nil)
           saved (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
@@ -1365,12 +1362,12 @@
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :footer-comp nil
-              :footer-provider nil
-              :config cfg/default-config
-              :tui nil}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
           sl-ref (atom nil)
           saved (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
@@ -1400,12 +1397,12 @@
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :footer-comp nil
-              :footer-provider nil
-              :config cfg/default-config
-              :tui nil}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
           sl-ref (atom nil)
           saved (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
@@ -1453,8 +1450,8 @@
                  (columns [_] 80)
                  (rows [_] 24)
                  (set-progress! [_ active] (swap! calls conj active)))
-          cs {:config {:show-terminal-progress false}
-              :tui {:terminal (atom term)}}]
+          cs (tu/with-test-engine {:config {:show-terminal-progress false}
+                                   :tui {:terminal (atom term)}})]
       (with-redefs [cfg/global-settings-path (fn [] missing)]
         ((var turn/set-terminal-progress!) cs false)
         (t/is (= [false] @calls) "the clear passes while disabled")
@@ -1469,12 +1466,12 @@
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :footer-comp nil
-              :footer-provider nil
-              :config cfg/default-config
-              :tui nil}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
           sl-ref (atom nil)
           saved (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
@@ -1521,9 +1518,9 @@
                     chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))
                     cfg/save-setting! (fn [path value] (reset! saved [path value]))]
         (reset! tc-ctrl (theme-ctrl/make-theme-controller {:theme "dark"} nil nil (fn [])))
-        (let [cs {:config cfg/default-config
-                  :chat-history nil
-                  :theme-controller @tc-ctrl}]
+        (let [cs (tu/with-test-engine {:config cfg/default-config
+                                       :chat-history nil
+                                       :theme-controller @tc-ctrl})]
           (testing "with a full theme name"
             ((:handler (commands/find-command "theme")) cs "light")
             (t/is (= "light" (get-in @saved [1])) "theme persisted as the full name")
@@ -1538,7 +1535,7 @@
   (testing "the editor's dynamic border follows the ACTIVE theme, not the
             config :theme snapshot — a /theme switch re-styles it"
     (let [bf (atom nil)
-          cs {:editor {:border-fn bf}}
+          cs (tu/with-test-engine {:editor {:border-fn bf}})
           rule (fn [theme-name]
                  ((theme/get-thinking-border-color (theme/get-theme theme-name) :max) "─"))]
       (reset! theme/theme-atom (theme/get-theme "dark"))
@@ -1561,9 +1558,9 @@
       (with-redefs [m/providers-atom (atom {:test-provider {:models [model]}})]
         (try
           (let [ag (agent/make-agent-state :provider :test-provider :model "test-model")
-                cs {:agent-state (atom ag)
-                    :config cfg/default-config
-                    :session-atom (atom nil)}
+                cs (tu/with-test-engine {:agent-state (atom ag)
+                                         :config cfg/default-config
+                                         :session-atom (atom nil)})
                 registry ((var ui-registry/build-extension-ui-registry)
                           {:tui nil :cs cs}
                           {:fdp (fdp/make-footer-data-provider)}
@@ -1611,7 +1608,7 @@
             (testing "fns stay live across an agent swap (session swaps assoc a
                 new record; only the :session field goes stale)"
               (let [sess (session/create-session (str (fs/cwd) "/target"))]
-                (reset! (:agent-state cs) (assoc ag :session sess))
+                (reset! (:agent-state (:engine cs)) (assoc ag :session sess))
                 (t/is (true? ((:is-idle ctx))))
                 (t/is (nil? ((:wait-for-idle ctx))))))
             (testing "get-context-usage reports the active session (pi parity)"
@@ -1637,11 +1634,11 @@
             (e.g. D's post-run compaction) has status idle while the prompt is
             still in flight (pi: isIdle / isStreaming / abort)"
     (let [ag (agent/make-agent-state)
-          cs {:agent-state (atom ag)
-              :config cfg/default-config
-              :session-atom (atom nil)
-              :compaction-queued (atom [])
-              :running-turn? (atom false)}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :config cfg/default-config
+                                   :session-atom (atom nil)
+                                   :compaction-queued (atom [])
+                                   :running-turn? (atom false)})
           registry ((var ui-registry/build-extension-ui-registry)
                     {:tui nil :cs cs}
                     {:fdp (fdp/make-footer-data-provider)}
@@ -1651,12 +1648,12 @@
           (t/is (= :idle @(:status ag)) "precondition: the status atom reads idle")
           (t/is (true? ((:is-idle ctx))))
           ;; The settle window: a prompt is in flight with the status idle
-          (reset! (:running-turn? cs) true)
+          (reset! (:turn-running? (:engine cs)) true)
           (t/is (false? ((:is-idle ctx))) "the run flag beats the status atom")
           (t/is (some? ((:wait-for-idle ctx))) "running → a wait promise")
           ((:abort ctx))
           (t/is (true? @(:signal ag)) "abort cancels the run even with the status idle")
-          (reset! (:running-turn? cs) false)
+          (reset! (:turn-running? (:engine cs)) false)
           (reset! (:signal ag) false)
           (t/is (true? ((:is-idle ctx))) "idle again once the run flag drops")
           ;; A compaction alone is not idle, and abort aborts it too
@@ -1672,7 +1669,7 @@
           ((:abort ctx))
           (t/is (false? @(:signal ag)) "idle → abort does nothing"))
         (finally
-          (reset! (:running-turn? cs) false)
+          (reset! (:turn-running? (:engine cs)) false)
           (clear-installed-context!))))))
 
 (deftest test-send-user-message-queues-while-the-prompt-settles
@@ -1685,14 +1682,14 @@
           ag (agent/make-agent-state :provider :test-native :model "test-model")
           ;; The settle window: a prompt is in flight (running-turn? true) but
           ;; the last attempt already reported the agent idle.
-          cs {:agent-state (atom ag)
-              :config cfg/default-config
-              :session-atom (atom nil)
-              :footer-provider (fdp/make-footer-data-provider)
-              :compaction-queued (atom [])
-              :pending-messages-comp {:steering-atom (atom [])
-                                      :follow-up-atom (atom [])}
-              :running-turn? (atom true)}]
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :config cfg/default-config
+                                   :session-atom (atom nil)
+                                   :footer-provider (fdp/make-footer-data-provider)
+                                   :compaction-queued (atom [])
+                                   :pending-messages-comp {:steering-atom (atom [])
+                                                           :follow-up-atom (atom [])}
+                                   :running-turn? (atom true)})]
       (with-redefs [m/providers-atom (atom {:test-native {:models [model]}})]
         (try
           (let [registry ((var ui-registry/build-extension-ui-registry)
@@ -1717,7 +1714,7 @@
               (t/is (= 0 @started) "still no concurrent prompt")
               (testing "with no prompt in flight a send starts the run"
                 (let [queued-before (vec @(:follow-up ag))]
-                  (reset! (:running-turn? cs) false)
+                  (reset! (:turn-running? (:engine cs)) false)
                   ((:send-user-message registry) "fresh" {:deliver-as :follow-up})
                   (t/is (= 1 @started) "idle send starts the run")
                   (t/is (= queued-before @(:follow-up ag))
@@ -1742,14 +1739,14 @@
                   fs/absolutize str)
           sess (session/create-session dir)
           ag (agent/make-agent-state :session sess)
-          cs {:agent-state (atom ag)
-              :config cfg/default-config
-              :session-atom (atom sess)
-              :footer-provider (fdp/make-footer-data-provider)
-              :compaction-queued (atom [])
-              :pending-messages-comp {:steering-atom (atom [])
-                                      :follow-up-atom (atom [])}
-              :running-turn? (atom false)}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :config cfg/default-config
+                                   :session-atom (atom sess)
+                                   :footer-provider (fdp/make-footer-data-provider)
+                                   :compaction-queued (atom [])
+                                   :pending-messages-comp {:steering-atom (atom [])
+                                                           :follow-up-atom (atom [])}
+                                   :running-turn? (atom false)})
           custom-entries #(filter (fn [e] (= :custom-message (:role e)))
                                   (session/get-branch sess))
           custom-context #(filter (fn [m] (= :custom (:role m))) @(:messages ag))]
@@ -1776,7 +1773,7 @@
               (t/is (= 1 (count (custom-context))) "not in context yet")
               (t/is (= 0 @started) "next-turn wins over :trigger-turn"))
             (testing "streaming + trigger-turn: queued into the run"
-              (reset! (:running-turn? cs) true)
+              (reset! (:turn-running? (:engine cs)) true)
               (send {:custom-type :note :content "steer"} {:trigger-turn true})
               (t/is (= 1 (count @(:steering ag))) ":steer is the default mode")
               (send {:custom-type :note :content "follow"}
@@ -1791,7 +1788,7 @@
               (t/is (= 1 (count (custom-entries))) "not persisted yet")
               (t/is (= 1 (count (custom-context))) "not in context yet"))
             (testing "idle + trigger-turn: appended once and starts the run"
-              (reset! (:running-turn? cs) false)
+              (reset! (:turn-running? (:engine cs)) false)
               (send {:custom-type :note :content "now"} {:trigger-turn true})
               (t/is (= 2 (count (custom-entries))) "persisted once")
               (t/is (= 2 (count (custom-context))) "appended once")
@@ -1808,9 +1805,9 @@
                                :headers {"X-Test" "yes"}})
         alternate (assoc adapter :id "other")
         ag (agent/make-agent-state :provider :test-native :model "test-model")
-        cs {:agent-state (atom ag)
-            :config cfg/default-config
-            :session-atom (atom nil)}]
+        cs (tu/with-test-engine {:agent-state (atom ag)
+                                 :config cfg/default-config
+                                 :session-atom (atom nil)})]
     (with-redefs [m/providers-atom (atom {:test-native {:models [native]}
                                           :test-adapter {:models [adapter alternate]}})]
       (try
@@ -1826,14 +1823,14 @@
         (testing "model and session changes are read from the current agent"
           (reset! (:model ag) "other")
           (t/is (identical? alternate (:model (extensions/build-extension-context))))
-          (reset! (:agent-state cs)
+          (reset! (:agent-state (:engine cs))
                   (agent/make-agent-state :provider :test-native :model "test-model"))
           (t/is (identical? native (:model (extensions/build-extension-context)))))
         (testing "unregistered selections have no resolved model"
-          (reset! (:model @(:agent-state cs)) "missing")
+          (reset! (:model (runtime/agent-state (:engine cs))) "missing")
           (t/is (nil? (:model (extensions/build-extension-context))))
-          (reset! (:model @(:agent-state cs)) "test-model")
-          (reset! (:provider @(:agent-state cs)) :missing)
+          (reset! (:model (runtime/agent-state (:engine cs))) "test-model")
+          (reset! (:provider (runtime/agent-state (:engine cs))) :missing)
           (t/is (nil? (:model (extensions/build-extension-context)))))
         (finally
           (clear-installed-context!))))))
@@ -1845,9 +1842,9 @@
         ag (agent/make-agent-state :provider :test-native :model "test-model"
                                    :scoped-models ["test-native/test-model"
                                                    "test-adapter/test-model"])
-        cs {:agent-state (atom ag)
-            :config cfg/default-config
-            :session-atom (atom nil)}]
+        cs (tu/with-test-engine {:agent-state (atom ag)
+                                 :config cfg/default-config
+                                 :session-atom (atom nil)})]
     (with-redefs [m/providers-atom (atom {:test-native {:models [native alternate]}
                                           :test-adapter {:models [foreign]}})]
       (try
@@ -1889,9 +1886,9 @@
     (let [old (m/map->Model {:provider :test-native :id "old"})
           model (m/map->Model {:provider :test-adapter :id "test-model"})
           ag (agent/make-agent-state :provider :test-native :model "old")
-          cs {:agent-state (atom ag)
-              :config cfg/default-config
-              :session-atom (atom nil)}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :config cfg/default-config
+                                   :session-atom (atom nil)})
           auth? (atom true)]
       (with-redefs [m/providers-atom (atom {:test-native {:models [old]}
                                             :test-adapter {:models [model]}})
@@ -1922,12 +1919,12 @@
             no harness for this path)"
     (let [ui (tui/create-tui nil)
           ed (editor/make-editor)
-          cs {:tui ui
-              :dock-stack (atom [])
-              :current-editor-atom (atom ed)
-              :status-indicator (status-indicator/make-status-indicator)
-              :config cfg/default-config
-              :session-atom (atom nil)}
+          cs (tu/with-test-engine {:tui ui
+                                   :dock-stack (atom [])
+                                   :current-editor-atom (atom ed)
+                                   :status-indicator (status-indicator/make-status-indicator)
+                                   :config cfg/default-config
+                                   :session-atom (atom nil)})
           ch (chat-history/make-chat-history)
           disposed (atom [])
           logged (atom [])
@@ -1969,12 +1966,12 @@
   [{:keys [ui ed above below hdr sp1 header-container ch]}]
   ((var ui-registry/build-extension-ui-registry)
    {:tui ui
-    :cs {:tui ui
-         :dock-stack (atom [])
-         :current-editor-atom (atom ed)
-         :status-indicator (status-indicator/make-status-indicator)
-         :config cfg/default-config
-         :session-atom (atom nil)}}
+    :cs (tu/with-test-engine {:tui ui
+                              :dock-stack (atom [])
+                              :current-editor-atom (atom ed)
+                              :status-indicator (status-indicator/make-status-indicator)
+                              :config cfg/default-config
+                              :session-atom (atom nil)})}
    {:ftr {:extension-statuses-atom (atom {})}
     :ed ed
     :ch ch
@@ -2117,9 +2114,9 @@
     (with-redefs [tui/tui-set-focus (fn [_ _] nil)
                   tui/tui-request-render (fn [_] nil)]
       (let [ed (editor/make-editor)
-            cs {:tui {}
-                :dock-stack (atom [])
-                :current-editor-atom (atom ed)}
+            cs (tu/with-test-engine {:tui {}
+                                     :dock-stack (atom [])
+                                     :current-editor-atom (atom ed)})
             panel-a (status-indicator/make-status-indicator)
             panel-b (editor/make-editor)]
         ;; A mounts, then B replaces it
@@ -2145,10 +2142,10 @@
     (install-app-keybindings!)
     (let [ui (tui/create-tui nil)
           ed (editor/make-editor)
-          cs {:tui ui
-              :dock-stack (atom [])
-              :current-editor-atom (atom ed)
-              :chat-history (chat-history/make-chat-history)}
+          cs (tu/with-test-engine {:tui ui
+                                   :dock-stack (atom [])
+                                   :current-editor-atom (atom ed)
+                                   :chat-history (chat-history/make-chat-history)})
           covers (atom 0)
           selector-p (promise)
           released-p (promise)
@@ -2319,17 +2316,17 @@
           ed (editor/make-editor)
           ch (chat-history/make-chat-history)
           fdp-instance (fdp/make-footer-data-provider)
-          cs {:tui ui
-              :dock-stack (atom [])
-              :current-editor-atom (atom ed)
-              :editor ed
-              :chat-history ch
-              :footer-provider fdp-instance
-              :status-indicator (status-indicator/make-status-indicator)
-              :config cfg/default-config
-              :agent-state (atom (agent/make-agent-state))
-              :session-atom (atom nil)
-              :running-turn? (atom false)}
+          cs (tu/with-test-engine {:tui ui
+                                   :dock-stack (atom [])
+                                   :current-editor-atom (atom ed)
+                                   :editor ed
+                                   :chat-history ch
+                                   :footer-provider fdp-instance
+                                   :status-indicator (status-indicator/make-status-indicator)
+                                   :config cfg/default-config
+                                   :agent-state (atom (agent/make-agent-state))
+                                   :session-atom (atom nil)
+                                   :running-turn? (atom false)})
           seen (atom ::unset)
           close-ref (atom nil)
           submit ((var layout/make-editor-submit-handler) cs)
@@ -2434,7 +2431,7 @@
           default-ed (:editor cs)
           custom-ed (editor/make-editor)]
       (reset! (:current-editor-atom cs) custom-ed)
-      (reset! (:compacting? @(:agent-state cs)) true)
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
       (with-redefs [tui/tui-request-render (fn [_] nil)]
         ((var turn/handle-submit) cs "queued draft"))
       (t/is (= ["queued draft"] (editor/editor-get-history custom-ed)))
@@ -2445,13 +2442,13 @@
   (testing "a plain message submitted during compaction queues as steer
             (pi: onSubmit → isCompacting → queueCompactionMessage(text, steer))"
     (let [cs (compaction-cs)]
-      (reset! (:compacting? @(:agent-state cs)) true)
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
       (with-redefs [tui/tui-request-render (fn [_] nil)]
         ((var turn/handle-submit) cs "hello during compaction"))
       (t/is (= [{:text "hello during compaction" :mode :steer}]
-               @(:compaction-queued cs))
+               (runtime/compaction-queued (:engine cs)))
             "message queued with steer mode")
-      (t/is (empty? @(:messages @(:agent-state cs)))
+      (t/is (empty? @(:messages (runtime/agent-state (:engine cs))))
             "message NOT sent to the agent"))))
 
 (deftest test-follow-up-queues-during-compaction
@@ -2460,11 +2457,11 @@
     (let [cs (compaction-cs)
           ed @(:current-editor-atom cs)]
       (editor/editor-set-text! ed "later message")
-      (reset! (:compacting? @(:agent-state cs)) true)
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
       (with-redefs [tui/tui-request-render (fn [_] nil)]
         ((var turn/handle-follow-up) cs))
       (t/is (= [{:text "later message" :mode :follow-up}]
-               @(:compaction-queued cs))
+               (runtime/compaction-queued (:engine cs)))
             "message queued with follow-up mode"))))
 
 (deftest test-flush-compaction-queue-prompts-when-idle
@@ -2472,7 +2469,7 @@
             starts a run when idle, the rest queue (pi: flushCompactionQueue)"
     (let [cs (compaction-cs)
           started (atom [])]
-      (reset! (:compaction-queued cs)
+      (reset! (:compaction-queued (:engine cs))
               [{:text "first" :mode :steer}
                {:text "second" :mode :follow-up}])
       (with-redefs [agent/run-agent-turn (fn [a opts] (reset! started [a opts]) (future))
@@ -2484,8 +2481,8 @@
         ((var turn/flush-compaction-queue!) cs false))
       (t/is (seq @started) "a run started for the first message")
       (t/is (= "first" (get-in @started [1 :message])) "run carries the first message")
-      (t/is (empty? @(:compaction-queued cs)) "queue drained")
-      (let [{:keys [steering follow-up]} (agent/queued-messages @(:agent-state cs))]
+      (t/is (empty? (runtime/compaction-queued (:engine cs))) "queue drained")
+      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (= [] steering) "second (follow-up) not steered")
         (t/is (= ["second"] follow-up) "second queued as follow-up into the run")))))
 
@@ -2493,16 +2490,16 @@
   (testing "compaction_end during a running turn (overflow retry) queues every
             message into the turn (pi: flushCompactionQueue willRetry)"
     (let [cs (compaction-cs)]
-      (reset! (:running-turn? cs) true)
-      (reset! (:compaction-queued cs)
+      (reset! (:turn-running? (:engine cs)) true)
+      (reset! (:compaction-queued (:engine cs))
               [{:text "steer-msg" :mode :steer}
                {:text "follow-msg" :mode :follow-up}])
       (with-redefs [tui/tui-request-render (fn [_] nil)]
         ((var turn/flush-compaction-queue!) cs true))
-      (let [{:keys [steering follow-up]} (agent/queued-messages @(:agent-state cs))]
+      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (= ["steer-msg"] steering) "steer-mode queued into steering")
         (t/is (= ["follow-msg"] follow-up) "follow-up-mode queued into follow-up"))
-      (t/is (empty? @(:compaction-queued cs)) "queue drained"))))
+      (t/is (empty? (runtime/compaction-queued (:engine cs))) "queue drained"))))
 
 (deftest test-extension-command-during-compaction-executes
   (testing "extension commands execute immediately during compaction
@@ -2514,12 +2511,12 @@
        {:name "my-ext-cmd"
         :description "test"
         :extension-handler (fn [_ctx args] (reset! ran args))})
-      (reset! (:compacting? @(:agent-state cs)) true)
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
       (with-redefs [tui/tui-request-render (fn [_] nil)
                     state/update-footer! (fn [_] nil)]
         ((var turn/handle-submit) cs "/my-ext-cmd arg1"))
       (t/is (= "arg1" @ran) "extension command executed immediately")
-      (t/is (empty? @(:compaction-queued cs)) "not queued")
+      (t/is (empty? (runtime/compaction-queued (:engine cs))) "not queued")
       (commands/clear-commands!))))
 
 (deftest test-restore-queued-includes-compaction-queue
@@ -2527,14 +2524,14 @@
             session queues (pi: restoreQueuedMessagesToEditor → clearAllQueues)"
     (let [cs (compaction-cs)
           ed @(:current-editor-atom cs)]
-      (agent/steer! @(:agent-state cs) "steer-msg")
-      (reset! (:compaction-queued cs) [{:text "compact-msg" :mode :steer}])
+      (agent/steer! (runtime/agent-state (:engine cs)) "steer-msg")
+      (reset! (:compaction-queued (:engine cs)) [{:text "compact-msg" :mode :steer}])
       (editor/editor-set-text! ed "draft")
       (let [n ((var turn/restore-queued-messages!) cs)]
         (t/is (= 2 n) "both queues restored")
         (t/is (= "steer-msg\n\ncompact-msg\n\ndraft" (editor/editor-get-text ed))
               "messages combined with current editor text")
-        (t/is (empty? @(:compaction-queued cs)) "compaction queue cleared")))))
+        (t/is (empty? (runtime/compaction-queued (:engine cs))) "compaction queue cleared")))))
 
 (deftest test-compaction-end-handler-flushes
   (testing "the :compaction-end event handler flushes the queue"
@@ -2545,7 +2542,7 @@
               :cs-ref (atom cs)
               :pending-tool-comps (atom {})})
           started (atom [])]
-      (reset! (:compaction-queued cs) [{:text "after" :mode :steer}])
+      (reset! (:compaction-queued (:engine cs)) [{:text "after" :mode :steer}])
       (with-redefs [agent/run-agent-turn (fn [a opts] (reset! started [a opts]) (future))
                     status/activate-working-indicator! (fn [_] nil)
                     status/start-anim-timer! (fn [_] nil)
@@ -2561,10 +2558,10 @@
             manual compaction clears the run signal, so refusing (like
             /compact) is the safe answer"
     (let [ag (agent/make-agent-state)
-          cs {:agent-state (atom ag)
-              :config cfg/default-config
-              :session-atom (atom nil)
-              :running-turn? (atom true)}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :config cfg/default-config
+                                   :session-atom (atom nil)
+                                   :running-turn? (atom true)})
           registry ((var ui-registry/build-extension-ui-registry)
                     {:tui nil :cs cs}
                     {:fdp (fdp/make-footer-data-provider)}
@@ -2584,10 +2581,10 @@
             `Compaction failed: …` message exactly once — :compaction-error
             already carries the reason prefix"
     (let [ag (agent/make-agent-state)
-          cs {:agent-state (atom ag)
-              :config cfg/default-config
-              :session-atom (atom nil)
-              :running-turn? (atom false)}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :config cfg/default-config
+                                   :session-atom (atom nil)
+                                   :running-turn? (atom false)})
           registry ((var ui-registry/build-extension-ui-registry)
                     {:tui nil :cs cs}
                     {:fdp (fdp/make-footer-data-provider)}
@@ -2625,30 +2622,30 @@
             handler to abortCompaction; abortCompaction touches only the
             compaction controllers, never the agent run)"
     (let [cs (compaction-cs)]
-      (reset! (:compacting? @(:agent-state cs)) true)
-      (reset! (:signal @(:agent-state cs)) false)
-      (reset! (:compaction-signal @(:agent-state cs)) false)
-      (reset! (:running-turn? cs) true)
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (reset! (:signal (runtime/agent-state (:engine cs))) false)
+      (reset! (:compaction-signal (runtime/agent-state (:engine cs))) false)
+      (reset! (:turn-running? (:engine cs)) true)
       (with-redefs [status/stop-anim-timer! (fn [_] nil)
                     status/clear-status-indicator! (fn [_] nil)
                     state/update-footer! (fn [_] nil)
                     agent/cancel-turn (fn [_] (throw (ex-info "must not cancel the turn" {})))]
         ((var turn/handle-cancel) cs))
-      (t/is (true? @(:compaction-signal @(:agent-state cs))) "compaction aborted via its own signal")
-      (t/is (false? @(:signal @(:agent-state cs))) "the run's cancel signal is untouched")
-      (t/is (true? @(:running-turn? cs)) "the turn is NOT cancelled"))))
+      (t/is (true? @(:compaction-signal (runtime/agent-state (:engine cs)))) "compaction aborted via its own signal")
+      (t/is (false? @(:signal (runtime/agent-state (:engine cs)))) "the run's cancel signal is untouched")
+      (t/is (true? (runtime/turn-running? (:engine cs))) "the turn is NOT cancelled"))))
 
 (deftest test-cancel-idle-compaction-keeps-turn
   (testing "escape during compaction when no turn is running"
     (let [cs (compaction-cs)]
-      (reset! (:compacting? @(:agent-state cs)) true)
-      (reset! (:signal @(:agent-state cs)) false)
-      (reset! (:compaction-signal @(:agent-state cs)) false)
-      (reset! (:running-turn? cs) false)
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (reset! (:signal (runtime/agent-state (:engine cs))) false)
+      (reset! (:compaction-signal (runtime/agent-state (:engine cs))) false)
+      (reset! (:turn-running? (:engine cs)) false)
       (with-redefs [state/update-footer! (fn [_] nil)]
         ((var turn/handle-cancel) cs))
-      (t/is (true? @(:compaction-signal @(:agent-state cs))) "compaction aborted")
-      (t/is (false? @(:signal @(:agent-state cs))) "the run's cancel signal is untouched"))))
+      (t/is (true? @(:compaction-signal (runtime/agent-state (:engine cs)))) "compaction aborted")
+      (t/is (false? @(:signal (runtime/agent-state (:engine cs)))) "the run's cancel signal is untouched"))))
 
 (deftest test-follow-up-extension-command-executes-during-compaction
   (testing "Alt+Enter with an extension command during compaction executes
@@ -2662,11 +2659,11 @@
         :description "test"
         :extension-handler (fn [_ctx args] (reset! ran args))})
       (editor/editor-set-text! ed "/my-fu-cmd arg")
-      (reset! (:compacting? @(:agent-state cs)) true)
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
       (with-redefs [tui/tui-request-render (fn [_] nil)]
         ((var turn/handle-follow-up) cs))
       (t/is (= "arg" @ran) "extension command executed immediately")
-      (t/is (empty? @(:compaction-queued cs)) "not queued")
+      (t/is (empty? (runtime/compaction-queued (:engine cs))) "not queued")
       (commands/clear-commands!))))
 
 ;; ─── /followup command (pi: no equivalent — slash form of Alt+Enter) ──────
@@ -2688,14 +2685,14 @@
     (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cs (compaction-cs)]
-      (reset! (:running-turn? cs) true)
+      (reset! (:turn-running? (:engine cs)) true)
       (with-redefs [tui/tui-request-render (fn [_] nil)
                     chat-history/chat-history-show-status! (fn [_ _] nil)]
         ((:handler (commands/find-command "followup")) cs "do the thing"))
-      (let [{:keys [steering follow-up]} (agent/queued-messages @(:agent-state cs))]
+      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (= [] steering) "not steered into the running turn")
         (t/is (= ["do the thing"] follow-up) "args queued as follow-up"))
-      (t/is (empty? @(:messages @(:agent-state cs)))
+      (t/is (empty? @(:messages (runtime/agent-state (:engine cs))))
             "message NOT sent to the agent context yet"))))
 
 (deftest test-followup-command-submits-when-idle
@@ -2716,7 +2713,7 @@
       (t/is (seq @started) "run-agent-turn called")
       (t/is (= "wrap it up" (get-in @started [1 :message]))
             "run carries the args as the message")
-      (let [{:keys [steering follow-up]} (agent/queued-messages @(:agent-state cs))]
+      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (empty? steering) "nothing queued")
         (t/is (empty? follow-up) "nothing queued")))))
 
@@ -2726,12 +2723,12 @@
     (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cs (compaction-cs)]
-      (reset! (:compacting? @(:agent-state cs)) true)
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
       (with-redefs [tui/tui-request-render (fn [_] nil)
                     chat-history/chat-history-show-status! (fn [_ _] nil)]
         ((:handler (commands/find-command "followup")) cs "later msg"))
       (t/is (= [{:text "later msg" :mode :follow-up}]
-               @(:compaction-queued cs))
+               (runtime/compaction-queued (:engine cs)))
             "queued with follow-up mode"))))
 
 (deftest test-followup-command-blank-args-usage
@@ -2740,12 +2737,12 @@
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cs (compaction-cs)
           msg (atom nil)]
-      (reset! (:running-turn? cs) true)
+      (reset! (:turn-running? (:engine cs)) true)
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
         ((:handler (commands/find-command "followup")) cs ""))
       (t/is (= "Usage: /followup <message>" (:content @msg))
             "usage info shown")
-      (t/is (empty? (:follow-up (agent/queued-messages @(:agent-state cs))))
+      (t/is (empty? (:follow-up (agent/queued-messages (runtime/agent-state (:engine cs)))))
             "nothing queued for blank args"))))
 
 (deftest test-cancel-two-step-during-midrun-compaction
@@ -2755,9 +2752,9 @@
             compaction_end — two-step escape)"
     (let [cs (compaction-cs)
           cancelled (atom 0)]
-      (reset! (:compacting? @(:agent-state cs)) true)
-      (reset! (:signal @(:agent-state cs)) false)
-      (reset! (:running-turn? cs) true)
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (reset! (:signal (runtime/agent-state (:engine cs))) false)
+      (reset! (:turn-running? (:engine cs)) true)
       (with-redefs [status/stop-anim-timer! (fn [_] nil)
                     status/clear-status-indicator! (fn [_] nil)
                     state/update-footer! (fn [_] nil)
@@ -2769,11 +2766,11 @@
                     agent/cancel-turn (fn [_] (swap! cancelled inc))]
         ;; first escape: compaction aborted only
         ((var turn/handle-cancel) cs)
-        (t/is (true? @(:compaction-signal @(:agent-state cs))) "compaction aborted")
-        (t/is (false? @(:signal @(:agent-state cs))) "the run is not cancelled")
-        (t/is (true? @(:running-turn? cs)) "turn still running")
+        (t/is (true? @(:compaction-signal (runtime/agent-state (:engine cs)))) "compaction aborted")
+        (t/is (false? @(:signal (runtime/agent-state (:engine cs)))) "the run is not cancelled")
+        (t/is (true? (runtime/turn-running? (:engine cs))) "turn still running")
         (t/is (zero? @cancelled) "turn not cancelled")
         ;; compaction-end resets the flag; second escape cancels the turn
-        (reset! (:compacting? @(:agent-state cs)) false)
+        (reset! (:compacting? (runtime/agent-state (:engine cs))) false)
         ((var turn/handle-cancel) cs)
         (t/is (= 1 @cancelled) "second escape cancels the turn")))))

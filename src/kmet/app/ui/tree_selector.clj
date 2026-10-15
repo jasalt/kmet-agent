@@ -18,6 +18,7 @@
   (:require [clojure.string :as str]
             [kmet.app.keybindings :as app-kb]
             [kmet.app.session :as session]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.dock :as dock]
             [kmet.config :as cfg]
@@ -1079,7 +1080,7 @@
    highlight when re-opening mid-flow (pi initialSelectedId)."
   ([cs on-navigate] (show-session-tree cs on-navigate nil))
   ([cs on-navigate initial-selected-id]
-   (let [sess @(:session-atom cs)]
+   (let [sess (runtime/session (:engine cs))]
      (cond
        (nil? sess)
        (chat-history/chat-history-add-message! (:chat-history cs)
@@ -1105,7 +1106,7 @@
                                 ;; its rows instead of keeping the open-time
                                 ;; height
                                 :size-ref (tui/tui-terminal-size-ref (:tui cs))
-                                :initial-filter-mode (cfg/get-tree-filter-mode (:config cs))
+                                :initial-filter-mode (cfg/get-tree-filter-mode (runtime/config (:engine cs)))
                                 :initial-selected-id initial-selected-id
                                 :on-select (fn [entry]
                                              (@close-ref)
@@ -1116,7 +1117,7 @@
                                                 {:role :assistant
                                                  :content "Already at this point."})
 
-                                               @(:running-turn? cs)
+                                               (runtime/turn-running? (:engine cs))
                                                (chat-history/chat-history-add-message!
                                                 (:chat-history cs)
                                                 {:role :assistant

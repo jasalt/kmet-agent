@@ -9,6 +9,7 @@
             [kmet.tui.protocols :as protocols]
             [kmet.tui.timers :as timers]
             [kmet.app.loop :as agent]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.ui.pending-messages :as pending-messages]
             [kmet.app.ui.status-indicator :as status-indicator]
             [kmet.debug :as debug]))
@@ -58,7 +59,7 @@
   [cs]
   (reset! (:anim-timer cs)
           (frame-driver! (:tui cs)
-                         (fn [tui] (and @(:running? tui) @(:running-turn? cs)))
+                         (fn [tui] (and @(:running? tui) (runtime/turn-running? (:engine cs))))
                          "anim timer: ")))
 
 (defn- start-indicator-driver!
@@ -173,7 +174,7 @@
   ;; (on-agent-done/on-agent-error) drops running-turn? BEFORE clearing
   ;; the status, so an activation interleaved with it can land after the
   ;; clear. Never leave a spinner with no turn behind it.
-  (when-not @(:running-turn? cs)
+  (when-not (runtime/turn-running? (:engine cs))
     (status-indicator/status-indicator-stop! (:status-indicator cs))))
 
 (defn release-background-status!
@@ -196,7 +197,7 @@
   [cs kind]
   (when (= kind (:kind @(:status-current cs)))
     (clear-status-indicator! cs kind)
-    (when (and @(:running-turn? cs)
+    (when (and (runtime/turn-running? (:engine cs))
                (nil? @(:status-current cs))
                (not (status-indicator/status-indicator-active? (:status-indicator cs))))
       (activate-working-indicator! cs))))
@@ -243,8 +244,8 @@
    queues with the compaction queue (pi: getAllQueuedMessages — messages
    queued during compaction display alongside the session queue)."
   [cs]
-  (let [{:keys [steering follow-up]} (agent/queued-messages @(:agent-state cs))
-        cq @(:compaction-queued cs)
+  (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))
+        cq (runtime/compaction-queued (:engine cs))
         c-steer (mapv :text (filter #(= :steer (:mode %)) cq))
         c-follow (mapv :text (filter #(= :follow-up (:mode %)) cq))]
     ;; set-queues! swaps track!-watched atoms — the watch invalidates the

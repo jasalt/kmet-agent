@@ -10,6 +10,7 @@
             [kmet.ai.api.shared :as shared]
             [kmet.ai.models :as models]
             [kmet.app.keybindings :as app-kb]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.subs :as s]
             [kmet.config :as cfg]
@@ -271,7 +272,7 @@
   "Levels the agent's current model can express (pi getAvailableThinkingLevels):
    the model's supported levels, or [:off] when the model is unknown."
   [cs]
-  (let [ag @(:agent-state cs)
+  (let [ag (runtime/agent-state (:engine cs))
         model (models/get-model @(:provider ag) @(:model ag))]
     (if model
       (shared/get-supported-thinking-levels model)
@@ -282,7 +283,7 @@
    getDefaultThinkingLevel): the live settings.edn :thinking, else the
    config snapshot value. Invalid values fall back to :off."
   [cs]
-  (let [v (cfg/get-setting-live (:config cs) :thinking :off)]
+  (let [v (cfg/get-setting-live (runtime/config (:engine cs)) :thinking :off)]
     (if (keyword? v) v :off)))
 
 (defn show-thinking-selector
@@ -294,7 +295,7 @@
    express :off (pi opens the selector regardless; kmet's cycle parity —
    \"Current model does not support thinking\")."
   [cs & {:keys [on-select on-persist]}]
-  (let [ag @(:agent-state cs)
+  (let [ag (runtime/agent-state (:engine cs))
         sel-atom (atom nil)
         ;; leave, then dispose: dispose unwinds the selector's root
         ;; reaction and foreign input (the dock drops foreign records

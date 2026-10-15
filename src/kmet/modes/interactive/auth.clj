@@ -129,7 +129,7 @@
                                                    :content (str "Logged in to " (:name provider)
                                                                  ". Credentials saved to "
                                                                  (auth/auth-file-path) ".")})
-          (when (and (:session-atom cs) (:footer-comp cs) (:footer-provider cs))
+          (when (and (:session (:engine cs)) (:footer-comp cs) (:footer-provider cs))
             (state/update-footer! cs)))
         (catch Exception e
           ;; pi: silent on "Login cancelled", an error otherwise
@@ -167,7 +167,7 @@
                                                          :content (str "Saved API key for " (:name p)
                                                                        ". Credentials saved to "
                                                                        (auth/auth-file-path) ".")})
-                (when (and (:session-atom cs) (:footer-comp cs) (:footer-provider cs))
+                (when (and (:session (:engine cs)) (:footer-comp cs) (:footer-provider cs))
                   (state/update-footer! cs)))
             (chat-history/show-warning! (:chat-history cs)
                                         "No API key entered — nothing saved.")))
@@ -397,7 +397,7 @@
                    (if-let [entry (some #(when (= provider-id (:id %)) %) entries)]
                      (try
                        (auth/remove-credential! (keyword provider-id))
-                       (when (and (:session-atom cs) (:footer-comp cs)
+                       (when (and (:session (:engine cs)) (:footer-comp cs)
                                   (:footer-provider cs))
                          (state/update-footer! cs))
                        (chat-history/chat-history-add-message! (:chat-history cs)

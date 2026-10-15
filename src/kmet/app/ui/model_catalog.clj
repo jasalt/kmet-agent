@@ -4,6 +4,7 @@
   (:require [clojure.string :as str]
             [kmet.ai.models :as models]
             [kmet.app.ui.footer-data-provider :as fdp]
+            [kmet.app.session-runtime :as runtime]
             [kmet.tui.theme :as theme]))
 
 (defn model-full-id
@@ -41,7 +42,7 @@
    (:footer-provider cs)
    (count (distinct
            (map :provider
-                (scoped-or-available-models @(:agent-state cs)))))))
+                (scoped-or-available-models (runtime/agent-state (:engine cs))))))))
 
 (defn- fmt-usd-rate
   "$/M rate as a compact string (0.44 → \"$0.44\", 15 → \"$15\"); the

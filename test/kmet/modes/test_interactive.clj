@@ -55,6 +55,7 @@
             [babashka.process :as proc]
             [kmet.app.session-export :as session-export]
             [clojure.string :as str]
+            [kmet.app.session-runtime :as runtime]
             [kmet.test-utils :as tu]))
 
 (defn- make-handler
@@ -364,7 +365,7 @@
       (testing (str "auth status " auth-status ", session " (some? sess))
         (let [shared (atom [])
               chat (chat-history/make-chat-history)
-              cs {:session-atom (atom sess) :chat-history chat}]
+              cs (tu/with-test-engine {:session-atom (atom sess) :chat-history chat})]
           (with-redefs [builtins/gh-auth-status (constantly auth-status)
                         builtins/share-session! (fn [cs] (swap! shared conj cs))]
             ((:handler (get @registered "share")) cs ""))
@@ -383,9 +384,9 @@
               the first one clears"
       (let [shared (atom [])
             chat (chat-history/make-chat-history)
-            cs {:session-atom (atom {:id "session"})
-                :chat-history chat
-                :status-current (atom {:kind :share})}]
+            cs (tu/with-test-engine {:session-atom (atom {:id "session"})
+                                     :chat-history chat
+                                     :status-current (atom {:kind :share})})]
         (with-redefs [builtins/gh-auth-status (constantly :ok)
                       builtins/share-session! (fn [cs] (swap! shared conj cs))]
           ((:handler (get @registered "share")) cs ""))
@@ -402,12 +403,12 @@
           completed (promise)
           tui* {:render-requested? render-requested?
                 :running? (atom false)}
-          cs {:session-atom (atom sess)
-              :chat-history (chat-history/make-chat-history)
-              :tui tui*
-              :status-indicator (status-indicator/make-status-indicator)
-              :status-current (atom nil)
-              :running-turn? (atom false)}]
+          cs (tu/with-test-engine {:session-atom (atom sess)
+                                   :chat-history (chat-history/make-chat-history)
+                                   :tui tui*
+                                   :status-indicator (status-indicator/make-status-indicator)
+                                   :status-current (atom nil)
+                                   :running-turn? (atom false)})]
       (try
         (with-redefs [proc/process
                       (fn [& _]
@@ -438,10 +439,10 @@
           request-message-counts (atom [])
           tui* {:render-requested? render-requested?}
           chat-history (chat-history/make-chat-history)
-          cs {:tui tui*
-              :chat-history chat-history
-              :session-atom (atom sess)
-              :agent-state (atom (agent/make-agent-state))}
+          cs (tu/with-test-engine {:tui tui*
+                                   :chat-history chat-history
+                                   :session-atom (atom sess)
+                                   :agent-state (atom (agent/make-agent-state))})
           dereg (extensions/register-entry-renderer!
                  "test-entry-render"
                  (fn [_]
@@ -910,14 +911,14 @@
             knob from the reloaded config (pi: settingsManager.reload)"
     (let [ag (agent/make-agent-state)
           ch (chat-history/make-chat-history)
-          cs {:agent-state (atom ag)
-              :chat-history ch
-              :theme-controller nil
-              :loaded-resources-comp nil
-              :footer-comp nil
-              :config cfg/default-config
-              :tui nil
-              :system-prompt-opts (atom nil)}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history ch
+                                   :theme-controller nil
+                                   :loaded-resources-comp nil
+                                   :footer-comp nil
+                                   :config cfg/default-config
+                                   :tui nil
+                                   :system-prompt-opts (atom nil)})
           prev-settings @subs/image-settings-atom]
       (try
         ;; stale live state — the reloaded config must overwrite it
@@ -959,15 +960,15 @@
           hdr (expandable-text/make-expandable-text (constantly "compact")
                                                     (constantly "full"))
           lr (loaded-resources/make-loaded-resources)
-          cs {:agent-state (atom (agent/make-agent-state))
-              :chat-history ch
-              :header-comp hdr
-              :loaded-resources-comp lr
-              :theme-controller nil
-              :footer-comp nil
-              :config cfg/default-config
-              :tui nil
-              :system-prompt-opts (atom nil)}
+          cs (tu/with-test-engine {:agent-state (atom (agent/make-agent-state))
+                                   :chat-history ch
+                                   :header-comp hdr
+                                   :loaded-resources-comp lr
+                                   :theme-controller nil
+                                   :footer-comp nil
+                                   :config cfg/default-config
+                                   :tui nil
+                                   :system-prompt-opts (atom nil)})
           prev-settings @subs/image-settings-atom
           reload (fn [mode]
                    (with-redefs [cfg/init! (fn [] (assoc cfg/default-config
@@ -1006,16 +1007,16 @@
             from the launch dir, whatever session is active"
     (let [ag (agent/make-agent-state)
           runtime-cwd "/fake/runtime-project"
-          cs {:agent-state (atom ag)
-              :chat-history (chat-history/make-chat-history)
-              :footer-provider (fdp/make-footer-data-provider
-                                :cwd-atom (atom runtime-cwd))
-              :theme-controller nil
-              :loaded-resources-comp nil
-              :header-comp nil
-              :footer-comp nil
-              :config cfg/default-config
-              :tui nil}
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history (chat-history/make-chat-history)
+                                   :footer-provider (fdp/make-footer-data-provider
+                                                     :cwd-atom (atom runtime-cwd))
+                                   :theme-controller nil
+                                   :loaded-resources-comp nil
+                                   :header-comp nil
+                                   :footer-comp nil
+                                   :config cfg/default-config
+                                   :tui nil})
           loader-cwd (atom nil)]
       (with-redefs [cfg/init! (fn [] cfg/default-config)
                     theme-ctrl/set-config! (fn [_ _] nil)
@@ -1053,10 +1054,10 @@
             and the run flag is what counts (pi: isStreaming)"
     (let [ag (agent/make-agent-state)
           msg (atom nil)
-          cs {:agent-state (atom ag)
-              :chat-history nil
-              :running-turn? (atom true)
-              :tui nil}]
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :running-turn? (atom true)
+                                   :tui nil})]
       (is (= :idle @(:status ag))
           "precondition: the status atom already reads idle")
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
@@ -1069,14 +1070,14 @@
   (testing "input heals a stale scrollback only at a streaming-free moment"
     (let [make (fn [running bash compacting dirty]
                  (inter/map->CoreState
-                  {:running-turn? (atom running)
-                   :bash-running? (atom bash)
-                   :agent-state (atom {:compacting? (atom compacting)})
-                   :tui {:scrollback-dirty? (atom dirty)
-                         :force-redraw? (atom false)
-                         :render-requested? (atom false)
-                         :frame-count (atom 0)
-                         :scrollback-heal-target (atom 0)}}))
+                  (tu/with-test-engine {:running-turn? (atom running)
+                                        :bash-running? (atom bash)
+                                        :agent-state (atom {:compacting? (atom compacting)})
+                                        :tui {:scrollback-dirty? (atom dirty)
+                                              :force-redraw? (atom false)
+                                              :render-requested? (atom false)
+                                              :frame-count (atom 0)
+                                              :scrollback-heal-target (atom 0)}})))
           healed? (fn [cs] (true? @(get-in cs [:tui :force-redraw?])))
           latched? (fn [cs] (pos? @(get-in cs [:tui :scrollback-heal-target])))]
       (let [cs (make false false false true)]
@@ -1096,9 +1097,9 @@
   (testing "an explicit global reflow (toggle) forces the clearing rebuild, streaming or not"
     (doseq [[label running] [["idle" false] ["mid-turn" true]]]
       (let [cs (inter/map->CoreState
-                {:running-turn? (atom running)
-                 :tui {:force-redraw? (atom false)
-                       :render-requested? (atom false)}})]
+                (tu/with-test-engine {:running-turn? (atom running)
+                                      :tui {:force-redraw? (atom false)
+                                            :render-requested? (atom false)}}))]
         ((var turn/request-global-reflow-render!) cs)
         (is (true? @(get-in cs [:tui :force-redraw?]))
             (str label " — the scrollback is rebuilt, not left stale"))
@@ -1111,17 +1112,17 @@
       ;; Turn start: the heal no longer runs here, so the dirt stays for the
       ;; turn end (and a streaming turn cannot emit the clearing redraw).
       (let [cs (inter/map->CoreState
-                {:running-turn? (atom false)
-                 :agent-state (atom {})
-                 :tui {:scrollback-dirty? (atom true)
-                       :force-redraw? (atom false)
-                       :render-requested? (atom false)}})]
+                (tu/with-test-engine {:running-turn? (atom false)
+                                      :agent-state (atom {})
+                                      :tui {:scrollback-dirty? (atom true)
+                                            :force-redraw? (atom false)
+                                            :render-requested? (atom false)}}))]
         (with-redefs [agent/run-agent-turn noop
                       status/activate-working-indicator! noop
                       status/start-anim-timer! noop
                       state/update-footer! noop]
           ((var turn/start-agent-run!) cs))
-        (is (true? @(:running-turn? cs)) "the turn still starts")
+        (is (true? (runtime/turn-running? (:engine cs))) "the turn still starts")
         (is (false? @(get-in cs [:tui :force-redraw?]))
             "a dirty scrollback is left for the turn end, not cleared at the start"))
       ;; Turn end (done and error): heal, but only when streaming-free.
@@ -1131,16 +1132,16 @@
                                                   ["mid bash command" true true false]
                                                   ["clean scrollback" false false false]]]
         (let [cs (inter/map->CoreState
-                  {:anim-timer (atom nil)
-                   :running-turn? (atom true)
-                   :bash-running? (atom bash?)
-                   :agent-state (atom {:compacting? (atom false)})
-                   :chat-history (chat-history/make-chat-history)
-                   :tui {:scrollback-dirty? (atom dirty?)
-                         :force-redraw? (atom false)
-                         :render-requested? (atom false)
-                         :frame-count (atom 0)
-                         :scrollback-heal-target (atom 0)}})]
+                  (tu/with-test-engine {:anim-timer (atom nil)
+                                        :running-turn? (atom true)
+                                        :bash-running? (atom bash?)
+                                        :agent-state (atom {:compacting? (atom false)})
+                                        :chat-history (chat-history/make-chat-history)
+                                        :tui {:scrollback-dirty? (atom dirty?)
+                                              :force-redraw? (atom false)
+                                              :render-requested? (atom false)
+                                              :frame-count (atom 0)
+                                              :scrollback-heal-target (atom 0)}}))]
           (with-redefs [status/stop-anim-timer! noop
                         status/clear-status-indicator! noop
                         state/update-footer! noop]
@@ -1149,7 +1150,7 @@
               (str label " / " case-label
                    (if expected " heals the dirty scrollback"
                        " must not emit the clearing redraw")))
-          (is (false? @(:running-turn? cs)) (str label " ends the turn")))))))
+          (is (false? (runtime/turn-running? (:engine cs))) (str label " ends the turn")))))))
 
 (deftest global-quit-listener
   (testing "app.quit (ctrl+q by default) quits from anywhere and consumes the key"
@@ -1230,13 +1231,13 @@
             used to strand"
     (let [ui (tui/create-tui nil)
           ch (chat-history/make-chat-history)
-          cs {:tui ui
-              :chat-history ch
-              :dock-stack (atom [])
-              :pending-bash-components (atom [])
-              :bash-signal (atom false)
-              :agent-state (atom nil)
-              :theme-controller nil}]
+          cs (tu/with-test-engine {:tui ui
+                                   :chat-history ch
+                                   :dock-stack (atom [])
+                                   :pending-bash-components (atom [])
+                                   :bash-signal (atom false)
+                                   :agent-state (atom nil)
+                                   :theme-controller nil})]
       (chat-history/chat-history-add-message! ch {:role :user :content "hello"})
       (tui/tui-add-child ui ch)
       (protocols/render ch 40)
@@ -1369,7 +1370,7 @@
   (testing "the anim driver consults the quiet gate before requesting a frame"
     (let [requested (atom 0)
           tui {:running? (atom true)}
-          cs {:tui tui :running-turn? (atom true) :anim-timer (atom nil)}
+          cs (tu/with-test-engine {:tui tui :running-turn? (atom true) :anim-timer (atom nil)})
           driver (fn [gate]
                    (reset! requested 0)
                    (with-redefs [tui/tui-request-render (fn [_] (swap! requested inc))

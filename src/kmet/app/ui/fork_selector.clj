@@ -9,6 +9,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [kmet.app.session :as session]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.subs :as s]
@@ -106,7 +107,7 @@
   "Select a user message to fork from (pi: UserMessageSelectorComponent).
    ON-SELECT receives the chosen entry id; the caller performs the fork."
   [cs on-select]
-  (let [sess @(:session-atom cs)]
+  (let [sess (runtime/session (:engine cs))]
     (cond
       (nil? sess)
       (chat-history/chat-history-add-message! (:chat-history cs)

@@ -64,7 +64,7 @@
          ;; cancel an in-flight run and wait briefly for the terminal
          ;; :agent-settled to reach subscribers before they are cleared
          (runtime/dispose! engine)
-         (when-let [ag (some-> (:agent-state cs) deref)]
+         (when-let [ag (some-> (:agent-state (:engine cs)) deref)]
            (reset! (:signal ag) true)))
        (catch Throwable _))
   (try (reset! (:bash-signal cs) true) (catch Throwable _))
@@ -219,7 +219,7 @@
               (debug/log "terminal title: " e))))
         (tui/tui-start (:tui cs))
         (process/kill-tracked-children!)
-        (when-let [resume (state/format-resume-command @(:session-atom cs) config)]
+        (when-let [resume (state/format-resume-command (runtime/session (:engine cs)) config)]
           (println (str (th/dim "To resume this session:") " " resume)))
         (:tui cs))
       (catch Exception e

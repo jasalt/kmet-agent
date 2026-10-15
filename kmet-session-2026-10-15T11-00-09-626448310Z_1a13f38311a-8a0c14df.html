@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kmet session</title>
+<style>body{background:#1e1e2e;color:#cdd6f4;font-family:ui-monospace,Menlo,Consolas,monospace;margin:0;padding:2rem;line-height:1.5}
+   h1{color:#89b4fa;font-size:1.3rem}
+   .meta{color:#6c7086;margin-bottom:1.5rem}
+   .entry{margin:0 0 1rem;padding:.6rem .9rem;border:1px solid #313244;border-radius:6px;background:#181825}
+   .entry.user{border-left:3px solid #89b4fa}
+   .entry.assistant{border-left:3px solid #a6e3a1}
+   .entry.tool,.entry.bash{border-left:3px solid #f9e2af}
+   .entry.compaction,.entry.branch-summary{border-left:3px solid #f38ba8;opacity:.85}
+   .entry.custom,.entry.custom-message{border-left:3px solid #cba6f7}
+   .role{color:#89b4fa;font-weight:bold;margin-bottom:.3rem}
+   .header{color:#6c7086;font-weight:normal}
+   pre{white-space:pre-wrap;word-wrap:break-word;margin:.2rem 0;font-family:inherit}
+   .bash-output,.tool-output,.tool-args{color:#a6adc8;background:#11111b;padding:.4rem;border-radius:4px}
+   .tool-calls{margin:.3rem 0}
+   .tool-call{margin:.2rem 0}
+   .tool-name{color:#f9e2af}
+   .thinking{margin:.3rem 0}
+   .thinking summary{color:#6c7086;cursor:pointer}
+   .thinking pre{color:#a6adc8}
+   .image,.session-name{color:#cba6f7}
+   .message-image,.tool-image{display:block;max-width:min(100%,40rem);max-height:24rem;margin:.3rem 0;border-radius:4px}
+   .tool-images{margin:.3rem 0}
+   details.system-prompt,details.tools{margin:0 0 1rem;padding:.6rem .9rem;border:1px solid #313244;border-radius:6px;background:#181825}
+   details.system-prompt summary,details.tools summary{color:#89b4fa;font-weight:bold;cursor:pointer}
+   details.system-prompt pre{color:#a6adc8;background:#11111b;padding:.4rem;border-radius:4px}
+   .tool-item{margin:.3rem 0}
+   .tool-param{margin:.1rem 0 .1rem 1.2rem;color:#a6adc8}
+   .tool-desc{color:#a6adc8}</style>
+</head>
+<body>
+<h1>Session</h1>
+<div class="meta">id: 1a13f38311a-8a0c14df · cwd: /home/marko/src/kmetia/kmet-agent/target/test-export-cwd-1792062009626/project · created: 2026-10-15T11:00:09.626448310Z<br>Messages: 1 user, 1 assistant<br>Tool Calls: 0<br>Cost: $0.000</div>
+<details class="system-prompt"><summary>System Prompt</summary><pre>You are an expert coding assistant operating inside kmet, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.<br><br>Available tools:<br>- read: Read file contents<br>- write: Create or overwrite files<br>- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call<br>- bash: Execute bash commands (ls, grep, find, etc.)<br>- run_code: Run a Clojure script for general scripting, scans, or tool fan-out; emit curated output<br><br>In addition to the tools above, you may have access to other custom tools depending on the project.<br><br>Guidelines:<br>- Use bash for file operations like ls, rg, find<br>- Use read to examine files instead of cat or sed.<br>- Use write only for new files or complete rewrites.<br>- Use edit for precise changes (edits[].oldText must match exactly)<br>- When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls<br>- Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.<br>- Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.<br>- You can inspect KMET_* environment variables for current model and session details.<br>- Use run_code for general scripting and multi-step work — transforming or generating data, scanning/filtering many files, or a search/read/verify chain — instead of chaining bash cat/head/rg. Use bash for one small command and read for one file.<br>- Call tools from inside the script: inner results never enter the conversation, and only what you pass to (emit value) does. Start independent calls before derefing them; use tools/call-many + tools/await-all for batches and (deref p ms ::timeout) to bound one.<br>- Emit only curated output — the values you computed, counts, matches, a short summary — not raw file/search output. println and the final value are discarded.<br>- When a turn needs several tool calls, batch the independent ones into one message — they run in parallel; wait for a call&#39;s result only before using it.<br>- Be concise in your responses<br>- Show file paths clearly when working with files<br><br>&lt;project_context&gt;<br><br>Project-specific instructions and guidelines:<br><br>&lt;project_instructions path=&quot;AGENTS.md&quot;&gt;<br>LAUNCH-PROJECT CONTEXT<br>&lt;/project_instructions&gt;<br><br>&lt;/project_context&gt;<br><br>Current working directory: /home/marko/src/kmetia/kmet-agent/target/test-export-cwd-1792062009626/project</pre></details>
+<details class="tools"><summary>Available Tools</summary><div class="tool-item"><span class="tool-name">read</span> — <span class="tool-desc">Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.</span><div class="tool-param">path (required) — Path to the file to read (relative or absolute)</div><div class="tool-param">offset — Line number to start reading from (1-indexed)</div><div class="tool-param">limit — Maximum number of lines to read</div></div><div class="tool-item"><span class="tool-name">write</span> — <span class="tool-desc">Write content to a file. Creates the file if it doesn&#39;t exist, overwrites if it does. Automatically creates parent directories.</span><div class="tool-param">path (required) — File path to write to (relative or absolute)</div><div class="tool-param">content (required) — Content to write to the file</div></div><div class="tool-item"><span class="tool-name">edit</span> — <span class="tool-desc">Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.</span><div class="tool-param">path (required) — Path to the file to edit (relative or absolute)</div><div class="tool-param">edits (required) — One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead.</div></div><div class="tool-item"><span class="tool-name">bash</span> — <span class="tool-desc">Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.</span><div class="tool-param">command (required) — Shell command to execute</div><div class="tool-param">timeout — Timeout in seconds (optional, no default timeout)</div></div><div class="tool-item"><span class="tool-name">run_code</span> — <span class="tool-desc">Run a Clojure script with the active tools bridged in: one call can do a whole task — data work, loops over many files, chained or fanned-out tool calls — while every inner result stays out of the conversation. Only values you pass to (emit value) come back — stdout/stderr and the final value are discarded.
+
+Use it for general scripting and multi-step work — parse/transform/generate data, scan or filter many files with fs/slurp/sh, run a search→read→verify chain, or fan out N tool calls and reduce them. Use bash for one small command and read for one file.
+
+Tools: (tools/call &quot;name&quot; args) returns a promise — start independent calls before derefing. Batch with (tools/await-all (tools/call-many [{:name ... :args ...} ...])); discover with (tools/list) and (tools/describe &quot;name&quot;). Results are {:content :is-error :details :truncation :images}; branch on :is-error. (emit value) returns nil and may be called as often as needed — the emitted values are returned in order.
+
+Sandbox: Clojure; on babashka a full babashka surface. Require clojure.*/babashka.* namespaces or the bundled libs (rewrite-clj, cljfmt, edamame, parinferish); on babashka you can also resolve System/java.io.*/Throwable. Aliases: fs, str/set/edn/walk, json, p, sh, tools, sandbox. :timeout is seconds (0/omitted = none). Output is capped at 16 KiB/2000 lines; :max-output-bytes raises it to 50 KiB.</span><div class="tool-param">code (required) — Clojure program body to run</div><div class="tool-param">timeout — Timeout in seconds — like bash&#39;s :timeout: omit or 0 = no deadline; fractional ok, capped at a day</div><div class="tool-param">max-output-bytes — Maximum result bytes (default 16 KiB; capped at 50 KiB)</div></div></details>
+<div class="entry user"><div class="role">User</div><pre>hello</pre></div>
+<div class="entry assistant"><div class="role">Assistant</div><pre>ok</pre></div>
+</body>
+</html>

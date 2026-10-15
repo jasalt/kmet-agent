@@ -231,7 +231,7 @@
                                                                          (prompts/as-command-maps (prompts/get-prompt-templates))
                                                                          ;; pi: enableSkillCommands — read live at
                                                                          ;; autocomplete open
-                                                                         (when (cfg/get-enable-skill-commands (:config cs))
+                                                                         (when (cfg/get-enable-skill-commands (runtime/config (:engine cs)))
                                                                            (skills/as-command-maps (skills/get-skills)))))
                                                      :base-path #(fdp/fdp-get-cwd fdp))
                                                provider (reduce (fn [prov factory]
@@ -397,7 +397,7 @@
                                 ;; both branches schedule through the
                                 ;; guarded :status-current swap when real
                                 (if visible?
-                                  (when (and @(:running-turn? cs)
+                                  (when (and (runtime/turn-running? (:engine cs))
                                              (not (status-indicator/status-indicator-active?
                                                    (:status-indicator cs))))
                                     (status/activate-working-indicator! cs))
@@ -491,7 +491,7 @@
          ;; setActiveTools)
          :set-model (fn [model]
                       (if (and model (models/has-configured-auth model))
-                        (let [ag @(:agent-state cs)
+                        (let [ag (runtime/agent-state (:engine cs))
                               old-model (models/get-model @(:provider ag) @(:model ag))]
                           (agent/set-model! ag model)
                           (let [new-thinking (agent/switch-thinking-level old-model model @(:thinking ag) nil)]
@@ -505,15 +505,15 @@
          :set-thinking-level (fn [level]
                                (when (contains? #{:off :minimal :low :medium
                                                   :high :xhigh :max} level)
-                                 (agent/set-thinking-level! @(:agent-state cs) level)
+                                 (agent/set-thinking-level! (runtime/agent-state (:engine cs)) level)
                                  (sync-footer-model! cs)
                                  (state/update-editor-border-color! cs level)
                                  (tui/tui-request-render (:tui cs)))
                                nil)
          :get-thinking-level (fn []
-                               @(:thinking @(:agent-state cs)))
+                               @(:thinking (runtime/agent-state (:engine cs))))
          :send-user-message (fn [text & [{:keys [deliver-as expand-prompt-templates?]}]]
-                              (let [ag @(:agent-state cs)
+                              (let [ag (runtime/agent-state (:engine cs))
                                     ;; pi: prompt() throws while compaction is
                                     ;; in progress — extension messages cannot
                                     ;; queue into the UI compaction queue.
@@ -560,7 +560,7 @@
          ;; between a tool call and its result, and an idle send appends now —
          ;; starting a run when :trigger-turn is set.
          :send-message! (fn [message & [opts]]
-                          (let [ag @(:agent-state cs)
+                          (let [ag (runtime/agent-state (:engine cs))
                                 ;; pi: sendMessage → prompt — custom messages
                                 ;; cannot be submitted while compaction is in
                                 ;; progress (the compaction queue is UI-only).
@@ -603,11 +603,11 @@
                              ;; "every tool" and hide a :default-tools
                              ;; selection from extensions; pi: getActiveTools
                              ;; returns the active names)
-                             (mapv :name (agent/active-tools @(:agent-state cs))))
+                             (mapv :name (agent/active-tools (runtime/agent-state (:engine cs)))))
          :set-active-tools (fn [names]
                              ;; agent state only — no display depends on
                              ;; this synchronously
-                             (agent/set-active-tools! @(:agent-state cs) names)
+                             (agent/set-active-tools! (runtime/agent-state (:engine cs)) names)
                              nil)
          ;; Extension context (pi: ExtensionContext) — captures the live
          ;; layout/agent state per call; the headless default in
@@ -617,7 +617,7 @@
                           ;; assoc a NEW record onto the atom, so the old
                           ;; record's :session field goes stale (compact);
                           ;; the atom fields are shared and always current
-                          (let [ag-atom (:agent-state cs)
+                          (let [ag-atom (:agent-state (:engine cs))
                                 ag @ag-atom
                                 ;; pi: isIdle — a run stays active through the
                                 ;; settle window (isStreaming outlives the last
@@ -700,7 +700,7 @@
                                               (when on-error (on-error e))))))
                              :get-system-prompt (fn [] @(:system @ag-atom))
                              :get-system-prompt-options (fn []
-                                                          (let [config (:config cs)]
+                                                          (let [config (runtime/config (:engine cs))]
                                                             ;; pi: getSystemPromptOptions — the prompt's build
                                                             ;; inputs; cwd is the runtime one (a switched
                                                             ;; session's), context files stay the launch dir's
@@ -737,7 +737,7 @@
                                               ;; the new branch (the /tree command refuses too)
                                               (if (state/turn-running? cs)
                                                 {:cancelled true}
-                                                (if-let [sess @(:session-atom cs)]
+                                                (if-let [sess (runtime/session (:engine cs))]
                                                   (if-let [entry (session/get-entry sess
                                                                                     target-id)]
                                                     (do (session-admin/navigate-tree! cs sess entry
@@ -818,9 +818,9 @@
     ;; Installed once with the registry; reload mutates the same CoreState
     ;; (agent, session atom), so the wiring stays valid across reloads —
     ;; only /new, /resume, fork and clone re-register the session.
-    (extensions/set-session! @(:session-atom cs))
+    (extensions/set-session! (runtime/session (:engine cs)))
     (extensions/set-context-sink!
-     (fn [msg] (agent/add-context-message! @(:agent-state cs) msg)))
+     (fn [msg] (agent/add-context-message! (runtime/agent-state (:engine cs)) msg)))
     (extensions/set-entry-sink!
      (fn [entry]
        (when-let [rendered (session-admin/run-entry-renderer

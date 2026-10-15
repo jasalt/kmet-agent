@@ -12,7 +12,9 @@
             [kmet.tui.components.settings-list :as settings-list]
             [kmet.tui.core :as core]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as th]))
+            [kmet.tui.theme :as th]
+            [kmet.app.session-runtime :as runtime]
+            [kmet.test-utils :as tu]))
 
 (defn- with-image-env
   "Run F with the shared image settings and terminal capabilities bound
@@ -63,27 +65,29 @@
 ;; ─── The panel itself (show-settings) ──────────────────────────────────────
 
 (defn- settings-cs
-  "A minimal CS stand-in: the panel reads :agent-state, :config,
-   :chat-history, :dock-stack and :current-editor-atom; :tui stays nil
-   (the panel guards the rows that need one)."
+  "A minimal CS stand-in: the panel reads the agent state, config,
+   :chat-history, :dock-stack and :current-editor-atom through the runtime
+   engine (the fake agent state is a plain map — the panel only reads its
+   atoms); :tui stays nil (the panel guards the rows that need one)."
   []
-  {:tui nil
-   :agent-state (atom {:provider (atom :anthropic)
-                       :model (atom "does-not-exist")
-                       :thinking (atom :off)
-                       :cfg (atom {:auto-compact true
-                                   :block-images false
-                                   :steering-mode :one-at-a-time
-                                   :follow-up-mode :one-at-a-time
-                                   :loop-guard-enabled false
-                                   :loop-guard-threshold 3
-                                   :thinking-loop-guard-enabled false
-                                   :max-retries 0
-                                   :base-delay-ms 1000})})
-   :config {}
-   :chat-history (chat-history/make-chat-history)
-   :dock-stack (atom [])
-   :current-editor-atom (atom (editor/make-editor))})
+  (tu/with-test-engine
+    {:tui nil
+     :agent-state (atom {:provider (atom :anthropic)
+                         :model (atom "does-not-exist")
+                         :thinking (atom :off)
+                         :cfg (atom {:auto-compact true
+                                     :block-images false
+                                     :steering-mode :one-at-a-time
+                                     :follow-up-mode :one-at-a-time
+                                     :loop-guard-enabled false
+                                     :loop-guard-threshold 3
+                                     :thinking-loop-guard-enabled false
+                                     :max-retries 0
+                                     :base-delay-ms 1000})})
+     :config {}
+     :chat-history (chat-history/make-chat-history)
+     :dock-stack (atom [])
+     :current-editor-atom (atom (editor/make-editor))}))
 
 (defn- plain [comp width]
   (mapv #(str/replace % #"\u001b\[[0-9;]*[a-zA-Z]" "") (core/render comp width)))
@@ -200,7 +204,7 @@
         (dotimes [_ 5] (core/handle-input sl "\r"))
         (is (= "disabled"
                (:value (settings-list/settings-list-get-item sl :http-total-timeout))))
-        (is (= 0 (:http-total-timeout-ms @(:cfg @(:agent-state cs)))))
+        (is (= 0 (:http-total-timeout-ms @(:cfg (runtime/agent-state (:engine cs))))))
         (is (= [[:http-total-timeout-ms] 0] (last @saved))
             "the disabled choice persists as zero")))))
 

@@ -9,6 +9,7 @@
             [kmet.app.loop :as agent]
             [kmet.ai.models :as models]
             [kmet.app.model-resolver :as resolver]
+            [kmet.app.session-runtime :as runtime]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.footer-data-provider :as fdp]
@@ -36,11 +37,11 @@
    the resolved Model record, falling back to the settings value — synced to
    the agent too, so the proactive compaction check tracks model switches."
   [cs]
-  (let [ag @(:agent-state cs)
+  (let [ag (runtime/agent-state (:engine cs))
         fdp (:footer-provider cs)
         m (models/get-model @(:provider ag) @(:model ag))
         window (or (:context-window m)
-                   (:context-window (:config cs)))]
+                   (:context-window (runtime/config (:engine cs))))]
     (fdp/fdp-set-model! fdp @(:model ag))
     (fdp/fdp-set-provider! fdp @(:provider ag))
     (fdp/fdp-set-thinking! fdp @(:thinking ag))
@@ -62,7 +63,7 @@
    chat, and syncs the footer (pi setModel + showStatus — shared by /model,
    the selector, and cycling)."
   [cs model thinking-level]
-  (let [ag @(:agent-state cs)
+  (let [ag (runtime/agent-state (:engine cs))
         old-model (models/get-model @(:provider ag) @(:model ag))
         clamped (agent/switch-thinking-level old-model model @(:thinking ag) thinking-level)]
     (agent/set-model! ag model)
@@ -330,7 +331,7 @@
    scoped (Tab toggles all/scoped)."
   ([cs] (show-model-selector cs nil))
   ([cs search-term]
-   (let [ag @(:agent-state cs)
+   (let [ag (runtime/agent-state (:engine cs))
          available (models/get-available)]
      (if (empty? available)
        (chat-history/chat-history-add-message! (:chat-history cs)
@@ -370,4 +371,4 @@
   [cs term]
   (resolver/resolve-model-reference
    term
-   (model-catalog/scoped-or-available-models @(:agent-state cs))))
+   (model-catalog/scoped-or-available-models (runtime/agent-state (:engine cs)))))

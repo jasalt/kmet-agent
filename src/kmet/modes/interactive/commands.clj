@@ -69,7 +69,7 @@
    selector keeps pi's split: Enter applies the level to the session only,
    Ctrl+S also sets the default."
   [cs level persist?]
-  (let [ag @(:agent-state cs)]
+  (let [ag (runtime/agent-state (:engine cs))]
     (agent/set-thinking-level! ag level)
     (sync-footer-model! cs)
     (state/update-editor-border-color! cs level)
@@ -249,7 +249,7 @@
    (pi: handleShareCommand). Runs on a future with a spinner status
    indicator; the chat reply carries the gist URL."
   [cs]
-  (let [sess @(:session-atom cs)
+  (let [sess (runtime/session (:engine cs))
         chat (:chat-history cs)
         indicator (spinner/make-spinner :text "Creating gist..." :active true)
         done (promise)]
@@ -435,14 +435,14 @@
     :description "Continue where the agent left off (e.g. after a network error)"
     :handler (fn [cs _]
                (let [{:keys [chat-history]} cs
-                     agent-state @(:agent-state cs)]
+                     agent-state (runtime/agent-state (:engine cs))]
                  (cond
                    ;; A run may have ended in :error (network failure, retries
                    ;; exhausted) — that's exactly when /continue is useful, so
                    ;; only actively-running states refuse. Both the UI turn flag
                    ;; (set synchronously on submit) and the agent status
                    ;; (:thinking/:executing, set by the run future) are checked.
-                   (or @(:running-turn? cs)
+                   (or (runtime/turn-running? (:engine cs))
                        (contains? #{:thinking :executing} @(:status agent-state)))
                    (chat-history/chat-history-add-message! chat-history
                                                            {:role :info :label "Continue"
@@ -498,7 +498,7 @@
                                                           :content "Wait for the current response to finish before navigating the tree."})
                  (show-session-tree cs
                                     (fn [entry]
-                                      (session-admin/ask-branch-summary cs @(:session-atom cs) entry)))))})
+                                      (session-admin/ask-branch-summary cs (runtime/session (:engine cs)) entry)))))})
   (register-builtin-command!
    {:name "fork"
     :description "Create a new fork from a previous user message"
@@ -514,7 +514,7 @@
     :description "Set session display name"
     :argument-hint "<name>"
     :handler (fn [cs args]
-               (let [sess @(:session-atom cs)]
+               (let [sess (runtime/session (:engine cs))]
                  (if (nil? sess)
                    (chat-history/chat-history-add-message! (:chat-history cs)
                                                            {:role :assistant
@@ -548,7 +548,7 @@
    {:name "session"
     :description "Show session info and stats"
     :handler (fn [cs _]
-               (let [sess @(:session-atom cs)
+               (let [sess (runtime/session (:engine cs))
                      chat (:chat-history cs)]
                  (if (nil? sess)
                    (chat-history/chat-history-add-message! chat
@@ -562,7 +562,7 @@
     :description "Export session to HTML (JSONL is not supported by design)"
     :argument-hint "<path>"
     :handler (fn [cs args]
-               (let [sess @(:session-atom cs)
+               (let [sess (runtime/session (:engine cs))
                      chat (:chat-history cs)
                      arg (session-admin/parse-path-argument args)]
                  (cond
@@ -578,7 +578,7 @@
 
                    :else
                    (try
-                     (let [ag @(:agent-state cs)
+                     (let [ag (runtime/agent-state (:engine cs))
                            system-prompt (or @(:system-prompt-override ag) @(:system ag))
                            tool-defs (vals (tools/get-all-tools))
                            opts (cond-> (when arg {:path arg})
@@ -628,7 +628,7 @@
 
                    :ok
                    (cond
-                     (nil? @(:session-atom cs))
+                     (nil? (runtime/session (:engine cs)))
                      (chat-history/chat-history-add-message! chat
                                                              {:role :info :label "Share"
                                                               :content "No active session."})
@@ -647,7 +647,7 @@
    {:name "copy"
     :description "Copy last agent message to clipboard"
     :handler (fn [cs _]
-               (let [sess @(:session-atom cs)
+               (let [sess (runtime/session (:engine cs))
                      chat (:chat-history cs)]
                  (cond
                    (nil? sess)
@@ -678,7 +678,7 @@
     :argument-hint "<instructions>"
     :handler (fn [cs args]
                (let [{:keys [chat-history]} cs
-                     agent-state @(:agent-state cs)
+                     agent-state (runtime/agent-state (:engine cs))
                      instructions (when (seq args) args)]
                  (cond
                    (state/turn-running? cs)
@@ -766,7 +766,7 @@
    running (pi warns to wait for the current response)."
   [cs _]
   (let [{:keys [chat-history]} cs
-        agent-state @(:agent-state cs)]
+        agent-state (runtime/agent-state (:engine cs))]
     (if (state/turn-running? cs)
       (chat-history/chat-history-add-message! chat-history
                                               {:role :info :label "Reload"
@@ -817,6 +817,8 @@
               system-prompt (apply skills/build-system-prompt
                                    (mapcat identity system-prompt-opts))]
           (state/set-global-config! config)
+          ;; the runtime reads the config for session dirs and new sessions
+          (runtime/set-config! (:engine cs) config)
           (theme-ctrl/set-config! (:theme-controller cs) config)
 ;; pi: restoreChatBeforeSessionStart — re-apply hideThinkingBlock
           ;; and the tool display mode from settings to existing chat messages

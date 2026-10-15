@@ -18,7 +18,8 @@
             [kmet.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.modes.interactive.commands :as builtins]
-            [kmet.modes.interactive.auth :as interactive-auth]))
+            [kmet.modes.interactive.auth :as interactive-auth]
+            [kmet.test-utils :as tu]))
 
 ;; ─── Device-code poll state machine (pi pollOAuthDeviceCodeFlow) ───────────
 
@@ -635,11 +636,11 @@
   ((var builtins/register-builtin-commands!) cfg/default-config)
   (let [started (atom nil)
         sel-ref (atom nil)
-        cs {:chat-history nil
-            :session-atom nil
-            :footer-comp nil
-            :footer-provider nil
-            :tui nil}]
+        cs (tu/with-test-engine {:chat-history nil
+                                 :session-atom nil
+                                 :footer-comp nil
+                                 :footer-provider nil
+                                 :tui nil})]
     (with-redefs [dock/mount! (fn [_ component & _] (reset! sel-ref component))
                   tui/tui-request-render (fn [_] nil)
                   interactive-auth/oauth-login! (fn [_ prov] (reset! started [:oauth prov]))
@@ -666,11 +667,11 @@
   ((var builtins/register-builtin-commands!) cfg/default-config)
   (let [started (atom nil)
         sel-ref (atom nil)
-        cs {:chat-history nil
-            :session-atom nil
-            :footer-comp nil
-            :footer-provider nil
-            :tui nil}]
+        cs (tu/with-test-engine {:chat-history nil
+                                 :session-atom nil
+                                 :footer-comp nil
+                                 :footer-provider nil
+                                 :tui nil})]
     (with-redefs [dock/mount! (fn [_ component & _] (reset! sel-ref component))
                   tui/tui-request-render (fn [_] nil)
                   interactive-auth/oauth-login! (fn [_ prov] (reset! started [:oauth prov]))
@@ -700,11 +701,11 @@
     (fn [_]
       (let [msgs (atom [])
             sel-ref (atom nil)
-            cs {:chat-history nil
-                :session-atom nil
-                :footer-comp nil
-                :footer-provider nil
-                :tui nil}]
+            cs (tu/with-test-engine {:chat-history nil
+                                     :session-atom nil
+                                     :footer-comp nil
+                                     :footer-provider nil
+                                     :tui nil})]
         (with-redefs [chat-history/chat-history-add-message! (fn [_ msg] (swap! msgs conj msg))
                       chat-history/show-warning! (fn [_ _] nil)
                       dock/mount! (fn [_ component & _] (reset! sel-ref component))
