@@ -500,3 +500,216 @@
    and run the Tk event loop until the window closes."
   [backend tree & [options]]
   (run-loop! (mount-tree! backend tree options)))
+
+;; ═══════════════════════════════════════════════════════════════════════════
+;; Dialogs
+;; ═══════════════════════════════════════════════════════════════════════════
+;; Tk's five native dialogs: tk_messageBox, tk_getOpenFile/tk_getSaveFile,
+;; tk_chooseDirectory and tk_chooseColor — one imperative Tcl command each,
+;; running Tcl's own nested event loop. A call blocks its caller but not
+;; the UI (the nested loop keeps delivering events, the frame pump
+;; included), so it must run on the thread that owns the interpreter: a
+;; callback, not a component body, which renders inside the pump. Every
+;; function below repeats that rule where a caller meets it.
+;;
+;; A dialog's props are its Tcl options, kebab-cased, and its vocabulary is
+;; closed: a typo fails here instead of silently doing nothing.
+
+(def ^:private message-box-types
+  "Tk's message-box sets: :type -> {:tcl the -type word, :buttons what the
+   box shows}. Tk spells the multi-button sets without a dash (okcancel);
+   the keywords carry one."
+  {:ok                 {:tcl "ok"               :buttons #{:ok}}
+   :ok-cancel          {:tcl "okcancel"         :buttons #{:ok :cancel}}
+   :yes-no             {:tcl "yesno"            :buttons #{:yes :no}}
+   :yes-no-cancel      {:tcl "yesnocancel"      :buttons #{:yes :no :cancel}}
+   :retry-cancel       {:tcl "retrycancel"      :buttons #{:retry :cancel}}
+   :abort-retry-ignore {:tcl "abortretryignore" :buttons #{:abort :retry :ignore}}})
+
+(def ^:private message-box-icons
+  "The icons Tk's message box offers (the :icon prop)."
+  #{:error :info :question :warning})
+
+(def ^:private message-box-options
+  "The message box's props -> Tk's options."
+  {:message "-message" :detail "-detail" :title "-title" :type "-type"
+   :icon "-icon" :default "-default"})
+
+(def ^:private file-dialog-options
+  "The props tk_getOpenFile and tk_getSaveFile share."
+  {:title "-title" :initial-dir "-initialdir" :initial-file "-initialfile"
+   :file-types "-filetypes" :default-extension "-defaultextension"})
+
+(def ^:private open-file-options
+  "The open-file dialog's props: the file dialog's plus :multiple."
+  (assoc file-dialog-options :multiple "-multiple"))
+
+(def ^:private directory-dialog-options
+  "The directory dialog's props -> Tk's options."
+  {:title "-title" :initial-dir "-initialdir" :must-exist "-mustexist"})
+
+(def ^:private color-dialog-options
+  "The colour dialog's props -> Tk's options."
+  {:title "-title" :initial-color "-initialcolor"})
+
+(defn- prop-names
+  "PROPS (a collection of prop keywords) as \":a :b\" in name order, for
+   an error message."
+  [props]
+  (str/join " " (sort (map #(str ":" (name %)) props))))
+
+(defn- check-dialog-props!
+  "Throw when PROPS names a prop COMMAND has no option for: a dialog's
+   vocabulary is closed, so a typo would otherwise do nothing silently."
+  [command options props]
+  (when-some [unknown (seq (remove #(contains? options %) (keys props)))]
+    (throw (ex-info (str "kmet.tk.core: " command " has no " (prop-names unknown)
+                         " (props: " (prop-names (keys options)) ")")
+                    {:type :kmet.tk.core/unknown-dialog-prop
+                     :command command
+                     :props (vec (sort-by name unknown))}))))
+
+(defn- check-dialog-value!
+  "Throw when V is not one of ALLOWED for PROP — a closed vocabulary, better
+   reported here than by Tk after the dialog command has been built."
+  [command prop v allowed]
+  (when-not (contains? allowed v)
+    (throw (ex-info (str "kmet.tk.core: " command " " prop " must be one of "
+                         (prop-names allowed) ", not " (pr-str v))
+                    {:type :kmet.tk.core/bad-dialog-value
+                     :command command :prop prop :value v :allowed allowed}))))
+
+(defn- file-types-value
+  "V as Tk's -filetypes list syntax, checked first: Tk reads a malformed
+   value as a filter with no extensions instead of complaining."
+  [v]
+  (when-not (and (sequential? v)
+                 (every? #(and (sequential? %) (= 2 (count %))) v))
+    (throw (ex-info (str "kmet.tk.core: :file-types must be a sequence of"
+                         " [label extensions] pairs, not " (pr-str v))
+                    {:type :kmet.tk.core/bad-file-types :value v})))
+  (dsl/tcl-list v))
+
+(defn- dialog-value
+  "V as the Tcl value PROP's option takes: file types are Tcl list syntax,
+   a message box's :type Tk's own spelling; everything else is the word it
+   names (:info -> info, true -> 1)."
+  [prop v]
+  (case prop
+    :file-types (file-types-value v)
+    :type (:tcl (get message-box-types v))
+    (dsl/tcl-word v)))
+
+(defn- dialog-script
+  "The `COMMAND -option value …` Tcl script for PROPS through OPTIONS, in
+   prop-name order so the script is stable; a nil prop is absent and every
+   value is quoted."
+  [command options props]
+  (check-dialog-props! command options props)
+  (str/join " " (concat [command]
+                        (for [[prop option] (sort-by (comp name key) options)
+                              :let [v (get props prop)]
+                              :when (some? v)]
+                          (str option " " (dsl/tcl-quote (dialog-value prop v)))))))
+
+(defn- dialog-answer
+  "Tk's answer to the dialog SCRIPT: nil when the user cancelled (Tk
+   answers the empty string), ANSWER-FN (default identity) on an answer."
+  ([script] (dialog-answer script identity))
+  ([script answer-fn]
+   (let [s (eval! script)]
+     (when (seq s) (answer-fn s)))))
+
+(defonce ^:private next-dialog (atom 0))
+
+(defn- dialog-list-answer
+  "The elements of the Tcl list the dialog SCRIPT answered with, or nil when
+   the list is empty (cancelled). Tcl itself splits the list — its string
+   form braces elements containing spaces, and only Tcl reads that back
+   exactly — and every element is then fetched with lindex."
+  [script]
+  (let [var (str "::kmet_dialog_" (swap! next-dialog inc))]
+    (eval! (str "set " var " [" script "]"))
+    (try
+      (let [n (parse-long (eval! (str "llength $" var)))]
+        (when (pos? n)
+          (mapv #(eval! (str "lindex $" var " " %)) (range n))))
+      (finally
+        (eval! (str "unset " var))))))
+
+(defn message-box!
+  "Show Tk's native message box (tk_messageBox) and return the button the
+   user chose — :ok, :cancel, :yes, :no, :abort, :retry or :ignore — or nil
+   when the window was closed without one.
+
+   PROPS are Tk's own options:
+     :message  the text
+     :detail   the small text under it
+     :title    the window title
+     :type     the button set: :ok (default), :ok-cancel, :yes-no,
+               :yes-no-cancel, :retry-cancel, :abort-retry-ignore
+     :icon     :info (default), :error, :question, :warning
+     :default  the button Return picks, one of the :type's own
+
+   Blocks until the user answers — Tk runs a nested event loop, so the UI
+   stays live but the calling frame does not. Call it on the Tk thread (from
+   a callback), not from a component body, which renders inside the pump."
+  [props]
+  (let [type (or (:type props) :ok)]
+    (check-dialog-value! "message-box!" :type type (set (keys message-box-types)))
+    (when-some [icon (:icon props)]
+      (check-dialog-value! "message-box!" :icon icon message-box-icons))
+    (when-some [default (:default props)]
+      (check-dialog-value! "message-box!" :default default
+                           (:buttons (get message-box-types type))))
+    (dialog-answer (dialog-script "tk_messageBox" message-box-options props) keyword)))
+
+(defn open-file!
+  "Show Tk's native open-file dialog (tk_getOpenFile) and return the file the
+   user chose (nil when cancelled); with :multiple true a vector of paths
+   (nil when none was chosen).
+
+   PROPS are Tk's own options: :title, :initial-dir (:initialdir),
+   :initial-file, :default-extension, :file-types — [label extensions]
+   pairs, EXTENSIONS one pattern or a vector — and :multiple to select
+   several files.
+
+   Blocks until the user answers; see message-box! for the thread rule."
+  [props]
+  (let [script (dialog-script "tk_getOpenFile" open-file-options props)]
+    (if (:multiple props)
+      (dialog-list-answer script)
+      (dialog-answer script))))
+
+(defn save-file!
+  "Show Tk's native save-file dialog (tk_getSaveFile) and return the path the
+   user chose, nil when cancelled. Tk asks before an existing file is
+   overwritten where the platform does not already.
+
+   PROPS are open-file!'s without :multiple.
+
+   Blocks until the user answers; see message-box! for the thread rule."
+  [props]
+  (dialog-answer (dialog-script "tk_getSaveFile" file-dialog-options props)))
+
+(defn choose-directory!
+  "Show Tk's native directory dialog (tk_chooseDirectory) and return the
+   directory the user chose, nil when cancelled.
+
+   PROPS: :title, :initial-dir and :must-exist (true to accept only a
+   directory that exists).
+
+   Blocks until the user answers; see message-box! for the thread rule."
+  [props]
+  (dialog-answer (dialog-script "tk_chooseDirectory" directory-dialog-options props)))
+
+(defn choose-color!
+  "Show Tk's native colour dialog (tk_chooseColor) and return the colour the
+   user chose as \"#rrggbb\", nil when cancelled.
+
+   PROPS: :title and :initial-color, the colour the dialog opens with (a
+   \"#rrggbb\" string or a Tk colour name such as :red).
+
+   Blocks until the user answers; see message-box! for the thread rule."
+  [props]
+  (dialog-answer (dialog-script "tk_chooseColor" color-dialog-options props)))

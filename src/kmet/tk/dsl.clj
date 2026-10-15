@@ -364,6 +364,17 @@
     (boolean? x) (if x "1" "0")
     :else x))
 
+(defn tcl-list
+  "X as Tcl list syntax: a sequence as its elements, each one the word it
+   names (:x -> x, true -> 1) and quoted, so any value survives; anything
+   else is the one element. A nested sequence becomes one element of its
+   own — Tk's -filetypes is [label extensions] pairs, where the extensions
+   element is itself a list."
+  [x]
+  (if (sequential? x)
+    (str/join " " (map (comp tcl-quote tcl-list) x))
+    (tcl-word x)))
+
 ;; option-value builds a widget's font from the font props, so it reaches
 ;; forward to the rich-text helpers below (the same base font the :text tag
 ;; caches on its widget).
@@ -501,13 +512,14 @@
 
 (defn- option-value
   "V as the Tcl value PROP's option takes, per the catalogue's shape: a
-   sequence joins into a Tcl list (-padding/-tabs), the font props build
+   list-valued prop is Tcl list syntax (tcl-list, so an element with a
+   space stays one element: -padding/-tabs/-values), the font props build
    the widget's font from PROPS (so any of the four determines it), an
    image prop resolves its description to the widget-owned image name, and
    anything else is the word it names."
   [props prop v w]
   (case (opt/coerce prop)
-    :list (if (sequential? v) (str/join " " (map tcl-word v)) v)
+    :list (tcl-list v)
     :font (font-spec (resolve-base-font props) props)
     :image (image-name w prop v)
     v))

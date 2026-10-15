@@ -256,3 +256,43 @@
       (finally
         ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
+
+(t/deftest dialogs-reach-tk-and-answer-as-clojure-data
+  ;; The dialogs without a user: each Tk command the backend scripts is
+  ;; redefined as a proc that checks (or reshapes) its own arguments, so Tcl
+  ;; parses the emitted scripts exactly as it would for the real dialog —
+  ;; the -filetypes structure above all — and an answer rides back through
+  ;; the same path a real one takes. The interpreter is deleted afterwards,
+  ;; so the redefinitions do not outlive the test.
+  (if-let [a (live-tk)]
+    (try
+      (let [e (:eval a)]
+        (e (str "proc tk_messageBox {args} {\n"
+                "  set t [lindex $args [expr {[lsearch $args -type] + 1}]]\n"
+                "  if {$t ne \"yesno\"} { error \"bad -type $t\" }\n"
+                "  return yes\n"
+                "}\n"
+                "proc kmet_show {p} { list [lindex $p 0] [llength [lindex $p 1]] [lindex [lindex $p 1] 0] }\n"
+                "proc tk_getOpenFile {args} {\n"
+                "  if {[lsearch $args -multiple] >= 0} { return [list C:/a.txt {C:/b b.txt}] }\n"
+                "  set ft [lindex $args [expr {[lsearch $args -filetypes] + 1}]]\n"
+                "  join [list [llength $ft] {*}[kmet_show [lindex $ft 0]] {*}[kmet_show [lindex $ft 1]]] |\n"
+                "}\n"
+                "proc tk_getSaveFile {args} { return C:/out.txt }\n"
+                "proc tk_chooseDirectory {args} { return /tmp }\n"
+                "proc tk_chooseColor {args} { return #ff5500 }\n"))
+        (binding [tk/*adapter* a]
+          (t/is (= :yes (tk/message-box! {:type :yes-no :message "Save?"}))
+                "the -type word reached Tk and the answer is a keyword")
+          (t/is (= "2|All files|2|*.clj|Weird \\ {x}|1|*.md"
+                   (tk/open-file! {:file-types [["All files" ["*.clj" "*.cljc"]]
+                                                ["Weird \\ {x}" "*.md"]]}))
+                "the -filetypes value parses as Tk's [label extensions] pairs")
+          (t/is (= ["C:/a.txt" "C:/b b.txt"] (tk/open-file! {:multiple true}))
+                "a multiple answer's list is split by Tcl, spaces intact")
+          (t/is (= "C:/out.txt" (tk/save-file! {:title "Save"})))
+          (t/is (= "/tmp" (tk/choose-directory! {:must-exist true})))
+          (t/is (= "#ff5500" (tk/choose-color! {:title "Colour"})))))
+      (finally
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))

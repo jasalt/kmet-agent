@@ -204,10 +204,14 @@
 (t/deftest list-valued-props-render-as-tcl-lists
   (with-fake [rec nil]
     (let [{:keys [root]} (mounted [:ttk/frame {:padding [6 12]}
-                                   [:tk/text {:tabs [40 80]}]])]
+                                   [:tk/text {:tabs [40 80]}]
+                                   [:ttk/spinbox {:values ["a b" "c"]}]])]
       (t/is (some #(str/includes? % "-padding 6\\ 12") (scripts rec))
             "a :padding pair is one Tcl list word")
       (t/is (some #(str/includes? % "-tabs 40\\ 80") (scripts rec)))
+      (t/is (some #(str/includes? % (str "-values " (dsl/tcl-quote "a\\ b c")))
+                  (scripts rec))
+            "an element with a space stays one element of the list")
       (engine/dispose-component root))))
 
 (t/deftest an-empty-value-is-a-tcl-word-not-nothing
@@ -904,4 +908,99 @@
       (engine/dispose-component root)
       (t/is (some #(str/includes? % (str "destroy " sb)) (scripts rec))
             "dispose destroys the sibling scrollbar"))))
+
+;; ─── dialogs ──────────────────────────────────────────────────────────────
+
+(t/deftest tcl-list-quotes-every-element-and-keeps-nesting
+  ;; Tk's -filetypes is a list of {label extensions} pairs, so a nested
+  ;; sequence must stay one element of its own — quoting the element text
+  ;; does that (the whole value is quoted again where it becomes a Tcl
+  ;; word, see the dialog scripts below).
+  (t/is (= "2 3" (dsl/tcl-list [2 3])))
+  (t/is (= "a\\ b c" (dsl/tcl-list ["a b" "c"])))
+  (t/is (= "yes 1" (dsl/tcl-list [:yes true])))
+  (t/is (= "Clojure\\ *.clj" (dsl/tcl-list [["Clojure" "*.clj"]]))))
+
+(t/deftest a-message-box-scripts-tk-and-answers-with-a-button
+  (let [scripts (atom [])
+        adapter {:eval (fn [s] (swap! scripts conj s) "yes")}]
+    (binding [tk/*adapter* adapter]
+      (t/is (= :yes (tk/message-box! {:message "Save?" :detail "lossy"
+                                      :type :yes-no :icon :question
+                                      :title "kmet" :default :yes}))))
+    (t/is (= [(str "tk_messageBox -default yes -detail lossy -icon question"
+                   " -message Save? -title kmet -type yesno")]
+             @scripts)))
+  (binding [tk/*adapter* {:eval (fn [_] "")}]
+    (t/is (nil? (tk/message-box! {:message "x"}))
+          "a window closed without a button answers nothing")))
+
+(t/deftest file-directory-and-colour-dialogs-script-tk
+  (let [scripts (atom [])
+        adapter {:eval (fn [s] (swap! scripts conj s) "")}]
+    (binding [tk/*adapter* adapter]
+      (t/is (nil? (tk/open-file! {:title "Open" :initial-dir "/tmp" :initial-file "a.txt"
+                                  :file-types [["Clojure" "*.clj"]]
+                                  :default-extension ".clj"})))
+      (t/is (= (str "tk_getOpenFile -defaultextension .clj"
+                    " -filetypes " (dsl/tcl-quote "Clojure\\ *.clj")
+                    " -initialdir /tmp -initialfile a.txt -title Open")
+               (last @scripts))
+            "file types are Tcl list syntax, quoted into one option word")
+      (t/is (nil? (tk/save-file! {:title "Save"})))
+      (t/is (= "tk_getSaveFile -title Save" (last @scripts)))
+      (t/is (nil? (tk/choose-directory! {:title "Pick" :must-exist true})))
+      (t/is (= "tk_chooseDirectory -mustexist 1 -title Pick" (last @scripts)))
+      (t/is (nil? (tk/choose-color! {:title "Colour" :initial-color "#ff5500"})))
+      (t/is (= "tk_chooseColor -initialcolor \\#ff5500 -title Colour" (last @scripts)))))
+  (binding [tk/*adapter* {:eval (fn [_] "C:/picked.txt")}]
+    (t/is (= "C:/picked.txt" (tk/open-file! {}))
+          "a chosen path comes back as it is")))
+
+(t/deftest a-multiple-file-answer-is-read-with-tcl
+  ;; Tk answers a -multiple dialog with a Tcl list whose string form braces
+  ;; a path that contains spaces: the reader fetches each element with
+  ;; lindex — the path's own spaces survive — and unsets its variable.
+  (let [scripts (atom [])
+        adapter {:eval (fn [s]
+                         (swap! scripts conj s)
+                         (cond
+                           (str/includes? s "llength") "2"
+                           (str/includes? s "lindex") (if (str/ends-with? s " 0")
+                                                        "a b.txt" "c.txt")
+                           :else ""))}]
+    (binding [tk/*adapter* adapter]
+      (t/is (= ["a b.txt" "c.txt"] (tk/open-file! {:multiple true :title "Open"}))))
+    (t/is (some #(re-find #"^set ::kmet_dialog_\d+ \[tk_getOpenFile -multiple 1 -title Open\]$"
+                          %)
+                @scripts))
+    (t/is (some #(re-find #"^unset ::kmet_dialog_\d+$" %) @scripts)
+          "the dialog's private variable is cleaned up"))
+  (binding [tk/*adapter* {:eval (fn [s] (if (str/includes? s "llength") "0" ""))}]
+    (t/is (nil? (tk/open-file! {:multiple true}))
+          "a cancelled multiple dialog answers an empty list")))
+
+(t/deftest a-dialog-rejects-props-and-values-it-cannot-express
+  (with-fake [_rec nil]
+    (let [err (fn [f] (try (f) nil (catch Exception e e)))]
+      (let [e (err #(tk/message-box! {:message "x" :titel "typo"}))]
+        (t/is (= :kmet.tk.core/unknown-dialog-prop (:type (ex-data e))))
+        (t/is (str/includes? (ex-message e) ":titel"))
+        (t/is (str/includes? (ex-message e) "props:")))
+      (let [e (err #(tk/message-box! {:message "x" :type :yes-noo}))]
+        (t/is (= :kmet.tk.core/bad-dialog-value (:type (ex-data e))))
+        (t/is (str/includes? (ex-message e) ":type"))
+        (t/is (str/includes? (ex-message e) ":yes-noo")))
+      (let [e (err #(tk/message-box! {:message "x" :type :yes-no :default :ok}))]
+        (t/is (= :kmet.tk.core/bad-dialog-value (:type (ex-data e))))
+        (t/is (str/includes? (ex-message e) ":default")))
+      (let [e (err #(tk/message-box! {:message "x" :icon :boss}))]
+        (t/is (= :kmet.tk.core/bad-dialog-value (:type (ex-data e))))
+        (t/is (str/includes? (ex-message e) ":icon")))
+      (let [e (err #(tk/open-file! {:file-types ["*.clj"]}))]
+        (t/is (= :kmet.tk.core/bad-file-types (:type (ex-data e))))
+        (t/is (str/includes? (ex-message e) ":file-types")))
+      (let [e (err #(tk/choose-directory! {:title "x" :mustexists true}))]
+        (t/is (= :kmet.tk.core/unknown-dialog-prop (:type (ex-data e))))
+        (t/is (str/includes? (ex-message e) ":mustexists"))))))
 

@@ -439,6 +439,45 @@ its styled lines to the transcript width before they reach Tk (`:wrap
 surfaces — window, transcript canvas, message panel — so a missing paint
 or an overflowing body is obvious at a glance.
 
+### Dialogs
+
+Tk's five native dialogs are `kmet.tk.core` functions: `message-box!`,
+`open-file!`, `save-file!`, `choose-directory!` and `choose-color!`. Each
+scripts Tk's own command (`tk_messageBox`, `tk_getOpenFile`, …) and
+returns its answer as Clojure data:
+
+```clojure
+(tk/message-box! {:type :yes-no :icon :question :title "kmet"
+                  :message "Save the session?" :detail "…" :default :yes})
+;; => :yes / :no — nil when the window was closed without a button
+
+(tk/open-file! {:title "Open" :initial-dir "/home/me"
+                :file-types [["Session files" ["*.ednl" "*.jsonl"]]
+                             ["All files" "*"]]})
+;; => "/home/me/s.ednl"; a vector of paths with :multiple true; nil cancelled
+
+(tk/save-file! {:default-extension ".ednl"})  ;; => "/home/me/s.ednl"
+(tk/choose-directory! {:must-exist true})     ;; => "/home/me"
+(tk/choose-color! {:initial-color "#ff5500"}) ;; => "#ff5500"
+```
+
+The props are the dialog's Tcl options, kebab-cased (`:initial-dir` is
+`-initialdir`, `:must-exist` `-mustexist`). A dialog's vocabulary is
+closed: an unknown prop is an error, as is a message box `:type`/`:icon`
+outside its set, a `:default` button its `:type` does not show, or a
+`:file-types` value that is not `[label extensions]` pairs (Tk would read
+a malformed one as a filter with no extensions). `:type`
+is `:ok` (default) or one of `:ok-cancel`, `:yes-no`, `:yes-no-cancel`,
+`:retry-cancel`, `:abort-retry-ignore` (Tk spells them `okcancel` … — the
+keywords are kmet's); `:file-types` is `[label extensions]` pairs, the
+extensions one pattern or a vector.
+
+A dialog blocks its caller — Tk runs a nested event loop, so the window
+stays live but the calling frame waits — and must run on the thread that
+owns the interpreter (`mount!`/`run-loop!`): call it from a callback. A
+component body renders inside the pump, so a dialog there stalls the
+render pass until the user answers.
+
 ### Interactive development
 
 `run!` is `mount!` + `run-loop!`. The split exists for the REPL: mount on
@@ -465,8 +504,10 @@ through a real Tk when a display is there (on Termux, under jolt + Xvfb).
 `kmet.tk.test-tcl` (bb or Jolt, skipping where libtcl is absent)
 smoke-tests the real interpreter: eval, the command trampoline,
 `tcl-quote` round-tripping through the Tcl parser, the recorded Tcl/Tk
-pair with the interpreter's own patchlevel, and the image layer — real
-photos from data, sized and deleted with their widget.
+pair with the interpreter's own patchlevel, the image layer — real
+photos from data, sized and deleted with their widget — and the dialogs,
+answered by stand-in procs that check the emitted option words (a
+`-filetypes` list above all) with no user involved.
 
 `scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
 the interpreter's widget classes and their options and diffs them against
@@ -493,10 +534,11 @@ against a live Tk. kmet's own widgets are the `:ui/…` set in
 
 The first cuts that remain — the treeview's flat tables, canvas items
 without identity, checkable menu items, the read-only text tags, and
-everything Tk offers beside its widgets (dialogs, `grid`/`place`,
-window management, ttk styles, the clipboard, variables) — are tracked in
-[`tcl.md`](../../tcl.md) at the repository root, which lists each gap with
-what closing it needs and how the two guards below keep the list honest.
+everything Tk offers beside its widgets (`grid`/`place`, window
+management, a runtime theme switch, the clipboard, variables) — are tracked
+in [`tcl.md`](../../tcl.md) at the repository root, which lists each gap
+with what closing it needs and how the two guards below keep the list
+honest.
 The `:tk/text` tag carries the displayed content — styled segments in
 Tk tags, an optional scrollbar, generated mono fonts, wrapping — and
 `:ui/transcript` (kmet.app.ui.gui.ui) is the scroll container over it: one text

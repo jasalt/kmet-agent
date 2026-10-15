@@ -28,6 +28,15 @@ widget and description, and deleted with the widget; a name the app owns is
 never touched. Item vocabularies outside the tag specs — a menu item's
 `-image`, a treeview row's — are not props.
 
+Tk's native dialogs are `kmet.tk.core` functions: `message-box!`,
+`open-file!`, `save-file!`, `choose-directory!` and `choose-color!` script
+`tk_messageBox`/`tk_getOpenFile`/… with the props as that command's own
+options and answer with Clojure data — a button keyword, a path, a colour
+— or nil when the user cancelled (`:multiple` answers a vector of paths,
+which only Tcl can split out of the list Tk returns). They block in Tcl's
+nested event loop, so they must run on the Tk thread: call one from a
+callback, not from a component body, which renders inside the pump.
+
 kmet's own widgets are not part of those sets: they are `:ui/…` tags in
 `kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container), added to
 the backend through `kmet.tk.core/mount-backend!`/`run-backend!`.
@@ -115,11 +124,6 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
   after `tcl/install!`, so the viewer no longer follows the system theme.
   Still open: a runtime theme switch re-applying the set (the GUI app
   isn't ported yet).
-- **Dialogs.** `tk_messageBox`, `tk_getOpenFile`/`tk_getSaveFile`,
-  `tk_chooseDirectory`, `tk_chooseColor` have no home. They are imperative
-  (`kmet.tk.core/message-box!`, `open-file!`), blocking in Tcl's event loop,
-  so they must run on the Tk thread — mount!/run-loop!'s thread — not from a
-  component body, which renders on the same thread and may call them.
 - **An editable text tag.** `:tk/text` owns `-state`: it is a read-only
   display surface (`:ui/transcript` in kmet.app.ui.gui.ui hosts the embedded-window
   chat stack). A multi-line input (a chat composer
@@ -209,8 +213,9 @@ be; each group needs machinery:
   exits non-zero when a tag declares an option its widget lacks, and prints
   the widget classes without a tag (currently none).
 - `bb test kmet.tk.test-tcl` — the same check in test form plus a mount of
-  every tag with every declared prop, and a checkbutton/scale driven through
-  Tk; it skips where there is no display.
+  every tag with every declared prop, a checkbutton/scale driven through
+  Tk, and the dialogs answered by stand-in procs (their emitted option
+  words asserted, no user); it skips where there is no display.
 - `bb test kmet.tk.test-tk` — the headless recording adapter: tag
   construction, patching, callbacks, the value slots and disposal.
 - `bb test kmet.app.ui.gui.test-ui` — the same for the kmet-widget set (`:ui/…`),
