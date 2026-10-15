@@ -294,6 +294,187 @@
       (t/is (some #(re-find #"configure -font" %) (scripts rec)))
       (engine/dispose-component (:root m)))))
 
+;; ─── images ──────────────────────────────────────────────────────────────
+
+(defn- script-index
+  "The index of the first recorded script matching RE, or nil."
+  [rec re]
+  (first (keep-indexed (fn [i s] (when (re-find re s) i)) (scripts rec))))
+
+(t/deftest an-image-description-becomes-a-widget-owned-photo
+  ;; A description map creates the photo before the widget that names it
+  ;; (the Tk command needs the name at creation), and disposal deletes it.
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:tk/label {:text "logo" :image {:file "logo.png"}}]])
+          ss (scripts rec)
+          name (some->> (keep #(second (re-find #"^image create photo (::kmet_img_\d+) -file logo\.png$" %)) ss)
+                        first)]
+      (t/is (some? name) "the photo is created from the file")
+      (t/is (some #(str/includes? % (str "-image " name)) ss)
+            "the label names the created photo")
+      (t/is (< (script-index rec #"^image create photo")
+               (script-index rec #"^label "))
+            "the photo exists before the widget names it")
+      (engine/dispose-component root)
+      (t/is (some #(= (str "image delete " name) %) (scripts rec))
+            "disposal deletes the photo"))))
+
+(t/deftest an-image-name-passes-through-and-a-description-is-reused
+  (with-fake [rec nil]
+    (let [img (atom "::app::logo")
+          m (mounted (fn [_] [:ttk/frame {} [:ttk/label {:text "x" :image @img}]]))]
+      (t/is (some #(str/includes? % "-image ::app::logo") (scripts rec)))
+      (t/is (not-any? #(re-find #"^image create" %) (scripts rec))
+            "a name the app owns is not created")
+      (reset! img {:file "a.png"})
+      (rerender! m)
+      (t/is (= 1 (count (scripts-like rec #"^image create photo"))))
+      (rerender! m)
+      (t/is (= 1 (count (scripts-like rec #"^image create photo")))
+            "the same description reuses the cached photo")
+      (engine/dispose-component (:root m)))))
+
+(t/deftest image-sizing-scripts-zoom-subsample-and-fit
+  ;; zoom/subsample are Tk's own integer ops; :fit asks the loaded image its
+  ;; size and subsamples it to the box (never enlarging).
+  (let [scripts (atom [])
+        adapter {:eval (fn [s]
+                         (swap! scripts conj s)
+                         (cond
+                           (str/includes? s "image width") "200"
+                           (str/includes? s "image height") "100"
+                           :else ""))
+                 :command! (fn [_ _] nil)}]
+    (dsl/forget-widget-options!)
+    (binding [tk/*adapter* adapter]
+      (let [{:keys [root]} (mounted [:ttk/frame {}
+                                     [:tk/label {:image {:file "wide.png" :fit 100}}]
+                                     [:tk/label {:image {:file "box.png" :fit {:width 50 :height 25}}}]
+                                     [:tk/label {:image {:file "up.png" :zoom 3}}]
+                                     [:tk/label {:image {:file "down.png" :subsample [2 3]}}]])]
+        (t/is (some #(re-find #"copy ::kmet_img_\d+ -subsample 2 2 -shrink" %) @scripts)
+              ":fit 100 subsamples the 200x100 photo in both axes")
+        (t/is (some #(re-find #"copy ::kmet_img_\d+ -subsample 4 4 -shrink" %) @scripts)
+              "a :fit box takes the factor of its hardest axis")
+        (t/is (some #(re-find #"copy ::kmet_img_\d+ -zoom 3 3 -shrink" %) @scripts))
+        (t/is (some #(re-find #"copy ::kmet_img_\d+ -subsample 2 3 -shrink" %) @scripts))
+        (engine/dispose-component root)))))
+
+(t/deftest fit-measures-what-zoom-and-subsample-produced
+  ;; :fit applies after :zoom/:subsample, so its factor comes from the size
+  ;; they produced, not the natural one.
+  (let [scripts (atom [])
+        zoomed? (atom false)
+        adapter {:eval (fn [s]
+                         (swap! scripts conj s)
+                         (cond
+                           (re-find #"-zoom " s) (do (reset! zoomed? true) "")
+                           (str/includes? s "image width") (if @zoomed? "400" "200")
+                           (str/includes? s "image height") (if @zoomed? "200" "100")
+                           :else ""))
+                 :command! (fn [_ _] nil)}]
+    (dsl/forget-widget-options!)
+    (binding [tk/*adapter* adapter]
+      (let [{:keys [root]} (mounted [:ttk/frame {}
+                                     [:tk/label {:image {:file "big.png" :zoom 2
+                                                         :fit {:width 100}}}]])]
+        (t/is (some #(re-find #"copy ::kmet_img_\d+ -subsample 4 4 -shrink" %) @scripts)
+              ":fit 100 on the zoomed 400x200 takes factor 4")
+        (engine/dispose-component root)))))
+
+(t/deftest an-image-description-is-validated
+  ;; a description that cannot be expressed fails naming the prop and, for
+  ;; a typo, the key — instead of silently creating an empty or misshapen
+  ;; image (a Tk bitmap has no copy subcommand to size it with).
+  (with-fake [_rec nil]
+    (let [err (fn [props]
+                (try
+                  (mounted [:ttk/frame {} [:tk/label props]])
+                  nil
+                  (catch Exception e e)))]
+      (let [e (err {:image {:zoom 2}})]
+        (t/is (= :kmet.gui.tk/image-without-source (:type (ex-data e))))
+        (t/is (str/includes? (ex-message e) ":file"))
+        (t/is (str/includes? (ex-message e) ":image")))
+      (let [e (err {:image {:file "x.png" :fille "y.png"}})]
+        (t/is (= :kmet.gui.tk/unknown-image-key (:type (ex-data e))))
+        (t/is (str/includes? (ex-message e) ":fille")))
+      (let [e (err {:bitmap {:file "x.xbm" :zoom 2}})]
+        (t/is (= :kmet.gui.tk/bitmap-cannot-be-sized (:type (ex-data e))))
+        (t/is (str/includes? (ex-message e) ":zoom"))))))
+
+(t/deftest a-failed-construction-releases-the-images-it-created
+  ;; the ctor script creates an image before check-options! can reject the
+  ;; widget: a failed construction must not leave the photo behind
+  (let [scripts (atom [])
+        adapter {:eval (fn [s]
+                         (swap! scripts conj s)
+                         (if (str/includes? s " configure]")
+                           "-text\n-cursor\n"
+                           ""))
+                 :command! (fn [_ _] nil)}]
+    (dsl/forget-widget-options!)
+    (binding [tk/*adapter* adapter]
+      (t/is (thrown? Exception
+                     (mounted [:ttk/frame {}
+                               [:tk/label {:image {:file "x.png"} :bg "#fff"}]]))))
+    (t/is (some #(re-find #"^image delete ::kmet_img_\d+$" %) @scripts)
+          "the photo the failed widget created is released")))
+
+(t/deftest a-bitmap-description-creates-a-bitmap-image
+  ;; :bitmap is Tk's bitmap option, so a description there creates a bitmap
+  ;; image; the photo props never do.
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:tk/checkbutton {:bitmap {:file "q.xbm"}
+                                                     :selectimage {:file "s.xbm"}}]])]
+      (t/is (some #(re-find #"^image create bitmap ::kmet_img_\d+ -file q\.xbm$" %) (scripts rec)))
+      (t/is (some #(re-find #"^image create photo ::kmet_img_\d+ -file s\.xbm$" %) (scripts rec)))
+      (engine/dispose-component root))))
+
+(t/deftest a-background-image-description-creates-a-photo
+  ;; :tile and :backgroundimage (the classic frame's Tk 9 surface options)
+  ;; take a description like every other image prop.
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:tk/frame {:tile {:file "tile.png"}}])]
+      (t/is (some #(re-find #"^image create photo ::kmet_img_\d+ -file tile\.png$" %) (scripts rec)))
+      (t/is (some #(re-find #"-tile ::kmet_img_\d+" %) (scripts rec)))
+      (engine/dispose-component root))))
+
+(t/deftest a-changed-image-description-patches-the-widget
+  (with-fake [rec nil]
+    (let [img (atom {:file "a.png"})
+          m (mounted (fn [_] [:ttk/frame {} [:ttk/label {:text "x" :image @img}]]))]
+      (reset! img {:file "b.png"})
+      (rerender! m)
+      (t/is (zero? (count (scripts-like rec #"^destroy ")))
+            "an image change is a configure, not a rebuild")
+      (t/is (some #(re-find #"^\.w[\w.]+ configure -image ::kmet_img_\d+" %) (scripts rec)))
+      (t/is (some #(re-find #"^image create photo ::kmet_img_\d+ -file b\.png$" %) (scripts rec)))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest canvas-image-items-own-their-photo
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:tk/canvas {:items [{:type :image :coords [10 20]
+                                                         :image {:file "pic.png"}}
+                                                        {:type :line :coords [0 0 9 9]}]}]])]
+      (t/is (some #(re-find #"^image create photo ::kmet_img_\d+ -file pic\.png$" %) (scripts rec)))
+      (t/is (some #(re-find #"create image 10 20 -image ::kmet_img_\d+$" %) (scripts rec)))
+      (engine/dispose-component root)
+      (t/is (some #(re-find #"^image delete ::kmet_img_\d+$" %) (scripts rec))))))
+
+(t/deftest text-content-embeds-an-image-segment
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:tk/text {:content [{:text "before"}
+                                                        {:image {:file "pic.png"} :pady 4}
+                                                        {:text "after"}]}]])]
+      (t/is (some #(re-find #"^image create photo ::kmet_img_\d+ -file pic\.png$" %) (scripts rec)))
+      (t/is (some #(re-find #"image create end -image ::kmet_img_\d+ -pady 4" %) (scripts rec)))
+      (engine/dispose-component root))))
+
 ;; ─── callbacks ────────────────────────────────────────────────────────────
 
 (t/deftest click-dispatches-through-the-trampoline

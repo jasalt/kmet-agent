@@ -262,6 +262,7 @@ widget and lists the odd options itself:
 | `:labelled` `:layout` | `:text :textangle :underline`; `:justify :anchor :wraplength :compound` |
 | `:stateful` | `:state :activebackground :activeforeground :disabledforeground` |
 | `:classic-text` | the classic text-and-graphics block: `:activebackground :activeforeground :anchor :compound :disabledforeground :justify :underline :wraplength` |
+| `:imaged` | the classic widgets' image pair, `:image :bitmap`; the ttk widgets take `:image` alone, so their specs list it themselves |
 | `:selectable` | `:exportselection :selectbackground :selectforeground :selectborderwidth :inactiveselectbackground` |
 | `:fonted` | `:font-family :font-size :bold :italic` → `-font` |
 | `:progress` | `:value :maximum :mode :orient :phase :length` |
@@ -280,8 +281,10 @@ widget and lists the odd options itself:
 `options-for` checks every family and prop against the catalogue at load,
 so a typo fails there. Values keep their shape per prop: keywords and
 booleans render as Tcl words and flags, a sequence is one Tcl list
-(`:padding [6 12]`, `:tabs [40 80]`), and the font props build `-font`
-from the four of them. An empty string is `{}` — not nothing, which would
+(`:padding [6 12]`, `:tabs [40 80]`), the font props build `-font`
+from the four of them, and an image prop resolves its value to a Tk image
+name — a name passes through, a description is created and owned by the
+widget (see *Images*). An empty string is `{}` — not nothing, which would
 hand the next option to Tk as its value.
 
 Two consequences worth knowing:
@@ -311,8 +314,45 @@ because it needs machinery a prop cannot be: script-typed (`-command` is
 `-xscrollcommand`), the variable-backed `-variable`/`-textvariable`/
 `-listvariable` — a checkable widget's state is the tag's own private
 variable, so `-onvalue`/`-offvalue`/`-tristatevalue` are not props either —
-the image-backed `-image`/`-bitmap`/`-selectimage`, and the options that
-name another widget, `-menu` and `-labelwidget`.
+and the options that name another widget, `-menu` and `-labelwidget`.
+
+### Images
+
+The image-backed options *are* props: `:image`, `:bitmap`, `:selectimage`,
+`:tristateimage`, `:backgroundimage`, `:tile` on the widgets that have them,
+and the canvas items' `:image`/`:bitmap`/`:disabledimage`. A value is
+either a Tk image name — a string or keyword used as it is: a built-in
+bitmap such as `:questhead`, or a name the app created in Tcl — or a
+description map the widget then owns:
+
+```clojure
+[:tk/label {:image {:file "logo.png"}}]
+[:tk/label {:image {:data png-base64 :format :png :fit {:width 320}}}]
+[:tk/canvas {:items [{:type :image :coords [10 20] :image {:file "pic.png"}}]}]
+[:tk/text {:content [{:text "before"} {:image {:file "pic.png"} :pady 4}]}]
+```
+
+| key | meaning |
+|---|---|
+| `:file` | read the image from a file |
+| `:data` | base64 image data, with `:format` (`:png`, `:gif`, …) |
+| `:zoom` | `n` or `[x y]`: integer upscale after loading |
+| `:subsample` | `n` or `[x y]`: integer downscale after loading |
+| `:fit` | `{:width px :height px}` (or a bare width): subsample so the image fits the box without distortion; never enlarges |
+
+A `:bitmap` description creates an `image create bitmap`; every other image
+prop a photo, and only a photo can be sized — `:zoom`/`:subsample`/`:fit`
+(Tk bitmaps have no copy subcommand). Tk sizes a photo through a self-copy
+(`copy … -zoom/-subsample -shrink`), which `:zoom`/`:subsample`/`:fit`
+script; `:fit` measures the size the first two produced. A description is
+created once per widget and description — a re-render reuses the name — and
+`destroy!` deletes the images the widget created; a name the app owns is
+never deleted. A `:text` widget's `:content` segments also take
+`{:image description}` (with `:align`/`:padx`/`:pady`) to embed one.
+
+An image prop that holds a name is set as an option like any other, so it
+patches live; a changed description creates the new image and configures the
+widget with its name.
 
 ### Styles and themes (`kmet.gui.ttk.style`)
 
@@ -422,8 +462,9 @@ headlessly and round-trips them — `use-theme!`/`define-style!`/
 through a real Tk when a display is there (on Termux, under jolt + Xvfb).
 `kmet.gui.test-tcl` (bb or Jolt, skipping where libtcl is absent)
 smoke-tests the real interpreter: eval, the command trampoline,
-`tcl-quote` round-tripping through the Tcl parser, and the recorded
-Tcl/Tk pair with the interpreter's own patchlevel.
+`tcl-quote` round-tripping through the Tcl parser, the recorded Tcl/Tk
+pair with the interpreter's own patchlevel, and the image layer — real
+photos from data, sized and deleted with their widget.
 
 `scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
 the interpreter's widget classes and their options and diffs them against
@@ -443,14 +484,14 @@ themed `:ttk/…` set (frames, labels, buttons, fields, notebook, panes,
 progress, separator, sizegrip, toggleswitch, treeview), plus bare-string
 labels. Every tag accepts the Tk options its widget has, through the
 families in `kmet.gui.tk.options` (see *Options* above); the options Tk
-gives to no plain prop — script-, variable- and image-backed — are the
+gives to no plain prop — script- and variable-backed — are the
 ones still missing, and `scripts/tk_option_audit.clj` reports both sides
 against a live Tk. kmet's own widgets are the `:ui/…` set in
 `kmet.gui.ui` (today `:ui/transcript`, the chat scroll container).
 
 The first cuts that remain — the treeview's flat tables, canvas items
 without identity, checkable menu items, the read-only text tags, and
-everything Tk offers beside its widgets (dialogs, images, `grid`/`place`,
+everything Tk offers beside its widgets (dialogs, `grid`/`place`,
 window management, ttk styles, the clipboard, variables) — are tracked in
 [`tcl.md`](../../tcl.md) at the repository root, which lists each gap with
 what closing it needs and how the two guards below keep the list honest.

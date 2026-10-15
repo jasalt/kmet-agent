@@ -13,10 +13,11 @@
 
    Reached values are plain data: words (keywords, booleans, numbers,
    colours, names), Tcl lists (:padding [6 12], :tabs [40 80], :values,
-   :scrollregion, :show), and the font family
-   (:font-family/:font-size/:bold/:italic). Options that are not a plain
-   value are deliberately absent, each because it needs machinery a prop
-   cannot be:
+   :scrollregion, :show), the font family
+   (:font-family/:font-size/:bold/:italic), and images (see image-props:
+   a Tk image name, or a description kmet.gui.tk.dsl/image-name turns into
+   a widget-owned photo or bitmap). Options that are not a plain value are
+   deliberately absent, each because it needs machinery a prop cannot be:
 
      - script-typed: -command (declare it in :bindings with
        {:option :command}, as :on-click does), -validatecommand,
@@ -26,9 +27,8 @@
      - variable-backed: -variable, -textvariable, -listvariable (a
        checkable widget's state is the tag's own private variable, so
        -onvalue/-offvalue/-tristatevalue are not props either);
-     - image-backed: -image, -bitmap, -disabledimage, -selectimage,
-       -tristateimage (kmet does no image loading), -labelwidget;
-     - another widget: -menu (a menubutton's :items build their own);
+     - another widget: -menu (a menubutton's :items build their own),
+       -labelwidget;
      - only meaningful with one of the above: -selecttype, -title,
        -titlecolumns, -titleitems, -type, -displaycolumns.
 
@@ -63,7 +63,8 @@
     :insertborderwidth :insertofftime :insertontime :insertunfocussed
     :insertwidth :maxundo :spacing1 :spacing2 :spacing3 :tabs :tabstyle :undo
     :show :placeholder :placeholderforeground :validate :locale
-    :disabledbackground :readonlybackground})
+    :disabledbackground :readonlybackground
+    :image :bitmap :selectimage :tristateimage :disabledimage})
 
 (def options
   "prop → the Tcl option it names: the bulk are Tk's own option names, plus
@@ -91,6 +92,16 @@
    built from whichever of them the render supplied."
   #{:font-family :font-size :bold :italic})
 
+(def image-props
+  "The props whose option names an image. A value is either a Tk image name
+   — a built-in bitmap such as :questhead, or a name the app created — or a
+   description map the DSL turns into a widget-owned image (see
+   kmet.gui.tk.dsl/image-name): :file, :data with :format, and the sizing
+   :zoom/:subsample/:fit. :bitmap creates a Tk bitmap image, the rest
+   photos."
+  #{:image :bitmap :selectimage :tristateimage :backgroundimage :tile
+    :disabledimage})
+
 (def families
   "Named prop sets a spec composes its :options from (options-for). A
    family holds props that co-occur on one widget population, so a spec
@@ -115,6 +126,9 @@
    ;; radiobutton, menubutton — every one of them has all of these
    :classic-text #{:activebackground :activeforeground :anchor :compound
                    :disabledforeground :justify :underline :wraplength}
+   ;; the classic widgets' image pair; the ttk widgets take :image alone,
+   ;; so their specs list it themselves
+   :imaged      #{:image :bitmap}
    :selectable  #{:exportselection :selectbackground :selectforeground
                   :selectborderwidth :inactiveselectbackground}
    :fonted      #{:font-family :font-size :bold :italic}
@@ -149,9 +163,10 @@
   (sort (keys families)))
 
 (defn coerce
-  "PROP's value shape: :word (the default), :list or :font."
+  "PROP's value shape: :word (the default), :list, :font or :image."
   [prop]
   (cond
+    (contains? image-props prop) :image
     (contains? list-valued prop) :list
     (contains? font-props prop) :font
     :else :word))

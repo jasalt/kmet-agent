@@ -98,15 +98,27 @@
 ;; The classic widget set (:tk/…)
 ;; ═══════════════════════════════════════════════════════════════════════════
 
+(def ^:private canvas-image-options
+  "The canvas-item options that name an image: the item's own vocabulary,
+   taking the same values an image prop does (a Tk image name, or a
+   description the canvas widget owns)."
+  #{:image :bitmap :disabledimage})
+
 (defn- canvas-items!
   "Replace canvas W's items with PROPS' :items — `{:type :line :coords [x y …]}`
    plus the item's own Tcl canvas options (`-fill`, `-width`, `-text`,
    `-anchor`, …), which are Tk's canvas-item vocabulary, not the widget
-   catalogue's."
+   catalogue's. An image option's description is created as a resource of
+   W, so it survives the redraw and is released with the widget."
   [w props]
   (dsl/eval! (str (:path w) " delete all"))
   (doseq [{:keys [type coords] :as item} (or (:items props) [])]
-    (let [opts (dissoc item :type :coords)]
+    (let [opts (into {}
+                     (map (fn [[k v]]
+                            [k (if (contains? canvas-image-options k)
+                                 (dsl/image-name w k v)
+                                 v)]))
+                     (dissoc item :type :coords))]
       (dsl/eval! (str (:path w) " create " (dsl/tcl-word (or type :line))
                       (when (seq coords)
                         (str " " (str/join " "
@@ -210,7 +222,7 @@
    (dsl/widget-spec "button"
                     {:options (opt/options-for [:standard :geometry :highlighted
                                                 :bordered :spaced :fonted
-                                                :classic-text :stateful]
+                                                :classic-text :stateful :imaged]
                                                [:bg :fg :text :default :overrelief
                                                 :repeatdelay :repeatinterval])
                      :bindings {:on-click {:option :command}}
@@ -220,7 +232,7 @@
    (dsl/widget-spec "label"
                     {:options (opt/options-for [:standard :geometry :highlighted
                                                 :bordered :spaced :fonted
-                                                :classic-text :stateful]
+                                                :classic-text :stateful :imaged]
                                                [:bg :fg :text :textangle])
                      :bindings {:on-click {:event "<Button-1>"}}
                      :primary :text})
@@ -245,9 +257,10 @@
    (dsl/widget-spec "checkbutton"
                     {:options (opt/options-for [:standard :geometry :highlighted
                                                 :bordered :spaced :fonted
-                                                :classic-text :stateful]
+                                                :classic-text :stateful :imaged]
                                                [:bg :fg :text :selectcolor :indicatoron
-                                                :offrelief :overrelief])
+                                                :offrelief :overrelief :selectimage
+                                                :tristateimage])
                      :bindings dsl/check-bindings
                      :checkable :check})
 
@@ -255,9 +268,10 @@
    (dsl/widget-spec "radiobutton"
                     {:options (opt/options-for [:standard :geometry :highlighted
                                                 :bordered :spaced :fonted
-                                                :classic-text :stateful]
+                                                :classic-text :stateful :imaged]
                                                [:bg :fg :text :selectcolor :indicatoron
-                                                :offrelief :overrelief :value])
+                                                :offrelief :overrelief :value :selectimage
+                                                :tristateimage])
                      :bindings dsl/radio-bindings
                      :checkable :radio})
 
@@ -328,7 +342,7 @@
    (dsl/widget-spec "menubutton"
                     {:options (opt/options-for [:standard :geometry :highlighted
                                                 :bordered :spaced :fonted
-                                                :classic-text :stateful]
+                                                :classic-text :stateful :imaged]
                                                [:bg :fg :text :direction :indicatoron])
                      :bindings {:on-click {:event "<Button-1>"}}
                      :primary :text
@@ -380,8 +394,8 @@
   "A bare string child renders as a plain label."
   [text _props]
   (dsl/make-widget (get tags :ttk/label)
-                   (fn [p] (dsl/widget-script "ttk::label" p
-                                              {:text (or text "") :anchor :w :justify :left}))))
+                   (fn [p _w] (dsl/widget-script "ttk::label" p
+                                                 {:text (or text "") :anchor :w :justify :left}))))
 
 (def tk-backend
   "The Tk backend map for kmet.libs.hikap."

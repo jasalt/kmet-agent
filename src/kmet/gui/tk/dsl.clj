@@ -4,7 +4,7 @@
    allocation, the callback/binding registry (including the :bind chord to
    Tk event translation), the live-patch decisions (with the check that a
    prop's option exists on the running widget), widget construction and
-   disposal, and the rich-text/:text helpers.
+   disposal, the Tk images a widget owns, and the rich-text/:text helpers.
 
    The option vocabulary itself — which props exist, which Tcl option each
    names, and the families a spec composes its :options from — is
@@ -88,7 +88,8 @@
   ;; CALLBACKS maps a binding slot to the trampoline id bound for it (the
   ;; registry owns the handler); STYLES is the per-widget cache of derived
   ;; Tk resources — the generated text tags (and the named fonts behind
-  ;; them) the :text tag inserts with.
+  ;; them) the :text tag inserts with, and the Tk images the widget created
+  ;; (see the Images section).
   )
 
 (defonce ^:private next-id (atom 0))
@@ -368,27 +369,160 @@
 ;; caches on its widget).
 (declare ^:private resolve-base-font font-spec)
 
+;; ─── Images ───────────────────────────────────────────────────────────────
+;; An image-valued prop takes either a Tk image name — a string or keyword
+;; used as it is: a built-in bitmap such as :questhead, or a name the app
+;; created for itself in Tcl — or a description map the widget then owns:
+;;
+;;   {:file "logo.png"}                  read the image from a file
+;;   {:data "iVBORw0…" :format :png}     from base64 image data
+;;   {:zoom 2}     | {:zoom [2 3]}       integer upscale after loading
+;;   {:subsample 2} | {:subsample [2 3]} integer downscale after loading
+;;   {:fit {:width 320 :height 200}}     subsample so it fits the box
+;;
+;; A description is created once per widget and kind — a re-render with the
+;; same description reuses the name — and destroy! releases every image the
+;; widget created. A :bitmap prop creates `image create bitmap`, every
+;; other image prop (the catalogue's image-props) a photo. Sizing is
+;; photo-only (a Tk bitmap has no copy): Tk sizes a photo through a
+;; self-copy (`copy … -zoom/-subsample -shrink`), not a zoom subcommand.
+
+(defonce ^:private next-image (atom 0))
+
+(defn- image-kind
+  "The image a PROP's option names: a bitmap for :bitmap, a photo for the
+   rest of the catalogue's image props."
+  [prop]
+  (if (= :bitmap prop) :bitmap :photo))
+
+(defn- image-pair
+  "X — a number or an [x y] pair — as the [x y] pair Tk's zoom and
+   subsample take."
+  [x]
+  (if (sequential? x) [(first x) (second x)] [x x]))
+
+(defn- image-copy!
+  "Apply Tk's in-place copy to the image at IMG: `copy IMG -KIND x y
+   -shrink`, how a photo is zoomed or subsampled. FACTOR is a number or an
+   [x y] pair."
+  [img kind factor]
+  (let [[x y] (image-pair factor)]
+    (eval! (str img " copy " img " -" (name kind) " " x " " y " -shrink"))))
+
+(defn- image-fit!
+  "Shrink the photo at IMG to fit the :width/:height box FIT names (a bare
+   number is a width), without distorting it: one factor, from the axis
+   that constrains hardest, applied to both — a photo is never enlarged to
+   fit."
+  [img fit]
+  (let [{:keys [width height]} (if (map? fit) fit {:width fit})
+        pw (some-> (eval! (str "image width " img)) str/trim parse-long)
+        ph (some-> (eval! (str "image height " img)) str/trim parse-long)
+        factor (fn [px target]
+                 (if (and px target (pos? target) (> px target))
+                   (quot (+ px (dec target)) target)
+                   1))
+        f (max (factor pw width) (factor ph height))]
+    (when (and pw ph (> f 1))
+      (image-copy! img :subsample f))))
+
+(defn- create-image!
+  "Create the photo or bitmap V describes at IMG (`:file` beats `:data`),
+   sized per V's :zoom, :subsample and :fit — in that order, so :fit
+   measures what the first two produced."
+  [img kind v]
+  (eval! (str "image create " (name kind) " " img
+              (when-some [file (:file v)] (str " -file " (tcl-quote file)))
+              (when (and (nil? (:file v)) (some? (:data v)))
+                (str " -data " (tcl-quote (:data v))))
+              (when (some? (:format v))
+                (str " -format " (tcl-quote (tcl-word (:format v)))))))
+  (when (some? (:zoom v)) (image-copy! img :zoom (:zoom v)))
+  (when (some? (:subsample v)) (image-copy! img :subsample (:subsample v)))
+  (when (some? (:fit v)) (image-fit! img (:fit v))))
+
+(def ^:private image-description-keys
+  "The keys an image description may carry."
+  #{:file :data :format :zoom :subsample :fit})
+
+(defn- check-image-description!
+  "Throw when description V cannot be expressed: no source (:file/:data) —
+   an image with no source would be silently empty; an unknown key (a typo
+   would otherwise be ignored); or a sizing key on a bitmap (Tk bitmaps
+   have no copy subcommand to size them)."
+  [prop v]
+  (when (and (nil? (:file v)) (nil? (:data v)))
+    (throw (ex-info (str "kmet.gui.tk.dsl: an image description needs :file"
+                         " or :data (prop " prop ")")
+                    {:type :kmet.gui.tk/image-without-source
+                     :prop prop :description v})))
+  (when-some [unknown (seq (remove image-description-keys (keys v)))]
+    (throw (ex-info (str "kmet.gui.tk.dsl: unknown image description keys "
+                         (pr-str (vec unknown)) " (prop " prop ")")
+                    {:type :kmet.gui.tk/unknown-image-key
+                     :prop prop :keys (vec unknown)})))
+  (when-some [sizing (seq (filter #(contains? v %) [:zoom :subsample :fit]))]
+    (when (= :bitmap (image-kind prop))
+      (throw (ex-info (str "kmet.gui.tk.dsl: a :bitmap description cannot be"
+                           " sized — " (pr-str (vec sizing))
+                           " (Tk bitmaps have no copy; prop " prop ")")
+                      {:type :kmet.gui.tk/bitmap-cannot-be-sized
+                       :prop prop :keys (vec sizing) :description v})))))
+
+(defn image-name
+  "V as the Tk image name to script for the image prop PROP on W: a name
+   (string or keyword) passes through, a description map is created once
+   per widget and image kind and cached on the widget. W nil — a caller
+   with no widget to own the image — accepts names only."
+  [w prop v]
+  (if-not (map? v)
+    v
+    (do
+      (check-image-description! prop v)
+      (when (nil? w)
+        (throw (ex-info (str "kmet.gui.tk.dsl: an image description needs the "
+                             "widget that owns it (prop " prop ")")
+                        {:type :kmet.gui.tk/image-without-widget :prop prop})))
+      (let [kind (image-kind prop)
+            k [kind v]]
+        (or (get-in @(:styles w) [:images k])
+            (let [img (str "::kmet_img_" (swap! next-image inc))]
+              (create-image! img kind v)
+              (swap! (:styles w) update :images assoc k img)
+              img))))))
+
+(defn- release-images!
+  "Delete the Tk images W created (a name the app owns is not ours)."
+  [w]
+  (doseq [name (vals (:images @(:styles w)))]
+    (eval! (str "image delete " (tcl-quote name))))
+  (swap! (:styles w) dissoc :images)
+  nil)
+
 (defn- option-value
   "V as the Tcl value PROP's option takes, per the catalogue's shape: a
    sequence joins into a Tcl list (-padding/-tabs), the font props build
-   the widget's font from PROPS (so any of the four determines it), and
+   the widget's font from PROPS (so any of the four determines it), an
+   image prop resolves its description to the widget-owned image name, and
    anything else is the word it names."
-  [props prop v]
+  [props prop v w]
   (case (opt/coerce prop)
     :list (if (sequential? v) (str/join " " (map tcl-word v)) v)
     :font (font-spec (resolve-base-font props) props)
+    :image (image-name w prop v)
     v))
 
 (defn tcl-options
   "PROPS through OPTIONS ({:prop :tcl-option}) as a Tcl option map
    ({:text \"hi\" :foreground \"#fff\"}); a nil prop is absent. Values take
    the shape their prop's catalogue entry names (kmet.gui.tk.options/coerce):
-   a Tcl list joins a sequence, the font props build the widget's font."
-  [props options]
+   a Tcl list joins a sequence, the font props build the widget's font, and
+   an image prop is created as a resource of W."
+  [props options w]
   (into {} (for [[prop option] options
                  :let [v (get props prop)]
                  :when (some? v)]
-             [option (option-value props prop v)])))
+             [option (option-value props prop v w)])))
 
 (defn- option-args
   "A Tcl option map as `-option value` words, in option-name order so a
@@ -415,10 +549,10 @@
 
 (defn- configure-script
   "A `PATH configure -option value …` script for PROPS through OPTIONS, or
-   nil when nothing is patchable is set."
-  [path props options]
-  (when-let [args (seq (option-args (tcl-options props (configurable-options options))))]
-    (str/join " " (concat [path "configure"] args))))
+   nil when nothing is patchable is set. W owns any image the props describe."
+  [w props options]
+  (when-let [args (seq (option-args (tcl-options props (configurable-options options) w)))]
+    (str/join " " (concat [(:path w) "configure"] args))))
 
 (defn parent-widget
   "The container being constructed into, from the engine's construction
@@ -492,20 +626,26 @@
 
 (defn make-widget
   "Construct a TkWidget at a fresh path under the current construction
-   parent, run the ctor SCRIPT (a fn of the path), wire SPEC's bindings and
-   pack it into the parent. PROPS (optional) also carry the pack geometry —
-   Tk's own pack options on the child: :side (default :top), :fill (default
-   both for pane containers, x for leaves) and :expand. A creation command
-   this Tk does not have is rethrown as a kmet error naming the tag (see
-   create-widget!)."
+   parent, run the ctor SCRIPT (a fn of the path and the widget record),
+   wire SPEC's bindings and pack it into the parent. PROPS (optional) also
+   carry the pack geometry — Tk's own pack options on the child: :side
+   (default :top), :fill (default both for pane containers, x for leaves)
+   and :expand. A creation command this Tk does not have is rethrown as a
+   kmet error naming the tag (see create-widget!)."
   [spec ctor-script & [props]]
   (let [props (or props {})
         tag (:tag spec)
         parent (parent-widget)
         path (alloc-path! parent)
         w (->TkWidget path tag (atom []) (atom {}) (atom {}))]
-    (create-widget! spec (ctor-script path))
-    (check-options! spec tag path props)
+    (try
+      (create-widget! spec (ctor-script path w))
+      (check-options! spec tag path props)
+      (catch Exception e
+        ;; a failed construction can still have created the widget's images
+        ;; (the ctor script runs before the option check): release them
+        (release-images! w)
+        (throw e)))
     (apply-bindings! w {} props (:bindings spec))
     (when (and parent (not (false? (:pack? spec))))
       (if-let [attach (:attach @(:styles parent))]
@@ -536,7 +676,8 @@
 
 (defn destroy!
   "Dispose a TkWidget: recurse into its stored children (releasing their
-   callbacks), then destroy the widget path and any derived resources."
+   callbacks), then destroy the widget path, its derived resources and the
+   Tk images it created."
   [w]
   (when (some? w)
     (release-callbacks! w)
@@ -545,7 +686,8 @@
     (reset! (:kids w) [])
     (when-not (= "." (:path w))
       (eval! (str "destroy " (:path w))))
-    (dispose-widget-extras! w)))
+    (dispose-widget-extras! w)
+    (release-images! w)))
 
 ;; ─── Rich text (the :text tag) ────────────────────────────────────────────
 ;; A :text widget displays a plain :text string or a :content vector of
@@ -607,13 +749,21 @@
           tag))))
 
 (defn- insert-script
-  "The `insert end` command for SEG, or nil for empty text."
+  "The command that adds SEG to W: an image segment — `{:image description}`
+   with optional :align/:padx/:pady — inserts the embedded image, a text
+   segment the styled text; nil for empty text."
   [w seg]
-  (let [text (str (:text seg))]
-    (when (pos? (count text))
-      (str (:path w) " insert end " (tcl-quote text)
-           (when-some [tag (style-tag! w (segment-style seg))]
-             (str " " tag))))))
+  (if (some? (:image seg))
+    (str (:path w) " image create end -image "
+         (tcl-quote (image-name w :image (:image seg)))
+         (when-some [a (:align seg)] (str " -align " (tcl-word a)))
+         (when-some [px (:padx seg)] (str " -padx " (tcl-word px)))
+         (when-some [py (:pady seg)] (str " -pady " (tcl-word py))))
+    (let [text (str (:text seg))]
+      (when (pos? (count text))
+        (str (:path w) " insert end " (tcl-quote text)
+             (when-some [tag (style-tag! w (segment-style seg))]
+               (str " " tag)))))))
 
 (defn- fit-height!
   "Grow W's -height to the display lines its content occupies when a line
@@ -671,7 +821,7 @@
    (re)binds to W. Returns true (the engine keeps the instance)."
   [spec w prev props]
   (apply-bindings! w prev props (:bindings spec))
-  (apply-config! (configure-script (:path w) props (:options spec))))
+  (apply-config! (configure-script w props (:options spec))))
 
 (defn- default-apply
   "The shared :apply: patch SPEC's live-expressible props and bindings to
@@ -846,12 +996,12 @@
            :pack? pack?
            :ctor (fn [spec props]
                    (let [w (make-widget spec
-                                        (fn [p] (widget-script
-                                                 command p
-                                                 (merge (if (fn? fixed) (fixed props) fixed)
-                                                        (when checkable
-                                                          (checkable-options p checkable props))
-                                                        (tcl-options props (:options spec)))))
+                                        (fn [p w] (widget-script
+                                                   command p
+                                                   (merge (if (fn? fixed) (fixed props) fixed)
+                                                          (when checkable
+                                                            (checkable-options p checkable props))
+                                                          (tcl-options props (:options spec) w))))
                                         props)]
                      (when checkable
                        (select! w checkable props))

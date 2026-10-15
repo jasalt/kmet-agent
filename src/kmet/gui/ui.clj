@@ -40,7 +40,7 @@
                                   (merge {:wrap :none :height 1 :width 1 :padx 0 :pady 0
                                           :highlightthickness 0 :borderwidth 0 :takefocus 0
                                           :font (dsl/font-spec font {})}
-                                         (dsl/tcl-options props (:options spec)))))
+                                         (dsl/tcl-options props (:options spec) w))))
     (dsl/check-options! spec :ui/transcript text props)
     (dsl/eval! (str "ttk::scrollbar " sb " -orient vertical -command \"" text " yview\""))
     (dsl/eval! (str text " configure -yscrollcommand \"" sb " set\""))

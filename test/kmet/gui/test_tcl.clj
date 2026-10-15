@@ -221,3 +221,38 @@
       (finally
         ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
+
+(t/deftest image-descriptions-make-real-photos
+  ;; The image layer against a real Tk: a description creates a photo, the
+  ;; sizing ops size it, a bitmap name passes through, and disposal deletes
+  ;; the images the widget owned. The fixtures are 1x1 and 4x4 PNGs.
+  (if-let [a (live-tk)]
+    (try
+      (binding [tk/*adapter* a]
+        (let [e (:eval a)
+              one (str "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
+                       "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+              four (str "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR4"
+                        "nGP4z8DwHxkzkC4AADxAH+HggXe0AAAAAElFTkSuQmCC")
+              size (fn [i] [(e (str "image width " i)) (e (str "image height " i))])
+              kmet-images (fn [] (re-seq #"::kmet_img_\d+" (e "join [image names] \" \"")))
+              h (tk/mount! [:ttk/frame {}
+                            [:tk/label {:text "one" :image {:data one :format :png}}]
+                            [:tk/label {:text "up" :image {:data one :format :png :zoom 3}}]
+                            [:tk/label {:text "fit" :image {:data four :format :png
+                                                            :fit {:width 2}}}]
+                            [:tk/label {:text "bitmap" :bitmap :questhead}]] {})
+              images (kmet-images)]
+          (t/is (= 3 (count images))
+                "one photo per description; the bitmap name is not one")
+          (t/is (some #(= ["1" "1"] (size %)) images)
+                "the 1x1 photo loads at its natural size")
+          (t/is (some #(= ["3" "3"] (size %)) images) ":zoom 3 upscales it")
+          (t/is (some #(= ["2" "2"] (size %)) images)
+                ":fit subsamples the 4x4 photo to a 2-wide box")
+          (engine/dispose-component (:root h))
+          (t/is (empty? (kmet-images))
+                "disposal deletes the photos the widget created")))
+      (finally
+        ((deref (ns-resolve 'kmet.gui.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))

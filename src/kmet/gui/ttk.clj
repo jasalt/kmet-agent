@@ -113,7 +113,7 @@
    (dsl/widget-spec "ttk::label"
                     {:options (opt/options-for [:standard :classed :themed :bordered
                                                 :padded :labelled :layout :fonted]
-                                               [:width :bg :fg :state])
+                                               [:width :bg :fg :state :image])
                      :fixed {:anchor :w :justify :left}
                      :bindings {:on-click {:event "<Button-1>"}}
                      :primary :text})
@@ -122,14 +122,14 @@
    (dsl/widget-spec "ttk::button"
                     {:options (opt/options-for [:standard :classed :themed :padded]
                                                [:width :text :underline :justify
-                                                :compound :state :default])
+                                                :compound :state :default :image])
                      :bindings {:on-click {:option :command}}})
 
    :ttk/checkbutton
    (dsl/widget-spec "ttk::checkbutton"
                     {:options (opt/options-for [:standard :classed :themed :padded]
                                                [:width :text :underline :justify
-                                                :compound :state])
+                                                :compound :state :image])
                      :bindings dsl/check-bindings
                      :checkable :check})
 
@@ -137,7 +137,7 @@
    (dsl/widget-spec "ttk::radiobutton"
                     {:options (opt/options-for [:standard :classed :themed :padded]
                                                [:width :text :underline :justify
-                                                :compound :state :value])
+                                                :compound :state :value :image])
                      :bindings dsl/radio-bindings
                      :checkable :radio})
 
@@ -198,7 +198,7 @@
    (dsl/widget-spec "ttk::menubutton"
                     {:options (opt/options-for [:standard :classed :themed :padded]
                                                [:width :text :underline :justify
-                                                :compound :state :direction])
+                                                :compound :state :direction :image])
                      :bindings {:on-click {:event "<Button-1>"}}
                      :primary :text
                      :commands {:items dsl/set-menu-items!}})

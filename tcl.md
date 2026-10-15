@@ -13,7 +13,20 @@ scrollbar, canvas) and themed `:ttk/…` (frame, labelframe, label, button,
 checkbutton, radiobutton, entry, combobox, spinbox, scale, scrollbar,
 sizegrip, toggleswitch, menubutton, notebook, panedwindow, progressbar,
 separator, treeview) — and each tag reaches its widget's whole option set
-minus four kinds of option, listed below.
+minus three kinds of option (variable-, script- and cross-widget), listed
+below.
+
+Images are supported on the widget surfaces the tags script: the image
+props (`:image`, `:bitmap`, `:selectimage`, `:tristateimage`,
+`:backgroundimage`, `:tile`) and the canvas items'
+`:image`/`:bitmap`/`:disabledimage` take a Tk image name (a built-in bitmap
+such as `:questhead`, or a name the app created) or a description map the
+widget owns — a file or base64 data with `:format`, and the photo-only
+`:zoom`/`:subsample`/`:fit` sizing — and a `:text` widget's `:content` can
+embed one. The image is created (`image create photo`/`bitmap`), cached per
+widget and description, and deleted with the widget; a name the app owns is
+never touched. Item vocabularies outside the tag specs — a menu item's
+`-image`, a treeview row's — are not props.
 
 kmet's own widgets are not part of those sets: they are `:ui/…` tags in
 `kmet.gui.ui` (today `:ui/transcript`, the chat scroll container), added to
@@ -102,12 +115,6 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
   after `tcl/install!`, so the viewer no longer follows the system theme.
   Still open: a runtime theme switch re-applying the set (the GUI app
   isn't ported yet).
-- **Images.** No photo-image support at all: `-image`/`-bitmap`/`-selectimage`
-  are not props, the canvas cannot draw one, and a markdown image (which the
-  TUI renders) is a gap in a GUI transcript. Needs `image create photo`, a
-  way to load a file (`photo read`/`copy -from`), sizing (`zoom`/`subsample`)
-  and the Tk 9.1 background-image options (`-backgroundimage`, `-tile` are
-  already props for the classic frame).
 - **Dialogs.** `tk_messageBox`, `tk_getOpenFile`/`tk_getSaveFile`,
   `tk_chooseDirectory`, `tk_chooseColor` have no home. They are imperative
   (`kmet.gui.tk/message-box!`, `open-file!`), blocking in Tcl's event loop,
@@ -124,13 +131,15 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
 - **The treeview's tree mode.** Rows are flat. A hierarchy needs a row's
   `:children`, the `#0` column (`:show :tree`), `item open`/`move`, and
-  per-row `:tags` for colours and fonts (an app's tool-call tree).
+  per-row `:tags` for colours and fonts and `:image` for a row icon (an
+  app's tool-call tree).
 - **Canvas item identity.** `:items` is redrawn wholesale when it changes.
   An interactive canvas needs per-item ids, `itemconfigure` for an update,
   `item bind` (an `:on-item-click`) and item tags to address a group.
-- **A checkable menu item.** `:items` are commands, separators and
-  cascades; Tk's checkbutton/radiobutton items need a `-variable`, and
-  `-accelerator` is a label today, not a binding.
+- **A checkable or imaged menu item.** `:items` are commands, separators
+  and cascades; Tk's checkbutton/radiobutton items need a `-variable`, an
+  item's `-image` has no prop, and `-accelerator` is a label today, not a
+  binding.
 - **A right-click popup.** A menu is a menubutton's own (`:items`) or a
   window's menubar (`:tk/menu` with `:menubar true`); `tk_popup` on an
   arbitrary widget (and `-menu` as a prop) has no path yet.
@@ -155,7 +164,6 @@ be; each group needs machinery:
   with Tk's `%P`-style substitutions), `-xscrollcommand`/`-yscrollcommand`
   outside the `:scrollbar` prop, `-postcommand` (a menu built on open),
   `-browsecmd`/`-invokecommand`.
-- **Image-backed**: the `-image` family above.
 - **Cross-widget**: `-menu` (covered for menubuttons and the menubar),
   `-labelwidget`.
 
@@ -182,6 +190,13 @@ be; each group needs machinery:
   session grows; appending a card should add one widget (`:ui/transcript`
   already hosts each card as its own embedded window, so the missing piece
   is an append path in the component rather than a re-render).
+- **Image blocks in a card.** The image layer can display one, but
+  `kmet.app.ui.gui.transcript` still renders a `{:type :image}` content
+  block as the literal `[image]`: a card body is one height-counted `:text`
+  widget, so an image needs its own widget, a pixel fit width (a card is
+  measured in character columns), and a fallback for a format the running
+  Tk cannot read (its built-ins are PNG, GIF, PPM and XBM; SVG on 9.1 —
+  not JPEG).
 - **Virtualization.** Mount only the visible rows of a long list; the
   scrolling itself is Tk's.
 - **The extension-UI bridge.** kmet's own UI is written against `kmet.tui`;
