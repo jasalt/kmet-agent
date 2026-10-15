@@ -345,7 +345,10 @@ A binding value may also be a map with the handler under `:handler`, a
 *canvas* keeps its coordinates after the pointer leaves the item (where
 the item's own `:on-drag`, Tk's item bind, no longer fires) and `:text`
 reads the widget's value — and `:stop true` to end the script in `break`,
-which keeps Tk's class binding from running too.
+which keeps Tk's class binding from running too. Those three keys are the
+whole map: a typo'd one is refused rather than binding nothing. A kind the
+option itself supplies (`:validate`, `:scroll`) belongs to that option,
+not to a binding.
 
 ```clojure
 [:tk/canvas {:items @items
@@ -456,8 +459,8 @@ no tag declares them.
 The variable-backed options *are* props: `:variable` (a checkable widget's
 state), `:textvariable` (a text field's value) and `:listvariable` (a
 listbox's items) take a **kmet variable** — `kmet.tk.core/variable`, whose
-Tcl name lives in a namespace of its own (`::kmet_var_<n>`, so it cannot
-collide with the app's own Tcl):
+Tcl name lives in a namespace of its own (`::kmet_var_<n>`, which the
+app's Tcl should leave alone):
 
 ```clojure
 (def draft (tk/variable ""))
@@ -469,9 +472,11 @@ collide with the app's own Tcl):
 A variable is created lazily — nothing touches Tcl until a widget names it
 or it is read or written — and `variable-watch!` rides Tk's `trace add
 variable`, so a write from any side (the user's typing, Tk's own toggle,
-`variable-set!`) reaches the handler with the value Tcl wrote.
-`variable-value`/`variable-set!` read and write it through Tcl, and
-`variable-dispose!` unsets it and releases its watches. The calls that
+`variable-set!`) reaches the handler with the value Tcl wrote — including
+the write a widget's render makes for its declared `:active`, so a watcher
+can fire while that widget mounts. `variable-value`/`variable-set!` read
+and write it through Tcl, and `variable-dispose!` unsets it and releases
+its watches. The calls that
 touch Tcl run on the Tk thread, like every Tcl call; `kmet.tk.tcl/install!`
 registers the callback trampoline a trace needs, so a watched variable can
 be materialized right after installing.

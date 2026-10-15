@@ -93,11 +93,12 @@
 
 ;; ─── Shared variables (the variable-backed props) ────────────────────────
 ;; A widget option whose value is a shared Tcl variable — -variable,
-;; -textvariable, -listvariable — takes one of these. The variable is
-;; created lazily (nothing touches Tcl until it is first used, read or
-;; written), its Tcl name lives in a namespace of its own so it cannot
-;; collide with the app's own Tcl, and a watch rides Tk's `trace add
-;; variable`, which is what carries a Tcl-side change back to kmet.
+;; -textvariable, -listvariable — takes one of these, or a name the app's
+;; own Tcl owns. A kmet variable is created lazily (nothing touches Tcl
+;; until it is first used, read or written), its Tcl name lives in kmet's
+;; own namespace (which the app's Tcl should leave alone), and a watch
+;; rides Tk's `trace add variable`, which is what carries a Tcl-side
+;; change back to kmet.
 ;;
 ;;   (def draft (tk/variable ""))
 ;;   [:ttk/entry {:textvariable draft :on-change (fn [t] (println t))}]
@@ -140,7 +141,7 @@
 (defn variable-watch!
   "Call F with the string each Tcl write gives V — the user's typing into a
    -textvariable widget, Tk's own toggle, the app's variable-set!. Returns
-   an unwatch fn (itself safe to call once)."
+   an unwatch fn (calling it again is a no-op)."
   [v f]
   (dsl/variable-watch! v f))
 

@@ -628,6 +628,28 @@
         (t/is (= "" (tk/dispatch-callback! ["kmet::cb" dropped]))))
       (engine/dispose-component (:root m)))))
 
+(t/deftest a-bind-map-is-checked
+  ;; A :bind map carries :handler, :value and :stop — nothing else. A
+  ;; typo'd key would otherwise bind nothing (or name the tag's own fact),
+  ;; silently.
+  (with-fake [_rec nil]
+    (let [throw-of (fn [bind]
+                     (try (let [{:keys [root]} (mounted [:ttk/frame {}
+                                                         [:ttk/entry {:text "x" :bind bind}]])]
+                            (engine/dispose-component root)
+                            nil)
+                          (catch Exception e e)))]
+      (t/is (= :kmet.tk.core/bind-map
+               (:type (ex-data (throw-of {"<F2>" {:hadler (fn [] nil)}})))))
+      (t/is (= :kmet.tk.core/bind-map
+               (:type (ex-data (throw-of {"<F2>" {:value :pointer}})))))
+      (t/is (= :kmet.tk.core/bind-map
+               (:type (ex-data (throw-of {"<F2>" {:handler (fn [] nil)
+                                                  :option :validatecommand}}))))
+            "the slot table's own facts are not a binding's")
+      (t/is (nil? (throw-of {"<F2>" {:handler (fn [] nil) :stop true}}))
+            "the map's own three keys pass"))))
+
 (t/deftest window-bind-binds-the-toplevel
   (with-fake [rec nil]
     (tk/run! (fn [_] [:ttk/frame {}]) {:title "k" :bind {:ctrl+q (fn [] nil)}})

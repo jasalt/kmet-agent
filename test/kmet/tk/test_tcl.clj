@@ -586,6 +586,21 @@
       (tk/variable-dispose! v)
       (engine/dispose-component (:root h)))))
 
+(t/deftest a-render-write-fires-a-watcher
+  ;; The render writes the state a widget declares (:active) into its
+  ;; variable, and that is a Tcl write like any other — a watch sees it
+  ;; while the widget mounts, not only when the user or the app writes.
+  (with-live-tk [e]
+    (let [v (tk/variable 0)
+          seen (atom [])]
+      (tk/variable-watch! v #(swap! seen conj %))
+      (let [h (tk/mount! [:ttk/frame {}
+                          [:ttk/checkbutton {:text "a" :variable v :active true}]] {})]
+        (e "update")
+        (t/is (= ["1"] @seen) "the mount's own write reached the watcher")
+        (engine/dispose-component (:root h))
+        (tk/variable-dispose! v)))))
+
 (t/deftest a-shared-variable-is-tk-s-radio-group
   ;; One variable shared by two radiobuttons is Tk's own exclusive group:
   ;; invoking one moves the variable, and the handler Tk calls reads the

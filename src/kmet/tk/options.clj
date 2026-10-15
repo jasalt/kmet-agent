@@ -31,12 +31,12 @@
        -titlecolumns, -titleitems, -type, -displaycolumns.
 
    The variable-backed group is a prop family of its own: :variable,
-   :textvariable and :listvariable take a shared variable (see
-   kmet.tk.dsl/variable) and resolve to its Tcl name, so the widget
-   option — and :onvalue/:offvalue/:tristatevalue with it — is a plain
-   prop. A variable-backed prop's change rebuilds the widget: the tag
-   wires its state (the callback fragments, a private variable's
-   fallback) around the name.
+   :textvariable and :listvariable take a kmet variable (see
+   kmet.tk.dsl/variable) or a name the app's own Tcl owns, and resolve to
+   its Tcl name, so the widget option — and :onvalue/:offvalue/
+   :tristatevalue with it — is a plain prop. A variable-backed prop's
+   change rebuilds the widget: the tag wires its state (the callback
+   fragments, the state variable's name) around it.
 
    Tk 9 additions (-locale, -placeholder, -placeholderforeground,
    -textangle, -backgroundimage, -tile, -striped, -rowheight,

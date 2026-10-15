@@ -115,7 +115,8 @@ A `:bind` value may be a map with a `:value` kind instead of the handler
 alone, so the bound script hands the handler a live value the way a slot
 does — a `:pointer` drag on a canvas keeps its `[x y]` after the pointer
 leaves the item, where Tk's item bind stops firing. The kinds are the
-slots' own (see kmet.tk.dsl/value-kinds).
+slots' own (see kmet.tk.dsl/value-kinds), except the ones an option
+itself supplies (`:validate`, `:scroll`), which belong to that option.
 
 ## Tk 8.6 vs 9.1 — what the running version changes
 

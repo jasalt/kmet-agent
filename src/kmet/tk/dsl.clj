@@ -77,10 +77,10 @@
 ;; ═══════════════════════════════════════════════════════════════════════════
 
 (defn- check-var
-  "A Tcl variable name private to the widget at PATH. A classic Tk
-   checkbutton has select/deselect and no state query, so a checkable
-   widget's state lives in its own variable — and a radiobutton's own
-   -value is what its variable is compared against."
+  "A Tcl variable name private to the widget at PATH, for a checkable
+   widget's own state and for a menu item's check/radio state. A classic
+   Tk checkbutton has select/deselect and no state query, so its variable
+   is the state kmet reads and writes."
   [path]
   (str "::kmet_check_" (str/replace path #"[^A-Za-z0-9]" "_")))
 
@@ -208,11 +208,14 @@
 
 (defn- state-var
   "The Tcl variable a checkable widget's state lives in: the one its ctor
-   recorded (a shared variable the :variable prop named, else the tag's
-   private one). The private fallback is for a fragment bound on a widget
-   before its ctor ran — it cannot happen today."
+   recorded — a shared variable the :variable prop named, else the tag's
+   private one. A widget whose ctor did not record one is not a checkable
+   and has no state to read, so that is an error, not an empty name."
   [w]
-  (or (get @(:styles w) :state-variable) (check-var (:path w))))
+  (or (get @(:styles w) :state-variable)
+      (throw (ex-info (str "kmet.tk.core: " (:tag w)
+                           " has no state variable to read")
+                      {:type :kmet.tk.core/no-state-variable :tag (:tag w)}))))
 
 (def ^:private value-kinds
   "The kinds a slot's :value names, and what each means: the fragment the
@@ -296,18 +299,43 @@
 ;; only call it when a tree renders.
 (declare ^:private tcl-event)
 
+(def ^:private bind-map-keys
+  "The keys a :bind map carries: the handler, the :value kind the bound
+   script reads and :stop. The slot table's other facts belong to the tag,
+   not to a binding."
+  #{:handler :value :stop})
+
+(defn- bind-spec
+  "CHORD's :bind value V as the binding spec it names: the handler fn
+   itself, or a map with :handler and optional :value/:stop. A map's keys
+   are checked — a typo'd one would otherwise bind nothing at all."
+  [chord v]
+  (if (map? v)
+    (do (when-some [unknown (seq (remove bind-map-keys (keys v)))]
+          (throw (ex-info (str "kmet.tk.core: :bind " chord " names "
+                               (str/join " " (map pr-str unknown))
+                               " — a binding map takes :handler, :value and :stop")
+                          {:type :kmet.tk.core/bind-map
+                           :chord chord :keys (vec unknown)})))
+        (when-not (contains? v :handler)
+          (throw (ex-info (str "kmet.tk.core: :bind " chord " names no :handler")
+                          {:type :kmet.tk.core/bind-map
+                           :chord chord :keys (vec (keys v))})))
+        v)
+    {:handler v}))
+
 (defn- binding-slots
   "PROPS' binding slots as {slot {:event … :handler f}}: the tag's SLOTS
    table plus the universal :bind map, whose chord keys become [:bind chord]
-   slots. A :bind value is the handler fn, or a map carrying :handler plus
-   the slot's own facts — a :value kind, so the bound script hands the
-   handler a live value (a pointer's coordinates, a widget's text). SLOTS
-   may be nil (the tag declares none)."
+   slots. A :bind value is the handler fn, or a map with :handler and the
+   binding facts — a :value kind, so the bound script hands the handler a
+   live value (a pointer's coordinates, a widget's text), and :stop for the
+   class binding's break. SLOTS may be nil (the tag declares none)."
   [props slots]
   (into (into {} (for [[slot spec] slots]
                    [slot (assoc spec :handler (get props slot))]))
         (for [[chord v] (:bind props)
-              :let [spec (if (map? v) v {:handler v})]]
+              :let [spec (bind-spec chord v)]]
           [[:bind chord] (assoc spec :event (tcl-event chord))])))
 
 (defn apply-bindings!
@@ -494,8 +522,8 @@
 ;; ─── Shared variables (the variable-backed options) ───────────────────────
 ;; A variable-backed option (-variable, -textvariable, -listvariable) names
 ;; a Tcl variable the widget and kmet both read and write. A kmet variable
-;; is an object whose Tcl name lives in a namespace of its own (::kmet_var_<n>,
-;; so it cannot collide with the app's own Tcl), created lazily — the first
+;; is an object whose Tcl name lives in kmet's own namespace (::kmet_var_<n>,
+;; which the app's Tcl should leave alone), created lazily — the first
 ;; use, read or write materializes it in the running interpreter — and
 ;; watched through `trace add variable`, which is what carries a Tcl-side
 ;; change back to a kmet callback. A watch belongs to the variable, not to
@@ -512,8 +540,8 @@
    :listvariable prop takes. INITIAL is its Tcl value (a sequence is Tcl
    list syntax, nil the empty string). Nothing touches Tcl until the
    variable is first used, read or written — so one may be created before
-   an interpreter exists — and its name (::kmet_var_<n>) cannot collide
-   with the app's own Tcl."
+   an interpreter exists — and its name (::kmet_var_<n>) lives in kmet's
+   own namespace, which the app's Tcl should leave alone."
   [initial]
   (->TkVariable (str "::kmet_var_" (swap! next-var inc)) initial
                 (atom {}) (atom false)))
@@ -1713,7 +1741,8 @@
      :lens        the children lens (a container)
      :pack?       false for a widget Tk will not let pack manage (a menu)
      :text-field  true when :text is set through the widget's subcommands
-     :checkable   :check or :radio: its state is a private Tcl variable
+     :checkable   :check or :radio: its state lives in a Tcl variable
+                  (checkable-options picks the shared one or the tag's own)
      :label-widget true when a child may name the widget as its label: the
                   child's :labelwidget true makes it Tk's -labelwidget
                   (a labelframe's option) instead of a placed child"
