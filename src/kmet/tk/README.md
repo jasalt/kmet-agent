@@ -148,7 +148,8 @@ Three shapes of tag, on top of the plain leaves:
   as a pane (the child's `:minsize`/`:stretch`). A child of a `:tk/labelframe`
   or `:ttk/labelframe` carrying `:labelwidget true` is the frame's *label*
   instead of a placed child (Tk's `-labelwidget`): the tag builds it and
-  names it on the parent, which draws it in the label position. A `:tk/menu`
+  names it on the parent, which draws it in the label position and drops
+  the reference if the widget is later destroyed. A `:tk/menu`
   with `:menubar true` wires itself onto the window, and a menubutton's
   `:items` build the menu it pops.
 

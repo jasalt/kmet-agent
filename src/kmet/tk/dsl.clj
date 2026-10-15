@@ -952,11 +952,13 @@
 (defn make-widget
   "Construct a TkWidget at a fresh path under the current construction
    parent, run the ctor SCRIPT (a fn of the path and the widget record),
-   wire SPEC's bindings and pack it into the parent. PROPS (optional) also
-   carry the pack geometry — Tk's own pack options on the child: :side
-   (default :top), :fill (default both for pane containers, x for leaves)
-   and :expand. A creation command this Tk does not have is rethrown as a
-   kmet error naming the tag (see create-widget!)."
+   wire SPEC's bindings and place it in the parent: the child's own
+   geometry map or pack props, a container's attach fn, or — a
+   :labelwidget true child — as the parent labelframe's label. PROPS
+   (optional) also carry the pack geometry — Tk's own pack options on the
+   child: :side (default :top), :fill (default both for pane containers, x
+   for leaves) and :expand. A creation command this Tk does not have is
+   rethrown as a kmet error naming the tag (see create-widget!)."
   [spec ctor-script & [props]]
   (let [props (or props {})
         tag (:tag spec)
