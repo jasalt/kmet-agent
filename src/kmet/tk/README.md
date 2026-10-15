@@ -21,7 +21,8 @@ kmet.libs.hikap.alias     the qualified-keyword alias registry
 kmet.tui.hikap            the TUI backend (tag table, *width*, IComponent)
 kmet.tk.dsl               the Tk widget machinery: Tcl quoting and script
                           building, widget records, the callback/binding
-                          registry, live-patch decisions, rich text
+                          registry, shared variables, live-patch decisions,
+                          rich text
 kmet.tk.options           the Tk option vocabulary: props, value shapes,
                           and the families a spec composes :options from
 kmet.tk.core              the Tk backend + the classic widget set (:tk/…),
@@ -167,12 +168,14 @@ window or the widget).
 
 A checkable widget (`:tk/checkbutton`, `:tk/radiobutton`,
 `:ttk/checkbutton`, `:ttk/radiobutton`, `:ttk/toggleswitch`) shows its
-`:active` state and reports it through `:on-toggled`: Tk's `-variable` is
-not a prop, so the tag owns a private Tcl variable per widget — which is
+`:active` state and reports it through `:on-toggled`: the tag owns a private
+Tcl variable per widget unless `:variable` names a shared one — which is
 also the only state a classic Tk checkbutton can be read from (it has
 `select`/`deselect` and no query). A radiobutton compares that variable
-against its own `:value`, so `:active` on each button is what makes a
-group exclusive.
+against its own `:value`, so with the default private variables `:active`
+on each button is what makes a group exclusive; a group sharing one
+`:variable` is Tk's own group, and the render writes only the active
+button's value into it.
 
 The `:ttk/treeview` tag is both a flat table and a tree. A row is a vector
 of cells or a map of Tk's own item options — `:text` (the tree column),
@@ -384,9 +387,9 @@ widget and lists the odd options itself:
 so a typo fails there. Values keep their shape per prop: keywords and
 booleans render as Tcl words and flags, a sequence is one Tcl list
 (`:padding [6 12]`, `:tabs [40 80]`), the font props build `-font`
-from the four of them, and an image prop resolves its value to a Tk image
-name — a name passes through, a description is created and owned by the
-widget (see *Images*). An empty string is `{}` — not nothing, which would
+from the four of them, an image prop resolves its value to a Tk image
+name, and a variable-backed prop to its variable's Tcl name (see *Shared
+variables*). An empty string is `{}` — not nothing, which would
 hand the next option to Tk as its value.
 
 Two consequences worth knowing:
@@ -411,12 +414,42 @@ Two consequences worth knowing:
   this Tk (8.6.16)`.
 
 Options that are not a plain value are deliberately not props, each
-because it needs machinery a prop cannot be: script-typed (`-command` is
-`:on-click`/`:on-toggled`/`:on-scroll`, `-validatecommand`,
-`-xscrollcommand`), the variable-backed `-variable`/`-textvariable`/
-`-listvariable` — a checkable widget's state is the tag's own private
-variable, so `-onvalue`/`-offvalue`/`-tristatevalue` are not props either —
-and the options that name another widget, `-menu` and `-labelwidget`.
+because it needs machinery a prop cannot be: the script-typed ones
+(`-validatecommand`, `-invalidcommand`, `-xscrollcommand`,
+`-yscrollcommand`, `-postcommand`) and the options that name another
+widget (`-menu` for a menubutton is its `:items`; `-labelwidget` is not
+reached yet).
+
+### Shared variables
+
+The variable-backed options *are* props: `:variable` (a checkable widget's
+state), `:textvariable` (a text field's value) and `:listvariable` (a
+listbox's items) take a **kmet variable** — `kmet.tk.core/variable`, whose
+Tcl name lives in a namespace of its own (`::kmet_var_<n>`, so it cannot
+collide with the app's own Tcl):
+
+```clojure
+(def draft (tk/variable ""))
+[:ttk/entry {:textvariable draft
+             :on-change (fn [t] (println t))}]
+(tk/variable-watch! draft (fn [t] (reset! last-text t)))  ; fires on any write
+```
+
+A variable is created lazily — nothing touches Tcl until a widget names it
+or it is read or written — and `variable-watch!` rides Tk's `trace add
+variable`, so a write from any side (the user's typing, Tk's own toggle,
+`variable-set!`) reaches the handler with the value Tcl wrote.
+`variable-value`/`variable-set!` read and write it through Tcl, and
+`variable-dispose!` unsets it and releases its watches. The calls that
+touch Tcl run on the Tk thread, like every Tcl call.
+
+`:onvalue`, `:offvalue` and `:tristatevalue` are plain props beside a
+shared `:variable`: `:active` writes the on/off value into the variable,
+and `:on-toggled` compares the variable with the widget's own `-onvalue`,
+so either side can move the state. A radiobutton group sharing one
+`:variable` is Tk's own exclusive group. Two props that would be a second
+source of truth are refused: `:text` beside `:textvariable` on a text
+field, and a listbox's `:items` beside its `:listvariable`.
 
 ### Images
 
@@ -672,16 +705,16 @@ labels, fields, list, menu, panes, scale, scrollbar, canvas) and the
 themed `:ttk/…` set (frames, labels, buttons, fields, notebook, panes,
 progress, separator, sizegrip, toggleswitch, treeview), plus bare-string
 labels. Every tag accepts the Tk options its widget has, through the
-families in `kmet.tk.options` (see *Options* above); the options Tk
-gives to no plain prop — script- and variable-backed — are the
-ones still missing, and `scripts/tk_option_audit.clj` reports both sides
-against a live Tk. kmet's own widgets are the `:ui/…` set in
-`kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container).
+families in `kmet.tk.options` (see *Options* above); the script-typed
+options (validation, the scroll commands, `-postcommand`) and the options
+that name another widget are the ones still missing, and
+`scripts/tk_option_audit.clj` reports both sides against a live Tk. kmet's
+own widgets are the `:ui/…` set in `kmet.app.ui.gui.ui` (today
+`:ui/transcript`, the chat scroll container).
 
-The first cuts that remain — canvas item events beyond a click, and
-everything Tk offers beside its widgets (window management, the clipboard,
-variables, the script-typed options) — are tracked in
-[`tcl.md`](../../tcl.md) at the repository root, which lists
+The first cuts that remain — everything Tk offers beside its widgets
+(window management, the clipboard, the script-typed options) — are tracked
+in [`tcl.md`](../../tcl.md) at the repository root, which lists
 each gap with what closing it needs and how the two guards below keep the
 list honest; the GUI app port's own work — the composer, the transcript's
 rendering, the extension seam — is listed after them.

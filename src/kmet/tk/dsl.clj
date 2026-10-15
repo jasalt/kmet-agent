@@ -2,9 +2,10 @@
   "The widget-building machinery the Tk backends' tag tables are written
    in: Tcl quoting and script building, the TkWidget record and path
    allocation, the callback/binding registry (including the :bind chord to
-   Tk event translation), the live-patch decisions (with the check that a
-   prop's option exists on the running widget), widget construction and
-   disposal, the Tk images a widget owns, and the rich-text/:text helpers.
+   Tk event translation), shared Tcl variables and their traces, the
+   live-patch decisions (with the check that a prop's option exists on the
+   running widget), widget construction and disposal, the Tk images a
+   widget owns, and the rich-text/:text helpers.
 
    The option vocabulary itself — which props exist, which Tcl option each
    names, and the families a spec composes its :options from — is
@@ -112,11 +113,24 @@
 ;; The `kmet::cb` registry: callback id -> {:handler f :value :text/:variable}.
 (defonce ^:private callbacks (atom {}))
 
+(defn- register-handler!
+  "Register F in the `kmet::cb` registry and return its id. The registry
+   owns the handler; whatever releases the id stops it being dispatchable."
+  [f value arg]
+  (let [id (swap! next-callback inc)]
+    (swap! callbacks assoc id {:handler f :value value :arg (or arg value)})
+    id))
+
+(defn- release-handler!
+  "Drop the trampoline slot with ID."
+  [id]
+  (swap! callbacks dissoc id))
+
 (defn- release-slot!
   "Drop W's SLOT callback (a no-op when the slot is empty)."
   [w slot]
   (when-some [id (get @(:callbacks w) slot)]
-    (swap! callbacks dissoc id)
+    (release-handler! id)
     (swap! (:callbacks w) dissoc slot)))
 
 (defn- set-callback!
@@ -130,8 +144,7 @@
   [w slot f value arg]
   (release-slot! w slot)
   (when (some? f)
-    (let [id (swap! next-callback inc)]
-      (swap! callbacks assoc id {:handler f :value value :arg (or arg value)})
+    (let [id (register-handler! f value arg)]
       (swap! (:callbacks w) assoc slot id)
       (str "kmet::cb " id))))
 
@@ -175,33 +188,43 @@
       (parse-long (re-find #"[-+]?\d+" s))
       (or (parse-double s) s))))
 
+(defn- state-var
+  "The Tcl variable a checkable widget's state lives in: the shared
+   variable its :variable prop named (recorded on the widget at
+   construction), else its own private one."
+  [w]
+  (or (get @(:styles w) :variable) (check-var (:path w))))
+
 (def ^:private value-kinds
   "The kinds a slot's :value names, and what each means: the fragment the
    bound script reads the widget's live value with, and how the arguments
    the handler receives are shaped. A slot that has :arg but no :value (a
    scale's -command passes its value) reads nothing and only shapes what Tk
    handed it; the list kinds expand ({*}) so the handler gets one argument
-   per selected item."
-  {:text      {:fragment #(str "[" % " get]")}
+   per selected item. The fragment takes the TkWidget the slot is bound on,
+   so a state read can reach the variable the tag chose for it."
+  {:text      {:fragment (fn [w] (str "[" (:path w) " get]"))}
    ;; a multi-line widget's whole text: Tk keeps a newline of its own at the
    ;; end, which end-1c drops
-   :body      {:fragment #(str "[" % " get 1.0 end-1c]")}
+   :body      {:fragment (fn [w] (str "[" (:path w) " get 1.0 end-1c]"))}
    :number    {:args #(vector (as-number (first %)))}
-   :index     {:fragment #(str "{*}[" % " curselection]")
+   :index     {:fragment (fn [w] (str "{*}[" (:path w) " curselection]"))
                :args #(vector (mapv (fn [i] (or (parse-long i) i)) %))}
-   :ids       {:fragment #(str "{*}[" % " selection]")
+   :ids       {:fragment (fn [w] (str "{*}[" (:path w) " selection]"))
                :args #(vector (vec %))}
-   :tab-index {:fragment #(str "[" % " index current]")
+   :tab-index {:fragment (fn [w] (str "[" (:path w) " index current]"))
                :args #(vector (or (parse-long (first %)) (first %)))}
    ;; a click's coordinates, which only a binding substitutes: the handler
    ;; gets [x y] as Tk's %x/%y, relative to the widget
    :pointer   {:fragment (fn [_] "%x %y")
                :args #(vector (mapv as-number %))}
-   ;; a checkable widget's state lives in its private variable
-   :variable  {:fragment #(str "[set " (check-var %) "]")
+   ;; a checkable widget's state lives in its variable, whichever one the
+   ;; tag gave it: the on value is the widget's own -onvalue
+   :variable  {:fragment (fn [w] (str "[expr {[set " (state-var w) "] eq ["
+                                      (:path w) " cget -onvalue]}]"))
                :args #(mapv (fn [v] (= "1" v)) %)}
-   :radio     {:fragment #(str "[expr {[set " (check-var %) "] eq [" %
-                               " cget -value]}]")
+   :radio     {:fragment (fn [w] (str "[expr {[set " (state-var w) "] eq ["
+                                      (:path w) " cget -value]}]"))
                :args #(mapv (fn [v] (= "1" v)) %)}})
 
 (defn- value-fragment
@@ -210,7 +233,7 @@
    arguments (or reads none)."
   [w value]
   (when-some [fragment (:fragment (value-kinds value))]
-    (fragment (:path w))))
+    (fragment w)))
 
 (defn- bind-slot!
   "Point W's SLOT at F (nil unbinds), through the slot spec's Tcl -OPTION
@@ -356,11 +379,15 @@
   "True when every prop that changed between PREV and PROPS is one SPEC
    can express on the live widget — its :options, its :bindings, the
    universal :bind, plus its :patchable extras. A prop it cannot (a
-   creation-only option, a geometry, a re-wrap width) must decline so the
-   engine rebuilds instead of silently dropping the change."
+   creation-only option, a variable-backed one, a geometry, a re-wrap
+   width) must decline so the engine rebuilds instead of silently dropping
+   the change."
   [spec prev props]
   (let [{:keys [options bindings patchable]} spec
-        live (into #{} (comp (map key) (remove opt/creation-only?)) options)]
+        live (into #{} (comp (map key)
+                             (remove opt/creation-only?)
+                             (remove opt/variable-backed?))
+                   options)]
     (every? (into (into live (keys bindings)) (concat patchable [:bind]))
             (props-diff prev props))))
 
@@ -411,6 +438,124 @@
 ;; forward to the rich-text helpers below (the same base font the :text tag
 ;; caches on its widget).
 (declare ^:private resolve-base-font font-spec)
+
+;; ─── Shared variables (the variable-backed options) ───────────────────────
+;; A variable-backed option (-variable, -textvariable, -listvariable) names
+;; a Tcl variable the widget and kmet both read and write. A kmet variable
+;; is an object whose Tcl name lives in a namespace of its own (::kmet_var_<n>,
+;; so it cannot collide with the app's own Tcl), created lazily — the first
+;; use, read or write materializes it in the running interpreter — and
+;; watched through `trace add variable`, which is what carries a Tcl-side
+;; change back to a kmet callback. A watch belongs to the variable, not to
+;; a widget: it fires for every write, Tk's own included.
+
+(defonce ^:private next-var (atom 0))
+
+(defrecord TkVariable [name initial watches materialized]
+  ;; WATCHES: trace id -> the Tcl trace script, which a watch must keep to
+  ;; remove the trace again. MATERIALIZED: whether the Tcl variable and the
+  ;; watches' traces exist yet.
+  )
+
+(defn variable
+  "A kmet-owned Tcl variable, the value a :variable/:textvariable/
+   :listvariable prop takes. INITIAL is its Tcl value (a sequence is Tcl
+   list syntax). Nothing touches Tcl until the variable is first used,
+   read or written — so one may be created before an interpreter exists —
+   and its name (::kmet_var_<n>) cannot collide with the app's own Tcl."
+  [initial]
+  (->TkVariable (str "::kmet_var_" (swap! next-var inc)) initial
+                (atom {}) (atom false)))
+
+(defn variable?
+  "True when V is a kmet variable object."
+  [v]
+  (instance? TkVariable v))
+
+(defn variable-name
+  "V's Tcl variable name."
+  [v]
+  (:name v))
+
+(defn- trace-script
+  "The trace a watch with trampoline ID keeps on variable NAME, braced as
+   the one Tcl word `trace add variable` takes: Tk evaluates it on every
+   write, and `[set NAME]` hands the trampoline the variable's new value
+   (one Tcl word, spaces and all)."
+  [id name]
+  (str "{kmet::cb " id " [set " name "]}"))
+
+(defn- materialize!
+  "Create V's Tcl variable (holding its initial value) and its watchers'
+   traces in the running interpreter, once. Returns its name."
+  [v]
+  (when (compare-and-set! (:materialized v) false true)
+    (eval! (str "set " (:name v) " " (tcl-value (:initial v))))
+    (doseq [script (vals @(:watches v))]
+      (eval! (str "trace add variable " (:name v) " write " script))))
+  (:name v))
+
+(defn variable-value
+  "V's current Tcl value as a string. Materializes V when it has not been
+   used yet. Runs on the Tk thread, like every Tcl call."
+  [v]
+  (materialize! v)
+  (eval! (str "set " (:name v))))
+
+(defn variable-set!
+  "Set V's Tcl value (a sequence is Tcl list syntax, a keyword its name, a
+   boolean 1/0). Materializes V first, and writes through Tcl — so the
+   watchers and the widgets bound to V see the change. Returns VALUE."
+  [v value]
+  (materialize! v)
+  (eval! (str "set " (:name v) " " (tcl-value value)))
+  value)
+
+(defn variable-watch!
+  "Call F with the string each Tcl write gives V — the user's typing into a
+   -textvariable widget, Tk's own toggle, the app's variable-set!. Returns
+   an unwatch fn. A watch registered before V is materialized rides along
+   when it is; on the Tk thread, like every Tcl call."
+  [v f]
+  ;; Tk appends the variable name, the array element and the operation to a
+  ;; variable trace's script, so the trampoline's argv is the new value and
+  ;; those three: the watch hands F the value alone.
+  (let [id (register-handler! (fn [value & _] (f value)) nil nil)
+        script (trace-script id (:name v))
+        watching? @(:materialized v)]
+    (swap! (:watches v) assoc id script)
+    (when watching?
+      (eval! (str "trace add variable " (:name v) " write " script)))
+    (fn unwatch []
+      (when (contains? @(:watches v) id)
+        (swap! (:watches v) dissoc id)
+        (when @(:materialized v)
+          (eval! (str "trace remove variable " (:name v) " write " script)))
+        (release-handler! id)))))
+
+(defn variable-dispose!
+  "Drop V: remove its watchers' traces, unset its Tcl variable, and release
+   the watchers. V materializes again (with its initial value) if it is used
+   after this."
+  [v]
+  (let [watches @(:watches v)]
+    (when @(:materialized v)
+      (doseq [script (vals watches)]
+        (eval! (str "trace remove variable " (:name v) " write " script)))
+      (eval! (str "unset -nocomplain " (:name v))))
+    (doseq [id (keys watches)] (release-handler! id))
+    (reset! (:watches v) {})
+    (reset! (:materialized v) false)
+    nil))
+
+(defn variable-ref
+  "V as the Tcl variable name a widget option takes: a kmet variable
+   (materialized), or a name the app's own Tcl owns (a string or keyword).
+   An empty name is no variable at all (nil), as in Tk: the tag falls back
+   to its private one."
+  [v]
+  (let [name (if (variable? v) (materialize! v) (tcl-word v))]
+    (when (seq (str name)) name)))
 
 ;; ─── Images ───────────────────────────────────────────────────────────────
 ;; An image-valued prop takes either a Tk image name — a string or keyword
@@ -547,26 +692,33 @@
    list-valued prop is Tcl list syntax (tcl-list, so an element with a
    space stays one element: -padding/-tabs/-values), the font props build
    the widget's font from PROPS (so any of the four determines it), an
-   image prop resolves its description to the widget-owned image name, and
-   anything else is the word it names."
+   image prop resolves its description to the widget-owned image name, a
+   variable-backed prop to the variable's Tcl name, and anything else is
+   the word it names."
   [props prop v w]
   (case (opt/coerce prop)
     :list (tcl-list v)
     :font (font-spec (resolve-base-font props) props)
     :image (image-name w prop v)
+    :var (variable-ref v)
     v))
 
 (defn tcl-options
   "PROPS through OPTIONS ({:prop :tcl-option}) as a Tcl option map
    ({:text \"hi\" :foreground \"#fff\"}); a nil prop is absent. Values take
    the shape their prop's catalogue entry names (kmet.tk.options/coerce):
-   a Tcl list joins a sequence, the font props build the widget's font, and
-   an image prop is created as a resource of W."
+   a Tcl list joins a sequence, the font props build the widget's font,
+   and an image prop is created as a resource of W. A value the shape
+   resolves to nothing — an empty variable name, say — drops the option,
+   so a tag's own default (a private variable) is not overridden by it."
   [props options w]
-  (into {} (for [[prop option] options
-                 :let [v (get props prop)]
-                 :when (some? v)]
-             [option (option-value props prop v w)])))
+  (into {}
+        (keep (fn [[prop option]]
+                (let [v (get props prop)]
+                  (when (some? v)
+                    (when-some [resolved (option-value props prop v w)]
+                      [option resolved])))))
+        options))
 
 (defn- option-args
   "A Tcl option map as `-option value` words, in option-name order so a
@@ -585,11 +737,15 @@
   (str/join " " (concat [command path] (option-args options) (remove nil? extra))))
 
 (defn- configurable-options
-  "OPTIONS without its creation-only props: Tk refuses -class and friends
-   on configure, so a patch must not send them (the change rebuilds the
-   widget instead, see patchable?)."
+  "OPTIONS without the props a patch must not send: Tk refuses -class and
+   friends on configure, and a variable-backed prop's name is wired into
+   the widget's state (so the change rebuilds the widget instead, see
+   patchable?)."
   [options]
-  (into {} (remove (fn [[prop _]] (opt/creation-only? prop))) options))
+  (into {} (remove (fn [[prop _]]
+                     (or (opt/creation-only? prop)
+                         (opt/variable-backed? prop))))
+        options))
 
 (defn- configure-script
   "A `PATH configure -option value …` script for PROPS through OPTIONS, or
@@ -1393,28 +1549,39 @@
 
 ;; ─── The spec builder ─────────────────────────────────────────────────────
 
-;; A checkable widget's state lives in a private Tcl variable: a classic Tk
+;; A checkable widget's state lives in a Tcl variable: a classic Tk
 ;; checkbutton answers select/deselect and has no state query at all, so the
 ;; variable is what :active writes, what :on-toggled reads back, and what a
-;; radiobutton's own -value is compared against.
+;; radiobutton's own -value is compared against. A :variable prop shares
+;; that variable (with a radiobutton group, with the app); without one the
+;; tag owns a private variable per widget.
 
 (defn- checkable-options
-  "The creation options a checkable widget needs: its private variable and
-   its values (a checkbutton's 1/0, a radiobutton's own :value)."
+  "The creation options a checkable widget needs from the tag itself: the
+   state variable — the shared one a :variable prop names, else a private
+   one of its own (a classic Tk checkbutton has no state query, so its
+   variable is the only state to read) — and a radiobutton's :value
+   default (Tk starts it empty, which compares against nothing)."
   [path kind props]
-  (if (= kind :radio)
-    {:variable (check-var path) :value (or (:value props) 1)}
-    {:variable (check-var path) :onvalue 1 :offvalue 0}))
+  (cond-> {:variable (or (some-> (:variable props) variable-ref)
+                         (check-var path))}
+    (= kind :radio) (assoc :value (or (:value props) 1))))
 
 (defn- select!
-  "Apply PROPS' :active to a checkable widget of KIND — the variable holds
-   the on value, or OFF when this button is not the selected one."
+  "Apply PROPS' :active to a checkable widget of KIND: its state variable
+   gets the on value (a radiobutton's own :value, a checkbutton's
+   :onvalue), or the off one (a radio's empty string, a checkbutton's
+   :offvalue) when this button is not the selected one. A radiobutton
+   sharing a variable with its group writes only when it is the active
+   one: an unselected sibling must not unsay the group's selection."
   [w kind props]
-  (let [radio? (= kind :radio)]
-    (eval! (str "set " (check-var (:path w)) " "
-                (tcl-value (if (:active props)
-                             (if radio? (or (:value props) 1) 1)
-                             (if radio? "" 0)))))))
+  (let [radio? (= kind :radio)
+        shared? (some? (get @(:styles w) :variable))
+        on (if radio? (or (:value props) 1) (or (:onvalue props) 1))
+        off (if radio? "" (or (:offvalue props) 0))]
+    (when (or (:active props) (not (and radio? shared?)))
+      (eval! (str "set " (state-var w) " "
+                  (tcl-value (if (:active props) on off)))))))
 
 (defn widget-spec
   "The spec of a widget whose tag is its Tk command plus its options — the
@@ -1469,13 +1636,24 @@
            :lens lens
            :pack? pack?
            :ctor (fn [spec props]
+                   (when (and text-field (some? (:text props)) (some? (:textvariable props)))
+                     (throw (ex-info (str "kmet.tk.core: " (:tag spec) " takes"
+                                          " :text or :textvariable, not both — a"
+                                          " widget has one value source")
+                                     {:type :kmet.tk.core/text-and-textvariable
+                                      :tag (:tag spec)
+                                      :props [:text :textvariable]})))
                    (let [w (make-widget spec
-                                        (fn [p w] (widget-script
-                                                   command p
-                                                   (merge (if (fn? fixed) (fixed props) fixed)
-                                                          (when checkable
-                                                            (checkable-options p checkable props))
-                                                          (tcl-options props (:options spec) w))))
+                                        (fn [p w]
+                                          (when-some [v (some-> (:variable props) variable-ref)]
+                                            ;; the state fragments :on-toggled reads
+                                            (swap! (:styles w) assoc :variable v))
+                                          (widget-script
+                                           command p
+                                           (merge (if (fn? fixed) (fixed props) fixed)
+                                                  (when checkable
+                                                    (checkable-options p checkable props))
+                                                  (tcl-options props (:options spec) w))))
                                         props)]
                      (when checkable
                        (select! w checkable props))
@@ -1489,7 +1667,11 @@
                      w))
            :apply (fn [spec w prev props]
                     (when (patchable? spec prev props)
-                      (when (and checkable (not= (:active prev) (:active props)))
+                      (when (and checkable
+                                 (some #(not= (get prev %) (get props %))
+                                       [:active :value :onvalue :offvalue]))
+                        ;; :active is the state the render declares; :value and
+                        ;; the on/off values are what it writes into the variable
                         (select! w checkable props))
                       (when (and text-field (not= (:text prev) (:text props)))
                         (set-entry-text! w (:text props)))

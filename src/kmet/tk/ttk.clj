@@ -198,7 +198,7 @@
    (dsl/widget-spec "ttk::label"
                     {:options (opt/options-for [:standard :classed :themed :bordered
                                                 :padded :labelled :layout :fonted]
-                                               [:width :bg :fg :state :image])
+                                               [:width :bg :fg :state :image :textvariable])
                      :fixed {:anchor :w :justify :left}
                      :bindings {:on-click {:event "<Button-1>"}}
                      :primary :text})
@@ -206,23 +206,24 @@
    :ttk/button
    (dsl/widget-spec "ttk::button"
                     {:options (opt/options-for [:standard :classed :themed :padded]
-                                               [:width :text :underline :justify
+                                               [:width :text :textvariable :underline :justify
                                                 :compound :state :default :image])
                      :bindings {:on-click {:option :command}}})
 
    :ttk/checkbutton
    (dsl/widget-spec "ttk::checkbutton"
                     {:options (opt/options-for [:standard :classed :themed :padded]
-                                               [:width :text :underline :justify
-                                                :compound :state :image])
+                                               [:width :text :textvariable :variable :onvalue
+                                                :offvalue :underline :justify :compound
+                                                :state :image])
                      :bindings dsl/check-bindings
                      :checkable :check})
 
    :ttk/radiobutton
    (dsl/widget-spec "ttk::radiobutton"
                     {:options (opt/options-for [:standard :classed :themed :padded]
-                                               [:width :text :underline :justify
-                                                :compound :state :value :image])
+                                               [:width :text :textvariable :variable :underline
+                                                :justify :compound :state :value :image])
                      :bindings dsl/radio-bindings
                      :checkable :radio})
 
@@ -230,7 +231,7 @@
    (dsl/widget-spec "ttk::entry"
                     {:options (opt/options-for [:standard :classed :themed :editable
                                                 :fonted :localized]
-                                               [:width :bg :fg :exportselection
+                                               [:width :bg :fg :exportselection :textvariable
                                                 :justify :state])
                      :bindings dsl/text-field-bindings
                      :text-field true})
@@ -240,7 +241,7 @@
                     {:options (opt/options-for [:standard :classed :themed :editable
                                                 :fonted :localized]
                                                [:width :height :bg :fg :exportselection
-                                                :justify :state :values])
+                                                :textvariable :justify :state :values])
                      :bindings (assoc dsl/text-field-bindings
                                       :on-change {:event "<<ComboboxSelected>>"
                                                   :value :text})
@@ -250,8 +251,8 @@
    (dsl/widget-spec "ttk::spinbox"
                     {:options (opt/options-for [:standard :classed :themed :editable
                                                 :fonted :localized]
-                                               [:width :bg :fg :exportselection :justify
-                                                :state :values :format :from :to
+                                               [:width :bg :fg :exportselection :textvariable
+                                                :justify :state :values :format :from :to
                                                 :increment :wrap])
                      :bindings dsl/spinbox-bindings
                      :text-field true})
@@ -275,14 +276,15 @@
    :ttk/toggleswitch
    (dsl/widget-spec "ttk::toggleswitch"
                     {:options (opt/options-for [:standard :classed :themed]
-                                               [:width :size :text :underline])
+                                               [:width :size :text :variable :onvalue :offvalue
+                                                :underline])
                      :bindings dsl/check-bindings
                      :checkable :check})
 
    :ttk/menubutton
    (dsl/widget-spec "ttk::menubutton"
                     {:options (opt/options-for [:standard :classed :themed :padded]
-                                               [:width :text :underline :justify
+                                               [:width :text :textvariable :underline :justify
                                                 :compound :state :direction :image])
                      :bindings {:on-click {:event "<Button-1>"}}
                      :primary :text

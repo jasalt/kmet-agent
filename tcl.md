@@ -38,6 +38,16 @@ variables Tk needs, and `grid`/`place` as a child's own geometry maps. What
 each contract is, and what it refuses, is in `src/kmet/tk/README.md` (Data
 widgets, Props and bindings, Geometry).
 
+The variable-backed options are props: `:variable`, `:textvariable` and
+`:listvariable` take a kmet variable (`kmet.tk.core/variable`), whose Tcl
+name lives in a kmet namespace of its own, is materialized lazily, and is
+watched through Tk's `trace add variable` (`variable-watch!`, which is
+what carries a Tcl-side change back to a callback). `:onvalue`/`:offvalue`/
+`:tristatevalue` are plain props beside it, a checkable widget's variable
+is shared with the app and with its radio group, and a second source of
+truth (`:text` beside `:textvariable`, `:items` beside `:listvariable`) is
+refused. `src/kmet/tk/README.md` (Shared variables) is the contract.
+
 Tk's native dialogs are `kmet.tk.core` functions: `message-box!`,
 `open-file!`, `save-file!`, `choose-directory!` and `choose-color!` script
 `tk_messageBox`/`tk_getOpenFile`/… with the props as that command's own
@@ -148,15 +158,6 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 The catalogue (`kmet.tk.options`) leaves out what a plain value cannot
 be; each group needs machinery:
 
-- **Variable-backed**: `-variable`, `-textvariable`, `-listvariable` and
-  their companions `-onvalue`/`-offvalue`/`-tristatevalue`. A checkable
-  widget already keeps a *private* variable (that is how `:active` and
-  `:on-toggled` work, since a classic Tk checkbutton has no state query);
-  what is missing is a *shared* one — two-way text binding, a radiobutton
-  group Tk owns, a listbox driven by a Tcl list — with
-  `trace add variable` as the piece that carries a Tcl-side change back to
-  a kmet callback, and a naming scheme so a kmet-owned variable cannot
-  collide with the app's own Tcl.
 - **Script-typed**: `-validatecommand`/`-invalidcommand` (entry validation
   with Tk's `%P`-style substitutions), `-xscrollcommand`/`-yscrollcommand`
   outside the `:scrollbar` prop, `-postcommand` (a menu built on open),

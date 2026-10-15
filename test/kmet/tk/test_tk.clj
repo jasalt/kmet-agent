@@ -763,6 +763,215 @@
       (t/is (some #(re-find #"selection clear 0 end" %) (scripts rec)))
       (engine/dispose-component (:root m)))))
 
+;; ─── shared variables (the variable-backed props) ────────────────────────
+
+(t/deftest variable-backed-props-resolve-a-shared-tcl-name
+  ;; A kmet variable is an object whose Tcl name is its own (::kmet_var<n>),
+  ;; created lazily: the first widget that names it materializes it with the
+  ;; variable's initial value.
+  (with-fake [rec nil]
+    (let [v (tk/variable "hi")]
+      (t/is (tk/variable? v))
+      (t/is (re-matches #"::kmet_var_\d+" (tk/variable-name v)))
+      (t/is (empty? (scripts rec)) "creating a variable touches no Tcl")
+      (let [{:keys [root]} (mounted [:ttk/frame {} [:ttk/entry {:textvariable v}]])]
+        (t/is (some #(str/includes? % (str "-textvariable " (tk/variable-name v)))
+                    (scripts rec)))
+        (t/is (some #(= (str "set " (tk/variable-name v) " hi") %)
+                    (scripts rec))
+              "the first use materializes it with the initial value")
+        (engine/dispose-component root)))))
+
+(t/deftest a-checkable-widgets-shared-variable-carries-its-state
+  ;; A :variable prop shares the state variable (with the app, with a radio
+  ;; group): :active writes the variable's on/off value and :on-toggled
+  ;; reads the widget's own -onvalue back out of it. :onvalue/:offvalue are
+  ;; Tk's options, so they patch live like any other prop.
+  (with-fake [rec nil]
+    (let [v (tk/variable 0)
+          active (atom true)
+          m (mounted (fn [_] [:ttk/frame {}
+                              [:ttk/checkbutton {:text "x" :variable v
+                                                 :onvalue "yes" :offvalue "no"
+                                                 :active @active
+                                                 :on-toggled (fn [_] nil)}]]))
+          name (tk/variable-name v)]
+      (t/is (some #(str/includes? % (str " -variable " name)) (scripts rec)))
+      (t/is (some #(str/includes? % "-onvalue yes") (scripts rec)))
+      (t/is (some #(str/includes? % "-offvalue no") (scripts rec)))
+      (t/is (some #(= (str "set " name " yes") %) (scripts rec))
+            "an active button's variable holds its on value")
+      (let [script (first (scripts-like rec #"-command \{kmet::cb"))]
+        (t/is (str/includes? script (str "[set " name "]"))
+              "the toggled handler reads the shared variable")
+        (t/is (str/includes? script "cget -onvalue")
+              "and compares it with the widget's own on value"))
+      (reset! active false)
+      (rerender! m)
+      (t/is (zero? (count (scripts-like rec #"^destroy ")))
+            "flipping :active patches, it does not rebuild")
+      (t/is (some #(= (str "set " name " no") %) (scripts rec)))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-radio-group-shares-one-variable-and-only-the-active-writes
+  ;; Two radiobuttons naming one variable are Tk's own exclusive group: the
+  ;; render writes only the active button's value, so an unselected sibling
+  ;; cannot unsay the group's selection. Without a :variable each button
+  ;; keeps its private variable and :active's false clears it, as before.
+  (with-fake [rec nil]
+    (let [v (tk/variable :none)
+          selected (atom :light)
+          m (mounted (fn [_]
+                       [:ttk/frame {}
+                        [:ttk/radiobutton {:text "Light" :variable v :value :light
+                                           :active (= :light @selected)
+                                           :on-toggled (fn [_] nil)}]
+                        [:ttk/radiobutton {:text "Dark" :variable v :value :dark
+                                           :active (= :dark @selected)
+                                           :on-toggled (fn [_] nil)}]]))
+          name (tk/variable-name v)
+          writes (fn [] (filterv #(str/starts-with? % (str "set " name " "))
+                                 (scripts rec)))]
+      (t/is (= 2 (count (scripts-like rec (re-pattern (str " -variable " name)))))
+            "both buttons script the group's variable")
+      (t/is (= [(str "set " name " none") (str "set " name " light")] (writes))
+            "the first button writes the active value, and only it")
+      (doseq [script (scripts-like rec #"-command \{kmet::cb")]
+        (t/is (str/includes? script (str "[set " name "]")))
+        (t/is (str/includes? script "cget -value")
+              "each handler compares the group's variable with its own value"))
+      (reset! selected :dark)
+      (rerender! m)
+      (t/is (= [(str "set " name " none") (str "set " name " light")
+                (str "set " name " dark")]
+               (writes))
+            "moving the selection writes the new value")
+      (t/is (not-any? #(= (str "set " name " {}") %) (writes))
+            "the now-inactive sibling never clears the group")
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-private-radio-still-clears-its-own-state
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {}
+                                   [:ttk/radiobutton {:text "x" :value :a
+                                                      :active false}]])
+          var (second (re-find #"-variable (::kmet_check_\S+)" (first (scripts-like rec #"ttk::radiobutton"))))]
+      (t/is (some? var))
+      (t/is (some #(= (str "set " var " {}") %) (scripts rec))
+            "an unselected private radio clears its own variable")
+      (engine/dispose-component root))))
+
+(t/deftest an-empty-variable-name-is-no-variable
+  ;; An empty Tcl name is Tk's "no variable": the tag keeps its private one
+  ;; (an all-props mount asks every widget for its own cget value, which is
+  ;; empty where the widget has none).
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {} [:ttk/checkbutton {:text "x" :variable ""
+                                                                    :active true}]])]
+      (t/is (some #(re-find #"-variable ::kmet_check_\S+" %) (scripts rec)))
+      (t/is (some #(re-find #"set ::kmet_check_\S+ 1" %) (scripts rec)))
+      (engine/dispose-component root))))
+
+(t/deftest a-variable-backed-prop-change-rebuilds-the-widget
+  ;; The tag wires its state (the read-back fragments, the private variable's
+  ;; fallback) around the name, so a different variable is a different
+  ;; widget — not a live configure.
+  (with-fake [rec nil]
+    (let [v (atom (tk/variable 0))
+          m (mounted (fn [_] [:ttk/frame {}
+                              [:ttk/checkbutton {:text "x" :active false
+                                                 :variable @v}]]))]
+      (reset! v (tk/variable 0))
+      (rerender! m)
+      (t/is (pos? (count (scripts-like rec #"^destroy "))))
+      (t/is (= 2 (count (distinct (keep #(second (re-find #" -variable (\S+)" %))
+                                        (scripts rec)))))
+            "the rebuilt widget carries the new variable")
+      (engine/dispose-component (:root m)))))
+
+(t/deftest one-item-source-and-one-value-source
+  ;; Tk's -listvariable links a listbox to a variable both ways and a text
+  ;; field's -textvariable is its value, so the tags refuse a second source
+  ;; rather than let the two fight.
+  (with-fake [_rec nil]
+    (let [e (try (mounted [:ttk/frame {}
+                           [:ttk/entry {:text "a" :textvariable (tk/variable "b")}]])
+                 nil
+                 (catch Exception e e))]
+      (t/is (= :kmet.tk.core/text-and-textvariable (:type (ex-data e))))
+      (t/is (str/includes? (ex-message e) ":textvariable")))
+    (let [e (try (mounted [:tk/listbox {:items ["a"]
+                                        :listvariable (tk/variable ["b"])}])
+                 nil
+                 (catch Exception e e))]
+      (t/is (= :kmet.tk.core/items-and-listvariable (:type (ex-data e))))
+      (t/is (str/includes? (ex-message e) ":listvariable")))
+    (with-fake [rec nil]
+      (let [{:keys [root]} (mounted [:tk/listbox {:listvariable (tk/variable ["a" "b"])}])]
+        (t/is (some #(re-find #"-listvariable ::kmet_var_\d+" %) (scripts rec)))
+        (t/is (not-any? #(str/includes? % "insert end") (scripts rec))
+              "the variable is the listbox's only item source")
+        (engine/dispose-component root)))))
+
+(t/deftest variable-watches-carry-tcl-writes-back
+  ;; A watch rides `trace add variable`, so a write from any side — the
+  ;; user's typing into a -textvariable widget, Tk's own toggle, the app's
+  ;; variable-set! — reaches the handler with the value Tcl wrote.
+  (with-fake [rec nil]
+    (let [v (tk/variable "hi")
+          seen (atom [])
+          unwatch (tk/variable-watch! v #(swap! seen conj %))]
+      (t/is (empty? (scripts rec)) "a watch before materialization touches no Tcl")
+      (let [{:keys [root]} (mounted [:ttk/frame {} [:ttk/entry {:textvariable v}]])
+            name (tk/variable-name v)
+            trace (first (scripts-like rec #"^trace add variable "))
+            id (second (re-find #"kmet::cb (\d+) \[set " trace))]
+        (t/is (= (str "trace add variable " name " write {kmet::cb " id " [set " name "]}")
+                 trace))
+        (tk/dispatch-callback! ["kmet::cb" id "typed"])
+        (t/is (= ["typed"] @seen) "the watcher receives the value Tcl wrote")
+        (unwatch)
+        (t/is (some #(= (str "trace remove variable " name " write {kmet::cb " id
+                             " [set " name "]}")
+                        %)
+                    (scripts rec))
+              "unwatching removes the trace")
+        (t/is (= "" (tk/dispatch-callback! ["kmet::cb" id "again"]))
+              "and releases the trampoline")
+        (t/is (= ["typed"] @seen))
+        (engine/dispose-component root))
+      (tk/variable-set! v "knocked")
+      (t/is (some #(= (str "set " (tk/variable-name v) " knocked") %)
+                  (scripts rec)))
+      (tk/variable-dispose! v)
+      (t/is (some #(= (str "unset -nocomplain " (tk/variable-name v)) %)
+                  (scripts rec))))))
+
+(t/deftest a-disposed-variables-watches-are-released
+  (with-fake [rec nil]
+    (let [v (tk/variable 0)
+          seen (atom [])]
+      (tk/variable-watch! v #(swap! seen conj %))
+      (tk/variable-set! v 1)
+      (let [trace (first (scripts-like rec #"^trace add variable "))
+            id (second (re-find #"kmet::cb (\d+)" trace))]
+        (tk/variable-dispose! v)
+        (t/is (some #(= (str "trace remove variable " (tk/variable-name v)
+                             " write {kmet::cb " id " [set " (tk/variable-name v) "]}")
+                        %)
+                    (scripts rec)))
+        (t/is (some #(= (str "unset -nocomplain " (tk/variable-name v)) %)
+                    (scripts rec)))
+        (t/is (= "" (tk/dispatch-callback! ["kmet::cb" id "again"]))
+              "disposal releases every watcher it held")
+        (t/is (empty? @seen)))
+      ;; a disposed variable materializes again for a later widget
+      (let [{:keys [root]} (mounted [:ttk/frame {} [:ttk/entry {:textvariable v}]])
+            name (tk/variable-name v)]
+        (t/is (= 2 (count (scripts-like rec (re-pattern (str "^set " name " 0$")))))
+              "the mount after disposal sets the initial value again")
+        (engine/dispose-component root)))))
+
 (t/deftest a-treeview-takes-columns-rows-and-a-selection
   (with-fake [rec nil]
     (let [rows (atom [["a" "1"] ["b" "2"]])

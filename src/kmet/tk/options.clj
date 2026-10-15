@@ -19,18 +19,21 @@
    a widget-owned photo or bitmap). Options that are not a plain value are
    deliberately absent, each because it needs machinery a prop cannot be:
 
-     - script-typed: -command (declare it in :bindings with
-       {:option :command}, as :on-click does), -validatecommand,
-       -invalidcommand, -xscrollcommand, -yscrollcommand (the :scrollbar
-       prop wires those), -postcommand, -browsecmd, -invokecommand,
-       -tearoffcommand;
-     - variable-backed: -variable, -textvariable, -listvariable (a
-       checkable widget's state is the tag's own private variable, so
-       -onvalue/-offvalue/-tristatevalue are not props either);
-     - another widget: -menu (a menubutton's :items build their own),
-       -labelwidget;
+     - script-typed: -validatecommand, -invalidcommand, -xscrollcommand,
+       -yscrollcommand (the :scrollbar prop wires those), -postcommand,
+       -tearoffcommand (a :command/-command callback is a :bindings
+       {:option :command} slot, as :on-click is);
+     - another widget: -menu (a menubutton's :items build their own);
      - only meaningful with one of the above: -selecttype, -title,
        -titlecolumns, -titleitems, -type, -displaycolumns.
+
+   The variable-backed group is a prop family of its own: :variable,
+   :textvariable and :listvariable take a shared variable (see
+   kmet.tk.dsl/variable) and resolve to its Tcl name, so the widget
+   option — and :onvalue/:offvalue/:tristatevalue with it — is a plain
+   prop. A variable-backed prop's change rebuilds the widget: the tag
+   wires its state (the callback fragments, a private variable's
+   fallback) around the name.
 
    Tk 9 additions (-locale, -placeholder, -placeholderforeground,
    -textangle, -backgroundimage, -tile, -striped, -rowheight,
@@ -64,7 +67,9 @@
     :insertwidth :maxundo :spacing1 :spacing2 :spacing3 :tabs :tabstyle :undo
     :show :placeholder :placeholderforeground :validate :locale
     :disabledbackground :readonlybackground
-    :image :bitmap :selectimage :tristateimage :disabledimage})
+    :image :bitmap :selectimage :tristateimage :disabledimage
+    :variable :textvariable :listvariable
+    :onvalue :offvalue :tristatevalue})
 
 (def options
   "prop → the Tcl option it names: the bulk are Tk's own option names, plus
@@ -81,6 +86,13 @@
   "Props whose option Tk takes only at creation: a change to one rebuilds
    the widget (never a live configure)."
   #{:class :colormap :container :visual :screen :use})
+
+(def variable-props
+  "Props whose value is a shared Tcl variable (kmet.tk.dsl/variable): the
+   option takes the variable's Tcl name, and a change to one rebuilds the
+   widget — the tag wires its state around the name (a checkable widget's
+   read-back fragment, a text field's value path)."
+  #{:variable :textvariable :listvariable})
 
 (def list-valued
   "Props whose option is a Tcl list: a sequence renders as one (a single
@@ -162,11 +174,17 @@
   []
   (sort (keys families)))
 
+(defn variable-backed?
+  "True when PROP takes a shared Tcl variable."
+  [prop]
+  (contains? variable-props prop))
+
 (defn coerce
-  "PROP's value shape: :word (the default), :list, :font or :image."
+  "PROP's value shape: :word (the default), :list, :font, :image or :var."
   [prop]
   (cond
     (contains? image-props prop) :image
+    (contains? variable-props prop) :var
     (contains? list-valued prop) :list
     (contains? font-props prop) :font
     :else :word))

@@ -549,3 +549,81 @@
       (t/is (= "hi\n" (e (str text " get 1.0 end-1c")))
             "the more specific chord lets Tk insert the newline instead")
       (engine/dispose-component (:root h)))))
+
+;; ─── shared variables (the variable-backed props) ────────────────────────
+
+(t/deftest a-textvariable-carries-an-entry-s-text-both-ways
+  ;; A real ttk entry bound to a kmet variable: the widget takes its text
+  ;; from the variable, the user's typing lands in it (and its trace reaches
+  ;; the watcher), and a kmet write reaches the widget — the two-way binding
+  ;; the variable-based options exist for.
+  (with-live-tk [e]
+    (let [v (tk/variable "hi")
+          seen (atom [])
+          unwatch (tk/variable-watch! v #(swap! seen conj %))
+          h (tk/mount! (fn [_] [:ttk/frame {} [:ttk/entry {:textvariable v}]]) {})
+          w (do (e find-class-src) (e "kmetfind . TEntry"))]
+      (t/is (seq w) "the entry is in the window")
+      (t/is (= "hi" (e (str w " get"))) "its text starts as the variable's value")
+      (e (str "focus -force " w))
+      (e (str w " icursor end"))
+      (e "update")
+      (e (str "event generate " w " <KeyPress-a> -when tail"))
+      (e (str "event generate " w " <KeyRelease-a> -when tail"))
+      (e "update")
+      (t/is (= "hia" (e (str w " get"))))
+      (t/is (= "hia" (tk/variable-value v))
+            "Tk wrote the typing back into the variable")
+      (t/is (= ["hia"] @seen) "and the trace reached the watcher")
+      (tk/variable-set! v "bye")
+      (t/is (= "bye" (e (str w " get"))) "a kmet write reaches the widget")
+      (t/is (= ["hia" "bye"] @seen) "and fires the watcher too")
+      (unwatch)
+      (tk/variable-dispose! v)
+      (engine/dispose-component (:root h)))))
+
+(t/deftest a-shared-variable-is-tk-s-radio-group
+  ;; One variable shared by two radiobuttons is Tk's own exclusive group:
+  ;; invoking one moves the variable, and the handler Tk calls reads the
+  ;; group back — the render writes only the active button's value.
+  (with-live-tk [e]
+    (let [v (tk/variable :light)
+          toggled (atom [])
+          h (tk/mount! [:ttk/frame {}
+                        [:ttk/radiobutton {:text "Light" :variable v :value :light
+                                           :active true
+                                           :on-toggled #(swap! toggled conj [:light %])}]
+                        [:ttk/radiobutton {:text "Dark" :variable v :value :dark
+                                           :on-toggled #(swap! toggled conj [:dark %])}]]
+                       {})
+          light (do (e find-class-src) (e "kmetfind . TRadiobutton"))
+          dark (last (str/split (e (str "winfo children [winfo parent " light "]"))
+                                #"\s+"))]
+      (t/is (seq light) "the radiobutton is in the window")
+      (t/is (= "light" (tk/variable-value v)) "the active button's value is selected")
+      (e (str dark " invoke"))
+      (t/is (= "dark" (tk/variable-value v))
+            "invoking the sibling moves the whole group")
+      (t/is (= [[:dark true]] @toggled)
+            "only the invoked button's handler fires, and it reports itself selected")
+      (e (str light " invoke"))
+      (t/is (= "light" (tk/variable-value v)))
+      (t/is (= [[:dark true] [:light true]] @toggled))
+      (engine/dispose-component (:root h))
+      (tk/variable-dispose! v))))
+
+(t/deftest a-listvariable-drives-a-real-listbox-both-ways
+  (with-live-tk [e]
+    (let [v (tk/variable ["alpha" "beta"])
+          h (tk/mount! [:tk/listbox {:listvariable v}] {})
+          lb (do (e find-class-src) (e "kmetfind . Listbox"))]
+      (t/is (seq lb) "the listbox is in the window")
+      (t/is (= "alpha beta" (e (str lb " get 0 end"))))
+      (tk/variable-set! v ["gamma"])
+      (t/is (= "gamma" (e (str lb " get 0 end")))
+            "a kmet write replaces the listbox's items")
+      (e (str lb " insert end delta"))
+      (t/is (= "gamma delta" (tk/variable-value v))
+            "and a widget edit writes its list back into the variable")
+      (engine/dispose-component (:root h))
+      (tk/variable-dispose! v))))

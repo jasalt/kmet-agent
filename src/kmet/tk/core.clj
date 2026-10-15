@@ -91,6 +91,66 @@
   [argv]
   (dsl/dispatch-callback! argv))
 
+;; ─── Shared variables (the variable-backed props) ────────────────────────
+;; A widget option whose value is a shared Tcl variable — -variable,
+;; -textvariable, -listvariable — takes one of these. The variable is
+;; created lazily (nothing touches Tcl until it is first used, read or
+;; written), its Tcl name lives in a namespace of its own so it cannot
+;; collide with the app's own Tcl, and a watch rides Tk's `trace add
+;; variable`, which is what carries a Tcl-side change back to kmet.
+;;
+;;   (def draft (tk/variable ""))
+;;   [:ttk/entry {:textvariable draft :on-change (fn [t] (println t))}]
+;;   (tk/variable-watch! draft (fn [t] (reset! last-text t)))
+;;
+;; Every call that reaches Tcl runs on the Tk thread (from a callback or a
+;; component body, not a plain thread).
+
+(defn variable
+  "A kmet-owned Tcl variable, the value a :variable/:textvariable/
+   :listvariable prop takes. INITIAL is its Tcl value (a sequence is Tcl
+   list syntax); nothing touches Tcl until the variable is first used,
+   read or written, so one may be created before an interpreter exists."
+  [initial]
+  (dsl/variable initial))
+
+(defn variable?
+  "True when V is a kmet variable object."
+  [v]
+  (dsl/variable? v))
+
+(defn variable-name
+  "V's Tcl variable name."
+  [v]
+  (dsl/variable-name v))
+
+(defn variable-value
+  "V's current Tcl value as a string. Materializes V when it has not been
+   used yet."
+  [v]
+  (dsl/variable-value v))
+
+(defn variable-set!
+  "Set V's Tcl value (a sequence is Tcl list syntax, a keyword its name, a
+   boolean 1/0) and return VALUE. Writes through Tcl, so watchers and the
+   widgets bound to V see the change."
+  [v value]
+  (dsl/variable-set! v value))
+
+(defn variable-watch!
+  "Call F with the string each Tcl write gives V — the user's typing into a
+   -textvariable widget, Tk's own toggle, the app's variable-set!. Returns
+   an unwatch fn (itself safe to call once)."
+  [v f]
+  (dsl/variable-watch! v f))
+
+(defn variable-dispose!
+  "Drop V: remove its watchers' traces, unset its Tcl variable, and release
+   the watchers. V materializes again (with its initial value) if it is used
+   after this."
+  [v]
+  (dsl/variable-dispose! v))
+
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; The classic widget set (:tk/…)
 ;; ═══════════════════════════════════════════════════════════════════════════
@@ -107,8 +167,16 @@
     (dsl/eval! (str (:path w) " set " (dsl/tcl-value (:value props))))))
 
 (defn- listbox-items!
-  "Replace listbox W's items with PROPS' :items."
+  "Replace listbox W's items with PROPS' :items. A -listvariable is the
+   listbox's other source of items: Tk links the widget to the variable
+   both ways, so :items beside it would fight the variable's list."
   [w props]
+  (when (and (some? (:items props)) (some? (:listvariable props)))
+    (throw (ex-info (str "kmet.tk.core: " (:tag w) " takes :items or"
+                         " :listvariable, not both — a listbox has one item"
+                         " source")
+                    {:type :kmet.tk.core/items-and-listvariable
+                     :tag (:tag w) :props [:items :listvariable]})))
   (dsl/eval! (str (:path w) " delete 0 end"))
   (when (seq (:items props))
     (dsl/eval! (str (:path w) " insert end "
@@ -200,8 +268,8 @@
                     {:options (opt/options-for [:standard :geometry :highlighted
                                                 :bordered :spaced :fonted
                                                 :classic-text :stateful :imaged]
-                                               [:bg :fg :text :default :overrelief
-                                                :repeatdelay :repeatinterval])
+                                               [:bg :fg :text :textvariable :default
+                                                :overrelief :repeatdelay :repeatinterval])
                      :bindings {:on-click {:option :command}}
                      :primary :text})
 
@@ -210,7 +278,7 @@
                     {:options (opt/options-for [:standard :geometry :highlighted
                                                 :bordered :spaced :fonted
                                                 :classic-text :stateful :imaged]
-                                               [:bg :fg :text :textangle])
+                                               [:bg :fg :text :textvariable :textangle])
                      :bindings {:on-click {:event "<Button-1>"}}
                      :primary :text})
 
@@ -226,8 +294,8 @@
    (dsl/widget-spec "message"
                     {:options (opt/options-for [:standard :bordered :highlighted
                                                 :spaced :fonted]
-                                               [:bg :fg :text :anchor :aspect :justify
-                                                :width])
+                                               [:bg :fg :text :textvariable :anchor :aspect
+                                                :justify :width])
                      :primary :text})
 
    :tk/checkbutton
@@ -235,9 +303,10 @@
                     {:options (opt/options-for [:standard :geometry :highlighted
                                                 :bordered :spaced :fonted
                                                 :classic-text :stateful :imaged]
-                                               [:bg :fg :text :selectcolor :indicatoron
-                                                :offrelief :overrelief :selectimage
-                                                :tristateimage])
+                                               [:bg :fg :text :textvariable :variable :onvalue
+                                                :offvalue :tristatevalue :selectcolor
+                                                :indicatoron :offrelief :overrelief
+                                                :selectimage :tristateimage])
                      :bindings dsl/check-bindings
                      :checkable :check})
 
@@ -246,7 +315,8 @@
                     {:options (opt/options-for [:standard :geometry :highlighted
                                                 :bordered :spaced :fonted
                                                 :classic-text :stateful :imaged]
-                                               [:bg :fg :text :selectcolor :indicatoron
+                                               [:bg :fg :text :textvariable :variable
+                                                :tristatevalue :selectcolor :indicatoron
                                                 :offrelief :overrelief :value :selectimage
                                                 :tristateimage])
                      :bindings dsl/radio-bindings
@@ -256,7 +326,7 @@
    (dsl/widget-spec "entry"
                     {:options (opt/options-for [:standard :bordered :highlighted
                                                 :fonted :entry-body]
-                                               [:bg :fg :width :state :show])
+                                               [:bg :fg :width :state :show :textvariable])
                      :bindings dsl/text-field-bindings
                      :text-field true})
 
@@ -264,7 +334,7 @@
    (dsl/widget-spec "spinbox"
                     {:options (opt/options-for [:standard :bordered :highlighted
                                                 :fonted :entry-body]
-                                               [:bg :fg :width :state :activebackground
+                                               [:bg :fg :width :state :textvariable :activebackground
                                                 :buttonbackground :buttoncursor
                                                 :buttondownrelief :buttonuprelief :from :to
                                                 :increment :format :values :wrap
@@ -276,8 +346,9 @@
    (dsl/widget-spec "listbox"
                     {:options (opt/options-for [:standard :geometry :bordered :highlighted
                                                 :selectable :fonted]
-                                               [:bg :fg :activestyle :justify :selectmode
-                                                :setgrid :state :disabledforeground
+                                               [:bg :fg :listvariable :activestyle :justify
+                                                :selectmode :setgrid :state
+                                                :disabledforeground
                                                 :inactiveselectforeground])
                      :fixed {:height 8}
                      :bindings {:on-select {:event "<<ListboxSelect>>" :value :index}}
@@ -320,7 +391,8 @@
                     {:options (opt/options-for [:standard :geometry :highlighted
                                                 :bordered :spaced :fonted
                                                 :classic-text :stateful :imaged]
-                                               [:bg :fg :text :direction :indicatoron])
+                                               [:bg :fg :text :textvariable :direction
+                                                :indicatoron])
                      :bindings {:on-click {:event "<Button-1>"}}
                      :primary :text
                      :commands {:items dsl/set-menu-items!}})
