@@ -965,6 +965,45 @@
       (t/is (= "" (tk/dispatch-callback! ["kmet::cb" id]))
             "and disposal releases what the item held"))))
 
+(t/deftest a-widget-gets-a-context-menu
+  ;; Tk has no option for a popup menu: the idiom — Tk's own, from the menu
+  ;; man page — binds the platform's secondary click to tk_popup. Tk 9 has
+  ;; that click as <<ContextMenu>>; a Tk without it falls back to
+  ;; <Button-3>, which is what the recorder's interpreter answers (it has no
+  ;; virtual events).
+  (with-fake [rec nil]
+    (let [clicked (atom nil)
+          items (atom [{:label "Copy" :on-click #(reset! clicked :copy)}
+                       :separator
+                       {:label "Paste" :on-click #(reset! clicked :paste)}])
+          m (mounted (fn [_] [:ttk/frame {:context-menu @items}]))
+          frame (second (re-find #"^ttk::frame (\S+)$" (first (scripts-like rec #"^ttk::frame "))))
+          [_ menu] (re-find #"^menu (\S+) -tearoff 0$" (first (scripts-like rec #"^menu ")))]
+      (t/is (str/starts-with? menu (str frame "."))
+            "the menu is W's own child, so Tk destroys it with W")
+      (t/is (some #(re-find #"add command -label Copy -command \{kmet::cb \d+\}$" %) (scripts rec)))
+      (t/is (some #(str/includes? % (str menu " add separator")) (scripts rec)))
+      (t/is (some #(str/includes? % (str "bind " frame " <Button-3> {tk_popup " menu " %X %Y}"))
+                  (scripts rec))
+            "the secondary click posts the menu where it was clicked")
+      (let [id (second (re-find #"kmet::cb (\d+)" (first (scripts-like rec #"add command -label Copy"))))]
+        (t/is (= ":copy" (tk/dispatch-callback! ["kmet::cb" id])))
+        (reset! items [{:label "Reload" :on-click #(reset! clicked :reload)}])
+        (rerender! m)
+        (t/is (= "" (tk/dispatch-callback! ["kmet::cb" id]))
+              "rebuilding the items releases the callbacks the old ones held")
+        (t/is (some #(str/includes? % (str menu " delete 0 end")) (scripts rec)))
+        (t/is (some #(str/includes? % "add command -label Reload") (scripts rec)))
+        (reset! items nil)
+        (rerender! m)
+        (t/is (some #(str/includes? % (str "bind " frame " <Button-3> {}")) (scripts rec))
+              "no items unbinds the event")
+        (t/is (some #(str/includes? % (str "destroy " menu)) (scripts rec))
+              "and destroys the menu"))
+      (t/is (= 1 (count (scripts-like rec #"^ttk::frame ")))
+            ":context-menu patches the widget, it does not rebuild it")
+      (engine/dispose-component (:root m)))))
+
 ;; ─── rich text (:text :content segments) ─────────────────────────────────
 
 (t/deftest text-content-segments-reuse-style-tags

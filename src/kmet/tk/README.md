@@ -279,6 +279,25 @@ kmet chord (`:ctrl+enter`, `"ctrl+shift+p"`) or a raw Tk pattern
 [:tk/toplevel {:bind {:ctrl+q quit!}}]
 ```
 
+`:context-menu` gives any tag a popup: its value is a menu's own `:items`
+(a map with `:items` is a cascade, `:separator` a rule, anything else a
+command whose `:on-click` fires through the trampoline). Tk has no widget
+option for a popup, so the tag binds the platform's own secondary click —
+Tk 9's `<<ContextMenu>>`, which Tk generates for the platform's gesture,
+and where Tk does not have that event the classic `<Button-3>` — to Tk's
+`tk_popup`, which posts the menu where the click was (root coordinates)
+and unposts one that is already up, returning as soon as it has posted.
+The menu is the widget's own child, created on first use and destroyed
+with the widget; setting the prop to nil unbinds the event and destroys
+the menu.
+
+```clojure
+[:tk/canvas {:items @items
+             :context-menu [{:label "Copy" :on-click copy!}
+                            :separator
+                            {:label "Zoom" :items [{:label "2×" :on-click zoom!}]}]}]
+```
+
 A prop that is not in a tag spec's `:options`/`:bindings`/`:patchable`
 sets declines the live patch, so the engine rebuilds the widget instead of
 silently dropping the change.

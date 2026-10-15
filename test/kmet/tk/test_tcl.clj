@@ -302,6 +302,45 @@
         ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
 
+(t/deftest a-context-menu-posts-at-the-click
+  ;; On this platform (not macOS) a context menu answers <Button-3>, and its
+  ;; handler is tk_popup at the pointer in root coordinates. tk_popup itself
+  ;; is stubbed: what the DSL owns is the binding, the coordinates it hands
+  ;; over and the menu it creates under the widget.
+  (if-let [a (live-tk)]
+    (try
+      (let [e (:eval a)
+            items (atom [{:label "Copy" :on-click (fn [] nil)}])
+            h (binding [tk/*adapter* a]
+                (tk/mount! (fn [_] [:ttk/frame {:width 60 :height 40
+                                                :context-menu @items}]) {}))
+            w (do (e find-class-src) (e "kmetfind . TFrame"))]
+        (t/is (seq w) "the widget is in the window")
+        (e "set ::got {}")
+        (e "proc tk_popup {args} {set ::got $args}")
+        (e "update")
+        (e (str "event generate " w " <Button-3> -x 3 -y 4 -when tail"))
+        (e "update")
+        (let [[menu x y] (str/split (e "set ::got") #"\s+")]
+          (t/is (str/starts-with? menu (str w "."))
+                "the menu is the widget's own child")
+          (t/is (= (+ 3 (parse-long (e (str "winfo rootx " w)))) (parse-long x))
+                "posted at the click, in root coordinates")
+          (t/is (= (+ 4 (parse-long (e (str "winfo rooty " w)))) (parse-long y))))
+        (reset! items nil)
+        (binding [tk/*adapter* a] (rerender! h))
+        (t/is (= "0" (e (str "winfo exists " (first (str/split (e "set ::got") #"\s+")))))
+              "dropping the items destroys the menu")
+        (e "set ::got {}")
+        (e "update")
+        (e (str "event generate " w " <Button-3> -x 5 -y 6 -when tail"))
+        (e "update")
+        (t/is (= "" (e "set ::got")) "and unbinds the event")
+        (binding [tk/*adapter* a] (engine/dispose-component (:root h))))
+      (finally
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))
+
 (t/deftest install-leaves-tk-loaded-for-a-non-mounting-caller
   ;; kmet.tk.ttk.style scripts ttk::style between install! and mount, so
   ;; install! must load Tk itself instead of leaving it to the first mount.

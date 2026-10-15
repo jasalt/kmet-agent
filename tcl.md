@@ -54,6 +54,12 @@ callback its `:on-click` held, and a retyped or reshaped item is rebuilt
 Tk's item bind on the item's tag with the click's coordinates, and a click
 reaches the topmost item under the pointer, as in Tk.
 
+Any tag can carry a popup menu: `:context-menu` takes a menu's own items,
+the menu is created as the widget's child, and the tag binds the platform's
+secondary click — Tk 9's own `<<ContextMenu>>` where Tk generates it
+(macOS), `<Button-3>` elsewhere — to Tk's `tk_popup`, which posts at the
+click and returns at once.
+
 Tk's native dialogs are `kmet.tk.core` functions: `message-box!`,
 `open-file!`, `save-file!`, `choose-directory!` and `choose-color!` script
 `tk_messageBox`/`tk_getOpenFile`/… with the props as that command's own
@@ -169,9 +175,6 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
   and cascades; Tk's checkbutton/radiobutton items need a `-variable`, an
   item's `-image` has no prop, and `-accelerator` is a label today, not a
   binding.
-- **A right-click popup.** A menu is a menubutton's own (`:items`) or a
-  window's menubar (`:tk/menu` with `:menubar true`); `tk_popup` on an
-  arbitrary widget (and `-menu` as a prop) has no path yet.
 - **Layout beyond pack.** `grid` (forms: rows, columns, weights) and `place`
   (overlays) are missing, so a settings form has to be nested pack frames.
 

@@ -1042,11 +1042,11 @@
 ;; ─── Menus (the :tk/menu tag and the menubuttons) ─────────────────────────
 
 (defn- release-menu-slots!
-  "Drop W's menu-item callbacks (slot keys [:menu …]): rebuilding a menu's
+  "Drop W's menu-item callbacks (slot keys [ROOT …]): rebuilding a menu's
    items must release the trampolines the old items held."
-  [w]
+  [w root]
   (doseq [k (keys @(:callbacks w))
-          :when (and (vector? k) (= :menu (first k)))]
+          :when (and (vector? k) (= root (first k)))]
     (release-slot! w k))
   nil)
 
@@ -1097,10 +1097,72 @@
    releases the trampolines the old items held."
   [w props]
   (let [path (menu-path w)]
-    (release-menu-slots! w)
+    (release-menu-slots! w :menu)
     (eval! (str path " delete 0 end"))
     (menu-add! w path (:items props) [:menu])
     nil))
+
+;; ─── The context menu (:context-menu, on any tag) ────────────────────────
+;; Tk has no widget option for a popup menu: the idiom — Tk's own, from the
+;; menu man page — posts with tk_popup from a binding on the platform's
+;; secondary click. Tk 9 has that click as its own event, <<ContextMenu>>
+;; (generated for the platform's gesture, and there on every windowing
+;; system), so it is what is bound where it exists; a Tk without it gets
+;; the classic <Button-3>, and on macOS the pair Tk's own scripts use —
+;; binding X11's <Button-2> would take over the primary-selection paste.
+;; tk_popup posts wherever the click was, in root coordinates, and unposts
+;; a menu that is already up, so the handler needs no state of its own.
+
+(defn- context-menu-events
+  "The events that post a widget's context menu on this Tk."
+  []
+  (cond
+    (seq (eval! "event info <<ContextMenu>>"))
+    ["<<ContextMenu>>"]
+
+    (= "aqua" (str/trim (eval! "tk windowingsystem")))
+    ["<Button-2>" "<Control-Button-1>"]
+
+    :else
+    ["<Button-3>"]))
+
+(defn- context-menu-path
+  "The popup menu W's :context-menu items go in: created under W on first
+   use (tear-off off), so Tk destroys it with the widget."
+  [w]
+  (or (get @(:styles w) :context-menu)
+      (let [menu (alloc-path! w)]
+        (eval! (str "menu " menu " -tearoff 0"))
+        (swap! (:styles w) assoc :context-menu menu)
+        menu)))
+
+(defn- bind-context-menu!
+  "Point W's context-menu events at tk_popup on MENU — posted where the
+   click was, in root coordinates — or unbind them when MENU is nil."
+  [w menu]
+  (doseq [event (context-menu-events)]
+    (eval! (str "bind " (:path w) " " event " "
+                (if menu (str "{tk_popup " menu " %X %Y}") "{}")))))
+
+(defn set-context-menu!
+  "Point W's platform context-menu event at PROPS' :context-menu items,
+   which are a menu's own (`:tk/menu` :items): a map with :items is a
+   cascade, :separator a rule, anything else a command whose :on-click
+   fires through the trampoline. Nil (or no items) unbinds the event and
+   destroys the menu; the items are W's own menu, created under it."
+  [w props]
+  (let [items (:context-menu props)
+        menu (get @(:styles w) :context-menu)]
+    (release-menu-slots! w :context-menu)
+    (if (empty? items)
+      (do (bind-context-menu! w nil)
+          (when (some? menu)
+            (eval! (str "destroy " menu))
+            (swap! (:styles w) dissoc :context-menu)))
+      (let [menu (context-menu-path w)]
+        (eval! (str menu " delete 0 end"))
+        (menu-add! w menu items [:context-menu])
+        (bind-context-menu! w menu)))))
 
 ;; ─── The spec builder ─────────────────────────────────────────────────────
 
@@ -1153,7 +1215,7 @@
      :checkable   :check or :radio: its state is a private Tcl variable"
   [command {:keys [options fixed commands attach after bindings primary
                    patchable lens pack? text-field checkable]}]
-  (let [commands (or commands {})
+  (let [commands (merge {:context-menu set-context-menu!} commands)
         fixed (or fixed {})
         data-props (into (set (keys commands))
                          (concat patchable
