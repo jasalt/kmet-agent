@@ -98,10 +98,9 @@
           (:result ctx)
           (extensions/get-tool-result-hooks)))
 
-(defn- default-ui-registry
+(defn- default-ui-port
   "The capability map a front end without its own port gets: the headless
-   auto-answers (extensions/headless-ui-port — widgets/dialogs inert,
-   :request answers the degraded defaults) plus the `build-context`
+   auto-answers (extensions/headless-ui-port) plus the `build-context`
    callback every map must provide (the extension ctx
    :model/:scoped-models/:thinking-level read the live agent). Interactive
    replaces the map from `kmet.modes.interactive.ui-registry` once its
@@ -131,8 +130,7 @@
      :has-ui       — whether the front end has a UI port (ctx.has-ui);
                      defaults to false
      :ui-context   — front-end capability map; defaults to the headless
-                     port + build-context (kmet.app.session-runtime/
-                     default-ui-registry)
+                     port + build-context (session-runtime/default-ui-port)
      :agent-opts   — extra/overriding make-agent-state options (escape hatch
                      for tests and front-end-specific run options; the
                      engine's session follows an overridden :session)
@@ -243,9 +241,9 @@
     (extensions/set-session! (:session agent-state))
     (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (agent-state engine) msg)))
     (extensions/bind-extensions!
-     {:mode (or mode :print)
-      :has-ui (boolean has-ui)
-      :ui (or ui-context (default-ui-registry engine))})
+     {:mode mode
+      :has-ui has-ui
+      :ui (or ui-context (default-ui-port engine))})
     engine))
 
 (defn session
@@ -653,12 +651,10 @@
    same default resolves a request still pending at `dispose!`."
   [engine kind payload]
   (let [id (str (random-uuid))
+        default (get payload :default (extensions/ui-request-default kind))
         request (-> payload
                     (dissoc :default)
                     (assoc :type :ui-request :id id :kind kind))
-        default (if (contains? payload :default)
-                  (:default payload)
-                  (extensions/ui-request-default kind))
         p (promise)
         request-fn (extensions/ui-capability :request)]
     (if request-fn
@@ -669,9 +665,10 @@
                              ;; pending entry; the error reaches the caller
                              (respond! engine id default)
                              (throw t)))]
-            (if (= extensions/request-pending reply)
-              p
-              (do (respond! engine id reply) p))))
+            (when-not (= extensions/request-pending reply)
+              (respond! engine id reply))
+            p))
+      ;; no port: the degraded default is the answer
       (do (deliver p default) p))))
 
 ;; ─── Submission + compaction queue ─────────────────────────────────────────

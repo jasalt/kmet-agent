@@ -17,7 +17,7 @@
     (try (f)
          (finally (ex/unbind-extensions!)))))
 
-(defn- gate-engine
+(defn- bare-engine
   "A bare engine with just enough agent state for request/dispose tests."
   []
   (tu/test-engine {:agent-state (atom {:compacting? (atom false)})}))
@@ -65,20 +65,19 @@
 
 (deftest test-headless-port-auto-answers
   (testing "the degraded port answers every capability without a front end"
-    (let [port (ex/headless-ui-port)]
-      (t/is (nil? ((:notify port) "hi" :info)))
-      (t/is (= "" ((:get-editor-text port))))
-      (t/is (false? ((:get-tools-expanded port))))
-      (t/is (= :collapsed ((:get-tool-display-mode port))))
-      (t/is (= {:success false :error "UI not available"}
-               ((:set-theme port) "dark")))
-      (t/is (fn? ((:on-terminal-input port) (fn [_] nil)))
-            ":on-terminal-input returns a no-op unsubscriber")
-      (t/is (nil? (deref ((:custom port) (fn [_ _ _ _] nil) {}) 100 ::timeout))
-            ":custom returns an already-resolved promise")
-      (t/is (nil? ((:request port) {:kind :select})))
-      (t/is (false? ((:request port) {:kind :confirm})))
-      (t/is (nil? ((:request port) {:kind :editor}))))))
+    (ex/bind-extensions! {:mode :print :has-ui false :ui (ex/headless-ui-port)})
+    (t/is (nil? (ex/ui-notify "hi" :info))
+          "omitted setters fall through ui-call as no-ops")
+    (t/is (= "" (ex/ui-get-editor-text)))
+    (t/is (false? (ex/ui-get-tools-expanded)))
+    (t/is (= :collapsed (ex/ui-get-tool-display-mode)))
+    (t/is (= {:success false :error "UI not available"} (ex/ui-set-theme "dark")))
+    (t/is (fn? (ex/ui-on-terminal-input (fn [_] nil)))
+          ":on-terminal-input returns a no-op unsubscriber")
+    (t/is (nil? (deref (ex/ui-custom (fn [_ _ _ _] nil) {}) 100 ::timeout))
+          ":custom returns an already-resolved promise")
+    (t/is (nil? (ex/ui-call :request {:kind :select})))
+    (t/is (false? (ex/ui-call :request {:kind :confirm})))))
 
 (deftest test-headless-port-custom-via-extension-api
   (testing "ext/ui-custom through the headless port resolves instead of nil"
@@ -88,7 +87,7 @@
 
 (deftest test-request-ui-falls-back-to-defaults
   (testing "without a :request capability the degraded default answers"
-    (let [engine (gate-engine)]
+    (let [engine (bare-engine)]
       (t/is (false? (deref (rt/request-ui! engine :confirm {}) 100 ::timeout)))
       (t/is (nil? (deref (rt/request-ui! engine :select {}) 100 ::timeout)))
       (t/is (true? (deref (rt/request-ui! engine :confirm {:default true})
@@ -98,7 +97,7 @@
 (deftest test-request-ui-sync-port
   (testing "a port answering in-process returns the value — nil included"
     (let [seen (atom [])
-          engine (gate-engine)]
+          engine (bare-engine)]
       (ex/bind-extensions!
        {:mode :interactive :has-ui true
         :ui {:request (fn [request]
@@ -123,7 +122,7 @@
 (deftest test-request-ui-async-port-responds
   (testing "a forwarding port leaves the promise pending until respond!"
     (let [requests (atom [])
-          engine (gate-engine)]
+          engine (bare-engine)]
       (ex/bind-extensions!
        {:mode :rpc :has-ui false
         :ui {:request (fn [request] (swap! requests conj request)
@@ -140,7 +139,7 @@
 
 (deftest test-request-ui-throwing-port
   (testing "a throwing port propagates but leaves nothing pending"
-    (let [engine (gate-engine)]
+    (let [engine (bare-engine)]
       (ex/bind-extensions! {:mode :interactive :has-ui true
                             :ui {:request (fn [_] (throw (ex-info "boom" {})))}})
       (t/is (thrown? Exception (rt/request-ui! engine :confirm {})))
@@ -148,7 +147,7 @@
 
 (deftest test-dispose-resolves-pending-requests
   (testing "dispose! cannot leave an extension dialog parked"
-    (let [engine (gate-engine)]
+    (let [engine (bare-engine)]
       (ex/bind-extensions! {:mode :rpc :has-ui false
                             :ui {:request (fn [_] ex/request-pending)}})
       (let [p (rt/request-ui! engine :confirm {})]
@@ -158,11 +157,9 @@
               "the kind's degraded default resolves it, not nil")
         (t/is (empty? @(:pending-ui engine)))
         (t/is (= :print (ex/extension-mode))
-              "dispose! unbinds the front-end surface")))))
-
-(deftest test-dispose-honors-an-explicit-default
+              "dispose! unbinds the front-end surface"))))
   (testing "a request with :default resolves with it on dispose"
-    (let [engine (gate-engine)]
+    (let [engine (bare-engine)]
       (ex/bind-extensions! {:mode :rpc :has-ui false
                             :ui {:request (fn [_] ex/request-pending)}})
       (let [p (rt/request-ui! engine :select {:default :cancelled})]

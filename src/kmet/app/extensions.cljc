@@ -171,10 +171,11 @@
 (defonce ^:private markdown-transformers (atom []))
 (defonce ^:private flags (atom {}))
 (defonce ^:private cli-flags (atom {}))
-(defonce ^:private extension-binding
-  ;; {:mode front-end kind, :has-ui bool, :ui capability map} — the
-  ;; front-end surface extensions dispatch through (see bind-extensions!).
-  (atom {:mode :print :has-ui false :ui {}}))
+(def ^:private headless-binding
+  "The surface of a front end with no UI: pi's default mode (:print) and
+   no capabilities (every ui-call is inert)."
+  {:mode :print :has-ui false :ui {}})
+(defonce ^:private extension-binding (atom headless-binding))
 (defonce ^:private session-atom (atom nil))
 (defonce ^:private context-sink-atom (atom nil))
 (defonce ^:private entry-sink-atom (atom nil))
@@ -379,10 +380,11 @@
 ;;
 ;; One binding per process (pi: ExtensionRunner's uiContext + mode): the
 ;; front-end kind, whether a UI port is available (ctx.has-ui), and the
-;; capability map the front end supplies. The runtime binds the headless
-;; defaults at bootstrap and unbinds at dispose!; a front end with its own
-;; port re-binds after its widgets exist (kmet.modes.interactive installs
-;; its registry through bind-extensions!).
+;; capability map the front end supplies (see the headless-binding
+;; default). The runtime binds the headless defaults at bootstrap and
+;; unbinds at dispose!; a front end with its own port re-binds after its
+;; widgets exist (kmet.modes.interactive installs its registry through
+;; bind-extensions!).
 
 (defn bind-extensions!
   "Bind the front-end extension surface (pi: AgentSession.bindExtensions):
@@ -392,15 +394,16 @@
    front end; ui-call stays inert). A bind replaces the whole surface —
    absent keys fall back to the headless defaults, not to the previous
    binding; use set-ui-registry! for a port-only swap. Returns nil."
-  [{:keys [mode has-ui ui] :or {mode :print has-ui false}}]
-  (reset! extension-binding {:mode mode :has-ui has-ui :ui (or ui {})})
+  [{:keys [mode has-ui ui]}]
+  (reset! extension-binding {:mode (or mode :print)
+                             :has-ui (boolean has-ui)
+                             :ui (or ui {})})
   nil)
 
 (defn unbind-extensions!
-  "Restore the headless binding (mode :print, :has-ui false, no
-   capabilities). Returns nil."
+  "Restore the headless binding. Returns nil."
   []
-  (reset! extension-binding {:mode :print :has-ui false :ui {}})
+  (reset! extension-binding headless-binding)
   nil)
 
 (defn extension-mode
@@ -466,36 +469,21 @@
 
 (defn headless-ui-port
   "The degraded capability map a front end without a terminal binds (pi:
-   noOpUIContext): widget/status/dialog calls are inert, getters return
-   neutral values, :set-theme reports the missing UI, and :custom returns
-   an already-resolved promise — an extension cannot hang or crash a
-   headless run. :request answers ui-request-default by kind. The runtime
-   adds the live :build-context capability on top."
+   noOpUIContext): only the capabilities that must answer rather than stay
+   inert are present — :custom resolves to nil, the getters return neutral
+   values, :set-theme reports the missing UI, :on-terminal-input returns a
+   no-op unsubscriber, and :request auto-answers by kind. Inert setters
+   (notify, set-status, set-widget, the working indicator, …) are omitted:
+   ui-call treats an absent capability as a nil no-op — the
+   headless-binding default. The runtime adds the live :build-context
+   capability on top."
   []
-  {:notify (fn [_message _type] nil)
-   :chat-info (fn [_label _content] nil)
-   :custom (fn [_factory _opts] (doto (promise) (deliver nil)))
+  {:custom (fn [_factory _opts] (doto (promise) (deliver nil)))
    :on-terminal-input (fn [_handler] (fn [] nil))
-   :set-status (fn [_key _text] nil)
-   :set-widget (fn [_key _content _opts] nil)
-   :set-footer (fn [_factory] nil)
-   :set-header (fn [_factory] nil)
-   :set-title (fn [_title] nil)
-   :set-editor-text (fn [_text] nil)
    :get-editor-text (fn [] "")
-   :paste-to-editor (fn [_text] nil)
-   :set-working-indicator (fn [_options] nil)
-   :set-working-message (fn [_message] nil)
-   :set-working-visible (fn [_visible?] nil)
-   :set-hidden-thinking-label (fn [_label] nil)
-   :set-editor-component (fn [_factory] nil)
-   :add-autocomplete-provider (fn [_factory] nil)
    :set-theme (fn [_theme-or-name] {:success false :error "UI not available"})
    :get-tools-expanded (fn [] false)
-   :set-tools-expanded (fn [_expanded?] nil)
    :get-tool-display-mode (fn [] :collapsed)
-   :set-tool-display-mode (fn [_mode] nil)
-   :reset (fn [] nil)
    :request (fn [request] (ui-request-default (:kind request)))})
 
 (declare api-session read-model-facades)
