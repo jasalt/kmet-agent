@@ -167,8 +167,9 @@
    is dropped, not a render failure."
   [w props]
   (dsl/eval! (str (:path w) " delete [" (:path w) " children {}]"))
-  (let [ids (set (insert-rows! w "{}" "" (:rows props)))]
-    (tree-selection! w (assoc props :selected (filterv ids (selection-ids props))))))
+  (let [ids (insert-rows! w "{}" "" (:rows props))]
+    (dsl/check-unique-ids! (:tag w) ids)
+    (tree-selection! w (assoc props :selected (filterv (set ids) (selection-ids props))))))
 
 (defn- notebook-selected!
   "Select PROPS' :selected tab in notebook W."

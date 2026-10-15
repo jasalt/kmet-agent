@@ -713,6 +713,18 @@
   (when-some [args (seq (option-args geometry))]
     (str " " (str/join " " args))))
 
+(defn- check-attached-props!
+  "Throw when PROPS name a geometry manager for a child its container places
+   itself — a notebook tab, a pane, a text widget's embedded window: the
+   container owns that placement, so the map would be silently ignored."
+  [tag props]
+  (when-some [named (seq (filterv #(some? (get props %)) [:grid :place]))]
+    (throw (ex-info (str "kmet.tk.core: " tag " names " (first named)
+                         " under a container that places it itself (a tab, a"
+                         " pane or an embedded window)")
+                    {:type :kmet.tk.core/geometry-manager-not-supported
+                     :tag tag :managers (vec named)}))))
+
 (defn- manage-child!
   "Place the TAG child at PATH by the manager PROPS name — grid or place
    with the child's own geometry options, else pack with Tk's
@@ -768,7 +780,8 @@
       (if-let [attach (:attach @(:styles parent))]
         ;; containers that own their child placement (an embedded text
         ;; window, a notebook tab, a pane) — and read the child's props for it
-        (attach path props)
+        (do (check-attached-props! (:tag spec) props)
+            (attach path props))
         (manage-child! (:tag spec) path props)))
     w))
 
@@ -1025,6 +1038,26 @@
    description the canvas widget owns)."
   #{:image :bitmap :activeimage :disabledimage})
 
+(defn- item-options
+  "ITEM's own options — the keys in KMET-KEYS dropped — with every option in
+   IMAGE-KEYS resolved to the image W owns (the option's own description, or
+   the Tk image name it passes through)."
+  [w item kmet-keys image-keys]
+  (into {}
+        (map (fn [[k v]] [k (if (contains? image-keys k) (image-name w k v) v)]))
+        (apply dissoc item kmet-keys)))
+
+(defn check-unique-ids!
+  "Throw when IDS are not distinct: an id is how a kmet render addresses an
+   item in Tk, so two items sharing one would move, style and delete
+   together — and a selection by that id would reach only one of them."
+  [tag ids]
+  (when-some [dupes (seq (keep (fn [[id n]] (when (> n 1) id)) (frequencies ids)))]
+    (throw (ex-info (str "kmet.tk.core: " tag " renders the item id "
+                         (pr-str (vec dupes)) " twice — an id names one item")
+                    {:type :kmet.tk.core/duplicate-item-id
+                     :tag tag :ids (vec dupes)}))))
+
 (defn- canvas-item-id
   "ITEM's identity: its own :id (which is also its first Tk tag), or i<n>
    from its place in the render."
@@ -1036,11 +1069,7 @@
    image description resolved to the image W owns — with its tags, ID
    first, which is what makes the item addressable by its id."
   [w id item]
-  (-> (into {} (map (fn [[k v]]
-                      [k (if (contains? canvas-image-options k)
-                           (image-name w k v)
-                           v)]))
-            (apply dissoc item canvas-item-keys))
+  (-> (item-options w item canvas-item-keys canvas-image-options)
       (assoc :tags (into [id] (:tags item)))))
 
 (defn- canvas-create-item!
@@ -1081,9 +1110,11 @@
    place, a new one created, a gone one deleted with the trampoline its
    :on-click held."
   [w props]
-  (let [previous (:canvas-items @(:styles w))
-        items (into {} (map-indexed (fn [i item] [(canvas-item-id i item) item]))
-                    (or (:items props) []))]
+  (let [items-list (or (:items props) [])
+        ids (mapv canvas-item-id (range) items-list)
+        previous (:canvas-items @(:styles w))
+        items (into {} (map vector ids items-list))]
+    (check-unique-ids! (:tag w) ids)
     (doseq [[id was] previous
             :when (not (contains? items id))]
       (bind-canvas-item! w id nil was)
@@ -1127,9 +1158,8 @@
    item's -value, …) — Tk's own item vocabulary, with :image resolved to
    the image W owns."
   [w item]
-  (into {:label (or (:label item) "")}
-        (map (fn [[k v]] [k (if (= k :image) (image-name w :image v) v)]))
-        (apply dissoc item menu-item-keys)))
+  (merge {:label (or (:label item) "")}
+         (item-options w item menu-item-keys #{:image})))
 
 (defn- item-var
   "The private Tcl variable a checkbutton item at SLOT of the menu at
@@ -1196,6 +1226,12 @@
                   :radio (group-var path (:group item))
                   nil)
             command (menu-item-command w slot item var)]
+        (when (and (= :radio kind) (not (contains? item :value)))
+          (throw (ex-info (str "kmet.tk.core: " (:tag w) "'s radio item "
+                               (pr-str (:label item)) " has no :value — Tk"
+                               " compares the group's variable against it")
+                          {:type :kmet.tk.core/radio-item-without-value
+                           :tag (:tag w) :label (:label item)})))
         (when (= :check kind)
           (eval! (str "set " var " " (tcl-value (boolean (:checked item))))))
         (eval! (str path " add " (case kind :check "checkbutton" :radio "radiobutton" "command")

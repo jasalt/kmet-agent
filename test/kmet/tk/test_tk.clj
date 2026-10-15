@@ -864,6 +864,24 @@
             "only the container itself is packed")
       (engine/dispose-component root))))
 
+(t/deftest two-items-cannot-share-an-id
+  ;; An id is how a render addresses its item in Tk, so the same one twice
+  ;; would make two items move, style and delete together — Tk itself
+  ;; tolerates the duplicate, which is why the render refuses it.
+  (with-fake [_ nil]
+    (let [canvas-error (try (mounted [:tk/canvas {:items [{:id "n1" :type :line :coords [0 0 1 1]}
+                                                          {:id "n1" :type :rect :coords [2 2 3 3]}]}])
+                            nil
+                            (catch Exception e e))
+          tree-error (try (mounted [:ttk/treeview {:rows [{:id "r" :values [1]}
+                                                          {:id "r" :values [2]}]}])
+                          nil
+                          (catch Exception e e))]
+      (t/is (= :kmet.tk.core/duplicate-item-id (:type (ex-data canvas-error))))
+      (t/is (= ["n1"] (:ids (ex-data canvas-error))))
+      (t/is (= :kmet.tk.core/duplicate-item-id (:type (ex-data tree-error))))
+      (t/is (str/includes? (ex-message tree-error) "\"r\"")))))
+
 (t/deftest a-child-names-one-geometry-manager
   ;; Two managers on one child, a manager beside pack's own props, and Tk's
   ;; -in (whose master a kmet child does not have) are each refused before
@@ -878,7 +896,12 @@
                    nil
                    (catch Exception e e))]
         (t/is (= expected (:type (ex-data e)))
-              (str (pr-str props) " is refused with " expected))))))
+              (str (pr-str props) " is refused with " expected))))
+    (let [e (try (mounted [:ttk/notebook {} [:ttk/frame {:tab "One" :grid {:row 0}}]])
+                 nil
+                 (catch Exception e e))]
+      (t/is (= :kmet.tk.core/geometry-manager-not-supported (:type (ex-data e)))
+            "a container that places its child itself owns its geometry"))))
 
 (t/deftest a-notebook-adds-tabs-and-a-panedwindow-panes
   (with-fake [rec nil]
@@ -979,11 +1002,15 @@
       (t/is (= [true false] (let [id (id-of check)]
                               [(do (tk/dispatch-callback! ["kmet::cb" id "1"]) @toggled)
                                (do (tk/dispatch-callback! ["kmet::cb" id "0"]) @toggled)]))
-            "a check item's handler receives the new boolean")
-      (t/is (= [true false] (let [id (id-of light)]
-                              [(do (tk/dispatch-callback! ["kmet::cb" id "1"]) @toggled)
-                               (do (tk/dispatch-callback! ["kmet::cb" id "0"]) @toggled)]))
-            "and so does a radio item's")
+            "a check item's handler receives the new boolean")      (t/is (= [true false] (let [id (id-of light)]
+                                                                                            [(do (tk/dispatch-callback! ["kmet::cb" id "1"]) @toggled)
+                                                                                             (do (tk/dispatch-callback! ["kmet::cb" id "0"]) @toggled)]))
+                                                                          "and so does a radio item's")
+      (t/is (= :kmet.tk.core/radio-item-without-value
+               (:type (ex-data (try (mounted [:tk/menu {:items [{:kind :radio :label "x"}]}])
+                                    nil
+                                    (catch Exception e e)))))
+            "a radio item without :value has nothing for Tk to compare")
       (reset! checked :dark)
       (rerender! m)
       (t/is (some #(str/includes? % (str "set " (var-of light) " dark")) (scripts rec))

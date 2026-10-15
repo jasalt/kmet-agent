@@ -151,7 +151,8 @@ The `:items` of a menu, a menubutton or a `:context-menu` are Tk's own menu
 entries: `[:separator]` (or `{:kind :separator}`) a rule, a map with
 `:items` a cascade (its nested items get a child menu), and
 `{:kind :check …}` or `{:kind :radio …}` Tk's checkbutton and radiobutton
-entries. A check item keeps its state in a private Tcl variable, a radio
+entries (a radio one needs its `:value`: it is what Tk compares the group's
+variable against). A check item keeps its state in a private Tcl variable, a radio
 item in one shared by its `:group` — all the radios of that menu when it
 names none — which is what makes the group exclusive in Tk. A handler on
 either kind receives the new boolean; `:checked` is what the render
@@ -177,7 +178,8 @@ of cells or a map of Tk's own item options — `:text` (the tree column),
 `:values` (the data columns), `:tags`, `:open`, `:image` — plus `:id` and
 `:children`, which nest under the row's id; ids default to `r1, r2, …` at
 the top level and to `<parent>.1, …` below it, so a row can be addressed
-without being named. Tk's `delete` is recursive, so a `:rows` change
+without being named (a render repeating one is an error, as on a canvas).
+Tk's `delete` is recursive, so a `:rows` change
 rebuilds the whole hierarchy and clears Tk's selection — which is why
 `:selected` is applied again to the ids the new rows still have (an id
 that is gone is dropped rather than failing the render), and `:open` is
@@ -198,7 +200,8 @@ of Tk's canvas-item options (`{:type :line :coords [x y …] :fill "#fff"}`)
 plus `:id`, `:tags` and `:on-click`. Tk gives an item a numeric id of its
 own but lets a tag stand for it, so an item's `:id` (`i1`, `i2`, … when the
 render names none) is written as its first Tk tag, and every item command
-addresses it by that. A re-render *reconciles*: an id it still has keeps
+addresses it by that — so an id a render repeats is an error, Tk tolerating
+duplicates that would then move and delete together. A re-render *reconciles*: an id it still has keeps
 its item — the coordinates through Tk's `coords` subcommand, the changed
 options through `itemconfigure`, and its `:on-click` binding (Tk's item
 bind, `<Button-1>` on the item's own tag) — a new id is drawn, a gone id
@@ -249,7 +252,8 @@ two share a container, as in Tk, which is what an overlay is. A child that
 names two managers at once, or a manager beside pack's own
 `:side`/`:fill`/`:expand`, is an error here; a *container* whose children
 mix grid and pack is Tk's own error, and Tk's `-in` is refused — a child's
-master is the tag it renders under. A container that packs or grids its
+master is the tag it renders under, and a map under a container that places
+its child itself (a tab, a pane, an embedded window) is an error too. A container that packs or grids its
 children also takes `:rowconfigure` and `:columnconfigure` — {index Tk's
 own options}, through `grid columnconfigure` — for its rows and columns.
 

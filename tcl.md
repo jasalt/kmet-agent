@@ -29,54 +29,13 @@ widget and description, and deleted with the widget; a name the app owns is
 never touched. Item vocabularies outside the tag specs — a menu item's
 `-image` — are not props.
 
-`:ttk/treeview` is a table *and* a tree: a row is a vector of cells or a
-map with Tk's own item options — `:text` (the tree column), `:values`,
-`:tags`, `:open`, `:image` — plus `:id` and `:children`, which nest under
-the row's id (default ids extend to `<parent>.1`, … below the top level's
-`r1`, `r2`, …). The widget's `:tags` map configures Tk's row tags
-(`tag configure`), so colours, a font and a row image reach the rows
-naming them in their own `:tags`; `{:id "#0"}` is Tk's tree column —
-configured with `heading #0`/`column #0`, kept out of `-columns` — and
-`:show [:tree :headings]` asks Tk for it, where the tag's own default is
-`:headings`. Tk's `delete` is recursive, so a `:rows` change rebuilds the
-whole hierarchy and clears Tk's selection: `:selected` is applied again to
-the ids the new rows still have (a stale id is dropped, not a render
-failure), and `:open` is part of a row's own data (`tag bind` and
-`item move` are not exposed).
-
-`:tk/canvas` items have identity: an item's `:id` is written as its first
-Tk tag (Tk's own item ids are numeric, but a tag stands for an item
-wherever a tagOrId is taken), so a re-render reconciles by id — a kept
-item moves through Tk's `coords` subcommand and takes its changed options
-through `itemconfigure`, a new id is drawn, a gone id is deleted with the
-callback its `:on-click` held, and a retyped or reshaped item is rebuilt
-(Tk cannot unset an option). `:tags` reach Tk's item tags, `:on-click` is
-Tk's item bind on the item's tag with the click's coordinates, and a click
-reaches the topmost item under the pointer, as in Tk.
-
-Any tag can carry a popup menu: `:context-menu` takes a menu's own items,
-the menu is created as the widget's child, and the tag binds the platform's
-own secondary click — Tk 9's `<<ContextMenu>>`, which Tk generates for
-that gesture, or `<Button-3>` on a Tk without the event — to Tk's
-`tk_popup`, which posts at the click and returns at once.
-
-Menu items are Tk's own: `{:kind :check}` for a checkbutton entry and
-`{:kind :radio :value … :group …}` for a radiobutton one — a private Tcl
-variable for a check item, one variable per radio group, which is Tk's own
-exclusivity — with `:checked` as the render's declaration and either
-handler receiving the new boolean. Every other key is a Tk menu-item
-option (`-state`, `-underline`, `:image`, created as the menu's own), and
-`:accelerator` stays what Tk makes it, a label that the app's own `:bind`
-chord backs.
-
-Layout is Tk's own: a child is packed unless it carries `:grid {:row …
-:column … :sticky …}` or `:place {:relx … :anchor …}`, each map Tk's
-options for that manager (grid and place share a container, as in Tk), and
-a container that packs or grids takes `:rowconfigure`/`:columnconfigure`
-for its rows and columns through `grid columnconfigure`. Naming two
-managers on one child, or a manager beside pack's own props, is a kmet
-error; a container whose children mix grid and pack is Tk's own, and Tk's
-`-in` is refused (a child's master is the tag it renders under).
+Section 1's features follow Tk's own vocabulary: a treeview hierarchy
+(`:children`, the `#0` column, row tags and images), canvas items with
+identity (an `:id` written as the item's first Tk tag, reconciled in place),
+`:context-menu` posting through Tk's own `tk_popup`, check and radio menu
+items with the private variables Tk needs, and `grid`/`place` as a child's
+own geometry maps. What each contract is, and what it refuses, is in
+`src/kmet/tk/README.md` (Data widgets, Props and bindings, Geometry).
 
 Tk's native dialogs are `kmet.tk.core` functions: `message-box!`,
 `open-file!`, `save-file!`, `choose-directory!` and `choose-color!` script
