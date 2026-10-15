@@ -209,6 +209,57 @@
         ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
 
+(t/deftest a-treeview-nests-rows-tags-and-a-tree-column
+  ;; A real ttk::treeview: a row's :children nest under its own id, a row tag
+  ;; reaches and styles the rows naming it, the tree column is configured
+  ;; like any other column (and is not one of Tk's -columns), and the :open
+  ;; and :selected the app renders are what Tk reports back.
+  (if-let [a (live-tk)]
+    (try
+      (let [e (:eval a)
+            _ (e "image create photo ::icon -width 8 -height 8")
+            h (binding [tk/*adapter* a]
+                (tk/mount! (fn [_] [:ttk/treeview
+                                    {:columns [{:id "#0" :heading "Tool" :width 180}
+                                               {:id :kind :heading "Kind"}]
+                                     :show [:tree :headings]
+                                     :height 6
+                                     :font-family "Courier New" :font-size 11
+                                     :tags {"done" {:foreground "#888888" :bold true}}
+                                     :rows [{:id "git" :text "git" :values ["shell"]
+                                             :open true :tags ["done"]
+                                             :children [{:text "status" :values ["read"]
+                                                         :image "::icon"}]}
+                                            {:text "llm" :values ["call"]}]
+                                     :selected "git.1"}])
+                           {}))
+            tv (do (e find-class-src) (e "kmetfind . Treeview"))]
+        (t/is (seq tv) "the treeview is in the window")
+        (t/is (= "git r2" (e (str tv " children {}")))
+              "the hierarchy has two roots, with the ids kmet defaulted")
+        (t/is (= "git.1" (e (str tv " children git")))
+              "the child nests under its parent's id")
+        (t/is (= "1" (e (str tv " item git -open"))) "a row's :open is Tk's own")
+        (t/is (= "done" (e (str tv " item git -tags"))))
+        (t/is (= "1" (e (str tv " tag has done git")))
+              "the tag reaches the row that names it")
+        (t/is (= "0" (e (str tv " tag has done r2"))))
+        (t/is (str/includes? (e (str tv " tag configure done")) "#888888")
+              "and Tk holds the style the app gave it")
+        (t/is (str/includes? (e (str tv " tag configure done")) "bold")
+              "including the font its font props built")
+        (t/is (= "::icon" (e (str tv " item git.1 -image"))) "a row image is Tk's own")
+        (t/is (= "tree headings" (e (str tv " cget -show"))))
+        (t/is (= "180" (e (str tv " column #0 -width")))
+              "the tree column is configured like any other")
+        (t/is (= "kind" (e (str tv " cget -columns")))
+              "and is not one of Tk's -columns")
+        (t/is (= "git.1" (e (str tv " selection"))) "a nested row is selected by id")
+        (binding [tk/*adapter* a] (engine/dispose-component (:root h))))
+      (finally
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))
+
 (t/deftest install-leaves-tk-loaded-for-a-non-mounting-caller
   ;; kmet.tk.ttk.style scripts ttk::style between install! and mount, so
   ;; install! must load Tk itself instead of leaving it to the first mount.

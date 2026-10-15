@@ -27,7 +27,22 @@ widget owns — a file or base64 data with `:format`, and the photo-only
 embed one. The image is created (`image create photo`/`bitmap`), cached per
 widget and description, and deleted with the widget; a name the app owns is
 never touched. Item vocabularies outside the tag specs — a menu item's
-`-image`, a treeview row's — are not props.
+`-image` — are not props.
+
+`:ttk/treeview` is a table *and* a tree: a row is a vector of cells or a
+map with Tk's own item options — `:text` (the tree column), `:values`,
+`:tags`, `:open`, `:image` — plus `:id` and `:children`, which nest under
+the row's id (default ids extend to `<parent>.1`, … below the top level's
+`r1`, `r2`, …). The widget's `:tags` map configures Tk's row tags
+(`tag configure`), so colours, a font and a row image reach the rows
+naming them in their own `:tags`; `{:id "#0"}` is Tk's tree column —
+configured with `heading #0`/`column #0`, kept out of `-columns` — and
+`:show [:tree :headings]` asks Tk for it, where the tag's own default is
+`:headings`. Tk's `delete` is recursive, so a `:rows` change rebuilds the
+whole hierarchy and clears Tk's selection: `:selected` is applied again to
+the ids the new rows still have (a stale id is dropped, not a render
+failure), and `:open` is part of a row's own data (`tag bind` and
+`item move` are not exposed).
 
 Tk's native dialogs are `kmet.tk.core` functions: `message-box!`,
 `open-file!`, `save-file!`, `choose-directory!` and `choose-color!` script
@@ -136,10 +151,6 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
 ## 1. Data a tag cannot express
 
-- **The treeview's tree mode.** Rows are flat. A hierarchy needs a row's
-  `:children`, the `#0` column (`:show :tree`), `item open`/`move`, and
-  per-row `:tags` for colours and fonts and `:image` for a row icon (an
-  app's tool-call tree).
 - **Canvas item identity.** `:items` is redrawn wholesale when it changes.
   An interactive canvas needs per-item ids, `itemconfigure` for an update,
   `item bind` (an `:on-item-click`) and item tags to address a group.

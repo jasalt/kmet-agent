@@ -40,7 +40,8 @@
 
 (defn- columns
   "PROPS' :columns as [{:id :heading :width :anchor :stretch}]: a bare
-   keyword is a column named by it, and its heading defaults to its name."
+   keyword is a column named by it, and its heading defaults to its name.
+   The tree column is {:id \"#0\"} — the one a hierarchy indents in."
   [props]
   (mapv (fn [c]
           (let [spec (if (map? c) c {:id c})]
@@ -50,6 +51,12 @@
              :anchor (:anchor spec)
              :stretch (:stretch spec)}))
         (:columns props)))
+
+(defn- data-column-ids
+  "The data columns among COLUMNS: Tk's -columns, which must not name the
+   tree column (#0)."
+  [columns]
+  (into [] (comp (remove #(= "#0" (:id %))) (map :id)) columns))
 
 (defn- headings!
   "Configure tree W's headings and column widths from PROPS' :columns."
@@ -63,28 +70,105 @@
                       (when (some? stretch)
                         (str " -stretch " (dsl/tcl-word stretch))))))))
 
-(defn- tree-rows!
-  "Replace tree W's rows with PROPS' :rows: each row a vector of cells, or a
-   map with :id and :values (ids default to r1, r2, …)."
+(def ^:private tree-tag-options
+  "The ttk::treeview tag options a row tag's style map may set. A tag's font
+   comes from the widget's font props, not a raw -font."
+  #{:foreground :background :image})
+
+(defn- tag-font
+  "STYLE's font over the tree's own font, as the Tcl description a tag
+   configures — or nil when the style names no font prop."
+  [props style]
+  (when-some [f (not-empty (select-keys style opt/font-props))]
+    (dsl/font-spec (dsl/resolve-base-font (merge props f)) f)))
+
+(defn- tag-options
+  "The `tag configure` options for tree W's tag STYLE: the tag's own Tcl
+   options, :image resolved to the image it names, plus the font its font
+   props build over the tree's own."
+  [w props style]
+  (let [font (tag-font props style)]
+    (cond-> (select-keys style tree-tag-options)
+      (:image style) (update :image #(dsl/image-name w :image %))
+      font (assoc :font font))))
+
+(defn- tree-tags!
+  "Configure tree W's row tags from PROPS' :tags — {tag {:foreground …}} —
+   through Tk's `tag configure`, so the rows naming a tag in their own
+   :tags take its style: colours, font, row image."
   [w props]
-  (dsl/eval! (str (:path w) " delete [" (:path w) " children {}]"))
-  (doseq [[i row] (map-indexed vector (or (:rows props) []))
-          :let [cells (if (map? row) (:values row) row)
-                id (str (if (map? row) (or (:id row) (str "r" (inc i))) (str "r" (inc i))))]]
-    (dsl/eval! (str (:path w) " insert {} end -id " (dsl/tcl-quote id)
-                    (when (seq cells)
-                      (str " -values {" (str/join " " (map dsl/tcl-quote cells)) "}"))))))
+  (doseq [[tag style] (:tags props)]
+    (when-some [unknown (seq (remove #(or (contains? tree-tag-options %)
+                                          (contains? opt/font-props %))
+                                     (keys style)))]
+      (throw (ex-info (str "kmet.tk.core: unknown row tag options "
+                           (pr-str (vec unknown)) " (tag " tag ") — a treeview"
+                           " tag takes :foreground, :background, :image and the"
+                           " font props")
+                      {:type :kmet.tk.core/unknown-tag-option
+                       :tag (:tag w) :row-tag tag :options (vec unknown)})))
+    (when-let [opts (seq (tag-options w props style))]
+      (dsl/eval! (str (:path w) " tag configure " (dsl/tcl-quote (name tag)) " "
+                      (str/join " " (for [[k v] (sort-by (comp name key) opts)]
+                                      (str "-" (name k) " "
+                                           (dsl/tcl-quote (dsl/tcl-word v))))))))))
+
+(defn- insert-rows!
+  "Insert ROWS under the Tcl item PARENT ({} for the roots) into tree W, ids
+   defaulting to r1, r2, … at the top level and to <parent>.<n> below it,
+   each row's own :children after the row — Tk nests by parent. Returns
+   every id it inserted."
+  [w parent prefix rows]
+  (into []
+        (mapcat (fn [[i row]]
+                  (let [m (if (map? row) row {})
+                        cells (if (map? row) (:values row) row)
+                        id (str (or (:id m)
+                                    (if (str/blank? prefix)
+                                      (str "r" (inc i))
+                                      (str prefix (inc i)))))]
+                    (dsl/eval! (str (:path w) " insert " parent " end -id " (dsl/tcl-quote id)
+                                    (when-let [t (:text m)]
+                                      (str " -text " (dsl/tcl-quote (dsl/tcl-word t))))
+                                    (when (seq cells)
+                                      (str " -values " (dsl/tcl-quote (dsl/tcl-list cells))))
+                                    (when (seq (:tags m))
+                                      (str " -tags " (dsl/tcl-quote (dsl/tcl-list (:tags m)))))
+                                    (when (some? (:open m))
+                                      (str " -open " (dsl/tcl-word (:open m))))
+                                    (when-let [img (:image m)]
+                                      (str " -image " (dsl/tcl-quote (dsl/image-name w :image img))))))
+                    (into [id] (insert-rows! w (dsl/tcl-quote id) (str id ".") (:children m))))))
+        (map-indexed vector (or rows []))))
+
+(defn- selection-ids
+  "PROPS' :selected as a vector of ids (none when nil)."
+  [props]
+  (let [s (:selected props)]
+    (cond (sequential? s) (vec s)
+          (some? s) [s]
+          :else [])))
 
 (defn- tree-selection!
   "Select PROPS' :selected rows in tree W (one id, several, or nil to
    clear)."
   [w props]
   (dsl/eval! (str (:path w) " selection remove [" (:path w) " selection]"))
-  (let [ids (if (sequential? (:selected props)) (:selected props)
-                (when (some? (:selected props)) [(:selected props)]))]
-    (when (seq ids)
-      (dsl/eval! (str (:path w) " selection set "
-                      (str/join " " (map dsl/tcl-quote ids)))))))
+  (when-let [ids (seq (selection-ids props))]
+    (dsl/eval! (str (:path w) " selection set "
+                    (str/join " " (map dsl/tcl-quote ids))))))
+
+(defn- tree-rows!
+  "Replace tree W's rows with PROPS' :rows: a vector of cells, or a map with
+   :text (the tree column), :values, :id, :tags, :open, :image and
+   :children, which nest. Tk's delete is recursive, so a rows change
+   rebuilds the whole hierarchy and clears Tk's selection: the part of
+   :selected the new rows still have is selected again — an id that is gone
+   is dropped, not a render failure."
+  [w props]
+  (dsl/eval! (str (:path w) " delete [" (:path w) " children {}]"))
+  (let [ids (set (insert-rows! w "{}" "" (:rows props)))]
+    (tree-selection! w (assoc props :selected (filterv ids (selection-ids props))))))
 
 (defn- notebook-selected!
   "Select PROPS' :selected tab in notebook W."
@@ -236,11 +320,12 @@
                                                [:height :selectmode :show :rowheight
                                                 :headingheight :striped])
                      :fixed (fn [props]
-                              (let [cols (columns props)]
+                              (let [cols (data-column-ids (columns props))]
                                 (merge {:show :headings}
                                        (when (seq cols)
-                                         {:columns (str/join " " (map :id cols))}))))
+                                         {:columns (str/join " " cols)}))))
                      :bindings {:on-select {:event "<<TreeviewSelect>>" :value :ids}}
                      :commands {:rows tree-rows!
+                                :tags tree-tags!
                                 :selected tree-selection!}
                      :after headings!})})

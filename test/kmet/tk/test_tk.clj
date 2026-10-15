@@ -775,8 +775,8 @@
             "the column ids become Tk's -columns")
       (t/is (some #(re-find #"heading name -text Name" %) (scripts rec)))
       (t/is (some #(re-find #"column name -width 120" %) (scripts rec)))
-      (t/is (some #(re-find #"insert \{\} end -id r1 -values \{a 1\}" %) (scripts rec)))
-      (t/is (some #(re-find #"insert \{\} end -id r2 -values \{b 2\}" %) (scripts rec)))
+      (t/is (some #(re-find #"insert \{\} end -id r1 -values a\\ 1" %) (scripts rec)))
+      (t/is (some #(re-find #"insert \{\} end -id r2 -values b\\ 2" %) (scripts rec)))
       (t/is (some #(re-find #"selection set r1" %) (scripts rec)))
       (reset! rows [["c" "3"]])
       (rerender! m)
@@ -784,6 +784,62 @@
             "a rows change rebuilds the rows, not the widget")
       (t/is (zero? (count (scripts-like rec #"^destroy "))))
       (engine/dispose-component (:root m)))))
+
+(t/deftest a-treeview-grows-a-hierarchy-with-row-tags
+  (with-fake [rec nil]
+    (let [rows (atom [{:id "git" :text "git" :values ["shell"] :open true
+                       :tags ["done"]
+                       :children [{:text "status" :values ["read"] :image "::icon"}]}
+                      {:text "llm" :values ["call"]}])
+          m (mounted (fn [_] [:ttk/treeview {:columns [{:id "#0" :heading "Tool" :width 200}
+                                                       {:id :kind :heading "Kind"}]
+                                             :show [:tree :headings]
+                                             :font-family "Courier New" :font-size 11
+                                             :tags {"done" {:foreground "#888888" :bold true}}
+                                             :selected "git"
+                                             :rows @rows}]))]
+      (t/is (some #(re-find #"ttk::treeview \S+ -columns kind" %) (scripts rec))
+            "only the data columns go to Tk's -columns")
+      (t/is (some #(re-find #"heading #0 -text Tool" %) (scripts rec))
+            "the tree column is addressed like any other")
+      (t/is (some #(re-find #"column #0 -width 200" %) (scripts rec)))
+      (t/is (some #(re-find #"-show tree\\ headings" %) (scripts rec))
+            "a hierarchy asks for Tk's own -show")
+      (t/is (some #(str/includes? % (str "tag configure done -font \\{\\{Courier\\ New\\}\\ 11\\ bold\\}"
+                                         " -foreground \\#888888"))
+                  (scripts rec))
+            "a row tag takes Tk's tag options, its font built like a widget's")
+      (t/is (some #(re-find #"insert \{\} end -id git -text git -values shell -tags done -open 1" %)
+                  (scripts rec))
+            "a row map scripts Tk's own item options")
+      (t/is (some #(re-find #"insert git end -id git\.1 -text status -values read -image ::icon" %)
+                  (scripts rec))
+            "its :children insert under it, defaulting their ids under its own")
+      (t/is (some #(re-find #"insert \{\} end -id r2 -text llm -values call" %) (scripts rec))
+            "a top-level id still defaults to r<n>")
+      (let [sets (count (scripts-like rec #"selection set git"))]
+        (t/is (pos? sets) "the mount selects the row the app named")
+        (reset! rows [{:id "git" :text "git" :values ["shell"]}])
+        (rerender! m)
+        (t/is (some #(re-find #"delete \[\S+ children \{\}\]" %) (scripts rec)))
+        (t/is (zero? (count (scripts-like rec #"^destroy ")))
+              "a rows change rebuilds the hierarchy, not the widget")
+        (t/is (= (inc sets) (count (scripts-like rec #"selection set git")))
+              "and selects the still-selected row again — the rebuild cleared Tk's")
+        (reset! rows [{:text "other"}])
+        (rerender! m)
+        (t/is (= (inc sets) (count (scripts-like rec #"selection set git")))
+              "an id the new rows no longer have is dropped, not an error"))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest an-unknown-row-tag-option-is-an-error
+  (with-fake [_ nil]
+    (let [e (try (mounted [:ttk/frame {} [:ttk/treeview {:tags {"done" {:colour "#888888"}}}]])
+                 nil
+                 (catch Exception e e))]
+      (t/is (= :kmet.tk.core/unknown-tag-option (:type (ex-data e))))
+      (t/is (= [:colour] (:options (ex-data e))))
+      (t/is (str/includes? (ex-message e) ":colour")))))
 
 (t/deftest a-notebook-adds-tabs-and-a-panedwindow-panes
   (with-fake [rec nil]

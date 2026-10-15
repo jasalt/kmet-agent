@@ -135,9 +135,10 @@ Three shapes of tag, on top of the plain leaves:
   widget's own subcommands — patchable, and never an option.
 - **Data widgets** take their content as props rather than children:
   `:tk/listbox` `:items`/`:selected`, `:ttk/treeview` `:columns`/`:rows`/
-  `:selected`, `:tk/canvas` `:items` (each a `{:type :line :coords [x y …]}`
-  map plus that item's own canvas options), `:tk/menu`/`:tk/menubutton`/
-  `:ttk/menubutton` `:items`, `:ttk/combobox`/`:ttk/spinbox` `:values`.
+  `:tags`/`:selected`, `:tk/canvas` `:items` (each a `{:type :line
+  :coords [x y …]}` map plus that item's own canvas options),
+  `:tk/menu`/`:tk/menubutton`/`:ttk/menubutton` `:items`,
+  `:ttk/combobox`/`:ttk/spinbox` `:values`.
 - **Containers** place their children themselves: `:ttk/notebook` adds
   each child as a tab (the child's `:tab` names it, `:selected` picks one),
   `:ttk/panedwindow` as a pane (the child's `:weight`), `:tk/panedwindow`
@@ -153,6 +154,27 @@ also the only state a classic Tk checkbutton can be read from (it has
 `select`/`deselect` and no query). A radiobutton compares that variable
 against its own `:value`, so `:active` on each button is what makes a
 group exclusive.
+
+The `:ttk/treeview` tag is both a flat table and a tree. A row is a vector
+of cells or a map of Tk's own item options — `:text` (the tree column),
+`:values` (the data columns), `:tags`, `:open`, `:image` — plus `:id` and
+`:children`, which nest under the row's id; ids default to `r1, r2, …` at
+the top level and to `<parent>.1, …` below it, so a row can be addressed
+without being named. Tk's `delete` is recursive, so a `:rows` change
+rebuilds the whole hierarchy and clears Tk's selection — which is why
+`:selected` is applied again to the ids the new rows still have (an id
+that is gone is dropped rather than failing the render), and `:open` is
+part of a row's own data. `{:id "#0"}` in `:columns` is Tk's
+tree column — the one a hierarchy indents in — configured with
+`heading #0`/`column #0` and kept out of `-columns`; `:show
+[:tree :headings]` asks Tk for it, where the tag's own default is
+`:headings` (a flat table). `:tags {tag {:foreground … :background …
+:image …}}` configures Tk's row tags (`tag configure`), which the rows
+naming them in their own `:tags` take; a tag's font is built from the font
+props like a widget's own, so `:bold`/`:font-family` work there. Tk's
+`tag bind` and `item move` are not exposed: a row click is the widget's
+`:on-select`, and a re-render rebuilds rather than reorders (the row
+vector's order is the tree's).
 
 The classic specs are `kmet.tk.core`'s `classic-specs`, the themed ones
 `kmet.tk.ttk/specs`; `kmet.tk.core` completes both through
@@ -539,10 +561,11 @@ smoke-tests the real interpreter: eval, the command trampoline,
 pair with the interpreter's own patchlevel, the image layer — real
 photos from data, sized and deleted with their widget — the dialogs,
 answered by stand-in procs that check the emitted option words (a
-`-filetypes` list above all) with no user involved, and the editable
+`-filetypes` list above all) with no user involved, the editable
 text, typed into with real key events: its value round-trips through
 Tcl's parser, Return submits without a newline, and undo takes back the
-typed key alone.
+typed key alone, and a treeview's hierarchy, row tags and tree column
+read back out of the widget.
 
 `scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
 the interpreter's widget classes and their options and diffs them against
@@ -567,8 +590,8 @@ ones still missing, and `scripts/tk_option_audit.clj` reports both sides
 against a live Tk. kmet's own widgets are the `:ui/…` set in
 `kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container).
 
-The first cuts that remain — the treeview's flat tables, canvas items
-without identity, checkable menu items, and everything Tk offers beside
+The first cuts that remain — canvas items without identity, checkable or
+imaged menu items, a right-click popup, and everything Tk offers beside
 its widgets (`grid`/`place`, window management, the clipboard, variables) —
 are tracked in [`tcl.md`](../../tcl.md) at the repository root, which lists
 each gap with what closing it needs and how the two guards below keep the
