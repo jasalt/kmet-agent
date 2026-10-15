@@ -182,8 +182,8 @@
   (println "Options:")
   (println "  -d, --debug           Log to debug.log")
   (println "  -p, --print           Print response and exit (non-interactive)")
-  (println "  --mode <format>       Non-interactive mode: text (default) or edn print
-                        output; rpc starts the EDN stdio protocol (long-lived)")
+  (println "  --mode <mode>         Non-interactive mode: rpc (EDN stdio protocol), or
+                        print output text (default)/edn")
   (println "  -c, --continue        Continue most recent session")
   (println "  -r, --resume          Browse sessions")
   (println "  --session <id|path>   Resume session by id/prefix or file path")
@@ -210,7 +210,7 @@
   (println "Examples:")
   (println "  kmet                    Start interactive TUI")
   (println "  kmet -p \"list files\"    Print response and exit")
-  (println "  kmet --mode rpc      Serve the EDN stdin/stdout protocol")
+  (println "  kmet --mode rpc         Serve the EDN stdin/stdout protocol")
   (println "  kmet --model deepseek-v4-flash  Start with a specific model")
   (println "  kmet @tasks.md         Start with file content")
   (println "  kmet install ./extensions/my-ext   Install a package"))

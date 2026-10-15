@@ -129,10 +129,14 @@
     (failed :prompt "prompt requires a non-empty :message string")))
 
 (defn- command-abort
-  "Cancel the in-flight run and wait (bounded) for the session to become
-   idle before responding (pi: abort)."
+  "Cancel the in-flight run or compaction and wait (bounded) for the
+   session to become idle before responding (pi: abort). An idle abort is a
+   no-op: cancel! would still drop queued messages and emit an :aborted
+   queue-update even with nothing to cancel."
   [engine _]
-  (runtime/cancel! engine)
+  (when (or (runtime/turn-running? engine)
+            @(:compacting? (runtime/agent-state engine)))
+    (runtime/cancel! engine))
   (ok :abort {:idle (runtime/wait-idle! engine)}))
 
 (defn- command-clear-queue

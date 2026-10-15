@@ -139,3 +139,33 @@
                (str (fs/canonicalize (rt/find-recent-session dir cwd))))
             "the most recent session for the cwd is found"))
       (finally (fs/delete-tree dir)))))
+
+(deftest test-resolve-run-session-policy
+  (let [dir (str "target/test-session-runtime-resolve-" (System/currentTimeMillis))
+        config {:provider :opencode-go :model "deepseek-v4-flash" :session-dir dir}]
+    (try
+      (let [fresh (rt/resolve-run-session config {})]
+        (is (some? (:file fresh)) "a fresh session is created in the cwd dir")
+        ;; sessions reach disk on their first entry (create-session is lazy),
+        ;; and --continue/--session search the files
+        (session/append-entry fresh {:role :assistant :content "prior"})
+        (is (= (:id fresh) (:id (rt/resolve-run-session config {:continue true})))
+            "--continue finds the most recent session for the cwd")
+        (is (= (:id fresh)
+               (:id (rt/resolve-run-session config {:session (subs (:id fresh) 0 8)})))
+            "--session takes an id prefix"))
+      (is (nil? (rt/resolve-run-session config {:session "no-such-session"}))
+          "--session matching nothing resolves to nil (the caller reports it)")
+      (finally (fs/delete-tree dir)))))
+
+(deftest test-wait-idle
+  (with-engine
+    (fn [engine _]
+      (is (true? (rt/wait-idle! engine 100)) "an idle engine is idle immediately")
+      (reset! (:turn-running? engine) true)
+      (is (false? (rt/wait-idle! engine 30)) "a stuck turn times out")
+      (reset! (:turn-running? engine) false)
+      (reset! (:compacting? (rt/agent-state engine)) true)
+      (is (false? (rt/wait-idle! engine 30)) "a stuck compaction times out")
+      (reset! (:compacting? (rt/agent-state engine)) false)
+      (is (true? (rt/wait-idle! engine 100)) "idle again after both clear"))))

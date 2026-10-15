@@ -232,8 +232,20 @@
              (first records))))))
 
 (deftest test-abort-when-idle-is-a-no-op
-  (let [[_ records] (run-lines [{:type :abort :id 1}])]
-    (is (= {:idle true} (:data (first (responses records)))))))
+  (testing "an idle abort leaves the queues alone and emits no :aborted
+            queue-update (cancel! would do both, having nothing to cancel)"
+    (let [[_ records] (run-lines [{:type :steer :id 1 :message "keep me"}
+                                  {:type :abort :id 2}
+                                  {:type :clear-queue :id 3}])
+          [steered aborted cleared] (responses records)]
+      (is (= {:disposition :queued} (:data steered)))
+      (is (= {:idle true} (:data aborted)))
+      (is (= {:steering ["keep me"] :follow-up []} (:data cleared))
+          "the queued message survived the idle abort")
+      (is (empty? (filter #(and (= :queue-update (:type %))
+                                (= :aborted (:reason %)))
+                          records))
+          "no spurious aborted queue-update"))))
 
 (deftest test-trailing-content-is-a-parse-error
   (testing "a line must be exactly one EDN form (JSON.parse parity)"
