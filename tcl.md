@@ -37,6 +37,26 @@ which only Tcl can split out of the list Tk returns). They block in Tcl's
 nested event loop, so they must run on the Tk thread: call one from a
 callback, not from a component body, which renders inside the pump.
 
+ttk styles and themes are wired: `kmet.tk.ttk.style` is the style database
+(`use-theme!`, `define-style!`, `map-style!`, `apply!`) and
+`kmet.app.ui.gui.style` compiles the TUI theme + the transcript palette
+into a dark style set, which `scripts/gui_tk_session.clj` applies after
+`tcl/install!`. Re-applying the set when the *user* changes the theme is
+app work (the GUI app is not ported), so it is deliberately not tracked
+here.
+
+`:tk/text` is both the display surface and the backend's multi-line input.
+`:editable true` keeps `-state normal`, turns Tk's undo on, takes `:text`
+as the widget's value (read back with `get 1.0 end-1c` and written only
+when it differs, so mirroring `:on-change` into `:text` never moves the
+caret; a write resets the undo history, so undo covers only the user's own
+edits) and binds `:on-change` (`<KeyRelease>`: typing, a paste and an undo
+all end in one) and `:on-submit` (`<Return>`, ending in `break` so Tk's
+class binding does not also insert a newline). `:content` is refused on an
+editable text. A composer on top of it (`:ui/composer`: content-sized
+height, focus on mount, the TUI editor's history) is app work and is not
+tracked here, like the runtime theme switch.
+
 kmet's own widgets are not part of those sets: they are `:ui/…` tags in
 `kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container), added to
 the backend through `kmet.tk.core/mount-backend!`/`run-backend!`.
@@ -115,23 +135,7 @@ So a kmet tree that stays inside the 8.6 option set runs unchanged on
 8.6/9.0/9.1; a Tk 9 prop fails loudly at the first widget of its tag on an
 older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
-## 1. Visible in a themed app
-
-- **ttk styles and themes.** Wired for the GUI surfaces: the database layer
-  is `kmet.tk.ttk.style` (`use-theme!`, `define-style!`, `map-style!`,
-  `apply!`) and `kmet.app.ui.gui.style` compiles the TUI theme + the
-  transcript palette to a dark set; `scripts/gui_tk_session.clj` applies it
-  after `tcl/install!`, so the viewer no longer follows the system theme.
-  Still open: a runtime theme switch re-applying the set (the GUI app
-  isn't ported yet).
-- **An editable text tag.** `:tk/text` owns `-state`: it is a read-only
-  display surface (`:ui/transcript` in kmet.app.ui.gui.ui hosts the embedded-window
-  chat stack). A multi-line input (a chat composer
-  with the TUI's editing keys) needs a second tag with insert/delete from
-  Clojure, marks, `edit undo` (the `:undo`/`:maxundo` props are already
-  there), a `see` target, `:on-change` and focus handling.
-
-## 2. Data a tag cannot express
+## 1. Data a tag cannot express
 
 - **The treeview's tree mode.** Rows are flat. A hierarchy needs a row's
   `:children`, the `#0` column (`:show :tree`), `item open`/`move`, and
@@ -150,7 +154,7 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 - **Layout beyond pack.** `grid` (forms: rows, columns, weights) and `place`
   (overlays) are missing, so a settings form has to be nested pack frames.
 
-## 3. Options that are not props
+## 2. Options that are not props
 
 The catalogue (`kmet.tk.options`) leaves out what a plain value cannot
 be; each group needs machinery:
@@ -171,7 +175,7 @@ be; each group needs machinery:
 - **Cross-widget**: `-menu` (covered for menubuttons and the menubar),
   `-labelwidget`.
 
-## 4. Tk beyond its widgets
+## 3. Tk beyond its widgets
 
 - **Window management.** `wm` beyond `title`/`geometry`: minimum size,
   `resizable`, `attributes` (fullscreen, topmost, alpha), `iconphoto`,
@@ -188,7 +192,7 @@ be; each group needs machinery:
   `event add`/`generate` so kmet code can publish an event others bind, and
   focus traversal/`tk_focusNext` helpers.
 
-## 5. Rendering
+## 4. Rendering
 
 - **Incremental append.** The transcript re-renders its whole stack as a
   session grows; appending a card should add one widget (`:ui/transcript`

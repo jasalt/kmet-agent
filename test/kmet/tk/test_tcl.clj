@@ -7,7 +7,7 @@
    has Tcl/Tk installed."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.tk.test-support :refer [find-class-src live-tk]]
+            [kmet.tk.test-support :refer [find-class-src live-tk rerender!]]
             [kmet.tk.core :as tk]
             [kmet.tk.options :as opt]
             [kmet.libs.hikap :as engine]))
@@ -293,6 +293,85 @@
           (t/is (= "C:/out.txt" (tk/save-file! {:title "Save"})))
           (t/is (= "/tmp" (tk/choose-directory! {:must-exist true})))
           (t/is (= "#ff5500" (tk/choose-color! {:title "Colour"})))))
+      (finally
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))
+
+(t/deftest an-editable-text-keeps-its-value-exactly
+  ;; The value goes through tcl-quote and comes back out of Tcl's own
+  ;; parser: a multi-line text whose lines carry Tcl metacharacters must
+  ;; return unchanged, Tk's trailing newline excepted.
+  (if-let [a (live-tk)]
+    (try
+      (let [e (:eval a)
+            value "one\ntwo $x [y] {z} \"q\"\\"
+            h (binding [tk/*adapter* a]
+                (tk/mount! (fn [_] [:tk/text {:editable true :text value}]) {}))
+            text (do (e find-class-src) (e "kmetfind . Text"))]
+        (t/is (= value (e (str text " get 1.0 end-1c")))
+              "the value round-trips through the Tcl parser unchanged")
+        (t/is (= (str value "\n") (e (str text " get 1.0 end")))
+              "Tk's own trailing newline is the only thing added")
+        (binding [tk/*adapter* a] (engine/dispose-component (:root h))))
+      (finally
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))
+
+(t/deftest an-editable-text-types-submits-and-undoes
+  ;; A real text widget driven through its own bindings: a typed key reaches
+  ;; :on-change with the value read back, Return runs :on-submit without Tk's
+  ;; class binding also inserting a newline, `edit undo` takes back the typed
+  ;; key alone (a value the app wrote is not an undo step, so clearing a sent
+  ;; composer cannot be undone back), and a re-render that passes the text
+  ;; the widget already holds writes nothing. mount! is what registers the
+  ;; kmet::cb command the bound scripts dispatch through.
+  (if-let [a (live-tk)]
+    (try
+      (let [e (:eval a)
+            value (atom "hi")
+            typed (atom [])
+            submitted (atom [])
+            ;; the Shift-Enter recipe: a 0-arity no-op chord that suppresses
+            ;; the <Return> slot and lets Tk's own binding insert the line
+            no-op (fn [] nil)
+            h (binding [tk/*adapter* a]
+                (tk/mount! (fn [_] [:tk/text {:editable true :text @value
+                                              :on-change (fn [v] (swap! typed conj v))
+                                              :on-submit (fn [v] (swap! submitted conj v))
+                                              :bind {"shift+enter" no-op}}])
+                           {}))
+            text (do (e find-class-src) (e "kmetfind . Text"))]
+        (t/is (seq text) "the editable text is in the window")
+        (t/is (= "normal" (e (str text " cget -state")))
+              "an editable text stays editable")
+        (t/is (= "1" (e (str text " cget -undo"))) "and it can undo")
+        (t/is (= "hi" (e (str text " get 1.0 end-1c"))) "the value is its text")
+        (e (str "focus -force " text))
+        (e "update")
+        (e (str "event generate " text " <KeyPress-a> -when tail"))
+        (e (str "event generate " text " <KeyRelease-a> -when tail"))
+        (e "update")
+        (t/is (= ["hia"] @typed) ":on-change read the text the key had inserted")
+        (e (str text " mark set insert 1.1"))
+        (reset! value "hia")
+        (binding [tk/*adapter* a] (rerender! h))
+        (t/is (= "1.1" (e (str text " index insert")))
+              "the value the widget already holds is not rewritten")
+        (e (str "event generate " text " <Return> -when tail"))
+        (e "update")
+        (t/is (= ["hia"] @submitted) ":on-submit handed the text over")
+        (t/is (= "hia" (e (str text " get 1.0 end-1c")))
+              "Return did not also insert a newline (the slot ends in break)")
+        (e (str text " edit undo"))
+        (t/is (= "hi" (e (str text " get 1.0 end-1c"))) "the typed key undoes")
+        (t/is (= "0" (e (str text " edit canundo")))
+              "and the app's own value write is not an undo step")
+        (e (str "event generate " text " <Shift-Return> -when tail"))
+        (e "update")
+        (t/is (= ["hia"] @submitted) "Shift-Return does not submit")
+        (t/is (= "hi\n" (e (str text " get 1.0 end-1c")))
+              "the more specific chord lets Tk insert the newline instead")
+        (binding [tk/*adapter* a] (engine/dispose-component (:root h))))
       (finally
         ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))

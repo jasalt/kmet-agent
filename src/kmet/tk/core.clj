@@ -212,11 +212,18 @@
    (dsl/widget-spec "text"
                     {:options text-options
                      :fixed (fn [props]
-                              {:wrap :word :height 10 :width 80
-                               :borderwidth 0 :highlightthickness 0
-                               :font (dsl/font-spec (dsl/resolve-base-font props) {})})
-                     :commands {:content dsl/set-text-content!
-                                :text dsl/set-text-content!}
+                              (cond-> {:wrap :word :height 10 :width 80
+                                       :borderwidth 0 :highlightthickness 0
+                                       :font (dsl/font-spec (dsl/resolve-base-font props) {})}
+                                ;; an editor needs Tk's undo, which is off by
+                                ;; default
+                                (:editable props) (assoc :undo true)))
+                     ;; (:editable true) makes it an input: :text is its value
+                     ;; and -state stays normal, where a display surface
+                     ;; renders :text/:content segments and disables itself
+                     :commands {:content dsl/set-text!
+                                :text dsl/set-text!}
+                     :bindings dsl/text-bindings
                      :after maybe-scrollbar!})
 
    :tk/button

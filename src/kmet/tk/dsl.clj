@@ -141,6 +141,14 @@
   {:on-change {:event "<KeyRelease>" :value :text}
    :on-submit {:event "<Return>" :value :text}})
 
+(def text-bindings
+  "An editable text's slots: :on-change while typing (a paste or an undo is
+   a key release too) and :on-submit on Return, which ends in `break` so
+   Tk's class binding does not also insert a newline. Both read the
+   widget's own text with :body."
+  {:on-change {:event "<KeyRelease>" :value :body}
+   :on-submit {:event "<Return>" :value :body :stop true}})
+
 (def spinbox-bindings
   "A spinbox's text-field slots plus :on-spin, Tk's -command, which fires
    when the arrows (not the keyboard) change the value."
@@ -175,6 +183,9 @@
    handed it; the list kinds expand ({*}) so the handler gets one argument
    per selected item."
   {:text      {:fragment #(str "[" % " get]")}
+   ;; a multi-line widget's whole text: Tk keeps a newline of its own at the
+   ;; end, which end-1c drops
+   :body      {:fragment #(str "[" % " get 1.0 end-1c]")}
    :number    {:args #(vector (as-number (first %)))}
    :index     {:fragment #(str "{*}[" % " curselection]")
                :args #(vector (mapv (fn [i] (or (parse-long i) i)) %))}
@@ -200,11 +211,15 @@
 (defn- bind-slot!
   "Point W's SLOT at F (nil unbinds), through the slot spec's Tcl -OPTION
    or EVENT. The value fragment sits inside the bound script, so Tcl
-   evaluates it when the event fires, not at bind time."
-  [w slot {:keys [event option value arg]} f]
+   evaluates it when the event fires, not at bind time. :stop closes the
+   script with `break`, which keeps Tk's class binding from running too —
+   the Return slot of an editable text must not insert a newline."
+  [w slot {:keys [event option value arg stop]} f]
   (let [callback (set-callback! w slot f value arg)
         script (when (some? callback)
-                 (str callback (when-let [frag (value-fragment w value)] (str " " frag))))
+                 (str callback
+                      (when-let [frag (value-fragment w value)] (str " " frag))
+                      (when stop "; break")))
         body (str "{" (or script "") "}")]
     (if option
       (eval! (str (:path w) " configure -" (name option) " " body))
@@ -809,6 +824,39 @@
       (eval! script))
     (fit-height! w props (map :text segs))
     (eval! (str (:path w) " configure -state disabled"))))
+
+(defn set-text-value!
+  "Set W's editable text from PROPS' :text, leaving it editable and the
+   caret in view. The value is the widget's own text — Tk's trailing
+   newline is not part of it — so it is read back and compared here rather
+   than in Tcl: a re-render that mirrors :on-change into :text writes
+   nothing and never moves the cursor, and a write that does happen resets
+   the undo history, so undo takes back the user's edits and not the app's
+   (a cleared composer cannot be undone back)."
+  [w props]
+  (let [p (:path w)
+        value (str (or (:text props) ""))]
+    (when (not= value (eval! (str p " get 1.0 end-1c")))
+      (eval! (str p " delete 1.0 end"))
+      (eval! (str p " insert 1.0 " (tcl-quote value)))
+      (eval! (str p " edit reset"))
+      (eval! (str p " see insert")))))
+
+(defn set-text!
+  "Set W's text from PROPS: an editable text takes :text as its value
+   (set-text-value!), a read-only one renders :text/:content as display
+   segments (set-text-content!)."
+  [w props]
+  (let [editable? (:editable props)]
+    (cond
+      (and editable? (some? (:content props)))
+      (throw (ex-info (str "kmet.tk.core: an editable text takes :text, not"
+                           " :content (segments are a display path)")
+                      {:type :kmet.tk.core/editable-with-content
+                       :tag (:tag w) :prop :content}))
+
+      editable? (set-text-value! w props)
+      :else (set-text-content! w props))))
 
 (defn attach-scrollbar!
   "Give W a vertical ttk scrollbar wired both ways, packed as W's sibling

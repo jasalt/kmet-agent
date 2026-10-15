@@ -417,10 +417,42 @@ segments:
 Each distinct style gets one generated Tk tag, cached on the widget;
 bold/italic picks one of four named mono fonts derived from Tk's
 `TkFixedFont` (`:font-family`/`:font-size` override) and disposal deletes
-them. `:scrollbar true` adds a wired vertical `ttk::scrollbar`. The widget
-is left `-state disabled` (selectable, not editable); with a wrapping mode
-its `-height` follows the wrapped content when a line exceeds the widget
-width. `:fill`/`:expand` control packing for any tag, not just `:tk/text`.
+them. `:scrollbar true` adds a wired vertical `ttk::scrollbar`. A display
+text is left `-state disabled` (selectable, not editable); with a wrapping
+mode its `-height` follows the wrapped content when a line exceeds the
+widget width. `:fill`/`:expand` control packing for any tag, not just
+`:tk/text`.
+
+### An editable text (`:editable true`)
+
+The same tag is the backend's multi-line input — a chat composer is one:
+
+```clojure
+[:tk/text {:editable true :text @draft :height 3 :wrap :word
+           :on-change (fn [text] (reset! draft text))
+           :on-submit (fn [text] (send! text))}]
+```
+
+* `:text` is the widget's *value* here: it is read back (`get 1.0 end-1c`
+  — Tk's own trailing newline is not part of it) and written only when it
+  differs, so an app that mirrors `:on-change` into `:text` never moves the
+  caret; a write resets the undo history, so `edit undo` covers the user's
+  own edits and a cleared composer cannot be undone back.
+* `:on-change` fires on `<KeyRelease>` — typing, a Ctrl+V paste and an
+  `edit undo` all end in one — and hands the text over.
+* `:on-submit` fires on `<Return>` and its binding ends in `break`, so
+  Tk's class binding does not also insert a newline. Tk matches `<Return>`
+  for `<Shift-Return>` too, so a Shift-Enter newline needs that chord
+  bound as well — `:bind {"shift+enter" no-op}`, where the handler takes
+  no arguments (`:bind` slots hand over no value) — which wins as the more
+  specific pattern and lets Tk insert the line.
+* `:content` (styled segments) is refused on an editable text — segments
+  are a display path, and rendering them would disable the widget.
+* An editable text keeps the `:height` it is given, where a display text
+  follows its wrapped content: sizing a composer to what it holds is the
+  app's.
+* Tk's `-undo` is turned on; `:insert*`, `:spacing*`, `:tabs` and the rest
+  of the text body are props already.
 
 ### Surfaces, borders and wrapping
 
@@ -505,9 +537,12 @@ through a real Tk when a display is there (on Termux, under jolt + Xvfb).
 smoke-tests the real interpreter: eval, the command trampoline,
 `tcl-quote` round-tripping through the Tcl parser, the recorded Tcl/Tk
 pair with the interpreter's own patchlevel, the image layer — real
-photos from data, sized and deleted with their widget — and the dialogs,
+photos from data, sized and deleted with their widget — the dialogs,
 answered by stand-in procs that check the emitted option words (a
-`-filetypes` list above all) with no user involved.
+`-filetypes` list above all) with no user involved, and the editable
+text, typed into with real key events: its value round-trips through
+Tcl's parser, Return submits without a newline, and undo takes back the
+typed key alone.
 
 `scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
 the interpreter's widget classes and their options and diffs them against
@@ -533,17 +568,17 @@ against a live Tk. kmet's own widgets are the `:ui/…` set in
 `kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container).
 
 The first cuts that remain — the treeview's flat tables, canvas items
-without identity, checkable menu items, the read-only text tags, and
-everything Tk offers beside its widgets (`grid`/`place`, window
-management, a runtime theme switch, the clipboard, variables) — are tracked
-in [`tcl.md`](../../tcl.md) at the repository root, which lists each gap
-with what closing it needs and how the two guards below keep the list
-honest.
+without identity, checkable menu items, and everything Tk offers beside
+its widgets (`grid`/`place`, window management, the clipboard, variables) —
+are tracked in [`tcl.md`](../../tcl.md) at the repository root, which lists
+each gap with what closing it needs and how the two guards below keep the
+list honest.
 The `:tk/text` tag carries the displayed content — styled segments in
-Tk tags, an optional scrollbar, generated mono fonts, wrapping — and
-`:ui/transcript` (kmet.app.ui.gui.ui) is the scroll container over it: one text
-widget whose children are embedded windows (one widget per message) with
-a sibling scrollbar and "scroll to the end" on first map.
+Tk tags, an optional scrollbar, generated mono fonts, wrapping — or, with
+`:editable true`, the app's own multi-line input; `:ui/transcript`
+(kmet.app.ui.gui.ui) is the scroll container over it: one text widget
+whose children are embedded windows (one widget per message) with a
+sibling scrollbar and "scroll to the end" on first map.
 
 `kmet.app.ui.gui.transcript` is the chat UI over it: one bordered,
 collapsible card per session message type (user, assistant, tool, custom),

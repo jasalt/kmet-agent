@@ -193,7 +193,7 @@
           "the themed entry reaches Tk's -background/-foreground")
     (t/is (= :mode (get-in (tags :ttk/progressbar) [:options :mode])))
     (t/is (not (contains? (:options (tags :tk/text)) :state))
-          "the :text tags own -state (they are read-only surfaces)")))
+          "the :text tags own -state: the tag sets it, a prop never does")))
 
 (t/deftest families-and-props-are-checked-at-load
   (t/is (thrown-with-msg? Exception #"unknown families"
@@ -229,7 +229,10 @@
     (t/is (dsl/patchable? spec {:bg "#111111"} {:bg "#222222"}))
     (t/is (dsl/patchable? spec {:width 10} {:width 20}))
     (t/is (not (dsl/patchable? spec {:side :top} {:side :left}))
-          "pack geometry is not a Tk option: a change rebuilds")))
+          "pack geometry is not a Tk option: a change rebuilds"))
+  (t/is (not (dsl/patchable? (get (:tags tk/tk-backend) :tk/text)
+                             {:editable false} {:editable true}))
+        ":editable decides how :text is applied and what the widget is: a change rebuilds"))
 
 (t/deftest options-this-tk-lacks-fail-loudly
   ;; check-options! asks the widget for its own option list, so a prop whose
@@ -908,6 +911,79 @@
       (engine/dispose-component root)
       (t/is (some #(str/includes? % (str "destroy " sb)) (scripts rec))
             "dispose destroys the sibling scrollbar"))))
+
+;; ─── an editable text (:editable true) ───────────────────────────────────
+
+(t/deftest an-editable-text-is-an-editor-not-a-display-surface
+  ;; (:editable true) keeps -state normal (Tk's default), turns Tk's undo
+  ;; on, takes :text as its value — read back first, so a value the widget
+  ;; already holds is not rewritten — and binds the text slots.
+  (let [scripts (atom [])
+        adapter {:eval (fn [s] (swap! scripts conj s) "")
+                 :command! (fn [_ _] nil)}]
+    (dsl/forget-widget-options!)
+    (binding [tk/*adapter* adapter]
+      (let [{:keys [root]} (mounted [:ttk/frame {}
+                                     [:tk/text {:editable true :text "hi"
+                                                :on-change (fn [_] nil)
+                                                :on-submit (fn [_] nil)}]])]
+        (t/is (some #(str/includes? % "-undo 1") @scripts)
+              "an editor needs undo, which Tk leaves off on its own")
+        (t/is (not-any? #(str/includes? % "-state") @scripts)
+              "an editable text is never disabled")
+        (t/is (some #(str/includes? % " get 1.0 end-1c") @scripts)
+              "the widget's own text is read first")
+        (t/is (some #(str/includes? % "delete 1.0 end") @scripts))
+        (t/is (some #(str/includes? % "insert 1.0 hi") @scripts)
+              "the value goes in as the widget's text")
+        (t/is (some #(and (str/includes? % "<KeyRelease>")
+                          (str/includes? % "get 1.0 end-1c"))
+                    @scripts)
+              ":on-change reads the value on a key release")
+        (t/is (some #(and (str/includes? % "<Return>")
+                          (str/includes? % "get 1.0 end-1c")
+                          (str/includes? % "; break"))
+                    @scripts)
+              ":on-submit hands the value over and stops Tk's own newline")
+        (engine/dispose-component root)))))
+
+(t/deftest an-editable-text-leaves-what-the-widget-holds-alone
+  ;; A re-render that mirrors :on-change back into :text writes nothing at
+  ;; all, so the caret stays where the user left it.
+  (let [scripts (atom [])
+        adapter {:eval (fn [s]
+                         (swap! scripts conj s)
+                         (if (str/includes? s " get 1.0 end-1c") "hi" ""))
+                 :command! (fn [_ _] nil)}]
+    (dsl/forget-widget-options!)
+    (binding [tk/*adapter* adapter]
+      (let [{:keys [root]} (mounted [:ttk/frame {} [:tk/text {:editable true :text "hi"}]])]
+        (t/is (some #(str/includes? % " get 1.0 end-1c") @scripts))
+        (t/is (not-any? #(str/includes? % "delete 1.0 end") @scripts)
+              "the widget already holds the value: nothing is written")
+        (engine/dispose-component root)))))
+
+(t/deftest an-editable-text-refuses-rich-content
+  ;; segments would have to disable the widget to render; fail naming the
+  ;; prop instead of quietly turning an input into a display surface.
+  (with-fake [_rec nil]
+    (let [e (try (mounted [:ttk/frame {} [:tk/text {:editable true
+                                                    :content [{:text "x"}]}]])
+                 nil
+                 (catch Exception e e))]
+      (t/is (= :kmet.tk.core/editable-with-content (:type (ex-data e))))
+      (t/is (= :content (:prop (ex-data e))))
+      (t/is (str/includes? (ex-message e) ":content")))))
+
+(t/deftest a-display-text-still-disables-itself
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {} [:tk/text {:text "hi"}]])]
+      (t/is (some #(str/includes? % " configure -state disabled") (scripts rec))
+            "without :editable the tag stays the read-only surface it was")
+      (t/is (not-any? #(str/includes? % "-undo") (scripts rec)))
+      (t/is (not-any? #(str/includes? % "<KeyRelease>") (scripts rec))
+            "the text slots are declared for both modes but bound only with a handler")
+      (engine/dispose-component root))))
 
 ;; ─── dialogs ──────────────────────────────────────────────────────────────
 
