@@ -110,8 +110,7 @@
 
 (defonce ^:private next-callback (atom 0))
 
-;; The `kmet::cb` registry: callback id -> {:handler f :value :text/:variable
-;; :arg …, :answer bool}.
+;; The `kmet::cb` registry: callback id -> {:handler f :arg … :answer bool}.
 (defonce ^:private callbacks (atom {}))
 
 (defn- register-handler!
@@ -120,8 +119,7 @@
    the handler; whatever releases the id stops it being dispatchable."
   [f {:keys [value arg answer]}]
   (let [id (swap! next-callback inc)]
-    (swap! callbacks assoc id {:handler f :value value :arg (or arg value)
-                               :answer answer})
+    (swap! callbacks assoc id {:handler f :arg (or arg value) :answer answer})
     id))
 
 (defn- release-handler!
@@ -154,10 +152,17 @@
       (str "kmet::cb " id))))
 
 (def text-field-bindings
-  "A text field's standard slots: :on-change while typing, :on-submit on
-   Return, both reading the text back."
+  "A text field's slots: :on-change while typing and :on-submit on Return
+   (both reading the text back), Tk's validation pair — :validatecommand
+   asks whether an edit is allowed with the handler's boolean, and
+   :invalidcommand reports a refusal — and the horizontal scroll command.
+   Every text-field tag has all of them; the :validate prop is the mode
+   that makes Tk ask at all."
   {:on-change {:event "<KeyRelease>" :value :text}
-   :on-submit {:event "<Return>" :value :text}})
+   :on-submit {:event "<Return>" :value :text}
+   :validatecommand {:option :validatecommand :value :validate :answer true}
+   :invalidcommand {:option :invalidcommand :value :validate}
+   :xscrollcommand {:option :xscrollcommand :arg :scroll}})
 
 (def text-bindings
   "An editable text's slots: :on-change while typing (a paste or an undo is
@@ -173,25 +178,17 @@
   (assoc text-field-bindings :on-spin {:option :command :value :text}))
 
 (def check-bindings
-  "A checkbutton's or toggleswitch's slot: it reads the widget's private
-   variable, so the handler receives the new checked state."
+  "A checkbutton's or toggleswitch's slot: it reads the widget's state
+   variable — the shared one :variable names, else the tag's private one —
+   so the handler receives the new checked state."
   {:on-toggled {:option :command :value :variable}})
 
 (def radio-bindings
-  "A radiobutton's slot: it compares the private variable with the widget's
-   own :value, so the handler learns whether this button was selected. The
-   caller owns which button of the group is :active (Tk's own group
-   selection is a -variable)."
+  "A radiobutton's slot: it compares the state variable with the widget's
+   own :value, so the handler learns whether this button was selected. With
+   a shared :variable the group is Tk's own; without one each button keeps
+   a private variable and the caller owns which is :active."
   {:on-toggled {:option :command :value :radio}})
-
-(def validation-bindings
-  "An entry-like widget's validation slots: Tk asks :validatecommand whether
-   an edit is allowed — the handler gets Tk's %P, the value the widget would
-   have, and answers a boolean (false or nil refuses the edit) — and calls
-   :invalidcommand when the answer was no. The :validate prop is the mode
-   that makes Tk ask at all."
-  {:validatecommand {:option :validatecommand :value :validate :answer true}
-   :invalidcommand {:option :invalidcommand :value :validate}})
 
 (def scroll-bindings
   "A widget's own scroll commands. The :scrollbar prop wires Tk's
@@ -199,11 +196,6 @@
    app instead — the handler gets [first last] as numbers."
   {:xscrollcommand {:option :xscrollcommand :arg :scroll}
    :yscrollcommand {:option :yscrollcommand :arg :scroll}})
-
-(def scroll-x-bindings
-  "A text field's -xscrollcommand alone: it is entry-like, so it has no
-   vertical scroll command of its own (see scroll-bindings)."
-  (select-keys scroll-bindings [:xscrollcommand]))
 
 (defn- as-number
   "S as a Clojure number: an integral Tcl value (7, 7.0) as a long, else as
@@ -276,8 +268,8 @@
    class binding from running too — the Return slot of an editable text
    must not insert a newline. :answer marks a slot Tk reads a result from
    (a validatecommand's boolean)."
-  [w slot {:keys [event option value arg stop target answer]} f]
-  (let [callback (set-callback! w slot f {:value value :arg arg :answer answer})
+  [w slot {:keys [event option value stop target] :as spec} f]
+  (let [callback (set-callback! w slot f spec)
         script (when (some? callback)
                  (str callback
                       (when-let [frag (value-fragment w value)] (str " " frag))
@@ -1620,14 +1612,13 @@
 ;; tag owns a private variable per widget.
 
 (defn- checkable-options
-  "The creation options a checkable widget needs from the tag itself: the
-   state variable — the shared one a :variable prop names, else a private
+  "The creation options a checkable widget needs from the tag itself: its
+   state VARIABLE — the shared one a :variable prop names, else a private
    one of its own (a classic Tk checkbutton has no state query, so its
    variable is the only state to read) — and a radiobutton's :value
    default (Tk starts it empty, which compares against nothing)."
-  [path kind props]
-  (cond-> {:variable (or (some-> (:variable props) variable-ref)
-                         (check-var path))}
+  [kind props variable]
+  (cond-> {:variable variable}
     (= kind :radio) (assoc :value (or (:value props) 1))))
 
 (defn- select!
@@ -1639,10 +1630,10 @@
    one: an unselected sibling must not unsay the group's selection."
   [w kind props]
   (let [radio? (= kind :radio)
-        shared? (some? (get @(:styles w) :variable))
+        shared-radio? (and radio? (some? (get @(:styles w) :variable)))
         on (if radio? (or (:value props) 1) (or (:onvalue props) 1))
         off (if radio? "" (or (:offvalue props) 0))]
-    (when (or (:active props) (not (and radio? shared?)))
+    (when (or (:active props) (not shared-radio?))
       (eval! (str "set " (state-var w) " "
                   (tcl-value (if (:active props) on off)))))))
 
@@ -1683,6 +1674,9 @@
                                  :rowconfigure grid-master!))
                         commands)
         fixed (or fixed {})
+        ;; a checkable tag's :variable belongs to checkable-options, so the
+        ;; script options hand tcl-options everything but it
+        script-options (cond-> options checkable (dissoc :variable))
         data-props (into (set (keys commands))
                          (concat patchable
                                  (when text-field [:text])
@@ -1709,21 +1703,19 @@
                                      {:type :kmet.tk.core/text-and-textvariable
                                       :tag (:tag spec)
                                       :props [:text :textvariable]})))
-                   (let [w (make-widget spec
+                   (let [shared (when checkable (some-> (:variable props) variable-ref))
+                         w (make-widget spec
                                         (fn [p w]
-                                          (when-some [v (some-> (:variable props) variable-ref)]
+                                          (when shared
                                             ;; the state fragments :on-toggled reads
-                                            (swap! (:styles w) assoc :variable v))
+                                            (swap! (:styles w) assoc :variable shared))
                                           (widget-script
                                            command p
                                            (merge (if (fn? fixed) (fixed props) fixed)
                                                   (when checkable
-                                                    (checkable-options p checkable props))
-                                                  ;; a checkable tag's variable is the
-                                                  ;; one checkable-options resolved
-                                                  (tcl-options props (cond-> (:options spec)
-                                                                       checkable (dissoc :variable))
-                                                               w))))
+                                                    (checkable-options checkable props
+                                                                       (or shared (check-var p))))
+                                                  (tcl-options props script-options w))))
                                         props)]
                      (when checkable
                        (select! w checkable props))

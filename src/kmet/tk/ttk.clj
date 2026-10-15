@@ -234,8 +234,7 @@
                                                 :fonted :localized]
                                                [:width :bg :fg :exportselection :textvariable
                                                 :justify :state])
-                     :bindings (merge dsl/text-field-bindings dsl/validation-bindings
-                                      dsl/scroll-x-bindings)
+                     :bindings dsl/text-field-bindings
                      :text-field true})
 
    :ttk/combobox
@@ -244,12 +243,10 @@
                                                 :fonted :localized]
                                                [:width :height :bg :fg :exportselection
                                                 :textvariable :justify :state :values])
-                     :bindings (merge dsl/text-field-bindings
-                                      dsl/validation-bindings
-                                      dsl/scroll-x-bindings
-                                      {:on-change {:event "<<ComboboxSelected>>"
-                                                   :value :text}
-                                       :postcommand {:option :postcommand}})
+                     :bindings (assoc dsl/text-field-bindings
+                                      :on-change {:event "<<ComboboxSelected>>"
+                                                  :value :text}
+                                      :postcommand {:option :postcommand})
                      :text-field true})
 
    :ttk/spinbox
@@ -259,8 +256,7 @@
                                                [:width :bg :fg :exportselection :textvariable
                                                 :justify :state :values :format :from :to
                                                 :increment :wrap])
-                     :bindings (merge dsl/spinbox-bindings dsl/validation-bindings
-                                      dsl/scroll-x-bindings)
+                     :bindings dsl/spinbox-bindings
                      :text-field true})
 
    :ttk/scale

@@ -337,8 +337,7 @@
                     {:options (opt/options-for [:standard :bordered :highlighted
                                                 :fonted :entry-body]
                                                [:bg :fg :width :state :show :textvariable])
-                     :bindings (merge dsl/text-field-bindings dsl/validation-bindings
-                                      dsl/scroll-x-bindings)
+                     :bindings dsl/text-field-bindings
                      :text-field true})
 
    :tk/spinbox
@@ -350,8 +349,7 @@
                                                 :buttondownrelief :buttonuprelief :from :to
                                                 :increment :format :values :wrap
                                                 :repeatdelay :repeatinterval])
-                     :bindings (merge dsl/spinbox-bindings dsl/validation-bindings
-                                      dsl/scroll-x-bindings)
+                     :bindings dsl/spinbox-bindings
                      :text-field true})
 
    :tk/listbox
