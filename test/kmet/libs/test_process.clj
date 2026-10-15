@@ -78,19 +78,19 @@
           (try (proc/destroy-tree p) (catch Exception _ nil)))
         (try (fs/delete-tree dir) (catch Exception _ nil))))))
 
-(t/deftest ^:slow write-stdin-sends-utf8-and-close-sends-eof
-  ;; the client's stdin seam must reach the child on both hosts: Jolt's
-  ;; io/writer over a process stream buffers without ever writing
-  (let [p (proc/process ["cat"] {:in :pipe :out :pipe})]
+(t/deftest ^:slow writer-over-process-stdin-reaches-the-child
+  ;; io/writer over a process stdin must flush through to the child on both
+  ;; hosts (jolt#1379: it used to buffer without ever flushing the stream)
+  (let [p (proc/process ["cat"] {:in :pipe :out :pipe})
+        w (io/writer (:in p) :encoding "UTF-8")]
     (try
-      (process/write-stdin! p "héllo\n")
+      (.write w "héllo\n")
+      (.flush w)
       (t/is (= "héllo" (.readLine (io/reader (:out p))))
             "UTF-8 text reached the child")
-      (process/close-stdin! p)
+      (.close w)
       (t/is (nil? (.readLine (io/reader (:out p)))) "close sends EOF")
       (t/is (nil? (process/close-stdin! p)) "closing again is a no-op")
-      (t/is (thrown? Exception (process/write-stdin! p "ignored"))
-            "a closed stream fails the write rather than swallowing it")
       (finally
         (try (proc/destroy p) (catch Exception _ nil))))))
 

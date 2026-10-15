@@ -73,9 +73,9 @@
   [client line]
   ;; the lock object is bound first: clj-kondo's suspicious-lock check
   ;; rejects a keyword lookup directly inside locking
-  (let [lock (:in client)]
-    (locking lock
-      (libs-process/write-stdin! client (str line "\n")))))
+  (let [w (:in client)]
+    (locking w
+      (doto w (.write (str line "\n")) (.flush)))))
 
 (defn send!
   "Write COMMAND as one protocol record and return it with its :id (assigned
@@ -319,12 +319,11 @@
                             (cond-> {:in :pipe :out :pipe :err :pipe}
                               (:cwd opts) (assoc :dir (:cwd opts))
                               (:env opts) (assoc :extra-env (:env opts))))
-         ;; raw process streams: io/writer over a process stdin is a Jolt
-         ;; no-op (kmet.libs.process/write-stdin! owns the portable write;
-         ;; the reader side is a plain Reader)
+         ;; the reader side is a plain Reader; the writer wraps the process
+         ;; stdin so write-line!'s flush reaches the child
          client (map->RpcClient
                  {:process p
-                  :in (:in p)
+                  :in (io/writer (:in p) :encoding "UTF-8")
                   :out (io/reader (:out p))
                   :err (io/reader (:err p))
                   :pending (atom {})

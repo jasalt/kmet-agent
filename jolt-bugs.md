@@ -12,6 +12,14 @@ revision), the versions now pinned by the project. `:jolt/min-version` names
 `#1380`) were found porting the RPC front end (engine.md step 6d) and filed
 2026-10-15 against this revision.
 
+Re-checked the same day: both were closed on `main` by
+[PR #1382](https://github.com/jolt-lang/jolt/pull/1382) (merge `aaf2dfe1`,
+listed under CHANGELOG `[Unreleased]`), verified on the installed
+`v0.8.22-15-gaaf2dfe1` dev build, and the kmet workarounds were removed
+ahead of the tag. The entries stay live until a tag carries the fixes; until
+then a source build wants a Jolt from `main`. `#1031` is unchanged: still
+open, as is [babashka/sci#1093](https://github.com/babashka/sci/pull/1093).
+
 ## Live issues
 
 ### [jolt#1031](https://github.com/jolt-lang/jolt/issues/1031) — SCI host-protocol support on Jolt
@@ -31,11 +39,14 @@ the bytes sit in the stream's own port buffer, so a file stream stays empty
 and a child process never sees its stdin. The `jolt-io-writer` overlay's
 `out-stream?` arm (`host/chez/java/io-streams.ss`) passes `#f` as
 `make-charset-writer`'s downstream, so the char-writer's flush/close skip the
-stream; the `user-out-stream?` arm passes the stream. Workaround:
-`kmet.libs.process/write-stdin!` writes UTF-8 bytes with a direct flush on the
-process `:in` stream, and `kmet.modes.rpc-client` deliberately does not wrap
-`:in` in an `io/writer`. Once the fix reaches a tagged release, the client can
-hold `(io/writer (:in p))` again and `write-stdin!` can go.
+stream; the `user-out-stream?` arm passes the stream. Closed 2026-10-15 by
+[PR #1382](https://github.com/jolt-lang/jolt/pull/1382) (merge `aaf2dfe1`,
+on `main` after the tagged `v0.8.22`). The kmet workaround —
+`kmet.libs.process/write-stdin!` writing UTF-8 bytes with a direct flush,
+with `kmet.modes.rpc-client` holding the raw `:in` — was removed 2026-10-15
+ahead of the tag: the client holds `(io/writer (:in p) :encoding "UTF-8")`
+and flushes it per record. The entry stays live until a tag carries the fix;
+on the `v0.8.22` floor that wrapper would buffer.
 
 ### [jolt#1380](https://github.com/jolt-lang/jolt/issues/1380) — `io/reader` cannot coerce `*in*`
 
@@ -44,6 +55,9 @@ the `jolt-io-reader` overlay has no arm for it, so the ordinary JVM way to
 read stdin — `(with-open [r (io/reader *in*)] (line-seq r))` — throws
 `IllegalArgumentException: Cannot open <#object[clojure.lang.IObj$reify__0]>
 as a Reader`. (`clojure.core/read-line` works; only the coercion does not.)
-Workaround: `kmet.modes.rpc/serve-input` reads the default input with
-`clojure.core/read-line` and wraps only an explicit `:in` override. Once the
-fix reaches a tagged release, that branch can go.
+Workaround: `kmet.modes.rpc/serve-input` read the default input with
+`clojure.core/read-line` and wrapped only an explicit `:in` override.
+Closed 2026-10-15 by [PR #1382](https://github.com/jolt-lang/jolt/pull/1382)
+(merge `aaf2dfe1`); the workaround was removed ahead of the tag —
+`serve-input` wraps `(or in *in*)` with `io/reader` on both hosts. The entry
+stays live until a tag carries the fix.

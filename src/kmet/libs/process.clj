@@ -95,18 +95,6 @@
     (-> p :proc .pid)
     (catch Exception _ nil)))
 
-(defn write-stdin!
-  "Write TEXT to M's :in stream and flush it, returning nil. The
-   babashka.process stdin-write seam: a Writer gets .write, an OutputStream
-   gets UTF-8 bytes. Do not wrap the stream in clojure.java.io/writer — on
-   Jolt that wrapper buffers without ever reaching the child."
-  [m text]
-  (when-let [in (:in m)]
-    (if (instance? java.io.Writer in)
-      (doto in (.write text) (.flush))
-      (doto in (.write (.getBytes text "UTF-8")) (.flush)))
-    nil))
-
 (defn close-stdin!
   "Close M's :in stream (a babashka.process process map or anything with an
    :in writer), sending EOF to the child. A missing or already-closed stream

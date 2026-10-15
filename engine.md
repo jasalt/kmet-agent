@@ -915,14 +915,15 @@ architecture is folded into `src/kmet/README.md` under "Session runtime and
 front ends". Bugs fixed while landing this step (three the e2e test caught,
 one found reviewing the shutdown path):
 
-- Jolt's `*in*` is not a `java.io.Reader`, so `--mode rpc` could not read
-  stdin under `jolt start`; `rpc/serve` now takes a line source
-  (`clojure.core/read-line` by default; an explicit `:in` Reader is wrapped
-  only for tests).
-- Jolt's `io/writer` over a process stdin stream buffers without ever
-  reaching the child; `kmet.libs.process/write-stdin!` owns the portable
-  write (UTF-8 bytes + flush) and the client uses it (the bash executor's
-  one-shot `spit` was unaffected).
+- Jolt's `*in*` was not a `java.io.Reader` and `io/writer` over a process
+  stdin stream buffered without ever reaching the child. Both were worked
+  around while landing this step (`clojure.core/read-line` for the default
+  stdin, `kmet.libs.process/write-stdin!` for the client's writes), and both
+  workarounds were removed 2026-10-15 once Jolt `main` carried the fixes
+  (jolt#1379/#1380, merged after the `v0.8.22` tag; jolt-bugs.md):
+  `rpc/serve-input` wraps `(or in *in*)` with `io/reader` and the client
+  flushes `(io/writer (:in p) :encoding "UTF-8")` per record. The bash
+  executor's one-shot `spit` was unaffected either way.
 - `run-agent-turn`'s no-credential early return emitted
   `:agent-settled :error` without recording `:last-outcome`, so `get-state`
   (and the client's `wait-idle!` state probe) still reported `:completed`.

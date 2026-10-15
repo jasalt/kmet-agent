@@ -641,16 +641,12 @@
       (recur))))
 
 (defn- serve-input
-  "Serve commands from the configured input: an explicit :in override (a
-   Reader; tests drive the protocol with one) or clojure.core/read-line over
-   *in*. Jolt's *in* is not a java.io.Reader (it is a reify over the host's
-   reader protocol), so the default stdin source cannot be wrapped by
-   io/reader."
+  "Serve commands from the configured input: an explicit :in Reader (tests
+   drive the protocol with one) or *in*. Both hosts' *in* is a
+   java.io.Reader, so io/reader wraps either."
   [table engine in out]
-  (if in
-    (with-open [rdr (io/reader in)]
-      (serve table engine (fn [] (.readLine rdr)) out))
-    (serve table engine read-line out)))
+  (with-open [rdr (io/reader (or in *in*))]
+    (serve table engine (fn [] (.readLine rdr)) out)))
 
 (defn run
   "Run RPC mode: EDN commands on IN, protocol records on OUT. Resolves the
