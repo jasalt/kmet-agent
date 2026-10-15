@@ -56,9 +56,18 @@ reaches the topmost item under the pointer, as in Tk.
 
 Any tag can carry a popup menu: `:context-menu` takes a menu's own items,
 the menu is created as the widget's child, and the tag binds the platform's
-secondary click — Tk 9's own `<<ContextMenu>>` where Tk generates it
-(macOS), `<Button-3>` elsewhere — to Tk's `tk_popup`, which posts at the
-click and returns at once.
+own secondary click — Tk 9's `<<ContextMenu>>`, which Tk generates for
+that gesture, or `<Button-3>` on a Tk without the event — to Tk's
+`tk_popup`, which posts at the click and returns at once.
+
+Menu items are Tk's own: `{:kind :check}` for a checkbutton entry and
+`{:kind :radio :value … :group …}` for a radiobutton one — a private Tcl
+variable for a check item, one variable per radio group, which is Tk's own
+exclusivity — with `:checked` as the render's declaration and either
+handler receiving the new boolean. Every other key is a Tk menu-item
+option (`-state`, `-underline`, `:image`, created as the menu's own), and
+`:accelerator` stays what Tk makes it, a label that the app's own `:bind`
+chord backs.
 
 Tk's native dialogs are `kmet.tk.core` functions: `message-box!`,
 `open-file!`, `save-file!`, `choose-directory!` and `choose-color!` script
@@ -171,10 +180,6 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
   item bind for `<Button-1>`; `<Enter>`/`<Leave>` (hover), `<B1-Motion>`
   (drag) and a tag bound as a group need the same target machinery for
   other sequences, and Tk's `tag raise`/`lower` for item order.
-- **A checkable or imaged menu item.** `:items` are commands, separators
-  and cascades; Tk's checkbutton/radiobutton items need a `-variable`, an
-  item's `-image` has no prop, and `-accelerator` is a label today, not a
-  binding.
 - **Layout beyond pack.** `grid` (forms: rows, columns, weights) and `place`
   (overlays) are missing, so a settings form has to be nested pack frames.
 

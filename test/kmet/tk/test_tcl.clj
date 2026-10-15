@@ -341,6 +341,43 @@
         ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
 
+(t/deftest menu-items-carry-check-and-radio-state
+  ;; A real menu: Tk's own checkbutton/radiobutton items, the private
+  ;; variables the tag owns for them, and what Tk hands the handler — the
+  ;; radio items' shared variable is what makes their group exclusive.
+  (if-let [a (live-tk)]
+    (try
+      (let [e (:eval a)
+            toggled (atom nil)
+            click #(reset! toggled %)
+            h (binding [tk/*adapter* a]
+                (tk/mount! [:tk/menu {:items [{:kind :check :label "Wrap" :checked false
+                                               :on-click click}
+                                              {:kind :radio :group :mode :value :light
+                                               :label "Light" :checked true
+                                               :on-click click}
+                                              {:kind :radio :group :mode :value :dark
+                                               :label "Dark" :on-click click}]}]
+                           {}))
+            m (do (e find-class-src) (e "kmetfind . Menu"))
+            var-of (fn [i] (e (str m " entrycget " i " -variable")))]
+        (t/is (seq m) "the menu is in the window")
+        (t/is (= "Wrap" (e (str m " entrycget 0 -label"))))
+        (t/is (= "0" (e (str "set " (var-of 0)))) "the check item starts unchecked")
+        (e (str m " invoke 0"))
+        (t/is (true? @toggled) "invoking it hands the handler the new state")
+        (t/is (= "1" (e (str "set " (var-of 0)))) "and Tk flipped its variable")
+        (t/is (= (var-of 1) (var-of 2)) "the radio group shares one variable")
+        (t/is (= "light" (e (str "set " (var-of 1))))
+              "which holds the value of the checked item")
+        (e (str m " invoke 2"))
+        (t/is (= "dark" (e (str "set " (var-of 1))))
+              "invoking the other moves the whole group")
+        (binding [tk/*adapter* a] (engine/dispose-component (:root h))))
+      (finally
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))
+
 (t/deftest install-leaves-tk-loaded-for-a-non-mounting-caller
   ;; kmet.tk.ttk.style scripts ttk::style between install! and mount, so
   ;; install! must load Tk itself instead of leaving it to the first mount.

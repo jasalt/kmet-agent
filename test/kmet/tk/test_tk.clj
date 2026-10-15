@@ -876,17 +876,98 @@
                               [:ttk/menubutton {:text "File"
                                                 :items [{:label "Quit"
                                                          :on-click identity}]}]]))]
-      (t/is (some #(re-find #"add command -label Open.*-accelerator Ctrl-O" %) (scripts rec)))
+      (t/is (some #(re-find #"add command -accelerator Ctrl-O -label Open… -command \{kmet::cb \d+\}$"
+                            %)
+                  (scripts rec))
+            "the item options are Tk's own, in option-name order")
       (t/is (some #(re-find #"add separator" %) (scripts rec)))
       (t/is (some #(re-find #"add cascade -label More -menu" %) (scripts rec)))
       (t/is (some #(re-find #"-tearoff 0" %) (scripts rec)))
       (t/is (some #(re-find #"add command -label Quit" %) (scripts rec)))
       (let [ids (mapv #(second (re-find #"kmet::cb (\d+)" %))
-                      (scripts-like rec #"add command -label"))]
+                      (scripts-like rec #"add command "))]
         (t/is (= 3 (count ids)) "one trampoline per command item")
         (t/is (nil? @clicked))
         (tk/dispatch-callback! ["kmet::cb" (first ids)])
         (t/is (= :open @clicked) "the item's handler fires on dispatch"))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest menus-take-check-and-radio-items
+  ;; Tk's checkbutton/radiobutton menu items need a -variable, which the tag
+  ;; owns privately: a checkbutton item keeps its own, a radiobutton group
+  ;; one shared by the group — which is what makes the group exclusive.
+  ;; Either handler receives the new boolean; an item's other keys are Tk's
+  ;; own item options, an :image created as the menu's own.
+  (with-fake [rec nil]
+    (let [toggled (atom nil)
+          clicked #(reset! toggled %)
+          checked (atom :light)
+          items (fn [] [{:kind :check :label "Wrap" :checked true
+                         :on-click clicked
+                         :image {:data "iVBORw0KGgo=" :format :png}}
+                        {:kind :radio :group :mode :value :light :label "Light"
+                         :checked (= :light @checked) :on-click clicked}
+                        {:kind :radio :group :mode :value :dark :label "Dark"
+                         :checked (= :dark @checked) :on-click clicked}
+                        {:label "Reload" :state :disabled :underline 0}])
+          m (mounted (fn [_] [:tk/menu {:items (items)}]))
+          [check] (scripts-like rec #"add checkbutton")
+          [light dark] (scripts-like rec #"add radiobutton")
+          var-of (fn [script] (second (re-find #"-variable (\S+)" script)))
+          id-of (fn [script] (second (re-find #"kmet::cb (\d+)" script)))]
+      (t/is (some #(re-find #"^image create photo ::kmet_img_\d+ -data" %) (scripts rec))
+            "the item's image is the menu's own")
+      (t/is (every? #(str/includes? check %)
+                    ["add checkbutton" "-label Wrap" "-onvalue 1" "-offvalue 0"
+                     "-image ::kmet_img_" "-command {kmet::cb "])
+            "a checkbutton item is Tk's, with the option shapes it needs")
+      (t/is (str/includes? check (str "-command {kmet::cb " (id-of check) " [set "
+                                      (var-of check) "]}"))
+            "and reads its own variable back to the handler")
+      (t/is (some #(str/includes? % (str "set " (var-of check) " 1")) (scripts rec))
+            "the render writes the item's :checked")
+      (t/is (= (var-of light) (var-of dark))
+            "a radio group shares one variable, which is what makes it exclusive")
+      (t/is (every? #(str/includes? light %)
+                    ["add radiobutton" "-label Light" "-value light" "-command {kmet::cb "]))
+      (t/is (str/includes? light (str "[string equal [set " (var-of light) "] light]"))
+            "a radio item's handler gets whether the group now holds its value")
+      (t/is (some #(str/includes? % (str "set " (var-of light) " light")) (scripts rec))
+            "the group's variable carries the render's selection")
+      (t/is (some #(re-find #"add command -label Reload -state disabled -underline 0$" %)
+                  (scripts rec))
+            "any other key is a Tk menu-item option")
+      (t/is (= [true false] (let [id (id-of check)]
+                              [(do (tk/dispatch-callback! ["kmet::cb" id "1"]) @toggled)
+                               (do (tk/dispatch-callback! ["kmet::cb" id "0"]) @toggled)]))
+            "a check item's handler receives the new boolean")
+      (t/is (= [true false] (let [id (id-of light)]
+                              [(do (tk/dispatch-callback! ["kmet::cb" id "1"]) @toggled)
+                               (do (tk/dispatch-callback! ["kmet::cb" id "0"]) @toggled)]))
+            "and so does a radio item's")
+      (reset! checked :dark)
+      (rerender! m)
+      (t/is (some #(str/includes? % (str "set " (var-of light) " dark")) (scripts rec))
+            "moving the selection rewrites the group's variable")
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-menubuttons-menu-and-its-context-menu-keep-their-own-state
+  ;; Two menus on one widget are two menus: their items' private variables
+  ;; must differ, or clicking one would move the other's state.
+  (with-fake [rec nil]
+    (let [m (mounted (fn [_] [:ttk/menubutton
+                              {:text "File"
+                               :items [{:kind :check :label "Wrap" :checked false}]
+                               :context-menu [{:kind :check :label "Copy" :checked true}]}]))
+          vars (into [] (comp (filter #(str/includes? % "add checkbutton"))
+                              (map #(second (re-find #"-variable (\S+)" %))))
+                     (scripts rec))]
+      (t/is (= 2 (count vars)))
+      (t/is (not= (first vars) (second vars))
+            "each menu's check item keeps its own variable")
+      (t/is (and (some #(str/includes? % (str "set " (first vars) " 1")) (scripts rec))
+                 (some #(str/includes? % (str "set " (second vars) " 0")) (scripts rec)))
+            "and each takes its own :checked")
       (engine/dispose-component (:root m)))))
 
 (t/deftest a-menu-item-change-releases-the-old-trampolines

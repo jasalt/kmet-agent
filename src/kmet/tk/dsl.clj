@@ -1050,9 +1050,64 @@
     (release-slot! w k))
   nil)
 
+(def ^:private menu-item-keys
+  "The :items entry keys that are not Tcl menu-item options."
+  #{:kind :items :on-click :checked :group})
+
+(defn- menu-item-options
+  "ITEM's `add` options: its label, then every key it carries that is a Tcl
+   menu-item option (-accelerator, -state, -underline, -image, a radio
+   item's -value, …) — Tk's own item vocabulary, with :image resolved to
+   the image W owns."
+  [w item]
+  (into {:label (or (:label item) "")}
+        (map (fn [[k v]] [k (if (= k :image) (image-name w :image v) v)]))
+        (apply dissoc item menu-item-keys)))
+
+(defn- item-var
+  "The private Tcl variable a checkbutton item at SLOT of the menu at
+   MENU keeps its checked state in."
+  [menu slot]
+  (check-var (str menu "_item_" (str/join "_" (rest slot)))))
+
+(defn- group-var
+  "The private Tcl variable the radio group GROUP of the menu at MENU
+   shares: one variable per group is what makes Tk's radio items exclusive."
+  [menu group]
+  (check-var (str menu "_group_" (if (some? group) (str group) "menu"))))
+
+(defn- menu-radio-states
+  "The value each radio group among ITEMS should hold: the :value of the
+   last of its items that is :checked, else \"\" (nothing selected)."
+  [items]
+  (let [radios (filter #(and (map? %) (= :radio (:kind %)))
+                       (tree-seq sequential? seq items))]
+    (merge (zipmap (map :group radios) (repeat ""))
+           (into {} (comp (filter :checked) (map (juxt :group :value))) radios))))
+
+(defn- menu-item-command
+  "The trampoline script for ITEM's :on-click: a checkbutton item's handler
+   receives the state Tk has just written to its variable VAR, a
+   radiobutton item's whether its group variable now holds its :value, and
+   a plain command item's nothing, as Tk hands it nothing."
+  [w slot item var]
+  (when-some [f (:on-click item)]
+    (let [kind (:kind item)
+          state (case kind
+                  :check (str "[set " var "]")
+                  ;; `string equal`, not `expr`'s eq: the value is Tcl's own
+                  ;; word, which expr would read as a bareword
+                  :radio (str "[string equal [set " var "] " (tcl-value (:value item)) "]")
+                  nil)]
+      (str (set-callback! w slot f nil (when state :variable))
+           (when state (str " " state))))))
+
 (defn- menu-add!
   "Add ITEMS to the menu at PATH in W, giving each item its own slot
-   [:=menu …] so a rebuild can release them."
+   (SLOT conj'd with its index) so a rebuild can release what it held. A
+   checkbutton item keeps its state in a private variable of its own, a
+   radiobutton item in its group's — which is what makes the group
+   exclusive, in Tk."
   [w path items slot]
   (doseq [[i item] (map-indexed vector items)
           :let [slot (conj slot i)]]
@@ -1068,11 +1123,20 @@
         (menu-add! w sub (:items item) slot))
 
       :else
-      (eval! (str path " add command -label " (tcl-quote (or (:label item) ""))
-                  (when-some [acc (:accelerator item)]
-                    (str " -accelerator " (tcl-quote acc)))
-                  (when (some? (:on-click item))
-                    (str " -command {" (set-callback! w slot (:on-click item) nil nil) "}")))))))
+      (let [kind (:kind item)
+            var (case kind
+                  :check (item-var path slot)
+                  :radio (group-var path (:group item))
+                  nil)
+            command (menu-item-command w slot item var)]
+        (when (= :check kind)
+          (eval! (str "set " var " " (tcl-value (boolean (:checked item))))))
+        (eval! (str path " add " (case kind :check "checkbutton" :radio "radiobutton" "command")
+                    " " (str/join " " (option-args
+                                       (cond-> (menu-item-options w item)
+                                         (= :check kind) (assoc :variable var :onvalue 1 :offvalue 0)
+                                         (= :radio kind) (assoc :variable var))))
+                    (when command (str " -command {" command "}"))))))))
 
 (defn- menu-path
   "The menu W's :items go in: W's own path when W is the menu, else the
@@ -1090,16 +1154,22 @@
 
 (defn set-menu-items!
   "Replace W's menu items with PROPS' :items, releasing the trampolines the
-   old items held. `[:separator]` (or
-   {:kind :separator}) is a rule, a map with :items is a cascade (its nested
-   items become a child menu), anything else a command whose :on-click fires
-   through the trampoline; :accelerator shows a shortcut hint. Rebuilding
-   releases the trampolines the old items held."
+   old items held. `[:separator]` (or {:kind :separator}) is a rule, a map
+   with :items a cascade (its nested items become a child menu);
+   {:kind :check :label … :checked …} is a checkbutton item and
+   {:kind :radio :value … :group … :checked …} a radiobutton one — a
+   handler on either receives the new boolean. Any other menu-item option
+   in the map (-accelerator, -state, -underline, -image) is Tk's own. A
+   radio group's shared variable carries the selection, so the render
+   writes it before the items read it."
   [w props]
-  (let [path (menu-path w)]
+  (let [path (menu-path w)
+        items (:items props)]
     (release-menu-slots! w :menu)
     (eval! (str path " delete 0 end"))
-    (menu-add! w path (:items props) [:menu])
+    (doseq [[group value] (menu-radio-states items)]
+      (eval! (str "set " (group-var path group) " " (tcl-value (or value "")))))
+    (menu-add! w path items [:menu])
     nil))
 
 ;; ─── The context menu (:context-menu, on any tag) ────────────────────────

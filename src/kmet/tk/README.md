@@ -147,6 +147,22 @@ Three shapes of tag, on top of the plain leaves:
   `:menubar true` wires itself onto the window, and a menubutton's
   `:items` build the menu it pops.
 
+The `:items` of a menu, a menubutton or a `:context-menu` are Tk's own menu
+entries: `[:separator]` (or `{:kind :separator}`) a rule, a map with
+`:items` a cascade (its nested items get a child menu), and
+`{:kind :check …}` or `{:kind :radio …}` Tk's checkbutton and radiobutton
+entries. A check item keeps its state in a private Tcl variable, a radio
+item in one shared by its `:group` — all the radios of that menu when it
+names none — which is what makes the group exclusive in Tk. A handler on
+either kind receives the new boolean; `:checked` is what the render
+declares, and a radio group's variable is written from its items once per
+render, so a group with nothing checked has nothing selected. Every other
+key of an item map is a Tk menu-item option — `-state`, `-underline`,
+`-accelerator`, `-image` (an image description is created as the menu's
+own) — and `:accelerator` is a label and nothing more, as in Tk itself:
+the app binds the chord where it binds its other keys (`:bind`, on the
+window or the widget).
+
 A checkable widget (`:tk/checkbutton`, `:tk/radiobutton`,
 `:ttk/checkbutton`, `:ttk/radiobutton`, `:ttk/toggleswitch`) shows its
 `:active` state and reports it through `:on-toggled`: Tk's `-variable` is
@@ -599,9 +615,11 @@ answered by stand-in procs that check the emitted option words (a
 `-filetypes` list above all) with no user involved, the editable
 text, typed into with real key events: its value round-trips through
 Tcl's parser, Return submits without a newline, and undo takes back the
-typed key alone, and a treeview's hierarchy, row tags and tree column
-read back out of the widget, and a canvas whose items a re-render moves in
-place (the very item, by Tk's own numeric id) and clicks to its handler.
+typed key alone, a treeview's hierarchy, row tags and tree column
+read back out of the widget, a canvas whose items a re-render moves in
+place (the very item, by Tk's own numeric id) and clicks to its handler,
+a context menu posted at the click, and a menu's check and radio items
+invoked through Tk.
 
 `scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
 the interpreter's widget classes and their options and diffs them against
@@ -626,10 +644,10 @@ ones still missing, and `scripts/tk_option_audit.clj` reports both sides
 against a live Tk. kmet's own widgets are the `:ui/…` set in
 `kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container).
 
-The first cuts that remain — checkable or imaged menu items, a right-click
-popup, canvas item events beyond a click, and everything Tk offers beside
-its widgets (`grid`/`place`, window management, the clipboard, variables) —
-are tracked in [`tcl.md`](../../tcl.md) at the repository root, which lists
+The first cuts that remain — canvas item events beyond a click, and
+everything Tk offers beside its widgets (`grid`/`place`, window management,
+the clipboard, variables) — are tracked in [`tcl.md`](../../tcl.md) at the
+repository root, which lists
 each gap with what closing it needs and how the two guards below keep the
 list honest; the GUI app port's own work — the composer, the transcript's
 rendering, the extension seam — is listed after them.
