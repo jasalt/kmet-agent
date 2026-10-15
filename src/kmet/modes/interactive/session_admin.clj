@@ -11,6 +11,7 @@
             [kmet.tui.components.container :as container]
             [kmet.app.loop :as agent]
             [kmet.app.session :as session]
+            [kmet.app.session-export :as session-export]
             [kmet.app.session-runtime :as runtime]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.bash-execution :as be]
@@ -30,23 +31,6 @@
 
 ;; Forward reference inside this namespace (the tree's custom-summary path).
 (declare ask-branch-summary)
-
-(defn parse-path-argument
-  "Pi: getPathCommandArgument — strip surrounding quotes, else take the
-   first whitespace-delimited token. Returns nil when there is no argument —
-   a quoted but empty argument (`\"\"`) counts as none, so /export falls back
-   to its default path and /import to its usage line. Shared by /export and
-   /import."
-  [args]
-  (let [args (str/trim args)]
-    (when (seq args)
-      (let [first-char (first args)
-            token (if (contains? #{\" \'} first-char)
-                    (when-let [end (str/index-of args first-char 1)]
-                      (subs args 1 end))
-                    (let [ws (str/index-of args " ")]
-                      (if ws (subs args 0 ws) args)))]
-        (when (seq (str/trim (str token))) token)))))
 
 ;; ─── Resume session ────────────────────────────────────────────────────────
 
@@ -424,7 +408,7 @@
    createRuntime."
   [cs args]
   (let [chat (:chat-history cs)
-        path-arg (parse-path-argument args)]
+        path-arg (session-export/parse-path-argument args)]
     (cond
       (nil? path-arg)
       (import-error! chat "Usage: /import <path>")

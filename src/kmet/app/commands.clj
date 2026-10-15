@@ -6,12 +6,16 @@
       :frontend optional :interactive|:gui|… — nil means every front end
       :get-argument-completions optional (fn [arg-prefix] -> items)
       :handler (fn [ctx args] ...)}
-   Handlers receive the command context (engine.md §10.3): :runtime (the
-   kmet.app.session-runtime engine), :ui (the front end's UI value) and
-   :frontend (the front-end kind). Engine work calls the runtime; dialogs
-   and view work go through the front end. A handler returns nil or a small
-   result ({:message s} / {:stop true}); it never returns an intent for the
-   caller to interpret.
+   Handlers receive the command context: :runtime (the
+   kmet.app.session-runtime engine), :ui (the front end's command-UI value)
+   and :frontend (the front-end kind). Engine work calls the runtime; output
+   and view work go through the UI value: the shared capabilities are
+   :message (assistant transcript line), :info (fn [label content]),
+   :warning, :status, :notify and :set-title — an engine-portable command
+   uses only those and :runtime. A front end's own commands may read more
+   from its value (the interactive mode puts its CoreState under :state).
+   Handlers return nil; they act through the runtime and the UI value, never
+   through an intent for the caller to interpret.
    The registry is global so builtins, skills, and extensions can all
    register commands; the editor's autocomplete provider reads it live.")
 
@@ -22,6 +26,15 @@
   [cmd]
   (swap! registry (fn [cmds] (conj (remove #(= (:name %) (:name cmd)) cmds) cmd)))
   nil)
+
+(defn register-builtin!
+  "Register CMD unless an extension already took the name (extensions load
+   before builtins; an extension command owns the name when taken). Used
+   for the engine-portable builtins: no front-end tag, so every front end
+   dispatches them. Returns nil."
+  [cmd]
+  (when-not (first (filter #(= (:name %) (:name cmd)) @registry))
+    (register-command! cmd)))
 
 (defn unregister-command!
   "Remove a slash command by :name. Returns nil."

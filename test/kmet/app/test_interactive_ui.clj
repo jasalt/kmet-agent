@@ -47,6 +47,7 @@
             [kmet.libs.http :as http]
             [kmet.libs.terminal-image :as timg]
             [kmet.app.session :as session]
+            [kmet.app.session-export :as session-export]
             [kmet.app.session-runtime :as runtime]
             [kmet.app.skills :as skills]
             [kmet.app.ui.footer-data-provider :as fdp]
@@ -76,6 +77,14 @@
   (extensions/set-context-sink! nil)
   (extensions/set-entry-sink! nil)
   (extensions/unbind-extensions!))
+
+(defn- command-ctx
+  "The command context for CS: the engine-portable builtins take it directly
+   (the interactive registry unwraps its own commands from :state)."
+  [cs]
+  {:runtime (:engine cs)
+   :ui (turn/interactive-command-ui cs)
+   :frontend :interactive})
 
 (def ^:private no-image-caps
   "Capabilities stub for the /settings tests: the image rows (Show images /
@@ -385,7 +394,7 @@
       (reset! (:status ag) :thinking)
       (swap! (:messages ag) conj {:role :user :content [{:type :text :text "hi"}]})
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
-        ((:handler (commands/find-command "continue")) cs ""))
+        ((:handler (commands/find-command "continue")) (command-ctx cs) ""))
       (t/is (= "Wait for the current response to finish before continuing."
                (:content @msg))
             "refuses while a turn is running"))))
@@ -401,7 +410,7 @@
                                    :running-turn? (atom false)
                                    :tui nil})]
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
-        ((:handler (commands/find-command "continue")) cs ""))
+        ((:handler (commands/find-command "continue")) (command-ctx cs) ""))
       (t/is (= "No conversation to continue." (:content @msg))))))
 
 (deftest test-compact-refuses-while-running
@@ -420,7 +429,7 @@
       (t/is (= :idle @(:status ag))
             "precondition: the status atom already reads idle")
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
-        ((:handler (commands/find-command "compact")) cs ""))
+        ((:handler (commands/find-command "compact")) (command-ctx cs) ""))
       (t/is (= "Wait for the current response to finish before compacting."
                (:content @msg))
             "refuses while a turn is running"))))
@@ -454,7 +463,7 @@
                     status/start-anim-timer! (fn [_] nil)
                     state/update-footer! (fn [_] nil)
                     tui/tui-request-render (fn [_] nil)]
-        ((:handler (commands/find-command "continue")) cs ""))
+        ((:handler (commands/find-command "continue")) (command-ctx cs) ""))
       (t/is (some? @started) "run-agent-turn called")
       (t/is (identical? ag (first @started)) "runs on the current agent state")
       (t/is (nil? (:message (second @started)))
@@ -784,7 +793,7 @@
   (testing "pi: getPathCommandArgument (shared with /export) — quotes are
             stripped, trailing arguments ignored, an unterminated quote is
             no argument at all"
-    (let [parse (var session-admin/parse-path-argument)]
+    (let [parse (var session-export/parse-path-argument)]
       (t/is (nil? (parse "")))
       (t/is (nil? (parse "   ")))
       (t/is (= "a.ednl" (parse "a.ednl")))
@@ -1038,7 +1047,7 @@
           (append-message! sess "hello")
           (let [cs (import-test-cs sess)
                 ch (:chat-history cs)]
-            ((:handler (commands/find-command "export")) cs "")
+            ((:handler (commands/find-command "export")) (command-ctx cs) "")
             (let [msg (last-message ch)]
               (t/is (= :info (:role msg)))
               (t/is (str/includes? (slash (str (:content msg))) (slash project))
@@ -1049,7 +1058,7 @@
               (testing "a quoted-empty path is no path: the default is used"
                 (with-redefs [tui/tui-request-render (fn [_])
                               tui/tui-set-focus (fn [_ _])]
-                  ((:handler (commands/find-command "export")) cs "\"\""))
+                  ((:handler (commands/find-command "export")) (command-ctx cs) "\"\""))
                 (t/is (str/includes? (slash (str (:content (last-message ch)))) (slash project))
                       "not a 'Failed to export session' error")))))
         (finally (fs/delete-tree dir))))))
@@ -1058,7 +1067,7 @@
   (testing "a quoted but empty path argument reads as none (pi:
             getPathCommandArgument) — /export falls back to its default and
             /import to its usage line instead of resolving the process cwd"
-    (let [parse (var session-admin/parse-path-argument)]
+    (let [parse (var session-export/parse-path-argument)]
       (t/is (nil? (parse "")))
       (t/is (nil? (parse "   ")))
       (t/is (nil? (parse "\"\"")))
@@ -2458,7 +2467,7 @@
       ((var builtins/register-builtin-commands!) cfg/default-config)
       (with-redefs [agent/compact-context! (fn [& _] (throw (ex-info "boom" {})))
                     debug/log-error (fn [& parts] (deliver logged (apply str parts)))]
-        @((:handler (commands/find-command "compact")) cs ""))
+        @((:handler (commands/find-command "compact")) (command-ctx cs) ""))
       (t/is (str/includes? (deref logged 2000 "") "boom")
             "the escaping error is logged"))))
 

@@ -650,10 +650,20 @@ runtime-started runs present through `set-run-callbacks!` (the TUI installs
 `turn/run-callbacks`, so an extension send streams and tears down like an
 editor submission).
 
-**Still open in this step**: the command-ctx migration — handlers receiving
-`{:runtime :ui :frontend}` with the legacy CoreState keys deleted and the
-engine-portable implementations moved into `kmet.app.*` homes (§10.3). The
-port now exists; that migration is the remaining consumer work.
+**Command ctx (the consumer).** Command handlers now receive the real
+`{:runtime :ui :frontend}`: `:runtime` is the engine, `:ui` the front end's
+command-UI value, and no legacy CoreState keys. The interactive value
+(`turn/interactive-command-ui`) carries the shared output capabilities
+(`:message`, `:info`, `:warning`, `:status`, `:notify`, `:set-title`) plus
+`:state`, the CoreState its own view-bound commands read; the interactive
+registration passes `:state` to those handlers, so their bodies are
+unchanged. `kmet.app.commands.builtins` registers the engine-portable
+commands (`/continue`, `/name`, `/export`, `/compact`) untagged, so any
+front end can dispatch them; they use only `:runtime` and the shared UI
+capabilities (async paths included — `/compact` replies from its future
+through `:info`). `parse-path-argument` moved to `kmet.app.session-export`
+so the portable `/export` needs no mode code. The remaining commands are
+view-bound (`:frontend :interactive`) and stay in the mode.
 
 ### Step 5 — GUI mode (the proof)
 
@@ -752,19 +762,18 @@ The rest are parked with the step that resolves them.
 2. **Session load validation policy (finding C)** — measured in step 0:
    139 ms (bb) / 138 ms (jolt) per 10k entries, above target; header
    always, entries only on skip or `--debug`.
-3. **Command split granularity** — decided; the ctx shape and front-end
-tag landed in step 3 (handlers receive `{:runtime :ui :frontend}` plus the
-legacy CoreState keys, and builtins carry a `:frontend` tag). The step 4
-port seam landed (`bind-extensions!`, the headless port, `request-ui!`/
-`respond!`); the engine-portable *implementations* move into `kmet.app.*`
-homes when the command-ctx migration replaces the CoreState keys inside the
-ctx — the remaining step 4 consumer work. One handler shape, no intent
-language. A handler returns nil or a small result
-(`{:message s}` / `{:stop true}`), never an intent to interpret. Extension
-commands keep the same `ctx` shape. Intents/effects would only pay off for
-a front end that executes commands in another process; a future wire mode
-should instead expose the operations as protocol commands (pi's
-`new_session`/`fork`/…), not serialize slash-command intents.
+3. **Command split granularity** — settled and landed. Handlers receive
+`{:runtime :ui :frontend}` (no legacy keys); the engine-portable builtins
+(`/continue`, `/name`, `/export`, `/compact`) live in
+`kmet.app.commands.builtins` behind the shared command-UI capabilities,
+and the view-bound commands stay in the mode behind `:frontend
+:interactive`. One handler shape, no intent language: a handler acts
+through the runtime and the UI value (the `{:message s}`/`{:stop true}`
+result sketch was dropped — a capability map serves sync and async output
+alike). Extension commands keep the same `ctx` shape. Intents/effects would
+only pay off for a front end that executes commands in another process; a
+future wire mode should instead expose the operations as protocol commands
+(pi's `new_session`/`fork`/…), not serialize slash-command intents.
 4. **`:resume` selector** — step 3.
 5. **GUI scope** — step 5.
 6. **RPC trigger** — step 6 (a real consumer).

@@ -9,6 +9,23 @@
             [babashka.fs :as fs]
             [kmet.app.session :as session]))
 
+(defn parse-path-argument
+  "Pi: getPathCommandArgument — strip surrounding quotes, else take the
+   first whitespace-delimited token. Returns nil when there is no argument —
+   a quoted but empty argument (`\"\"`) counts as none, so /export falls
+   back to its default path and /import to its usage line. Shared by
+   /export and /import."
+  [args]
+  (let [args (str/trim args)]
+    (when (seq args)
+      (let [first-char (first args)
+            token (if (contains? #{\" \'} first-char)
+                    (when-let [end (str/index-of args first-char 1)]
+                      (subs args 1 end))
+                    (let [ws (str/index-of args " ")]
+                      (if ws (subs args 0 ws) args)))]
+        (when (seq (str/trim (str token))) token)))))
+
 ;; ─── HTML escaping ─────────────────────────────────────────────────────────
 
 (defn- escape-html

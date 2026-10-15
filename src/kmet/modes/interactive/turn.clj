@@ -426,14 +426,31 @@
   [cs text mode]
   (runtime/queue-compaction-message! (:engine cs) text mode))
 
+(defn interactive-command-ui
+  "The interactive command-UI value (ctx :ui): the shared capabilities the
+   engine-portable builtins use — :message, :info (fn [label content]),
+   :warning, :status, :notify, :set-title — plus :state, the CoreState the
+   mode's own view-bound handlers read."
+  [cs]
+  {:state cs
+   :message (fn [s] (chat-history/chat-history-add-message! (:chat-history cs)
+                                                            {:role :assistant :content s}))
+   :info (fn [label content] (chat-history/chat-history-add-message!
+                              (:chat-history cs)
+                              {:role :info :label label :content content}))
+   :warning (fn [s] (chat-history/show-warning! (:chat-history cs) s))
+   :status (fn [s] (chat-history/chat-history-show-status! (:chat-history cs) s))
+   :notify (fn [s] (tui/tui-flash! (:tui cs) s))
+   :set-title (fn [] (state/update-terminal-title! cs))})
+
 (defn command-context
   "The slash-command handler context (engine.md §10.3): :runtime is the
-   session-runtime engine, :ui the front end's UI value, :frontend the
-   front-end kind. While the UI port lands (step 4) the context also
-   carries the legacy CoreState keys handlers still read, so a handler sees
-   one map."
+   session-runtime engine, :ui the front end's command-UI value
+   (interactive-command-ui), :frontend the front-end kind."
   [cs]
-  (assoc cs :runtime (:engine cs) :ui cs :frontend :interactive))
+  {:runtime (:engine cs)
+   :ui (interactive-command-ui cs)
+   :frontend :interactive})
 
 (defn handle-submit [cs text]
   (let [trimmed (str/trim text)

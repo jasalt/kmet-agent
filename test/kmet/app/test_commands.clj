@@ -29,15 +29,25 @@
   (commands/unregister-command! "gone")
   (t/is (nil? (commands/find-command "gone"))))
 
-(t/deftest handler-receives-cs-and-args
+(t/deftest handler-receives-ctx-and-args
   (let [received (atom nil)]
     (commands/register-command!
      {:name "echo"
       :description "echo args"
-      :handler (fn [cs args] (reset! received [cs args]))})
-    (let [cs {:fake :state}]
-      ((:handler (commands/find-command "echo")) cs "hello"))
-    (t/is (= [{:fake :state} "hello"] @received))))
+      :handler (fn [ctx args] (reset! received [ctx args]))})
+    (let [ctx {:runtime :engine :ui :ui :frontend :interactive}]
+      ((:handler (commands/find-command "echo")) ctx "hello"))
+    (t/is (= [{:runtime :engine :ui :ui :frontend :interactive} "hello"] @received))))
+
+(t/deftest register-builtin-skips-a-taken-name
+  (commands/register-command!
+   {:name "mine" :description "extension version" :handler (fn [_ _] nil)})
+  (commands/register-builtin! {:name "mine" :description "builtin" :handler (fn [_ _] nil)})
+  (commands/register-builtin! {:name "fresh" :description "builtin" :handler (fn [_ _] nil)})
+  (t/is (= "extension version" (:description (commands/find-command "mine"))))
+  (t/is (= "builtin" (:description (commands/find-command "fresh"))))
+  (t/is (nil? (:frontend (commands/find-command "fresh")))
+        "engine-portable builtins carry no front-end tag"))
 
 (t/deftest clear-removes-all
   (commands/register-command!

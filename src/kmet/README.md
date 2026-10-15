@@ -81,8 +81,11 @@ src/kmet/
 │   │                     subscribers, UI requests (request-ui!/respond!),
 │   │                     disposal (engine.md §4.1)
 │   ├── commands.clj / keybindings.clj / packages.clj / extensions.cljc —
-│   │                     slash command registry (context-shaped handlers,
-│   │                     front-end tags), keymap, package + extension loading;
+│   │                     slash command registry (ctx-shaped handlers:
+│   │                     {:runtime :ui :frontend}, front-end tags; the
+│   │                     engine-portable builtins live in
+│   │                     kmet.app.commands.builtins), keymap, package +
+│   │                     extension loading;
 │   │                     extensions/context.cljc — per-extension SCI isolation
 │   ├── model_resolver.clj — model pattern/CLI resolution
 │   ├── tools/          — built-in tools: read, write, edit, bash

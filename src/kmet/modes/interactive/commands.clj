@@ -21,6 +21,7 @@
             [kmet.app.session-runtime :as runtime]
             [kmet.app.session-export :as session-export]
             [kmet.app.commands :as commands]
+            [kmet.app.commands.builtins :as runtime-commands]
             [kmet.app.extensions :as extensions]
             [kmet.app.event-bus :as event-bus]
             [kmet.app.keybindings :as app-kb]
@@ -306,11 +307,24 @@
    extension registered under a builtin name (e.g. the shipped /tools
    extension replacing the builtin tools listing — pi has no builtin
    /tools; the example extension owns the name there) must not be
-   clobbered. Builtins carry the :interactive front-end tag, so a future
-   non-terminal front end's autocomplete and dispatch filter them out."
+   clobbered.
+
+   The registry calls handlers with the command ctx ({:runtime :ui
+   :frontend}); these builtins are written against the interactive UI
+   value, so the wrapper passes (:state (:ui ctx)) — the CoreState. Tests
+   that call a handler directly with a raw CoreState keep working: a map
+   without :runtime is taken as the view value itself. Builtins carry the
+   :interactive front-end tag, so a future non-terminal front end's
+   autocomplete and dispatch filter them out."
   [cmd]
   (when-not (commands/find-command (:name cmd))
-    (commands/register-command! (assoc cmd :frontend :interactive))))
+    (commands/register-command!
+     (assoc cmd
+            :frontend :interactive
+            :handler (fn [ctx args]
+                       ((:handler cmd)
+                        (if (contains? ctx :runtime) (:state (:ui ctx)) ctx)
+                        args))))))
 
 (defn- make-hotkey-wired?
   "Predicate over a keybinding id: is it wired in this interactive mode?
@@ -333,6 +347,7 @@
   "Register kmet's builtin slash commands. Handlers receive [cs args];
    argument completions feed the editor autocomplete dropdown."
   [_config]
+  (runtime-commands/register-runtime-commands!)
   (register-builtin-command!
    {:name "quit"
     :description "Exit kmet"
@@ -430,37 +445,6 @@
                                                                                          :content (str "Resumed session " short-id ".")})
                                                 (tui/tui-request-render (:tui cs)))))))))})
   (register-builtin-command!
-   {:name "continue"
-    :description "Continue where the agent left off (e.g. after a network error)"
-    :handler (fn [cs _]
-               (let [{:keys [chat-history]} cs
-                     agent-state (runtime/agent-state (:engine cs))]
-                 (cond
-                   ;; A run may have ended in :error (network failure, retries
-                   ;; exhausted) — that's exactly when /continue is useful, so
-                   ;; only actively-running states refuse. Both the UI turn flag
-                   ;; (set synchronously on submit) and the agent status
-                   ;; (:thinking/:executing, set by the run future) are checked.
-                   (or (runtime/turn-running? (:engine cs))
-                       (contains? #{:thinking :executing} @(:status agent-state)))
-                   (chat-history/chat-history-add-message! chat-history
-                                                           {:role :info :label "Continue"
-                                                            :content "Wait for the current response to finish before continuing."})
-
-                   @(:compacting? agent-state)
-                   (chat-history/chat-history-add-message! chat-history
-                                                           {:role :info :label "Continue"
-                                                            :content "Wait for the in-progress compaction to finish before continuing."})
-
-                   (empty? (agent/get-context agent-state))
-                   (chat-history/chat-history-add-message! chat-history
-                                                           {:role :info :label "Continue"
-                                                            :content "No conversation to continue."})
-
-                   :else
-                   (do (debug/log "/continue command")
-                       (turn/start-agent-run! cs)))))})
-  (register-builtin-command!
    ;; pi: no equivalent — /followup is the slash-command form of Alt+Enter
    ;; (app.message.followUp), letting the follow-up text ride the args
    ;; instead of the editor
@@ -509,41 +493,6 @@
     :handler (fn [cs _]
                (session-admin/clone-current-session! cs))})
   (register-builtin-command!
-   {:name "name"
-    :description "Set session display name"
-    :argument-hint "<name>"
-    :handler (fn [cs args]
-               (let [sess (runtime/session (:engine cs))]
-                 (if (nil? sess)
-                   (chat-history/chat-history-add-message! (:chat-history cs)
-                                                           {:role :assistant
-                                                            :content "No active session."})
-                   (if (seq args)
-                     (let [sanitized (session/sanitize-session-name args)]
-                       (session/append-session-info! sess sanitized)
-                       ;; pi: session_info_changed — extensions track the
-                       ;; display name
-                       (event-bus/emit-event!
-                        {:type :session-info-changed
-                         :session-file (:file sess)
-                         :name sanitized})
-                       (state/update-terminal-title! cs)
-                       (when-not (= args sanitized)
-                         ;; pi: warn when normalization changed the input
-                         (chat-history/show-warning!
-                          (:chat-history cs)
-                          (str "Session name was normalized from " (pr-str args)
-                               " to " (pr-str sanitized))))
-                       (chat-history/chat-history-add-message! (:chat-history cs)
-                                                               {:role :info :label "Name"
-                                                                :content (str "Session name set: " sanitized)}))
-                     (if-let [current (session/get-session-name sess)]
-                       (chat-history/chat-history-add-message! (:chat-history cs)
-                                                               {:role :info :label "Name"
-                                                                :content (str "Session name: " current)})
-                       (chat-history/show-warning! (:chat-history cs)
-                                                   "Usage: /name <name>"))))))})
-  (register-builtin-command!
    {:name "session"
     :description "Show session info and stats"
     :handler (fn [cs _]
@@ -556,46 +505,6 @@
                    (chat-history/chat-history-add-message! chat
                                                            {:role :assistant
                                                             :content (session-info-text sess)}))))})
-  (register-builtin-command!
-   {:name "export"
-    :description "Export session to HTML (JSONL is not supported by design)"
-    :argument-hint "<path>"
-    :handler (fn [cs args]
-               (let [sess (runtime/session (:engine cs))
-                     chat (:chat-history cs)
-                     arg (session-admin/parse-path-argument args)]
-                 (cond
-                   (nil? sess)
-                   (chat-history/chat-history-add-message! chat
-                                                           {:role :info :label "Export"
-                                                            :content "No active session."})
-
-                   (str/ends-with? (str/lower-case (or arg "")) ".jsonl")
-                   (chat-history/chat-history-add-message! chat
-                                                           {:role :info :label "Export"
-                                                            :content "JSONL export is not supported — kmet sessions are EDN-only. Use /export or /export <path.html>."})
-
-                   :else
-                   (try
-                     (let [ag (runtime/agent-state (:engine cs))
-                           system-prompt (or @(:system-prompt-override ag) @(:system ag))
-                           tool-defs (vals (tools/get-all-tools))
-                           opts (cond-> (when arg {:path arg})
-                                  ;; without an explicit path the export lands in
-                                  ;; the session's runtime cwd (where its tools work),
-                                  ;; not the launch directory
-                                  (not arg) (assoc :cwd (state/runtime-cwd cs))
-                                  system-prompt (assoc :system-prompt system-prompt)
-                                  (seq tool-defs) (assoc :tools tool-defs))
-                           path (session-export/export-to-html! sess opts)]
-                       (chat-history/chat-history-add-message! chat
-                                                               {:role :info :label "Export"
-                                                                :content (str "Session exported to: " path)}))
-                     (catch Exception e
-                       (chat-history/chat-history-add-message! chat
-                                                               {:role :info :label "Export"
-                                                                :content (str "Failed to export session: "
-                                                                              (or (ex-message e) (str e)))}))))))})
   (register-builtin-command!
    ;; kmet keeps the path hint /export carries (pi hints neither; its usage
    ;; error spells the syntax out). kmet sessions are EDN, hence "from a
@@ -671,49 +580,6 @@
    {:name "reload"
     :description "Reload keybindings, extensions, skills, prompts, themes, and context files"
     :handler handle-reload})
-  (register-builtin-command!
-   {:name "compact"
-    :description "Manually compact the session context"
-    :argument-hint "<instructions>"
-    :handler (fn [cs args]
-               (let [{:keys [chat-history]} cs
-                     agent-state (runtime/agent-state (:engine cs))
-                     instructions (when (seq args) args)]
-                 (cond
-                   (state/turn-running? cs)
-                   (chat-history/chat-history-add-message! chat-history
-                                                           {:role :info :label "Compact"
-                                                            :content "Wait for the current response to finish before compacting."})
-
-                   @(:compacting? agent-state)
-                   (chat-history/chat-history-add-message! chat-history
-                                                           {:role :info :label "Compact"
-                                                            :content "Compaction already in progress."})
-
-                   :else
-                   ;; Runs on a future so the input thread stays live and
-                   ;; escape can cancel the compaction (pi: session.compact
-                   ;; is async). The :compaction-end event reports an
-                   ;; aborted compaction; only the result replies go here.
-                   (future
-                     (try
-                       (let [result (runtime/compact! (:engine cs) instructions :manual)]
-                         (when-not (or (= :aborted result) (= :failed result))
-                           ;; pi: handleCompactCommand ignores the thrown
-                           ;; compaction error — compaction_end surfaces it
-                           ;; (showError for manual); the future only replies
-                           ;; for success and nothing-to-compact.
-                           (chat-history/chat-history-add-message!
-                            chat-history
-                            {:role :info :label "Compact"
-                             :content (if result
-                                        "Session compacted."
-                                        "Nothing to compact (session too small).")})))
-                       (catch Exception e
-                         ;; pi: handleCompactCommand catches and ignores (the
-                         ;; events carry the failure) — but a future that
-                         ;; swallows the exception hides real bugs, so log it.
-                         (debug/log-error "manual compaction failed: " e)))))))})
   (register-builtin-command!
    {:name "theme"
     :description "Switch theme"
