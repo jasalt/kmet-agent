@@ -378,6 +378,40 @@
         ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
 
+(t/deftest a-real-grid-and-place-lay-out-their-children
+  ;; A real frame with a gridded and a placed child: Tk reports the manager
+  ;; each one has — grid and place share a master, which is what makes an
+  ;; overlay work — the container's configured column, and the options each
+  ;; geometry map passed.
+  (if-let [a (live-tk)]
+    (try
+      (let [e (:eval a)
+            h (binding [tk/*adapter* a]
+                (tk/mount! [:ttk/frame {:width 120 :height 80
+                                        :columnconfigure {0 {:weight 1 :minsize 50}}}
+                            [:ttk/label {:text "a" :grid {:row 0 :column 1 :sticky "nsew"}}]
+                            [:ttk/label {:text "b" :place {:relx 0.25 :rely 0.5}}]]
+                           {}))
+            f (do (e find-class-src) (e "kmetfind . TFrame"))
+            kids (str/split (e (str "winfo children " f)) #"\s+")
+            [first-kid second-kid] kids]
+        (t/is (seq f) "the frame is in the window")
+        (t/is (= 2 (count kids)) "both children are there")
+        (t/is (= "grid" (e (str "winfo manager " first-kid))) "the first is gridded")
+        (t/is (= "place" (e (str "winfo manager " second-kid)))
+              "the second is placed — Tk lets place share a master")
+        (t/is (and (str/includes? (e (str "grid info " first-kid)) "-column 1")
+                   (str/includes? (e (str "grid info " first-kid)) "-row 0"))
+              "with the row and column the render gave it")
+        (t/is (str/includes? (e (str "place info " second-kid)) "-relx 0.25")
+              "and the relative position its own map gave it")
+        (t/is (str/includes? (e (str "grid columnconfigure " f " 0")) "-weight 1")
+              "the container's column is configured")
+        (binding [tk/*adapter* a] (engine/dispose-component (:root h))))
+      (finally
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))
+
 (t/deftest install-leaves-tk-loaded-for-a-non-mounting-caller
   ;; kmet.tk.ttk.style scripts ttk::style between install! and mount, so
   ;; install! must load Tk itself instead of leaving it to the first mount.

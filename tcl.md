@@ -69,6 +69,15 @@ option (`-state`, `-underline`, `:image`, created as the menu's own), and
 `:accelerator` stays what Tk makes it, a label that the app's own `:bind`
 chord backs.
 
+Layout is Tk's own: a child is packed unless it carries `:grid {:row …
+:column … :sticky …}` or `:place {:relx … :anchor …}`, each map Tk's
+options for that manager (grid and place share a container, as in Tk), and
+a container that packs or grids takes `:rowconfigure`/`:columnconfigure`
+for its rows and columns through `grid columnconfigure`. Naming two
+managers on one child, or a manager beside pack's own props, is a kmet
+error; a container whose children mix grid and pack is Tk's own, and Tk's
+`-in` is refused (a child's master is the tag it renders under).
+
 Tk's native dialogs are `kmet.tk.core` functions: `message-box!`,
 `open-file!`, `save-file!`, `choose-directory!` and `choose-color!` script
 `tk_messageBox`/`tk_getOpenFile`/… with the props as that command's own
@@ -180,8 +189,6 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
   item bind for `<Button-1>`; `<Enter>`/`<Leave>` (hover), `<B1-Motion>`
   (drag) and a tag bound as a group need the same target machinery for
   other sequences, and Tk's `tag raise`/`lower` for item order.
-- **Layout beyond pack.** `grid` (forms: rows, columns, weights) and `place`
-  (overlays) are missing, so a settings form has to be nested pack frames.
 
 ## 2. Options that are not props
 

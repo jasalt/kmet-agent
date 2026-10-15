@@ -668,6 +668,79 @@
                         e))
         (throw e)))))
 
+;; ─── Geometry (how a child is placed in its parent) ──────────────────────
+;; A child is packed unless it carries a geometry map: {:grid {:row 0
+;; :column 1 :sticky "nsew"}} for Tk's grid (a form) or {:place {:relx 0.5
+;; :rely 0.5 :anchor :center}} for place (an overlay), each taking Tk's own
+;; options for that manager. Naming two managers, or a manager together
+;; with pack's own :side/:fill/:expand, is an error here; a *parent* whose
+;; children mix grid and pack is Tk's own error, whose message names both
+;; (place coexists with either, which is what makes an overlay work in Tk).
+
+(def ^:private pack-props
+  "The props a packed child's placement comes from."
+  [:side :fill :expand])
+
+(defn- geometry-manager
+  "The geometry manager TAG's child names in PROPS: :grid or :place from
+   its own map, else nil for pack."
+  [tag props]
+  (let [named (filterv #(some? (get props %)) [:grid :place])
+        pack-named (filterv #(some? (get props %)) pack-props)]
+    (when (> (count named) 1)
+      (throw (ex-info (str "kmet.tk.core: " tag " names two geometry managers "
+                           (pr-str named) " — a child has one")
+                      {:type :kmet.tk.core/two-geometry-managers
+                       :tag tag :managers named})))
+    (when (and (seq named) (seq pack-named))
+      (throw (ex-info (str "kmet.tk.core: " tag " names " (first named)
+                           " and pack's own " (pr-str pack-named)
+                           " — a child has one geometry manager")
+                      {:type :kmet.tk.core/mixed-geometry-props
+                       :tag tag :manager (first named) :pack-props pack-named})))
+    (first named)))
+
+(defn- geometry-args
+  "GEOMETRY — PROPS' :grid or :place map — as ` -option value` words in
+   option-name order, Tk's own geometry options for the manager."
+  [tag manager geometry]
+  (when (contains? geometry :in)
+    (throw (ex-info (str "kmet.tk.core: " tag "'s " (name manager)
+                         " names -in: a child's master is the tag it renders"
+                         " under")
+                    {:type :kmet.tk.core/geometry-master-not-supported
+                     :tag tag :manager manager})))
+  (when-some [args (seq (option-args geometry))]
+    (str " " (str/join " " args))))
+
+(defn- manage-child!
+  "Place the TAG child at PATH by the manager PROPS name — grid or place
+   with the child's own geometry options, else pack with Tk's
+   :side/:fill/:expand."
+  [tag path props]
+  (case (geometry-manager tag props)
+    :grid (eval! (str "grid " path (geometry-args tag :grid (:grid props))))
+    :place (eval! (str "place " path (geometry-args tag :place (:place props))))
+    (eval! (str "pack " path
+                " -side " (tcl-value (or (:side props) :top))
+                " -fill " (tcl-word (or (:fill props)
+                                        (if (#{:ttk/frame :tk/frame :ttk/labelframe} tag)
+                                          :both
+                                          :x)))
+                (when (:expand props) " -expand 1")))))
+
+(defn- grid-master!
+  "Configure W's rows and columns from PROPS' :rowconfigure and
+   :columnconfigure — {index {:weight 1 :minsize 40}} — through Tk's own
+   `grid columnconfigure`, which takes an index or a whole range (`0`, `1`,
+   `0 3`, …)."
+  [w props]
+  (doseq [kind [:columnconfigure :rowconfigure]
+          [index opts] (get props kind)]
+    (eval! (str "grid " (name kind) " " (:path w) " " (tcl-value index)
+                (when-some [args (seq (option-args opts))]
+                  (str " " (str/join " " args)))))))
+
 (defn make-widget
   "Construct a TkWidget at a fresh path under the current construction
    parent, run the ctor SCRIPT (a fn of the path and the widget record),
@@ -696,13 +769,7 @@
         ;; containers that own their child placement (an embedded text
         ;; window, a notebook tab, a pane) — and read the child's props for it
         (attach path props)
-        (eval! (str "pack " path
-                    " -side " (tcl-value (or (:side props) :top))
-                    " -fill " (tcl-word (or (:fill props)
-                                            (if (#{:ttk/frame :tk/frame :ttk/labelframe} tag)
-                                              :both
-                                              :x)))
-                    (when (:expand props) " -expand 1")))))
+        (manage-child! (:tag spec) path props)))
     w))
 
 (defn child-lens
@@ -1285,7 +1352,13 @@
      :checkable   :check or :radio: its state is a private Tcl variable"
   [command {:keys [options fixed commands attach after bindings primary
                    patchable lens pack? text-field checkable]}]
-  (let [commands (merge {:context-menu set-context-menu!} commands)
+  (let [commands (merge (cond-> {:context-menu set-context-menu!}
+                          ;; a container that packs or grids its children owns
+                          ;; their rows and columns
+                          (and lens (not attach))
+                          (assoc :columnconfigure grid-master!
+                                 :rowconfigure grid-master!))
+                        commands)
         fixed (or fixed {})
         data-props (into (set (keys commands))
                          (concat patchable

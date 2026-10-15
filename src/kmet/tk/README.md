@@ -239,16 +239,28 @@ scrolling has no canvas coordinate ceiling (a canvas hits Tk's 16-bit
 limit around 32k pixels, which a long transcript reaches quickly), which
 is why the container is a text widget.
 
-Pack geometry is the child's, like Tk's own pack options: `:side`
-(`-side`, default `top`), `:fill` (default `both` inside a pane container,
-`x` otherwise) and `:expand`.
+Geometry is the child's, like Tk's own geometry options. A child without a
+geometry map is packed: `:side` (`-side`, default `top`), `:fill` (default
+`both` inside a pane container, `x` otherwise) and `:expand`. A child
+carrying `:grid {:row 0 :column 1 :sticky "nsew" :padx [4 6]}` is gridded
+(a form) and one carrying `:place {:relx 0.5 :rely 0.5 :anchor :center}`
+placed (an overlay), each map taking Tk's own options for that manager; the
+two share a container, as in Tk, which is what an overlay is. A child that
+names two managers at once, or a manager beside pack's own
+`:side`/`:fill`/`:expand`, is an error here; a *container* whose children
+mix grid and pack is Tk's own error, and Tk's `-in` is refused — a child's
+master is the tag it renders under. A container that packs or grids its
+children also takes `:rowconfigure` and `:columnconfigure` — {index Tk's
+own options}, through `grid columnconfigure` — for its rows and columns.
 
 ```clojure
 [:tk/toplevel {:title "kmet"}
  [:ttk/frame {:padding 8}
   [:ttk/label "hi"]
-  [:ttk/frame {}
-   [:ttk/button {:text "Go" :side :left :on-click go!}]]
+  [:ttk/frame {:columnconfigure {1 {:weight 1}}}
+   [:ttk/button {:text "Go" :grid {:row 0 :column 0} :on-click go!}]
+   [:ttk/entry {:grid {:row 0 :column 1 :sticky "ew"}}]
+   [:ttk/label {:text "over" :place {:relx 0.5 :rely 0.5 :anchor :center}}]]
   [:tk/text {:text "…" :wrap :word}]]]
 ```
 
@@ -618,8 +630,9 @@ Tcl's parser, Return submits without a newline, and undo takes back the
 typed key alone, a treeview's hierarchy, row tags and tree column
 read back out of the widget, a canvas whose items a re-render moves in
 place (the very item, by Tk's own numeric id) and clicks to its handler,
-a context menu posted at the click, and a menu's check and radio items
-invoked through Tk.
+a context menu posted at the click, a menu's check and radio items
+invoked through Tk, and a frame's gridded and placed children read back
+with `winfo manager`.
 
 `scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
 the interpreter's widget classes and their options and diffs them against
@@ -645,9 +658,9 @@ against a live Tk. kmet's own widgets are the `:ui/…` set in
 `kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container).
 
 The first cuts that remain — canvas item events beyond a click, and
-everything Tk offers beside its widgets (`grid`/`place`, window management,
-the clipboard, variables) — are tracked in [`tcl.md`](../../tcl.md) at the
-repository root, which lists
+everything Tk offers beside its widgets (window management, the clipboard,
+variables, the script-typed options) — are tracked in
+[`tcl.md`](../../tcl.md) at the repository root, which lists
 each gap with what closing it needs and how the two guards below keep the
 list honest; the GUI app port's own work — the composer, the transcript's
 rendering, the extension seam — is listed after them.

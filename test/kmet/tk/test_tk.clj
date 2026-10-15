@@ -841,6 +841,45 @@
       (t/is (= [:colour] (:options (ex-data e))))
       (t/is (str/includes? (ex-message e) ":colour")))))
 
+(t/deftest a-child-can-be-gridded-or-placed
+  ;; Tk's other two geometry managers: a child's own :grid/:place map takes
+  ;; Tk's options for it (in the option-name order every script uses), and a
+  ;; container's :rowconfigure/:columnconfigure its rows and columns.
+  (with-fake [rec nil]
+    (let [{:keys [root]} (mounted [:ttk/frame {:width 100
+                                               :columnconfigure {0 {:weight 1}
+                                                                 "1" {:weight 2 :minsize 40}}}
+                                   [:ttk/label {:text "hi"
+                                                :grid {:row 0 :column 1 :sticky "nsew"
+                                                       :padx [4 6]}}]
+                                   [:ttk/label {:text "over"
+                                                :place {:relx 0.5 :rely 0.5 :anchor :center}}]])]
+      (t/is (some #(re-find #"^grid \S+ -column 1 -padx 4\\ 6 -row 0 -sticky nsew$" %) (scripts rec))
+            "a :grid child is gridded with Tk's own options")
+      (t/is (some #(re-find #"^place \S+ -anchor center -relx 0\.5 -rely 0\.5$" %) (scripts rec))
+            "a :place child is placed")
+      (t/is (some #(re-find #"^grid columnconfigure \S+ 0 -weight 1$" %) (scripts rec)))
+      (t/is (some #(re-find #"^grid columnconfigure \S+ 1 -minsize 40 -weight 2$" %) (scripts rec)))
+      (t/is (= 1 (count (scripts-like rec #"^pack ")))
+            "only the container itself is packed")
+      (engine/dispose-component root))))
+
+(t/deftest a-child-names-one-geometry-manager
+  ;; Two managers on one child, a manager beside pack's own props, and Tk's
+  ;; -in (whose master a kmet child does not have) are each refused before
+  ;; any script is built — Tk's own error names the first two only when the
+  ;; container is already managed.
+  (with-fake [_ nil]
+    (doseq [[props expected]
+            [[{:grid {} :place {}} :kmet.tk.core/two-geometry-managers]
+             [{:place {} :side :left} :kmet.tk.core/mixed-geometry-props]
+             [{:grid {:row 0 :in ".other"}} :kmet.tk.core/geometry-master-not-supported]]]
+      (let [e (try (mounted [:ttk/frame {} [:ttk/label (assoc props :text "x")]])
+                   nil
+                   (catch Exception e e))]
+        (t/is (= expected (:type (ex-data e)))
+              (str (pr-str props) " is refused with " expected))))))
+
 (t/deftest a-notebook-adds-tabs-and-a-panedwindow-panes
   (with-fake [rec nil]
     (let [{:keys [root]} (mounted [:ttk/frame {}
