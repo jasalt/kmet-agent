@@ -149,7 +149,8 @@ Three shapes of tag, on top of the plain leaves:
   or `:ttk/labelframe` carrying `:labelwidget true` is the frame's *label*
   instead of a placed child (Tk's `-labelwidget`): the tag builds it and
   names it on the parent, which draws it in the label position and drops
-  the reference if the widget is later destroyed. A `:tk/menu`
+  the reference if the widget is later destroyed. A labelframe takes one
+  label widget; a later child replaces the earlier. A `:tk/menu`
   with `:menubar true` wires itself onto the window, and a menubutton's
   `:items` build the menu it pops.
 
@@ -338,12 +339,13 @@ kmet chord (`:ctrl+enter`, `"ctrl+shift+p"`) or a raw Tk pattern
 [:tk/toplevel {:bind {:ctrl+q quit!}}]
 ```
 
-A binding value may also be a map with the handler under `:handler` and a
-`:value` kind the bound script reads, the same kinds the slots use:
-`:pointer` puts the event's `%x %y` in the handler's hands — a drag on the
-*canvas* keeps its coordinates after the pointer leaves the item, where
-the item's own `:on-drag` (Tk's item bind) no longer fires — and `:text`
-reads the widget's value:
+A binding value may also be a map with the handler under `:handler`, a
+`:value` kind the bound script reads — the same kinds the slots use:
+`:pointer` puts the event's `%x %y` in the handler's hands, a drag on the
+*canvas* keeps its coordinates after the pointer leaves the item (where
+the item's own `:on-drag`, Tk's item bind, no longer fires) and `:text`
+reads the widget's value — and `:stop true` to end the script in `break`,
+which keeps Tk's class binding from running too.
 
 ```clojure
 [:tk/canvas {:items @items
@@ -479,9 +481,19 @@ shared `:variable`: `:active` writes the on/off value into the variable,
 and `:on-toggled` compares the variable with the widget's own `-onvalue`
 (a radiobutton's `-value`), so either side can move the state. A
 radiobutton group sharing one `:variable` is Tk's own exclusive group.
+A prop may also name the app's own Tcl variable (a string or keyword),
+which kmet resolves as it is — quoting it wherever a script reads or
+writes it — and never unsets; such a variable has no watch, since watches
+belong to kmet variables. A variable belongs to the app's state, not to a
+render: one created inside a component body is a new object every pass,
+which rebuilds the widget each time (declare it outside, as state is).
 Two props that would be a second source of truth are refused: `:text`
 beside `:textvariable` on a text field, and a listbox's `:items` beside
 its `:listvariable`.
+
+A checkable widget without a shared `:variable` gets a private state
+variable of the tag's own, which its disposal unsets; a shared one is the
+app's to keep.
 
 ### Images
 
@@ -581,9 +593,9 @@ segments:
 ```
 
 Each distinct style gets one generated Tk tag, cached on the widget;
-bold/italic picks one of four named mono fonts derived from Tk's
-`TkFixedFont` (`:font-family`/`:font-size` override) and disposal deletes
-them. `:scrollbar true` adds a wired vertical `ttk::scrollbar`. A display
+bold/italic picks a font description derived from Tk's `TkFixedFont`
+(`:font-family`/`:font-size` override). `:scrollbar true` adds a wired
+vertical `ttk::scrollbar`. A display
 text is left `-state disabled` (selectable, not editable); with a wrapping
 mode its `-height` follows the wrapped content when a line exceeds the
 widget width. `:fill`/`:expand` control packing for any tag, not just

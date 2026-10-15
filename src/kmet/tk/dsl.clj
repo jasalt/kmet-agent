@@ -207,11 +207,12 @@
       (or (parse-double s) s))))
 
 (defn- state-var
-  "The Tcl variable a checkable widget's state lives in: the shared
-   variable its :variable prop named (recorded on the widget at
-   construction), else its own private one."
+  "The Tcl variable a checkable widget's state lives in: the one its ctor
+   recorded (a shared variable the :variable prop named, else the tag's
+   private one). The private fallback is for a fragment bound on a widget
+   before its ctor ran — it cannot happen today."
   [w]
-  (or (get @(:styles w) :variable) (check-var (:path w))))
+  (or (get @(:styles w) :state-variable) (check-var (:path w))))
 
 (def ^:private value-kinds
   "The kinds a slot's :value names, and what each means: the fragment the
@@ -244,10 +245,10 @@
    :scroll    {:args #(vector (mapv as-number %))}
    ;; a checkable widget's state lives in its variable, whichever one the
    ;; tag gave it: the on value is the widget's own -onvalue
-   :variable  {:fragment (fn [w] (str "[expr {[set " (state-var w) "] eq ["
+   :variable  {:fragment (fn [w] (str "[expr {[set " (tcl-quote (state-var w)) "] eq ["
                                       (:path w) " cget -onvalue]}]"))
                :args #(mapv (fn [v] (= "1" v)) %)}
-   :radio     {:fragment (fn [w] (str "[expr {[set " (state-var w) "] eq ["
+   :radio     {:fragment (fn [w] (str "[expr {[set " (tcl-quote (state-var w)) "] eq ["
                                       (:path w) " cget -value]}]"))
                :args #(mapv (fn [v] (= "1" v)) %)}})
 
@@ -544,12 +545,16 @@
 
 (defn- materialize!
   "Create V's Tcl variable (holding its initial value) and its watchers'
-   traces in the running interpreter, once. Returns its name."
+   traces in the running interpreter, once. The record counts as
+   materialized only once the Tcl work succeeded, so a failed first touch
+   (no interpreter yet) is retried rather than leaving it half-made.
+   Returns its name."
   [v]
-  (when (compare-and-set! (:materialized v) false true)
+  (when-not @(:materialized v)
     (eval! (str "set " (:name v) " " (variable-word (:initial v))))
     (doseq [script (vals @(:watches v))]
-      (eval! (str "trace add variable " (:name v) " write " script))))
+      (eval! (str "trace add variable " (:name v) " write " script)))
+    (reset! (:materialized v) true))
   (:name v))
 
 (defn- untrace!
@@ -1031,10 +1036,18 @@
   (when-some [sb (:scrollbar @(:styles w))]
     (eval! (str "destroy " (tcl-quote sb)))))
 
+(defn- dispose-state-variable!
+  "Unset the private state variable W's ctor created for it: a shared one
+   belongs to the app and is left alone."
+  [w]
+  (when-some [variable (:state-variable @(:styles w))]
+    (when-not (:shared-variable @(:styles w))
+      (eval! (str "unset -nocomplain " variable)))))
+
 (defn destroy!
   "Dispose a TkWidget: recurse into its stored children (releasing their
    callbacks), then destroy the widget path, its derived resources and the
-   Tk images it created."
+   Tk images it created, and its private state variable if it has one."
   [w]
   (when (some? w)
     (release-callbacks! w)
@@ -1044,6 +1057,7 @@
     (when-not (= "." (:path w))
       (eval! (str "destroy " (:path w))))
     (dispose-widget-extras! w)
+    (dispose-state-variable! w)
     (release-images! w)))
 
 ;; ─── Rich text (the :text tag) ────────────────────────────────────────────
@@ -1669,11 +1683,11 @@
    one: an unselected sibling must not unsay the group's selection."
   [w kind props]
   (let [radio? (= kind :radio)
-        shared-radio? (and radio? (some? (get @(:styles w) :variable)))
+        shared-radio? (and radio? (get @(:styles w) :shared-variable))
         on (if radio? (prop-or props :value 1) (prop-or props :onvalue 1))
         off (if radio? "" (prop-or props :offvalue 0))]
     (when (or (:active props) (not shared-radio?))
-      (eval! (str "set " (state-var w) " "
+      (eval! (str "set " (tcl-quote (state-var w)) " "
                   (tcl-value (if (:active props) on off)))))))
 
 (defn widget-spec
@@ -1740,16 +1754,19 @@
                    (let [shared (when checkable (some-> (:variable props) variable-ref))
                          w (make-widget spec
                                         (fn [p w]
-                                          (when shared
-                                            ;; the state fragments :on-toggled reads
-                                            (swap! (:styles w) assoc :variable shared))
-                                          (widget-script
-                                           command p
-                                           (merge (if (fn? fixed) (fixed props) fixed)
-                                                  (when checkable
-                                                    (checkable-options checkable props
-                                                                       (or shared (check-var p))))
-                                                  (tcl-options props script-options w))))
+                                          (let [variable (when checkable (or shared (check-var p)))]
+                                            (when variable
+                                              ;; the state the :on-toggled fragment
+                                              ;; reads; a shared one is the app's to keep
+                                              (swap! (:styles w) assoc :state-variable variable)
+                                              (when shared
+                                                (swap! (:styles w) assoc :shared-variable true)))
+                                            (widget-script
+                                             command p
+                                             (merge (if (fn? fixed) (fixed props) fixed)
+                                                    (when checkable
+                                                      (checkable-options checkable props variable))
+                                                    (tcl-options props script-options w)))))
                                         props)]
                      (when checkable
                        (select! w checkable props))

@@ -39,10 +39,12 @@ each contract is, and what it refuses, is in `src/kmet/tk/README.md` (Data
 widgets, Props and bindings, Geometry).
 
 The variable-backed options are props: `:variable`, `:textvariable` and
-`:listvariable` take a kmet variable (`kmet.tk.core/variable`), whose Tcl
-name lives in a kmet namespace of its own, is materialized lazily, and is
-watched through Tk's `trace add variable` (`variable-watch!`, which is
-what carries a Tcl-side change back to a callback). `:onvalue`/`:offvalue`/
+`:listvariable` take a kmet variable (`kmet.tk.core/variable`) — whose
+Tcl name lives in a kmet namespace of its own, is materialized lazily,
+and is watched through Tk's `trace add variable` (`variable-watch!`, which
+is what carries a Tcl-side change back to a callback) — or a name the
+app's own Tcl owns, which kmet scripts as it is and never unsets.
+`:onvalue`/`:offvalue`/
 `:tristatevalue` are plain props beside it, a checkable widget's variable
 is shared with the app and with its radio group, and a second source of
 truth (`:text` beside `:textvariable`, `:items` beside `:listvariable`) is
