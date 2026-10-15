@@ -260,6 +260,48 @@
         ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
     (t/is true "skipped: libtcl, libtk or a display is absent")))
 
+(t/deftest a-canvas-reconciles-real-items-and-clicks-them
+  ;; A real canvas: an item's id is a Tk tag, so a re-render that moves an
+  ;; item keeps the very item Tk drew (its numeric id does not change), the
+  ;; options land through Tk's own itemconfigure/coords, and a click on the
+  ;; item runs the handler its render gave it, with the click's coordinates.
+  (if-let [a (live-tk)]
+    (try
+      (let [e (:eval a)
+            clicked (atom nil)
+            click #(reset! clicked %)
+            items (atom [{:id "n1" :type :rect :coords [0 0 40 30] :fill "red"
+                          :tags ["hot"] :on-click click}
+                         {:id "n2" :type :line :coords [0 0 10 10]}])
+            h (binding [tk/*adapter* a]
+                (tk/mount! (fn [_] [:tk/canvas {:width 100 :height 60 :items @items}]) {}))
+            c (do (e find-class-src) (e "kmetfind . Canvas"))]
+        (t/is (seq c) "the canvas is in the window")
+        (t/is (= "red" (e (str c " itemcget n1 -fill"))))
+        (t/is (= "n1 hot" (e (str c " itemcget n1 -tags")))
+              "the app's id is the item's first tag, its own tags after it")
+        (let [item (e (str c " find withtag n1"))]
+          (t/is (seq item) "the item is addressable by its id")
+          (swap! items (fn [items]
+                         [(assoc (first items) :coords [10 10 50 40])
+                          {:id "n3" :type :line :coords [60 0 80 10]}]))
+          (binding [tk/*adapter* a] (rerender! h))
+          (t/is (= item (e (str c " find withtag n1")))
+                "a moved item is the same Tk item, not a new one")
+          (t/is (= [10.0 10.0 50.0 40.0] (mapv parse-double (str/split (e (str c " coords n1")) #"\s+")))
+                "its coordinates move through Tk's coords subcommand")
+          (t/is (= "" (e (str c " find withtag n2"))) "a gone id is deleted")
+          (t/is (seq (e (str c " find withtag n3"))) "a new id is drawn"))
+        (e "update")
+        (e (str "event generate " c " <Button-1> -x 20 -y 20 -when tail"))
+        (e "update")
+        (t/is (= [20 20] @clicked)
+              "a click on the item runs the handler its render gave it")
+        (binding [tk/*adapter* a] (engine/dispose-component (:root h))))
+      (finally
+        ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
+    (t/is true "skipped: libtcl, libtk or a display is absent")))
+
 (t/deftest install-leaves-tk-loaded-for-a-non-mounting-caller
   ;; kmet.tk.ttk.style scripts ttk::style between install! and mount, so
   ;; install! must load Tk itself instead of leaving it to the first mount.

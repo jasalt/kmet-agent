@@ -99,43 +99,12 @@
 ;; The classic widget set (:tk/…)
 ;; ═══════════════════════════════════════════════════════════════════════════
 
-(def ^:private canvas-image-options
-  "The canvas-item options that name an image: the item's own vocabulary,
-   taking the same values an image prop does (a Tk image name, or a
-   description the canvas widget owns)."
-  #{:image :bitmap :disabledimage})
-
-(defn- canvas-items!
-  "Replace canvas W's items with PROPS' :items — `{:type :line :coords [x y …]}`
-   plus the item's own Tcl canvas options (`-fill`, `-width`, `-text`,
-   `-anchor`, …), which are Tk's canvas-item vocabulary, not the widget
-   catalogue's. An image option's description is created as a resource of
-   W, so it survives the redraw and is released with the widget."
-  [w props]
-  (dsl/eval! (str (:path w) " delete all"))
-  (doseq [{:keys [type coords] :as item} (or (:items props) [])]
-    (let [opts (into {}
-                     (map (fn [[k v]]
-                            [k (if (contains? canvas-image-options k)
-                                 (dsl/image-name w k v)
-                                 v)]))
-                     (dissoc item :type :coords))]
-      (dsl/eval! (str (:path w) " create " (dsl/tcl-word (or type :line))
-                      (when (seq coords)
-                        (str " " (str/join " "
-                                           (map #(dsl/tcl-quote (dsl/tcl-word %)) coords))))
-                      (when (seq opts)
-                        (str " " (str/join " "
-                                           (for [[k v] (sort-by (comp name key) opts)]
-                                             (str "-" (name k) " "
-                                                  (dsl/tcl-quote (dsl/tcl-word v))))))))))))
-
 (defn- scale-value!
   "Set classic scale W to PROPS' :value (a scale's value is a subcommand,
    not an option)."
   [w props]
   (when (some? (:value props))
-    (dsl/eval! (str (:path w) " set " (dsl/tcl-quote (dsl/tcl-word (:value props)))))))
+    (dsl/eval! (str (:path w) " set " (dsl/tcl-value (:value props))))))
 
 (defn- listbox-items!
   "Replace listbox W's items with PROPS' :items."
@@ -179,8 +148,8 @@
             (when-let [title (:title props)]
               (dsl/eval! (str "wm title . " (dsl/tcl-quote title))))
             (when-let [width (:width props)]
-              (dsl/eval! (str "wm geometry . " (dsl/tcl-quote (dsl/tcl-word width)) "x"
-                              (dsl/tcl-quote (dsl/tcl-word (or (:height props) 400))))))
+              (dsl/eval! (str "wm geometry . " (dsl/tcl-value width) "x"
+                              (dsl/tcl-value (or (:height props) 400)))))
             (let [w (dsl/->TkWidget "." :tk/toplevel (atom []) (atom {}) (atom {}))]
               ;; the window is Tk's own ".": its options are configured, not
               ;; created (and :width/:height above are the window's, not the
@@ -343,7 +312,7 @@
                                                 :selectforeground :xscrollincrement
                                                 :yscrollincrement])
                      :fixed {:borderwidth 0 :highlightthickness 0}
-                     :commands {:items canvas-items!}
+                     :commands {:items dsl/canvas-items!}
                      :after maybe-scrollbar!})
 
    :tk/menubutton
@@ -382,7 +351,7 @@
                                  (dsl/eval! (str (:path w) " add " path
                                                  (when-some [minsize (:minsize props)]
                                                    (str " -minsize "
-                                                        (dsl/tcl-quote (dsl/tcl-word minsize))))
+                                                        (dsl/tcl-value minsize)))
                                                  (when-some [stretch (:stretch props)]
                                                    (str " -stretch "
                                                         (dsl/tcl-word stretch)))))))

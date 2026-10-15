@@ -60,7 +60,7 @@
     (when parent
       (dsl/eval! (str "pack " sb " -side right -fill y"))
       (dsl/eval! (str "pack " text " -side left -fill "
-                      (dsl/tcl-quote (dsl/tcl-word (or (:fill props) :both)))
+                      (dsl/tcl-value (or (:fill props) :both))
                       (when-not (false? (:expand props)) " -expand 1"))))
     w))
 

@@ -34,7 +34,7 @@
   (fn [path props]
     (dsl/eval! (str (:path w) " add " path
                     (when-some [weight (:weight props)]
-                      (str " -weight " (dsl/tcl-quote (dsl/tcl-word weight))))))))
+                      (str " -weight " (dsl/tcl-value weight)))))))
 
 ;; ─── The data widgets' own subcommands ────────────────────────────────────
 
@@ -111,7 +111,7 @@
       (dsl/eval! (str (:path w) " tag configure " (dsl/tcl-quote (name tag)) " "
                       (str/join " " (for [[k v] (sort-by (comp name key) opts)]
                                       (str "-" (name k) " "
-                                           (dsl/tcl-quote (dsl/tcl-word v))))))))))
+                                           (dsl/tcl-value v)))))))))
 
 (defn- insert-rows!
   "Insert ROWS under the Tcl item PARENT ({} for the roots) into tree W, ids
@@ -129,7 +129,7 @@
                                       (str prefix (inc i)))))]
                     (dsl/eval! (str (:path w) " insert " parent " end -id " (dsl/tcl-quote id)
                                     (when-let [t (:text m)]
-                                      (str " -text " (dsl/tcl-quote (dsl/tcl-word t))))
+                                      (str " -text " (dsl/tcl-value t)))
                                     (when (seq cells)
                                       (str " -values " (dsl/tcl-quote (dsl/tcl-list cells))))
                                     (when (seq (:tags m))

@@ -468,7 +468,7 @@
                                                          :image {:file "pic.png"}}
                                                         {:type :line :coords [0 0 9 9]}]}]])]
       (t/is (some #(re-find #"^image create photo ::kmet_img_\d+ -file pic\.png$" %) (scripts rec)))
-      (t/is (some #(re-find #"create image 10 20 -image ::kmet_img_\d+$" %) (scripts rec)))
+      (t/is (some #(re-find #"create image 10 20 -image ::kmet_img_\d+ -tags i1$" %) (scripts rec)))
       (engine/dispose-component root)
       (t/is (some #(re-find #"^image delete ::kmet_img_\d+$" %) (scripts rec))))))
 
@@ -906,18 +906,64 @@
               "the replaced item's handler is released"))
       (engine/dispose-component (:root m)))))
 
-(t/deftest a-canvas-draws-its-items
+(t/deftest a-canvas-reconciles-its-items-by-id
+  ;; A canvas item's identity is the app's :id — written as its first Tk
+  ;; tag, since Tk gives items numeric ids of its own — so a re-render keeps
+  ;; the items whose ids it still has: the coordinates move through Tk's
+  ;; `coords` subcommand, changed options through `itemconfigure`, and only
+  ;; a new, gone, retyped or reshaped item costs a create or a delete.
   (with-fake [rec nil]
     (let [items (atom [{:type :line :coords [0 0 10 10] :fill "#ff0000"}
                        {:type :text :coords [5 5] :text "hi" :anchor :w}])
           m (mounted (fn [_] [:tk/canvas {:items @items}]))]
-      (t/is (some #(re-find #"create line 0 0 10 10 -fill \\#ff0000" %) (scripts rec)))
-      (t/is (some #(re-find #"create text 5 5 -anchor w -text hi" %) (scripts rec)))
-      (reset! items [{:type :rect :coords [1 1 2 2]}])
+      (t/is (some #(re-find #"create line 0 0 10 10 -fill \\#ff0000 -tags i1$" %) (scripts rec))
+            "an item's id is its first Tk tag (i<n> when the render names none)")
+      (t/is (some #(re-find #"create text 5 5 -anchor w -tags i2 -text hi$" %) (scripts rec)))
+      (let [drawn (count (scripts rec))]
+        (rerender! m)
+        (t/is (= drawn (count (scripts rec)))
+              "a render that changes nothing leaves the canvas alone"))
+      (swap! items assoc 0 {:type :line :coords [0 0 20 20] :fill "#00ff00"})
       (rerender! m)
-      (t/is (some #(str/includes? % "delete all") (scripts rec)))
-      (t/is (some #(re-find #"create rect 1 1 2 2" %) (scripts rec)))
+      (t/is (some #(re-find #"coords i1 0 0 20 20$" %) (scripts rec))
+            "a kept item moves through Tk's coords subcommand")
+      (t/is (some #(re-find #"itemconfigure i1 -fill \\#00ff00$" %) (scripts rec))
+            "its changed options go through itemconfigure")
+      (reset! items [{:id "i1" :type :line :coords [0 0 20 20] :fill "#00ff00"}
+                     {:id "i3" :type :rect :coords [1 1 4 4]}])
+      (rerender! m)
+      (t/is (some #(re-find #"delete i2$" %) (scripts rec)) "a gone id is deleted")
+      (t/is (some #(re-find #"create rect 1 1 4 4 -tags i3$" %) (scripts rec))
+            "a new one is drawn")
+      (swap! items assoc 0 {:id "i1" :type :rect :coords [0 0 20 20]})
+      (rerender! m)
+      (t/is (some #(re-find #"delete i1$" %) (scripts rec))
+            "a retyped item (or one that dropped an option) is rebuilt")
+      (t/is (some #(re-find #"create rect 0 0 20 20 -tags i1$" %) (scripts rec)))
+      (t/is (zero? (count (scripts-like rec #"^destroy ")))
+            "the widget itself is never rebuilt")
       (engine/dispose-component (:root m)))))
+
+(t/deftest a-canvas-items-click-is-an-item-bind
+  (with-fake [rec nil]
+    (let [clicked (atom nil)
+          items (atom [{:id "n1" :type :rect :coords [0 0 10 10] :fill "#fff"
+                        :tags ["hot"] :on-click #(reset! clicked %)}])
+          m (mounted (fn [_] [:tk/canvas {:items @items}]))
+          id (second (re-find #"kmet::cb (\d+)" (first (scripts-like rec #"<Button-1>"))))]
+      (t/is (some #(re-find #"create rect 0 0 10 10 -fill \\#fff -tags n1\\ hot$" %) (scripts rec))
+            "the app's own tags ride in the item's one -tags list, after its id")
+      (t/is (some #(re-find #"<Button-1> \{kmet::cb \d+ %x %y\}$" %) (scripts rec))
+            "a click on the item is Tk's item bind, on the item's own tag")
+      (tk/dispatch-callback! ["kmet::cb" id "7" "9"])
+      (t/is (= [7 9] @clicked) "the handler receives the click's coordinates")
+      (swap! items assoc 0 (assoc (first @items) :on-click nil))
+      (rerender! m)
+      (t/is (some #(re-find #"<Button-1> \{\}$" %) (scripts rec))
+            "a dropped handler unbinds the item")
+      (engine/dispose-component (:root m))
+      (t/is (= "" (tk/dispatch-callback! ["kmet::cb" id]))
+            "and disposal releases what the item held"))))
 
 ;; ─── rich text (:text :content segments) ─────────────────────────────────
 

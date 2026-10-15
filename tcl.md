@@ -44,6 +44,16 @@ the ids the new rows still have (a stale id is dropped, not a render
 failure), and `:open` is part of a row's own data (`tag bind` and
 `item move` are not exposed).
 
+`:tk/canvas` items have identity: an item's `:id` is written as its first
+Tk tag (Tk's own item ids are numeric, but a tag stands for an item
+wherever a tagOrId is taken), so a re-render reconciles by id — a kept
+item moves through Tk's `coords` subcommand and takes its changed options
+through `itemconfigure`, a new id is drawn, a gone id is deleted with the
+callback its `:on-click` held, and a retyped or reshaped item is rebuilt
+(Tk cannot unset an option). `:tags` reach Tk's item tags, `:on-click` is
+Tk's item bind on the item's tag with the click's coordinates, and a click
+reaches the topmost item under the pointer, as in Tk.
+
 Tk's native dialogs are `kmet.tk.core` functions: `message-box!`,
 `open-file!`, `save-file!`, `choose-directory!` and `choose-color!` script
 `tk_messageBox`/`tk_getOpenFile`/… with the props as that command's own
@@ -151,9 +161,10 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
 ## 1. Data a tag cannot express
 
-- **Canvas item identity.** `:items` is redrawn wholesale when it changes.
-  An interactive canvas needs per-item ids, `itemconfigure` for an update,
-  `item bind` (an `:on-item-click`) and item tags to address a group.
+- **Canvas item events beyond a click.** An item's `:on-click` is Tk's
+  item bind for `<Button-1>`; `<Enter>`/`<Leave>` (hover), `<B1-Motion>`
+  (drag) and a tag bound as a group need the same target machinery for
+  other sequences, and Tk's `tag raise`/`lower` for item order.
 - **A checkable or imaged menu item.** `:items` are commands, separators
   and cascades; Tk's checkbutton/radiobutton items need a `-variable`, an
   item's `-image` has no prop, and `-accelerator` is a label today, not a

@@ -136,7 +136,8 @@ Three shapes of tag, on top of the plain leaves:
 - **Data widgets** take their content as props rather than children:
   `:tk/listbox` `:items`/`:selected`, `:ttk/treeview` `:columns`/`:rows`/
   `:tags`/`:selected`, `:tk/canvas` `:items` (each a `{:type :line
-  :coords [x y …]}` map plus that item's own canvas options),
+  :coords [x y …]}` map of Tk's own canvas-item options, plus `:id`,
+  `:tags` and `:on-click`),
   `:tk/menu`/`:tk/menubutton`/`:ttk/menubutton` `:items`,
   `:ttk/combobox`/`:ttk/spinbox` `:values`.
 - **Containers** place their children themselves: `:ttk/notebook` adds
@@ -175,6 +176,20 @@ props like a widget's own, so `:bold`/`:font-family` work there. Tk's
 `tag bind` and `item move` are not exposed: a row click is the widget's
 `:on-select`, and a re-render rebuilds rather than reorders (the row
 vector's order is the tree's).
+
+A canvas (`:tk/canvas`) draws its `:items` as Tk's own items: each is a map
+of Tk's canvas-item options (`{:type :line :coords [x y …] :fill "#fff"}`)
+plus `:id`, `:tags` and `:on-click`. Tk gives an item a numeric id of its
+own but lets a tag stand for it, so an item's `:id` (`i1`, `i2`, … when the
+render names none) is written as its first Tk tag, and every item command
+addresses it by that. A re-render *reconciles*: an id it still has keeps
+its item — the coordinates through Tk's `coords` subcommand, the changed
+options through `itemconfigure`, and its `:on-click` binding (Tk's item
+bind, `<Button-1>` on the item's own tag) — a new id is drawn, a gone id
+deleted with the callback it held, and an item whose type or option set
+changed is rebuilt, since Tk cannot unset an option. A click hands the
+handler the click's coordinates and reaches the *topmost* item under the
+pointer, Tk's own rule: overlapping items shadow each other's handlers.
 
 The classic specs are `kmet.tk.core`'s `classic-specs`, the themed ones
 `kmet.tk.ttk/specs`; `kmet.tk.core` completes both through
@@ -243,6 +258,7 @@ The callback slots and what the handler receives:
 | `:on-toggled` | the checkable widgets (`-command`) | the new boolean |
 | `:on-select` | `:tk/listbox` (`<<ListboxSelect>>`) | a vector of indices |
 | `:on-select` | `:ttk/treeview` (`<<TreeviewSelect>>`) | a vector of row ids |
+| an item's `:on-click` | `:tk/canvas` `:items` (Tk's item bind) | the click's coordinates, `[x y]` |
 | `:on-scroll` | `:tk/scrollbar`/`:ttk/scrollbar` (`-command`) | Tk's scroll arguments (`"moveto" "0.5"`) |
 | `:on-tab-changed` | `:ttk/notebook` (`<<NotebookTabChanged>>`) | the tab index |
 
@@ -565,7 +581,8 @@ answered by stand-in procs that check the emitted option words (a
 text, typed into with real key events: its value round-trips through
 Tcl's parser, Return submits without a newline, and undo takes back the
 typed key alone, and a treeview's hierarchy, row tags and tree column
-read back out of the widget.
+read back out of the widget, and a canvas whose items a re-render moves in
+place (the very item, by Tk's own numeric id) and clicks to its handler.
 
 `scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
 the interpreter's widget classes and their options and diffs them against
@@ -590,8 +607,8 @@ ones still missing, and `scripts/tk_option_audit.clj` reports both sides
 against a live Tk. kmet's own widgets are the `:ui/…` set in
 `kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container).
 
-The first cuts that remain — canvas items without identity, checkable or
-imaged menu items, a right-click popup, and everything Tk offers beside
+The first cuts that remain — checkable or imaged menu items, a right-click
+popup, canvas item events beyond a click, and everything Tk offers beside
 its widgets (`grid`/`place`, window management, the clipboard, variables) —
 are tracked in [`tcl.md`](../../tcl.md) at the repository root, which lists
 each gap with what closing it needs and how the two guards below keep the

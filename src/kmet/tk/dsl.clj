@@ -193,6 +193,10 @@
                :args #(vector (vec %))}
    :tab-index {:fragment #(str "[" % " index current]")
                :args #(vector (or (parse-long (first %)) (first %)))}
+   ;; a click's coordinates, which only a binding substitutes: the handler
+   ;; gets [x y] as Tk's %x/%y, relative to the widget
+   :pointer   {:fragment (fn [_] "%x %y")
+               :args #(vector (mapv as-number %))}
    ;; a checkable widget's state lives in its private variable
    :variable  {:fragment #(str "[set " (check-var %) "]")
                :args #(mapv (fn [v] (= "1" v)) %)}
@@ -210,11 +214,13 @@
 
 (defn- bind-slot!
   "Point W's SLOT at F (nil unbinds), through the slot spec's Tcl -OPTION
-   or EVENT. The value fragment sits inside the bound script, so Tcl
-   evaluates it when the event fires, not at bind time. :stop closes the
-   script with `break`, which keeps Tk's class binding from running too —
-   the Return slot of an editable text must not insert a newline."
-  [w slot {:keys [event option value arg stop]} f]
+   or EVENT — :target names a tagOrId to bind on instead of the widget
+   itself, which is Tk's item bind for a canvas. The value fragment sits
+   inside the bound script, so Tcl evaluates it when the event fires, not
+   at bind time. :stop closes the script with `break`, which keeps Tk's
+   class binding from running too — the Return slot of an editable text
+   must not insert a newline."
+  [w slot {:keys [event option value arg stop target]} f]
   (let [callback (set-callback! w slot f value arg)
         script (when (some? callback)
                  (str callback
@@ -223,7 +229,11 @@
         body (str "{" (or script "") "}")]
     (if option
       (eval! (str (:path w) " configure -" (name option) " " body))
-      (eval! (str "bind " (:path w) " " event " " body)))))
+      (if target
+        ;; Tk's item bind is the widget's own subcommand (bind <tagOrId> …),
+        ;; not the window-level `bind` command
+        (eval! (str (:path w) " bind " (tcl-quote target) " " event " " body))
+        (eval! (str "bind " (:path w) " " event " " body))))))
 
 ;; tcl-event is defined with the chord translation below; the slot tables
 ;; only call it when a tree renders.
@@ -390,6 +400,13 @@
     (str/join " " (map (comp tcl-quote tcl-list) x))
     (tcl-word x)))
 
+(defn tcl-value
+  "X as the one Tcl word an option value is: a sequence as Tcl list syntax
+   (so an element with a space stays one element), anything else the word
+   it names."
+  [x]
+  (tcl-quote (if (sequential? x) (tcl-list x) (tcl-word x))))
+
 ;; option-value builds a widget's font from the font props, so it reaches
 ;; forward to the rich-text helpers below (the same base font the :text tag
 ;; caches on its widget).
@@ -462,7 +479,7 @@
               (when (and (nil? (:file v)) (some? (:data v)))
                 (str " -data " (tcl-quote (:data v))))
               (when (some? (:format v))
-                (str " -format " (tcl-quote (tcl-word (:format v)))))))
+                (str " -format " (tcl-value (:format v))))))
   (when (some? (:zoom v)) (image-copy! img :zoom (:zoom v)))
   (when (some? (:subsample v)) (image-copy! img :subsample (:subsample v)))
   (when (some? (:fit v)) (image-fit! img (:fit v))))
@@ -553,12 +570,12 @@
 
 (defn- option-args
   "A Tcl option map as `-option value` words, in option-name order so a
-   widget's script is stable: keywords and booleans render as Tcl words,
-   every value is quoted so any string survives."
+   widget's script is stable: a sequence is Tcl list syntax, a keyword or a
+   boolean the word it names, and every value is one quoted word."
   [options]
   (for [[option v] (sort-by (comp name key) options)
         :when (some? v)]
-    (str "-" (name option) " " (tcl-quote (tcl-word v)))))
+    (str "-" (name option) " " (tcl-value v))))
 
 (defn widget-script
   "A `COMMAND PATH -option value … FRAGMENTS…` construction script from an
@@ -680,7 +697,7 @@
         ;; window, a notebook tab, a pane) — and read the child's props for it
         (attach path props)
         (eval! (str "pack " path
-                    " -side " (tcl-quote (tcl-word (or (:side props) :top)))
+                    " -side " (tcl-value (or (:side props) :top))
                     " -fill " (tcl-word (or (:fill props)
                                             (if (#{:ttk/frame :tk/frame :ttk/labelframe} tag)
                                               :both
@@ -920,6 +937,108 @@
   (when-some [[first last] (seq (:position props))]
     (eval! (str (:path w) " set " (tcl-quote first) " " (tcl-quote last)))))
 
+;; ─── Canvas items (the :tk/canvas tag) ───────────────────────────────────
+;; Tk gives a canvas item a numeric id of its own, but lets any tag stand
+;; for the item wherever a tagOrId is taken — so a rendered item's identity
+;; is written as its first tag: the app's own :id (i1, i2, … when it names
+;; none), which every item command then addresses. A re-render reconciles
+;; against what the widget holds: a surviving id keeps its item — the
+;; coordinates through Tk's `coords` subcommand (there is no -coords item
+;; option) and the changed options through `itemconfigure` — a new id is
+;; created, a gone id deleted with the callback it held, and an item whose
+;; type or option set changed is recreated, since Tk cannot unset an option.
+
+(def ^:private canvas-item-keys
+  "The :items entry keys that are not Tcl canvas-item options."
+  #{:id :type :coords :on-click})
+
+(def ^:private canvas-image-options
+  "The canvas-item options that name an image: the item's own vocabulary,
+   taking the same values an image prop does (a Tk image name, or a
+   description the canvas widget owns)."
+  #{:image :bitmap :activeimage :disabledimage})
+
+(defn- canvas-item-id
+  "ITEM's identity: its own :id (which is also its first Tk tag), or i<n>
+   from its place in the render."
+  [i item]
+  (str (or (:id item) (str "i" (inc i)))))
+
+(defn- canvas-item-options
+  "ITEM's Tcl canvas-item options for the item ID: its own options — an
+   image description resolved to the image W owns — with its tags, ID
+   first, which is what makes the item addressable by its id."
+  [w id item]
+  (-> (into {} (map (fn [[k v]]
+                      [k (if (contains? canvas-image-options k)
+                           (image-name w k v)
+                           v)]))
+            (apply dissoc item canvas-item-keys))
+      (assoc :tags (into [id] (:tags item)))))
+
+(defn- canvas-create-item!
+  "Create ITEM as the item ID on canvas W."
+  [w id item]
+  (eval! (str (:path w) " create " (tcl-word (or (:type item) :line))
+              (when-let [coords (seq (:coords item))]
+                (str " " (str/join " " (map tcl-value coords))))
+              " " (str/join " " (option-args (canvas-item-options w id item))))))
+
+(defn- canvas-configure-item!
+  "Update canvas W's item ID from WAS to ITEM in place."
+  [w id was item]
+  (when (not= (:coords was) (:coords item))
+    (eval! (str (:path w) " coords " (tcl-quote id) " "
+                (str/join " " (map tcl-value (:coords item))))))
+  (let [before (canvas-item-options w id was)
+        after (canvas-item-options w id item)
+        changed (into {} (remove (fn [[k v]] (= v (get before k)))) after)]
+    (when (seq changed)
+      (eval! (str (:path w) " itemconfigure " (tcl-quote id) " "
+                  (str/join " " (option-args changed)))))))
+
+(defn- bind-canvas-item!
+  "Point W's item ID at ITEM's :on-click handler (nil unbinds): Tk's item
+   bind, so a click on the item hands the handler the click's coordinates —
+   which item it is, the render that made it knows."
+  [w id item was]
+  (when (not= (:on-click item) (:on-click was))
+    (bind-slot! w [:item id] {:target id :event "<Button-1>" :value :pointer}
+                (:on-click item))))
+
+(defn canvas-items!
+  "Reconcile canvas W's items with PROPS' :items — each an item map of Tk's
+   own canvas-item options (`{:type :line :coords [x y …] :fill \"#fff\"}`)
+   plus :id (its identity and its first Tk tag), :tags and :on-click (a
+   handler for a click on the item). An id this render keeps is updated in
+   place, a new one created, a gone one deleted with the trampoline its
+   :on-click held."
+  [w props]
+  (let [previous (:canvas-items @(:styles w))
+        items (into {} (map-indexed (fn [i item] [(canvas-item-id i item) item]))
+                    (or (:items props) []))]
+    (doseq [[id was] previous
+            :when (not (contains? items id))]
+      (bind-canvas-item! w id nil was)
+      (eval! (str (:path w) " delete " (tcl-quote id))))
+    (doseq [[id item] items]
+      (let [was (get previous id)
+            recreate? (or (nil? was)
+                          (not= (:type was) (:type item))
+                          ;; a dropped option cannot be unset: rebuild instead
+                          (seq (remove #(contains? item %)
+                                       (keys (dissoc was :id :type :coords :on-click)))))]
+        (if recreate?
+          (do (when (some? was)
+                (bind-canvas-item! w id nil was)
+                (eval! (str (:path w) " delete " (tcl-quote id))))
+              (canvas-create-item! w id item)
+              (bind-canvas-item! w id item nil))
+          (do (when (not= was item) (canvas-configure-item! w id was item))
+              (bind-canvas-item! w id item was)))))
+    (swap! (:styles w) assoc :canvas-items items)
+    nil))
+
 ;; ─── Menus (the :tk/menu tag and the menubuttons) ─────────────────────────
 
 (defn- release-menu-slots!
@@ -1004,9 +1123,9 @@
   [w kind props]
   (let [radio? (= kind :radio)]
     (eval! (str "set " (check-var (:path w)) " "
-                (tcl-quote (tcl-word (if (:active props)
-                                       (if radio? (or (:value props) 1) 1)
-                                       (if radio? "" 0))))))))
+                (tcl-value (if (:active props)
+                             (if radio? (or (:value props) 1) 1)
+                             (if radio? "" 0)))))))
 
 (defn widget-spec
   "The spec of a widget whose tag is its Tk command plus its options — the
