@@ -108,6 +108,12 @@ bb test kmet.tk.test-tcl               # the same claim in test form: every
 The audit's per-widget dump (`--widgets`) prints each class's option list, so
 a new tag starts from an audit line rather than from guessing.
 
+A `:bind` value may be a map with a `:value` kind instead of the handler
+alone, so the bound script hands the handler a live value the way a slot
+does — a `:pointer` drag on a canvas keeps its `[x y]` after the pointer
+leaves the item, where Tk's item bind stops firing. The kinds are the
+slots' own (see kmet.tk.dsl/value-kinds).
+
 ## Tk 8.6 vs 9.1 — what the running version changes
 
 The tag table is kmet's, not Tk's: the tag names are the same on every
@@ -168,18 +174,7 @@ So a kmet tree that stays inside the 8.6 option set runs unchanged on
 8.6/9.0/9.1; a Tk 9 prop fails loudly at the first widget of its tag on an
 older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
-## 1. What a plain value cannot express
-
-The catalogue (`kmet.tk.options`) leaves out what a plain value cannot
-be; each group needs machinery:
-
-- **A value a `:bind` handler cannot read.** A widget's own binding hands
-  its handler no arguments, so a drag that leaves its canvas item has no
-  coordinates: Tk's pointer grab keeps the events coming to the widget, but
-  nothing carries `%x %y` into the handler. A binding spec with a value kind
-  (as an item binding has) is what would close it.
-
-## 2. Tk beyond its widgets
+## Tk beyond its widgets
 
 - **Window management.** `wm` beyond `title`/`geometry`: minimum size,
   `resizable`, `attributes` (fullscreen, topmost, alpha), `iconphoto`,
@@ -198,9 +193,9 @@ be; each group needs machinery:
 
 ## The app port (after the backend list)
 
-The numbered sections above are the `kmet.tk.*` gaps that block the GUI app
-port. This one is the port's own work — the app's input and rendering, plus
-the seam extensions need — and it starts once those gaps are closed.
+The section above is the remaining `kmet.tk.*` gap list. This one is the
+port's own work — the app's input and rendering, plus the seam extensions
+need — and it starts once those gaps are closed.
 Nothing here is a backend gap.
 
 - **`:ui/composer`.** The chat input on the editable `:tk/text`: a

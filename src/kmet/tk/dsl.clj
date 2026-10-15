@@ -298,22 +298,27 @@
 (defn- binding-slots
   "PROPS' binding slots as {slot {:event … :handler f}}: the tag's SLOTS
    table plus the universal :bind map, whose chord keys become [:bind chord]
-   slots. SLOTS may be nil (the tag declares none)."
+   slots. A :bind value is the handler fn, or a map carrying :handler plus
+   the slot's own facts — a :value kind, so the bound script hands the
+   handler a live value (a pointer's coordinates, a widget's text). SLOTS
+   may be nil (the tag declares none)."
   [props slots]
   (into (into {} (for [[slot spec] slots]
                    [slot (assoc spec :handler (get props slot))]))
-        (for [[chord f] (:bind props)]
-          [[:bind chord] {:event (tcl-event chord) :handler f}])))
+        (for [[chord v] (:bind props)
+              :let [spec (if (map? v) v {:handler v})]]
+          [[:bind chord] (assoc spec :event (tcl-event chord))])))
 
 (defn apply-bindings!
-  "Rebind the slots whose handler changed between PREV and PROPS, and
-   unbind the slots PROPS dropped — a callback that leaves the tree must
-   stop firing."
+  "Rebind the slots whose handler or read-back kind changed between PREV
+   and PROPS, and unbind the slots PROPS dropped — a callback that leaves
+   the tree must stop firing, and one whose binding spec changed must be
+   bound again (the script holds the old kind's fragment)."
   [w prev props slots]
   (let [before (binding-slots prev slots)
         after (binding-slots props slots)]
     (doseq [[slot spec] after
-            :when (not= (:handler spec) (:handler (get before slot)))]
+            :when (not= spec (get before slot))]
       (bind-slot! w slot spec (:handler spec)))
     (doseq [[slot spec] before
             :when (not (contains? after slot))]

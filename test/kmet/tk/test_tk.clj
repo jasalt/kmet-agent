@@ -550,6 +550,48 @@
       (t/is (false? @checked))
       (engine/dispose-component (:root m)))))
 
+(t/deftest a-bind-map-carries-a-value-kind
+  ;; A :bind value may be a map with :handler and a :value kind, so the
+  ;; bound script hands the handler a live value as a slot does — the
+  ;; pointer's coordinates for a drag on the widget itself (Tk directs item
+  ;; events to the item, so its own bind stops at the item's edge), a
+  ;; widget's text for a chord.
+  (with-fake [rec nil]
+    (let [seen (atom [])
+          m (mounted (fn [_] [:ttk/frame {}
+                              [:tk/canvas {:bind {"<B1-Motion>" {:handler #(swap! seen conj %)
+                                                                 :value :pointer}}}]
+                              [:ttk/entry {:text "hi"
+                                           :bind {:f2 {:handler #(swap! seen conj %)
+                                                       :value :text}}}]]))]
+      (let [motion (first (scripts-like rec #"<B1-Motion>"))
+            id (second (re-find #"kmet::cb (\d+)" motion))]
+        (t/is (re-find #"<B1-Motion> \{kmet::cb \d+ %x %y\}$" motion)
+              "the pointer kind puts Tk's %x %y into the script")
+        (tk/dispatch-callback! ["kmet::cb" id "3" "4"])
+        (t/is (= [[3 4]] @seen)))
+      (let [f2 (first (scripts-like rec #"<F2>"))
+            id (second (re-find #"kmet::cb (\d+)" f2))]
+        (t/is (re-find #"<F2> \{kmet::cb \d+ \[\.w\S+ get\]\}$" f2))
+        (tk/dispatch-callback! ["kmet::cb" id "abc"])
+        (t/is (= [[3 4] "abc"] @seen)))
+      (engine/dispose-component (:root m)))))
+
+(t/deftest a-changed-bind-value-kind-rebinds
+  (with-fake [rec nil]
+    (let [handler (fn [& _] nil)
+          value (atom :pointer)
+          m (mounted (fn [_] [:ttk/frame {}
+                              [:tk/canvas {:bind {"<B1-Motion>" {:handler handler
+                                                                 :value @value}}}]]))]
+      (t/is (some #(re-find #"<B1-Motion> \{kmet::cb \d+ %x %y\}$" %) (scripts rec)))
+      (reset! value nil)
+      (rerender! m)
+      (t/is (some #(re-find #"<B1-Motion> \{kmet::cb \d+\}$" %) (scripts rec))
+            "the same handler with no value kind is bound again, without a fragment")
+      (t/is (= 2 (count (scripts-like rec #"<B1-Motion>"))))
+      (engine/dispose-component (:root m)))))
+
 (t/deftest bind-takes-chords-and-tracks-the-map
   ;; :bind binds arbitrary events by kmet chord (or a raw Tk pattern); a
   ;; chord that leaves the map is unbound again.

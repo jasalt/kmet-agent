@@ -729,3 +729,28 @@
                                 (first (str/split (e (str "winfo children " label)) #"\s+")))))
             "the label frame holds the widget the render put in it")
       (engine/dispose-component (:root h)))))
+
+;; ─── a binding that reads a value ────────────────────────────────────────
+
+(t/deftest a-widget-bind-keeps-a-drag-s-coordinates
+  ;; Tk directs a mouse event to the current item, so an item's :on-drag
+  ;; stops at its edge. The canvas's own :bind with :value :pointer keeps
+  ;; the coordinates coming — the drag that leaves the item, which is the
+  ;; gap section 1 of tcl.md named.
+  (with-live-tk [e]
+    (let [seen (atom [])
+          h (tk/mount! [:tk/canvas {:width 120 :height 80
+                                    :items [{:id "box" :type :rect
+                                             :coords [0 0 30 30] :fill "red"}]
+                                    :bind {"<B1-Motion>" {:handler (fn [xy] (swap! seen conj xy))
+                                                          :value :pointer}}}]
+                       {})
+          c (do (e find-class-src) (e "kmetfind . Canvas"))]
+      (t/is (seq c) "the canvas is in the window")
+      (e "update")
+      (e (str "event generate " c " <Button-1> -x 10 -y 10 -when tail"))
+      (e (str "event generate " c " <B1-Motion> -x 90 -y 60 -when tail"))
+      (e "update")
+      (t/is (= [[90 60]] @seen)
+            "the drag's coordinates reached the widget's own binding")
+      (engine/dispose-component (:root h)))))

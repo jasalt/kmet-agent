@@ -338,6 +338,18 @@ kmet chord (`:ctrl+enter`, `"ctrl+shift+p"`) or a raw Tk pattern
 [:tk/toplevel {:bind {:ctrl+q quit!}}]
 ```
 
+A binding value may also be a map with the handler under `:handler` and a
+`:value` kind the bound script reads, the same kinds the slots use:
+`:pointer` puts the event's `%x %y` in the handler's hands — a drag on the
+*canvas* keeps its coordinates after the pointer leaves the item, where
+the item's own `:on-drag` (Tk's item bind) no longer fires — and `:text`
+reads the widget's value:
+
+```clojure
+[:tk/canvas {:items @items
+             :bind {"<B1-Motion>" {:handler drag! :value :pointer}}}]
+```
+
 `:context-menu` gives any tag a popup: its value is a menu's own `:items`
 (a map with `:items` is a cascade, `:separator` a rule, anything else a
 command whose `:on-click` fires through the trampoline). Tk has no widget
