@@ -17,7 +17,7 @@
     (mapv #(clojure.string/replace % #"\u001b\[[0-9;]*[a-zA-Z]" "")
           (core/render comp width))))
 
-(deftest render-call-test
+(deftest ^:bb-only render-call-test
   (testing "file tools show symbol + path"
     (let [lines (plain (render/render-call "get_symbol_body"
                                            {:path "src/core.clj" :symbol "init"}
@@ -41,7 +41,7 @@
 (def ^:private summary-details
   {:count 2 :label "symbols" :name "greet" :file-count 1})
 
-(deftest summary-result-test
+(deftest ^:bb-only summary-result-test
   (testing "collapsed hit summary: count + label + name + file count"
     (let [c (render/render-result "ignored" false th 60 false nil nil nil
                                   {:details summary-details :cwd "."})
@@ -64,7 +64,7 @@
       (is (some #(str/includes? % "function a") lines))
       (is (some #(str/includes? % "function b") lines)))))
 
-(deftest body-result-test
+(deftest ^:bb-only body-result-test
   (let [details {:name "double-it" :line-count 2
                  :path "src/core.clj"
                  :body "(defn double-it [x]\n  (* 2 x))"}]
@@ -81,7 +81,7 @@
         (is (some #(str/includes? % "double-it") lines))
         (is (some #(str/includes? % "* 2 x") lines))))))
 
-(deftest fallback-result-test
+(deftest ^:bb-only fallback-result-test
   (testing "error results pass through in the preview"
     (let [c (render/render-result "tree-sitter: boom" true th 60 false
                                   nil nil nil {})
@@ -93,7 +93,7 @@
           lines (plain c 60)]
       (is (some #(str/includes? % "plain text result") lines)))))
 
-(deftest quiet-titles-test
+(deftest ^:bb-only quiet-titles-test
   (testing "list_symbols"
     (is (= "list_symbols /a/b.clj" (render/title-list-symbols {:path "/a/b.clj"})))
     (is (nil? (render/title-list-symbols {})))

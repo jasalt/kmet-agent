@@ -31,12 +31,12 @@
 ;; Argument validation / discovery
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-missing-code
+(deftest ^:bb-only test-missing-code
   (let [result (eval-tool/execute {})]
     (is (:is-error result))
     (is (str/includes? (:content result) "code"))))
 
-(deftest test-no-server-found
+(deftest ^:bb-only test-no-server-found
   (with-redefs [nrepl/discover-port (fn [& _] nil)]
     (let [result (eval-tool/execute {:code "(+ 1 2)"})]
       (is (:is-error result))
@@ -44,7 +44,7 @@
       (is (str/includes? (:content result) ".nrepl-port"))
       (is (str/includes? (:content result) "common nREPL ports")))))
 
-(deftest test-explicit-port-skips-discovery
+(deftest ^:bb-only test-explicit-port-skips-discovery
   (let [discover-called (atom false)]
     (with-redefs [nrepl/discover-port (fn [& _] (reset! discover-called true) nil)
                   nrepl/eval-code (fn [_] {:ok? true :values ["3"] :out "" :err ""
@@ -52,7 +52,7 @@
       (eval-tool/execute {:code "(+ 1 2)" :port 7888})
       (is (false? @discover-called)))))
 
-(deftest test-cwd-is-passed-to-discovery
+(deftest ^:bb-only test-cwd-is-passed-to-discovery
   (let [captured (atom nil)]
     (with-redefs [nrepl/discover-port (fn [host dir]
                                         (reset! captured [host dir])
@@ -60,7 +60,7 @@
       (eval-tool/execute {:code "(+ 1 2)"} nil nil {:cwd "/project"})
       (is (= ["127.0.0.1" "/project"] @captured)))))
 
-(deftest test-cancel-is-passed-to-eval-code
+(deftest ^:bb-only test-cancel-is-passed-to-eval-code
   (let [captured (atom nil)
         signal (atom false)]
     (with-redefs [nrepl/eval-code (fn [opts]
@@ -77,7 +77,7 @@
 ;; Formatting
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-success-content-interleaves-output-and-values
+(deftest ^:bb-only test-success-content-interleaves-output-and-values
   (let [result {:ok? true
                 :values ["3"]
                 :out "hello\n"
@@ -96,7 +96,7 @@
             :cancelled? false :error? false}
            (dissoc (:details r) :code)))))
 
-(deftest test-eval-error-is-flagged-and-named
+(deftest ^:bb-only test-eval-error-is-flagged-and-named
   (let [result {:ok? false
                 :ex "class java.lang.ArithmeticException"
                 :values ["#error {:cause \"Divide by zero\"}"]
@@ -110,7 +110,7 @@
     (is (str/includes? (:content r) "=> #error"))
     (is (str/includes? (:content r) "at clojure.lang"))))
 
-(deftest test-repaired-delimiters-are-reported
+(deftest ^:bb-only test-repaired-delimiters-are-reported
   (let [result {:ok? true :values ["#'user/foo"] :out "" :err ""
                 :events [[:value "#'user/foo"]] :env :clj}
         [r opts] (execute-with {:code "(defn foo [x]\n  (+ x 1" :port 7888} result)]
@@ -119,7 +119,7 @@
         "evaluation receives the repaired code")
     (is (true? (get-in r [:details :repaired?])))))
 
-(deftest test-timeout-is-reported
+(deftest ^:bb-only test-timeout-is-reported
   (let [result {:ok? false :timeout? true :values [] :out "" :err ""
                 :events [] :env :clj}
         [r _] (execute-with {:code "(Thread/sleep 10000)" :port 7888 :timeout 500} result)]
@@ -127,7 +127,7 @@
     (is (str/includes? (:content r) "timed out after 500 ms"))
     (is (true? (get-in r [:details :timed-out?])))))
 
-(deftest test-cancelled-is-reported
+(deftest ^:bb-only test-cancelled-is-reported
   (let [result {:ok? false :cancelled? true :values [] :out "" :err ""
                 :events [] :env :clj}
         [r _] (execute-with {:code "(Thread/sleep 100000)" :port 7888} result)]
@@ -136,7 +136,7 @@
     (is (true? (get-in r [:details :cancelled?])))
     (is (not (str/includes? (:content r) "Eval error")))))
 
-(deftest test-connection-error-is-reported
+(deftest ^:bb-only test-connection-error-is-reported
   (let [[r _] (execute-with {:code "(+ 1 2)" :port 7888} nil
                             (ex-info "Could not connect to nREPL at 127.0.0.1:7888 — Connection refused"
                                      {:type :nrepl-connect}))]
@@ -147,7 +147,7 @@
 ;; Renderers
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-call-renderer-and-title
+(deftest ^:bb-only test-call-renderer-and-title
   (testing "label, code and port render on the call line"
     (let [lines (plain (eval-tool/render-eval-call "clojure_eval"
                                                    {:code "(+ 1 2)" :port 7888}
@@ -180,7 +180,7 @@
 ;; Registration
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-registration-opts-into-the-tail-status-line
+(deftest ^:bb-only test-registration-opts-into-the-tail-status-line
   (testing "clojure_eval is a runner tool: :status true"
     (let [{:keys [api state]} (ext/create-nullable-api)
           _ (eval-tool/register! api)

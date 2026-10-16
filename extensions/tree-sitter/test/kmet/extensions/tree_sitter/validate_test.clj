@@ -19,14 +19,14 @@
 
 (def src ["def broken(:" "    return"])
 
-(deftest problems-from-tree-test
+(deftest ^:bb-only problems-from-tree-test
   (let [problems (validate/problems-from-tree (parse-el error-fixture) src)]
     (is (= 2 (count problems)))
     (is (= {:kind :error :line 1 :col 11}
            (select-keys (first problems) [:kind :line :col])))
     (is (= "def broken(:" (:snippet (first problems))))))
 
-(deftest zero-width-missing-test
+(deftest ^:bb-only zero-width-missing-test
   ;; a missing named node surfaces as a zero-width child in the tree
   ;; (`if :` → condition: (identifier [1, 6] - [1, 6]))
   (let [sexp "(module [0, 0] - [2, 0]
@@ -39,7 +39,7 @@
     (is (= [{:kind :missing :line 1 :col 3 :expected "identifier" :snippet "if :"}]
            problems))))
 
-(deftest stats-record-test
+(deftest ^:bb-only stats-record-test
   ;; MISSING tokens (like `def f(:` → `(MISSING ")" ...)`) never appear in
   ;; the tree — only on the stats line
   (let [line "/tmp/bad.py\tParse: 0.09 ms\t170 bytes/ms\t(MISSING \") [0, 6] - [0, 6])"
@@ -51,20 +51,20 @@
   (testing "clean stats line (no record) -> nil"
     (is (nil? (validate/stats-record "/tmp/ok.py\tParse: 0.1 ms\t200 bytes/ms")))))
 
-(deftest delimiter-balanced-test
+(deftest ^:bb-only delimiter-balanced-test
   (are [s] (nil? (first (validate/delimiter-problems s)))
     "(defn f [x] {:a 1})"
     "(def s \")\") ; a ) inside a string/comment"
     "[{:k \"x\"}]"
     "(multi\n   line \"strings\")"))
 
-(deftest delimiter-unclosed-test
+(deftest ^:bb-only delimiter-unclosed-test
   (let [p (first (validate/delimiter-problems "(defn f [x]"))]
     (is (= :unclosed (:kind p)))
     (is (= 1 (:line p) (:col p)))
     (is (= ")" (:expected p)))))
 
-(deftest delimiter-stray-closer-test
+(deftest ^:bb-only delimiter-stray-closer-test
   ;; the first ) closes the opener; the second ) is stray (nothing open),
   ;; reported at its own position with no expectation
   (let [p (first (validate/delimiter-problems "(defn f [x]))"))]
@@ -72,7 +72,7 @@
     (is (= 13 (:col p)))
     (is (nil? (:expected p)))))
 
-(deftest report-text-test
+(deftest ^:bb-only report-text-test
   (let [report (validate/report-text
                 [{:kind :error :line 2 :col 3 :snippet "(x"}])]
     (is (str/includes? report "line 2, col 3: syntax error"))
@@ -84,7 +84,7 @@
   (and (fs/exists? (paths/bin-path nil))
        (fs/exists? (fs/path (paths/libs-dir nil) "python.wasm"))))
 
-(deftest ^:integration parse-problems!-test
+(deftest ^:integration ^:bb-only parse-problems!-test
   (when (cache-ready?)
     (testing "broken python reports problems (missing token via stats line)"
       (let [r (validate/parse-problems!

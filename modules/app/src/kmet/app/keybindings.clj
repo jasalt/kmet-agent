@@ -215,7 +215,6 @@
              (spit f (str (pr-str config) "\n"))))
          (catch Exception _ nil))))))
 
-
 ;; ─── Convenience: key-hint with theme fns ───────────────────────────────
 
 (defonce ^:private theme-fns-atom (atom nil))
@@ -262,4 +261,4 @@
    (reload-agent-keybindings! (cfg/get-agent-dir)))
   ([agent-dir]
    ((tui-kb-var 'set-user-bindings!) ((tui-kb-var 'get-global-keybindings))
-                                    (load-user-bindings (keybindings-config-path agent-dir)))))
+                                     (load-user-bindings (keybindings-config-path agent-dir)))))

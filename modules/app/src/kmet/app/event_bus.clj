@@ -394,7 +394,7 @@
 ;; the agent loop and app routes events through emit-event!.
 
 (defonce ^:private ^:dynamic *default-event-listener-atom*
-            (atom (atom {})))
+  (atom (atom {})))
 
 (defn set-default-event-listener-atom!
   "Install the event-listener atom owned by ENGINE as the process default
@@ -422,7 +422,7 @@
    Returns a deregister function."
   [event-type callback]
   (let [listeners (default-event-listeners)
-          id (random-uuid)]
+        id (random-uuid)]
     (swap! listeners update event-type assoc id callback)
     (fn [] (swap! (default-event-listeners) update event-type dissoc id))))
 

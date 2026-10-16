@@ -10,12 +10,10 @@
    listed gitignore-aware — git in a repo, a pruned walk otherwise (see
    project-files) — so a new root must be added to `source-roots` here.
 
-   extensions/ is first-class: its .clj files (source and any tests they
-   carry) are part of the lint/format gates and the changed-file scan, and
-   join the require graph so contract changes pull them into the lint
-   closure. Extension tests are separate projects though — they run from
-   inside their own directory against their own deps, never via the root
-   runner — so extension namespaces are excluded from root test selection.
+   extensions/ is first-class: its .clj files (source and tests) are part of
+   the lint/format gates and the changed-file scan, join the require graph so
+   contract changes pull them into the lint closure, and run through the
+   root test runner alongside the rest of the suite.
 
    Change detection: git diff vs HEAD + untracked files when the project is a
    git repo; otherwise a mtime comparison against a baseline file written by
@@ -176,15 +174,26 @@
 (defn path->ns
   "Source/test file path to its namespace symbol
    (src/kmet/app/ui/model_selector.clj → kmet.app.ui.model-selector;
-   tasks/kmet/tasks/build.cljc → kmet.tasks.build). Accepts either
+   tasks/kmet/tasks/build.cljc → kmet.tasks.build;
+   extensions/clojure/src/kmet/extensions/clojure/core.clj → kmet.extensions.clojure.core;
+   extensions/tools.clj → kmet.extensions.tools). Accepts either
    separator — fs/glob yields backslashes on Windows."
   [path]
-  (symbol
-   (-> (slashify path)
-       (str/replace #"\.(?:clj[c]?|jolt)$" "")
-       (str/replace "_" "-")
-       (str/replace "/" ".")
-       (str/replace #"^(?:modules\.(?:reakt|hikap|libs|tui|ai|app|loader|tk)\.src\.|modules\.(?:reakt|libs|ai|tui|app|tk|loader)\.test\.)|^test\.|^tasks\." ""))))
+  (let [p (slashify path)
+        p (cond
+            (re-matches #"extensions/[^/]+\.clj" p)
+            (str "kmet/extensions/" (str/replace (subs p (count "extensions/")) #"\.clj$" ".clj"))
+
+            (re-find #"^extensions/[^/]+/(?:src|test)/" p)
+            (str/replace-first p #"^extensions/[^/]+/(?:src|test)/" "")
+
+            :else p)]
+    (symbol
+     (-> p
+         (str/replace #"\.(?:clj[c]?|jolt)$" "")
+         (str/replace "_" "-")
+         (str/replace "/" ".")
+         (str/replace #"^(?:modules\.(?:reakt|hikap|libs|tui|ai|app|loader|tk)\.src\.|modules\.(?:reakt|libs|ai|tui|app|tk|loader)\.test\.)|^test\.|^tasks\." "")))))
 
 (defn- read-ns-form
   "First form of PATH (the ns form), or nil when unreadable."
@@ -283,20 +292,16 @@
 
 (defn affected-test-nss-by
   "Test namespaces affected by CHANGED-NSS: the changed ones plus every test
-   namespace that transitively requires them. Extension namespaces never
-   enter the selection — their tests are separate projects (own deps and
-   classpath) that run from inside the extension directory, so the root
-   runner must not try to load them."
+   transaction closure reach test namespaces that transitively require them,
+   including the extension tests that now run through the root runner."
   [changed-nss]
   (let [{:keys [graph paths]} (scan-graph)
         rev (reverse-graph graph)
         root? (fn [ns-sym]
-                (and (graph ns-sym)
-                     (not (str/starts-with? (paths ns-sym) "extensions/"))))
+                (graph ns-sym))
         roots (filter root? changed-nss)
         tests (set (filter (fn [ns-sym]
-                             (and (test-ns? ns-sym)
-                                  (not (str/starts-with? (paths ns-sym) "extensions/"))))
+                             (test-ns? ns-sym))
                            (keys paths)))]
     (->> (closure roots rev) (filter tests) sort)))
 

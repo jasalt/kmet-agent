@@ -3,7 +3,7 @@
  ;; implementation lives there (see AGENTS.md § File layout). Both hosts
  ;; resolve kmet.tasks.* from it, and neither artifact carries it — the
  ;; uberjar walks src/, jolt's :jolt/build :embed does too.
-:paths ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/app/src" "modules/app/test" "modules/loader/src" "modules/loader/test" "modules/tk/src" "modules/tk/test" "test" "tasks"]
+:paths ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/app/src" "modules/app/test" "modules/loader/src" "modules/loader/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions/clojure/src" "extensions/clojure/test" "extensions/tree-sitter/src" "extensions/tree-sitter/test" "extensions/review/src" "extensions/review/test"]
  :deps {dev.weavejester/cljfmt {:mvn/version "0.16.6"}
         ;; babashka >= 1.13.224 bundles data.json (2.5.2 as of 1.13.225) and
         ;; the built-in wins over any declared copy; pinned at the bundled
@@ -54,20 +54,14 @@
   test-changed {:doc "Run the non-slow tests of namespaces affected by changed files\n\nRequire-graph closure over src/test/tasks/extensions; full gate: bb test."
                 :requires ([kmet.tasks.changed :as changed] [kmet.tasks.runner :as runner])
                 :task (help/with-help
-                       (let [nss (changed/affected-test-nss)
-                             ext (changed/extension-changed-files)]
-                         (when (seq ext)
-                           (println (str "note: " (count ext) " extension file(s) changed — extension tests run from inside their directories (bb test there), not from the root runner.")))
+                       (let [nss (changed/affected-test-nss)]
                          (if (seq nss)
                            (runner/run-ns-syms nss false)
                            (println "No affected test namespaces — nothing to run."))))}
   test-ext-changed {:doc "Run ONLY the slow (^:slow) tests of namespaces affected by changed files\n\nRequire-graph closure; full gate: bb test-ext."
                     :requires ([kmet.tasks.changed :as changed] [kmet.tasks.runner :as runner])
                     :task (help/with-help
-                           (let [nss (changed/affected-test-nss)
-                                 ext (changed/extension-changed-files)]
-                             (when (seq ext)
-                               (println (str "note: " (count ext) " extension file(s) changed — extension tests run from inside their directories (bb test there), not from the root runner.")))
+                           (let [nss (changed/affected-test-nss)]
                              (if (seq nss)
                                (runner/run-ns-syms nss true)
                                (println "No affected test namespaces — nothing to run."))))}

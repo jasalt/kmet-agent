@@ -4,7 +4,7 @@
             [kmet.extensions.tree-sitter.paths :as paths]
             [kmet.extensions.tree-sitter.test-util :as tu]))
 
-(deftest default-root-test
+(deftest ^:bb-only default-root-test
   (testing "default root lives at ~/.kmet/agent/tree-sitter (the host
             agent dir; core/init may repoint it)"
     (is (= (fs/path (fs/home) ".kmet" "agent" "tree-sitter")
@@ -13,7 +13,7 @@
     (is (= (if (fs/windows?) "tree-sitter.exe" "tree-sitter")
            (paths/bin-name)))))
 
-(deftest set-default-root!-test
+(deftest ^:bb-only set-default-root!-test
   (let [orig (paths/root)
         base (tu/temp-dir! "ts-root")]
     (try
@@ -25,7 +25,7 @@
         (is (= (fs/path base "other") (paths/root (fs/path base "other")))))
       (finally (paths/set-default-root! orig)))))
 
-(deftest base-override-test
+(deftest ^:bb-only base-override-test
   (let [base (tu/temp-dir! "ts-paths")]
     (testing "every path stays inside an overridden base"
       (doseq [p [(paths/root base)
@@ -40,7 +40,7 @@
       (testing "override does not disturb the default root"
         (is (not= (str (paths/bin-dir base)) (str (paths/bin-dir))))))))
 
-(deftest ensure-dirs!-test
+(deftest ^:bb-only ensure-dirs!-test
   (let [base (tu/temp-dir! "ts-dirs")]
     (testing "creates root plus the three subdirs"
       (paths/ensure-dirs! base)

@@ -6,7 +6,7 @@
             [kmet.extensions.tree-sitter.paths :as paths]
             [kmet.extensions.tree-sitter.test-util :as tu]))
 
-(deftest process!-capture-test
+(deftest ^:bb-only process!-capture-test
   (testing "captures exit code and stdout"
     (let [res (cli/process! ["sh" "-c" "printf hi"] nil)]
       (is (= 0 (:exit res)))
@@ -16,30 +16,30 @@
       (is (= 3 (:exit res)))
       (is (str/includes? (str (:err res)) "boom")))))
 
-(deftest process!-timeout-test
+(deftest ^:bb-only process!-timeout-test
   (let [res (cli/process! ["sleep" "30"] {:timeout-ms 150})]
     (is (= {:error :timeout} (select-keys res [:error])))))
 
-(deftest exec!-spawn-failure-test
+(deftest ^:bb-only exec!-spawn-failure-test
   ;; base dir holds no binary -> resolution points at a nonexistent path
   (let [base (tu/temp-dir! "ts-spawn")
         res (cli/exec! ["--version"] {:base base})]
     (is (= {:error :spawn-failure} (select-keys res [:error])))
     (is (string? (:reason res)))))
 
-(deftest process!-extra-env-test
+(deftest ^:bb-only process!-extra-env-test
   (let [res (cli/process! ["sh" "-c" "printf $TS_PROBE_VAR"]
                           {:env {"TS_PROBE_VAR" "42"}})]
     (is (= "42" (str/trim (:out res))))))
 
-(deftest launcher-text-test
+(deftest ^:bb-only launcher-text-test
   (let [text (cli/launcher-text {:bin-name "tree-sitter" :linker "ld-linux-aarch64.so.1"})]
     (is (str/starts-with? text "#!/data/data/com.termux/files/usr/bin/sh"))
     (is (re-find #"glibc/lib/ld-linux-aarch64\.so\.1" text))
     (is (re-find #"\"\$DIR/tree-sitter\"" text))
     (is (re-find #"unset LD_PRELOAD" text))))
 
-(deftest emit-launcher!-test
+(deftest ^:bb-only emit-launcher!-test
   (let [base (tu/temp-dir! "ts-launcher")]
     (paths/ensure-dirs! base)
     (let [w (cli/emit-launcher! base)]
@@ -48,7 +48,7 @@
       (when-not (fs/windows?)
         (is (= "rwxr-xr-x" (fs/posix->str (fs/posix-file-permissions w))))))))
 
-(deftest resolve-invocation-test
+(deftest ^:bb-only resolve-invocation-test
   (let [base (tu/temp-dir! "ts-resolve")]
     (paths/ensure-dirs! base)
     (let [bin (paths/bin-path base)

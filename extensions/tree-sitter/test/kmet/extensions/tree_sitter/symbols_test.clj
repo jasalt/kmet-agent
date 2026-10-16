@@ -69,7 +69,7 @@
 (defn- parse-el [s]
   (sexp/parse-tree s))
 
-(deftest collect-clojure-test
+(deftest ^:bb-only collect-clojure-test
   (let [el (parse-el clj-sexp)
         {:keys [symbols calls]} (symbols/collect el clj-src (symbols/rules "clojure"))]
     (testing "defs found with kinds and ranges"
@@ -83,7 +83,7 @@
               {:name "greet" :line 3 :enclosing nil}]
              calls)))))
 
-(deftest collect-python-test
+(deftest ^:bb-only collect-python-test
   (let [el (parse-el py-sexp)
         {:keys [symbols calls]} (symbols/collect el py-src (symbols/rules "python"))]
     (testing "class + method defs"
@@ -92,7 +92,7 @@
     (testing "call records nearest enclosing def (the method)"
       (is (= [{:name "helper" :line 2 :enclosing "bar"}] calls)))))
 
-(deftest collect-typescript-test
+(deftest ^:bb-only collect-typescript-test
   (let [el (parse-el ts-sexp)
         {:keys [symbols calls]} (symbols/collect el ts-src (symbols/rules "typescript"))]
     (testing "function declaration captured"
@@ -101,7 +101,7 @@
       (is (= [{:name "meth" :enclosing "top"}]
              (mapv #(select-keys % [:name :enclosing]) calls))))))
 
-(deftest body-lines-test
+(deftest ^:bb-only body-lines-test
   ;; first element child of the source root is the defn list_lit
   (let [defn-el (first (sexp/children (parse-el clj-sexp)))]
     (testing "node range slice incl. both endpoints"
@@ -166,7 +166,7 @@
       name: (sym_name [4, 5] - [4, 6]))
     value: (num_lit [4, 7] - [4, 8])))")
 
-(deftest collect-clojure-var-kind-test
+(deftest ^:bb-only collect-clojure-var-kind-test
   ;; regression: several defs share the list_lit node type — each symbol's
   ;; kind must come from ITS matching rule, not the first rule of that type
   (let [el (parse-el (var-kind-sexp))
@@ -175,7 +175,7 @@
     (is (= [["answer" "var"] ["double-it" "function"]]
            (mapv (juxt :name :kind) syms)))))
 
-(deftest collect-clojure-def-forms-test
+(deftest ^:bb-only collect-clojure-def-forms-test
   ;; defrecord/defprotocol/defmulti are symbols with their own kinds — and
   ;; defining heads must never leak through as bogus calls
   (let [el (parse-el (def-forms-sexp))
@@ -186,7 +186,7 @@
     (testing "no defining heads leak as calls"
       (is (= [] (:calls res))))))
 
-(deftest collect-ts-binding-filter-test
+(deftest ^:bb-only collect-ts-binding-filter-test
   ;; const bindings count only when function-valued
   (let [sexp "(program [0, 0] - [2, 0]
   (lexical_declaration [0, 0] - [0, 12]
@@ -204,7 +204,7 @@
         syms (:symbols (symbols/collect el src (symbols/rules "typescript")))]
     (is (= [["f" "binding"]] (mapv (juxt :name :kind) syms)))))
 
-(deftest rules-integrity-test
+(deftest ^:bb-only rules-integrity-test
   (doseq [lang ["clojure" "python" "typescript" "tsx"]]
     (let [r (symbols/rules lang)]
       (testing (str lang)
@@ -233,7 +233,7 @@
            "integration test (populate via ensure-binary!/ensure-grammar!; "
            "tests never download)"))
 
-(deftest ^:integration analyze-file!-test
+(deftest ^:integration ^:bb-only analyze-file!-test
   (when (cache-ready?)
     (let [dir (tu/temp-dir! "ts-sym-it")]
       (try
@@ -251,7 +251,7 @@
 
 ;; ─── split-trees unit tests (no CLI needed) ───────────────────────────────
 
-(deftest split-trees-test
+(deftest ^:bb-only split-trees-test
   (testing "pairs trees to paths in order"
     (let [out "(source [0,0]-[1,0])\n(source [0,0]-[1,0])\n"
           pairs (#'symbols/split-trees ["/a.clj" "/b.clj"] out)]

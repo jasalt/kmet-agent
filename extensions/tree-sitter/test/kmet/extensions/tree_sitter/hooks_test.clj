@@ -27,7 +27,7 @@
                            :args {:path f}
                            :result result}))
 
-(deftest write-block-format-test
+(deftest ^:bb-only write-block-format-test
   (with-stub py-problems
     (let [r (call-write {:path "/tmp/x.py" :content "x = (1 +"})]
       (is (some? r))
@@ -35,7 +35,7 @@
       (is (str/includes? (:reason r) "line 2, col 3"))
       (is (str/includes? (:reason r) "Write blocked — ")))))
 
-(deftest write-clean-passes-test
+(deftest ^:bb-only write-clean-passes-test
   (with-stub nil
     (is (nil? (call-write {:path "/tmp/ok.py"
                            :content "def f():\n    return 1\n"})))))
@@ -44,15 +44,15 @@
   (#'hooks/on-tool-call {:tool-name tool
                          :args {:path "/tmp/x.py" :content "x = (1 +"}}))
 
-(deftest only-write-intercepted-test
+(deftest ^:bb-only only-write-intercepted-test
   (testing "edit is handled by the post-hook, not the pre-hook"
     (with-stub py-problems
       (is (nil? (call-write-with-tool "edit"))))))
 
-(deftest unknown-ext-passes-test
+(deftest ^:bb-only unknown-ext-passes-test
   (is (nil? (call-write {:path "/tmp/notes.md" :content "# hello )"}))))
 
-(deftest clojure-deferred-to-paren-repair-test
+(deftest ^:bb-only clojure-deferred-to-paren-repair-test
   ;; clojure extension present -> tree-sitter never gates clojure files,
   ;; even when the delimiter scanner would find problems
   (dispatch/set-api! {:get-all-tools (fn [] [{:name "clojure_edit"}])})
@@ -69,7 +69,7 @@
     (is (nil? (call-write {:path "/tmp/ok.clj"
                            :content "(defn f [x]\n  (inc x))\n"})))))
 
-(deftest never-throw-test
+(deftest ^:bb-only never-throw-test
   (with-redefs [validate/parse-problems!
                 (fn [& _] (throw (ex-info "boom" {})))]
     (is (nil? (call-write {:path "/tmp/x.py" :content "whatever"})))))
@@ -82,7 +82,7 @@
     (spit f "def load(uid):\n    return db_fetch(uid)\n")
     [dir f]))
 
-(deftest edit-warn-appends-test
+(deftest ^:bb-only edit-warn-appends-test
   (let [[dir f] (broken-file-fixture!)]
     (try
       (with-stub [{:kind :error :line 2 :col 5
@@ -93,14 +93,14 @@
           (is (str/includes? (:content r) "Edited successfully."))))
       (finally (fs/delete-tree dir)))))
 
-(deftest edit-clean-no-warning-test
+(deftest ^:bb-only edit-clean-no-warning-test
   (let [[dir f] (broken-file-fixture!)]
     (try
       (with-stub nil
         (is (nil? (call-edit-result f {:content "ok"}))))
       (finally (fs/delete-tree dir)))))
 
-(deftest edit-error-result-not-inspected-test
+(deftest ^:bb-only edit-error-result-not-inspected-test
   (is (nil? (#'hooks/on-tool-result
              {:tool-name "edit" :is-error true
               :args {:path "/tmp/x.py"} :result {:content ""}}))))

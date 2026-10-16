@@ -17,8 +17,12 @@
     (is (= 'kmet.tasks.generate-models
            (changed/path->ns "tasks/kmet/tasks/generate_models.clj")))
     (is (= 'kmet.tasks.test-lint (changed/path->ns "test/kmet/tasks/test_lint.clj"))))
-  (testing "extension files map to path-derived namespaces"
-    (is (= 'extensions.tools (changed/path->ns "extensions/tools.clj"))))
+  (testing "extension files map to their canonical namespaces"
+    (is (= 'kmet.extensions.tools (changed/path->ns "extensions/tools.clj")))
+    (is (= 'kmet.extensions.clojure.core
+           (changed/path->ns "extensions/clojure/src/kmet/extensions/clojure/core.clj")))
+    (is (= 'kmet.extensions.clojure.edit-util-test
+           (changed/path->ns "extensions/clojure/test/kmet/extensions/clojure/edit_util_test.clj"))))
   (testing "Windows fs/glob separators normalize — the graph keys are /-spelled"
     (is (= 'kmet.app.ui.model-selector
            (changed/path->ns "modules\\app\\src\\kmet\\app\\ui\\model_selector.clj")))
@@ -67,9 +71,9 @@
   (testing "unrelated namespaces stay out"
     (let [nss (set (changed/affected-test-nss-by '[kmet.ai.models]))]
       (is (not (contains? nss 'kmet.tui.components.test-text)))))
-  (testing "extension namespaces never enter root test selection (their tests run from inside the extension directory)"
+  (testing "extension test namespaces now participate in root test selection"
     (let [nss (set (changed/affected-test-nss-by '[kmet.extension extensions.tools]))]
-      (is (empty? (filter #(str/starts-with? (str %) "extensions.") nss)))
+      (is (seq (filter #(str/starts-with? (str %) "kmet.extensions.") nss)))
       (is (contains? nss 'kmet.app.test-extensions)))))
 
 (deftest affected-lint-file-closure

@@ -27,7 +27,7 @@
     :file-types ["tl" ".TL"]
     :probe "probe-source"}})
 
-(deftest languages-table-integrity-test
+(deftest ^:bb-only languages-table-integrity-test
   (let [langs (g/languages)]
     (testing "launch set pinned: clojure, python, typescript, tsx"
       (is (= #{"clojure" "python" "typescript" "tsx"} (set (keys langs)))))
@@ -43,7 +43,7 @@
           :direct (do (is (re-find #"^https://" (:url entry)) lang)
                       (is (re-matches #"\d+\.\d+\.\d+" (:version entry)) lang)))))))
 
-(deftest resolve-lang-test
+(deftest ^:bb-only resolve-lang-test
   (testing "manifest-backed routing"
     (are [ext lang] (= lang (g/resolve-lang ext))
       "py" "python"
@@ -59,7 +59,7 @@
   (testing "overridden table"
     (is (= "testlang" (g/resolve-lang "TL" {:langs fixture-table})))))
 
-(deftest scaffold-layout-test
+(deftest ^:bb-only scaffold-layout-test
   (let [base (tu/temp-dir! "ts-g-scaffold")]
     (g/scaffold! "python" {:base base})
     (let [dir (g/scaffold-dir "python" base)]
@@ -87,7 +87,7 @@
       (g/scaffold! "python" {:base base})
       (is (fs/exists? (fs/path (g/scaffold-dir "python" base) "src/parser.c"))))))
 
-(deftest ensure-grammar-cache-hit-test
+(deftest ^:bb-only ensure-grammar-cache-hit-test
   (let [base (tu/temp-dir! "ts-g-hit")]
     (paths/ensure-dirs! base)
     (spit (str (g/wasm-path "testlang" base)) fixture-wasm-bytes)
@@ -109,10 +109,10 @@
           (is (fs/exists? (fs/path (g/scaffold-dir "testlang" base) "src/grammar.json")))
           (is (fs/exists? (paths/config-path base))))))))
 
-(deftest ensure-grammar-unknown-lang-test
+(deftest ^:bb-only ensure-grammar-unknown-lang-test
   (is (nil? (g/ensure-grammar! "nosuchlang" {:base (tu/temp-dir! "ts-g-none")}))))
 
-(deftest load-check-test
+(deftest ^:bb-only load-check-test
   (let [base (tu/temp-dir! "ts-g-check")]
     (paths/ensure-dirs! base)
     (testing "clean parse output accepted"
@@ -134,7 +134,7 @@
                             (g/load-check! "testlang" {:base base :langs fixture-table}
                                            (fn [_ _] {:error :spawn-failure})))))))
 
-(deftest wasm-path-test
+(deftest ^:bb-only wasm-path-test
   (let [base (tu/temp-dir! "ts-g-wasm")]
     (is (= (fs/path (paths/libs-dir base) "python.wasm")
            (g/wasm-path "python" base)))))

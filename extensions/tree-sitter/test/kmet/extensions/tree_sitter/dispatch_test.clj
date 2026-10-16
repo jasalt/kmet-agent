@@ -7,7 +7,7 @@
 (defn- route [ext enabled?]
   (dispatch/route ext {:clojure-enabled? enabled?}))
 
-(deftest route-table-test
+(deftest ^:bb-only route-table-test
   (testing "grammar-backed languages always validate"
     (is (= :tree-sitter (route "py" false)))
     (is (= :tree-sitter (route "py" true)))
@@ -27,7 +27,7 @@
     (is (= :tree-sitter (route "PY" true)))
     (is (= :defer (route "CLJ" true)))))
 
-(deftest live-clojure-detection-test
+(deftest ^:bb-only live-clojure-detection-test
   (testing "clojure tools present -> defer"
     (dispatch/set-api! {:get-all-tools
                         (fn [] [{:name "clojure_edit"}

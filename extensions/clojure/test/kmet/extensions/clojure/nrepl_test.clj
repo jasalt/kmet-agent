@@ -21,25 +21,25 @@
 ;; Bencode
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-roundtrip-op-message
+(deftest ^:bb-only test-roundtrip-op-message
   (is (= {:op "eval" :code "(+ 1 2)" :id "1"}
          (roundtrip {:op "eval" :code "(+ 1 2)" :id "1"}))))
 
-(deftest test-roundtrip-utf8
+(deftest ^:bb-only test-roundtrip-utf8
   (testing "string length is byte length, not char count"
     (let [m {:value "héllo → ünïcode"}]
       (is (= m (roundtrip m)))))
   (testing "non-ASCII payload decodes back byte-for-byte"
     (is (= {:v "λ"} (decode-one (nrepl/encode-message {:v "λ"}))))))
 
-(deftest test-roundtrip-integers-and-nested
+(deftest ^:bb-only test-roundtrip-integers-and-nested
   (is (= {:n 42} (roundtrip {:n 42})))
   (is (= {:n -7} (roundtrip {:n -7})))
   (is (= {:versions {"clojure" "1.12.0" "nrepl" "1.5.1"}}
          (roundtrip {:versions {"clojure" "1.12.0" "nrepl" "1.5.1"}})))
   (is (= {:list [1 "a" [2]]} (roundtrip {:list [1 "a" [2]]}))))
 
-(deftest test-decode-several-messages-from-one-stream
+(deftest ^:bb-only test-decode-several-messages-from-one-stream
   (let [bs (nrepl/encode-message {:id "1" :out "a"})
         bs2 (nrepl/encode-message {:id "1" :status ["done"]})
         src (source-of (byte-array (concat (seq bs) (seq bs2))))]
@@ -47,10 +47,10 @@
     (is (= {:id "1" :status ["done"]} (nrepl/read-message src)))
     (is (nil? (nrepl/read-message src)) "clean EOF reads as nil")))
 
-(deftest test-decode-rejects-garbage
+(deftest ^:bb-only test-decode-rejects-garbage
   (is (thrown? Exception (decode-one (byte-array [(unchecked-byte 0x78)])))))
 
-(deftest test-merge-messages
+(deftest ^:bb-only test-merge-messages
   (let [merged (nrepl/merge-messages
                 [{:id "1" :out "ana" :value "1"}
                  {:id "1" :out "ly" :err "warn"}
@@ -63,13 +63,13 @@
     (is (= {"clojure" "1.12.0"} (:versions merged)))
     (is (= #{"done"} (:status merged)))))
 
-(deftest test-message-events-preserve-arrival-order
+(deftest ^:bb-only test-message-events-preserve-arrival-order
   (is (= [[:out "hello\n"] [:value "3"] [:err "boom"]]
          (nrepl/message-events [{:out "hello\n"}
                                 {:value "3"}
                                 {:err "boom"}]))))
 
-(deftest test-env-from-describe
+(deftest ^:bb-only test-env-from-describe
   (is (= :bb (nrepl/env-from-describe {:versions {"babashka" "1.3.0" "nrepl" "1.0"}})))
   (is (= :basilisp (nrepl/env-from-describe {:versions {"basilisp" "0.2"}})))
   (is (= :shadow (nrepl/env-from-describe {:versions {"shadow-cljs" "2.28"}})))
@@ -137,7 +137,7 @@
                (reset! running? false)
                (try (.close server) (catch Exception _ nil)))})))
 
-(deftest ^:slow test-eval-code-against-fake-server
+(deftest ^:slow ^:bb-only test-eval-code-against-fake-server
   (let [{:keys [port stop!]} (start-fake-nrepl!)]
     (try
       (let [result (nrepl/eval-code {:port port :code "(+ 1 2)"})]
@@ -158,7 +158,7 @@
         (nrepl/close-sessions!)
         (stop!)))))
 
-(deftest ^:slow test-eval-code-timeout-interrupts
+(deftest ^:slow ^:bb-only test-eval-code-timeout-interrupts
   (let [{:keys [port stop!]} (start-fake-nrepl! {:eval-sleep-ms 1500})]
     (try
       (let [result (nrepl/eval-code {:port port :code "(Thread/sleep 1500)"
@@ -169,7 +169,7 @@
         (nrepl/close-sessions!)
         (stop!)))))
 
-(deftest ^:slow test-connect-failure-is-a-typed-error
+(deftest ^:slow ^:bb-only test-connect-failure-is-a-typed-error
   (let [e (try
             (nrepl/eval-code {:port 1 :code "1" :timeout-ms 200})
             nil
@@ -177,7 +177,7 @@
     (is (some? e))
     (is (= :nrepl-connect (:type (ex-data e))))))
 
-(deftest ^:slow test-ns-op-fallback-to-in-ns
+(deftest ^:slow ^:bb-only test-ns-op-fallback-to-in-ns
   (testing "a server without the ns op still switches namespace via (in-ns …)"
     (let [codes (atom [])
           {:keys [port stop!]} (start-fake-nrepl! {:ns-op-status ["unknown-op" "done"]
@@ -193,12 +193,12 @@
           (nrepl/close-sessions!)
           (stop!))))))
 
-(deftest test-eval-code-cancel-before-connect
+(deftest ^:bb-only test-eval-code-cancel-before-connect
   (let [result (nrepl/eval-code {:port 1 :code "1" :cancel (fn [] true)})]
     (is (:cancelled? result))
     (is (not (:ok? result)))))
 
-(deftest ^:slow test-eval-code-cancel-closes-a-blocked-read
+(deftest ^:slow ^:bb-only test-eval-code-cancel-closes-a-blocked-read
   (let [{:keys [port stop!]} (start-fake-nrepl! {:eval-sleep-ms 5000})
         cancelled (atom false)]
     (doto (Thread. (fn []
@@ -219,7 +219,7 @@
         (nrepl/close-sessions!)
         (stop!)))))
 
-(deftest ^:slow test-discover-port-in-directory
+(deftest ^:slow ^:bb-only test-discover-port-in-directory
   (let [{:keys [port stop!]} (start-fake-nrepl!)]
     (try
       (let [dir "target/nrepl-tests"]
@@ -236,7 +236,7 @@
         (nrepl/close-sessions!)
         (stop!)))))
 
-(deftest ^:slow test-discover-port-falls-back-to-common-ports
+(deftest ^:slow ^:bb-only test-discover-port-falls-back-to-common-ports
   (let [{:keys [port stop!]} (start-fake-nrepl!)]
     (try
       (testing "with no port file, a responding common port is used"
@@ -257,7 +257,7 @@
         (nrepl/close-sessions!)
         (stop!)))))
 
-(deftest ^:slow test-discover-port-falls-through-a-stale-port-file
+(deftest ^:slow ^:bb-only test-discover-port-falls-through-a-stale-port-file
   (let [{:keys [port stop!]} (start-fake-nrepl!)
         dead-port (with-open [socket (java.net.ServerSocket. 0)]
                     (.getLocalPort socket))

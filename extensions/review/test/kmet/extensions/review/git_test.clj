@@ -56,12 +56,12 @@
 
 ;; -- Tests --------------------------------------------------------------
 
-(deftest in-git-repo?-in-repo-test
+(deftest ^:bb-only in-git-repo?-in-repo-test
   (with-test-repo
     (fn [dir]
       (is (true? (g/in-git-repo? (exec dir)))))))
 
-(deftest in-git-repo?-out-of-repo-test
+(deftest ^:bb-only in-git-repo?-out-of-repo-test
   ;; Note: babashka.process may walk up the directory tree on some
   ;; platforms, finding a parent .git. To be safe, we test with a
   ;; /tmp-style non-repo path that has no parent git.
@@ -72,7 +72,7 @@
     (.mkdirs (java.io.File. non-repo))
     (is (false? (g/in-git-repo? (exec non-repo))))))
 
-(deftest local-branches-test
+(deftest ^:bb-only local-branches-test
   (with-test-repo
     (fn [dir]
       (let [branches (g/local-branches (exec dir))]
@@ -81,7 +81,7 @@
        ;; no "remotes/" entries
         (is (not-any? #(str/starts-with? % "remotes/") branches))))))
 
-(deftest recent-commits-test
+(deftest ^:bb-only recent-commits-test
   (with-test-repo
     (fn [dir]
      ;; repo has 2 commits on main + 1 on feature
@@ -92,31 +92,31 @@
         (is (every? :title commits))
         (is (every? #(re-matches #"[0-9a-f]{7,40}" (:sha %)) commits))))))
 
-(deftest recent-commits-limit-test
+(deftest ^:bb-only recent-commits-limit-test
   (with-test-repo
     (fn [dir]
       (let [commits (g/recent-commits (exec dir) 2)]
         (is (= 2 (count commits)))))))
 
-(deftest current-branch-test
+(deftest ^:bb-only current-branch-test
   (with-test-repo
     (fn [dir]
       (is (= "main" (g/current-branch (exec dir)))))))
 
-(deftest default-branch-test
+(deftest ^:bb-only default-branch-test
   (with-test-repo
     (fn [dir]
      ;; No origin/HEAD configured in our throwaway repo, so it falls
      ;; back to "main" (which exists in the local branches).
       (is (= "main" (g/default-branch (exec dir)))))))
 
-(deftest uncommitted?-clean-test
+(deftest ^:bb-only uncommitted?-clean-test
   (with-test-repo
     (fn [dir]
       (is (false? (g/uncommitted? (exec dir))))
       (is (false? (g/pending-changes? (exec dir)))))))
 
-(deftest uncommitted?-untracked-test
+(deftest ^:bb-only uncommitted?-untracked-test
   (with-test-repo
     (fn [dir]
       (spit (str dir "/new.txt") "x")
@@ -124,7 +124,7 @@
      ;; untracked files do NOT block branch switching
       (is (false? (g/pending-changes? (exec dir)))))))
 
-(deftest pending-changes?-modified-test
+(deftest ^:bb-only pending-changes?-modified-test
   (with-test-repo
     (fn [dir]
       (spit (str dir "/README.md") "modified\n")
@@ -132,7 +132,7 @@
      ;; modified tracked file blocks branch switching
       (is (true? (g/pending-changes? (exec dir)))))))
 
-(deftest merge-base-fallback-test
+(deftest ^:bb-only merge-base-fallback-test
   ;; `merge-base` first tries the upstream tracking branch (which
   ;; doesn't exist in our throwaway repo); the fallback should still
   ;; resolve a sha via `git merge-base HEAD <branch>`.

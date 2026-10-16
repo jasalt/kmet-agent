@@ -13,14 +13,14 @@
 
 ;; -- init / shutdown -----------------------------------------------------
 
-(deftest init-registers-commands-test
+(deftest ^:bb-only init-registers-commands-test
   (let [{:keys [api state]} (ext/create-nullable-api)]
     (review/init api)
     (let [cmds (set (keys (:commands @state)))]
       (is (contains? cmds "review"))
       (is (contains? cmds "end-review")))))
 
-(deftest init-registers-handlers-test
+(deftest ^:bb-only init-registers-handlers-test
   (let [{:keys [api state]} (ext/create-nullable-api)]
     (review/init api)
     (let [handlers (set (keys (:handlers @state)))]
@@ -40,44 +40,44 @@
   (try (#'review/parse-args args)
        (catch Exception e {:error (ex-message e)})))
 
-(deftest parse-args-empty-test
+(deftest ^:bb-only parse-args-empty-test
   (is (= {:target nil} (parse "")))
   (is (= {:target nil} (parse nil))))
 
-(deftest parse-args-uncommitted-test
+(deftest ^:bb-only parse-args-uncommitted-test
   (is (= {:target {:type :uncommitted} :extra-instruction nil}
          (parse "uncommitted"))))
 
-(deftest parse-args-base-branch-test
+(deftest ^:bb-only parse-args-base-branch-test
   (is (= {:target {:type :base-branch :branch "main"}
           :extra-instruction nil}
          (parse "branch main"))))
 
-(deftest parse-args-base-branch-missing-test
+(deftest ^:bb-only parse-args-base-branch-missing-test
   ;; No branch arg: target is nil (caller shows selector)
   (is (= {:target nil :extra-instruction nil}
          (parse "branch"))))
 
-(deftest parse-args-commit-test
+(deftest ^:bb-only parse-args-commit-test
   (is (= {:target {:type :commit :sha "abc1234" :title nil}
           :extra-instruction nil}
          (parse "commit abc1234"))))
 
-(deftest parse-args-commit-with-title-test
+(deftest ^:bb-only parse-args-commit-with-title-test
   (is (= {:target {:type :commit :sha "abc1234" :title "WIP flarble"}
           :extra-instruction nil}
          (parse "commit abc1234 WIP flarble"))))
 
-(deftest parse-args-folder-test
+(deftest ^:bb-only parse-args-folder-test
   (is (= {:target {:type :folder :paths ["src" "docs"]}
           :extra-instruction nil}
          (parse "folder src docs"))))
 
-(deftest parse-args-folder-missing-test
+(deftest ^:bb-only parse-args-folder-missing-test
   (is (= {:target nil :extra-instruction nil}
          (parse "folder"))))
 
-(deftest parse-args-extra-flag-test
+(deftest ^:bb-only parse-args-extra-flag-test
   (testing "--extra with following arg"
     (is (= {:target {:type :uncommitted}
             :extra-instruction "focus on performance"}
@@ -90,20 +90,20 @@
     (let [r (parse "uncommitted --extra")]
       (is (contains? r :error)))))
 
-(deftest parse-args-quoted-paths-test
+(deftest ^:bb-only parse-args-quoted-paths-test
   ;; Folder preserves spaces inside quotes (tokenizer keeps them as one
   ;; token; previously the join/split in parse-args dropped them).
   (is (= {:target {:type :folder :paths ["src/My File.clj" "docs"]}
           :extra-instruction nil}
          (parse "folder \"src/My File.clj\" docs"))))
 
-(deftest parse-args-unknown-subcommand-test
+(deftest ^:bb-only parse-args-unknown-subcommand-test
   ;; unknown subcommand -> target nil, caller shows selector
   (is (= {:target nil} (parse "garbage"))))
 
 ;; -- preset-state + smart-default ---------------------------------------
 
-(deftest smart-default-test
+(deftest ^:bb-only smart-default-test
   ;; The smart default index matches the presets order:
   ;; 0 uncommitted, 1 base-branch, 2 commit
   (is (= 0 (dlg/smart-default true false)))
@@ -153,7 +153,7 @@
    :custom-type "review-settings"
    :data {:custom-instructions instructions}})
 
-(deftest review-settings-read-session-wide-test
+(deftest ^:bb-only review-settings-read-session-wide-test
   (reset! @#'review/review-custom-instructions nil)
   (let [{:keys [api]} (stub-review-api
                        [(settings-entry "First")
@@ -166,7 +166,7 @@
       (is (str/includes? prompt "Shared custom review instructions"))
       (is (str/includes? prompt "Latest instruction")))))
 
-(deftest execute-review-keeps-origin-and-instructions-test
+(deftest ^:bb-only execute-review-keeps-origin-and-instructions-test
   ;; The fresh-session branch jump emits :session-tree, whose handler
   ;; re-derives module state from the new branch. The origin must be
   ;; restored afterwards (pi: lockedOriginId) and the settings must still

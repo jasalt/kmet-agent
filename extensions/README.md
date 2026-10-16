@@ -99,9 +99,9 @@ never ship.
 All extension files — source **and any tests they carry** — are covered by
 the repo gates: `bb lint` / `bb format` / `bb format-check` lint and format
 `extensions/`, and the `bb *-changed` dev loop tracks extension files
-(extension namespaces join the require graph for linting, but extension
-tests are never selected by the root `bb test` runner — they run from
-inside the extension directory).
+(extension namespaces join the require graph for linting and testing, and
+extension tests now run through the root `bb test` runner — they can still be
+run from inside the extension directory against their own deps).
 
 ## Building UI
 

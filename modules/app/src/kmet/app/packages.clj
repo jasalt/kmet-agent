@@ -57,8 +57,7 @@
             [kmet.app.extensions :as extensions]
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
-            [kmet.config :as cfg]
-))
+            [kmet.config :as cfg]))
 
 (def ^:private resource-types
   "The four package resource types (pi: RESOURCE_TYPES)."

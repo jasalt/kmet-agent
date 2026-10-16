@@ -38,14 +38,14 @@
 ;; Parameter validation
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-missing-file-path
+(deftest ^:bb-only test-missing-file-path
   (let [result (edit-tool/execute {:form_type "defn"
                                    :form_identifier "foo"
                                    :content "(defn foo [])"})]
     (is (:is-error result))
     (is (str/includes? (:content result) "file_path"))))
 
-(deftest test-missing-form-type
+(deftest ^:bb-only test-missing-form-type
   (let [path (write-test-file! "missing-form-type" "(defn foo [] nil)")
         result (edit-tool/execute {:file_path path
                                    :form_identifier "foo"
@@ -53,7 +53,7 @@
     (is (:is-error result))
     (is (str/includes? (:content result) "form_type"))))
 
-(deftest test-missing-form-identifier
+(deftest ^:bb-only test-missing-form-identifier
   (let [path (write-test-file! "missing-form-id" "(defn foo [] nil)")
         result (edit-tool/execute {:file_path path
                                    :form_type "defn"
@@ -61,7 +61,7 @@
     (is (:is-error result))
     (is (str/includes? (:content result) "form_identifier"))))
 
-(deftest test-missing-content
+(deftest ^:bb-only test-missing-content
   ;; content stays required (same convention as the edit tool's newText):
   ;; omitting it is an error, deletion uses an explicit empty string.
   (let [path (write-test-file! "missing-content" "(defn foo [] nil)")
@@ -73,7 +73,7 @@
     (is (str/includes? (:content result) "empty string"))
     (is (str/includes? (read-test-file path) "(defn foo [] nil)"))))
 
-(deftest test-delete-with-empty-content
+(deftest ^:bb-only test-delete-with-empty-content
   ;; Deletion follows the edit tool's convention: a blank content with
   ;; operation "replace" removes the form and its line.
   (let [path (write-test-file! "delete-empty"
@@ -85,7 +85,7 @@
       (is (not (str/includes? content "defn b")))
       (is (str/includes? content "(defn a [] 1)\n\n(defn c [] 3)")))))
 
-(deftest test-delete-first-form
+(deftest ^:bb-only test-delete-first-form
   (let [path (write-test-file! "delete-first"
                                "(defn a [] 1)\n\n(defn b [] 2)\n")
         result (edit-tool/execute (edit-opts path "defn" "a" ""))]
@@ -94,7 +94,7 @@
       (is (not (str/includes? content "defn a")))
       (is (str/includes? content "(defn b [] 2)")))))
 
-(deftest test-delete-last-form
+(deftest ^:bb-only test-delete-last-form
   (let [path (write-test-file! "delete-last"
                                "(defn a [] 1)\n\n(defn b [] 2)\n")
         result (edit-tool/execute (edit-opts path "defn" "b" ""))]
@@ -103,7 +103,7 @@
       (is (not (str/includes? content "defn b")))
       (is (str/includes? content "(defn a [] 1)")))))
 
-(deftest test-insert-with-empty-content-rejected
+(deftest ^:bb-only test-insert-with-empty-content-rejected
   ;; Insert operations need content; an empty content cannot insert.
   (doseq [op ["insert_before" "insert_after"]]
     (testing op
@@ -114,7 +114,7 @@
         (is (str/includes? (:content result) "content"))
         (is (str/includes? (read-test-file path) "(defn foo [] nil)"))))))
 
-(deftest test-file-not-found
+(deftest ^:bb-only test-file-not-found
   (let [result (edit-tool/execute {:file_path "target/nonexistent-xyz.clj"
                                    :form_type "defn"
                                    :form_identifier "foo"
@@ -122,7 +122,7 @@
     (is (:is-error result))
     (is (str/includes? (:content result) "not found"))))
 
-(deftest test-non-clojure-file
+(deftest ^:bb-only test-non-clojure-file
   (let [path (do (ensure-test-dir!)
                  (str test-dir "/notes.txt"))
         _    (spit path "(defn foo [])")
@@ -135,7 +135,7 @@
     (is (str/includes? (:content result) "Not a Clojure file"))
     (is (str/includes? (:content result) "has extension '.txt'"))))
 
-(deftest test-comment-form-type-rejected
+(deftest ^:bb-only test-comment-form-type-rejected
   (let [path (write-test-file! "comment-reject" "(defn foo [] nil)")
         result (edit-tool/execute {:file_path path
                                    :form_type "comment"
@@ -148,7 +148,7 @@
 ;; Replace a defn
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-defn
+(deftest ^:bb-only test-replace-defn
   (let [path (write-test-file! "replace-defn"
                                "(defn greet [name]\n  (str \"Hello \" name))\n")
         result (edit-tool/execute (edit-opts path "defn" "greet"
@@ -157,7 +157,7 @@
     (is (str/includes? (:content result) "Edit applied"))
     (is (str/includes? (read-test-file path) "\"Hi \""))))
 
-(deftest test-replace-defn-multi-line
+(deftest ^:bb-only test-replace-defn-multi-line
   (let [path (write-test-file! "replace-defn-ml"
                                "(defn compute\n  [x y]\n  (+ x y))\n")
         result (edit-tool/execute
@@ -168,7 +168,7 @@
       (is (str/includes? content "* x y"))
       (is (not (str/includes? content "+ x y"))))))
 
-(deftest test-replace-defn-multi-arity
+(deftest ^:bb-only test-replace-defn-multi-arity
   ;; the shape validator must accept the full multi-arity grammar:
   ;; docstring and attr-map around the arities, metadata on the arg vectors
   (let [path (write-test-file! "replace-defn-multi-arity"
@@ -182,7 +182,7 @@
       (is (str/includes? content ":private true"))
       (is (str/includes? content "(long (* w h))")))))
 
-(deftest test-replace-defn-multi-arity-single-clause
+(deftest ^:bb-only test-replace-defn-multi-arity-single-clause
   (let [path (write-test-file! "replace-defn-multi-arity-one"
                                "(defn classify [x] :num)\n")
         result (edit-tool/execute
@@ -195,7 +195,7 @@
 ;; Replace a def
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-def
+(deftest ^:bb-only test-replace-def
   (let [path (write-test-file! "replace-def"
                                "(def max-retries 3)\n")
         result (edit-tool/execute
@@ -208,7 +208,7 @@
 ;; Replace a defn-
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-defn-private
+(deftest ^:bb-only test-replace-defn-private
   (let [path (write-test-file! "replace-defn-priv"
                                "(defn- helper [x] (inc x))\n")
         result (edit-tool/execute
@@ -221,7 +221,7 @@
 ;; Replace a defmacro
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-defmacro
+(deftest ^:bb-only test-replace-defmacro
   (let [path (write-test-file! "replace-defmacro"
                                "(defmacro when-let* [binding & body]\n  `(let ~binding (when ~(first binding) ~@body)))\n")
         result (edit-tool/execute
@@ -236,12 +236,12 @@
 ;; Replace a deftest
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-deftest
+(deftest ^:bb-only test-replace-deftest
   (let [path (write-test-file! "replace-deftest"
-                               "(deftest my-test\n  (is (= 1 1)))\n")
+                               "(deftest ^:bb-only my-test\n  (is (= 1 1)))\n")
         result (edit-tool/execute
                 (edit-opts path "deftest" "my-test"
-                           "(deftest my-test\n  (is (= 2 2)))"))]
+                           "(deftest ^:bb-only my-test\n  (is (= 2 2)))"))]
     (is (not (:is-error result)))
     (is (str/includes? (read-test-file path) "(= 2 2)"))))
 
@@ -249,7 +249,7 @@
 ;; Replace an ns declaration
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-ns
+(deftest ^:bb-only test-replace-ns
   (let [path (write-test-file! "replace-ns"
                                "(ns my.app.core\n  (:require [clojure.string :as str]))\n")
         result (edit-tool/execute
@@ -263,7 +263,7 @@
 ;; Replace a defrecord
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-defrecord
+(deftest ^:bb-only test-replace-defrecord
   (let [path (write-test-file! "replace-defrecord"
                                "(defrecord Point [x y])\n")
         result (edit-tool/execute
@@ -276,7 +276,7 @@
 ;; Replace a defprotocol
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-defprotocol
+(deftest ^:bb-only test-replace-defprotocol
   (let [path (write-test-file! "replace-defprotocol"
                                "(defprotocol IRender\n  (render [this width]))\n")
         result (edit-tool/execute
@@ -289,7 +289,7 @@
 ;; Replace a defmethod (unqualified name, dispatch from content)
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-defmethod-unqualified
+(deftest ^:bb-only test-replace-defmethod-unqualified
   (let [path (write-test-file! "replace-defmethod-uq"
                                "(defmethod area :square\n  [{:keys [w]}] (* w w))\n")
         result (edit-tool/execute
@@ -304,7 +304,7 @@
 ;; Replace a defmethod (qualified name)
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-defmethod-qualified
+(deftest ^:bb-only test-replace-defmethod-qualified
   (let [path (write-test-file! "replace-defmethod-q"
                                "(defmethod shape/area :rectangle\n  [{:keys [w h]}] (* w h))\n")
         result (edit-tool/execute
@@ -317,7 +317,7 @@
 ;; Insert before
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-insert-before-defn
+(deftest ^:bb-only test-insert-before-defn
   (let [path (write-test-file! "insert-before"
                                "(defn second-fn [] nil)\n")
         result (edit-tool/execute
@@ -332,7 +332,7 @@
       (is (str/includes? content "(defn first-fn [] 42)\n\n(defn second-fn [] nil)")
           "inserted form is newline-separated from the anchor"))))
 
-(deftest test-insert-before-with-comment
+(deftest ^:bb-only test-insert-before-with-comment
   (let [path (write-test-file! "insert-before-cmt"
                                ";; some comment\n(defn target [] nil)\n")
         result (edit-tool/execute
@@ -343,7 +343,7 @@
     (let [content (read-test-file path)]
       (is (str/includes? content "before-target")))))
 
-(deftest test-insert-before-defn-private-with-multi-line-docstring
+(deftest ^:bb-only test-insert-before-defn-private-with-multi-line-docstring
   ;; Regression (bump session): inserting a defn- whose docstring spans
   ;; lines failed "Incomplete 'defn' form: missing the argument vector" —
   ;; the shape validator recognized only single-line (:token) docstrings,
@@ -360,7 +360,7 @@
              (.indexOf content "emit-row")))
       (is (str/includes? content "non-final fragment.")))))
 
-(deftest test-insert-before-different-form-type
+(deftest ^:bb-only test-insert-before-different-form-type
   ;; form_type names the anchor; an inserted form is independent and is
   ;; checked against its own head, so a def may be inserted beside a defn.
   (let [path (write-test-file! "insert-before-other-type"
@@ -374,7 +374,7 @@
       (is (< (.indexOf content "cell-style-reset")
              (.indexOf content "target"))))))
 
-(deftest test-insert-before-incomplete-own-type-rejected
+(deftest ^:bb-only test-insert-before-incomplete-own-type-rejected
   ;; The looser insert check still validates the inserted form against its
   ;; own type: a bodyless (def x) beside a defn anchor is rejected.
   (let [path (write-test-file! "insert-before-incomplete"
@@ -391,7 +391,7 @@
 ;; Insert after
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-insert-after-defn
+(deftest ^:bb-only test-insert-after-defn
   (let [path (write-test-file! "insert-after"
                                "(defn first-fn [] 42)\n")
         result (edit-tool/execute
@@ -403,7 +403,7 @@
       (is (< (.indexOf content "first-fn")
              (.indexOf content "second-fn"))))))
 
-(deftest test-insert-after-keeps-trailing-comment
+(deftest ^:bb-only test-insert-after-keeps-trailing-comment
   ;; Regression: insert_after used to land between the anchor form and its
   ;; same-line trailing comment, detaching the comment onto the inserted
   ;; form. The comment must stay on the anchor's line, with the inserted
@@ -425,7 +425,7 @@
              (.indexOf content "probe-b"))
           "next form still follows"))))
 
-(deftest test-insert-after-keeps-next-form-doc-comment
+(deftest ^:bb-only test-insert-after-keeps-next-form-doc-comment
   ;; A comment starting on its own line leads the NEXT form — the inserted
   ;; form goes above it, the comment stays with its form.
   (let [path (write-test-file! "insert-after-doc-cmt"
@@ -440,7 +440,7 @@
              (.indexOf content "doc for probe-b"))
           "own-line comment stays with the next form"))))
 
-(deftest test-insert-after-trailing-comment-at-eof
+(deftest ^:bb-only test-insert-after-trailing-comment-at-eof
   (let [path (write-test-file! "insert-after-cmt-eof"
                                "(defn probe-a [x] (* x 2)) ;; last form\n")
         result (edit-tool/execute
@@ -452,7 +452,7 @@
       (is (str/includes? content "(defn probe-a [x] (* x 2)) ;; last form")
           "comment stays with the anchor at EOF"))))
 
-(deftest test-alias-qualified-macro-matched-by-plain-tag
+(deftest ^:bb-only test-alias-qualified-macro-matched-by-plain-tag
   ;; form_type "deftest" must match (t/deftest ...): the tag check compares
   ;; the unqualified name (consistent with the similar-matches hint) — it
   ;; used to fail with "Could not find form" unless the full "t/deftest"
@@ -471,7 +471,7 @@
 ;; Not found — error + similar matches
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-form-not-found
+(deftest ^:bb-only test-form-not-found
   (let [path (write-test-file! "not-found"
                                "(defn alpha [] 1)\n(defn beta [] 2)\n")
         result (edit-tool/execute
@@ -481,7 +481,7 @@
     (is (str/includes? (:content result) "Could not find"))
     (is (str/includes? (:content result) "gamma"))))
 
-(deftest test-similar-matches-reported
+(deftest ^:bb-only test-similar-matches-reported
   (testing "defmethod with same base name reports similar dispatch values"
     (let [path (write-test-file! "similar-dm"
                                  "(defmethod area :square\n  [{:keys [w]}] (* w w))\n(defmethod area :rectangle\n  [{:keys [w h]}] (* w h))\n")
@@ -492,7 +492,7 @@
       (is (str/includes? (:content result) "Similar forms found"))
       (is (str/includes? (:content result) "area")))))
 
-(deftest test-no-similar-for-different-names
+(deftest ^:bb-only test-no-similar-for-different-names
   (testing "forms with different base names are not reported as similar"
     (let [path (write-test-file! "no-similar"
                                  "(defn alpha [] 1)\n(defn beta [] 2)\n")
@@ -506,7 +506,7 @@
 ;; Form not found for defmethod
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-defmethod-not-found
+(deftest ^:bb-only test-defmethod-not-found
   (let [path (write-test-file! "defmethod-not-found"
                                "(defmethod area :square\n  [{:keys [w]}] (* w w))\n")
         result (edit-tool/execute
@@ -519,7 +519,7 @@
 ;; Default operation is replace
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-default-operation-is-replace
+(deftest ^:bb-only test-default-operation-is-replace
   (let [path (write-test-file! "default-op"
                                "(defn old [] 0)\n")
         ;; No :operation key — should default to replace
@@ -536,7 +536,7 @@
 ;; Formatting is applied
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-formatting-applied
+(deftest ^:bb-only test-formatting-applied
   (let [path (write-test-file! "formatting"
                                "(defn foo []\n  42)\n")
         ;; Malformed content — too much indentation
@@ -552,7 +552,7 @@
 ;; Multiple forms in the same file — only target is replaced
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-targeted-replacement
+(deftest ^:bb-only test-targeted-replacement
   (let [path (write-test-file! "targeted"
                                "(defn alpha [] 1)\n(defn beta [] 2)\n(defn gamma [] 3)\n")
         result (edit-tool/execute
@@ -570,7 +570,7 @@
 ;; Diff is included in result (when available — may be nil on read-only tmpfs)
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-diff-in-result
+(deftest ^:bb-only test-diff-in-result
   (let [path (write-test-file! "diff-result"
                                "(defn old-fn [] 0)\n")
         result (edit-tool/execute
@@ -586,7 +586,7 @@
 ;; No-op replacement (identical content) — still succeeds
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-identical-replacement
+(deftest ^:bb-only test-identical-replacement
   (let [path (write-test-file! "identical"
                                "(defn same [] 42)\n")
         result (edit-tool/execute
@@ -599,7 +599,7 @@
 ;; UTF-8 content preserved
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-utf8-preserved
+(deftest ^:bb-only test-utf8-preserved
   (let [path (write-test-file! "utf8"
                                "(defn greeting [] \"Привет мир\")\n")
         result (edit-tool/execute
@@ -612,7 +612,7 @@
 ;; String and regex literals in content
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-string-and-regex-content
+(deftest ^:bb-only test-string-and-regex-content
   (let [path (write-test-file! "string-regex"
                                "(defn pattern [] nil)\n")
         result (edit-tool/execute
@@ -625,7 +625,7 @@
 ;; Replace with a comment (deletion)
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-with-comment
+(deftest ^:bb-only test-replace-with-comment
   (let [path (write-test-file! "replace-comment"
                                "(defn obsolete [] nil)\n(defn keep [] 1)\n")
         result (edit-tool/execute
@@ -636,7 +636,7 @@
       (is (str/includes? content "obsolete function removed"))
       (is (str/includes? content "(defn keep [] 1)")))))
 
-(deftest test-fragment-content-rejected
+(deftest ^:bb-only test-fragment-content-rejected
   ;; A fragment like "(defn- filter-kind" (missing the arg vector) is
   ;; unbalanced and rejected outright — it used to be auto-repaired into a
   ;; bodyless "(defn- filter-kind)" and silently written to the file.
@@ -650,7 +650,7 @@
     ;; the file must be untouched
     (is (str/includes? (read-test-file path) "filter-kind\n  [f]"))))
 
-(deftest test-wrong-form-type-rejected
+(deftest ^:bb-only test-wrong-form-type-rejected
   ;; Content that parses but is not the requested form type is rejected.
   (let [path (write-test-file! "wrong-type-reject"
                                "(defn target [] nil)\n")
@@ -661,7 +661,7 @@
     (is (str/includes? (:content result) "does not start with"))
     (is (str/includes? (read-test-file path) "(defn target [] nil)"))))
 
-(deftest test-incomplete-def-rejected
+(deftest ^:bb-only test-incomplete-def-rejected
   ;; A complete-but-incomplete "def" form like "(def foo)" (no value) is
   ;; rejected by structural validation.
   (let [path (write-test-file! "incomplete-def"
@@ -673,7 +673,7 @@
     (is (str/includes? (:content result) "expected (def name value)"))
     (is (str/includes? (read-test-file path) "(def foo 1)"))))
 
-(deftest test-unbalanced-content-rejected
+(deftest ^:bb-only test-unbalanced-content-rejected
   ;; Unbalanced content is rejected outright — no auto-repair. The
   ;; rejection names the actual error: kind, location, opened-at.
   (let [path (write-test-file! "unbalanced-reject"
@@ -689,7 +689,7 @@
     ;; the file must be untouched
     (is (str/includes? (read-test-file path) "(defn foo [] nil)"))))
 
-(deftest test-syntax-error-content-rejected-explicitly
+(deftest ^:bb-only test-syntax-error-content-rejected-explicitly
   ;; Balanced-but-unparsable content used to slip past the unbalance check
   ;; and fail later with a confusing pipeline error; it is now rejected up
   ;; front with the reader's actual message and position.
@@ -709,7 +709,7 @@
 ;; Insert after defmethod with qualified name
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-empty-ns-rejected
+(deftest ^:bb-only test-empty-ns-rejected
   ;; "(ns)" (no namespace name) is structurally broken — must be rejected,
   ;; not silently written over the file's real ns declaration.
   (let [path (write-test-file! "empty-ns"
@@ -722,7 +722,7 @@
     ;; the file must be untouched
     (is (str/includes? (read-test-file path) "foo.bar"))))
 
-(deftest test-insert-after-defmethod-qualified
+(deftest ^:bb-only test-insert-after-defmethod-qualified
   (let [path (write-test-file! "insert-after-dm"
                                "(defmethod shape/area :square\n  [{:keys [w]}] (* w w))\n")
         result (edit-tool/execute
@@ -737,7 +737,7 @@
 
 ;; ─── Quiet titles ───────────────────────────────────────────────────────────
 
-(deftest test-title
+(deftest ^:bb-only test-title
   (testing "full args"
     (is (= "clojure_edit replace defn foo in /a/b.clj"
            (edit-tool/title {:file_path "/a/b.clj" :form_type "defn"

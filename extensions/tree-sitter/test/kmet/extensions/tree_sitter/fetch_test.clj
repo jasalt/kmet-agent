@@ -21,7 +21,7 @@
       (.closeEntry zos)))
   path)
 
-(deftest sha256-test
+(deftest ^:bb-only sha256-test
   (let [tmp (tu/temp-dir! "ts-fetch")]
     (spit (str (fs/path tmp "abc")) "abc")
     (is (= abc-sha (fetch/sha256 (fs/path tmp "abc"))))
@@ -29,7 +29,7 @@
     (spit (str (fs/path tmp "abx")) "abx")
     (is (not= abc-sha (fetch/sha256 (fs/path tmp "abx"))))))
 
-(deftest store-and-verify!-test
+(deftest ^:bb-only store-and-verify!-test
   (testing "happy path: stream lands atomically at dest"
     (let [tmp (tu/temp-dir! "ts-store")
           dest (fs/path tmp "blob")
@@ -61,7 +61,7 @@
       (is (empty? (filter #(str/includes? (str %) ".part-")
                           (fs/list-dir tmp)))))))
 
-(deftest extract-zip!-test
+(deftest ^:bb-only extract-zip!-test
   (let [tmp (tu/temp-dir! "ts-zip")
         zip (make-zip! (fs/path tmp "a.zip")
                        {"tree-sitter" "#!/bin/sh\necho hi\n"
@@ -73,7 +73,7 @@
         (is (= "#!/bin/sh\necho hi\n" (slurp (str (fs/path out "tree-sitter")))))
         (is (= "contents" (slurp (str (fs/path out "nested/dir/readme.txt")))))))))
 
-(deftest extract-zip!-zip-slip-test
+(deftest ^:bb-only extract-zip!-zip-slip-test
   (doseq [name ["../evil.txt" "/abs/evil.txt"]]
     (let [tmp (tu/temp-dir! "ts-slip")
           zip (make-zip! (fs/path tmp "evil.zip") {name "nope"})
@@ -84,7 +84,7 @@
       (is (= :kmet.libs.archive/zip-slip (:type (ex-data ex))))
       (is (not (fs/exists? (fs/path tmp "evil.txt")))))))
 
-(deftest binary-release-test
+(deftest ^:bb-only binary-release-test
   (let [{:keys [version targets]} (fetch/binary-release)]
     (testing "one pinned version, six targets, well-formed entries"
       (is (re-matches #"\d+\.\d+\.\d+" version))

@@ -6,11 +6,11 @@
 
 ;; ─── Per-target prompt format helpers ──────────────────────────────────
 
-(deftest format-uncommitted-test
+(deftest ^:bb-only format-uncommitted-test
   (is (str/includes? (p/format-uncommitted) "current code changes"))
   (is (str/includes? (p/format-uncommitted) "prioritized findings")))
 
-(deftest format-base-branch-with-merge-base-test
+(deftest ^:bb-only format-base-branch-with-merge-base-test
   (let [out (p/format-base-branch "main" "abc1234")]
     (is (str/includes? out "main"))
     (is (str/includes? out "abc1234"))
@@ -18,32 +18,32 @@
     ;; the merge-base form is used
     (is (not (str/includes? out "merge-base HEAD")))))
 
-(deftest format-base-branch-fallback-test
+(deftest ^:bb-only format-base-branch-fallback-test
   (let [out (p/format-base-branch "develop" nil)]
     (is (str/includes? out "develop"))
     ;; the fallback form is used
     (is (str/includes? out "git merge-base"))
     (is (str/includes? out "develop's upstream"))))
 
-(deftest format-commit-with-title-test
+(deftest ^:bb-only format-commit-with-title-test
   (let [out (p/format-commit "abc1234" "Fix flarble")]
     (is (str/includes? out "abc1234"))
     (is (str/includes? out "Fix flarble"))
     (is (str/includes? out "Review the code changes introduced by commit"))))
 
-(deftest format-commit-without-title-test
+(deftest ^:bb-only format-commit-without-title-test
   (let [out (p/format-commit "abc1234" nil)]
     (is (str/includes? out "abc1234"))
     (is (not (str/includes? out "(\"")))))
 
-(deftest format-folder-test
+(deftest ^:bb-only format-folder-test
   (let [out (p/format-folder ["src" "docs"])]
     (is (str/includes? out "src, docs"))
     (is (str/includes? out "snapshot review"))))
 
 ;; ─── build-review-prompt dispatch ──────────────────────────────────────
 
-(deftest build-review-prompt-dispatch-test
+(deftest ^:bb-only build-review-prompt-dispatch-test
   (testing "uncommitted"
     (is (= p/uncommitted-prompt (p/build-review-prompt {:type :uncommitted}))))
   (testing "base-branch with merge-base"
@@ -66,7 +66,7 @@
 
 ;; ─── User-facing hint ─────────────────────────────────────────────────
 
-(deftest user-facing-hint-test
+(deftest ^:bb-only user-facing-hint-test
   (is (= "current changes" (p/user-facing-hint {:type :uncommitted})))
   (is (= "changes against 'main'"
          (p/user-facing-hint {:type :base-branch :branch "main"})))
@@ -86,14 +86,14 @@
 
 ;; ─── Rubric assertions (the language-agnostic part) ──────────────────
 
-(deftest rubric-has-no-js-examples-test
+(deftest ^:bb-only rubric-has-no-js-examples-test
   ;; pi-review's rubric mentioned `isRecord` / `asString` as JS idioms.
   ;; The port drops those in favor of "trivial type-coercion or 'is-a-X'
   ;; wrappers that just rename an existing primitive".
   (is (not (str/includes? p/review-rubric "isRecord")))
   (is (not (str/includes? p/review-rubric "asString"))))
 
-(deftest rubric-generalizes-json-test
+(deftest ^:bb-only rubric-generalizes-json-test
   ;; pi-review's rubric had two JSON-specific bullets (item 4 of fail-fast
   ;; was "JSON parsing/decoding", item 7 of untrusted-input was about
   ;; ?next_page redirects). The port generalizes to "structured data
@@ -105,14 +105,14 @@
   ;; untrusted-input bullet about redirects stays
   (is (str/includes? p/review-rubric "open redirects")))
 
-(deftest rubric-generalizes-error-fallbacks-test
+(deftest ^:bb-only rubric-generalizes-error-fallbacks-test
   ;; pi-review's fail-fast item 3 listed `null`/`[]`/`false` as JS-typical
   ;; fallback values. The port uses the language-agnostic phrase
   ;; "silent fallback values" without naming the JS-specific cases.
   (is (str/includes? p/review-rubric "silent fallback values"))
   (is (not (str/includes? p/review-rubric "returning `null`/`[]`/`false`"))))
 
-(deftest rubric-preserves-other-bullets-test
+(deftest ^:bb-only rubric-preserves-other-bullets-test
   ;; Bullet points that don't depend on language stay.
   (is (str/includes? p/review-rubric "back pressure"))
   (is (str/includes? p/review-rubric "P0"))
@@ -122,13 +122,13 @@
 
 ;; ─── Summary / fix prompts ─────────────────────────────────────────────
 
-(deftest review-summary-prompt-test
+(deftest ^:bb-only review-summary-prompt-test
   (is (str/includes? p/review-summary-prompt "Review Scope"))
   (is (str/includes? p/review-summary-prompt "Verdict"))
   (is (str/includes? p/review-summary-prompt "Fix Queue"))
   (is (str/includes? p/review-summary-prompt "Human Reviewer Callouts")))
 
-(deftest review-fix-findings-prompt-test
+(deftest ^:bb-only review-fix-findings-prompt-test
   (is (str/includes? p/review-fix-findings-prompt "priority order"))
   (is (str/includes? p/review-fix-findings-prompt
                      "fail-fast error handling")))

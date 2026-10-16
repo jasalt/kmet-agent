@@ -80,6 +80,25 @@
     kmet.tasks.build-test
     kmet.tasks.build-jolt-test
     kmet.app.test-skills
+    kmet.extensions.clojure.edit-util-test
+    kmet.extensions.clojure.edit-tool-test
+    kmet.extensions.clojure.sexp-tool-test
+    kmet.extensions.clojure.paren-repair-test
+    kmet.extensions.clojure.nrepl-test
+    kmet.extensions.clojure.eval-tool-test
+    kmet.extensions.tree-sitter.paths-test
+    kmet.extensions.tree-sitter.fetch-test
+    kmet.extensions.tree-sitter.cli-test
+    kmet.extensions.tree-sitter.grammars-test
+    kmet.extensions.tree-sitter.symbols-test
+    kmet.extensions.tree-sitter.tools-test
+    kmet.extensions.tree-sitter.renderers-test
+    kmet.extensions.tree-sitter.validate-test
+    kmet.extensions.tree-sitter.dispatch-test
+    kmet.extensions.tree-sitter.hooks-test
+    kmet.extensions.review.prompts-test
+    kmet.extensions.review.git-test
+    kmet.extensions.review.review-test
 
     kmet.app.test-prompts
     kmet.app.test-extensions

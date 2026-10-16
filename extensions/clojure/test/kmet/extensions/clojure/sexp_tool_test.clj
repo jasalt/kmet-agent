@@ -38,14 +38,14 @@
 ;; Parameter validation
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-missing-file-path
+(deftest ^:bb-only test-missing-file-path
   (let [result (sexp-tool/execute {:match_form "(+ x 1)"
                                    :new_form "(+ x 2)"
                                    :operation "replace"})]
     (is (:is-error result))
     (is (str/includes? (:content result) "file_path"))))
 
-(deftest test-file-not-found
+(deftest ^:bb-only test-file-not-found
   (let [result (sexp-tool/execute {:file_path "target/nonexistent-xyz.clj"
                                    :match_form "(+ x 1)"
                                    :new_form "(+ x 2)"
@@ -53,7 +53,7 @@
     (is (:is-error result))
     (is (str/includes? (:content result) "not found"))))
 
-(deftest test-non-clojure-file
+(deftest ^:bb-only test-non-clojure-file
   (let [path (do (ensure-test-dir!)
                  (str test-dir "/notes.txt"))
         _    (spit path "(+ x 1)")
@@ -64,7 +64,7 @@
     (is (:is-error result))
     (is (str/includes? (:content result) "Not a Clojure file"))))
 
-(deftest test-missing-match-form
+(deftest ^:bb-only test-missing-match-form
   (let [path (write-test-file! "missing-match" "(+ x 1)")
         result (sexp-tool/execute {:file_path path
                                    :new_form "(+ x 2)"
@@ -72,7 +72,7 @@
     (is (:is-error result))
     (is (str/includes? (:content result) "match_form"))))
 
-(deftest test-missing-new-form
+(deftest ^:bb-only test-missing-new-form
   ;; new_form stays required (same convention as the edit tool's newText):
   ;; omitting it is an error, deletion uses an explicit empty string.
   (let [path (write-test-file! "missing-new" "(+ x 1)")
@@ -84,7 +84,7 @@
     (is (str/includes? (:content result) "empty string"))
     (is (str/includes? (read-test-file path) "(+ x 1)"))))
 
-(deftest test-delete-with-empty-new-form
+(deftest ^:bb-only test-delete-with-empty-new-form
   ;; Deletion follows the edit tool's convention: an empty new_form with
   ;; operation "replace" removes the matched expression.
   (let [path (write-test-file! "delete-empty"
@@ -97,7 +97,7 @@
       (is (not (str/includes? content "println")))
       (is (str/includes? content "42")))))
 
-(deftest test-delete-with-blank-new-form
+(deftest ^:bb-only test-delete-with-blank-new-form
   ;; Whitespace-only new_form carries zero complete expressions — same as "".
   (let [path (write-test-file! "delete-blank"
                                "(defn f []\n  (println \"debug\")\n  42)\n")
@@ -108,7 +108,7 @@
       (is (not (str/includes? content "println")))
       (is (str/includes? content "42")))))
 
-(deftest test-delete-multiple-expressions
+(deftest ^:bb-only test-delete-multiple-expressions
   ;; A multi-expression match with an empty new_form removes the whole block.
   (let [path (write-test-file! "delete-multi"
                                "(defn f []\n  (validate x)\n  (transform x)\n  x)\n")
@@ -120,7 +120,7 @@
       (is (not (str/includes? content "transform")))
       (is (str/includes? content "x)")))))
 
-(deftest test-delete-with-replace-all
+(deftest ^:bb-only test-delete-with-replace-all
   ;; Empty new_form + replace_all removes every occurrence.
   (let [path (write-test-file! "delete-all"
                                "(defn a [] (inc x))\n(defn b [] (inc x))\n")
@@ -132,7 +132,7 @@
       (is (str/includes? content "(defn a"))
       (is (str/includes? content "(defn b")))))
 
-(deftest test-insert-with-empty-new-form-rejected
+(deftest ^:bb-only test-insert-with-empty-new-form-rejected
   ;; Insert operations need content; an empty new_form cannot insert.
   (doseq [op ["insert_before" "insert_after"]]
     (testing op
@@ -145,7 +145,7 @@
         (is (str/includes? (:content result) "new_form"))
         (is (str/includes? (read-test-file path) "(defn first [] 1)"))))))
 
-(deftest test-match-form-whitespace-only
+(deftest ^:bb-only test-match-form-whitespace-only
   (let [path (write-test-file! "whitespace-match" "(+ x 1)")
         result (sexp-tool/execute {:file_path path
                                    :match_form "   \n  "
@@ -155,7 +155,7 @@
     ;; Blank match_form is treated as missing
     (is (str/includes? (:content result) "match_form"))))
 
-(deftest test-match-form-comment-only
+(deftest ^:bb-only test-match-form-comment-only
   (let [path (write-test-file! "comment-match" "(+ x 1)")
         result (sexp-tool/execute {:file_path path
                                    :match_form ";; just a comment"
@@ -164,7 +164,7 @@
     (is (:is-error result))
     (is (str/includes? (:content result) "S-expression"))))
 
-(deftest test-new-form-invalid
+(deftest ^:bb-only test-new-form-invalid
   ;; Unbalanced new_form ("(defn foo [") is rejected — no auto-repair —
   ;; with the actual error: kind, location, opened-at.
   (let [path (write-test-file! "invalid-new" "(+ x 1)")
@@ -179,7 +179,7 @@
     (is (str/includes? (:content result) "opened at line 1, col 11"))
     (is (str/includes? (read-test-file path) "(+ x 1)"))))
 
-(deftest test-match-form-syntax-error-reports-location
+(deftest ^:bb-only test-match-form-syntax-error-reports-location
   ;; A balanced-looking but unparsable match_form names the reader error
   ;; and position instead of failing later as a confusing not-found.
   (let [path (write-test-file! "syntax-match" "(+ x 1)")
@@ -192,7 +192,7 @@
     (is (str/includes? (:content result) "Syntax error in match_form"))
     (is (str/includes? (:content result) "at line 1, col 6"))))
 
-(deftest test-new-form-unrepairable
+(deftest ^:bb-only test-new-form-unrepairable
   (let [path (write-test-file! "invalid-new2" "(+ x 1)")
         result (sexp-tool/execute {:file_path path
                                    :match_form "(+ x 1)"
@@ -201,7 +201,7 @@
     ;; #_ alone is not a valid expression even after repair
     (is (:is-error result))))
 
-(deftest test-new-form-unbalanced-rejected
+(deftest ^:bb-only test-new-form-unbalanced-rejected
   ;; Unbalanced new_form is rejected outright — no auto-repair.
   (let [path (write-test-file! "unbalanced-new" "(+ x 1)")
         result (sexp-tool/execute {:file_path path
@@ -213,7 +213,7 @@
     ;; the file must be untouched
     (is (str/includes? (read-test-file path) "(+ x 1)"))))
 
-(deftest test-match-form-unbalanced-rejected
+(deftest ^:bb-only test-match-form-unbalanced-rejected
   ;; Unbalanced match_form is rejected outright — no auto-repair.
   (let [path (write-test-file! "unbalanced-match" "(+ x 1)")
         result (sexp-tool/execute {:file_path path
@@ -225,7 +225,7 @@
     ;; the file must be untouched
     (is (str/includes? (read-test-file path) "(+ x 1)"))))
 
-(deftest test-new-form-broken-defn-rejected
+(deftest ^:bb-only test-new-form-broken-defn-rejected
   ;; A broken definition fragment like "(defn- filter-kind" (unbalanced,
   ;; missing the arg vector) is rejected — it used to be auto-repaired into
   ;; a bodyless "(defn- filter-kind)" and silently written to the file.
@@ -239,7 +239,7 @@
     ;; the file must be untouched
     (is (str/includes? (read-test-file path) "(+ x 1)"))))
 
-(deftest test-new-form-incomplete-def-rejected
+(deftest ^:bb-only test-new-form-incomplete-def-rejected
   ;; A balanced-but-incomplete def ("(def foo)" with no value) is rejected
   ;; by structural validation — and the validator's actual reason is
   ;; spelled out instead of a generic rejection.
@@ -253,7 +253,7 @@
     (is (str/includes? (:content result) "expected (def name value)"))
     (is (str/includes? (read-test-file path) "(+ x 1)"))))
 
-(deftest test-new-form-valid-def-allowed
+(deftest ^:bb-only test-new-form-valid-def-allowed
   ;; Valid definition forms still work.
   (let [path (write-test-file! "valid-def-new" "(+ x 1)")
         result (sexp-tool/execute {:file_path path
@@ -263,7 +263,7 @@
     (is (not (:is-error result)))
     (is (str/includes? (read-test-file path) "(def foo 3)"))))
 
-(deftest test-match-form-auto-repaired
+(deftest ^:bb-only test-match-form-auto-repaired
   (let [path (write-test-file! "auto-repair-match" "(defn foo [] (* x 2))")
         result (sexp-tool/execute {:file_path path
                                    :match_form "(* x 2"
@@ -278,7 +278,7 @@
 ;; Basic replace
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-simple-expression
+(deftest ^:bb-only test-replace-simple-expression
   (let [path (write-test-file! "replace-simple"
                                "(+ x 1)\n")
         result (sexp-tool/execute
@@ -288,7 +288,7 @@
     (is (str/includes? (read-test-file path) "(+ x 10)"))
     (is (not (str/includes? (read-test-file path) "(+ x 1)")))))
 
-(deftest test-replace-in-function-body
+(deftest ^:bb-only test-replace-in-function-body
   (let [path (write-test-file! "replace-in-fn"
                                "(defn compute [x]\n  (+ x 1))\n")
         result (sexp-tool/execute
@@ -296,7 +296,7 @@
     (is (not (:is-error result)))
     (is (str/includes? (read-test-file path) "(* x 2)"))))
 
-(deftest test-only-the-changed-form-is-reformatted
+(deftest ^:bb-only test-only-the-changed-form-is-reformatted
   ;; The pipeline formats only the top-level forms the edit touched: the
   ;; changed form is cljfmt-formatted, while a form the formatter would
   ;; change elsewhere keeps its bytes.
@@ -311,7 +311,7 @@
       (is (str/includes? content "  (let [x 1]\n    (+ x 3))")
           "changed form is reformatted with cljfmt"))))
 
-(deftest test-replace-function-call
+(deftest ^:bb-only test-replace-function-call
   (let [path (write-test-file! "replace-call"
                                "(println \"hello\")\n")
         result (sexp-tool/execute
@@ -319,7 +319,7 @@
     (is (not (:is-error result)))
     (is (str/includes? (read-test-file path) "\"world\""))))
 
-(deftest test-replace-let-binding
+(deftest ^:bb-only test-replace-let-binding
   (let [path (write-test-file! "replace-let"
                                "(let [x 1 y 2]\n  (+ x y))\n")
         result (sexp-tool/execute
@@ -327,7 +327,7 @@
     (is (not (:is-error result)))
     (is (str/includes? (read-test-file path) "y 20"))))
 
-(deftest test-replace-keyword
+(deftest ^:bb-only test-replace-keyword
   (let [path (write-test-file! "replace-keyword"
                                "{:name \"Alice\" :age 30}\n")
         result (sexp-tool/execute
@@ -337,7 +337,7 @@
       (is (str/includes? content ":full-name"))
       (is (not (str/includes? content ":name"))))))
 
-(deftest test-replace-vector-element
+(deftest ^:bb-only test-replace-vector-element
   (let [path (write-test-file! "replace-vector"
                                "[1 2 3 4 5]\n")
         result (sexp-tool/execute
@@ -345,7 +345,7 @@
     (is (not (:is-error result)))
     (is (str/includes? (read-test-file path) "99"))))
 
-(deftest test-replace-map-entry
+(deftest ^:bb-only test-replace-map-entry
   (let [path (write-test-file! "replace-map"
                                "{:a 1 :b 2 :c 3}\n")
         result (sexp-tool/execute
@@ -357,7 +357,7 @@
 ;; Whitespace-normalized matching
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-whitespace-insensitive-match
+(deftest ^:bb-only test-whitespace-insensitive-match
   (testing "extra whitespace in source doesn't prevent matching"
     (let [path (write-test-file! "ws-match"
                                  "(+   x    1)\n")
@@ -366,7 +366,7 @@
       (is (not (:is-error result)))
       (is (str/includes? (read-test-file path) "(+ x 99)")))))
 
-(deftest test-whitespace-insensitive-multiline
+(deftest ^:bb-only test-whitespace-insensitive-multiline
   (testing "multiline source matches with single-line match"
     (let [path (write-test-file! "ws-multiline"
                                  "(+ x\n   1)\n")
@@ -379,7 +379,7 @@
 ;; Match not found
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-match-not-found
+(deftest ^:bb-only test-match-not-found
   (let [path (write-test-file! "not-found"
                                "(+ x 1)\n(- y 2)\n")
         result (sexp-tool/execute
@@ -387,7 +387,7 @@
     (is (:is-error result))
     (is (str/includes? (:content result) "Could not find"))))
 
-(deftest test-match-partial-not-enough
+(deftest ^:bb-only test-match-partial-not-enough
   (testing "a partial match that doesn't cover the full sexp is not found"
     (let [path (write-test-file! "partial"
                                  "(+ x 1 y 2)\n")
@@ -396,7 +396,7 @@
       (is (:is-error result))
       (is (str/includes? (:content result) "Could not find")))))
 
-(deftest test-match-not-found-repair-note
+(deftest ^:bb-only test-match-not-found-repair-note
   (testing "unbalanced match_form is rejected — no repair, no match attempt"
     (let [path (write-test-file! "not-found-unbalanced"
                                  "(when (and (a? x) (b? y))\n  (c))\n")
@@ -407,7 +407,7 @@
       (is (str/includes? (:content result) "unbalanced"))
       (is (not (str/includes? (:content result) "Could not find"))))))
 
-(deftest test-match-not-found-no-repair-note
+(deftest ^:bb-only test-match-not-found-no-repair-note
   (testing "balanced match_form that simply isn't there does not claim a repair"
     (let [path (write-test-file! "not-found-balanced"
                                  "(+ x 1)\n")
@@ -417,7 +417,7 @@
       (is (str/includes? (:content result) "Could not find"))
       (is (not (str/includes? (:content result) "auto-repaired"))))))
 
-(deftest test-edit-success-repair-note
+(deftest ^:bb-only test-edit-success-repair-note
   (testing "unbalanced new_form is rejected — no edit, no repair"
     (let [path (write-test-file! "edit-repair-note"
                                  "(defn foo [x] (+ x 1))\n")
@@ -432,7 +432,7 @@
 ;; replace_all
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-all
+(deftest ^:bb-only test-replace-all
   (let [path (write-test-file! "replace-all"
                                "(defn a [] (inc x))\n(defn b [] (inc y))\n(defn c [] (inc z))\n")
         result (sexp-tool/execute
@@ -442,7 +442,7 @@
     (let [content (read-test-file path)]
       (is (str/includes? content "(+ x 1)")))))
 
-(deftest test-replace-all-rename-symbol
+(deftest ^:bb-only test-replace-all-rename-symbol
   (let [path (write-test-file! "replace-all-rename"
                                "(defn a [] (my-fn 1))\n(defn b [] (my-fn 2))\n")
         result (sexp-tool/execute
@@ -456,7 +456,7 @@
 ;; Multi-expression matching
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-multi-expression-match
+(deftest ^:bb-only test-multi-expression-match
   (let [path (write-test-file! "multi-match"
                                "(defn foo []\n  (validate x)\n  (transform x)\n  x)\n")
         result (sexp-tool/execute
@@ -465,7 +465,7 @@
     (is (not (:is-error result)))
     (is (str/includes? (read-test-file path) "(-> x validate transform)"))))
 
-(deftest test-multi-expression-match-with-extra-whitespace
+(deftest ^:bb-only test-multi-expression-match-with-extra-whitespace
   (let [path (write-test-file! "multi-ws"
                                "(do  (validate  x)  (transform  x))\n")
         result (sexp-tool/execute
@@ -478,7 +478,7 @@
 ;; Insert before
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-insert-before
+(deftest ^:bb-only test-insert-before
   (let [path (write-test-file! "insert-before"
                                "(defn second [] 2)\n")
         result (sexp-tool/execute
@@ -492,7 +492,7 @@
       (is (str/includes? content "(defn first [] 1)\n\n(defn second [] 2)")
           "inserted form is newline-separated from the anchor"))))
 
-(deftest test-insert-before-expression
+(deftest ^:bb-only test-insert-before-expression
   (let [path (write-test-file! "insert-before-expr"
                                "(+ y 1)\n")
         result (sexp-tool/execute
@@ -509,7 +509,7 @@
 ;; Insert after
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-insert-after
+(deftest ^:bb-only test-insert-after
   (let [path (write-test-file! "insert-after"
                                "(defn first [] 1)\n")
         result (sexp-tool/execute
@@ -521,7 +521,7 @@
       (is (< (.indexOf content "first")
              (.indexOf content "second"))))))
 
-(deftest test-insert-after-expression
+(deftest ^:bb-only test-insert-after-expression
   (let [path (write-test-file! "insert-after-expr"
                                "(prn \"done\")\n")
         result (sexp-tool/execute
@@ -534,7 +534,7 @@
       (is (< (.indexOf content "prn")
              (.indexOf content "println"))))))
 
-(deftest test-insert-after-keeps-trailing-comment
+(deftest ^:bb-only test-insert-after-keeps-trailing-comment
   ;; Regression: insert_after used to land between the matched expression
   ;; and its same-line trailing comment, detaching the comment onto the
   ;; inserted form. The comment stays with the match, and the inserted
@@ -555,7 +555,7 @@
       (is (str/includes? content "(prn \"inserted\")\n(prn \"b\")")
           "inserted form on its own line, not glued to the next"))))
 
-(deftest test-insert-after-separates-forms
+(deftest ^:bb-only test-insert-after-separates-forms
   ;; insert_after must separate the inserted form from the next one with a
   ;; newline — it used to glue them onto one line (cljfmt only added a space).
   (let [path (write-test-file! "insert-after-sep"
@@ -573,7 +573,7 @@
 ;; replace_all forced false for insert operations
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-all-forced-false-on-insert
+(deftest ^:bb-only test-replace-all-forced-false-on-insert
   (testing "replace_all is forced false for insert_before/insert_after"
     (let [path (write-test-file! "replace-all-insert"
                                  "(+ x 1)\n(+ x 2)\n")
@@ -590,7 +590,7 @@
 ;; Formatting is applied
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-formatting-applied
+(deftest ^:bb-only test-formatting-applied
   (let [path (write-test-file! "formatting"
                                "(defn foo []\n  (+ x 1))\n")
         result (sexp-tool/execute
@@ -604,7 +604,7 @@
 ;; Diff is included in result (when available)
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-diff-in-result
+(deftest ^:bb-only test-diff-in-result
   (let [path (write-test-file! "diff-result"
                                "(foo)\n")
         result (sexp-tool/execute
@@ -619,7 +619,7 @@
 ;; Identical replacement (no-op)
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-identical-replacement
+(deftest ^:bb-only test-identical-replacement
   (let [path (write-test-file! "identical"
                                "(+ x 1)\n")
         result (sexp-tool/execute
@@ -631,7 +631,7 @@
 ;; Nested expressions
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-nested-expression-replace
+(deftest ^:bb-only test-nested-expression-replace
   (let [path (write-test-file! "nested"
                                "(when (pred? x)\n  (do-something x))\n")
         result (sexp-tool/execute
@@ -639,7 +639,7 @@
     (is (not (:is-error result)))
     (is (str/includes? (read-test-file path) ":extra"))))
 
-(deftest test-deeply-nested-replace
+(deftest ^:bb-only test-deeply-nested-replace
   (let [path (write-test-file! "deep-nested"
                                "(defn f []\n  (let [x (g (+ 1 2))]\n    (h x)))\n")
         result (sexp-tool/execute
@@ -652,7 +652,7 @@
 ;; Comments in source
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-match-with-comments-in-source
+(deftest ^:bb-only test-match-with-comments-in-source
   (let [path (write-test-file! "comments"
                                ";; before\n(+ x 1) ;; inline\n;; after\n")
         result (sexp-tool/execute
@@ -666,7 +666,7 @@
 ;; Regex and string literals
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-replace-regex-literal
+(deftest ^:bb-only test-replace-regex-literal
   (let [path (write-test-file! "regex"
                                "(re-pattern \"\\\\d+\")\n")
         result (sexp-tool/execute
@@ -675,7 +675,7 @@
     (is (not (:is-error result)))
     (is (str/includes? (read-test-file path) "[0-9]+"))))
 
-(deftest test-replace-string-literal
+(deftest ^:bb-only test-replace-string-literal
   (let [path (write-test-file! "string-lit"
                                "\"hello world\"\n")
         result (sexp-tool/execute
@@ -687,7 +687,7 @@
 ;; Multiple forms in file — only match is replaced
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-targeted-only-replaced
+(deftest ^:bb-only test-targeted-only-replaced
   (let [path (write-test-file! "targeted"
                                "(+ x 1)\n(- y 2)\n(* z 3)\n")
         result (sexp-tool/execute
@@ -702,7 +702,7 @@
 ;; UTF-8 content
 ;; ═══════════════════════════════════════════════════════════════════════════════
 
-(deftest test-utf8-preserved
+(deftest ^:bb-only test-utf8-preserved
   (let [path (write-test-file! "utf8"
                                "\"Привет\"\n")
         result (sexp-tool/execute
@@ -712,7 +712,7 @@
 
 ;; ─── Quiet titles ───────────────────────────────────────────────────────────
 
-(deftest test-title
+(deftest ^:bb-only test-title
   (testing "match preview"
     (is (= "clojure_edit_replace_sexp replace (+ x 1) in /a.clj"
            (sexp-tool/title {:file_path "/a.clj" :match_form "(+ x 1)\n(+ y 2)"

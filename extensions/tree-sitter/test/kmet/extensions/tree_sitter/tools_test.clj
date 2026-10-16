@@ -16,7 +16,7 @@
 (defn- wrapped [name]
   (:execute (some #(when (= name (:name %)) %) (tools/tool-defs))))
 
-(deftest list-symbols-validation-test
+(deftest ^:bb-only list-symbols-validation-test
   (testing "missing path"
     (let [r ((wrapped "list_symbols") {})]
       (is (:is-error r))
@@ -26,7 +26,7 @@
       (is (:is-error r))
       (is (re-find #"File not found" (:content r))))))
 
-(deftest unsupported-extension-test
+(deftest ^:bb-only unsupported-extension-test
   ;; .rs has no language table entry -> clean error result, no exception
   (let [dir (tu/temp-dir! "ts-tools")
         f (fs/path dir "code.rs")]
@@ -35,7 +35,7 @@
       (is (:is-error r))
       (is (re-find #"no tree-sitter grammar configured" (:content r))))))
 
-(deftest never-throw-test
+(deftest ^:bb-only never-throw-test
   ;; an infrastructure blow-up surfaces as a normal error result
   (with-redefs [symbols/analyze-file! (fn [& _] (throw (ex-info "boom" {})))
                 grammars/resolve-lang (constantly "clojure")
@@ -70,7 +70,7 @@
   (spit (str (fs/path root "app.clj"))
         "(ns app)\n\n(defn user [n]\n  (helper n))\n"))
 
-(deftest ^:integration five-tools-end-to-end-test
+(deftest ^:integration ^:bb-only five-tools-end-to-end-test
   (when (cache-ready?)
     (let [root (tu/temp-dir! "ts-tools-it")
           lib (str (fs/path root "lib.clj"))
