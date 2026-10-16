@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-02T10:35:48Z"
+ :generated-at "2026-10-16T07:28:00Z"
  :provider {:id :fireworks
             :name "Fireworks AI"
             :env-vars ["FIREWORKS_API_KEY"]
@@ -107,6 +107,21 @@
     :cost {:input 0.3 :output 1.2 :cache-read 0.06 :cache-write 0}
     :context-window 512000
     :max-tokens 512000
+    :compat {:supports-long-cache-retention false
+             :send-session-affinity-headers true
+             :supports-cache-control-on-tools false
+             :supports-eager-tool-input-streaming false}}
+   "accounts/fireworks/models/muse-spark-open"
+   {:id "accounts/fireworks/models/muse-spark-open"
+    :name "Muse Spark Open"
+    :provider :fireworks
+    :api :anthropic-messages
+    :base-url "https://api.fireworks.ai/inference"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 1.25 :output 4.25 :cache-read 0.15 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 131072
     :compat {:supports-long-cache-retention false
              :send-session-affinity-headers true
              :supports-cache-control-on-tools false

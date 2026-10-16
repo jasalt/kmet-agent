@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-14T10:10:31Z"
+ :generated-at "2026-10-16T07:28:00Z"
  :provider {:id :vercel-ai-gateway
             :name "Vercel AI Gateway"
             :env-vars ["AI_GATEWAY_API_KEY"]
@@ -612,17 +612,6 @@
     :context-window 1000000
     :max-tokens 128000
     :compat {:force-adaptive-thinking true}}
-   "anthropic/claude-sonnet-4"
-   {:id "anthropic/claude-sonnet-4"
-    :name "Claude Sonnet 4"
-    :provider :vercel-ai-gateway
-    :api :anthropic-messages
-    :base-url "https://ai-gateway.vercel.sh"
-    :reasoning true
-    :input [:text :image]
-    :cost {:input 3 :output 15 :cache-read 0.3 :cache-write 3.75}
-    :context-window 1000000
-    :max-tokens 64000}
    "anthropic/claude-sonnet-4.5"
    {:id "anthropic/claude-sonnet-4.5"
     :name "Claude Sonnet 4.5"
@@ -1460,6 +1449,17 @@
     :cost {:input 0.1 :output 0.2 :cache-read 0.002 :cache-write 0}
     :context-window 1048576
     :max-tokens 1048576}
+   "meta/muse-spark-open"
+   {:id "meta/muse-spark-open"
+    :name "Muse Spark Open"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 1.25 :output 4.25 :cache-read 0.15 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 1048576}
    "meta/muse-wonder-1.0"
    {:id "meta/muse-wonder-1.0"
     :name "Muse Wonder"
@@ -1801,6 +1801,17 @@
     :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
     :context-window 1000000
     :max-tokens 65000}
+   "nvidia/nemotron-3.5-super-vl"
+   {:id "nvidia/nemotron-3.5-super-vl"
+    :name "NVIDIA Nemotron 3.5 Super VL"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 0.2 :output 0.5 :cache-read 0.04 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 1048576}
    "nvidia/nemotron-nano-12b-v2-vl"
    {:id "nvidia/nemotron-nano-12b-v2-vl"
     :name "Nvidia Nemotron Nano 12B V2 VL"
@@ -3086,6 +3097,17 @@
     :cost {:input 1 :output 2 :cache-read 0.2 :cache-write 0}
     :context-window 256000
     :max-tokens 256000}
+   "stealth/cat-jam"
+   {:id "stealth/cat-jam"
+    :name "Cat Jam"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 131072}
    "stealth/glyph-cluster"
    {:id "stealth/glyph-cluster"
     :name "Glyph Cluster"
@@ -3108,6 +3130,17 @@
     :cost {:input 0.2 :output 1.15 :cache-read 0.04 :cache-write 0}
     :context-window 256000
     :max-tokens 256000}
+   "stepfun/step-5-preview"
+   {:id "stepfun/step-5-preview"
+    :name "Step 5 Preview"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 1 :output 2.7 :cache-read 0.05 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 1048576}
    "tencent/hy3"
    {:id "tencent/hy3"
     :name "Hy3"
@@ -3171,7 +3204,7 @@
     :base-url "https://ai-gateway.vercel.sh"
     :reasoning true
     :input [:text]
-    :cost {:input 0.435 :output 0.87 :cache-read 0.0036 :cache-write 0}
+    :cost {:input 0.3045 :output 0.609 :cache-read 0.0028 :cache-write 0}
     :context-window 1050000
     :max-tokens 131000}
    "xiaomi/mimo-v2.6-flash"

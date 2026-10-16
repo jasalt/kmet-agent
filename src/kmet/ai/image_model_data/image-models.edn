@@ -1,10 +1,19 @@
 {:schema-version 1
- :generated-at "2026-10-14T10:10:32Z"
+ :generated-at "2026-10-16T07:28:02Z"
  :provider {:id :openrouter :name "OpenRouter"}
  :models
  {"black-forest-labs/flux-3-image"
   {:id "black-forest-labs/flux-3-image"
-   :name "Black Forest Labs: FLUX.3 Image"
+   :name "Black Forest Labs: FLUX 3 Image"
+   :provider :openrouter
+   :api :openrouter-images
+   :base-url "https://openrouter.ai/api/v1"
+   :input [:text :image]
+   :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+   :output [:image]}
+  "black-forest-labs/flux-3-image-klein"
+  {:id "black-forest-labs/flux-3-image-klein"
+   :name "Black Forest Labs: FLUX 3 Image Klein"
    :provider :openrouter
    :api :openrouter-images
    :base-url "https://openrouter.ai/api/v1"
@@ -146,6 +155,15 @@
    :input [:image :text]
    :cost {:input 1.5 :output 7.5 :cache-read 0 :cache-write 0}
    :output [:image :text]}
+  "krea/k3-edit"
+  {:id "krea/k3-edit"
+   :name "Krea: K3 Edit"
+   :provider :openrouter
+   :api :openrouter-images
+   :base-url "https://openrouter.ai/api/v1"
+   :input [:text :image]
+   :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+   :output [:image]}
   "krea/krea-2-large"
   {:id "krea/krea-2-large"
    :name "Krea: Krea 2 Large"

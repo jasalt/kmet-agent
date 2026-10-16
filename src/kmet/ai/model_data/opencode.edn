@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-14T10:10:31Z"
+ :generated-at "2026-10-16T07:28:00Z"
  :provider {:id :opencode
             :name "OpenCode (Zen)"
             :env-vars ["OPENCODE_API_KEY"]
@@ -372,7 +372,7 @@
                          :xhigh "xhigh"}
     :input [:text]
     :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
-    :context-window 262144
+    :context-window 1048576
     :max-tokens 131072
     :compat {:supports-store false
              :supports-developer-role false
@@ -470,26 +470,27 @@
              :requires-reasoning-content-on-assistant-messages true
              :max-tokens-field :max-tokens
              :supports-strict-mode true}}
-   "exo-free"
-   {:id "exo-free"
-    :name "Exo Free"
+   "deepseek-v4.1-flash-free"
+   {:id "deepseek-v4.1-flash-free"
+    :name "DeepSeek V4.1 Flash Free"
     :provider :opencode
     :api :openai-completions
     :base-url "https://opencode.ai/zen/v1"
     :reasoning true
     :thinking-level-map {:high "high"
                          :low nil
-                         :max nil
+                         :max "max"
                          :medium nil
                          :minimal nil
                          :off nil
                          :xhigh nil}
     :input [:text :image]
     :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
-    :context-window 1048576
-    :max-tokens 131072
+    :context-window 200000
+    :max-tokens 32000
     :compat {:supports-store false
              :supports-developer-role false
+             :requires-reasoning-content-on-assistant-messages true
              :max-tokens-field :max-tokens
              :supports-strict-mode true}}
    "glm-5"
@@ -588,6 +589,28 @@
              :supports-developer-role false
              :max-tokens-field :max-tokens
              :supports-strict-mode true}}
+   "glm-5.3-flash-free"
+   {:id "glm-5.3-flash-free"
+    :name "GLM-5.3-Flash Free"
+    :provider :opencode
+    :api :openai-completions
+    :base-url "https://opencode.ai/zen/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium nil
+                         :minimal nil
+                         :off nil
+                         :xhigh nil}
+    :input [:text :image]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 200000
+    :max-tokens 32000
+    :compat {:supports-store false
+             :supports-developer-role false
+             :max-tokens-field :max-tokens
+             :supports-strict-mode true}}
    "kimi-k2.5"
    {:id "kimi-k2.5"
     :name "Kimi K2.5"
@@ -657,32 +680,24 @@
              :supports-developer-role false
              :max-tokens-field :max-tokens
              :supports-strict-mode true}}
-   "ling-3.0-flash-fin-free"
-   {:id "ling-3.0-flash-fin-free"
-    :name "Ling 3.0 Flash Fin Free"
+   "ll-alpha-free"
+   {:id "ll-alpha-free"
+    :name "LL Alpha Free"
     :provider :opencode
     :api :openai-completions
     :base-url "https://opencode.ai/zen/v1"
     :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium "medium"
+                         :minimal nil
+                         :off nil
+                         :xhigh "xhigh"}
     :input [:text]
     :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
     :context-window 262144
-    :max-tokens 32768
-    :compat {:supports-store false
-             :supports-developer-role false
-             :max-tokens-field :max-tokens
-             :supports-strict-mode true}}
-   "ling-3.1-flash-free"
-   {:id "ling-3.1-flash-free"
-    :name "Ling 3.1 Flash Free"
-    :provider :opencode
-    :api :openai-completions
-    :base-url "https://opencode.ai/zen/v1"
-    :reasoning true
-    :input [:text]
-    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
-    :context-window 262144
-    :max-tokens 32768
+    :max-tokens 65536
     :compat {:supports-store false
              :supports-developer-role false
              :max-tokens-field :max-tokens
@@ -814,6 +829,28 @@
              :supports-developer-role false
              :max-tokens-field :max-tokens
              :supports-strict-mode true}}
+   "nemotron-3.5-super-vl-free"
+   {:id "nemotron-3.5-super-vl-free"
+    :name "Nemotron 3.5 Super VL Free"
+    :provider :opencode
+    :api :openai-completions
+    :base-url "https://opencode.ai/zen/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max nil
+                         :medium "medium"
+                         :minimal "minimal"
+                         :off "none"
+                         :xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 131072
+    :compat {:supports-store false
+             :supports-developer-role false
+             :max-tokens-field :max-tokens
+             :supports-strict-mode true}}
    "qwen3.8-max"
    {:id "qwen3.8-max"
     :name "Qwen3.8 Max"
@@ -847,28 +884,6 @@
     :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
     :context-window 1048576
     :max-tokens 524288
-    :compat {:supports-store false
-             :supports-developer-role false
-             :max-tokens-field :max-tokens
-             :supports-strict-mode true}}
-   "step-5-preview-free"
-   {:id "step-5-preview-free"
-    :name "Step 5 Preview Free"
-    :provider :opencode
-    :api :openai-completions
-    :base-url "https://opencode.ai/zen/v1"
-    :reasoning true
-    :thinking-level-map {:high "high"
-                         :low "low"
-                         :max nil
-                         :medium "medium"
-                         :minimal nil
-                         :off nil
-                         :xhigh nil}
-    :input [:text :image]
-    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
-    :context-window 1000000
-    :max-tokens 65536
     :compat {:supports-store false
              :supports-developer-role false
              :max-tokens-field :max-tokens
