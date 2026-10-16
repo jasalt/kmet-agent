@@ -17,7 +17,6 @@
             [kmet.libs.edn-store :as cred]
             [kmet.libs.dynamic-value :as dynamic-value]
             [kmet.ai.hooks :as hooks]
-            [kmet.libs.host :as host]
             [kmet.ai.google-adc :as google-adc]))
 
 ;; ─── Env var table (pi env-api-keys.ts) ────────────────────────────────────
