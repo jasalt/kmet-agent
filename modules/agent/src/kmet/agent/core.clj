@@ -49,6 +49,69 @@
 
 ;; ─── CLI argument parsing ──────────────────────────────────────────────────
 
+(def ^:private cli-option-handlers
+  {"-d" (fn [opts _ remaining] [(assoc opts :debug true) remaining])
+   "--debug" (fn [opts _ remaining] [(assoc opts :debug true) remaining])
+   "-p" (fn [opts _ remaining] [(assoc opts :print true) remaining])
+   "--print" (fn [opts _ remaining] [(assoc opts :print true) remaining])
+   "-c" (fn [opts _ remaining] [(assoc opts :continue true) remaining])
+   "--continue" (fn [opts _ remaining] [(assoc opts :continue true) remaining])
+   "-r" (fn [opts _ remaining] [(assoc opts :resume true) remaining])
+   "--resume" (fn [opts _ remaining] [(assoc opts :resume true) remaining])
+   "--generate-models" (fn [opts _ remaining] [(assoc opts :generate-models true) remaining])
+   "-h" (fn [opts _ _] [(assoc opts :help true) '()])
+   "--help" (fn [opts _ _] [(assoc opts :help true) '()])
+   "--version" (fn [opts _ _] [(assoc opts :version true) '()])
+   "--mode" (fn [opts _ remaining]
+              (if (seq remaining)
+                [(assoc opts :mode (keyword (first remaining))) (rest remaining)]
+                [(assoc opts :mode nil) remaining]))
+   "-t" (fn [opts _ remaining]
+          (if (seq remaining)
+            (let [level (keyword (first remaining))]
+              [(assoc opts :thinking level) (rest remaining)])
+            [opts remaining]))
+   "--thinking" (fn [opts _ remaining]
+                  (if (seq remaining)
+                    (let [level (keyword (first remaining))]
+                      [(assoc opts :thinking level) (rest remaining)])
+                    [opts remaining]))
+   "--session" (fn [opts _ remaining]
+                 (if (seq remaining)
+                   [(assoc opts :session (first remaining)) (rest remaining)]
+                   [opts remaining]))
+   "--session-dir" (fn [opts _ remaining]
+                     (if (seq remaining)
+                       [(assoc opts :session-dir (first remaining)) (rest remaining)]
+                       [opts remaining]))
+   "--model" (fn [opts _ remaining]
+               (if (seq remaining)
+                 [(assoc opts :model (first remaining)) (rest remaining)]
+                 [opts remaining]))
+   "--system-prompt" (fn [opts _ remaining]
+                       (if (seq remaining)
+                         [(assoc opts :system-prompt (first remaining)) (rest remaining)]
+                         [opts remaining]))
+   "--append-system-prompt" (fn [opts _ remaining]
+                              (if (seq remaining)
+                                [(update opts :append-system-prompt (fnil conj []) (first remaining)) (rest remaining)]
+                                [opts remaining]))
+   "--provider" (fn [opts _ remaining]
+                  (if (seq remaining)
+                    (let [p (keyword (first remaining))]
+                      [(assoc opts :provider p) (rest remaining)])
+                    [opts remaining]))
+   "--models" (fn [opts _ remaining]
+                (if (seq remaining)
+                  [(assoc opts :models (mapv str/trim (str/split (first remaining) #","))) (rest remaining)]
+                  [opts remaining]))
+   "--list-models" (fn [opts _ remaining]
+                     (if (and (seq remaining)
+                              (not (str/starts-with? (first remaining) "-"))
+                              (not (str/starts-with? (first remaining) "@")))
+                       [(assoc opts :list-models (first remaining)) (rest remaining)]
+                       [(assoc opts :list-models true) remaining]))})
+
 (defn parse-args [args]
   (loop [args args
          opts {:provider nil
@@ -66,85 +129,6 @@
       (let [arg (first args)
             rest-args (rest args)]
         (cond
-          (#{"-d" "--debug"} arg)
-          (recur rest-args (assoc opts :debug true))
-
-          (#{"-p" "--print"} arg)
-          (recur rest-args (assoc opts :print true))
-
-          (#{"--mode"} arg)
-          ;; Output mode for non-interactive runs; implies --print (pi:
-          ;; cli/args.ts --mode text|json|rpc). Validated at dispatch.
-          (if (seq rest-args)
-            (recur (rest rest-args) (assoc opts :mode (keyword (first rest-args))))
-            (recur rest-args (assoc opts :mode nil)))
-
-          (#{"-c" "--continue"} arg)
-          (recur rest-args (assoc opts :continue true))
-
-          (#{"-t" "--thinking"} arg)
-          (if (seq rest-args)
-            (let [level (keyword (first rest-args))]
-              (recur (rest rest-args) (assoc opts :thinking level)))
-            (recur rest-args opts))
-
-          (#{"-r" "--resume"} arg)
-          (recur rest-args (assoc opts :resume true))
-
-          (#{"--session"} arg)
-          (if (seq rest-args)
-            (recur (rest rest-args) (assoc opts :session (first rest-args)))
-            (recur rest-args opts))
-
-          (#{"--session-dir"} arg)
-          (if (seq rest-args)
-            (recur (rest rest-args) (assoc opts :session-dir (first rest-args)))
-            (recur rest-args opts))
-
-          (#{"--model"} arg)
-          (if (seq rest-args)
-            (recur (rest rest-args) (assoc opts :model (first rest-args)))
-            (recur rest-args opts))
-
-          (#{"--system-prompt"} arg)
-          (if (seq rest-args)
-            (recur (rest rest-args) (assoc opts :system-prompt (first rest-args)))
-            (recur rest-args opts))
-
-          (#{"--append-system-prompt"} arg)
-          (if (seq rest-args)
-            (recur (rest rest-args) (update opts :append-system-prompt (fnil conj []) (first rest-args)))
-            (recur rest-args opts))
-
-          (#{"--provider"} arg)
-          (if (seq rest-args)
-            (let [p (keyword (first rest-args))]
-              (recur (rest rest-args) (assoc opts :provider p)))
-            (recur rest-args opts))
-
-          (#{"--models"} arg)
-          (if (seq rest-args)
-            (recur (rest rest-args)
-                   (assoc opts :models (mapv str/trim (str/split (first rest-args) #","))))
-            (recur rest-args opts))
-
-          (#{"--list-models"} arg)
-          ;; pi: the next arg is a search pattern unless it's a flag or @file
-          (if (and (seq rest-args)
-                   (not (str/starts-with? (first rest-args) "-"))
-                   (not (str/starts-with? (first rest-args) "@")))
-            (recur (rest rest-args) (assoc opts :list-models (first rest-args)))
-            (recur rest-args (assoc opts :list-models true)))
-
-          (#{"--generate-models"} arg)
-          (recur rest-args (assoc opts :generate-models true))
-
-          (#{"-h" "--help"} arg)
-          (assoc opts :help true)
-
-          (#{"--version"} arg)
-          (assoc opts :version true)
-
           (str/starts-with? arg "@")
           (let [file-path (subs arg 1)]
             (if (seq file-path)
@@ -158,21 +142,29 @@
                   (recur rest-args opts))))
 
           (str/starts-with? arg "--")
-          ;; Unknown --flag: collected for extension registerFlag/getFlag
-          ;; (pi: registerFlag + getFlag). Supports --flag=value, a
-          ;; following non-dash arg as the value, or a bare --flag as
-          ;; boolean true.
           (let [eq (str/index-of arg "=")
                 [name value] (if eq
                                [(subs arg 2 eq) (subs arg (inc eq))]
                                [(subs arg 2) nil])]
-            (if (some? value)
+            (cond
+              (contains? cli-option-handlers arg)
+              (let [[opts' rest'] ((get cli-option-handlers arg) opts arg rest-args)]
+                (recur rest' opts'))
+
+              (some? value)
               (recur rest-args (assoc-in opts [:ext-flags name] value))
-              (if (and (seq rest-args)
-                       (not (str/starts-with? (first rest-args) "-")))
-                (recur (rest rest-args)
-                       (assoc-in opts [:ext-flags name] (first rest-args)))
-                (recur rest-args (assoc-in opts [:ext-flags name] true)))))
+
+              (and (seq rest-args)
+                   (not (str/starts-with? (first rest-args) "-")))
+              (recur (rest rest-args)
+                     (assoc-in opts [:ext-flags name] (first rest-args)))
+
+              :else
+              (recur rest-args (assoc-in opts [:ext-flags name] true))))
+
+          (contains? cli-option-handlers arg)
+          (let [[opts' rest'] ((get cli-option-handlers arg) opts arg rest-args)]
+            (recur rest' opts'))
 
           :else
           (recur rest-args (update opts :messages conj arg)))))))
