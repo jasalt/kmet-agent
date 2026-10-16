@@ -5,7 +5,7 @@
    timed reads from JLine, live width/height from the terminal, plus the
    stty snapshot workaround around JLine's own FFM termios handling."
   (:require [clojure.string :as str]
-            [kmet.libs.terminal :as lib]
+            [kmet.tui.terminal-escape :as lib]
             [kmet.tui.terminal :as term])
   (:import (org.jline.terminal TerminalBuilder Terminal)
            (org.jline.utils NonBlockingReader)))

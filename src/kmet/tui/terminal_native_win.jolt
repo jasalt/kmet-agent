@@ -20,7 +20,7 @@
    at call time; the unit tests reach its pure helper directly. The
    bounded-read buffer, the env size fallback and the pending-queue helper
    live in kmet.tui.terminal."
-  (:require [kmet.libs.terminal :as lib]
+  (:require [kmet.tui.terminal-escape :as lib]
             [kmet.tui.terminal :as term]
             [jolt.ffi :as ffi]))
 

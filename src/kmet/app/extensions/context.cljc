@@ -257,8 +257,6 @@
     kmet.libs.process
     kmet.libs.reakt
     kmet.libs.sse
-    kmet.libs.terminal
-    kmet.libs.terminal-image
     kmet.libs.yaml])
 
 (defn- ns-path

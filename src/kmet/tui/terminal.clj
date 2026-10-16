@@ -6,7 +6,7 @@
    the platform primitives — raw mode, writing, bounded reads, live size,
    the progress keepalive; everything else (cursor/clear/title sequences,
    write log, Kitty negotiation, terminal queries, drain-on-exit) is
-   derived here or in kmet.libs.terminal. Backends are resolved lazily by
+   derived here or in kmet.tui.terminal-escape. Backends are resolved lazily by
    create-terminal, so neither host touches the other's platform deps and
    neither OS loads the other's FFI surface:
 
@@ -22,7 +22,7 @@
    the bounded-read buffer size, the COLUMNS/LINES size fallback and the
    pending-queue helper — live here."
   (:require [kmet.libs.host :as host]
-            [kmet.libs.terminal :as lib]))
+            [kmet.tui.terminal-escape :as escape]))
 
 ;; ─── The protocol: platform primitives only ────────────────────────────────
 
@@ -63,21 +63,21 @@
    feature is off."
   [terminal interval-atom active]
   (if active
-    (do (write-output terminal lib/TERMINAL-PROGRESS-ACTIVE-SEQUENCE)
+    (do (write-output terminal escape/TERMINAL-PROGRESS-ACTIVE-SEQUENCE)
         (when (nil? @interval-atom)
           (reset! interval-atom
                   (future
                     (try
                       (loop []
-                        (Thread/sleep lib/TERMINAL-PROGRESS-KEEPALIVE-MS)
+                        (Thread/sleep escape/TERMINAL-PROGRESS-KEEPALIVE-MS)
                         (when @interval-atom
-                          (write-output terminal lib/TERMINAL-PROGRESS-ACTIVE-SEQUENCE)
+                          (write-output terminal escape/TERMINAL-PROGRESS-ACTIVE-SEQUENCE)
                           (recur)))
                       (catch InterruptedException _))))))
     (when-let [f @interval-atom]
       (future-cancel f)
       (reset! interval-atom nil)
-      (write-output terminal lib/TERMINAL-PROGRESS-CLEAR-SEQUENCE))))
+      (write-output terminal escape/TERMINAL-PROGRESS-CLEAR-SEQUENCE))))
 
 ;; ─── Shared native-backend pieces ──────────────────────────────────────────
 
@@ -122,20 +122,20 @@
 ;; ─── Kitty protocol wrappers (lib fns bound to this terminal's writer) ─────
 
 (defn write-fn
-  "A write-fn bound to the terminal's write-output (for kmet.libs.terminal)."
+  "A write-fn bound to the terminal's write-output (for kmet.tui.terminal-escape)."
   [terminal]
   #(write-output terminal %))
 
 (defn query-kitty-protocol!
   "Send the Kitty keyboard protocol query (pi: queryAndEnableKittyProtocol)."
   [terminal]
-  (lib/query-kitty-protocol! (write-fn terminal)))
+  (escape/query-kitty-protocol! (write-fn terminal)))
 
 (defn disable-kitty-protocol!
   "Disable the Kitty keyboard protocol and modifyOtherKeys (pi: drainInput /
    stop). Resets the global kitty-active flag."
   [terminal]
-  (lib/disable-kitty-protocol! (write-fn terminal)))
+  (escape/disable-kitty-protocol! (write-fn terminal)))
 
 (defn handle-negotiation-sequence!
   "Act on a parsed negotiation response (pi: handleKeyboardProtocolNegotiation-
@@ -143,7 +143,7 @@
    device-attributes report (when kitty is inactive) → modifyOtherKeys
    fallback."
   [terminal parsed]
-  (lib/handle-negotiation-sequence! (write-fn terminal) parsed))
+  (escape/handle-negotiation-sequence! (write-fn terminal) parsed))
 
 (defn drain-input!
   "Disable the keyboard protocols and drain pending input so late key
@@ -151,7 +151,7 @@
    max 1000ms, exits after 50ms of input idle). Backend-neutral: pulls
    through the protocol's bounded read-input."
   [terminal]
-  (lib/disable-kitty-protocol! (write-fn terminal))
+  (escape/disable-kitty-protocol! (write-fn terminal))
   (let [max-ms 1000
         idle-ms 50]
     (loop [last-read (System/nanoTime)
@@ -169,53 +169,53 @@
   "Query the terminal's cell size in pixels (CSI 16 t). The response
    (\u001b[6;h;wt) is consumed by the TUI input path."
   [terminal]
-  (write-output terminal lib/CELL-SIZE-QUERY))
+  (write-output terminal escape/CELL-SIZE-QUERY))
 
 (defn query-osc-11-background!
   "Query the terminal's default background color (OSC 11;?)."
   [terminal]
-  (write-output terminal lib/OSC-11-BACKGROUND-QUERY))
+  (write-output terminal escape/OSC-11-BACKGROUND-QUERY))
 
 (defn query-color-scheme!
   "Query the terminal's color scheme preference (CSI ? 996 n); the reply
    is \u001b[?997;1n (dark) / ;2n (light)."
   [terminal]
-  (write-output terminal lib/COLOR-SCHEME-QUERY))
+  (write-output terminal escape/COLOR-SCHEME-QUERY))
 
 (defn set-color-scheme-notifications!
   "Enable/disable unsolicited color scheme reports (CSI ? 2031 h/l)."
   [terminal enabled?]
   (write-output terminal (if enabled?
-                           lib/COLOR-SCHEME-NOTIFICATIONS-ON
-                           lib/COLOR-SCHEME-NOTIFICATIONS-OFF)))
+                           escape/COLOR-SCHEME-NOTIFICATIONS-ON
+                           escape/COLOR-SCHEME-NOTIFICATIONS-OFF)))
 
 ;; Re-exported protocol constants (for kmet.tui.core and other tui namespaces)
-(def BRACKETED-PASTE-ON lib/BRACKETED-PASTE-ON)
-(def BRACKETED-PASTE-OFF lib/BRACKETED-PASTE-OFF)
-(def PASTE-START lib/PASTE-START)
-(def PASTE-END lib/PASTE-END)
-(def CSI-2026-SYNC-ON lib/CSI-2026-SYNC-ON)
-(def CSI-2026-SYNC-OFF lib/CSI-2026-SYNC-OFF)
-(def DESIRED-KITTY-FLAGS lib/DESIRED-KITTY-FLAGS)
-(def KITTY-KEYBOARD-PROTOCOL-QUERY lib/KITTY-KEYBOARD-PROTOCOL-QUERY)
-(def NEGOTIATION-FLUSH-TIMEOUT-MS lib/NEGOTIATION-FLUSH-TIMEOUT-MS)
-(def OSC-11-BACKGROUND-QUERY lib/OSC-11-BACKGROUND-QUERY)
-(def COLOR-SCHEME-QUERY lib/COLOR-SCHEME-QUERY)
-(def COLOR-SCHEME-NOTIFICATIONS-ON lib/COLOR-SCHEME-NOTIFICATIONS-ON)
-(def COLOR-SCHEME-NOTIFICATIONS-OFF lib/COLOR-SCHEME-NOTIFICATIONS-OFF)
-(def CELL-SIZE-QUERY lib/CELL-SIZE-QUERY)
-(def TERMINAL-PROGRESS-ACTIVE-SEQUENCE lib/TERMINAL-PROGRESS-ACTIVE-SEQUENCE)
-(def TERMINAL-PROGRESS-CLEAR-SEQUENCE lib/TERMINAL-PROGRESS-CLEAR-SEQUENCE)
-(def TERMINAL-PROGRESS-KEEPALIVE-MS lib/TERMINAL-PROGRESS-KEEPALIVE-MS)
-(def parse-negotiation-sequence lib/parse-negotiation-sequence)
-(def split-negotiation-response lib/split-negotiation-response)
-(def split-terminal-response lib/split-terminal-response)
-(def negotiation-prefix? lib/negotiation-prefix?)
-(def cell-size-response-prefix? lib/cell-size-response-prefix?)
-(def osc-11-response-prefix? lib/osc-11-response-prefix?)
-(def color-scheme-report-prefix? lib/color-scheme-report-prefix?)
-(def parse-osc-11-background-response lib/parse-osc-11-background-response)
-(def parse-terminal-color-scheme-report lib/parse-terminal-color-scheme-report)
-(def parse-cell-size-response lib/parse-cell-size-response)
-(def enable-modify-other-keys! lib/enable-modify-other-keys!)
-(def disable-modify-other-keys! lib/disable-modify-other-keys!)
+(def BRACKETED-PASTE-ON escape/BRACKETED-PASTE-ON)
+(def BRACKETED-PASTE-OFF escape/BRACKETED-PASTE-OFF)
+(def PASTE-START escape/PASTE-START)
+(def PASTE-END escape/PASTE-END)
+(def CSI-2026-SYNC-ON escape/CSI-2026-SYNC-ON)
+(def CSI-2026-SYNC-OFF escape/CSI-2026-SYNC-OFF)
+(def DESIRED-KITTY-FLAGS escape/DESIRED-KITTY-FLAGS)
+(def KITTY-KEYBOARD-PROTOCOL-QUERY escape/KITTY-KEYBOARD-PROTOCOL-QUERY)
+(def NEGOTIATION-FLUSH-TIMEOUT-MS escape/NEGOTIATION-FLUSH-TIMEOUT-MS)
+(def OSC-11-BACKGROUND-QUERY escape/OSC-11-BACKGROUND-QUERY)
+(def COLOR-SCHEME-QUERY escape/COLOR-SCHEME-QUERY)
+(def COLOR-SCHEME-NOTIFICATIONS-ON escape/COLOR-SCHEME-NOTIFICATIONS-ON)
+(def COLOR-SCHEME-NOTIFICATIONS-OFF escape/COLOR-SCHEME-NOTIFICATIONS-OFF)
+(def CELL-SIZE-QUERY escape/CELL-SIZE-QUERY)
+(def TERMINAL-PROGRESS-ACTIVE-SEQUENCE escape/TERMINAL-PROGRESS-ACTIVE-SEQUENCE)
+(def TERMINAL-PROGRESS-CLEAR-SEQUENCE escape/TERMINAL-PROGRESS-CLEAR-SEQUENCE)
+(def TERMINAL-PROGRESS-KEEPALIVE-MS escape/TERMINAL-PROGRESS-KEEPALIVE-MS)
+(def parse-negotiation-sequence escape/parse-negotiation-sequence)
+(def split-negotiation-response escape/split-negotiation-response)
+(def split-terminal-response escape/split-terminal-response)
+(def negotiation-prefix? escape/negotiation-prefix?)
+(def cell-size-response-prefix? escape/cell-size-response-prefix?)
+(def osc-11-response-prefix? escape/osc-11-response-prefix?)
+(def color-scheme-report-prefix? escape/color-scheme-report-prefix?)
+(def parse-osc-11-background-response escape/parse-osc-11-background-response)
+(def parse-terminal-color-scheme-report escape/parse-terminal-color-scheme-report)
+(def parse-cell-size-response escape/parse-cell-size-response)
+(def enable-modify-other-keys! escape/enable-modify-other-keys!)
+(def disable-modify-other-keys! escape/disable-modify-other-keys!)

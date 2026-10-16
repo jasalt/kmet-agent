@@ -6,7 +6,7 @@
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.tui.core :as core]
             [kmet.tui.terminal :as term]
-            [kmet.libs.terminal :as lib]
+            [kmet.tui.terminal-escape :as lib]
             [kmet.libs.terminal-image :as img]))
 
 (defn- recording-terminal

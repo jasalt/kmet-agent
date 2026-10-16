@@ -5,7 +5,7 @@
             [kmet.libs.concurrent :as concurrent]
             [kmet.tui.core :as core]
             [kmet.libs.reakt :as reakt]
-            [kmet.libs.terminal :as lib]
+            [kmet.tui.terminal-escape :as lib]
             [kmet.libs.terminal-image :as img]
             [kmet.tui.keys :as keys]
             [kmet.tui.terminal :as term]

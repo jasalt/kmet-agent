@@ -1,4 +1,4 @@
-(ns kmet.libs.terminal
+(ns kmet.tui.terminal-escape
   "Generic terminal protocol knowledge — escape sequences and the Kitty
    keyboard protocol negotiation (pi: terminal.ts / stdin-buffer.ts).
    Portable: every protocol function takes a write-fn instead of a concrete

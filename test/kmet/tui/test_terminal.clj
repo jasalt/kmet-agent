@@ -2,7 +2,7 @@
   "Tests for the shared terminal body in kmet.tui.terminal — the OSC 9;4
    progress keepalive/dedupe (apply-progress!) and the stop-time clear."
   (:require [clojure.test :as t]
-            [kmet.libs.terminal :as lib]
+            [kmet.tui.terminal-escape :as lib]
             [kmet.tui.core :as core]
             [kmet.tui.terminal :as term]))
 

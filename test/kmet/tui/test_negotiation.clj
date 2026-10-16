@@ -5,7 +5,7 @@
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.tui.core :as core]
             [kmet.tui.keys :as keys]
-            [kmet.libs.terminal :as lib]
+            [kmet.tui.terminal-escape :as lib]
             [kmet.tui.terminal :as term]))
 
 (defn- recording-writer

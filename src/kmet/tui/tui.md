@@ -1389,7 +1389,7 @@ Notes:
 ## 9. Theming
 
 All styling goes through `kmet.tui.theme`; raw ANSI escapes are banned
-outside `src/kmet/tui/` and `kmet.libs.terminal`.
+outside `src/kmet/tui/` and `kmet.tui.terminal-escape`.
 
 ```clojure
 (theme/fg theme :primary text)     ; wraps, resets fg only (\u001b[39m)

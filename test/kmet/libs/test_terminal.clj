@@ -3,7 +3,7 @@
    byte-oriented backend (Jolt's read(2)) needs, where a fixed-size read
    can split a multi-byte character at any byte offset."
   (:require [clojure.test :as t :refer [deftest testing]]
-            [kmet.libs.terminal :as lib]))
+            [kmet.tui.terminal-escape :as lib]))
 
 (defn- decode [& bytes]
   (lib/utf8-decode bytes))

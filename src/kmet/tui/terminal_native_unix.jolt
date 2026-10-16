@@ -6,7 +6,7 @@
    on a registered shutdown hook), poll(2) + read(2) for reads bounded by a
    timeout, and ioctl(TIOCGWINSZ) for the live size. No subprocesses, no
    libraries beyond libc. Multi-byte UTF-8 split across read buffers is
-   reassembled by kmet.libs.terminal/utf8-decode with a per-terminal tail
+   reassembled by kmet.tui.terminal-escape/utf8-decode with a per-terminal tail
    (a read boundary is not a character boundary).
 
    A .jolt file — the runtime's own source extension — so it is Jolt code by
@@ -15,7 +15,7 @@
    at call time. The bounded-read buffer, the env size fallback and the
    pending-queue helper live in kmet.tui.terminal."
   (:require [clojure.string :as str]
-            [kmet.libs.terminal :as lib]
+            [kmet.tui.terminal-escape :as lib]
             [kmet.tui.terminal :as term]
             [jolt.ffi :as ffi]))
 

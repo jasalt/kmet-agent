@@ -10,7 +10,7 @@
             [kmet.tui.protocols :as protocols]
             [kmet.libs.reakt :as reakt]
             [kmet.libs.reakt.weak :as weak]
-            [kmet.libs.terminal :as lib-terminal]
+            [kmet.tui.terminal-escape :as lib-terminal]
             [kmet.tui.terminal :as terminal]
             [kmet.tui.timers :as timers]
             [kmet.tui.wake :as wake]
@@ -1810,7 +1810,7 @@
 ;; Opt-in ground truth for input bugs that only reproduce in one terminal:
 ;; every reader drain, every dispatched input unit (raw bytes, parsed key,
 ;; kitty event flags, paste-burst state and outcome) and every intercepted
-;; response is appended to the trace file (kmet.libs.terminal/input-log!;
+;; response is appended to the trace file (kmet.tui.terminal-escape/input-log!;
 ;; see tui.md §11). The trace never changes behavior — every helper here
 ;; no-ops when the env var is unset.
 

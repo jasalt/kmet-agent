@@ -48,7 +48,7 @@
             [kmet.libs.clipboard :as clipboard]
             [kmet.app.context :as context]
             [kmet.libs.process :as process]
-            [kmet.libs.terminal :as lib-term]
+            [kmet.tui.terminal-escape :as lib-term]
             [kmet.modes.interactive.auth :as auth]
             [kmet.modes.interactive.resources :as resources]
             [kmet.modes.interactive.session-admin :as session-admin]

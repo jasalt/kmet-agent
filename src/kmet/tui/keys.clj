@@ -5,7 +5,7 @@
    (with alternate keys + event types), modifyOtherKeys, mode-aware
    legacy sequences, and the full legacy table."
   (:require [clojure.string :as str]
-            [kmet.libs.terminal :as lib]))
+            [kmet.tui.terminal-escape :as lib]))
 
 ;; ─── Key constants ──────────────────────────────────────────────────────────
 
@@ -115,7 +115,7 @@
         ;; other single char is a meta key)
         :else true))))
 
-;; ─── Kitty protocol state (owned by kmet.libs.terminal) ────────────────────
+;; ─── Kitty protocol state (owned by kmet.tui.terminal-escape) ────────────────────
 
 ;; One-slot memo for parse-key. Within one keystroke the same raw input is
 ;; parsed once per chord of every binding checked (30-60 times: the editor's
@@ -623,7 +623,7 @@
 
 (defn is-key-release?
   "Check if the data is a key release event (Kitty protocol, event type 3).
-   kmet does not request event types (kmet.libs.terminal keeps flag 2 out
+   kmet does not request event types (kmet.tui.terminal-escape keeps flag 2 out
    of DESIRED-KITTY-FLAGS: broken terminals turn some key-ups into a
    duplicate printable — Windows Terminal's non-ASCII release fallback),
    so a release typically never arrives; this stays as the defensive

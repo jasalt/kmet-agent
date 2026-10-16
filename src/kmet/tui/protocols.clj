@@ -7,7 +7,7 @@
    invalidate/dispose. Records may optionally carry a :wants-key-release?
    field (pi: Component.wantsKeyRelease) — when true, key release events are
    delivered to handle-input (filtered otherwise). kmet does not request
-   event types (kmet.libs.terminal/DESIRED-KITTY-FLAGS), so this only has an
+   event types (kmet.tui.terminal-escape/DESIRED-KITTY-FLAGS), so this only has an
    effect on terminals that report releases anyway."
   (render [this width] "Render component to lines (seq of strings)")
   (handle-input [this data] "Handle keyboard input")
