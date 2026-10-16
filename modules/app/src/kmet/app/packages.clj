@@ -58,7 +58,7 @@
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
             [kmet.config :as cfg]
-            [kmet.tui.theme :as theme]))
+))
 
 (def ^:private resource-types
   "The four package resource types (pi: RESOURCE_TYPES)."
@@ -567,7 +567,13 @@
     :extensions (extensions/extension-artifact-paths d)
     :skills (skills/discover-skill-files d)
     :prompts (prompts/prompt-template-files-in-dir d)
-    :themes (vec (or (theme/theme-files-in-dir d) []))))
+    :themes (vec (or (when (fs/directory? d)
+                       (->> (fs/list-dir d)
+                            (filter #(and (fs/regular-file? %)
+                                          (str/ends-with? (fs/file-name %) ".edn")))
+                            (map str)
+                            vec))
+                     []))))
 
 ;; ─── Resolution (pi: resolvePackageSources + toResolvedPaths) ─────────────
 
