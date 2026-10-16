@@ -12,7 +12,12 @@
 
 ;; ─── Template state ────────────────────────────────────────────────────────
 
-(defonce ^:private templates (atom []))
+(defonce pending-prompt-templates (atom []))
+(defn- current-prompt-template-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :prompt-templates)
+      pending-prompt-templates))
 
 ;; ─── Argument parsing (pi: parseCommandArgs) ──────────────────────────────
 
@@ -168,8 +173,8 @@
   (let [t (make-template-from-content content name
                                       (or location (str (or extension "prompt")))
                                       extension)]
-    (when t (swap! templates conj t))
-    (fn [] (swap! templates (fn [ts] (remove #(identical? % t) ts))))))
+    (when t (swap! (current-prompt-template-registry) conj t))
+    (fn [] (doseq [reg [(current-prompt-template-registry) pending-prompt-templates]] (swap! reg (fn [ts] (remove #(identical? % t) ts)))))))
 
 (defn prompt-template-files-in-dir
   "Prompt template .md files directly inside DIR (non-recursive, pi:
@@ -202,7 +207,7 @@
       (binding [*out* *err*]
         (println (str "Warning: prompt template at " path ": " message))))
     (let [ts @loaded]
-      (swap! templates into ts)
+      (swap! (current-prompt-template-registry) into ts)
       ts)))
 
 (defn load-prompt-templates-from-dir
@@ -214,17 +219,18 @@
 
 (defn get-prompt-templates
   []
-  @templates)
+  @(current-prompt-template-registry))
 
 (defn clear-prompt-templates!
   "Remove all loaded prompt templates (pi: resourceLoader.reload re-discovers
    from scratch). Used by /reload."
   []
-  (reset! templates []))
+  (doseq [reg [(current-prompt-template-registry) pending-prompt-templates]]
+    (reset! reg [])))
 
 (defn get-prompt-template
   [name]
-  (first (filter #(= name (:name %)) @templates)))
+  (first (filter #(= name (:name %)) @(current-prompt-template-registry))))
 
 ;; ─── Expansion (pi: expandPromptTemplate) ─────────────────────────────────
 

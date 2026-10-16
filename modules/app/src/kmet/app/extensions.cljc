@@ -204,8 +204,18 @@
                   ((resolve 'kmet.app.session-runtime/default-engine)))
               :markdown-transformers)
       pending-markdown-transformers))
-(defonce ^:private flags (atom {}))
-(defonce ^:private cli-flags (atom {}))
+(defonce pending-flags (atom {}))
+(defn- current-flag-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :flags)
+      pending-flags))
+(defonce pending-cli-flags (atom {}))
+(defn- current-cli-flag-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :cli-flags)
+      pending-cli-flags))
 (def ^:private headless-binding
   "The surface of a front end with no UI: pi's default mode (:print), no
    capabilities (every ui-call is inert) and no runtime capabilities."
@@ -214,7 +224,12 @@
 (defonce ^:private session-atom (atom nil))
 (defonce ^:private context-sink-atom (atom nil))
 (defonce ^:private entry-sink-atom (atom nil))
-(defonce ^:private applied-resource-paths (atom #{}))
+(defonce pending-applied-resource-paths (atom #{}))
+(defn- current-applied-resource-path-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :applied-resource-paths)
+      pending-applied-resource-paths))
 
 ;; ─── Input / before-agent-start hooks (pi: pi.on('input') / ──────────────
 ;; ─── 'before_agent_start'; applied by modes.interactive + app.loop) ──────
@@ -411,20 +426,23 @@
    leading --; opts: :type (:boolean|:string) :default. Returns a deregister
    fn."
   [name & [{:keys [type default]}]]
-  (swap! flags assoc name {:type (or type :string) :default default})
-  (fn [] (swap! flags dissoc name)))
+  (let [reg (current-flag-registry)]
+    (swap! reg assoc name {:type (or type :string) :default default})
+    (fn []
+      (doseq [r [(current-flag-registry) pending-flags]]
+        (swap! r dissoc name)))))
 
 (defn set-cli-flags! [flag-map]
-  (reset! cli-flags (or flag-map {}))
+  (reset! (current-cli-flag-registry) (or flag-map {}))
   nil)
 
 (defn get-flag
   "Value of a registered CLI flag: the argv value coerced by the registered
    :type, falling back to :default. nil for unregistered flags."
   [name]
-  (let [{:keys [type default]} (get @flags name)]
-    (when (contains? @flags name)
-      (let [raw (get @cli-flags name)]
+  (let [{:keys [type default]} (get @(current-flag-registry) name)]
+    (when (contains? @(current-flag-registry) name)
+      (let [raw (get @(current-cli-flag-registry) name)]
         (case type
           :boolean (let [v (if (nil? raw) default raw)]
                      (if (string? v)
@@ -995,8 +1013,9 @@
                                     (swap! reg (fn [hs] (remove #(identical? % h) hs))))))))
 
      :register-flag! (fn [flag-name & [opts]]
-                       (register-flag! flag-name opts)
-                       (track (fn [] (swap! flags dissoc flag-name))))
+                       (let [dereg (register-flag! flag-name opts)]
+                         (track dereg)
+                         dereg))
      :get-flag get-flag
      :register-shortcut! (fn [key-id & [opts]]
                            (let [dereg (register-shortcut!
@@ -1365,18 +1384,19 @@
                           (update :theme-paths into (:theme-paths r))))
                       {:skill-paths [] :prompt-paths [] :theme-paths []}
                       results)]
-    (doseq [p (:skill-paths paths)]
-      (when-not (contains? @applied-resource-paths p)
-        (skills/load-skills-from-dir p)
-        (swap! applied-resource-paths conj p)))
-    (doseq [p (:prompt-paths paths)]
-      (when-not (contains? @applied-resource-paths p)
-        (prompts/load-prompt-templates-from-dir p)
-        (swap! applied-resource-paths conj p)))
-    (doseq [p (:theme-paths paths)]
-      (when-not (contains? @applied-resource-paths p)
-        (theme/load-themes-from-dir p)
-        (swap! applied-resource-paths conj p)))
+    (let [applied (current-applied-resource-path-registry)]
+      (doseq [p (:skill-paths paths)]
+        (when-not (contains? @applied p)
+          (skills/load-skills-from-dir p)
+          (swap! applied conj p)))
+      (doseq [p (:prompt-paths paths)]
+        (when-not (contains? @applied p)
+          (prompts/load-prompt-templates-from-dir p)
+          (swap! applied conj p)))
+      (doseq [p (:theme-paths paths)]
+        (when-not (contains? @applied p)
+          (theme/load-themes-from-dir p)
+          (swap! applied conj p))))
     paths))
 
 (defn clear-extensions!
@@ -1384,7 +1404,9 @@
   []
   ;; extension-contributed resources are re-discovered on the next
   ;; session-start after a reload (the loaders are cleared too)
-  (reset! applied-resource-paths #{})
+  (doseq [reg [(current-applied-resource-path-registry)
+               pending-applied-resource-paths]]
+    (reset! reg #{}))
   (unload-all-extensions!))
 
 (defn registered-extensions

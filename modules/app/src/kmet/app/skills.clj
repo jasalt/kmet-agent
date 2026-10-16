@@ -25,7 +25,12 @@
 
 ;; ─── Skill state ──────────────────────────────────────────────────────────
 
-(defonce ^:private skills (atom []))
+(defonce pending-skills (atom []))
+(defn- current-skill-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :skills)
+      pending-skills))
 
 ;; ─── Validation (pi: validateName / validateDescription) ──────────────────
 
@@ -93,15 +98,15 @@
   "Register a programmatic skill (no backing file, so the model cannot read it
    on demand — pi has no equivalent; kept for kmet's API and tests)."
   [name description]
-  (swap! skills conj {:name name
-                      :description description
-                      :body nil
-                      :raw nil
-                      :location nil
-                      :extension nil
-                      :file-path nil
-                      :base-dir nil
-                      :disable-model-invocation false}))
+  (swap! (current-skill-registry) conj {:name name
+                                        :description description
+                                        :body nil
+                                        :raw nil
+                                        :location nil
+                                        :extension nil
+                                        :file-path nil
+                                        :base-dir nil
+                                        :disable-model-invocation false}))
 
 (defn- load-skill-from-file
   "Load a skill from a SKILL.md (or flat .md) file. Returns {:skill
@@ -149,13 +154,13 @@
   "Add SKILL to the registry unless its name collides (first wins, pi).
    Returns a collision diagnostic map, or nil."
   [skill location]
-  (if-let [existing (first (filter #(= (:name %) (:name skill)) @skills))]
+  (if-let [existing (first (filter #(= (:name %) (:name skill)) @(current-skill-registry)))]
     {:type "collision"
      :message (str "name \"" (:name skill) "\" collision")
      :path (str location)
      :winner-path (str (or (:location existing) (:file-path existing)))
      :loser-path (str location)}
-    (do (swap! skills conj skill)
+    (do (swap! (current-skill-registry) conj skill)
         nil)))
 
 (defn- add-skill-results!
@@ -178,7 +183,8 @@
   "Remove all loaded skills and reset the registry (pi: resourceLoader.reload
    re-discovers from scratch). Used by /reload."
   []
-  (reset! skills []))
+  (doseq [reg [(current-skill-registry) pending-skills]]
+    (reset! reg [])))
 
 (defn discover-skill-files
   "Discover skill files under DIR using pi's discovery rules (a dir
@@ -234,7 +240,9 @@
         (binding [*out* *err*]
           (println (str "Warning: skill collision at " (:path collision) ": "
                         (:message collision))))))
-    (fn [] (swap! skills (fn [ss] (remove #(identical? % skill) ss))))))
+    (fn []
+      (doseq [reg [(current-skill-registry) pending-skills]]
+        (swap! reg (fn [ss] (remove #(identical? % skill) ss)))))))
 
 (defn- skill-content-for-path
   "The SKILL.md text for RAW-PATH when it names a registered extension
@@ -251,7 +259,7 @@
                 (when (or (= p loc)
                           (str/ends-with? p (str "/" loc)))
                   (or (:raw s) (:body s))))))
-          @skills)))
+          @(current-skill-registry))))
 
 ;; tools.read cannot require this namespace (skills -> registry -> read
 ;; would cycle), so the locator resolver is pushed there at load time.
@@ -259,11 +267,11 @@
 
 (defn get-skills
   []
-  @skills)
+  @(current-skill-registry))
 
 (defn get-skill
   [name]
-  (first (filter #(= name (:name %)) @skills)))
+  (first (filter #(= name (:name %)) @(current-skill-registry))))
 
 (defn expand-skill-command
   "Expand /skill:name args into the skill body wrapped in a <skill> block

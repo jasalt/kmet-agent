@@ -1076,10 +1076,16 @@ the scope here deliberately does not.
 **Current implementation update.** The event-listener map is now owned by
 the engine and installed as the process default in `bootstrap` (see
 `event-bus/set-default-event-listener-atom!`); `dispose!` resets it and
-restores an empty process default. The command registry is intentionally
-not being scoped independently yet: it is loaded and cleared through
-extension loading, and moving it needs the registration-point change
-below.
+restores an empty process default. The command registry is engine-owned
+with a pending buffer (and now has no process-global fallback read),
+custom tool and tool-source registries are engine-owned, the input,
+before-agent-start, tool-call, tool-result, markdown-transformer,
+entry-renderer and message-renderer extension registries are engine-owned,
+and extension `flags`/`cli-flags` plus `applied-resource-paths` are now
+scoped to the engine through the same pending-buffer pattern. `skills`
+and `prompts` caches are now also engine-scoped; `packages`
+remains process-scoped because it has no persistent toggle/package atom
+beyond the process-level file loader.
 
 **Registration-point decision.** Do not require extension loading to move
 substantially. Scaled registration should follow one of:
