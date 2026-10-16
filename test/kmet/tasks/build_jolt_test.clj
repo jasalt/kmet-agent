@@ -131,7 +131,7 @@
 (deftest parse-args-defaults-to-an-optimized-host-build
   (is (= {:mode "optimized" :flags [] :native-link nil :boot nil :target nil
           :target-pack nil :out-dir nil :jolt nil :force? false :no-smoke? true
-          :test? false :help? false}
+          :help? false}
          (jbuild/parse-args []))))
 
 (deftest parse-args-reads-modes-and-passthrough-flags
@@ -159,10 +159,7 @@
   (testing "--out names the directory the executable is additionally copied to"
     (is (= "/tmp/kmet" (:out-dir (jbuild/parse-args ["-o" "/tmp/kmet"]))))
     (is (= "/tmp/kmet" (:out-dir (jbuild/parse-args ["--out" "/tmp/kmet"])))))
-  (is (= "/opt/jolt" (:jolt (jbuild/parse-args ["--jolt" "/opt/jolt"]))))
-  (testing "--test builds the compiled test runner"
-    (is (true? (:test? (jbuild/parse-args ["--test"]))))
-    (is (true? (:test? (jbuild/parse-args ["--test" "--dev"]))))))
+  (is (= "/opt/jolt" (:jolt (jbuild/parse-args ["--jolt" "/opt/jolt"])))))
 
 (deftest parse-args-reads-cross-builds
   (let [opts (jbuild/parse-args ["--target" "tarm64le" "--target-pack" "/tmp/pack"])]

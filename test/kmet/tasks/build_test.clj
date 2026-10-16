@@ -45,17 +45,17 @@
 
 (deftest ^:bb-only parse-args-collects-targets-and-flags
   (is (= {:targets [] :all? false :force? false :no-smoke? true
-          :test? false :out nil :help? false}
+          :out nil :help? false}
          (build/parse-args [])))
   (is (= {:targets ["linux-aarch64"] :all? true :force? true :no-smoke? true
-          :test? false :out nil :help? false}
+          :out nil :help? false}
          (build/parse-args ["linux-aarch64" "--all" "--force"])))
   (is (= {:targets ["macos-aarch64" "windows-amd64"]
-          :all? false :force? false :no-smoke? true :test? false :out nil :help? true}
+          :all? false :force? false :no-smoke? true :out nil :help? true}
          (build/parse-args ["macos-aarch64" "--help" "windows-amd64"])))
   (testing "a babashka release asset slug is accepted as its platform"
     (is (= {:targets ["linux-amd64"] :all? false :force? false :no-smoke? true
-            :test? false :out nil :help? false}
+            :out nil :help? false}
            (build/parse-args ["linux-amd64-static"]))))
   (testing "the smoke test is opt-in"
     (is (false? (:no-smoke? (build/parse-args ["--smoke"]))))
@@ -64,10 +64,7 @@
     (is (= "bin" (:out (build/parse-args ["--out" "bin"]))))
     (is (= "bin" (:out (build/parse-args ["-o" "bin"]))))
     (is (thrown-with-msg? Exception #"needs a directory"
-                          (build/parse-args ["--out"]))))
-  (testing "--test builds the test-runner artifact"
-    (is (true? (:test? (build/parse-args ["--test"]))))
-    (is (true? (:test? (build/parse-args ["linux-aarch64" "--test"]))))))
+                          (build/parse-args ["--out"])))))
 
 (deftest ^:bb-only parse-args-rejects-bad-input
   (is (thrown-with-msg? Exception #"unknown target"

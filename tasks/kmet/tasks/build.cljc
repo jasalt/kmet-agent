@@ -858,14 +858,13 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
   [args]
   (loop [args args
          opts {:targets [] :all? false :force? false :no-smoke? true
-               :test? false :out nil :help? false}]
+               :out nil :help? false}]
     (if-some [arg (first args)]
       (cond
         (= "--all" arg) (recur (rest args) (assoc opts :all? true))
         (= "--force" arg) (recur (rest args) (assoc opts :force? true))
         (= "--smoke" arg) (recur (rest args) (assoc opts :no-smoke? false))
         (= "--no-smoke" arg) (recur (rest args) (assoc opts :no-smoke? true))
-        (= "--test" arg) (recur (rest args) (assoc opts :test? true))
         (#{"-o" "--out"} arg)
         (let [dir (second args)]
           (when (str/blank? (str dir))
@@ -904,11 +903,11 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
    current-host artifact after building (--list-models plus --version, or
    the packaged test runner for --test; skipped by default to keep local
    dist builds fast and side-effect free). A fresh uberjar
-   (target/kmet.jar, or target/kmet-test.jar for --test) is always rebuilt
+   target/kmet.jar is always rebuilt
    first so artifacts never bundle stale sources."
   [& args]
   (bb-only! "kmet.tasks.build/-main (the bb half of the dist task)")
-  (let [{:keys [targets all? force? no-smoke? test? out help?]} (parse-args args)]
+  (let [{:keys [targets all? force? no-smoke? out help?]} (parse-args args)]
     (when help?
       (println (:doc (meta #'-main)))
       (System/exit 0))
@@ -916,9 +915,9 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
       (when (fs/exists? cache-dir)
         (fs/delete-tree cache-dir)))
     (let [ver (version)
-          jar (if test? test-jar-path jar-path)
-          _ (do (println "building" (if test? "test uberjar" "uberjar") jar)
-                (if test? (test-uberjar*) (uberjar*)))
+          jar jar-path
+          _ (do (println "building uberjar" jar)
+                (uberjar*))
           bb-ver (latest-bb-version)
           targets (cond
                     all? (sort (keys target-table))
@@ -932,16 +931,16 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
               (throw (ex-info "--out copies one platform's executable; name a single target"
                               {:type ::usage :targets (vec targets)})))]
       (println (format "%s %s | babashka %s | targets: %s"
-                       (if test? "kmet-test" "kmet") ver bb-ver (str/join ", " targets)))
+                       "kmet" ver bb-ver (str/join ", " targets)))
       (doseq [platform targets]
         (let [built (assemble-one! platform (get target-table platform) bb-ver
-                                   {:test? test? :jar jar})]
+                                   {:jar jar})]
           (pack-artifact!
-           (artifact-zip :bb ver platform {:test? test?})
+           (artifact-zip :bb ver platform {})
            built)
           (when out
             (install-artifact! out platform built))
           (when-not no-smoke?
-            (smoke-test! (:exe built) platform {:test? test?}))))
+            (smoke-test! (:exe built) platform {}))))
       (println "done:" dist-dir))))
 

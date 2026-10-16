@@ -351,7 +351,7 @@
   (loop [args args
          opts {:mode "optimized" :flags [] :native-link nil :boot nil :target nil
                :target-pack nil :out-dir nil :jolt nil :force? false
-               :no-smoke? true :test? false :help? false}]
+               :no-smoke? true :help? false}]
     (if-some [arg (first args)]
       (let [more (rest args)]
         (case arg
@@ -378,7 +378,6 @@
           "--out" (recur (rest more) (assoc opts :out-dir (opt-value arg more)))
           "--jolt" (recur (rest more) (assoc opts :jolt (opt-value arg more)))
           "--force" (recur more (assoc opts :force? true))
-          "--test" (recur more (assoc opts :test? true))
           "--smoke" (recur more (assoc opts :no-smoke? false))
           "--no-smoke" (recur more (assoc opts :no-smoke? true))
           ("-h" "--help") (recur more (assoc opts :help? true))
@@ -650,13 +649,6 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
    (Jolt's default) for the quickest start. --release trades the size back for
    Clojure backtraces; --dev produces an unoptimized development build.
 
-   --test builds the compiled test runner instead: the same pipeline with the
-   generated kmet.tasks.test-main entry, every test namespace statically
-   required into the image. The artifact is the bare `kmetj-test`, packaged
-   as dist/kmetj-test-<ver>-<platform>.zip, and takes `--test` /
-   `--test-ext` [filters] — the same slow/fast split as `bb test` / `bb
-   test-ext`, run as compiled code.
-
    This is the Jolt half of the project's `dist` task: `bb dist` builds the
    same app for the babashka host — the bare `kmet` and
    kmet-<ver>-<platform>.zip in the same dist/ — so one dist/ can carry both
@@ -711,15 +703,6 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
      --target-pack DIR         the prepared pack for --target MACHINE
      -o, --out DIR             additionally copy the built executable into
                                DIR (the dist zip stays the build output)
-     --test                    build the compiled test runner instead
-                               (kmetj-test, packaged as
-                               kmetj-test-<ver>-<platform>.zip; entry
-                               kmet.tasks.test-main, the whole suite compiled
-                               in). The binary takes --test | --test-ext
-                               [filters]; the default optimized mode is the
-                               one to use — its compressed fasl image links
-                               far faster than --dev's uncompressed one for
-                               the full suite
      --force                   discard the incremental build state under
                                target/jolt/ and compile from scratch
      --smoke                   verify the artifact after building: run it from
@@ -730,10 +713,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
                                baked in. A Windows static build also runs with
                                PATH reduced to System32, so a missed static
                                OpenSSL link cannot be masked by the build host
-                               — the check to run before publishing. A --test
-                               artifact runs `--test kmet.libs.test-archive`
-                               instead (proving the suite is compiled in). A
-                               cross build skips it (only this host's own
+                               — the check to run before publishing. A cross build skips it (only this host's own
                                platform can run here)
      --no-smoke                skip that runtime verification (the default, so
                                a plain `jolt dist` does not launch the artifact)
@@ -747,8 +727,6 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
      jolt dist --smoke                  ... and verify the artifact runs
      jolt dist --dynamic                force runtime native loading
      jolt dist --static                 force archive linking
-     jolt dist --test                   compiled test runner (optimized)
-     jolt dist --test --smoke           ... and smoke-run its suite
      jolt dist --dev                    quick development build
      jolt dist --out ~/.local/bin       also install the executable there
      jolt dist --boot small             smallest artifact to ship
@@ -756,7 +734,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
                                         cross build for linux-aarch64
 
    Artifacts land in dist/ as kmetj-<ver>-<platform>[-dev].zip
-   (kmetj-test-... for --test builds), each holding one top-level folder
+   , each holding one top-level folder
    named after the zip with the bare kmetj (kmetj.exe on Windows), the
    Termux launcher when one is written, and the LICENSE. The executable
    itself is assembled under target/dist/; --out DIR copies it (and the
@@ -765,7 +743,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
    glibc-linked binary (run that instead of the binary); a jolt linked with
    the bionic cc runs directly, and a cross build gets none either."
   [& args]
-  (let [{:keys [mode native-link target target-pack out-dir force? no-smoke? jolt help? test?] :as opts}
+  (let [{:keys [mode native-link target target-pack out-dir force? no-smoke? jolt help?] :as opts}
         (parse-args args)]
     (when help?
       (println (:doc (meta #'-main)))
@@ -775,8 +753,8 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
           platform (target-platform target)
           link-mode (native-link-mode platform native-link)
           ver (build/version)
-          bin (scratch-bin platform mode {:test? test?})
-          {:keys [exe zip]} (default-artifacts ver platform mode {:test? test?})
+          bin (scratch-bin platform mode {})
+          {:keys [exe zip]} (default-artifacts ver platform mode {})
           exe (fs/absolutize exe)
           zip (fs/absolutize zip)]
       (when (= :unknown-platform platform)
@@ -787,15 +765,13 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
                         {:type ::usage :target target})))
       (validate-build! platform target link-mode)
       (println (format "%s %s | jolt %s | %s | %s%s"
-                       (build/artifact-base :jolt {:test? test?}) ver jver platform
+                       (build/artifact-base :jolt {}) ver jver platform
                        (name link-mode)
                        (if (= mode "release") "" (str " | " mode))))
       (when force?
         (println "clearing scratch:" (str (fs/parent bin)))
         (fs/delete-tree (fs/parent bin)))
       (fs/create-dirs (fs/parent bin))
-      (when test?
-        (println "generating" (str (build/generate-test-main!))))
       ;; bundled extensions are embedded through the staged root deps.edn
       ;; lists ("target/kmet-bundled"); staging
       ;; validates the manifest first, so a broken bundle fails the build
@@ -827,6 +803,5 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
           (build/install-artifact! out-dir platform {:exe exe :launcher launcher}))
         (smoke-test! exe platform
                      {:no-smoke? no-smoke?
-                      :test? test?
                       :static-link? (= :static link-mode)}))
       (println "built:" (str exe)))))
