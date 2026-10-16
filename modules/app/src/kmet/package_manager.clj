@@ -10,7 +10,7 @@
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.app.packages :as pkgs]
-            [kmet.app.ui.resource-config :as resource-config]
+            [kmet.app.ui.tui.resource-config :as resource-config]
             [kmet.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.tui.protocols :as protocols]

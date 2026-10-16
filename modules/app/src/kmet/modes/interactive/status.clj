@@ -9,8 +9,8 @@
             [kmet.tui.protocols :as protocols]
             [kmet.tui.timers :as timers]
             [kmet.app.session-runtime :as runtime]
-            [kmet.app.ui.pending-messages :as pending-messages]
-            [kmet.app.ui.status-indicator :as status-indicator]
+            [kmet.app.ui.tui.pending-messages :as pending-messages]
+            [kmet.app.ui.tui.status-indicator :as status-indicator]
             [kmet.debug :as debug]))
 
 ;; Internal forward references (the timer teardown paths).

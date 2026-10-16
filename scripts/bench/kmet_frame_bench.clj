@@ -35,7 +35,7 @@
 (ns kmet-frame-bench
   (:require [clojure.string :as str]
             [kmet.app.session :as session]
-            [kmet.app.ui.chat-history :as chat-history]
+            [kmet.app.ui.tui.chat-history :as chat-history]
             [kmet.modes.interactive :as inter]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.stack :as stack]

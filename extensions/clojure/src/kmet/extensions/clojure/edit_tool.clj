@@ -8,7 +8,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [kmet.extensions.clojure.edit-util :as util]
-            [kmet.app.ui.tool-renderers :as renderers]
+            [kmet.app.ui.tui.tool-renderers :as renderers]
             [rewrite-clj.node :as n]
             [rewrite-clj.zip :as z]))
 

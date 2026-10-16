@@ -1,0 +1,1001 @@
+(ns kmet.app.ui.tui.test-chat-history
+  (:require [clojure.string :as str]
+            [clojure.test :as t :refer [deftest is testing]]
+            [kmet.tui.core :as core]
+            [kmet.libs.hikap.core :as engine]
+            [kmet.libs.hikap.component :as component]
+            [kmet.tui.protocols :as protocols]
+            [kmet.libs.terminal-image :as timg]
+            [kmet.app.ui.tui.bash-execution :as be]
+            [kmet.app.ui.tui.tool-execution :as te]
+            [kmet.app.ui.tui.chat-history :as ch]
+            [kmet.test-utils :as tu]))
+
+(defn- plain-lines
+  "Render component and strip ANSI codes for easier testing."
+  [component width]
+  (mapv tu/strip-ansi (core/render component width)))
+
+(deftest test-create
+  (testing "create chat history component"
+    (let [ch (ch/make-chat-history)]
+      (is (some? ch))
+      (is (= [] (ch/chat-history-get-messages ch)))
+      (is (= "" (ch/chat-history-get-streaming-text ch))))))
+
+(deftest test-add-message
+  (testing "add a user message"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "hello"})
+      (is (= 1 (count (ch/chat-history-get-messages ch))))
+      (is (= :user (:role (first (ch/chat-history-get-messages ch)))))
+      (is (= "hello" (:content (first (ch/chat-history-get-messages ch))))))))
+
+(deftest test-render-user
+  (testing "render a user message with Pi-style user-message-bg box"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "Hello world"})
+      (let [lines (plain-lines ch 40)]
+        (is (pos? (count lines)))
+        (is (some #(re-find #"Hello world" %) lines)
+            "User message content should be visible")
+        ;; Should not have old-style headers
+        (is (not-any? #(re-find #"─── You" %) lines)
+            "Should not have old-style '─── You' header")))))
+
+(deftest test-render-assistant
+  (testing "render an assistant message with Pi-style plain text"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :assistant :content "Hi there!"})
+      (let [lines (plain-lines ch 40)]
+        (is (pos? (count lines)))
+        (is (some #(re-find #"Hi there!" %) lines)
+            "Assistant message content should be visible")
+        (is (not-any? #(re-find #"─── Assistant" %) lines)
+            "Should not have old-style '─── Assistant' header")))))
+
+(deftest test-render-tool
+  (testing "render a tool message with Pi-style box"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch
+                                    {:role :tool :name "my-tool" :content "file contents" :is-error false})
+      (let [lines (plain-lines ch 40)]
+        (is (pos? (count lines)))
+        (is (some #(re-find #"my-tool" %) lines))
+        (is (some #(re-find #"file contents" %) lines))))))
+
+(deftest test-tool-message-carries-the-runtime-cwd
+  (testing "tool components take the runtime cwd from the chat history's
+            cwd-fn (pi: ToolRenderContext.cwd — renderers shorten paths
+            against it), and each component keeps the cwd its tool ran in"
+    (let [cwd (atom "/project/one")
+          chh (ch/make-chat-history :cwd-fn #(deref cwd))
+          ctx (var te/tool-execution-context)
+          one (ch/chat-history-add-message! chh {:role :tool :name "read" :content "x"})]
+      (is (= "/project/one" (:cwd (ctx one nil true))))
+      (reset! cwd "/project/two")
+      (let [two (ch/chat-history-add-message! chh {:role :tool :name "read" :content "x"})]
+        (is (= "/project/two" (:cwd (ctx two nil true))))
+        (is (= "/project/one" (:cwd (ctx one nil true)))
+            "an existing component keeps the cwd its tool ran in")))
+    (testing "without a cwd-fn the process cwd is used"
+      (let [chh (ch/make-chat-history)
+            ctx (var te/tool-execution-context)
+            comp (ch/chat-history-add-message! chh {:role :tool :name "read" :content "x"})]
+        (is (= (System/getProperty "user.dir") (:cwd (ctx comp nil true))))))))
+
+(deftest test-tool-message-resolves-the-status-opt-in
+  (testing "the tool definition's :status reaches its component: the bash
+            tool opts into the tail status line, an unknown tool does not"
+    (let [ch (ch/make-chat-history)
+          bash (ch/chat-history-add-message!
+                ch {:role :tool :tool-name "bash" :content "" :is-error false})
+          plain (ch/chat-history-add-message!
+                 ch {:role :tool :tool-name "my-tool" :content "x" :is-error false})]
+      (is (true? (:status bash)))
+      (is (nil? (:status plain)))
+      (te/tool-execution-mark-execution-started! bash)
+      (let [lines (plain-lines ch 60)]
+        (is (some #(str/includes? % "Elapsed") lines)
+            "the status tool renders the live tail line")
+        (is (= 1 (count (filter #(str/includes? % "Elapsed") lines)))
+            "only the opted-in tool renders it")))))
+
+(deftest test-render-tool-error
+  (testing "render a tool error message with Pi-style box"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch
+                                    {:role :tool :name "my-tool" :content "command not found" :is-error true})
+      (let [lines (plain-lines ch 40)]
+        (is (pos? (count lines)))
+        (is (some #(re-find #"my-tool" %) lines))
+        (is (some #(re-find #"command not found" %) lines))))))
+
+(deftest test-render-info
+  (testing "render an info message with Pi-style custom-message-bg"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-set-info-msg! ch {:label "system" :content "Info message"})
+      (ch/chat-history-add-message! ch {:role :user :content "hello"})
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"system" %) lines)
+            "Info label should be visible")
+        (is (some #(re-find #"Info message" %) lines)
+            "Info content should be visible")))))
+
+(deftest test-streaming
+  (testing "streaming text renders with Pi-style"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-append-streaming-text! ch "Hello")
+      (ch/chat-history-append-thinking-text! ch "Thinking...")
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"Hello" %) lines))
+        (is (some #(re-find #"Thinking" %) lines))))))
+
+(deftest test-append-streaming
+  (testing "append streaming text"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-append-streaming-text! ch "Hello ")
+      (ch/chat-history-append-streaming-text! ch "world")
+      (is (= "Hello world" (ch/chat-history-get-streaming-text ch))))))
+
+(deftest test-append-streaming-schedules-frame
+  ;; Stage 5 (§3.4): on-agent-text retired its manual request-render — the
+  ;; append swap must reach the assistant component's track! watch, whose
+  ;; invalidate-cache schedules EXACTLY ONE frame per real change. Requires a
+  ;; rendered-once placeholder so the watches are installed.
+  (let [ch (ch/make-chat-history)
+        fired (atom 0)]
+    (ch/chat-history-start-streaming! ch)
+    (core/render ch 40)
+    (component/set-frame-hook! #(swap! fired inc))
+    (try
+      (ch/chat-history-append-streaming-text! ch "Hello")
+      (is (= 1 @fired) "first append scheduled exactly one frame")
+      (ch/chat-history-append-streaming-text! ch " world")
+      (is (= 2 @fired) "second append scheduled another frame")
+      (is (= "Hello world" (ch/chat-history-get-streaming-text ch)))
+      (finally
+        (component/set-frame-hook! nil)))))
+
+(deftest test-finalize-streaming
+  (testing "finalize streaming text into a message"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-append-streaming-text! ch "Final message")
+      (let [msg (ch/chat-history-finalize-streaming! ch)]
+        (is (some? msg))
+        ;; After finalize, streaming text cleared, message is in history
+        (is (= "" (ch/chat-history-get-streaming-text ch)))
+        (let [msgs (ch/chat-history-get-messages ch)]
+          (is (= 1 (count msgs)))
+          (is (= :assistant (:role (first msgs))))
+          (is (= "Final message" (:content (first msgs)))))))))
+
+(deftest test-mark-streaming-tool-calls-then-finalize
+  (testing "marking the streaming message tool-call-bearing does not break
+            finalize's identity match, so the entry still materializes"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-start-streaming! ch)
+      (ch/chat-history-append-streaming-text! ch "Final message ")
+      (ch/chat-history-mark-streaming-tool-calls! ch)
+      (ch/chat-history-finalize-streaming! ch)
+      (let [entry (peek @(:messages-atom ch))]
+        (is (false? (:streaming? entry)) "finalize found the marked entry")
+        (is (nil? (:text-atom entry)) "content atoms materialized and stripped")
+        (is (= "Final message " (:content entry)))
+        (is (true? (:tool-calls? entry)) "the tool-call flag survives finalization")))))
+
+(deftest test-finalize-empty
+  (testing "finalize empty streaming returns nil"
+    (let [ch (ch/make-chat-history)]
+      (is (nil? (ch/chat-history-finalize-streaming! ch)))
+      (is (= [] (ch/chat-history-get-messages ch))))))
+
+(deftest test-clear
+  (testing "clear all messages and info"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "hello"})
+      (ch/chat-history-append-streaming-text! ch "thinking")
+      (ch/chat-history-set-info-msg! ch {:label "test" :content "info"})
+      (ch/chat-history-clear! ch)
+      (is (= [] (ch/chat-history-get-messages ch)))
+      (is (= "" (ch/chat-history-get-streaming-text ch)))))
+  (testing "clear disposes message components so owned drivers stop"
+    (let [ch (ch/make-chat-history)
+          bash-comp (be/make-bash-execution :command "sleep 10")]
+      ;; Mount through the chat (the production path) so the root reaction
+      ;; owns the state watch. After clear!, the driver is stopped (done set,
+      ;; future cancelled) — assert on those, not on hook traffic, which the
+      ;; test's own mounts also generate.
+      (ch/chat-history-add-message! ch {:role :bash :command "sleep 10"
+                                        :component bash-comp})
+      (core/render ch 40)
+      (is (false? @(:done-atom bash-comp)) "driver armed while mounted")
+      (is (some? @(:ticker-id-atom bash-comp)) "driver timer armed while mounted")
+      (ch/chat-history-clear! ch)
+      (is (true? @(:done-atom bash-comp)) "clear tripped the driver done flag")
+      (is (nil? @(:ticker-id-atom bash-comp)) "clear cancelled the driver timer")
+      (is (nil? @(:elapsed-ticker-id-atom bash-comp)) "clear cancelled the elapsed ticker")
+      (is (= [] (ch/chat-history-get-messages ch)) "messages cleared"))))
+
+(deftest test-tool-expanded-toggle
+  (testing "toggle tool expanded state"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :tool :name "ls" :content "files"})
+      (is (false? (ch/chat-history-get-tool-expanded ch)))
+      (ch/chat-history-toggle-tool-expanded! ch)
+      (is (true? (ch/chat-history-get-tool-expanded ch)))
+      ;; the child reads the shared toggle atom reactively — no per-child
+      ;; push happened, yet the next render must show expanded output
+      (let [child (:component (first @(:messages-atom ch)))]
+        (is (some #(re-find #"files" %) (core/render child 60))
+            "tool output visible after global expand with no push"))
+      (ch/chat-history-toggle-tool-expanded! ch)
+      (is (false? (ch/chat-history-get-tool-expanded ch))))))
+
+(deftest test-tool-display-mode-cycle
+  (testing "ctrl+o cycles collapsed → quiet → expanded → collapsed"
+    (let [ch (ch/make-chat-history)]
+      (is (= :collapsed (ch/chat-history-get-tool-display-mode ch)))
+      (is (= :quiet (ch/chat-history-cycle-tool-display! ch)))
+      (is (= :expanded (ch/chat-history-cycle-tool-display! ch)))
+      (is (= :collapsed (ch/chat-history-cycle-tool-display! ch)))))
+  (testing "set rejects unknown modes"
+    (let [ch (ch/make-chat-history)]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (ch/chat-history-set-tool-display-mode! ch :loud)))
+      (is (= :collapsed (ch/chat-history-get-tool-display-mode ch))
+          "rejected set leaves the mode untouched")))
+  (testing "quiet reads as not-expanded through the boolean shim"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-set-tool-display-mode! ch :quiet)
+      (is (false? (ch/chat-history-get-tool-expanded ch)))
+      ;; the toggle shim leaves quiet via expanded
+      (is (true? (ch/chat-history-toggle-tool-expanded! ch)))
+      (is (= :expanded (ch/chat-history-get-tool-display-mode ch))))))
+
+(deftest test-tool-display-mode-init
+  (testing "make-chat-history seeds the mode; default stays collapsed"
+    (let [ch (ch/make-chat-history)]
+      (is (= :collapsed (ch/chat-history-get-tool-display-mode ch))))
+    (doseq [mode [:collapsed :quiet :expanded]]
+      (let [ch (ch/make-chat-history :tool-display-mode mode)]
+        (is (= mode (ch/chat-history-get-tool-display-mode ch)))))
+    (let [ch (ch/make-chat-history :tool-display-mode :bogus)]
+      (is (= :collapsed (ch/chat-history-get-tool-display-mode ch))
+          "invalid init degrades to collapsed"))))
+
+(deftest test-quiet-run-groups-without-inner-separators
+  (testing "consecutive quiet :tool entries share one run separator; other roles keep theirs"
+    (let [ch (ch/make-chat-history :tool-display-mode :quiet)]
+      (ch/chat-history-add-message! ch {:role :user :content "hello"})
+      (ch/chat-history-add-message! ch {:role :tool :name "first-tool" :content "a"})
+      (ch/chat-history-add-message! ch {:role :tool :name "second-tool" :content "b"})
+      (ch/chat-history-add-message! ch {:role :assistant :content "reply"})
+      (ch/chat-history-add-message! ch {:role :tool :name "third-tool" :content "c"})
+      (let [lines (plain-lines ch 40)
+            idx (fn [re] (first (keep-indexed #(when (re-find re %2) %1) lines)))]
+        (is (= ["hello" "first-tool" "second-tool" "reply" "third-tool"]
+               (filterv seq (map str/trim lines)))
+            "no blank line inside a quiet run, separators elsewhere")
+        (is (= "" (nth lines (dec (idx #"first-tool")))) "one separator opens the run")
+        (is (= "" (nth lines (dec (idx #"third-tool")))) "a new run re-opens after other roles")
+        (is (not= "" (nth lines (dec (idx #"second-tool")))) "no separator inside the run"))))
+  (testing "a quiet run includes :skill entries (user blocks split into :skill)"
+    (let [ch (ch/make-chat-history :tool-display-mode :quiet)
+          block "<skill name=\"demo\" location=\"/x/SKILL.md\">\nbody here\n</skill>"]
+      (ch/chat-history-add-message! ch {:role :tool :name "first-tool" :content "a"})
+      (ch/chat-history-add-message! ch {:role :user :content block})
+      (ch/chat-history-add-message! ch {:role :tool :name "second-tool" :content "b"})
+      (let [lines (plain-lines ch 40)
+            idx (fn [re] (first (keep-indexed #(when (re-find re %2) %1) lines)))]
+        (is (= ["first-tool" "[skill] demo" "second-tool"]
+               (filterv seq (map str/trim lines))))
+        (is (not= "" (nth lines (dec (idx #"\[skill\]")))) "skill continues the run"))))
+  (testing "collapsed mode keeps each tool box's own separator"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "hello"})
+      (ch/chat-history-add-message! ch {:role :tool :name "first-tool" :content "a"})
+      (ch/chat-history-add-message! ch {:role :tool :name "second-tool" :content "b"})
+      (let [lines (plain-lines ch 40)
+            idx (fn [re] (first (keep-indexed #(when (re-find re %2) %1) lines)))
+            blank? #(= "" (str/trim %))]
+        (is (blank? (nth lines (dec (idx #"first-tool")))))
+        (is (blank? (nth lines (dec (idx #"second-tool"))))
+            "each box keeps its own separator outside quiet")))))
+
+(deftest test-quiet-run-survives-silent-tool-call-assistant
+  (testing "a finalized tool-call-only assistant message renders nothing and keeps the run"
+    (let [ch (ch/make-chat-history :tool-display-mode :quiet)]
+      (ch/chat-history-add-message! ch {:role :user :content "hello"})
+      (ch/chat-history-add-message! ch {:role :tool :name "first-tool" :content "a"})
+      (ch/chat-history-start-streaming! ch)
+      (ch/chat-history-mark-streaming-tool-calls! ch)
+      (ch/chat-history-finalize-streaming! ch)
+      (ch/chat-history-add-message! ch {:role :tool :name "second-tool" :content "b"})
+      (let [lines (plain-lines ch 40)
+            idx (fn [re] (first (keep-indexed #(when (re-find re %2) %1) lines)))]
+        (is (= ["hello" "first-tool" "second-tool"]
+               (filterv seq (map str/trim lines)))
+            "the silent assistant contributes no lines")
+        (is (= "" (nth lines (dec (idx #"first-tool")))) "one separator opens the run")
+        (is (not= "" (nth lines (dec (idx #"second-tool")))) "no separator inside the run"))))
+  (testing "an assistant message with real text still breaks the run"
+    (let [ch (ch/make-chat-history :tool-display-mode :quiet)]
+      (ch/chat-history-add-message! ch {:role :tool :name "first-tool" :content "a"})
+      (ch/chat-history-add-message! ch {:role :assistant :content "Thinking..." :tool-calls? true})
+      (ch/chat-history-add-message! ch {:role :tool :name "second-tool" :content "b"})
+      (let [lines (plain-lines ch 40)
+            idx (fn [re] (first (keep-indexed #(when (re-find re %2) %1) lines)))]
+        (is (= "" (nth lines (dec (idx #"second-tool"))))
+            "visible thinking re-opens the run with a separator")))))
+
+(deftest test-thinking-hidden-toggle
+  (testing "toggle thinking hidden state"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :assistant :content "hello" :thinking "thinking..."})
+      (is (false? (ch/chat-history-get-thinking-hidden ch)))
+      (ch/chat-history-toggle-thinking-hidden! ch)
+      (is (true? (ch/chat-history-get-thinking-hidden ch)))
+      (ch/chat-history-toggle-thinking-hidden! ch)
+      (is (false? (ch/chat-history-get-thinking-hidden ch))))))
+
+(deftest test-render-multiple
+  (testing "multiple messages render"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "line1"})
+      (ch/chat-history-add-message! ch {:role :user :content "line2"})
+      (let [lines (core/render ch 40)]
+        (is (pos? (count lines)))))))
+
+(deftest test-multiple-messages
+  (testing "multiple messages render in order"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "First"})
+      (ch/chat-history-add-message! ch {:role :assistant :content "Second"})
+      (ch/chat-history-add-message! ch {:role :user :content "Third"})
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"First" %) lines))
+        (is (some #(re-find #"Second" %) lines))
+        (is (some #(re-find #"Third" %) lines))
+        (let [first-idx (first (keep-indexed #(when (re-find #"First" %2) %1) lines))
+              third-idx (first (keep-indexed #(when (re-find #"Third" %2) %1) lines))]
+          (is (< first-idx third-idx) "Messages should maintain order"))))))
+
+(deftest test-cache-invalidation
+  (testing "cache invalidates on new message"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "original"})
+      (let [lines1 (plain-lines ch 40)]
+        (is (some #(re-find #"original" %) lines1)))
+      (ch/chat-history-add-message! ch {:role :user :content "new"})
+      (let [lines2 (plain-lines ch 40)]
+        (is (some #(re-find #"new" %) lines2))))))
+
+(deftest test-remove-streaming-placeholder
+  (testing "placeholder is the last entry — removed, streaming state cleared"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "initial"})
+      (ch/chat-history-start-streaming! ch)
+      (is (true? (ch/chat-history-remove-streaming-placeholder! ch)))
+      (is (nil? @(:streaming-atom ch)))
+      (is (= ["initial"] (map :content (ch/chat-history-get-messages ch))))))
+
+  (testing "consumed steering message sits after the placeholder — it survives"
+    ;; on-agent-error / handle-cancel remove the empty placeholder when a
+    ;; run dies before the next assistant message-start. A drained
+    ;; steering/follow-up user message (or a tool execution) is appended
+    ;; AFTER the placeholder, so position-based removal would delete the
+    ;; user's message instead (pi: agent_end removes the streamingComponent
+    ;; by reference).
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "initial"})
+      (ch/chat-history-start-streaming! ch)
+      (ch/chat-history-add-message! ch {:role :user :content "STEERED"})
+      (ch/chat-history-add-message! ch {:role :user :content "TOOL"})
+      (is (true? (ch/chat-history-remove-streaming-placeholder! ch)))
+      (is (nil? @(:streaming-atom ch)))
+      (is (= ["initial" "STEERED" "TOOL"]
+             (map :content (ch/chat-history-get-messages ch))))))
+
+  (testing "trailing status lines are dropped with the placeholder"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-start-streaming! ch)
+      (ch/chat-history-show-status! ch "some status")
+      (is (true? (ch/chat-history-remove-streaming-placeholder! ch)))
+      (is (empty? (ch/chat-history-get-messages ch)))))
+
+  (testing "no streaming in progress — no-op"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "initial"})
+      (is (nil? (ch/chat-history-remove-streaming-placeholder! ch)))
+      (is (= 1 (count (ch/chat-history-get-messages ch)))))))
+
+(deftest test-remove-streaming-placeholder-disposes-removed-components
+  ;; the placeholder and any trailing status lines dropped with it leave the
+  ;; transcript — their track! registry entries must leave with them
+  (let [watchers component/live-watch-count
+        ch (ch/make-chat-history)]
+    (ch/chat-history-add-message! ch {:role :user :content "hi"})
+    (plain-lines ch 80)
+    (let [baseline (watchers)]
+      (ch/chat-history-start-streaming! ch)
+      (ch/chat-history-show-status! ch "Working...")
+      (plain-lines ch 80)
+      (is (component/tracked? (:component (first @(:messages-atom ch))))
+          "the user message is tracked")
+      (is (component/tracked? (:component @(:streaming-atom ch)))
+          "the streaming placeholder is tracked")
+      (is (true? (ch/chat-history-remove-streaming-placeholder! ch)))
+      (is (<= (watchers) baseline)
+          "the placeholder and dropped trailing statuses are disposed"))))
+
+(deftest test-rebuild
+  (testing "rebuild replaces all messages and preserves the info banner"
+    (let [ch (ch/make-chat-history)
+          _ (ch/chat-history-set-info-msg! ch {:label "banner" :content "info text"})]
+      (ch/chat-history-add-message! ch {:role :user :content "old 1"})
+      (ch/chat-history-add-message! ch {:role :assistant :content "old 2"})
+      (ch/chat-history-rebuild! ch [{:role :user :content "new 1"}
+                                    {:role :assistant :content "new 2"}])
+      ;; old messages gone, new ones present
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"new 1" %) lines) "new user message rendered")
+        (is (some #(re-find #"new 2" %) lines) "new assistant message rendered")
+        (is (not-any? #(re-find #"old 1|old 2" %) lines) "old messages removed")
+        (is (some #(re-find #"info text" %) lines) "info banner preserved"))))
+
+  (testing "rebuild with no info banner"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "old"})
+      (ch/chat-history-rebuild! ch [{:role :user :content "only"}])
+      (is (= [{:role :user :content "only"}]
+             (ch/chat-history-get-messages ch))))))
+
+(deftest test-rebuild-pairs-tool-calls-with-results
+  (testing "an agent-context rebuild renders each tool execution's call line
+            (name + args) with its result — parallel results merge by id"
+    (let [msgs [{:role :assistant :content ""
+                 :tool-calls [{:id "t1" :name "read" :arguments {:path "a.txt"}}
+                              {:id "t2" :name "bash" :arguments {:command "ls"}}]}
+                ;; results arrive out of order (parallel completion)
+                {:role :tool :tool-name "bash" :is-error false
+                 :content [{:type :tool_result :tool_use_id "t2" :content "out-b"}]}
+                {:role :tool :tool-name "read" :is-error false
+                 :content [{:type :tool_result :tool_use_id "t1" :content "out-a"}]}]
+          ch (ch/make-chat-history :tool-display-mode :expanded)]
+      (ch/chat-history-rebuild! ch msgs)
+      (let [tools (filter #(= :tool (:kind %))
+                          (map :component @(:messages-atom ch)))
+            by-name (into {} (map (juxt #(deref (:name-atom %))
+                                        #(str/join "\n" (plain-lines % 60)))
+                                  tools))]
+        (is (= 2 (count tools))
+            "one component per call; the raw result messages are dropped")
+        (is (str/includes? (get by-name "read") "read a.txt")
+            "read's call line carries the name and path")
+        (is (str/includes? (get by-name "read") "out-a")
+            "read's result merged into the same component")
+        (is (str/includes? (get by-name "bash") "$ ls")
+            "bash's call line carries the command")
+        (is (str/includes? (get by-name "bash") "out-b"))
+        (is (= #{"t1" "t2"} (set (map #(deref (:tool-call-id-atom %)) tools)))
+            "paired components carry their call id (render-context parity)"))))
+
+  (testing "a paired edit result renders its recorded diff (details survive)"
+    (let [ch (ch/make-chat-history :tool-display-mode :expanded)]
+      (ch/chat-history-rebuild! ch
+                                [{:role :assistant :content ""
+                                  :tool-calls [{:id "t1" :name "edit"
+                                                :arguments {:path "note.txt"
+                                                            :edits [{:oldText "one"
+                                                                     :newText "two"}]}}]}
+                                 {:role :tool :tool-name "edit" :is-error false
+                                  :details {:diff "-1 one\n+1 TWO"}
+                                  :content [{:type :tool_result :tool_use_id "t1"
+                                             :content "ok"}]}])
+      (let [rendered (str/join "\n" (plain-lines ch 60))]
+        (is (str/includes? rendered "edit note.txt")
+            "the edit call line carries the path")
+        (is (str/includes? rendered "TWO")
+            "the recorded result diff renders on the first pass")
+        (is (not (str/includes? rendered "two"))
+            "the filesystem preview is not used (the recorded diff wins)"))))
+
+  (testing "a rebuilt tool keeps its title through a display-mode toggle"
+    (let [ch (ch/make-chat-history :tool-display-mode :quiet)]
+      (ch/chat-history-rebuild! ch
+                                [{:role :assistant :content ""
+                                  :tool-calls [{:id "t1" :name "read"
+                                                :arguments {:path "a.txt"}}]}
+                                 {:role :tool :tool-name "read" :is-error false
+                                  :content [{:type :tool_result :tool_use_id "t1"
+                                             :content "out-a"}]}])
+      (is (some #(re-find #"read a\.txt" %) (plain-lines ch 60))
+          "the quiet line carries the call title")
+      (ch/chat-history-cycle-tool-display! ch)
+      (is (some #(re-find #"read a\.txt" %) (plain-lines ch 60))
+          "toggling display mode does not blank the rebuilt title")))
+
+  (testing "a result whose call is gone renders with :tool-name promoted to :name"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-rebuild! ch
+                                [{:role :tool :tool-name "grep" :is-error false
+                                  :content [{:type :tool_result :tool_use_id "gone"
+                                             :content "hit"}]}])
+      (is (some #(re-find #"grep" %) (plain-lines ch 60))
+          "the standalone result keeps a visible call line"))))
+
+(deftest test-tool-call-message-projection
+  (testing "the shared call projection (used by the rebuild and the replay):
+            call fields plus the result outcome, or a pending message when
+            the call has no result"
+    (let [tc {:id "t1" :name "read" :arguments {:path "a.txt"}}]
+      (is (= {:role :tool :tool-call-id "t1" :tool-name "read"
+              :arguments {:path "a.txt"} :content "" :is-error false}
+             (ch/tool-call-message tc nil))
+          "an unanswered call keeps the pending shape (no ended-at)")
+      (is (= {:role :tool :tool-call-id "t1" :tool-name "read"
+              :arguments {:path "a.txt"}
+              :content [{:type :tool_result :tool_use_id "t1" :content "out"}]
+              :is-error true :truncation {:truncated true}}
+             (ch/tool-call-message
+              tc {:role :tool :tool-name "read" :is-error true
+                  :truncation {:truncated true}
+                  :content [{:type :tool_result :tool_use_id "t1" :content "out"}]}))
+          "the result's outcome merges into the call message"))))
+
+(deftest test-insert-before-streaming
+  (testing "injected :info message lands above the streaming placeholder"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "hi"})
+      (ch/chat-history-start-streaming! ch)
+      (ch/chat-history-append-streaming-text! ch "response")
+      (ch/chat-history-insert-before-streaming! ch
+                                                {:role :info :label "ext" :content "injected note"})
+      (let [msgs (ch/chat-history-get-messages ch)]
+        (is (= 3 (count msgs)))
+        (is (= :user (:role (nth msgs 0))))
+        (is (= :info (:role (nth msgs 1))) "info box sits above the response")
+        (is (= :assistant (:role (nth msgs 2))))))))
+
+(deftest test-insert-before-streaming-appends-when-no-streaming
+  (testing "falls back to appending when no streaming placeholder exists"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "hi"})
+      (ch/chat-history-insert-before-streaming! ch
+                                                {:role :info :label "ext" :content "note"})
+      (let [msgs (ch/chat-history-get-messages ch)]
+        (is (= 2 (count msgs)))
+        (is (= :info (:role (nth msgs 1))))))))
+
+(deftest test-user-message-block-content
+  (testing "block-vector user content renders as plain text, not a literal vector"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch
+                                    {:role :user :content [{:type :text :text "hi there"}]})
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"hi there" %) lines))
+        (is (not-any? #(re-find #"\{:type" %) lines)
+            "raw block vector must not render")))))
+
+(deftest test-user-message-image-renders-inline
+  (testing "image blocks render as image elements — without protocol support the text indicator, never [image mime] placeholders"
+    (let [prev-caps (timg/get-capabilities)]
+      (try
+        (timg/set-capabilities! {:images nil :true-color true :hyperlinks true})
+        (let [ch (ch/make-chat-history)]
+          (ch/chat-history-add-message! ch
+                                        {:role :user
+                                         :content [{:type :text :text "see:"}
+                                                   {:type :image :data "AA" :mime-type "image/png"}]})
+          (let [lines (plain-lines ch 40)]
+            (is (some #(re-find #"see:" %) lines))
+            (is (some #(re-find #"\[Image: \[image/png\] 800x600\]" %) lines))
+            (is (not-any? #(re-find #"\[image image/png\]" %) lines))))
+        (finally (timg/set-capabilities! prev-caps))))))
+
+(deftest test-show-status
+  (testing "status line renders and is not persisted as a message"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "hello"})
+      (ch/chat-history-show-status! ch "Tool output: expanded")
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"Tool output: expanded" %) lines)
+            "status text should render"))
+      (is (= [:user] (mapv :role (ch/chat-history-get-messages ch)))
+          "status must not appear in persisted messages")
+      (is (= ["hello"] (mapv :content (ch/chat-history-get-messages ch)))))))
+
+(deftest test-render-plain-entries
+  (testing "error/warning/notice/unknown-role entries render as plain lines"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :error :content "boom"})
+      (ch/chat-history-add-message! ch {:role :warning :content "careful"})
+      (ch/chat-history-add-message! ch {:role :notice :content "fyi"})
+      (ch/chat-history-add-message! ch {:role :notice :content "styled" :style :error})
+      (ch/chat-history-add-message! ch {:role :mystery :content "**unknown body**"})
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"^ Error: boom\s*$" %) lines) "error line")
+        (is (some #(re-find #"^ Warning: careful\s*$" %) lines) "warning line")
+        (is (some #(re-find #"^ fyi\s*$" %) lines)
+            "notice line, default :warning style")
+        (is (some #(re-find #"^ styled\s*$" %) lines)
+            "notice line with an explicit :style")
+        (is (some #(re-find #"^unknown body\s*$" %) lines)
+            "unknown roles fall back to the unpadded markdown helper")))))
+
+(deftest test-show-status-updates-in-place
+  (testing "repeated status updates replace the line instead of appending"
+    (let [ch (ch/make-chat-history)
+          _ (ch/chat-history-add-message! ch {:role :user :content "hi"})]
+      (ch/chat-history-show-status! ch "Tool output: expanded")
+      ;; render first: the update below must invalidate the status entry's
+      ;; root cache, not just render correctly because nothing was cached yet
+      (is (some #(re-find #"Tool output: expanded" %) (plain-lines ch 40)))
+      (ch/chat-history-show-status! ch "Tool output: collapsed")
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"Tool output: collapsed" %) lines))
+        (is (not-any? #(re-find #"Tool output: expanded" %) lines)
+            "old status text should be replaced, not accumulated")))))
+
+(deftest test-plain-entries-run-no-idle-bodies
+  (testing "a plain entry's root is a constant tree — an idle frame rebuilds nothing"
+    ;; the trivial body still runs (no tracked deref to memoize on), but every
+    ;; element is reused: constructs and disposals stay at zero
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :error :content "boom"})
+      (protocols/render ch 40)
+      (engine/reset-counters!)
+      (protocols/render ch 40)
+      (is (zero? (:constructs (engine/counters))) "no element rebuilt")
+      (is (zero? (:disposals (engine/counters))) "nothing disposed")))
+  (testing "an in-place status rewrite re-derives exactly one body"
+    (let [ch (ch/make-chat-history)
+          _ (ch/chat-history-add-message! ch {:role :user :content "hi"})]
+      (ch/chat-history-show-status! ch "one")
+      (protocols/render ch 40)
+      (engine/reset-counters!)
+      (protocols/render ch 40)
+      (is (zero? (:bodies-run (engine/counters))) "idle status frame runs no bodies")
+      (engine/reset-counters!)
+      (ch/chat-history-show-status! ch "two")
+      (protocols/render ch 40)
+      (is (= 1 (:bodies-run (engine/counters))) "the rewrite re-derives once")
+      (is (some #(re-find #"two" %) (plain-lines ch 40))))))
+
+(deftest test-info-collapsible
+  (testing "collapsible info banner toggles with the tool-expand action"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-set-info-msg! ch
+                                     {:label "kmet" :content "plain"
+                                      :collapsed-content "Press ctrl+o to expand"
+                                      :expanded-content "Full help here"})
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"Press ctrl\+o to expand" %) lines)
+            "collapsed content shown by default")
+        (is (not-any? #(re-find #"Full help here" %) lines)))
+      (ch/chat-history-toggle-tool-expanded! ch)
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"Full help here" %) lines)
+            "expanded content after toggle")
+        (is (not-any? #(re-find #"Press ctrl\+o to expand" %) lines))))))
+
+(deftest test-info-non-collapsible-untouched
+  (testing "non-collapsible info banner is left untouched by the toggle"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-set-info-msg! ch {:label "kmet" :content "static text"})
+      (ch/chat-history-toggle-tool-expanded! ch)
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"static text" %) lines))))))
+
+(deftest test-rebuild-preserves-collapsible-info
+  (testing "rebuild keeps collapsible variants and expanded state"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-set-info-msg! ch
+                                     {:label "kmet" :content "plain"
+                                      :collapsed-content "Collapsed banner"
+                                      :expanded-content "Expanded banner"})
+      (ch/chat-history-toggle-tool-expanded! ch)  ;; expand
+      (ch/chat-history-rebuild! ch [{:role :user :content "new"}])
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"Expanded banner" %) lines)
+            "expanded state preserved across rebuild"))
+      (ch/chat-history-toggle-tool-expanded! ch)  ;; collapse
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"Collapsed banner" %) lines)
+            "collapsible variants preserved across rebuild")))))
+
+(deftest test-flag-toggle-no-content
+  (testing "toggles flip the tracked flags even with no matching components"
+    (let [ch (ch/make-chat-history)]
+      (is (false? (ch/chat-history-get-tool-expanded ch)))
+      (ch/chat-history-toggle-tool-expanded! ch)
+      (is (true? (ch/chat-history-get-tool-expanded ch)) "flag flips without tools")
+      (ch/chat-history-toggle-tool-expanded! ch)
+      (is (false? (ch/chat-history-get-tool-expanded ch)))
+      (ch/chat-history-toggle-thinking-hidden! ch)
+      (is (true? (ch/chat-history-get-thinking-hidden ch)) "flag flips without messages"))))
+
+(deftest test-new-messages-inherit-flags
+  (testing "new tool components inherit the expansion flag"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :tool :name "ls" :content "files"})
+      (is (false? (ch/chat-history-get-tool-expanded ch)))
+      (ch/chat-history-toggle-tool-expanded! ch)
+      ;; a NEW tool added after the toggle is expanded too
+      (ch/chat-history-add-message! ch {:role :tool :name "ls" :content "more"})
+      (let [tools (keep (fn [m] (when (contains? (:component m) :expanded-atom)
+                                  (:component m)))
+                        @(:messages-atom ch))]
+        (is (= 2 (count tools)))
+        (is (every? #(identical? (:tools-expanded-atom ch)
+                                 (:tools-expanded-atom %))
+                    tools)
+            "all tools — old and new — link to the shared toggle atom"))))
+  (testing "new assistant messages inherit the thinking-hidden flag"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch
+                                    {:role :assistant :content "a" :thinking "t"})
+      (ch/chat-history-toggle-thinking-hidden! ch)
+      (ch/chat-history-add-message! ch
+                                    {:role :assistant :content "b" :thinking "t2"})
+      (let [assistants (keep (fn [m] (when (contains? (:component m) :hide-thinking-atom)
+                                       (:component m)))
+                             @(:messages-atom ch))]
+        (is (= 2 (count assistants)))
+        (is (every? #(true? @(:hide-thinking-atom %)) assistants)
+            "all assistant messages — old and new — have thinking hidden")))))
+
+(deftest test-remove-streaming-placeholder-skips-status
+  (testing "placeholder removal drops trailing status lines with it"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-start-streaming! ch)
+      (ch/chat-history-show-status! ch "Tool output: expanded")
+      (is (true? (ch/chat-history-remove-streaming-placeholder! ch)))
+      (is (= [] (ch/chat-history-get-messages ch))
+          "the status line and the placeholder are both removed"))))
+
+(deftest test-show-status-appends-then-scrolls-away
+  (testing "a status is a trailing entry — the next message renders below it,
+            pushing the status up out of the pinned-bottom position"
+    (let [ch (ch/make-chat-history)
+          _ (ch/chat-history-add-message! ch {:role :user :content "hello"})
+          _ (ch/chat-history-show-status! ch "Tool output: expanded")
+          _ (ch/chat-history-add-message! ch {:role :assistant :content "response"})
+          lines (plain-lines ch 40)
+          status-idx (first (keep-indexed #(when (re-find #"Tool output" %2) %1) lines))
+          resp-idx (first (keep-indexed #(when (re-find #"response" %2) %1) lines))]
+      (is status-idx)
+      (is resp-idx)
+      (is (< status-idx resp-idx)
+          "the new message appears after the status — the status is no longer
+           pinned to the bottom of the chat"))))
+
+(deftest test-output-pad-reaches-every-padded-kind
+  (testing "one reset! on the shared pad atom re-pads every boxed message kind"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-set-info-msg! ch {:label "kmet" :content "info"})
+      (ch/chat-history-add-message! ch {:role :user :content "user text"})
+      (ch/chat-history-add-message! ch {:role :assistant :content "assistant text"})
+      (ch/chat-history-add-message! ch {:role :custom :label "custom" :content "custom text"})
+      (ch/chat-history-add-message! ch {:role :compaction :summary "compacted" :tokens-before 5})
+      (ch/chat-history-set-output-pad! ch 3)
+      (let [lines (mapv tu/strip-ansi (core/render ch 48))]
+        (is (some #(re-find #"^   \[kmet\]" %) lines) "info banner")
+        (is (some #(re-find #"^   user text" %) lines) "user message")
+        (is (some #(re-find #"^   assistant text" %) lines) "assistant message")
+        (is (some #(re-find #"^   custom text" %) lines) "custom message")
+        (is (some #(re-find #"^   \[compaction\]" %) lines) "compaction summary"))
+      (testing "and back down — the pad is not sticky"
+        (ch/chat-history-set-output-pad! ch 0)
+        (let [lines (mapv tu/strip-ansi (core/render ch 48))]
+          (is (some #(re-find #"^\[kmet\]" %) lines))
+          (is (some #(re-find #"^assistant text" %) lines))))))
+  (testing "a pad change re-wraps an assistant message's cached lines"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-start-streaming! ch)
+      (ch/chat-history-append-streaming-text!
+       ch "streaming text that is long enough to wrap at some width")
+      (is (some #(re-find #"^ streaming text" %) (mapv tu/strip-ansi (core/render ch 32))))
+      (ch/chat-history-set-output-pad! ch 3)
+      (is (some #(re-find #"^   streaming text" %) (mapv tu/strip-ansi (core/render ch 32)))
+          "the pad is part of the reflow staleness key"))))
+
+(deftest test-output-pad-only-follows-history-built-components
+  (testing "a pre-built component (extension renderer) keeps its own padding"
+    (let [ch (ch/make-chat-history)
+          own (te/make-tool-execution :name "ls" :content "own pad")]
+      (ch/chat-history-add-message! ch {:role :tool :component own})
+      (ch/chat-history-set-output-pad! ch 4)
+      (core/render ch 40)
+      (is (= 1 @(:padding-x-atom @(:box own)))
+          "the transcript no longer pushes into components it did not build")))
+  (testing "…but one built with the history's pad atom follows it"
+    (let [ch (ch/make-chat-history)
+          mine (te/make-tool-execution :name "ls" :content "follows"
+                                       :output-pad-atom (:output-pad-atom ch))]
+      (ch/chat-history-add-message! ch {:role :tool :component mine})
+      (ch/chat-history-set-output-pad! ch 4)
+      (core/render ch 40)
+      (is (= 4 @(:padding-x-atom @(:box mine))) "opt-in through the shared atom"))))
+
+(deftest test-info-banner-in-children
+  (testing "the info banner is a chat message: themed, persisted as :info, survives placeholder removal"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-set-info-msg! ch {:label "kmet" :content "banner"})
+      (is (some? @(:info-comp-atom ch)) "banner component exists")
+      ;; output-pad must reach the banner without errors (theme needs no
+      ;; walk — components subscribe to ui.subs/theme-sub, Stage 5)
+      (ch/chat-history-set-output-pad! ch 2)
+      (ch/chat-history-add-message! ch {:role :user :content "hi"})
+      (is (= [:info :user] (mapv :role (ch/chat-history-get-messages ch))))
+      (ch/chat-history-start-streaming! ch)
+      (is (true? (ch/chat-history-remove-streaming-placeholder! ch)))
+      (is (= [:info :user] (mapv :role (ch/chat-history-get-messages ch)))
+          "placeholder removal removes the placeholder, not the banner or the message"))))
+
+(deftest test-show-error-warning
+  (testing "show-error! / show-warning! render plain spacer + colored text (pi: showError/showWarning)"
+    (let [ch (ch/make-chat-history)
+          _ (ch/show-warning! ch "bash already running")
+          _ (ch/show-error! ch "command failed")
+          lines (plain-lines ch 40)]
+      (is (some #(re-find #"Warning: bash already running" %) lines))
+      (is (some #(re-find #"Error: command failed" %) lines))
+      (is (not-any? #(re-find #"custom-message" %) lines)
+          "no background box — plain text like pi"))))
+
+(deftest test-info-banner-first-user-spacing
+  (testing "first user message after the info banner gets the same separator as later messages (visible gap between the two boxes)"
+    (let [ch (ch/make-chat-history)
+          _ (ch/chat-history-set-info-msg! ch {:label "kmet" :content "banner"})
+          _ (ch/chat-history-add-message! ch {:role :user :content "hello"})
+          lines (plain-lines ch 20)
+          banner-idx (first (keep-indexed #(when (re-find #"banner" %2) %1) lines))
+          hello-idx (first (keep-indexed #(when (re-find #"hello" %2) %1) lines))]
+      (is banner-idx)
+      (is hello-idx)
+      (is (= hello-idx (+ banner-idx 4))
+          "banner content → 3 blank lines (box bottom pad + separator + user box top pad) → user text"))))
+
+(deftest test-unknown-system-role-renders
+  (testing "roles without a dedicated component (:system, :unknown) render as plain text"
+    (let [ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :system :content "compaction summary"})
+      (ch/chat-history-add-message! ch {:role :unknown :content "mystery content"})
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"compaction summary" %) lines))
+        (is (some #(re-find #"mystery content" %) lines))
+        (is (= 2 (count (ch/chat-history-get-messages ch)))
+            "messages are kept, not silently dropped")))))
+
+(deftest test-tool-block-content
+  (testing "tool messages with block-vector content (agent-loop :context-replaced) render"
+    (let [ch (ch/make-chat-history)]
+      ;; :context-replaced rebuild feeds agent messages whose tool content is
+      ;; [{:type :tool_result :content "..."}] — must not crash or print the raw vector
+      (ch/chat-history-add-message! ch
+                                    {:role :tool :name "bash"
+                                     :content [{:type :tool_result :tool_use_id "x" :content "file text"}]
+                                     :is-error false})
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"file text" %) lines)
+            "tool_result content extracted from the block")
+        (is (not-any? #(re-find #"tool_result|PersistentVector" %) lines)
+            "raw block vector must not render")))))
+
+(deftest test-hidden-thinking-label
+  (testing "chat-history-set-hidden-thinking-label! applies to existing and
+            new assistant messages (pi: setHiddenThinkingLabel)"
+    (let [ch (ch/make-chat-history)
+          _ (ch/chat-history-add-message! ch {:role :assistant
+                                              :content "resp"
+                                              :thinking "secret"})
+          _ (ch/chat-history-toggle-thinking-hidden! ch)
+          _ (ch/chat-history-set-hidden-thinking-label! ch "Thoughts hidden")
+          lines (plain-lines ch 40)]
+      (is (some #(re-find #"Thoughts hidden" %) lines)
+          "existing hidden message shows the custom label")
+      (is (not-any? #(re-find #"secret" %) lines)
+          "thinking content stays hidden")
+      ;; nil restores the default
+      (ch/chat-history-set-hidden-thinking-label! ch nil)
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"Thinking\.\.\." %) lines)
+            "nil restores the default label")))))
+
+(deftest test-render-prebuilt-component
+  (testing "a message carrying a pre-built :component renders it as-is"
+    (let [ch (ch/make-chat-history)
+          comp (core/make-text "prebuilt!")]
+      (ch/chat-history-add-message! ch {:component comp})
+      (let [lines (plain-lines ch 40)]
+        (is (some #(re-find #"prebuilt!" %) lines)
+            "the pre-built component's text should be visible, not empty")))))
+
+(deftest test-info-banner-replacement-disposes-previous
+  (testing "replacing the info banner disposes the previous component — its
+            children's track! watches must not outlive it"
+    (let [watchers component/live-watch-count
+          h (ch/make-chat-history)]
+      (ch/chat-history-set-info-msg! h {:label "a" :content "one"})
+      (core/render h 60)
+      (let [first-banner @(:info-comp-atom h)
+            baseline (watchers)]
+        (is (some? first-banner))
+        (is (component/tracked? first-banner) "the banner is tracked")
+        (ch/chat-history-set-info-msg! h {:label "b" :content "two"})
+        (core/render h 60)
+        (is (not (identical? first-banner @(:info-comp-atom h))))
+        (is (<= (watchers) baseline)
+            "the replaced banner's watches were torn down")))))
+
+(deftest test-dispose-cascades-into-messages-and-banner
+  (testing "finding 2: ChatHistoryComponent disposal clears and disposes the
+            transcript and the banner, so a tui-clear/container cascade
+            cannot leave message components (and their track! watches)
+            rooted"
+    (let [watchers component/live-watch-count
+          before (watchers)
+          ch (ch/make-chat-history)]
+      (ch/chat-history-add-message! ch {:role :user :content "hello"})
+      (ch/chat-history-add-message! ch {:role :assistant :content "hi there"})
+      (ch/chat-history-set-info-msg! ch {:label "banner" :content "info"})
+      (core/render ch 60)
+      (is (every? component/tracked? (keep :component @(:messages-atom ch)))
+          "the messages are tracked")
+      (is (component/tracked? @(:info-comp-atom ch)) "the banner is tracked")
+      (protocols/dispose ch)
+      (is (empty? (ch/chat-history-get-messages ch)) "messages cleared")
+      (is (nil? @(:info-comp-atom ch)) "banner cleared")
+      (is (<= (watchers) before) "message/banner watches torn down")
+      (protocols/dispose ch)
+      (is (<= (watchers) before) "dispose stays idempotent"))))
+
+(deftest test-info-banner-survives-rebuild-with-images
+  (testing "chat-history-rebuild! preserves the banner's content images"
+    (let [prev-caps (timg/get-capabilities)]
+      (try
+        (timg/set-capabilities! {:images nil :true-color true :hyperlinks true})
+        (let [h (ch/make-chat-history)]
+          (ch/chat-history-set-info-msg! h {:label "ext" :content "note"
+                                            :images [{:data "AA" :mime-type "image/png"}]})
+          (core/render h 60)
+          (is (= [{:data "AA" :mime-type "image/png"}]
+                 @(:images-atom @(:info-comp-atom h)))
+              "banner carries the image blocks")
+          (ch/chat-history-rebuild! h [{:role :user :content "hi"}])
+          (let [lines (plain-lines h 60)]
+            (is (some #(re-find #"\[Image: \[image/png\]" %) lines)
+                "the rebuilt banner still renders its image")
+            (is (some #(re-find #"note" %) lines))))
+        (finally (timg/set-capabilities! prev-caps))))))
+
+(deftest test-get-messages-info-entry-carries-images
+  (testing "the banner entry from chat-history-get-messages round-trips images"
+    (let [h (ch/make-chat-history)]
+      (ch/chat-history-set-info-msg! h {:label "ext" :content "note"
+                                        :images [{:data "AA" :mime-type "image/png"}]})
+      (let [info (first (ch/chat-history-get-messages h))]
+        (is (= :info (:role info)))
+        (is (= [{:data "AA" :mime-type "image/png"}] (:images info)))))))
+
+(deftest test-skill-invocation-with-images
+  (testing "images attached to a /skill: invocation render with the trailing
+            args (previously dropped: the skill branch rendered only text)"
+    (let [prev-caps (timg/get-capabilities)
+          block (str "<skill name=\"demo\" location=\"/x/SKILL.md\">\n"
+                     "body\n</skill>\n\nargs here")]
+      (try
+        (timg/set-capabilities! {:images nil :true-color true :hyperlinks true})
+        (let [ch (ch/make-chat-history)]
+          (ch/chat-history-add-message! ch
+                                        {:role :user
+                                         :content [{:type :text :text block}
+                                                   {:type :image :data "AA" :mime-type "image/png"}]})
+          (let [lines (plain-lines ch 60)]
+            (is (some #(re-find #"\[skill\]" %) lines) "skill message rendered")
+            (is (some #(re-find #"args here" %) lines) "args rendered below")
+            (is (some #(re-find #"\[Image: \[image/png\]" %) lines)
+                "the attached image renders")))
+        (finally (timg/set-capabilities! prev-caps))))))

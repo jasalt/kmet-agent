@@ -22,7 +22,7 @@
             [kmet.app.retry :as retry]
             [kmet.config :as cfg]
             [kmet.debug :as debug]
-            [kmet.app.ui.chat-history :as ui]
+            [kmet.app.ui.tui.chat-history :as ui]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]
             [kmet.test-utils :refer [slash] :as tu]))

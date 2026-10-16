@@ -1,6 +1,6 @@
 (ns kmet.app.test-layer-guard
   "Guard (engine.md §8): app business logic (kmet.app.*, excluding
-   kmet.app.ui.** and the extension-ABI injection) must not require the
+   kmet.app.ui.tui.** and the extension-ABI injection) must not require the
    terminal/Tk front ends or the interactive mode."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]

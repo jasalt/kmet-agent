@@ -153,7 +153,7 @@ listed in the root `AGENTS.md` topic map.
   `kmet.libs.*` and nothing above it. kmet's own `:ui/…` widgets are app
   UI over the backend, in `kmet.app.ui.gui.ui`.
 - `kmet.modes.*` is the entry-mode layer; `kmet.app.*` is business logic;
-  `kmet.app.ui.*` is app-specific UI; `kmet.core` only parses arguments and
+  `kmet.app.ui.tui.*` is app-specific UI; `kmet.core` only parses arguments and
   dispatches.
 - `kmet.tasks.*` lives under `tasks/kmet/tasks/`, is never required by shipped
   code, and is not packaged. Task tests live under `test/kmet/tasks/`.

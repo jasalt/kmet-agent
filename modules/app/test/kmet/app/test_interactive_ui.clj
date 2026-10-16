@@ -31,15 +31,15 @@
             [kmet.app.extensions :as extensions]
             [kmet.app.keybindings :as app-kb]
             [kmet.modes.interactive.theme-controller :as theme-ctrl]
-            [kmet.app.ui.footer :as footer]
-            [kmet.app.ui.pending-messages :as pending-messages]
-            [kmet.app.ui.scoped-models-selector :as scoped-models-selector]
-            [kmet.app.ui.status-indicator :as status-indicator]
-            [kmet.app.ui.chat-history :as chat-history]
-            [kmet.app.ui.dock :as dock]
-            [kmet.app.ui.model-catalog :as model-catalog]
-            [kmet.app.ui.model-selector :as model-selector]
-            [kmet.app.ui.thinking-selector :as thinking-selector]
+            [kmet.app.ui.tui.footer :as footer]
+            [kmet.app.ui.tui.pending-messages :as pending-messages]
+            [kmet.app.ui.tui.scoped-models-selector :as scoped-models-selector]
+            [kmet.app.ui.tui.status-indicator :as status-indicator]
+            [kmet.app.ui.tui.chat-history :as chat-history]
+            [kmet.app.ui.tui.dock :as dock]
+            [kmet.app.ui.tui.model-catalog :as model-catalog]
+            [kmet.app.ui.tui.model-selector :as model-selector]
+            [kmet.app.ui.tui.thinking-selector :as thinking-selector]
             [kmet.ai.models :as m]
             [kmet.ai.auth :as auth]
             [kmet.app.loop :as agent]
@@ -50,7 +50,7 @@
             [kmet.app.session-export :as session-export]
             [kmet.app.session-runtime :as runtime]
             [kmet.app.skills :as skills]
-            [kmet.app.ui.footer-data-provider :as fdp]
+            [kmet.app.ui.tui.footer-data-provider :as fdp]
             [babashka.fs :as fs]
             [kmet.config :as cfg]
             [kmet.tui.keybindings :as tui-kb]
@@ -2169,7 +2169,7 @@
       (t/is (= 0 @cleanups) "dispose unwinds on dialog close"))))
 
 (deftest test-dispose-dialog-component-shapes
-  (testing "dispose-dialog-component! (kmet.app.ui.custom-dialog-adapter/
+  (testing "dispose-dialog-component! (kmet.app.ui.tui.custom-dialog-adapter/
             dispose-component!) handles every component shape: duck-typed
             maps via their :dispose key, records via the protocol, nil
             no-op — and a throwing foreign dispose never propagates"

@@ -572,7 +572,7 @@ fixture before generalizing; that is exactly what §6.3 targets.
 - Correctness: `kmet.test-utils`, `kmet.test-keys`,
   `kmet.tui.components.test-editor`, `kmet.tui.components.test-markdown`,
   `kmet.tui.components.test-truncated-text`, `kmet.tui.components.test-text`,
-  `kmet.tui.test-render-loop`, `kmet.app.ui.test-tool-renderers` (or
+  `kmet.tui.test-render-loop`, `kmet.app.ui.tui.test-tool-renderers` (or
   `bb test-changed`) — and the same namespaces under `jolt test`, since §5.4
   adds a jolt-only code path. All green on both hosts when the §5 wins landed.
 - Equality contract for the scanner: `kmet.test-utils/test-strip-ansi-host-equivalence`
@@ -1260,7 +1260,7 @@ Two of §12's improvement candidates landed:
 
 1. **One `[:text]` node per tool-output block** — the bash/read/write/default
    renderers emitted one node per output line; they now emit a single joined
-   node (`kmet.app.ui.tool-renderers/tool-text-lines`). Node work alone, on
+   node (`kmet.app.ui.tui.tool-renderers/tool-text-lines`). Node work alone, on
    the synthetic 6,438-line body: 259 → 76 ms (bb) and 570 → 172 ms (jolt).
 2. **Normalize memo** — `run-render-loop!` reuses the previous frame's
    normalized string for every line `identical?` to its previous raw line
@@ -2189,8 +2189,8 @@ A sweep of `src/` for regexes on per-frame / per-line / per-chunk paths after
 `kmet.app.bash-executor/sanitize-output` ran a private copy of
 `ANSI-CODE-RE` plus two unconditional CR replaces on every decoded bash
 chunk (the streaming path, so once per process read);
-`kmet.app.ui.tool-renderers/sanitize-display-text` and
-`kmet.app.ui.bash-execution/bash-execution-append-output!` repeated the CR
+`kmet.app.ui.tui.tool-renderers/sanitize-display-text` and
+`kmet.app.ui.tui.bash-execution/bash-execution-append-output!` repeated the CR
 passes. The private ANSI regex is gone — the shared host-branched
 `kmet.tui.utils/strip-ansi-codes` does the strip (scanner on Jolt) — and the
 CR passes are guarded with `str/includes? "\r"`. Real function, 1.8 KB

@@ -85,7 +85,7 @@ scope by the EDNL-only decision.
 
 pi `core/package-manager.ts` (the full resolve pipeline) +
 `package-manager-cli.ts` + `cli/config-selector.ts`
-→ `kmet.app.packages` + `kmet.package-manager` + `kmet.app.ui.resource-config`
+→ `kmet.app.packages` + `kmet.package-manager` + `kmet.app.ui.tui.resource-config`
 (+ the runner call sites in `core.clj`, `modes/interactive.clj`, `modes/print.clj`).
 
 `PackageManager.resolve()` is fully ported: top-level settings resource
@@ -203,7 +203,7 @@ list/config` dispatch from `core.clj` to `kmet.package-manager` (pi
 | **Alt-screen search** (search overlay over the transcript) | `packages/tui/src/alt-screen-search.ts`, `tui-alt-screen.ts` | **Postponed indefinitely** (same — needs an alt-screen mode) |
 | **Images in chat** | `terminal.showImages`, `terminal.imageWidthCells`, `images.autoResize`, `images.blockImages` settings; `show-images-selector.ts` | **Partial** — the TUI half done (`tui.md` §10): `:terminal {:show-images :image-width-cells}` settings, terminal-support-gated `/settings` rows, and inline images (or the `imageFallback` text indicator when off/unsupported) in tool results and user/custom messages. `images.blockImages` done: `:images {:block-images}` setting + ungated `/settings` row, stripped per request in `app/loop.clj/call-llm` (pi: convertToLlmWithBlockImages — placeholder text, consecutive dedupe, stored context untouched). **Missing**: `images.autoResize` and the per-model `inputLimits.images.resize` catalog metadata (pi #9631: resize profiles in `models.json`, applied to attachments, `read`, and tool-result images). Both need a resizer backend decision — pi runs a Photon WASM resize pipeline and babashka has no ImageIO/AWT (see `app/tools/read.clj`); the generated catalogs carry no `:input-limits` keys yet
 | **Cache-miss notices** | `showCacheMissNotices` setting | Done — `:show-cache-miss-notices` setting, `session/detect-cache-miss` (pi detectMiss), notice at agent-end (≥ 20k tokens) |
-| **Skill invocation presentation** | `components/skill-invocation-message.ts` | **Done** — `kmet.app.skills/parse-skill-block` + `kmet.app.ui.skill-message`: a `/skill:name` block renders as `[skill] name (ctrl+o to expand)` (collapsed) or the name + body as Markdown (expanded), with the trailing args as a normal user message below. Live and replay share the parse; the session still stores the expanded text |
+| **Skill invocation presentation** | `components/skill-invocation-message.ts` | **Done** — `kmet.app.skills/parse-skill-block` + `kmet.app.ui.tui.skill-message`: a `/skill:name` block renders as `[skill] name (ctrl+o to expand)` (collapsed) or the name + body as Markdown (expanded), with the trailing args as a normal user message below. Live and replay share the parse; the session still stores the expanded text |
 | **Custom entry rendering** | `registerEntryRenderer` + `components/custom-entry.ts` | Done — `extensions/register-entry-renderer!` + live entry sink; rendered at replay and on append (pi registerEntryRenderer + CustomEntryComponent) |
 
 ### 3. Slash commands

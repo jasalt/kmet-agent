@@ -19,7 +19,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [kmet.extension :as ext]
-            [kmet.app.ui.tool-renderers :as renderers]
+            [kmet.app.ui.tui.tool-renderers :as renderers]
             [kmet.libs.process :as process]))
 
 ;; ─── pi constants ──────────────────────────────────────────────────────────

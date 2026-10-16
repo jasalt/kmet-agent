@@ -216,7 +216,7 @@
     kmet.tui.components.text
     kmet.tui.components.v-stack
     kmet.tui.components.truncated-text
-    kmet.app.ui.tool-renderers
+    kmet.app.ui.tui.tool-renderers
     kmet.app.keybindings])
 
 (def ^:private libs-library-namespaces
@@ -483,7 +483,7 @@
    filter) and shared-tui-namespaces both read it."
   [n]
   (or (str/starts-with? n "kmet.tui.")
-      (= n "kmet.app.ui.tool-renderers")
+      (= n "kmet.app.ui.tui.tool-renderers")
       (= n "kmet.app.keybindings")))
 
 (defn- libs-layer?
@@ -860,7 +860,7 @@
         ;; (e.g. review/dialogs requiring kmet.tui.macros on second load)
         ;; must validate against what CAN be shared, not what happens to
         ;; be loaded. The load-fn serves kmet.tui.* from the host anyway.
-        (#{"kmet.app.ui.tool-renderers" "kmet.app.keybindings"} s)
+        (#{"kmet.app.ui.tui.tool-renderers" "kmet.app.keybindings"} s)
         (when-not (or (contains? tui-namespaces lib)
                       (contains? (set tui-library-namespaces) lib))
           (throw (ex-info
@@ -1117,7 +1117,7 @@
                        " — the loader is host machinery and is not part of the extension contract")
 
                   (or (str/starts-with? (str ns-sym) "kmet.tui.")
-                      (= (str ns-sym) "kmet.app.ui.tool-renderers")
+                      (= (str ns-sym) "kmet.app.ui.tui.tool-renderers")
                       (= (str ns-sym) "kmet.app.keybindings"))
                   (str "Extension " ext-name " requires " ns-sym
                        " — the shared TUI/renderer library is shared by reference and was"

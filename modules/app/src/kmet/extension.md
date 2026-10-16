@@ -613,7 +613,7 @@ disposed when a later pass replaces it — to keep an instance across passes,
 return the same one back (read it from `:last-component` and return it
 unchanged); a renderer that returns a fresh component each pass gets the
 previous one cleaned up automatically. The supported reusable built-in
-renderer vars are in `kmet.app.ui.tool-renderers`, including
+renderer vars are in `kmet.app.ui.tui.tool-renderers`, including
 `render-edit-call`, `render-edit-result`, `state-result-nodes` (the tail
 state line), `render-bash-result` (a
 plain-text output body: styled lines, a collapsed line window with an expand
@@ -672,7 +672,7 @@ and keeps the built-in rendering:
                     :env (assoc env "MY_HOOK" "1")})}))
 
 ;; A dedicated name + description gets default rendering (attach
-;; kmet.app.ui.tool-renderers' render-bash-call/render-bash-result for the
+;; kmet.app.ui.tui.tool-renderers' render-bash-call/render-bash-result for the
 ;; built-in look — that namespace is shared with extensions).
 (ext/register-tool! api
   (ext/create-bash-tool api

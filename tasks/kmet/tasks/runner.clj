@@ -107,8 +107,8 @@
     kmet.app.test-packages
     kmet.app.test-bundled-extensions
     kmet.test-package-manager
-    kmet.app.ui.test-resource-config
-    kmet.app.ui.test-hotkeys
+    kmet.app.ui.tui.test-resource-config
+    kmet.app.ui.tui.test-hotkeys
     kmet.app.test-extensions-ui
     kmet.app.test-ui-port
     kmet.app.test-layer-guard
@@ -211,38 +211,38 @@
     kmet.libs.test-archive
     kmet.libs.test-aws-sigv4
     kmet.app.test-context
-    kmet.app.ui.test-chat-history
+    kmet.app.ui.tui.test-chat-history
     kmet.app.ui.gui.test-transcript
     kmet.app.ui.gui.test-style
     kmet.app.ui.gui.test-ui
-    kmet.app.ui.test-user-message
-    kmet.app.ui.test-image-block
-    kmet.app.ui.test-assistant-message
-    kmet.app.ui.test-tool-renderers
-    kmet.app.ui.test-tool-execution
-    kmet.app.ui.test-custom-message
-    kmet.app.ui.test-settings-selector
-    kmet.app.ui.test-theme-submenu
-    kmet.app.ui.test-skill-message
-    kmet.app.ui.test-summary-message
-    kmet.app.ui.test-bash-execution
-    kmet.app.ui.test-dialogs
-    kmet.app.ui.test-external-editor
-    kmet.app.ui.test-suspend
-    kmet.app.ui.test-login-dialog
-    kmet.app.ui.test-footer
-    kmet.app.ui.test-footer-data-provider
-    kmet.app.ui.test-pending-messages
-    kmet.app.ui.test-status-indicator
-    kmet.app.ui.test-loaded-resources
-    kmet.app.ui.test-scoped-models-selector
-    kmet.app.ui.test-model-selector
-    kmet.app.ui.test-thinking-selector
-    kmet.app.ui.test-auth-selector
-    kmet.app.ui.test-dock
-    kmet.app.ui.test-session-selector
-    kmet.app.ui.test-fork-selector
-    kmet.app.ui.test-tree-selector
+    kmet.app.ui.tui.test-user-message
+    kmet.app.ui.tui.test-image-block
+    kmet.app.ui.tui.test-assistant-message
+    kmet.app.ui.tui.test-tool-renderers
+    kmet.app.ui.tui.test-tool-execution
+    kmet.app.ui.tui.test-custom-message
+    kmet.app.ui.tui.test-settings-selector
+    kmet.app.ui.tui.test-theme-submenu
+    kmet.app.ui.tui.test-skill-message
+    kmet.app.ui.tui.test-summary-message
+    kmet.app.ui.tui.test-bash-execution
+    kmet.app.ui.tui.test-dialogs
+    kmet.app.ui.tui.test-external-editor
+    kmet.app.ui.tui.test-suspend
+    kmet.app.ui.tui.test-login-dialog
+    kmet.app.ui.tui.test-footer
+    kmet.app.ui.tui.test-footer-data-provider
+    kmet.app.ui.tui.test-pending-messages
+    kmet.app.ui.tui.test-status-indicator
+    kmet.app.ui.tui.test-loaded-resources
+    kmet.app.ui.tui.test-scoped-models-selector
+    kmet.app.ui.tui.test-model-selector
+    kmet.app.ui.tui.test-thinking-selector
+    kmet.app.ui.tui.test-auth-selector
+    kmet.app.ui.tui.test-dock
+    kmet.app.ui.tui.test-session-selector
+    kmet.app.ui.tui.test-fork-selector
+    kmet.app.ui.tui.test-tree-selector
     kmet.test-core
     kmet.tasks.test-changed
     kmet.tasks.test-clean

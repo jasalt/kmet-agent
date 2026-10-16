@@ -11,7 +11,7 @@
             [kmet.tui.components.markdown :as md]
             [kmet.tui.components.select-list :as sl]
             [kmet.tui.components.settings-list :as settings]
-            [kmet.app.ui.footer :as footer]
+            [kmet.app.ui.tui.footer :as footer]
             [kmet.libs.reakt.core :as reakt]
             [kmet.libs.reakt.weak :as weak]
             [kmet.test-utils :as test-utils]))
