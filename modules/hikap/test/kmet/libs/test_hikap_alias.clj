@@ -3,9 +3,11 @@
             [kmet.libs.hikap.alias :as alias]))
 
 (t/use-fixtures :each (fn [f]
-                        (alias/reset-registry!)
-                        (f)
-                        (alias/reset-registry!)))
+                        (let [snapshot (alias/registered)]
+                          (alias/reset-registry!)
+                          (f)
+                          (alias/reset-registry!)
+                          (doseq [[k v] snapshot] (alias/register! k v)))))
 
 (t/deftest registered-empty-initially
   (t/is (map? (alias/registered)))

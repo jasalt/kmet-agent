@@ -31,7 +31,7 @@
 
 (deftest module-dependencies-flow-downward
   (testing "every module depends only on lower layers"
-    (doseq [module (sort (fs/list-dir "modules"))]
+    (doseq [module (sort-by str (fs/list-dir "modules"))]
       (when (fs/exists? (fs/path "modules" module "deps.edn"))
         (let [deps (module-deps module)]
           (doseq [dep deps]

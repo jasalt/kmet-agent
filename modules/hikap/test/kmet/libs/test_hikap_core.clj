@@ -8,11 +8,13 @@
 (def backend ts/backend)
 
 (t/use-fixtures :each (fn [f]
-                        (alias/reset-registry!)
-                        (engine/reset-counters!)
-                        (f)
-                        (alias/reset-registry!)
-                        (engine/reset-counters!)))
+                        (let [snapshot (alias/registered)]
+                          (alias/reset-registry!)
+                          (engine/reset-counters!)
+                          (f)
+                          (alias/reset-registry!)
+                          (engine/reset-counters!)
+                          (doseq [[k v] snapshot] (alias/register! k v)))))
 
 ;; ── counters ───────────────────────────────────────────────────────────────
 
