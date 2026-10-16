@@ -135,6 +135,9 @@
     kmet.tui.test-core
     kmet.libs.test-reakt
     kmet.libs.test-hikap
+    kmet.libs.test-hikap-alias
+    kmet.libs.test-hikap-component
+    kmet.libs.test-hikap-core
     kmet.libs.test-weak
     kmet.tui.test-reakt-integration
     kmet.tui.test-compute
