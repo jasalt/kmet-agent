@@ -1222,22 +1222,24 @@
        (catch Exception _ nil)))
 
 (defn dnd-drag-source-register!
-  "Register W as a drag source for the type list TYPES, firing HANDLER
-   (optional) on a drag."
-  [w types & [handler]]
-  (eval! (str "tkdnd::drag_source register " (widget-path w)
-              " " (dsl/tcl-value types)
-              (when handler (str " " (dsl/tcl-quote (str handler)))))))
+  "Register W as a drag source for the type list TYPES (default \"*\"), with
+   the optional MOUSE-BUTTON (1, 2 or 3; default 1)."
+  ([w] (dnd-drag-source-register! w "*"))
+  ([w types] (dnd-drag-source-register! w types 1))
+  ([w types button]
+   (eval! (str "tkdnd::drag_source register " (widget-path w)
+               " " (dsl/tcl-value (or types "*"))
+               " " (dsl/tcl-word (or button 1))))))
 
 (defn dnd-drag-source-unregister! [w]
   (eval! (str "tkdnd::drag_source unregister " (widget-path w))))
 
 (defn dnd-drop-target-register!
-  "Register W as a drop target for TYPES, firing HANDLER on a drop."
-  [w types & [handler]]
-  (eval! (str "tkdnd::drop_target register " (widget-path w)
-              " " (dsl/tcl-value types)
-              (when handler (str " " (dsl/tcl-quote (str handler)))))))
+  "Register W as a drop target for TYPES (default \"*\")."
+  ([w] (dnd-drop-target-register! w "*"))
+  ([w types]
+   (eval! (str "tkdnd::drop_target register " (widget-path w)
+               " " (dsl/tcl-value (or types "*"))))))
 
 (defn dnd-drop-target-unregister! [w]
   (eval! (str "tkdnd::drop_target unregister " (widget-path w))))
