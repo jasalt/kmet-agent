@@ -61,3 +61,25 @@ Closed 2026-10-15 by [PR #1382](https://github.com/jolt-lang/jolt/pull/1382)
 (merge `aaf2dfe1`); the workaround was removed ahead of the tag —
 `serve-input` wraps `(or in *in*)` with `io/reader` on both hosts. The entry
 stays live until a tag carries the fix.
+
+### [jolt#1395](https://github.com/jolt-lang/jolt/issues/1395) — `clojure.core/compare` cannot compare `java.nio.file.Path`
+
+Jolt's `clojure.core/compare` raises a `ClassCastException` when comparing
+two `java.nio.file.Path` values (e.g. those returned by `babashka.fs/list-dir`),
+claiming that one path "cannot be compared to" the other. Although `Path`
+implements `Comparable` and its `.compareTo` method works directly, `compare`
+does not dispatch to it, so `clojure.core/sort` fails on paths. Babashka/JVM
+sort the same paths normally.
+
+Repro:
+
+```clojure
+(require '[babashka.fs :as fs])
+(def paths (fs/list-dir "modules"))
+(compare (first paths) (second paths))  ; throws in Jolt
+(sort paths)                            ; also fails
+```
+
+Workaround in kmet: avoid comparing `Path` objects directly, for example
+`(sort-by str (fs/list-dir "modules"))`. Re-check once a tagged Jolt release
+carries the fix.
