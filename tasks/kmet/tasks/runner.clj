@@ -134,6 +134,7 @@
     kmet.tui.test-autocomplete
     kmet.tui.test-core
     kmet.libs.test-reakt
+    kmet.libs.test-reakt-features
     kmet.libs.test-hikap
     kmet.libs.test-hikap-alias
     kmet.libs.test-hikap-component
