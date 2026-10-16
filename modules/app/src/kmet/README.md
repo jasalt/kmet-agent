@@ -88,7 +88,7 @@ modules/app/src/kmet/
 │   │                     (new/resume/fork/clone/switch), the submission
 │   │                     chain and compaction queue, prompts/queues,
 │   │                     subscribers, UI requests (request-ui!/respond!),
-│   │                     disposal (engine.md §4.1)
+│   │                     disposal (kmet.app.session-runtime)
 │   ├── commands.clj / keybindings.clj / packages.clj / extensions.cljc —
 │   │                     slash command registry (ctx-shaped handlers:
 │   │                     {:runtime :ui :frontend}, front-end tags; the
@@ -172,7 +172,7 @@ registration tables/maps over compile-time multimethod registries. Use
 
 ### Session runtime and front ends
 
-The engine/UI split (root `engine.md`) puts one session runtime behind every
+The session-runtime split puts one session runtime behind every
 front end:
 
 - `kmet.app.session-runtime` owns the agent state, the session lifecycle
@@ -199,8 +199,8 @@ front end:
   interactive, TUI, or Tk namespace (the documented `kmet.tui.theme`
   extension-ABI allowance aside).
 
-malli boundary schemas and the GUI front end remain scheduled in
-`engine.md`.
+Tier 1 malli boundary schemas for session entries, config, and auth landed.
+The GUI live milestone remains the final GUI-dependent work.
 
 ### Portable host rules
 

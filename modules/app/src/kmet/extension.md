@@ -1152,7 +1152,7 @@ a plain status line.
 #### UI requests (front-end plumbing)
 
 A front end answers host UI requests through the runtime's request/response
-pair (engine.md §4.5), not through the event stream: the runtime delivers
+pair (extension runtime UI port), not through the event stream: the runtime delivers
 `{:type :ui-request :id ... :kind ...}` to the port's `:request` capability,
 and the front end either returns the answer in-process (blocking dialogs are
 allowed inside extension handlers) or forwards it to its client and answers
