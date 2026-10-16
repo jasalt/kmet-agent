@@ -11,7 +11,7 @@
     (is (= 'kmet.app.ui.model-selector (changed/path->ns "modules/app/src/kmet/app/ui/model_selector.clj")))
     (is (= 'kmet.ai.api.openai-completions (changed/path->ns "modules/ai/src/kmet/ai/api/openai_completions.clj"))))
   (testing "test files map to test namespaces"
-    (is (= 'kmet.app.test-loop (changed/path->ns "test/kmet/app/test_loop.clj"))))
+    (is (= 'kmet.app.test-loop (changed/path->ns "modules/app/test/kmet/app/test_loop.clj"))))
   (testing "task files map through their own root (tasks/, not src/)"
     (is (= 'kmet.tasks.build (changed/path->ns "tasks/kmet/tasks/build.cljc")))
     (is (= 'kmet.tasks.generate-models
