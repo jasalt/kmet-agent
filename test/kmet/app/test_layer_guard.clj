@@ -39,8 +39,7 @@
   ;; Known pre-existing violations (engine.md §3.6/§5 finding F). Remove an
   ;; entry when the corresponding leak is fixed; new violations fail this
   ;; test.
-  {"kmet.app.bash-executor" ["kmet.tui."]
-   "kmet.app.theme-controller" ["kmet.tui."]
+  {"kmet.app.theme-controller" ["kmet.tui."]
    "kmet.app.packages" ["kmet.tui."]
    "kmet.app.keybindings" ["kmet.tui."]
    "kmet.app.extensions" ["kmet.tui."]

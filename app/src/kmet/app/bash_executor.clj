@@ -7,7 +7,7 @@
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.process :as process]
             [kmet.libs.host :as host]
-            [kmet.tui.utils :as utils]
+            [kmet.libs.terminal :as terminal]
             [kmet.debug :as debug]))
 
 (def DEFAULT-MAX-LINES 2000)
@@ -99,7 +99,7 @@
    (kmet.tui.utils/strip-ansi-codes); the CR pass is guarded so a LF-only
    chunk (the common case) skips both replaces."
   [s]
-  (let [s (utils/strip-ansi-codes s)
+  (let [s (terminal/strip-ansi-codes s)
         s (if (str/includes? s "\r")
             (-> s (str/replace #"\r\n" "\n") (str/replace #"\r" "\n"))
             s)]

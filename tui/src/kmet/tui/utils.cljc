@@ -1,6 +1,7 @@
 (ns kmet.tui.utils
   "Text width calculation and wrapping utilities."
   (:require [clojure.string :as str]
+            [kmet.libs.terminal :as terminal]
             [kmet.libs.terminal-image :as img]))
 
 ;; ─── Cursor marker ────────────────────────────────────────────────────────
@@ -15,9 +16,9 @@
 ;; (pi: ansi-regex).
 (def ANSI-CODE-RE
   "ANSI CSI (ESC [ … final byte) and OSC (ESC ] … BEL/ST/0x9C) sequences.
-   Public like the scanners: its production callers sit in :default reader
-   branches, which the bb lint view does not read."
-  #"\u001b\[[0-9;]*[a-zA-Z]|\u001b\][^\u0007\u001b\u009c]*(?:\u001b\\|\u0007|\u009c)")
+   Delegated to kmet.libs.terminal so app code can share it without a TUI
+   require (engine.md step 8, finding F)."
+  terminal/ANSI-CODE-RE)
 
 ;; ansi-code-at lives in the ANSI-window-slicing section below; the
 ;; truncation walk reaches it through this declaration.
