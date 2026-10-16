@@ -128,7 +128,7 @@ single-file resources map their namespace directly to the exact embedded key
 (for example `kmet.extensions.deepseek-peak` to
 `extensions/deepseek-peak.clj`). Older Jolt releases fall back to SCI.
 
-The shipped set is enumerated in `modules/app/src/kmet/bundled-extensions/manifest.edn`;
+The shipped set is enumerated in `modules/app/src/kmet/bundled-extensions.edn`;
 `bb check-bundled-extensions` validates it (every artifact under
 `extensions/` is listed or excluded, directory manifests declare `:sci`,
 strict ns-path layout, `deps.edn` with only `:deps` and no `:local/root`).

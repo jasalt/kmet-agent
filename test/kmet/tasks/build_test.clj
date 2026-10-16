@@ -383,7 +383,7 @@
         (is (contains? entries "extensions/clojure/src/extension.edn"))
         (is (contains? entries "extensions/clojure/src/skills/clojure-edit/SKILL.md"))
         (is (contains? entries "extensions/tools.clj"))
-        (is (contains? entries "kmet/bundled-extensions/manifest.edn"))))))
+        (is (contains? entries "kmet/bundled-extensions.edn"))))))
 
 (deftest ^:bb-only uberjar-extra-roots-never-shadow
   ;; The extra (bundled) roots are walked after the

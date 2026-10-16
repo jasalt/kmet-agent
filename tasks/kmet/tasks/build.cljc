@@ -62,7 +62,7 @@
 (def ^:private bundled-manifest-path
   "The committed manifest, read straight from the checkout (it is inside
    src/, so the runtime sees it as a classpath resource in every mode)."
-  "modules/app/src/kmet/bundled-extensions/manifest.edn")
+  "modules/app/src/kmet/bundled-extensions.edn")
 (def ^:private bundled-staging-root
   "Build-time staging root the packagers embed/walk as an extra root: its
    tree is exactly the runtime's resource keys,

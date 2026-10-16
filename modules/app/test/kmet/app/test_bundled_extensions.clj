@@ -92,12 +92,12 @@
 (t/deftest test-artifact-manifest-wins-over-checkout-cwd
   (let [repo (tmp-dir)
         artifact (fs/path repo "extensions" "demo" "src")
-        manifest-path (fs/path repo "src" "kmet" "bundled-extensions" "manifest.edn")
+        manifest-path (fs/path repo "src" "kmet" "bundled-extensions.edn")
         manifest {:artifacts [{:name "demo" :kind :dir :root "demo/src"}]}
         embedded-url (java.net.URL. "jar:file:/kmet.jar!/embedded")
         resource (fn [path]
                    (case (str path)
-                     "kmet/bundled-extensions/manifest.edn" embedded-url
+                     "kmet/bundled-extensions.edn" embedded-url
                      "extensions/demo/src/extension.edn" embedded-url
                      nil))]
     (fs/create-dirs artifact)

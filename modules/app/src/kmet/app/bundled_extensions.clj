@@ -37,7 +37,7 @@
 (def ^:private manifest-resource
   "Classpath key of the committed manifest (inside src/, so every mode has
    it: checkout classpath, bb uberjar, jolt embed)."
-  "kmet/bundled-extensions/manifest.edn")
+  "kmet/bundled-extensions.edn")
 
 (def ^:private resource-prefix
   "The staging prefix the packagers land bundled artifacts under (see
@@ -67,7 +67,7 @@
    sources on disk)."
   []
   (or (io/resource manifest-resource)
-      (let [f (fs/path (fs/cwd) "modules" "app" "src" "kmet" "bundled-extensions" "manifest.edn")]
+      (let [f (fs/path (fs/cwd) "modules" "app" "src" "kmet" "bundled-extensions.edn")]
         (when (fs/exists? f) (str f)))))
 
 (defn manifest
@@ -93,9 +93,9 @@
   (boolean (some #(= % root) (:exclude manifest))))
 
 (defn- repo-root
-  "The repo root when F is the manifest file of a source checkout, else
-   nil: four parent steps up (manifest.edn → bundled-extensions → kmet →
-   src → repo) and an `extensions/` directory to prove it."
+  "The repo root when F is the manifest file of a source checkout, else nil:
+   walk parents until a directory containing an `extensions/` entry is found,
+   which proves the checkout root."
   [f]
   (try
     (loop [dir (fs/parent (io/file f))]
@@ -110,8 +110,8 @@
   []
   (let [cwd (fs/cwd)]
     (when (and (fs/exists? (fs/path cwd "extensions"))
-               (fs/exists? (fs/path cwd "modules" "app" "src" "kmet" "bundled-extensions"
-                                    "manifest.edn")))
+               (fs/exists? (fs/path cwd "modules" "app" "src" "kmet"
+                                    "bundled-extensions.edn")))
       (str cwd))))
 
 (defn checkout-root
