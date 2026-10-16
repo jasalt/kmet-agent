@@ -53,10 +53,13 @@
 
 (defn- group-kill
   "SIGKILL the whole process group of pid (pid must be a group leader).
-   Returns the kill exit code (0 = the group existed and was signaled)."
+   Returns the kill exit code (0 = the group existed and was signaled).
+   POSIX `kill` (a shell builtin) is used rather than the external
+   util-linux/binary `kill` because the latter parses a leading `-' arg
+   as an option and silently succeeds without signaling anything."
   [pid]
   (try
-    (:exit @(proc/process ["kill" "-9" (str "-" pid)]
+    (:exit @(proc/process ["sh" "-c" "kill -9 -\"$1\"" "sh" (str pid)]
                           {:out :discard :err :discard}))
     (catch Exception _ -1)))
 
