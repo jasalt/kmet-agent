@@ -47,7 +47,7 @@
   "The lint corpus: the shared tree on both hosts (src/, test/, tasks/) plus
    jolt/ — the provider lib is jolt-only code, excluded from the babashka view
    and linted by the jolt one."
-  ["modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/agent/src" "modules/loader/src" "modules/tk/src" "test" "tasks" "extensions" "jolt"])
+  ["modules/reakt/src" "modules/hikap/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/agent/src" "modules/loader/src" "modules/tk/src" "test" "tasks" "extensions" "jolt"])
 
 (def ^:private views
   "The two reader views of the tree; every gate runs both.

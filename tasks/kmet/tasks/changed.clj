@@ -32,12 +32,12 @@
    cover, in listing order. test/ is a root too but holds only tests — its
    files reach the graph through the same scan (see project-files for how
    the roots are enumerated)."
-  ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/agent/src" "modules/agent/test" "modules/loader/src" "modules/loader/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions"])
+  ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/hikap/test" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/agent/src" "modules/agent/test" "modules/loader/src" "modules/loader/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions"])
 
 (def ^:private changed-path-re
   "Changed-file paths that are lint/format/scan material: a .clj[c] file under
    one of `source-roots`."
-  #"(?:modules/(?:reakt|hikap|libs|tui|ai|agent|loader|tk)/src|modules/(?:reakt|libs|ai|tui|agent|tk|loader)/test|test|tasks|extensions)/.*\.(?:clj[c]?|jolt)")
+  #"(?:modules/(?:reakt|hikap|libs|tui|ai|agent|loader|tk)/src|modules/(?:reakt|hikap|libs|ai|tui|agent|tk|loader)/test|test|tasks|extensions)/.*\.(?:clj[c]?|jolt)")
 
 (defn- git-repo?
   []

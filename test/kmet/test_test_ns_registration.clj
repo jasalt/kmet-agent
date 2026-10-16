@@ -19,7 +19,8 @@
 
 (defn- ns-symbol [root path]
   (-> (str path)
-      (str/replace (re-pattern (str "^" (java.util.regex.Pattern/quote root) "/")) "")
+      (str/replace "\\" "/")
+      (str/replace (re-pattern (str "^" (java.util.regex.Pattern/quote (str/replace (str root) "\\" "/")) "/")) "")
       (str/replace #"\.clj[ac]?$" "")
       (str/replace "/" ".")
       (str/replace "_" "-")))

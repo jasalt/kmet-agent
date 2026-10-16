@@ -434,7 +434,7 @@
   []
   (bb-only! "kmet.tasks.build/uberjar*")
   (stage-bundled-extensions!)
-  (write-uberjar! jar-path main-class ["modules/agent/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/loader/src" "modules/tk/src"]
+  (write-uberjar! jar-path main-class ["modules/reakt/src" "modules/hikap/src" "modules/agent/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/loader/src" "modules/tk/src"]
                   {:extra-roots [bundled-staging-root]}))
 
 (defn test-uberjar*
@@ -448,7 +448,8 @@
   (generate-test-main!)
   (stage-bundled-extensions!)
   (write-uberjar! test-jar-path test-main-class
-                  ["modules/agent/src" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test"
+                  ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/hikap/test"
+                   "modules/agent/src" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test"
                    "modules/ai/src" "modules/ai/test" "modules/loader/src" "modules/loader/test"
                    "modules/tk/src" "modules/tk/test" "tasks" "test" test-entry-root]
                   {:extra-roots [bundled-staging-root]}))

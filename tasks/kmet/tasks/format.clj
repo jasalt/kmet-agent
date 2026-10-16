@@ -36,7 +36,9 @@
    sha256-manifested and owned by the model generators, not cljfmt).
    Gitignored trees are never traversed (kmet.tasks.changed/project-files)."
   []
-  (->> (changed/project-files ["modules/libs/src" "modules/libs/test"
+  (->> (changed/project-files ["modules/reakt/src" "modules/reakt/test"
+                               "modules/hikap/src" "modules/hikap/test"
+                               "modules/libs/src" "modules/libs/test"
                                "modules/tui/src" "modules/tui/test"
                                "modules/ai/src" "modules/ai/test"
                                "modules/agent/src" "modules/agent/test"
