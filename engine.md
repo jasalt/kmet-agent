@@ -48,18 +48,22 @@ Decisions already taken in discussion:
 
 ## 1. Goal and non-goals
 
-Goal: any front end can drive a session through one session runtime and
-one event stream without touching loop, session, tools, provider, or
-extension internals.
+Goals (v1 and later):
+
+- **Multi-engine processes.** Multiple session runtimes can coexist in one
+  process (a headless server with parallel sessions, automation clients,
+  and exported/imported sessions). The runtime, extension handle, event
+  listeners, command and tool registries, subscribers, UI port, request
+  broker, scoped models, and runtime cwd become engine-owned; `bootstrap`
+  installs them and `dispose!` drops exactly that engine’s state. A single
+  interactive terminal session remains a common UX limitation, but the
+  runtime and headless front ends must not assume process-global ownership.
+- **Any front end can drive a session** through one session runtime and
+  one event stream without touching loop, session, tools, provider, or
+  extension internals.
 
 Non-goals (v1):
 
-- **Multi-engine processes.** One runtime per process for now, but
-  multi-engine is a confirmed future direction (a headless server with
-  parallel sessions). The extension runtime (`kmet.app.extensions` globals)
-  stays process-global in v1; the runtime holds its handle and installs it
-  at `bootstrap`, so per-engine scoping later is a re-plumbing, not a
-  redesign — and no new process-global assumptions are added meanwhile.
 - **Sharing view code between front ends.** TUI components, `app/ui/*`, and
   GUI widgets stay per-front-end. What is shared is the session runtime,
   the event stream, and the data providers.
@@ -1058,9 +1062,9 @@ Rules:
 - Registration functions keep returning deregister fns, but those fns now
   remove from the engine that created them; a stale fn no-ops cleanly.
   Front ends keep their current `register-*-!` call sites.
-- Multi-engine is still out of scope (§1); scoping only removes the
-  assumption. The `kmet.app.extensions` globals stay process-global in v1,
-  but nothing new is added to them.
+- Multi-engine is now an explicit goal (§1): scoping removes process-global
+  ownership, not only the assumption. V1 may retain compatibility behind
+  default-engine accessors only until engines stop using globals.
 
 Acceptance: two engines can be bootstrapped and disposed in one process
 without cross-contamination of hooks/commands/tools; the guard tests still
@@ -1068,6 +1072,35 @@ pass; `test/kmet/app/test_extensions_ui.clj` and
 `test/kmet/app/test_session_runtime.clj` cover the install/dispose cycle.
 A documented (not implemented) future step adds per-engine dispatch —
 the scope here deliberately does not.
+
+**Current implementation update.** The event-listener map is now owned by
+the engine and installed as the process default in `bootstrap` (see
+`event-bus/set-default-event-listener-atom!`); `dispose!` resets it and
+restores an empty process default. The command registry is intentionally
+not being scoped independently yet: it is loaded and cleared through
+extension loading, and moving it needs the registration-point change
+below.
+
+**Registration-point decision.** Do not require extension loading to move
+substantially. Scaled registration should follow one of:
+
+1. **Bootstrap-first registration** — the front end loads extensions,
+   then calls `bootstrap`; the registrations are already alive and attach
+   to the engine created there; multi-engine requires re-running them, which
+   is too expensive in v1.
+2. **Deferred registry install** — registration functions record into a
+   process buffer and `bootstrap` adopts + clears it; this is simple and
+   keeps the registration site unchanged, but it only works if no two
+   engines register concurrently.
+3. **Engine-aware registration** — add engine-optional overloads
+   (`register-*-! [engine] [engine item]`) and keep the current process
+   default for v1; this is the chosen direction once the needed extension
+   registration call sites are threaded, because it preserves the v1 default
+   while making Step 2’s later relocation additive.
+
+The current code uses (3) only where it is already present in the
+session runtime (`default-event-listener-atom`), so future work remains
+additive.
 
 ### Step 5 — GUI mode (the proof; scheduled last)
 
@@ -1149,7 +1182,10 @@ malli probes (scratch dirs under `target/`, removed by `bb clean`):
 
 ## 10. Deferred questions
 
-Multi-engine scoping (§1, §4.5) and command split granularity are settled.
+Multi-engine scoping (§1, §4.5) is now an explicit goal, not a
+settled deferral. Engine-optional registration APIs, deferred/registration
+ordering, extension load timing, and multiple-engine cleanup remain work to
+do. Command split granularity is settled.
 The rest are parked with the step that resolves them.
 
 1. **Settle outcome shape (finding A)** — done in step 0 (`:agent-settled`
