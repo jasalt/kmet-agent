@@ -1233,8 +1233,7 @@
       (try
         (is (= :alive (extensions/ui-call :probe))
             "sanity: the registry is installed")
-        (with-redefs [state/set-global-config! noop
-                      session/resolve-session-path (fn [_ _] "target/fake-session.jsonl")
+        (with-redefs [session/resolve-session-path (fn [_ _] "target/fake-session.jsonl")
                       state/format-resume-command (fn [_ _] nil)
                       session/load-session (fn [_] sess)
                       layout/build-layout (fn [_ _] {:tui tui-stub

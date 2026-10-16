@@ -424,7 +424,7 @@
             ;; session's directory; a not-yet-persisted session still carries
             ;; its computed :file (lazy creation)
             dest-dir (or (some-> (:file sess) fs/parent str)
-                         (state/ensure-cwd-session-dir))]
+                         (state/ensure-cwd-session-dir (runtime/config (:engine cs)) (str (fs/cwd))))]
         (try
           (let [plan (session/plan-session-import path-arg dest-dir)]
             (show-import-confirm!

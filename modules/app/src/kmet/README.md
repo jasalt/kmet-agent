@@ -40,8 +40,9 @@ modules/app/src/kmet/
 │   │                     subscription, wait-idle
 │   └── interactive/    — sections split out of interactive.clj:
 │       ├── state.clj   — CoreState (view state + the runtime engine),
-│       │                 config ref, session-dir/format helpers,
-│       │                 footer/title/border updaters
+│       │                 session-dir/format helpers,
+│       │                 footer/title/border updaters (config is now read
+│       │                 from the engine config atom, not a global ref)
 │       ├── auth.clj    — login/logout flows + provider options
 │       ├── status.clj  — anim timer, status indicator, pending messages
 │       ├── turn.clj    — agent event reactions, submit/cancel/dequeue,

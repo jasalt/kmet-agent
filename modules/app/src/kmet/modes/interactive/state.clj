@@ -15,43 +15,25 @@
             [kmet.tui.terminal :as term]
             [kmet.libs.host :as host]))
 
-;; ─── Global config ref ────────────────────────────────────────────────────
-
-(defonce ^:private global-config (atom nil))
-
-(defn set-global-config!
-  "Install the process config (kmet.modes.interactive/run and
-   /reload); session helpers read it for the sessions dir."
-  [config]
-  (reset! global-config config)
-  nil)
-
 ;; ─── Session helpers ───────────────────────────────────────────────────────
-
-(defn- get-session-dir []
-  (if-let [c @global-config]
-    (cfg/get-session-dir c)
-    (str (System/getProperty "user.home") "/.kmet/sessions")))
 
 (defn ensure-session-dir
   "The base sessions dir (created). Listings (resume-session) walk it plus
    its cwd-encoded subdirectories (pi: listAll — G2), so legacy flat session
-   files remain visible alongside per-project ones."
-  []
-  (let [d (get-session-dir)]
+   files remain visible alongside per-project ones. CONFIG is the loaded
+   config map."
+  [config]
+  (let [d (cfg/get-session-dir config)]
     (fs/create-dirs d)
     d))
 
 (defn ensure-cwd-session-dir
   "The sessions dir for a cwd — where new sessions are placed:
    BASE/<--cwd-->/ (pi: getDefaultSessionDir — per-project isolation, G2).
-   The 0-arity uses the process cwd (startup, --continue); callers with a
-   live session pass the runtime cwd (runtime-cwd), so a session resumed or
-   imported from another project keeps creating its sessions in that
-   project's dir (pi: newSession uses the runtime cwd, not process.cwd)."
-  ([] (ensure-cwd-session-dir (str (fs/cwd))))
-  ([cwd]
-   (runtime/ensure-cwd-session-dir (get-session-dir) cwd)))
+   CONFIG is the loaded or runtime config map and CWD is the directory the
+   session belongs to."
+  [config cwd]
+  (runtime/ensure-cwd-session-dir (cfg/get-session-dir config) cwd))
 
 (defn runtime-cwd
   "The working directory of CS's runtime (pi: AgentSession._cwd, seeded from
@@ -86,9 +68,10 @@
   "Most recent session for the current cwd (pi: continueRecent →
    findMostRecentSession — header-based discovery in the cwd-encoded dir;
    legacy headerless sessions and other-cwd files are excluded, no fallback).
-   Used by --continue so the current project's last session is resumed."
-  []
-  (runtime/find-recent-session (get-session-dir) (str (fs/cwd))))
+   Used by --continue so the current project's last session is resumed.
+   CONFIG is the loaded config map."
+  [config]
+  (runtime/find-recent-session (ensure-session-dir config) (str (fs/cwd))))
 
 (defn- quote-if-needed
   "pi quoteIfNeeded — leave safe shell tokens bare, else single-quote with

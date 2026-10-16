@@ -9,6 +9,7 @@
             [kmet.tui.theme :as th]
             [kmet.tui.timers :as timers]
             [kmet.config :as cfg]
+            [babashka.fs :as fs]
             [kmet.debug :as debug]
             [kmet.app.event-bus :as event-bus]
             [kmet.app.extensions :as extensions]
@@ -118,7 +119,6 @@
 
       ;; Apply command-line overrides
       (let [config (cfg/apply-cli-overrides config opts)
-            _ (state/set-global-config! config)
             session (cond
                       (:session opts)
                       (let [base-dir (cfg/get-session-dir config)
@@ -129,7 +129,7 @@
                                 (println (str "No session found matching '" (:session opts) "'")))
                               (System/exit 1))))
                       (:resume opts) nil
-                      (:continue opts) (if-let [path (state/find-session)]
+                      (:continue opts) (if-let [path (state/find-session config)]
                                          ;; find-session returns the session
                                          ;; file path — load it into a Session
                                          ;; record so the context and chat can
@@ -137,13 +137,13 @@
                                          (session/load-session path)
                                          ;; pi: continueRecent — no session to
                                          ;; continue → start a fresh one
-                                         (session/create-session (state/ensure-cwd-session-dir)))
-                      :else (session/create-session (state/ensure-cwd-session-dir)))
+                                         (session/create-session (state/ensure-cwd-session-dir config (str (fs/cwd)))))
+                      :else (session/create-session (state/ensure-cwd-session-dir config (str (fs/cwd)))))
             cs (layout/build-layout config session)]
         (reset! cs-ref cs)
         (reset! tui-ref (:tui cs))
         (when (:resume opts)
-          (show-session-selector cs state/ensure-session-dir
+          (show-session-selector cs (fn [] (state/ensure-session-dir (runtime/config (:engine cs))))
                                  (fn [path]
                                    ;; pi: emitBeforeSwitch (reason :resume) —
                                    ;; extensions may cancel the switch

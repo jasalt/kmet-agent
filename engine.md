@@ -1011,6 +1011,64 @@ Do not start unless it removes `->json-schema` or at least one
 Add runtime argument validation only if that test holds. Not part of the
 split — drop it if the parity work outweighs the deletion.
 
+### Step 10 — engine-scoped registries (multi-engine prep)
+
+Follow-up to steps 3 and 4, and independent of the GUI. The runtime
+already installs and clears its own handle (session, context sink, UI
+port, capability map), but the registries those handles populate are
+still process-global `defonce` atoms. Step 4's `dispose!` unbinds the
+handle; it does not clear what an extension registered through it.
+This step moves ownership of those registries onto the engine (or a
+per-process context the engine creates), so a second engine is a
+re-plumbing rather than a rewrite and tests stop needing `clear-*!`
+calls and ordering discipline.
+
+Scope, in order:
+1. `kmet.app.event-bus/event-listeners` (§4.2 already calls for
+   subscription, not a single `:on-event`; this completes the async
+   side). Event bus becomes an instance held by the engine, with a
+   default process instance for boot code that runs before any engine.
+2. `kmet.app.commands/registry`. Command registration requires an engine
+   to attach to; builtins still register into a base registry that
+   every engine inherits (today's `register-builtin!` semantics), and
+   the headless guard's command-filtering by `:frontend` tag continues to
+   work.
+3. `kmet.app.tools.registry` `custom-tools` and `tool-sources`. Custom
+   tools belong to an engine's tool surface; the built-in set stays shared
+   immutable data.
+4. `kmet.app.extensions` registries (input hooks, tool-call/result hooks,
+   entry/message renderers, markdown transformers, flags, CLI flags,
+   applied resource paths), plus `bind-extensions!`/`bind-runtime-capabilities!`.
+   Extension load/unload stays process-scoped (namespaces are loaded by
+   `clojure.core'); the registry entries move onto the engine's handle,
+   installed by `bootstrap` and dropped by `dispose!`.
+5. `kmet.app.skills` / `kmet.app.prompts` caches, and `kmet.app.packages`
+   package/toggle state — the late, large pieces; do them only after 1–4
+   prove the pattern, or leave them process-scoped with a document note.
+
+Rules:
+- No new process-global assumptions are added meanwhile (engine.md §1);
+  the default instance is a `defonce` only for libraries, never for app
+  state. Code that today reads an atom directly (`@extensions/session-atom`)
+  switches to the runtime accessor; the atom becomes an implementation
+  detail of the default engine.
+- `bootstrap` builds the registries (fresh maps/vectors) and installs them
+  in one transaction with the extension handle; `dispose!` drops them, so a
+  disposed engine's handlers no longer fire when the next engine starts.
+- Registration functions keep returning deregister fns, but those fns now
+  remove from the engine that created them; a stale fn no-ops cleanly.
+  Front ends keep their current `register-*-!` call sites.
+- Multi-engine is still out of scope (§1); scoping only removes the
+  assumption. The `kmet.app.extensions` globals stay process-global in v1,
+  but nothing new is added to them.
+
+Acceptance: two engines can be bootstrapped and disposed in one process
+without cross-contamination of hooks/commands/tools; the guard tests still
+pass; `test/kmet/app/test_extensions_ui.clj` and
+`test/kmet/app/test_session_runtime.clj` cover the install/dispose cycle.
+A documented (not implemented) future step adds per-engine dispatch —
+the scope here deliberately does not.
+
 ### Step 5 — GUI mode (the proof; scheduled last)
 
 The only remaining step gated on an external project. It runs after steps

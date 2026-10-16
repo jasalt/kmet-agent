@@ -429,7 +429,7 @@
                  (chat-history/chat-history-add-message! (:chat-history cs)
                                                          {:role :assistant
                                                           :content "Wait for the current response to finish before resuming."})
-                 (show-session-selector cs state/ensure-session-dir
+                 (show-session-selector cs (fn [] (state/ensure-session-dir (runtime/config (:engine cs))))
                                         (fn [path]
                                           ;; pi: emitBeforeSwitch (reason :resume)
                                           ;; — extensions may cancel the switch
@@ -679,7 +679,6 @@
                                   :tools active-tools}
               system-prompt (apply skills/build-system-prompt
                                    (mapcat identity system-prompt-opts))]
-          (state/set-global-config! config)
           ;; the runtime reads the config for session dirs and new sessions
           (runtime/set-config! (:engine cs) config)
           (theme-ctrl/set-config! (:theme-controller cs) config)
