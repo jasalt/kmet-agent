@@ -37,12 +37,12 @@
    Gitignored trees are never traversed (kmet.tasks.changed/project-files)."
   []
   (->> (changed/project-files ["modules/libs/src" "modules/libs/test"
-                      "modules/tui/src" "modules/tui/test"
-                      "modules/ai/src" "modules/ai/test"
-                      "modules/app/src" "modules/app/test"
-                      "modules/loader/src" "modules/loader/test"
-                      "modules/tk/src" "modules/tk/test"
-                      "test" "tasks" "extensions"]
+                               "modules/tui/src" "modules/tui/test"
+                               "modules/ai/src" "modules/ai/test"
+                               "modules/app/src" "modules/app/test"
+                               "modules/loader/src" "modules/loader/test"
+                               "modules/tk/src" "modules/tk/test"
+                               "test" "tasks" "extensions"]
                               ["clj" "cljs" "cljc" "cljd" "bb" "edn" "jolt"])
        (remove #(re-find #"/(image_)?model_data/" %))
        vec))
