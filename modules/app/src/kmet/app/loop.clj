@@ -806,6 +806,15 @@ Be precise and concise in your responses."}}]
     :after-hook @(:after-tool-call agent)}
    raw))
 
+(defn- set-agent-status!
+  "Update the run's :status atom and emit the matching :status event. EXTRA, when
+   given, is merged into the event (e.g. {:tool-calls ...}) so the call site
+   does not repeat the reset/emit pair."
+  [agent status & [extra]]
+  (reset! (:status agent) status)
+  (emit agent (merge {:type :status :status status} (or extra {})))
+  nil)
+
 (defn- execute-tool-calls-parallel!
   "Execute tool calls concurrently (pi: executeToolCallsParallel).
    Preparation (start events + before hooks) is sequential; execution is
@@ -2325,8 +2334,7 @@ Be precise and concise in your responses."}}]
   (close-retry-and-surface-error! agent err on-error)
   ;; Will not be retried — pi: _willRetryAfterAgentEnd is false here.
   (agent-end err false)
-  (reset! (:status agent) :idle)
-  (emit agent {:type :status :status :idle})
+  (set-agent-status! agent :idle)
   {:status :error})
 
 (defn- tools-phase!
@@ -2350,9 +2358,7 @@ Be precise and concise in your responses."}}]
   [agent t result]
   (let [assistant-msg (add-assistant-message! agent result)
         tool-calls (:tool-calls result)]
-    (reset! (:status agent) :executing)
-    (emit agent {:type :status :status :executing
-                 :tool-calls tool-calls})
+    (set-agent-status! agent :executing {:tool-calls tool-calls})
     (let [threshold (:loop-guard-threshold @(:cfg agent))
           guard-enabled? (:loop-guard-enabled @(:cfg agent))
           {:keys [suppressed survivors state]}
@@ -2429,8 +2435,7 @@ Be precise and concise in your responses."}}]
                 (append-message! agent result-msg)
                 (when (:session agent)
                   (session/append-entry (:session agent) result-msg))))]
-      (reset! (:status agent) :thinking)
-      (emit agent {:type :status :status :thinking})
+      (set-agent-status! agent :thinking)
       ;; pi: the post-turn hooks and the :turn-end boundary run
       ;; unconditionally — even when terminate stops the tool-call continuation
       (let [decision (complete-turn! agent t assistant-msg results)]
@@ -2500,8 +2505,7 @@ Be precise and concise in your responses."}}]
                                    (empty? prev-tool-calls)
                                    (empty? @(:steering agent))))
                         (if @(:signal agent)
-                          (do (reset! (:status agent) :idle)
-                              (emit agent {:type :status :status :idle})
+                          (do (set-agent-status! agent :idle)
                               (agent-end nil false)
                               {:status :aborted}) ;; cancelled — exit quietly
                           {:status :settled :turn t})
@@ -2676,11 +2680,9 @@ Be precise and concise in your responses."}}]
               ;; Outer: poll the follow-up queue (pi: runLoop's outer poll)
               (if (pos? (inject-queued-messages! agent (:follow-up agent)
                                                  (:follow-up-mode @(:cfg agent))))
-                (do (reset! (:status agent) :thinking)
-                    (emit agent {:type :status :status :thinking})
+                (do (set-agent-status! agent :thinking)
                     (recur turn'))
-                (do (reset! (:status agent) :idle)
-                    (emit agent {:type :status :status :idle})
+                (do (set-agent-status! agent :idle)
                     (agent-end nil false)
                     {:status :settled :text @text-buf})))))))))
 
@@ -2844,8 +2846,7 @@ Be precise and concise in your responses."}}]
               (prepare-run! agent message images)
               (loop []
                 (emit agent {:type :agent-start})
-                (reset! (:status agent) :thinking)
-                (emit agent {:type :status :status :thinking})
+                (set-agent-status! agent :thinking)
                 (let [outcome (run-attempt! agent @attempt-token opts)]
                   (case (:status outcome)
                     :settled
@@ -2904,8 +2905,7 @@ Be precise and concise in your responses."}}]
                                          :attempt attempt
                                          :final-error "Retry cancelled"})
                             (reset! (:retry-count agent) 0)
-                            (reset! (:status agent) :idle)
-                            (emit agent {:type :status :status :idle}))))
+                            (set-agent-status! agent :idle))))
 
                     :overflow
                     (let [error (:error outcome)]
@@ -2927,8 +2927,7 @@ Be precise and concise in your responses."}}]
                         (do (close-retry-and-surface-error! agent error on-error)
                             (if (continue-prompt? agent)
                               (do (continue-attempt!) (recur))
-                              (do (reset! (:status agent) :idle)
-                                  (emit agent {:type :status :status :idle}))))))
+                              (set-agent-status! agent :idle)))))
 
                     ;; Unreachable: run-attempt! returns one of the five
                     ;; outcomes. Throwing (rather than a bare case failure)
@@ -2947,8 +2946,7 @@ Be precise and concise in your responses."}}]
                 (emit agent {:type :error :message (ex-message e)})
                 ;; Same settle rule as terminal-error!: an unhandled exception
                 ;; ends the run, and the agent is idle afterwards.
-                (reset! (:status agent) :idle)
-                (emit agent {:type :status :status :idle}))
+                (set-agent-status! agent :idle))
               (finally
                 ;; pi: _flushPendingBashMessages — bash results recorded while
                 ;; streaming are queued to preserve tool_use/tool_result ordering
@@ -2991,8 +2989,7 @@ Be precise and concise in your responses."}}]
   (when-let [{:keys [promise partials]} @(:active-call agent)]
     (when-not (realized? promise)
       (deliver promise (merge {:cancelled true} (partials)))))
-  (reset! (:status agent) :idle)
-  (emit agent {:type :status :status :idle})
+  (set-agent-status! agent :idle)
   nil)
 
 ;; ─── State helpers ─────────────────────────────────────────────────────────
