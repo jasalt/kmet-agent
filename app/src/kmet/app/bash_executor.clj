@@ -96,7 +96,7 @@
   "Pi: sanitizeBinaryOutput() — strips ANSI codes and control chars (except
    \\t \\n \\r) and Unicode format characters (U+FFF9-U+FFFB). The ANSI
    strip is the shared host-branched scanner
-   (kmet.tui.utils/strip-ansi-codes); the CR pass is guarded so a LF-only
+   (kmet.libs.terminal/strip-ansi-codes); the CR pass is guarded so a LF-only
    chunk (the common case) skips both replaces."
   [s]
   (let [s (terminal/strip-ansi-codes s)
