@@ -188,13 +188,13 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
   windows are manageable through `wm-command!` or direct `wm ... <path>`;
   see `kmet.tk.core`'s `mount!`/
   `mount-backend!`/`run!`/`run-backend!`.
-- **Drag and drop.** Tk's core has no portable cross-app drag-and-drop
-  command; `kmet.tk.core` exposes `dnd-available?` and, when TkDnD is
-  present, `dnd-require!`/`dnd-version`/`dnd-drag-source!`/
-  `dnd-drop-target!` (thin wrappers over TkDnD; the exact TkDnD API
-  is forwarded), plus `event-generate!` and the bindings for in-app
-  drags. Window management, clipboard/selection, scaling, focus, busy,
-  virtual events and named fonts
+- **Drag and drop.** Cross-app drag and drop is covered where TkDnD is
+  installed (`dnd-available?`, `dnd-require!`, `dnd-version`,
+  `dnd-drag-source-register!`/`dnd-drop-target-register!`, plus their
+  unregister/alias forms), which now match TkDnD's command signatures; in-app
+  drags remain possible through bindings and `event-generate!`. Window
+  management (including multi-window), clipboard/selection, scaling, focus,
+  busy, virtual events and named fonts
   are now covered — see `kmet.tk.core`: `iconify!`/`withdraw!`/`deiconify!`,
   `minsize!`/`maxsize!`/`resizable!`/`attributes!`/`iconphoto!`/`on-close!`,
   `clipboard-*`/`selection-*`, `scaling`/`set-scaling!`, `tk busy` helpers,
