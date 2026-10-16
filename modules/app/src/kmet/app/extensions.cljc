@@ -166,18 +166,28 @@
 (defn- current-input-hook-registry []
   (or (some-> (do (require 'kmet.app.session-runtime)
                   ((resolve 'kmet.app.session-runtime/default-engine)))
-             :input-hooks)
+              :input-hooks)
       pending-input-hooks))
 (defonce pending-before-agent-start-hooks (atom []))
 (defn- current-before-agent-start-hook-registry []
   (or (some-> (do (require 'kmet.app.session-runtime)
                   ((resolve 'kmet.app.session-runtime/default-engine)))
-             :before-agent-start-hooks)
+              :before-agent-start-hooks)
       pending-before-agent-start-hooks))
 (defonce ^:private entry-renderers (atom {}))
 (defonce ^:private message-renderers (atom {}))
-(defonce ^:private tool-call-hooks (atom []))
-(defonce ^:private tool-result-hooks (atom []))
+(defonce pending-tool-call-hooks (atom []))
+(defn- current-tool-call-hook-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :tool-call-hooks)
+      pending-tool-call-hooks))
+(defonce pending-tool-result-hooks (atom []))
+(defn- current-tool-result-hook-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :tool-result-hooks)
+      pending-tool-result-hooks))
 (defonce ^:private markdown-transformers (atom []))
 (defonce ^:private flags (atom {}))
 (defonce ^:private cli-flags (atom {}))
@@ -307,16 +317,26 @@
   "Register a tool-call hook (extension api: on-tool-call): (fn [ctx]) →
    nil | {:block true :reason} | {:args transformed}. Returns a deregister fn."
   [hook]
-  (register-hook! tool-call-hooks hook))
+  (let [reg (current-tool-call-hook-registry)]
+    (register-hook! reg hook)
+    (fn []
+      (doseq [reg [(current-tool-call-hook-registry)
+                   pending-tool-call-hooks]]
+        (swap! reg (fn [hs] (remove #(identical? % hook) hs)))))))
 
 (defn register-tool-result-hook!
   "Register a tool-result hook (extension api: on-tool-result): (fn [ctx])
    → nil | {:content ... :is-error ...} overrides. Returns a deregister fn."
   [hook]
-  (register-hook! tool-result-hooks hook))
+  (let [reg (current-tool-result-hook-registry)]
+    (register-hook! reg hook)
+    (fn []
+      (doseq [reg [(current-tool-result-hook-registry)
+                   pending-tool-result-hooks]]
+        (swap! reg (fn [hs] (remove #(identical? % hook) hs)))))))
 
-(defn get-tool-call-hooks [] @tool-call-hooks)
-(defn get-tool-result-hooks [] @tool-result-hooks)
+(defn get-tool-call-hooks [] @(current-tool-call-hook-registry))
+(defn get-tool-result-hooks [] @(current-tool-result-hook-registry))
 
 ;; ─── Shortcuts + markdown transformers (extension api) ────────────────────
 
@@ -944,14 +964,19 @@
      :on-tool-call (fn [hook]
                      (let [h (loader-aware ext hook)]
                        (register-tool-call-hook! h)
-                       (track (fn [] (swap! tool-call-hooks
-                                            (fn [hs] (remove #(identical? % h) hs)))))))
+                       (track (fn []
+                                (doseq [reg [(current-tool-call-hook-registry)
+                                             pending-tool-call-hooks]]
+                                  (swap! reg (fn [hs] (remove #(identical? % h) hs))))))))
+
      :on-tool-result (fn [hook]
                        (let [h (loader-aware ext hook)]
                          (register-tool-result-hook! h)
                          (track (fn []
-                                  (swap! tool-result-hooks
-                                         (fn [hs] (remove #(identical? % h) hs)))))))
+                                  (doseq [reg [(current-tool-result-hook-registry)
+                                               pending-tool-result-hooks]]
+                                    (swap! reg (fn [hs] (remove #(identical? % h) hs))))))))
+
      :register-flag! (fn [flag-name & [opts]]
                        (register-flag! flag-name opts)
                        (track (fn [] (swap! flags dissoc flag-name))))

@@ -254,7 +254,9 @@
                              :input-hooks (atom (vec @extensions/pending-input-hooks))
                              :before-agent-start-hooks (atom (vec @extensions/pending-before-agent-start-hooks))
                              :custom-tools (atom @tools-reg/pending-custom-tools)
-                             :tool-sources (atom @tools-reg/pending-tool-sources)})]
+                             :tool-sources (atom @tools-reg/pending-tool-sources)
+                             :tool-call-hooks (atom (vec @extensions/pending-tool-call-hooks))
+                             :tool-result-hooks (atom (vec @extensions/pending-tool-result-hooks))})]
     ;; Runtime-scoped extension handle: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent. The
     ;; front-end binding is runtime-scoped too (engine.md §4.5): bootstrap
@@ -264,6 +266,8 @@
     (reset! commands/pending-command-registry [])
     (reset! tools-reg/pending-custom-tools {})
     (reset! tools-reg/pending-tool-sources {})
+    (reset! extensions/pending-tool-call-hooks [])
+    (reset! extensions/pending-tool-result-hooks [])
     (set-default-engine! engine)
     (extensions/set-session! (:session agent-state))
     (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (agent-state engine) msg)))
