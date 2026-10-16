@@ -577,6 +577,71 @@
            (nil? (get explicit :requires-reasoning-content-on-assistant-messages)))
       (assoc :requires-reasoning-content-on-assistant-messages true))))
 
+(defn- openai-thinking-params-openrouter [model effort]
+  (cond-> {}
+    effort (assoc :reasoning {:effort (effort-value model effort)})
+    (and (nil? effort) (not (off-explicitly-null? model)))
+    (assoc :reasoning {:effort (or (get-in model [:thinking-level-map :off]) "none")})))
+
+(defn- openai-thinking-params-deepseek [model effort effort?]
+  (cond-> {}
+    effort (assoc :thinking {:type "enabled"})
+    (and (nil? effort) (not (off-explicitly-null? model)))
+    (assoc :thinking {:type "disabled"})
+    (and effort effort?)
+    (assoc :reasoning_effort (effort-value model effort))))
+
+(defn- openai-thinking-params-qwen [model effort effort?]
+  (cond-> {:enable_thinking (boolean effort)}
+    (and effort effort?) (assoc :reasoning_effort (effort-value model effort))))
+
+(defn- openai-thinking-params-zai [model effort effort?]
+  (cond-> {:thinking (if effort
+                       {:type "enabled" :clear_thinking false}
+                       {:type "disabled"})}
+    (and effort effort?) (assoc :reasoning_effort (effort-value model effort))))
+
+(defn- openai-thinking-params-together [model effort effort?]
+  (cond-> {:reasoning {:enabled (boolean effort)}}
+    (and effort effort?) (assoc :reasoning_effort (effort-value model effort))))
+
+(defn- openai-thinking-params-qwen-chat-template [effort]
+  {:chat_template_kwargs {:enable_thinking (boolean effort)
+                          :preserve_thinking true}})
+
+(defn- openai-thinking-params-chat-template [model effort compat]
+  (cond-> {}
+    (seq (:chat-template-kwargs compat))
+    (assoc :chat_template_kwargs
+           (resolve-template-values model effort (:chat-template-kwargs compat)))))
+
+(defn- openai-thinking-params-baseten [model effort effort? compat]
+  (cond-> {}
+    (seq (:chat-template-args compat))
+    (assoc :chat_template_args
+           (resolve-template-values model effort (:chat-template-args compat)))
+    (and effort effort?)
+    (assoc :reasoning_effort (effort-value model effort))
+    (and (nil? effort) (string? (get-in model [:thinking-level-map :off])))
+    (assoc :reasoning_effort (get-in model [:thinking-level-map :off]))))
+
+(defn- openai-thinking-params-ant-ling []
+  {})
+
+(defn- openai-thinking-params-string-thinking [model effort]
+  (cond-> {}
+    effort (assoc :thinking (effort-value model effort))
+    (and (nil? effort) (not (off-explicitly-null? model)))
+    (assoc :thinking (or (get-in model [:thinking-level-map :off]) "none"))))
+
+(defn- openai-thinking-params-generic [model effort effort?]
+  (cond
+    (and effort effort?) {:reasoning_effort (effort-value model effort)}
+    (and (nil? effort) effort?)
+    (let [off (get-in model [:thinking-level-map :off])]
+      (if (string? off) {:reasoning_effort off} {}))
+    :else {}))
+
 (defn openai-thinking-params
   "Thinking params for an openai-completions payload (pi buildParams thinking
    section; kmet's formats: default/openai, deepseek, qwen, openrouter,
@@ -589,91 +654,20 @@
         compat (resolved-openai-compat model)
         fmt (:thinking-format compat)
         effort? (not= false (:supports-reasoning-effort compat))]
-    (cond
-      (and reasoning? (= fmt :openrouter))
-      ;; OpenRouter normalizes reasoning across providers via a nested
-      ;; reasoning object (pi thinkingFormat "openrouter"); off →
-      ;; reasoning: {effort: "none"} unless the model pins :off to null.
-      (cond-> {}
-        effort (assoc :reasoning {:effort (effort-value model effort)})
-        (and (nil? effort) (not (off-explicitly-null? model)))
-        (assoc :reasoning {:effort (or (get-in model [:thinking-level-map :off]) "none")}))
-
-      (and reasoning? (= fmt :deepseek))
-      (cond-> {}
-        effort (assoc :thinking {:type "enabled"})
-        (and (nil? effort) (not (off-explicitly-null? model)))
-        (assoc :thinking {:type "disabled"})
-        (and effort effort?)
-        (assoc :reasoning_effort (effort-value model effort)))
-
-      (and reasoning? (= fmt :qwen))
-      (cond-> {:enable_thinking (boolean effort)}
-        (and effort effort?)
-        (assoc :reasoning_effort (effort-value model effort)))
-
-      (and reasoning? (= fmt :zai))
-      ;; pi thinkingFormat "zai": thinking {type} + reasoning_effort when
-      ;; the provider supports it (zai models always send the thinking
-      ;; object — no off:null gate, matching pi).
-      (cond-> {:thinking (if effort
-                           {:type "enabled" :clear_thinking false}
-                           {:type "disabled"})}
-        (and effort effort?)
-        (assoc :reasoning_effort (effort-value model effort)))
-
-      (and reasoning? (= fmt :together))
-      ;; pi thinkingFormat "together": nested reasoning: {enabled} +
-      ;; reasoning_effort when supported.
-      (cond-> {:reasoning {:enabled (boolean effort)}}
-        (and effort effort?)
-        (assoc :reasoning_effort (effort-value model effort)))
-
-      (and reasoning? (= fmt :qwen-chat-template))
-      {:chat_template_kwargs {:enable_thinking (boolean effort)
-                              :preserve_thinking true}}
-
-      (and reasoning? (= fmt :chat-template))
-      (cond-> {}
-        (seq (:chat-template-kwargs compat))
-        (assoc :chat_template_kwargs
-               (resolve-template-values model effort
-                                        (:chat-template-kwargs compat))))
-
-      (and reasoning? (= fmt :baseten))
-      ;; pi thinkingFormat "baseten": chat_template_args from the compat
-      ;; spec ($var thinking.enabled) + reasoning_effort when supported
-      ;; (the off value from the thinking-level-map).
-      (cond-> {}
-        (seq (:chat-template-args compat))
-        (assoc :chat_template_args
-               (resolve-template-values model effort
-                                        (:chat-template-args compat)))
-        (and effort effort?)
-        (assoc :reasoning_effort (effort-value model effort))
-        (and (nil? effort) (string? (get-in model [:thinking-level-map :off])))
-        (assoc :reasoning_effort (get-in model [:thinking-level-map :off])))
-
-      (and reasoning? (= fmt :ant-ling))
-      ;; pi thinkingFormat "ant-ling": the branch is empty — Ring reasons
-      ;; by default and ignores explicit effort; the trailing default
-      ;; branches must not fire.
+    (if (not reasoning?)
       {}
-
-      (and reasoning? (= fmt :string-thinking))
-      (cond-> {}
-        effort (assoc :thinking (effort-value model effort))
-        (and (nil? effort) (not (off-explicitly-null? model)))
-        (assoc :thinking (or (get-in model [:thinking-level-map :off]) "none")))
-
-      (and reasoning? effort effort?)
-      {:reasoning_effort (effort-value model effort)}
-
-      (and reasoning? (nil? effort) effort?)
-      (let [off (get-in model [:thinking-level-map :off])]
-        (if (string? off) {:reasoning_effort off} {}))
-
-      :else {})))
+      (case fmt
+        :openrouter (openai-thinking-params-openrouter model effort)
+        :deepseek (openai-thinking-params-deepseek model effort effort?)
+        :qwen (openai-thinking-params-qwen model effort effort?)
+        :zai (openai-thinking-params-zai model effort effort?)
+        :together (openai-thinking-params-together model effort effort?)
+        :qwen-chat-template (openai-thinking-params-qwen-chat-template effort)
+        :chat-template (openai-thinking-params-chat-template model effort compat)
+        :baseten (openai-thinking-params-baseten model effort effort? compat)
+        :ant-ling (openai-thinking-params-ant-ling)
+        :string-thinking (openai-thinking-params-string-thinking model effort)
+        (openai-thinking-params-generic model effort effort?)))))
 
 (def thinking-budgets
   "pi adjustMaxTokensForThinking defaultBudgets (minimal/low/medium/high)."
