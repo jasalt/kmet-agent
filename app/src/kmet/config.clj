@@ -8,6 +8,8 @@
             [babashka.fs :as fs]
             [kmet.tui.theme :as theme]
             [kmet.ai.auth :as auth]
+            [kmet.app.config-schema :as config-schema]
+            [kmet.debug :as debug]
             [kmet.app.bash-executor :as bash-exec]
             [kmet.libs.http :as http]
             [kmet.libs.edn-store :as eds]))
@@ -284,6 +286,10 @@
     ;; above — load-config is the single choke point every entry mode
     ;; passes through, so the transport setting applies in interactive
     ;; and print mode alike).
+    ;; Boundary validation (engine.md step 7): debug-only.
+    (when (and (debug/enabled?) (not (config-schema/validate-config? with-env)))
+      (binding [*out* *err*]
+        (println "Warning: Wrong-shape config" (pr-str (config-schema/explain-config with-env)))))
     (http/set-transport! (get-http-transport with-env))
     ;; pi: shellPath/shellCommandPrefix — read by the bash tool and by
     ;; executeBash in pi; applied here so both paths (and extension-built
