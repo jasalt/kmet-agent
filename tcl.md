@@ -180,16 +180,24 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
 ## Tk beyond its widgets
 
-- **More than one window per process.** `mount!` owns `.` and the dirty
-  flag is global (one window per process by design today); a second window
-  needs per-window state and a window registry. (Window management,
-  clipboard/selection, scaling, focus, busy, virtual events and named fonts
+- **Window management, multi-window included.** `mount!`/`run!` now drive
+  several top-levels from one Tk event loop: the first window owns `.`
+  and later mounts get a fresh `.win<n>` path; each handle carries its
+  own dirty flag and pump, and the pump iterates every mounted window.
+  Window-management helpers script against `.` by default and accept a
+  window path for a secondary window; see `kmet.tk.core`'s `mount!`/
+  `mount-backend!`/`run!`/`run-backend!`.
+- **Drag and drop.** Tk's core has no portable cross-app drag-and-drop
+  command; `kmet.tk.core` exposes `dnd-available?` and, when TkDnD is
+  present, `dnd-require!`/`dnd-version`/`dnd-drag-source!`/
+  `dnd-drop-target!` (thin wrappers over TkDnD; the exact TkDnD API
+  is forwarded), plus `event-generate!` and the bindings for in-app
+  drags. Window management, clipboard/selection, scaling, focus, busy,
+  virtual events and named fonts
   are now covered — see `kmet.tk.core`: `iconify!`/`withdraw!`/`deiconify!`,
   `minsize!`/`maxsize!`/`resizable!`/`attributes!`/`iconphoto!`/`on-close!`,
   `clipboard-*`/`selection-*`, `scaling`/`set-scaling!`, `tk busy` helpers,
-  `focus-*`, `event-*`, and the `font-*` wrappers.)
-- **Drag and drop** (`tkdnd`/Tk 9 DnD) remains, as does runtime window
-  management of a second, independently-owned window.
+  `focus-*`, `event-*`, and the `font-*` wrappers.
 
 ## The app port (after the backend list)
 

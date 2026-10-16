@@ -160,7 +160,10 @@
 ;; The classic widget set (:tk/…)
 ;; ═══════════════════════════════════════════════════════════════════════════
 
-(declare apply-window-props! register-close-handler! size-pair window-dummy wm-size-command!)
+(declare register-close-handler! size-pair window-dummy wm-size-command!)
+(declare apply-window-props-to!)
+(declare ^:dynamic *window-path*)
+(declare next-window-number)
 
 (defn- scale-value!
   "Set classic scale W to PROPS' :value (a scale's value is a subcommand,
@@ -225,19 +228,23 @@
    widgets and composites live in kmet.app.ui.gui.ui, not here."
   {:tk/toplevel
    {:ctor (fn [spec props]
-            (when-let [title (:title props)]
-              (dsl/eval! (str "wm title . " (dsl/tcl-quote title))))
-            (when-let [width (:width props)]
-              (dsl/eval! (str "wm geometry . " (dsl/tcl-value width) "x"
-                              (dsl/tcl-value (or (:height props) 400)))))
-            (apply-window-props! props)
-            (let [w (dsl/->TkWidget "." :tk/toplevel (atom []) (atom {}) (atom {}))]
-              ;; the window is Tk's own ".": its options are configured, not
-              ;; created (and :width/:height above are the window's, not the
-              ;; widget's, so they are not in :options)
-              (dsl/check-options! spec :tk/toplevel "." props)
-              (dsl/apply-live! spec w {} props)
-              w))
+            (let [path *window-path*]
+              (when-not (= path ".")
+                (when (not= "1" (eval! (str "winfo exists " path)))
+                  (eval! (str "toplevel " path))))
+              (when-let [title (:title props)]
+                (dsl/eval! (str "wm title " path " " (dsl/tcl-quote title))))
+              (when-let [width (:width props)]
+                (dsl/eval! (str "wm geometry " path " " (dsl/tcl-value width) "x"
+                                (dsl/tcl-value (or (:height props) 400)))))
+              (apply-window-props-to! path props)
+              (let [w (dsl/->TkWidget path :tk/toplevel (atom []) (atom {}) (atom {}))]
+                ;; the window is Tk's own root: its options are configured, not
+                ;; created (and :width/:height above are the window's, not
+                ;; the widget's, so they are not in :options)
+                (dsl/check-options! spec :tk/toplevel path props)
+                (dsl/apply-live! spec w {} props)
+                w)))
     :options (opt/options-for [:standard :classed :creation :surface :bordered
                                :highlighted :spaced :window])
     :patchable [:minimum-size :minsize :maximum-size :maxsize :resizable
@@ -248,7 +255,7 @@
     :apply (fn [spec w prev props]
              (when (dsl/patchable? spec prev props)
                (dsl/apply-live! spec w prev props)
-               (apply-window-props! props)
+               (apply-window-props-to! (:path w) props)
                true))
     :lens (dsl/child-lens)}
 
@@ -490,13 +497,29 @@
 ;; Run loop
 ;; ═══════════════════════════════════════════════════════════════════════════
 
-(defonce ^:private dirty? (atom false))
+(def ^:dynamic *window-path*
+  "The Tk window path the current mount is creating; \".\" for the first
+   window, a fresh top-level path thereafter."
+  ".")
+
+(defonce ^:private all-windows (atom #{}))
+
+(defn- allocate-window-path!
+  "A free top-level path — \".\" for the first window, \".win<n>\" after."
+  []
+  (if (empty? @all-windows)
+    "."
+    (str ".win" (swap! next-window-number inc))))
+
+;; The real counter, so a second window never reuses a number.
+(defonce ^:private next-window-number (atom 0))
 
 (defn- request-render!
-  "The frame hook Tk installs (any thread may call it): mark the tree dirty
-   and let the pump on the Tk thread do the rendering."
+  "The frame hook Tk installs (any thread may call it): mark every mounted
+   window dirty so the pump repaints the one whose tree changed."
   []
-  (reset! dirty? true)
+  (doseq [h @all-windows]
+    (reset! (:dirty h) true))
   nil)
 
 (defn- mount-tree!
@@ -508,16 +531,24 @@
     (prepare!))
   ;; the one command handler every callback rides
   (command! "kmet::cb" dispatch-callback!)
-  (let [window (engine/compile-element backend [:tk/toplevel (or options {})])
+  (let [path (allocate-window-path!)
+        _ (when-not (= path ".")
+            (eval! (str "toplevel " path)))
+        window (binding [*window-path* path]
+                 (engine/compile-element backend [:tk/toplevel (or options {})]))
         root (engine/root backend tree)
+        dirty (atom true)
         pump (fn []
-               (when (compare-and-set! dirty? true false)
+               (when (compare-and-set! dirty true false)
                  (binding [engine/*construct-context* {:parent window}]
-                   (engine/render-component root nil))))]
-    (reset! dirty? true)
+                   (engine/render-component root nil))))
+        h {:window window :root root :pump pump :dirty dirty
+           :window-path path}]
+    (swap! all-windows conj h)
+    (reset! dirty true)
     (component/set-frame-hook! request-render!)
     (pump)
-    {:window window :root root :pump pump}))
+    h))
 
 (defn mount!
   "Prepare the adapter and mount TREE (a tree, or a component fn that is
@@ -550,17 +581,23 @@
   (request-render!))
 
 (defn run-loop!
-  "Block on the Tk event loop, pumping dirty frames into HANDLE's tree, and
-   dispose the tree when the window closes. Call it on the thread that owns
-   the interpreter (the one that ran mount!)."
-  [{:keys [root pump]}]
+  "Block on the Tk event loop, pumping dirty frames into every mounted
+   window's tree, and dispose them when the loop closes. Call it on the
+   thread that owns the interpreter (the one that ran mount!)."
+  [_handle]
   (require-adapter!)
   (try
-    ((:run-loop *adapter*) pump)
+    ((:run-loop *adapter*)
+     (fn []
+       (doseq [h @all-windows]
+         ((:pump h)))))
     (finally
       (component/set-frame-hook! nil)
-      (engine/dispose-component root)
-      (eval! "destroy ."))))
+      (doseq [h @all-windows]
+        (engine/dispose-component (:root h)))
+      (doseq [p (distinct (map :window-path @all-windows))]
+        (eval! (str "destroy " p)))
+      (reset! all-windows #{}))))
 
 (defn run!
   "Mount TREE in a Tk window and run the Tk event loop until the window is
@@ -811,64 +848,64 @@
   (dsl/->TkWidget "." :tk/toplevel (atom []) (atom {}) (atom {})))
 
 (defn- register-close-handler!
-  "Register F as `:tk/toplevel`'s close handler and install it through Tk's
+  "Register F as PATH's close handler and install it through Tk's
    WM_DELETE_WINDOW protocol. F returning true (or a truthy value) keeps
    the window open; false or nil destroys it (the run loop's default)."
-  [f]
-  (let [w (window-dummy)
-        cb (dsl/register-callback! w :on-close f {:value nil :answer true})]
-    (eval! (str "wm protocol . WM_DELETE_WINDOW { if {![ " cb "]} { destroy . } }"))))
+  ([f] (register-close-handler! "." f))
+  ([path f]
+   (let [w (window-dummy)
+         cb (dsl/register-callback! w :on-close f {:value nil :answer true})]
+     (eval! (str "wm protocol " path " WM_DELETE_WINDOW { if {![ " cb "]} { destroy " path " } }")))))
 
-(defn- apply-window-props!
-  "Script the window-management props of the `:tk/toplevel` tag onto Tk's
-   own root window."
-  [props]
+(defn- apply-window-props-to!
+  "Script the window-management props of the `:tk/toplevel` tag onto PATH."
+  [path props]
   (when-some [v (or (get props :minimum-size) (get props :minsize))]
     (let [[w h] (size-pair v)]
-      (eval! (str "wm minsize . " (dsl/tcl-value w) " " (dsl/tcl-value h)))))
+      (eval! (str "wm minsize " path " " (dsl/tcl-value w) " " (dsl/tcl-value h)))))
   (when-some [v (or (get props :maximum-size) (get props :maxsize))]
     (let [[w h] (size-pair v)]
-      (eval! (str "wm maxsize . " (dsl/tcl-value w) " " (dsl/tcl-value h)))))
+      (eval! (str "wm maxsize " path " " (dsl/tcl-value w) " " (dsl/tcl-value h)))))
   (when (contains? props :resizable)
     (let [v (:resizable props)
           [x y] (if (or (boolean? v) (number? v)) [v v] (size-pair v))]
-      (eval! (str "wm resizable . " (dsl/tcl-word x) " " (dsl/tcl-word y)))))
+      (eval! (str "wm resizable " path " " (dsl/tcl-word x) " " (dsl/tcl-word y)))))
   (when-some [v (or (get props :fullscreen) (get props :full-screen))]
-    (eval! (str "wm attributes . -fullscreen " (dsl/tcl-word v))))
+    (eval! (str "wm attributes " path " -fullscreen " (dsl/tcl-word v))))
   (when-some [v (or (get props :topmost) (get props :always-on-top)
                     (get props :topmost?) (get props :always-on-top?))]
-    (eval! (str "wm attributes . -topmost " (dsl/tcl-word v))))
+    (eval! (str "wm attributes " path " -topmost " (dsl/tcl-word v))))
   (when-some [v (get props :alpha)]
-    (eval! (str "wm attributes . -alpha " (dsl/tcl-word v))))
+    (eval! (str "wm attributes " path " -alpha " (dsl/tcl-word v))))
   (when-some [v (get props :zoomed)]
-    (eval! (str "wm attributes . -zoomed " (dsl/tcl-word v))))
+    (eval! (str "wm attributes " path " -zoomed " (dsl/tcl-word v))))
   (when-some [v (get props :titlepath)]
-    (eval! (str "wm attributes . -titlepath " (dsl/tcl-value v))))
+    (eval! (str "wm attributes " path " -titlepath " (dsl/tcl-value v))))
   (when-some [v (or (get props :icon-photo) (get props :iconphoto))]
     (let [img (if (map? v) (dsl/image-name (window-dummy) :image v) v)
           default? (or (get props :icon-photo-default)
                        (get props :default-icon?) (get props :default))]
-      (eval! (str "wm iconphoto . " (when default? "-default ") (dsl/tcl-value img)))))
+      (eval! (str "wm iconphoto " path " " (when default? "-default ") (dsl/tcl-value img)))))
   (when-some [v (get props :icon-name)]
-    (eval! (str "wm iconname . " (dsl/tcl-quote v))))
+    (eval! (str "wm iconname " path " " (dsl/tcl-quote v))))
   (when (contains? props :state)
     (case (:state props)
       (:normal nil) nil
-      :iconic (eval! "wm iconify .")
-      :withdrawn (eval! "wm withdraw .")
-      (eval! (str "wm state . " (dsl/tcl-word (:state props))))))
+      :iconic (eval! (str "wm iconify " path))
+      :withdrawn (eval! (str "wm withdraw " path))
+      (eval! (str "wm state " path " " (dsl/tcl-word (:state props))))))
   (when (contains? props :iconified)
     (if (:iconified props)
-      (eval! "wm iconify .")
-      (eval! "wm deiconify .")))
+      (eval! (str "wm iconify " path))
+      (eval! (str "wm deiconify " path))))
   (when (contains? props :withdrawn)
     (if (:withdrawn props)
-      (eval! "wm withdraw .")
-      (eval! "wm deiconify .")))
+      (eval! (str "wm withdraw " path))
+      (eval! (str "wm deiconify " path))))
   (when (contains? props :on-close)
     (if-some [f (:on-close props)]
-      (register-close-handler! f)
-      (eval! "wm protocol . WM_DELETE_WINDOW { destroy . }"))))
+      (register-close-handler! path f)
+      (eval! (str "wm protocol " path " WM_DELETE_WINDOW { destroy " path " }")))))
 
 (defn iconify!
   "Iconify the root window."
@@ -1163,3 +1200,47 @@
 
 ;; virtual events as above.
 
+;; ═══════════════════════════════════════════════════════════════════════════
+;; Cross-app drag and drop (TkDnD, where the host provides it).
+;; ═══════════════════════════════════════════════════════════════════════════
+
+(defn dnd-available?
+  "Whether the TkDnD package can be loaded into this interpreter."
+  []
+  (try (not (str/blank? ((:eval (require-adapter!)) "package require tkdnd")))
+       (catch Exception _ false)))
+
+(defn dnd-require!
+  "Load TkDnD and return its version string."
+  []
+  (eval! "package require tkdnd"))
+
+(defn dnd-version
+  "The TkDnD version, or nil when it cannot be loaded."
+  []
+  (try (eval! "package require tkdnd")
+       (catch Exception _ nil)))
+
+(defn dnd-drag-source-register!
+  "Register W as a drag source for the type list TYPES, firing HANDLER
+   (optional) on a drag."
+  [w types & [handler]]
+  (eval! (str "tkdnd::drag_source register " (widget-path w)
+              " " (dsl/tcl-value types)
+              (when handler (str " " (dsl/tcl-quote (str handler)))))))
+
+(defn dnd-drag-source-unregister! [w]
+  (eval! (str "tkdnd::drag_source unregister " (widget-path w))))
+
+(defn dnd-drop-target-register!
+  "Register W as a drop target for TYPES, firing HANDLER on a drop."
+  [w types & [handler]]
+  (eval! (str "tkdnd::drop_target register " (widget-path w)
+              " " (dsl/tcl-value types)
+              (when handler (str " " (dsl/tcl-quote (str handler)))))))
+
+(defn dnd-drop-target-unregister! [w]
+  (eval! (str "tkdnd::drop_target unregister " (widget-path w))))
+
+(def dnd-drag-source! dnd-drag-source-register!)
+(def dnd-drop-target! dnd-drop-target-register!)
