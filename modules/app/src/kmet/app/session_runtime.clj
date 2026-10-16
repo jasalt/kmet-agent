@@ -234,12 +234,14 @@
                              :turn-running? (atom false)
                              :compaction-queued (atom [])
                              :pending-ui (atom {})
-                             :run-callbacks (atom nil)})]
+                             :run-callbacks (atom nil)
+                             :event-listeners (atom {})})]
     ;; Runtime-scoped extension handle: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent. The
     ;; front-end binding is runtime-scoped too (engine.md §4.5): bootstrap
     ;; installs the headless port and the front-end kind, dispose! unbinds.
     ;; A front end with its own port re-binds after its widgets exist.
+    (event-bus/set-default-event-listener-atom! (:event-listeners engine))
     (extensions/set-session! (:session agent-state))
     (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (agent-state engine) msg)))
     (extensions/bind-extensions!
@@ -1098,6 +1100,10 @@
     (doseq [{:keys [promise default]} (vals @(:pending-ui engine))]
       (deliver promise default))
     (reset! (:pending-ui engine) {})
+    ;; drop this engine's extension event-listeners from circulation; with v1's
+    ;; single engine, the process default points back at a fresh empty atom.
+    (reset! (event-bus/default-event-listener-atom) {})
+    (event-bus/set-default-event-listener-atom! (atom {}))
     (extensions/set-session! nil)
     (extensions/set-context-sink! nil)
     (extensions/unbind-extensions!))

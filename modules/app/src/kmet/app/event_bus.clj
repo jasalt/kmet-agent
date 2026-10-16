@@ -393,7 +393,25 @@
 ;; Global listener registry. Extensions register callbacks with on-event;
 ;; the agent loop and app routes events through emit-event!.
 
-(defonce ^:private event-listeners (atom {}))
+(defonce ^:private ^:dynamic *default-event-listener-atom*
+            (atom (atom {})))
+
+(defn set-default-event-listener-atom!
+  "Install the event-listener atom owned by ENGINE as the process default
+   (v1 single-engine; multi-engine scopes these per engine later)."
+  [listener-atom]
+  (reset! *default-event-listener-atom* listener-atom))
+
+(defn default-event-listener-atom
+  "The process default event-listener atom (the one install/dispose treat
+   as current)."
+  []
+  @*default-event-listener-atom*)
+
+(defn- default-event-listeners
+  "The listener map atom used by event-listener registration and emission."
+  []
+  @*default-event-listener-atom*)
 
 (defn on-event
   "Register a callback for an event type.
@@ -403,14 +421,15 @@
    callback   — (fn [event-map])
    Returns a deregister function."
   [event-type callback]
-  (let [id (random-uuid)]
-    (swap! event-listeners update event-type assoc id callback)
-    (fn [] (swap! event-listeners update event-type dissoc id))))
+  (let [listeners (default-event-listeners)
+          id (random-uuid)]
+    (swap! listeners update event-type assoc id callback)
+    (fn [] (swap! (default-event-listeners) update event-type dissoc id))))
 
 (defn clear-event-listeners!
   "Remove all event listeners (for testing)."
   []
-  (reset! event-listeners {}))
+  (reset! (default-event-listeners) {}))
 
 (defn- invoke-handler
   "Call CB with EVENT, returning nil and warning on a throw — a broken
@@ -431,7 +450,7 @@
    navigation reads :session-before-tree results: :cancel, :summary, ...)."
   [event]
   (let [type (:type event)
-        listeners (get @event-listeners type)]
+        listeners (get @(default-event-listeners) type)]
     (when listeners
       (reduce (fn [acc [_ cb]]
                 (let [result (invoke-handler cb event)]
@@ -446,7 +465,7 @@
    handlers are skipped and warned, same as emit-event!."
   [event]
   (let [type (:type event)
-        listeners (get @event-listeners type)]
+        listeners (get @(default-event-listeners) type)]
     (when listeners
       (into [] (keep (fn [[_ cb]] (invoke-handler cb event))) listeners))))
 
@@ -460,7 +479,7 @@
    Throwing handlers are skipped and warned, same as emit-event!."
   [event]
   (let [type (:type event)
-        listeners (get @event-listeners type)]
+        listeners (get @(default-event-listeners) type)]
     (when listeners
       (reduce (fn [acc [_ cb]]
                 (let [result (invoke-handler cb (if acc (merge event acc) event))]
@@ -471,4 +490,4 @@
 (defn get-event-types
   "List all registered event types."
   []
-  (keys @event-listeners))
+  (keys @(default-event-listeners)))
