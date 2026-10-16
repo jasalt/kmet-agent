@@ -448,7 +448,9 @@
   (generate-test-main!)
   (stage-bundled-extensions!)
   (write-uberjar! test-jar-path test-main-class
-                  ["modules/app/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/loader/src" "modules/tk/src" "tasks" "test" test-entry-root]
+                  ["modules/app/src" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test"
+                   "modules/ai/src" "modules/ai/test" "modules/loader/src" "modules/loader/test"
+                   "modules/tk/src" "modules/tk/test" "tasks" "test" test-entry-root]
                   {:extra-roots [bundled-staging-root]}))
 
 ;; ─── Assembling artifacts ──────────────────────────────────────────────────

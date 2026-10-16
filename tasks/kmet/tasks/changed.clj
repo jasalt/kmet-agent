@@ -34,12 +34,12 @@
    cover, in listing order. test/ is a root too but holds only tests — its
    files reach the graph through the same scan (see project-files for how
    the roots are enumerated)."
-  ["modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/ai/src" "modules/ai/test" "modules/app/src" "modules/loader/src" "modules/loader/test" "modules/tk/src" "test" "tasks" "extensions"])
+  ["modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/app/src" "modules/loader/src" "modules/loader/test" "modules/tk/src" "test" "tasks" "extensions"])
 
 (def ^:private changed-path-re
   "Changed-file paths that are lint/format/scan material: a .clj[c] file under
    one of `source-roots`."
-  #"(?:modules/(?:libs|tui|ai|app|loader|tk)/src|modules/(?:libs|ai|loader)/test|test|tasks|extensions)/.*\.(?:clj[c]?|jolt)")
+  #"(?:modules/(?:libs|tui|ai|app|loader|tk)/src|modules/(?:libs|ai|tui|loader)/test|test|tasks|extensions)/.*\.(?:clj[c]?|jolt)")
 
 (defn- git-repo?
   []
@@ -184,7 +184,7 @@
        (str/replace #"\.(?:clj[c]?|jolt)$" "")
        (str/replace "_" "-")
        (str/replace "/" ".")
-       (str/replace #"^(?:modules\.(?:libs|tui|ai|app|loader|tk)\.src\.|modules\.(?:libs|ai|loader)\.test\.)|^test\.|^tasks\." ""))))
+       (str/replace #"^(?:modules\.(?:libs|tui|ai|app|loader|tk)\.src\.|modules\.(?:libs|ai|tui|loader)\.test\.)|^test\.|^tasks\." ""))))
 
 (defn- read-ns-form
   "First form of PATH (the ns form), or nil when unreadable."
