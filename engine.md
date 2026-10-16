@@ -5,14 +5,13 @@ Status: working design note at the repository root (like `run_code.md`,
 questions. It is not user documentation and it is not authoritative for
 behavior — the topic map in `AGENTS.md` still points at the behavior docs.
 
-Steps 0–4 and 6a–6d have landed, and their architecture is folded into
+Steps 0–4, 6a–6d and 7 have landed, and their architecture is folded into
 [`src/kmet/README.md`](src/kmet/README.md) ("Session runtime and front
 ends"); RPC mode's user guide is [`docs/rpc.md`](docs/rpc.md). The
 remaining work is ordered so only the GUI waits on the Tk backend: the
-malli boundary schemas (step 7, §4.3/§6), the app-layer enforcement and
-finding F cleanups (step 8, §8), the optional finding E follow-up
-(step 9), then the GUI (step 5) once the Tk backend stabilizes. Fold this
-file into the README or delete it when those land.
+app-layer enforcement and finding F cleanups (step 8, §8), the optional
+finding E follow-up (step 9), then the GUI (step 5) once the Tk backend
+stabilizes. Fold this file into the README or delete it when those land.
 
 Scope: one session runtime usable unchanged by the interactive TUI, print
 mode (text and event output), and the GUI front end. The GUI is postponed
@@ -963,9 +962,10 @@ C's measured load policy.
   humanized explanation) under `--debug`. Validate the header always and
   entries only on skip or `--debug`, per finding C; re-measure with the real
   schema and record the number here.
-- Add config `m/decode` defaults/coercion for the sections already
-  validated (`:retry`, `:loop-guard`, compaction, `:images`, timeouts) and
-  the `auth.edn` credential predicate; both files stay forgiving and open.
+- Add config and `auth.edn` boundary schemas, and warn under `--debug` for a
+  wrong-shape config or credential. Config defaults/coercion stay in the
+  existing live getters (the `m/decode` variant only ships if it deletes
+  those) and `auth.edn` uses malli for `valid-credential?`.
 - Do not schema in-process events, the bootstrap map, or view models (§6
   Tier 3); the event vocabulary stays keyword-keyed and tested by parity.
 
