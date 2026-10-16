@@ -7,7 +7,7 @@
             [kmet.app.ui.gui.ui :as ui]
             [kmet.tk.test-support :refer [find-class-src live-tk scripts scripts-like with-fake]]
             [kmet.tk.core :as tk]
-            [kmet.libs.hikap :as engine]))
+            [kmet.libs.hikap.core :as engine]))
 
 ;; ─── the backend's tag table ─────────────────────────────────────────────
 

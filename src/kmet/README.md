@@ -141,8 +141,8 @@ listed in the root `AGENTS.md` topic map.
   `test/kmet/libs/test_self_contained.clj` enforces exactly this.
   `kmet.libs.reakt.weak` is the one namespace allowed to touch `java.lang.ref` —
   a platform exception like the terminal backends.
-- `kmet.libs.hikap` is the toolkit-agnostic UI framework inside libs: the
-  hiccup engine (`kmet.libs.hikap`), the component runtime
+- `kmet.libs.hikap.core` is the toolkit-agnostic UI framework inside libs: the
+  hiccup engine (`kmet.libs.hikap.core`), the component runtime
   (`kmet.libs.hikap.component`) and the alias registry
   (`kmet.libs.hikap.alias`). Being a lib it may require only `kmet.libs.*`;
   `kmet.tui.*` and `kmet.tk.*` are backends over it — they pass their
@@ -150,7 +150,7 @@ listed in the root `AGENTS.md` topic map.
 - `kmet.ai.*` is a standalone provider/auth library and depends only on
   `kmet.libs.*` plus standard/third-party code.
 - `kmet.tui.*` is the generic UI layer (the terminal backend for
-  `kmet.libs.hikap`). It may depend on `kmet.libs.*`, never on app, LLM, or
+  `kmet.libs.hikap.core`). It may depend on `kmet.libs.*`, never on app, LLM, or
   session concepts.
 - `kmet.tk.*` is the Tk GUI backend (Jolt-only; kmet.tk.core with the
   classic `:tk/…` widget set, kmet.tk.ttk the `:ttk/…` set, kmet.tk.dsl

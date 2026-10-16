@@ -9,7 +9,7 @@
             [kmet.app.ui.model-selector :as ms]
             [kmet.ai.models :as models]
             [kmet.tui.core :as core]
-            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.core :as engine]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]

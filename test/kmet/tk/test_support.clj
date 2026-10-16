@@ -4,7 +4,7 @@
    engine mount helpers over a backend, and the live-Tk probe."
   (:require [kmet.tk.core :as tk]
             [kmet.tk.dsl :as dsl]
-            [kmet.libs.hikap :as engine]))
+            [kmet.libs.hikap.core :as engine]))
 
 (defn with-fake*
   "Call F with a recording adapter bound as tk/*adapter*; it sees

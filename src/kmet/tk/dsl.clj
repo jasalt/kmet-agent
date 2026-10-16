@@ -18,7 +18,7 @@
    this one require."
   (:require [clojure.string :as str]
             [kmet.tk.options :as opt]
-            [kmet.libs.hikap :as engine]))
+            [kmet.libs.hikap.core :as engine]))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; The evaluator seam

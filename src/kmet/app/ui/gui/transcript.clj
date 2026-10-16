@@ -409,6 +409,6 @@
    the tree again; a fn root is re-run whenever an atom its body derefed
    (the session's entries, CTX's collapse set) changes, which is what makes
    the card titles live. Mount this with kmet.app.ui.gui.ui/run!, or
-   kmet.libs.hikap/root over kmet.app.ui.gui.ui/backend."
+   kmet.libs.hikap.core/root over kmet.app.ui.gui.ui/backend."
   [session ctx]
   (fn [_props] (page session ctx)))

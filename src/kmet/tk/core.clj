@@ -35,7 +35,7 @@
             [kmet.tk.options :as opt]
             [kmet.tk.ttk :as ttk]
             [kmet.libs.hikap.component :as component]
-            [kmet.libs.hikap :as engine])
+            [kmet.libs.hikap.core :as engine])
   (:refer-clojure :exclude [run!]))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
@@ -461,7 +461,7 @@
                                                  {:text (or text "") :anchor :w :justify :left}))))
 
 (def tk-backend
-  "The Tk backend map for kmet.libs.hikap."
+  "The Tk backend map for kmet.libs.hikap.core."
   {:name :tk
    :tags tags
    :text-leaf text-leaf

@@ -1,6 +1,6 @@
 (ns kmet.libs.hikap.alias
   "Qualified-keyword tag aliases — reusable, named tag-level components for
-   the hiccup engine (kmet.libs.hikap).
+   the hiccup engine (kmet.libs.hikap.core).
 
    A hiccup element whose head is a QUALIFIED keyword resolves through this
    registry to a fn `(fn [attrs children] tree)` — unless the rendering

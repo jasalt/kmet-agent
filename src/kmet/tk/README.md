@@ -14,7 +14,7 @@ loop. kmet's own widget set (`:ui/…`) is app UI over the backend:
 
 ```
 kmet.libs.reakt.core           reactions over plain atoms (host-agnostic)
-kmet.libs.hikap           the hiccup engine: parse, keyed reconcile,
+kmet.libs.hikap.core           the hiccup engine: parse, keyed reconcile,
                           ComponentFn, refs — parameterized by a backend map
 kmet.libs.hikap.component track! render cache, with-let stores, frame hook
 kmet.libs.hikap.alias     the qualified-keyword alias registry
@@ -40,21 +40,21 @@ are `:ui/…` tags in `kmet.app.ui.gui.ui` (app UI over this backend),
 which mounts through the backend's extra-tag seam
 (`kmet.tk.core/mount-backend!`, `run-backend!`). A declared host tag wins
 over the alias registry, so `:tk/canvas` and `:ttk/frame` are host tags —
-see kmet.libs.hikap's parse-host — while any other qualified keyword
+see kmet.libs.hikap.core's parse-host — while any other qualified keyword
 still resolves as an alias; a `:ui/…` tag is unknown to the plain Tk
 backend on purpose.
 
 The pre-split `kmet.tui.hiccup` was one namespace; the toolkit-agnostic
-half is now `kmet.libs.hikap` (+ `.component` / `.alias`), and
+half is now `kmet.libs.hikap.core` (+ `.component` / `.alias`), and
 `kmet.tui.hikap` is the TUI backend over it: the tag table, the
 width-bound render context, the `IComponent` extension, and the TUI-bound
 entry points (`root`, `compile-tree`, `render-lines`, `materialize-ref!`).
 Backend-independent pieces (`ref`, `compute`, the counters) are required
-from `kmet.libs.hikap`.
+from `kmet.libs.hikap.core`.
 
 ## The backend map
 
-`kmet.libs.hikap` reaches every toolkit-specific operation through a map:
+`kmet.libs.hikap.core` reaches every toolkit-specific operation through a map:
 
 | key | meaning |
 |---|---|

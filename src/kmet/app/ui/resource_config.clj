@@ -51,7 +51,7 @@
             [kmet.config :as cfg]
             [kmet.libs.reakt.core :as r]
             [kmet.tui.components.input :as input]
-            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.core :as engine]
             [kmet.tui.hikap :as hiccup]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.keys :as keys]

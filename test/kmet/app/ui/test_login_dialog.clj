@@ -6,7 +6,7 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kmet.app.ui.login-dialog :as ld]
-            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.core :as engine]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]
             [kmet.libs.reakt.core :as r]))

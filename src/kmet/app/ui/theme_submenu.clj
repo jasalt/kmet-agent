@@ -6,7 +6,7 @@
    automatic setting."
   (:require [clojure.string :as str]
             [kmet.app.ui.settings-submenu :as submenu]
-            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.core :as engine]
             [kmet.tui.hikap :as h]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]

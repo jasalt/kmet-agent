@@ -1,5 +1,5 @@
 (ns kmet.tui.test-compute
-  "Headless tests for kmet.libs.hikap/compute (dsl.md §3.1, Stage 5): derived refs —
+  "Headless tests for kmet.libs.hikap.core/compute (dsl.md §3.1, Stage 5): derived refs —
    sugar over reactions with the dep list seeding tracking — with equal-value
    no-op notification, auto-disposal for per-instance computes, record
    components subscribing through the track!/RXRef bridge, and the
@@ -8,7 +8,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [kmet.tui.core :as core]
-            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.core :as engine]
             [kmet.tui.hikap :as h]
             [kmet.libs.hikap.component :as component :refer [with-let track!]]
             [kmet.tui.macros :refer [defcomponent]]

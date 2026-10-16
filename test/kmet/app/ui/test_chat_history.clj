@@ -2,7 +2,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.tui.core :as core]
-            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.core :as engine]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.libs.terminal-image :as timg]

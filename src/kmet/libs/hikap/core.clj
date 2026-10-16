@@ -1,4 +1,4 @@
-(ns kmet.libs.hikap
+(ns kmet.libs.hikap.core
   "Backend-agnostic hiccup component engine — the toolkit-independent half
    of the former kmet.tui.hiccup (the TUI backend now lives in
    kmet.tui.hikap; the Tk backend in kmet.tk.core).
@@ -153,7 +153,7 @@
    set, and suggests the nearest known tag when the backend offers a
    matcher."
   [backend tag]
-  (throw (ex-info (str "kmet.libs.hikap: unknown tag " tag
+  (throw (ex-info (str "kmet.libs.hikap.core: unknown tag " tag
                        ". Known tags: " (pr-str (known-tags backend)) "."
                        (did-you-mean backend (subs (str tag) 1)
                                      (keys (:tags backend))))
@@ -215,12 +215,12 @@
                                     (or (not props-map?)
                                         (nil? (:lens spec)))))
         ;; a ref handle in the PRIMARY slot is almost certainly
-        ;; [:widget (kmet.libs.hikap/ref)] missing the props map — every other child
+        ;; [:widget (kmet.libs.hikap.core/ref)] missing the props map — every other child
         ;; position rejects refs loudly, so must this one too (checked
         ;; against PRE-split children: take-primary consumes the head)
         _ (when (and take-primary? (satisfies? DslRef (first children)))
             (throw (ex-info
-                    (str "kmet.libs.hikap: bare (kmet.libs.hikap/ref) as the value "
+                    (str "kmet.libs.hikap.core: bare (kmet.libs.hikap.core/ref) as the value "
                          "child of " tag " — did you mean [" (name tag)
                          " {:ref ...} ...]?")
                     {:tag tag})))
@@ -243,7 +243,7 @@
         key (or (:key meta) meta-key)]
     (when (and (seq children) (nil? (:lens spec)))
       (throw (ex-info
-              (str "kmet.libs.hikap: children given to leaf tag " tag
+              (str "kmet.libs.hikap.core: children given to leaf tag " tag
                    " — leaves take only props")
               {:tag tag :children children})))
     (check-ref! tag (:ref meta))
@@ -252,12 +252,12 @@
      :tag tag :spec spec :props props :nodes children}))
 
 (defn- check-ref!
-  ":ref must be a handle from kmet.libs.hikap/ref — anything else (a keyword, a
+  ":ref must be a handle from kmet.libs.hikap.core/ref — anything else (a keyword, a
    string) is a typo that would otherwise detonate later at fill time."
   [where r]
   (when (and (some? r) (not (satisfies? DslRef r)))
     (throw (ex-info
-            (str "kmet.libs.hikap: :ref must be a (kmet.libs.hikap/ref) handle, got "
+            (str "kmet.libs.hikap.core: :ref must be a (kmet.libs.hikap.core/ref) handle, got "
                  (pr-str r) (when (keyword? where) (str " on tag " where)))
             {:ref r}))))
 
@@ -268,7 +268,7 @@
    reach here."
   [backend tag]
   (let [known (vec (sort (keys (alias/registered))))]
-    (throw (ex-info (str "kmet.libs.hikap: unknown alias " tag
+    (throw (ex-info (str "kmet.libs.hikap.core: unknown alias " tag
                          ". Registered aliases: " (pr-str known) "."
                          (did-you-mean backend (subs (str tag) 1) known))
                     {:alias tag :registered-aliases known}))))
@@ -342,7 +342,7 @@
            :ctree (when (seq children) children)})
         :else (throw
                (ex-info
-                (str "kmet.libs.hikap: invalid element head " (pr-str tag)
+                (str "kmet.libs.hikap.core: invalid element head " (pr-str tag)
                      " — expected a keyword tag (host or alias) or a "
                      "function component")
                 {:head tag}))))
@@ -358,7 +358,7 @@
         (when-not stack?
           (throw
            (ex-info
-            (str "kmet.libs.hikap: stack entry map {:component c} outside "
+            (str "kmet.libs.hikap.core: stack entry map {:component c} outside "
                  "a stack tag (:v-stack/:h-stack) — entries are stack "
                  "children only")
             {:entry node})))
@@ -367,12 +367,12 @@
            :c (entry-component node) :item node :owned false}))
       (throw
        (ex-info
-        (str "kmet.libs.hikap: bare map child — maps pass through "
+        (str "kmet.libs.hikap.core: bare map child — maps pass through "
              "only as stack entries {:component c}; got "
              (pr-str (keys node)))
         {:map node})))
     :else (throw
-           (ex-info (str "kmet.libs.hikap: cannot compile tree node "
+           (ex-info (str "kmet.libs.hikap.core: cannot compile tree node "
                          (pr-str node)
                          " — for function roots use hiccup/root")
                     {:node node}))))
@@ -406,7 +406,7 @@
         (do
           (when (and (:key d) (contains? seen (:key d)))
             (throw (ex-info
-                    (str "kmet.libs.hikap: duplicate :key " (pr-str (:key d))
+                    (str "kmet.libs.hikap.core: duplicate :key " (pr-str (:key d))
                          " among siblings — keys must uniquely identify a "
                          "child for reuse")
                     {:key (:key d)})))
@@ -604,7 +604,7 @@
     {:kind ::record :mkey raw :c raw :item raw :owned false}
     :else
     (throw (ex-info
-            (str "kmet.libs.hikap: unexpected child in container storage: "
+            (str "kmet.libs.hikap.core: unexpected child in container storage: "
                  (pr-str raw))
             {:child raw}))))
 
@@ -884,7 +884,7 @@
   [backend el]
   (when (and (sequential? el) (not (vector? el)))
     (throw (ex-info
-            (str "kmet.libs.hikap: seq passed to compile-element — a seq "
+            (str "kmet.libs.hikap.core: seq passed to compile-element — a seq "
                  "splices as CHILDREN of an element or ROOTS via compile-tree")
             {:node el})))
   (let [parsed (parse-nodes backend [el] false)]

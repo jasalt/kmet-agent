@@ -39,7 +39,7 @@ components sit above them**, exactly like React components above `[:div]`.
   Container, VStack, HStack, Markdown, Editor, Input, SelectList, … — the
   terminal's primitives.
 - **Components** (plain fns): `(fn [props] tree)` — the composition layer.
-- **Reconciler** (`kmet.libs.hikap` + the `kmet.tui.hikap` TUI backend):
+- **Reconciler** (`kmet.libs.hikap.core` + the `kmet.tui.hikap` TUI backend):
   compiles trees to records and diffs them by key. The engine is
   toolkit-agnostic; the TUI supplies the tag table, the `*width*` render
   context and the IComponent wiring (see §13).
@@ -131,7 +131,7 @@ atom change → reaction dirty → queued → frame flush runs it →
 | `kmet.tui.macros` | `defcomponent` — TUI record boilerplate over `kmet.tui.protocols/IComponent` |
 | `kmet.libs.reakt.core` | reactions/track/cursor/batching over plain atoms |
 | `kmet.libs.hikap.component` | host-agnostic `track!` render cache, `with-let` stores, track-watch registry, frame-scheduler hook |
-| `kmet.libs.hikap` | toolkit-agnostic hiccup engine: parse, keyed reconcile, ComponentFn, refs, compute — parameterized by a backend map (tag table, string leaf, render/dispose hooks) |
+| `kmet.libs.hikap.core` | toolkit-agnostic hiccup engine: parse, keyed reconcile, ComponentFn, refs, compute — parameterized by a backend map (tag table, string leaf, render/dispose hooks) |
 | `kmet.libs.hikap.alias` | qualified-keyword tag aliases: process-global registry, resolution, `defalias` (§2.9) |
 | `kmet.tui.hikap` | the TUI backend: tag table, `*width*`/`*comp*`, IComponent extension for the engine's ComponentFn, and the TUI-bound entry points (`root`, `compile-tree`, `reconcile!`, `render-lines`, `materialize-ref!`) |
 | `kmet.tui.components.*` | host elements (see §10) |
@@ -378,7 +378,7 @@ records. A tree that declares such an element reaches its instantiated
 record through a ref — a second pseudo-prop beside `:key`:
 
 ```clojure
-(def editor-ref (kmet.libs.hikap/ref))
+(def editor-ref (kmet.libs.hikap.core/ref))
 
 [:editor-container {:ref editor-ref}]
 
@@ -388,7 +388,7 @@ record through a ref — a second pseudo-prop beside `:key`:
 
 Rules:
 
-- refs are created with `(kmet.libs.hikap/ref)`; reconcile fills them on construct
+- refs are created with `(kmet.libs.hikap.core/ref)`; reconcile fills them on construct
   and clears them when the element is disposed — or when the element stops
   declaring that handle (a replaced or dropped `:ref` prop), so an
   abandoned handle never derefs a live component; treat as read-only.
@@ -433,7 +433,7 @@ its search field — when that field is a tag-owned `[:input]`, the ref is
 how the wrapper reaches it:
 
 ```clojure
-(def search-ref (kmet.libs.hikap/ref))
+(def search-ref (kmet.libs.hikap.core/ref))
 
 (hiccup/root (fn [_] [:container {} ... [:input {:ref search-ref}] ...]))
 
@@ -770,7 +770,7 @@ requesting renders).
   A child's internal state affecting output means the parent must deref it
   too.
 
-### 3.3 Derived state — `kmet.libs.hikap/compute`
+### 3.3 Derived state — `kmet.libs.hikap.core/compute`
 
 Derived refs over the atoms the app already owns — sugar over a reaction
 whose body reads each listed dep tracked and applies F to their current
@@ -793,17 +793,17 @@ Two usage patterns over the one primitive:
 ;; Per-instance — compute under with-let: created once, disposed with
 ;; the instance (automatic when created during a render pass):
 (defn message [props]
-  (with-let [content (kmet.libs.hikap/compute [(:messages-atom props)]
+  (with-let [content (kmet.libs.hikap.core/compute [(:messages-atom props)]
                           #(get-in % [(:idx props) :content]))]
     [:text {:text @content}]))
 
 ;; Shared — def'd top-level computes; (def ...) IS the registry:
-(def agent-status-sub (kmet.libs.hikap/compute [agent-state] :status))
+(def agent-status-sub (kmet.libs.hikap.core/compute [agent-state] :status))
 (defn status-line [_props] [:text {:text (str @agent-status-sub)}])
 ```
 
 A shared sub whose body would be a pure alias of one atom —
-`(kmet.libs.hikap/compute [a] identity)` — should be the atom itself: a reaction
+`(kmet.libs.hikap.core/compute [a] identity)` — should be the atom itself: a reaction
 buys nothing there (no derivation), and its cache-hit verification costs
 roughly twice a plain atom deref, paid by every subscriber every frame.
 `kmet.app.ui.subs/theme-sub` and `image-settings-sub` are such atoms.
@@ -1517,10 +1517,10 @@ Hiccup keeps process-wide counters, collected always and readable any
 time (tests assert on them):
 
 ```clojure
-(kmet.libs.hikap/counters)
+(kmet.libs.hikap.core/counters)
 ;; {:bodies-run 2 :bodies-skipped 37 :constructs 0 :reuses 5
 ;;  :applies 1 :disposals 0 :computes 4 :skips 2}
-(kmet.libs.hikap/reset-counters!)   ;; back to zero (tests)
+(kmet.libs.hikap.core/reset-counters!)   ;; back to zero (tests)
 ```
 
 Reading them: `bodies-run` climbing on frames where nothing the body derefs
@@ -1647,11 +1647,11 @@ kmet.tk         the Tk GUI backend, Jolt-only (kmet.tk.core = the backend
                 kmet.tk.tcl = the host FFI adapter)
 kmet.libs.*     self-contained helpers bottom layer (terminal protocol,
                 HTTP, markdown, reakt, ...) — includes the toolkit-agnostic
-                hiccup framework kmet.libs.hikap (+ .component / .alias)
+                hiccup framework kmet.libs.hikap.core (+ .component / .alias)
 ```
 
-`kmet.libs.hikap` may require `kmet.libs.*` only; `kmet.tui.*` and
-`kmet.tk.*` build on `kmet.libs.hikap` + `kmet.libs.*`. `kmet.tui.*` must never require
+`kmet.libs.hikap.core` may require `kmet.libs.*` only; `kmet.tui.*` and
+`kmet.tk.*` build on `kmet.libs.hikap.core` + `kmet.libs.*`. `kmet.tui.*` must never require
 `kmet.app.*`, `kmet.modes.*` or `kmet.ai.*`; app-specific components belong
 in `kmet.app.ui.*`.
 
@@ -1796,7 +1796,7 @@ Two ways to embed a stateful leaf, both keep its state across passes:
   `IFocusable.set-focused!` to it and disposes it in its own `dispose`
   (§13.1).
 
-A wrapper reaches a DSL-owned instance through a `kmet.libs.hikap/ref` (§2.4) — deref
+A wrapper reaches a DSL-owned instance through a `kmet.libs.hikap.core/ref` (§2.4) — deref
 only in handlers/effects, never a render body. Forwarding input to a ref'd
 leaf is the canonical second case: input is delivered to the focused leaf
 only (§7), so the wrapper keeps focus and pushes each keystroke into the

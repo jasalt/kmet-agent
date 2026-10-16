@@ -11,10 +11,10 @@
    hint chrome AND the interactive content (the `[:select-list]` /
    `[:input]` element) are DSL-owned, so the dialog disposes the frame
    once. The tree constructs the content record — the dialog reaches it
-   through the `kmet.libs.hikap/ref` handle it declared, read right after
+   through the `kmet.libs.hikap.core/ref` handle it declared, read right after
    `compile-tree` (tui.md §2.4)."
   (:require [clojure.string :as str]
-            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.core :as engine]
             [kmet.tui.hikap :as h]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]

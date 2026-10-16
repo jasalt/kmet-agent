@@ -8,7 +8,7 @@
             [kmet.libs.reakt.core :as r]
             [kmet.libs.hikap.alias :refer [defalias]]
             [kmet.tui.components.select-list :as select-list]
-            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.core :as engine]
             [kmet.tui.hikap :as h]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]

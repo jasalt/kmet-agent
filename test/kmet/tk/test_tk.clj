@@ -12,7 +12,7 @@
             [kmet.tk.core :as tk]
             [kmet.tk.dsl :as dsl]
             [kmet.tk.options :as opt]
-            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.core :as engine]
             [kmet.libs.hikap.alias :as alias]
             [kmet.libs.hikap.component :as component]
             [kmet.libs.reakt.core :as r]))

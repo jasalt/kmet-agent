@@ -10,7 +10,7 @@
             [babashka.fs :as fs]
             [kmet.app.keybindings :as kb]
             [kmet.app.ui.session-selector :as ss]
-            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.core :as engine]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]

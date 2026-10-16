@@ -238,7 +238,7 @@
     kmet.libs.edn-store
     kmet.libs.fs
     kmet.libs.highlight
-    kmet.libs.hikap
+    kmet.libs.hikap.core
     kmet.libs.hikap.alias
     kmet.libs.hikap.component
     kmet.libs.host

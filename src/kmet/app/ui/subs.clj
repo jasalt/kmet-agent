@@ -7,7 +7,7 @@
    atom and gates on identical?/= exactly like a reaction's notification
    gate does, and a reaction's per-read cache verification costs about
    twice an atom deref, paid by every subscriber on every frame. Use
-   kmet.libs.hikap/compute for actual derivation over deps, not aliasing.
+   kmet.libs.hikap.core/compute for actual derivation over deps, not aliasing.
    Treat the subs as read-only: they ARE the atoms, so a write through a
    sub name mutates global state past its owner — write the owning atom
    through its API instead (the theme setters, the settings rows)."

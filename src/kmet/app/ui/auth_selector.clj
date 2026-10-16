@@ -9,7 +9,7 @@
             [kmet.app.keybindings :as app-kb]
             [kmet.app.ui.subs :as s]
             [kmet.libs.reakt.core :as r]
-            [kmet.libs.hikap :as engine]
+            [kmet.libs.hikap.core :as engine]
             [kmet.tui.hikap :as h]
             [kmet.tui.components.input :as input]
             [kmet.tui.fuzzy :as fuzzy]
