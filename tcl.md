@@ -200,6 +200,33 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
   `clipboard-*`/`selection-*`, `scaling`/`set-scaling!`, `tk busy` helpers,
   `focus-*`, `event-*`, and the `font-*` wrappers.
 
+## Tk backend tasks specifically for the GUI live shell
+
+The seam and the widgets are complete, so the GUI does not need a new
+backend abstraction. The remaining Tk-side work is integration and
+threading, not new widget support:
+
+- Verify a fresh `kmet.app.ui.gui.*` shell can mount a tree, run its
+  pump, and shut down cleanly with `mount-backend!`/`run-backend!`, the
+  same way the display-only transcript demo does.
+- Document and exercise an explicit `after idle` entry point so `subscribe!`
+  callbacks running on the loop thread can be marshaled back to the
+  toolkit thread when they need more than `render!` marks (all other Tk
+  work already happens there). `render!` itself is already safe from any
+  thread.
+- Confirm the second-window pump dirty path under a long-running stream —
+  cards, prompts, and dialogs opening in new `toplevel`s while a chat
+  stream is active — without starving the component passes.
+- Confirm dialog results can be delivered to asynchronous `respond!`
+  consumers the application port wires; the dialogs themselves return
+  Clojure data and block only the caller.
+- Keep `kmet.app.ui.gui.transcript` and the shipped backend tests as the
+  reference point: no new public `kmet.tk.*` API is expected for the live
+  GUI, only exercise of the current one.
+
+Nothing here is a missing widget or option: the tag set and dialog surface
+already cover them.
+
 ## The app port (after the backend list)
 
 The section above is the remaining `kmet.tk.*` gap list. This one is the
