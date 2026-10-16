@@ -7,8 +7,7 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.config :as cfg]
-            [kmet.tui.keybindings :as kb]))
+            [kmet.config :as cfg]))
 
 ;; ─── App keybinding definitions ──────────────────────────────────────────
 ;; Extends the TUI definitions with agent-specific actions.
@@ -59,21 +58,27 @@
    "app.tree.unfoldOrDown" {:default-keys ["ctrl+right" "alt+right"] :description "Tree: unfold branch or move down"}
    "app.tree.toggleLabelTimestamp" {:default-keys ["shift+t"]        :description "Tree: toggle label timestamps"}})
 
-;; ─── Combined definitions (TUI + App) ─────────────────────────────────────
+;; ─── Dynamic TUI interop ───────────────────────────────────────────────
+;; App-layer policy definitions stay here without requiring the TUI layer.
+
+(defn- tui-keybindings-ns []
+  (require 'kmet.tui.keybindings)
+  (the-ns 'kmet.tui.keybindings))
+
+(defn- tui-kb-var
+  [sym]
+  (ns-resolve (tui-keybindings-ns) sym))
 
 (def all-keybinding-defs
   "Union of TUI keybinding definitions and app keybinding definitions."
-  (merge kb/tui-keybinding-defs app-keybinding-defs))
-
-;; ─── KeybindingsManager for the agent app ─────────────────────────────────
+  (merge @(tui-kb-var 'tui-keybinding-defs) app-keybinding-defs))
 
 (defn make-agent-keybindings-manager
-  "Create a KeybindingsManager with both TUI and app keybindings.
-   Optionally accepts user overrides map."
+  "Create a KeybindingsManager with both TUI and app keybindings."
   ([]
    (make-agent-keybindings-manager {}))
   ([user-bindings]
-   (kb/make-keybindings-manager all-keybinding-defs user-bindings)))
+   ((tui-kb-var 'make-keybindings-manager) all-keybinding-defs user-bindings)))
 
 ;; ─── Persisted keybindings file (pi: KeybindingsManager.create/reload) ──
 ;; User overrides live in keybindings.edn next to the settings file; defaults
@@ -210,62 +215,51 @@
              (spit f (str (pr-str config) "\n"))))
          (catch Exception _ nil))))))
 
-(defn create-agent-keybindings-manager
-  "Pi: KeybindingsManager.create(agentDir) — build the agent KeybindingsManager
-   with persisted user overrides from <agent-dir>/keybindings.edn."
-  ([]
-   (create-agent-keybindings-manager (cfg/get-agent-dir)))
-  ([agent-dir]
-   (make-agent-keybindings-manager (load-user-bindings (keybindings-config-path agent-dir)))))
-
-(defn reload-agent-keybindings!
-  "Pi: KeybindingsManager.reload — re-read persisted user overrides from
-   <agent-dir>/keybindings.edn into the global KeybindingsManager (for /reload)."
-  ([]
-   (reload-agent-keybindings! (cfg/get-agent-dir)))
-  ([agent-dir]
-   (kb/set-user-bindings! (kb/get-global-keybindings)
-                          (load-user-bindings (keybindings-config-path agent-dir)))))
 
 ;; ─── Convenience: key-hint with theme fns ───────────────────────────────
 
-(declare key-hint)
-
-;; This will be set by core.clj once the theme is available.
 (defonce ^:private theme-fns-atom (atom nil))
 
 (defn set-key-hint-theme-fns!
-  "Set the dim/muted styling functions for key-hint rendering.
-   Called during app initialization with theme/dim and theme/fg :muted."
+  "Set the dim/muted styling functions for key hint rendering."
   [dim-fn muted-fn]
   (reset! theme-fns-atom {:dim dim-fn :muted muted-fn}))
 
 (defn key-text
-  "Pi: keyText — all resolved key chords for an id joined with '/', or \"\".
-   Raw chords (\"pageUp\"): this is the machine/settings form. Use key-label
-   for anything a user reads as a hint."
   [id]
-  (or (kb/key-text (kb/get-global-keybindings) id) ""))
+  (or ((tui-kb-var 'key-text) ((tui-kb-var 'get-global-keybindings)) id) ""))
 
 (defn key-label
-  "All resolved chords for an id, labelled for display and joined with '/'
-   — \"pgup\", \"↑/↓\" — or \"\" when nothing is bound (§7.1)."
   [id]
-  (or (kb/key-label-text (kb/get-global-keybindings) id) ""))
+  (or ((tui-kb-var 'key-label-text) ((tui-kb-var 'get-global-keybindings)) id) ""))
 
 (defn key-hint
-  "Convenience wrapper: renders a keybinding hint using the app's theme.
-   kmgr — KeybindingsManager (or nil for global)
-   id   — keybinding ID (e.g. \"app.tools.expand\")
-   desc — description text"
   ([id desc]
    (let [{:keys [dim muted]} @theme-fns-atom]
      (if (and dim muted)
-       (kb/key-hint (kb/get-global-keybindings) id desc dim muted)
+       ((tui-kb-var 'key-hint) ((tui-kb-var 'get-global-keybindings)) id desc dim muted)
        ;; Fallback: plain text
        (str (key-label id) " " desc))))
   ([kmgr id desc]
    (let [{:keys [dim muted]} @theme-fns-atom]
      (if (and dim muted)
-       (kb/key-hint kmgr id desc dim muted)
-       (str (or (kb/key-label-text kmgr id) "") " " desc)))))
+       ((tui-kb-var 'key-hint) kmgr id desc dim muted)
+       (str (or ((tui-kb-var 'key-label-text) kmgr id) "") " " desc)))))
+
+;; ─── Create/reload manager wrappers ───────────────────────────────────────
+
+(defn create-agent-keybindings-manager
+  "Pi: KeybindingsManager.create(agentDir)."
+  ([]
+   (create-agent-keybindings-manager (cfg/get-agent-dir)))
+  ([agent-dir]
+   (let [make (tui-kb-var 'make-keybindings-manager)]
+     (make all-keybinding-defs (load-user-bindings (keybindings-config-path agent-dir))))))
+
+(defn reload-agent-keybindings!
+  "Pi: KeybindingsManager.reload."
+  ([]
+   (reload-agent-keybindings! (cfg/get-agent-dir)))
+  ([agent-dir]
+   ((tui-kb-var 'set-user-bindings!) ((tui-kb-var 'get-global-keybindings))
+                                    (load-user-bindings (keybindings-config-path agent-dir)))))

@@ -39,8 +39,7 @@
   ;; Known pre-existing violations (engine.md §3.6/§5 finding F). Remove an
   ;; entry when the corresponding leak is fixed; new violations fail this
   ;; test.
-  {"kmet.app.keybindings" ["kmet.tui."]
-   "kmet.app.extensions" ["kmet.tui."]
+  {"kmet.app.extensions" ["kmet.tui."]
    "kmet.app.extensions.context" ["kmet.tui." "kmet.modes."]})
 
 (deftest app-layer-does-not-require-front-ends
