@@ -1042,7 +1042,15 @@
 ;; Clipboard and primary selection (`clipboard`, `selection`).
 ;; ═══════════════════════════════════════════════════════════════════════════
 
-(defn- widget-path [w] (if (and (map? w) (:path w)) (:path w) (str w)))
+(defn- widget-path
+  "W as a Tk window path: a widget record's :path, a mounted handle's window,
+   or W itself."
+  [w]
+  (cond
+    (and (map? w) (:path w)) (:path w)
+    (and (map? w) (:window-path w)) (:window-path w)
+    (and (map? w) (:window w)) (widget-path (:window w))
+    :else (str w)))
 
 (defn- opt-words [m]
   (when (seq m)
