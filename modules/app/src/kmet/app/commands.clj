@@ -20,24 +20,46 @@
    register commands; the editor's autocomplete provider reads it live."
   (:require [clojure.string :as str]))
 
-(defonce ^:private registry (atom []))
+(defonce ^:private fallback-command-registry (atom []))
+
+(defn- command-registries
+  "The registries updated by a register/unregister/clear operation: the
+   process fallback plus the active engine's registry, when available."
+  []
+  (if-let [eng (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))]
+    [(:commands eng) fallback-command-registry]
+    [fallback-command-registry]))
+
+(defn- all-registered-commands
+  "All commands currently registered, with one entry per :name."
+  []
+  (reduce (fn [acc cmd]
+            (if (some #(= (:name %) (:name cmd)) acc)
+              acc
+              (conj acc cmd)))
+          []
+          (apply concat (map deref (command-registries)))))
 
 (defn register-command!
   "Register (or replace by :name) a slash command. Returns nil."
   [cmd]
-  (swap! registry (fn [cmds] (conj (remove #(= (:name %) (:name cmd)) cmds) cmd)))
+  (doseq [reg (command-registries)]
+    (swap! reg (fn [cmds] (conj (remove #(= (:name %) (:name cmd)) cmds) cmd))))
   nil)
 
 (defn unregister-command!
   "Remove a slash command by :name. Returns nil."
   [name]
-  (swap! registry (fn [cmds] (remove #(= (:name %) name) cmds)))
+  (doseq [reg (command-registries)]
+    (swap! reg (fn [cmds] (remove #(= (:name %) name) cmds))))
   nil)
 
 (defn clear-commands!
   "Remove all registered commands (mainly for tests). Returns nil."
   []
-  (reset! registry [])
+  (doseq [reg (command-registries)]
+    (reset! reg []))
   nil)
 
 (defn command-line?
@@ -69,19 +91,19 @@
    with no :frontend tag is available to every front end, one with a tag
    only to that front end (dispatch and autocomplete filter by the
    installed capabilities)."
-  ([] @registry)
+  ([] (into [] (all-registered-commands)))
   ([frontend]
-   (filterv #(available-to? frontend %) @registry)))
+   (filterv #(available-to? frontend %) (all-registered-commands))))
 
 (defn find-command
   "Look up a slash command by :name, or nil. With FRONTEND, only a command
    available to that front end is returned (a nil :frontend tag means every
    front end)."
   ([name]
-   (first (filter #(= (:name %) name) @registry)))
+   (first (filter #(= (:name %) name) (all-registered-commands))))
   ([name frontend]
    (first (filter #(and (= (:name %) name) (available-to? frontend %))
-                  @registry))))
+                  (all-registered-commands)))))
 
 (defn register-builtin!
   "Register CMD unless a command already took the name (extensions load

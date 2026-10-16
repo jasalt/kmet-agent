@@ -52,6 +52,19 @@
 
 (declare cancel! turn-running? runtime-capabilities)
 
+(defonce ^:private default-engine-ref (atom nil))
+
+(defn default-engine
+  "The current default engine for code paths that register or emit through
+   the process-default registry/listener API."
+  []
+  @default-engine-ref)
+
+(defn set-default-engine!
+  "Install ENGINE as the process default."
+  [engine]
+  (reset! default-engine-ref engine))
+
 (defn agent-state
   "The live AgentState record. The engine holds it in an atom because a
    session switch replaces the record (the mode assoc's :session and resets
@@ -235,13 +248,15 @@
                              :compaction-queued (atom [])
                              :pending-ui (atom {})
                              :run-callbacks (atom nil)
-                             :event-listeners (atom {})})]
+                             :event-listeners (atom {})
+                             :commands (atom [])})]
     ;; Runtime-scoped extension handle: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent. The
     ;; front-end binding is runtime-scoped too (engine.md §4.5): bootstrap
     ;; installs the headless port and the front-end kind, dispose! unbinds.
     ;; A front end with its own port re-binds after its widgets exist.
     (event-bus/set-default-event-listener-atom! (:event-listeners engine))
+    (set-default-engine! engine)
     (extensions/set-session! (:session agent-state))
     (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (agent-state engine) msg)))
     (extensions/bind-extensions!
@@ -1104,6 +1119,7 @@
     ;; single engine, the process default points back at a fresh empty atom.
     (reset! (event-bus/default-event-listener-atom) {})
     (event-bus/set-default-event-listener-atom! (atom {}))
+    (set-default-engine! nil)
     (extensions/set-session! nil)
     (extensions/set-context-sink! nil)
     (extensions/unbind-extensions!))
