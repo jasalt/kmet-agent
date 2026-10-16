@@ -251,6 +251,8 @@
                              :run-callbacks (atom nil)
                              :event-listeners (atom {})
                              :commands (atom (vec @commands/pending-command-registry))
+                             :input-hooks (atom (vec @extensions/pending-input-hooks))
+                             :before-agent-start-hooks (atom (vec @extensions/pending-before-agent-start-hooks))
                              :custom-tools (atom @tools-reg/pending-custom-tools)
                              :tool-sources (atom @tools-reg/pending-tool-sources)})]
     ;; Runtime-scoped extension handle: the session facades and the ctx

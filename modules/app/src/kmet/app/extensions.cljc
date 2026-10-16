@@ -162,8 +162,18 @@
 
 ;; ─── Registries (the storage; api capabilities wire into these) ──────────
 (defonce ^:private extensions (atom []))
-(defonce ^:private input-hooks (atom []))
-(defonce ^:private before-agent-start-hooks (atom []))
+(defonce pending-input-hooks (atom []))
+(defn- current-input-hook-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+             :input-hooks)
+      pending-input-hooks))
+(defonce pending-before-agent-start-hooks (atom []))
+(defn- current-before-agent-start-hook-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+             :before-agent-start-hooks)
+      pending-before-agent-start-hooks))
 (defonce ^:private entry-renderers (atom {}))
 (defonce ^:private message-renderers (atom {}))
 (defonce ^:private tool-call-hooks (atom []))
@@ -198,14 +208,24 @@
    {:action :handled} to consume, {:action :transform :text ... :images ...}
    to rewrite, or nil. Returns a deregister fn."
   [hook]
-  (register-hook! input-hooks hook))
+  (let [reg (current-input-hook-registry)]
+    (swap! reg conj hook)
+    (fn []
+      (doseq [reg [(current-input-hook-registry)
+                   pending-input-hooks]]
+        (swap! reg (fn [hs] (remove #(identical? % hook) hs)))))))
 
 (defn register-before-agent-start-hook!
   "Register a before-agent-start hook (extension api: on-before-agent-start).
    Hook: (fn [{:keys [prompt system-prompt]}]) returning a map with
    :system-prompt and/or :message, or nil. Returns a deregister fn."
   [hook]
-  (register-hook! before-agent-start-hooks hook))
+  (let [reg (current-before-agent-start-hook-registry)]
+    (swap! reg conj hook)
+    (fn []
+      (doseq [reg [(current-before-agent-start-hook-registry)
+                   pending-before-agent-start-hooks]]
+        (swap! reg (fn [hs] (remove #(identical? % hook) hs)))))))
 
 (defn apply-input-hooks
   "Run all input hooks in registration order over text and images
@@ -213,7 +233,7 @@
    | {:action :pass ...}."
   [text source & [{:keys [streaming-behavior images]}]]
   (let [initial-images (or images [])]
-    (loop [hooks @input-hooks
+    (loop [hooks @(current-input-hook-registry)
            current text
            current-images initial-images]
       (if-let [hook (first hooks)]
@@ -239,7 +259,7 @@
   "Run all before-agent-start hooks in registration order.
    Returns {:system-prompt string-or-nil :messages [msg ...]}."
   [prompt system-prompt]
-  (loop [hooks @before-agent-start-hooks
+  (loop [hooks @(current-before-agent-start-hook-registry)
          current-prompt system-prompt
          messages []]
     (if-let [hook (first hooks)]
@@ -259,8 +279,8 @@
       {:system-prompt (when (not= current-prompt system-prompt) current-prompt)
        :messages messages})))
 
-(defn clear-input-hooks! [] (reset! input-hooks []))
-(defn clear-before-agent-start-hooks! [] (reset! before-agent-start-hooks []))
+(defn clear-input-hooks! [] (reset! (current-input-hook-registry) []))
+(defn clear-before-agent-start-hooks! [] (reset! (current-before-agent-start-hook-registry) []))
 
 ;; ─── Renderers + tool hooks (extension api) ───────────────────────────────
 
@@ -913,13 +933,13 @@
      :on-input (fn [hook]
                  (let [h (loader-aware ext hook)]
                    (register-input-hook! h)
-                   (track (fn [] (swap! input-hooks
+                   (track (fn [] (swap! (current-input-hook-registry)
                                         (fn [hs] (remove #(identical? % h) hs)))))))
      :on-before-agent-start (fn [hook]
                               (let [h (loader-aware ext hook)]
                                 (register-before-agent-start-hook! h)
                                 (track (fn []
-                                         (swap! before-agent-start-hooks
+                                         (swap! (current-before-agent-start-hook-registry)
                                                 (fn [hs] (remove #(identical? % h) hs)))))))
      :on-tool-call (fn [hook]
                      (let [h (loader-aware ext hook)]
