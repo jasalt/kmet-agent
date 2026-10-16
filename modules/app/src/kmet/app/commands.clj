@@ -20,26 +20,16 @@
    register commands; the editor's autocomplete provider reads it live."
   (:require [clojure.string :as str]))
 
-(defonce ^:private fallback-command-registry (atom []))
+(defonce pending-command-registry (atom []))
 
 (defn- command-registries
-  "The registries updated by a register/unregister/clear operation: the
-   process fallback plus the active engine's registry, when available."
+  "The registry to use when an engine is active; otherwise the pre-bootstrap
+   pending buffer."
   []
   (if-let [eng (do (require 'kmet.app.session-runtime)
                   ((resolve 'kmet.app.session-runtime/default-engine)))]
-    [(:commands eng) fallback-command-registry]
-    [fallback-command-registry]))
-
-(defn- all-registered-commands
-  "All commands currently registered, with one entry per :name."
-  []
-  (reduce (fn [acc cmd]
-            (if (some #(= (:name %) (:name cmd)) acc)
-              acc
-              (conj acc cmd)))
-          []
-          (apply concat (map deref (command-registries)))))
+    [(:commands eng)]
+    [pending-command-registry]))
 
 (defn register-command!
   "Register (or replace by :name) a slash command. Returns nil."
@@ -85,6 +75,16 @@
    front end)."
   [frontend cmd]
   (or (nil? (:frontend cmd)) (= frontend (:frontend cmd))))
+
+(defn- all-registered-commands
+  "One registered command per :name across active or pending registries."
+  []
+  (reduce (fn [acc cmd]
+            (if (some #(= (:name %) (:name cmd)) acc)
+              acc
+              (conj acc cmd)))
+          []
+          (apply concat (map deref (command-registries)))))
 
 (defn get-commands
   "All registered slash commands, or those available to FRONTEND: a command
