@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-16T07:28:00Z"
+ :generated-at "2026-10-16T07:36:49Z"
  :provider {:id :commandcode
             :name "Command Code"
             :env-vars ["CMD_API_KEY"]
@@ -951,11 +951,18 @@
     :provider :commandcode
     :api :openai-completions
     :base-url "https://api.commandcode.ai/provider/v1"
-    :reasoning false
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium "medium"
+                         :minimal nil
+                         :off nil
+                         :xhigh "xhigh"}
     :input [:text]
     :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
     :context-window 1048576
-    :max-tokens 32768}
+    :max-tokens 131072}
    "stealth/glyph-cluster:free"
    {:id "stealth/glyph-cluster:free"
     :name "Glyph Cluster"

@@ -2060,6 +2060,7 @@
    "sakana/fugu-ultra"                 [:openrouter "sakana/fugu-ultra"]
    "stepfun/Step-3.5-Flash"            [:openrouter "stepfun/step-3.5-flash"]
    "stepfun/Step-3.7-Flash"            [:openrouter "stepfun/step-3.7-flash"]
+   "stealth/cat-jam:free"             [:opencode "cat-jam-free"]
    "thinkingmachines/inkling"          [:baseten "thinkingmachines/inkling"]
    "thinkingmachines/inkling-small"    [:openrouter "thinkingmachines/inkling-small"]
    "xai/grok-4.5"                      [:xai "grok-4.5"]

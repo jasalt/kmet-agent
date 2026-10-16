@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-16T07:28:00Z"
+ :generated-at "2026-10-16T07:39:04Z"
  :provider {:id :openrouter
             :name "OpenRouter"
             :env-vars ["OPENROUTER_API_KEY"]
@@ -1018,7 +1018,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 0.008 :output 1.28 :cache-read 0.008 :cache-write 0}
+    :cost {:input 0.0068 :output 1.28 :cache-read 0.0068 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
@@ -2796,7 +2796,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.304 :output 10.295 :cache-read 0.21 :cache-write 0}
+    :cost {:input 0.304 :output 11.936 :cache-read 0.21 :cache-write 0}
     :context-window 1048576
     :max-tokens 131072
     :compat {:supports-developer-role false
@@ -6232,9 +6232,9 @@
                          :off nil
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.0167 :output 0.7796 :cache-read 0.0125 :cache-write 0}
+    :cost {:input 0.01503 :output 0.9 :cache-read 0.01125 :cache-write 0}
     :context-window 1048576
-    :max-tokens 131072
+    :max-tokens 943718
     :compat {:supports-developer-role false
              :thinking-format :openrouter
              :supports-strict-mode true}}
@@ -6477,7 +6477,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 0.0072 :output 1.152 :cache-read 0.0072 :cache-write 0}
+    :cost {:input 0.0068 :output 1.28 :cache-read 0.0068 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
@@ -6702,9 +6702,9 @@
                          :off nil
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.0167 :output 0.7796 :cache-read 0.0125 :cache-write 0}
+    :cost {:input 0.01503 :output 0.9 :cache-read 0.01125 :cache-write 0}
     :context-window 1048576
-    :max-tokens 131072
+    :max-tokens 943718
     :compat {:supports-developer-role false
              :thinking-format :openrouter
              :supports-strict-mode true}}
