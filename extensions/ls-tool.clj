@@ -15,22 +15,13 @@
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.agent.extension :as ext]
+            [kmet.libs.path :as path]
             [kmet.agent.ui.tui.tool-renderers :as renderers]))
-
-(defn- resolve-path
-  "PATH against the runtime cwd from the tool context; absolute paths pass
-   through, no ctx (or no :cwd) falls back to the process cwd."
-  [ctx path]
-  (let [p (str (or path "."))]
-    (if (fs/absolute? p)
-      p
-      (str (fs/normalize
-            (fs/path (or (:cwd ctx) (System/getProperty "user.dir")) p))))))
 
 (defn- execute
   [{:keys [path] :as args} _on-update _signal ctx]
   (try
-    (let [dir (io/file (resolve-path ctx path))]
+    (let [dir (io/file (path/resolve-tool-path-ctx ctx path))]
       (if-not (fs/directory? dir)
         {:content (str "Not a directory: " (or path ".")) :is-error true}
         (let [entries (sort-by fs/file-name (fs/list-dir dir))

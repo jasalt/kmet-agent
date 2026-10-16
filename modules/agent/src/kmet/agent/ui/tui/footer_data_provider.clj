@@ -68,8 +68,8 @@
   (reset! (:cwd-atom provider) cwd)
   ;; Branch depends on cwd — invalidate the lazy resolution
   (reset! (:git-branch-atom provider) nil)
-  (reset! (:git-branch-resolved?-atom provider) false)
-  nil)
+  (and (reset! (:git-branch-resolved?-atom provider) false)
+       nil))
 
 (defn fdp-get-git-branch
   "Resolve the git branch once per cwd, then return the cached value (pi:
@@ -85,8 +85,8 @@
 (defn fdp-get-session [provider] @(:session-atom provider))
 
 (defn fdp-set-session! [provider session]
-  (reset! (:session-atom provider) session)
-  nil)
+  (and (reset! (:session-atom provider) session)
+       nil))
 
 (defn fdp-get-session-name
   "Session display name from the latest session_info entry (pi:
@@ -102,8 +102,8 @@
    FooterDataProvider.setAvailableProviderCount — updated live by the
    /scoped-models selector and cycling)."
   [provider count]
-  (reset! (:provider-count-atom provider) count)
-  nil)
+  (and (reset! (:provider-count-atom provider) count)
+       nil))
 
 (defn fdp-get-context-window [provider] @(:context-window-atom provider))
 
@@ -114,16 +114,16 @@
 (defn fdp-get-thinking [provider] @(:thinking-atom provider))
 
 (defn fdp-set-model! [provider model]
-  (reset! (:model-atom provider) model)
-  nil)
+  (and (reset! (:model-atom provider) model)
+       nil))
 
 (defn fdp-set-provider! [provider provider-id]
-  (reset! (:provider-atom provider) provider-id)
-  nil)
+  (and (reset! (:provider-atom provider) provider-id)
+       nil))
 
 (defn fdp-set-thinking! [provider level]
-  (reset! (:thinking-atom provider) level)
-  nil)
+  (and (reset! (:thinking-atom provider) level)
+       nil))
 
 (defn fdp-get-reasoning
   "Whether the current model supports reasoning (pi: state.model.reasoning —
@@ -132,12 +132,12 @@
   @(:reasoning-atom provider))
 
 (defn fdp-set-reasoning! [provider reasoning?]
-  (reset! (:reasoning-atom provider) (boolean reasoning?))
-  nil)
+  (and (reset! (:reasoning-atom provider) (boolean reasoning?))
+       nil))
 
 (defn fdp-set-context-window! [provider window]
-  (reset! (:context-window-atom provider) window)
-  nil)
+  (and (reset! (:context-window-atom provider) window)
+       nil))
 
 (defn fdp-usage-totals
   "Cumulative usage (incl. USD :cost) across all session entries (pi:

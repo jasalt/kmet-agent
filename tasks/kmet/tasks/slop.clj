@@ -52,12 +52,13 @@
 ;; ------------------------------------------------------------------ options
 
 (def ^:private usage
-  (str "bb slop [path] [--top N] [--test] [--dups]\n\n"
-       "  path   directory (or single source file) to scan; default: .\n"
-       "  --top  number of outliers/duplicate groups to list per metric (default 15)\n"
-       "  --test also scan test trees (test/ and extensions/*/test)\n"
-       "  --dups list duplicate groups (clone groups + shape-identical defns)\n"
-       "         instead of the outlier file/function listings"))
+  (str "bb slop [path] [--top N] [--test] [--scripts] [--dups]\n\n"
+       "  path      directory (or single source file) to scan; default: .\n"
+       "  --top     number of outliers/duplicate groups to list per metric (default 15)\n"
+       "  --test    also scan test trees (test/ and extensions/*/test)\n"
+       "  --scripts also scan script trees (scripts/ and extensions/*/scripts)\n"
+       "  --dups    list duplicate groups (clone groups + shape-identical defns)\n"
+       "            instead of the outlier file/function listings"))
 
 (defn- parse-args [args]
   (loop [as (seq args) opts {:path "." :top 15}]
@@ -67,6 +68,7 @@
         (cond
           (or (= a "--help") (= a "-h")) (assoc opts :help true)
           (= a "--test") (recur (rest as) (assoc opts :test true))
+          (= a "--scripts") (recur (rest as) (assoc opts :scripts true))
           (= a "--dups") (recur (rest as) (assoc opts :dups true))
           (str/starts-with? a "--top=") (recur (rest as) (assoc opts :top (parse-long (subs a 6))))
           (= a "--top") (recur (drop 2 as) (assoc opts :top (parse-long (second as))))
@@ -288,28 +290,40 @@
   (let [name (str (fs/file-name f))]
     (boolean (some #(str/ends-with? name (str "." %)) source-exts))))
 
+(defn- scripts-root?
+  "True when ROOT itself is (or is nested under) a directory named
+   `scripts`, i.e. the user explicitly selected a script tree."
+  [root]
+  (boolean (some #{"scripts"}
+                 (map str (fs/components (fs/path root))))))
+
 (defn- skipped-path?
   "True when F under ROOT should be ignored: a build/VCS directory segment,
-   or - unless TEST? - a `test` directory segment."
-  [root f test?]
-  (let [parts (map str (fs/components (fs/relativize root f)))]
+   or - unless TEST? - a `test` directory segment, or - unless SCRIPTS? or
+   ROOT is a `scripts` tree - a `scripts` directory segment."
+  [root f {:keys [test scripts] :as _opts}]
+  (let [scripts? (or (boolean scripts) (scripts-root? root))
+        parts (map str (fs/components (fs/relativize root f)))]
     (boolean (or (some skip-segments parts)
-                 (and (not test?) (some #{"test"} parts))))))
+                 (and (not test) (some #{"test"} parts))
+                 (and (not scripts?) (some #{"scripts"} parts))))))
 
 (defn source-files
   "Every Clojure source (.clj/.cljc/.cljs/.bb) under ROOT, excluding build
    and VCS directories. Test trees (`test` path segments, including
-   `extensions/*/test`) are excluded unless OPTS has :test true. ROOT may
-   itself be a single source file."
+   `extensions/*/test`) are excluded unless OPTS has :test true; script
+   trees (`scripts` path segments, including `extensions/*/scripts`) are
+   excluded unless OPTS has :scripts true or ROOT is itself a script tree.
+   ROOT may itself be a single source file."
   ([root] (source-files root {}))
-  ([root {:keys [test]}]
+  ([root {:keys [scripts] :as opts}]
    (let [root-path (fs/path root)]
      (if (fs/regular-file? root-path)
        (if (source-path? root-path) [root-path] [])
        (->> (fs/glob root-path "**")
             (filter fs/regular-file?)
             (filter source-path?)
-            (remove #(skipped-path? root-path % test))
+            (remove #(skipped-path? root-path % (assoc opts :scripts (or (boolean scripts) (scripts-root? root-path)))))
             (sort-by str))))))
 
 (defn- parse-scan
@@ -333,9 +347,10 @@
    OPTS: :top outlier/duplicate-group count (default 15); :test also scan
    test trees; :dups also collect the duplicate groups (see
    kmet.tasks.slop.dups)."
-  [root {:keys [top test] :as opts :or {top 15}}]
-  (let [dups? (:dups opts)
-        files (source-files root {:test test})
+  [root {:keys [top test scripts] :as opts :or {top 15}}]
+  (let [scripts? (or (boolean scripts) (scripts-root? root))
+        dups? (:dups opts)
+        files (source-files root {:test test :scripts scripts?})
         sloc-stats (mapv file-sloc files)
         sloc-by-file (into {} (map (juxt :file :sloc) sloc-stats))
         sloc-lines-by-file (into {} (map (juxt :file :sloc-lines) sloc-stats))
@@ -386,6 +401,7 @@
                          (sort-by second >))]
     {:root (str root)
      :test (boolean test)
+     :scripts scripts?
      :top top
      :dups (boolean dups?)
      :dup-clones dup-clones
@@ -451,7 +467,7 @@
   "Render a `scan` report as plain text: summary, reference comparison and
    the outlier listings — or, for a :dups scan, the duplicate groups
    (kmet.tasks.slop.dups) instead of the outlier listings."
-  [{:keys [root test files sloc clone-lines rule-lines union-lines overlap rule-counts
+  [{:keys [root test scripts files sloc clone-lines rule-lines union-lines overlap rule-counts
            outlier-files functions failures top dups dup-clones dup-shapes lines-by-file
            high-cc max-cc total-mass hi-mass verbosity erosion outliers]}]
   (str/join
@@ -459,7 +475,11 @@
    (concat
     [(str "SCBench slop - " root)
      (format "  scope: %s | %d files | %d SLOC | %d functions | %d parse failures"
-             (if test "source + tests" "source only")
+             (cond
+               (and test scripts) "source + tests + scripts"
+               test "source + tests"
+               scripts "source + scripts"
+               :else "source only")
              files sloc functions (count failures))
      ""
      (format "VERBOSITY  %.3f  (SCBench: clone + rule-flagged lines / SLOC)"
@@ -520,4 +540,4 @@
     (when (or (nil? top) (< top 1))
       (println (str "bb slop: --top must be a positive integer\n\n" usage))
       (System/exit 1))
-    (println (format-report (scan path (select-keys opts [:top :test :dups]))))))
+    (println (format-report (scan path (select-keys opts [:top :test :scripts :dups]))))))

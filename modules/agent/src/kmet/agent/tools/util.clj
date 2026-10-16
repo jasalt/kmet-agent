@@ -2,28 +2,15 @@
   "Shared utilities for tool implementations — safe file traversal,
    quiet-title path shortening, etc."
   (:require [babashka.fs :as fs]
-            [clojure.string :as str]))
-
-(def ^:private max-traverse-files 10000)
+            [clojure.string :as str]
+            [kmet.libs.path :as path]))
 
 (defn safe-file-seq
   "Like file-seq but with symlink cycle protection and a max-files limit.
    Skips `.git` directories — a repo's object store is never source-search
    material."
   [dir-path]
-  (let [visited (atom #{})]
-    (take max-traverse-files
-          (filter fs/regular-file?
-                  (tree-seq
-                   (fn [f]
-                     (and (fs/directory? f)
-                          (not= ".git" (fs/file-name f))
-                          (let [cp (fs/canonicalize f)]
-                            (when-not (contains? @visited cp)
-                              (swap! visited conj cp)
-                              true))))
-                   (fn [d] (fs/list-dir d))
-                   (fs/file dir-path))))))
+  (path/safe-file-seq dir-path))
 
 ;; ─── Runtime working directory ────────────────────────────────────────────
 

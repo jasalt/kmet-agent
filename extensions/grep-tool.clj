@@ -17,43 +17,12 @@
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.agent.extension :as ext]
+            [kmet.libs.path :as path]
             [kmet.agent.ui.tui.tool-renderers :as renderers]))
-
-(def ^:private max-traverse-files
-  "Traversal cap shared with the retired builtin (10k files)."
-  10000)
 
 (def ^:private max-matches
   "Matches shown before the result is marked truncated."
   100)
-
-(defn- resolve-path
-  "PATH against the runtime cwd from the tool context; absolute paths pass
-   through, no ctx (or no :cwd) falls back to the process cwd."
-  [ctx path]
-  (let [p (str (or path "."))]
-    (if (fs/absolute? p)
-      p
-      (str (fs/normalize
-            (fs/path (or (:cwd ctx) (System/getProperty "user.dir")) p))))))
-
-(defn- safe-file-seq
-  "Like file-seq with symlink-cycle protection, a max-files cap and `.git`
-   skipped — a repo's object store is never source-search material."
-  [dir-path]
-  (let [visited (atom #{})]
-    (take max-traverse-files
-          (filter fs/regular-file?
-                  (tree-seq
-                   (fn [f]
-                     (and (fs/directory? f)
-                          (not= ".git" (fs/file-name f))
-                          (let [cp (fs/canonicalize f)]
-                            (when-not (contains? @visited cp)
-                              (swap! visited conj cp)
-                              true))))
-                   (fn [d] (fs/list-dir d))
-                   (fs/file dir-path))))))
 
 (defn- search-file!
   "Append FILE's matching lines to RESULTS, the path /-separated; an
@@ -73,12 +42,12 @@
   [{:keys [pattern path]} _on-update _signal ctx]
   (try
     (let [re (re-pattern pattern)
-          f (io/file (resolve-path ctx path))
+          f (io/file (path/resolve-tool-path-ctx ctx path))
           results (volatile! [])
           skipped (volatile! [])]
       (if (fs/regular-file? f)
         (search-file! results skipped re f)
-        (doseq [file (safe-file-seq f)]
+        (doseq [file (path/safe-file-seq f)]
           (search-file! results skipped re file)))
       (let [r @results
             sk @skipped]

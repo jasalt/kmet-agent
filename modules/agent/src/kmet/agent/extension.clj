@@ -338,6 +338,14 @@
                       :input-hooks [] :before-agent-start-hooks []
                       :bash-tool-opts []
                       :ui-calls [] :emitted [] :model-calls []})
+         hook (fn [key]
+                (fn [hook]
+                  (swap! state update key conj hook)
+                  (fn [] (swap! state update key (fn [hs] (remove #(identical? % hook) hs))))))
+         assoc-k (fn [key]
+                   (fn [id value]
+                     (swap! state assoc-in [key id] value)
+                     (fn [] (swap! state update key dissoc id))))
          api {:extension-name "nullable" :extension-path "test" :extension-dir "test"
               :agent-dir agent-dir
               :register-command! (fn [cmd]
@@ -374,44 +382,22 @@
                           (fn [] (swap! state update-in [:handlers event-type]
                                         (fn [hs] (remove #(identical? % handler) hs)))))
               :emit-event! (fn [event] (swap! state update :emitted conj event))
-              :on-input (fn [hook]
-                          (swap! state update :input-hooks conj hook)
-                          (fn [] (swap! state update :input-hooks
-                                        (fn [hs] (remove #(identical? % hook) hs)))))
-              :on-before-agent-start (fn [hook]
-                                       (swap! state update :before-agent-start-hooks conj hook)
-                                       (fn [] (swap! state update :before-agent-start-hooks
-                                                     (fn [hs] (remove #(identical? % hook) hs)))))
-              :on-tool-call (fn [hook]
-                              (swap! state update :tool-call-hooks conj hook)
-                              (fn [] (swap! state update :tool-call-hooks
-                                            (fn [hs] (remove #(identical? % hook) hs)))))
-              :on-tool-result (fn [hook]
-                                (swap! state update :tool-result-hooks conj hook)
-                                (fn [] (swap! state update :tool-result-hooks
-                                              (fn [hs] (remove #(identical? % hook) hs)))))
-              :register-flag! (fn [name opts]
-                                (swap! state assoc-in [:flags name] opts)
-                                (fn [] (swap! state update :flags dissoc name)))
+              :on-input (hook :input-hooks)
+              :on-before-agent-start (hook :before-agent-start-hooks)
+              :on-tool-call (hook :tool-call-hooks)
+              :on-tool-result (hook :tool-result-hooks)
+              :register-flag! (assoc-k :flags)
               :get-flag (fn [name] (get-in @state [:flags name]))
-              :register-shortcut! (fn [key-id opts]
-                                    (swap! state assoc-in [:shortcuts key-id] opts)
-                                    (fn [] (swap! state update :shortcuts dissoc key-id)))
+              :register-shortcut! (assoc-k :shortcuts)
               :register-markdown-transformer! (fn [transformer]
                                                 (swap! state update :markdown-transformers conj transformer)
                                                 (fn [] (swap! state update :markdown-transformers
                                                               (fn [ts] (remove #(identical? % transformer) ts)))))
               :send-message! (fn [message opts]
                                (swap! state update :ui-calls conj [:send-message! message opts]))
-              :register-entry-renderer! (fn [custom-type renderer]
-                                          (swap! state assoc-in [:entry-renderers custom-type] renderer)
-                                          (fn [] (swap! state update :entry-renderers dissoc custom-type)))
-              :register-message-renderer! (fn [custom-type renderer]
-                                            (swap! state assoc-in [:message-renderers custom-type] renderer)
-                                            (fn [] (swap! state update :message-renderers dissoc custom-type)))
-              :register-alias! (fn [alias-kw f]
-                                 (swap! state assoc-in [:aliases alias-kw] f)
-                                 (fn [] (swap! state update :aliases dissoc alias-kw)))
+              :register-entry-renderer! (assoc-k :entry-renderers)
+              :register-message-renderer! (assoc-k :message-renderers)
+              :register-alias! (assoc-k :aliases)
               :register-skill! (fn [raw-content & [opts]]
                                  (swap! state update :skills conj {:content raw-content :opts opts})
                                  (fn [] (swap! state update :skills

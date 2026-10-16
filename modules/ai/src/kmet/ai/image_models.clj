@@ -18,6 +18,7 @@
             [clojure.string :as str]
             [kmet.ai.auth :as auth]
             [kmet.ai.models :as models]
+            [kmet.libs.catalog-cache :as catalog-cache]
             [kmet.libs.http :as http]))
 
 ;; ─── Records (pi types.ts ImagesModel / images-models.ts ImagesProvider) ──
@@ -314,16 +315,10 @@
    (register-images-api-provider! :openrouter-images generate-openrouter-images)
    (clear-providers!)
    (let [data (or (when-let [cache (fresh-image-model-cache agent-dir)]
-                    (try
-                      (when (not= cache @announced-image-cache)
-                        (reset! announced-image-cache cache)
-                        (println "Image models: using cached catalog from" cache))
-                      (read-catalog-file cache)
-                      (catch Exception e
-                        (binding [*out* *err*]
-                          (println "Warning: ignoring unusable image-model cache:"
-                                   (ex-message e)))
-                        nil)))
+                    (catalog-cache/try-cached announced-image-cache cache
+                                              "Image models: using cached catalog from"
+                                              read-catalog-file
+                                              "Warning: ignoring unusable image-model cache:"))
                   (do (reset! announced-image-cache nil)
                       (bundled-image-catalog)))
          provider-info (:provider data)]

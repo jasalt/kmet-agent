@@ -241,6 +241,16 @@
   (swap! hook-atom conj hook)
   (fn [] (swap! hook-atom (fn [hs] (remove #(identical? % hook) hs)))))
 
+(defn- register-pending-hook!
+  "Register HOOK in CUR-FN's registry and return a deregister fn removing it
+   from CUR-FN and PENDING-ATOM."
+  [cur-fn pending-atom hook]
+  (let [reg (cur-fn)]
+    (swap! reg conj hook)
+    (fn []
+      (doseq [reg [(cur-fn) pending-atom]]
+        (swap! reg (fn [hs] (remove #(identical? % hook) hs)))))))
+
 (defn register-input-hook!
   "Register an input hook (extension api: on-input). Fires for agent
    messages submitted from the interactive input path. Hook:
@@ -248,24 +258,14 @@
    {:action :handled} to consume, {:action :transform :text ... :images ...}
    to rewrite, or nil. Returns a deregister fn."
   [hook]
-  (let [reg (current-input-hook-registry)]
-    (swap! reg conj hook)
-    (fn []
-      (doseq [reg [(current-input-hook-registry)
-                   pending-input-hooks]]
-        (swap! reg (fn [hs] (remove #(identical? % hook) hs)))))))
+  (register-pending-hook! current-input-hook-registry pending-input-hooks hook))
 
 (defn register-before-agent-start-hook!
   "Register a before-agent-start hook (extension api: on-before-agent-start).
    Hook: (fn [{:keys [prompt system-prompt]}]) returning a map with
    :system-prompt and/or :message, or nil. Returns a deregister fn."
   [hook]
-  (let [reg (current-before-agent-start-hook-registry)]
-    (swap! reg conj hook)
-    (fn []
-      (doseq [reg [(current-before-agent-start-hook-registry)
-                   pending-before-agent-start-hooks]]
-        (swap! reg (fn [hs] (remove #(identical? % hook) hs)))))))
+  (register-pending-hook! current-before-agent-start-hook-registry pending-before-agent-start-hooks hook))
 
 (defn apply-input-hooks
   "Run all input hooks in registration order over text and images
@@ -345,27 +345,26 @@
 (defn get-message-renderer [custom-type]
   (get @(current-message-renderer-registry) custom-type))
 
+(defn- register-tracked-hook!
+  "register-hook! plus a deregister closure covering the current registry and
+   its pending twin."
+  [cur-reg pending-reg hook]
+  (register-hook! cur-reg hook)
+  (fn []
+    (doseq [reg [cur-reg pending-reg]]
+      (swap! reg (fn [hs] (remove #(identical? % hook) hs))))))
+
 (defn register-tool-call-hook!
   "Register a tool-call hook (extension api: on-tool-call): (fn [ctx]) →
    nil | {:block true :reason} | {:args transformed}. Returns a deregister fn."
   [hook]
-  (let [reg (current-tool-call-hook-registry)]
-    (register-hook! reg hook)
-    (fn []
-      (doseq [reg [(current-tool-call-hook-registry)
-                   pending-tool-call-hooks]]
-        (swap! reg (fn [hs] (remove #(identical? % hook) hs)))))))
+  (register-tracked-hook! (current-tool-call-hook-registry) pending-tool-call-hooks hook))
 
 (defn register-tool-result-hook!
   "Register a tool-result hook (extension api: on-tool-result): (fn [ctx])
    → nil | {:content ... :is-error ...} overrides. Returns a deregister fn."
   [hook]
-  (let [reg (current-tool-result-hook-registry)]
-    (register-hook! reg hook)
-    (fn []
-      (doseq [reg [(current-tool-result-hook-registry)
-                   pending-tool-result-hooks]]
-        (swap! reg (fn [hs] (remove #(identical? % hook) hs)))))))
+  (register-tracked-hook! (current-tool-result-hook-registry) pending-tool-result-hooks hook))
 
 (defn get-tool-call-hooks [] @(current-tool-call-hook-registry))
 (defn get-tool-result-hooks [] @(current-tool-result-hook-registry))

@@ -15,7 +15,8 @@
             [kmet.libs.dynamic-value :as dynamic-value]
             [kmet.ai.model-config :as model-config]
             [kmet.ai.oauth :as oauth]
-            [kmet.ai.provider-composer :as composer]))
+            [kmet.ai.provider-composer :as composer]
+            [kmet.libs.catalog-cache :as catalog-cache]))
 
 ;; ─── Records (pi: types.ts Model / models.ts Provider) ─────────────────────
 
@@ -414,15 +415,10 @@
    (auth/set-oauth-source! (fn [provider-id] (:oauth (get-provider provider-id))))
    (let [providers
          (or (when-let [cache (fresh-model-cache agent-dir)]
-               (try
-                 (when (not= cache @announced-cache)
-                   (reset! announced-cache cache)
-                   (println "Models: using cached catalogs from" cache))
-                 (load-dir-providers cache)
-                 (catch Exception e
-                   (binding [*out* *err*]
-                     (println "Warning: ignoring unusable model catalog cache:" (ex-message e)))
-                   nil)))
+               (catalog-cache/try-cached announced-cache cache
+                                         "Models: using cached catalogs from"
+                                         load-dir-providers
+                                         "Warning: ignoring unusable model catalog cache:"))
              (do (reset! announced-cache nil)
                  (load-bundled-providers)))
          providers (into {}

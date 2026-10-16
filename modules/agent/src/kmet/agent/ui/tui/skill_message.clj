@@ -39,7 +39,8 @@
             [kmet.libs.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as theme]))
+            [kmet.tui.theme :as theme]
+            [kmet.agent.ui.tui.messagebox :as messagebox]))
 
 ;; ─── Shared styling (also used by the compact read call) ───────────────────
 
@@ -69,7 +70,7 @@
 
 ;; ─── Record ────────────────────────────────────────────────────────────────
 
-(declare apply-theme! rebuild-content!)
+(declare rebuild-content!)
 
 (defn- expanded-state
   "The expansion state the children were last built for, read WITHOUT
@@ -100,7 +101,7 @@
             thm (deref s/theme-sub)
             _ (when-not (identical? thm @applied-theme-atom)
                 (reset! applied-theme-atom thm)
-                (apply-theme! this thm))
+                (messagebox/themed-box! this thm rebuild-content!))
             ;; the shared mode is the single source of truth (pi:
             ;; toolOutputExpanded, extended): sync only when it moved, so
             ;; the children are rebuilt at most once per flip
@@ -169,13 +170,6 @@
     ;; track! watches do not outlive them (zombie watchers, tui.md §5.1)
     (container/container-replace-children! container children)))
 
-(defn- apply-theme!
-  "Apply THEME to the derived structures (box background + rebuilt children).
-   Runs at construction and whenever theme-sub changes (render, apply-once)."
-  [comp thm]
-  (box/box-set-bg-fn @(:box comp) #(theme/bg thm :custom-message-bg %))
-  (rebuild-content! comp @(:expanded-atom comp)))
-
 ;; ─── Public API ────────────────────────────────────────────────────────────
 
 ;; ─── Construction ──────────────────────────────────────────────────────────
@@ -216,5 +210,5 @@
       ;; Children and background built here from the global theme snapshot;
       ;; the first render re-applies from theme-sub if it changed meanwhile
       (reset! (:applied-theme-atom comp) thm)
-      (apply-theme! comp thm)
+      (messagebox/themed-box! comp thm rebuild-content!)
       comp)))

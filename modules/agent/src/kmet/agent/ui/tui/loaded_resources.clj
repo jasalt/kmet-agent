@@ -49,18 +49,18 @@
   "Replace the resource sections. Each section is
    {:name \"Skills\" :items [compact labels] :expanded-items [full lines]}."
   [comp sections]
-  (reset! (:sections-atom comp) (vec sections))
-  nil)
+  (and (reset! (:sections-atom comp) (vec sections))
+       nil))
 
 (defn loaded-resources-set-expanded!
   "Set the section expansion state (pi: toolOutputExpanded drives header and
    resource sections together)."
   [comp expanded?]
-  (reset! (:expanded?-atom comp) (boolean expanded?))
-  nil)
+  (and (reset! (:expanded?-atom comp) (boolean expanded?))
+       nil))
 
 (defn loaded-resources-set-theme!
   "Switch the theme (live re-theme on theme changes)."
   [comp th]
-  (reset! (:theme-atom comp) th)
-  nil)
+  (and (reset! (:theme-atom comp) th)
+       nil))

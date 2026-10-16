@@ -227,5 +227,5 @@
   "Enable/disable the \" (auto)\" context indicator (pi:
    setAutoCompactEnabled)."
   [comp enabled?]
-  (reset! (:auto-compact-atom comp) (boolean enabled?))
-  nil)
+  (and (reset! (:auto-compact-atom comp) (boolean enabled?))
+       nil))
