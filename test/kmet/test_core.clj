@@ -3,9 +3,9 @@
    --version flag, and its token-count formatting."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.core :as core]
+            [kmet.agent.core :as core]
             [kmet.ai.models :as models]
-            [kmet.version :as version]))
+            [kmet.agent.version :as version]))
 
 (t/deftest test-format-token-count
   (t/is (= "200K" (@#'core/format-token-count 200000)))

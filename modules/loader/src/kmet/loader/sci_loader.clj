@@ -4,7 +4,7 @@
    `require` back through the loader.
 
    The context is built here; the caller injects the share list
-   (`:namespaces`, e.g. the kmet.extension contract plus the shared
+   (`:namespaces`, e.g. the kmet.agent.extension contract plus the shared
    kmet.tui.* / kmet.libs.* layers copied with `sci/copy-var*`), the
    sci/init knobs (`:sci-opts` — :classes, :imports, :features, …) and the
    source provider:

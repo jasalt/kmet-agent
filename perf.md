@@ -426,7 +426,7 @@ runtime-loaded, which kmet needs — without it the build stops with the
 native-library notice and exits 2). kmet builds and runs:
 
 ```sh
-jolt build -m kmet.core -o kmet-jolt --dynamic   # ~15 min on the phone, 52 MB
+jolt build -m kmet.agent.core -o kmet-jolt --dynamic   # ~15 min on the phone, 52 MB
 ./kmet-jolt                                       # full TUI, works
 ```
 
@@ -572,7 +572,7 @@ fixture before generalizing; that is exactly what §6.3 targets.
 - Correctness: `kmet.test-utils`, `kmet.test-keys`,
   `kmet.tui.components.test-editor`, `kmet.tui.components.test-markdown`,
   `kmet.tui.components.test-truncated-text`, `kmet.tui.components.test-text`,
-  `kmet.tui.test-render-loop`, `kmet.app.ui.tui.test-tool-renderers` (or
+  `kmet.tui.test-render-loop`, `kmet.agent.ui.tui.test-tool-renderers` (or
   `bb test-changed`) — and the same namespaces under `jolt test`, since §5.4
   adds a jolt-only code path. All green on both hosts when the §5 wins landed.
 - Equality contract for the scanner: `kmet.test-utils/test-strip-ansi-host-equivalence`
@@ -653,7 +653,7 @@ budget will reject"*, never as an engine preference.
 grouped `retryable-error-regex` (2.01 → 0.79 ms). That was an artifact: the
 non-interleaved benchmark measured the *warming* rounds (irregex's first
 rounds are 3-4x its steady state — see §6.2b). The interleaved A/B/A numbers
-above replace it, and the proposed change to `kmet.app.loop` was dropped. A
+above replace it, and the proposed change to `kmet.agent.loop` was dropped. A
 second revision measured a grouped `bare-url-re` as 113x slower; that was
 building the grouped pattern as `( (?i)… )`, which moves `(?i)` *inside* the
 group — with `(?i)` outside, grouped and group-free are identical (0.108 vs
@@ -1260,7 +1260,7 @@ Two of §12's improvement candidates landed:
 
 1. **One `[:text]` node per tool-output block** — the bash/read/write/default
    renderers emitted one node per output line; they now emit a single joined
-   node (`kmet.app.ui.tui.tool-renderers/tool-text-lines`). Node work alone, on
+   node (`kmet.agent.ui.tui.tool-renderers/tool-text-lines`). Node work alone, on
    the synthetic 6,438-line body: 259 → 76 ms (bb) and 570 → 172 ms (jolt).
 2. **Normalize memo** — `run-render-loop!` reuses the previous frame's
    normalized string for every line `identical?` to its previous raw line
@@ -2186,11 +2186,11 @@ A sweep of `src/` for regexes on per-frame / per-line / per-chunk paths after
 
 ### 19.1 Fixed: the bash/tool output sanitizers
 
-`kmet.app.bash-executor/sanitize-output` ran a private copy of
+`kmet.agent.bash-executor/sanitize-output` ran a private copy of
 `ANSI-CODE-RE` plus two unconditional CR replaces on every decoded bash
 chunk (the streaming path, so once per process read);
-`kmet.app.ui.tui.tool-renderers/sanitize-display-text` and
-`kmet.app.ui.tui.bash-execution/bash-execution-append-output!` repeated the CR
+`kmet.agent.ui.tui.tool-renderers/sanitize-display-text` and
+`kmet.agent.ui.tui.bash-execution/bash-execution-append-output!` repeated the CR
 passes. The private ANSI regex is gone — the shared host-branched
 `kmet.tui.utils/strip-ansi-codes` does the strip (scanner on Jolt) — and the
 CR passes are guarded with `str/includes? "\r"`. Real function, 1.8 KB

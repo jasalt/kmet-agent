@@ -1,0 +1,2680 @@
+(ns kmet.agent.test-interactive-ui
+  "Tests for the interactive-mode extension UI helpers: the autocomplete
+   factory wrapper chain (pi: setupAutocompleteProvider) and the custom
+   editor duck-typed transfer (pi: setCustomEditorComponent)."
+  (:require [clojure.string :as str]
+            [clojure.test :as t :refer [deftest testing]]
+            [kmet.agent.debug :as debug]
+            [kmet.tui.autocomplete :as ac]
+            [kmet.tui.components.container :as container]
+            [kmet.tui.components.editor :as editor]
+            [kmet.tui.components.expandable-text :as expandable-text]
+            [kmet.tui.components.settings-list :as settings-list]
+            [kmet.tui.components.spinner :as spinner]
+            [kmet.tui.components.text :as text]
+            [kmet.tui.hikap :as hiccup]
+            [kmet.libs.hikap.component :as component]
+            [kmet.tui.theme :as theme]
+            [kmet.tui.protocols :as protocols]
+            [kmet.tui.terminal :as terminal]
+            [kmet.tui.core :as tui]
+            [kmet.agent.modes.interactive :as inter]
+            [kmet.agent.modes.interactive.auth :as ia]
+            [kmet.agent.modes.interactive.commands :as builtins]
+            [kmet.agent.modes.interactive.layout :as layout]
+            [kmet.agent.modes.interactive.ui-registry :as ui-registry]
+            [kmet.agent.modes.interactive.state :as state]
+            [kmet.agent.modes.interactive.status :as status]
+            [kmet.agent.modes.interactive.turn :as turn]
+            [kmet.agent.modes.interactive.session-admin :as session-admin]
+            [kmet.agent.commands :as commands]
+            [kmet.agent.extensions :as extensions]
+            [kmet.agent.keybindings :as app-kb]
+            [kmet.agent.modes.interactive.theme-controller :as theme-ctrl]
+            [kmet.agent.ui.tui.footer :as footer]
+            [kmet.agent.ui.tui.pending-messages :as pending-messages]
+            [kmet.agent.ui.tui.scoped-models-selector :as scoped-models-selector]
+            [kmet.agent.ui.tui.status-indicator :as status-indicator]
+            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.agent.ui.tui.dock :as dock]
+            [kmet.agent.ui.tui.model-catalog :as model-catalog]
+            [kmet.agent.ui.tui.model-selector :as model-selector]
+            [kmet.agent.ui.tui.thinking-selector :as thinking-selector]
+            [kmet.ai.models :as m]
+            [kmet.ai.auth :as auth]
+            [kmet.agent.loop :as agent]
+            [kmet.agent.tools.core :as tools]
+            [kmet.libs.http :as http]
+            [kmet.libs.terminal-image :as timg]
+            [kmet.agent.session :as session]
+            [kmet.agent.session-export :as session-export]
+            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.skills :as skills]
+            [kmet.agent.ui.tui.footer-data-provider :as fdp]
+            [babashka.fs :as fs]
+            [kmet.agent.config :as cfg]
+            [kmet.tui.keybindings :as tui-kb]
+            [kmet.agent.event-bus :as event-bus]
+            [kmet.test-utils :as tu :refer [slash strip-ansi]]
+            [kmet.libs.concurrent :as concurrent]))
+
+(defn- capture-mount!
+  "A dock/mount! stand-in for tests: records the component that receives
+  keys (the :focus-target when given, else COMPONENT) in REF (pi:
+  showSelector mounts into the editor dock and focuses the interactive
+  child; the tests don't have a dock)."
+  [ref]
+  (fn [_ component & [opts]]
+    (reset! ref (or (:focus-target opts) component))))
+
+(defn- clear-installed-context!
+  "Reset the global extension wiring a `build-extension-ui-registry` install
+   leaves behind: the binding (capability map + front-end kind) plus the
+   session/context/entry sinks, which close over the installing test's fake
+   cs. Call from a test's finally so later tests never see the fake
+   context."
+  []
+  (extensions/set-session! nil)
+  (extensions/set-context-sink! nil)
+  (extensions/set-entry-sink! nil)
+  (extensions/unbind-extensions!))
+
+(defn- command-ctx
+  "The command context for CS: the engine-portable builtins take it directly
+   (the interactive registry unwraps its own commands from :state)."
+  [cs]
+  {:runtime (:engine cs)
+   :ui (turn/interactive-command-ui cs)
+   :frontend :interactive})
+
+(def ^:private no-image-caps
+  "Capabilities stub for the /settings tests: the image rows (Show images /
+  Image width) exist only when the terminal reports image support
+  (image-rows), so index-based row navigation must not depend on the
+  developer's terminal. Stub get-capabilities alongside the other test
+  redefs."
+  {:images nil :true-color true :hyperlinks false})
+
+(defn- transfer-editor! [app-ed custom-ed kb]
+  ((var ui-registry/transfer-editor!) app-ed custom-ed kb))
+
+(defn- normalize [x]
+  ((var ui-registry/normalize-autocomplete-provider) x))
+
+(deftest test-normalize-autocomplete-provider-protocol
+  (testing "an AutocompleteProvider passes through unchanged"
+    (let [p (ac/make-combined-provider :commands-fn (constantly []))]
+      (t/is (identical? p (normalize p))))))
+
+(deftest test-normalize-autocomplete-provider-map
+  (testing "a duck-typed map provider is adapted to the protocol"
+    (let [p (normalize {:get-suggestions (fn [_state] {:items [{:value "x" :label "X"}]
+                                                       :prefix "x"})
+                        :get-trigger-characters ["@"]})]
+      (t/is (satisfies? ac/AutocompleteProvider p))
+      (let [res (ac/get-suggestions p ["xa"] 0 1 {})]
+        (t/is (= "x" (:prefix res)))
+        (t/is (= "X" (-> res :items first :label))))
+      (t/is (= ["@"] (ac/get-trigger-characters p)))
+      ;; default apply-completion replaces the prefix
+      (let [st (ac/apply-completion p ["xa"] 0 1 {:value "xyz" :label "xyz"} "x")]
+        (t/is (= "xyza" (nth (:lines st) 0)))
+        (t/is (= 3 (:cursor-col st)))))))
+
+(deftest test-normalize-autocomplete-provider-nil
+  (testing "non-provider values normalize to nil"
+    (t/is (nil? (normalize nil)))
+    (t/is (nil? (normalize 42)))))
+
+(deftest test-transfer-editor!
+  (testing "transfer-editor! copies text callbacks, appearance, provider,
+            and action handlers onto a custom editor (pi duck-typing)"
+    (let [app-ed (editor/make-editor)
+          custom (editor/make-editor)
+          _ (editor/editor-set-on-submit! app-ed (fn [t] (println t)))
+          _ (editor/editor-set-on-action! app-ed "app.interrupt" (fn []))
+          _ (editor/editor-set-autocomplete-provider!
+             app-ed (ac/make-combined-provider :commands-fn (constantly [])))
+          _ (reset! (:border-fn app-ed) (fn [s] s))
+          _ (reset! (:terminal-rows-atom app-ed) (fn [] 24))
+          _ (reset! (:padding-x app-ed) 3)]
+      (transfer-editor! app-ed custom nil)
+      (t/is (identical? @(:on-submit app-ed) @(:on-submit custom))
+            "on-submit handler copied")
+      (t/is (contains? @(:action-handlers custom) "app.interrupt")
+            "app action handlers copied")
+      (t/is (some? @(:autocomplete-provider custom))
+            "autocomplete provider copied")
+      (t/is (identical? @(:border-fn app-ed) @(:border-fn custom))
+            "border fn copied (pi: borderColor property)")
+      (t/is (= 3 @(:padding-x custom)) "padding copied")
+      (t/is (some? @(:terminal-rows-atom custom))
+            "dynamic-height source copied"))))
+
+(deftest test-transfer-editor!-non-editor
+  (testing "transfer to a non-editor component is a no-op"
+    (let [app-ed (editor/make-editor)
+          plain {:render (fn [_] [""])}]
+      (t/is (nil? (transfer-editor! app-ed plain nil)))
+      (t/is (= [:render] (keys plain)) "plain map untouched"))))
+
+;; ─── Builtin auth commands (Phase 3) ───────────────────────────────────────
+
+(deftest test-builtin-login-logout-registered
+  (testing "login/logout are real builtins inside register-builtin-commands!
+            (not dropped or left as top-level forms)"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [login (commands/find-command "login")
+          logout (commands/find-command "logout")]
+      (t/is (some? login) "login registered")
+      (t/is (= "Configure provider authentication" (:description login)))
+      (t/is (some? (:handler login)) "login has a handler")
+      (t/is (some? logout) "logout registered")
+      (t/is (= "Remove provider authentication" (:description logout)))
+      (t/is (some? (:handler logout)) "logout has a handler"))))
+
+(deftest test-view-builtin-through-the-command-ctx
+  (testing "the registry adapter unwraps :state for a view-bound builtin:
+            /help dispatched through the real command ctx reaches the chat"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state)
+          msgs (atom [])
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :tui nil})]
+      (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (swap! msgs conj m))]
+        ((:handler (commands/find-command "help")) (turn/command-context cs) ""))
+      (t/is (some #(str/includes? (str (:content %)) "Available commands") @msgs)
+            "the view-bound handler saw the CoreState through :state"))))
+
+(deftest test-name-command-portable
+  (testing "/name runs from the command ctx: it renames the session and
+            reports through the shared UI capabilities (no CoreState)"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [dir (str "target/test-name-command-" (System/currentTimeMillis))
+          sess (session/create-session dir)
+          engine (tu/test-engine {:session (atom sess)})
+          calls (atom [])]
+      (try
+        ((:handler (commands/find-command "name"))
+         {:runtime engine
+          :ui {:info (fn [label content] (swap! calls conj [:info label content]))
+               :set-title (fn [] (swap! calls conj [:set-title]))}}
+         "  my session  ")
+        (t/is (= "my session" (session/get-session-name sess)))
+        (t/is (= [:set-title] (first @calls)) "the title refresh comes first")
+        (t/is (= [:info "Name" "Session name set: my session"] (second @calls)))
+        (t/is (= 2 (count @calls)) "no warning for an already-clean name")
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-builtins-do-not-clobber-extension-commands
+  (testing "builtin registration skips names an extension already took
+            (extensions load before the layout is built; the shipped /tools
+            extension replaces the builtin tools listing)"
+    (commands/clear-commands!)
+    (commands/register-command!
+     {:name "tools" :description "extension version" :handler (fn [_ _] nil)})
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (t/is (= "extension version" (:description (commands/find-command "tools")))
+          "extension command survives builtin registration")
+    (t/is (some? (commands/find-command "model")) "unclaimed builtins still register")))
+
+(deftest test-login-logout-unmatched-reference
+  (testing "an unmatched /login reference opens the provider selector pre-filled;
+           /logout always opens the stored-credential selector (pi)"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [sel-ref (atom nil)]
+      (with-redefs [dock/mount! (fn [_ component & _] (reset! sel-ref component))
+                    tui/tui-request-render (fn [_] nil)
+                    chat-history/chat-history-add-message! (fn [_ _] nil)
+                    chat-history/show-warning! (fn [_ _] nil)
+                    auth/get-credentials (fn [] {:github-copilot {:type :oauth
+                                                                  :access "a" :refresh "r"
+                                                                  :expires 9e99}})]
+        ((:handler (commands/find-command "login")) {} "nonexistent-provider")
+        (t/is (some? @sel-ref) "provider selector mounted")
+        (t/is (= :login (:mode @sel-ref)))
+        (t/is (= "nonexistent-provider" (:search @(:state-atom @sel-ref)))
+              "the typed reference pre-fills the filter")
+        (reset! sel-ref nil)
+        ((:handler (commands/find-command "logout")) {} "")
+        (t/is (some? @sel-ref) "logout selector mounted")
+        (t/is (= :logout (:mode @sel-ref)))))))
+
+(deftest test-model-command-switches-model
+  (testing "/model resolves provider/model patterns and switches the agent"
+    (commands/clear-commands!)
+    (m/load-catalogs!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})]
+      (with-redefs [auth/configured? (fn [_] true)
+                    chat-history/chat-history-add-message! (fn [_ _] nil)
+                    model-selector/sync-footer-model! (fn [_] nil)
+                    cfg/set-default-model! (fn [_ _] nil)]
+        (testing "provider/model pattern"
+          ((:handler (commands/find-command "model")) cs "deepseek/deepseek-v4-pro")
+          (t/is (= :deepseek @(:provider ag)))
+          (t/is (= "deepseek-v4-pro" @(:model ag))))
+        (testing ":thinking suffix sets the agent thinking level"
+          ((:handler (commands/find-command "model")) cs "deepseek/deepseek-v4-pro:high")
+          (t/is (= :high @(:thinking ag))))
+        (testing "unmatched pattern opens the selector with the failed term
+                  pre-filled (pi handleModelCommand — no catalog refresh:
+                  kmet's catalogs are static)"
+          (let [selector-term (atom nil)]
+            (with-redefs [model-selector/show-model-selector (fn [_ & [term]] (reset! selector-term term))]
+              ((:handler (commands/find-command "model")) cs "nope")
+              (t/is (= "nope" @selector-term) "selector opened with the failed term"))))))))
+
+;; ─── /thinking command ──────────────────────────────────────────────────────
+
+(deftest test-thinking-command-registered
+  (testing "/thinking is a real builtin inside register-builtin-commands!"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [c (commands/find-command "thinking")]
+      (t/is (some? c) "thinking registered")
+      (t/is (= "Set thinking level" (:description c)))
+      (t/is (= "<level>" (:argument-hint c)))
+      (t/is (some? (:handler c)) "thinking has a handler")
+      (t/is (some? (:get-argument-completions c))
+            "thinking completes its level argument"))))
+
+(deftest test-thinking-command-arg-sets-level
+  (testing "/thinking <level> applies the level to the session AND saves it
+            as the settings default — the choice survives a restart (kmet
+            deviation: pi's direct command stays session-scoped)"
+    (commands/clear-commands!)
+    (m/load-catalogs!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state :provider :deepseek :model "deepseek-v4-pro")
+          status (atom nil)
+          saved (atom nil)
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :editor (editor/make-editor)
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})]
+      (with-redefs [chat-history/chat-history-show-status! (fn [_ m] (reset! status m))
+                    model-selector/sync-footer-model! (fn [_] nil)
+                    cfg/save-setting! (fn [path value] (reset! saved [path value]))
+                    tui/tui-request-render (fn [_])]
+        (testing "a supported level applies and persists"
+          ((:handler (commands/find-command "thinking")) cs "high")
+          (t/is (= :high @(:thinking ag)) "agent thinking level set")
+          (t/is (= "Default thinking level: high" @status)
+                "status reports the saved default")
+          (t/is (= [[:thinking] :high] @saved)
+                "the level is written to settings.edn"))
+        (testing "matching is case-insensitive"
+          ((:handler (commands/find-command "thinking")) cs "MAX")
+          (t/is (= :max @(:thinking ag)))
+          (t/is (= [[:thinking] :max] @saved) "the matched level is persisted"))
+        (testing "an unsupported level warns with the available list"
+          (let [warning (atom nil)]
+            (with-redefs [chat-history/show-warning! (fn [_ m] (reset! warning m))]
+              ((:handler (commands/find-command "thinking")) cs "medium")
+              (t/is (= "Unknown thinking level \"medium\". Available levels: off, high, max."
+                       @warning)
+                    "warns listing the model's levels")
+              (t/is (= :max @(:thinking ag)) "thinking unchanged")
+              (t/is (= [[:thinking] :max] @saved)
+                    "a miss does not rewrite the saved default"))))))))
+
+(deftest test-thinking-command-bare-opens-selector
+  (testing "bare /thinking mounts the level selector for a reasoning model;
+            a model without supported levels gets the cycle status"
+    (commands/clear-commands!)
+    (m/load-catalogs!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [status (atom nil)
+          sel-ref (atom nil)
+          reasoning-cs (tu/with-test-engine {:agent-state (atom (agent/make-agent-state :provider :deepseek
+                                                                                        :model "deepseek-v4-pro"))
+                                             :chat-history nil
+                                             :editor (editor/make-editor)
+                                             :footer-comp nil
+                                             :footer-provider nil
+                                             :config cfg/default-config
+                                             :tui nil})
+          plain-cs (tu/with-test-engine {:agent-state (atom (agent/make-agent-state :provider :ghost
+                                                                                    :model "unknown-model"))
+                                         :chat-history nil
+                                         :editor (editor/make-editor)
+                                         :config cfg/default-config
+                                         :tui nil})]
+      (with-redefs [chat-history/chat-history-show-status! (fn [_ m] (reset! status m))
+                    chat-history/chat-history-add-message! (fn [_ _] nil)
+                    ;; deterministic default — must not depend on the real
+                    ;; ~/.kmet/agent/settings.edn on the dev machine
+                    thinking-selector/default-thinking-level (fn [_] :off)
+                    dock/mount! (capture-mount! sel-ref)
+                    tui/tui-set-focus (fn [_ _])
+                    tui/tui-request-render (fn [_])]
+        (testing "reasoning model → the selector mounts"
+          ((:handler (commands/find-command "thinking")) reasoning-cs "")
+          (t/is (some? @sel-ref) "selector mounted")
+          (t/is (= [:off :high :max] (thinking-selector/thinking-selector-get-levels @sel-ref))
+                "selector lists the model's supported levels"))
+        (testing "unknown model → only :off → the cycle status, no selector"
+          ((:handler (commands/find-command "thinking")) plain-cs "")
+          (t/is (= "Current model does not support thinking" @status)))))))
+
+(deftest test-thinking-selector-persist-wiring
+  (testing "the mounted selector's Ctrl+S path runs the mode's persist logic:
+            agent level set + [:thinking] saved to settings (pi Ctrl+S →
+            selectThinkingLevel(level, true))"
+    (commands/clear-commands!)
+    (m/load-catalogs!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state :provider :deepseek :model "deepseek-v4-pro")
+          saved (atom nil)
+          sel-ref (atom nil)
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :editor (editor/make-editor)
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})]
+      (with-redefs [chat-history/chat-history-show-status! (fn [_ _] nil)
+                    thinking-selector/default-thinking-level (fn [_] :off)
+                    cfg/save-setting! (fn [path value] (reset! saved [path value]))
+                    model-selector/sync-footer-model! (fn [_] nil)
+                    dock/mount! (capture-mount! sel-ref)
+                    tui/tui-set-focus (fn [_ _])
+                    tui/tui-request-render (fn [_])]
+        ((:handler (commands/find-command "thinking")) cs "")
+        (let [sel @sel-ref]
+          (t/is (some? sel) "selector mounted")
+          ;; current :off (default) → move to :high (index 1) → Ctrl+S
+          (protocols/handle-input sel "\u001b[B")
+          (protocols/handle-input sel "\u0013")
+          (t/is (= [[:thinking] :high] @saved)
+                "Ctrl+S saves [:thinking] <level> to settings")
+          (t/is (= :high @(:thinking ag)) "agent thinking level set"))))))
+
+;; ─── /continue command ─────────────────────────────────────────────────────
+
+(deftest test-continue-registered
+  (testing "/continue is a real builtin inside register-builtin-commands!"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [c (commands/find-command "continue")]
+      (t/is (some? c) "continue registered")
+      (t/is (= "Continue where the agent left off (e.g. after a network error)"
+               (:description c)))
+      (t/is (some? (:handler c)) "continue has a handler"))))
+
+(deftest test-continue-refuses-while-running
+  (testing "/continue refuses while the agent is running"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state)
+          msg (atom nil)
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :running-turn? (atom true)
+                                   :tui nil})]
+      (reset! (:status ag) :thinking)
+      (swap! (:messages ag) conj {:role :user :content [{:type :text :text "hi"}]})
+      (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
+        ((:handler (commands/find-command "continue")) (command-ctx cs) ""))
+      (t/is (= "Wait for the current response to finish before continuing."
+               (:content @msg))
+            "refuses while a turn is running"))))
+
+(deftest test-continue-refuses-empty-context
+  (testing "/continue refuses when there is no conversation to continue"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state)
+          msg (atom nil)
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :running-turn? (atom false)
+                                   :tui nil})]
+      (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
+        ((:handler (commands/find-command "continue")) (command-ctx cs) ""))
+      (t/is (= "No conversation to continue." (:content @msg))))))
+
+(deftest test-compact-refuses-while-running
+  (testing "/compact refuses while a run is active even when the status atom
+            already reads idle — the settle window (a post-run compaction or
+            a pre-settle continuation) keeps the run flag true, and the run
+            flag is what counts (pi: isStreaming)"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state)
+          msg (atom nil)
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :running-turn? (atom true)
+                                   :tui nil})]
+      (t/is (= :idle @(:status ag))
+            "precondition: the status atom already reads idle")
+      (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
+        ((:handler (commands/find-command "compact")) (command-ctx cs) ""))
+      (t/is (= "Wait for the current response to finish before compacting."
+               (:content @msg))
+            "refuses while a turn is running"))))
+
+(deftest test-continue-starts-run-without-message
+  (testing "/continue starts an agent run on the existing context with no new
+            user message — the model picks up the interrupted turn (e.g. after
+            a network error the last entry is an unanswered user message)"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state)
+          _ (swap! (:messages ag) conj
+                   {:role :user :content [{:type :text :text "fix the bug"}]})
+          started (atom nil)
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :running-turn? (atom false)
+                                   :tui nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :status-root nil
+                                   :status-indicator nil
+                                   :status-current (atom nil)
+                                   :anim-timer (atom nil)})]
+      (with-redefs [chat-history/chat-history-add-message! (fn [_ _] nil)
+                    chat-history/chat-history-start-streaming! (fn [_] nil)
+                    agent/run-agent-turn (fn [a opts]
+                                           (reset! started [a opts])
+                                           (future))
+                    status/activate-working-indicator! (fn [_] nil)
+                    status/start-anim-timer! (fn [_] nil)
+                    state/update-footer! (fn [_] nil)
+                    tui/tui-request-render (fn [_] nil)]
+        ((:handler (commands/find-command "continue")) (command-ctx cs) ""))
+      (t/is (some? @started) "run-agent-turn called")
+      (t/is (identical? ag (first @started)) "runs on the current agent state")
+      (t/is (nil? (:message (second @started)))
+            "no :message value — no new user message is added")
+      (t/is (true? (runtime/turn-running? (:engine cs))) "UI turn flag set"))))
+
+;; ─── Status indicator swap model (pi: showStatusIndicator/clearStatusIndicator) ──
+;; The working indicator must survive mid-turn transient swaps: after a retry
+;; backoff or compaction the next turn-start revives it, and a stale end event
+;; (auto-retry-end / compaction-end) must not stop an indicator that was
+;; already replaced (pi: clearStatusIndicator(kind) is kind-gated).
+
+(defn- test-status-cs
+  "A minimal CoreState-like map for the status swap helpers: the status
+   layer is a hiccup/root-mounted fn component over a :status-current atom
+   (dsl.md stage 4), so renders go through the root's reaction + reconcile.
+   The editor atom holds no editor — a custom editor that cannot embed the
+   status, so the standalone layer renders."
+  []
+  (let [si (status-indicator/make-status-indicator :text "Working")
+        cur (atom nil)
+        ced (atom nil)]
+    (tu/with-test-engine
+      {:tui {:render-requested? (atom false)}
+       :status-indicator si
+       :status-current cur
+       :current-editor-atom ced
+       :status-root (hiccup/root (status-indicator/make-status-area cur si ced))
+       :running-turn? (atom true)})))
+
+(defn- status-lines [cs]
+  (protocols/render (:status-root cs) 60))
+
+(defn- working-status? [cs]
+  (let [lines (status-lines cs)]
+    (and (= 2 (count lines))
+         (boolean (some #(re-find #"Working" %) lines)))))
+
+(defn- blank-status? [cs]
+  (let [lines (status-lines cs)]
+    (and (= 2 (count lines))
+         (every? #(re-find #"^\s*$" %) lines))))
+
+(deftest test-status-indicator-survives-retry
+  (testing "the working indicator is revived after a retry backoff and kept
+            by the kind-gated auto-retry-end (pi: agent_start after
+            continue() re-shows WorkingStatusIndicator)"
+    (let [cs (test-status-cs)]
+      (testing "submit activates the working indicator"
+        ((var status/activate-working-indicator!) cs)
+        (t/is (working-status? cs)))
+      (testing "auto-retry-start swaps in the retry countdown"
+        ((var status/show-status-indicator!) cs :retry
+                                             (status-indicator/make-retry-status-indicator 1 3 2000))
+        (t/is (not (working-status? cs))))
+      (testing "turn-start after the backoff revives the working indicator"
+        ((var status/activate-working-indicator!) cs)
+        (t/is (working-status? cs)))
+      (testing "auto-retry-end no-ops once the working indicator is active"
+        ((var status/clear-status-indicator!) cs :retry)
+        (t/is (working-status? cs))
+        (t/is (nil? @(:status-current cs))))
+      (testing "turn end clears to the idle two rows"
+        ((var status/clear-status-indicator!) cs)
+        (t/is (blank-status? cs))))))
+
+(deftest test-status-indicator-survives-compaction
+  (testing "in-loop compaction clears at compaction-end and the following
+            turn-start revives the working indicator"
+    (let [cs (test-status-cs)]
+      ((var status/activate-working-indicator!) cs)
+      ((var status/show-status-indicator!) cs :compaction
+                                           (status-indicator/make-compaction-status-indicator))
+      (t/is (not (working-status? cs)))
+      ((var status/clear-status-indicator!) cs :compaction)
+      (t/is (blank-status? cs))
+      ((var status/activate-working-indicator!) cs)
+      (t/is (working-status? cs)))))
+
+(deftest test-status-indicator-kind-gated-clear
+  (testing "a stale end event cannot stop an indicator it didn't own"
+    (let [cs (test-status-cs)]
+      ((var status/activate-working-indicator!) cs)
+      ((var status/show-status-indicator!) cs :compaction
+                                           (status-indicator/make-compaction-status-indicator))
+      ;; auto-retry-end arriving while compaction is active must no-op
+      ((var status/clear-status-indicator!) cs :retry)
+      (t/is (not (working-status? cs)))
+      (t/is (= :compaction (:kind @(:status-current cs))))
+      (testing "cancel during backoff clears unconditionally; the late
+                retry-end no-ops"
+        ((var status/clear-status-indicator!) cs)
+        (t/is (blank-status? cs))
+        ((var status/clear-status-indicator!) cs :retry)
+        (t/is (blank-status? cs))
+        (t/is (nil? @(:status-current cs)))))))
+
+(deftest test-current-status-indicator
+  (testing "the editor-border hook's status source: the transient swap when
+            one is up, else the active working indicator, else nil"
+    (let [cs (test-status-cs)]
+      (t/is (nil? ((var status/current-status-indicator) cs)))
+      ((var status/activate-working-indicator!) cs)
+      (t/is (identical? (:status-indicator cs)
+                        ((var status/current-status-indicator) cs)))
+      (let [retry (status-indicator/make-retry-status-indicator 1 3 2000)]
+        ((var status/show-status-indicator!) cs :retry retry)
+        (t/is (identical? retry ((var status/current-status-indicator) cs))))
+      ((var status/clear-status-indicator!) cs)
+      (t/is (nil? ((var status/current-status-indicator) cs))))))
+
+(deftest ^:slow test-transient-indicator-drives-frames
+  (testing "a transient indicator shown outside an agent turn arms its own
+            frame driver — the clock-driven frames only advance when
+            something requests renders (manual /compact regression: without
+            the driver the compaction spinner sits on one frame)"
+    (let [cs (assoc (test-status-cs)
+                    :tui {:running? (atom true)
+                          :render-requested? (atom false)})
+          tui (:tui cs)]
+      ((var status/show-status-indicator!) cs :compaction
+                                           (status-indicator/make-compaction-status-indicator))
+      (let [first-driver (:driver @(:status-current cs))]
+        (t/is (some? first-driver) "the driver is recorded on the status entry")
+        (reset! (:render-requested? tui) false)
+        (t/is (loop [deadline (+ (concurrent/monotonic-ms) 2000)]
+                (cond
+                  @(:render-requested? tui) true
+                  (< (concurrent/monotonic-ms) deadline) (do (Thread/sleep 5) (recur deadline))
+                  :else false))
+              "frames are requested while it is up")
+        (testing "swapping in the next indicator retires the previous driver"
+          ((var status/show-status-indicator!) cs :retry
+                                               (status-indicator/make-retry-status-indicator 1 3 2000))
+          (let [next-driver (:driver @(:status-current cs))]
+            (t/is (some? next-driver))
+            (t/is (not (identical? first-driver next-driver)))
+            (t/is (future-cancelled? first-driver))
+            (testing "clearing cancels the driver with the status"
+              ((var status/clear-status-indicator!) cs)
+              (t/is (future-cancelled? next-driver)))))))))
+
+(deftest test-clear-working-status
+  (testing ":working clears the implicit working status — pi:
+            setWorkingVisible(false) → clearStatusIndicator('working')"
+    (let [cs (test-status-cs)]
+      ((var status/activate-working-indicator!) cs)
+      (t/is (working-status? cs))
+      ((var status/clear-status-indicator!) cs :working)
+      (t/is (blank-status? cs))
+      (t/is (nil? @(:status-current cs)))))
+  (testing "a transient indicator is not the working status — a :working
+            clear leaves it"
+    (let [cs (test-status-cs)]
+      ((var status/show-status-indicator!) cs :compaction
+                                           (status-indicator/make-compaction-status-indicator))
+      ((var status/clear-status-indicator!) cs :working)
+      (t/is (= :compaction (:kind @(:status-current cs)))))))
+
+(deftest ^:slow test-release-background-status
+  (testing "a background status (share/branch summary) releases its slot and
+            gives the working spinner back while the turn still streams"
+    (let [cs (test-status-cs)
+          share (spinner/make-spinner :text "Creating gist..." :active true)]
+      ((var status/activate-working-indicator!) cs)
+      ((var status/show-status-indicator!) cs :share share)
+      (t/is (not (working-status? cs)))
+      ((var status/release-background-status!) cs :share)
+      (t/is (nil? @(:status-current cs)))
+      (t/is (working-status? cs))))
+  (testing "no revive when the turn ended"
+    (let [cs (test-status-cs)
+          share (spinner/make-spinner :text "Creating gist..." :active true)]
+      (reset! (:turn-running? (:engine cs)) false)
+      ((var status/show-status-indicator!) cs :share share)
+      ((var status/release-background-status!) cs :share)
+      (t/is (blank-status? cs))))
+  (testing "a newer transient owns the slot — neither cleared nor displaced"
+    (let [cs (test-status-cs)
+          share (spinner/make-spinner :text "Creating gist..." :active true)]
+      ((var status/show-status-indicator!) cs :share share)
+      ((var status/show-status-indicator!) cs :retry
+                                           (status-indicator/make-retry-status-indicator 1 3 2000))
+      ((var status/release-background-status!) cs :share)
+      (t/is (= :retry (:kind @(:status-current cs))))))
+  (testing "a same-kind replacement is released too (pi:
+            clearStatusIndicator matches the active kind — a branch-summary
+            retry re-shows the branch-summary indicator)"
+    (let [cs (test-status-cs)
+          first-share (spinner/make-spinner :text "one" :active true)
+          second-share (spinner/make-spinner :text "two" :active true)]
+      ((var status/show-status-indicator!) cs :share first-share)
+      ((var status/show-status-indicator!) cs :share second-share)
+      ((var status/release-background-status!) cs :share)
+      (t/is (nil? @(:status-current cs)) "the active indicator was released")
+      (t/is (working-status? cs) "the working spinner is given back")))
+  (testing "an already-revived working spinner is not restarted (its
+            animation clock survives)"
+    (let [cs (test-status-cs)
+          share (spinner/make-spinner :text "Creating gist..." :active true)]
+      ((var status/show-status-indicator!) cs :share share)
+      ;; a :turn-start revived the working spinner while the background op
+      ;; ran — the late release must not touch it
+      ((var status/activate-working-indicator!) cs)
+      (let [start @(:start-atom (:spinner (:status-indicator cs)))]
+        (Thread/sleep 5)
+        ((var status/release-background-status!) cs :share)
+        (t/is (= start @(:start-atom (:spinner (:status-indicator cs))))))))
+  (testing "a turn ending mid-revival must not leave a spinner behind (the
+            post-revival re-check rolls it back)"
+    (let [cs (test-status-cs)
+          share (spinner/make-spinner :text "Creating gist..." :active true)
+          real (var-get (var status/activate-working-indicator!))]
+      ((var status/show-status-indicator!) cs :share share)
+      (with-redefs-fn {(var status/activate-working-indicator!)
+                       (fn [c] (reset! (:running-turn? c) false) (real c))}
+        (fn [] ((var status/release-background-status!) cs :share)))
+      (t/is (not (status-indicator/status-indicator-active? (:status-indicator cs)))
+            "the revived spinner is stopped again"))))
+
+;; ─── /scoped-models + /settings (missing slash commands) ───────────────────
+
+(defn- install-app-keybindings!
+  "Install the app keybindings manager (the interactive mode does this at
+   startup; tests drive overlay keys, which match app.models.* ids)."
+  []
+  (tui-kb/set-global-keybindings!
+   (app-kb/create-agent-keybindings-manager "target/test-interactive-ui-kb")))
+
+(deftest test-scoped-models-settings-registered
+  (testing "scoped-models and settings are real builtins"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [scoped (commands/find-command "scoped-models")
+          settings (commands/find-command "settings")]
+      (t/is (some? scoped))
+      (t/is (= "Enable/disable models for Ctrl+P cycling" (:description scoped)))
+      (t/is (some? (:handler scoped)))
+      (t/is (some? settings))
+      (t/is (some? (:handler settings))))))
+
+(deftest test-hotkeys-registered-with-real-handler
+  (testing "/hotkeys is a real builtin: its handler mounts the hiccup view,
+            which shows wired actions only"
+    (commands/clear-commands!)
+    (install-app-keybindings!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [hotkeys (commands/find-command "hotkeys")]
+      (t/is (some? hotkeys) "hotkeys registered")
+      (t/is (= "Show all keyboard shortcuts" (:description hotkeys)))
+      (t/is (some? (:handler hotkeys)))
+      (let [ed (editor/make-editor)
+            ch (chat-history/make-chat-history)]
+        ;; wire one app action; app.suspend / app.message.copy stay unwired
+        ;; on this bare editor (the interactive layout installs app.suspend)
+        (editor/editor-set-on-action! ed "app.tools.expand" (fn [] nil))
+        ((:handler hotkeys) {:chat-history ch :editor ed} "")
+        (let [msg (last @(:messages-atom ch))
+              comp (:component msg)]
+          (t/is (some? comp) "the hiccup view is the message component")
+          (t/is (nil? (:content msg))
+                "no fallback assistant text — the view renders the content")
+          (let [lines (protocols/render comp 84)]
+            (t/is (some #(str/includes? % "Toggle tool output expansion") lines)
+                  "a wired app action has a row")
+            (t/is (not (some #(str/includes? % "Suspend to background") lines))
+                  "a declared-but-unwired action stays out"))
+          (protocols/dispose comp))))))
+
+(deftest test-hotkeys-wired-predicate
+  (testing "wired-hotkey? answers from the editor's installed actions"
+    (let [ed (editor/make-editor)]
+      (editor/editor-set-on-action! ed "app.tools.expand" (fn [] nil))
+      (let [wired? ((var builtins/make-hotkey-wired?) {:editor ed})]
+        (t/is (wired? "tui.editor.cursorUp") "TUI ids are the editor's own")
+        (t/is (wired? "app.tools.expand") "installed on the editor")
+        (t/is (wired? "app.quit") "the global quit listener owns it")
+        (t/is (not (wired? "app.suspend")) "not installed on this bare editor")
+        (t/is (not (wired? "app.message.copy")) "tree-selector-only in kmet"))
+      (testing "no editor: only the global-listener action survives"
+        (let [wired? ((var builtins/make-hotkey-wired?) nil)]
+          (t/is (wired? "app.quit"))
+          (t/is (not (wired? "app.tools.expand"))))))))
+
+;; ─── /import (pi: handleImportCommand) ────────────────────────────────────
+
+(defn- import-test-cs
+  "CoreState for the /import tests: real chat/session/agent/footer state so
+   the resume path runs for real (pi: importFromJsonl swaps the runtime),
+   with only the dock and the render calls stubbed (no terminal in tests).
+   The cwd atom is shared by the footer provider and the chat history, as in
+   build-layout, and the system-prompt options carry a launch-project
+   context file — the switch must keep them (only the cwd line follows the
+   session's working directory)."
+  [active-sess]
+  (let [cwd-atom (atom (or (session/session-cwd active-sess) (str (fs/cwd))))
+        ch (chat-history/make-chat-history :cwd-fn #(deref cwd-atom))
+        prov (fdp/make-footer-data-provider :cwd-atom cwd-atom :session active-sess)
+        ed (editor/make-editor)
+        opts {:cwd (deref cwd-atom)
+              :context-files [{:path "AGENTS.md" :content "LAUNCH-PROJECT CONTEXT"}]}
+        ag (agent/make-agent-state
+            :session active-sess
+            :system-prompt-opts opts
+            :system (apply skills/build-system-prompt (mapcat identity opts)))
+        ag-atom (atom ag)
+        sess-atom (atom active-sess)
+        engine (tu/test-engine {:agent-state ag-atom :session sess-atom :cwd cwd-atom})]
+    (inter/map->CoreState
+     {:engine engine
+      :chat-history ch
+      :editor ed
+      :current-editor-atom (atom ed)
+      :footer-provider prov
+      :footer-comp (footer/make-footer :provider prov)})))
+
+(defn- last-message [ch] (select-keys (peek @(:messages-atom ch)) [:role :content]))
+
+(defn- append-message!
+  "Persist a user+assistant pair — a session file is written lazily (G4),
+   so it needs an assistant message to exist on disk."
+  [sess text]
+  (session/append-entry sess {:role :user :content [{:type :text :text text}]})
+  (session/append-entry sess {:role :assistant :content [{:type :text :text "ok"}]}))
+
+(deftest test-import-path-argument
+  (testing "pi: getPathCommandArgument (shared with /export) — quotes are
+            stripped, trailing arguments ignored, an unterminated quote is
+            no argument at all"
+    (let [parse (var session-export/parse-path-argument)]
+      (t/is (nil? (parse "")))
+      (t/is (nil? (parse "   ")))
+      (t/is (= "a.ednl" (parse "a.ednl")))
+      (t/is (= "a.ednl" (parse "a.ednl extra ignored")))
+      (t/is (= "my file.ednl" (parse "  \"my file.ednl\" extra")))
+      (t/is (= "my file.ednl" (parse "'my file.ednl'")))
+      (t/is (nil? (parse "\"unterminated"))))))
+
+(deftest test-import-registered-and-path-errors
+  (testing "/import is a real builtin; pi's usage and file errors surface as
+            Error: lines before any confirmation is mounted"
+    (commands/clear-commands!)
+    (install-app-keybindings!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [cmd (commands/find-command "import")
+          dir (str (fs/absolutize (str "target/test-import-errors-" (System/currentTimeMillis))))]
+      (t/is (some? cmd) "registered — /import is no longer a placeholder")
+      (t/is (= "Import and resume a session from a file" (:description cmd)))
+      (t/is (= "<path>" (:argument-hint cmd)))
+      (try
+        (let [cs (import-test-cs (session/create-session dir))
+              ch (:chat-history cs)
+              sel-ref (atom nil)]
+          (with-redefs [tui/tui-request-render (fn [_])
+                        tui/tui-set-focus (fn [_ _])
+                        dock/mount! (capture-mount! sel-ref)]
+            (testing "no path → pi's usage error"
+              ((:handler cmd) cs "")
+              (t/is (= {:role :error :content "Usage: /import <path>"}
+                       (last-message ch)))
+              (t/is (nil? @sel-ref) "nothing is confirmed for a missing argument"))
+            (testing "a missing file fails before the confirmation (pi:
+                        SessionImportFileNotFoundError)"
+              ((:handler cmd) cs (str dir "/ghost.ednl"))
+              (t/is (= :error (:role (last-message ch))))
+              (t/is (str/includes? (:content (last-message ch))
+                                   "Failed to import session: File not found:"))
+              (t/is (nil? @sel-ref)))
+            (testing "a file that is not a kmet session fails the same way"
+              (let [junk (str dir "/junk.ednl")]
+                (spit junk "not a session\n")
+                ((:handler cmd) cs junk)
+                (t/is (str/includes? (:content (last-message ch))
+                                     "Failed to import session: Not a kmet session file"))))
+            (testing "an in-flight turn refuses — kmet's switch commands do
+                        not abort (pi: teardownCurrent does)"
+              (reset! (:turn-running? (:engine cs)) true)
+              ((:handler cmd) cs (str dir "/whatever.ednl"))
+              (t/is (= "Wait for the current response to finish before importing."
+                       (:content (last-message ch)))))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-import-confirm-flow
+  (testing "/import copies the file into the active session's directory and
+            resumes it when the Yes/No confirm is accepted"
+    (commands/clear-commands!)
+    (install-app-keybindings!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [dir (str (fs/absolutize (str "target/test-import-flow-" (System/currentTimeMillis))))
+          foreign (str dir "/foreign-project")]
+      (try
+        (fs/create-dirs foreign)
+        ;; the imported session was recorded in another project — pi's import
+        ;; moves the runtime cwd there (createRuntime's cwd)
+        (let [src (session/create-session (str dir "/src") {:cwd foreign})]
+          (append-message! src "imported question")
+          (let [active (session/create-session (str dir "/dest"))
+                _ (append-message! active "hello")
+                cs (import-test-cs active)
+                ch (:chat-history cs)
+                cmd (commands/find-command "import")
+                sel-ref (atom nil)
+                stored (str (fs/path (str dir "/dest") (fs/file-name (:file src))))]
+            (with-redefs [tui/tui-request-render (fn [_])
+                          tui/tui-set-focus (fn [_ _])
+                          dock/mount! (capture-mount! sel-ref)]
+              ((:handler cmd) cs (:file src))
+              (let [dlg @sel-ref]
+                (t/is (some? dlg) "the confirm replaces the editor dock (pi: showSelector)")
+                (let [rendered (str/join "\n" (protocols/render dlg 200))]
+                  (t/is (str/includes? rendered "Import session"))
+                  (t/is (str/includes? rendered "Replace current session with"))
+                  (t/is (str/includes? rendered (:file src)) "the path is named")
+                  (t/is (str/includes? rendered "Yes"))
+                  (t/is (str/includes? rendered "No")))
+                ;; enter on the highlighted Yes (pi: the first option)
+                (protocols/handle-input dlg "\r"))
+              (t/is (fs/exists? stored) "the file is copied into the session dir")
+              (t/is (= (slurp (:file src)) (slurp stored)) "verbatim copy")
+              (t/is (= (:id src) (:id (runtime/session (:engine cs))))
+                    "the imported session is active")
+              (t/is (= (:id src) (:id (:session (runtime/agent-state (:engine cs)))))
+                    "the agent's session swapped too")
+              (t/is (= ["imported question"]
+                       (mapv :content (filter #(= :user (:role %))
+                                              @(:messages-atom ch))))
+                    "the imported transcript is replayed")
+              (t/is (= {:role :status
+                        :content (str "Session imported from: " (:file src))}
+                       (last-message ch))
+                    "pi: showStatus 'Session imported from: …'")
+              (t/is (= (slash foreign) (slash (fdp/fdp-get-cwd (:footer-provider cs))))
+                    "the runtime cwd follows the imported session's")
+              (t/is (= (slash foreign)
+                       (slash (get-in @(:system-prompt-opts (runtime/agent-state (:engine cs))) [:cwd])))
+                    "and the system prompt options")
+              (t/is (str/includes? (slash @(:system (runtime/agent-state (:engine cs)))) (slash foreign))
+                    "the model is told where its tools will run")
+              (t/is (= [{:path "AGENTS.md" :content "LAUNCH-PROJECT CONTEXT"}]
+                       (get-in @(:system-prompt-opts (runtime/agent-state (:engine cs))) [:context-files]))
+                    "project context files stay with the launch project")
+              (t/is (str/includes? @(:system (runtime/agent-state (:engine cs))) "LAUNCH-PROJECT CONTEXT")
+                    "and stay in the rebuilt prompt"))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-session-switch-drops-runtime-tool-selection
+  (testing "pi: a session switch (kmet -c at launch, /resume, /import)
+            recreates the runtime from settings — the outgoing session's
+            runtime tool selection must not leak into the resumed one"
+    (let [dir (str (fs/absolutize (str "target/test-switch-tools-" (System/currentTimeMillis))))]
+      (try
+        (let [outgoing (session/create-session (str dir "/out"))
+              _ (append-message! outgoing "hello")
+              incoming (session/create-session (str dir "/in"))
+              _ (append-message! incoming "imported question")
+              cs (import-test-cs outgoing)
+              ag (runtime/agent-state (:engine cs))
+              active-names (fn [] (into #{} (map :name) (agent/active-tools ag)))
+              prompt-tool-names (fn []
+                                  (into #{}
+                                        (map :name)
+                                        (get-in @(:system-prompt-opts ag) [:tools])))]
+          ;; the config-resolved surface at startup (-bash in settings.edn)
+          (reset! (:default-tools ag) (tools/resolve-default-tools ["-bash"]))
+          (t/is (not (contains? (active-names) "bash"))
+                "the configured surface excludes bash")
+          (testing "a /tools selection in the outgoing session enables bash"
+            (agent/set-active-tools! ag (conj (vec (active-names)) "bash"))
+            (t/is (contains? (active-names) "bash"))
+            (t/is (contains? (prompt-tool-names) "bash")
+                  "the system prompt options follow the runtime selection"))
+          (with-redefs [tui/tui-request-render (fn [_])
+                        tui/tui-set-focus (fn [_ _])]
+            (session-admin/restore-session! cs incoming true))
+          (t/is (nil? @(:enabled-tools ag))
+                "the runtime allowlist does not carry over")
+          (t/is (not (contains? (active-names) "bash"))
+                "the configured surface governs the resumed session")
+          (t/is (not (contains? (prompt-tool-names) "bash"))
+                "and the rebuilt prompt options agree"))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-import-cancellation-paths
+  (testing "/import leaves the session and the filesystem alone when the
+            confirmation is declined, escaped, or cancelled by an extension"
+    (commands/clear-commands!)
+    (install-app-keybindings!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [dir (str (fs/absolutize (str "target/test-import-cancel-" (System/currentTimeMillis))))]
+      (try
+        (let [src (session/create-session (str dir "/src"))]
+          (append-message! src "question")
+          (let [active (session/create-session (str dir "/dest"))
+                _ (append-message! active "hello")
+                cs (import-test-cs active)
+                ch (:chat-history cs)
+                cmd (commands/find-command "import")
+                sel-ref (atom nil)
+                stored (str (fs/path (str dir "/dest") (fs/file-name (:file src))))]
+            (with-redefs [tui/tui-request-render (fn [_])
+                          tui/tui-set-focus (fn [_ _])
+                          dock/mount! (capture-mount! sel-ref)]
+              (testing "escape shows pi's cancelled status and writes nothing"
+                (reset! sel-ref nil)
+                ((:handler cmd) cs (:file src))
+                (protocols/handle-input @sel-ref "\u001b")
+                (t/is (= {:role :status :content "Import cancelled"} (last-message ch)))
+                (t/is (not (fs/exists? stored)) "no copy")
+                (t/is (= (:id active) (:id (runtime/session (:engine cs)))) "same session"))
+              (testing "selecting No cancels the same way"
+                (reset! sel-ref nil)
+                ((:handler cmd) cs (:file src))
+                (protocols/handle-input @sel-ref "\u001b[B")  ;; down → No
+                (protocols/handle-input @sel-ref "\r")
+                (t/is (= {:role :status :content "Import cancelled"} (last-message ch)))
+                (t/is (not (fs/exists? stored))))
+              (testing "an extension cancelling :session-before-switch wins
+                          even after Yes — no copy, no switch"
+                (reset! sel-ref nil)
+                (event-bus/clear-event-listeners!)
+                (event-bus/on-event :session-before-switch (fn [_] {:cancel true}))
+                ((:handler cmd) cs (:file src))
+                (protocols/handle-input @sel-ref "\r")
+                (t/is (= {:role :status :content "Import cancelled"} (last-message ch)))
+                (t/is (not (fs/exists? stored)) "the copy is still pending")
+                (t/is (= (:id active) (:id (runtime/session (:engine cs))))))
+              (testing "a source already in the session dir is not re-copied"
+                (reset! sel-ref nil)
+                (event-bus/clear-event-listeners!)
+                ((:handler cmd) cs (:file active))
+                (protocols/handle-input @sel-ref "\r")
+                (t/is (= 1 (count (fs/list-dir (str dir "/dest"))))
+                      "no suffixed duplicate")
+                (t/is (= (:id active) (:id (runtime/session (:engine cs)))))))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-import-keeps-the-current-cwd-when-the-recorded-one-is-gone
+  (testing "a recorded cwd that no longer exists keeps the current runtime
+            cwd — kmet says so and continues (pi: MissingSessionCwdError asks
+            for a fallback cwd)"
+    (commands/clear-commands!)
+    (install-app-keybindings!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [dir (str (fs/absolutize (str "target/test-import-gone-cwd-" (System/currentTimeMillis))))
+          gone (str dir "/gone-project")]
+      (try
+        (let [src (session/create-session (str dir "/src") {:cwd gone})]
+          (append-message! src "from a deleted project")
+          (let [active (session/create-session (str dir "/dest"))
+                _ (append-message! active "hello")
+                cs (import-test-cs active)
+                ch (:chat-history cs)
+                before (fdp/fdp-get-cwd (:footer-provider cs))
+                sel-ref (atom nil)]
+            (with-redefs [tui/tui-request-render (fn [_])
+                          tui/tui-set-focus (fn [_ _])
+                          dock/mount! (capture-mount! sel-ref)]
+              ((:handler (commands/find-command "import")) cs (:file src))
+              (protocols/handle-input @sel-ref "\r")
+              (t/is (= (:id src) (:id (runtime/session (:engine cs)))) "the session still switches")
+              (t/is (= before (fdp/fdp-get-cwd (:footer-provider cs)))
+                    "the current cwd is kept")
+              (t/is (some #(and (= :status (:role %))
+                                (str/includes? (str (:content %)) "no longer exists"))
+                          @(:messages-atom ch))
+                    "and the user is told"))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-export-defaults-to-the-runtime-cwd
+  (testing "/export without a path writes into the session's runtime cwd —
+            where its tools work (pi resolves its default against the process
+            cwd; kmet's runtime cwd follows the session)"
+    (commands/clear-commands!)
+    (install-app-keybindings!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [dir (str (fs/absolutize (str "target/test-export-cwd-" (System/currentTimeMillis))))
+          project (str dir "/project")]
+      (try
+        (fs/create-dirs project)
+        (let [sess (session/create-session (str dir "/sessions") {:cwd project})]
+          (append-message! sess "hello")
+          (let [cs (import-test-cs sess)
+                ch (:chat-history cs)]
+            ((:handler (commands/find-command "export")) (command-ctx cs) "")
+            (let [msg (last-message ch)]
+              (t/is (= :info (:role msg)))
+              (t/is (str/includes? (slash (str (:content msg))) (slash project))
+                    "the reported path is inside the session's project"))
+            (let [files (vec (fs/list-dir project))]
+              (t/is (= 1 (count files)) "one export, in the project dir")
+              (t/is (str/starts-with? (fs/file-name (first files)) "kmet-session-"))
+              (testing "a quoted-empty path is no path: the default is used"
+                (with-redefs [tui/tui-request-render (fn [_])
+                              tui/tui-set-focus (fn [_ _])]
+                  ((:handler (commands/find-command "export")) (command-ctx cs) "\"\""))
+                (t/is (str/includes? (slash (str (:content (last-message ch)))) (slash project))
+                      "not a 'Failed to export session' error")))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-path-argument-empty-is-none
+  (testing "a quoted but empty path argument reads as none (pi:
+            getPathCommandArgument) — /export falls back to its default and
+            /import to its usage line instead of resolving the process cwd"
+    (let [parse (var session-export/parse-path-argument)]
+      (t/is (nil? (parse "")))
+      (t/is (nil? (parse "   ")))
+      (t/is (nil? (parse "\"\"")))
+      (t/is (nil? (parse "''")))
+      (t/is (nil? (parse "\"   \"")))
+      (t/is (= "/tmp/x.ednl" (parse "\"/tmp/x.ednl\"")))
+      (t/is (= "/tmp/x.ednl" (parse "/tmp/x.ednl extra"))))))
+
+(deftest test-switch-commands-refuse-mid-turn
+  (testing "/resume and /tree refuse while a response is streaming, like
+            /import, /fork and /clone (pi: teardownCurrent aborts the run and
+            switches; kmet waits instead)"
+    (commands/clear-commands!)
+    (install-app-keybindings!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [dir (str (fs/absolutize (str "target/test-mid-turn-guards-"
+                                       (System/currentTimeMillis))))]
+      (try
+        (let [ch (chat-history/make-chat-history)
+              cs (inter/map->CoreState
+                  (tu/with-test-engine {:running-turn? (atom true)
+                                        :chat-history ch
+                                        :session-atom (atom (session/create-session dir))
+                                        :agent-state (atom (agent/make-agent-state))}))]
+          ((:handler (commands/find-command "resume")) cs "")
+          (t/is (= "Wait for the current response to finish before resuming."
+                   (:content (last-message ch))))
+          ((:handler (commands/find-command "tree")) cs "")
+          (t/is (= "Wait for the current response to finish before navigating the tree."
+                   (:content (last-message ch)))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-tree-summarize-prompt-uses-the-editor-dock
+  (testing "the /tree summarize prompt and custom-instruction editor mount in
+            the editor dock (pi: showExtensionSelector / showExtensionEditor),
+            not as floating overlays — the old overlay path rendered over the
+            chat when the tree closed and the document shrank"
+    (let [dir (str (fs/absolutize (str "target/test-tree-summary-dock-"
+                                       (System/currentTimeMillis))))
+          sel-ref (atom nil)]
+      (try
+        (let [sess (session/create-session dir)
+              entry (session/append-entry sess
+                                          {:role :user
+                                           :content [{:type :text :text "q"}]})
+              cs (tu/with-test-engine {:tui {:render-requested? (atom false)}
+                                       :session-atom (atom sess)})]
+          (with-redefs [dock/mount! (capture-mount! sel-ref)
+                        tui/tui-request-render (fn [_])
+                        ;; hermetic: no branchSummary.skipPrompt from the
+                        ;; developer's settings file
+                        cfg/global-settings-path (fn [] (str dir "/no-settings.edn"))]
+            (testing "Summarize branch? selector is framed in the dock with all options"
+              ((var session-admin/ask-branch-summary) cs sess entry)
+              (let [text (str/join "\n" (map strip-ansi
+                                             (protocols/render @sel-ref 80)))]
+                (t/is (str/includes? text "Summarize branch?") "framed title")
+                (t/is (str/includes? text "No summary"))
+                (t/is (str/includes? text "Summarize with custom prompt")
+                      "all three options render (a bare overlay with :height 3 cut the third)")
+                (t/is (str/includes? text "─") "border drawn")))
+            (testing "custom instructions open a framed input in the dock"
+              ((var session-admin/prompt-custom-summary!) cs sess entry)
+              (let [text (str/join "\n" (map strip-ansi
+                                             (protocols/render @sel-ref 80)))]
+                (t/is (str/includes? text "Custom branch summarization instructions"))
+                (t/is (str/includes? text "submit")
+                      "the input dialog's keybinding hint renders")))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-tree-summarize-prompt-skip-prompt-setting
+  (testing "branchSummary.skipPrompt skips the question and defaults to no
+            summary (pi: getBranchSummarySkipPrompt)"
+    (let [dir (str (fs/absolutize (str "target/test-tree-skip-prompt-"
+                                       (System/currentTimeMillis))))
+          settings-file (str dir "/settings.edn")
+          sel-ref (atom nil)
+          navigated (atom nil)]
+      (fs/create-dirs dir)
+      (try
+        (spit settings-file "{:branch-summary {:skip-prompt true}}\n")
+        (let [sess (session/create-session dir)
+              entry (session/append-entry sess
+                                          {:role :user
+                                           :content [{:type :text :text "q"}]})
+              cs (tu/with-test-engine {:tui {:render-requested? (atom false)}
+                                       :session-atom (atom sess)})]
+          (with-redefs [dock/mount! (capture-mount! sel-ref)
+                        tui/tui-request-render (fn [_])
+                        cfg/global-settings-path (fn [] settings-file)
+                        session-admin/navigate-tree!
+                        (fn [& args] (reset! navigated args))]
+            ((var session-admin/ask-branch-summary) cs sess entry))
+          (t/is (some? @navigated) "the navigation runs without the question")
+          (t/is (= [false nil false nil] (drop 3 @navigated))
+                "defaults to no summary (pi: wantsSummary stays false)")
+          (t/is (nil? @sel-ref) "no selector was mounted"))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-summarization-retry-event-handlers
+  (testing "the summarization retry events drive the status area (pi:
+            summarization_retry_scheduled → error line + RetryStatusIndicator,
+            _attempt_start → the compaction/branch-summary indicator,
+            _finished → the kind-gated retry clear)"
+    (let [cs (test-status-cs)
+          h ((var layout/make-agent-event-handler)
+             {:chat-history (chat-history/make-chat-history)
+              :tui {:render-requested? (atom false)}
+              :cs-ref (atom cs)
+              :pending-tool-comps (atom {})})]
+      (h {:type :summarization-retry-scheduled
+          :attempt 1 :max-attempts 3 :delay-ms 2000
+          :error-message "rate limit exceeded"})
+      (t/is (= :retry (:kind @(:status-current cs)))
+            "the retry countdown took the status slot")
+      (t/is (some #(str/includes? % "Retrying (1/3)") (status-lines cs))
+            "pi's countdown text renders")
+      (h {:type :summarization-retry-attempt-start :source :compaction
+          :reason :threshold})
+      (t/is (= :compaction (:kind @(:status-current cs)))
+            "the retried compaction re-shows its indicator")
+      (h {:type :summarization-retry-attempt-start :source :branch-summary})
+      (t/is (= :branch-summary (:kind @(:status-current cs)))
+            "a retried branch summarization re-shows the branch indicator")
+      (h {:type :summarization-retry-finished})
+      (t/is (= :branch-summary (:kind @(:status-current cs)))
+            "the retry clear is kind-gated (pi: clearStatusIndicator)"))))
+
+(deftest test-same-cwd-spelled-differently-is-not-a-switch
+  (testing "a session whose recorded cwd differs only in spelling (trailing
+            slash) leaves the runtime cwd and the prompt alone — the
+            comparison is spelling-insensitive"
+    (let [dir (str (fs/absolutize (str "target/test-cwd-spelling-" (System/currentTimeMillis))))
+          project (str dir "/project")
+          spelled (str project "/")]
+      (try
+        (fs/create-dirs project)
+        (let [sess (session/create-session (str dir "/sessions") {:cwd project})
+              engine (tu/test-engine {:agent-state (atom (agent/make-agent-state))
+                                      :session (atom sess)
+                                      :cwd spelled})]
+          (t/is (= spelled ((var runtime/apply-session-cwd!) engine sess))
+                "the cwd in effect is returned unchanged")
+          (t/is (= spelled (runtime/cwd engine)) "and kept as spelled"))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-scoped-models-selector-initial-state
+  (testing "/scoped-models opens the selector with session scoped models, then
+            settings :enabled-models patterns, else nil (all enabled)"
+    (commands/clear-commands!)
+    (m/load-catalogs!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
+          sel-ref (atom nil)]
+      (with-redefs [auth/configured? (fn [_] true)
+                    chat-history/chat-history-add-message! (fn [_ _] nil)
+                    cfg/get-enabled-models-live (fn [_] nil)
+                    model-catalog/update-available-provider-count! (fn [_] nil)
+                    dock/mount! (capture-mount! sel-ref)
+                    tui/tui-set-focus (fn [_ _])
+                    tui/tui-request-render (fn [_])]
+        (testing "no session scoped models and no patterns → all enabled"
+          ((:handler (commands/find-command "scoped-models")) cs "")
+          (t/is (nil? (scoped-models-selector/scoped-models-get-enabled-ids @sel-ref))))
+        (testing "session scoped models win"
+          (agent/set-scoped-models! ag ["opencode-go/deepseek-v4-flash"])
+          ((:handler (commands/find-command "scoped-models")) cs "")
+          (t/is (= ["opencode-go/deepseek-v4-flash"]
+                   (scoped-models-selector/scoped-models-get-enabled-ids @sel-ref))))
+        (testing "settings :enabled-models patterns resolve"
+          (agent/set-scoped-models! ag [])
+          (with-redefs [cfg/get-enabled-models-live
+                        (fn [_] ["opencode-go/deepseek-v4-flash"])]
+            ((:handler (commands/find-command "scoped-models")) cs "")
+            (t/is (= ["opencode-go/deepseek-v4-flash"]
+                     (scoped-models-selector/scoped-models-get-enabled-ids @sel-ref)))))
+        (testing "unresolved patterns survive as [unavailable] rows alongside
+                  resolved ones (pi: no-match diagnostics appended)"
+          (agent/set-scoped-models! ag [])
+          (with-redefs [cfg/get-enabled-models-live
+                        (fn [_] ["opencode-go/deepseek-v4-flash" "ghost/model"])]
+            ((:handler (commands/find-command "scoped-models")) cs "")
+            (t/is (= ["opencode-go/deepseek-v4-flash" "ghost/model"]
+                     (scoped-models-selector/scoped-models-get-enabled-ids @sel-ref)))))))))
+
+(deftest test-scoped-models-edit-updates-session
+  (testing "selector edits write the session scoped list and clear on all-enabled"
+    (install-app-keybindings!)
+    (commands/clear-commands!)
+    (m/load-catalogs!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
+          sel-ref (atom nil)]
+      (with-redefs [auth/configured? (fn [_] true)
+                    chat-history/chat-history-add-message! (fn [_ _] nil)
+                    model-catalog/update-available-provider-count! (fn [_] nil)
+                    dock/mount! (capture-mount! sel-ref)
+                    tui/tui-set-focus (fn [_ _])
+                    tui/tui-request-render (fn [_])]
+        ((:handler (commands/find-command "scoped-models")) cs "")
+        (let [sel @sel-ref]
+          (protocols/handle-input sel "\r")  ;; enter — toggle the first model
+          (t/is (seq @(:scoped-models ag))
+                "session scoped list updated after an edit")
+          ;; Ctrl+A (all enabled) clears the session scoping again
+          (protocols/handle-input sel "\u0001")
+          (t/is (= [] @(:scoped-models ag))
+                "all-enabled clears the session scoped list (pi updateSessionModels)"))))))
+
+(deftest test-scoped-models-save-drops-models-no-longer-available
+  (testing "Ctrl+S excludes models that became unavailable after opening the selector"
+    (install-app-keybindings!)
+    (commands/clear-commands!)
+    (let [kept (m/map->Model {:provider :test-provider :id "kept"})
+          disappeared (m/map->Model {:provider :test-provider :id "disappeared"})
+          disabled (m/map->Model {:provider :test-provider :id "disabled"})
+          initially-available [kept disappeared disabled]
+          available-at-save [kept disabled]
+          available-calls (atom 0)
+          ag (agent/make-agent-state)
+          _ (agent/set-scoped-models! ag ["test-provider/kept"
+                                          "test-provider/disappeared"])
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
+          sel-ref (atom nil)
+          saved (atom ::not-saved)]
+      ((var builtins/register-builtin-commands!) cfg/default-config)
+      (with-redefs [m/get-available (fn []
+                                      (if (= 1 (swap! available-calls inc))
+                                        initially-available
+                                        available-at-save))
+                    auth/configured? (fn [_] true)
+                    chat-history/chat-history-add-message! (fn [_ _] nil)
+                    cfg/get-enabled-models-live (fn [_] nil)
+                    cfg/set-enabled-models! (fn [ids] (reset! saved ids))
+                    model-catalog/update-available-provider-count! (fn [_] nil)
+                    dock/mount! (capture-mount! sel-ref)
+                    tui/tui-set-focus (fn [_ _])
+                    tui/tui-request-render (fn [_])]
+        ((:handler (commands/find-command "scoped-models")) cs "")
+        (protocols/handle-input @sel-ref "\u0013")
+        (t/is (= ["test-provider/kept"] @saved)
+              "only still-available enabled models are persisted")))))
+
+(deftest test-settings-thinking-row
+  (testing "/settings opens a settings list whose thinking row changes the
+            session level and persists to settings"
+    (install-app-keybindings!)
+    (commands/clear-commands!)
+    (m/load-catalogs!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4.1-flash"
+                                     :thinking :off)
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
+          sl-ref (atom nil)
+          saved (atom nil)]
+      (with-redefs [auth/configured? (fn [_] true)
+                    timg/get-capabilities (constantly no-image-caps)
+                    model-selector/sync-footer-model! (fn [_] nil)
+                    chat-history/chat-history-get-thinking-hidden (fn [_] false)
+                    cfg/save-setting! (fn [path value] (reset! saved [path value]))
+                    dock/mount! (capture-mount! sl-ref)
+                    tui/tui-set-focus (fn [_ _])
+                    tui/tui-request-render (fn [_])]
+        ((:handler (commands/find-command "settings")) cs "")
+        (let [sl @sl-ref]
+          (t/is (some? sl) "settings list shown")
+          ;; select the thinking row by id (row order is data, not stable)
+          (settings-list/settings-list-select-item! sl :thinking)
+          ;; Enter (pi: activateItem) cycles the selected row
+          (protocols/handle-input sl "\r")
+          (t/is (not= :off @(:thinking ag)) "thinking row cycles the session level")
+          (t/is (= [[:thinking] @(:thinking ag)] @saved)
+                "thinking change persisted to settings (path + level)"))))))
+
+(deftest test-settings-block-images-row
+  (testing "/settings Block images row flips the agent knob and persists
+            (pi: block-images, ungated — unlike the terminal image rows)"
+    (install-app-keybindings!)
+    (commands/clear-commands!)
+    (m/load-catalogs!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
+          sl-ref (atom nil)
+          saved (atom nil)]
+      (with-redefs [auth/configured? (fn [_] true)
+                    timg/get-capabilities (constantly no-image-caps)
+                    chat-history/chat-history-get-thinking-hidden (fn [_] false)
+                    cfg/save-setting! (fn [path value] (reset! saved [path value]))
+                    dock/mount! (capture-mount! sl-ref)
+                    tui/tui-set-focus (fn [_ _])
+                    tui/tui-request-render (fn [_])]
+        (t/is (false? (:block-images @(:cfg ag))) "default off at startup")
+        ((:handler (commands/find-command "settings")) cs "")
+        (let [sl @sl-ref]
+          ;; select the block-images row by id (the terminal image rows are
+          ;; stubbed away via no-image-caps; the skill-commands row follows)
+          (settings-list/settings-list-select-item! sl :block-images)
+          (protocols/handle-input sl "\r")  ;; enter — false -> true
+          (t/is (true? (:block-images @(:cfg ag))) "row toggles the agent knob")
+          (t/is (= [[:images :block-images] true] @saved) "blocked persisted")
+          (protocols/handle-input sl "\r")  ;; enter — true -> false
+          (t/is (false? (:block-images @(:cfg ag))) "cycling back unblocks")
+          (t/is (= [[:images :block-images] false] @saved) "unblocked persisted"))))))
+
+(deftest test-settings-retry-rows
+  (testing "/settings retry rows apply live to the agent and persist"
+    (install-app-keybindings!)
+    (commands/clear-commands!)
+    (m/load-catalogs!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
+          sl-ref (atom nil)
+          saved (atom nil)]
+      (with-redefs [auth/configured? (fn [_] true)
+                    timg/get-capabilities (constantly no-image-caps)
+                    chat-history/chat-history-get-thinking-hidden (fn [_] false)
+                    cfg/get-retry-settings-live
+                    (fn [_] {:enabled true :max-retries 3 :base-delay-ms 2000})
+                    cfg/save-setting! (fn [path value] (reset! saved [path value]))
+                    dock/mount! (capture-mount! sl-ref)
+                    tui/tui-set-focus (fn [_ _])
+                    tui/tui-request-render (fn [_])]
+        (t/is (= 3 (:max-retries @(:cfg ag))) "default retry wired at startup")
+        ((:handler (commands/find-command "settings")) cs "")
+        (let [sl @sl-ref]
+          ;; select rows by id (row order is data, not stable): retry block
+          (settings-list/settings-list-select-item! sl :auto-retry)
+          (protocols/handle-input sl "\r") ;; enter — auto-retry true -> false
+          (t/is (= 0 (:max-retries @(:cfg ag))) "disabled retry gates max-retries to 0")
+          (t/is (= [[:retry :enabled] false] @saved) "auto-retry persisted")
+          (protocols/handle-input sl "\r") ;; enter — auto-retry back on
+          (t/is (= 3 (:max-retries @(:cfg ag))) "re-enabled retry restores max-retries")
+          (settings-list/settings-list-select-item! sl :max-retries)
+          (protocols/handle-input sl "\r") ;; enter — 3 -> 5
+          (t/is (= 5 (:max-retries @(:cfg ag))) "max-retries applies live")
+          (t/is (= [[:retry :max-retries] 5] @saved) "max-retries persisted")
+          (settings-list/settings-list-select-item! sl :base-delay-ms)
+          (protocols/handle-input sl "\r") ;; enter — 2000 -> 4000
+          (t/is (= 4000 (:base-delay-ms @(:cfg ag))) "base delay applies live")
+          (t/is (= [[:retry :base-delay-ms] 4000] @saved) "base delay persisted"))))))
+
+(deftest test-set-terminal-progress-clears-when-disabled
+  (testing "a turn end clears even while the setting is off; activation
+            stays gated (pi gates both ends, leaving its keepalive asserting
+            after a mid-turn disable)"
+    (let [missing (str (fs/absolutize (fs/file "target" (str "test-progress-missing-"
+                                                             (System/currentTimeMillis))))
+                       "/settings.edn")
+          calls (atom [])
+          term (reify terminal/ITerminal
+                 (start! [_ _ _] nil)
+                 (stop! [_] nil)
+                 (started? [_] true)
+                 (write-output [_ _] nil)
+                 (read-input [_ _] -1)
+                 (columns [_] 80)
+                 (rows [_] 24)
+                 (set-progress! [_ active] (swap! calls conj active)))
+          cs (tu/with-test-engine {:config {:show-terminal-progress false}
+                                   :tui {:terminal (atom term)}})]
+      (with-redefs [cfg/global-settings-path (fn [] missing)]
+        ((var turn/set-terminal-progress!) cs false)
+        (t/is (= [false] @calls) "the clear passes while disabled")
+        ((var turn/set-terminal-progress!) cs true)
+        (t/is (= [false] @calls) "activation is still settings-gated")))))
+
+(deftest test-settings-http-transport-row
+  (testing "/settings HTTP transport row switches the runtime transport
+            (platform → curl → platform) and persists"
+    (install-app-keybindings!)
+    (commands/clear-commands!)
+    (m/load-catalogs!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :chat-history nil
+                                   :footer-comp nil
+                                   :footer-provider nil
+                                   :config cfg/default-config
+                                   :tui nil})
+          sl-ref (atom nil)
+          saved (atom nil)]
+      (with-redefs [auth/configured? (fn [_] true)
+                    timg/get-capabilities (constantly no-image-caps)
+                    chat-history/chat-history-get-thinking-hidden (fn [_] false)
+                    cfg/save-setting! (fn [path value] (reset! saved [path value]))
+                    dock/mount! (capture-mount! sl-ref)
+                    tui/tui-set-focus (fn [_ _])
+                    tui/tui-request-render (fn [_])]
+        (try
+          (http/set-transport! :platform)
+          ((:handler (commands/find-command "settings")) cs "")
+          (let [sl @sl-ref]
+            ;; select the transport row by id (row order is data, not stable)
+            (settings-list/settings-list-select-item! sl :http-transport)
+            (protocols/handle-input sl "\r") ;; platform -> curl
+            (t/is (= :curl (http/get-transport))
+                  "row switches the runtime transport")
+            (t/is (= [[:http-transport] :curl] @saved)
+                  "transport persisted to settings")
+            (protocols/handle-input sl "\r") ;; curl -> platform
+            (t/is (= :platform (http/get-transport))
+                  "cycling back to platform"))
+          (finally (http/set-transport! :platform)))))))
+
+;; ─── /theme command ───────────────────────────────────────────────────────
+
+(deftest test-theme-command
+  (testing "/theme takes the whole argument string (a string is a seq of
+            chars — (first args) would yield the first character)"
+    (install-app-keybindings!)
+    (commands/clear-commands!)
+    (m/load-catalogs!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [saved (atom nil)
+          msg (atom nil)
+          tc-ctrl (atom nil)]
+      (with-redefs [tui/tui-on-terminal-color-scheme-change (fn [_ _] nil)
+                    tui/tui-invalidate (fn [_] nil)
+                    ;; the controller is built over a stub UI here (this test
+                    ;; covers the /theme argument handling); stub the forced
+                    ;; render notify-changed! now issues too
+                    tui/tui-request-render (fn [& _] nil)
+                    chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))
+                    cfg/save-setting! (fn [path value] (reset! saved [path value]))]
+        (reset! tc-ctrl (theme-ctrl/make-theme-controller {:theme "dark"} nil nil (fn [])))
+        (let [cs (tu/with-test-engine {:config cfg/default-config
+                                       :chat-history nil
+                                       :theme-controller @tc-ctrl})]
+          (testing "with a full theme name"
+            ((:handler (commands/find-command "theme")) cs "light")
+            (t/is (= "light" (get-in @saved [1])) "theme persisted as the full name")
+            (t/is (= "light" (theme-ctrl/get-active-theme-name @tc-ctrl))
+                  "theme switched to the full name")
+            ;; restore: components subscribe to the shared theme atom
+            ;; (Stage 5) — a leaked light theme re-themes later tests
+            ((:handler (commands/find-command "theme")) cs "dark")
+            (t/is (= "dark" (:name (theme/get-current-theme))))))))))
+
+(deftest test-update-editor-border-color-uses-active-theme
+  (testing "the editor's dynamic border follows the ACTIVE theme, not the
+            config :theme snapshot — a /theme switch re-styles it"
+    (let [bf (atom nil)
+          cs (tu/with-test-engine {:editor {:border-fn bf}})
+          rule (fn [theme-name]
+                 ((theme/get-thinking-border-color (theme/get-theme theme-name) :max) "─"))]
+      (reset! theme/theme-atom (theme/get-theme "dark"))
+      ((var state/update-editor-border-color!) cs :max)
+      (t/is (= (rule "dark") ((deref bf) "─")))
+      (reset! theme/theme-atom (theme/get-theme "light"))
+      (try
+        ((var state/update-editor-border-color!) cs :max)
+        (t/is (= (rule "light") ((deref bf) "─"))
+              "after a theme switch the border uses the new theme's color, not
+               the config snapshot it was constructed from")
+        (t/is (not= (rule "dark") ((deref bf) "─")))
+        (finally
+          (reset! theme/theme-atom (theme/get-theme "dark")))))))
+
+(deftest test-build-context-capability
+  (testing "the interactive ui registry's :build-context captures live state"
+    (let [model (m/map->Model {:provider :test-provider :id "test-model"
+                               :context-window 32768})]
+      (with-redefs [m/providers-atom (atom {:test-provider {:models [model]}})]
+        (try
+          (let [ag (agent/make-agent-state :provider :test-provider :model "test-model")
+                cs (tu/with-test-engine {:agent-state (atom ag)
+                                         :config cfg/default-config
+                                         :session-atom (atom nil)})
+                registry ((var ui-registry/build-extension-ui-registry)
+                          {:tui nil :cs cs}
+                          {:fdp (fdp/make-footer-data-provider)}
+                          nil)
+                ctx ((:build-context registry))]
+            (t/is (= :interactive (:mode ctx)))
+            (t/is (true? (:has-ui ctx)))
+            (t/is (string? (:cwd ctx)))
+            (t/is (identical? model (:model ctx)))
+            (t/is (= :test-provider (:provider (:model ctx))))
+            (t/is (identical? model ((:find (:models (extensions/build-extension-context)))
+                                     :test-provider "test-model"))
+                  "ctx :models reads the live registry (pi ctx.modelRegistry)")
+            (t/is (= [] (:scoped-models ctx)))
+            (t/is (true? ((:is-idle ctx))))
+            (t/is (false? ((:has-pending-messages ctx))))
+            (t/is (false? ((:signal ctx))))
+            (t/is (string? ((:get-system-prompt ctx))))
+            (t/is (nil? ((:wait-for-idle ctx))) "already idle → nil, not a promise")
+            (t/is (nil? ((:get-context-usage ctx))) "no active session → nil (pi parity)")
+            (t/is (= {:cancelled true} ((:fork ctx) nil)))
+            (t/is (= {:cancelled true} ((:navigate-tree ctx) "missing-leaf")))
+            (t/is (= {:cancelled true} ((:switch-session ctx) "/nonexistent-file.edn")))
+            (t/is (false? ((:is-project-trusted ctx))))
+            (testing ":navigate-tree opts reach the extension context. The
+                full navigate-tree flow needs an editor + LLM; here we
+                only test the wrapper's short-circuit: a missing target
+                id returns :cancelled without emitting
+                :session-before-tree (the prep-event contract is
+                exercised by the manual /review run, not here)."
+              (let [seen (atom nil)
+                    dereg (event-bus/on-event :session-before-tree
+                                              (fn [ev] (reset! seen ev)))
+                    result ((:navigate-tree ctx) "missing-target"
+                                                 {:summarize false
+                                                  :custom-instructions "ci"
+                                                  :replace-instructions true
+                                                  :label "my-label"})]
+                (t/is (= {:cancelled true} result)
+                      "navigate-tree with a missing target id returns :cancelled")
+                (t/is (nil? @seen)
+                      "no :session-before-tree event was emitted for a missing target")
+                (dereg)))
+            (t/is (not (contains? ctx :cs)) "CoreState never leaks into the ctx")
+            (testing "fns stay live across an agent swap (session swaps assoc a
+                new record; only the :session field goes stale)"
+              (let [sess (session/create-session (str (fs/cwd) "/target"))]
+                (reset! (:agent-state (:engine cs)) (assoc ag :session sess))
+                (t/is (true? ((:is-idle ctx))))
+                (t/is (nil? ((:wait-for-idle ctx))))))
+            (testing "get-context-usage reports the active session (pi parity)"
+              (let [fdp-provider (fdp/make-footer-data-provider)
+                    _ (fdp/fdp-set-session! fdp-provider
+                                            (session/create-session
+                                             (str (fs/cwd) "/target")))
+                    registry ((var ui-registry/build-extension-ui-registry)
+                              {:tui nil :cs cs}
+                              {:fdp fdp-provider}
+                              nil)
+                    usage ((:get-context-usage ((:build-context registry))))]
+                (t/is (contains? usage :tokens))
+                (t/is (contains? usage :context-window))
+                (t/is (contains? usage :percent)))))
+          ;; Registry installation is a side effect: clean up even if a
+          ;; capability throws, so later contexts cannot see the fake cs.
+          (finally (clear-installed-context!)))))))
+
+(deftest test-build-context-idle-follows-the-run-and-compaction-flags
+  (testing "the extension ctx's idle state, wait-for-idle and abort follow the
+            run and compaction flags, not the status atom — the settle window
+            (e.g. D's post-run compaction) has status idle while the prompt is
+            still in flight (pi: isIdle / isStreaming / abort)"
+    (let [ag (agent/make-agent-state)
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :config cfg/default-config
+                                   :session-atom (atom nil)
+                                   :compaction-queued (atom [])
+                                   :running-turn? (atom false)})
+          registry ((var ui-registry/build-extension-ui-registry)
+                    {:tui nil :cs cs}
+                    {:fdp (fdp/make-footer-data-provider)}
+                    nil)]
+      (try
+        (let [ctx ((:build-context registry))]
+          (t/is (= :idle @(:status ag)) "precondition: the status atom reads idle")
+          (t/is (true? ((:is-idle ctx))))
+          ;; The settle window: a prompt is in flight with the status idle
+          (reset! (:turn-running? (:engine cs)) true)
+          (t/is (false? ((:is-idle ctx))) "the run flag beats the status atom")
+          (t/is (some? ((:wait-for-idle ctx))) "running → a wait promise")
+          ((:abort ctx))
+          (t/is (true? @(:signal ag)) "abort cancels the run even with the status idle")
+          (reset! (:turn-running? (:engine cs)) false)
+          (reset! (:signal ag) false)
+          (t/is (true? ((:is-idle ctx))) "idle again once the run flag drops")
+          ;; A compaction alone is not idle, and abort aborts it too
+          (reset! (:compaction-signal ag) false)
+          (reset! (:compacting? ag) true)
+          (t/is (false? ((:is-idle ctx))) "a compaction is not idle (pi: isIdle)")
+          (t/is (some? ((:wait-for-idle ctx))) "a compaction → a wait promise")
+          ((:abort ctx))
+          (t/is (true? @(:compaction-signal ag)) "abort aborts the compaction")
+          (reset! (:compacting? ag) false)
+          ;; fully idle → abort is a no-op, not a stale run cancel
+          (reset! (:signal ag) false)
+          ((:abort ctx))
+          (t/is (false? @(:signal ag)) "idle → abort does nothing"))
+        (finally
+          (reset! (:turn-running? (:engine cs)) false)
+          (clear-installed-context!))))))
+
+(deftest test-build-context-resolves-current-model
+  (let [native (m/map->Model {:provider :test-native :id "test-model"
+                              :base-url "https://native.test/v1"})
+        adapter (m/map->Model {:provider :test-adapter :id "test-model"
+                               :base-url "https://adapter.test/v1"
+                               :headers {"X-Test" "yes"}})
+        alternate (assoc adapter :id "other")
+        ag (agent/make-agent-state :provider :test-native :model "test-model")
+        cs (tu/with-test-engine {:agent-state (atom ag)
+                                 :config cfg/default-config
+                                 :session-atom (atom nil)})]
+    (with-redefs [m/providers-atom (atom {:test-native {:models [native]}
+                                          :test-adapter {:models [adapter alternate]}})]
+      (try
+        (ui-registry/build-extension-ui-registry
+         {:tui nil :cs cs} {:fdp (fdp/make-footer-data-provider)} nil)
+        (t/is (identical? native (:model (extensions/build-extension-context))))
+        (testing "a provider switch resolves the record even when the model ID is unchanged"
+          (reset! (:provider ag) :test-adapter)
+          (let [model (:model (extensions/build-extension-context))]
+            (t/is (identical? adapter model))
+            (t/is (= "https://adapter.test/v1" (:base-url model)))
+            (t/is (= {"X-Test" "yes"} (:headers model)))))
+        (testing "model and session changes are read from the current agent"
+          (reset! (:model ag) "other")
+          (t/is (identical? alternate (:model (extensions/build-extension-context))))
+          (reset! (:agent-state (:engine cs))
+                  (agent/make-agent-state :provider :test-native :model "test-model"))
+          (t/is (identical? native (:model (extensions/build-extension-context)))))
+        (testing "unregistered selections have no resolved model"
+          (reset! (:model (runtime/agent-state (:engine cs))) "missing")
+          (t/is (nil? (:model (extensions/build-extension-context))))
+          (reset! (:model (runtime/agent-state (:engine cs))) "test-model")
+          (reset! (:provider (runtime/agent-state (:engine cs))) :missing)
+          (t/is (nil? (:model (extensions/build-extension-context)))))
+        (finally
+          (clear-installed-context!))))))
+
+(deftest test-build-context-resolves-scoped-models
+  (let [native (m/map->Model {:provider :test-native :id "test-model"})
+        alternate (m/map->Model {:provider :test-native :id "other"})
+        foreign (m/map->Model {:provider :test-adapter :id "test-model"})
+        ag (agent/make-agent-state :provider :test-native :model "test-model"
+                                   :scoped-models ["test-native/test-model"
+                                                   "test-adapter/test-model"])
+        cs (tu/with-test-engine {:agent-state (atom ag)
+                                 :config cfg/default-config
+                                 :session-atom (atom nil)})]
+    (with-redefs [m/providers-atom (atom {:test-native {:models [native alternate]}
+                                          :test-adapter {:models [foreign]}})]
+      (try
+        (ui-registry/build-extension-ui-registry
+         {:tui nil :cs cs} {:fdp (fdp/make-footer-data-provider)} nil)
+        (testing "full ids resolve to pi ScopedModel-shaped entries"
+          (let [scoped (:scoped-models (extensions/build-extension-context))]
+            (t/is (= #{:model} (set (keys (first scoped))))
+                  "no :thinking-level — kmet drops scoped thinking levels")
+            (t/is (identical? native (:model (first scoped))))
+            (t/is (identical? foreign (:model (second scoped))))))
+        (testing "duplicate entries collapse (pi modelsAreEqual dedupe)"
+          (reset! (:scoped-models ag) ["test-native/test-model"
+                                       "test-native/test-model"])
+          (let [scoped (:scoped-models (extensions/build-extension-context))]
+            (t/is (= 1 (count scoped)))
+            (t/is (identical? native (:model (first scoped))))))
+        (testing "bare ids resolve against the current provider"
+          (reset! (:scoped-models ag) ["test-model"])
+          (t/is (identical? native
+                            (:model (first (:scoped-models (extensions/build-extension-context))))))
+          (reset! (:provider ag) :test-adapter)
+          (t/is (identical? foreign
+                            (:model (first (:scoped-models (extensions/build-extension-context)))))))
+        (testing "entries that no longer resolve drop out"
+          (reset! (:scoped-models ag) ["test-native/missing" "also-missing"
+                                       "test-native/test-model"])
+          (let [scoped (:scoped-models (extensions/build-extension-context))]
+            (t/is (= 1 (count scoped)))
+            (t/is (identical? native (:model (first scoped))))))
+        (testing "no scoping configured stays empty"
+          (reset! (:scoped-models ag) [])
+          (t/is (= [] (:scoped-models (extensions/build-extension-context)))))
+        (finally
+          (clear-installed-context!))))))
+
+(deftest test-extension-reset-closes-open-dialogs
+  (testing "the registry :reset teardown closes an open ui-custom dialog
+            through the ordered leave-then-dispose path on both surfaces:
+            the dialog is disposed, its surface empty, and no
+            disposed-while-mounted violation is logged (the follow-up had
+            no harness for this path)"
+    (let [ui (tui/create-tui nil)
+          ed (editor/make-editor)
+          cs (tu/with-test-engine {:tui ui
+                                   :dock-stack (atom [])
+                                   :current-editor-atom (atom ed)
+                                   :status-indicator (status-indicator/make-status-indicator)
+                                   :config cfg/default-config
+                                   :session-atom (atom nil)})
+          ch (chat-history/make-chat-history)
+          disposed (atom [])
+          logged (atom [])
+          registry ((var ui-registry/build-extension-ui-registry)
+                    {:tui ui :cs cs}
+                    {:ftr {:extension-statuses-atom (atom {})}
+                     :ed ed
+                     :ch ch
+                     :fdp (fdp/make-footer-data-provider)
+                     :widgets-above-atom (atom {})
+                     :widgets-below-atom (atom {})}
+                    nil)
+          factory (fn [_tui _theme _kb _close]
+                    {:render (fn [_width] [])
+                     :dispose (fn [] (swap! disposed conj :dialog))})]
+      (try
+        (with-redefs [debug/log-error (fn [& args] (swap! logged conj args))]
+          ;; dock surface: the path the release!-before-dispose fix covers
+          ((:custom registry) factory {})
+          (t/is (= 1 (count @(:dock-stack cs))) "the dialog docked")
+          ((:reset registry))
+          (t/is (= [:dialog] @disposed) "reset disposed the dock dialog")
+          (t/is (empty? @(:dock-stack cs)) "the dock is empty")
+          ;; overlay surface: the membership hide leaves before dispose
+          (reset! disposed [])
+          ((:custom registry) factory {:overlay true
+                                       :overlay-options {:anchor :center}})
+          (t/is (true? (tui/tui-has-overlay? ui)) "the dialog floated")
+          ((:reset registry))
+          (t/is (= [:dialog] @disposed) "reset disposed the overlay dialog")
+          (t/is (false? (tui/tui-has-overlay? ui)) "the overlay stack is empty")
+          (t/is (empty? @logged) "no disposed-while-mounted violation"))
+        (finally
+          (clear-installed-context!))))))
+
+(defn- build-extension-registry
+  "The /reload fixture both widget-reset tests drive: an extension UI
+   registry over fresh above/below widget atoms and the given components."
+  [{:keys [ui ed above below hdr sp1 header-container ch]}]
+  ((var ui-registry/build-extension-ui-registry)
+   {:tui ui
+    :cs (tu/with-test-engine {:tui ui
+                              :dock-stack (atom [])
+                              :current-editor-atom (atom ed)
+                              :status-indicator (status-indicator/make-status-indicator)
+                              :config cfg/default-config
+                              :session-atom (atom nil)})}
+   {:ftr {:extension-statuses-atom (atom {})}
+    :ed ed
+    :ch ch
+    :fdp (fdp/make-footer-data-provider)
+    :hdr hdr
+    :sp1 sp1
+    :header-container header-container
+    :widgets-above-atom above
+    :widgets-below-atom below}
+   nil))
+
+(defn- make-cleanup-widget
+  "A widget factory whose owned subtree runs a with-let cleanup counted in
+   CLEANUPS — the shared fixture of the /reload widget tests."
+  [cleanups]
+  (fn []
+    ((var ui-registry/make-extension-widget-component)
+     nil
+     [:container {}
+      [:text {:padding-x 0 :padding-y 0} "w"]
+      [(fn [_props]
+         (component/with-let [_ (swap! cleanups inc)]
+           [:text {:padding-x 0 :padding-y 0} "owned"]
+           (finally (swap! cleanups dec)))) {}]])))
+
+(defn- make-reload-fixture
+  "The /reload widget-test fixture: a TUI, the default editor, fresh widget
+   atoms, header chrome and a chat history, with the extension registry over
+   them and a cleanup counter the widget factory bumps."
+  []
+  (let [ui (tui/create-tui nil)
+        ed (editor/make-editor)
+        above (atom {})
+        below (atom {})
+        header-container (container/make-container [])
+        hdr (expandable-text/make-expandable-text (fn [] "hdr") (fn [] "hdr"))
+        sp1 (text/make-text " " 0 0)
+        ch (chat-history/make-chat-history)
+        cleanups (atom 0)]
+    {:above above
+     :hdr hdr
+     :sp1 sp1
+     :cleanups cleanups
+     :widget (make-cleanup-widget cleanups)
+     :registry (build-extension-registry
+                {:ui ui :ed ed :above above :below below :hdr hdr
+                 :sp1 sp1 :header-container header-container :ch ch})}))
+
+(defn- dispose-reload-fixture!
+  "Release MAKE-RELOAD-FIXTURE's header chrome and the installed extension
+   context."
+  [{:keys [hdr sp1]}]
+  (protocols/dispose hdr)
+  (protocols/dispose sp1)
+  (clear-installed-context!))
+
+(deftest test-reset-disposes-extension-widgets-header-and-editor
+  (testing "finding 1: the /reload :reset path, the header swap and the
+            editor swap dispose the values they drop — records carry no
+            :dispose key, so the old duck-typed probes lost them with the
+            swap"
+    (let [{:keys [registry above cleanups widget] :as fixture} (make-reload-fixture)
+          headers (atom [])
+          header-factory (fn [tag]
+                           (fn [_t _theme]
+                             {:render (fn [_] [])
+                              :dispose (fn [] (swap! headers conj tag))}))]
+      (try
+        ;; widgets: the replace path already worked; reset must dispose too
+        ((:set-widget registry) :w1 (widget) {})
+        (protocols/render (get @above :w1) 40)
+        (t/is (= 1 @cleanups) "widget subtree initialized by render")
+        ((:set-widget registry) :w1 (widget) {})
+        (t/is (= 0 @cleanups) "replace disposed the previous widget")
+        (protocols/render (get @above :w1) 40)
+        ((:reset registry))
+        (t/is (= 0 @cleanups) "reset disposed the dropped widget")
+        (t/is (empty? @above))
+        ;; header: a swap and the reset must dispose the previous header
+        ((:set-header registry) (header-factory :one))
+        ((:set-header registry) (header-factory :two))
+        (t/is (= [:one] @headers) "header swap disposed the previous header")
+        ((:reset registry))
+        (t/is (= [:one :two] @headers) "reset disposed the custom header")
+        ;; footer: set-footer replace and reset dispose through
+        ;; tui-remove-child's tolerant verb
+        (let [footers (atom [])
+              footer-factory (fn [tag]
+                               (fn [_t _theme _data]
+                                 {:render (fn [_] [])
+                                  :dispose (fn [] (swap! footers conj tag))}))]
+          ((:set-footer registry) (footer-factory :one))
+          ((:set-footer registry) (footer-factory :two))
+          (t/is (= [:one] @footers) "footer swap disposed the previous footer")
+          ((:reset registry))
+          (t/is (= [:one :two] @footers) "reset disposed the custom footer"))
+        ;; editor: a swap must dispose the replaced custom editor (never the
+        ;; default `ed`)
+        (let [seen (atom [])
+              ed-a (editor/make-editor)
+              ed-b (editor/make-editor)]
+          (with-redefs-fn
+            (assoc {} #'ui-registry/dispose-dialog-component!
+                   (fn [c] (swap! seen conj c)))
+            (fn []
+              ((:set-editor-component registry) (fn [_ _ _] ed-a))
+              ((:set-editor-component registry) (fn [_ _ _] ed-b))))
+          (t/is (= [ed-a] @seen)
+                "the previous custom editor was disposed; the default ed was not"))
+        (finally
+          (dispose-reload-fixture! fixture))))))
+
+(deftest ^:slow test-fifty-reload-cycles-leave-no-watches-behind
+  (testing "50 widget set+render+reset cycles keep
+            live-watch-count flat and unwind every with-let cleanup — a
+            regression guard for the /reload drop sites"
+    (let [baseline (component/live-watch-count)
+          {:keys [registry above cleanups widget] :as fixture} (make-reload-fixture)]
+      (try
+        (dotimes [_ 50]
+          ((:set-widget registry) :w1 (widget) {})
+          (protocols/render (get @above :w1) 40)
+          ((:reset registry)))
+        (t/is (= 0 @cleanups) "every widget subtree unwound")
+        (t/is (empty? @above))
+        ;; <=, not =: the baseline is registry-wide, and a GC during the
+        ;; cycles can clear unrelated stale entries from earlier tests.
+        (t/is (<= (component/live-watch-count) baseline)
+              "no watch entry survived the cycles")
+        (finally
+          (dispose-reload-fixture! fixture))))))
+
+;; ─── DSL stage 4 review: dock generation gate + widget-area reactivity ────
+
+(deftest test-dock-membership-handles
+  (testing "a release removes only its own component, wherever it sits, so a
+            replaced selector's close cannot yank the newer one out of the
+            dock (membership replaced pi's activeSelectorToken); release is
+            idempotent and restores the CURRENT active editor"
+    (with-redefs [tui/tui-set-focus (fn [_ _] nil)
+                  tui/tui-request-render (fn [_] nil)]
+      (let [ed (editor/make-editor)
+            cs (tu/with-test-engine {:tui {}
+                                     :dock-stack (atom [])
+                                     :current-editor-atom (atom ed)})
+            panel-a (status-indicator/make-status-indicator)
+            panel-b (editor/make-editor)]
+        ;; A mounts, then B replaces it
+        (dock/mount! cs panel-a)
+        (dock/mount! cs panel-b)
+        (t/is (= panel-b (dock/top-component @(:dock-stack cs))) "B recorded")
+        (dock/release! cs panel-a)
+        (t/is (= panel-b (dock/top-component @(:dock-stack cs)))
+              "the absent component's release is inert")
+        ;; B's release reveals the editor; a second call is harmless
+        (dock/release! cs panel-b)
+        (t/is (nil? (dock/top-component @(:dock-stack cs))) "editor restored")
+        (dock/release! cs panel-b)
+        (t/is (nil? (dock/top-component @(:dock-stack cs)))
+              "double release stays nil")))))
+
+(deftest test-oauth-login-dialog-covers-and-releases
+  (testing "kmetia/kmet-agent#5: the :select round trip COVERS the login
+            dialog with the method selector (dock/cover!) instead of
+            re-mounting it, so no mount handle can go stale; closing the
+            selector reveals the dialog, and the flow's release + dispose
+            leaves the dock empty with the editor holding input"
+    (install-app-keybindings!)
+    (let [ui (tui/create-tui nil)
+          ed (editor/make-editor)
+          cs (tu/with-test-engine {:tui ui
+                                   :dock-stack (atom [])
+                                   :current-editor-atom (atom ed)
+                                   :chat-history (chat-history/make-chat-history)})
+          covers (atom 0)
+          selector-p (promise)
+          released-p (promise)
+          _ (tui/tui-add-child ui ed)
+          _ (tui/tui-set-focus-home!
+             ui #(or (dock/top-focus-target (deref (:dock-stack cs)))
+                     (deref (:current-editor-atom cs))))
+          ;; 1 = the dialog, 2 = the method selector covering it; the
+          ;; cover leaves the dialog below (depth 2), the flow's final
+          ;; release empties the stack and the guard hands focus back to
+          ;; the editor — waiting on the FOCUS atom (not the stack) lands
+          ;; after the guard has run
+          _ (add-watch (:dock-stack cs) ::issue-5-covers
+                       (fn [_ _ _ new]
+                         (when (= 2 (swap! covers inc))
+                           (deliver selector-p {:selector (dock/top-component new)
+                                                :depth (count new)}))))
+          _ (add-watch (:focused-component ui) ::issue-5-released
+                       (fn [_ _ _ new]
+                         (when (and (identical? ed new)
+                                    (empty? @(:dock-stack cs)))
+                           (deliver released-p :released))))
+          provider {:id :test-provider
+                    :name "Test Provider"
+                    :oauth {:login (fn [interaction]
+                                     (let [method ((:prompt interaction)
+                                                   {:type :select
+                                                    :message "Select login method:"
+                                                    :options [{:id "browser"
+                                                               :label "Browser login"}
+                                                              {:id "device"
+                                                               :label "Device code login"}]})]
+                                       (when-not (= "browser" method)
+                                         (throw (ex-info "unexpected method"
+                                                         {:method method})))
+                                       {:type :oauth :access "a" :refresh "r"}))}}]
+      (with-redefs [auth/set-oauth-credential! (fn [_ _] nil)]
+        ((var ia/oauth-login!) cs provider)
+        (let [covered (deref selector-p 5000 :timeout)]
+          (t/is (not= :timeout covered) "the method selector mounted")
+          (t/is (= 2 (:depth covered))
+                "the selector COVERS the dialog — it stayed below instead of
+                 being replaced/re-mounted (pi showAuthSelect)")
+          (protocols/handle-input (:selector covered) "\r"))
+        (t/is (= :released (deref released-p 5000 :timeout))
+              "the flow released the dock")
+        (t/is (empty? @(:dock-stack cs)) "no dialog left on screen")
+        (t/is (identical? ed (tui/tui-focused-component ui))
+              "the editor holds input again")))))
+
+(defn- strip-ansi-lines [lines]
+  (mapv strip-ansi lines))
+
+(deftest test-widget-area-tracked-reactivity
+  (testing "the widget strips re-derive from pure map swaps: registered
+            widgets appear, removals disappear, the below strip renders
+            nothing while empty, dispose unwinds cleanly"
+    (let [above (atom {})
+          below (atom {})
+          mk (fn [label] ((var ui-registry/make-extension-widget-component) nil
+                                                                            [:text {:padding-x 1 :padding-y 0} label]))
+          above-root (hiccup/root ((var ui-registry/make-widget-area-above) above))
+          below-root (hiccup/root ((var ui-registry/make-widget-area-below) below))]
+      (try
+        (swap! above assoc :w1 (mk "widget one"))
+        (let [lines (strip-ansi-lines (protocols/render above-root 40))]
+          (t/is (some #(re-find #"widget one" %) lines) "widget rendered"))
+        ;; a pure map swap re-derives on next render (tracked read)
+        (swap! above assoc :w2 (mk "widget two"))
+        (let [lines (strip-ansi-lines (protocols/render above-root 40))]
+          (t/is (some #(re-find #"widget two" %) lines) "second widget shown")
+          (t/is (some #(re-find #"widget one" %) lines) "first still shown"))
+        ;; below strip renders nothing while empty, widgets once added
+        (t/is (empty? (protocols/render below-root 40)) "empty below strip")
+        (reset! below {:wb (mk "below widget")})
+        (let [lines (strip-ansi-lines (protocols/render below-root 40))]
+          (t/is (some #(re-find #"below widget" %) lines) "below widget shown"))
+        ;; removal disappears on next render
+        (swap! above dissoc :w1)
+        (let [lines (strip-ansi-lines (protocols/render above-root 40))]
+          (t/is (not-any? #(re-find #"widget one" %) lines) "removed widget gone"))
+        (finally
+          (protocols/dispose above-root)
+          (protocols/dispose below-root))))))
+
+(deftest test-widget-tree-content-and-dispose
+  (testing "hiccup tree content compiles to a renderable wrapper whose
+            :dispose unwinds owned cleanups (the set-widget replace/remove
+            hook's contract)"
+    (let [cleanups (atom 0)
+          cleanup-fn (fn [_props]
+                       (component/with-let [_ (swap! cleanups inc)]
+                         [:text {:padding-x 0 :padding-y 0} "owned"]
+                         (finally (swap! cleanups dec))))
+          w ((var ui-registry/make-extension-widget-component)
+             nil [:container {}
+                  [:text {:padding-x 1 :padding-y 0} "tree widget"]
+                  [cleanup-fn {}]])]
+      ;; vector content compiles to a real stamped component — spliceable
+      (t/is (satisfies? protocols/IComponent w))
+      (let [lines (strip-ansi-lines (protocols/render w 40))]
+        (t/is (some #(re-find #"tree widget" %) lines)))
+      (t/is (= 1 @cleanups) "render initialized the owned subtree")
+      (protocols/dispose w)
+      (t/is (= 0 @cleanups) "component dispose unwound the owned subtree"))))
+
+(deftest test-custom-component-tree-content
+  (testing "normalize-custom-component accepts a hiccup element tree for
+            ui-custom dialogs — compiles to a renderable IComponent whose
+            dispose unwinds owned cleanups"
+    (let [cleanups (atom 0)
+          cleanup-fn (fn [_props]
+                       (component/with-let [_ (swap! cleanups inc)]
+                         [:text {:padding-x 0 :padding-y 0} "dialog body"]
+                         (finally (swap! cleanups dec))))
+          comp (var-get #'ui-registry/normalize-custom-component)
+          c (comp [:container {}
+                   [:text {:padding-x 1 :padding-y 0} "MCP OAuth"]
+                   [cleanup-fn {}]])]
+      ;; NOTE: satisfies? is unreliable for reify under SCI — assert via
+      ;; protocol dispatch (render/dispose), which is what the host uses
+      (let [lines (strip-ansi-lines (protocols/render c 40))]
+        (t/is (some #(re-find #"MCP OAuth" %) lines))
+        (t/is (some #(re-find #"dialog body" %) lines)))
+      (t/is (= 1 @cleanups))
+      ;; the host's close/replace/shutdown sites all funnel through
+      ;; dispose-dialog-component! — prove THAT path unwinds tree dialogs
+      ((var-get #'ui-registry/dispose-dialog-component!) c)
+      (t/is (= 0 @cleanups) "dispose unwinds on dialog close"))))
+
+(deftest test-dispose-dialog-component-shapes
+  (testing "dispose-dialog-component! (kmet.agent.ui.tui.custom-dialog-adapter/
+            dispose-component!) handles every component shape: duck-typed
+            maps via their :dispose key, records via the protocol, nil
+            no-op — and a throwing foreign dispose never propagates"
+    (let [dispose! (var-get #'ui-registry/dispose-dialog-component!)
+          called (atom 0)]
+      (dispose! {:render (fn [_] ["duck"]) :dispose (fn [] (swap! called inc))})
+      (t/is (= 1 @called) "duck-typed :dispose invoked")
+      (dispose! {:render (fn [_] ["duck"]) :dispose (fn [] (throw (ex-info "boom" {})))})
+      (t/is true "a throwing foreign dispose is swallowed")
+      (dispose! {:render (fn [_] ["no dispose key"])})
+      (t/is true "a map without :dispose does not propagate the dispatch error")
+      (dispose! nil)
+      (t/is true "nil is a no-op")
+      (let [c (hiccup/compile-tree [:container {} [:text {:padding-x 0 :padding-y 0} "x"]])]
+        (dispose! c)
+        (t/is true "records dispatch through the protocol")))))
+
+(deftest test-widget-string-vector-no-longer-lines
+  (testing "breaking change: string vectors are NOT line lists anymore —
+            they fail tree compilation loudly instead of silently rendering
+            text lines"
+    (t/is (thrown? Exception
+                   ((var ui-registry/make-extension-widget-component) nil ["just" "lines"])))))
+
+;; ─── Editor submit ordering (pi: submitValue clears before onSubmit) ───────
+
+(deftest test-submit-clears-editor-before-command-dispatch
+  (testing "a submitted command finds the editor already empty (pi: the
+            editor clears in submitValue before onSubmit runs): a ui-custom
+            dialog the command mounts saves that empty draft, so closing
+            the /tools dialog cannot put the submitted '/tools' line back
+            into the editor — while a dialog opened outside a submit still
+            restores the draft it covered"
+    (commands/clear-commands!)
+    (let [ui (tui/create-tui nil)
+          ed (editor/make-editor)
+          ch (chat-history/make-chat-history)
+          fdp-instance (fdp/make-footer-data-provider)
+          cs (tu/with-test-engine {:tui ui
+                                   :dock-stack (atom [])
+                                   :current-editor-atom (atom ed)
+                                   :editor ed
+                                   :chat-history ch
+                                   :footer-provider fdp-instance
+                                   :status-indicator (status-indicator/make-status-indicator)
+                                   :config cfg/default-config
+                                   :agent-state (atom (agent/make-agent-state))
+                                   :session-atom (atom nil)
+                                   :running-turn? (atom false)})
+          seen (atom ::unset)
+          close-ref (atom nil)
+          submit ((var layout/make-editor-submit-handler) cs)
+          factory (fn [_tui _th _kb close]
+                    (reset! close-ref close)
+                    {:render (fn [_width] [""])})]
+      (try
+        ((var ui-registry/build-extension-ui-registry)
+         {:tui ui :cs cs}
+         {:ftr {:extension-statuses-atom (atom {})}
+          :ed ed
+          :ch ch
+          :fdp fdp-instance
+          :widgets-above-atom (atom {})
+          :widgets-below-atom (atom {})}
+         nil)
+        (commands/register-command!
+         {:name "tools"
+          :description "test"
+          :extension-handler (fn [_ctx _args]
+                               (reset! seen (extensions/ui-get-editor-text))
+                               (extensions/ui-custom factory {}))})
+        (editor/editor-set-text! ed "/tools")
+        (submit "/tools")
+        (t/is (= "" @seen)
+              "the command handler sees the cleared editor")
+        (t/is (= 1 (count @(:dock-stack cs)))
+              "the dialog mounted over the editor")
+        (@close-ref nil)
+        (t/is (= "" (editor/editor-get-text ed))
+              "closing the dialog leaves the editor empty — no resurrected /tools")
+        (t/is (empty? @(:dock-stack cs)) "the dialog left the dock")
+        (testing "a dialog opened outside a submit still restores the draft"
+          (editor/editor-set-text! ed "draft")
+          (extensions/ui-custom factory {})
+          (@close-ref nil)
+          (t/is (= "draft" (editor/editor-get-text ed))))
+        (finally
+          (commands/clear-commands!)
+          (clear-installed-context!))))))
+
+;; ─── Compaction queue (pi: queueCompactionMessage / flushCompactionQueue) ──
+
+(defn- compaction-cs
+  "A CoreState-like map for compaction-queue tests, with a runtime engine
+   sharing its session/turn/queue atoms."
+  []
+  (let [ag (agent/make-agent-state)
+        ag-atom (atom ag)
+        sess-atom (atom (session/create-session
+                         (str "target/test-compaction-queue-" (System/currentTimeMillis))))
+        engine (tu/test-engine {:agent-state ag-atom :session sess-atom})
+        ch (chat-history/make-chat-history)
+        ed (editor/make-editor)
+        si (status-indicator/make-status-indicator :text "Working")
+        cur (atom nil)
+        ;; a plain editor (no top-border fn) cannot embed the status, so
+        ;; the standalone layer renders for these tests
+        ced (atom ed)]
+    {:tui {:render-requested? (atom false)}
+     :engine engine
+     :agent-state ag-atom
+     :chat-history ch
+     :editor ed
+     :current-editor-atom ced
+     :compaction-queued (:compaction-queued engine)
+     :running-turn? (:turn-running? engine)
+     :bash-running? (atom false)
+     :bash-signal (atom false)
+     :status-indicator si
+     :status-current cur
+     :status-root (hiccup/root (status-indicator/make-status-area cur si ced))
+     :footer-comp nil
+     :footer-provider nil
+     :pending-messages-comp (pending-messages/make-pending-messages)
+     :session-atom sess-atom}))
+
+(deftest test-bash-already-running-restores-the-command
+  (testing "pi: a bash submit while another command runs warns and puts the
+            typed command back into the editor (the submit wiring cleared
+            it before dispatch), so it can be re-submitted after cancelling
+            the running one"
+    (let [cs (compaction-cs)
+          ed @(:current-editor-atom cs)
+          msgs (atom [])]
+      (editor/editor-set-text! ed "")
+      (reset! (:bash-running? cs) true)
+      (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (swap! msgs conj m))
+                    tui/tui-request-render (fn [_] nil)]
+        ((var turn/handle-submit) cs "!ls -la"))
+      (t/is (= "!ls -la" (editor/editor-get-text ed))
+            "the typed command is back in the editor")
+      (t/is (= ["A bash command is already running. Cancel it first."]
+               (mapv :content @msgs))
+            "the warning is the only chat output"))))
+
+(deftest test-submit-history-targets-the-active-editor
+  (testing "submitted text lands in the ACTIVE editor's Up/Down history
+            (pi: this.editor.addToHistory) — a custom editor swapped in via
+            ui-set-editor-component gets the history, not the default editor"
+    (let [cs (compaction-cs)
+          default-ed (:editor cs)
+          custom-ed (editor/make-editor)]
+      (reset! (:current-editor-atom cs) custom-ed)
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (with-redefs [tui/tui-request-render (fn [_] nil)]
+        ((var turn/handle-submit) cs "queued draft"))
+      (t/is (= ["queued draft"] (editor/editor-get-history custom-ed)))
+      (t/is (empty? (editor/editor-get-history default-ed))
+            "the default editor's history is untouched"))))
+
+(deftest test-submit-queues-during-compaction
+  (testing "a plain message submitted during compaction queues as steer
+            (pi: onSubmit → isCompacting → queueCompactionMessage(text, steer))"
+    (let [cs (compaction-cs)]
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (with-redefs [tui/tui-request-render (fn [_] nil)]
+        ((var turn/handle-submit) cs "hello during compaction"))
+      (t/is (= [{:text "hello during compaction" :mode :steer}]
+               (runtime/compaction-queued (:engine cs)))
+            "message queued with steer mode")
+      (t/is (empty? @(:messages (runtime/agent-state (:engine cs))))
+            "message NOT sent to the agent"))))
+
+(deftest test-follow-up-queues-during-compaction
+  (testing "Alt+Enter during compaction queues as follow-up
+            (pi: handleFollowUp → queueCompactionMessage(text, followUp))"
+    (let [cs (compaction-cs)
+          ed @(:current-editor-atom cs)]
+      (editor/editor-set-text! ed "later message")
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (with-redefs [tui/tui-request-render (fn [_] nil)]
+        ((var turn/handle-follow-up) cs))
+      (t/is (= [{:text "later message" :mode :follow-up}]
+               (runtime/compaction-queued (:engine cs)))
+            "message queued with follow-up mode"))))
+
+(deftest test-flush-compaction-queue-prompts-when-idle
+  (testing "compaction_end flushes the queue: the first non-extension message
+            starts a run when idle, the rest queue (pi: flushCompactionQueue)"
+    (let [cs (compaction-cs)
+          started (atom [])]
+      (reset! (:compaction-queued (:engine cs))
+              [{:text "first" :mode :steer}
+               {:text "second" :mode :follow-up}])
+      (with-redefs [agent/run-agent-turn (fn [a opts] (reset! started [a opts]) (future))
+                    status/activate-working-indicator! (fn [_] nil)
+                    status/start-anim-timer! (fn [_] nil)
+                    state/update-footer! (fn [_] nil)
+                    tui/tui-request-render (fn [_] nil)
+                    chat-history/chat-history-start-streaming! (fn [_] nil)]
+        ((var turn/flush-compaction-queue!) cs false))
+      (t/is (seq @started) "a run started for the first message")
+      (t/is (= "first" (get-in @started [1 :message])) "run carries the first message")
+      (t/is (empty? (runtime/compaction-queued (:engine cs))) "queue drained")
+      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
+        (t/is (= [] steering) "second (follow-up) not steered")
+        (t/is (= ["second"] follow-up) "second queued as follow-up into the run")))))
+
+(deftest test-flush-compaction-queue-queues-when-running
+  (testing "compaction_end during a running turn (overflow retry) queues every
+            message into the turn (pi: flushCompactionQueue willRetry)"
+    (let [cs (compaction-cs)]
+      (reset! (:turn-running? (:engine cs)) true)
+      (reset! (:compaction-queued (:engine cs))
+              [{:text "steer-msg" :mode :steer}
+               {:text "follow-msg" :mode :follow-up}])
+      (with-redefs [tui/tui-request-render (fn [_] nil)]
+        ((var turn/flush-compaction-queue!) cs true))
+      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
+        (t/is (= ["steer-msg"] steering) "steer-mode queued into steering")
+        (t/is (= ["follow-msg"] follow-up) "follow-up-mode queued into follow-up"))
+      (t/is (empty? (runtime/compaction-queued (:engine cs))) "queue drained"))))
+
+(deftest test-extension-command-during-compaction-executes
+  (testing "extension commands execute immediately during compaction
+            (pi: isExtensionCommand → prompt() executes)"
+    (commands/clear-commands!)
+    (let [cs (compaction-cs)
+          ran (atom nil)]
+      (commands/register-command!
+       {:name "my-ext-cmd"
+        :description "test"
+        :extension-handler (fn [_ctx args] (reset! ran args))})
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (with-redefs [tui/tui-request-render (fn [_] nil)
+                    state/update-footer! (fn [_] nil)]
+        ((var turn/handle-submit) cs "/my-ext-cmd arg1"))
+      (t/is (= "arg1" @ran) "extension command executed immediately")
+      (t/is (empty? (runtime/compaction-queued (:engine cs))) "not queued")
+      (commands/clear-commands!))))
+
+(deftest test-restore-queued-includes-compaction-queue
+  (testing "Alt+Up / cancel restores the compaction queue alongside the
+            session queues (pi: restoreQueuedMessagesToEditor → clearAllQueues)"
+    (let [cs (compaction-cs)
+          ed @(:current-editor-atom cs)]
+      (agent/steer! (runtime/agent-state (:engine cs)) "steer-msg")
+      (reset! (:compaction-queued (:engine cs)) [{:text "compact-msg" :mode :steer}])
+      (editor/editor-set-text! ed "draft")
+      (let [n ((var turn/restore-queued-messages!) cs)]
+        (t/is (= 2 n) "both queues restored")
+        (t/is (= "steer-msg\n\ncompact-msg\n\ndraft" (editor/editor-get-text ed))
+              "messages combined with current editor text")
+        (t/is (empty? (runtime/compaction-queued (:engine cs))) "compaction queue cleared")))))
+
+(deftest test-compaction-end-handler-flushes
+  (testing "the :compaction-end event handler flushes the queue"
+    (let [cs (compaction-cs)
+          h ((var layout/make-agent-event-handler)
+             {:chat-history (:chat-history cs)
+              :tui {:render-requested? (atom false)}
+              :cs-ref (atom cs)
+              :pending-tool-comps (atom {})})
+          started (atom [])]
+      (reset! (:compaction-queued (:engine cs)) [{:text "after" :mode :steer}])
+      (with-redefs [agent/run-agent-turn (fn [a opts] (reset! started [a opts]) (future))
+                    status/activate-working-indicator! (fn [_] nil)
+                    status/start-anim-timer! (fn [_] nil)
+                    state/update-footer! (fn [_] nil)
+                    tui/tui-request-render (fn [_] nil)
+                    chat-history/chat-history-start-streaming! (fn [_] nil)]
+        (h {:type :compaction-end :reason :threshold :result true :will-retry false}))
+      (t/is (seq @started) "queued message prompted a run after compaction"))))
+
+(deftest test-ui-compact-refuses-while-a-turn-runs
+  (testing "the extension UI's compact refuses mid-turn — pi's compact() aborts
+            the running operation first, but kmet's cancel is cooperative and a
+            manual compaction clears the run signal, so refusing (like
+            /compact) is the safe answer"
+    (let [ag (agent/make-agent-state)
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :config cfg/default-config
+                                   :session-atom (atom nil)
+                                   :running-turn? (atom true)})
+          registry ((var ui-registry/build-extension-ui-registry)
+                    {:tui nil :cs cs}
+                    {:fdp (fdp/make-footer-data-provider)}
+                    nil)
+          ctx ((:build-context registry))
+          errors (atom [])]
+      (with-redefs [agent/compact-context! (fn [& _]
+                                             (throw (ex-info "must not compact" {})))]
+        @((:compact ctx)
+          {:on-error (fn [e] (swap! errors conj (ex-message e)))}))
+      (t/is (= ["Wait for the current response to finish before compacting."]
+               @errors)
+            "the caller is refused with an error, not compacted"))))
+
+(deftest test-ui-compact-reports-the-failure-message
+  (testing "a failed compaction reaches the extension caller with pi's
+            `Compaction failed: …` message exactly once — :compaction-error
+            already carries the reason prefix"
+    (let [ag (agent/make-agent-state)
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :config cfg/default-config
+                                   :session-atom (atom nil)
+                                   :running-turn? (atom false)})
+          registry ((var ui-registry/build-extension-ui-registry)
+                    {:tui nil :cs cs}
+                    {:fdp (fdp/make-footer-data-provider)}
+                    nil)
+          ctx ((:build-context registry))
+          errors (atom [])]
+      (with-redefs [agent/compact-context!
+                    (fn [ag & _]
+                      (reset! (:compaction-error ag)
+                              "Compaction failed: Summarization failed: provider exploded")
+                      :failed)]
+        @((:compact ctx)
+          {:on-error (fn [e] (swap! errors conj (ex-message e)))}))
+      (t/is (= ["Compaction failed: Summarization failed: provider exploded"]
+               @errors)
+            "the message is reported verbatim, once"))))
+
+(deftest test-compact-command-logs-an-escaping-error
+  (testing "the /compact future logs an exception escaping compact-context!
+            (pi: handleCompactCommand catches and ignores — the events carry
+            the failure; kmet logs it so a future never swallows a bug)"
+    (commands/clear-commands!)
+    (let [cs (compaction-cs)
+          logged (promise)]
+      ((var builtins/register-builtin-commands!) cfg/default-config)
+      (with-redefs [agent/compact-context! (fn [& _] (throw (ex-info "boom" {})))
+                    debug/log-error (fn [& parts] (deliver logged (apply str parts)))]
+        @((:handler (commands/find-command "compact")) (command-ctx cs) ""))
+      (t/is (str/includes? (deref logged 2000 "") "boom")
+            "the escaping error is logged"))))
+
+(deftest test-cancel-during-compaction-keeps-turn
+  (testing "escape during compaction aborts ONLY the compaction — a running
+            turn is not cancelled (pi: compaction_start swaps the escape
+            handler to abortCompaction; abortCompaction touches only the
+            compaction controllers, never the agent run)"
+    (let [cs (compaction-cs)]
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (reset! (:signal (runtime/agent-state (:engine cs))) false)
+      (reset! (:compaction-signal (runtime/agent-state (:engine cs))) false)
+      (reset! (:turn-running? (:engine cs)) true)
+      (with-redefs [status/stop-anim-timer! (fn [_] nil)
+                    status/clear-status-indicator! (fn [_] nil)
+                    state/update-footer! (fn [_] nil)
+                    agent/cancel-turn (fn [_] (throw (ex-info "must not cancel the turn" {})))]
+        ((var turn/handle-cancel) cs))
+      (t/is (true? @(:compaction-signal (runtime/agent-state (:engine cs)))) "compaction aborted via its own signal")
+      (t/is (false? @(:signal (runtime/agent-state (:engine cs)))) "the run's cancel signal is untouched")
+      (t/is (true? (runtime/turn-running? (:engine cs))) "the turn is NOT cancelled"))))
+
+(deftest test-cancel-idle-compaction-keeps-turn
+  (testing "escape during compaction when no turn is running"
+    (let [cs (compaction-cs)]
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (reset! (:signal (runtime/agent-state (:engine cs))) false)
+      (reset! (:compaction-signal (runtime/agent-state (:engine cs))) false)
+      (reset! (:turn-running? (:engine cs)) false)
+      (with-redefs [state/update-footer! (fn [_] nil)]
+        ((var turn/handle-cancel) cs))
+      (t/is (true? @(:compaction-signal (runtime/agent-state (:engine cs)))) "compaction aborted")
+      (t/is (false? @(:signal (runtime/agent-state (:engine cs)))) "the run's cancel signal is untouched"))))
+
+(deftest test-cancel-bash-signals-the-running-command
+  (testing "escape with a running bash command signals it and drops the
+            running flag (the executor returns, the bash future records the
+            result)"
+    (let [cs (compaction-cs)]
+      (reset! (:bash-running? cs) true)
+      (reset! (:bash-signal cs) false)
+      (with-redefs [state/update-footer! (fn [_] nil)]
+        ((var turn/handle-cancel) cs))
+      (t/is (true? @(:bash-signal cs)) "the running executor is signalled")
+      (t/is (false? @(:bash-running? cs)) "the running flag drops"))))
+
+(deftest test-follow-up-extension-command-executes-during-compaction
+  (testing "Alt+Enter with an extension command during compaction executes
+            immediately (pi: handleFollowUp → isExtensionCommand → prompt)"
+    (commands/clear-commands!)
+    (let [cs (compaction-cs)
+          ed @(:current-editor-atom cs)
+          ran (atom nil)]
+      (commands/register-command!
+       {:name "my-fu-cmd"
+        :description "test"
+        :extension-handler (fn [_ctx args] (reset! ran args))})
+      (editor/editor-set-text! ed "/my-fu-cmd arg")
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (with-redefs [tui/tui-request-render (fn [_] nil)]
+        ((var turn/handle-follow-up) cs))
+      (t/is (= "arg" @ran) "extension command executed immediately")
+      (t/is (empty? (runtime/compaction-queued (:engine cs))) "not queued")
+      (commands/clear-commands!))))
+
+;; ─── /followup command (pi: no equivalent — slash form of Alt+Enter) ──────
+
+(deftest test-followup-command-registered
+  (testing "/followup is a real builtin inside register-builtin-commands!"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [c (commands/find-command "followup")]
+      (t/is (some? c) "followup registered")
+      (t/is (= "Queue a follow-up message (like Alt+Enter)" (:description c)))
+      (t/is (= "<message>" (:argument-hint c)) "arg hint shown")
+      (t/is (some? (:handler c)) "followup has a handler"))))
+
+(deftest test-followup-command-queues-while-running
+  (testing "/followup <text> while the agent runs queues the args as a
+            follow-up (pi: handleFollowUp semantics) — nothing reaches the
+            chat or context until the loop consumes it"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [cs (compaction-cs)]
+      (reset! (:turn-running? (:engine cs)) true)
+      (with-redefs [tui/tui-request-render (fn [_] nil)
+                    chat-history/chat-history-show-status! (fn [_ _] nil)]
+        ((:handler (commands/find-command "followup")) cs "do the thing"))
+      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
+        (t/is (= [] steering) "not steered into the running turn")
+        (t/is (= ["do the thing"] follow-up) "args queued as follow-up"))
+      (t/is (empty? @(:messages (runtime/agent-state (:engine cs))))
+            "message NOT sent to the agent context yet"))))
+
+(deftest test-followup-command-submits-when-idle
+  (testing "/followup <text> while idle starts a run with the args as the
+            message — Alt+Enter's idle path (pi: handleFollowUp → submit)"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [cs (compaction-cs)
+          started (atom [])]
+      (with-redefs [chat-history/chat-history-add-message! (fn [_ _] nil)
+                    chat-history/chat-history-start-streaming! (fn [_] nil)
+                    agent/run-agent-turn (fn [a opts] (reset! started [a opts]) (future))
+                    status/activate-working-indicator! (fn [_] nil)
+                    status/start-anim-timer! (fn [_] nil)
+                    state/update-footer! (fn [_] nil)
+                    tui/tui-request-render (fn [_] nil)]
+        ((:handler (commands/find-command "followup")) cs "wrap it up"))
+      (t/is (seq @started) "run-agent-turn called")
+      (t/is (= "wrap it up" (get-in @started [1 :message]))
+            "run carries the args as the message")
+      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
+        (t/is (empty? steering) "nothing queued")
+        (t/is (empty? follow-up) "nothing queued")))))
+
+(deftest test-followup-command-queues-during-compaction
+  (testing "/followup <text> during compaction queues as follow-up (pi:
+            handleFollowUp → queueCompactionMessage(text, followUp))"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [cs (compaction-cs)]
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (with-redefs [tui/tui-request-render (fn [_] nil)
+                    chat-history/chat-history-show-status! (fn [_ _] nil)]
+        ((:handler (commands/find-command "followup")) cs "later msg"))
+      (t/is (= [{:text "later msg" :mode :follow-up}]
+               (runtime/compaction-queued (:engine cs)))
+            "queued with follow-up mode"))))
+
+(deftest test-followup-command-blank-args-usage
+  (testing "/followup with no args shows usage instead of queueing anything"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [cs (compaction-cs)
+          msg (atom nil)]
+      (reset! (:turn-running? (:engine cs)) true)
+      (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
+        ((:handler (commands/find-command "followup")) cs ""))
+      (t/is (= "Usage: /followup <message>" (:content @msg))
+            "usage info shown")
+      (t/is (empty? (:follow-up (agent/queued-messages (runtime/agent-state (:engine cs)))))
+            "nothing queued for blank args"))))
+
+(deftest test-cancel-two-step-during-midrun-compaction
+  (testing "escape during a mid-run compaction aborts the compaction first;
+            a second escape then cancels the turn (pi: compaction_start
+            swaps the escape handler to abortCompaction, restored at
+            compaction_end — two-step escape)"
+    (let [cs (compaction-cs)
+          cancelled (atom 0)]
+      (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+      (reset! (:signal (runtime/agent-state (:engine cs))) false)
+      (reset! (:turn-running? (:engine cs)) true)
+      (with-redefs [status/stop-anim-timer! (fn [_] nil)
+                    status/clear-status-indicator! (fn [_] nil)
+                    state/update-footer! (fn [_] nil)
+                    chat-history/chat-history-add-message! (fn [_ _] nil)
+                    chat-history/chat-history-show-status! (fn [_ _] nil)
+                    chat-history/chat-history-finalize-streaming! (fn [_] nil)
+                    chat-history/chat-history-finalize-thinking! (fn [_] nil)
+                    chat-history/chat-history-remove-streaming-placeholder! (fn [_] nil)
+                    agent/cancel-turn (fn [_] (swap! cancelled inc))]
+        ;; first escape: compaction aborted only
+        ((var turn/handle-cancel) cs)
+        (t/is (true? @(:compaction-signal (runtime/agent-state (:engine cs)))) "compaction aborted")
+        (t/is (false? @(:signal (runtime/agent-state (:engine cs)))) "the run is not cancelled")
+        (t/is (true? (runtime/turn-running? (:engine cs))) "turn still running")
+        (t/is (zero? @cancelled) "turn not cancelled")
+        ;; compaction-end resets the flag; second escape cancels the turn
+        (reset! (:compacting? (runtime/agent-state (:engine cs))) false)
+        ((var turn/handle-cancel) cs)
+        (t/is (= 1 @cancelled) "second escape cancels the turn")))))

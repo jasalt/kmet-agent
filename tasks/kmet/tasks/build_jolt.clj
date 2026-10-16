@@ -43,12 +43,12 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             ;; shared with the babashka packager: one artifact-version rule
-            ;; (kmet.version) and one termux probe
+            ;; (kmet.agent.version) and one termux probe
             [kmet.tasks.build :as build]
-            [kmet.version :as version-lib]))
+            [kmet.agent.version :as version-lib]))
 
 (def ^:private scratch-root "target/jolt")
-(def ^:private entry-ns "kmet.core")
+(def ^:private entry-ns "kmet.agent.core")
 (def ^:private test-entry-ns "kmet.tasks.test-main")
 
 (def ^:private bake-root
@@ -60,7 +60,7 @@
   "target/kmet-version")
 
 (def ^:private smoke-args
-  "The model half of the smoke test: kmet.core prints the model table and
+  "The model half of the smoke test: kmet.agent.core prints the model table and
    exits, and the table is built from the embedded catalogs — a missing embed
    fails here. The version half runs --version and is checked against the
    bake."
@@ -637,7 +637,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
 
    Build kmet's Jolt executable as the bare `kmetj` (kmetj.exe on Windows):
    one native binary with the runtime, clojure.core, the stdlib, the
-   dependencies and kmet itself compiled in (the entry is kmet.core),
+   dependencies and kmet itself compiled in (the entry is kmet.agent.core),
    packaged as dist/kmetj-<ver>-<platform>.zip with one top-level folder
    named after the zip (kmet.tasks.build/artifact-dir) holding the
    executable, its Termux launcher when one is written, and the LICENSE. A

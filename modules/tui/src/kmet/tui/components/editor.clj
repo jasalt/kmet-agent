@@ -1081,7 +1081,7 @@
 
 ;; ─── App actions (pi: CustomEditor.handleInput) ───────────────────────────
 ;; Registered action handlers (via editor-set-on-action!) are matched against
-;; the keybindings manager (the app-level KeybindingsManager in kmet.core) and
+;; the keybindings manager (the app-level KeybindingsManager in kmet.agent.core) and
 ;; take precedence over editor-internal key handling. Priority handlers
 ;; (editor-set-priority-action!, used for extension shortcuts — pi:
 ;; onExtensionShortcut) are checked BEFORE every app action, so extensions
@@ -1679,7 +1679,7 @@
    centered scroll label when scrolled). This is the app's status-in-border
    hook (pi: CustomEditor.renderTopBorder — the embedWorkingStatus opt-in
    that puts the session status in the editor's first line; the app's
-   kmet.app.ui.tui.status-indicator/editor-embeds-status? reads it back)."
+   kmet.agent.ui.tui.status-indicator/editor-embeds-status? reads it back)."
   [editor f]
   (reset! (:top-border-fn-atom editor) f))
 

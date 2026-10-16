@@ -3,7 +3,7 @@
  ;; implementation lives there (see AGENTS.md § File layout). Both hosts
  ;; resolve kmet.tasks.* from it, and neither artifact carries it — the
  ;; uberjar walks src/, jolt's :jolt/build :embed does too.
-:paths ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/hikap/test" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/app/src" "modules/app/test" "modules/loader/src" "modules/loader/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions/clojure/src" "extensions/clojure/test" "extensions/tree-sitter/src" "extensions/tree-sitter/test" "extensions/review/src" "extensions/review/test"]
+:paths ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/hikap/test" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/agent/src" "modules/agent/test" "modules/loader/src" "modules/loader/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions/clojure/src" "extensions/clojure/test" "extensions/tree-sitter/src" "extensions/tree-sitter/test" "extensions/review/src" "extensions/review/test"]
  :deps {dev.weavejester/cljfmt {:mvn/version "0.16.6"}
         ;; babashka >= 1.13.224 bundles data.json (2.5.2 as of 1.13.225) and
         ;; the built-in wins over any declared copy; pinned at the bundled
@@ -11,7 +11,7 @@
         ;; Before the bundling, >= 2.5 could not load under SCI (definterface
         ;; in json.clj InternalPBR), hence the old 2.4.0 pin.
         org.clojure/data.json {:mvn/version "2.5.2"}
-        ;; Fixed bundled extension set (kmet.app.extension-libs). rewrite-clj,
+        ;; Fixed bundled extension set (kmet.agent.extension-libs). rewrite-clj,
         ;; edamame, spec.alpha and tools.reader are bb-bundled ports, so only
         ;; the two Maven-only set members need declaring here; cljfmt above
         ;; serves both the format tasks and the set.
@@ -25,7 +25,7 @@
  :tasks
  {:requires ([kmet.tasks.help :as help])
   start   {:doc "Start kmet (interactive TUI); `bb start --help` for kmet's CLI options"
-           :requires ([kmet.core :as core])
+           :requires ([kmet.agent.core :as core])
            :task (apply core/-main *command-line-args*)}
   uberjar {:doc "Build target/kmet.jar (run with: bb target/kmet.jar)"
            :requires ([kmet.tasks.build :as build])
@@ -40,7 +40,7 @@
            :requires ([kmet.tasks.runner :as runner])
            :task (help/with-help (apply runner/-main false *command-line-args*))
            :override-builtin true}
-  test-ext {:doc "Run ONLY the slow (^:slow) test suites\n\nArgs: plain test var names, ns/var pairs, or whole namespaces (bb test-ext kmet.app.test-extensions). Whole-namespace args select slow vars; var args ignore slow?. Unloadable namespaces are reported with the load failure reason (full run: all; filtered run: requested only) and fail the run."
+  test-ext {:doc "Run ONLY the slow (^:slow) test suites\n\nArgs: plain test var names, ns/var pairs, or whole namespaces (bb test-ext kmet.agent.test-extensions). Whole-namespace args select slow vars; var args ignore slow?. Unloadable namespaces are reported with the load failure reason (full run: all; filtered run: requested only) and fail the run."
             :requires ([kmet.tasks.runner :as runner])
             :task (help/with-help (apply runner/-main true *command-line-args*))
             :override-builtin true}
@@ -80,7 +80,7 @@
                                     (babashka.nrepl.server/start-server! {:port 1667})
                                     (println "nREPL started on port 1667")))}
   check   {:doc "Verify all code compiles"
-           :requires ([kmet.core])
+           :requires ([kmet.agent.core])
            :task (help/with-help (println "All source namespaces compile successfully."))
            :override-builtin true}
   generate-models {:doc "Regenerate the committed provider + image model catalogs (network)\n\nProvider catalogs come from models.dev + the live sources; the image catalog from OpenRouter. Either failure exits 1."

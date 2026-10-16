@@ -1,7 +1,7 @@
 (ns iso-a.main
   "Extension pinning tools.cli 0.4.1."
   (:require [clojure.tools.cli :as cli]
-            [kmet.extension :as ext]))
+            [kmet.agent.extension :as ext]))
 
 (defn init [api]
   (ext/register-tool! api {:name "iso-a"

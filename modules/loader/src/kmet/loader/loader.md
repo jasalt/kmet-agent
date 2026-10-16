@@ -11,7 +11,7 @@ combinators, host root), `modules/loader/src/kmet/loader/memory_loader.clj` (in-
 `modules/loader/src/kmet/loader/sci_loader.clj` (SCI code backend: locate/read/eval, SCI's
 `require` routed through the loader, injected share list), the conformance
 suites (`test/kmet/loader/test_core.clj`, `test/kmet/loader/test_sci_loader.clj`)
-and the extension runtime rewiring (`kmet.app.extensions` builds one
+and the extension runtime rewiring (`kmet.agent.extensions` builds one
 loader per extension; the loader lives outside the shared `kmet.libs.*`
 layer — host machinery, not contract). The library keeps this doc and a
 self-containment guard (`kmet.loader.test-self-contained`) so
@@ -33,7 +33,7 @@ Not implemented yet: Phase 3 (JVM native backend + hybrid — deliberately
 last: the JVM host already gets isolation through SCI) and Phase 4
 (promotion).
 
-Related docs (repo-root relative): `modules/app/src/kmet/extension.md` (the extension
+Related docs (repo-root relative): `modules/agent/src/kmet/extension.md` (the extension
 contract), `modules/tui/src/kmet/tui/tui.md` (house style for a package reference doc).
 
 ---
@@ -144,7 +144,7 @@ Answers are **hits** — data, never opened (§4.4).
 - `:ns` → the source's **location** (file path / artifact entry) or
   "already linked in another loader" (by-reference delegation, §4.3)
 - `:var` → the **var cell** (shared by reference — this is how
-  `kmet.extension`, `kmet.tui.*`, `kmet.libs.*` are injected today)
+  `kmet.agent.extension`, `kmet.tui.*`, `kmet.libs.*` are injected today)
 - `:class` → a class registration/token (jolt) or a real `Class` (JVM)
 - `:resource` → the resource's **location** (a URL or an embedded entry
   name — jolt has two kinds, and both open on demand); the loader wraps it
@@ -409,7 +409,7 @@ every host gets the same semantics for free. The generic backend is one
 implementation with a host seam for *where bytes come from*
 (`babashka.classes`/resource on bb, classpath on the JVM,
 `jolt.host/ns-source` on jolt) and the **share list** supplied by the app
-layer (the lib must not know `kmet.extension`/`kmet.tui.*`/`kmet.libs.*`).
+layer (the lib must not know `kmet.agent.extension`/`kmet.tui.*`/`kmet.libs.*`).
 
 Verified JVM facts (probed, not assumed): `proxy [java.lang.ClassLoader]`
 works and is the only viable route — `defineClass` is protected/final and
@@ -896,8 +896,8 @@ upgrades that must satisfy the same suite.
   `sci/init`, sharing the injected namespaces and seeded classes, with only
   `:load-fn` / `:namespaces` overrides and definitions per fork. The
   extension runtime uses this — one base per shared-namespace set, forked
-  per extension (`kmet.app.extensions/shared-context`).
-- `modules/app/src/kmet/app/extensions.cljc` — replace `create-context` +
+  per extension (`kmet.agent.extensions/shared-context`).
+- `modules/agent/src/kmet/app/extensions.cljc` — replace `create-context` +
   `make-load-fn` + `jars-for` plumbing with `loader/sci-loader` + policies
   (`allow` over the root for the shared layers; per-extension deps resolver
   injected). `load-extension!` / `unload-extension!` keep their shape
@@ -908,8 +908,8 @@ upgrades that must satisfy the same suite.
   SCI for extension isolation at all (see Phase 2 — the native backend is
   what runs there now; `kmet.loader.sci-loader` remains the bb/JVM backend, which is
   the only host left that needs an interpreter).
-- `modules/app/src/kmet/extension.clj` — **no re-exports** (decided in Phase 1):
-  extensions never see the loader at all. `kmet.app.extensions` uses
+- `modules/agent/src/kmet/extension.clj` — **no re-exports** (decided in Phase 1):
+  extensions never see the loader at all. `kmet.agent.extensions` uses
   `kmet.loader.*` directly, and a require of it from extension code fails
   with an actionable "host machinery" error; the extension-facing surface is
   unchanged, so promotion still breaks nothing.
@@ -1059,7 +1059,7 @@ requested namespace to an exact native source key. A mapped hit names the
 owning context as its home, so it uses the real native reader and unloads with
 that context.
 
-`kmet.app.extensions/create-loader` picks the native backend on Jolt: bundled
+`kmet.agent.extensions/create-loader` picks the native backend on Jolt: bundled
 directories use an `embed:<prefix>` root; bundled single files map their
 declared namespace directly to the exact embedded key (no materialization or
 restaging); checkout single files are still materialized at their munged ns
@@ -1113,7 +1113,7 @@ one exception: they are stored and compared by identity.
    **Done.**
 3. Phase 1 on Jolt: `jolt -e "(require 'kmet.loader.core)"`, the suite, then
    kmet's extension tests. **Done** — `jolt test
-   kmet.loader.test-core kmet.loader.test-sci-loader` and `kmet.app.test-extensions`
+   kmet.loader.test-core kmet.loader.test-sci-loader` and `kmet.agent.test-extensions`
    are green on jolt.
 4. Phase 2 (Jolt native) — **done** in the Jolt repo, 27/27. Phase 3 (JVM,
    plus hybrid) is last and may follow promotion. Each backend must pass

@@ -29,7 +29,7 @@
  ;; extensions/<name>/src layout, so io/resource reads a bundled extension at
  ;; the same path in a binary as in a checkout. A
  ;; missing root embeds nothing — the runtime then offers no bundled set.
- :jolt/build {:embed ["modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/app/src" "modules/loader/src" "modules/tk/src" "target/kmet-version" "target/kmet-bundled"]}
+ :jolt/build {:embed ["modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/agent/src" "modules/loader/src" "modules/tk/src" "target/kmet-version" "target/kmet-bundled"]}
 
  ;; OpenSSL stays dynamically loaded for run/repl and for the default dist mode
  ;; on Linux (including WSL), macOS, and other non-Windows platforms. Windows
@@ -59,7 +59,7 @@
                 :windows ["libssl-3-x64.dll" "libssl-3.dll"
                           "libssl-1_1-x64.dll" "libssl.dll"]}]
 
- :deps {        kmetia/app {:local/root "modules/app"}
+ :deps {        kmetia/agent {:local/root "modules/agent"}
 
         ;; babashka.fs / babashka.process are deliberately NOT deps: babashka
         ;; bundles them, and jolt vendors the same namespaces (built-in,
@@ -121,7 +121,7 @@
                                          :git/sha "00455b8135861b2fd2ddbe3e7887a94e7aba5760"}
         ;; cljfmt / spec.alpha / rewrite-clj serve the format tasks
         ;; (kmet.tasks.format — one code path on both hosts) AND the fixed
-        ;; bundled extension set (kmet.app.extension-libs, src/kmet/extension.md §
+        ;; bundled extension set (kmet.agent.extension-libs, src/kmet/extension.md §
         ;; Bundled extension libraries): jolt dist AOT-compiles them in,
         ;; and extension contexts share the loaded namespaces by reference.
         ;; bb.edn carries the same cljfmt version for babashka; bb's

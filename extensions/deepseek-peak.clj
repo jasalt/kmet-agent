@@ -17,7 +17,7 @@
    DeepSeek ever changes its schedule.
 
    Display follows /session: the panel is appended to the chat history as
-   an :info message via kmet.extension/ui-chat-info — part of the live
+   an :info message via kmet.agent.extension/ui-chat-info — part of the live
    transcript, no overlay and nothing to dismiss, never sent to the LLM,
    not persisted across restarts. It is laid out as one unwrapped logical
    line per block: the chat's Markdown view word-wraps each paragraph to
@@ -37,7 +37,7 @@
   (:require [babashka.fs :as fs]
             [babashka.process :as proc]
             [clojure.string :as str]
-            [kmet.extension :as ext]
+            [kmet.agent.extension :as ext]
             [kmet.tui.theme :as theme]))
 
 ;; ─── The schedule (api-docs.deepseek.com/quick_start/pricing) ──────────────

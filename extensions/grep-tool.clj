@@ -16,8 +16,8 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.extension :as ext]
-            [kmet.app.ui.tui.tool-renderers :as renderers]))
+            [kmet.agent.extension :as ext]
+            [kmet.agent.ui.tui.tool-renderers :as renderers]))
 
 (def ^:private max-traverse-files
   "Traversal cap shared with the retired builtin (10k files)."

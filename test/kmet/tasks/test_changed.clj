@@ -7,11 +7,11 @@
 
 (deftest path->ns-mapping
   (testing "src files map to namespaces (underscores become dashes)"
-    (is (= 'kmet.core (changed/path->ns "modules/app/src/kmet/core.clj")))
-    (is (= 'kmet.app.ui.tui.model-selector (changed/path->ns "modules/app/src/kmet/app/ui/tui/model_selector.clj")))
+    (is (= 'kmet.agent.core (changed/path->ns "modules/agent/src/kmet/agent/core.clj")))
+    (is (= 'kmet.agent.ui.tui.model-selector (changed/path->ns "modules/agent/src/kmet/agent/ui/tui/model_selector.clj")))
     (is (= 'kmet.ai.api.openai-completions (changed/path->ns "modules/ai/src/kmet/ai/api/openai_completions.clj"))))
   (testing "test files map to test namespaces"
-    (is (= 'kmet.app.test-loop (changed/path->ns "modules/app/test/kmet/app/test_loop.clj"))))
+    (is (= 'kmet.agent.test-loop (changed/path->ns "modules/agent/test/kmet/agent/test_loop.clj"))))
   (testing "task files map through their own root (tasks/, not src/)"
     (is (= 'kmet.tasks.build (changed/path->ns "tasks/kmet/tasks/build.cljc")))
     (is (= 'kmet.tasks.generate-models
@@ -24,20 +24,20 @@
     (is (= 'kmet.extensions.clojure.edit-util-test
            (changed/path->ns "extensions/clojure/test/kmet/extensions/clojure/edit_util_test.clj"))))
   (testing "Windows fs/glob separators normalize — the graph keys are /-spelled"
-    (is (= 'kmet.app.ui.tui.model-selector
-           (changed/path->ns "modules\\app\\src\\kmet\\app\\ui\\tui\\model_selector.clj")))
+    (is (= 'kmet.agent.ui.tui.model-selector
+           (changed/path->ns "modules\\agent\\src\\kmet\\agent\\ui\\tui\\model_selector.clj")))
     (is (= 'kmet.tasks.test-lint
            (changed/path->ns "test\\kmet\\tasks\\test_lint.clj")))))
 
 (deftest ns-requires-extraction
   (testing "vector entries"
-    (is (= '#{kmet.app.loop kmet.ai.models kmet.config}
+    (is (= '#{kmet.agent.loop kmet.ai.models kmet.agent.config}
            (changed/ns-requires
-            '(ns kmet.modes.print
+            '(ns kmet.agent.modes.print
                "doc"
-               (:require [kmet.app.loop :as agent]
+               (:require [kmet.agent.loop :as agent]
                          [kmet.ai.models :as models]
-                         [kmet.config :as cfg]))))))
+                         [kmet.agent.config :as cfg]))))))
   (testing "prefix-list entries expand to full namespaces"
     (is (= '#{kmet.libs.a kmet.libs.b.c kmet.libs.d}
            (changed/ns-requires
@@ -51,7 +51,7 @@
     (let [nss (set (changed/affected-test-nss-by '[kmet.ai.models]))]
       (is (contains? nss 'kmet.ai.test-models))
       (is (contains? nss 'kmet.ai.test-provider-composer))
-      (is (contains? nss 'kmet.app.test-model-resolver))))
+      (is (contains? nss 'kmet.agent.test-model-resolver))))
   (testing "changing a test namespace includes itself"
     (let [nss (set (changed/affected-test-nss-by '[kmet.tui.components.test-text]))]
       (is (contains? nss 'kmet.tui.components.test-text))))
@@ -72,9 +72,9 @@
     (let [nss (set (changed/affected-test-nss-by '[kmet.ai.models]))]
       (is (not (contains? nss 'kmet.tui.components.test-text)))))
   (testing "extension test namespaces now participate in root test selection"
-    (let [nss (set (changed/affected-test-nss-by '[kmet.extension extensions.tools]))]
+    (let [nss (set (changed/affected-test-nss-by '[kmet.agent.extension extensions.tools]))]
       (is (seq (filter #(str/starts-with? (str %) "kmet.extensions.") nss)))
-      (is (contains? nss 'kmet.app.test-extensions)))))
+      (is (contains? nss 'kmet.agent.test-extensions)))))
 
 (deftest affected-lint-file-closure
   (testing "a changed file, its dependents, and their transitive dependencies are linted together
@@ -82,9 +82,9 @@
     (let [files (set (changed/affected-lint-files-by ["modules/libs/src/kmet/libs/process.clj"]))]
       (is (contains? files "modules/libs/src/kmet/libs/process.clj")
           "the changed file is linted")
-      (is (contains? files "modules/app/src/kmet/app/extensions.cljc")
+      (is (contains? files "modules/agent/src/kmet/agent/extensions.cljc")
           "a dependent is linted (its call sites see a changed signature)")
-      (is (contains? files "modules/app/src/kmet/app/extensions/context.cljc")
+      (is (contains? files "modules/agent/src/kmet/agent/extensions/context.cljc")
           "a dependency of the dependent is linted (its vars must resolve)")))
   (testing "unrelated namespaces stay out"
     (let [files (set (changed/affected-lint-files-by ["modules/libs/src/kmet/libs/process.clj"]))]

@@ -34,9 +34,9 @@
 
 (ns kmet-frame-bench
   (:require [clojure.string :as str]
-            [kmet.app.session :as session]
-            [kmet.app.ui.tui.chat-history :as chat-history]
-            [kmet.modes.interactive :as inter]
+            [kmet.agent.session :as session]
+            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.agent.modes.interactive :as inter]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.stack :as stack]
             [kmet.tui.core :as core]
@@ -84,7 +84,7 @@
 (def ^:private replay-branch!
   "The private session-admin replay entry (resume populates the chat
    history through it; the harness only needs the same populated history)."
-  (var-get (ns-resolve 'kmet.modes.interactive.session-admin 'replay-branch!)))
+  (var-get (ns-resolve 'kmet.agent.modes.interactive.session-admin 'replay-branch!)))
 
 ;; ─── Frame/phase post-processing ───────────────────────────────────────────
 

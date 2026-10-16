@@ -21,7 +21,7 @@
             [kmet.extensions.mcp-adapter.tool-proxy :as proxy]
             [kmet.extensions.mcp-adapter.tool-source :as script-source]
             [kmet.extensions.mcp-adapter.setup :as setup]
-            [kmet.extension :as ext]
+            [kmet.agent.extension :as ext]
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.mcp.client :as mcp]
             [kmet.libs.mcp.protocol :as protocol]
@@ -228,13 +228,13 @@
                 (catch Exception _ nil))))))))
 
 (defn- log-debug!
-  "Best-effort opt-in debug logging. kmet.debug is not part of the shared
-   extension context (only kmet.extension, kmet.tui.* and kmet.libs.* are
+  "Best-effort opt-in debug logging. kmet.agent.debug is not part of the shared
+   extension context (only kmet.agent.extension, kmet.tui.* and kmet.libs.* are
    injected there), so resolve it at runtime the way the review extension
    does, and stay silent where it is unreachable."
   [& parts]
   (try
-    (when-let [log-fn (resolve 'kmet.debug/log)]
+    (when-let [log-fn (resolve 'kmet.agent.debug/log)]
       (apply log-fn parts))
     (catch Throwable _ nil)))
 

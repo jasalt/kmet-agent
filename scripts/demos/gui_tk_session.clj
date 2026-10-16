@@ -1,6 +1,6 @@
 (ns gui-tk-session
   "Display a saved kmet session in a Tk window using the GUI transcript
-   components (kmet.app.ui.gui.transcript): one Tk widget per message, in a
+   components (kmet.agent.ui.gui.transcript): one Tk widget per message, in a
    scroll container, scrolled to the end once loaded.
 
    Display only: it loads the session file, renders it once, and shows it.
@@ -13,10 +13,10 @@
    directory. The window is sized for --width mono columns."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.app.session :as session]
-            [kmet.app.ui.gui.style :as gui-style]
-            [kmet.app.ui.gui.transcript :as transcript]
-            [kmet.app.ui.gui.ui :as ui]
+            [kmet.agent.session :as session]
+            [kmet.agent.ui.gui.style :as gui-style]
+            [kmet.agent.ui.gui.transcript :as transcript]
+            [kmet.agent.ui.gui.ui :as ui]
             [kmet.tk.tcl :as tcl]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.theme :as theme]))

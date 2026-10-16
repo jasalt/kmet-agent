@@ -2,7 +2,7 @@
   "Tests for kmet.tk.ttk.style: the ttk::style scripts against a recording
    adapter (headless), and one round trip through a real Tk under a display
    (skipped where there is none). The app palette set has its own namespace,
-   kmet.app.ui.gui.test-style."
+   kmet.agent.ui.gui.test-style."
   (:require [clojure.test :as t]
             [kmet.tk.test-support :refer [live-tk scripts with-fake]]
             [kmet.tk.core :as tk]

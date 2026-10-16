@@ -7,7 +7,7 @@
    review is available with `branch <remote-branch>` once a PR's head is
    fetched; we do not need to be opinionated about it here."
   (:require [clojure.string :as str]
-            [kmet.extension :as ext]))
+            [kmet.agent.extension :as ext]))
 
 ;; ─── Low-level exec helper ──────────────────────────────────────────────
 

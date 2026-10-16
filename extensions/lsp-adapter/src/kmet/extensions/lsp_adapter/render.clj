@@ -5,11 +5,11 @@
    falls back to a plain preview when they are absent (replayed sessions,
    error results). All styling goes through kmet.tui.theme; paths are
    shortened + hyperlinked via the shared host helpers in
-   kmet.app.ui.tui.tool-renderers."
+   kmet.agent.ui.tui.tool-renderers."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.app.keybindings :as app-kb]
-            [kmet.app.ui.tui.tool-renderers :as shared]
+            [kmet.agent.keybindings :as app-kb]
+            [kmet.agent.ui.tui.tool-renderers :as shared]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.spacer :as spacer]
             [kmet.tui.components.text :as text]

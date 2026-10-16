@@ -4,7 +4,7 @@
    repair/timeout notices."
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
-            [kmet.extension :as ext]
+            [kmet.agent.extension :as ext]
             [kmet.extensions.clojure.eval-tool :as eval-tool]
             [kmet.extensions.clojure.nrepl :as nrepl]
             [kmet.tui.core :as core]

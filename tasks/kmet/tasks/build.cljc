@@ -31,7 +31,7 @@
             [clojure.string :as str]
             [kmet.libs.archive :as archive]
             [kmet.libs.http :as http]
-            [kmet.version :as version-lib]))
+            [kmet.agent.version :as version-lib]))
 
 (def ^:private gh-api-url
   "https://api.github.com/repos/babashka/babashka/releases/latest")
@@ -39,7 +39,7 @@
 (def ^:private cache-dir "target/build-cache")
 (def ^:private dist-dir "dist")
 (def ^:private jar-path "target/kmet.jar")
-(def ^:private main-class "kmet.core")
+(def ^:private main-class "kmet.agent.core")
 (def ^:private test-jar-path "target/kmet-test.jar")
 
 (def ^:private test-main-class "kmet.tasks.test-main")
@@ -62,7 +62,7 @@
 (def ^:private bundled-manifest-path
   "The committed manifest, read straight from the checkout (it is inside
    src/, so the runtime sees it as a classpath resource in every mode)."
-  "modules/app/src/kmet/bundled-extensions.edn")
+  "modules/agent/src/kmet/bundled-extensions.edn")
 (def ^:private bundled-staging-root
   "Build-time staging root the packagers embed/walk as an extra root: its
    tree is exactly the runtime's resource keys,
@@ -156,7 +156,7 @@
 ;; ─── Version ───────────────────────────────────────────────────────────────
 
 (defn version
-  "Artifact version string: kmet.version/artifact-version (jolt's
+  "Artifact version string: kmet.agent.version/artifact-version (jolt's
    checkout rule, `v` stripped) — the base version artifact names carry."
   []
   (version-lib/artifact-version))
@@ -380,7 +380,7 @@
        (io/copy (.getBytes (str "Manifest-Version: 1.0\r\n"
                                 "Main-Class: " main "\r\n\r\n")) zos)
        (.closeEntry zos)
-       ;; the version this artifact is: kmet.core reads it back for
+       ;; the version this artifact is: kmet.agent.core reads it back for
        ;; `kmet --version` (a built binary has no checkout to describe)
        (.putNextEntry zos (java.util.zip.ZipEntry. "kmet/version.txt"))
        (io/copy (.getBytes (str (version-lib/checkout-version) "\n")) zos)
@@ -429,12 +429,12 @@
 
 (defn uberjar*
   "Create target/kmet.jar in THIS process — the app uberjar `bb dist`
-   appends: Main-Class kmet.core, every src/ file, then the dependency jars
+   appends: Main-Class kmet.agent.core, every src/ file, then the dependency jars
    and the staged bundled extensions (stage-bundled-extensions!)."
   []
   (bb-only! "kmet.tasks.build/uberjar*")
   (stage-bundled-extensions!)
-  (write-uberjar! jar-path main-class ["modules/app/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/loader/src" "modules/tk/src"]
+  (write-uberjar! jar-path main-class ["modules/agent/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/loader/src" "modules/tk/src"]
                   {:extra-roots [bundled-staging-root]}))
 
 (defn test-uberjar*
@@ -448,7 +448,7 @@
   (generate-test-main!)
   (stage-bundled-extensions!)
   (write-uberjar! test-jar-path test-main-class
-                  ["modules/app/src" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test"
+                  ["modules/agent/src" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test"
                    "modules/ai/src" "modules/ai/test" "modules/loader/src" "modules/loader/test"
                    "modules/tk/src" "modules/tk/test" "tasks" "test" test-entry-root]
                   {:extra-roots [bundled-staging-root]}))
@@ -622,7 +622,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
 
 (def ^:private extension-loader-kinds
   "Loader backend kinds an extension manifest may declare — the runtime's
-   selection vocabulary (kmet.app.extensions/select-loader-kind)."
+   selection vocabulary (kmet.agent.extensions/select-loader-kind)."
   #{:sci :jolt})
 
 (defn- pack-verify!
@@ -829,7 +829,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
    every artifact root is copied to
    target/kmet-bundled/extensions/<root>/…, which is exactly
    the resource-key layout the runtime probes (see
-   kmet.app.bundled-extensions). The staging root is the extra root the bb
+   kmet.agent.bundled-extensions). The staging root is the extra root the bb
    uberjar walks and the jolt :jolt/build :embed list embeds; deleting it
    first keeps stale files out. Returns the staging root path. Host-neutral
    (fs + slurp/spit), so `jolt dist` can share it."

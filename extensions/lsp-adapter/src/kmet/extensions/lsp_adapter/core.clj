@@ -12,7 +12,7 @@
             [kmet.extensions.lsp-adapter.render :as render]
             [kmet.extensions.lsp-adapter.runtime :as runtime]
             [kmet.extensions.lsp-adapter.tools :as tools]
-            [kmet.extension :as ext]
+            [kmet.agent.extension :as ext]
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.edn-store :as edn-store]
             [kmet.tui.theme :as theme]))
@@ -125,7 +125,7 @@ errors.")
                        :render-result render/render-lsp-result
                        :title render/title-lsp
                        :execute (fn [args _on-update signal _ctx]
-           ;; Tool contract (kmet.app.tools.registry): execute returns
+           ;; Tool contract (kmet.agent.tools.registry): execute returns
            ;; {:content ...}; :details rides along for the renderer. A bare
            ;; string reaches the after-tool-call chain, whose
            ;; (contains? result :is-error) throws on strings.

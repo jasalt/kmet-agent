@@ -11,7 +11,7 @@
 
    The file is `.jolt` — the runtime's own source extension — so it is Jolt
    code by construction, with no reader conditionals and no way for babashka
-   or the JVM to load it by accident. `kmet.app.extensions` requires it under
+   or the JVM to load it by accident. `kmet.agent.extensions` requires it under
    a `#?(:jolt ...)` and picks the backend at runtime, so nothing else needs
    to know it exists.
 

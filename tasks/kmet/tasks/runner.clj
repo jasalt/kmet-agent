@@ -28,7 +28,7 @@
    that failed to load.
 
    Filters select tests: a plain var name (e.g. `test-tool-bash`), an ns/var
-   pair (e.g. `kmet.app.test-loop/my-test`), or a whole namespace
+   pair (e.g. `kmet.agent.test-loop/my-test`), or a whole namespace
    (a known test ns, a dotted ns name, or ns/ with an empty var part).
    Whole-namespace filters select by slow?; var filters ignore slow?.
 
@@ -48,18 +48,18 @@
   "Every test namespace. The slow/fast split happens per test var via ^:slow
    metadata, so no namespace is excluded from either run."
   '[kmet.test-utils kmet.test-keys
-    kmet.app.test-session
-    kmet.app.test-session-schema
-    kmet.app.test-config-schema
+    kmet.agent.test-session
+    kmet.agent.test-session-schema
+    kmet.agent.test-config-schema
     kmet.ai.test-message-schema
-    kmet.app.test-session-export
-    kmet.app.test-compaction
-    kmet.app.test-tools
-    kmet.app.test-run-code
+    kmet.agent.test-session-export
+    kmet.agent.test-compaction
+    kmet.agent.test-tools
+    kmet.agent.test-run-code
     kmet.ai.test-llm
     kmet.ai.test-attribution
     kmet.ai.test-models
-    kmet.app.test-model-resolver
+    kmet.agent.test-model-resolver
     kmet.libs.test-dynamic-value
     kmet.test-version
     kmet.ai.test-model-config
@@ -72,8 +72,8 @@
     kmet.ai.test-self-contained
     kmet.ai.test-constrained-sampling
     kmet.ai.test-api-tools
-    kmet.app.test-loop
-    kmet.app.test-session-runtime
+    kmet.agent.test-loop
+    kmet.agent.test-session-runtime
     kmet.test-theme kmet.test-config
     kmet.test-http-boundary
     kmet.test-time-boundary
@@ -81,7 +81,7 @@
     kmet.test-test-ns-registration
     kmet.tasks.build-test
     kmet.tasks.build-jolt-test
-    kmet.app.test-skills
+    kmet.agent.test-skills
     kmet.extensions.clojure.edit-util-test
     kmet.extensions.clojure.edit-tool-test
     kmet.extensions.clojure.sexp-tool-test
@@ -102,30 +102,30 @@
     kmet.extensions.review.git-test
     kmet.extensions.review.review-test
 
-    kmet.app.test-prompts
-    kmet.app.test-extensions
-    kmet.app.test-packages
-    kmet.app.test-bundled-extensions
+    kmet.agent.test-prompts
+    kmet.agent.test-extensions
+    kmet.agent.test-packages
+    kmet.agent.test-bundled-extensions
     kmet.test-package-manager
-    kmet.app.ui.tui.test-resource-config
-    kmet.app.ui.tui.test-hotkeys
-    kmet.app.test-extensions-ui
-    kmet.app.test-ui-port
-    kmet.app.test-layer-guard
-    kmet.app.test-runtime-capabilities
-    kmet.app.test-interactive-ui
-    kmet.app.test-event-bus
-    kmet.app.test-event-conformance
-    kmet.app.test-theme-controller
-    kmet.app.test-commands
-    kmet.app.test-keybindings
-    kmet.modes.test-print
-    kmet.modes.test-rpc
-    kmet.modes.test-rpc-client
-    kmet.modes.test-headless-guard
-    kmet.modes.test-interactive
-    kmet.modes.interactive.test-state
-    kmet.modes.test-overlay-input-smoke
+    kmet.agent.ui.tui.test-resource-config
+    kmet.agent.ui.tui.test-hotkeys
+    kmet.agent.test-extensions-ui
+    kmet.agent.test-ui-port
+    kmet.agent.test-layer-guard
+    kmet.agent.test-runtime-capabilities
+    kmet.agent.test-interactive-ui
+    kmet.agent.test-event-bus
+    kmet.agent.test-event-conformance
+    kmet.agent.test-theme-controller
+    kmet.agent.test-commands
+    kmet.agent.test-keybindings
+    kmet.agent.modes.test-print
+    kmet.agent.modes.test-rpc
+    kmet.agent.modes.test-rpc-client
+    kmet.agent.modes.test-headless-guard
+    kmet.agent.modes.test-interactive
+    kmet.agent.modes.interactive.test-state
+    kmet.agent.modes.test-overlay-input-smoke
     kmet.test-editing
     kmet.tui.test-fuzzy
     kmet.tui.test-border
@@ -210,39 +210,39 @@
     kmet.libs.test-http
     kmet.libs.test-archive
     kmet.libs.test-aws-sigv4
-    kmet.app.test-context
-    kmet.app.ui.tui.test-chat-history
-    kmet.app.ui.gui.test-transcript
-    kmet.app.ui.gui.test-style
-    kmet.app.ui.gui.test-ui
-    kmet.app.ui.tui.test-user-message
-    kmet.app.ui.tui.test-image-block
-    kmet.app.ui.tui.test-assistant-message
-    kmet.app.ui.tui.test-tool-renderers
-    kmet.app.ui.tui.test-tool-execution
-    kmet.app.ui.tui.test-custom-message
-    kmet.app.ui.tui.test-settings-selector
-    kmet.app.ui.tui.test-theme-submenu
-    kmet.app.ui.tui.test-skill-message
-    kmet.app.ui.tui.test-summary-message
-    kmet.app.ui.tui.test-bash-execution
-    kmet.app.ui.tui.test-dialogs
-    kmet.app.ui.tui.test-external-editor
-    kmet.app.ui.tui.test-suspend
-    kmet.app.ui.tui.test-login-dialog
-    kmet.app.ui.tui.test-footer
-    kmet.app.ui.tui.test-footer-data-provider
-    kmet.app.ui.tui.test-pending-messages
-    kmet.app.ui.tui.test-status-indicator
-    kmet.app.ui.tui.test-loaded-resources
-    kmet.app.ui.tui.test-scoped-models-selector
-    kmet.app.ui.tui.test-model-selector
-    kmet.app.ui.tui.test-thinking-selector
-    kmet.app.ui.tui.test-auth-selector
-    kmet.app.ui.tui.test-dock
-    kmet.app.ui.tui.test-session-selector
-    kmet.app.ui.tui.test-fork-selector
-    kmet.app.ui.tui.test-tree-selector
+    kmet.agent.test-context
+    kmet.agent.ui.tui.test-chat-history
+    kmet.agent.ui.gui.test-transcript
+    kmet.agent.ui.gui.test-style
+    kmet.agent.ui.gui.test-ui
+    kmet.agent.ui.tui.test-user-message
+    kmet.agent.ui.tui.test-image-block
+    kmet.agent.ui.tui.test-assistant-message
+    kmet.agent.ui.tui.test-tool-renderers
+    kmet.agent.ui.tui.test-tool-execution
+    kmet.agent.ui.tui.test-custom-message
+    kmet.agent.ui.tui.test-settings-selector
+    kmet.agent.ui.tui.test-theme-submenu
+    kmet.agent.ui.tui.test-skill-message
+    kmet.agent.ui.tui.test-summary-message
+    kmet.agent.ui.tui.test-bash-execution
+    kmet.agent.ui.tui.test-dialogs
+    kmet.agent.ui.tui.test-external-editor
+    kmet.agent.ui.tui.test-suspend
+    kmet.agent.ui.tui.test-login-dialog
+    kmet.agent.ui.tui.test-footer
+    kmet.agent.ui.tui.test-footer-data-provider
+    kmet.agent.ui.tui.test-pending-messages
+    kmet.agent.ui.tui.test-status-indicator
+    kmet.agent.ui.tui.test-loaded-resources
+    kmet.agent.ui.tui.test-scoped-models-selector
+    kmet.agent.ui.tui.test-model-selector
+    kmet.agent.ui.tui.test-thinking-selector
+    kmet.agent.ui.tui.test-auth-selector
+    kmet.agent.ui.tui.test-dock
+    kmet.agent.ui.tui.test-session-selector
+    kmet.agent.ui.tui.test-fork-selector
+    kmet.agent.ui.tui.test-tree-selector
     kmet.test-core
     kmet.tasks.test-changed
     kmet.tasks.test-clean
@@ -665,7 +665,7 @@
    true; `jolt test` false, `jolt test-ext` true — the same split works on
    both hosts because ^:slow var metadata is preserved under jolt).
    Remaining args are filters: plain test var names (`bb test test-tool-bash`),
-   ns/var pairs (`bb test-ext kmet.app.test-loop/my-test`), or whole
+   ns/var pairs (`bb test-ext kmet.agent.test-loop/my-test`), or whole
    namespaces (`bb test kmet.tui.test-fuzzy`, or ns/ with a trailing slash).
    Whole-namespace filters select by slow?; var filters ignore slow?.
    The skip report lists unloadable namespaces (full run: all of them;

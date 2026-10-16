@@ -6,7 +6,7 @@
             [babashka.fs :as fs]
             [kmet.ai.api.sse :as sse]
             [kmet.ai.auth :as auth]
-            [kmet.app.retry :as retry]
+            [kmet.agent.retry :as retry]
             [kmet.libs.aws-sigv4 :as aws-sigv4]
             [kmet.libs.dynamic-value :as dynamic-value]
             [kmet.ai.llm :as llm]
@@ -21,11 +21,11 @@
             [kmet.ai.api.google-vertex :as vertex]
             [kmet.ai.api.bedrock-converse-stream :as bedrock]
             [kmet.ai.google-adc :as adc]
-            [kmet.app.loop :as loop]
-            [kmet.app.session :as session]
-            [kmet.config :as cfg]
+            [kmet.agent.loop :as loop]
+            [kmet.agent.session :as session]
+            [kmet.agent.config :as cfg]
             [kmet.ai.models :as m]
-            [kmet.app.tools.core :as tools]
+            [kmet.agent.tools.core :as tools]
             [kmet.libs.concurrent :as concurrent]))
 
 ;; ─── Module loads ─────────────────────────────────────────────────────────

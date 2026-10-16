@@ -1,7 +1,7 @@
 # Built-in extensions
 
 Extensions shipped with kmet, living in the repo so they stay in sync with
-the extension contract (`kmet.extension`). They are **opt-in**: nothing here
+the extension contract (`kmet.agent.extension`). They are **opt-in**: nothing here
 is loaded by default.
 
 ## Enabling an extension
@@ -12,7 +12,7 @@ all: `kmet config` lists every extension under “Bundled with kmet”
 the `:bundled-extensions` key (`["clojure" "-mcp-adapter"]` globally,
 `["+mcp-adapter"]` as a project delta). Bundled extensions are not
 packages — `kmet install`/`remove`/`list` cannot touch them — and nothing is
-ever extracted to disk (see `modules/app/src/kmet/extension.md`).
+ever extracted to disk (see `modules/agent/src/kmet/extension.md`).
 
 Extensions also load from the global dir (`~/.kmet/agent/extensions/`) and
 the project-local dir (`.kmet/extensions/`) at startup and on `/reload`.
@@ -20,7 +20,7 @@ Use this for local development against an edited copy: symlink or copy the
 extension into one of those — or install it as a **package** with
 `kmet install <path>` (records the source in settings; see
 [`docs/usage.md`](../docs/usage.md#package-subcommands) and
-`modules/app/src/kmet/extension.md`):
+`modules/agent/src/kmet/extension.md`):
 
 ```bash
 # one-time setup: make the shipped extension a package (user scope)
@@ -72,15 +72,15 @@ never ship.
 - **Single-file extensions** (`*.clj` at the top level of the directory) —
   one namespace defining `(defn init [api])`, namespaced
   `kmet.extensions.<name>` (the file's stem). They cannot carry a
-  `deps.edn`, so they may only use `kmet.extension` plus the shared
+  `deps.edn`, so they may only use `kmet.agent.extension` plus the shared
   `kmet.tui.*` / `kmet.libs.*` library layers, the shared renderer
-  namespaces (`kmet.app.ui.tui.tool-renderers`, `kmet.app.keybindings`),
+  namespaces (`kmet.agent.ui.tui.tool-renderers`, `kmet.agent.keybindings`),
   `clojure.*` / `babashka.*` builtins and the fixed bundled set
   (rewrite-clj, edamame, clojure.tools.reader, clojure.spec.alpha, cljfmt,
-  parinferish — see `modules/app/src/kmet/extension.md` § Bundled extension libraries). They
+  parinferish — see `modules/agent/src/kmet/extension.md` § Bundled extension libraries). They
   have **no tests** — the code is expected to
   stay small and self-contained; validate changes by loading the file
-  against `kmet.extension/create-nullable-api` or the real runtime.
+  against `kmet.agent.extension/create-nullable-api` or the real runtime.
 - **Directory-based extensions** (a subdirectory with an `extension.edn`
   manifest `{:name ... :entry my.ext.main :loader [:jolt :sci]}`) — separate
   projects with a **strict ns-path layout** (namespace `a.b/c` at `a/b/c.clj`
@@ -88,12 +88,12 @@ never ship.
   `kmet.extensions.<name>.*`, the manifest entry at
   `kmet.extensions.<name>.core`. `:loader` lists the loader backends the extension
   supports (`:sci` / `:jolt`; the host picks its own preference — see
-  `modules/app/src/kmet/extension.md` § Loader compatibility). They may carry a `deps.edn` for
+  `modules/agent/src/kmet/extension.md` § Loader compatibility). They may carry a `deps.edn` for
   library dependencies (`:deps` only) and their own tests (run them from
   inside the directory, e.g. `bb test` against the extension's own deps).
 - **Jar/zip extensions** — the same layout packed as a single archive
   (`extension.edn` + `deps.edn` at the root, code at ns paths, resources by
-  exact name). The loader serves them unexpanded. See `modules/app/src/kmet/extension.md` for
+  exact name). The loader serves them unexpanded. See `modules/agent/src/kmet/extension.md` for
   the format.
 
 All extension files — source **and any tests they carry** — are covered by
@@ -138,8 +138,8 @@ terminal background).
 
 ## Shipped extensions
 
-The extension authoring guide — the full `kmet.extension` API contract —
-lives in [`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md); keep it up to
+The extension authoring guide — the full `kmet.agent.extension` API contract —
+lives in [`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md); keep it up to
 date whenever the contract changes.
 
 | Extension | Description |

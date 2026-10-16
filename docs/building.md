@@ -10,7 +10,7 @@ folder with the version-less executable (`kmet` / `kmetj`) and the LICENSE.
 
 On babashka the artifact is an official babashka release binary with the kmet
 uberjar appended (babashka detects the appended zip at startup and runs
-`kmet.core/-main` — see babashka's "Self-contained executable" wiki page).
+`kmet.agent.core/-main` — see babashka's "Self-contained executable" wiki page).
 Cross-builds work from any host because packaging is download + concat only.
 
 ```sh
@@ -24,7 +24,7 @@ bb dist --out ~/bin     # additionally copy the executable there
 ## Jolt artifacts
 
 On jolt the same task AOT-compiles the app through
-`jolt build -m kmet.core` — runtime, stdlib, dependencies and kmet in one
+`jolt build -m kmet.agent.core` — runtime, stdlib, dependencies and kmet in one
 native binary, with the model catalogs embedded. Builds default to Jolt's
 optimized emission (`--opt`, no inspector/procedure-source information) with
 its fast boot image; `--release` keeps Clojure backtraces at a larger size:
@@ -80,7 +80,7 @@ those runtime libraries must be reachable. A Windows static smoke test instead
 limits `PATH` to `System32`, proving no OpenSSL/lz4/zlib DLL is needed beside
 the artifact.
 
-A direct `jolt build -m kmet.core` is still the one-off compiler command on
+A direct `jolt build -m kmet.agent.core` is still the one-off compiler command on
 Unix. Use `jolt dist` when you want kmet's mode defaults, archive staging, and
 post-build verification.
 
@@ -131,7 +131,7 @@ compiles under `target/jolt/<platform>/<mode>/`; `--smoke` runs the freshly
 built binary (`--list-models` plus `--version`) before it is announced.
 
 Versioning: artifacts are stamped with **jolt's checkout rule**
-(`kmet.version`, jolt's `tools/version.sh`), so the base version reads
+(`kmet.agent.version`, jolt's `tools/version.sh`), so the base version reads
 like the compiler's — the nearest `v<digit>` release tag as
 `git describe --tags --dirty` reports it (`v0.8.0` on the tag,
 `v0.8.0-56-g63374117` past it, `-dirty` with uncommitted edits), `dev-g<sha>`

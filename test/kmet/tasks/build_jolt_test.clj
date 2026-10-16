@@ -231,20 +231,20 @@
 
 (deftest build-argv-pins-the-entry-and-output
   (let [argv #'jbuild/build-argv]
-    (is (= ["build" "-m" "kmet.core" "-o" "/tmp/out/kmet"]
+    (is (= ["build" "-m" "kmet.agent.core" "-o" "/tmp/out/kmet"]
            (argv {:mode "release" :flags [] :out "/tmp/out/kmet"})))
     (testing "mode, boot and passthrough flags follow the output"
-      (is (= ["build" "-m" "kmet.core" "-o" "/o" "--dev" "--closed-world"]
+      (is (= ["build" "-m" "kmet.agent.core" "-o" "/o" "--dev" "--closed-world"]
              (argv {:mode "dev" :flags ["--closed-world"] :out "/o"})))
-      (is (= ["build" "-m" "kmet.core" "-o" "/o" "--opt" "--boot" "small"]
+      (is (= ["build" "-m" "kmet.agent.core" "-o" "/o" "--opt" "--boot" "small"]
              (argv {:mode "optimized" :boot "small" :flags [] :out "/o"}))))
     (testing "native link mode is explicit only when dynamic"
-      (is (= ["build" "-m" "kmet.core" "-o" "/o" "--dynamic"]
+      (is (= ["build" "-m" "kmet.agent.core" "-o" "/o" "--dynamic"]
              (argv {:mode "release" :flags [] :native-link :dynamic :out "/o"})))
-      (is (= ["build" "-m" "kmet.core" "-o" "/o"]
+      (is (= ["build" "-m" "kmet.agent.core" "-o" "/o"]
              (argv {:mode "release" :flags [] :native-link :static :out "/o"}))))
     (testing "cross builds carry the target and its pack"
-      (is (= ["build" "-m" "kmet.core" "-o" "/o" "--target" "tarm64le" "--target-pack" "/p"]
+      (is (= ["build" "-m" "kmet.agent.core" "-o" "/o" "--target" "tarm64le" "--target-pack" "/p"]
              (argv {:mode "release" :flags [] :out "/o"
                     :target "tarm64le" :target-pack "/p"}))))
     (testing "--test selects the generated test entry and its source roots"

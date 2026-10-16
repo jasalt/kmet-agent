@@ -15,7 +15,7 @@
    Each dialog returns a result via the ui-custom `close` callback.
    Cancel = `close nil` (or escape)."
   (:require [clojure.string :as str]
-            [kmet.extension :as ext]
+            [kmet.agent.extension :as ext]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
@@ -36,7 +36,7 @@
    The kmet frame carries a blank line between border and title (a
    deliberate deviation from pi's ExtensionSelectorComponent, which
    places them adjacent) — shared with kmet's own
-   kmet.app.ui.tui.dialogs/frame kit for a consistent look."
+   kmet.agent.ui.tui.dialogs/frame kit for a consistent look."
   [th title body-element hint-element & [{:keys [bold-title?]
                                           :or {bold-title? true}}]]
   (h/compile-tree

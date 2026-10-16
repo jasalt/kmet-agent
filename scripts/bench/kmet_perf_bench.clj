@@ -166,8 +166,8 @@
 ;; ─── Fresh-process cold regex ───────────────────────────────────────────────
 
 (defn cold-regex [grouped?]
-  (require 'kmet.app.retry)
-  (let [rre (var-get (ns-resolve 'kmet.app.retry 'retryable-error-regex))
+  (require 'kmet.agent.retry)
+  (let [rre (var-get (ns-resolve 'kmet.agent.retry 'retryable-error-regex))
         rx (if grouped?
              (re-pattern (str "(" (.pattern rre) ")"))
              rre)
@@ -197,11 +197,11 @@
                      label (count texts) chars blocks ms (/ (* ms 1000.0) (max 1 chars))))))
 
 (defn md-session [file]
-  (require 'kmet.app.session 'kmet.app.ui.tui.chat-history 'kmet.modes.interactive)
-  (let [session ((resolve 'kmet.app.session/load-session) file)
-        ch ((resolve 'kmet.app.ui.tui.chat-history/make-chat-history) :tool-display-mode :expanded)
-        cs ((resolve 'kmet.modes.interactive/map->CoreState) {:chat-history ch})]
-    ((resolve 'kmet.modes.interactive/replay-branch!) cs session)
+  (require 'kmet.agent.session 'kmet.agent.ui.tui.chat-history 'kmet.agent.modes.interactive)
+  (let [session ((resolve 'kmet.agent.session/load-session) file)
+        ch ((resolve 'kmet.agent.ui.tui.chat-history/make-chat-history) :tool-display-mode :expanded)
+        cs ((resolve 'kmet.agent.modes.interactive/map->CoreState) {:chat-history ch})]
+    ((resolve 'kmet.agent.modes.interactive/replay-branch!) cs session)
     (let [messages @(:messages-atom ch)
           parts (fn [k] (keep (fn [m] (when (= :assistant (:role m)) @(k (:component m)))) messages))]
       (println "md/parse over the assistant messages' markdown sources:")
@@ -211,12 +211,12 @@
 ;; ─── Kitty-image whole-document scan cost (the diff hot path) ───────────────
 
 (defn kitty-scan [file]
-  (require 'kmet.app.session 'kmet.app.ui.tui.chat-history 'kmet.modes.interactive 'kmet.tui.core
+  (require 'kmet.agent.session 'kmet.agent.ui.tui.chat-history 'kmet.agent.modes.interactive 'kmet.tui.core
            'kmet.libs.terminal-image)
-  (let [session ((resolve 'kmet.app.session/load-session) file)
-        ch ((resolve 'kmet.app.ui.tui.chat-history/make-chat-history) :tool-display-mode :expanded)
-        cs ((resolve 'kmet.modes.interactive/map->CoreState) {:chat-history ch})
-        replay (var-get (ns-resolve 'kmet.modes.interactive.session-admin 'replay-branch!))
+  (let [session ((resolve 'kmet.agent.session/load-session) file)
+        ch ((resolve 'kmet.agent.ui.tui.chat-history/make-chat-history) :tool-display-mode :expanded)
+        cs ((resolve 'kmet.agent.modes.interactive/map->CoreState) {:chat-history ch})
+        replay (var-get (ns-resolve 'kmet.agent.modes.interactive.session-admin 'replay-branch!))
         _ (replay cs session)
         lines ((resolve 'kmet.tui.core/render) ch 100)
         avg (/ (double (reduce + 0 (map count lines))) (max 1 (count lines)))

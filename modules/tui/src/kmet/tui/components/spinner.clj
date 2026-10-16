@@ -25,7 +25,7 @@
 (def default-interval-ms
   "The default animation bucket: one braille frame per 240 ms (5 frames ×
    240 ms = the classic 1.2 s revolution). The interactive mode's status
-   drivers sample at this period (kmet.modes.interactive.status) and
+   drivers sample at this period (kmet.agent.modes.interactive.status) and
    quiet-gate the request (kmet.tui.timers/frame-due?), so a frame another
    source painted within the last half bucket serves as the sample; the
    transient indicators' elapsed frames use it too — keep them from

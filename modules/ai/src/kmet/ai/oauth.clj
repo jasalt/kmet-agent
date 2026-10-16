@@ -19,7 +19,7 @@
 
    Interaction (pi AuthInteraction): a map {:signal cancel-atom :prompt
    (fn [prompt-map] → string) :notify (fn [event] nil)} provided by the UI
-   (kmet.modes.interactive) — this namespace never touches the TUI.
+   (kmet.agent.modes.interactive) — this namespace never touches the TUI.
 
    The generic machinery (device-code poll, PKCE, loopback callback server,
    RFC 8414/7591/8628 helpers) lives in kmet.libs.oauth — the shared seam

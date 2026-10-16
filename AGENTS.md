@@ -9,9 +9,9 @@ change when behavior changes.
 
 | Area | Authoritative reference |
 |------|-------------------------|
-| Application layout and contributor workflow | [`modules/app/src/kmet/README.md`](modules/app/src/kmet/README.md) |
+| Application layout and contributor workflow | [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
-| Extension contract and authoring | [`modules/app/src/kmet/extension.md`](modules/app/src/kmet/extension.md) |
+| Extension contract and authoring | [`modules/agent/src/kmet/extension.md`](modules/agent/src/kmet/extension.md) |
 | Loader design and backends | [`modules/loader/src/kmet/loader/loader.md`](modules/loader/src/kmet/loader/loader.md) |
 | Jolt provider scaffolding and host integration | [`jolt/src/jolt/kmet/README.md`](jolt/src/jolt/kmet/README.md) |
 | User guides and examples | [`docs/README.md`](docs/README.md), [`docs/examples/README.md`](docs/examples/README.md) |
@@ -25,7 +25,7 @@ session-runtime split’s GUI-independent steps landed.)
 
 ## Basic development flow
 
-- `bb start` starts `kmet.core/-main`; `jolt start` is the native-host
+- `bb start` starts `kmet.agent.core/-main`; `jolt start` is the native-host
   equivalent.
 - `bb clean` removes build output and caches; `bb clean --dry-run` lists what
   it would remove. `jolt clean` is the native-host equivalent.
@@ -100,7 +100,7 @@ session-runtime split’s GUI-independent steps landed.)
 - Both host lint views must remain valid for shared code.
 - The layer boundaries, task packaging rules, portability notes, and
   application state conventions are maintained in
-  [`modules/app/src/kmet/README.md`](modules/app/src/kmet/README.md). Keep that document current
+  [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md). Keep that document current
   when those rules change.
 
 ### Time and durations
@@ -120,8 +120,8 @@ session-runtime split’s GUI-independent steps landed.)
 
 - Use `ex-info` with a structured `:cause` or `:type` key. Let errors reach
   the top-level handler instead of silently swallowing them.
-- Lifecycle and handled-error logging belongs to `kmet.debug`; use
-  `kmet.debug/log` for opt-in debug output and `kmet.debug/log-error` for
+- Lifecycle and handled-error logging belongs to `kmet.agent.debug`; use
+  `kmet.agent.debug/log` for opt-in debug output and `kmet.agent.debug/log-error` for
   unhandled top-level errors.
 
 ### Shared layers are extended, not copied
@@ -134,7 +134,7 @@ session-runtime split’s GUI-independent steps landed.)
   way.
 - Needing a variant is the signal to extend the lower layer (or the nearest
   shared namespace) — a second implementation is a bug even when it works.
-  The layer map is in [`modules/app/src/kmet/README.md`](modules/app/src/kmet/README.md); the
+  The layer map is in [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md); the
   dispatcher list is in [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md).
 
 ## Testing
@@ -163,7 +163,7 @@ session-runtime split’s GUI-independent steps landed.)
 - Jolt claims, guarded requires, loader capability floors, and native
   packaging live in [`jolt/src/jolt/kmet/README.md`](jolt/src/jolt/kmet/README.md)
   and [`docs/building.md`](docs/building.md).
-- Extension behavior lives in [`modules/app/src/kmet/extension.md`](modules/app/src/kmet/extension.md);
+- Extension behavior lives in [`modules/agent/src/kmet/extension.md`](modules/agent/src/kmet/extension.md);
   shipped-extension user setup remains in [`extensions/README.md`](extensions/README.md).
 - Supported platforms are Linux, macOS, Windows, WSL, and Termux. Start with
   [`docs/building.md`](docs/building.md) for platform setup and distribution;

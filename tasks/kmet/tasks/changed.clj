@@ -32,12 +32,12 @@
    cover, in listing order. test/ is a root too but holds only tests — its
    files reach the graph through the same scan (see project-files for how
    the roots are enumerated)."
-  ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/app/src" "modules/app/test" "modules/loader/src" "modules/loader/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions"])
+  ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/agent/src" "modules/agent/test" "modules/loader/src" "modules/loader/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions"])
 
 (def ^:private changed-path-re
   "Changed-file paths that are lint/format/scan material: a .clj[c] file under
    one of `source-roots`."
-  #"(?:modules/(?:reakt|hikap|libs|tui|ai|app|loader|tk)/src|modules/(?:reakt|libs|ai|tui|app|tk|loader)/test|test|tasks|extensions)/.*\.(?:clj[c]?|jolt)")
+  #"(?:modules/(?:reakt|hikap|libs|tui|ai|agent|loader|tk)/src|modules/(?:reakt|libs|ai|tui|agent|tk|loader)/test|test|tasks|extensions)/.*\.(?:clj[c]?|jolt)")
 
 (defn- git-repo?
   []
@@ -173,7 +173,7 @@
 
 (defn path->ns
   "Source/test file path to its namespace symbol
-   (src/kmet/app/ui/model_selector.clj → kmet.app.ui.tui.model-selector;
+   (src/kmet/app/ui/model_selector.clj → kmet.agent.ui.tui.model-selector;
    tasks/kmet/tasks/build.cljc → kmet.tasks.build;
    extensions/clojure/src/kmet/extensions/clojure/core.clj → kmet.extensions.clojure.core;
    extensions/tools.clj → kmet.extensions.tools). Accepts either
@@ -193,7 +193,7 @@
          (str/replace #"\.(?:clj[c]?|jolt)$" "")
          (str/replace "_" "-")
          (str/replace "/" ".")
-         (str/replace #"^(?:modules\.(?:reakt|hikap|libs|tui|ai|app|loader|tk)\.src\.|modules\.(?:reakt|libs|ai|tui|app|tk|loader)\.test\.)|^test\.|^tasks\." "")))))
+         (str/replace #"^(?:modules\.(?:reakt|hikap|libs|tui|ai|agent|loader|tk)\.src\.|modules\.(?:reakt|libs|ai|tui|agent|tk|loader)\.test\.)|^test\.|^tasks\." "")))))
 
 (defn- read-ns-form
   "First form of PATH (the ns form), or nil when unreadable."
@@ -237,7 +237,7 @@
 (defn- scan-graph
   "The require graph (ns → set of required kmet.* nss) and ns → file path,
    from every .clj file under the source roots. Extension namespaces join the
-   graph so changes to the extension contract (kmet.extension, kmet.tui.*,
+   graph so changes to the extension contract (kmet.agent.extension, kmet.tui.*,
    kmet.libs.*) pull dependent extension files into the lint closure.
    Cached per source-tree stamp: the affected-* helpers scan repeatedly in
    one process (bb test-changed/test-ext-changed and their tests) and the

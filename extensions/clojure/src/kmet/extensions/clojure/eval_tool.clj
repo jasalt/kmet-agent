@@ -9,8 +9,8 @@
 (ns kmet.extensions.clojure.eval-tool
   "clojure_eval — evaluate Clojure code in a running nREPL server."
   (:require [clojure.string :as str]
-            [kmet.app.ui.tui.tool-renderers :as renderers]
-            [kmet.extension :as ext]
+            [kmet.agent.ui.tui.tool-renderers :as renderers]
+            [kmet.agent.extension :as ext]
             [kmet.extensions.clojure.edit-util :as util]
             [kmet.extensions.clojure.nrepl :as nrepl]
             [kmet.tui.theme :as theme]))

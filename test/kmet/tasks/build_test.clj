@@ -10,7 +10,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [kmet.version :as version-lib]
+            [kmet.agent.version :as version-lib]
             [kmet.tasks.build :as build]
             [kmet.test-utils :refer [slash]]))
 
@@ -179,7 +179,7 @@
           (is (contains? entries "kmet/tasks/test_main.clj"))
           (is (contains? entries "kmet/tasks/runner.clj"))
           (is (contains? entries "kmet/ai/test_sse.clj"))
-          (is (contains? entries "kmet/core.clj")))
+          (is (contains? entries "kmet/agent/core.clj")))
         (testing "the entry point is the test runner"
           (is (str/includes? manifest "Main-Class: kmet.tasks.test-main")))))))
 
@@ -197,7 +197,7 @@
     (with-open [zf (java.util.zip.ZipFile. (fs/file app))]
       (let [entries (set (map (fn [e] (.getName ^java.util.zip.ZipEntry e))
                               (enumeration-seq (.entries zf))))]
-        (is (contains? entries "kmet/core.clj"))
+        (is (contains? entries "kmet/agent/core.clj"))
         (is (not-any? #(str/starts-with? % "kmet/tasks/") entries))
         (is (not-any? #(str/starts-with? % "kmet/libs/test_") entries))
         (is (not-any? #(str/starts-with? % "kmet/test_") entries))
@@ -404,7 +404,7 @@
     (spit (str extra "/extensions/clojure/src/extension.edn") "{:name \"clojure\"}\n")
     (spit (str extra "/extensions/clojure/src/SKILL.md") "skill\n")
     (try
-      (let [jar (@#'build/write-uberjar! out "kmet.core" [normal] {:extra-roots [extra]})
+      (let [jar (@#'build/write-uberjar! out "kmet.agent.core" [normal] {:extra-roots [extra]})
             names (with-open [zf (java.util.zip.ZipFile. (fs/file jar))]
                     (set (map (fn [e] (.getName ^java.util.zip.ZipEntry e))
                               (enumeration-seq (.entries zf)))))

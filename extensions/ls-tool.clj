@@ -14,8 +14,8 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.extension :as ext]
-            [kmet.app.ui.tui.tool-renderers :as renderers]))
+            [kmet.agent.extension :as ext]
+            [kmet.agent.ui.tui.tool-renderers :as renderers]))
 
 (defn- resolve-path
   "PATH against the runtime cwd from the tool context; absolute paths pass

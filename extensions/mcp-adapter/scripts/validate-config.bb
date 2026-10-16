@@ -12,7 +12,7 @@
          '[babashka.fs :as fs]
          '[clojure.java.io :as io]
          '[kmet.libs.json :as json]
-         '[kmet.extension :as ext]
+         '[kmet.agent.extension :as ext]
          '[kmet.extensions.mcp-adapter.config :as config]
          '[kmet.extensions.mcp-adapter.metadata :as metadata]
          '[kmet.extensions.mcp-adapter.core :as mcp])

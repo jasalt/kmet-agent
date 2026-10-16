@@ -46,7 +46,7 @@ TUI-only and is not accepted.
 {:type :agent-settled :outcome :completed}
 ```
 
-Events are the print-mode wire projection (`kmet.app.event-bus/wire-event`):
+Events are the print-mode wire projection (`kmet.agent.event-bus/wire-event`):
 the same `{:type ...}` vocabulary as the session stream, with the cumulative
 `:message-update` snapshot dropped and error payloads stringified. Streaming
 consumers watch `:message-update` deltas and stop at `:agent-settled`, whose
@@ -207,17 +207,17 @@ headless default.
 
 TUI-only capabilities without a wire form stay inert (or degrade to the
 headless default) and are listed in
-[`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md); the client can ignore
+[`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md); the client can ignore
 fire-and-forget records it does not render.
 
-## Scripting with `kmet.modes.rpc-client`
+## Scripting with `kmet.agent.modes.rpc-client`
 
-The repository ships a thin EDN client (`modules/app/src/kmet/modes/rpc_client.clj`) for
+The repository ships a thin EDN client (`modules/agent/src/kmet/modes/rpc_client.clj`) for
 Clojure scripts — it spawns the process, correlates responses by `:id`, and
 subscribes to the event stream:
 
 ```clojure
-(require '[kmet.modes.rpc-client :as client])
+(require '[kmet.agent.modes.rpc-client :as client])
 
 (def c (client/start {:args ["--provider" "opencode-go"
                              "--model" "deepseek-v4.1-flash"]}))

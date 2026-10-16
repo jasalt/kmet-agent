@@ -1,7 +1,7 @@
 (ns kmet.extensions.mcp-adapter.panel
   "The mcp-adapter's UI, built directly on the shared kmet.tui.* layer and
    mounted via ui-custom (pi: pi-mcp-adapter ships mcp-panel.ts and hosts
-   it with ctx.ui.custom; kmet.extension docstring — extensions build
+   it with ctx.ui.custom; kmet.agent.extension docstring — extensions build
    their own components, the api carries only host bridges).
 
    McpPanel — port of pi-mcp-adapter's mcp-panel.ts: server/tool rows with

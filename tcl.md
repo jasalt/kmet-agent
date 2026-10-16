@@ -76,7 +76,7 @@ callback, not from a component body, which renders inside the pump.
 
 ttk styles and themes are wired: `kmet.tk.ttk.style` is the style database
 (`use-theme!`, `define-style!`, `map-style!`, `apply!`) and
-`kmet.app.ui.gui.style` compiles the TUI theme + the transcript palette
+`kmet.agent.ui.gui.style` compiles the TUI theme + the transcript palette
 into a dark style set, which `scripts/demos/gui_tk_session.clj` applies after
 `tcl/install!`. Re-applying the set when the *user* changes the theme is
 app work: it is the last item of the app port at the end of this file.
@@ -93,12 +93,12 @@ editable text. The composer built on it (`:ui/composer`) is app work too —
 it waits for the app port, listed at the end of this file.
 
 kmet's own widgets are not part of those sets: they are `:ui/…` tags in
-`kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container), added to
+`kmet.agent.ui.gui.ui` (today `:ui/transcript`, the chat scroll container), added to
 the backend through `kmet.tk.core/mount-backend!`/`run-backend!`.
 
 Two guards keep that honest, and are the place to start from when adding a
 widget (the `:ui/…` widgets have their own guard, `bb test
-kmet.app.ui.gui.test-ui`):
+kmet.agent.ui.gui.test-ui`):
 
 ```sh
 bb scripts/bench/tk_option_audit.clj          # declared vs. the live widget, per tag
@@ -206,7 +206,7 @@ The seam and the widgets are complete, so the GUI does not need a new
 backend abstraction. The remaining Tk-side work is integration and
 threading, not new widget support:
 
-- Verify a fresh `kmet.app.ui.gui.*` shell can mount a tree, run its
+- Verify a fresh `kmet.agent.ui.gui.*` shell can mount a tree, run its
   pump, and shut down cleanly with `mount-backend!`/`run-backend!`, the
   same way the display-only transcript demo does.
 - Document and exercise an explicit `after idle` entry point so `subscribe!`
@@ -220,7 +220,7 @@ threading, not new widget support:
 - Confirm dialog results can be delivered to asynchronous `respond!`
   consumers the application port wires; the dialogs themselves return
   Clojure data and block only the caller.
-- Keep `kmet.app.ui.gui.transcript` and the shipped backend tests as the
+- Keep `kmet.agent.ui.gui.transcript` and the shipped backend tests as the
   reference point: no new public `kmet.tk.*` API is expected for the live
   GUI, only exercise of the current one.
 
@@ -242,7 +242,7 @@ Nothing here is a backend gap.
   already hosts each card as its own embedded window, so the missing piece
   is an append path in the component rather than a re-render).
 - **Image blocks in a card.** The image layer can display one, but
-  `kmet.app.ui.gui.transcript` still renders a `{:type :image}` content
+  `kmet.agent.ui.gui.transcript` still renders a `{:type :image}` content
   block as the literal `[image]`: a card body is one height-counted `:text`
   widget, so an image needs its own widget, a pixel fit width (a card is
   measured in character columns), and a fallback for a format the running
@@ -268,8 +268,8 @@ Nothing here is a backend gap.
   words asserted, no user); it skips where there is no display.
 - `bb test kmet.tk.test-tk` — the headless recording adapter: tag
   construction, patching, callbacks, the value slots and disposal.
-- `bb test kmet.app.ui.gui.test-ui` — the same for the kmet-widget set (`:ui/…`),
-  mounted through `kmet.app.ui.gui.ui/backend`.
+- `bb test kmet.agent.ui.gui.test-ui` — the same for the kmet-widget set (`:ui/…`),
+  mounted through `kmet.agent.ui.gui.ui/backend`.
 - `jolt test kmet.tk.test-ttk-style` under a display (on Termux, `xvfb-run
   -a`) — the ttk style database round-trips through a real Tk; the same
   tests record the scripts headlessly on babashka.

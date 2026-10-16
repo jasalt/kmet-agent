@@ -9,7 +9,7 @@
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]
             [kmet.tui.keybindings :as kb]
-            [kmet.app.keybindings :as app-kb]
+            [kmet.agent.keybindings :as app-kb]
             [babashka.fs :as fs]))
 
 ;; Raw key sequences matching what parse-key expects

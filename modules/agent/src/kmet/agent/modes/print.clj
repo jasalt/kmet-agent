@@ -1,0 +1,121 @@
+(ns kmet.agent.modes.print
+  "Print mode — non-interactive: send message, print response, exit.
+   pi: modes/print-mode.ts. A pure consumer of the runtime's event stream:
+   :text streams assistant text and returns the final message's text; :edn
+   prints the session header and every event as EDN (pi's --mode json, the
+   machine-readable variant)."
+  (:require [clojure.string :as str]
+            [kmet.agent.event-bus :as event-bus]
+            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.prompts :as prompts]
+            [kmet.agent.skills :as skills]
+            [kmet.agent.config :as cfg]))
+
+(defn- message-text
+  "The concatenated text blocks of MESSAGE, or nil when it has none."
+  [message]
+  (let [text (->> (:content message)
+                  (keep #(when (= :text (:type %)) (:text %)))
+                  (apply str))]
+    (not-empty text)))
+
+(defn- settle-result
+  "The run's exit result at :agent-settled (pi: runPrintMode's text branch).
+
+   Text mode returns the final assistant message's text; a failed or
+   aborted run reports to stderr and yields nil, which exits 1 (core).
+   Edn mode's result is only a success flag: the events on stdout carry
+   the detail, so a failure stays silent there."
+  [mode message error outcome]
+  (if (= :completed outcome)
+    (if (= :edn mode) :completed (or (message-text message) ""))
+    (do (when (= :text mode)
+          (binding [*out* *err*]
+            (println "Error:" (or (event-bus/wire-error error)
+                                  (:error-message message)
+                                  (case outcome
+                                    :aborted "Request aborted"
+                                    "Request failed")))))
+        nil)))
+
+(defn- event-consumer
+  "The print run's subscriber for MODE: streams text deltas in :text mode,
+   prints every wire event in :edn mode, and delivers the run's result at
+   :agent-settled. The last :message-end and :error payloads decide the
+   result's text and error detail.
+
+   A throw from the consumer must not leave the result promise undelivered
+   — the runtime isolates a throwing subscriber, so run would block on the
+   promise forever (a stdout write failing mid-stream, e.g. a closed pipe
+   in :edn mode, is the reachable case). Deliver the failure, then rethrow
+   for the dispatcher's log."
+  [mode result-promise]
+  (let [last-message (atom nil)
+        last-error (atom nil)]
+    (fn [event]
+      (try
+        (when (= :edn mode)
+          (prn (event-bus/wire-event event))
+          (flush))
+        (case (:type event)
+          :message-update
+          (when (and (= :text mode) (= :text (get-in event [:delta :type])))
+            (print (get-in event [:delta :content]))
+            (flush))
+
+          :message-end
+          (reset! last-message (:message event))
+
+          :error
+          (reset! last-error (:message event))
+
+          :agent-settled
+          (deliver result-promise
+                   (settle-result mode @last-message @last-error (:outcome event)))
+
+          nil)
+        (catch Exception e
+          (deliver result-promise nil)
+          (throw e))))))
+
+(defn run
+  "Run in non-interactive mode: send message, print response, exit.
+   opts: :model, :provider, :messages, :system-prompt, :append-system-prompt,
+         :config, :session (id/prefix/path), :continue, :mode (:text | :edn)"
+  [opts]
+  (let [{:keys [model provider messages config]} opts
+        mode (:mode opts :text)
+        config (cfg/apply-cli-overrides (or config (cfg/load-config :no-env? true)) opts)
+        session (runtime/resolve-run-session config opts)]
+    (if (nil? session)
+      ;; --session matched nothing: report like interactive mode and return
+      ;; nil — core exits 1 on a nil result
+      (do
+        (binding [*out* *err*]
+          (println (str "No session found matching '" (:session opts) "'")))
+        nil)
+      (let [;; the runtime owns the wiring (agent state, system prompt, run
+            ;; options, extension handle); print mode owns only its consumer.
+            ;; The front-end kind extensions see follows the output variant
+            ;; (pi: mode === "json" ? "json" : "print").
+            engine (runtime/bootstrap config {:session session
+                                              :model model
+                                              :provider provider
+                                              :mode (if (= :edn mode) :json :print)})
+            result-promise (promise)
+            unsubscribe (runtime/subscribe! engine (event-consumer mode result-promise))
+            ;; pi: session.prompt expands skill commands + prompt templates
+            message (-> (str/join " " messages)
+                        (skills/expand-skill-command)
+                        (prompts/expand-prompt-template (prompts/get-prompt-templates)))]
+        (try
+          (when (= :edn mode)
+            (when-let [header (:header session)]
+              (prn header)
+              (flush)))
+          (runtime/prompt! engine {:text message})
+          @result-promise
+          (finally
+            ;; the run owns the globals it installed (one-shot mode)
+            (unsubscribe)
+            (runtime/dispose! engine)))))))

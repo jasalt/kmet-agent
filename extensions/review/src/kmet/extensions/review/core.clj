@@ -16,7 +16,7 @@
    :session-start and :session-tree via the review-session entry."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.extension :as ext]
+            [kmet.agent.extension :as ext]
             [kmet.extensions.review.dialogs :as dlg]
             [kmet.extensions.review.git :as git]
             [kmet.extensions.review.prompts :as prompts]
@@ -63,7 +63,7 @@
                           (try (slurp guidelines)
                                (catch Exception e
                                  (try
-                                   (when-let [log-fn (resolve 'kmet.debug/log)]
+                                   (when-let [log-fn (resolve 'kmet.agent.debug/log)]
                                      (log-fn "Failed to read REVIEW_GUIDELINES.md" e))
                                    (catch Throwable _ nil))
                                  nil)))]

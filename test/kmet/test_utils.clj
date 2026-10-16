@@ -2,7 +2,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.app.session-runtime :as rt]
+            [kmet.agent.session-runtime :as rt]
             [kmet.tui.utils :as u]))
 
 (defn test-engine
@@ -11,7 +11,7 @@
    them), plus optional :config, :cwd (a value or an atom) and the
    :turn-running?/:compaction-queued atoms. Subscribers, last-run and
    disposal are fresh. Production builds engines through
-   kmet.app.session-runtime/bootstrap."
+   kmet.agent.session-runtime/bootstrap."
   [{:keys [agent-state session config cwd turn-running? compaction-queued]}]
   (rt/map->Engine {:agent-state agent-state
                    :session session

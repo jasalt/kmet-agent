@@ -21,7 +21,7 @@
 
    Usage: symlink or copy this file into ~/.kmet/agent/extensions/ (global)
    or .kmet/extensions/ (project-local), then restart kmet or run /reload."
-  (:require [kmet.extension :as ext]
+  (:require [kmet.agent.extension :as ext]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
             [kmet.tui.components.settings-list :as settings-list]

@@ -11,12 +11,12 @@ opt-in extensions). The one thing already in place is measurement — per-tool
 result-token attribution — so the build/no-build decision can be made on data.
 
 Status: **T1, T2 and T4 implemented** in this tree —
-`modules/app/src/kmet/app/tools/run_code.cljc`, a builtin (read/write/edit/bash + `run_code`),
-`kmet.app.test-run-code` (56 tests: 39 fast + 17 `^:slow`, smoke-verified on
+`modules/agent/src/kmet/app/tools/run_code.cljc`, a builtin (read/write/edit/bash + `run_code`),
+`kmet.agent.test-run-code` (56 tests: 39 fast + 17 `^:slow`, smoke-verified on
 babashka and jolt); the mcp-adapter's `mcpScript` tool and `bb`-subprocess
 runtime retired into the same engine (its catalog joins the sandbox as a
 contributed tool source — T2 below). T4 shares the invocation pipeline with
-the loop (`kmet.app.tools.invoke`), so scripted calls fire the run's tool
+the loop (`kmet.agent.tools.invoke`), so scripted calls fire the run's tool
 hooks and a script abort cancels inner calls. The last plan item, the
 post-adoption T0 re-measurement, is recorded below as well (✅): run_code is
 still used rarely, so the bash find/read workload has not moved yet.
@@ -33,7 +33,7 @@ The sandbox now builds its per-call SCI context from the host's loaded
 so macros survive) plus babashka's class table on the bb host — a script
 `require`s `clojure.pprint`/`clojure.java.io`/… and resolves `System`,
 `java.io.*`, `Throwable`, `future` as in a babashka script. The fixed
-bundled extension set (`kmet.app.extension-libs` — `rewrite-clj.*`,
+bundled extension set (`kmet.agent.extension-libs` — `rewrite-clj.*`,
 `edamame.core`, `cljfmt.*`, `parinferish.core`) is copied too, so a script
 requires the same shared copies extension contexts get. kmet's own
 namespaces stay blocked (the boundary error below), and jolt's SCI exposes no
@@ -86,7 +86,7 @@ question is measured before anything is built. It does differ — see
 | deferred MCP tool definitions (`tool_search`) | ✅ mcp-adapter: one `mcp` proxy tool, lazy servers, output guard |
 | truncation everywhere | ✅ read (2000 lines/50KB), bash (line/byte caps + full-output file), script (16 KiB/2000-line default result + capture budget) |
 | partial output on interrupt | ✅ bash returns streamed output + "Command aborted" |
-| compaction | ✅ `kmet.app.compaction` (LLM summarization) |
+| compaction | ✅ `kmet.agent.compaction` (LLM summarization) |
 | visibility (tokens/cost) | ✅ footer: ↑in ↓out R/W cache, $cost, context % |
 | `mcpScript` (scripted MCP calls) | ✅ mcp-adapter: retired into the shared `run_code` tool — the catalog is a contributed sandbox tool source (T2) |
 | `code_execution` (script + distilled output) | ✅ builtin `run_code` (T1, landed — plan and re-measurement below) |
@@ -289,14 +289,14 @@ so T1–T3 don't re-litigate it:
    daemon manager + a framed protocol.
 4. **RPC mode** (pi convergence): pi's `--mode rpc` is JSONL over stdio with
    commands (`prompt`, `bash`, `abort`, session ops) and streaming events.
-   kmet already has the event vocabulary (`kmet.app.event_bus`) and a headless
-   mode (`kmet.modes.print`); what's missing is command dispatch, serialization
+   kmet already has the event vocabulary (`kmet.agent.event_bus`) and a headless
+   mode (`kmet.agent.modes.print`); what's missing is command dispatch, serialization
    and a client. Only worth building when a **second consumer** exists
    (subagent tool, editor embedding) — not for token savings.
 
 Loader facts: kmet.loader uses **SCI on babashka** and the **native
 `jolt.loader` on jolt** (`.jolt` file; backend selected in
-`kmet.app.extensions`). The run_code tool builds a fresh per-call `sci/init`
+`kmet.agent.extensions`). The run_code tool builds a fresh per-call `sci/init`
 context (the T1 original forked a cached base through
 `kmet.loader.sci-loader`) and evaluates with `sci/eval-string*` directly;
 kmet pins SCI in `jolt/deps.edn`, so the same evaluator is available on
@@ -454,7 +454,7 @@ comes first.
   (`extensions/mcp-adapter/src/kmet/extensions/mcp_adapter/tool_source.clj` is
   now ~30 lines of contribution glue). What shipped:
   - **Core: extension-contributed tool sources.**
-    `kmet.app.tools.registry/register-tool-source!` /
+    `kmet.agent.tools.registry/register-tool-source!` /
     `unregister-tool-source!` (id → a 0-arg fn returning {name → tool map})
     and `get-contributed-tools`; the sandbox resolves the surface per call,
     so the next run_code call sees a newly registered source.
@@ -468,7 +468,7 @@ comes first.
     contributed name goes through the same normalization/`:streams?`/
     `:contextual?` handling without joining `get-tool`/`get-all-tools`.
     The extension API (`:register-tool-source!`/`:unregister-tool-source!`,
-    tracked for unload) is documented in `modules/app/src/kmet/extension.md`.
+    tracked for unload) is documented in `modules/agent/src/kmet/extension.md`.
   - **Adapter: the catalog as a source.**
     `tool-proxy/script-tool-records` builds records from the metadata cache
     (prefixed name → `{:name :label :description :parameters :streams?
@@ -496,7 +496,7 @@ comes first.
   measured need (boot cost/call frequency) or a second consumer. The tool
   contract (description/skill/API) should survive T1→T3 untouched.
 - **T4 — shared invocation core + hooks + cancellation. ✅ landed.** The
-  bridge stopped owning a private execution path: `kmet.app.tools.invoke`
+  bridge stopped owning a private execution path: `kmet.agent.tools.invoke`
   serves the loop and the sandbox alike, scripted calls fire the run's
   tool hooks, a script abort cancels what it can reach, and surface
   selection unifies through `registry/select-tools`. Details below.
@@ -578,7 +578,7 @@ must emit it.
 
 ### Dispatch and result contract
 
-- One bridge over `kmet.app.tools.core/execute-tool` — the loop's own seam.
+- One bridge over `kmet.agent.tools.core/execute-tool` — the loop's own seam.
   It already provides arg normalization, `:prepare-arguments`,
   `:contextual?`/`:streams?` dispatch, and exception → `{:is-error true}`.
 - **Never through `loop/execute-tool-calls-*`**: that path emits
@@ -684,7 +684,7 @@ bb now gets the host class table, so class access is no longer excluded there):
 class access (empty `:classes`/`:imports` on hosts with no class table — host
 fns hide their own; SCI's default reflective instance-method calls on host
 values still work, and are harmless without class resolution),
-`kmet.app.*`/`kmet.tui.*`/`kmet.extension` (the extension contract is not the
+`kmet.agent.*`/`kmet.tui.*`/`kmet.agent.extension` (the extension contract is not the
 script contract), `kmet.loader`, arbitrary `require` of Maven deps (dependency
 resolution is an extension-manifest feature — a missing require fails with the
 boundary error; the fixed bundled extension set is not arbitrary — it is
@@ -706,7 +706,7 @@ The description must teach the boundary and the batching: **one call can
 orchestrate many tool calls** (fan out, loop, chain) so N results cost one
 round trip; **bulk scanning via `babashka.fs`/`slurp`/`sh`** (no truncation,
 no per-call overhead); tools are for semantic queries (lsp/structural) and
-mutations. A harness-level guideline in `kmet.app.skills/build-guidelines`
+mutations. A harness-level guideline in `kmet.agent.skills/build-guidelines`
 teaches the same at the turn level — batch independent tool calls in one
 message, since the loop runs them in parallel by default — and the script
 tool's own guidelines spell out the bash/script split. Both are kmet
@@ -747,7 +747,7 @@ precedent is available if the prompt impact measures badly).
 
 The plan above is now the record of what landed:
 
-1. ✅ **Tool** — `modules/app/src/kmet/app/tools/run_code.cljc` (`.cljc` for the
+1. ✅ **Tool** — `modules/agent/src/kmet/app/tools/run_code.cljc` (`.cljc` for the
    jolt/bb `sci/binding` split), a `run_code` record (params `code` +
    `timeout` in seconds — bash's unit — plus an optional result byte
    budget, `:streams? true`, `:contextual? true`), registered at the
@@ -862,7 +862,7 @@ The probes that found the capture bugs left a set of deliberate behaviors:
 
 ## T4 — shared invocation core, hooks, cancellation (landed)
 
-The bridge no longer owns a private execution path. `kmet.app.tools.invoke`
+The bridge no longer owns a private execution path. `kmet.agent.tools.invoke`
 (`prepare-tool-call` / `execute-tool-call` / `finish-tool-call`) is the one
 pipeline both callers use:
 
@@ -911,14 +911,14 @@ pipeline both callers use:
 
 ## References
 
-- `modules/app/src/kmet/app/tools/run_code.cljc` — the T1 implementation: capabilities,
+- `modules/agent/src/kmet/app/tools/run_code.cljc` — the T1 implementation: capabilities,
   bridge, capture, deadline, combined cancel signal;
   `test/kmet/app/test_run_code.clj` the tests. `run_code.cljc` (not `.clj`)
   because of the `#?(:jolt … :default …)` `sci/binding` — clj-kondo allows
   reader conditionals only in `.cljc`, and the split must be read out on
   babashka (the macro expands to private `sci.impl` fns babashka's nested SCI
   cannot resolve).
-- `modules/app/src/kmet/app/tools/invoke.clj` — the T4 shared invocation pipeline
+- `modules/agent/src/kmet/app/tools/invoke.clj` — the T4 shared invocation pipeline
   (`prepare-tool-call` / `execute-tool-call` / `finish-tool-call`);
   `test/kmet/app/test_tools.clj` covers its hook/binding semantics, and
   `test/kmet/app/test_loop.clj` the loop side (block, arg rewrite in both
@@ -927,22 +927,22 @@ pipeline both callers use:
 - `modules/libs/src/kmet/libs/concurrent.clj` — `or-signal` (the read-only OR-view of
   cancel signals used by the run_code bridge and the loop's provider guard)
   next to the extension `spawn` helper.
-- `modules/app/src/kmet/app/tools/core.clj`, `modules/app/src/kmet/app/tools/registry.clj` —
+- `modules/agent/src/kmet/app/tools/core.clj`, `modules/agent/src/kmet/app/tools/registry.clj` —
   `execute-tool` (the bridge seam), `select-tools` (the shared surface
   filter), `built-in-tools`, `get-all-tools`, `get-tool`.
-- `modules/app/src/kmet/app/loop.clj` — run-level bindings (incl.
+- `modules/agent/src/kmet/app/loop.clj` — run-level bindings (incl.
   `run-code/*enabled-tools-fn*`, `run-code/*tool-hooks*` and the per-batch
   `run-code/*assistant-message*`) + `active-tools` / `set-active-tools!`;
   `execute-tool-calls-*` (what the bridge must not route through); the
   `--debug` per-tool report at agent end.
-- `modules/app/src/kmet/app/extensions.cljc` — `shared-context` / `shared-var-map` /
+- `modules/agent/src/kmet/app/extensions.cljc` — `shared-context` / `shared-var-map` /
   `build-context-namespaces` (SCI injection pattern), `build-extension-context`.
-- `modules/app/src/kmet/extension.clj` — tool registration (`register-tool!`,
+- `modules/agent/src/kmet/extension.clj` — tool registration (`register-tool!`,
   `create-bash-tool`, `on-tool-call` / `on-tool-result`).
-- `modules/app/src/kmet/app/session.clj` — `:result-tokens`, `tool-usage`,
+- `modules/agent/src/kmet/app/session.clj` — `:result-tokens`, `tool-usage`,
   `tool-usage-report`.
-- `modules/app/src/kmet/modes/interactive.clj` — the `/session` **Tool Results** section.
-- `modules/app/src/kmet/app/event_bus.clj` — event vocabulary shared with the TUI (the
+- `modules/agent/src/kmet/modes/interactive.clj` — the `/session` **Tool Results** section.
+- `modules/agent/src/kmet/app/event_bus.clj` — event vocabulary shared with the TUI (the
   serialization seam a future RPC mode would use).
 - `kmet.loader.sci-loader` — `:base` fork (per-call contexts for T3's daemon),
   `:eval-fn` (the default `sci/eval-string*`), `:interrupt-fn` support.

@@ -90,7 +90,7 @@ scripts/        — repo tooling (git hooks, repros)
 ```
 
 Implementation and development references are kept close to their packages;
-start with [`modules/app/src/kmet/README.md`](modules/app/src/kmet/README.md) for contributor
+start with [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md) for contributor
 information.
 
 ## License

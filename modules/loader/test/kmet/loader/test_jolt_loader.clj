@@ -12,7 +12,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :as t :refer [deftest]]
-            [kmet.extension]
+            [kmet.agent.extension]
             [kmet.loader.core :as loader]))
 
 (defn- adapter
@@ -96,14 +96,14 @@
 
 (deftest adapter-host-view-is-the-extension-contract
   (if-let [{:keys [root host-view]} (adapter)]
-    (let [host (host-view (root) #{'kmet.extension 'kmet.libs})]
-      (t/is (identical? (ns-resolve 'kmet.extension 'register-tool!)
-                        (loader/load host {:kind :var :name "kmet.extension/register-tool!"}))
+    (let [host (host-view (root) #{'kmet.agent.extension 'kmet.libs})]
+      (t/is (identical? (ns-resolve 'kmet.agent.extension 'register-tool!)
+                        (loader/load host {:kind :var :name "kmet.agent.extension/register-tool!"}))
             "a shared host namespace comes back by reference")
-      (t/is (= [] (loader/find host {:kind :ns :name "kmet.app.commands"}))
+      (t/is (= [] (loader/find host {:kind :ns :name "kmet.agent.commands"}))
             "a name outside the contract is invisible")
       (t/is (= :loader/miss
-               (:type (ex-data (threw #(loader/load host {:kind :ns :name "kmet.app.commands"})))))
+               (:type (ex-data (threw #(loader/load host {:kind :ns :name "kmet.agent.commands"})))))
             "invisible means a miss, not a denial — a context's own roots get their turn")
       (t/is (str/includes? (str (ex-message (threw #(loader/find host {:kind :ns :name "kmet.loader.core"}))))
                            "host machinery")

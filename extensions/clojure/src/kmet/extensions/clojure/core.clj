@@ -8,7 +8,7 @@
 
 (ns kmet.extensions.clojure.core
   (:require [clojure.java.io :as io]
-            [kmet.extension :as ext]
+            [kmet.agent.extension :as ext]
             [kmet.extensions.clojure.edit-tool :as edit-tool]
             [kmet.extensions.clojure.eval-tool :as eval-tool]
             [kmet.extensions.clojure.nrepl :as nrepl]
