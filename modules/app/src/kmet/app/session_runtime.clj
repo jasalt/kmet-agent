@@ -256,7 +256,10 @@
                              :custom-tools (atom @tools-reg/pending-custom-tools)
                              :tool-sources (atom @tools-reg/pending-tool-sources)
                              :tool-call-hooks (atom (vec @extensions/pending-tool-call-hooks))
-                             :tool-result-hooks (atom (vec @extensions/pending-tool-result-hooks))})]
+                             :tool-result-hooks (atom (vec @extensions/pending-tool-result-hooks))
+                             :markdown-transformers (atom (vec @extensions/pending-markdown-transformers))
+                             :entry-renderers (atom (into {} @extensions/pending-entry-renderers))
+                             :message-renderers (atom (into {} @extensions/pending-message-renderers))})]
     ;; Runtime-scoped extension handle: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent. The
     ;; front-end binding is runtime-scoped too (engine.md §4.5): bootstrap
@@ -268,6 +271,9 @@
     (reset! tools-reg/pending-tool-sources {})
     (reset! extensions/pending-tool-call-hooks [])
     (reset! extensions/pending-tool-result-hooks [])
+    (reset! extensions/pending-markdown-transformers [])
+    (reset! extensions/pending-entry-renderers {})
+    (reset! extensions/pending-message-renderers {})
     (set-default-engine! engine)
     (extensions/set-session! (:session agent-state))
     (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (agent-state engine) msg)))

@@ -174,8 +174,18 @@
                   ((resolve 'kmet.app.session-runtime/default-engine)))
               :before-agent-start-hooks)
       pending-before-agent-start-hooks))
-(defonce ^:private entry-renderers (atom {}))
-(defonce ^:private message-renderers (atom {}))
+(defonce pending-entry-renderers (atom {}))
+(defn- current-entry-renderer-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :entry-renderers)
+      pending-entry-renderers))
+(defonce pending-message-renderers (atom {}))
+(defn- current-message-renderer-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :message-renderers)
+      pending-message-renderers))
 (defonce pending-tool-call-hooks (atom []))
 (defn- current-tool-call-hook-registry []
   (or (some-> (do (require 'kmet.app.session-runtime)
@@ -188,7 +198,12 @@
                   ((resolve 'kmet.app.session-runtime/default-engine)))
               :tool-result-hooks)
       pending-tool-result-hooks))
-(defonce ^:private markdown-transformers (atom []))
+(defonce pending-markdown-transformers (atom []))
+(defn- current-markdown-transformer-registry []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :markdown-transformers)
+      pending-markdown-transformers))
 (defonce ^:private flags (atom {}))
 (defonce ^:private cli-flags (atom {}))
 (def ^:private headless-binding
@@ -299,19 +314,21 @@
    register-entry-renderer!). RENDERER — (fn [entry]) returning a chat
    message map (or bare component) or nil. Returns a deregister fn."
   [custom-type renderer]
-  (swap! entry-renderers assoc custom-type renderer)
-  (fn [] (swap! entry-renderers dissoc custom-type)))
+  (swap! (current-entry-renderer-registry) assoc custom-type renderer)
+  (fn [] (swap! (current-entry-renderer-registry) dissoc custom-type)))
 
-(defn get-entry-renderer [custom-type] (get @entry-renderers custom-type))
+(defn get-entry-renderer [custom-type]
+  (get @(current-entry-renderer-registry) custom-type))
 
 (defn register-message-renderer!
   "Register a renderer for a custom MESSAGE type (extension api:
    register-message-renderer!). Returns a deregister fn."
   [custom-type renderer]
-  (swap! message-renderers assoc custom-type renderer)
-  (fn [] (swap! message-renderers dissoc custom-type)))
+  (swap! (current-message-renderer-registry) assoc custom-type renderer)
+  (fn [] (swap! (current-message-renderer-registry) dissoc custom-type)))
 
-(defn get-message-renderer [custom-type] (get @message-renderers custom-type))
+(defn get-message-renderer [custom-type]
+  (get @(current-message-renderer-registry) custom-type))
 
 (defn register-tool-call-hook!
   "Register a tool-call hook (extension api: on-tool-call): (fn [ctx]) →
@@ -366,12 +383,12 @@
    transformer that throws is skipped (pi: keep the current markdown and
    continue). Returns a deregister fn."
   [transformer]
-  (register-hook! markdown-transformers transformer))
+  (register-hook! (current-markdown-transformer-registry) transformer))
 
 (defn get-markdown-transformers
   "Registered markdown transformers in registration order."
   []
-  @markdown-transformers)
+  @(current-markdown-transformer-registry))
 
 (defn apply-markdown-transformers
   "Apply the registered markdown transformers to MARKDOWN in registration
@@ -385,7 +402,7 @@
                 (if (string? r) r acc))
               (catch Exception _ acc)))
           markdown
-          @markdown-transformers))
+          @(current-markdown-transformer-registry)))
 
 ;; ─── CLI flags (extension api: register-flag! / get-flag) ─────────────────
 
@@ -995,10 +1012,10 @@
                                          dereg))
      :register-entry-renderer! (fn [custom-type renderer]
                                  (register-entry-renderer! custom-type renderer)
-                                 (track (fn [] (swap! entry-renderers dissoc custom-type))))
+                                 (track (fn [] (swap! (current-entry-renderer-registry) dissoc custom-type))))
      :register-message-renderer! (fn [custom-type renderer]
                                    (register-message-renderer! custom-type renderer)
-                                   (track (fn [] (swap! message-renderers dissoc custom-type))))
+                                   (track (fn [] (swap! (current-message-renderer-registry) dissoc custom-type))))
      ;; tag aliases (kmet.libs.hikap.alias): the registry is process-global, so the
      ;; registration MUST be tracked — unload removes exactly this fn's
      ;; registration (a later re-registration by another owner survives)
