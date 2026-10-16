@@ -10,7 +10,7 @@
             [babashka.fs :as fs]))
 
 (defn- loader-files []
-  (->> (fs/list-dir "app/src/kmet/loader")
+  (->> (fs/list-dir "modules/loader/src/kmet/loader")
        (filter #(re-find #"\.(?:clj[ca]?|jolt)$" (str %)))
        (map str)))
 

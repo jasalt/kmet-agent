@@ -20,7 +20,7 @@
                              [(str root "/" p)
                               (str root "/" (str/replace p ".clj" ".cljc"))
                               (str root "/" (str/replace p ".clj" ".cljs"))])
-                           ["app/src" "libs/src" "tui/src" "ai/src" "src"])))))
+                           ["modules/app/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "src"])))))
 
 (defn- required-namespaces
   "The kmet.* namespaces PATH's ns form requires. Reads the ns form itself —

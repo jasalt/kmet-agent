@@ -247,7 +247,7 @@
   (testing "loader construction validates roots eagerly"
     (is (= :loader/bad-root
            (:type (ex-data-of #(ldr/url-search ["/no/such/kmet-loader-root"])))))
-    (is (some? (first-hit (ldr/url-search ["app/src"]) :ns "kmet.loader.core"))))
+    (is (some? (first-hit (ldr/url-search ["modules/loader/src"]) :ns "kmet.loader.core"))))
   (testing "a source that disappears after find fails at load, not silently"
     (let [src (atom {:namespaces {"vanish.lib" {:source "(ns vanish.lib)"}}})
           l (mem/memory src)
@@ -257,7 +257,7 @@
       (swap! src update :namespaces dissoc "vanish.lib")
       (is (= :loader/unreadable (:type (ex-data-of #(ldr/load l hit)))))))
   (testing "a located ns with no code backend is unreadable, not silently loaded"
-    (let [l (ldr/url-search ["app/src"])]
+    (let [l (ldr/url-search ["modules/loader/src"])]
       (is (= :loader/unreadable
              (:type (ex-data-of #(ldr/load l (req :ns "kmet.loader.core")))))))))
 

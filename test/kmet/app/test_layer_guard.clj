@@ -11,7 +11,7 @@
             (mapcat (fn [f]
                       (if (fs/directory? f) (walk f) [f]))
                     (fs/list-dir dir)))]
-    (->> (walk "app/src/kmet/app")
+    (->> (walk "modules/app/src/kmet/app")
          (remove #(str/includes? (str %) "/ui/"))
          (filter #(re-find #"\.clj[ca]?$" (str %)))
          (map str))))
@@ -48,7 +48,7 @@
 (deftest app-layer-does-not-require-front-ends
   (testing "no new kmet.app namespace reaches the TUI/Tk/interactive layers"
     (doseq [f (app-source-files)]
-      (let [ns-name (-> f (str/replace #"^app/src/" "")
+      (let [ns-name (-> f (str/replace #"^modules/app/src/" "")
                         (str/replace #"\.clj[ca]?$" "")
                         (str/replace #"/" ".")
                         (str/replace #"_" "-"))

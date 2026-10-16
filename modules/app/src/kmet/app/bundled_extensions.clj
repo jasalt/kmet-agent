@@ -67,7 +67,7 @@
    sources on disk)."
   []
   (or (io/resource manifest-resource)
-      (let [f (fs/path (fs/cwd) "src" "kmet" "bundled-extensions" "manifest.edn")]
+      (let [f (fs/path (fs/cwd) "modules" "app" "src" "kmet" "bundled-extensions" "manifest.edn")]
         (when (fs/exists? f) (str f)))))
 
 (defn manifest
@@ -98,10 +98,11 @@
    src → repo) and an `extensions/` directory to prove it."
   [f]
   (try
-    (let [repo (fs/parent (fs/parent (fs/parent (fs/parent (fs/parent (io/file f))))))]
-      (when (and repo
-                 (fs/exists? (fs/path repo "extensions")))
-        (str repo)))
+    (loop [dir (fs/parent (io/file f))]
+      (cond
+        (nil? dir) nil
+        (fs/exists? (fs/path dir "extensions")) (str dir)
+        :else (recur (fs/parent dir))))
     (catch Exception _ nil)))
 
 (defn- cwd-root
@@ -109,7 +110,7 @@
   []
   (let [cwd (fs/cwd)]
     (when (and (fs/exists? (fs/path cwd "extensions"))
-               (fs/exists? (fs/path cwd "app" "src" "kmet" "bundled-extensions"
+               (fs/exists? (fs/path cwd "modules" "app" "src" "kmet" "bundled-extensions"
                                     "manifest.edn")))
       (str cwd))))
 

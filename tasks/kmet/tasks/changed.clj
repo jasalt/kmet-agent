@@ -34,12 +34,12 @@
    cover, in listing order. test/ is a root too but holds only tests — its
    files reach the graph through the same scan (see project-files for how
    the roots are enumerated)."
-  ["libs/src" "tui/src" "ai/src" "app/src" "test" "tasks" "extensions"])
+  ["modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/app/src" "modules/loader/src" "modules/tk/src" "test" "tasks" "extensions"])
 
 (def ^:private changed-path-re
   "Changed-file paths that are lint/format/scan material: a .clj[c] file under
    one of `source-roots`."
-  #"(?:(?:libs|tui|ai|app)/src|test|tasks|extensions)/.*\.(?:clj[c]?|jolt)")
+  #"(?:modules/(?:libs|tui|ai|app|loader|tk)/src|test|tasks|extensions)/.*\.(?:clj[c]?|jolt)")
 
 (defn- git-repo?
   []
@@ -184,7 +184,7 @@
        (str/replace #"\.(?:clj[c]?|jolt)$" "")
        (str/replace "_" "-")
        (str/replace "/" ".")
-       (str/replace #"^(?:libs|tui|ai|app)\.src\.|^test\.|^tasks\." ""))))
+       (str/replace #"^(?:modules\.(?:libs|tui|ai|app|loader|tk)\.src\.)|^test\.|^tasks\." ""))))
 
 (defn- read-ns-form
   "First form of PATH (the ns form), or nil when unreadable."

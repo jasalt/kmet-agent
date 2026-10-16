@@ -3,7 +3,7 @@
 This file documents the application package and its contributor workflow.
 Implementation-specific references live beside their namespaces, not in the
 user-facing `docs/` directory: see [`tui/tui.md`](tui/tui.md),
-[`loader/loader.md`](loader/loader.md), [`extension.md`](extension.md),
+[`../../loader/src/kmet/loader/loader.md`](../../loader/src/kmet/loader/loader.md), [`extension.md`](extension.md),
 [`development/pi-alignment.md`](development/pi-alignment.md). Temporary
 analysis notes (`run_code.md`, `perf.md`, and `jolt-bugs.md`) remain at the
 repository root by convention.
@@ -11,7 +11,7 @@ repository root by convention.
 ## Project structure
 
 ```
-src/kmet/
+modules/app/src/kmet/
 ├── core.clj            — CLI entry, arg parsing, mode dispatch
 ├── config.clj          — Configuration loading (settings.edn, env vars)
 ├── debug.clj           — Debug/error logging
@@ -102,13 +102,6 @@ src/kmet/
 │   │                     extensions/grep-tool.clj, find-tool.clj,
 │   │                     ls-tool.clj, powershell.clj)
 │   └── ui/             — app TUI components (chat history, footer, ...)
-├── tk/                 — the Tk GUI backend on babashka and Jolt: the
-│                         hiccup-tk core (core.clj, with the classic
-│                         :tk/… widget set; ttk.clj for the :ttk/… set;
-│                         dsl.clj the machinery both are written
-│                         against, options.clj the Tk option vocabulary
-│                         they compose their props from) and its host FFI
-│                         Tcl adapter (tcl.cljc) — see tk/README.md
 ├── tui/                — Generic TUI library (pi: @earendil-works/pi-tui;
 │   │                     usage docs in src/kmet/tui/tui.md)
 │   └── components/     — text, input, editor, markdown, select/settings
@@ -132,7 +125,7 @@ listed in the root `AGENTS.md` topic map.
 
 ### Layer boundaries
 
-- `kmet.loader.*` is an extraction candidate: it may use third-party deps and
+- `kmet.loader.*` is now an outer module (`modules/loader`); it may use third-party deps and
   `kmet.loader.*`, but no other `kmet.*` namespace.
 - `kmet.libs.*` is generic and self-contained; it may not require non-libs
   `kmet.*` namespaces (app, TUI, mode, AI). Sibling-lib composition is fine

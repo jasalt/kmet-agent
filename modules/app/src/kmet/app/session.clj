@@ -280,7 +280,7 @@
         header? (and (seq parsed) (= :session (:type (first parsed))))
         header (when header? (first parsed))
         _ (when (and (debug/enabled?) header?
-                    (not (session-schema/validate-header? header)))
+                     (not (session-schema/validate-header? header)))
             (binding [*out* *err*]
               (println "Warning: Wrong-shape session header in" path ":"
                        (pr-str (session-schema/explain-header header)))))

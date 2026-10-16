@@ -79,7 +79,8 @@ to the code and people who own it. The longer etymology is in
 ## Project layout
 
 ```text
-src/kmet/       — the application and its libraries
+modules/        — application modules and libraries (app, ai, libs, tui,
+                  loader, tk); each is a standalone classpath root
 extensions/     — opt-in shipped extensions
 jolt/           — Jolt provider scaffolding
 docs/           — user-facing documentation
@@ -89,7 +90,7 @@ scripts/        — repo tooling (git hooks, repros)
 ```
 
 Implementation and development references are kept close to their packages;
-start with [`src/kmet/README.md`](src/kmet/README.md) for contributor
+start with [`modules/app/src/kmet/README.md`](modules/app/src/kmet/README.md) for contributor
 information.
 
 ## License

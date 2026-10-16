@@ -1015,7 +1015,7 @@ split — drop it if the parity work outweighs the deletion.
 
 The only remaining step gated on an external project. It runs after steps
 7–9, once the Tk backend stabilizes. The backend already exists —
-`src/kmet/tk/` ships the Tk/Tcl backend (`kmet.tk.core`, `kmet.tk.ttk`,
+`modules/tk/src/kmet/tk/` ships the Tk/Tcl backend (`kmet.tk.core`, `kmet.tk.ttk`,
 `kmet.tk.dsl`, `kmet.tk.options`, `kmet.tk.tcl`) with its own `README.md`,
 and the display-only viewer (`scripts/gui_tk_session.clj` +
 `app/ui/gui/transcript.clj`) already renders a saved session. What is

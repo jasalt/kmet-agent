@@ -29,7 +29,7 @@
  ;; extensions/<name>/src layout, so io/resource reads a bundled extension at
  ;; the same path in a binary as in a checkout. A
  ;; missing root embeds nothing — the runtime then offers no bundled set.
- :jolt/build {:embed ["libs/src" "tui/src" "ai/src" "app/src" "target/kmet-version" "target/kmet-bundled"]}
+ :jolt/build {:embed ["modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/app/src" "modules/loader/src" "modules/tk/src" "target/kmet-version" "target/kmet-bundled"]}
 
  ;; OpenSSL stays dynamically loaded for run/repl and for the default dist mode
  ;; on Linux (including WSL), macOS, and other non-Windows platforms. Windows
@@ -59,7 +59,7 @@
                 :windows ["libssl-3-x64.dll" "libssl-3.dll"
                           "libssl-1_1-x64.dll" "libssl.dll"]}]
 
- :deps {        kmetia/app {:local/root "app"}
+ :deps {        kmetia/app {:local/root "modules/app"}
 
         ;; babashka.fs / babashka.process are deliberately NOT deps: babashka
         ;; bundles them, and jolt vendors the same namespaces (built-in,

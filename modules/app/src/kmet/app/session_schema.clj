@@ -19,63 +19,63 @@
 
 (def AssistantEntry
   (common-entry :assistant
-    [:content {:optional true} [:or :string :nil [:vector :any]]]
-    [:tool-calls {:optional true} [:or :nil [:vector :any]]]
-    [:tool-results {:optional true} [:or :nil [:vector :any]]]
-    [:stop-reason {:optional true} [:or :keyword :string :nil]]
-    [:error-message {:optional true} [:or :string :nil]]))
+                [:content {:optional true} [:or :string :nil [:vector :any]]]
+                [:tool-calls {:optional true} [:or :nil [:vector :any]]]
+                [:tool-results {:optional true} [:or :nil [:vector :any]]]
+                [:stop-reason {:optional true} [:or :keyword :string :nil]]
+                [:error-message {:optional true} [:or :string :nil]]))
 
 (def UserEntry
   (common-entry :user
-    [:content {:optional true} [:or :string :nil [:vector :any]]]))
+                [:content {:optional true} [:or :string :nil [:vector :any]]]))
 
 (def ToolEntry
   (common-entry :tool
-    [:content {:optional true} [:or :string :nil [:vector :any]]]
-    [:tool-name {:optional true} [:or :string :nil]]
-    [:tool-call-id {:optional true} [:or :string :nil]]
-    [:is-error {:optional true} :boolean]
-    [:result-tokens {:optional true} [:or :nil :int]]))
+                [:content {:optional true} [:or :string :nil [:vector :any]]]
+                [:tool-name {:optional true} [:or :string :nil]]
+                [:tool-call-id {:optional true} [:or :string :nil]]
+                [:is-error {:optional true} :boolean]
+                [:result-tokens {:optional true} [:or :nil :int]]))
 
 (def BashEntry
   (common-entry :bash
-    [:command {:optional true} [:or :string :nil]]
-    [:output {:optional true} [:or :string :nil]]
-    [:exit-code {:optional true} [:or :nil :int]]
-    [:full-output-path {:optional true} [:or :string :nil]]
-    [:exclude-from-context? {:optional true} :boolean]))
+                [:command {:optional true} [:or :string :nil]]
+                [:output {:optional true} [:or :string :nil]]
+                [:exit-code {:optional true} [:or :nil :int]]
+                [:full-output-path {:optional true} [:or :string :nil]]
+                [:exclude-from-context? {:optional true} :boolean]))
 
 (def ThinkingLevelChangeEntry
   (common-entry :thinking-level-change
-    [:thinking-level {:optional true} [:or :keyword :string :nil]]))
+                [:thinking-level {:optional true} [:or :keyword :string :nil]]))
 
 (def ModelChangeEntry
   (common-entry :model-change
-    [:provider {:optional true} [:or :keyword :string :nil]]
-    [:model {:optional true} [:or :string :nil]]))
+                [:provider {:optional true} [:or :keyword :string :nil]]
+                [:model {:optional true} [:or :string :nil]]))
 
 (def SessionInfoEntry
   (common-entry :session_info
-    [:name {:optional true} [:or :string :nil]]))
+                [:name {:optional true} [:or :string :nil]]))
 
 (def CompactionEntry
   (common-entry :compaction
-    [:summary {:optional true} [:or :string :nil]]))
+                [:summary {:optional true} [:or :string :nil]]))
 
 (def ContextEditEntry
   (common-entry :context-edit
-    [:target-id {:optional true} [:or :string :nil]]
-    [:replacement {:optional true} [:or :nil :map]]))
+                [:target-id {:optional true} [:or :string :nil]]
+                [:replacement {:optional true} [:or :nil :map]]))
 
 (def CustomEntry
   (common-entry :custom
-    [:custom-type {:optional true} [:or :string :keyword :nil]]
-    [:data {:optional true} :any]))
+                [:custom-type {:optional true} [:or :string :keyword :nil]]
+                [:data {:optional true} :any]))
 
 (def LabelEntry
   (common-entry :label
-    [:target-id {:optional true} [:or :string :nil]]
-    [:label {:optional true} [:or :string :nil]]))
+                [:target-id {:optional true} [:or :string :nil]]
+                [:label {:optional true} [:or :string :nil]]))
 
 (def Entry
   [:multi {:dispatch :role}
