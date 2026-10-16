@@ -169,3 +169,35 @@
       (is (false? (rt/wait-idle! engine 30)) "a stuck compaction times out")
       (reset! (:compacting? (rt/agent-state engine)) false)
       (is (true? (rt/wait-idle! engine 100)) "idle again after both clear"))))
+
+(deftest test-two-engines-do-not-cross-contaminate
+  (let [dir1 (str "target/test-multi-engine-a-" (System/currentTimeMillis))
+        dir2 (str "target/test-multi-engine-b-" (System/currentTimeMillis))
+        sess1 (session/create-session
+               (rt/ensure-cwd-session-dir dir1 (str (fs/cwd)))
+               {:cwd (str (fs/cwd))})
+        e1 (rt/bootstrap (test-config) {:session sess1})
+        sess2 (session/create-session
+               (rt/ensure-cwd-session-dir dir2 (str (fs/cwd)))
+               {:cwd (str (fs/cwd))})
+        e2 (rt/bootstrap (test-config) {:session sess2})]
+    (try
+      (doseq [k [:input-hooks :before-agent-start-hooks :tool-call-hooks
+                 :tool-result-hooks :markdown-transformers :entry-renderers
+                 :message-renderers :commands :custom-tools :tool-sources
+                 :event-listeners :flags :cli-flags
+                 :applied-resource-paths :skills :prompt-templates]]
+        (is (not (identical? (k e1) (k e2)))
+            (str "engine-owned " k " is not shared")))
+      (let [e1-events (atom [])
+            e2-events (atom [])]
+        (rt/subscribe! e1 #(swap! e1-events conj %))
+        (rt/subscribe! e2 #(swap! e2-events conj %))
+        (rt/cancel! e1)
+        (is (seq @e1-events) "the first engine's subscribers receive its events")
+        (is (empty? @e2-events) "the second engine's subscribers receive nothing"))
+      (finally
+        (rt/dispose! e2)
+        (rt/dispose! e1)
+        (fs/delete-tree dir1)
+        (fs/delete-tree dir2)))))
