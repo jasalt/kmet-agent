@@ -10,15 +10,6 @@
 
 (def ^:private tool-timeout-ms 5000)
 
-(def ^:private win-powershell-set-clipboard
-  ;; clip.exe decodes its stdin bytes with the console's OEM code page, so
-  ;; UTF-8 text lands on the clipboard as mojibake (—  ->  ΓÇö on CP437).
-  ;; PowerShell reads the raw bytes and decodes them as UTF-8 instead.
-  ["powershell" "-NoProfile" "-NonInteractive" "-Command"
-   (str "$ms = New-Object IO.MemoryStream; "
-        "[Console]::OpenStandardInput().CopyTo($ms); "
-        "[Text.Encoding]::UTF8.GetString($ms.ToArray()) | Set-Clipboard")])
-
 (defn- run-tool!
   "Run CMD with TEXT piped to stdin. Returns true when the tool exited 0
    before the timeout; false on non-zero exit, spawn failure, or timeout.
@@ -52,11 +43,11 @@
 (defn copy-text!
   "Copy TEXT to the system clipboard. Windows goes through the Win32 API
    over the host FFI first (kmet.libs.clipboard-win, no subprocess); the
-   platform tools are used everywhere else and as its fallback: Termux
-   (termux-clipboard-set), Wayland (wl-copy), X11 (xclip, then xsel),
-   macOS (pbcopy), Windows (PowerShell — clip.exe decodes stdin with the
-   console code page and mangles non-ASCII text). Returns true when
-   something copied TEXT, false when nothing was available."
+   platform tools are used everywhere else: Termux (termux-clipboard-set),
+   Wayland (wl-copy), X11 (xclip, then xsel), macOS (pbcopy). On Windows
+   there is no subprocess fallback (clip.exe/PowerShell paths mangle
+   non-ASCII text), so a failed native copy returns false. Returns true
+   when something copied TEXT, false when nothing was available."
   [text]
   (let [os (str/lower-case (System/getProperty "os.name" ""))
         termux? (seq (System/getenv "TERMUX_VERSION"))
@@ -66,8 +57,6 @@
                      (into [["wl-copy"] ["xclip" "-selection" "clipboard"]
                             ["xsel" "--clipboard" "--input"]])
                      (and (not termux?) (str/includes? os "mac"))
-                     (conj ["pbcopy"])
-                     (and (not termux?) (str/includes? os "win"))
-                     (conj win-powershell-set-clipboard))]
+                     (conj ["pbcopy"]))]
     (or (native-copy! text)
         (boolean (some #(run-tool! % text) candidates)))))
