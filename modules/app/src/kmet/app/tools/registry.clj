@@ -73,25 +73,34 @@
 
 ;; ─── Extended tool registry ────────────────────────────────────────────────
 
-(defonce ^:private custom-tools (atom {}))
+(defonce pending-custom-tools (atom {}))
+
+(defn- current-custom-tool-registry
+  "The atom storing custom-tool definitions: the active engine's or the
+   pre-bootstrap pending buffer."
+  []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :custom-tools)
+      pending-custom-tools))
 
 (defn register-tool!
   "Register a custom tool after normalizing its provider-facing schema."
   [tool]
   (let [tool (tool/normalize-tool-definition tool)]
-    (swap! custom-tools assoc (:name tool) tool)))
+    (swap! (current-custom-tool-registry) assoc (:name tool) tool)))
 
 (defn unregister-tool!
   "Remove a custom tool."
   [name]
-  (swap! custom-tools dissoc name))
+  (swap! (current-custom-tool-registry) dissoc name))
 
 (defn get-all-tools
   "Get all available tools (built-in + custom). A custom tool that reuses a
    built-in's name shadows it (pi: the extension registry is layered over the
    base definitions, custom wins)."
   []
-  (merge built-in-tools @custom-tools))
+  (merge built-in-tools @(current-custom-tool-registry)))
 
 (defn get-tool
   "Get a tool by name — resolved through get-all-tools, so the map a caller
@@ -104,7 +113,16 @@
 ;; surface without joining get-all-tools (the model's tool set). The
 ;; mcp-adapter contributes its cached MCP catalog this way (run_code.md T2).
 
-(defonce ^:private tool-sources (atom {}))
+(defonce pending-tool-sources (atom {}))
+
+(defn- current-tool-source-registry
+  "The atom storing extension-contributed tool source functions: the active
+   engine's or the pre-bootstrap pending buffer."
+  []
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :tool-sources)
+      pending-tool-sources))
 
 (defn register-tool-source!
   "Register (or replace) an extension-contributed tool source. ID identifies
@@ -115,13 +133,13 @@
    shadows a colliding name. Re-registering under the same ID replaces the
    source; the next run_code call resolves the new catalog."
   [id tools-fn]
-  (swap! tool-sources assoc id tools-fn)
+  (swap! (current-tool-source-registry) assoc id tools-fn)
   nil)
 
 (defn unregister-tool-source!
   "Remove a contributed tool source by ID."
   [id]
-  (swap! tool-sources dissoc id)
+  (swap! (current-tool-source-registry) dissoc id)
   nil)
 
 (defn get-contributed-tools
@@ -132,7 +150,7 @@
   (reduce (fn [acc tools-fn]
             (let [tools (try (tools-fn) (catch Exception _ nil))]
               (if (map? tools) (merge acc tools) acc)))
-          {} (vals @tool-sources)))
+          {} (vals @(current-tool-source-registry))))
 
 ;; ─── Callable surfaces ─────────────────────────────────────────────────────
 
