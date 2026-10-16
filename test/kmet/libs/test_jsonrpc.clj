@@ -6,6 +6,7 @@
    pin the default kill path of close!."
   (:require [babashka.process :as proc]
             [clojure.test :refer [deftest is testing]]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.libs.json :as json]
             [kmet.libs.jsonrpc :as jsonrpc]
             [kmet.libs.process :as process]))
@@ -276,11 +277,11 @@
       (let [f (future
                 (try (jsonrpc/request! conn "slow" {} {:timeout-ms 8000})
                      (catch Exception e e)))
-            t0 (System/currentTimeMillis)]
+            t0 (concurrent/monotonic-ms)]
         (Thread/sleep 50)
         (.close (:out s2c))                ;; peer dies mid-request
         (let [res (deref f 4000 ::still-blocked)
-              elapsed (- (System/currentTimeMillis) t0)]
+              elapsed (- (concurrent/monotonic-ms) t0)]
           (is (instance? Exception res))
           (is (= :kmet.libs.jsonrpc/transport-dead (:type (ex-data res))))
           (is (= "slow" (:method (ex-data res))))

@@ -7,6 +7,7 @@
    request through curl."
   (:require [clojure.string :as str]
             [clojure.test :as t]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.libs.http :as http]))
 
 ;; ─── Local test server (java.net.ServerSocket, no external deps) ──────────
@@ -291,10 +292,10 @@
                         (Thread/sleep 10000)
                         (respond s "200 OK" "late" {})))]
     (try
-      (let [t0 (System/currentTimeMillis)
+      (let [t0 (concurrent/monotonic-ms)
             e (try (http/get (str base "/") {:as :stream :headers-timeout 150})
                    (catch Exception e e))
-            elapsed (- (System/currentTimeMillis) t0)]
+            elapsed (- (concurrent/monotonic-ms) t0)]
         (t/is (instance? Exception e) "the request must not hang")
         (t/is (= :transport-error (:type (ex-data e))))
         (t/is (str/includes? (ex-message e) "timed out")
@@ -316,12 +317,12 @@
                           (.write out (.getBytes "stream"))
                           (.flush out))))]
     (try
-      (let [t0 (System/currentTimeMillis)
+      (let [t0 (concurrent/monotonic-ms)
             r (http/get (str base "/") {:as :stream :headers-timeout 200})
             body (slurp (:body r))]
         (http/close! r)
         (t/is (= "stream" body))
-        (t/is (>= (- (System/currentTimeMillis) t0) 400)
+        (t/is (>= (- (concurrent/monotonic-ms) t0) 400)
               "the body was read past the headers deadline"))
       (finally (close)))))
 

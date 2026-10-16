@@ -55,7 +55,8 @@
             [kmet.config :as cfg]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.app.event-bus :as event-bus]
-            [kmet.test-utils :as tu :refer [slash strip-ansi]]))
+            [kmet.test-utils :as tu :refer [slash strip-ansi]]
+            [kmet.libs.concurrent :as concurrent]))
 
 (defn- capture-mount!
   "A dock/mount! stand-in for tests: records the component that receives
@@ -625,10 +626,10 @@
       (let [first-driver (:driver @(:status-current cs))]
         (t/is (some? first-driver) "the driver is recorded on the status entry")
         (reset! (:render-requested? tui) false)
-        (t/is (loop [deadline (+ (System/currentTimeMillis) 2000)]
+        (t/is (loop [deadline (+ (concurrent/monotonic-ms) 2000)]
                 (cond
                   @(:render-requested? tui) true
-                  (< (System/currentTimeMillis) deadline) (do (Thread/sleep 5) (recur deadline))
+                  (< (concurrent/monotonic-ms) deadline) (do (Thread/sleep 5) (recur deadline))
                   :else false))
               "frames are requested while it is up")
         (testing "swapping in the next indicator retires the previous driver"

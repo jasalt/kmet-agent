@@ -14,7 +14,8 @@
             [kmet.tui.keybindings :as tui-kb]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.utils :as u]))
+            [kmet.tui.utils :as u]
+            [kmet.libs.concurrent :as concurrent]))
 
 (defn- now-ms [] (System/currentTimeMillis))
 
@@ -119,11 +120,11 @@
 (defn- wait-for
   "Poll PRED until truthy (async completions land on futures)."
   [pred]
-  (let [deadline (+ (System/currentTimeMillis) 3000)]
+  (let [deadline (+ (concurrent/monotonic-ms) 3000)]
     (loop []
       (if (pred)
         true
-        (if (< (System/currentTimeMillis) deadline)
+        (if (< (concurrent/monotonic-ms) deadline)
           (do (Thread/sleep 10) (recur))
           (throw (ex-info "wait-for timeout" {})))))))
 

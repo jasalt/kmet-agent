@@ -19,7 +19,8 @@
             [kmet.tui.core :as tui]
             [kmet.modes.interactive.commands :as builtins]
             [kmet.modes.interactive.auth :as interactive-auth]
-            [kmet.test-utils :as tu]))
+            [kmet.test-utils :as tu]
+            [kmet.libs.concurrent :as concurrent]))
 
 ;; ─── Device-code poll state machine (pi pollOAuthDeviceCodeFlow) ───────────
 
@@ -734,10 +735,10 @@
 (defn- wait-for
   "Poll (fn [] value) until truthy or TIMEOUT-MS elapses (25ms slices)."
   [f timeout-ms]
-  (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+  (let [deadline (+ (concurrent/monotonic-ms) timeout-ms)]
     (loop []
       (let [v (f)]
-        (if (or v (< deadline (System/currentTimeMillis)))
+        (if (or v (< deadline (concurrent/monotonic-ms)))
           v
           (do (Thread/sleep 25) (recur)))))))
 

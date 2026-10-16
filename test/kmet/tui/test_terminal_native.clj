@@ -63,9 +63,9 @@ if pid == 0:
     os.execvp('jolt', ['jolt', exec_cmd])
     os._exit(127)
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 25, 90, 0, 0))
-start, seen, done, status, exited = time.time(), b'', set(), 0, False
+start, seen, done, status, exited = time.monotonic(), b'', set(), 0, False
 try:
-    while time.time() - start < timeout_s:
+    while time.monotonic() - start < timeout_s:
         r, _, _ = select.select([fd], [], [], 0.05)
         if r:
             try:
@@ -90,8 +90,8 @@ try:
     if not exited:
         # EOF/EIO or the deadline: the child should be exiting now; reap it,
         # and only then force-kill.
-        grace = time.time() + 3
-        while time.time() < grace:
+        grace = time.monotonic() + 3
+        while time.monotonic() < grace:
             wp, st = os.waitpid(pid, os.WNOHANG)
             if wp:
                 status, exited = st, True
@@ -115,7 +115,8 @@ sys.exit(os.waitstatus_to_exitcode(status) if exited else 124)
    that never comes (and stop! would hang behind it). With the lock the
    winner takes the byte and the loser times out."
   "(require '[kmet.tui.terminal :as term]
-            '[kmet.tui.terminal-native-unix :as native])
+            '[kmet.tui.terminal-native-unix :as native]
+            '[kmet.libs.concurrent :as concurrent])
 (let [t (native/create-terminal)]
   (term/start! t (fn [_] nil) (fn [] nil))
   (println \"STARTED\" (term/started? t) (term/columns t) (term/rows t))
@@ -125,9 +126,9 @@ sys.exit(os.waitstatus_to_exitcode(status) if exited else 124)
         r1 (deref f1 8000 :timeout)
         r2 (deref f2 8000 :timeout)]
     (println \"CONC\" (pr-str [r1 r2])))
-  (let [deadline (+ (System/currentTimeMillis) 6000)]
+  (let [deadline (+ (concurrent/monotonic-ms) 6000)]
     (loop [got []]
-      (if (or (>= (count got) 3) (> (System/currentTimeMillis) deadline))
+      (if (or (>= (count got) 3) (> (concurrent/monotonic-ms) deadline))
         (println \"GOT\" (pr-str got))
         (let [c (term/read-input t 200)]
           (if (pos? c) (recur (conj got c)) (recur got))))))

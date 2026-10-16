@@ -10,7 +10,8 @@
             [kmet.app.tools.registry :as registry]
             [kmet.app.tools.run-code :as run-code]
             [kmet.app.tools.util :as tool-util]
-            [kmet.libs.host :as host]))
+            [kmet.libs.host :as host]
+            [kmet.libs.concurrent :as concurrent]))
 
 (defn- run
   "Execute the run_code tool the way the registry does."
@@ -106,7 +107,7 @@
                        :execute (fn [_] @release {:content "late"})}
       (fn []
         (try
-          (let [started-at (System/currentTimeMillis)
+          (let [started-at (concurrent/monotonic-ms)
                 f (future
                     (tools/execute-tool
                      "run_code"
@@ -119,7 +120,7 @@
               (t/is (some? r))
               (t/is (:is-error r))
               (t/is (= :aborted (get-in r [:details :error])))
-              (t/is (< (- (System/currentTimeMillis) started-at) 1000))))
+              (t/is (< (- (concurrent/monotonic-ms) started-at) 1000))))
           (finally
             (deliver release true)
             (Thread/sleep 50)))))))

@@ -168,9 +168,9 @@
 (defn- wait-for-frames
   "Block until N frames are written or TIMEOUT-MS elapses."
   [writes n timeout-ms]
-  (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+  (let [deadline (+ (concurrent/monotonic-ms) timeout-ms)]
     (loop []
-      (when (and (< (System/currentTimeMillis) deadline)
+      (when (and (< (concurrent/monotonic-ms) deadline)
                  (< (count (frame-writes writes)) n))
         (Thread/sleep 5)
         (recur)))
@@ -180,11 +180,11 @@
 (defn- wait-until
   "Block until PRED is truthy or TIMEOUT-MS elapses; returns whether it became truthy."
   [pred timeout-ms]
-  (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+  (let [deadline (+ (concurrent/monotonic-ms) timeout-ms)]
     (loop []
       (cond
         (pred) true
-        (< (System/currentTimeMillis) deadline) (do (Thread/sleep 10) (recur))
+        (< (concurrent/monotonic-ms) deadline) (do (Thread/sleep 10) (recur))
         :else false))))
 
 ;; ─── Tests ─────────────────────────────────────────────────────────────────
@@ -723,9 +723,9 @@
         ;; unchanged content emits nothing) — the render itself is observable
         ;; via the diff-state update.
         (swap! size assoc :rows 30)
-        (let [deadline (+ (System/currentTimeMillis) 5000)]
+        (let [deadline (+ (concurrent/monotonic-ms) 5000)]
           (loop []
-            (when (and (< (System/currentTimeMillis) deadline)
+            (when (and (< (concurrent/monotonic-ms) deadline)
                        (not= 30 @(:previous-height tui)))
               (Thread/sleep 5)
               (recur))))

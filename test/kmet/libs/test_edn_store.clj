@@ -3,7 +3,8 @@
             [clojure.edn :as edn]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.libs.edn-store :as eds]))
+            [kmet.libs.edn-store :as eds]
+            [kmet.libs.concurrent :as concurrent]))
 
 ;; ─── expand-path ───────────────────────────────────────────────────────────
 
@@ -165,12 +166,12 @@
     (try
       ;; simulate another process holding the lock: fresh dir, recent mtime
       (fs/create-dir (str f ".lock"))
-      (let [start (System/currentTimeMillis)
+      (let [start (concurrent/monotonic-ms)
             err (try (eds/save-edn-setting! f [:a] 1) nil
                      (catch Exception e e))]
         (is (some? err) "a held lock must throw, not hang")
         (is (= :file-lock-timeout (:type (ex-data err))) "timeout error type")
-        (is (< (- (System/currentTimeMillis) start) 5000)
+        (is (< (- (concurrent/monotonic-ms) start) 5000)
             "bounded retries return quickly (10 x 20ms), not forever"))
       (finally (fs/delete-tree tmp)))))
 

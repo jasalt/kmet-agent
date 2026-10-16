@@ -12,6 +12,7 @@
             [clojure.string :as str]
             [clojure.test :as t]
             [kmet.ai.model-gen :as mg]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.libs.http :as http]
             [kmet.tasks.generate-models :as gen-models]))
 
@@ -197,9 +198,9 @@
           "fast inner fetch passes through"))
   (with-redefs [mg/fetch-commandcode-prices* (fn [] (Thread/sleep 300000))
                 mg/commandcode-prices-timeout-ms 500]
-    (let [t0 (System/currentTimeMillis)
+    (let [t0 (concurrent/monotonic-ms)
           res (mg/fetch-commandcode-prices)
-          dt (- (System/currentTimeMillis) t0)]
+          dt (- (concurrent/monotonic-ms) t0)]
       (t/is (nil? res) "stalled fetch yields nil (zero rates downstream)")
       (t/is (< dt 30000) (str "wrapper must give up at the cap, took " dt "ms")))))
 

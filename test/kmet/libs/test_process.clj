@@ -8,6 +8,7 @@
             [babashka.process :as proc]
             [clojure.java.io :as io]
             [clojure.test :as t]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.libs.process :as process]))
 
 (defn- temp-dir []
@@ -61,9 +62,9 @@
           (t/is (some? pid) "the spawned shell exposes its pid")
           ;; wait for the descendant to exist, so the kill cannot race the
           ;; tree's creation and pass vacuously
-          (let [deadline (+ (System/currentTimeMillis) 5000)]
+          (let [deadline (+ (concurrent/monotonic-ms) 5000)]
             (while (and (not (fs/exists? started))
-                        (< (System/currentTimeMillis) deadline))
+                        (< (concurrent/monotonic-ms) deadline))
               (Thread/sleep 50)))
           (t/is (fs/exists? started) "the descendant reported in before the kill")
           (process/kill-process-tree! pid)

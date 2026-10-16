@@ -46,11 +46,11 @@ if pid == 0:
     os._exit(127)
 # 100x30 keeps the splash header and the /lsp panel rows on screen
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 100, 0, 0))
-start, seen, status = time.time(), b'', 0
+start, seen, status = time.monotonic(), b'', 0
 fired, fired_at, due = 0, 0.0, None
 try:
     while True:
-        now = time.time() - start
+        now = time.monotonic() - start
         if fired == len(stages):
             if now >= fired_at + grace:
                 break

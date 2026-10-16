@@ -25,7 +25,8 @@
             [kmet.app.session :as session]
             [kmet.config :as cfg]
             [kmet.ai.models :as m]
-            [kmet.app.tools.core :as tools]))
+            [kmet.app.tools.core :as tools]
+            [kmet.libs.concurrent :as concurrent]))
 
 ;; ─── Module loads ─────────────────────────────────────────────────────────
 
@@ -1639,7 +1640,7 @@
                          (catch Exception _ nil))))
                 (.setDaemon true)
                 (.start))
-            t0 (System/currentTimeMillis)
+            t0 (concurrent/monotonic-ms)
             errors (atom [])
             fut (llm/send-message {:provider :opencode-go
                                    :api-key "sk-test"
@@ -1652,7 +1653,7 @@
         (try
           @fut
           (t/is (= 1 (count @errors)))
-          (let [elapsed (- (System/currentTimeMillis) t0)]
+          (let [elapsed (- (concurrent/monotonic-ms) t0)]
             ;; Window 20s: the error message assertion below guards the mechanism
             ;; (must contain "timed out" — a broken deadline yields the EOF
             ;; error instead); this window only allows for scheduling delay on
