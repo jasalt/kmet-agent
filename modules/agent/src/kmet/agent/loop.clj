@@ -1704,6 +1704,36 @@ Be precise and concise in your responses."}}]
      :details (:details summary-result)
      :entry entry}))
 
+(defn- finish-compaction!
+  "Emit compact-context! completion events and return its terminal value."
+  [agent reason result from-extension? aborted? failed? succeeded? error-message]
+  (reset! (:compaction-error agent) error-message)
+  (when succeeded?
+    (emit agent {:type :session-compact
+                 :compaction-entry (:entry result)
+                 :from-extension from-extension?
+                 :reason reason
+                 :will-retry (= reason :overflow)}))
+  (emit agent {:type :compaction-end
+               :reason reason
+               :from-extension from-extension?
+               :aborted aborted?
+               :result (when succeeded? (dissoc result :entry))
+               :error-message error-message
+               :will-retry (and succeeded? (= reason :overflow))})
+  (when (or failed? aborted?)
+    (emit agent {:type :session-compact-failed
+                 :reason reason
+                 :error-message error-message
+                 :from-extension from-extension?
+                 :aborted aborted?
+                 :will-retry false})
+    (reset! (:compaction-blocked agent) true))
+  (cond
+    (= result ::cancelled) false
+    succeeded? true
+    :else result))
+
 (defn compact-context!
   "LLM-based compaction (pi: prepareCompaction → compact): summarize the
    pre-cut entries, append a compaction entry (append-only — summarized
@@ -1858,46 +1888,7 @@ Be precise and concise in your responses."}}]
               failed? (= result :failed)
               error-message (when failed?
                               (compaction/compaction-failure-message reason @failure))]
-          (reset! (:compaction-error agent) error-message)
-          ;; pi: session_compact — fired after a successful compaction with
-          ;; the appended entry (extensions index/re-render it), BEFORE
-          ;; compaction_end so handlers see the entry before the queue flush
-          ;; (pi: the manual and automatic paths both emit it first)
-          (when succeeded?
-            (emit agent {:type :session-compact
-                         :compaction-entry (:entry result)
-                         :from-extension @from-extension
-                         :reason reason
-                         :will-retry (= reason :overflow)}))
-          (emit agent {:type :compaction-end
-                       :reason reason
-                       :from-extension @from-extension
-                       :aborted aborted?
-                       :result (when succeeded? (dissoc result :entry))
-                       :error-message error-message
-                       ;; Overflow compaction retries the interrupted turn
-                       ;; (pi: _runAutoCompaction willRetry — compaction_end
-                       ;; carries whether the run continues); a failed or
-                       ;; cancelled compaction never does.
-                       :will-retry (and succeeded? (= reason :overflow))})
-          ;; pi: session_compact_failed — fired when compaction fails or is
-          ;; aborted (the summarization errored, or a compaction/run cancel
-          ;; signal fired mid-compaction); this prompt's automatic checks
-          ;; then stand down
-          (when (or failed? aborted?)
-            (emit agent {:type :session-compact-failed
-                         :reason reason
-                         :error-message error-message
-                         :from-extension @from-extension
-                         :aborted aborted?
-                         ;; pi: _emitSessionCompactFailed — a compaction that
-                         ;; failed or was cancelled never retries the turn
-                         :will-retry false})
-            (reset! (:compaction-blocked agent) true))
-          (cond
-            (= result ::cancelled) false
-            succeeded? true
-            :else result))
+          (finish-compaction! agent reason result @from-extension aborted? failed? succeeded? error-message))
         (finally
           (reset! (:compacting? agent) false))))))
 
