@@ -458,6 +458,30 @@
                (assoc st :selected found)
                st)))))
 
+(defn- global-toggle-row!
+  "Flip ITEM's enabled state in global scope: call TOGGLE-FN and update
+   the row in place (pi updateItem)."
+  [this row item toggle-fn]
+  (let [enabled (not (:enabled row))]
+    (toggle-fn item enabled)
+    (update-row-state! this {:enabled enabled
+                             :override-state :inherit})))
+
+(defn- project-cycle-row!
+  "Cycle ITEM through inherit/load/unload in project scope: compute the
+   next state; on change call OVERRIDE-FN and update the row in place."
+  [this row item override-fn inherited-enabled]
+  (let [next-state (pkgs/next-override-state (:override-state row)
+                                             inherited-enabled)]
+    (when (not= next-state (:override-state row))
+      (override-fn item next-state)
+      (update-row-state!
+       this
+       {:override-state next-state
+        :enabled (if (= :inherit next-state)
+                   inherited-enabled
+                   (= :load next-state))}))))
+
 (defn- toggle-selected!
   "Space/enter on an item row (pi toggleResource): global scope flips the
    enabled state (package items write the package entry, top-level items
@@ -481,40 +505,18 @@
           ;; +name/-name delta (kmet.app.tools.config/apply-builtin-tool-*)
           (tools-config/builtin-tool-item? item)
           (if (= :global (:write-scope st))
-            (let [enabled (not (:enabled row))]
-              (tools-config/apply-builtin-tool-toggle! item enabled)
-              (update-row-state! this {:enabled enabled
-                                       :override-state :inherit}))
-            (let [next-state (pkgs/next-override-state (:override-state row)
-                                                       (:inherited-enabled row))]
-              (when (not= next-state (:override-state row))
-                (tools-config/apply-builtin-tool-project-override! item next-state)
-                (update-row-state!
-                 this
-                 {:override-state next-state
-                  :enabled (if (= :inherit next-state)
-                             (:inherited-enabled row)
-                             (= :load next-state))}))))
+            (global-toggle-row! this row item tools-config/apply-builtin-tool-toggle!)
+            (project-cycle-row! this row item tools-config/apply-builtin-tool-project-override!
+                                (:inherited-enabled row)))
 
           ;; bundled items are not :packages entries: the global branch
           ;; writes the :bundled-extensions key, the project branch its
           ;; +/- delta (kmet.app.packages/apply-bundled-*)
           (pkgs/bundled-item? item)
           (if (= :global (:write-scope st))
-            (let [enabled (not (:enabled row))]
-              (pkgs/apply-bundled-toggle! item enabled)
-              (update-row-state! this {:enabled enabled
-                                       :override-state :inherit}))
-            (let [next-state (pkgs/next-override-state (:override-state row)
-                                                       (:inherited-enabled row))]
-              (when (not= next-state (:override-state row))
-                (pkgs/apply-bundled-project-override! item next-state)
-                (update-row-state!
-                 this
-                 {:override-state next-state
-                  :enabled (if (= :inherit next-state)
-                             (:inherited-enabled row)
-                             (= :load next-state))}))))
+            (global-toggle-row! this row item pkgs/apply-bundled-toggle!)
+            (project-cycle-row! this row item pkgs/apply-bundled-project-override!
+                                (:inherited-enabled row)))
 
           (pkgs/single-extension-item? item) nil
 
@@ -522,22 +524,11 @@
           ;; pi: global scope toggles user-scope items only (project rows
           ;; toggle from the project scope view)
           (when (= :user (get-in item [:metadata :scope]))
-            (let [enabled (not (:enabled row))]
-              (pkgs/apply-global-toggle! item enabled)
-              (update-row-state! this {:enabled enabled
-                                       :override-state :inherit})))
+            (global-toggle-row! this row item pkgs/apply-global-toggle!))
 
           :else
-          (let [next-state (pkgs/next-override-state (:override-state row)
-                                                     (:inherited-enabled row))]
-            (when (not= next-state (:override-state row))
-              (pkgs/apply-project-override! item next-state)
-              (update-row-state!
-               this
-               {:override-state next-state
-                :enabled (if (= :inherit next-state)
-                           (:inherited-enabled row)
-                           (= :load next-state))}))))))))
+          (project-cycle-row! this row item pkgs/apply-project-override!
+                              (:inherited-enabled row)))))))
 
 (defn- refresh-filter!
   "Apply the search field's text to the row list (pi: searchInput change →
