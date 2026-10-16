@@ -28,7 +28,7 @@
             [kmet.app.extensions :as extensions]
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
-            [kmet.app.theme-controller :as theme-ctrl]
+            [kmet.modes.interactive.theme-controller :as theme-ctrl]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.custom-dialog-adapter :as cda]
             [kmet.app.ui.dock :as dock]

@@ -25,7 +25,7 @@
             [kmet.app.keybindings :as app-kb]
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
-            [kmet.app.theme-controller :as theme-ctrl]
+            [kmet.modes.interactive.theme-controller :as theme-ctrl]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.external-editor :refer [handle-external-editor]]

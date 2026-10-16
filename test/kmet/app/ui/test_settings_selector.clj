@@ -3,7 +3,7 @@
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.dock :as dock]
-            [kmet.app.theme-controller :as theme-ctrl]
+            [kmet.modes.interactive.theme-controller :as theme-ctrl]
             [kmet.app.ui.settings-selector :as ss]
             [kmet.app.ui.subs :as subs]
             [kmet.config :as cfg]

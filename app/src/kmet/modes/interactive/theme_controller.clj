@@ -1,4 +1,4 @@
-(ns kmet.app.theme-controller
+(ns kmet.modes.interactive.theme-controller
   "Theme controller (pi: InteractiveThemeController) — terminal-theme
    detection, auto light/dark sync via color-scheme notifications, and
    theme switching. Every applied change re-themes the app components

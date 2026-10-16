@@ -8,7 +8,7 @@
             [kmet.tui.core :as core]
             [kmet.tui.terminal :as term]
             [kmet.tui.theme :as theme]
-            [kmet.app.theme-controller :as tc]))
+            [kmet.modes.interactive.theme-controller :as tc]))
 
 (defn- recording-terminal
   "ITerminal stub recording written output."

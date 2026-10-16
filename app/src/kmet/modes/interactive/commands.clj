@@ -31,7 +31,7 @@
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
             [kmet.app.tools.core :as tools]
-            [kmet.app.theme-controller :as theme-ctrl]
+            [kmet.modes.interactive.theme-controller :as theme-ctrl]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.footer :as footer]
             [kmet.app.ui.fork-selector :refer [show-fork-selector]]

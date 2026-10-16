@@ -12,7 +12,7 @@
    :curl, applied live to kmet.libs.http), and a theme row."
   (:require [kmet.app.loop :as agent]
             [kmet.app.session-runtime :as runtime]
-            [kmet.app.theme-controller :as theme-ctrl]
+            [kmet.modes.interactive.theme-controller :as theme-ctrl]
             [kmet.ai.api.shared :as shared]
             [kmet.ai.models :as models]
             [kmet.app.ui.chat-history :as chat-history]

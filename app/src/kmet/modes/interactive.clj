@@ -14,7 +14,7 @@
             [kmet.app.extensions :as extensions]
             [kmet.app.session :as session]
             [kmet.app.session-runtime :as runtime]
-            [kmet.app.theme-controller :as theme-ctrl]
+            [kmet.modes.interactive.theme-controller :as theme-ctrl]
             [kmet.app.ui.bash-execution :as bash-execution]
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.dock :as dock]

@@ -30,7 +30,7 @@
             [kmet.app.commands :as commands]
             [kmet.app.extensions :as extensions]
             [kmet.app.keybindings :as app-kb]
-            [kmet.app.theme-controller :as theme-ctrl]
+            [kmet.modes.interactive.theme-controller :as theme-ctrl]
             [kmet.app.ui.footer :as footer]
             [kmet.app.ui.pending-messages :as pending-messages]
             [kmet.app.ui.scoped-models-selector :as scoped-models-selector]
