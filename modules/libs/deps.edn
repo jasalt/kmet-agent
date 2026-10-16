@@ -1,2 +1,2 @@
 {:paths ["src" "test"]
- :deps {}}
+ :deps {kmetia/reakt {:local/root "../reakt"}}}
