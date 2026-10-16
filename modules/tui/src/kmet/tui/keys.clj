@@ -490,6 +490,54 @@
             b (normalize-key-id key-id)]
         (and a b (= a b))))))
 
+(defn- parse-standalone-control-key [data]
+  (case data
+    "\u001b\u001b" "ctrl+alt+["
+    "\u001b\u001c" "ctrl+alt+\\"
+    "\u001b\u001d" "ctrl+alt+]"
+    "\u001b\u001f" "ctrl+alt+-"
+    "\u001bOM" "enter"
+    "\u0000" "ctrl+space"
+    "\u001b " "alt+space"
+    nil))
+
+(defn- escape-ctrl-or-alt-key [data]
+  (when (and (not (lib/kitty-active?))
+             (= (count data) 2)
+             (= (first data) \u001b))
+    (let [code (int (nth data 1))]
+      (cond
+        (and (>= code 1) (<= code 26))
+        (str "ctrl+alt+" (char (+ (dec code) (int \a))))
+
+        (or (and (>= code 97) (<= code 122))
+            (and (>= code 48) (<= code 57))
+            (contains? SYMBOL-KEYS (str (char code))))
+        (str "alt+" (char code))
+
+        :else nil))))
+
+(defn- ctrl-letter-or-symbol-key [data]
+  (when (and (= (count data) 1)
+             (let [c (int (first data))]
+               (< c 32)))
+    (let [base (case (int (first data))
+                 8 "backspace"
+                 9 "tab"
+                 13 "enter"
+                 27 "escape"
+                 127 "backspace"
+                 (let [n (int (first data))]
+                   (cond
+                     (and (>= n 1) (<= n 26))
+                     (str "ctrl+" (char (+ (dec n) (int \a))))
+                     (== n 28) "ctrl+\\"
+                     (== n 29) "ctrl+]"
+                     (== n 30) "ctrl+^"
+                     (== n 31) "ctrl+-"
+                     :else nil)))]
+      base)))
+
 (defn parse-key
   "Parse raw terminal input into a key identifier string.
    Returns the key-id or nil if unrecognized. Mirrors pi's parseKey order:
@@ -515,56 +563,11 @@
 
    (get @legacy-map data)
 
-   ;; Standalone control sequences (pi parseKey singles)
-   (case data
-     "\u001b\u001b" "ctrl+alt+["
-     "\u001b\u001c" "ctrl+alt+\\"
-     "\u001b\u001d" "ctrl+alt+]"
-     "\u001b\u001f" "ctrl+alt+-"
-     "\u001bOM" "enter"
-     "\u0000" "ctrl+space"
-     "\u001b " "alt+space"
-     nil)
+   (parse-standalone-control-key data)
 
-   ;; ESC + ctrl char → ctrl+alt+letter; ESC + printable → alt+key
-   ;; (pi legacy alt/modifier handling, skipped when Kitty is active)
-   (when (and (not (lib/kitty-active?))
-              (= (count data) 2)
-              (= (first data) \u001b))
-     (let [code (int (nth data 1))]
-       (cond
-         (and (>= code 1) (<= code 26))
-         (str "ctrl+alt+" (char (+ (dec code) (int \a))))
+   (escape-ctrl-or-alt-key data)
 
-         (or (and (>= code 97) (<= code 122))
-             (and (>= code 48) (<= code 57))
-             (contains? SYMBOL-KEYS (str (char code))))
-         (str "alt+" (char code))
-
-         :else nil)))
-
-   ;; Ctrl+letter or Ctrl+symbol
-   (when (and (= (count data) 1)
-              (let [c (int (first data))]
-                (< c 32)))
-     (let [base (case (int (first data))
-                  8 "backspace"
-                  9 "tab"
-                  13 "enter"
-                  27 "escape"
-                  127 "backspace"
-                  ;; default: 0x01-0x1a -> ctrl+a..ctrl+z
-                  ;;          0x1c-0x1f -> ctrl+\\, ctrl+], ctrl+^, ctrl+-
-                  (let [n (int (first data))]
-                    (cond
-                      (and (>= n 1) (<= n 26))
-                      (str "ctrl+" (char (+ (dec n) (int \a))))
-                      (== n 28) "ctrl+\\"
-                      (== n 29) "ctrl+]"
-                      (== n 30) "ctrl+^"
-                      (== n 31) "ctrl+-"
-                      :else nil)))]
-       base))
+   (ctrl-letter-or-symbol-key data)
 
    ;; Backspace (DEL = 0x7f, BS = 0x08)
    (when (and (= (count data) 1)
