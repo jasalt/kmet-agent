@@ -11,6 +11,7 @@
    set-config-key-source! by models/load-models-config!) → env vars in pi
    order."
   (:require [babashka.fs :as fs]
+            [malli.core :as m]
             [clojure.string :as str]
             [kmet.libs.aws-sigv4 :as aws-sigv4]
             [kmet.libs.edn-store :as cred]
@@ -141,12 +142,15 @@
    string :access/:refresh and a finite number :expires}. Non-map entries
    are invalid — a stored entry is always a map."
   [credential]
-  (and (map? credential)
-       (if (= :oauth (:type credential))
-         (and (string? (:access credential))
-              (string? (:refresh credential))
-              (host/finite? (:expires credential)))
-         (or (nil? (:key credential)) (string? (:key credential))))))
+  (m/validate
+   [:or
+    [:map {:closed false} [:key {:optional true} [:or :nil :string]]]
+    [:map {:closed false}
+     [:type [:= :oauth]]
+     [:access :string]
+     [:refresh :string]
+     [:expires [:or :nil [:fn number?]]]]]
+   credential))
 
 (defn load-auth!
   "Load auth.edn into the auth atom; returns the auth map. Called at startup
