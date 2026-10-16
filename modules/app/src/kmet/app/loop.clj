@@ -759,6 +759,53 @@ Be precise and concise in your responses."}}]
                    :content content
                    :is-partial true}))))
 
+(defn- prepare-tool-call!
+  "Run one tool call's preparation: emit :tool-execution-start, then either settle
+   it immediately when the tool is undeclared (pi: prepareToolCall's
+   tools.find) or run the before-tool-call hook and return TC with any
+   rewritten :arguments. Scheduling of the execution itself stays with the
+   caller (parallel vs sequential)."
+  [agent assistant-msg tc declared]
+  (let [tc-id (:id tc)
+        tc-name (:name tc)
+        tc-args (:arguments tc)]
+    (emit agent {:type :tool-execution-start
+                 :tool-call-id tc-id
+                 :tool-name tc-name
+                 :args tc-args})
+    (if-not (contains? declared tc-name)
+      ;; undeclared call settles as an error without executing, but the
+      ;; after hook still runs in finish-tool-call!
+      (assoc tc :kmet/blocked
+             {:content (str "Tool " tc-name " not found")
+              :is-error true})
+      (let [prep (invoke/prepare-tool-call
+                  {:tool-name tc-name
+                   :args tc-args
+                   :tool-call-id tc-id
+                   :assistant-message assistant-msg
+                   :before-hook @(:before-tool-call agent)})]
+        (cond
+          (:block prep)
+          (assoc tc :kmet/blocked (:block prep))
+
+          (contains? prep :args)
+          (assoc tc :arguments (:args prep))
+
+          :else tc)))))
+
+(defn- finish-tool-call!
+  "Apply the after-tool-call hook to RAW for the given TC (pi: after hooks),
+   preserving the rewritten ARGS. Returns the final result map."
+  [agent assistant-msg tc args raw]
+  (invoke/finish-tool-call
+   {:tool-name (:name tc)
+    :args args
+    :tool-call-id (:id tc)
+    :assistant-message assistant-msg
+    :after-hook @(:after-tool-call agent)}
+   raw))
+
 (defn- execute-tool-calls-parallel!
   "Execute tool calls concurrently (pi: executeToolCallsParallel).
    Preparation (start events + before hooks) is sequential; execution is
@@ -782,49 +829,14 @@ Be precise and concise in your responses."}}]
                                  :result result
                                  :is-error (:is-error result false)}))
         finish-call (fn [tc raw]
-                      (invoke/finish-tool-call
-                       {:tool-name (:name tc)
-                        :args (:arguments tc)
-                        :tool-call-id (:id tc)
-                        :assistant-message assistant-msg
-                        :after-hook @(:after-tool-call agent)}
-                       raw))
+                      (finish-tool-call! agent assistant-msg tc (:arguments tc) raw))
         ;; Always record before emitting: the source-order appends below
         ;; read the map after the futures finish, so a result is never lost
         ;; to a failed emit.
         settle! (fn [tc result]
                   (swap! finalized assoc (:id tc) result)
                   (emit-end! tc result))
-        prepared (mapv (fn [tc]
-                         (let [tc-id (:id tc)
-                               tc-name (:name tc)
-                               tc-args (:arguments tc)]
-                           (emit agent {:type :tool-execution-start
-                                        :tool-call-id tc-id
-                                        :tool-name tc-name
-                                        :args tc-args})
-                           (if-not (contains? declared tc-name)
-                             ;; pi: prepareToolCall's tools.find — an
-                             ;; undeclared call settles immediately as an
-                             ;; error (hooks included), so a disabled tool
-                             ;; cannot run
-                             (assoc tc :kmet/blocked
-                                    {:content (str "Tool " tc-name " not found")
-                                     :is-error true})
-                             (let [prep (invoke/prepare-tool-call
-                                         {:tool-name tc-name
-                                          :args tc-args
-                                          :tool-call-id tc-id
-                                          :assistant-message assistant-msg
-                                          :before-hook @(:before-tool-call agent)})]
-                               (cond
-                                 (:block prep)
-                                 (assoc tc :kmet/blocked (:block prep))
-
-                                 (contains? prep :args)
-                                 (assoc tc :arguments (:args prep))
-
-                                 :else tc)))))
+        prepared (mapv #(prepare-tool-call! agent assistant-msg % declared)
                        tool-calls)
         ;; Blocked calls settle during preparation (pi: an immediate
         ;; outcome's end fires right away), not after the batch.
@@ -887,51 +899,35 @@ Be precise and concise in your responses."}}]
     (doseq [tc tool-calls]
       (let [tc-id (:id tc)
             tc-name (:name tc)
-            tc-args (:arguments tc)]
-        (emit agent {:type :tool-execution-start
+            tc-args (:arguments tc)
+            ;; shared preparation: emits the start event and runs the
+            ;; before-tool-call hook (+ undeclared handling)
+            prepared (prepare-tool-call! agent assistant-msg tc declared)
+            args (:arguments prepared)
+            raw (if (contains? prepared :kmet/blocked)
+                  (:kmet/blocked prepared)
+                  (invoke/execute-tool-call
+                   tools/execute-tool
+                   {:tool-name tc-name
+                    :args args
+                    :tool-call-id tc-id
+                    :assistant-message assistant-msg
+                    :signal (:signal agent)
+                    :ctx (extensions/build-extension-context)
+                    :on-update (tool-on-update agent tc-id)}))
+            result (finish-tool-call! agent assistant-msg prepared args raw)
+            result-msg (tool-result-message tc-id tc-name result)]
+        (when (not= false append?)
+          (append-message! agent result-msg)
+          (when (:session agent)
+            (session/append-entry (:session agent) result-msg)))
+        (swap! tool-results conj result)
+        (emit agent {:type :tool-execution-end
                      :tool-call-id tc-id
                      :tool-name tc-name
-                     :args tc-args})
-        (let [prep (if (contains? declared tc-name)
-                     (invoke/prepare-tool-call
-                      {:tool-name tc-name
-                       :args tc-args
-                       :tool-call-id tc-id
-                       :assistant-message assistant-msg
-                       :before-hook @(:before-tool-call agent)})
-                     {:block {:content (str "Tool " tc-name " not found")
-                              :is-error true}})
-              args (if (contains? prep :args) (:args prep) tc-args)
-              raw (if (:block prep)
-                    (:block prep)
-                    (invoke/execute-tool-call
-                     tools/execute-tool
-                     {:tool-name tc-name
-                      :args args
-                      :tool-call-id tc-id
-                      :assistant-message assistant-msg
-                      :signal (:signal agent)
-                      :ctx (extensions/build-extension-context)
-                      :on-update (tool-on-update agent tc-id)}))
-              result (invoke/finish-tool-call
-                      {:tool-name tc-name
-                       :args args
-                       :tool-call-id tc-id
-                       :assistant-message assistant-msg
-                       :after-hook @(:after-tool-call agent)}
-                      raw)
-              result-msg (tool-result-message tc-id tc-name result)]
-          (when (not= false append?)
-            (append-message! agent result-msg)
-            (when (:session agent)
-              (session/append-entry (:session agent) result-msg)))
-          (swap! tool-results conj result)
-          (emit agent {:type :tool-execution-end
-                       :tool-call-id tc-id
-                       :tool-name tc-name
-                       :args tc-args
-                       :result result
-                       :is-error (:is-error result false)}))))
+                     :args tc-args
+                     :result result
+                     :is-error (:is-error result false)})))
     ;; pi: terminate rides on blocked results — the batch stops the run
     ;; only when every call in it was blocked with :terminate
     {:results @tool-results
