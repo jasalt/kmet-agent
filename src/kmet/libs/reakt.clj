@@ -19,7 +19,7 @@
    IRefs).
 
    A reaction is kept alive by its derefers, never by its dependencies: dep
-   watches are registered through kmet.libs.weak against the reaction (the
+   watches are registered through kmet.libs.reakt.weak against the reaction (the
    handler captures the registry key only, never the reaction), so an
    unreachable reaction is collected and the next sweep unsubscribes its dep
    watches. Owned liveness is the flip side — a reaction
@@ -55,7 +55,7 @@
    write back through the source (=-gated, nested lenses composing), and a
    disposed lens refuses writes instead of writing back from the dead."
   (:refer-clojure :exclude [derive])
-  (:require [kmet.libs.weak :as weak]))
+  (:require [kmet.libs.reakt.weak :as weak]))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; Context
@@ -290,7 +290,7 @@
    short-circuits before the CAS: non-reactive derefs settle the queue on
    every read (reaction deref-fn), and the empty case is the common one —
    the swap machinery must not be its price. After a drain, a weak
-   subscription sweep runs (kmet.libs.weak) so headless
+   subscription sweep runs (kmet.libs.reakt.weak) so headless
    consumers that never start a TUI still reclaim collected subscribers."
   []
   (when (and (pos? (count @queue))

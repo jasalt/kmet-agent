@@ -14,7 +14,7 @@
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.libs.reakt :as rag]
-            [kmet.libs.weak :as weak]))
+            [kmet.libs.reakt.weak :as weak]))
 
 (defcomponent Probe nil [cache-atom render-count-atom body]
   (render [this width]

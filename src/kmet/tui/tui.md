@@ -871,7 +871,7 @@ overlay close, reconcile removal, shutdown; implementations must be
   is the contract for everything GC cannot release (timers, subprocesses,
   ad-hoc `add-watch` subscriptions, `with-let` finalizers, foreign records).
   On top, the `track!`
-  registry and reaction dep subscriptions are weak (`kmet.libs.weak`): a
+  registry and reaction dep subscriptions are weak (`kmet.libs.reakt.weak`): a
   component or reaction that becomes unreachable without dispose is
   reclaimed by the sweep, which unwatches its refs. The backstop runs no
   user cleanups and never fires while an owner still holds the record — an

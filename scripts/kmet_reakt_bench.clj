@@ -1,5 +1,5 @@
 ;; reakt-layer microbenchmarks behind perf.md §14: per-op costs of the
-;; reactive engine (kmet.libs.reakt + kmet.libs.weak) and the scaling that
+;; reactive engine (kmet.libs.reakt + kmet.libs.reakt.weak) and the scaling that
 ;; points at the algorithmic candidates. Same steady-state method as
 ;; kmet_perf_bench.clj (§6.2b): 2 warming rounds, median of 5 rounds;
 ;; report same-run host ratios, not absolutes across machines.
@@ -8,7 +8,7 @@
 ;;   jolt scripts/kmet_reakt_bench.clj
 (ns kmet-reakt-bench
   (:require [kmet.libs.reakt :as r]
-            [kmet.libs.weak :as weak]))
+            [kmet.libs.reakt.weak :as weak]))
 
 (defn- now [] (System/nanoTime))
 (defn- median [xs] (nth (vec (sort xs)) (quot (count xs) 2)))

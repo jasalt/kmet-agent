@@ -139,7 +139,7 @@ listed in the root `AGENTS.md` topic map.
   and expected (`http → concurrent/json/process`,
   `oauth → concurrent/crypto/http/json`, `reakt → weak`);
   `test/kmet/libs/test_self_contained.clj` enforces exactly this.
-  `kmet.libs.weak` is the one namespace allowed to touch `java.lang.ref` —
+  `kmet.libs.reakt.weak` is the one namespace allowed to touch `java.lang.ref` —
   a platform exception like the terminal backends.
 - `kmet.libs.hikap` is the toolkit-agnostic UI framework inside libs: the
   hiccup engine (`kmet.libs.hikap`), the component runtime

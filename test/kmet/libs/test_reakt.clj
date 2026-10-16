@@ -6,7 +6,7 @@
    kmet.tui.test-reakt-integration / test-compute / test-track.)"
   (:require [clojure.test :as t :refer [deftest is testing]]
             [kmet.libs.reakt :as r]
-            [kmet.libs.weak :as weak]
+            [kmet.libs.reakt.weak :as weak]
             [kmet.test-utils :as test-utils]))
 
 (deftest test-changed-gate

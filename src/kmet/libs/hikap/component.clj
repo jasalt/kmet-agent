@@ -11,7 +11,7 @@
    (kmet.tui.hikap, kmet.tk.core) builds its component records on top of
    this namespace; nothing here knows a toolkit."
   (:require [kmet.libs.reakt :as reakt]
-            [kmet.libs.weak :as weak]))
+            [kmet.libs.reakt.weak :as weak]))
 
 (def ^:private deref-form?
   "Only the 1-arg (deref x) form — @x reads as (clojure.core/deref x).
@@ -136,7 +136,7 @@
    Atom handlers capture the component's watch KEY only and find the
    component through the weak registry, so a watch never roots a component;
    a collected component's watches are removed by the next sweep
-   (kmet.libs.weak). A reaction entry is
+   (kmet.libs.reakt.weak). A reaction entry is
    [REACTION value]: the entry pins the reaction, so the cache can never
    keep validating a reaction the GC already collected."
   [component width render-fn]

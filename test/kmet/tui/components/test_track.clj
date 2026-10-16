@@ -13,7 +13,7 @@
             [kmet.tui.components.settings-list :as settings]
             [kmet.app.ui.footer :as footer]
             [kmet.libs.reakt :as reakt]
-            [kmet.libs.weak :as weak]
+            [kmet.libs.reakt.weak :as weak]
             [kmet.test-utils :as test-utils]))
 
 (defn- watch-key-of

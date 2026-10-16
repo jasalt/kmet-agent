@@ -9,7 +9,7 @@
             [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.libs.reakt :as reakt]
-            [kmet.libs.weak :as weak]
+            [kmet.libs.reakt.weak :as weak]
             [kmet.libs.terminal :as lib-terminal]
             [kmet.tui.terminal :as terminal]
             [kmet.tui.timers :as timers]

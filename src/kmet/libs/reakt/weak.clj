@@ -1,4 +1,4 @@
-(ns kmet.libs.weak
+(ns kmet.libs.reakt.weak
   "Queue/sweep weak-subscription registry: a subscription never keeps its
    subject alive. Entries hold their subject through a `WeakReference`; once
    the subject is collected the reference lands on a `ReferenceQueue`, the
@@ -54,7 +54,7 @@
       ((:on-dead entry) k (:payload entry))
       (catch Throwable t
         (binding [*out* *err*]
-          (println "kmet.libs.weak on-dead error:" (ex-message t)))))))
+          (println "kmet.libs.reakt.weak on-dead error:" (ex-message t)))))))
 
 (defn- register-entry
   "The registry map with KEY registered or refreshed for SUBJECT. Throws on
