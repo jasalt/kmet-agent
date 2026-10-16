@@ -944,9 +944,11 @@ Independent of the GUI, and the first step that adds a dependency. Uses
 §4.3 (malli at boundaries only) and the §6 Tier 1 inventory, under finding
 C's measured load policy.
 
-- Add malli (0.20.1 was verified in §9) to `deps.edn` and `bb.edn`, and
-  re-verify `bb check`, `bb lint` over both reader views, and a `jolt -e`
-  require probe in the same change.
+- Lead with a dependency-only commit: add malli to both host dependency
+  files, then rerun the §9 probe against the actual supported Jolt floor
+  (the `jolt/min-version` in `deps.edn`) before any schema is authored.
+  Require `bb check`, `bb lint` over both reader views, and a successful
+  `jolt -e` require probe in that same commit.
 - Add `kmet.ai.message`: message and content-block schemas. This is the
   highest-value schema; the session entry schema is its first consumer and
   a future wire protocol reuses it.
@@ -955,9 +957,12 @@ C's measured load policy.
   roles today), open where the format is forward-compatible and
   `:closed true` where an extra key is a bug, every schema carrying a
   `:description` (coverage test). The load path separates "unparseable"
-  (skip, as today) from "wrong shape" (line + `malli.error/humanize`),
-  validating the header always and entries only on skip or `--debug` per
-  finding C; re-measure with the real schema and record the number here.
+  (skip, as today) from "wrong shape" (line + `malli.error/humanize`): an
+  unparseable entry skips with a warning; a parseable but wrong-shape
+  entry skips with a warning on normal load and fails (with the line and
+  humanized explanation) under `--debug`. Validate the header always and
+  entries only on skip or `--debug`, per finding C; re-measure with the real
+  schema and record the number here.
 - Add config `m/decode` defaults/coercion for the sections already
   validated (`:retry`, `:loop-guard`, compaction, `:images`, timeouts) and
   the `auth.edn` credential predicate; both files stay forgiving and open.
@@ -972,31 +977,38 @@ auth tests are unchanged or stricter.
 
 Independent of the GUI. Lands §8's first bullet and shrinks its allowlist.
 
-- Add the `app/**` layer guard (excluding `app/ui/**`) modeled on
-  `test/kmet/libs/test_self_contained.clj`: no `kmet.tui.*`, `kmet.tk.*`,
-  or `kmet.modes.*` requires. Seed the allowlist with the six known
-  violations (§3.6).
-- Fix the leaks and shrink the allowlist one by one (§5 finding F):
-  - `bash_executor`'s ANSI stripping moves to `kmet.libs`;
-  - theme *discovery* stays in the runtime while parsing and rendering
-    leave `packages.clj` and `extensions.cljc` for the front end;
-  - `theme_controller` moves up out of `app`;
-  - `keybindings` keeps the keymap definitions (app policy) and hands the
-    formatting to the TUI;
-  - `extensions/context.cljc`'s `tui-library-namespaces` injection is the
-    extension ABI (§3.8), so its entry may stay, documented — the
-    shared-component-library extraction remains unscheduled.
+- Add the app-layer guard, modeled on `test/kmet/modes/test_headless_guard.clj`
+  (multi-source-root `ns`-form lookup), not the one-source libs guard: every
+  app source root outside `app/ui/**` must not require `kmet.tui.*`,
+  `kmet.tk.*`, or `kmet.modes.*`. Use the extension ABI injection in
+  `extensions/context.cljc` as the one named, documented exception, not as
+  an allowlist entry for the other five leaks.
+- Fix the leaks in this order (§5 finding F):
+  1. `bash_executor`'s ANSI stripping moves to `kmet.libs.terminal-escape`,
+     preserving the `#?(:jolt ... :default ...)` host split;
+  2. `keybindings` keeps the keymap definitions in app and hands the
+     formatting to the TUI;
+  3. `theme_controller` moves up out of `app`;
+  4. theme *discovery* stays in the app package layer while parsing and
+     rendering remain front-end concerns in `packages.clj` and
+     `extensions.cljc`;
+  5. `extensions/context.cljc`'s `tui-library-namespaces` injection stays as
+     the named extension-ABI exception; the shared-component-library
+     extraction remains unscheduled.
 - Update `src/kmet/README.md`'s layer map in the same change.
 
-Acceptance: the guard is green with an empty or documented
- extension-ABI-only allowlist, and print/RPC stay headless.
+Acceptance: the guard is green with the extension-ABI injection as the only
+ documented exception; print/RPC stay headless; and `test_headless_guard` is
+ unchanged.
 
 ### Step 9 — finding E follow-up (optional)
 
-Only if it deletes the hand-rolled code: derive the tool `:params` JSON
+Optional, and only if it deletes code: derive the tool `:params` JSON
 schema from malli (`app/tools/tool.clj`) within
-`ai/constrained-sampling.clj`'s strict-mode subset, gated on a parity test;
-add runtime argument validation only if that test holds. Not part of the
+`ai/constrained-sampling.clj`'s strict-mode subset, gated on a parity test.
+Do not start unless it removes `->json-schema` or at least one
+`app/tools` file; otherwise the parity work is not worth the deletion.
+Add runtime argument validation only if that test holds. Not part of the
 split — drop it if the parity work outweighs the deletion.
 
 ### Step 5 — GUI mode (the proof; scheduled last)
@@ -1009,10 +1021,14 @@ and the display-only viewer (`scripts/gui_tk_session.clj` +
 `app/ui/gui/transcript.clj`) already renders a saved session. What is
 missing is the live run:
 
-- Subscribe to the runtime, marshal to the toolkit thread, and drive
-  prompt/stream/cancel through the same operations the TUI uses.
-- The mode constructs no `AgentState`, no session atoms, and no
-  `make-agent-state` map; everything comes from the runtime and the stream.
+- Step 5a proves the live read stream first: prompt, streamed assistant
+  text, tool cards, and cancellation, each rendered from `subscribe!`
+  events only.
+- Step 5b adds cancel/error semantics.
+- Step 5c wires the extension UI port.
+- Marshal every runtime callback to the toolkit thread; the mode holds no
+  `AgentState`, no session atoms, and no `make-agent-state` map; everything
+  comes from the runtime and the stream.
 - Reuse `app/ui/gui/*` for rendering; the transcript's TUI-renderer reuse
   is intentional and stays.
 
