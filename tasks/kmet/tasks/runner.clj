@@ -90,6 +90,7 @@
     kmet.app.ui.test-hotkeys
     kmet.app.test-extensions-ui
     kmet.app.test-ui-port
+    kmet.app.test-layer-guard
     kmet.app.test-runtime-capabilities
     kmet.app.test-interactive-ui
     kmet.app.test-event-bus
