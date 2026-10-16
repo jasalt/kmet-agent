@@ -9,27 +9,39 @@
             [babashka.fs :as fs]))
 
 (defn- ai-files []
-  (concat
-   (->> (fs/list-dir "src/kmet/ai")
-        (filter #(str/ends-with? (str %) ".clj"))
-        (map str))
-   (->> (fs/list-dir "src/kmet/ai/api")
-        (filter #(str/ends-with? (str %) ".clj"))
-        (map str))))
+  (letfn [(walk [dir]
+            (mapcat (fn [f]
+                      (if (fs/directory? f) (walk f) [f]))
+                    (fs/list-dir dir)))]
+    (->> (walk "src/kmet/ai")
+         (filter #(re-find #"\.clj[ca]?$" (str %)))
+         (map str))))
 
-(defn- kmet-requires [path]
-  (let [content (slurp path)
-        ns-block (re-find #"(?s)\(ns\s+[\w.-]+(?:\s+.*?)?\)" content)]
-    (when ns-block
-      (->> (re-seq #"\[([\w.-]+)(?:\s+:as\s+\w+)?\]" ns-block)
-           (map second)
-           (filter #(str/starts-with? % "kmet."))
-           (remove #(or (= % "kmet.ai")
-                        (str/starts-with? % "kmet.ai.")
-                        (str/starts-with? % "kmet.libs.")))))))
+(defn- ns-form [path]
+  ;; Read the ns form itself — a regex over the file stops at the first `)`
+  ;; inside the ns docstring and silently checks nothing.
+  (let [form (try (read-string (slurp path))
+                  (catch Exception e
+                    (throw (ex-info (str "self-containment guard cannot read " path) {} e))))]
+    (when (and (seq? form) (= 'ns (first form))) form)))
+
+(defn- foreign-kmet-requires [path]
+  (when-let [form (ns-form path)]
+    (->> (for [clause (rest form)
+               :when (and (seq? clause) (= :require (first clause)))
+               spec (rest clause)]
+           (cond
+             (symbol? spec) spec
+             (vector? spec) (first spec)
+             (seq? spec) (first spec)))
+         (map str)
+         (filter #(str/starts-with? % "kmet."))
+         (remove #(or (= % "kmet.ai")
+                      (str/starts-with? % "kmet.ai.")
+                      (str/starts-with? % "kmet.libs."))))))
 
 (deftest ai-is-self-contained
   (doseq [f (ai-files)]
-    (let [deps (kmet-requires f)]
+    (let [deps (foreign-kmet-requires f)]
       (is (empty? deps)
           (str f " must only require kmet.libs.*, found: " deps)))))

@@ -11,7 +11,6 @@
             [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.config :as cfg]
             [kmet.ai.auth :as auth]
             [kmet.libs.dynamic-value :as dynamic-value]
             [kmet.ai.model-config :as model-config]
@@ -343,7 +342,7 @@
    pins the scope dir (KMET_CODING_AGENT_DIR sandboxing); nil resolves via
    cfg/get-agent-dir."
   ([] (default-models-cache-dir nil))
-  ([agent-dir] (str (fs/path (or agent-dir (cfg/get-agent-dir)) "models-cache"))))
+  ([agent-dir] (str (fs/path (or agent-dir (auth/resolve-agent-dir)) "models-cache"))))
 
 (defn fresh-model-cache
   "*models-cache-dir (defaulting to the agent-dir cache) when usable: it
@@ -683,4 +682,4 @@
    of default-config's :providers map)."
   [config]
   (or (:model config)
-      (:id (default-model-for (cfg/get-provider config)))))
+      (:id (default-model-for (:provider config)))))

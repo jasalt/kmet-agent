@@ -18,7 +18,6 @@
             [clojure.string :as str]
             [kmet.ai.auth :as auth]
             [kmet.ai.models :as models]
-            [kmet.config :as cfg]
             [kmet.libs.http :as http]))
 
 ;; ─── Records (pi types.ts ImagesModel / images-models.ts ImagesProvider) ──
@@ -259,7 +258,7 @@
    load-image-catalogs! reads it. AGENT-DIR pins the scope dir
    (KMET_CODING_AGENT_DIR sandboxing); nil resolves via cfg/get-agent-dir."
   ([] (default-image-models-cache-dir nil))
-  ([agent-dir] (str (fs/path (or agent-dir (cfg/get-agent-dir)) "image-models-cache"))))
+  ([agent-dir] (str (fs/path (or agent-dir (auth/resolve-agent-dir)) "image-models-cache"))))
 
 (defn- bundled-image-catalog
   "The bundled image-model catalog blob, nil when the resource is missing or

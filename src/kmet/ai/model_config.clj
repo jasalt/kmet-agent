@@ -16,7 +16,8 @@
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.config :as cfg]))
+            [kmet.ai.auth :as auth]
+            [kmet.libs.edn-store :as eds]))
 
 (defonce config-atom (atom {:providers {} :error nil}))
 
@@ -265,7 +266,7 @@
    (KMET_CODING_AGENT_DIR sandboxing); nil resolves via cfg/get-agent-dir."
   ([] (models-edn-paths nil))
   ([agent-dir]
-   [(str (fs/path (or agent-dir (cfg/get-agent-dir)) "models.edn"))
+   [(str (fs/path (or agent-dir (auth/resolve-agent-dir)) "models.edn"))
     (str (fs/path (fs/cwd) ".kmet" "models.edn"))]))
 
 (defn- load-config-file
@@ -308,7 +309,7 @@
        {:providers {} :error (str/join "\n\n" errors)}
        (if (not-any? (fn [{:keys [data error]}] (or data error)) results)
          {:providers {} :error nil}
-         (let [config (reduce (fn [acc {:keys [data]}] (cfg/deep-merge acc data)) {} results)]
+         (let [config (reduce (fn [acc {:keys [data]}] (eds/deep-merge acc data)) {} results)]
            (if-let [errors (seq (validate-config config))]
              {:providers {}
               :error (str "Invalid models.edn schema:\n"
