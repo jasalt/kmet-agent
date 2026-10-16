@@ -815,6 +815,15 @@ Be precise and concise in your responses."}}]
   (emit agent (merge {:type :status :status status} (or extra {})))
   nil)
 
+(defn- append-persisted-message!
+  "Append MSG to both the live context and the session (pi: append + append-entry).
+   Returns MSG. Centralizes the two-step append so context/session stay in sync."
+  [agent msg]
+  (append-message! agent msg)
+  (when (:session agent)
+    (session/append-entry (:session agent) msg))
+  msg)
+
 (defn- execute-tool-calls-parallel!
   "Execute tool calls concurrently (pi: executeToolCallsParallel).
    Preparation (start events + before hooks) is sequential; execution is
@@ -889,9 +898,7 @@ Be precise and concise in your responses."}}]
       (doseq [tc prepared]
         (let [result (get @finalized (:id tc))
               result-msg (tool-result-message (:id tc) (:name tc) result)]
-          (append-message! agent result-msg)
-          (when (:session agent)
-            (session/append-entry (:session agent) result-msg)))))
+          (append-persisted-message! agent result-msg))))
     ;; pi: terminate stops the run after this batch — only when EVERY
     ;; finalized call (blocked ones carry the hint, executed ones don't)
     {:results (mapv #(get @finalized (:id %)) tool-calls)
@@ -927,9 +934,7 @@ Be precise and concise in your responses."}}]
             result (finish-tool-call! agent assistant-msg prepared args raw)
             result-msg (tool-result-message tc-id tc-name result)]
         (when (not= false append?)
-          (append-message! agent result-msg)
-          (when (:session agent)
-            (session/append-entry (:session agent) result-msg)))
+          (append-persisted-message! agent result-msg))
         (swap! tool-results conj result)
         (emit agent {:type :tool-execution-end
                      :tool-call-id tc-id
@@ -2432,9 +2437,7 @@ Be precise and concise in your responses."}}]
                                :tool-call-id tc-id :tool-name tc-name :args tc-args
                                :result res
                                :is-error (:is-error res false)}))
-                (append-message! agent result-msg)
-                (when (:session agent)
-                  (session/append-entry (:session agent) result-msg))))]
+                (append-persisted-message! agent result-msg)))]
       (set-agent-status! agent :thinking)
       ;; pi: the post-turn hooks and the :turn-end boundary run
       ;; unconditionally — even when terminate stops the tool-call continuation
