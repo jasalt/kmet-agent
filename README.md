@@ -80,7 +80,7 @@ to the code and people who own it. The longer etymology is in
 
 ```text
 modules/        — application modules and libraries (app, ai, libs, tui,
-                  loader, tk); each is a standalone classpath root
+                  loader, tk, reakt, hikap); each is a standalone classpath root
 extensions/     — opt-in shipped extensions
 jolt/           — Jolt provider scaffolding
 docs/           — user-facing documentation

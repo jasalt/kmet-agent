@@ -3,8 +3,8 @@
 ;; `roles`) the per-role cold split of every message component.
 ;;
 ;; Usage:
-;;   bb   scripts/kmet_render_bench.clj <session-file> [width] [roles]
-;;   jolt scripts/kmet_render_bench.clj <session-file> [width] [roles]
+;;   bb   scripts/bench/kmet_render_bench.clj <session-file> [width] [roles]
+;;   jolt scripts/bench/kmet_render_bench.clj <session-file> [width] [roles]
 ;;
 ;; The session file is a `~/.kmet/sessions/` .ednl (or its path); width
 ;; defaults to 100. Numbers are wall-clock and single-run by design — this is

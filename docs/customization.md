@@ -39,4 +39,4 @@ color values, installation, and live reload; complete starting points are in
   unloadable at runtime; unload runs shutdown + deregisters everything.
   Shipped opt-in extensions live in [`extensions/`](../extensions/)
   ([usage](../extensions/README.md)); writing your own:
-  [`src/kmet/extension.md`](../src/kmet/extension.md)
+  [`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md)

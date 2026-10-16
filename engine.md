@@ -6,7 +6,7 @@ questions. It is not user documentation and it is not authoritative for
 behavior — the topic map in `AGENTS.md` still points at the behavior docs.
 
 Steps 0–4, 6a–6d and 7 have landed, and their architecture is folded into
-[`src/kmet/README.md`](src/kmet/README.md) ("Session runtime and front
+[`modules/app/src/kmet/README.md`](modules/app/src/kmet/README.md) ("Session runtime and front
 ends"); RPC mode's user guide is [`docs/rpc.md`](docs/rpc.md). The
 remaining work is ordered so only the GUI waits on the Tk backend: the
 app-layer enforcement and finding F cleanups (step 8, §8), the optional
@@ -35,7 +35,7 @@ Decisions already taken in discussion:
   ownership, not naming. (The former step R is dropped.)
 - **The GUI is the next visual front end, and RPC the next headless one.**
   The GUI already exists as a display-only viewer
-  (`scripts/gui_tk_session.clj`, `app/ui/gui/transcript.clj`); its live-run
+  (`scripts/demos/gui_tk_session.clj`, `app/ui/gui/transcript.clj`); its live-run
   milestone is what exercises the render seam, but it is postponed until
   the Tk backend stabilizes. RPC (step 6) landed instead: the same
   seam from the async-answer side, with no terminal.
@@ -84,7 +84,7 @@ The seam mostly exists today; the plan sharpens it rather than inventing it.
   (extensions).
 - `kmet.modes.print` drives the loop headlessly with no TUI — the proof that
   a second front end is viable.
-- The GUI front end is already started: `scripts/gui_tk_session.clj` renders
+- The GUI front end is already started: `scripts/demos/gui_tk_session.clj` renders
   a saved session through `app/ui/gui/transcript.clj` and `kmet.tk.*`
   (display-only, no loop). The live-run milestone is the plan's real proof.
   The transcript reuses the TUI renderers (markdown, theme, ANSI) on
@@ -92,7 +92,7 @@ The seam mostly exists today; the plan sharpens it rather than inventing it.
 - `kmet.ai.*` is a standalone provider/auth library; `kmet.app.tools/*`
   contain no TUI requires.
 - `app/ui/*` (~12.1k lines, 36 files) is already fenced as app-specific
-  presentation, and the layer rules in `src/kmet/README.md` state the
+  presentation, and the layer rules in `modules/app/src/kmet/README.md` state the
   direction (`libs` → `tui`/`gui` → `app` → `modes`).
 
 ## 3. Findings: what actually blocks the split
@@ -130,7 +130,7 @@ The seam mostly exists today; the plan sharpens it rather than inventing it.
 7. **No serialization contract.** Events carry partial message snapshots;
    session files are read leniently (malformed line → skip with a warning);
    nothing asserts that an emitted event is plain EDN data.
-8. **The extension ABI hard-requires the TUI layer.** `src/kmet/extension.md`
+8. **The extension ABI hard-requires the TUI layer.** `modules/app/src/kmet/extension.md`
    tells extensions they may depend on `kmet.extension`, `kmet.tui.*`, and
    `kmet.libs.*`; `app/extensions/context.cljc` enforces that allowlist
    (`validate-entry-requires!`) and injects the whole
@@ -353,7 +353,7 @@ active front end. Split the capability map:
   grows an event-output variant (`--mode text|json`, pi's one-consumer
   trick) — the cheapest headless conformance test for the stream.
 - `gui` (scheduled last): the display-only viewer exists
-  (`scripts/gui_tk_session.clj`); the live mode subscribes to the runtime,
+  (`scripts/demos/gui_tk_session.clj`); the live mode subscribes to the runtime,
   renders through `kmet.tk.*` and `app/ui/gui/*`, and binds the UI port.
   It runs after the GUI-independent steps 7–9, once the Tk backend
   stabilizes. This is the proof the plan is written against.
@@ -831,7 +831,7 @@ rest to the model). `get_commands` reports this same filtered view.
   (`kmet.modes.rpc-client`: send + await id, event callback, wait-idle)
   used by the `^:slow` subprocess round-trip test and documented as the
   scripted-consumer example; `docs/rpc.md` user guide + supported-command
-  reference; fold this note into `src/kmet/README.md` as steps land.
+  reference; fold this note into `modules/app/src/kmet/README.md` as steps land.
 
 Acceptance: protocol-discipline tests green (ids optional, malformed →
 parse response without id, stdout protocol-only, accepted ≠ completed,
@@ -914,7 +914,7 @@ agent dir under `target/` pinning an unauthenticated custom provider, so the
 full prompt path is exercised without touching the network. `docs/rpc.md` is
 the user guide (transport, discipline, the command reference, the extension
 UI records, the client example, and the pi parity table); the landed
-architecture is folded into `src/kmet/README.md` under "Session runtime and
+architecture is folded into `modules/app/src/kmet/README.md` under "Session runtime and
 front ends". Bugs fixed while landing this step (three the e2e test caught,
 one found reviewing the shutdown path):
 
@@ -999,7 +999,7 @@ Independent of the GUI. Lands §8's first bullet and shrinks its allowlist.
   5. `extensions/context.cljc`'s `tui-library-namespaces` injection stays as
      the named extension-ABI exception; the shared-component-library
      extraction remains unscheduled.
-- Update `src/kmet/README.md`'s layer map in the same change.
+- Update `modules/app/src/kmet/README.md`'s layer map in the same change.
 
 Acceptance: the guard is green with the extension-ABI injection as the only
  documented exception; print/RPC stay headless; and `test_headless_guard` is
@@ -1108,7 +1108,7 @@ The only remaining step gated on an external project. It runs after steps
 7–9, once the Tk backend stabilizes. The backend already exists —
 `modules/tk/src/kmet/tk/` ships the Tk/Tcl backend (`kmet.tk.core`, `kmet.tk.ttk`,
 `kmet.tk.dsl`, `kmet.tk.options`, `kmet.tk.tcl`) with its own `README.md`,
-and the display-only viewer (`scripts/gui_tk_session.clj` +
+and the display-only viewer (`scripts/demos/gui_tk_session.clj` +
 `app/ui/gui/transcript.clj`) already renders a saved session. What is
 missing is the live run:
 
@@ -1133,7 +1133,7 @@ Scheduled as step 8 — the first remaining step after the schemas, and
 independent of the GUI.
 
 - **Layer guard** modeled on `test/kmet/libs/test_self_contained.clj`
-  (which reads the `ns` form, not a regex): every `src/kmet/app/**` file —
+  (which reads the `ns` form, not a regex): every `modules/app/src/kmet/app/**` file —
   excluding `app/ui/**` (app-specific view code) — must not require `kmet.tui.*`,
   `kmet.tk.*`, or `kmet.modes.*`. Seed the allowlist with the six known
   violations (§3.6: `bash_executor`, `theme_controller`, `packages`,
@@ -1152,9 +1152,9 @@ independent of the GUI.
   `loop-event-types` keysets agree (test).
 - **EDN contract**: recorded scenarios round-trip; the conformance renderer
   consumes every `loop-event-types` event with no internal-state access.
-- **Docs**: update `src/kmet/README.md` (layer map, state conventions),
-  `src/kmet/extension.md` (UI port, async UI requests), and
-  `src/kmet/app/event_bus.clj` descriptions in the change that alters them.
+- **Docs**: update `modules/app/src/kmet/README.md` (layer map, state conventions),
+  `modules/app/src/kmet/extension.md` (UI port, async UI requests), and
+  `modules/app/src/kmet/app/event_bus.clj` descriptions in the change that alters them.
   This file is listed among the temporary root notes in `AGENTS.md` while
   it exists.
 

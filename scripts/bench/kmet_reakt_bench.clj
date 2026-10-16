@@ -4,8 +4,8 @@
 ;; kmet_perf_bench.clj (§6.2b): 2 warming rounds, median of 5 rounds;
 ;; report same-run host ratios, not absolutes across machines.
 ;;
-;;   bb   scripts/kmet_reakt_bench.clj
-;;   jolt scripts/kmet_reakt_bench.clj
+;;   bb   scripts/bench/kmet_reakt_bench.clj
+;;   jolt scripts/bench/kmet_reakt_bench.clj
 (ns kmet-reakt-bench
   (:require [kmet.libs.reakt.core :as r]
             [kmet.libs.reakt.weak :as weak]))

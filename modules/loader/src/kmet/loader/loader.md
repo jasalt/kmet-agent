@@ -6,16 +6,16 @@ promoted to a standalone library afterwards. It is the answer to the
 **extension-isolation** workstream that was a hard blocker for the port.
 
 Status: design locked; implementation staged (see §9). **Phases 0, 1 and 2
-are implemented**: `src/kmet/loader/core.clj` (protocol, generic body,
-combinators, host root), `src/kmet/loader/memory_loader.clj` (in-memory backend),
-`src/kmet/loader/sci_loader.clj` (SCI code backend: locate/read/eval, SCI's
+are implemented**: `modules/loader/src/kmet/loader/core.clj` (protocol, generic body,
+combinators, host root), `modules/loader/src/kmet/loader/memory_loader.clj` (in-memory backend),
+`modules/loader/src/kmet/loader/sci_loader.clj` (SCI code backend: locate/read/eval, SCI's
 `require` routed through the loader, injected share list), the conformance
 suites (`test/kmet/loader/test_core.clj`, `test/kmet/loader/test_sci_loader.clj`)
 and the extension runtime rewiring (`kmet.app.extensions` builds one
 loader per extension; the loader lives outside the shared `kmet.libs.*`
 layer — host machinery, not contract). The library keeps this doc and a
 self-containment guard (`kmet.loader.test-self-contained`) so
-`src/kmet/loader/` can be extracted as a whole.
+`modules/loader/src/kmet/loader/` can be extracted as a whole.
 
 Phase 2, the **native Jolt backend**, is implemented in the *Jolt* repo
 (`stdlib/jolt/loader.clj`; the classloader-lite request was
@@ -23,7 +23,7 @@ jolt-lang/jolt#912 and the implementation jolt-lang/jolt#1039, both closed),
 with `test/chez/loaderconf-test.clj` as its writ — the 36-case suite
 `make loaderconf` runs, baseline empty, including embedded loader roots.
 kmet consumes it through its own
-adapter, `src/kmet/loader/jolt_loader.jolt`, and the extension system evaluates
+adapter, `modules/loader/src/kmet/loader/jolt_loader.jolt`, and the extension system evaluates
 natively on Jolt through it when the manifest declares `:jolt` (the fallback
 to the SCI backend for `:sci`-only manifests is the Phase 1 backend, on Jolt
 too — see §9 Phase 2 for what landed, on both sides,
@@ -33,8 +33,8 @@ Not implemented yet: Phase 3 (JVM native backend + hybrid — deliberately
 last: the JVM host already gets isolation through SCI) and Phase 4
 (promotion).
 
-Related docs (repo-root relative): `src/kmet/extension.md` (the extension
-contract), `src/kmet/tui/tui.md` (house style for a package reference doc).
+Related docs (repo-root relative): `modules/app/src/kmet/extension.md` (the extension
+contract), `modules/tui/src/kmet/tui/tui.md` (house style for a package reference doc).
 
 ---
 
@@ -869,12 +869,12 @@ upgrades that must satisfy the same suite.
 
 ### Phase 0 — protocol, policies, suite (no kmet integration yet)
 
-- `src/kmet/loader/core.clj` — protocol, request/answer shapes, combinators
+- `modules/loader/src/kmet/loader/core.clj` — protocol, request/answer shapes, combinators
   (`->loader`, `delegating`, `allow`, `deny`, `self-first`, `isolated`,
   `pool`, `url-search`), `with-loader`/`current-loader`, link table,
   in-flight marks, generic `find`/`resolve`/`load` body, `open-hit`,
   `unloaded?`/`status`, `unload!` report.
-- `src/kmet/loader/memory_loader.clj` (ns `kmet.loader.memory-loader`) — an
+- `modules/loader/src/kmet/loader/memory_loader.clj` (ns `kmet.loader.memory-loader`) — an
   in-memory loader over a source map, used by the suite and as the demo
   loader (no sci yet).
 - `test/kmet/loader/test_core.clj` (ns `kmet.loader.test-core`) — cases 1–8,
@@ -886,7 +886,7 @@ upgrades that must satisfy the same suite.
 
 ### Phase 1 — sci backend + kmet extension wiring (all hosts, sci)
 
-- `src/kmet/loader/sci_loader.clj` (ns `kmet.loader.sci-loader`) — a Loader whose
+- `modules/loader/src/kmet/loader/sci_loader.clj` (ns `kmet.loader.sci-loader`) — a Loader whose
   generic body delegates compile/eval to sci (`:load-fn`, `:namespaces`,
   `:classes`), with the **share list injected** by the caller. No sci
   dependency is declared: babashka and jolt bundle `sci.core` (§6.5), and
@@ -897,7 +897,7 @@ upgrades that must satisfy the same suite.
   `:load-fn` / `:namespaces` overrides and definitions per fork. The
   extension runtime uses this — one base per shared-namespace set, forked
   per extension (`kmet.app.extensions/shared-context`).
-- `src/kmet/app/extensions.cljc` — replace `create-context` +
+- `modules/app/src/kmet/app/extensions.cljc` — replace `create-context` +
   `make-load-fn` + `jars-for` plumbing with `loader/sci-loader` + policies
   (`allow` over the root for the shared layers; per-extension deps resolver
   injected). `load-extension!` / `unload-extension!` keep their shape
@@ -908,7 +908,7 @@ upgrades that must satisfy the same suite.
   SCI for extension isolation at all (see Phase 2 — the native backend is
   what runs there now; `kmet.loader.sci-loader` remains the bb/JVM backend, which is
   the only host left that needs an interpreter).
-- `src/kmet/extension.clj` — **no re-exports** (decided in Phase 1):
+- `modules/app/src/kmet/extension.clj` — **no re-exports** (decided in Phase 1):
   extensions never see the loader at all. `kmet.app.extensions` uses
   `kmet.loader.*` directly, and a require of it from extension code fails
   with an actionable "host machinery" error; the extension-facing surface is
@@ -1047,7 +1047,7 @@ Gates for the M-stages, when they land: the corpus/unit/cts/sbperf set
 §6.1.10; `make sci` / `scifunctional` must stay green throughout — they
 pin the sci path the extension backend uses.
 
-**kmet's side of the native backend.** `src/kmet/loader/jolt_loader.jolt` (a
+**kmet's side of the native backend.** `modules/loader/src/kmet/loader/jolt_loader.jolt` (a
 `.jolt` source, so Jolt-only by extension and free of reader conditionals)
 forwards
 kmet's protocol to the Jolt loader — protocols do not unify, so it adapts
@@ -1097,7 +1097,7 @@ one exception: they are stored and compared by identity.
 
 ### Phase 4 — promotion to a standalone library
 
-- Move `src/kmet/loader/` (+ its doc and suite) out unchanged; add its own
+- Move `modules/loader/src/kmet/loader/` (+ its doc and suite) out unchanged; add its own
   `deps.edn`. The tree already lives outside `kmet.libs.*` with no `kmet.*`
   requires (guarded by `kmet.loader.test-self-contained`) and extensions never
   see the loader (option B), so promotion is a move — no API break.

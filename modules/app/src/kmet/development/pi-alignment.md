@@ -175,7 +175,7 @@ list/config` dispatch from `core.clj` to `kmet.package-manager` (pi
 **Flags** — kmet covers `-p/--print`, `-c/--continue`, `-r/--resume`, `--model`,
 `--provider`, `--models`, `--list-models`, `--system-prompt`, `--append-system-prompt`,
 `-t/--thinking`, `-d/--debug`, `-h/--help`, `@files`, positional messages
-(`src/kmet/core.clj` vs pi `cli/args.ts`). Missing:
+(`modules/app/src/kmet/core.clj` vs pi `cli/args.ts`). Missing:
 
 | flag | purpose |
 |---|---|
@@ -198,7 +198,7 @@ list/config` dispatch from `core.clj` to `kmet.package-manager` (pi
 
 | Feature | pi ref | kmet status |
 |---|---|---|
-| **Mermaid diagram rendering** | `modes/interactive/components/mermaid.ts` + `markdown.mermaid` setting (`off`/`final`/`streaming`) | **Postponed indefinitely** (2026-09-10; rationale in `src/kmet/tui/tui.md` §15.1) |
+| **Mermaid diagram rendering** | `modes/interactive/components/mermaid.ts` + `markdown.mermaid` setting (`off`/`final`/`streaming`) | **Postponed indefinitely** (2026-09-10; rationale in `modules/tui/src/kmet/tui/tui.md` §15.1) |
 | **LaTeX rendering** (`$…$`, `$$…$$`) | `packages/tui/src/latex.ts`, wired in `tui/src/components/markdown.ts` | **Postponed indefinitely** (same) |
 | **Alt-screen search** (search overlay over the transcript) | `packages/tui/src/alt-screen-search.ts`, `tui-alt-screen.ts` | **Postponed indefinitely** (same — needs an alt-screen mode) |
 | **Images in chat** | `terminal.showImages`, `terminal.imageWidthCells`, `images.autoResize`, `images.blockImages` settings; `show-images-selector.ts` | **Partial** — the TUI half done (`tui.md` §10): `:terminal {:show-images :image-width-cells}` settings, terminal-support-gated `/settings` rows, and inline images (or the `imageFallback` text indicator when off/unsupported) in tool results and user/custom messages. `images.blockImages` done: `:images {:block-images}` setting + ungated `/settings` row, stripped per request in `app/loop.clj/call-llm` (pi: convertToLlmWithBlockImages — placeholder text, consecutive dedupe, stored context untouched). **Missing**: `images.autoResize` and the per-model `inputLimits.images.resize` catalog metadata (pi #9631: resize profiles in `models.json`, applied to attachments, `read`, and tool-result images). Both need a resizer backend decision — pi runs a Photon WASM resize pipeline and babashka has no ImageIO/AWT (see `app/tools/read.clj`); the generated catalogs carry no `:input-limits` keys yet

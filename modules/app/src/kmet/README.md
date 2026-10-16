@@ -3,7 +3,7 @@
 This file documents the application package and its contributor workflow.
 Implementation-specific references live beside their namespaces, not in the
 user-facing `docs/` directory: see [`tui/tui.md`](tui/tui.md),
-[`../../loader/src/kmet/loader/loader.md`](../../loader/src/kmet/loader/loader.md), [`extension.md`](extension.md),
+[`../../loader/modules/loader/src/kmet/loader/loader.md`](../../loader/modules/loader/src/kmet/loader/loader.md), [`extension.md`](extension.md),
 [`development/pi-alignment.md`](development/pi-alignment.md). Temporary
 analysis notes (`run_code.md`, `perf.md`, and `jolt-bugs.md`) remain at the
 repository root by convention.
@@ -104,7 +104,7 @@ modules/app/src/kmet/
 │   │                     ls-tool.clj, powershell.clj)
 │   └── ui/             — app TUI components (chat history, footer, ...)
 ├── tui/                — Generic TUI library (pi: @earendil-works/pi-tui;
-│   │                     usage docs in src/kmet/tui/tui.md)
+│   │                     usage docs in modules/tui/src/kmet/tui/tui.md)
 │   └── components/     — text, input, editor, markdown, select/settings
 │                         lists, spinner, image, stack layouts, ...
 ```

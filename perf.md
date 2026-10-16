@@ -843,7 +843,7 @@ code.
 
 ### 10.4 bb vs jolt: the profiles invert by subsystem
 
-Same harness (`scripts/kmet_render_bench.clj`), same phone, width 100, one run
+Same harness (`scripts/bench/kmet_render_bench.clj`), same phone, width 100, one run
 each at HEAD (±10–20 %):
 
 | metric | A bb | A jolt | B bb | B jolt |
@@ -956,9 +956,9 @@ Fresh sweep on the phone, after upgrading jolt from v0.8.6-83 to
 **v0.8.10-10-g9c439021** (`bb` 1.13.222). Two things moved the comparison:
 upstream's regex/perf work (shipped across v0.8.7–v0.8.10; the `$`-anchor fix
 jolt#1062 is in this toolchain) and kmet's own §10.5 + `parse-inline` work.
-The harnesses are committed: `scripts/kmet_render_bench.clj` (§10's),
-`scripts/kmet_perf_bench.clj` (primitive sweep + `cold-regex` / `md-session` /
-`kitty-scan` modes) and `scripts/perf_typing.sh` (§7/§9.3's recipe, settle
+The harnesses are committed: `scripts/bench/kmet_render_bench.clj` (§10's),
+`scripts/bench/kmet_perf_bench.clj` (primitive sweep + `cold-regex` / `md-session` /
+`kitty-scan` modes) and `scripts/bench/perf_typing.sh` (§7/§9.3's recipe, settle
 default 30 s — see §11.4). All µs figures are steady-state medians with warmups
 (§6.2b), reported as same-process host ratios; absolutes are phone-specific like
 every phone table here.
@@ -1116,7 +1116,7 @@ frames a user actually gets:
 
 ### 11.4 Typing CPU: parity on the phone
 
-`scripts/perf_typing.sh` (300 keys @ 20 ms, net of an equal idle window, fresh
+`scripts/bench/perf_typing.sh` (300 keys @ 20 ms, net of an equal idle window, fresh
 session per round; 8 runs bb / 7 jolt):
 
 | host | runs (net ticks) | median |
@@ -1234,7 +1234,7 @@ jolt 3.57 ms per pass — and skipped entirely without image support (cb763f6).
 
 ### 12.3 Typing CPU — parity reproduces
 
-`scripts/perf_typing.sh` (300 keys @ 20 ms, 30 s settle, fresh session per
+`scripts/bench/perf_typing.sh` (300 keys @ 20 ms, 30 s settle, fresh session per
 round; net ticks):
 
 | host | runs | median |
@@ -1323,7 +1323,7 @@ A second pass landed the kitty-walk gate and the `ansi-code-at` scanner:
 Fresh sweep on the Termux/aarch64 phone (`bb` 1.13.225, **`jolt v0.8.20`**),
 after the 2026-10-09 TUI work (reconcile skip for `=`-equal subtrees, tag
 aliases, weak reakt watches) and with the now-committed live-frame harness
-`scripts/kmet_frame_bench.clj` (101241d5) in place of §11.3's manual
+`scripts/bench/kmet_frame_bench.clj` (101241d5) in place of §11.3's manual
 instrumentation. The fixture is the largest local session,
 `2026-10-04T15-34-09-418Z_1a1078d1709-55a72c05.ednl`: **14,881 rendered
 lines / 2.63 MB** at width 100x30. §12's fixture `19fdb60dc61-b305.ednl` is
@@ -1383,7 +1383,7 @@ Reading:
 
 The app task was renamed **`bb run` → `bb start`** in 00b3e373 (2026-09-29;
 `bb run` now opens a babashka REPL, not kmet), so §1's recipe is stale and
-`scripts/perf_typing.sh` now documents `bb start` / `jolt start`. Corrected
+`scripts/bench/perf_typing.sh` now documents `bb start` / `jolt start`. Corrected
 fresh-app measurement (300 keys @ 20 ms, 30 s bb / 40 s jolt settle, net of an
 equal idle window):
 
@@ -1432,7 +1432,7 @@ Per-frame medians on the §13.1 fixture (same tree, before → after):
 bb is unchanged within the phone's run-to-run noise (its scan was already
 ~2.5-3 ms; the shortcut keeps the old cost when unfocused and the loop's
 identity preservation when marked). On the live app (focused editor,
-`scripts/perf_typing.sh`, 300 keys @ 20 ms): **bb ~225 → ~191 net ticks
+`scripts/bench/perf_typing.sh`, 300 keys @ 20 ms): **bb ~225 → ~191 net ticks
 (−15 %), jolt 234 → ~138 (−41 %)**. In isolation on 177-char lines, the
 marked-frame cursor phase is bb 5.2 (old) → 6.0 (loop, with the identity win
 landing in normalize instead) and jolt 17.3 → 2.8. Tests:
@@ -1551,8 +1551,8 @@ The reactive engine under the TUI (`kmet.libs.reakt.core` + `kmet.libs.reakt.wea
 no profile yet. Reproduce with:
 
 ```sh
-bb   scripts/kmet_reakt_bench.clj     # full sweep
-jolt scripts/kmet_reakt_bench.clj
+bb   scripts/bench/kmet_reakt_bench.clj     # full sweep
+jolt scripts/bench/kmet_reakt_bench.clj
 ```
 
 Steady-state per-op medians (§6.2b: 2 warming rounds, median of 5), same
@@ -1966,14 +1966,14 @@ another terminal at ~20 % of a core for the whole session — the recorded
 §6.2b condition, not corrected for; the numbers landed inside the expected
 bands.
 
-Harnesses: `scripts/kmet_reakt_bench.clj`, `scripts/kmet_perf_bench.clj`,
-`scripts/kmet_frame_bench.clj` (`19fdb60dc61-b305.ednl`, 9,067 rendered
-lines), `scripts/perf_typing.sh`, and scratch probes under
+Harnesses: `scripts/bench/kmet_reakt_bench.clj`, `scripts/bench/kmet_perf_bench.clj`,
+`scripts/bench/kmet_frame_bench.clj` (`19fdb60dc61-b305.ednl`, 9,067 rendered
+lines), `scripts/bench/perf_typing.sh`, and scratch probes under
 `target/perf-check-17/` (map-key, scaling, queue, handoff, io).
 
 ### 17.1 reakt layer — the many-dep deficit is gone
 
-`scripts/kmet_reakt_bench.clj`, both hosts, medians of 5 rounds (µs; J/B =
+`scripts/bench/kmet_reakt_bench.clj`, both hosts, medians of 5 rounds (µs; J/B =
 jolt/bb; §16.1's phone ratio alongside):
 
 | op | bb | jolt | J/B | §16.1 J/B |
@@ -2070,7 +2070,7 @@ lines. Remove it with the floor.
 
 ### 17.6 Primitives — stable against §12.1
 
-`scripts/kmet_perf_bench.clj` (same sweep as §12.1, medians of 5 rounds).
+`scripts/bench/kmet_perf_bench.clj` (same sweep as §12.1, medians of 5 rounds).
 Nothing regressed in shape; the notable movers since §12.1 are all better on
 jolt: `ansi-code-at` 1.374 → **0.332 µs** (the §12.5 scanner, kmet-side),
 editor 20-line render 169.5 → **75.7** (J/B 2.7 → 1.28) and 500-char 384 →
@@ -2154,7 +2154,7 @@ to change in kmet.
 
 ### 18.3 Fixed: two kmet sites fed the raw regex to jolt
 
-Applied (`src/kmet/tui/utils.cljc`):
+Applied (`modules/tui/src/kmet/tui/utils.cljc`):
 
 - **`truncate-to-width` called `match-at ANSI-CODE-RE` at *every index* of a
   styled line** — a fresh matcher per character — instead of the
@@ -2389,7 +2389,7 @@ The remaining inversion in the mixed fixtures is the `corpus` row: it is
 markup-dense (a link, a bare URL, backticks and emphasis in every ~400-char
 section), so the runs between specials are short, the per-call matcher scan
 is paid often, and the URL regex itself runs on real URLs. The added
-`bb scripts/kmet_perf_bench.clj` rows read 275.8 µs / 2.99 ms / 1.71 ms /
+`bb scripts/bench/kmet_perf_bench.clj` rows read 275.8 µs / 2.99 ms / 1.71 ms /
 11.81 ms on bb and 458.2 µs / 5.82 ms / 2.37 ms / 9.69 ms on jolt (the
 sweep runs after minutes of other benches, so trust the A/B ratios, not
 those absolutes).

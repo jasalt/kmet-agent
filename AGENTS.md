@@ -9,9 +9,9 @@ change when behavior changes.
 
 | Area | Authoritative reference |
 |------|-------------------------|
-| Application layout and contributor workflow | [`src/kmet/README.md`](src/kmet/README.md) |
-| TUI, components, Hiccup, reactivity, input, and rendering | [`src/kmet/tui/tui.md`](src/kmet/tui/tui.md) |
-| Extension contract and authoring | [`src/kmet/extension.md`](src/kmet/extension.md) |
+| Application layout and contributor workflow | [`modules/app/src/kmet/README.md`](modules/app/src/kmet/README.md) |
+| TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
+| Extension contract and authoring | [`modules/app/src/kmet/extension.md`](modules/app/src/kmet/extension.md) |
 | Loader design and backends | [`modules/loader/src/kmet/loader/loader.md`](modules/loader/src/kmet/loader/loader.md) |
 | Jolt provider scaffolding and host integration | [`jolt/src/jolt/kmet/README.md`](jolt/src/jolt/kmet/README.md) |
 | User guides and examples | [`docs/README.md`](docs/README.md), [`docs/examples/README.md`](docs/examples/README.md) |
@@ -99,7 +99,7 @@ intentionally remain at the project root.
 - Both host lint views must remain valid for shared code.
 - The layer boundaries, task packaging rules, portability notes, and
   application state conventions are maintained in
-  [`src/kmet/README.md`](src/kmet/README.md). Keep that document current
+  [`modules/app/src/kmet/README.md`](modules/app/src/kmet/README.md). Keep that document current
   when those rules change.
 
 ### Time and durations
@@ -133,8 +133,8 @@ intentionally remain at the project root.
   way.
 - Needing a variant is the signal to extend the lower layer (or the nearest
   shared namespace) — a second implementation is a bug even when it works.
-  The layer map is in [`src/kmet/README.md`](src/kmet/README.md); the
-  dispatcher list is in [`src/kmet/tui/tui.md`](src/kmet/tui/tui.md).
+  The layer map is in [`modules/app/src/kmet/README.md`](modules/app/src/kmet/README.md); the
+  dispatcher list is in [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md).
 
 ## Testing
 
@@ -158,11 +158,11 @@ intentionally remain at the project root.
 - Keep implementation and design documentation with its package, as listed in
   the topic map; temporary project notes stay at the repository root.
 - TUI rules (components, Hiccup, `track!`, lifecycle/input, theming, and
-  full-redraw behavior) live in [`src/kmet/tui/tui.md`](src/kmet/tui/tui.md).
+  full-redraw behavior) live in [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md).
 - Jolt claims, guarded requires, loader capability floors, and native
   packaging live in [`jolt/src/jolt/kmet/README.md`](jolt/src/jolt/kmet/README.md)
   and [`docs/building.md`](docs/building.md).
-- Extension behavior lives in [`src/kmet/extension.md`](src/kmet/extension.md);
+- Extension behavior lives in [`modules/app/src/kmet/extension.md`](modules/app/src/kmet/extension.md);
   shipped-extension user setup remains in [`extensions/README.md`](extensions/README.md).
 - Supported platforms are Linux, macOS, Windows, WSL, and Termux. Start with
   [`docs/building.md`](docs/building.md) for platform setup and distribution;

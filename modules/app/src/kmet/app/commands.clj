@@ -22,34 +22,31 @@
 
 (defonce pending-command-registry (atom []))
 
-(defn- command-registries
-  "The registry to use when an engine is active; otherwise the pre-bootstrap
-   pending buffer."
+(defn- current-command-registry
+  "The active engine's command registry atom, or the pre-bootstrap pending
+   buffer when no engine is active."
   []
-  (if-let [eng (do (require 'kmet.app.session-runtime)
-                  ((resolve 'kmet.app.session-runtime/default-engine)))]
-    [(:commands eng)]
-    [pending-command-registry]))
+  (or (some-> (do (require 'kmet.app.session-runtime)
+                  ((resolve 'kmet.app.session-runtime/default-engine)))
+              :commands)
+      pending-command-registry))
 
 (defn register-command!
   "Register (or replace by :name) a slash command. Returns nil."
   [cmd]
-  (doseq [reg (command-registries)]
-    (swap! reg (fn [cmds] (conj (remove #(= (:name %) (:name cmd)) cmds) cmd))))
+  (swap! (current-command-registry) (fn [cmds] (conj (remove #(= (:name %) (:name cmd)) cmds) cmd)))
   nil)
 
 (defn unregister-command!
   "Remove a slash command by :name. Returns nil."
   [name]
-  (doseq [reg (command-registries)]
-    (swap! reg (fn [cmds] (remove #(= (:name %) name) cmds))))
+  (swap! (current-command-registry) (fn [cmds] (remove #(= (:name %) name) cmds)))
   nil)
 
 (defn clear-commands!
   "Remove all registered commands (mainly for tests). Returns nil."
   []
-  (doseq [reg (command-registries)]
-    (reset! reg []))
+  (reset! (current-command-registry) [])
   nil)
 
 (defn command-line?
@@ -77,14 +74,10 @@
   (or (nil? (:frontend cmd)) (= frontend (:frontend cmd))))
 
 (defn- all-registered-commands
-  "One registered command per :name across active or pending registries."
+  "The commands currently registered; register-command! replaces by
+   :name, so the atom already has unique names."
   []
-  (reduce (fn [acc cmd]
-            (if (some #(= (:name %) (:name cmd)) acc)
-              acc
-              (conj acc cmd)))
-          []
-          (apply concat (map deref (command-registries)))))
+  @(current-command-registry))
 
 (defn get-commands
   "All registered slash commands, or those available to FRONTEND: a command

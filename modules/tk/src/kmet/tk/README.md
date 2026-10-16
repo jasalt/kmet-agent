@@ -96,12 +96,12 @@ without Termux:X11; on Termux, jolt (bionic) can use the system Tcl/Tk
 while the glibc babashka build needs a glibc Tcl/Tk.
 
 ```sh
-bb scripts/gui_tk_demo.clj       # opens a small demo window
-jolt scripts/gui_tk_demo.clj     # the same on Jolt
+bb scripts/demos/gui_tk_demo.clj       # opens a small demo window
+jolt scripts/demos/gui_tk_demo.clj     # the same on Jolt
 
 # display a saved session (TUI palette, markdown, tool output):
-bb scripts/gui_tk_session.clj [session.ednl] [--width 110]
-jolt scripts/gui_tk_session.clj [session.ednl] [--width 110]
+bb scripts/demos/gui_tk_session.clj [session.ednl] [--width 110]
+jolt scripts/demos/gui_tk_session.clj [session.ednl] [--width 110]
 #   no path: the most recent session for the current directory
 #   --dump N: print the first N rendered lines instead of opening a window
 ```
@@ -126,7 +126,7 @@ menubutton message panedwindow radiobutton scale scrollbar spinbox text
 toplevel` and the themed `ttk::button
 checkbutton combobox entry frame label labelframe menubutton notebook
 panedwindow progressbar radiobutton scale scrollbar separator sizegrip
-spinbox toggleswitch treeview`. `scripts/tk_option_audit.clj` reports
+spinbox toggleswitch treeview`. `scripts/bench/tk_option_audit.clj` reports
 that coverage against a live Tk.
 
 Three shapes of tag, on top of the plain leaves:
@@ -579,7 +579,7 @@ Styles are defined on the Tk thread once the adapter has Tk
 theme's colors and `kmet.app.ui.gui.transcript`'s surfaces to the values
 above (frames and labels on the window surface, fields on the card
 surface, notebook, treeview, scrollbars, and the active/pressed/disabled
-maps), and `apply-theme!` applies it. `scripts/gui_tk_session.clj` calls
+maps), and `apply-theme!` applies it. `scripts/demos/gui_tk_session.clj` calls
 `(gui-style/apply-theme! (:theme ctx))` right after `tcl/install!`; the
 app's own startup and a runtime theme switch land with the GUI app port.
 
@@ -743,7 +743,7 @@ fractions, a canvas `:bind` keeping a drag's coordinates past the item's
 edge, a posted menu's `-postcommand`, and a labelframe's label widget read
 back with `cget -labelwidget`.
 
-`scripts/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
+`scripts/bench/tk_option_audit.clj` (bb, needs Tcl/Tk and a display) enumerates
 the interpreter's widget classes and their options and diffs them against
 the tag table: the options a tag declares that its widget lacks, and the
 options it does not reach yet. `kmet.tk.test-tcl`'s
@@ -764,7 +764,7 @@ families in `kmet.tk.options` (see *Options* above), and its script-typed
 options are the tag's binding slots (validation, the scroll commands,
 `-postcommand`); the cross-widget options are reached through the tag that
 owns them (a menubutton's `:items`, a menu's `:menubar`, a labelframe
-child's `:labelwidget`), and `scripts/tk_option_audit.clj` reports what is
+child's `:labelwidget`), and `scripts/bench/tk_option_audit.clj` reports what is
 still missing against a live Tk. kmet's own widgets are the `:ui/…` set in
 `kmet.app.ui.gui.ui` (today `:ui/transcript`, the chat scroll container).
 
@@ -784,7 +784,7 @@ sibling scrollbar and "scroll to the end" on first map.
 `kmet.app.ui.gui.transcript` is the chat UI over it: one bordered,
 collapsible card per session message type (user, assistant, tool, custom),
 reusing the TUI markdown renderer and palette, and
-`scripts/gui_tk_session.clj` opens a saved session in it (display only).
+`scripts/demos/gui_tk_session.clj` opens a saved session in it (display only).
 kmet's own application UI is still written against `kmet.tui` (line-oriented
 components) and is not ported to this backend yet; the next steps are
 incremental transcript append (instead of re-rendering the whole stack),

@@ -44,7 +44,7 @@ A copyable starting point with the current keys is available in
 
 ## Provider catalogs
 
-`kmet` reads its provider catalog from `src/kmet/ai/model_data/*.edn`
+`kmet` reads its provider catalog from `modules/ai/src/kmet/ai/model_data/*.edn`
 (40 providers: opencode-go, deepseek, anthropic, google, groq, cerebras,
 openrouter, nvidia, moonshotai, qwen-token-plan, minimax, fireworks,
 vercel-ai-gateway, zai, together, baseten, kimi-coding, cloudflare, mistral,
@@ -58,7 +58,7 @@ and each cache replaces the corresponding built-in data whenever it is
 strictly newer — so an upgrade shipping newer bundled data wins over a
 stale cache until the next refresh. Reruns with no upstream changes rewrite
 nothing. The image-model catalog lives in
-`src/kmet/ai/image_model_data/image-models.edn`.
+`modules/ai/src/kmet/ai/image_model_data/image-models.edn`.
 Models, base URLs and defaults are registry data; custom providers, API keys
 and model overrides go in `~/.kmet/agent/models.edn`. OpenAI-completions
 wire compatibility (thinking format, max-tokens field, reasoning

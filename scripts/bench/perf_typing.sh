@@ -4,7 +4,7 @@
 # while sending N keys at IVAL seconds apart. Net CPU = typing - idle,
 # in /proc/<pid>/stat ticks (fields 14+15, user+sys; 100 Hz on this device).
 #
-#   scripts/perf_typing.sh <label> <command-string> [nkeys] [interval-s] [settle-s]
+#   scripts/bench/perf_typing.sh <label> <command-string> [nkeys] [interval-s] [settle-s]
 #
 # Pass the app commands: `bb start` / `jolt start`. The bb `run` task was
 # renamed to `start` in 00b3e373 (2026-09-29); `bb run` now opens a babashka

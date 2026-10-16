@@ -1389,7 +1389,7 @@ Notes:
 ## 9. Theming
 
 All styling goes through `kmet.tui.theme`; raw ANSI escapes are banned
-outside `src/kmet/tui/` and `kmet.tui.terminal-escape`.
+outside `modules/tui/src/kmet/tui/` and `kmet.tui.terminal-escape`.
 
 ```clojure
 (theme/fg theme :primary text)     ; wraps, resets fg only (\u001b[39m)
@@ -1439,7 +1439,7 @@ nil detects.
 
 ## 10. Component catalog
 
-All under `src/kmet/tui/components/`, constructed via `make-*` fns (or the
+All under `modules/tui/src/kmet/tui/components/`, constructed via `make-*` fns (or the
 DSL tags of §2.2):
 
 | component | purpose |
@@ -1589,9 +1589,9 @@ current directory. Prefer an existing, git-ignored directory, e.g.
 ### When bytes look wrong but headless render looks right
 
 Scroll-region/diff bugs are invisible at the lines level. Capture the
-session's raw output — `scripts/tmux_capture.sh` or
-`scripts/pty_capture.py` — and replay it through the minimal ANSI emulator:
-`python3 scripts/term_dump.py out.raw` prints the frames (with colors) at
+session's raw output — `scripts/capture/tmux_capture.sh` or
+`scripts/capture/pty_capture.py` — and replay it through the minimal ANSI emulator:
+`python3 scripts/capture/term_dump.py out.raw` prints the frames (with colors) at
 sync boundaries.
 
 The repository capture helpers are:
@@ -1822,7 +1822,7 @@ embedded field.
 
 Deliberate boundaries, recorded so the analysis behind them is not redone.
 This is not the gap tracker — kmet↔pi follow-ups live in
-`src/kmet/development/pi-alignment.md`;
+`modules/app/src/kmet/development/pi-alignment.md`;
 anything listed here changes only on an explicit request.
 
 ### 15.1 Features deliberately out of scope

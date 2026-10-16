@@ -2,7 +2,7 @@
 
 Working notes on the gaps of the Tk backend (`kmet.tk.*`), ordered by what
 would matter first to an app UI built on it. The app port's own work, which
-waits for these, is listed at the end. `modules/tk/modules/tk/src/kmet/tk/README.md` is the
+waits for these, is listed at the end. `modules/tk/src/kmet/tk/README.md` is the
 package's design document; this file is the open-work list beside it.
 
 ## What is complete
@@ -35,7 +35,7 @@ identity (an `:id` written as the item's first Tk tag, reconciled in place,
 with Tk's item events and its stacking order), `:context-menu` posting
 through Tk's own `tk_popup`, check and radio menu items with the private
 variables Tk needs, and `grid`/`place` as a child's own geometry maps. What
-each contract is, and what it refuses, is in `modules/tk/modules/tk/src/kmet/tk/README.md` (Data
+each contract is, and what it refuses, is in `modules/tk/src/kmet/tk/README.md` (Data
 widgets, Props and bindings, Geometry).
 
 The variable-backed options are props: `:variable`, `:textvariable` and
@@ -48,7 +48,7 @@ app's own Tcl owns, which kmet scripts as it is and never unsets.
 `:tristatevalue` are plain props beside it, a checkable widget's variable
 is shared with the app and with its radio group, and a second source of
 truth (`:text` beside `:textvariable`, `:items` beside `:listvariable`) is
-refused. `modules/tk/modules/tk/src/kmet/tk/README.md` (Shared variables) is the contract.
+refused. `modules/tk/src/kmet/tk/README.md` (Shared variables) is the contract.
 
 The script-typed options are props too — binding slots of the tags whose
 widgets have them. Tk asks `:validatecommand` whether an edit is allowed,
@@ -77,7 +77,7 @@ callback, not from a component body, which renders inside the pump.
 ttk styles and themes are wired: `kmet.tk.ttk.style` is the style database
 (`use-theme!`, `define-style!`, `map-style!`, `apply!`) and
 `kmet.app.ui.gui.style` compiles the TUI theme + the transcript palette
-into a dark style set, which `scripts/gui_tk_session.clj` applies after
+into a dark style set, which `scripts/demos/gui_tk_session.clj` applies after
 `tcl/install!`. Re-applying the set when the *user* changes the theme is
 app work: it is the last item of the app port at the end of this file.
 
@@ -101,7 +101,7 @@ widget (the `:ui/…` widgets have their own guard, `bb test
 kmet.app.ui.gui.test-ui`):
 
 ```sh
-bb scripts/tk_option_audit.clj          # declared vs. the live widget, per tag
+bb scripts/bench/tk_option_audit.clj          # declared vs. the live widget, per tag
 bb test kmet.tk.test-tcl               # the same claim in test form: every
                                         # tag's options and callback options
                                         # checked, every tag mounted with all
@@ -127,7 +127,7 @@ against both interpreters on one machine (Tk 9.1.0 from the kmet bundle, Tk
 8.6.18 from the Git for Windows bundle):
 
 ```sh
-KMET_TCL_LIB=…/tcl86.dll KMET_TK_LIB=…/tk86.dll bb scripts/tk_option_audit.clj
+KMET_TCL_LIB=…/tcl86.dll KMET_TK_LIB=…/tk86.dll bb scripts/bench/tk_option_audit.clj
 ```
 
 ### Options Tk 9 added (they fail on 8.6)
@@ -232,7 +232,7 @@ Nothing here is a backend gap.
 
 ## How to keep this list honest
 
-- `bb scripts/tk_option_audit.clj` — declared vs. live options per tag;
+- `bb scripts/bench/tk_option_audit.clj` — declared vs. live options per tag;
   exits non-zero when a tag declares an option its widget lacks, and prints
   the widget classes without a tag (currently none).
 - `bb test kmet.tk.test-tcl` — the same check in test form plus a mount of

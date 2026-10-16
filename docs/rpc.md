@@ -207,12 +207,12 @@ headless default.
 
 TUI-only capabilities without a wire form stay inert (or degrade to the
 headless default) and are listed in
-[`src/kmet/extension.md`](../src/kmet/extension.md); the client can ignore
+[`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md); the client can ignore
 fire-and-forget records it does not render.
 
 ## Scripting with `kmet.modes.rpc-client`
 
-The repository ships a thin EDN client (`src/kmet/modes/rpc_client.clj`) for
+The repository ships a thin EDN client (`modules/app/src/kmet/modes/rpc_client.clj`) for
 Clojure scripts — it spawns the process, correlates responses by `:id`, and
 subscribes to the event stream:
 

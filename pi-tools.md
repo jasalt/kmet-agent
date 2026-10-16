@@ -107,4 +107,4 @@ does not list the tools; the MCP extension activates `codemode` when a server wi
 - kmet currently has no exposure/loadout layer: every registered tool is
   effectively `direct`, selection is the `:enabled-tools` filter plus `/tools`,
   and script-visible tools come from the `run_code` tool-source mechanism. See
-  `src/kmet/development/pi-alignment.md`.
+  `modules/app/src/kmet/development/pi-alignment.md`.

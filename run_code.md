@@ -11,7 +11,7 @@ opt-in extensions). The one thing already in place is measurement — per-tool
 result-token attribution — so the build/no-build decision can be made on data.
 
 Status: **T1, T2 and T4 implemented** in this tree —
-`src/kmet/app/tools/run_code.cljc`, a builtin (read/write/edit/bash + `run_code`),
+`modules/app/src/kmet/app/tools/run_code.cljc`, a builtin (read/write/edit/bash + `run_code`),
 `kmet.app.test-run-code` (56 tests: 39 fast + 17 `^:slow`, smoke-verified on
 babashka and jolt); the mcp-adapter's `mcpScript` tool and `bb`-subprocess
 runtime retired into the same engine (its catalog joins the sandbox as a
@@ -468,7 +468,7 @@ comes first.
     contributed name goes through the same normalization/`:streams?`/
     `:contextual?` handling without joining `get-tool`/`get-all-tools`.
     The extension API (`:register-tool-source!`/`:unregister-tool-source!`,
-    tracked for unload) is documented in `src/kmet/extension.md`.
+    tracked for unload) is documented in `modules/app/src/kmet/extension.md`.
   - **Adapter: the catalog as a source.**
     `tool-proxy/script-tool-records` builds records from the metadata cache
     (prefixed name → `{:name :label :description :parameters :streams?
@@ -747,7 +747,7 @@ precedent is available if the prompt impact measures badly).
 
 The plan above is now the record of what landed:
 
-1. ✅ **Tool** — `src/kmet/app/tools/run_code.cljc` (`.cljc` for the
+1. ✅ **Tool** — `modules/app/src/kmet/app/tools/run_code.cljc` (`.cljc` for the
    jolt/bb `sci/binding` split), a `run_code` record (params `code` +
    `timeout` in seconds — bash's unit — plus an optional result byte
    budget, `:streams? true`, `:contextual? true`), registered at the
@@ -911,38 +911,38 @@ pipeline both callers use:
 
 ## References
 
-- `src/kmet/app/tools/run_code.cljc` — the T1 implementation: capabilities,
+- `modules/app/src/kmet/app/tools/run_code.cljc` — the T1 implementation: capabilities,
   bridge, capture, deadline, combined cancel signal;
   `test/kmet/app/test_run_code.clj` the tests. `run_code.cljc` (not `.clj`)
   because of the `#?(:jolt … :default …)` `sci/binding` — clj-kondo allows
   reader conditionals only in `.cljc`, and the split must be read out on
   babashka (the macro expands to private `sci.impl` fns babashka's nested SCI
   cannot resolve).
-- `src/kmet/app/tools/invoke.clj` — the T4 shared invocation pipeline
+- `modules/app/src/kmet/app/tools/invoke.clj` — the T4 shared invocation pipeline
   (`prepare-tool-call` / `execute-tool-call` / `finish-tool-call`);
   `test/kmet/app/test_tools.clj` covers its hook/binding semantics, and
   `test/kmet/app/test_loop.clj` the loop side (block, arg rewrite in both
   batch modes, after-hook overrides, and hook propagation into a scripted
   call).
-- `src/kmet/libs/concurrent.clj` — `or-signal` (the read-only OR-view of
+- `modules/libs/src/kmet/libs/concurrent.clj` — `or-signal` (the read-only OR-view of
   cancel signals used by the run_code bridge and the loop's provider guard)
   next to the extension `spawn` helper.
-- `src/kmet/app/tools/core.clj`, `src/kmet/app/tools/registry.clj` —
+- `modules/app/src/kmet/app/tools/core.clj`, `modules/app/src/kmet/app/tools/registry.clj` —
   `execute-tool` (the bridge seam), `select-tools` (the shared surface
   filter), `built-in-tools`, `get-all-tools`, `get-tool`.
-- `src/kmet/app/loop.clj` — run-level bindings (incl.
+- `modules/app/src/kmet/app/loop.clj` — run-level bindings (incl.
   `run-code/*enabled-tools-fn*`, `run-code/*tool-hooks*` and the per-batch
   `run-code/*assistant-message*`) + `active-tools` / `set-active-tools!`;
   `execute-tool-calls-*` (what the bridge must not route through); the
   `--debug` per-tool report at agent end.
-- `src/kmet/app/extensions.cljc` — `shared-context` / `shared-var-map` /
+- `modules/app/src/kmet/app/extensions.cljc` — `shared-context` / `shared-var-map` /
   `build-context-namespaces` (SCI injection pattern), `build-extension-context`.
-- `src/kmet/extension.clj` — tool registration (`register-tool!`,
+- `modules/app/src/kmet/extension.clj` — tool registration (`register-tool!`,
   `create-bash-tool`, `on-tool-call` / `on-tool-result`).
-- `src/kmet/app/session.clj` — `:result-tokens`, `tool-usage`,
+- `modules/app/src/kmet/app/session.clj` — `:result-tokens`, `tool-usage`,
   `tool-usage-report`.
-- `src/kmet/modes/interactive.clj` — the `/session` **Tool Results** section.
-- `src/kmet/app/event_bus.clj` — event vocabulary shared with the TUI (the
+- `modules/app/src/kmet/modes/interactive.clj` — the `/session` **Tool Results** section.
+- `modules/app/src/kmet/app/event_bus.clj` — event vocabulary shared with the TUI (the
   serialization seam a future RPC mode would use).
 - `kmet.loader.sci-loader` — `:base` fork (per-call contexts for T3's daemon),
   `:eval-fn` (the default `sci/eval-string*`), `:interrupt-fn` support.

@@ -77,6 +77,8 @@
     kmet.test-theme kmet.test-config
     kmet.test-http-boundary
     kmet.test-time-boundary
+    kmet.test-module-deps
+    kmet.test-test-ns-registration
     kmet.tasks.build-test
     kmet.tasks.build-jolt-test
     kmet.app.test-skills
@@ -132,6 +134,7 @@
     kmet.tui.test-autocomplete
     kmet.tui.test-core
     kmet.libs.test-reakt
+    kmet.libs.test-hikap
     kmet.libs.test-weak
     kmet.tui.test-reakt-integration
     kmet.tui.test-compute

@@ -6,8 +6,8 @@
 
    Needs Tcl/Tk and a display (it creates the widgets once to ask them).
 
-   Run: bb scripts/tk_option_audit.clj
-        bb scripts/tk_option_audit.clj --widgets   ; per-widget option dump
+   Run: bb scripts/bench/tk_option_audit.clj
+        bb scripts/bench/tk_option_audit.clj --widgets   ; per-widget option dump
 
    Exits 1 when a tag declares an option its widget lacks."
   (:require [clojure.string :as str]

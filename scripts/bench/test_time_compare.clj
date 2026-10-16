@@ -9,7 +9,7 @@
 ;; (which also carries namespace loading).
 ;;
 ;; Usage:
-;;   bb scripts/test_time_compare.clj [options] [test-filter ...]
+;;   bb scripts/bench/test_time_compare.clj [options] [test-filter ...]
 ;;
 ;; Options:
 ;;   -s, --slow          compare the ^:slow suite (test-ext) instead of test
@@ -360,7 +360,7 @@
   (println
    (str/join
     "\n"
-    ["Usage: bb scripts/test_time_compare.clj [options] [test-filter ...]"
+    ["Usage: bb scripts/bench/test_time_compare.clj [options] [test-filter ...]"
      ""
      "Runs `bb test` and `jolt test` (or `test-ext` with --slow) and prints each"
      "namespace's runner-reported and externally measured wall times side by side."

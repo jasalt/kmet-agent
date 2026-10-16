@@ -1,12 +1,12 @@
 ;; Primitive microbenchmarks behind perf.md's tables (§3.3, §5, §9.1, §9.2,
 ;; §6.6, §11, §12). Same script on both hosts:
 ;;
-;;   bb   scripts/kmet_perf_bench.clj              # full sweep
-;;   jolt scripts/kmet_perf_bench.clj
-;;   bb   scripts/kmet_perf_bench.clj cold-regex   # fresh-process first re-find
-;;   bb   scripts/kmet_perf_bench.clj cold-regex-grouped
-;;   bb   scripts/kmet_perf_bench.clj md-session <session-file>
-;;   bb   scripts/kmet_perf_bench.clj kitty-scan <session-file>
+;;   bb   scripts/bench/kmet_perf_bench.clj              # full sweep
+;;   jolt scripts/bench/kmet_perf_bench.clj
+;;   bb   scripts/bench/kmet_perf_bench.clj cold-regex   # fresh-process first re-find
+;;   bb   scripts/bench/kmet_perf_bench.clj cold-regex-grouped
+;;   bb   scripts/bench/kmet_perf_bench.clj md-session <session-file>
+;;   bb   scripts/bench/kmet_perf_bench.clj kitty-scan <session-file>
 ;;
 ;; Steady-state per-op medians with warmups (§6.2b): warming rounds matter,
 ;; irregex's first rounds run 3-4x steady state. Numbers are single-process

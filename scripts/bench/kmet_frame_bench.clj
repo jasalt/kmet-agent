@@ -3,8 +3,8 @@
 ;; measured per frame on a real session in a virtual terminal.
 ;;
 ;; Usage:
-;;   bb   scripts/kmet_frame_bench.clj <session-file> [width] [height] [scenario]
-;;   jolt scripts/kmet_frame_bench.clj <session-file> [width] [height] [scenario]
+;;   bb   scripts/bench/kmet_frame_bench.clj <session-file> [width] [height] [scenario]
+;;   jolt scripts/bench/kmet_frame_bench.clj <session-file> [width] [height] [scenario]
 ;;
 ;; Scenarios (default `all`):
 ;;   cold   — the first frame (the whole transcript, full emit)
