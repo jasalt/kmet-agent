@@ -49,6 +49,8 @@
    metadata, so no namespace is excluded from either run."
   '[kmet.test-utils kmet.test-keys
     kmet.app.test-session
+    kmet.app.test-session-schema
+    kmet.ai.test-message-schema
     kmet.app.test-session-export
     kmet.app.test-compaction
     kmet.app.test-tools

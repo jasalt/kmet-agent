@@ -5,6 +5,8 @@
   (:require [kmet.ai.usage :as usage]
             [kmet.libs.fs :as kfs]
             [kmet.libs.edn-store :as eds]
+            [kmet.app.session-schema :as session-schema]
+            [kmet.debug :as debug]
             [clojure.java.io :as io]
             [clojure.edn :as edn]
             [clojure.string :as str]
@@ -173,7 +175,14 @@
   [path line]
   (let [trimmed (str/trim line)]
     (when (seq trimmed)
-      (try (edn/read-string trimmed)
+      (try (let [e (edn/read-string trimmed)]
+             (if (and (debug/enabled?) (map? e)
+                      (not (session-schema/validate-entry? e)))
+               (do (binding [*out* *err*]
+                     (println "Warning: Skipping wrong-shape entry in" path ":"
+                              (pr-str (session-schema/explain-entry e))))
+                   ::invalid)
+               e))
            (catch Exception ex
              (binding [*out* *err*]
                (println "Warning: Skipping invalid entry in" path ":" (ex-message ex)))
