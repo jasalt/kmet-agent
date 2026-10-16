@@ -98,7 +98,7 @@
    src → repo) and an `extensions/` directory to prove it."
   [f]
   (try
-    (let [repo (fs/parent (fs/parent (fs/parent (fs/parent (io/file f)))))]
+    (let [repo (fs/parent (fs/parent (fs/parent (fs/parent (fs/parent (io/file f))))))]
       (when (and repo
                  (fs/exists? (fs/path repo "extensions")))
         (str repo)))
@@ -109,7 +109,7 @@
   []
   (let [cwd (fs/cwd)]
     (when (and (fs/exists? (fs/path cwd "extensions"))
-               (fs/exists? (fs/path cwd "src" "kmet" "bundled-extensions"
+               (fs/exists? (fs/path cwd "app" "src" "kmet" "bundled-extensions"
                                     "manifest.edn")))
       (str cwd))))
 

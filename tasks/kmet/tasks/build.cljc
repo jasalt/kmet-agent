@@ -62,7 +62,7 @@
 (def ^:private bundled-manifest-path
   "The committed manifest, read straight from the checkout (it is inside
    src/, so the runtime sees it as a classpath resource in every mode)."
-  "src/kmet/bundled-extensions/manifest.edn")
+  "app/src/kmet/bundled-extensions/manifest.edn")
 (def ^:private bundled-staging-root
   "Build-time staging root the packagers embed/walk as an extra root: its
    tree is exactly the runtime's resource keys,
@@ -434,7 +434,7 @@
   []
   (bb-only! "kmet.tasks.build/uberjar*")
   (stage-bundled-extensions!)
-  (write-uberjar! jar-path main-class ["src"]
+  (write-uberjar! jar-path main-class ["app/src" "libs/src" "tui/src" "ai/src"]
                   {:extra-roots [bundled-staging-root]}))
 
 (defn test-uberjar*
@@ -448,7 +448,7 @@
   (generate-test-main!)
   (stage-bundled-extensions!)
   (write-uberjar! test-jar-path test-main-class
-                  ["src" "tasks" "test" test-entry-root]
+                  ["app/src" "libs/src" "tui/src" "ai/src" "tasks" "test" test-entry-root]
                   {:extra-roots [bundled-staging-root]}))
 
 ;; ─── Assembling artifacts ──────────────────────────────────────────────────

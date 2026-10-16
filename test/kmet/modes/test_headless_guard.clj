@@ -15,9 +15,12 @@
   "The source file defining namespace N (clj, then cljc, then cljs)."
   [n]
   (let [p (str (str/replace n "." "/") ".clj")]
-    (first (filter fs/exists? [(str "src/" p)
-                               (str "src/" (str/replace p ".clj" ".cljc"))
-                               (str "src/" (str/replace p ".clj" ".cljs"))]))))
+    (first (filter fs/exists?
+                   (mapcat (fn [root]
+                             [(str root "/" p)
+                              (str root "/" (str/replace p ".clj" ".cljc"))
+                              (str root "/" (str/replace p ".clj" ".cljs"))])
+                           ["app/src" "libs/src" "tui/src" "ai/src" "src"])))))
 
 (defn- required-namespaces
   "The kmet.* namespaces PATH's ns form requires. Reads the ns form itself —

@@ -14,7 +14,7 @@
             (mapcat (fn [f]
                       (if (fs/directory? f) (walk f) [f]))
                     (fs/list-dir dir)))]
-    (->> (walk "src/kmet/libs")
+    (->> (walk "libs/src/kmet/libs")
          (filter #(re-find #"\.clj[ca]?$" (str %)))
          (map str))))
 

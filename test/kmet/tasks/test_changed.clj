@@ -7,9 +7,9 @@
 
 (deftest path->ns-mapping
   (testing "src files map to namespaces (underscores become dashes)"
-    (is (= 'kmet.core (changed/path->ns "src/kmet/core.clj")))
-    (is (= 'kmet.app.ui.model-selector (changed/path->ns "src/kmet/app/ui/model_selector.clj")))
-    (is (= 'kmet.ai.api.openai-completions (changed/path->ns "src/kmet/ai/api/openai_completions.clj"))))
+    (is (= 'kmet.core (changed/path->ns "app/src/kmet/core.clj")))
+    (is (= 'kmet.app.ui.model-selector (changed/path->ns "app/src/kmet/app/ui/model_selector.clj")))
+    (is (= 'kmet.ai.api.openai-completions (changed/path->ns "ai/src/kmet/ai/api/openai_completions.clj"))))
   (testing "test files map to test namespaces"
     (is (= 'kmet.app.test-loop (changed/path->ns "test/kmet/app/test_loop.clj"))))
   (testing "task files map through their own root (tasks/, not src/)"
@@ -21,7 +21,7 @@
     (is (= 'extensions.tools (changed/path->ns "extensions/tools.clj"))))
   (testing "Windows fs/glob separators normalize — the graph keys are /-spelled"
     (is (= 'kmet.app.ui.model-selector
-           (changed/path->ns "src\\kmet\\app\\ui\\model_selector.clj")))
+           (changed/path->ns "app\\src\\kmet\\app\\ui\\model_selector.clj")))
     (is (= 'kmet.tasks.test-lint
            (changed/path->ns "test\\kmet\\tasks\\test_lint.clj")))))
 
@@ -75,16 +75,16 @@
 (deftest affected-lint-file-closure
   (testing "a changed file, its dependents, and their transitive dependencies are linted together
             (clj-kondo resolves qualified vars across the files of one invocation only)"
-    (let [files (set (changed/affected-lint-files-by ["src/kmet/libs/process.clj"]))]
-      (is (contains? files "src/kmet/libs/process.clj")
+    (let [files (set (changed/affected-lint-files-by ["libs/src/kmet/libs/process.clj"]))]
+      (is (contains? files "libs/src/kmet/libs/process.clj")
           "the changed file is linted")
-      (is (contains? files "src/kmet/app/extensions.cljc")
+      (is (contains? files "app/src/kmet/app/extensions.cljc")
           "a dependent is linted (its call sites see a changed signature)")
-      (is (contains? files "src/kmet/app/extensions/context.cljc")
+      (is (contains? files "app/src/kmet/app/extensions/context.cljc")
           "a dependency of the dependent is linted (its vars must resolve)")))
   (testing "unrelated namespaces stay out"
-    (let [files (set (changed/affected-lint-files-by ["src/kmet/libs/process.clj"]))]
-      (is (not (contains? files "src/kmet/tui/hiccup.cljc"))))))
+    (let [files (set (changed/affected-lint-files-by ["libs/src/kmet/libs/process.clj"]))]
+      (is (not (contains? files "tui/src/kmet/tui/hiccup.cljc"))))))
 
 (deftest project-files-skips-ignored-trees
   (let [files (changed/project-files ["extensions"] ["clj" "cljc" "jolt"])]

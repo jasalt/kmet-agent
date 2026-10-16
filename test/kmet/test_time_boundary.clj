@@ -22,9 +22,9 @@
 (def ^:private wall-clock-allowed
   "libs files where the wall clock is compared against externally-produced
    wall-clock data rather than an elapsed duration."
-  #{"src/kmet/libs/crypto.clj"     ; JWT iat/exp claims
-    "src/kmet/libs/edn_store.clj"  ; the lock file's own mtime
-    "src/kmet/libs/mcp/auth.clj"}) ; persisted OAuth token expiry (epoch ms)
+  #{"libs/src/kmet/libs/crypto.clj"     ; JWT iat/exp claims
+    "libs/src/kmet/libs/edn_store.clj"  ; the lock file's own mtime
+    "libs/src/kmet/libs/mcp/auth.clj"}) ; persisted OAuth token expiry (epoch ms)
 
 (defn- lib-files
   "Every lib source file (.clj/.cljc) under src/kmet/libs, at any depth.
@@ -34,7 +34,7 @@
   (letfn [(walk [dir]
             (mapcat (fn [f] (if (fs/directory? f) (walk f) [f]))
                     (fs/list-dir dir)))]
-    (->> (walk "src/kmet/libs")
+    (->> (walk "libs/src/kmet/libs")
          (map #(tu/slash (str %)))
          (filter #(re-find #"\.clj[ca]?$" %))
          (sort))))

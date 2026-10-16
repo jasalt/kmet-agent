@@ -1,0 +1,2 @@
+{:paths ["src"]
+ :deps {kmetia/libs {:local/root "../libs"}}}

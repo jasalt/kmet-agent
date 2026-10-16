@@ -264,7 +264,7 @@
 (def data-dir
   "Committed catalog directory, relative to the project root (bb tasks run
    from there, matching kmet.app.models/model-data-dir)."
-  "src/kmet/ai/model_data")
+  "ai/src/kmet/ai/model_data")
 
 ;; ─── Small helpers ─────────────────────────────────────────────────────────
 

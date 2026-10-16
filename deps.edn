@@ -8,7 +8,7 @@
  ;; loads for every file-backed native, so an older compiler cannot silently
  ;; produce a dynamic-dependent artifact.
 
- :paths ["src" "tasks"]
+ :paths ["tasks"]
  ;; tasks/ (the bb-task implementations) is a source root but deliberately NOT
  ;; an embed root: :paths are runtime source roots resolved against JOLT_PWD
  ;; (and the app's own require closure decides what compiles), so task code is
@@ -29,7 +29,7 @@
  ;; extensions/<name>/src layout, so io/resource reads a bundled extension at
  ;; the same path in a binary as in a checkout. A
  ;; missing root embeds nothing — the runtime then offers no bundled set.
- :jolt/build {:embed ["src" "target/kmet-version" "target/kmet-bundled"]}
+ :jolt/build {:embed ["libs/src" "tui/src" "ai/src" "app/src" "target/kmet-version" "target/kmet-bundled"]}
 
  ;; OpenSSL stays dynamically loaded for run/repl and for the default dist mode
  ;; on Linux (including WSL), macOS, and other non-Windows platforms. Windows
@@ -59,7 +59,9 @@
                 :windows ["libssl-3-x64.dll" "libssl-3.dll"
                           "libssl-1_1-x64.dll" "libssl.dll"]}]
 
- :deps {        ;; babashka.fs / babashka.process are deliberately NOT deps: babashka
+ :deps {        kmetia/app {:local/root "app"}
+
+        ;; babashka.fs / babashka.process are deliberately NOT deps: babashka
         ;; bundles them, and jolt vendors the same namespaces (built-in,
         ;; resolving ahead of any deps.edn copy). A Maven copy is redundant on
         ;; both hosts and only risks shadowing the vendored one. jolt's public

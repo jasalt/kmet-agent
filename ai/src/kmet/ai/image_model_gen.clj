@@ -31,7 +31,7 @@
 (def data-dir
   "Committed image catalog directory, relative to the project root (bb tasks
    run from there)."
-  "src/kmet/ai/image_model_data")
+  "ai/src/kmet/ai/image_model_data")
 
 (defn catalog-path
   "The image catalog file inside DIR."
