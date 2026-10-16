@@ -362,7 +362,7 @@
   (let [dir (make-package (tmp-dir))]
     (try
       (with-settings (fn []
-                       (pkgs/load-themes!)
+                       (theme/load-theme-paths! (pkgs/resolve-theme-paths))
                        (t/is (some? (theme/get-theme-by-name "package-theme"))))
         {:source dir})
       (finally

@@ -976,14 +976,13 @@
          paths (remove #(contains? loaded %) (enabled-item-paths (resolve-configured-packages agent-dir) :prompts))]
      (prompts/load-prompt-template-files! (vec paths)))))
 
-(defn load-themes!
-  "Register every enabled theme in the unified resolution. AGENT-DIR pins
-   the user scope root."
-  ([] (load-themes! nil))
+(defn resolve-theme-paths
+  "Return every enabled theme path in the unified resolution. AGENT-DIR pins
+   the user scope root. Side-effect-free; the caller registers the paths with
+   the front end it has."
+  ([] (resolve-theme-paths nil))
   ([agent-dir]
-   (let [loaded (into #{} (keep :source-path) (vals (theme/get-all-themes)))
-         paths (remove #(contains? loaded %) (enabled-item-paths (resolve-configured-packages agent-dir) :themes))]
-     (theme/load-theme-paths! (vec paths)))))
+   (enabled-item-paths (resolve-configured-packages agent-dir) :themes)))
 
 ;; ─── Config model (pi: config-selector.ts) ─────────────────────────────────
 ;; The resource-config TUI (kmet config) toggles resources across all layers

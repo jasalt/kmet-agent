@@ -224,7 +224,7 @@
                    (invalidate [_] nil)
                    (dispose [_] (swap! disposed inc)))
           redefs {#'cfg/init! (fn [] {})
-                  #'pkgs/load-themes! (fn [] nil)
+                  #'pkgs/resolve-theme-paths (fn [] nil)
                   #'term/create-terminal (fn [] {:term true})
                   #'term/rows (fn [_] 24)
                   #'tui/create-tui (fn [_] {:components (atom [])})

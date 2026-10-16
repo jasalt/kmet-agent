@@ -10,6 +10,7 @@
             [kmet.config :as cfg]
             [kmet.app.extensions :as extensions]
             [kmet.app.packages :as packages]
+            [kmet.tui.theme :as theme]
             [kmet.package-manager :as package-manager]
             [kmet.ai.image-models :as image-models]
             [kmet.ai.image-model-gen :as image-gen]
@@ -384,7 +385,7 @@
       ;; One unified load per type (pi: resourceLoader — top-level entries,
       ;; auto dirs, then packages in precedence order)
       (packages/load-extensions!)
-      (packages/load-themes!)
+      (theme/load-theme-paths! (packages/resolve-theme-paths))
 
       ;; Extension CLI flags: the collected --flags become readable via
       ;; extensions/get-flag (pi: registerFlag + getFlag).

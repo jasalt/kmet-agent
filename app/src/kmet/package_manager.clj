@@ -233,7 +233,7 @@
         project-mode? (or local (fs/exists? (str (fs/path (fs/cwd) ".kmet"))))
         ;; custom themes for the config's :theme name (pi: initTheme after
         ;; the resource loader)
-        _ (pkgs/load-themes!)
+        _ (theme/load-theme-paths! (pkgs/resolve-theme-paths))
         terminal (term/create-terminal)
         tui (tui/create-tui terminal)
         ;; theme before the UI starts (pi: initTheme(settings.getTheme()))

@@ -649,7 +649,7 @@
               ;; stderr, so failures must be collected for the transcript
               ;; (one unified load: top-level entries, auto dirs, packages)
               ext-results (packages/load-extensions!)
-              _ (packages/load-themes!)
+              _ (th/load-theme-paths! (packages/resolve-theme-paths))
               ;; pi: model-runtime.refresh — recompose providers from models.edn
               _ (models/load-models-config!)
               ;; pi: resourceLoader.reload (skills, prompts)
