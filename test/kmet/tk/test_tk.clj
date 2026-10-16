@@ -15,7 +15,7 @@
             [kmet.libs.hikap :as engine]
             [kmet.libs.hikap.alias :as alias]
             [kmet.libs.hikap.component :as component]
-            [kmet.libs.reakt :as r]))
+            [kmet.libs.reakt.core :as r]))
 
 ;; ─── Tcl quoting ──────────────────────────────────────────────────────────
 

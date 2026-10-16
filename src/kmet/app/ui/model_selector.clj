@@ -16,7 +16,7 @@
             [kmet.app.ui.model-catalog :as model-catalog]
             [kmet.app.ui.subs :as s]
             [kmet.config :as cfg]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.libs.hikap :as engine]
             [kmet.tui.hikap :as h]
             [kmet.tui.components.input :as input]

@@ -23,7 +23,7 @@
             [kmet.tui.hikap :as hiccup]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.tui.theme :as theme]
             [kmet.tui.utils :as u]))
 

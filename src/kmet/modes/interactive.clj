@@ -20,7 +20,7 @@
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.session-selector :refer [show-session-selector]]
             [kmet.libs.process :as process]
-            [kmet.libs.reakt :as reakt]
+            [kmet.libs.reakt.core :as reakt]
             [kmet.modes.interactive.layout :as layout]
             [kmet.modes.interactive.session-admin :as session-admin]
             [kmet.modes.interactive.state :as state]))

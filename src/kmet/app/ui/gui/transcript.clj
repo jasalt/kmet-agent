@@ -15,7 +15,7 @@
    `kmet.tk.core` needs no ANSI knowledge and the terminal renderers stay
    the single source of the styling."
   (:require [clojure.string :as str]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.tui.components.markdown :as tui-md]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]

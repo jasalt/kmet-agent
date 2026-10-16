@@ -23,7 +23,7 @@
    same colours as CustomMessageComponent."
   (:require [kmet.app.keybindings :as app-kb]
             [kmet.app.ui.subs :as s]
-            [kmet.libs.reakt :as reakt]
+            [kmet.libs.reakt.core :as reakt]
             [kmet.tui.components.box :as box]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.markdown :as md]

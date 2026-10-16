@@ -1,16 +1,16 @@
 (ns kmet.libs.hikap.component
   "Host-agnostic component runtime over the standalone reactive engine
-   (kmet.libs.reakt — reactions, cursors, batching).
+   (kmet.libs.reakt.core — reactions, cursors, batching).
 
    track! — reactive render cache: rewrites @atom reads in the render body
-   to tracked derefs (kmet.libs.reakt/tracked-deref), so any atom change
+   to tracked derefs (kmet.libs.reakt.core/tracked-deref), so any atom change
    invalidates the cache automatically and setters need no manual
    invalidate call. It must be a macro because deref rewriting happens at
    compile time. Also hosts with-let — per-instance component state — the
    frame-scheduler hook, and the track! watch registry. Every backend
    (kmet.tui.hikap, kmet.tk.core) builds its component records on top of
    this namespace; nothing here knows a toolkit."
-  (:require [kmet.libs.reakt :as reakt]
+  (:require [kmet.libs.reakt.core :as reakt]
             [kmet.libs.reakt.weak :as weak]))
 
 (def ^:private deref-form?
@@ -31,7 +31,7 @@
   (cond
     (or (symbol? form) (not (coll? form))) form
     (and (seq? form) (= 'quote (first form))) form
-    (deref-form? form) (list 'kmet.libs.reakt/tracked-deref (rewrite-derefs (second form)))
+    (deref-form? form) (list 'kmet.libs.reakt.core/tracked-deref (rewrite-derefs (second form)))
     (seq? form) (apply list (map rewrite-derefs form))
     (vector? form) (mapv rewrite-derefs form)
     (map? form) (into (empty form) (map (fn [[k v]] [(rewrite-derefs k) (rewrite-derefs v)]) form))
@@ -270,7 +270,7 @@
   "Live track! registry entries (tests/guards): components whose render ran
    with track! and are still reachable. Reactions share the weak registry
    (their payload carries :rx-watch-key, the components' :watched) and are
-   counted by kmet.libs.reakt/live-reaction-count instead. Dead-but-unswept
+   counted by kmet.libs.reakt.core/live-reaction-count instead. Dead-but-unswept
    entries are excluded; (weak/entry-count) includes them."
   []
   (weak/live-count (fn [payload] (contains? payload :watched))))

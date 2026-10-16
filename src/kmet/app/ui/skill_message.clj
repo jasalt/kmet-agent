@@ -28,7 +28,7 @@
    drift."
   (:require [clojure.string :as str]
             [kmet.app.keybindings :as app-kb]
-            [kmet.libs.reakt :as reakt]
+            [kmet.libs.reakt.core :as reakt]
             [kmet.app.ui.subs :as s]
             [kmet.tui.components.box :as box]
             [kmet.tui.components.container :as container]

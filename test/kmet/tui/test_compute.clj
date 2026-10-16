@@ -13,7 +13,7 @@
             [kmet.libs.hikap.component :as component :refer [with-let track!]]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
-            [kmet.libs.reakt :as rag]
+            [kmet.libs.reakt.core :as rag]
             [kmet.libs.reakt.weak :as weak]))
 
 (defcomponent Probe nil [cache-atom render-count-atom body]

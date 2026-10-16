@@ -11,7 +11,7 @@
    `WeakReference` while the subject is identical (a streaming render pass
    must not allocate one ref per pass) and sweeps opportunistically, which
    is one `.poll` when nothing died. `sweep!` runs at the render loop's wake
-   and after `kmet.libs.reakt/flush!`, so headless consumers sweep too.
+   and after `kmet.libs.reakt.core/flush!`, so headless consumers sweep too.
 
    This is the one namespace allowed to touch `java.lang.ref` (the
    platform-dependency exception, like the terminal backends); both hosts

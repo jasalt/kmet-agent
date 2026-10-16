@@ -5,7 +5,7 @@
    contract opens it, renders it in place of the list, and forwards input
    to it through the child's ref."
   (:require [kmet.app.ui.subs :as s]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.libs.hikap.alias :refer [defalias]]
             [kmet.tui.components.select-list :as select-list]
             [kmet.libs.hikap :as engine]

@@ -12,7 +12,7 @@
    can never be overridden and stays immutable."
   (:require [clojure.string :as str]
             [kmet.app.ui.subs :as s]
-            [kmet.libs.reakt :as reakt]
+            [kmet.libs.reakt.core :as reakt]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
             [kmet.tui.timers :as timers]

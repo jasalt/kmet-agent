@@ -12,7 +12,7 @@
             [kmet.libs.hikap :as engine]
             [kmet.tui.hikap :as h]
             [kmet.libs.hikap.component :refer [with-let]]
-            [kmet.libs.reakt :as r]))
+            [kmet.libs.reakt.core :as r]))
 
 ;; restore the load-time registry (the defalias below) after each test so
 ;; tests never leak registrations into one another

@@ -13,7 +13,7 @@
             [kmet.app.ui.chat-history :as chat-history]
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.subs :as s]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.tui.hikap :as h]
             [kmet.tui.keybindings :as kb]
             [kmet.libs.hikap.component :refer [track!]]

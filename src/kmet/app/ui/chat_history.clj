@@ -6,7 +6,7 @@
    component caches. There is no parallel children bookkeeping and no
    child→message reverse-engineering — persistence reads the atom directly."
   (:require [clojure.string :as str]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
             [kmet.tui.hikap :as h]

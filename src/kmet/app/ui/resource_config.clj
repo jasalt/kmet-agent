@@ -49,7 +49,7 @@
             [kmet.app.tools.config :as tools-config]
             [kmet.app.ui.subs :as s]
             [kmet.config :as cfg]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.tui.components.input :as input]
             [kmet.libs.hikap :as engine]
             [kmet.tui.hikap :as hiccup]

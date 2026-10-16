@@ -13,7 +13,7 @@ loop. kmet's own widget set (`:ui/…`) is app UI over the backend:
 ## Where the layers sit
 
 ```
-kmet.libs.reakt           reactions over plain atoms (host-agnostic)
+kmet.libs.reakt.core           reactions over plain atoms (host-agnostic)
 kmet.libs.hikap           the hiccup engine: parse, keyed reconcile,
                           ComponentFn, refs — parameterized by a backend map
 kmet.libs.hikap.component track! render cache, with-let stores, frame hook
@@ -703,7 +703,7 @@ loop's thread). The backend map and the mounted structure are captured at
 mount time, so a change inside `kmet.tk.core` itself needs a remount.
 
 A mounted body is memoized by the engine, so state it depends on must be
-declared: read it with `kmet.libs.reakt/tracked-deref` (a plain `@atom`
+declared: read it with `kmet.libs.reakt.core/tracked-deref` (a plain `@atom`
 read caches the tree and a click repaints nothing).
 
 ## Testing

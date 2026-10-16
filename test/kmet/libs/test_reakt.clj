@@ -1,11 +1,11 @@
 (ns kmet.libs.test-reakt
-  "Pure engine tests for kmet.libs.reakt — no TUI, no components: dependency
+  "Pure engine tests for kmet.libs.reakt.core — no TUI, no components: dependency
    discovery across branches, =-gated watch notification, cursors, manual
    tracks, disposal semantics, and the changed? gate. (The engine's
    integration with component render bodies is covered in
    kmet.tui.test-reakt-integration / test-compute / test-track.)"
   (:require [clojure.test :as t :refer [deftest is testing]]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.libs.reakt.weak :as weak]
             [kmet.test-utils :as test-utils]))
 

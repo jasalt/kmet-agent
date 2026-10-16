@@ -35,7 +35,7 @@
             [kmet.app.context :as context]
             [kmet.libs.host :as host]
             [kmet.libs.process :as process]
-            [kmet.libs.reakt :as reakt]
+            [kmet.libs.reakt.core :as reakt]
             [kmet.app.extensions :as extensions]
             [kmet.app.theme-controller :as theme-ctrl]
             [kmet.ai.models :as models]

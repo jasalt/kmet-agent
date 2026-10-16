@@ -255,7 +255,7 @@
     kmet.libs.mcp.transport.stdio
     kmet.libs.oauth
     kmet.libs.process
-    kmet.libs.reakt
+    kmet.libs.reakt.core
     kmet.libs.sse
     kmet.libs.yaml])
 

@@ -1,4 +1,4 @@
-(ns kmet.libs.reakt
+(ns kmet.libs.reakt.core
   "Standalone reactive engine: a Babashka port of reagent.ratom's semantics
    — auto-dependency-discovering reactions, cursors, batching — with plain
    clojure.lang.Atoms as first-class inputs. Generic by design: no terminal,
@@ -224,7 +224,7 @@
       (f)
       (catch Throwable e
         (binding [*out* *err*]
-          (println "kmet.libs.reakt enqueue hook error:" (ex-message e))))))
+          (println "kmet.libs.reakt.core enqueue hook error:" (ex-message e))))))
   nil)
 
 (defn- enqueue!
@@ -319,7 +319,7 @@
               (when-some [e @error]
                 (throw e)))
             (when (> round max-rounds)
-              (throw (ex-info "kmet.libs.reakt: reaction queue did not settle (cyclic reactions?)"
+              (throw (ex-info "kmet.libs.reakt.core: reaction queue did not settle (cyclic reactions?)"
                               {:rounds round})))
             (recur (inc round)))))
       (finally
@@ -460,7 +460,7 @@
                      (enqueue! r)))))
              (catch Throwable e
                (binding [*out* *err*]
-                 (println "kmet.libs.reakt dep-handler error:" (.getMessage e))))))
+                 (println "kmet.libs.reakt.core dep-handler error:" (.getMessage e))))))
          update-watching!
          (fn [collected]
            ;; Set-diff (Reagent's _update-watching), identity-flavored:
@@ -506,7 +506,7 @@
                  ;; value being replaced rather than recursing forever.
                  (= :busy state) value
                  (> guard max-rounds)
-                 (throw (ex-info "kmet.libs.reakt: reaction did not converge after repeated mid-run invalidation"
+                 (throw (ex-info "kmet.libs.reakt.core: reaction did not converge after repeated mid-run invalidation"
                                  {:rounds guard}))
                  :else
                  ;; Fresh re-check: dispose may have landed between the
@@ -575,7 +575,7 @@
                                (fl key @self value result)
                                (catch Throwable e
                                  (binding [*out* *err*]
-                                   (println "kmet.libs.reakt watcher error:"
+                                   (println "kmet.libs.reakt.core watcher error:"
                                             (.getMessage e)))))))
                          (if (= :dirty (:state @cell))
                            (recur (inc guard))
@@ -836,7 +836,7 @@
          _ (when-not (or (writable-cursor? source)
                          (instance? clojure.lang.IAtom source))
              (throw (ex-info
-                     (str "kmet.libs.reakt/writable-cursor: source must be "
+                     (str "kmet.libs.reakt.core/writable-cursor: source must be "
                           "a plain atom or another writable cursor — "
                           (pr-str (class source))
                           " has no write-back path (a read-only cursor "
@@ -879,8 +879,8 @@
 
 (defn- not-writable! [fname ref]
   (throw (ex-info
-          (str "kmet.libs.reakt/" fname ": not a writable cursor — make one "
-               "over the source with kmet.libs.reakt/writable-cursor "
+          (str "kmet.libs.reakt.core/" fname ": not a writable cursor — make one "
+               "over the source with kmet.libs.reakt.core/writable-cursor "
                "(a read-only cursor has no path to write back to, and a "
                "plain atom is written with swap!/reset! directly)")
           {:ref ref})))

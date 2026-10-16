@@ -8,7 +8,7 @@
   (:require [clojure.string :as str]
             [kmet.app.keybindings :as app-kb]
             [kmet.app.ui.subs :as s]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.libs.hikap :as engine]
             [kmet.tui.hikap :as h]
             [kmet.tui.components.input :as input]

@@ -45,7 +45,7 @@ components sit above them**, exactly like React components above `[:div]`.
   context and the IComponent wiring (see §13).
 - **Root** (`hiccup/root`): the one constructor from a tree to a mounted,
   disposable record.
-- **Reactivity** (`kmet.libs.reakt` + `track!`): dependency-discovering
+- **Reactivity** (`kmet.libs.reakt.core` + `track!`): dependency-discovering
   reactions over plain atoms; invalidation schedules the next frame.
 - **Output**: every record caches its rendered lines per width; the frame
   loop emits only the diff against the previous frame.
@@ -129,7 +129,7 @@ atom change → reaction dirty → queued → frame flush runs it →
 | `kmet.tui.terminal-jline` / `kmet.tui.terminal-native-unix` / `kmet.tui.terminal-native-win` | the three backends — JLine on bb/JVM, termios (Unix) / kernel32 console (Windows) FFI over `jolt.ffi` on Jolt; only these namespaces touch platform deps |
 | `kmet.tui.protocols` | `IComponent`, `IFocusable`, `IEditorComponent` |
 | `kmet.tui.macros` | `defcomponent` — TUI record boilerplate over `kmet.tui.protocols/IComponent` |
-| `kmet.libs.reakt` | reactions/track/cursor/batching over plain atoms |
+| `kmet.libs.reakt.core` | reactions/track/cursor/batching over plain atoms |
 | `kmet.libs.hikap.component` | host-agnostic `track!` render cache, `with-let` stores, track-watch registry, frame-scheduler hook |
 | `kmet.libs.hikap` | toolkit-agnostic hiccup engine: parse, keyed reconcile, ComponentFn, refs, compute — parameterized by a backend map (tag table, string leaf, render/dispose hooks) |
 | `kmet.libs.hikap.alias` | qualified-keyword tag aliases: process-global registry, resolution, `defalias` (§2.9) |
@@ -668,12 +668,12 @@ the process-global registry in `kmet.libs.hikap.alias`:
 
 ## 3. Reactivity
 
-### 3.1 `kmet.libs.reakt` — reactions over plain atoms
+### 3.1 `kmet.libs.reakt.core` — reactions over plain atoms
 
 A Babashka port of `reagent.ratom`'s semantics. There is **no custom atom
 type**: Babashka seals `IWatchable`/`IReset` away from pure-source
 implementations, so dependency capture rides the existing deref funnel —
-`kmet.libs.reakt/tracked-deref`, through which every component render body
+`kmet.libs.reakt.core/tracked-deref`, through which every component render body
 routes its reads via `track!`. Plain `clojure.lang.Atom`s ARE the tracked
 inputs — plain atoms need no wrapper, so there is no `ratom` sugar.
 
@@ -734,7 +734,7 @@ Coverage contract — tracked reads are exactly:
 (b) explicit `reakt/tracked-deref` calls in hand-written bodies,
 (c) nested reaction/cursor derefs (automatic).
 
-Layering note: `kmet.libs.reakt` has no TUI dependencies, so
+Layering note: `kmet.libs.reakt.core` has no TUI dependencies, so
 `kmet.app.*` (non-ui) code may require it directly for derived state and
 reactions outside any component — only `kmet.tui.*` itself is off-limits
 to the app layer.

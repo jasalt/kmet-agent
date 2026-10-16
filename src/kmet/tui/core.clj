@@ -8,7 +8,7 @@
             [kmet.tui.theme :as theme]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
-            [kmet.libs.reakt :as reakt]
+            [kmet.libs.reakt.core :as reakt]
             [kmet.libs.reakt.weak :as weak]
             [kmet.tui.terminal-escape :as lib-terminal]
             [kmet.tui.terminal :as terminal]
@@ -2434,7 +2434,7 @@
               ;; components and run their on-dead unsubscribes (queue-gated:
               ;; one .poll when nothing died).
               (weak/sweep!)
-              ;; Frame flush: drain the reaction batch queue (kmet.libs.reakt)
+              ;; Frame flush: drain the reaction batch queue (kmet.libs.reakt.core)
               ;; on every wake — a render request, an enqueued reaction (the
               ;; reakt wake hook), a timer, or the idle heartbeat — so queued
               ;; reactions are current before the render gate below reads them

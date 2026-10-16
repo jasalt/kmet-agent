@@ -9,7 +9,7 @@
             [kmet.libs.hikap :as engine]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]
-            [kmet.libs.reakt :as r]))
+            [kmet.libs.reakt.core :as r]))
 
 (defn- strip-ansi [s]
   (str/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))

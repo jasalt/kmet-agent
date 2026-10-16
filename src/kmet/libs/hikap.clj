@@ -52,7 +52,7 @@
   (:require
    [kmet.libs.hikap.alias :as alias]
    [kmet.libs.hikap.component :as component]
-   [kmet.libs.reakt :as r]))
+   [kmet.libs.reakt.core :as r]))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; Refs — the imperative escape hatch (tui.md §2.4)
@@ -936,7 +936,7 @@
     ((:dispose! backend) c)))
 
 (defn compute
-  "A derived reactive ref over DEPS (tui.md §3.3): kmet.libs.reakt/derive
+  "A derived reactive ref over DEPS (tui.md §3.3): kmet.libs.reakt.core/derive
    plus two conveniences — creation counting (--debug :computes) and
    auto-disposal when created during a component render pass
    (kmet.libs.hikap.component/*store* bound under with-let): the reaction is
@@ -944,7 +944,7 @@
    cleanup. Top-level shared computes (no enclosing store) live forever,
    which is the point. Create computes ONCE per instance — one built bare
    inside a component body leaks a reaction per pass, visible as :computes
-   climbing in the counters. See kmet.libs.reakt/derive for the full
+   climbing in the counters. See kmet.libs.reakt.core/derive for the full
    semantics (dep seeding, =-gated notification, batched re-runs)."
   [deps f]
   ;; Count creations: computes are created ONCE per instance (top-level def

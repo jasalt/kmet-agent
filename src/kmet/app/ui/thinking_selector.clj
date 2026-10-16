@@ -14,7 +14,7 @@
             [kmet.app.ui.dock :as dock]
             [kmet.app.ui.subs :as s]
             [kmet.config :as cfg]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.tui.components.input :as input]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]

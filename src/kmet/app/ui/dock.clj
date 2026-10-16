@@ -43,7 +43,7 @@
    panel's target (a selector's inner list, not its chrome))."
   (:require [kmet.app.ui.custom-dialog-adapter :as cda]
             [kmet.debug :as debug]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.tui.core :as tui]))
 
 (defn- entry

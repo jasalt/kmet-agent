@@ -18,7 +18,7 @@
             [kmet.tui.components.container :as container]
             [kmet.tui.components.expandable-text :as expandable-text]
             [kmet.app.context :as context]
-            [kmet.libs.reakt :as r]
+            [kmet.libs.reakt.core :as r]
             [kmet.ai.models :as models]
             [kmet.app.model-resolver :as resolver]
             [kmet.app.loop :as agent]

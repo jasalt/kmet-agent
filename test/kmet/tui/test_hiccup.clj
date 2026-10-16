@@ -25,7 +25,7 @@
             [kmet.tui.protocols :as protocols]
             [kmet.tui.components.stack :as stack]
             [kmet.tui.utils :as u]
-            [kmet.libs.reakt :as rag]
+            [kmet.libs.reakt.core :as rag]
             [kmet.libs.terminal-image :as timg]))
 
 (defn- joined [tree width]
