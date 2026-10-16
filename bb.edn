@@ -11,7 +11,7 @@
         ;; Before the bundling, >= 2.5 could not load under SCI (definterface
         ;; in json.clj InternalPBR), hence the old 2.4.0 pin.
         org.clojure/data.json {:mvn/version "2.5.2"}
-        ;; Fixed bundled extension set (kmet.agent.extension-libs). rewrite-clj,
+        ;; Fixed bundled extension set (kmet.agent.extensions.libs). rewrite-clj,
         ;; edamame, spec.alpha and tools.reader are bb-bundled ports, so only
         ;; the two Maven-only set members need declaring here; cljfmt above
         ;; serves both the format tasks and the set.

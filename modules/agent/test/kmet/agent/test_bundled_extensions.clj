@@ -7,7 +7,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.agent.bundled-extensions :as bundled]
+            [kmet.agent.extensions.bundled :as bundled]
             [kmet.agent.packages :as pkgs]
             [kmet.agent.config :as cfg]
             [kmet.tasks.build :as build]

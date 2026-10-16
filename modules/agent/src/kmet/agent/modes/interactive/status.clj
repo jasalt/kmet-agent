@@ -8,7 +8,7 @@
             [kmet.tui.components.spinner :as spinner]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.timers :as timers]
-            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.pending-messages :as pending-messages]
             [kmet.agent.ui.tui.status-indicator :as status-indicator]
             [kmet.agent.debug :as debug]))

@@ -1,4 +1,4 @@
-(ns kmet.agent.extensions
+(ns kmet.agent.extensions.core
   "Extension runtime: discovers, loads, reloads and unloads Clojure
    extensions. The extension contract lives in kmet.agent.extension — extensions
    depend on that namespace plus the shared library layers kmet.tui.*
@@ -20,7 +20,7 @@
    legacy extension) is treated as [:sci :jolt] with a warning; a
    single-file extension implicitly supports both. Everything else is
    required from there. Bundled extensions resolve
-   through a descriptor instead of a path (kmet.agent.bundled-extensions): a
+   through a descriptor instead of a path (kmet.agent.extensions.bundled): a
    checkout's real artifact root, or — in a built artifact — a resource
    tree under extensions/<root>. On Jolt with embedded loader roots, a
    resource-directory descriptor carries an `embed:<prefix>` root and a
@@ -60,7 +60,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.context :as context]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.session :as session]
+            [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.bash :as bash-tool]
@@ -74,7 +74,7 @@
             ;; app's require closure (jolt dist AOT-compiles it). bb/JVM
             ;; load the same namespace in host-requires! on the first
             ;; extension load (its requires resolve to the bb ports there).
-            #?(:jolt [kmet.agent.extension-libs])
+            #?(:jolt [kmet.agent.extensions.libs])
             #?(:jolt [kmet.loader.jolt-loader :as loader-jolt])
             [kmet.agent.extension]))
 
@@ -164,56 +164,56 @@
 (defonce ^:private extensions (atom []))
 (defonce pending-input-hooks (atom []))
 (defn- current-input-hook-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :input-hooks)
       pending-input-hooks))
 (defonce pending-before-agent-start-hooks (atom []))
 (defn- current-before-agent-start-hook-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :before-agent-start-hooks)
       pending-before-agent-start-hooks))
 (defonce pending-entry-renderers (atom {}))
 (defn- current-entry-renderer-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :entry-renderers)
       pending-entry-renderers))
 (defonce pending-message-renderers (atom {}))
 (defn- current-message-renderer-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :message-renderers)
       pending-message-renderers))
 (defonce pending-tool-call-hooks (atom []))
 (defn- current-tool-call-hook-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :tool-call-hooks)
       pending-tool-call-hooks))
 (defonce pending-tool-result-hooks (atom []))
 (defn- current-tool-result-hook-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :tool-result-hooks)
       pending-tool-result-hooks))
 (defonce pending-markdown-transformers (atom []))
 (defn- current-markdown-transformer-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :markdown-transformers)
       pending-markdown-transformers))
 (defonce pending-flags (atom {}))
 (defn- current-flag-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :flags)
       pending-flags))
 (defonce pending-cli-flags (atom {}))
 (defn- current-cli-flag-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :cli-flags)
       pending-cli-flags))
 (def ^:private headless-binding
@@ -226,8 +226,8 @@
 (defonce ^:private entry-sink-atom (atom nil))
 (defonce pending-applied-resource-paths (atom #{}))
 (defn- current-applied-resource-path-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :applied-resource-paths)
       pending-applied-resource-paths))
 
@@ -564,7 +564,7 @@
 (def request-pending
   "Port return marker: the request was forwarded to an asynchronous client
    (or an in-process dialog that has not resolved yet) and is answered
-   later with kmet.agent.session-runtime/respond!."
+   later with kmet.agent.session.runtime/respond!."
   ::pending)
 
 (defn ui-request-default
@@ -1088,11 +1088,11 @@
    exception: they are stored and compared by identity (see
    register-entry-renderer!), so wrapping them would break that contract —
    they read no resources at registration."
-  [ext handler]
+  [_ext handler]
   #?(:jolt (if (fn? handler)
-             (case (:loader-kind ext)
+             (case (:loader-kind _ext)
                :jolt (fn [& args]
-                       (loader-jolt/with-loader* @(:loader ext)
+                       (loader-jolt/with-loader* @(:loader _ext)
                          (fn [] (apply handler args))))
                :sci (fn [& args] (context/with-sci-io #(apply handler args))))
              handler)
@@ -1282,7 +1282,7 @@
 
 (defn load-extension-descriptor!
   "Load a single bundled extension from DESCRIPTOR
-   (kmet.agent.bundled-extensions/artifacts). Same contract as
+   (kmet.agent.extensions.bundled/artifacts). Same contract as
    load-extension!: in a source checkout the descriptor resolves to the
    real extensions/ path and loads exactly as load-extension! would; in a
    built artifact the files come from the extensions/ resource prefix. On
@@ -1471,7 +1471,7 @@
 
 (defn load-extension-descriptors!
   "Load bundled extension DESCRIPTORS
-   (kmet.agent.bundled-extensions/artifacts) — load-extension-paths!'s
+   (kmet.agent.extensions.bundled/artifacts) — load-extension-paths!'s
    descriptor counterpart: the same result maps and notes, with :path the
    descriptor's synthetic identity."
   [descriptors]

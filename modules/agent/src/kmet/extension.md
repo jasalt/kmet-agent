@@ -353,7 +353,7 @@ Maven deps into the Jolt binary. On both hosts the library is loaded once
 (extensions through `host-requires!`, scripts on the first `run_code` call),
 so sharing costs nothing per user and keeps `identical?`/protocol identity.
 Requiring a set member needs **no `deps.edn`** and no host-conditional code.
-The set is enumerated in `kmet.agent.extension-libs`:
+The set is enumerated in `kmet.agent.extensions.libs`:
 
 | Library | Namespaces | Notes |
 |---|---|---|
@@ -463,10 +463,10 @@ runtime (e.g. from another extension or a REPL):
 
 | Operation | Function | Effect |
 |---|---|---|
-| Load | `kmet.agent.extensions/load-extension!` (path) | load one file or manifest dir; returns `{:extension name :error nil :loader-kind :sci\|:jolt}`, `{:extension nil :error msg}` on failure, or `{:extension name :skipped true :reason :unsupported-loader …}` when the host offers none of the declared backends |
-| Unload | `kmet.agent.extensions/unload-extension!` (record) | run `shutdown`, deregister everything, remove namespaces |
-| Reload | `kmet.agent.extensions/reload-extensions!` (dirs) | unload all, reload from the given container dirs |
-| List | `kmet.agent.extensions/get-loaded-extensions` | `[{:name .. :path .. :loader-kind ..}]` |
+| Load | `kmet.agent.extensions.core/load-extension!` (path) | load one file or manifest dir; returns `{:extension name :error nil :loader-kind :sci\|:jolt}`, `{:extension nil :error msg}` on failure, or `{:extension name :skipped true :reason :unsupported-loader …}` when the host offers none of the declared backends |
+| Unload | `kmet.agent.extensions.core/unload-extension!` (record) | run `shutdown`, deregister everything, remove namespaces |
+| Reload | `kmet.agent.extensions.core/reload-extensions!` (dirs) | unload all, reload from the given container dirs |
+| List | `kmet.agent.extensions.core/get-loaded-extensions` | `[{:name .. :path .. :loader-kind ..}]` |
 
 A failing `init` is rolled back: the loader unloads whatever was registered
 before the error and reports `{:extension nil :error msg}` — no partial state
@@ -481,7 +481,7 @@ replaced or closed, or until `/reload` disposes it. Release what such a
 surface holds in `shutdown` or when it closes; unload alone does not reach
 it.
 
-Implementation note: the entry points above live in `kmet.agent.extensions`,
+Implementation note: the entry points above live in `kmet.agent.extensions.core`,
 together with the registries they wire the API into. The isolation machinery
 they drive — artifact/jar discovery, class seeding, the shared SCI base,
 loader construction, and source evaluation — lives in
@@ -1156,7 +1156,7 @@ pair (extension runtime UI port), not through the event stream: the runtime deli
 `{:type :ui-request :id ... :kind ...}` to the port's `:request` capability,
 and the front end either returns the answer in-process (blocking dialogs are
 allowed inside extension handlers) or forwards it to its client and answers
-later with `kmet.agent.session-runtime/respond!`. Kinds without a dedicated
+later with `kmet.agent.session.runtime/respond!`. Kinds without a dedicated
 surface auto-answer — `:select` → nil, `:confirm` → false,
 `:input`/`:editor`/`:custom` → nil — and `dispose!` resolves any request still
 pending with the request's default. No built-in capability routes through

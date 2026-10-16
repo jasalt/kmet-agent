@@ -2,7 +2,7 @@
   "Extension UI registry tests — dispatch, no-op-before-install, and the
    extension-facing ui-* API (pi: ExtensionUIContext)."
   (:require [clojure.test :as t :refer [deftest testing]]
-            [kmet.agent.extensions :as ex]))
+            [kmet.agent.extensions.core :as ex]))
 
 (defn- install-test-registry!
   "Install a registry that records calls, with a :custom impl returning a

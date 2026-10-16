@@ -178,7 +178,7 @@
     (t/is (= "Y" (:content r)))))
 
 (t/deftest test-run-code-bundled-extension-libraries
-  ;; the fixed bundled extension set (kmet.agent.extension-libs) is available
+  ;; the fixed bundled extension set (kmet.agent.extensions.libs) is available
   ;; to scripts as to extension contexts — rewrite-clj on both hosts
   (t/is (= "(c d)"
            (:content (run (str "(require '[rewrite-clj.zip :as z])"

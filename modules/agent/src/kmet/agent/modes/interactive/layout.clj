@@ -18,10 +18,10 @@
             [kmet.tui.components.container :as container]
             [kmet.tui.components.expandable-text :as expandable-text]
             [kmet.ai.models :as models]
-            [kmet.agent.session :as session]
-            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.session.core :as session]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.agent.commands :as commands]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
@@ -501,7 +501,7 @@
         cwd (or (session/session-cwd session) (str (fs/cwd)))
 
         ;; The runtime owns the agent state, system prompt, run options and
-        ;; extension handle (kmet.agent.session-runtime/bootstrap); the layout
+        ;; extension handle (kmet.agent.session.runtime/bootstrap); the layout
         ;; owns view state and subscribes its event handler once the widgets
         ;; exist.
         engine (runtime/bootstrap config {:session session :cwd cwd})

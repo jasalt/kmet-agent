@@ -10,7 +10,7 @@
    or plain selection rewrite; project: +/- delta over the global list).
 
    The bundled group lists the app-provided bundled extensions
-   (kmet.agent.bundled-extensions): always present,
+   (kmet.agent.extensions.bundled): always present,
    disabled by default, toggled through the :bundled-extensions settings
    key of the write scope (global: plain/-name; project: +/- delta over
    the global setting).

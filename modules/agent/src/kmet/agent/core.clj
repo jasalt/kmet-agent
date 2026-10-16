@@ -8,7 +8,7 @@
             [kmet.agent.modes.print :as print-mode]
             [kmet.agent.modes.rpc :as rpc-mode]
             [kmet.agent.config :as cfg]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.packages :as packages]
             [kmet.tui.theme :as theme]
             [kmet.agent.package-manager :as package-manager]

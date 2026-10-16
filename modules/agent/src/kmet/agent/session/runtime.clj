@@ -1,4 +1,4 @@
-(ns kmet.agent.session-runtime
+(ns kmet.agent.session.runtime
   "The session runtime: the engine a front end drives.
 
    One constructor (`bootstrap`) builds the agent state, the session, the
@@ -37,13 +37,13 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.context :as context]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as agent]
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.session :as session]
-            [kmet.agent.session-export :as session-export]
+            [kmet.agent.session.core :as session]
+            [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.registry :as tools-reg]))

@@ -22,10 +22,10 @@
             [kmet.ai.models :as models]
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.loop :as agent]
-            [kmet.agent.session :as session]
-            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.session.core :as session]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.agent.commands :as commands]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
             [kmet.agent.modes.interactive.theme-controller :as theme-ctrl]
@@ -44,7 +44,7 @@
 
 ;; ─── Extension UI registry (pi: ExtensionUIContext) ────────────────────────
 ;; build-layout installs this registry after the layout is live; extensions
-;; call the kmet.agent.extensions ui-* fns, which dispatch through it. All
+;; call the kmet.agent.extensions.core ui-* fns, which dispatch through it. All
 ;; closures capture the layout pieces they mutate.
 
 (defn make-widget-area-above

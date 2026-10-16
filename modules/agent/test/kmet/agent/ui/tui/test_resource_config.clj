@@ -6,7 +6,7 @@
             [clojure.string :as str]
             [clojure.edn :as edn]
             [babashka.fs :as fs]
-            [kmet.agent.bundled-extensions :as bundled]
+            [kmet.agent.extensions.bundled :as bundled]
             [kmet.agent.packages :as pkgs]
             [kmet.agent.tools.config :as tools-config]
             [kmet.agent.ui.tui.resource-config :as rc]

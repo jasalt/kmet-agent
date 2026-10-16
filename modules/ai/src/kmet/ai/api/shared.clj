@@ -201,7 +201,7 @@
 
 (defn- edited-bash-text
   "The text an append-only context edit installed on a bash entry — a text
-   block vector (see kmet.agent.session/append-context-edit!). nil for an
+   block vector (see kmet.agent.session.core/append-context-edit!). nil for an
    un-edited entry (kmet derives the text from :command/:output where pi's
    tool messages carry content) and for legacy entries carrying some other
    block shape."

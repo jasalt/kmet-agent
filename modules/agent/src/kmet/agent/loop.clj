@@ -97,11 +97,11 @@
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.tools.run-code :as run-code-tool]
             [kmet.ai.auth :as auth]
-            [kmet.agent.session :as session]
+            [kmet.agent.session.core :as session]
             [kmet.ai.models :as models]
             [kmet.ai.api.shared :as shared]
             [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.debug :as debug]
             [kmet.libs.concurrent :as concurrent]
@@ -3029,7 +3029,7 @@ Be precise and concise in your responses."}}]
    TARGET-ID must exist, lie on the active branch, and be a message entry
    contributing editable model content (:user, :assistant, :tool, :bash,
    :custom-message); otherwise this throws (see
-   kmet.agent.session/append-context-edit!). Throws {:type :no-session} without a
+   kmet.agent.session.core/append-context-edit!). Throws {:type :no-session} without a
    session. Nothing is emitted: the edit changes the model projection only,
    and the UI deliberately keeps rendering the raw conversation (unlike
    :context-replaced, which makes the UI mirror a new message list)."

@@ -28,7 +28,7 @@
   (now-ms))
 
 (defn- info
-  "A session-info map like kmet.agent.session/build-session-info returns."
+  "A session-info map like kmet.agent.session.core/build-session-info returns."
   [path & {:keys [name first-message modified count cwd parent]}]
   (let [now (now-ms)]
     {:path path

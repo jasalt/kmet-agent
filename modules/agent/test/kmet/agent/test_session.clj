@@ -4,7 +4,7 @@
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.session :as s]
+            [kmet.agent.session.core :as s]
             [kmet.ai.usage :as usage]
             [kmet.test-utils :refer [slash]]))
 

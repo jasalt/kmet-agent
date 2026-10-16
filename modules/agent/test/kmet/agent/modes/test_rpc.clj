@@ -11,11 +11,11 @@
             [kmet.agent.modes.rpc :as rpc]
             [kmet.ai.models :as models]
             [kmet.agent.commands :as commands]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as agent]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.session :as session]
-            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.session.core :as session]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.agent.skills :as skills]))
 
 (defn- opts

@@ -14,8 +14,8 @@
 
 (defonce pending-prompt-templates (atom []))
 (defn- current-prompt-template-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :prompt-templates)
       pending-prompt-templates))
 

@@ -13,7 +13,7 @@
             [kmet.tui.core :as core]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]
-            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.test-utils :as tu]))
 
 (defn- with-image-env

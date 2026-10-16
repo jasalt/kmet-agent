@@ -1822,7 +1822,7 @@ embedded field.
 
 Deliberate boundaries, recorded so the analysis behind them is not redone.
 This is not the gap tracker — kmet↔pi follow-ups live in
-`modules/agent/src/kmet/development/pi-alignment.md`;
+`modules/agent/src/kmet/pi-alignment.md`;
 anything listed here changes only on an explicit request.
 
 ### 15.1 Features deliberately out of scope

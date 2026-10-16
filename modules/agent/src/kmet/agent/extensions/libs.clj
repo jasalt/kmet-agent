@@ -1,11 +1,11 @@
-(ns kmet.agent.extension-libs
+(ns kmet.agent.extensions.libs
   "The fixed set of bundled libraries kmet provides on both hosts — to
    extension contexts and to run_code scripts alike. See
    src/kmet/extension.md § Bundled extension libraries.
 
    The requires below are the set's enumeration of third-party roots:
    loading the namespace is the point. On Jolt it is statically required by
-   kmet.agent.extensions, so `jolt dist` pulls the whole set into the app's
+   kmet.agent.extensions.core, so `jolt dist` pulls the whole set into the app's
    require closure (AOT), and the extension host view shares the loaded
    namespaces by reference; on babashka/JVM host-requires! and run_code's
    require-host-namespaces! require it on first use (the requires resolve to
@@ -17,7 +17,7 @@
    sandbox's namespace copy, so the surface cannot drift from the set.
 
    clojure.* (core.async and rrb-vector included) and babashka.fs /
-   babashka.process are shared by the host clauses in kmet.agent.extensions,
+   babashka.process are shared by the host clauses in kmet.agent.extensions.core,
    not from here."
   (:require [cljfmt.config]
             [cljfmt.core]

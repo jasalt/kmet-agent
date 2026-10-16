@@ -16,10 +16,10 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.commands.builtins :as builtins]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.session :as session]
-            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.session.core :as session]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.agent.skills :as skills]
             [kmet.agent.config :as cfg]
             [kmet.agent.debug :as debug]))

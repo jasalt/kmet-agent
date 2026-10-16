@@ -1,12 +1,12 @@
 (ns kmet.agent.test-session-runtime
-  "Tests for kmet.agent.session-runtime: the engine front ends drive
+  "Tests for kmet.agent.session.runtime: the engine front ends drive
    (engine.md §4.1, step 1)."
   (:require [babashka.fs :as fs]
             [clojure.test :refer [deftest is]]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as agent]
-            [kmet.agent.session :as session]
-            [kmet.agent.session-runtime :as rt]))
+            [kmet.agent.session.core :as session]
+            [kmet.agent.session.runtime :as rt]))
 
 (defn- test-config
   "A sparse run config — every derived option falls back to its default."

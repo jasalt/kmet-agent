@@ -35,7 +35,7 @@
    — :entry is a namespace symbol resolved by strict ns-path lookup
    (namespace a.b/c lives at a/b/c.clj under the root); :loader lists the
    loader backends the extension supports (:sci / :jolt — the host picks
-   its own preference, see kmet.agent.extensions). Internal namespaces
+   its own preference, see kmet.agent.extensions.core). Internal namespaces
    are required from there. An extension directory may also carry a deps.edn
    declaring library dependencies; kmet serves them to that extension only
    (each extension runs in its own isolated context, so different

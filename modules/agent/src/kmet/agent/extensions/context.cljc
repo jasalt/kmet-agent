@@ -493,14 +493,14 @@
 
 (def ^:private bundled-extension-lib-predicate
   "Is namespace name N part of the fixed bundled extension set? The set's
-   membership rule lives beside its enumeration (kmet.agent.extension-libs,
+   membership rule lives beside its enumeration (kmet.agent.extensions.libs,
    bundled-library-namespace?); the lazy resolve keeps the set's libraries
    off the extension machinery's load path — host-requires! loads them on
    the first extension (run_code's require-host-namespaces! on the first
    script). The set's clojure.* members — spec.alpha, tools.reader,
    core.async, rrb-vector — are admitted by shared-namespace?'s host clauses
    and port sets instead."
-  (delay @(requiring-resolve 'kmet.agent.extension-libs/bundled-library-namespace?)))
+  (delay @(requiring-resolve 'kmet.agent.extensions.libs/bundled-library-namespace?)))
 
 (defn- shared-namespace?
   "Is NS-OBJ a host namespace extension contexts share? The scan's rule,
@@ -732,7 +732,7 @@
       (file-extension f))))
 
 (defn resolve-extension-descriptor
-  "Resolve a bundled descriptor (kmet.agent.bundled-extensions/artifacts) into
+  "Resolve a bundled descriptor (kmet.agent.extensions.bundled/artifacts) into
    the resolve-extension shape. Descriptor kinds :dir/:file/:jar are
    checkout artifacts and resolve exactly like paths (:root names them);
    :resource-dir reads its manifest from the resource prefix and carries a
@@ -1167,7 +1167,7 @@
 (defn- host-requires!
   "Require the shared library layers before a per-extension context is
    built, so the all-ns scan in build-context-namespaces finds them.
-   kmet.agent.extension-libs is the fixed bundled extension set (see there):
+   kmet.agent.extensions.libs is the fixed bundled extension set (see there):
    on Jolt it is already loaded (statically required for the build
    closure), on bb/JVM this first extension load pulls it in. bb-only ports
    (clojure.spec, rewrite-clj, tools.reader — SCI-incompatible Maven
@@ -1176,7 +1176,7 @@
   []
   (require 'clojure.core.async)
   (apply require (concat tui-library-namespaces libs-library-namespaces))
-  (require 'kmet.agent.extension-libs)
+  (require 'kmet.agent.extensions.libs)
   (when-not (host/jolt?)
     (apply require (concat spec-port-namespaces bb-shared-namespaces)))
   nil)

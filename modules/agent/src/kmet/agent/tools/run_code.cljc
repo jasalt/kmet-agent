@@ -181,7 +181,7 @@
 
 (defn- eval-with-io
   "Run THUNK with SCI's *out*/*err* bound to the capture writers (the
-   kmet.agent.extensions/with-sci-io pattern: babashka's SCI is wired to the
+   kmet.agent.extensions.core/with-sci-io pattern: babashka's SCI is wired to the
    host streams, Jolt's sci vars are bound explicitly). Used by the eval
    thread and by sandbox/spawn, whose future thread would otherwise print to
    an unbound *out* on Jolt. Print length/level are bounded alongside: an
@@ -460,20 +460,20 @@
 
 (def ^:private bundled-lib-namespace?
   "The fixed bundled extension set's membership predicate
-   (kmet.agent.extension-libs, bundled-library-namespace?), resolved lazily:
+   (kmet.agent.extensions.libs, bundled-library-namespace?), resolved lazily:
    require-host-namespaces! loads the set on the first script call, and the
    delay keeps its libraries off the app's startup path. A script can then
    require the same copies extension contexts share — rewrite-clj.*,
    edamame.core, cljfmt.*, parinferish.core (the set's clojure.* members ride
    copyable-namespace?'s clojure.* clause)."
-  (delay @(requiring-resolve 'kmet.agent.extension-libs/bundled-library-namespace?)))
+  (delay @(requiring-resolve 'kmet.agent.extensions.libs/bundled-library-namespace?)))
 
 (defn- copyable-namespace?
   "True for a loaded host namespace the full-babashka surface copies: the
    babashka/clojure vocabulary, minus clojure.core (SCI's builtin core is the
    interpreter's own and must not be shadowed) and babashka.nrepl (a host
    server, not a script API), plus the fixed bundled extension set
-   (kmet.agent.extension-libs — the same shared copies extension contexts get,
+   (kmet.agent.extensions.libs — the same shared copies extension contexts get,
    so a script's structural-editing and formatting vocabulary matches an
    extension's). kmet's own namespaces are never in this set."
   [ns-sym]
@@ -556,13 +556,13 @@
 
 (defn- require-host-namespaces!
   "Host-require before value-sharing: babashka preloads babashka.fs/process,
-   Jolt does not. kmet.agent.extension-libs is the fixed bundled extension set
+   Jolt does not. kmet.agent.extensions.libs is the fixed bundled extension set
    (its requires are the enumeration), loaded here so the copy sees it; the
    set's membership rule rides copyable-namespace?'s lazy resolve."
   []
   (require 'babashka.fs)
   (require 'babashka.process)
-  (require 'kmet.agent.extension-libs)
+  (require 'kmet.agent.extensions.libs)
   nil)
 
 (defn- unreadable-namespace

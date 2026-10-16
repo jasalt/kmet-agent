@@ -6,8 +6,8 @@
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
-            [kmet.agent.session :as session]
-            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.session.core :as session]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.ui.tui.dock :as dock]
@@ -149,7 +149,7 @@
                       dock-root
                       dock-stack
                       theme-controller
-                      ;; the kmet.agent.session-runtime engine; the layout owns
+                      ;; the kmet.agent.session.runtime engine; the layout owns
                       ;; view state and subscribes to the engine's stream
                       engine])
 

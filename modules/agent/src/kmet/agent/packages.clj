@@ -2,10 +2,10 @@
   "Package manager + resource resolution (pi: core/package-manager.ts + the
    package part of core/resource-loader.ts — the local directory/file source
    subset; npm and git installs are deliberately out of scope, see
-   src/kmet/development/pi-alignment.md).
+   src/kmet/pi-alignment.md).
 
    A fifth, app-provided layer sits after packages: the bundled extensions
-   (kmet.agent.bundled-extensions) — the shipped
+   (kmet.agent.extensions.bundled) — the shipped
    `extensions/` set, present in every run mode and disabled unless the
    `:bundled-extensions` settings entries enable it. Bundled items rank
    last (5), are not `:packages` entries (kmet install/remove cannot touch
@@ -53,8 +53,8 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.agent.bundled-extensions :as bundled-extensions]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.bundled :as bundled-extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
             [kmet.agent.config :as cfg]))
@@ -1024,7 +1024,7 @@
 
 ;; ─── Bundled extensions ──────────────────────────
 ;; The app-provided fifth layer: descriptors from
-;; kmet.agent.bundled-extensions, PackageItem-shaped here, enabled through
+;; kmet.agent.extensions.bundled, PackageItem-shaped here, enabled through
 ;; the :bundled-extensions settings key. The key shares the resource-array
 ;; vocabulary (plain/+name enables, -name/!name disables); a project entry
 ;; is a delta over the global one, so the same tri-state cycle as the
@@ -1074,7 +1074,7 @@
 
 (defn bundled-items
   "PackageItem-shaped items for the bundled extension layer, one per
-   descriptor of the current run mode (kmet.agent.bundled-extensions/artifacts
+   descriptor of the current run mode (kmet.agent.extensions.bundled/artifacts
    — checkout paths in dev, resource prefixes in a built artifact). Enabled
    per the :bundled-extensions entries of both settings scopes; default
    disabled. AGENT-DIR is accepted for symmetry with the other resolvers

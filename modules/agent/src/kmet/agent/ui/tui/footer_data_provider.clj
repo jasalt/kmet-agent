@@ -5,7 +5,7 @@
    configured provider count, and the model context window."
   (:require [clojure.string :as str]
             [babashka.process :as proc]
-            [kmet.agent.session :as session]
+            [kmet.agent.session.core :as session]
             [kmet.ai.usage :as usage]
             [kmet.agent.compaction :as compaction]))
 
@@ -36,7 +36,7 @@
      :cwd-atom       — inject the cwd atom instead of creating one (the
                        interactive mode shares it with the chat history, so
                        one write switches both — see fdp-set-cwd!)
-     :session        — kmet.agent.session Session record or nil
+     :session        — kmet.agent.session.core Session record or nil
      :provider-count — number of configured providers (pi: availableProviderCount)
      :context-window — model context window in tokens, or nil when unknown
      :model          — current model id

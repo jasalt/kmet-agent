@@ -622,7 +622,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
 
 (def ^:private extension-loader-kinds
   "Loader backend kinds an extension manifest may declare — the runtime's
-   selection vocabulary (kmet.agent.extensions/select-loader-kind)."
+   selection vocabulary (kmet.agent.extensions.core/select-loader-kind)."
   #{:sci :jolt})
 
 (defn- pack-verify!
@@ -829,7 +829,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
    every artifact root is copied to
    target/kmet-bundled/extensions/<root>/…, which is exactly
    the resource-key layout the runtime probes (see
-   kmet.agent.bundled-extensions). The staging root is the extra root the bb
+   kmet.agent.extensions.bundled). The staging root is the extra root the bb
    uberjar walks and the jolt :jolt/build :embed list embeds; deleting it
    first keeps stale files out. Returns the staging root path. Host-neutral
    (fs + slurp/spit), so `jolt dist` can share it."

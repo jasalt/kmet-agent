@@ -9,11 +9,11 @@
    Extensions run in isolated SCI contexts where `future`/`pmap`/`pcalls`
    are not available — SCI is a pure interpreter with no bundled
    Executor, while babashka injects `future` only into its host context
-   (see `kmet.agent.extensions/build-context-namespaces`). `kmet` therefore
+   (see `kmet.agent.extensions.core/build-context-namespaces`). `kmet` therefore
    exposes this tiny helper instead of whitelisting `future`:
 
    - host: `babashka` embeds `sci` + injects `future` via `:namespaces`
-   - extensions: second `sci` context built by `kmet.agent.extensions` —
+   - extensions: second `sci` context built by `kmet.agent.extensions.core` —
      only `slurp`/`spit`/`file-seq` from `clojure.core` plus the shared
      `kmet.tui.*` / `kmet.libs.*` layers are injected; `future` is
      deliberately omitted.

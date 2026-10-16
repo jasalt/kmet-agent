@@ -6,7 +6,7 @@
   (:require [clojure.test :as t :refer [deftest is testing]]
             [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
-            [kmet.agent.session :as session]
+            [kmet.agent.session.core :as session]
             [kmet.libs.host :as host]
             [kmet.agent.modes.interactive.state :as state]))
 

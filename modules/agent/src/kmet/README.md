@@ -4,7 +4,7 @@ This file documents the application package and its contributor workflow.
 Implementation-specific references live beside their namespaces, not in the
 user-facing `docs/` directory: see [`tui/tui.md`](tui/tui.md),
 [`../../loader/modules/loader/src/kmet/loader/loader.md`](../../loader/modules/loader/src/kmet/loader/loader.md), [`extension.md`](extension.md),
-[`development/pi-alignment.md`](development/pi-alignment.md). Temporary
+[`pi-alignment.md`](pi-alignment.md). Temporary
 analysis notes (`run_code.md`, `perf.md`, and `jolt-bugs.md`) remain at the
 repository root by convention.
 
@@ -78,17 +78,17 @@ modules/agent/src/kmet/
 │   │                     provider attribution headers, tool JSON-schema
 │   │                     constraints, injectable provider-event slots
 │   ├── http.clj        — provider streams over the kmet.libs.http boundary
-├── app/                — App business logic (pi: dist/core/)
+├── agent/              — App business logic (pi: dist/core/)
 │   ├── loop.clj        — the agent loop; retry.clj — retry/error policy;
-│   │                     loop_guard.clj — repeat-loop guard; session.clj — EDNL sessions
-│   ├── session_runtime.clj — the session runtime front ends drive:
-│   │                     bootstrap (agent state, system prompt, run
-│   │                     options, extension binding + runtime
-│   │                     capabilities), session lifecycle
-│   │                     (new/resume/fork/clone/switch), the submission
-│   │                     chain and compaction queue, prompts/queues,
-│   │                     subscribers, UI requests (request-ui!/respond!),
-│   │                     disposal (kmet.agent.session-runtime)
+│   │                     loop_guard.clj — repeat-loop guard
+│   ├── session/         — session subsystem:
+│   │   ├── core.clj     — EDNL sessions (storage, branch/tree,
+│   │   │                 compaction, import/export planning)
+│   │   ├── schema.clj   — Malli schemas for session entries/header
+│   │   ├── export.clj   — standalone HTML session export
+│   │   └── runtime.clj  — the session runtime engine (bootstrap, lifecycle,
+│   │                     submission chain, compaction queue,
+│   │                     subscribers, UI requests, disposal)
 │   ├── commands.clj / keybindings.clj / packages.clj / extensions.cljc —
 │   │                     slash command registry (ctx-shaped handlers:
 │   │                     {:runtime :ui :frontend}, front-end tags; the
@@ -175,7 +175,7 @@ registration tables/maps over compile-time multimethod registries. Use
 The session-runtime split puts one session runtime behind every
 front end:
 
-- `kmet.agent.session-runtime` owns the agent state, the session lifecycle
+- `kmet.agent.session.runtime` owns the agent state, the session lifecycle
   (`new-session!`, `resume!`, `fork!`, `clone!`, `switch-session!`), the
   submission chain, the steer/follow-up queues, compaction, and the
   extension runtime handle. Front ends call `bootstrap` once and drive the

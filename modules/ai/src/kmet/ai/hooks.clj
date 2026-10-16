@@ -3,7 +3,7 @@
    before_provider_headers / after_provider_response events).
 
    kmet.ai must not depend on kmet.agent (the event bus lives there), so the
-   extension bridge (kmet.agent.extensions) installs these single-fn slots —
+   extension bridge (kmet.agent.extensions.core) installs these single-fn slots —
    defaults are no-ops. The slots live in their own namespace because both
    kmet.ai.api.shared (payload/context application) and kmet.ai.http
    (headers/response application, where the HTTP call happens) must reach

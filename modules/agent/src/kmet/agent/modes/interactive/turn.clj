@@ -3,7 +3,7 @@
    the submit/cancel/queue paths, the compaction-queue display, and the
    terminal-progress indicator (pi: session.prompt input events, agent
    event handlers, flushCompactionQueue). The runtime owns the submission
-   chain and the compaction queue itself (kmet.agent.session-runtime); this
+   chain and the compaction queue itself (kmet.agent.session.runtime); this
    namespace keeps the UI reactions."
   (:require [clojure.string :as str]
             [kmet.agent.debug :as debug]
@@ -14,13 +14,13 @@
             [kmet.tui.terminal :as term]
             [kmet.tui.components.container :as container]
             [kmet.agent.loop :as agent]
-            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.chat-history :as chat-history]
             [kmet.agent.ui.tui.bash-execution :as be]
             [kmet.agent.bash-executor :as bash-exec]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.tools.util :as tools-util]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.keybindings :as app-kb]

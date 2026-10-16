@@ -6,10 +6,10 @@
   (:require [babashka.fs :as fs]
             [clojure.test :as t :refer [deftest testing]]
             [kmet.ai.models :as m]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as agent]
-            [kmet.agent.session :as session]
-            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.session.core :as session]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.agent.config :as cfg]
             [kmet.test-utils :as tu]))
 

@@ -22,7 +22,7 @@
             [kmet.ai.api.bedrock-converse-stream :as bedrock]
             [kmet.ai.google-adc :as adc]
             [kmet.agent.loop :as loop]
-            [kmet.agent.session :as session]
+            [kmet.agent.session.core :as session]
             [kmet.agent.config :as cfg]
             [kmet.ai.models :as m]
             [kmet.agent.tools.core :as tools]

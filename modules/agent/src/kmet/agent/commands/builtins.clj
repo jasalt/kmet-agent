@@ -8,9 +8,9 @@
             [kmet.agent.debug :as debug]
             [kmet.agent.commands :as commands]
             [kmet.agent.loop :as agent]
-            [kmet.agent.session :as session]
-            [kmet.agent.session-export :as session-export]
-            [kmet.agent.session-runtime :as runtime]))
+            [kmet.agent.session.core :as session]
+            [kmet.agent.session.export :as session-export]
+            [kmet.agent.session.runtime :as runtime]))
 
 (defn- out
   "Call a shared command-UI capability; an absent capability is inert (a

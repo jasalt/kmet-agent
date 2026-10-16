@@ -10,8 +10,8 @@
             [kmet.agent.modes.print :as print-mode]
             [kmet.ai.models :as m]
             [kmet.agent.loop :as agent]
-            [kmet.agent.session :as session]
-            [kmet.agent.extensions :as extensions]))
+            [kmet.agent.session.core :as session]
+            [kmet.agent.extensions.core :as extensions]))
 
 (defn- opts
   "Minimal run opts — :model/:provider bypass catalog resolution;

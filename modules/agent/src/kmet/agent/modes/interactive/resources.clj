@@ -7,7 +7,7 @@
             [kmet.agent.context :as context]
             [kmet.agent.skills :as skills]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.extensions :as extensions]))
+            [kmet.agent.extensions.core :as extensions]))
 
 ;; ─── Loaded resources (pi: showLoadedResources) ────────────────────────────
 

@@ -5,7 +5,7 @@
             [babashka.fs :as fs]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.util :as tool-util]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.ai.api.shared :as schema-shared]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.bash-executor :as bash-exec]

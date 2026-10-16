@@ -15,12 +15,12 @@
             [kmet.libs.host :as host]
             [kmet.agent.config :as cfg]
             [kmet.ai.models :as models]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.extensions.context :as ext-context]
             [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.session :as session]
+            [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.ai.hooks :as ai-hooks]
@@ -607,7 +607,7 @@
   ;; injected and the bundled jars excluded.
   ;;
   ;; Runs on both hosts: the fixture's deps.edn excludes rewrite-clj for the
-  ;; bb port, and the fixed bundled set (kmet.agent.extension-libs) provides
+  ;; bb port, and the fixed bundled set (kmet.agent.extensions.libs) provides
   ;; it where the declaration's gap would otherwise be — the closure
   ;; assertions below stay meaningful on both (the declared cljfmt is in the
   ;; closure, the host-provided ports are not).
@@ -627,7 +627,7 @@
     (extensions/unload-all-extensions!)))
 
 (t/deftest test-extension-fixed-bundled-set
-  ;; the fixed bundled set (kmet.agent.extension-libs; src/kmet/extension.md § Bundled
+  ;; the fixed bundled set (kmet.agent.extensions.libs; src/kmet/extension.md § Bundled
   ;; extension libraries) needs no deps.edn: a single-file extension requires
   ;; every third-party member and calls each one — same result on both hosts.
   (extensions/clear-extensions!)

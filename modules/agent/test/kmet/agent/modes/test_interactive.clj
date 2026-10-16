@@ -20,7 +20,7 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.loop :as agent]
-            [kmet.agent.session :as session]
+            [kmet.agent.session.core :as session]
             [kmet.agent.ui.tui.bash-execution :as bash-execution]
             [kmet.agent.ui.tui.chat-history :as chat-history]
             [kmet.agent.ui.tui.footer :as footer]
@@ -36,7 +36,7 @@
             [kmet.libs.host :as host]
             [kmet.libs.process :as process]
             [kmet.libs.reakt.core :as reakt]
-            [kmet.agent.extensions :as extensions]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.modes.interactive.theme-controller :as theme-ctrl]
             [kmet.ai.models :as models]
             [kmet.agent.keybindings :as app-kb]
@@ -53,9 +53,9 @@
             [kmet.tui.timers :as timers]
             [babashka.fs :as fs]
             [babashka.process :as proc]
-            [kmet.agent.session-export :as session-export]
+            [kmet.agent.session.export :as session-export]
             [clojure.string :as str]
-            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.test-utils :as tu]))
 
 (defn- make-handler

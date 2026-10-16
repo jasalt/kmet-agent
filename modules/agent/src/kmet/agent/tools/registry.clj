@@ -79,8 +79,8 @@
   "The atom storing custom-tool definitions: the active engine's or the
    pre-bootstrap pending buffer."
   []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :custom-tools)
       pending-custom-tools))
 
@@ -119,8 +119,8 @@
   "The atom storing extension-contributed tool source functions: the active
    engine's or the pre-bootstrap pending buffer."
   []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :tool-sources)
       pending-tool-sources))
 

@@ -1,4 +1,4 @@
-(ns kmet.agent.bundled-extensions
+(ns kmet.agent.extensions.bundled
   "Bundled extension artifacts — the shipped `extensions/` set, resolved in
    whichever form the current run can reach them.
 
@@ -67,7 +67,7 @@
    sources on disk)."
   []
   (or (io/resource manifest-resource)
-      (let [f (fs/path (fs/cwd) "modules" "app" "src" "kmet" "bundled-extensions.edn")]
+      (let [f (fs/path (fs/cwd) "modules" "agent" "src" "kmet" "bundled-extensions.edn")]
         (when (fs/exists? f) (str f)))))
 
 (defn manifest
@@ -110,7 +110,7 @@
   []
   (let [cwd (fs/cwd)]
     (when (and (fs/exists? (fs/path cwd "extensions"))
-               (fs/exists? (fs/path cwd "modules" "app" "src" "kmet"
+               (fs/exists? (fs/path cwd "modules" "agent" "src" "kmet"
                                     "bundled-extensions.edn")))
       (str cwd))))
 

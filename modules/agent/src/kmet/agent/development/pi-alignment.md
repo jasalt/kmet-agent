@@ -30,7 +30,7 @@ is fully landed — see §7; per-model image input limits stay in §2.
 
 ## Session storage and alignment
 
-`kmet.agent.session` follows pi v3 `SessionManager` semantics in EDN/Clojure,
+`kmet.agent.session.core` follows pi v3 `SessionManager` semantics in EDN/Clojure,
 rather than importing pi's file format. It is intentionally EDNL-only: there
 is no JSONL codec, import/export, or reading and writing of pi session files,
 and no v1→v2/v2→v3 migration machinery. The v4 harness concepts (lanes, a

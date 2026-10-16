@@ -33,7 +33,7 @@ The sandbox now builds its per-call SCI context from the host's loaded
 so macros survive) plus babashka's class table on the bb host — a script
 `require`s `clojure.pprint`/`clojure.java.io`/… and resolves `System`,
 `java.io.*`, `Throwable`, `future` as in a babashka script. The fixed
-bundled extension set (`kmet.agent.extension-libs` — `rewrite-clj.*`,
+bundled extension set (`kmet.agent.extensions.libs` — `rewrite-clj.*`,
 `edamame.core`, `cljfmt.*`, `parinferish.core`) is copied too, so a script
 requires the same shared copies extension contexts get. kmet's own
 namespaces stay blocked (the boundary error below), and jolt's SCI exposes no
@@ -296,7 +296,7 @@ so T1–T3 don't re-litigate it:
 
 Loader facts: kmet.loader uses **SCI on babashka** and the **native
 `jolt.loader` on jolt** (`.jolt` file; backend selected in
-`kmet.agent.extensions`). The run_code tool builds a fresh per-call `sci/init`
+`kmet.agent.extensions.core`). The run_code tool builds a fresh per-call `sci/init`
 context (the T1 original forked a cached base through
 `kmet.loader.sci-loader`) and evaluates with `sci/eval-string*` directly;
 kmet pins SCI in `jolt/deps.edn`, so the same evaluator is available on
@@ -935,7 +935,7 @@ pipeline both callers use:
   `run-code/*assistant-message*`) + `active-tools` / `set-active-tools!`;
   `execute-tool-calls-*` (what the bridge must not route through); the
   `--debug` per-tool report at agent end.
-- `modules/agent/src/kmet/app/extensions.cljc` — `shared-context` / `shared-var-map` /
+- `modules/agent/src/kmet/agent/extensions/core.cljc` — `shared-context` / `shared-var-map` /
   `build-context-namespaces` (SCI injection pattern), `build-extension-context`.
 - `modules/agent/src/kmet/extension.clj` — tool registration (`register-tool!`,
   `create-bash-tool`, `on-tool-call` / `on-tool-result`).

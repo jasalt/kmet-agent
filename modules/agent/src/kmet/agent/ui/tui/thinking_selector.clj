@@ -10,7 +10,7 @@
             [kmet.ai.api.shared :as shared]
             [kmet.ai.models :as models]
             [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.session-runtime :as runtime]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.dock :as dock]
             [kmet.agent.ui.tui.subs :as s]
             [kmet.agent.config :as cfg]

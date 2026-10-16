@@ -27,8 +27,8 @@
 
 (defonce pending-skills (atom []))
 (defn- current-skill-registry []
-  (or (some-> (do (require 'kmet.agent.session-runtime)
-                  ((resolve 'kmet.agent.session-runtime/default-engine)))
+  (or (some-> (do (require 'kmet.agent.session.runtime)
+                  ((resolve 'kmet.agent.session.runtime/default-engine)))
               :skills)
       pending-skills))
 

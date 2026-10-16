@@ -43,7 +43,7 @@
   ;; Known pre-existing violations (engine.md §3.6/§5 finding F). Remove an
   ;; entry when the corresponding leak is fixed; new violations fail this
   ;; test.
-  {"kmet.agent.extensions" ["kmet.tui."]
+  {"kmet.agent.extensions.core" ["kmet.tui."]
    "kmet.agent.extensions.context" ["kmet.tui." "kmet.agent.modes."]})
 
 (deftest app-layer-does-not-require-front-ends

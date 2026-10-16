@@ -5,9 +5,9 @@
    pair a request with its answer."
   (:require [babashka.fs :as fs]
             [clojure.test :as t :refer [deftest testing]]
-            [kmet.agent.extensions :as ex]
-            [kmet.agent.session :as session]
-            [kmet.agent.session-runtime :as rt]
+            [kmet.agent.extensions.core :as ex]
+            [kmet.agent.session.core :as session]
+            [kmet.agent.session.runtime :as rt]
             [kmet.test-utils :as tu]))
 
 ;; The binding is process-global state; every test starts and ends headless.

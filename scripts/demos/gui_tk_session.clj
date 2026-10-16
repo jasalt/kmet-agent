@@ -13,7 +13,7 @@
    directory. The window is sized for --width mono columns."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.agent.session :as session]
+            [kmet.agent.session.core :as session]
             [kmet.agent.ui.gui.style :as gui-style]
             [kmet.agent.ui.gui.transcript :as transcript]
             [kmet.agent.ui.gui.ui :as ui]
