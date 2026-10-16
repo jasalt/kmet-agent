@@ -180,20 +180,16 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
 
 ## Tk beyond its widgets
 
-- **Window management.** `wm` beyond `title`/`geometry`: minimum size,
-  `resizable`, `attributes` (fullscreen, topmost, alpha), `iconphoto`,
-  `iconify`/`withdraw`, and a `:on-close` hook on `:tk/toplevel` — the run
-  loop already traps `WM_DELETE_WINDOW`, but only to end itself.
 - **More than one window per process.** `mount!` owns `.` and the dirty
   flag is global (one window per process by design today); a second window
-  needs per-window state and a window registry.
-- **Clipboard and selection.** `clipboard get`/`append`, the primary
-  selection, `tk_textCopy`-style helpers, and drag and drop.
-- **Scaling, focus, virtual events.** `tk scaling` (HiDPI), `tk busy` for a
-  subtree, `font create`/`configure` for named fonts and Tk 9's fallback
-  lists (today a font is a description derived per widget from TkFixedFont),
-  `event add`/`generate` so kmet code can publish an event others bind, and
-  focus traversal/`tk_focusNext` helpers.
+  needs per-window state and a window registry. (Window management,
+  clipboard/selection, scaling, focus, busy, virtual events and named fonts
+  are now covered — see `kmet.tk.core`: `iconify!`/`withdraw!`/`deiconify!`,
+  `minsize!`/`maxsize!`/`resizable!`/`attributes!`/`iconphoto!`/`on-close!`,
+  `clipboard-*`/`selection-*`, `scaling`/`set-scaling!`, `tk busy` helpers,
+  `focus-*`, `event-*`, and the `font-*` wrappers.)
+- **Drag and drop** (`tkdnd`/Tk 9 DnD) remains, as does runtime window
+  management of a second, independently-owned window.
 
 ## The app port (after the backend list)
 

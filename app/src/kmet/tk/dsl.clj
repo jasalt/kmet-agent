@@ -375,6 +375,14 @@
       :else (str result))
     (str (or result ""))))
 
+(defn register-callback!
+  "Register F as W's SLOT handler and return the `kmet::cb <id>` script
+   that carries it; nil F releases the slot. Public entry point for code
+   outside this namespace that needs a callback trampoline (window close,
+   script-typed options owned by another namespace)."
+  [w slot f spec]
+  (set-callback! w slot f spec))
+
 (defn dispatch-callback!
   "The single command handler behind `kmet::cb`: ARGV is
    [\"kmet::cb\" id & values]. Returns the handler's result string (\"\")."

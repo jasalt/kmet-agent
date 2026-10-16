@@ -160,6 +160,8 @@
 ;; The classic widget set (:tk/…)
 ;; ═══════════════════════════════════════════════════════════════════════════
 
+(declare apply-window-props! register-close-handler! size-pair window-dummy wm-size-command!)
+
 (defn- scale-value!
   "Set classic scale W to PROPS' :value (a scale's value is a subcommand,
    not an option)."
@@ -228,6 +230,7 @@
             (when-let [width (:width props)]
               (dsl/eval! (str "wm geometry . " (dsl/tcl-value width) "x"
                               (dsl/tcl-value (or (:height props) 400)))))
+            (apply-window-props! props)
             (let [w (dsl/->TkWidget "." :tk/toplevel (atom []) (atom {}) (atom {}))]
               ;; the window is Tk's own ".": its options are configured, not
               ;; created (and :width/:height above are the window's, not the
@@ -237,6 +240,16 @@
               w))
     :options (opt/options-for [:standard :classed :creation :surface :bordered
                                :highlighted :spaced :window])
+    :patchable [:minimum-size :minsize :maximum-size :maxsize :resizable
+                :fullscreen :full-screen :topmost :always-on-top :topmost?
+                :always-on-top? :alpha :zoomed :icon-photo :iconphoto :on-close
+                :state :iconified :withdrawn :icon-name :icon-photo-default
+                :default :default-icon? :titlepath]
+    :apply (fn [spec w prev props]
+             (when (dsl/patchable? spec prev props)
+               (dsl/apply-live! spec w prev props)
+               (apply-window-props! props)
+               true))
     :lens (dsl/child-lens)}
 
    :tk/frame
@@ -775,3 +788,378 @@
    Blocks until the user answers; see message-box! for the thread rule."
   [props]
   (dialog-answer (dialog-script "tk_chooseColor" color-dialog-options props)))
+
+;; ═══════════════════════════════════════════════════════════════════════════
+;; Window management (wm): entries on `:tk/toplevel`, plus imperative helpers.
+;; The window IS Tk's own ".": everything here scripts `wm … .`.
+;; ═══════════════════════════════════════════════════════════════════════════
+
+(defn- size-pair
+  "V as a [width height] pair for wm minsize/maxsize/resizable: a sequence of
+   two, a map with :width/:height (or :w/:h), or a single value applied to
+   both dimensions."
+  [v]
+  (cond
+    (sequential? v) [(first v) (second v)]
+    (map? v) [(or (:width v) (:w v)) (or (:height v) (:h v))]
+    :else [v v]))
+
+(defn- window-dummy
+  "A TkWidget record for the root window, so image descriptions can be
+   resolved against Tk's own \".\" (the window owns the image)."
+  []
+  (dsl/->TkWidget "." :tk/toplevel (atom []) (atom {}) (atom {})))
+
+(defn- register-close-handler!
+  "Register F as `:tk/toplevel`'s close handler and install it through Tk's
+   WM_DELETE_WINDOW protocol. F returning true (or a truthy value) keeps
+   the window open; false or nil destroys it (the run loop's default)."
+  [f]
+  (let [w (window-dummy)
+        cb (dsl/register-callback! w :on-close f {:value nil :answer true})]
+    (eval! (str "wm protocol . WM_DELETE_WINDOW { if {![ " cb "]} { destroy . } }"))))
+
+(defn- apply-window-props!
+  "Script the window-management props of the `:tk/toplevel` tag onto Tk's
+   own root window."
+  [props]
+  (when-some [v (or (get props :minimum-size) (get props :minsize))]
+    (let [[w h] (size-pair v)]
+      (eval! (str "wm minsize . " (dsl/tcl-value w) " " (dsl/tcl-value h)))))
+  (when-some [v (or (get props :maximum-size) (get props :maxsize))]
+    (let [[w h] (size-pair v)]
+      (eval! (str "wm maxsize . " (dsl/tcl-value w) " " (dsl/tcl-value h)))))
+  (when (contains? props :resizable)
+    (let [v (:resizable props)
+          [x y] (if (or (boolean? v) (number? v)) [v v] (size-pair v))]
+      (eval! (str "wm resizable . " (dsl/tcl-word x) " " (dsl/tcl-word y)))))
+  (when-some [v (or (get props :fullscreen) (get props :full-screen))]
+    (eval! (str "wm attributes . -fullscreen " (dsl/tcl-word v))))
+  (when-some [v (or (get props :topmost) (get props :always-on-top)
+                    (get props :topmost?) (get props :always-on-top?))]
+    (eval! (str "wm attributes . -topmost " (dsl/tcl-word v))))
+  (when-some [v (get props :alpha)]
+    (eval! (str "wm attributes . -alpha " (dsl/tcl-word v))))
+  (when-some [v (get props :zoomed)]
+    (eval! (str "wm attributes . -zoomed " (dsl/tcl-word v))))
+  (when-some [v (get props :titlepath)]
+    (eval! (str "wm attributes . -titlepath " (dsl/tcl-value v))))
+  (when-some [v (or (get props :icon-photo) (get props :iconphoto))]
+    (let [img (if (map? v) (dsl/image-name (window-dummy) :image v) v)
+          default? (or (get props :icon-photo-default)
+                       (get props :default-icon?) (get props :default))]
+      (eval! (str "wm iconphoto . " (when default? "-default ") (dsl/tcl-value img)))))
+  (when-some [v (get props :icon-name)]
+    (eval! (str "wm iconname . " (dsl/tcl-quote v))))
+  (when (contains? props :state)
+    (case (:state props)
+      (:normal nil) nil
+      :iconic (eval! "wm iconify .")
+      :withdrawn (eval! "wm withdraw .")
+      (eval! (str "wm state . " (dsl/tcl-word (:state props))))))
+  (when (contains? props :iconified)
+    (if (:iconified props)
+      (eval! "wm iconify .")
+      (eval! "wm deiconify .")))
+  (when (contains? props :withdrawn)
+    (if (:withdrawn props)
+      (eval! "wm withdraw .")
+      (eval! "wm deiconify .")))
+  (when (contains? props :on-close)
+    (if-some [f (:on-close props)]
+      (register-close-handler! f)
+      (eval! "wm protocol . WM_DELETE_WINDOW { destroy . }"))))
+
+(defn iconify!
+  "Iconify the root window."
+  []
+  (eval! "wm iconify ."))
+
+(defn deiconify!
+  "Deiconify (raise) the root window."
+  []
+  (eval! "wm deiconify ."))
+
+(defn withdraw!
+  "Withdraw (hide) the root window."
+  []
+  (eval! "wm withdraw ."))
+
+(defn window-state
+  "The root window's wm state: \"normal\", \"iconic\" or \"withdrawn\"."
+  []
+  (eval! "wm state ."))
+
+(defn- wm-size-command!
+  [cmd v]
+  (let [[w h] (size-pair v)]
+    (eval! (str cmd " . " (dsl/tcl-value w) " " (dsl/tcl-value h)))))
+
+(defn minsize!
+  "Set the root window's minimum size. Accepts a [w h] sequence, a map, a
+   single value for both, or two separate arguments."
+  ([v] (wm-size-command! "wm minsize" v))
+  ([w h] (eval! (str "wm minsize . " (dsl/tcl-value w) " " (dsl/tcl-value h)))))
+
+(defn maximum-size!
+  "Set the root window's maximum size (minimum-size! on 8.6 raises it too)."
+  ([v] (wm-size-command! "wm maxsize" v))
+  ([w h] (eval! (str "wm maxsize . " (dsl/tcl-value w) " " (dsl/tcl-value h)))))
+
+(defn maxsize!
+  "Alias for maximum-size!."
+  ([v] (maximum-size! v))
+  ([w h] (maximum-size! w h)))
+
+(defn resizable!
+  "Set whether the root window is user-resizable. A boolean applies to both
+   axes; a [width height] sequence or two boolean arguments set them
+   separately."
+  ([v]
+   (let [v' (if (or (boolean? v) (number? v)) [v v] (size-pair v))
+         [x y] v']
+     (eval! (str "wm resizable . " (dsl/tcl-word x) " " (dsl/tcl-word y)))))
+  ([x y]
+   (eval! (str "wm resizable . " (dsl/tcl-word x) " " (dsl/tcl-word y)))))
+
+(defn fullscreen!
+  "Set the root window's fullscreen state."
+  [v]
+  (eval! (str "wm attributes . -fullscreen " (dsl/tcl-word v))))
+
+(defn topmost!
+  "Set whether the root window stays above others."
+  [v]
+  (eval! (str "wm attributes . -topmost " (dsl/tcl-word v))))
+
+(defn always-on-top!
+  "Alias for topmost!."
+  [v]
+  (topmost! v))
+
+(defn alpha!
+  "Set the root window's opacity (0.0–1.0)."
+  [v]
+  (eval! (str "wm attributes . -alpha " (dsl/tcl-word v))))
+
+(defn zoomed!
+  "Set the root window's zoomed (maximized) state where the platform
+   supports it."
+  [v]
+  (eval! (str "wm attributes . -zoomed " (dsl/tcl-word v))))
+
+(defn raise!
+  "Raise the root window (optionally above WINDOW)."
+  ([] (eval! "wm raise ."))
+  ([above] (eval! (str "wm raise . " (dsl/tcl-value above)))))
+
+(defn lower!
+  "Lower the root window (optionally below WINDOW)."
+  ([] (eval! "wm lower ."))
+  ([below] (eval! (str "wm lower . " (dsl/tcl-value below)))))
+
+(defn- wm-attr-name [k]
+  (str "-" (name (get {:always-on-top :topmost
+                       :always-on-top? :topmost
+                       :topmost? :topmost} k k))))
+
+(defn attributes!
+  "Script wm attributes onto the root window. A map sets each key; two
+   arguments set a single attribute name (a keyword) to a value."
+  ([attrs]
+   (doseq [[k v] attrs]
+     (eval! (str "wm attributes . " (wm-attr-name k) " " (dsl/tcl-value v)))))
+  ([k v]
+   (eval! (str "wm attributes . " (wm-attr-name k) " " (dsl/tcl-value v)))))
+
+(defn iconphoto!
+  "Set the root window's icon image (a Tk name or a description map)."
+  ([image] (iconphoto! image false))
+  ([image x]
+   (let [default? (if (map? x) (or (:default x) (:default? x)) x)
+         img (if (map? image) (dsl/image-name (window-dummy) :image image) image)]
+     (eval! (str "wm iconphoto . " (when default? "-default ") (dsl/tcl-value img))))))
+
+(defn on-close!
+  "Install F (or clear with nil) as `:tk/toplevel`'s close handler."
+  [f]
+  (if f
+    (register-close-handler! f)
+    (eval! "wm protocol . WM_DELETE_WINDOW { destroy . }")))
+
+(defn wm-command!
+  "Run an arbitrary `wm SUBCOMMAND …` script on the root window."
+  [subcommand & args]
+  (eval! (str "wm " (name subcommand) " . "
+              (str/join " " (map dsl/tcl-value args)))))
+
+(def minimumsize! minsize!)
+(def maximumsize! maximum-size!)
+(def max-size! maximum-size!)
+(def min-size! minsize!)
+(def minimum-size! minsize!)
+(def iconify-window! iconify!)
+(def deiconify-window! deiconify!)
+
+;; ═══════════════════════════════════════════════════════════════════════════
+;; Clipboard and primary selection (`clipboard`, `selection`).
+;; ═══════════════════════════════════════════════════════════════════════════
+
+(defn- widget-path [w] (if (and (map? w) (:path w)) (:path w) (str w)))
+
+(defn- opt-words [m]
+  (when (seq m)
+    (str/join " " (mapcat (fn [[k v]] [(str "-" (name k)) (str (dsl/tcl-value v))]) m))))
+
+(defn clipboard-clear!
+  "Clear the clipboard. OPTIONS: :displayof (a window/widget)."
+  [& {:keys [displayof]}]
+  (eval! (str "clipboard clear"
+              (when displayof (str " -displayof " (dsl/tcl-value (widget-path displayof)))))))
+
+(defn clipboard-get
+  "Read the clipboard (CLIPBOARD selection). OPTIONS: :displayof, :type."
+  [& {:keys [displayof type]}]
+  (eval! (str "clipboard get"
+              (when displayof (str " -displayof " (dsl/tcl-value (widget-path displayof))))
+              (when type (str " -type " (dsl/tcl-word type))))))
+
+(defn clipboard-append!
+  "Append DATA to the clipboard. OPTIONS (keyword args): :displayof, :format,
+   :type."
+  [data & {:keys [displayof format type]}]
+  (eval! (str "clipboard append"
+              (when displayof (str " -displayof " (dsl/tcl-value (widget-path displayof))))
+              (when format (str " -format " (dsl/tcl-word format)))
+              (when type (str " -type " (dsl/tcl-word type)))
+              " -- " (dsl/tcl-quote (str data)))))
+
+(defn clipboard-set!
+  "Replace the clipboard's contents with DATA (clear + append)."
+  [data & opts]
+  (apply clipboard-clear! opts)
+  (apply clipboard-append! data opts))
+
+(defn selection-clear!
+  "Clear the selection. OPTIONS: :displayof, :selection (:primary, :clipboard
+   or a string)."
+  [& {:keys [displayof selection]}]
+  (eval! (str "selection clear"
+              (when displayof (str " -displayof " (dsl/tcl-value (widget-path displayof))))
+              (when selection (str " -selection " (dsl/tcl-word selection))))))
+
+(defn selection-get
+  "Read the selection. OPTIONS: :displayof, :selection, :type."
+  [& {:keys [displayof selection type]}]
+  (eval! (str "selection get"
+              (when displayof (str " -displayof " (dsl/tcl-value (widget-path displayof))))
+              (when selection (str " -selection " (dsl/tcl-word selection)))
+              (when type (str " -type " (dsl/tcl-word type))))))
+
+(defn selection-handle!
+  "Registers CMD as the handler producing the SELECTION's data (advanced)."
+  [window cmd & {:keys [selection type format]}]
+  (eval! (str "selection handle"
+              (when selection (str " -selection " (dsl/tcl-word selection)))
+              (when type (str " -type " (dsl/tcl-word type)))
+              (when format (str " -format " (dsl/tcl-word format)))
+              " " (dsl/tcl-value (widget-path window)) " "
+              (dsl/tcl-quote (str cmd)))))
+
+(defn selection-own!
+  "Take ownership of the selection for WINDOW. OPTIONS: :command, :selection."
+  [window & {:keys [command selection]}]
+  (eval! (str "selection own"
+              (when selection (str " -selection " (dsl/tcl-word selection)))
+              (when command (str " -command " (dsl/tcl-quote (str command))))
+              " " (dsl/tcl-value (widget-path window)))))
+
+;; ═══════════════════════════════════════════════════════════════════════════
+;; Scaling, focus, busy, Tk resource (fonts) helpers.
+;; ═══════════════════════════════════════════════════════════════════════════
+
+(defn scaling
+  "The Tk scaling factor."
+  ([] (eval! "tk scaling"))
+  ([factor] (eval! (str "tk scaling " (dsl/tcl-value factor))) (scaling)))
+
+(defn set-scaling! [factor] (eval! (str "tk scaling " (dsl/tcl-value factor))))
+
+(defn busy-hold!
+  "Block input to W (and its descendants) with a busy cursor."
+  [w & {:keys [cursor]}]
+  (eval! (str "tk busy hold" (when cursor (str " -cursor " (dsl/tcl-word cursor)))
+              " " (dsl/tcl-value (widget-path w)))))
+
+(defn busy-release! [w]
+  (eval! (str "tk busy release " (dsl/tcl-value (widget-path w)))))
+
+(defn busy? [w]
+  (eval! (str "tk busy status " (dsl/tcl-value (widget-path w)))))
+
+(defn busy-configure! [w opts]
+  (eval! (str "tk busy configure " (dsl/tcl-value (widget-path w)) " " (opt-words opts))))
+
+(defn focus-set! [w]
+  (eval! (str "focus " (dsl/tcl-value (widget-path w)))))
+
+(defn focus-get [] (eval! "focus"))
+
+(defn focus-next! [w]
+  (eval! (str "tk_focusNext " (dsl/tcl-value (widget-path w)))))
+
+(defn focus-prev! [w]
+  (eval! (str "tk_focusPrev " (dsl/tcl-value (widget-path w)))))
+
+(defn- tcl-seq [v]
+  (if (sequential? v) (str/join " " (map dsl/tcl-value v)) (dsl/tcl-value v)))
+
+(defn event-add!
+  "Add virtual event <<VIRTUAL>> bound to the sequences."
+  [virtual & sequences]
+  (eval! (str "event add " (dsl/tcl-value virtual) " " (str/join " " (map tcl-seq sequences)))))
+
+(defn event-delete! [virtual & [sequence]]
+  (eval! (str "event delete " (dsl/tcl-value virtual)
+              (when sequence (str " " (tcl-seq sequence))))))
+
+(defn event-generate! [w event & [opts]]
+  (eval! (str "event generate " (dsl/tcl-value (widget-path w)) " " (dsl/tcl-value event)
+              (when (seq opts) (str " " (opt-words opts))))))
+
+(defn event-info [virtual]
+  (eval! (str "event info " (dsl/tcl-value virtual))))
+
+(defn text-copy! [w] (eval! (str "tk_textCopy " (dsl/tcl-value (widget-path w)))))
+(defn text-cut! [w] (eval! (str "tk_textCut " (dsl/tcl-value (widget-path w)))))
+(defn text-paste! [w] (eval! (str "tk_textPaste " (dsl/tcl-value (widget-path w)))))
+
+;; ═══════════════════════════════════════════════════════════════════════════
+;; Named fonts (`font …`).
+;; ═══════════════════════════════════════════════════════════════════════════
+
+(defn font-create! [name opts]
+  (eval! (str "font create " (dsl/tcl-word name)
+              (when (seq opts) (str " " (opt-words opts))))))
+
+(defn font-configure! [name opts]
+  (eval! (str "font configure " (dsl/tcl-word name) " " (opt-words opts))))
+
+(defn font-delete! [name]
+  (eval! (str "font delete " (dsl/tcl-word name))))
+
+(defn font-families [] (eval! "font families"))
+(defn font-names [] (eval! "font names"))
+
+(defn font-measure [name text]
+  (eval! (str "font measure " (dsl/tcl-word name) " " (dsl/tcl-quote (str text)))))
+
+(defn font-metrics [name]
+  (eval! (str "font metrics " (dsl/tcl-word name))))
+
+(defn font-actual [name & [option]]
+  (eval! (str "font actual " (dsl/tcl-word name)
+              (when option (str " " (dsl/tcl-word option))))))
+
+;; virtual events as above.
+
