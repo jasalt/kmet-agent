@@ -1244,3 +1244,30 @@
 
 (def dnd-drag-source! dnd-drag-source-register!)
 (def dnd-drop-target! dnd-drop-target-register!)
+
+;; ═══════════════════════════════════════════════════════════════════════════
+;; Per-window control of a secondary window (primary helpers script ".").
+;; ═══════════════════════════════════════════════════════════════════════════
+
+(defn window-iconify! [w] (eval! (str "wm iconify " (widget-path w))))
+(defn window-deiconify! [w] (eval! (str "wm deiconify " (widget-path w))))
+(defn window-withdraw! [w] (eval! (str "wm withdraw " (widget-path w))))
+(defn window-state-of [w] (eval! (str "wm state " (widget-path w))))
+
+(defn window-minsize!
+  ([w v] (let [[a b] (size-pair v)]
+           (eval! (str "wm minsize " (widget-path w) " "
+                       (dsl/tcl-value a) " " (dsl/tcl-value b)))))
+  ([w a b] (eval! (str "wm minsize " (widget-path w) " "
+                       (dsl/tcl-value a) " " (dsl/tcl-value b)))))
+
+(defn window-maxsize!
+  ([w v] (let [[a b] (size-pair v)]
+           (eval! (str "wm maxsize " (widget-path w) " "
+                       (dsl/tcl-value a) " " (dsl/tcl-value b)))))
+  ([w a b] (eval! (str "wm maxsize " (widget-path w) " "
+                       (dsl/tcl-value a) " " (dsl/tcl-value b)))))
+
+(defn window-resizable! [w x y]
+  (eval! (str "wm resizable " (widget-path w) " "
+              (dsl/tcl-word x) " " (dsl/tcl-word y))))

@@ -184,8 +184,9 @@ older host, and `ttk::toggleswitch` needs Tk 9.0+.
   several top-levels from one Tk event loop: the first window owns `.`
   and later mounts get a fresh `.win<n>` path; each handle carries its
   own dirty flag and pump, and the pump iterates every mounted window.
-  Window-management helpers script against `.` by default and accept a
-  window path for a secondary window; see `kmet.tk.core`'s `mount!`/
+  Window-management helpers script against `.` by default; secondary
+  windows are manageable through `wm-command!` or direct `wm ... <path>`;
+  see `kmet.tk.core`'s `mount!`/
   `mount-backend!`/`run!`/`run-backend!`.
 - **Drag and drop.** Tk's core has no portable cross-app drag-and-drop
   command; `kmet.tk.core` exposes `dnd-available?` and, when TkDnD is
