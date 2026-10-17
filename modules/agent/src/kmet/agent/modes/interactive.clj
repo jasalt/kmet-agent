@@ -60,12 +60,10 @@
    extension surfaces → tree → process-global roots. Idempotent, so a
    second call is a no-op."
   [cs]
-  (try (if-let [engine (:engine cs)]
+  (try (when-let [engine (:engine cs)]
          ;; cancel an in-flight run and wait briefly for the terminal
          ;; :agent-settled to reach subscribers before they are cleared
-         (runtime/dispose! engine)
-         (when-let [ag (some-> (:agent-state (:engine cs)) deref)]
-           (reset! (:signal ag) true)))
+         (runtime/dispose! engine))
        (catch Throwable _))
   (try (reset! (:bash-signal cs) true) (catch Throwable _))
   (try (extensions/ui-reset!) (catch Throwable _))

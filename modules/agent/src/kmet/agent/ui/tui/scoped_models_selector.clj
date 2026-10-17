@@ -400,8 +400,7 @@
         close! (fn []
                  (dock/close-atom! cs sel-atom))
         available (models/get-available)
-        ag (runtime/agent-state (:engine cs))
-        session-scoped (vec @(:scoped-models ag))
+        session-scoped (runtime/scoped-models (:engine cs))
         patterns (cfg/get-enabled-models-live (runtime/config (:engine cs)))
         configured-ids (fn []
                          ;; resolve each pattern; unresolved ones survive as

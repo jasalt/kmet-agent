@@ -13,7 +13,6 @@
             [kmet.tui.theme :as th]
             [kmet.tui.terminal :as term]
             [kmet.tui.components.container :as container]
-            [kmet.agent.loop :as agent]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.chat-history :as chat-history]
             [kmet.agent.ui.tui.bash-execution :as be]
@@ -174,12 +173,11 @@
                        ;; reaches live bash executions too (reactive read)
                        :tools-expanded-atom (:tools-expanded-atom (:chat-history cs)))
             ;; ── Build session env (pi: resolveSpawnContext) ─────────────
-            ag (runtime/agent-state (:engine cs))
             session-env
             (bash-tool/session-env {:session (runtime/session (:engine cs))
-                                    :provider @(:provider ag)
-                                    :model @(:model ag)
-                                    :thinking-level @(:thinking ag)})
+                                    :provider (runtime/provider (:engine cs))
+                                    :model (runtime/model (:engine cs))
+                                    :thinking-level (runtime/thinking-level (:engine cs))})
 
             ;; ── Emit user-bash event for extensions (pi: emitUserBash) ──
             ;; Bind the ! cancel signal so extension handlers reacting to
@@ -242,7 +240,7 @@
               ;; streaming so tool_use/tool_result ordering is preserved
               ;; (pi: recordBashResult queues pending bash messages, flushed
               ;; by run-agent-turn once the run settles)
-              (agent/add-bash-result! (runtime/agent-state (:engine cs)) command result exclude-from-context?)
+              (runtime/add-bash-result! (:engine cs) command result exclude-from-context?)
 
               ;; Move pending bash from pending container to chat (pi: pendingMessagesContainer)
               (when (runtime/turn-running? (:engine cs))
@@ -277,7 +275,7 @@
   [cs]
   (and (not (runtime/turn-running? (:engine cs)))
        (not @(:bash-running? cs))
-       (not @(:compacting? (runtime/agent-state (:engine cs))))))
+       (not (runtime/compacting? (:engine cs)))))
 
 (defn heal-stale-scrollback-when-idle!
   "Heal a stale above-window scrollback when the app is streaming-free (see
@@ -444,7 +442,7 @@
 
 (defn handle-submit [cs text]
   (let [trimmed (str/trim text)
-        compacting? @(:compacting? (runtime/agent-state (:engine cs)))
+        compacting? (runtime/compacting? (:engine cs))
         command (commands/parse-command-line trimmed)]
     (when (seq trimmed)
       (cond
@@ -522,7 +520,7 @@
     ;; Queue input during compaction (pi: handleFollowUp → isCompacting
     ;; → extension commands execute immediately via prompt(), everything
     ;; else queues as followUp).
-    @(:compacting? (runtime/agent-state (:engine cs)))
+    (runtime/compacting? (:engine cs))
     (if (runtime/extension-command? text)
       (do (runtime/execute-extension-command! text) :executed)
       (do (queue-compaction-message! cs text :follow-up) :compaction))
@@ -591,8 +589,8 @@
    abortCompaction) — a running turn is NOT cancelled and continues on the
    pre-compaction context."
   [cs]
-  (let [ag (runtime/agent-state (:engine cs))]
-    (if @(:compacting? ag)
+  (let [engine (:engine cs)]
+    (if (runtime/compacting? engine)
       ;; Escape during compaction aborts ONLY the summarization (pi: onEscape
       ;; → abortCompaction — the compaction_start handler swaps the escape
       ;; handler to abortCompaction, restored at compaction_end). A running
@@ -601,7 +599,7 @@
       ;; clears the indicator and reports the cancellation.
       (do
         (debug/log "compaction cancelled by user")
-        (agent/abort-compaction! ag))
+        (runtime/abort-compaction! engine))
       (do
         (when (state/cancel-bash! cs)
           (debug/log "bash command cancelled by user")

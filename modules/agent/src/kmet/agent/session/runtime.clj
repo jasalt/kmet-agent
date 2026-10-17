@@ -658,16 +658,23 @@
 
 (defn snapshot
   "A plain-data view of the engine: the session, the agent's status /
-   model / provider / thinking, the pending queues and the last outcome.
-   Fields are read from independent atoms, so the snapshot is not one
-   atomic cut (engine.md §4.1) — display consumers are fine with that."
+   model / provider / thinking, the queue state (including the batch modes
+   and auto-compaction flag), and the last outcome. Fields are read from
+   independent atoms, so the snapshot is not one atomic cut — display
+   consumers are fine with that."
   [engine]
-  (let [agent-state (agent-state engine)]
+  (let [agent-state (agent-state engine)
+        cfg @(:cfg agent-state)]
     {:session @(:session engine)
      :status @(:status agent-state)
      :model @(:model agent-state)
      :provider @(:provider agent-state)
      :thinking @(:thinking agent-state)
+     :scoped-models (vec @(:scoped-models agent-state))
+     :compacting? (boolean @(:compacting? agent-state))
+     :steering-mode (:steering-mode cfg)
+     :follow-up-mode (:follow-up-mode cfg)
+     :auto-compact (:auto-compact cfg)
      :queues (agent/queued-messages agent-state)
      :last-outcome @(:last-outcome agent-state)}))
 
@@ -1030,6 +1037,145 @@
 (defn set-scoped-models! [engine models]
   (agent/set-scoped-models! (agent-state engine) models))
 
+;; ─── Front-end surface ─────────────────────────────────────────────────────
+;;
+;; Modes and app UI (kmet.agent.modes.**, kmet.agent.ui.**) read and drive
+;; the engine through this section only — they never require
+;; kmet.agent.loop, so every front end gets the same operations and agent
+;; internals stay behind the runtime.
+
+(defn model
+  "The current model id (a string), as stored on the agent state."
+  [engine]
+  @(:model (agent-state engine)))
+
+(defn provider
+  "The current provider keyword."
+  [engine]
+  @(:provider (agent-state engine)))
+
+(defn model-record
+  "The resolved Model record for the current provider/model, or nil when
+   the registry does not know it."
+  [engine]
+  (models/get-model (provider engine) (model engine)))
+
+(defn thinking-level
+  "The current thinking level."
+  [engine]
+  @(:thinking (agent-state engine)))
+
+(defn compacting?
+  "True while a compaction is in flight."
+  [engine]
+  (boolean @(:compacting? (agent-state engine))))
+
+(defn compaction-error
+  "The last compaction failure message, or nil."
+  [engine]
+  @(:compaction-error (agent-state engine)))
+
+(defn has-queued-messages?
+  "True when the steering or follow-up queue holds messages."
+  [engine]
+  (boolean (agent/has-queued-messages? (agent-state engine))))
+
+(defn cancel-signal
+  "The current cancel signal value (extension ctx.signal)."
+  [engine]
+  @(:signal (agent-state engine)))
+
+(defn system-prompt
+  "The live system prompt text."
+  [engine]
+  @(:system (agent-state engine)))
+
+(defn set-system-prompt!
+  "Replace the live system prompt and its build options (the /reload
+   rebuild path)."
+  [engine prompt opts]
+  (let [ag (agent-state engine)]
+    (reset! (:system ag) prompt)
+    (reset! (:system-prompt-opts ag) opts))
+  nil)
+
+(defn run-options
+  "The live runtime-tunable run options (the agent's cfg map: retry delays,
+   steering/follow-up modes, loop guard, context window, ...). Each call
+   reads the current values."
+  [engine]
+  @(:cfg (agent-state engine)))
+
+(defn active-tools
+  "The LLM-visible active tool set (registry maps filtered by the enabled
+   and default-tool selections)."
+  [engine]
+  (agent/active-tools (agent-state engine)))
+
+(defn apply-default-tools!
+  "Re-apply a :default-tools selection after a settings reload; returns the
+   new selection."
+  [engine selection]
+  (agent/apply-default-tools! (agent-state engine) selection))
+
+(defn add-context-message!
+  "Append a context-only message (not persisted to the session) to the
+   agent's in-memory context."
+  [engine msg]
+  (agent/add-context-message! (agent-state engine) msg))
+
+(defn add-bash-result!
+  "Record a !/!! bash execution result in the context and session (deferred
+   while the agent streams; flushed when the run settles)."
+  [engine command result exclude-from-context?]
+  (agent/add-bash-result! (agent-state engine) command result exclude-from-context?))
+
+(defn abort-compaction!
+  "Abort the in-flight compaction without cancelling a running turn."
+  [engine]
+  (agent/abort-compaction! (agent-state engine)))
+
+(defn generate-branch-summary
+  "LLM summary of abandoned branch entries for tree navigation. Returns
+   {:summary str :usage map} | {:aborted true} | {:error msg}; SIGNAL
+   aborts the call."
+  [engine entries custom-instructions signal replace-instructions?]
+  (agent/generate-branch-summary (agent-state engine) entries custom-instructions
+                                 signal replace-instructions?))
+
+(defn set-http-idle-timeout-ms!
+  "Set the SSE idle timeout live (0 disables)."
+  [engine ms]
+  (agent/set-http-idle-timeout-ms! (agent-state engine) ms))
+
+(defn set-http-total-timeout-ms!
+  "Set the whole-request total deadline live (nil follows the idle
+   timeout; 0 disables it)."
+  [engine ms]
+  (agent/set-http-total-timeout-ms! (agent-state engine) ms))
+
+(defn set-run-options!
+  "Merge M into the runtime-tunable run options (retry delays, loop-guard
+   thresholds, the context window, ...)."
+  [engine m]
+  (swap! (:cfg (agent-state engine)) merge m)
+  nil)
+
+(defn switch-model!
+  "Switch the session model with the position-preserving thinking rule
+   (kmet rank rule — see kmet.agent.loop/switch-thinking-level), persist it
+   as the settings default, and return the resulting thinking level.
+   EXPLICIT-LEVEL wins when given. The /model + selector + extension
+   capability path; set-model! applies the model alone."
+  [engine model explicit-level]
+  (let [ag (agent-state engine)
+        old-model (models/get-model @(:provider ag) @(:model ag))
+        level (agent/switch-thinking-level old-model model @(:thinking ag) explicit-level)]
+    (agent/set-model! ag model)
+    (agent/set-thinking-level! ag level)
+    (cfg/set-default-model! (:provider model) (:id model))
+    level))
+
 ;; ─── Runtime-owned extension capabilities (pi: bindCore) ───────────────────
 
 (defn- reject-compacting!
@@ -1040,18 +1186,14 @@
                     {:type :compaction-in-progress}))))
 
 (defn- set-model-capability
-  "pi: ctx.setModel — auth-gated, with the position-preserving thinking
-   switch and the settings default persisted (the front-end view rides the
-   :model-select / :thinking-level-select events). Returns true when the
+  "pi: ctx.setModel — auth-gated; the switch applies the position-preserving
+   thinking rule and persists the settings default (the front-end view rides
+   the :model-select / :thinking-level-select events). Returns true when the
    model was applied, false when it has no configured auth."
   [engine model]
   (if (and model (models/has-configured-auth model))
-    (let [ag (agent-state engine)
-          old-model (models/get-model @(:provider ag) @(:model ag))]
-      (agent/set-model! ag model)
-      (agent/set-thinking-level! ag (agent/switch-thinking-level old-model model @(:thinking ag) nil))
-      (cfg/set-default-model! (:provider model) (:id model))
-      true)
+    (do (switch-model! engine model nil)
+        true)
     false))
 
 (defn- send-user-message-capability

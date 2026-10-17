@@ -18,7 +18,6 @@
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.ai.models :as models]
             [kmet.ai.api.shared :as shared]
-            [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.session.export :as session-export]
@@ -628,8 +627,7 @@
    session.reload → _rebuildSystemPrompt). Refuses while the agent is
    running (pi warns to wait for the current response)."
   [cs _]
-  (let [{:keys [chat-history]} cs
-        agent-state (runtime/agent-state (:engine cs))]
+  (let [{:keys [chat-history]} cs]
     (if (state/turn-running? cs)
       (chat-history/chat-history-add-message! chat-history
                                               {:role :info :label "Reload"
@@ -663,10 +661,10 @@
               ;; restriction survives the reload. The :default-tools setting
               ;; is re-resolved first (pi: AgentSession.reload — tools newly
               ;; added to the setting become active; removed ones stay).
-              _ (agent/apply-default-tools! agent-state
-                                            (tools/resolve-default-tools
-                                             (cfg/get-default-tools config)))
-              active-tools (agent/active-tools agent-state)
+              _ (runtime/apply-default-tools! (:engine cs)
+                                              (tools/resolve-default-tools
+                                               (cfg/get-default-tools config)))
+              active-tools (runtime/active-tools (:engine cs))
               system-prompt-opts {:custom-prompt (cfg/get-custom-prompt config)
                                   :append-prompt (cfg/get-append-system-prompt config)
                                   ;; the cwd line follows the runtime cwd (a session
@@ -695,8 +693,7 @@
               (expandable-text/expandable-text-set-expanded! hdr (= :expanded mode)))
             (when-let [lr (:loaded-resources-comp cs)]
               (loaded-resources/loaded-resources-set-expanded! lr (= :expanded mode))))
-          (reset! (:system agent-state) system-prompt)
-          (reset! (:system-prompt-opts agent-state) system-prompt-opts)
+          (runtime/set-system-prompt! (:engine cs) system-prompt system-prompt-opts)
           (loaded-resources/loaded-resources-set-sections!
            (:loaded-resources-comp cs) (resources/build-loaded-resource-sections))
           ;; pi: settingsManager.reload() — re-seed the live image settings

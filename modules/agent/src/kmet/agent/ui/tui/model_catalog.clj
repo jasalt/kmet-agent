@@ -15,8 +15,8 @@
 (defn- scoped-model-snapshot
   "Models matched against first (pi: session scoped models when set, else
    the available snapshot). Scoped entries that no longer resolve drop out."
-  [agent-state]
-  (let [scoped @(:scoped-models agent-state)]
+  [engine]
+  (let [scoped (runtime/scoped-models engine)]
     (if (seq scoped)
       (vec (keep (fn [id]
                    (let [slash (str/index-of id "/")]
@@ -29,9 +29,9 @@
 (defn scoped-or-available-models
   "pi: session scoped models when set, else the available snapshot (feeds
    cycling, /model, and the footer provider count)."
-  [agent-state]
-  (if (seq @(:scoped-models agent-state))
-    (scoped-model-snapshot agent-state)
+  [engine]
+  (if (seq (runtime/scoped-models engine))
+    (scoped-model-snapshot engine)
     (models/get-available)))
 
 (defn update-available-provider-count!
@@ -42,7 +42,7 @@
    (:footer-provider cs)
    (count (distinct
            (map :provider
-                (scoped-or-available-models (runtime/agent-state (:engine cs))))))))
+                (scoped-or-available-models (:engine cs)))))))
 
 (defn- fmt-usd-rate
   "$/M rate as a compact string (0.44 → \"$0.44\", 15 → \"$15\"); the

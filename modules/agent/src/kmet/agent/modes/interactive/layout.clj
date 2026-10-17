@@ -440,7 +440,7 @@
       ;; is idempotent.
       (when-let [cs @cs-ref]
         (state/update-editor-border-color!
-         cs (or (:level evt) @(:thinking (runtime/agent-state (:engine cs)))))
+         cs (or (:level evt) (runtime/thinking-level (:engine cs))))
         (sync-footer-model! cs))
       ;; Trailing default expression (SCI's case rejects the :default keyword)
       nil)))
@@ -471,10 +471,9 @@
    (pi: onAction cycleModelForward/cycleModelBackward). Reports why nothing
    moved when the session has a single model in scope."
   [cs direction]
-  (let [engine (:engine cs)
-        ag (runtime/agent-state engine)]
+  (let [engine (:engine cs)]
     (if (runtime/cycle-model! engine direction)
-      (do (cfg/set-default-model! @(:provider ag) @(:model ag))
+      (do (cfg/set-default-model! (runtime/provider engine) (runtime/model engine))
           (sync-footer-model! cs))
       (chat-history/chat-history-show-status!
        (:chat-history cs)
@@ -542,7 +541,6 @@
         ;; proactive auto-compaction check (pi: state.model.contextWindow)
         ctx-window (or (:context-window (models/get-model provider model))
                        (:context-window config))
-        ag @(:agent-state engine)
         ;; B.1: welcome header — ExpandableText with compact/full variants
         ;; (pi: builtInHeader), toggled by app.tools.expand
         hdr (let [mode (cfg/get-tool-display-mode config)]
@@ -563,18 +561,18 @@
                             :terminal-rows (fn [] (term/rows @(:terminal t)))
                             :border-fn (th/get-thinking-border-color
                                         (cfg/get-theme config)
-                                        (or @(:thinking ag) :off)))
+                                        (or (runtime/thinking-level engine) :off)))
         ;; B.6: footer data provider + footer (pi: FooterComponent; the
         ;; model line wraps to its own line when the stats line is too narrow)
         fdp (fdp/make-footer-data-provider
              :cwd-atom cwd-atom
              :session session
-             :provider-count (count (distinct (map :provider (model-catalog/scoped-or-available-models ag))))
+             :provider-count (count (distinct (map :provider (model-catalog/scoped-or-available-models engine))))
              ;; Phase 2: context window from the resolved Model record, falling
              ;; back to the settings value when the model is unknown (pi footer
              ;; contextPercentDisplay)
              :context-window ctx-window
-             :model @(:model ag) :provider @(:provider ag) :thinking @(:thinking ag)
+             :model (runtime/model engine) :provider (runtime/provider engine) :thinking (runtime/thinking-level engine)
              ;; pi: the thinking suffix renders only for reasoning models
              :reasoning (boolean (:reasoning (models/get-model provider model))))
         ftr (footer/make-footer :theme (cfg/get-theme config)
@@ -693,7 +691,7 @@
                   ;; most prominent themed element changes with the palette
                   (reset! (:border-fn ed)
                           (th/get-thinking-border-color
-                           current-theme (or @(:thinking ag) :off)))
+                           current-theme (or (runtime/thinking-level engine) :off)))
                   (tui/tui-request-render t))))
           cs (assoc cs :status-indicator si :theme-controller tc)
           ;; The default editor renders the session status in its first

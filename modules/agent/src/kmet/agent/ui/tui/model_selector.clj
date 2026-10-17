@@ -6,7 +6,6 @@
    footer sync."
   (:require [clojure.string :as str]
             [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.loop :as agent]
             [kmet.ai.models :as models]
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.session.runtime :as runtime]
@@ -15,7 +14,6 @@
             [kmet.agent.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.ui.tui.model-catalog :as model-catalog]
             [kmet.agent.ui.tui.subs :as s]
-            [kmet.agent.config :as cfg]
             [kmet.libs.reakt.core :as r]
             [kmet.libs.hikap.core :as engine]
             [kmet.tui.hikap :as h]
@@ -37,17 +35,19 @@
    the resolved Model record, falling back to the settings value — synced to
    the agent too, so the proactive compaction check tracks model switches."
   [cs]
-  (let [ag (runtime/agent-state (:engine cs))
+  (let [engine (:engine cs)
         fdp (:footer-provider cs)
-        m (models/get-model @(:provider ag) @(:model ag))
+        model (runtime/model engine)
+        provider (runtime/provider engine)
+        m (models/get-model provider model)
         window (or (:context-window m)
-                   (:context-window (runtime/config (:engine cs))))]
-    (fdp/fdp-set-model! fdp @(:model ag))
-    (fdp/fdp-set-provider! fdp @(:provider ag))
-    (fdp/fdp-set-thinking! fdp @(:thinking ag))
+                   (:context-window (runtime/config engine)))]
+    (fdp/fdp-set-model! fdp model)
+    (fdp/fdp-set-provider! fdp provider)
+    (fdp/fdp-set-thinking! fdp (runtime/thinking-level engine))
     (fdp/fdp-set-reasoning! fdp (boolean (:reasoning m)))
     (fdp/fdp-set-context-window! fdp window)
-    (swap! (:cfg ag) assoc :context-window window)
+    (runtime/set-run-options! engine {:context-window window})
     ;; No explicit footer invalidation: the footer's track-deps cover the
     ;; fdp atoms — the setters above schedule the frame reactively.
     (tui/tui-request-render (:tui cs))
@@ -63,12 +63,7 @@
    chat, and syncs the footer (pi setModel + showStatus — shared by /model,
    the selector, and cycling)."
   [cs model thinking-level]
-  (let [ag (runtime/agent-state (:engine cs))
-        old-model (models/get-model @(:provider ag) @(:model ag))
-        clamped (agent/switch-thinking-level old-model model @(:thinking ag) thinking-level)]
-    (runtime/set-model! (:engine cs) model)
-    (cfg/set-default-model! (:provider model) (:id model))
-    (runtime/set-thinking-level! (:engine cs) clamped)
+  (let [clamped (runtime/switch-model! (:engine cs) model thinking-level)]
     (chat-history/chat-history-add-message! (:chat-history cs)
                                             {:role :assistant
                                              :content (str "Switched to " (fmt-model (:provider model) (:id model))
@@ -331,8 +326,7 @@
    scoped (Tab toggles all/scoped)."
   ([cs] (show-model-selector cs nil))
   ([cs search-term]
-   (let [ag (runtime/agent-state (:engine cs))
-         available (models/get-available)]
+   (let [available (models/get-available)]
      (if (empty? available)
        (chat-history/chat-history-add-message! (:chat-history cs)
                                                {:role :assistant
@@ -342,8 +336,8 @@
                                    (when slash
                                      (models/get-model (keyword (subs id 0 slash))
                                                        (subs id (inc slash))))))
-                               @(:scoped-models ag)))
-             current (models/get-model @(:provider ag) @(:model ag))
+                               (runtime/scoped-models (:engine cs))))
+             current (runtime/model-record (:engine cs))
              ;; late binding: the close callbacks reach the mounted
              ;; selector through this atom (pi: showSelector's handle)
              sel-atom (atom nil)
@@ -371,4 +365,4 @@
   [cs term]
   (resolver/resolve-model-reference
    term
-   (model-catalog/scoped-or-available-models (runtime/agent-state (:engine cs)))))
+   (model-catalog/scoped-or-available-models (:engine cs))))

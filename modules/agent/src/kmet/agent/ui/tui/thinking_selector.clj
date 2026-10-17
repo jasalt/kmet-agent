@@ -8,7 +8,6 @@
    Esc cancels. Mounted in place of the editor (pi: showSelector)."
   (:require [clojure.string :as str]
             [kmet.ai.api.shared :as shared]
-            [kmet.ai.models :as models]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.dock :as dock]
@@ -272,8 +271,7 @@
   "Levels the agent's current model can express (pi getAvailableThinkingLevels):
    the model's supported levels, or [:off] when the model is unknown."
   [cs]
-  (let [ag (runtime/agent-state (:engine cs))
-        model (models/get-model @(:provider ag) @(:model ag))]
+  (let [model (runtime/model-record (:engine cs))]
     (if model
       (shared/get-supported-thinking-levels model)
       [:off])))
@@ -295,8 +293,7 @@
    express :off (pi opens the selector regardless; kmet's cycle parity —
    \"Current model does not support thinking\")."
   [cs & {:keys [on-select on-persist]}]
-  (let [ag (runtime/agent-state (:engine cs))
-        sel-atom (atom nil)
+  (let [sel-atom (atom nil)
         ;; leave, then dispose: dispose unwinds the selector's root
         ;; reaction and foreign input (the dock drops foreign records
         ;; without disposing them)
@@ -304,7 +301,7 @@
                  (dock/close-atom! cs sel-atom))
         sel (make-thinking-selector
              (available-levels cs)
-             @(:thinking ag)
+             (runtime/thinking-level (:engine cs))
              (default-thinking-level cs)
              :on-select (fn [level]
                           (close!)

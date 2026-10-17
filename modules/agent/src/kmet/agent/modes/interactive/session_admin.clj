@@ -9,7 +9,6 @@
             [kmet.tui.theme :as th]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.container :as container]
-            [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.session.runtime :as runtime]
@@ -519,8 +518,7 @@
    cancels the call."
   [cs sess old-leaf target-leaf user-msg-text prep abort-atom
    custom-instructions replace-instructions?]
-  (let [ag (runtime/agent-state (:engine cs))
-        ed (:editor cs)
+  (let [ed (:editor cs)
         prev-interrupt (get @(:action-handlers ed) "app.interrupt")
         indicator (status-indicator/make-branch-summary-status-indicator)
         done (promise)]
@@ -534,8 +532,8 @@
     (start-branch-summary-render-driver! (:tui cs) done)
     (future
       (try
-        (deliver done (agent/generate-branch-summary
-                       ag (:entries-to-summarize prep) custom-instructions
+        (deliver done (runtime/generate-branch-summary
+                       (:engine cs) (:entries-to-summarize prep) custom-instructions
                        abort-atom replace-instructions?))
         (catch Throwable e
           (debug/log "branch summarization failed: " e)

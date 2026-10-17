@@ -10,11 +10,9 @@
    (settings.edn :loop-guard — enabled / threshold, plus the thinking
    repeat guard toggle), the HTTP transport row (:platform http-client vs
    :curl, applied live to kmet.libs.http), and a theme row."
-  (:require [kmet.agent.loop :as agent]
-            [kmet.agent.session.runtime :as runtime]
+  (:require [kmet.agent.session.runtime :as runtime]
             [kmet.agent.modes.interactive.theme-controller :as theme-ctrl]
             [kmet.ai.api.shared :as shared]
-            [kmet.ai.models :as models]
             [kmet.agent.ui.tui.chat-history :as chat-history]
             [kmet.agent.ui.tui.footer :as footer]
             [kmet.agent.ui.tui.loaded-resources :as loaded-resources]
@@ -106,18 +104,19 @@
   [cs]
   (let [;; late binding: the escape callback disposes the frame, built below
         frame-atom (atom nil)
-        ag (runtime/agent-state (:engine cs))
-        model (models/get-model @(:provider ag) @(:model ag))
+        engine (:engine cs)
+        model (runtime/model-record engine)
         levels (if model (shared/get-supported-thinking-levels model) [:off])
-        current (or (some #{(keyword @(:thinking ag))} levels) (first levels))
-        config (runtime/config (:engine cs))
+        current (or (some #{(keyword (runtime/thinking-level engine))} levels) (first levels))
+        config (runtime/config engine)
         retry-atom (atom (cfg/get-retry-settings-live config))
         ;; Repeat-loop guard (kmet-specific): settings.edn :loop-guard block
         lg-atom (atom (cfg/get-loop-guard-settings-live config))
         apply-lg! (fn []
                     (let [lg @lg-atom]
-                      (swap! (:cfg ag) assoc :loop-guard-enabled (:enabled lg))
-                      (swap! (:cfg ag) assoc :loop-guard-threshold (:threshold lg))))
+                      (runtime/set-run-options! engine
+                                                {:loop-guard-enabled (:enabled lg)
+                                                 :loop-guard-threshold (:threshold lg)})))
         save-lg! (fn [path value]
                    (cfg/save-setting! path value)
                    (apply-lg!))
@@ -128,9 +127,11 @@
         total-ms (cfg/get-setting-live config :http-total-timeout-ms 0)
         apply-retry! (fn []
                        (let [r @retry-atom]
-                         (swap! (:cfg ag) assoc :max-retries (if (:enabled r) (:max-retries r) 0))
-                         (swap! (:cfg ag) assoc :base-delay-ms (:base-delay-ms r))
-                         (swap! (:cfg ag) assoc :max-agent-delay-ms (:max-agent-delay-ms r))))
+                         (runtime/set-run-options!
+                          engine
+                          {:max-retries (if (:enabled r) (:max-retries r) 0)
+                           :base-delay-ms (:base-delay-ms r)
+                           :max-agent-delay-ms (:max-agent-delay-ms r)})))
         save-retry! (fn [path value]
                       (cfg/save-setting! path value)
                       (apply-retry!))
@@ -143,10 +144,10 @@
                                         (tui/tui-get-clear-on-shrink (:tui cs))
                                         "Clear empty rows when content shrinks (may cause flicker)"))
         base-items (into []
-                         (concat [(bool-row :auto-compact "Auto-compact" (:auto-compact @(:cfg ag))
+                         (concat [(bool-row :auto-compact "Auto-compact" (:auto-compact (runtime/run-options engine))
                                             "Automatically compact context when it gets too large")]
                                  img-rows
-                                 [(bool-row :block-images "Block images" (:block-images @(:cfg ag))
+                                 [(bool-row :block-images "Block images" (:block-images (runtime/run-options engine))
                                             "Prevent images from being sent to LLM providers")
                                   (bool-row :skill-commands "Skill commands"
                                             (cfg/get-enable-skill-commands config)
@@ -154,12 +155,12 @@
                                   {:id :steering-mode
                                    :label "Steering mode"
                                    :description "Enter while streaming queues steering messages. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once."
-                                   :value (name (:steering-mode @(:cfg ag)))
+                                   :value (name (:steering-mode (runtime/run-options engine)))
                                    :values ["one-at-a-time" "all"]}
                                   {:id :follow-up-mode
                                    :label "Follow-up mode"
                                    :description "Ctrl+Enter queues follow-up messages until the agent stops. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once."
-                                   :value (name (:follow-up-mode @(:cfg ag)))
+                                   :value (name (:follow-up-mode (runtime/run-options engine)))
                                    :values ["one-at-a-time" "all"]}
                                   {:id :http-idle-timeout
                                    :label "HTTP idle timeout"
@@ -245,17 +246,17 @@
                                   {:id :loop-guard-enabled
                                    :label "Repeat guard"
                                    :description "Abort repeated identical tool calls (repeat-loop guard)"
-                                   :value (:loop-guard-enabled @(:cfg ag))
+                                   :value (:loop-guard-enabled (runtime/run-options engine))
                                    :values [true false]}
                                   {:id :loop-guard-threshold
                                    :label "Repeat threshold"
                                    :description "Repeated calls before the guard fires"
-                                   :value (:loop-guard-threshold @(:cfg ag))
+                                   :value (:loop-guard-threshold (runtime/run-options engine))
                                    :values [2 3 4 5]}
                                   {:id :thinking-loop-guard-enabled
                                    :label "Thinking repeat guard"
                                    :description "Also abort repeated identical thinking"
-                                   :value (:thinking-loop-guard-enabled @(:cfg ag))
+                                   :value (:thinking-loop-guard-enabled (runtime/run-options engine))
                                    :values [true false]}]))
         ;; hardware-cursor row needs the live tui, theme row the theme
         ;; controller (tests build a minimal cs without them)
@@ -286,7 +287,7 @@
                     (case id
                       :auto-compact
                       (let [on? (= value "true")]
-                        (agent/set-auto-compact! ag on?)
+                        (runtime/set-auto-compact! engine on?)
                         (cfg/save-setting! [:auto-compact] on?)
                         (when-let [f (:footer-comp cs)]
                           (footer/footer-set-auto-compact! f on?)))
@@ -314,21 +315,21 @@
                       (cfg/set-show-terminal-progress! (= value "true"))
                       :steering-mode
                       (let [mode (keyword value)]
-                        (agent/set-steering-mode! ag mode)
+                        (runtime/set-steering-mode! engine mode)
                         (cfg/save-setting! [:steering-mode] mode))
                       :follow-up-mode
                       (let [mode (keyword value)]
-                        (agent/set-follow-up-mode! ag mode)
+                        (runtime/set-follow-up-mode! engine mode)
                         (cfg/save-setting! [:follow-up-mode] mode))
                       :http-idle-timeout
                       (let [ms (:ms (some #(when (= value (:label %)) %)
                                           http-idle-timeout-choices))]
-                        (agent/set-http-idle-timeout-ms! ag ms)
+                        (runtime/set-http-idle-timeout-ms! engine ms)
                         (cfg/save-setting! [:http-idle-timeout-ms] ms))
                       :http-total-timeout
                       (let [ms (:ms (some #(when (= value (:label %)) %)
                                           http-total-timeout-choices))]
-                        (agent/set-http-total-timeout-ms! ag ms)
+                        (runtime/set-http-total-timeout-ms! engine ms)
                         (cfg/save-setting! [:http-total-timeout-ms] ms))
                       :http-transport
                       (let [mode (keyword value)]
@@ -398,7 +399,7 @@
                       (do (swap! lg-atom assoc :threshold value)
                           (save-lg! [:loop-guard :threshold] value))
                       :thinking-loop-guard-enabled
-                      (do (swap! (:cfg ag) assoc :thinking-loop-guard-enabled (boolean value))
+                      (do (runtime/set-run-options! engine {:thinking-loop-guard-enabled (boolean value)})
                           (cfg/save-setting! [:thinking-loop-guard-enabled] (boolean value)))))
         on-escape (fn []
                     ;; restore the editor and unwind the panel: the tree owns

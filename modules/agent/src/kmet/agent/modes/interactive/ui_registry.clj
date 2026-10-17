@@ -19,9 +19,7 @@
             [kmet.tui.components.expandable-text :as expandable-text]
             [kmet.agent.context :as context]
             [kmet.libs.reakt.core :as r]
-            [kmet.ai.models :as models]
             [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.commands :as commands]
@@ -489,31 +487,28 @@
          ;; layout/agent state per call; the headless default in
          ;; extensions.clj covers everything else (mode/has-ui/…)
          :build-context (fn []
-                          ;; capture the agent-state ATOM: session swaps
-                          ;; assoc a NEW record onto the atom, so the old
-                          ;; record's :session field goes stale (compact);
-                          ;; the atom fields are shared and always current
-                          (let [ag-atom (:agent-state (:engine cs))
-                                ag @ag-atom
+                          ;; read the engine live on every call: a session swap
+                          ;; replaces the agent-state record, so a captured
+                          ;; record's :session field would go stale (compact)
+                          (let [engine (:engine cs)
                                 ;; pi: isIdle — a run stays active through the
                                 ;; settle window (isStreaming outlives the last
                                 ;; attempt) and a compaction is not idle either
                                 idle? (fn []
                                         (and (not (state/turn-running? cs))
-                                             (not @(:compacting? @ag-atom))))]
+                                             (not (runtime/compacting? engine))))]
                             {:mode :interactive
                              :has-ui true
                              :cwd (fdp/fdp-get-cwd fdp)
-                             :model (models/get-model @(:provider ag) @(:model ag))
+                             :model (runtime/model-record engine)
                              :scoped-models (resolver/scoped-models-for-context
-                                             @(:scoped-models ag) @(:provider ag))
-                             :thinking-level @(:thinking ag)
+                                             (runtime/scoped-models engine)
+                                             (runtime/provider engine))
+                             :thinking-level (runtime/thinking-level engine)
                              :is-idle idle?
                              :has-pending-messages (fn []
-                                                     (boolean
-                                                      (agent/has-queued-messages?
-                                                       @ag-atom)))
-                             :signal (fn [] @(:signal @ag-atom))
+                                                     (runtime/has-queued-messages? engine))
+                             :signal (fn [] (runtime/cancel-signal engine))
                              :abort (fn []
                                       ;; pi: abort() acts while a run is active
                                       ;; (including the settle window) or a
@@ -560,7 +555,7 @@
                                                            {:type :busy})))
 
                                               :else
-                                              (let [r (agent/compact-context! @ag-atom custom-instructions :manual)]
+                                              (let [r (runtime/compact! engine custom-instructions :manual)]
                                                 (if (and (= :failed r) on-error)
                                                   ;; pi: compact() throws on
                                                   ;; summarization failure →
@@ -568,13 +563,13 @@
                                                   ;; `Compaction failed: <cause>`
                                                   ;; message (:compaction-error
                                                   ;; already carries the prefix)
-                                                  (on-error (ex-info (or @(:compaction-error @ag-atom)
+                                                  (on-error (ex-info (or (runtime/compaction-error engine)
                                                                          "Compaction failed: Unknown error")
                                                                      {:type :compaction-failed}))
                                                   (when on-complete (on-complete {:result r})))))
                                             (catch Exception e
                                               (when on-error (on-error e))))))
-                             :get-system-prompt (fn [] @(:system @ag-atom))
+                             :get-system-prompt (fn [] (runtime/system-prompt engine))
                              :get-system-prompt-options (fn []
                                                           (let [config (runtime/config (:engine cs))]
                                                             ;; pi: getSystemPromptOptions — the prompt's build
@@ -699,7 +694,7 @@
     ;; only /new, /resume, fork and clone re-register the session.
     (extensions/set-session! (runtime/session (:engine cs)))
     (extensions/set-context-sink!
-     (fn [msg] (agent/add-context-message! (runtime/agent-state (:engine cs)) msg)))
+     (fn [msg] (runtime/add-context-message! (:engine cs) msg)))
     (extensions/set-entry-sink!
      (fn [entry]
        (when-let [rendered (session-admin/run-entry-renderer

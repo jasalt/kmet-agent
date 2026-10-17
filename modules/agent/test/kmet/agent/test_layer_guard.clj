@@ -45,6 +45,19 @@
   ;; test.
   {"kmet.agent.extensions.core" ["kmet.tui."]})
 
+(defn- front-end-source-files
+  "Every mode and app-UI namespace file (the front-end layers)."
+  []
+  (letfn [(walk [dir]
+            (mapcat (fn [f]
+                      (if (fs/directory? f) (walk f) [f]))
+                    (fs/list-dir dir)))]
+    (->> (concat (walk "modules/agent/src/kmet/agent/modes")
+                 (walk "modules/agent/src/kmet/agent/ui"))
+         (map str)
+         (filter #(re-find #"\.clj[ca]?$" %))
+         (sort))))
+
 (deftest app-layer-does-not-require-front-ends
   (testing "no new kmet.agent namespace reaches the TUI/Tk/interactive layers"
     (doseq [f (app-source-files)]
@@ -63,3 +76,16 @@
                                       deps))]
         (is (empty? forbidden)
             (str ns-name " requires forbidden namespaces: " (vec (sort forbidden))))))))
+
+(deftest front-ends-drive-the-runtime-not-the-loop
+  (testing "modes and app UI reach the engine through the session runtime"
+    (let [files (front-end-source-files)]
+      (is (seq files) "no front-end sources scanned — check the walk roots")
+      (is (some #(str/includes? % "/modes/") files) "modes tree not scanned")
+      (is (some #(str/includes? % "/ui/") files) "app UI tree not scanned")
+      (doseq [f files]
+        (let [forbidden (filter #(str/starts-with? % "kmet.agent.loop")
+                                (required-kmet f))]
+          (is (empty? forbidden)
+              (str f " requires " (vec forbidden)
+                   " — front ends drive kmet.agent.session.runtime instead")))))))

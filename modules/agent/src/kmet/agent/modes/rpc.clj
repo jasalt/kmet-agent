@@ -275,7 +275,7 @@
    queue-update even with nothing to cancel."
   [engine _]
   (when (or (runtime/turn-running? engine)
-            @(:compacting? (runtime/agent-state engine)))
+            (runtime/compacting? engine))
     (runtime/cancel! engine))
   (ok :abort {:idle (runtime/wait-idle! engine)}))
 
@@ -306,8 +306,6 @@
   [engine _]
   (let [snap (runtime/snapshot engine)
         sess (:session snap)
-        ag (runtime/agent-state engine)
-        cfg @(:cfg ag)
         session-name (some-> sess session/get-session-name)
         {:keys [steering follow-up]} (:queues snap)]
     (ok :get-state
@@ -315,10 +313,10 @@
                  :provider (:provider snap)
                  :thinking-level (:thinking snap)
                  :turn-running? (runtime/turn-running? engine)
-                 :compacting? @(:compacting? ag)
-                 :steering-mode (:steering-mode cfg)
-                 :follow-up-mode (:follow-up-mode cfg)
-                 :auto-compaction-enabled (boolean (:auto-compact cfg))
+                 :compacting? (:compacting? snap)
+                 :steering-mode (:steering-mode snap)
+                 :follow-up-mode (:follow-up-mode snap)
+                 :auto-compaction-enabled (boolean (:auto-compact snap))
                  :pending-message-count (+ (count steering) (count follow-up))
                  :last-outcome (:last-outcome snap)}
           sess (assoc :session
@@ -357,10 +355,9 @@
    fewer than two models are available."
   [engine _]
   (if-let [model-id (runtime/cycle-model! engine)]
-    (let [ag (runtime/agent-state engine)]
-      (ok :cycle-model {:model (models/get-model @(:provider ag) model-id)
-                        :thinking-level @(:thinking ag)
-                        :scoped? (boolean (seq (runtime/scoped-models engine)))}))
+    (ok :cycle-model {:model (models/get-model (runtime/provider engine) model-id)
+                      :thinking-level (runtime/thinking-level engine)
+                      :scoped? (boolean (seq (runtime/scoped-models engine)))})
     (ok :cycle-model nil)))
 
 (defn- command-get-available-models [_ _]
@@ -389,8 +386,7 @@
   "The current model's supported levels (pi:
    get_available_thinking_levels)."
   [engine _]
-  (let [ag (runtime/agent-state engine)
-        model (models/get-model @(:provider ag) @(:model ag))]
+  (let [model (runtime/model-record engine)]
     (ok :get-available-thinking-levels
         {:levels (if model (shared/get-supported-thinking-levels model) [:off])})))
 
@@ -425,7 +421,7 @@
       (runtime/turn-running? engine)
       (failed :compact "Wait for the current response to finish before compacting")
 
-      @(:compacting? (runtime/agent-state engine))
+      (runtime/compacting? engine)
       (failed :compact "Compaction already in progress")
 
       :else

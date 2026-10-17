@@ -181,6 +181,9 @@ front end:
   extension runtime handle. Front ends call `bootstrap` once and drive the
   engine through its operations: the TUI keeps its `CoreState` view state
   plus the engine, and print/RPC modes construct no agent state at all.
+  Modes and app UI (kmet.agent.modes.**, kmet.agent.ui.**) use the runtime's
+  front-end surface only — they never require `kmet.agent.loop` — and
+  `kmet.agent.test-layer-guard` enforces that boundary.
 - The event stream is the API. `subscribe!` delivers plain EDN events on the
   emitting thread (fast, non-blocking) and the vocabulary in
   `kmet.agent.event-bus` (`event-types` / `app-event-types` /
