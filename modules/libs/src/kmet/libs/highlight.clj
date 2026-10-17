@@ -104,6 +104,22 @@
 (defn- hex-digit? [c]
   (contains? hex-chars c))
 
+(defn- scan-digits
+  "Scan decimal digits starting at J, returning the first non-digit index."
+  [s j n]
+  (loop [k j]
+    (if (and (< k n) (Character/isDigit (char-at s k)))
+      (recur (inc k))
+      k)))
+
+(defn- scan-hex-digits
+  "Scan hex digits starting at J, returning the first non-hex-digit index."
+  [s j n]
+  (loop [k j]
+    (if (and (< k n) (hex-digit? (char-at s k)))
+      (recur (inc k))
+      k)))
+
 (defn- scan-number-end
   "End index of a number starting at I, or nil when I is not a number start.
    Handles decimals, fractions, exponents, and 0x/0b/0o radix prefixes."
@@ -119,27 +135,18 @@
                     :else nil)]
         (cond
           radix
-          (let [start (+ i 2)
-                j (loop [j start]
-                    (if (and (< j n)
-                             (if (= radix 16)
-                               (hex-digit? (char-at s j))
-                               (Character/isDigit (char-at s j))))
-                      (recur (inc j))
-                      j))]
+          (let [hex? (= radix 16)
+                start (+ i 2)
+                j (if hex?
+                    (scan-hex-digits s start n)
+                    (scan-digits s start n))]
             (when (> j start) j))
 
           (Character/isDigit c)
-          (let [j (loop [j i]
-                    (if (and (< j n) (Character/isDigit (char-at s j)))
-                      (recur (inc j))
-                      j))
+          (let [j (scan-digits s i n)
                 j (if (and (< j n) (= (char-at s j) \.)
                            (< (inc j) n) (Character/isDigit (char-at s (inc j))))
-                    (loop [k (inc j)]
-                      (if (and (< k n) (Character/isDigit (char-at s k)))
-                        (recur (inc k))
-                        k))
+                    (scan-digits s (inc j) n)
                     j)
                 j (if (and (< j n) (contains? #{\e \E} (char-at s j)))
                     (let [k (if (and (< (inc j) n)
@@ -147,19 +154,13 @@
                               (+ j 2)
                               (inc j))]
                       (if (and (< k n) (Character/isDigit (char-at s k)))
-                        (loop [m k]
-                          (if (and (< m n) (Character/isDigit (char-at s m)))
-                            (recur (inc m))
-                            m))
+                        (scan-digits s k n)
                         j))
                     j)]
             j)
 
           (and (= c \.) (< (inc i) n) (Character/isDigit (char-at s (inc i))))
-          (loop [j (inc i)]
-            (if (and (< j n) (Character/isDigit (char-at s j)))
-              (recur (inc j))
-              j))
+          (scan-digits s (inc i) n)
 
           :else nil)))))
 
