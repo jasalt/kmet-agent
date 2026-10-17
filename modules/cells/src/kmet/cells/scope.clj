@@ -43,14 +43,6 @@
       (update-in [:by-owner owner]
                  (fn [entries] (into [] (remove #(= k (:key %))) entries)))))
 
-(defn- drop-entry
-  "Drop owner's registration for k when its value is still v — a stale
-   deregister fn must not remove a newer registration."
-  [s owner k v]
-  (if (= v (get-in s [:by-key k owner]))
-    (remove-entry s owner k)
-    s))
-
 (defn- remember-owner
   [s owner]
   (update s :owner-order
@@ -71,12 +63,16 @@
     :children (atom [])}))
 
 (defn deregister!
-  "Drop OWNER's registration for K when its value is still V, so a stale call
-   cannot remove a newer registration — the targeted removal for a live owner,
-   where `dispose-owner!` removes everything the owner registered. This is the
-   operation `register!` returns as a fn. Returns nil."
+  "Drop OWNER's registration for K when its value is still V — a stale call
+   cannot remove a newer registration. It is the targeted removal for a live
+   owner, where `dispose-owner!` removes everything the owner registered, and
+   the operation `register!` returns as a fn. Returns nil."
   [node owner k v]
-  (swap! (:store node) drop-entry owner k v)
+  (swap! (:store node)
+         (fn [s]
+           (if (= v (get-in s [:by-key k owner]))
+             (remove-entry s owner k)
+             s)))
   nil)
 
 (defn register!

@@ -42,17 +42,30 @@
   [k]
   (and (vector? k) (= :kmet/command (first k))))
 
-(defn- command-registrations
-  "Every command on the tree, in display order: owners in first-registration
-   order, each owner's commands in its own registration order."
+(defn- command-for
+  "The command named NAME, or nil. Owners are searched in first-registration
+   order, so the owner that took the name keeps it — an extension loaded
+   before the builtins beats one of theirs, which is the rule
+   `register-builtin!` skips on."
+  [name]
+  (let [node (app-runtime/node)
+        by-owner (scope/for-key node (command-key name))]
+    (some #(get by-owner %) (scope/owners node))))
+
+(defn- command-names
+  "Every command name on the tree, in display order: owners in
+   first-registration order, each owner's commands in its own registration
+   order, each name once."
   []
   (let [node (app-runtime/node)]
-    (into []
-          (comp (filter (fn [[k _]] (command-key? k))) (map second))
-          (mapcat #(scope/owner-registrations node %) (scope/owners node)))))
+    (distinct
+     (into []
+           (keep (fn [[k _]] (when (command-key? k) (second k))))
+           (mapcat #(scope/owner-registrations node %) (scope/owners node))))))
 
 (defn register-command!
-  "Register (or replace by :name) a slash command. Returns nil."
+  "Register (or replace by :name) a slash command. The store key is derived
+   from :name, so a command is always addressed by its own name. Returns nil."
   [cmd]
   (scope/register! (app-runtime/node) commands-owner (command-key (:name cmd)) cmd)
   nil)
@@ -103,19 +116,11 @@
   (or (nil? (:frontend cmd)) (= frontend (:frontend cmd))))
 
 (defn- all-registered-commands
-  "The effective registry, in display order: every name once, from the owner
-   that took it. Owners are searched in first-registration order, so a name an
-   extension registered before the builtins stays the extension's (which is
-   what `register-builtin!` skips on); a cross-owner collision between
-   extensions is settled when P5 gives them owners of their own. Owners share
-   the store with other registries, so the shape filter is what keeps this to
-   commands."
+  "The effective registry, in display order: each name once, from the owner
+   that took it (`command-for`). Owners share the store with other registries,
+   so key shape is what keeps this to commands."
   []
-  (let [registrations (command-registrations)]
-    (into []
-          (comp (distinct)
-                (map (fn [name] (first (filter #(= name (:name %)) registrations)))))
-          (map :name registrations))))
+  (mapv command-for (command-names)))
 
 (defn get-commands
   "All registered slash commands, or those available to FRONTEND: a command
@@ -131,9 +136,9 @@
    available to that front end is returned (a nil :frontend tag means every
    front end)."
   ([name]
-   (first (filter #(= (:name %) name) (all-registered-commands))))
+   (command-for name))
   ([name frontend]
-   (let [cmd (find-command name)]
+   (when-let [cmd (command-for name)]
      (when (available-to? frontend cmd) cmd))))
 
 (defn register-builtin!

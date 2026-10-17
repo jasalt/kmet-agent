@@ -90,6 +90,16 @@
   (t/is (empty? (commands/get-commands)))
   (t/is (empty? (scope/for-key (app-runtime/node) [:kmet/command "stored"]))))
 
+(t/deftest get-commands-keeps-registration-order
+  ;; The palette and :get-commands list in registration order, and replacing a
+  ;; command moves it to the end — the vector registry's order, kept by the
+  ;; store's per-owner order.
+  (commands/register-command! {:name "beta" :description "x" :handler (fn [_ _] nil)})
+  (commands/register-command! {:name "alpha" :description "x" :handler (fn [_ _] nil)})
+  (t/is (= ["beta" "alpha"] (mapv :name (commands/get-commands))))
+  (commands/register-command! {:name "beta" :description "again" :handler (fn [_ _] nil)})
+  (t/is (= ["alpha" "beta"] (mapv :name (commands/get-commands)))))
+
 (t/deftest handler-receives-ctx-and-args
   (let [received (atom nil)]
     (commands/register-command!
