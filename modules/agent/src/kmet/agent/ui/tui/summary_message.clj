@@ -107,9 +107,7 @@
             _ (box/box-set-padding-x! @box pad)
             ;; tracked read: a palette switch re-applies the box background once
             thm (deref s/theme-sub)
-            _ (when-not (identical? thm @applied-theme-atom)
-                (reset! applied-theme-atom thm)
-                (messagebox/themed-box! this thm rebuild-content!))
+            _ (messagebox/apply-theme-once! this applied-theme-atom thm rebuild-content!)
             ;; the shared mode is the single source of truth (pi:
             ;; toolOutputExpanded) — rebuild at most once per flip
             _ (when (not= expanded (expanded-state this))

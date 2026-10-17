@@ -14,6 +14,7 @@
             [kmet.ai.auth :as auth]
             [kmet.libs.dynamic-value :as dynamic-value]
             [kmet.ai.model-config :as model-config]
+            [kmet.ai.registry :as registry]
             [kmet.ai.oauth :as oauth]
             [kmet.ai.provider-composer :as composer]
             [kmet.libs.catalog-cache :as catalog-cache]))
@@ -103,18 +104,17 @@
   "Upsert a Provider by :id (pi: MutableModels.setProvider — provider ids are
    unique; registering again replaces the existing entry)."
   [provider]
-  (swap! providers-atom assoc (:id provider) provider)
-  provider)
+  (registry/register-entity! providers-atom provider))
 
 (defn unregister-provider!
   "Remove a provider by :id (pi: MutableModels.deleteProvider)."
   [id]
-  (swap! providers-atom dissoc id))
+  (registry/unregister-entity! providers-atom id))
 
 (defn clear-providers!
   "Remove all providers (pi: MutableModels.clearProviders)."
   []
-  (reset! providers-atom {}))
+  (registry/clear-entities! providers-atom))
 
 (defn get-providers
   "All registered providers, in registration order."
@@ -124,7 +124,7 @@
 (defn get-provider
   "Provider record by keyword id, or nil when unknown."
   [id]
-  (get @providers-atom id))
+  (registry/get-entity providers-atom id))
 
 (defn get-models
   "All models of one provider (pi: Models.getModels), or of every provider
@@ -137,7 +137,7 @@
 (defn get-model
   "Model record for PROV-ID + model id, or nil (pi: Models.getModel)."
   [prov-id model-id]
-  (first (filter #(= model-id (:id %)) (get-models prov-id))))
+  (registry/get-model providers-atom prov-id model-id))
 
 (defn default-model-for
   "Default Model record for a provider: its :default-model id, or the first

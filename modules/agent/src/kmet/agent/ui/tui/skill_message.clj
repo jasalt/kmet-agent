@@ -99,9 +99,7 @@
             ;; tracked reads: the shared mode flips every skill message at
             ;; once, and a palette switch re-applies the box background
             thm (deref s/theme-sub)
-            _ (when-not (identical? thm @applied-theme-atom)
-                (reset! applied-theme-atom thm)
-                (messagebox/themed-box! this thm rebuild-content!))
+            _ (messagebox/apply-theme-once! this applied-theme-atom thm rebuild-content!)
             ;; the shared mode is the single source of truth (pi:
             ;; toolOutputExpanded, extended): sync only when it moved, so
             ;; the children are rebuilt at most once per flip

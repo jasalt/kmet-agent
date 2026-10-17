@@ -18,6 +18,7 @@
             [clojure.string :as str]
             [kmet.ai.auth :as auth]
             [kmet.ai.models :as models]
+            [kmet.ai.registry :as registry]
             [kmet.libs.catalog-cache :as catalog-cache]
             [kmet.libs.http :as http]))
 
@@ -43,20 +44,17 @@
 (defn register-provider!
   "Register (or replace by :id) an ImagesProvider (pi setProvider)."
   [provider]
-  (swap! providers-atom assoc (:id provider) provider)
-  nil)
+  (registry/register-entity! providers-atom provider))
 
 (defn unregister-provider!
   "Remove an ImagesProvider by :id (pi deleteProvider)."
   [id]
-  (swap! providers-atom dissoc id)
-  nil)
+  (registry/unregister-entity! providers-atom id))
 
 (defn clear-providers!
   "Remove all providers (pi clearProviders; test + reload seam)."
   []
-  (reset! providers-atom {})
-  nil)
+  (registry/clear-entities! providers-atom))
 
 (defn get-providers
   "All registered ImagesProviders."
@@ -66,7 +64,7 @@
 (defn get-provider
   "An ImagesProvider by :id, or nil."
   [id]
-  (get @providers-atom id))
+  (registry/get-entity providers-atom id))
 
 (defn get-models
   "Last-known models: all providers (best-effort) or one provider by :id
@@ -78,7 +76,7 @@
 (defn get-model
   "A model by provider :id + model id, or nil (pi getModel)."
   [provider-id model-id]
-  (first (filter #(= model-id (:id %)) (get-models provider-id))))
+  (registry/get-model providers-atom provider-id model-id))
 
 (defn get-auth
   "Resolved request auth for an image provider (pi ImagesModels.getAuth):
