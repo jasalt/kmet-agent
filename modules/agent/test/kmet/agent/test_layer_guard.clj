@@ -50,8 +50,10 @@
 (def ^:private temporary-leaks
   ;; Known pre-existing violations of the app layer boundary. Remove an
   ;; entry when the corresponding leak is fixed; new violations fail this
-  ;; test.
-  {"kmet.agent.extensions.core" ["kmet.tui."]})
+  ;; test. Empty since the extension resource loader moved its theme call
+  ;; behind the extensions-context call-time door
+  ;; (kmet.agent.extensions.context/load-themes-from-dir!).
+  {})
 
 (defn- front-end-source-files
   "Every mode and app-UI namespace file (the front-end layers)."

@@ -67,7 +67,6 @@
             [kmet.agent.config :as cfg]
             [kmet.agent.debug :as debug]
             [kmet.libs.hikap.alias :as alias]
-            [kmet.tui.theme :as theme]
             [kmet.libs.host :as host]
             [kmet.loader.core :as loader]
             ;; Jolt only: pulls the fixed bundled extension set into the
@@ -1394,7 +1393,9 @@
           (swap! applied conj p)))
       (doseq [p (:theme-paths paths)]
         (when-not (contains? @applied p)
-          (theme/load-themes-from-dir p)
+          ;; theme loading is an extension-ABI shared library; the context
+          ;; namespace owns the call-time door (see its load-themes-from-dir!)
+          (context/load-themes-from-dir! p)
           (swap! applied conj p))))
     paths))
 

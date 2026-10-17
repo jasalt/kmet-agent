@@ -1564,6 +1564,68 @@
         (doseq [n ["sci" "js" "sj" "jolt" "jvm" "legacy" "bad" "expose"]]
           (fs/delete-tree (str "target/test-ext-loader-" n)))))))
 
+;; ─── The shared-library lists vs the source trees ────────────────────────
+
+(def ^:private host-backend-namespaces
+  "Shared-layer namespaces deliberately outside the extension lists: each
+   loads host resources at namespace load, so host-requires!'s eager require
+   cannot pull it on every host."
+  '#{kmet.libs.clipboard-win        ;; user32/kernel32 FFI at namespace load
+     kmet.libs.host-native          ;; Jolt host backend (.jolt source)
+     kmet.tui.terminal-jline        ;; imports org.jline.* (bb/JVM only)
+     kmet.tui.terminal-native-unix  ;; Jolt/Unix backend (.jolt source)
+     kmet.tui.terminal-native-win}) ;; Jolt/Windows backend (.jolt source)
+
+(def ^:private agent-shared-namespaces
+  "Shared-layer namespaces owned by the agent module (the app-level renderers
+   in tui-library-namespaces)."
+  '#{kmet.agent.keybindings kmet.agent.ui.tui.tool-renderers})
+
+(defn- library-ns-name
+  "The namespace symbol for source file P under DIR with PREFIX."
+  [prefix dir p]
+  (symbol (str prefix "."
+               (-> (str/replace (str (fs/relativize (fs/path dir) p)) "\\" "/")
+                   (str/replace #"\.(clj|cljc|jolt|bb)$" "")
+                   (str/replace "_" "-")
+                   (str/replace "/" ".")))))
+
+(defn- shared-source-namespaces
+  "Every namespace defined in the shared TUI/libs source trees — the lists'
+   universe, host backends included so the test can pin their exclusion."
+  []
+  (let [roots [["kmet.tui" "modules/tui/src/kmet/tui"]
+               ["kmet.libs" "modules/libs/src/kmet/libs"]
+               ["kmet.libs" "modules/hikap/src/kmet/libs"]
+               ["kmet.libs" "modules/reakt/src/kmet/libs"]]]
+    (into #{}
+          (mapcat (fn [[prefix dir]]
+                    (map #(library-ns-name prefix dir %)
+                         (concat (fs/glob dir "*.{clj,cljc,jolt,bb}")
+                                 (fs/glob dir "**/*.{clj,cljc,jolt,bb}")))))
+          roots)))
+
+(t/deftest test-shared-library-lists-match-the-source-trees
+  (testing "the extension shared-library lists and the source trees agree:
+            a namespace added or removed without updating its list fails"
+    (let [entries (into (set @#'ext-context/tui-library-namespaces)
+                        @#'ext-context/libs-library-namespaces)
+          sources (shared-source-namespaces)
+          known (into entries (into host-backend-namespaces agent-shared-namespaces))]
+      (t/is (< 60 (count entries)) "the lists are real, not empty")
+      (t/is (< 60 (count sources)) "the source scan found the trees")
+      (t/is (empty? (remove known sources))
+            (str "shared namespaces missing from the lists: "
+                 (vec (sort (remove known sources)))))
+      (t/is (empty? (remove (into sources agent-shared-namespaces) entries))
+            (str "stale shared-library list entries: "
+                 (vec (sort (remove (into sources agent-shared-namespaces) entries)))))
+      (t/is (empty? (filter entries host-backend-namespaces))
+            "host backends stay out of the eagerly-required lists")
+      (t/is (every? fs/exists? ["modules/agent/src/kmet/agent/keybindings.clj"
+                                "modules/agent/src/kmet/agent/ui/tui/tool_renderers.clj"])
+            "the agent-owned list entries have source files"))))
+
 (t/deftest ^:slow ^:bb-only test-packed-clojure-jar-roundtrip
   ;; end-to-end jar distribution for a real shipped extension: pack
   ;; extensions/clojure/src with plain zip mechanics, load the jar, run a

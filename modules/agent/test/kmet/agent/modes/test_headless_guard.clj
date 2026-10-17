@@ -1,12 +1,13 @@
 (ns kmet.agent.modes.test-headless-guard
-  "Guard (engine.md §8): a headless front end's static require graph must not
-   reach the interactive mode, the TUI view layer, or the Tk backend. The
-   stricter claim — no `kmet.tui.*` at all — is not achievable while
-   extensions are enabled: the extension ABI admits `kmet.tui.*` and
-   `host-requires!` pulls the layer in, so `kmet.tui.theme` is the one
-   namespace left reachable from both headless modes. That allowance is
-   pinned exactly (the terminal constructor and every component are
-   forbidden) and shrinks with the shared split."
+  "Guard: a headless front end's static require graph must not reach the
+   interactive mode, the TUI view layer, or the Tk backend. The stricter
+   claim — no `kmet.tui.*` at all — is not achievable while the app config
+   resolves the active theme: `kmet.agent.config` reads the shared
+   `kmet.tui.theme` store, so that is the one namespace left reachable from
+   both headless modes (the extension ABI additionally loads the whole
+   shared TUI layer at call time via `host-requires!`, invisible to this
+   static graph). That allowance is pinned exactly (the terminal constructor
+   and every component are forbidden) and shrinks with the shared split."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
             [babashka.fs :as fs]))

@@ -182,7 +182,10 @@
 (def ^:private tui-library-namespaces
   "The generic TUI layer and the supported app-level tool renderers shared
    with extension contexts. Required once before per-extension contexts are
-   built; injected by reference so component and protocol identity is shared."
+   built; injected by reference so component and protocol identity is shared.
+   Host backends stay out (terminal-jline imports org.jline.*;
+   terminal-native-* are Jolt .jolt sources) — the drift guard in
+   kmet.agent.test-extensions keeps this list and the source trees in sync."
   '[kmet.tui.autocomplete
     kmet.tui.border
     kmet.tui.core
@@ -192,9 +195,12 @@
     kmet.tui.keys
     kmet.tui.macros
     kmet.tui.protocols
+    kmet.tui.terminal
+    kmet.tui.terminal-escape
     kmet.tui.theme
     kmet.tui.timers
     kmet.tui.utils
+    kmet.tui.wake
     kmet.tui.components.alt-screen-flash
     kmet.tui.components.box
     kmet.tui.components.cancellable-loader
@@ -224,12 +230,13 @@
    is self-contained (enforced by kmet.libs.test-self-contained), so the
    whole prefix is whitelisted. Required once here so they exist when a
    per-extension context is built — injection is by reference, never
-   re-evaluated, so any protocols they define keep their identity. Keep in
-   sync with src/kmet/libs/ when a lib is added or removed, except a host
-   backend its caller loads at call time on its own platform
-   (kmet.libs.clipboard-win loads user32.dll — unloadable elsewhere)."
+   re-evaluated, so any protocols they define keep their identity. Host
+   backends stay out (kmet.libs.clipboard-win loads user32.dll at namespace
+   load; kmet.libs.host-native is a Jolt .jolt source) — the drift guard in
+   kmet.agent.test-extensions keeps this list and the source trees in sync."
   '[kmet.libs.archive
     kmet.libs.aws-sigv4
+    kmet.libs.catalog-cache
     kmet.libs.clipboard
     kmet.libs.concurrent
     kmet.libs.crypto
@@ -254,9 +261,13 @@
     kmet.libs.mcp.transport.sse
     kmet.libs.mcp.transport.stdio
     kmet.libs.oauth
+    kmet.libs.path
     kmet.libs.process
     kmet.libs.reakt.core
+    kmet.libs.reakt.weak
     kmet.libs.sse
+    kmet.libs.terminal
+    kmet.libs.terminal-image
     kmet.libs.yaml])
 
 (defn- ns-path
@@ -1180,6 +1191,15 @@
   (when-not (host/jolt?)
     (apply require (concat spec-port-namespaces bb-shared-namespaces)))
   nil)
+
+(defn load-themes-from-dir!
+  "Apply THEME-DIR's theme files through the shared kmet.tui.theme library.
+   The theme store is an extension-ABI shared library — host-requires! loads
+   it with the rest of the TUI layer on the first extension load — and this
+   namespace owns that call-time door, so plain app code (resource discovery
+   in kmet.agent.extensions.core) never requires kmet.tui.* at the ns level."
+  [dir]
+  ((requiring-resolve 'kmet.tui.theme/load-themes-from-dir) dir))
 
 ;; ─── The shared base context (per-extension forks) ───────────────────────
 
