@@ -1,6 +1,6 @@
 (ns kmet.agent.test-runtime
-  "The seed composition runtime: the `:builtin` backend resolves kmet's own
-   units, and an unmounted root is empty."
+  "The composition runtime: the builtin units, the resolution backend, and
+   the app node's default entries."
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is]]
             [kmet.agent.runtime :as runtime]
@@ -33,3 +33,12 @@
       (is (= [:app :probe] (:owner (:probe (cells/composition node)))))
       (is (= {:n 21} (:config (:probe (cells/composition node)))))
       (is (nil? (runtime/unit-handle node :absent))))))
+
+(deftest the-app-node-mounts-the-default-entries
+  (let [node (runtime/node)
+        snapshot (runtime/snapshot node)]
+    (is (= [] (cells/check (runtime/runtime) runtime/default-entries)))
+    (is (= [:loop-guard] (keys snapshot)))
+    (is (= [:app :loop-guard] (:owner (:loop-guard snapshot))))
+    (is (fn? (runtime/handle snapshot :loop-guard)))
+    (is (identical? node (runtime/node)) "one app tree per process")))

@@ -90,6 +90,7 @@
             [kmet.agent.compaction :as compaction]
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.retry :as retry]
+            [kmet.agent.runtime :as runtime]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.invoke :as invoke]
@@ -176,6 +177,9 @@
                        system-prompt-opts    ;; atom of the build-system-prompt options map (pi: _baseSystemPromptOptions)
                        loop-guard            ;; atom of per-run repeat-loop guard state:
                                              ;;   {:window [signature...] :suppressed n}
+                       node                  ;; the composition node this run reads its units
+                                             ;; from: the app root by default (kmet.agent.runtime),
+                                             ;; a child node for a subagent run (cells.md §5.6)
                        ])
 
 (defn make-agent-state
@@ -205,8 +209,12 @@
          blocks from provider calls; transcript and session untouched),
          :default-tools (resolved :default-tools selection — the built-in
          tools active at startup, pi: defaultTools; nil = every built-in
-         active, see kmet.agent.tools.registry/resolve-default-tools)"
-  [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools]
+         active, see kmet.agent.tools.registry/resolve-default-tools),
+         :node (the composition node this run reads its units from; default
+         the app root, kmet.agent.runtime/node — a subagent run passes its own
+         child node, which then has to carry the units the run reads,
+         cells.md §5.6)"
+  [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools node]
       :or {provider :opencode-go
            thinking :off
            steering-mode :all
@@ -225,6 +233,7 @@
            loop-guard-enabled true
            loop-guard-threshold 3
            thinking-loop-guard-enabled true
+           node (runtime/node)
            system "You are kmet, a minimal coding agent. Help the user with their tasks.
 Use the available tools to read, write, edit files, and execute commands.
 Be precise and concise in your responses."}}]
@@ -284,7 +293,8 @@ Be precise and concise in your responses."}}]
                     :run-messages (atom {})
                     :run-token (atom nil)
                     :system-prompt-opts (atom system-prompt-opts)
-                    :loop-guard (atom {:window [] :suppressed 0})}))
+                    :loop-guard (atom {:window [] :suppressed 0})
+                    :node node}))
 
 ;; ─── Active tools (pi: ctx.setActiveTools) ──────────────────────
 
@@ -2342,24 +2352,26 @@ Be precise and concise in your responses."}}]
      :continue   — run one more turn even though nothing else would
      :loop-guard — repeat-loop guard tripped (caller settles the run)
 
-   Repeat-loop guard (kmet-specific): the batch is filtered through
-   loop-guard-filter first. Suppressed calls get a synthetic guard result
-   (transcript stays coherent — no dangling tool ids, and the user sees why
-   in the tool box); survivors execute normally. When a batch is ALL
-   suppressed — or cumulative suppressions reach 2×threshold (mixed
-   alternating batches) — the guard trips. A successful write/edit resets
-   the guard's memory of other calls (the world changed, so a repeated
+   Repeat-loop guard (kmet-specific): the batch is filtered through the
+   `:loop-guard` slot's handle, read from the attempt's snapshot — the unit is
+   a mount, not a namespace (cells.md §5.4, §8.1). Suppressed calls get a
+   synthetic guard result (transcript stays coherent — no dangling tool ids,
+   and the user sees why in the tool box); survivors execute normally. When a
+   batch is ALL suppressed — or cumulative suppressions reach 2×threshold
+   (mixed alternating batches) — the guard trips. A successful write/edit
+   resets the guard's memory of other calls (the world changed, so a repeated
    call observes new state); failed, blocked, or suppressed writes reset
    nothing, and each writer's own signature is kept."
-  [agent t result]
+  [agent units t result]
   (let [assistant-msg (add-assistant-message! agent result)
         tool-calls (:tool-calls result)]
     (set-agent-status! agent :executing {:tool-calls tool-calls})
     (let [threshold (:loop-guard-threshold @(:cfg agent))
           guard-enabled? (:loop-guard-enabled @(:cfg agent))
+          guard-filter (runtime/handle units :loop-guard)
           {:keys [suppressed survivors state]}
           (if guard-enabled?
-            (loop-guard/loop-guard-filter @(:loop-guard agent) threshold tool-calls)
+            (guard-filter @(:loop-guard agent) threshold tool-calls)
             {:suppressed [] :survivors tool-calls :state @(:loop-guard agent)})
           suppressed? (seq suppressed)
           guard-result (fn [tc]
@@ -2469,7 +2481,8 @@ Be precise and concise in your responses."}}]
    :agent-end is emitted here with this attempt's accumulated messages
    (RUN-TOKEN keys the accumulator) and :will-retry."
   [agent run-token {:keys [on-text on-thinking on-error]}]
-  (let [text-buf (atom "")
+  (let [units (runtime/snapshot (:node agent)) ; one read per attempt (cells.md §5.4)
+        text-buf (atom "")
         agent-end (fn [error will-retry]
                     (when-let [s (:session agent)]
                       (when (pos? (get-in (session/tool-usage s)
@@ -2643,7 +2656,7 @@ Be precise and concise in your responses."}}]
                                     (reset! (:overflow-recovered agent) false))
                                   (let [tool-calls (:tool-calls result)]
                                     (if (seq tool-calls)
-                                      (let [phase (tools-phase! agent t result)]
+                                      (let [phase (tools-phase! agent units t result)]
                                         (cond
                                           (= :loop-guard phase)
                                         ;; Repeat-loop guard tripped: settle the

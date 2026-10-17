@@ -85,6 +85,9 @@ modules/agent/src/kmet/
 ├── agent/              — App business logic (pi: dist/core/)
 │   ├── loop.clj        — the agent loop; retry.clj — retry/error policy;
 │   │                     loop_guard.clj — repeat-loop guard
+│   ├── runtime.clj     — the composition runtime: builtin units, the
+│   │                     :builtin resolution backend, and the app root
+│   │                     node runs read their units from (P2)
 │   ├── session/         — session subsystem:
 │   │   ├── core.clj     — EDNL sessions (storage, branch/tree,
 │   │   │                 compaction, import/export planning)

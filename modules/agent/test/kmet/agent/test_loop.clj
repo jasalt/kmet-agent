@@ -19,6 +19,8 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.loop :as loop]
             [kmet.agent.loop-guard :as guard]
+            [kmet.agent.runtime :as runtime]
+            [kmet.cells.core :as cells]
             [kmet.agent.retry :as retry]
             [kmet.agent.config :as cfg]
             [kmet.agent.debug :as debug]
@@ -1847,6 +1849,48 @@
     (t/is (= :idle @(:status agent)) "run settles idle")
     (t/is (str/includes? (or @done-text "") "repeated identical tool calls")
           "on-done carries the guard explanation")))
+
+(t/deftest test-loop-agent-runs-in-the-app-node
+  ;; The run's node defaults to the app's (kmet.agent.runtime), and a run can
+  ;; be pointed at its own tree for a child node (cells.md §5.6).
+  (t/is (identical? (runtime/node) (:node (loop/make-agent-state))))
+  (let [mine (:root (runtime/runtime))]
+    (t/is (identical? mine (:node (loop/make-agent-state :node mine))))))
+
+(t/deftest test-loop-runs-the-guard-mounted-in-its-node
+  ;; The guard is reached through the store, not the namespace: a spy mounted
+  ;; in the run's own node filters the batch (and trips it on the second, so
+  ;; the run settles), and the run's configured threshold reaches it
+  ;; (cells.md §5.4, §8.1).
+  (let [calls (atom [])
+        seen (atom 0)
+        spy (fn [state threshold tool-calls]
+              (swap! calls conj threshold)
+              (if (< 1 (swap! seen inc))
+                {:suppressed tool-calls :survivors [] :state state}
+                {:suppressed [] :survivors tool-calls :state state}))]
+    (with-redefs [runtime/builtin-units {:kmet/loop-guard {:handle spy}}
+                  cfg/get-api-key (fn [_] "test-key")
+                  tools/execute-tool
+                  (fn [_ _ _] {:content "ok" :is-error false})
+                  llm/send-message
+                  (fn [opts]
+                    (future
+                      (when-let [on-tc (:on-tool-call opts)]
+                        (on-tc {:id "tc1" :name "bash"
+                                :arguments "{\"command\":\"ls\"}" :index 0}))
+                      (when-let [on-done (:on-done opts)]
+                        (on-done :tool-calls))
+                      :done))]
+      (let [mine (cells/mount! (runtime/runtime) runtime/default-entries)
+            agent (loop/make-agent-state :node mine :on-event (fn [_]))]
+        @(loop/run-agent-turn agent {:message "run"
+                                     :on-done (fn [_])
+                                     :on-error (fn [_])})
+        (t/is (seq @calls) "the mounted handle filtered the batch")
+        (t/is (= [3] (distinct @calls))
+              "the run's configured threshold reached the mounted handle")
+        (t/is (= :idle @(:status agent)) "the run settled through the guard")))))
 
 (t/deftest test-loop-run-agent-turn-thinking-loop-guard-terminates
   ;; End-to-end: the model streams the same reasoning segment repeatedly;
