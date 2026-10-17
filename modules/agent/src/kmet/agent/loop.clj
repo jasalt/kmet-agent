@@ -2354,21 +2354,25 @@ Be precise and concise in your responses."}}]
 
    Repeat-loop guard (kmet-specific): the batch is filtered through the
    `:loop-guard` slot's handle, read from the attempt's snapshot — the unit is
-   a mount, not a namespace (cells.md §5.4, §8.1). Suppressed calls get a
-   synthetic guard result (transcript stays coherent — no dangling tool ids,
-   and the user sees why in the tool box); survivors execute normally. When a
-   batch is ALL suppressed — or cumulative suppressions reach 2×threshold
-   (mixed alternating batches) — the guard trips. A successful write/edit
-   resets the guard's memory of other calls (the world changed, so a repeated
-   call observes new state); failed, blocked, or suppressed writes reset
-   nothing, and each writer's own signature is kept."
+   a mount, not a namespace (cells.md §5.4, §8.1). Its entry config supplies
+   the threshold when the mount carries one, and cfg's value is the default
+   until P4 maps config keys onto entries. Suppressed calls get a synthetic
+   guard result (transcript stays coherent — no dangling tool ids, and the
+   user sees why in the tool box); survivors execute normally. When a batch is
+   ALL suppressed — or cumulative suppressions reach 2×threshold (mixed
+   alternating batches) — the guard trips. A successful write/edit resets the
+   guard's memory of other calls (the world changed, so a repeated call
+   observes new state); failed, blocked, or suppressed writes reset nothing,
+   and each writer's own signature is kept."
   [agent units t result]
   (let [assistant-msg (add-assistant-message! agent result)
         tool-calls (:tool-calls result)]
     (set-agent-status! agent :executing {:tool-calls tool-calls})
-    (let [threshold (:loop-guard-threshold @(:cfg agent))
+    (let [threshold (or (:threshold (runtime/config units :loop-guard))
+                        (:loop-guard-threshold @(:cfg agent)))
           guard-enabled? (:loop-guard-enabled @(:cfg agent))
-          guard-filter (runtime/handle units :loop-guard)
+          guard-filter (when guard-enabled?
+                         (runtime/require-handle units :loop-guard))
           {:keys [suppressed survivors state]}
           (if guard-enabled?
             (guard-filter @(:loop-guard agent) threshold tool-calls)

@@ -1860,17 +1860,19 @@
 (t/deftest test-loop-runs-the-guard-mounted-in-its-node
   ;; The guard is reached through the store, not the namespace: a spy mounted
   ;; in the run's own node filters the batch (and trips it on the second, so
-  ;; the run settles), and the run's configured threshold reaches it
-  ;; (cells.md §5.4, §8.1).
+  ;; the run settles), and the mount's entry config supplies the threshold
+  ;; (cells.md §5.4, §6.1, §8.1).
   (let [calls (atom [])
         seen (atom 0)
         spy (fn [state threshold tool-calls]
               (swap! calls conj threshold)
               (if (< 1 (swap! seen inc))
                 {:suppressed tool-calls :survivors [] :state state}
-                {:suppressed [] :survivors tool-calls :state state}))]
-    (with-redefs [runtime/builtin-units {:kmet/loop-guard {:handle spy}}
-                  cfg/get-api-key (fn [_] "test-key")
+                {:suppressed [] :survivors tool-calls :state state}))
+        rt (cells/runtime {:resolve [[:builtin (fn [_] {:handle spy})]]})
+        mine (cells/mount! rt [{:id :loop-guard :name :kmet/loop-guard
+                                :config {:threshold 7}}])]
+    (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   tools/execute-tool
                   (fn [_ _ _] {:content "ok" :is-error false})
                   llm/send-message
@@ -1882,14 +1884,13 @@
                       (when-let [on-done (:on-done opts)]
                         (on-done :tool-calls))
                       :done))]
-      (let [mine (cells/mount! (runtime/runtime) runtime/default-entries)
-            agent (loop/make-agent-state :node mine :on-event (fn [_]))]
+      (let [agent (loop/make-agent-state :node mine :on-event (fn [_]))]
         @(loop/run-agent-turn agent {:message "run"
                                      :on-done (fn [_])
                                      :on-error (fn [_])})
         (t/is (seq @calls) "the mounted handle filtered the batch")
-        (t/is (= [3] (distinct @calls))
-              "the run's configured threshold reached the mounted handle")
+        (t/is (= [7] (distinct @calls))
+              "the mount's entry config reached the mounted handle")
         (t/is (= :idle @(:status agent)) "the run settled through the guard")))))
 
 (t/deftest test-loop-snapshot-survives-a-mid-attempt-change
@@ -1897,10 +1898,10 @@
   ;; during the attempt (here a remount) is invisible to it, and the next
   ;; attempt reads the new tree — the tool-unload race the rule closes.
   (let [used (atom [])
-        guard-a (fn [state threshold tool-calls]
+        guard-a (fn [state _threshold tool-calls]
                   (swap! used conj :a)
                   {:suppressed [] :survivors tool-calls :state state})
-        guard-b (fn [state threshold tool-calls]
+        guard-b (fn [state _threshold tool-calls]
                   (swap! used conj :b)
                   {:suppressed tool-calls :survivors [] :state state})
         table (atom {:kmet/loop-guard {:handle guard-a}})

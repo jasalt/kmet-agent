@@ -171,7 +171,7 @@ startup and on `/reload`, after the auto resource dirs.
 | `/share` | Share the session as a secret GitHub gist |
 | `/copy` | Copy the last agent message to the clipboard |
 | `/compact [instructions]` | Manually compact the session context |
-| `/reload` | Reload settings, keybindings, extensions, skills, prompts, themes and context files |
+| `/reload` | Reload settings, keybindings, extensions, skills, prompts, themes, context files and builtin units |
 | `/theme <name>` | Switch color theme |
 
 `/skill:<name>` loads a skill on demand; any other `/command args` expands a

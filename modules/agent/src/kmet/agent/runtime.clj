@@ -34,19 +34,26 @@
 
 (defonce ^:private app-rt (runtime))
 
-(defonce ^:private app-root
-  ;; Mounted as this namespace loads — earlier than -main rather than later,
-  ;; which is the guarantee the root has to satisfy: every init(api) needs an
-  ;; owner to register under (cells.md §8.2). `mount!` diffs, so a later mount
-  ;; of the same entries is a no-op.
-  (cells/mount! app-rt default-entries))
+(defonce ^:private app-root* (atom nil))
+
+(defn remount!
+  "Diff the default entries into the app root — mount them the first time,
+   and after that re-diff, so a unit whose namespace was reloaded remounts
+   and its new handle reaches the app: a mounted slot holds the handle value
+   it was mounted with (cells.md §6.2, §6.4). `/reload` calls this. Returns
+   the node."
+  []
+  (locking app-root*
+    (let [mounted (cells/mount! app-rt default-entries)]
+      (reset! app-root* mounted)
+      mounted)))
 
 (defn node
-  "The app's root node, with the default entries mounted. One app tree per
-   process: -main reaches this before loading extensions, and a run's
-   AgentState defaults to it (kmet.agent.loop/make-agent-state)."
+  "The app's root node, mounting the default entries the first time it is
+   asked for. -main reaches this before extension loading, so every
+   `init(api)` has an owner to register under (cells.md §8.2)."
   []
-  app-root)
+  (or @app-root* (remount!)))
 
 (defn snapshot
   "Take an attempt's composition read: thread the value through the attempt so
@@ -59,6 +66,25 @@
   "The handle mounted at SLOT-ID in SNAPSHOT, or nil."
   [snapshot slot-id]
   (:handle (get snapshot slot-id)))
+
+(defn require-handle
+  "The handle mounted at SLOT-ID in SNAPSHOT. Throws when the run's tree does
+   not carry the slot — a caller that needs a unit should hear which slot and
+   which tree, not call nil."
+  [snapshot slot-id]
+  (or (handle snapshot slot-id)
+      (throw (ex-info (str "kmet.agent.runtime: this run's tree has no "
+                           (pr-str slot-id) " unit (mounted: "
+                           (pr-str (vec (sort (keys snapshot)))) ")")
+                      {:type ::missing-unit
+                       :slot slot-id
+                       :mounted (vec (sort (keys snapshot)))}))))
+
+(defn config
+  "SLOT-ID's entry config in SNAPSHOT, or nil — the value the mount validated
+   against the unit's `:config` schema (cells.md §3, §6.1)."
+  [snapshot slot-id]
+  (:config (get snapshot slot-id)))
 
 (defn unit-handle
   "The handle mounted at root slot ID, or nil — the one-off read for a caller

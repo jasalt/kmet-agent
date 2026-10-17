@@ -42,3 +42,42 @@
     (is (= [:app :loop-guard] (:owner (:loop-guard snapshot))))
     (is (fn? (runtime/handle snapshot :loop-guard)))
     (is (identical? node (runtime/node)) "one app tree per process")))
+
+(deftest a-remount-reaches-a-changed-unit
+  ;; A mounted slot holds the handle value it was mounted with, so a reloaded
+  ;; unit needs a remount: the diff keeps unchanged slots and remounts the
+  ;; changed one (cells.md §6.2, §6.4).
+  (let [changed (fn [& _] :changed)
+        node (runtime/node)]
+    (try
+      (with-redefs [runtime/builtin-units {:kmet/loop-guard {:handle changed}}]
+        (runtime/remount!)
+        (is (identical? changed
+                        (runtime/handle (runtime/snapshot node) :loop-guard)))
+        (is (identical? node (runtime/node)) "into the same tree"))
+      (finally
+        (runtime/remount!)))
+    (is (not (identical? changed
+                         (runtime/handle (runtime/snapshot node) :loop-guard)))
+        "the real unit is back")))
+
+(deftest a-missing-slot-says-which-and-where
+  (let [mine (cells/mount! (runtime/runtime) [{:id :probe :name :kmet/loop-guard}])
+        snapshot (runtime/snapshot mine)]
+    (is (nil? (runtime/handle snapshot :absent)) "handle stays the soft read")
+    (is (fn? (runtime/require-handle snapshot :probe)))
+    (let [e (try (runtime/require-handle snapshot :loop-guard)
+                 nil
+                 (catch Exception e e))]
+      (is (= :kmet.agent.runtime/missing-unit (:type (ex-data e))))
+      (is (= :loop-guard (:slot (ex-data e))))
+      (is (= [:probe] (:mounted (ex-data e))))
+      (is (str/includes? (ex-message e) ":loop-guard")))))
+
+(deftest entry-config-is-readable-from-the-snapshot
+  (let [mine (cells/mount! (runtime/runtime)
+                           [{:id :loop-guard :name :kmet/loop-guard
+                             :config {:threshold 7}}])
+        snapshot (runtime/snapshot mine)]
+    (is (= {:threshold 7} (runtime/config snapshot :loop-guard)))
+    (is (nil? (runtime/config snapshot :absent)))))

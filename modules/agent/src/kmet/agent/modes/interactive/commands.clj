@@ -28,6 +28,7 @@
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
+            [kmet.agent.runtime :as app-runtime]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.modes.interactive.theme-controller :as theme-ctrl]
@@ -575,7 +576,7 @@
                                                  "No agent messages to copy yet.")))))})
   (register-builtin-command!
    {:name "reload"
-    :description "Reload keybindings, extensions, skills, prompts, themes, and context files"
+    :description "Reload keybindings, extensions, skills, prompts, themes, context files, and units"
     :handler handle-reload})
   (register-builtin-command!
    {:name "theme"
@@ -622,10 +623,10 @@
     :handler (fn [cs _] (auth/handle-logout-command! cs))}))
 
 (defn handle-reload
-  "Reload settings, extensions, skills, prompts, themes, context files, and
-   rebuild the system prompt (pi: interactive-mode handleReloadCommand →
-   session.reload → _rebuildSystemPrompt). Refuses while the agent is
-   running (pi warns to wait for the current response)."
+  "Reload settings, extensions, skills, prompts, themes, context files and
+   the builtin units, and rebuild the system prompt (pi: interactive-mode
+   handleReloadCommand → session.reload → _rebuildSystemPrompt). Refuses
+   while the agent is running (pi warns to wait for the current response)."
   [cs _]
   (let [{:keys [chat-history]} cs]
     (if (state/turn-running? cs)
@@ -635,6 +636,9 @@
       (try
         ;; pi: settingsManager.reload() + theme re-registration
         (let [config (cfg/init!)
+              ;; a reloaded builtin unit's new handle reaches the app only by
+              ;; remounting: the mount holds the value it was mounted with
+              _ (app-runtime/remount!)
               ;; pi: keybindings.reload() — re-read keybindings.edn
               _ (app-kb/reload-agent-keybindings!)
         ;; pi: session.reload → emitSessionShutdownEvent(reason reload)
