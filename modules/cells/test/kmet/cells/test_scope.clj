@@ -68,5 +68,27 @@
     (scope/dispose! n :a)
     (is (= {} @seen) "the registration is gone before the teardown runs")))
 
+(deftest deregister-targets-one-owner-and-guards-replacement
+  (let [n (scope/node)]
+    (scope/register! n :a [:k] :v1)
+    (scope/register! n :b [:k] :v2)
+    (scope/deregister! n :a [:k] :v1)
+    (is (= {:b :v2} (scope/for-key n [:k])) "the other owner keeps its value")
+    (scope/register! n :a [:k] :v3)
+    (scope/deregister! n :a [:k] :v1)
+    (is (= {:a :v3 :b :v2} (scope/for-key n [:k]))
+        "a stale value cannot remove a newer registration")))
+
+(deftest owner-registrations-keep-registration-order
+  (let [n (scope/node)]
+    (scope/register! n :a [:first] 1)
+    (scope/register! n :a [:second] 2)
+    (scope/register! n :b [:other] 3)
+    (is (= [[[:first] 1] [[:second] 2]] (scope/owner-registrations n :a)))
+    (scope/register! n :a [:first] 10)
+    (is (= [[[:second] 2] [[:first] 10]] (scope/owner-registrations n :a))
+        "replacing a registration moves it to the end")
+    (is (= [] (scope/owner-registrations n :absent)))))
+
 (deftest nil-registrations-are-rejected
   (is (thrown? Exception (scope/register! (scope/node) :o [:k] nil))))

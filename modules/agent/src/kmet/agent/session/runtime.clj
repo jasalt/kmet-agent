@@ -253,7 +253,6 @@
                              :pending-ui (atom {})
                              :run-callbacks (atom nil)
                              :event-listeners (atom {})
-                             :commands (atom (vec @commands/pending-command-registry))
                              :input-hooks (atom (vec @extensions/pending-input-hooks))
                              :before-agent-start-hooks (atom (vec @extensions/pending-before-agent-start-hooks))
                              :custom-tools (atom @tools-reg/pending-custom-tools)
@@ -274,7 +273,6 @@
     ;; installs the headless port and the front-end kind, dispose! unbinds.
     ;; A front end with its own port re-binds after its widgets exist.
     (event-bus/set-default-event-listener-atom! (:event-listeners engine))
-    (reset! commands/pending-command-registry [])
     (reset! tools-reg/pending-custom-tools {})
     (reset! tools-reg/pending-tool-sources {})
     (reset! extensions/pending-tool-call-hooks [])

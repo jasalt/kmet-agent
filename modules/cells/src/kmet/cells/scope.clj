@@ -5,8 +5,10 @@
    The store is an atom so `register!`/`dispose!` can be imperative while the
    node stays the value a handle receives. There is one registration per
    (owner, key) — re-registering replaces it, and a stale deregister fn from
-   the replaced registration is a no-op. Disposal runs an owner's cleanups in
-   reverse registration order, then the owner's teardowns (a `:start` hook's
+   the replaced registration does nothing (the guard compares values, so an
+   earlier registration of an *equal* value is indistinguishable and its fn
+   does remove the newer one). Disposal runs an owner's cleanups in reverse
+   registration order, then the owner's teardowns (a `:start` hook's
    returned fn, which unwinds after everything the hook registered). One
    failing cleanup never skips the rest; it is reported through
    `*error-reporter*`."
@@ -27,21 +29,27 @@
    :teardowns {}     ; {owner [f]} — run after the owner's registrations
    :owner-order []}) ; first-registration order, for whole-node disposal
 
+(defn- remove-entry
+  "Remove OWNER's registration for k and its by-owner entry, whatever value it
+   holds; a key with no owners left leaves the view."
+  [s owner k]
+  (-> s
+      (update :by-key
+              (fn [by-key]
+                (let [owners (dissoc (get by-key k) owner)]
+                  (if (empty? owners)
+                    (dissoc by-key k)
+                    (assoc by-key k owners)))))
+      (update-in [:by-owner owner]
+                 (fn [entries] (into [] (remove #(= k (:key %))) entries)))))
+
 (defn- drop-entry
   "Drop owner's registration for k when its value is still v — a stale
    deregister fn must not remove a newer registration."
   [s owner k v]
-  (if (not= v (get-in s [:by-key k owner]))
-    s
-    (-> s
-        (update :by-key
-                (fn [by-key]
-                  (let [owners (dissoc (get by-key k) owner)]
-                    (if (empty? owners)
-                      (dissoc by-key k)
-                      (assoc by-key k owners)))))
-        (update-in [:by-owner owner]
-                   (fn [entries] (into [] (remove #(= k (:key %))) entries))))))
+  (if (= v (get-in s [:by-key k owner]))
+    (remove-entry s owner k)
+    s))
 
 (defn- remember-owner
   [s owner]
@@ -62,6 +70,15 @@
     :parent parent
     :children (atom [])}))
 
+(defn deregister!
+  "Drop OWNER's registration for K when its value is still V, so a stale call
+   cannot remove a newer registration — the targeted removal for a live owner,
+   where `dispose-owner!` removes everything the owner registered. This is the
+   operation `register!` returns as a fn. Returns nil."
+  [node owner k v]
+  (swap! (:store node) drop-entry owner k v)
+  nil)
+
 (defn register!
   "Install v under the host-shaped key k for owner (a slot path). Returns a
    deregister fn, collected onto owner — the caller need not keep it."
@@ -70,10 +87,10 @@
     (throw (ex-info "cannot register nil under a key"
                     {:type ::nil-registration :owner owner :key k})))
   (let [store (:store node)
-        deregister (fn deregister [] (swap! store drop-entry owner k v))]
+        deregister (fn deregister [] (deregister! node owner k v))]
     (swap! store
            (fn [s]
-             (-> (drop-entry s owner k v)
+             (-> (remove-entry s owner k)
                  (assoc-in [:by-key k owner] v)
                  (update :by-owner add-cleanup owner {:key k :value v :deregister deregister})
                  (remember-owner owner))))
@@ -89,9 +106,17 @@
   f)
 
 (defn owner-keys
-  "The set of keys owner registered — what `composition`/`explain` report."
+  "The set of keys owner registered — what `composition`/`explain` report.
+   A registry that lists itself in registration order wants
+   `owner-registrations`."
   [node owner]
   (into #{} (map :key) (get-in @(:store node) [:by-owner owner])))
+
+(defn owner-registrations
+  "OWNER's registrations in registration order: [[key value] …]. Replacing a
+   registration moves it to the end, as it does for the host's registry."
+  [node owner]
+  (into [] (map (juxt :key :value)) (get-in @(:store node) [:by-owner owner])))
 
 (defn owners
   "Every owner path on the store, in first-registration order — what

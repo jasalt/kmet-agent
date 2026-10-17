@@ -6,7 +6,8 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.commands.builtins :as builtins]
             [kmet.agent.runtime :as app-runtime]
-            [kmet.cells.core :as cells]))
+            [kmet.cells.core :as cells]
+            [kmet.cells.scope :as scope]))
 
 (t/use-fixtures :each
   (fn [f]
@@ -33,6 +34,21 @@
    {:name "gone" :description "x" :handler (fn [_ _] nil)})
   (commands/unregister-command! "gone")
   (t/is (nil? (commands/find-command "gone"))))
+
+(t/deftest the-registry-lives-in-the-app-roots-store
+  ;; The registry is the store, not an engine field: a registration is
+  ;; readable through the store under the app's owner, and clear-commands!
+  ;; removes it by key (a unit owns several registries — cells.md §5.1).
+  (commands/register-command!
+   {:name "stored" :description "x" :handler (fn [_ _] nil)})
+  (t/is (identical? (:handler (commands/find-command "stored"))
+                    (:handler (get (scope/for-key (app-runtime/node)
+                                                  [:kmet/command "stored"])
+                                   commands/commands-owner))))
+  (t/is (= 1 (count (commands/get-commands))) "in registration order")
+  (commands/clear-commands!)
+  (t/is (empty? (commands/get-commands)))
+  (t/is (empty? (scope/for-key (app-runtime/node) [:kmet/command "stored"]))))
 
 (t/deftest handler-receives-ctx-and-args
   (let [received (atom nil)]

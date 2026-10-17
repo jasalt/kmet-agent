@@ -295,6 +295,15 @@ the caller no longer *has to* keep it: `register!` attaches it to the owner
 (via a bound `*owner*` in the extension case), which is the part of Cordis's
 `this.caller.collect` worth copying.
 
+Two more store operations exist for the host that owns one registry of many:
+`(scope/owner-registrations node owner)` → `[[key value] …]` in registration
+order, which is what a registry's own listing needs (`owner-keys` is a set,
+which is enough for `composition` and `explain`), and
+`(scope/deregister! node owner k v)` — the operation `register!` returns as a
+fn, public for the call that removes one entry while its owner stays live (an
+extension dropping one command), where `dispose!` removes everything the owner
+registered. Its value guard is what makes a stale removal a no-op.
+
 **Owners are slot paths.** A unit's registrations are owned by the unit's slot
 path — the composition and slot ids that reach it, `[:app :agent-loop :budget]`,
 which `:start` receives as its second argument — so replacing its slot disposes

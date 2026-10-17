@@ -4,6 +4,7 @@
    use to read and drive it."
   (:require [babashka.fs :as fs]
             [clojure.test :refer [deftest is testing]]
+            [kmet.agent.commands :as commands]
             [kmet.agent.config :as cfg]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as agent]
@@ -27,6 +28,18 @@
         (try (f engine sess)
              (finally (rt/dispose! engine))))
       (finally (fs/delete-tree dir)))))
+
+(deftest test-commands-outlive-an-engine
+  ;; The app root's store owns commands, so disposing an engine does not drop
+  ;; them — with the engine atom they were its copy of the pending buffer.
+  (with-engine
+    (fn [_engine _sess]
+      (commands/register-command!
+       {:name "outlives-demo" :handler (fn [& _] nil)})))
+  (try
+    (is (some? (commands/find-command "outlives-demo")))
+    (finally
+      (commands/unregister-command! "outlives-demo"))))
 
 (deftest test-bootstrap-builds-the-engine
   (with-engine
@@ -416,11 +429,17 @@
     (try
       (doseq [k [:input-hooks :before-agent-start-hooks :tool-call-hooks
                  :tool-result-hooks :markdown-transformers :entry-renderers
-                 :message-renderers :commands :custom-tools :tool-sources
+                 :message-renderers :custom-tools :tool-sources
                  :event-listeners :flags :cli-flags
                  :applied-resource-paths :skills :prompt-templates]]
         (is (not (identical? (k e1) (k e2)))
             (str "engine-owned " k " is not shared")))
+      ;; Commands are the app's, not an engine's (P2): neither engine owns the
+      ;; registry, so a registration reaches both and the name is found with
+      ;; no engine at all — the pending buffer could only fill the first one.
+      (commands/register-command!
+       {:name "app-wide-demo" :handler (fn [& _] nil)})
+      (is (some? (commands/find-command "app-wide-demo")))
       (let [e1-events (atom [])
             e2-events (atom [])]
         (rt/subscribe! e1 #(swap! e1-events conj %))

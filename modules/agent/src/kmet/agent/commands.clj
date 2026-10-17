@@ -16,37 +16,57 @@
    from its value (the interactive mode puts its CoreState under :state).
    Handlers return nil; they act through the runtime and the UI value, never
    through an intent for the caller to interpret.
-   The registry is global so builtins, skills, and extensions can all
-   register commands; the editor's autocomplete provider reads it live."
-  (:require [clojure.string :as str]))
+   The registry lives in the app root's store, under the `[:app :commands]`
+   owner and the `[:kmet/command <name>]` key: a registration is visible to
+   every front end and outlives an engine, and it is disposed with its owner
+   rather than reset by hand (cells.md §5.1). The extension ABI registers
+   here today; P5 gives each extension its own owner."
+  (:require [clojure.string :as str]
+            [kmet.agent.runtime :as app-runtime]
+            [kmet.cells.scope :as scope]))
 
-(defonce pending-command-registry (atom []))
+(def commands-owner
+  "The app's command registry owner — the root's `:commands` slot path. A
+   slot need not be mounted for its owner to hold registrations."
+  [:app :commands])
 
-(defn- current-command-registry
-  "The active engine's command registry atom, or the pre-bootstrap pending
-   buffer when no engine is active."
-  []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :commands)
-      pending-command-registry))
+(defn- command-key
+  "The store key addressing a command by NAME."
+  [name]
+  [:kmet/command name])
+
+(defn- registered
+  "{owner command} for the command named NAME. One owner registers commands
+   today, so `find-command` reads the only entry; P5 adds extension owners
+   and with them a precedence rule."
+  [name]
+  (scope/for-key (app-runtime/node) (command-key name)))
 
 (defn register-command!
   "Register (or replace by :name) a slash command. Returns nil."
   [cmd]
-  (swap! (current-command-registry) (fn [cmds] (conj (remove #(= (:name %) (:name cmd)) cmds) cmd)))
+  (scope/register! (app-runtime/node) commands-owner (command-key (:name cmd)) cmd)
   nil)
 
 (defn unregister-command!
-  "Remove a slash command by :name. Returns nil."
+  "Remove a slash command by :name, from whichever owner registered it.
+   Returns nil."
   [name]
-  (swap! (current-command-registry) (fn [cmds] (remove #(= (:name %) name) cmds)))
+  (let [node (app-runtime/node)
+        k (command-key name)]
+    (doseq [[owner v] (scope/for-key node k)]
+      (scope/deregister! node owner k v)))
   nil)
 
 (defn clear-commands!
-  "Remove all registered commands (mainly for tests). Returns nil."
+  "Remove every registered command (mainly for tests). Returns nil."
   []
-  (reset! (current-command-registry) [])
+  ;; by key, not by owner: a unit owns several registries (§5.1)
+  (let [node (app-runtime/node)]
+    (doseq [[k owners] (scope/registrations node)
+            :when (= :kmet/command (first k))
+            [owner v] owners]
+      (scope/deregister! node owner k v)))
   nil)
 
 (defn command-line?
@@ -74,10 +94,10 @@
   (or (nil? (:frontend cmd)) (= frontend (:frontend cmd))))
 
 (defn- all-registered-commands
-  "The commands currently registered; register-command! replaces by
-   :name, so the atom already has unique names."
+  "The commands currently registered, in registration order; register-command!
+   replaces by :name, so each name appears once."
   []
-  @(current-command-registry))
+  (mapv second (scope/owner-registrations (app-runtime/node) commands-owner)))
 
 (defn get-commands
   "All registered slash commands, or those available to FRONTEND: a command
@@ -93,10 +113,10 @@
    available to that front end is returned (a nil :frontend tag means every
    front end)."
   ([name]
-   (first (filter #(= (:name %) name) (all-registered-commands))))
+   (some-> (first (registered name)) val))
   ([name frontend]
-   (first (filter #(and (= (:name %) name) (available-to? frontend %))
-                  (all-registered-commands)))))
+   (let [cmd (find-command name)]
+     (when (available-to? frontend cmd) cmd))))
 
 (defn register-builtin!
   "Register CMD unless a command already took the name (extensions load
