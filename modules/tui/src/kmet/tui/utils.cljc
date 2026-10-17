@@ -988,6 +988,58 @@
    :blink false :inverse false :hidden false :strike false
    :fg nil :bg nil})
 
+(defn- sgr-attribute-on
+  "Apply a single SGR 'on' attribute code (1,2,3,4,5,7,8,9) to STATE."
+  [state c]
+  (case c
+    1 (assoc state :bold true)
+    2 (assoc state :dim true)
+    3 (assoc state :italic true)
+    4 (assoc state :underline true)
+    5 (assoc state :blink true)
+    7 (assoc state :inverse true)
+    8 (assoc state :hidden true)
+    9 (assoc state :strike true)
+    state))
+
+(defn- sgr-attribute-off
+  "Apply a single SGR 'off' attribute code (21-29, except 26) to STATE."
+  [state c]
+  (case c
+    21 (assoc state :bold false)
+    22 (assoc state :bold false :dim false)
+    23 (assoc state :italic false)
+    24 (assoc state :underline false)
+    25 (assoc state :blink false)
+    27 (assoc state :inverse false)
+    28 (assoc state :hidden false)
+    29 (assoc state :strike false)
+    state))
+
+(defn- sgr-fg-code?
+  "True when C is a basic (30-37) or bright (90-97) foreground color code."
+  [c]
+  (or (and (>= c 30) (<= c 37))
+      (and (>= c 90) (<= c 97))))
+
+(defn- sgr-bg-code?
+  "True when C is a basic (40-47) or bright (100-107) background color code."
+  [c]
+  (or (and (>= c 40) (<= c 47))
+      (and (>= c 100) (<= c 107))))
+
+(defn- sgr-color
+  "Parse an extended color (38/48) starting at index I in PARAMS, returning
+   {:code SGR-code-string-or-nil :next next-index}."
+  [params i base]
+  (let [n (count params)]
+    (if (and (< (inc i) n) (= (nth params (inc i)) 5) (< (+ i 2) n))
+      {:code (str base ";5;" (nth params (+ i 2))) :next (+ i 3)}
+      (if (and (< (inc i) n) (= (nth params (inc i)) 2) (< (+ i 4) n))
+        {:code (str base ";2;" (nth params (+ i 2)) ";" (nth params (+ i 3)) ";" (nth params (+ i 4)))
+         :next (+ i 5)}
+        {:code nil :next (inc i)}))))
+
 (defn- apply-sgr-code
   "Apply one SGR escape (e.g. \"\\u001b[38;2;1;2;3m\") to STATE and return
    the new state (pi: AnsiCodeTracker.process)."
@@ -1002,43 +1054,22 @@
         (loop [state state i 0]
           (if (>= i n)
             state
-            (let [c (nth params i)
-                  color (fn [base]
-                          (if (and (< (inc i) n) (= (nth params (inc i)) 5) (< (+ i 2) n))
-                            {:code (str base ";5;" (nth params (+ i 2))) :next (+ i 3)}
-                            (if (and (< (inc i) n) (= (nth params (inc i)) 2) (< (+ i 4) n))
-                              {:code (str base ";2;" (nth params (+ i 2)) ";" (nth params (+ i 3))
-                                          ";" (nth params (+ i 4)))
-                               :next (+ i 5)}
-                              {:code nil :next (inc i)})))]
+            (let [c (nth params i)]
               (cond
                 (= c 0) (recur (reset-sgr-state) (inc i))
-                (= c 38) (let [{:keys [code next]} (color "38")]
-                           (recur (if code (assoc state :fg code) state) next))
-                (= c 48) (let [{:keys [code next]} (color "48")]
-                           (recur (if code (assoc state :bg code) state) next))
-                (= c 1) (recur (assoc state :bold true) (inc i))
-                (= c 2) (recur (assoc state :dim true) (inc i))
-                (= c 3) (recur (assoc state :italic true) (inc i))
-                (= c 4) (recur (assoc state :underline true) (inc i))
-                (= c 5) (recur (assoc state :blink true) (inc i))
-                (= c 7) (recur (assoc state :inverse true) (inc i))
-                (= c 8) (recur (assoc state :hidden true) (inc i))
-                (= c 9) (recur (assoc state :strike true) (inc i))
-                (= c 21) (recur (assoc state :bold false) (inc i))
-                (= c 22) (recur (assoc state :bold false :dim false) (inc i))
-                (= c 23) (recur (assoc state :italic false) (inc i))
-                (= c 24) (recur (assoc state :underline false) (inc i))
-                (= c 25) (recur (assoc state :blink false) (inc i))
-                (= c 27) (recur (assoc state :inverse false) (inc i))
-                (= c 28) (recur (assoc state :hidden false) (inc i))
-                (= c 29) (recur (assoc state :strike false) (inc i))
+                (or (= c 38) (= c 48))
+                (let [base (if (= c 38) "38" "48")
+                      attr (if (= c 38) :fg :bg)
+                      {:keys [code next]} (sgr-color params i base)]
+                  (recur (if code (assoc state attr code) state) next))
                 (= c 39) (recur (assoc state :fg nil) (inc i))
                 (= c 49) (recur (assoc state :bg nil) (inc i))
-                (or (and (>= c 30) (<= c 37)) (and (>= c 90) (<= c 97)))
-                (recur (assoc state :fg (str c)) (inc i))
-                (or (and (>= c 40) (<= c 47)) (and (>= c 100) (<= c 107)))
-                (recur (assoc state :bg (str c)) (inc i))
+                (contains? #{1 2 3 4 5 7 8 9} c)
+                (recur (sgr-attribute-on state c) (inc i))
+                (contains? #{21 22 23 24 25 27 28 29} c)
+                (recur (sgr-attribute-off state c) (inc i))
+                (sgr-fg-code? c) (recur (assoc state :fg (str c)) (inc i))
+                (sgr-bg-code? c) (recur (assoc state :bg (str c)) (inc i))
                 :else (recur state (inc i))))))))))
 
 (defn- active-sgr-codes
