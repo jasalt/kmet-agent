@@ -2116,10 +2116,14 @@
    "Qwen/Qwen3.7-Plus"                 [:qwen-token-plan "qwen3.7-plus"]
    "Qwen/Qwen3.8-27B"                  [:openrouter "qwen/qwen3.8-27b"]
    "Qwen/Qwen3.8-Max"                  [:qwen-token-plan "qwen3.8-max"]
+   ;; Cat Jam was the stealth codename for reflection's Beam 1.0: OpenCode
+   ;; deprecated cat-jam-free in favour of beam-free (same limits and effort
+   ;; map), so the legacy alias and the newly listed beam id both clamp there.
+   "reflection/beam:free"              [:opencode "beam-free"]
+   "stealth/cat-jam:free"              [:opencode "beam-free"]
    "sakana/fugu-ultra"                 [:openrouter "sakana/fugu-ultra"]
    "stepfun/Step-3.5-Flash"            [:openrouter "stepfun/step-3.5-flash"]
    "stepfun/Step-3.7-Flash"            [:openrouter "stepfun/step-3.7-flash"]
-   "stealth/cat-jam:free"             [:opencode "cat-jam-free"]
    "thinkingmachines/inkling"          [:baseten "thinkingmachines/inkling"]
    "thinkingmachines/inkling-small"    [:openrouter "thinkingmachines/inkling-small"]
    "xai/grok-4.5"                      [:xai "grok-4.5"]

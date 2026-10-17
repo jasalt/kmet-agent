@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-16T07:36:49Z"
+ :generated-at "2026-10-17T12:24:12Z"
  :provider {:id :commandcode
             :name "Command Code"
             :env-vars ["CMD_API_KEY"]
@@ -926,6 +926,24 @@
     :context-window 256000
     :max-tokens 32768
     :compat {:thinking-format :openrouter}}
+   "reflection/beam:free"
+   {:id "reflection/beam:free"
+    :name "Beam 1.0"
+    :provider :commandcode
+    :api :openai-completions
+    :base-url "https://api.commandcode.ai/provider/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium "medium"
+                         :minimal nil
+                         :off nil
+                         :xhigh "xhigh"}
+    :input [:text]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 131072}
    "sakana/fugu-ultra"
    {:id "sakana/fugu-ultra"
     :name "Fugu Ultra"

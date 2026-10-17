@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-16T07:28:00Z"
+ :generated-at "2026-10-17T12:16:44Z"
  :provider {:id :opencode-go
             :name "OpenCode Go"
             :env-vars ["OPENCODE_API_KEY"]
@@ -86,9 +86,9 @@
     :context-window 1048576
     :max-tokens 65536}}
   :openai-completions
-  {"cat-jam-free"
-   {:id "cat-jam-free"
-    :name "Cat Jam Free"
+  {"beam-free"
+   {:id "beam-free"
+    :name "Beam Free"
     :provider :opencode-go
     :api :openai-completions
     :base-url "https://opencode.ai/zen/go/v1"

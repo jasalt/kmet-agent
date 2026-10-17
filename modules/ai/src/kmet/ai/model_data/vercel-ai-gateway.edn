@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-16T07:28:00Z"
+ :generated-at "2026-10-17T12:16:44Z"
  :provider {:id :vercel-ai-gateway
             :name "Vercel AI Gateway"
             :env-vars ["AI_GATEWAY_API_KEY"]
@@ -888,6 +888,17 @@
     :cost {:input 0.3 :output 1.2 :cache-read 0.007 :cache-write 0}
     :context-window 1048576
     :max-tokens 32768}
+   "deepseek/deepseek-v4.1-flash-1017"
+   {:id "deepseek/deepseek-v4.1-flash-1017"
+    :name "DeepSeek V4.1 Flash 1017"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 0.15 :output 0.6 :cache-read 0.003 :cache-write 0}
+    :context-window 1000000
+    :max-tokens 384000}
    "deepseek/deepseek-v4.1-flash-fast"
    {:id "deepseek/deepseek-v4.1-flash-fast"
     :name "DeepSeek V4.1 Flash Fast"
@@ -2866,6 +2877,28 @@
     :cost {:input 6 :output 30 :cache-read 0.6 :cache-write 7.5}
     :context-window 131072
     :max-tokens 131072}
+   "reflection/beam"
+   {:id "reflection/beam"
+    :name "Beam 1.0"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 131072}
+   "reflection/beam-free"
+   {:id "reflection/beam-free"
+    :name "Beam 1.0 (Free)"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 131072}
    "sakana/fugu-max"
    {:id "sakana/fugu-max"
     :name "Fugu Max"
@@ -3138,7 +3171,7 @@
     :base-url "https://ai-gateway.vercel.sh"
     :reasoning true
     :input [:text :image]
-    :cost {:input 1 :output 2.7 :cache-read 0.05 :cache-write 0}
+    :cost {:input 1 :output 2.7 :cache-read 0.1 :cache-write 0}
     :context-window 1048576
     :max-tokens 1048576}
    "tencent/hy3"

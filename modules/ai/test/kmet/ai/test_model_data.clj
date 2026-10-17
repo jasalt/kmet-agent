@@ -449,6 +449,32 @@
     ;; NVIDIA NIM dropped inkling: Baseten still serves it.
     (check "thinkingmachines/inkling" :baseten "thinkingmachines/inkling")))
 
+(t/deftest test-commandcode-cat-jam-ref-follows-beam-rename
+  "Cat Jam was the stealth codename for reflection's Beam 1.0: OpenCode
+   deprecated the cat-jam-free id in favour of beam-free (same limits and
+   models.dev effort map), so the ref follows the rename instead of warning
+   on every generation run. The newly listed reflection/beam:free endpoint
+   id resolves against the same canonical."
+  (let [refs @#'mg/commandcode-canonical-refs
+        catalogs (#'mg/read-catalogs mg/data-dir)
+        canonical (get-in catalogs [:opencode :openai-completions "beam-free"])]
+    (t/is (= [:opencode "beam-free"] (get refs "stealth/cat-jam:free"))
+          "the retired cat-jam-free ref must follow the rename")
+    (t/is (= [:opencode "beam-free"] (get refs "reflection/beam:free"))
+          "the unveiled beam id resolves against the same canonical")
+    (t/is (some? canonical) "the canonical beam-free entry must exist")
+    (doseq [cid ["stealth/cat-jam:free" "reflection/beam:free"]]
+      (let [cc (get-in catalogs [:commandcode :openai-completions cid])]
+        (t/is (some? cc) (str cid " must be listed"))
+        (t/is (= true (:reasoning cc))
+              (str cid " must carry thinking support"))
+        (t/is (= (:max-tokens canonical) (:max-tokens cc))
+              (str cid " must carry the canonical max-tokens"))
+        (t/is (= (:input canonical) (:input cc))
+              (str cid " must carry the canonical input modalities"))
+        (t/is (= (:thinking-level-map canonical) (:thinking-level-map cc))
+              (str cid " must carry the canonical thinking levels"))))))
+
 (t/deftest test-commandcode-qwen36-max-preview-override
   "OpenRouter retired qwen/qwen3.6-max-preview in the 2026-10-12 model bump
    while the CommandCode endpoint kept serving the id: the dead ref was
