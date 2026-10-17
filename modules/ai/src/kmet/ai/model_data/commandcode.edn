@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-17T12:24:12Z"
+ :generated-at "2026-10-17T19:26:09Z"
  :provider {:id :commandcode
             :name "Command Code"
             :env-vars ["CMD_API_KEY"]
@@ -406,7 +406,7 @@
              :thinking-format :deepseek}}
    "deepseek/deepseek-v4.1-flash-fast"
    {:id "deepseek/deepseek-v4.1-flash-fast"
-    :name "DeepSeek V4.1 Flash Fast"
+    :name "DeepSeek V4.1 Flash Fast (latest)"
     :provider :commandcode
     :api :openai-completions
     :base-url "https://api.commandcode.ai/provider/v1"

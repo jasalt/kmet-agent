@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-17T12:16:44Z"
+ :generated-at "2026-10-17T19:26:09Z"
  :provider {:id :vercel-ai-gateway
             :name "Vercel AI Gateway"
             :env-vars ["AI_GATEWAY_API_KEY"]
@@ -896,9 +896,9 @@
     :base-url "https://ai-gateway.vercel.sh"
     :reasoning true
     :input [:text :image]
-    :cost {:input 0.15 :output 0.6 :cache-read 0.003 :cache-write 0}
-    :context-window 1000000
-    :max-tokens 384000}
+    :cost {:input 0.14 :output 0.42 :cache-read 0.0042 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 1048576}
    "deepseek/deepseek-v4.1-flash-fast"
    {:id "deepseek/deepseek-v4.1-flash-fast"
     :name "DeepSeek V4.1 Flash Fast"
