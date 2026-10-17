@@ -460,6 +460,48 @@
                        values)]
     (when (seq resolved) resolved)))
 
+(defn- zai-provider? [provider url]
+  (or (contains? #{"zai" "zai-coding-cn"} provider)
+      (str/includes? url "api.z.ai")
+      (str/includes? url "open.bigmodel.cn")))
+
+(defn- together-provider? [provider url]
+  (or (= provider "together")
+      (str/includes? url "api.together.ai")
+      (str/includes? url "api.together.xyz")))
+
+(defn- moonshot-provider? [provider url]
+  (or (contains? #{"moonshotai" "moonshotai-cn"} provider)
+      (str/includes? url "api.moonshot.")))
+
+(defn- openrouter-provider? [provider url]
+  (or (= provider "openrouter")
+      (str/includes? url "openrouter.ai")))
+
+(defn- cloudflare-workers-provider? [provider url]
+  (or (= provider "cloudflare-workers-ai")
+      (str/includes? url "api.cloudflare.com")))
+
+(defn- cloudflare-gateway-provider? [provider url]
+  (or (= provider "cloudflare-ai-gateway")
+      (str/includes? url "gateway.ai.cloudflare.com")))
+
+(defn- nvidia-provider? [provider url]
+  (or (= provider "nvidia")
+      (str/includes? url "integrate.api.nvidia.com")))
+
+(defn- ant-ling-provider? [provider url]
+  (or (= provider "ant-ling")
+      (str/includes? url "api.ant-ling.com")))
+
+(defn- deepseek-provider? [provider url]
+  (or (= provider "deepseek")
+      (str/includes? url "deepseek.com")))
+
+(defn- grok-provider? [provider url]
+  (or (= provider "xai")
+      (str/includes? url "api.x.ai")))
+
 (defn detect-openai-compat
   "pi detectCompat (packages/ai/src/api/openai-completions.ts): auto-detected
    openai-completions compatibility defaults for a model from its provider id
@@ -478,37 +520,32 @@
   (let [provider (some-> provider name)
         url (str/lower-case (or base-url ""))
         id-str (or id "")
-        in-url? (fn [s] (str/includes? url s))
-        zai? (or (contains? #{"zai" "zai-coding-cn"} provider)
-                 (in-url? "api.z.ai")
-                 (in-url? "open.bigmodel.cn"))
-        together? (or (= provider "together")
-                      (in-url? "api.together.ai")
-                      (in-url? "api.together.xyz"))
-        moonshot? (or (contains? #{"moonshotai" "moonshotai-cn"} provider)
-                      (in-url? "api.moonshot."))
-        openrouter? (or (= provider "openrouter") (in-url? "openrouter.ai"))
-        cf-workers? (or (= provider "cloudflare-workers-ai") (in-url? "api.cloudflare.com"))
-        cf-gateway? (or (= provider "cloudflare-ai-gateway") (in-url? "gateway.ai.cloudflare.com"))
-        nvidia? (or (= provider "nvidia") (in-url? "integrate.api.nvidia.com"))
-        ant-ling? (or (= provider "ant-ling") (in-url? "api.ant-ling.com"))
-        deepseek? (or (= provider "deepseek") (in-url? "deepseek.com"))
+        zai? (zai-provider? provider url)
+        together? (together-provider? provider url)
+        moonshot? (moonshot-provider? provider url)
+        openrouter? (openrouter-provider? provider url)
+        cf-workers? (cloudflare-workers-provider? provider url)
+        cf-gateway? (cloudflare-gateway-provider? provider url)
+        nvidia? (nvidia-provider? provider url)
+        ant-ling? (ant-ling-provider? provider url)
+        deepseek? (deepseek-provider? provider url)
+        grok? (grok-provider? provider url)
         non-standard? (or nvidia?
                           (= provider "cerebras")
-                          (in-url? "cerebras.ai")
+                          (str/includes? url "cerebras.ai")
                           (= provider "xai")
-                          (in-url? "api.x.ai")
+                          (str/includes? url "api.x.ai")
                           together?
-                          (in-url? "chutes.ai")
+                          (str/includes? url "chutes.ai")
                           deepseek?
                           zai?
                           moonshot?
                           (= provider "opencode")
-                          (in-url? "opencode.ai")
+                          (str/includes? url "opencode.ai")
                           cf-workers?
                           cf-gateway?
                           ant-ling?)
-        use-max-tokens? (or (in-url? "chutes.ai")
+        use-max-tokens? (or (str/includes? url "chutes.ai")
                             deepseek?
                             moonshot?
                             cf-gateway?
@@ -516,7 +553,6 @@
                             nvidia?
                             ant-ling?
                             zai?)
-        grok? (or (= provider "xai") (in-url? "api.x.ai"))
         openrouter-dev-role? (and openrouter?
                                   (some #(str/starts-with? id-str %)
                                         ["anthropic/" "openai/"]))]
@@ -543,9 +579,6 @@
      :chat-template-kwargs {}
      :chat-template-args {}
      :supports-thinking-token-budget false
-     ;; openai-completions compatibility alone does not imply strict JSON-schema
-     ;; tool support (pi 890f92088): the generated catalog carries an explicit
-     ;; true for capable models, and that explicit compat wins over this default.
      :supports-strict-mode false
      :cache-control-format (when (and openrouter? (str/starts-with? id-str "anthropic/"))
                              :anthropic)
