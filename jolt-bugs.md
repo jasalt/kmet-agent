@@ -1,8 +1,8 @@
 # jolt-bugs — reported upstream issues
 
 Open tickets only: a ticket is dropped once its fix reaches a tagged release.
-Status checked on 2026-10-15 against Jolt `v0.8.22` (`1db4cc98`, the latest
-tag). It carries every fix the v0.8.21 floor had left on `main` — #1313
+Status checked on 2026-10-17 against Jolt `v0.8.22-49-ga108b749` (dev build on `main`
+ahead of the tagged `v0.8.22`). It carries every fix the v0.8.21 floor had left on `main` — #1313
 (PR #1314), #1316 (PR #1320), #1327 (PR #1330) and #1364 (PR #1366) — so
 those entries are dropped per the rule above, and the kmet workarounds gated
 on #1316/#1364 were already removed 2026-10-15. Also checked:
@@ -16,9 +16,13 @@ Re-checked the same day: both were closed on `main` by
 [PR #1382](https://github.com/jolt-lang/jolt/pull/1382) (merge `aaf2dfe1`,
 listed under CHANGELOG `[Unreleased]`), verified on the installed
 `v0.8.22-15-gaaf2dfe1` dev build, and the kmet workarounds were removed
-ahead of the tag. The entries stay live until a tag carries the fixes; until
-then a source build wants a Jolt from `main`. `#1031` is unchanged: still
-open, as is [babashka/sci#1093](https://github.com/babashka/sci/pull/1093).
+ahead of the tag. `#1395` was closed on `main` on 2026-10-17 by
+[PR #1396](https://github.com/jolt-lang/jolt/pull/1396) (merge `a108b749`),
+verified on the installed `v0.8.22-49-ga108b749` dev build (`compare`/`sort`
+on `Path` values now works). The entries stay live until a tag carries the
+fixes; until then a source build wants a Jolt from `main`. `#1031` is
+unchanged: still open, as is
+[babashka/sci#1093](https://github.com/babashka/sci/pull/1093).
 
 ## Live issues
 
@@ -80,6 +84,10 @@ Repro:
 (sort paths)                            ; also fails
 ```
 
-Workaround in kmet: avoid comparing `Path` objects directly, for example
-`(sort-by str (fs/list-dir "modules"))`. Re-check once a tagged Jolt release
-carries the fix.
+Closed 2026-10-17 by [PR #1396](https://github.com/jolt-lang/jolt/pull/1396)
+(merge `a108b749`, on `main` after the tagged `v0.8.22`), verified on the
+installed `v0.8.22-49-ga108b749` dev build: `compare`/`sort` on `Path`
+values now works. The kmet workaround — `(sort-by str ...)` on path
+collections — stays in place because the `v0.8.22` floor still lacks the fix;
+it is also harmless and keeps ordering deterministic. The entry stays live
+until a tag carries the fix.
