@@ -1892,6 +1892,51 @@
               "the run's configured threshold reached the mounted handle")
         (t/is (= :idle @(:status agent)) "the run settled through the guard")))))
 
+(t/deftest test-loop-snapshot-survives-a-mid-attempt-change
+  ;; cells.md §5.4: an attempt reads its units once. A change to the tree
+  ;; during the attempt (here a remount) is invisible to it, and the next
+  ;; attempt reads the new tree — the tool-unload race the rule closes.
+  (let [used (atom [])
+        guard-a (fn [state threshold tool-calls]
+                  (swap! used conj :a)
+                  {:suppressed [] :survivors tool-calls :state state})
+        guard-b (fn [state threshold tool-calls]
+                  (swap! used conj :b)
+                  {:suppressed tool-calls :survivors [] :state state})
+        table (atom {:kmet/loop-guard {:handle guard-a}})
+        rt (cells/runtime {:resolve [[:builtin (fn [nm] (get @table nm))]]})
+        node (cells/mount! rt runtime/default-entries)
+        run! (fn [on-first-call]
+               (let [calls (atom 0)]
+                 (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                               tools/execute-tool
+                               (fn [_ _ _] {:content "ok" :is-error false})
+                               llm/send-message
+                               (fn [opts]
+                                 (future
+                                   (when (= 1 (swap! calls inc))
+                                     (on-first-call)
+                                     (when-let [on-tc (:on-tool-call opts)]
+                                       (on-tc {:id "tc1" :name "bash"
+                                               :arguments "{\"command\":\"ls\"}"
+                                               :index 0})))
+                                   (when-let [on-done (:on-done opts)]
+                                     (on-done :tool-calls))
+                                   :done))]
+                   @(loop/run-agent-turn
+                     (loop/make-agent-state :node node :on-event (fn [_]))
+                     {:message "run" :on-done (fn [_]) :on-error (fn [_])}))))]
+    ;; The tree changes while the first attempt is in flight.
+    (run! (fn [] (reset! table {:kmet/loop-guard {:handle guard-b}})
+            (cells/mount! rt runtime/default-entries)))
+    (t/is (= [:a] @used) "the attempt kept the handle it started with")
+    (t/is (= guard-b (runtime/handle (runtime/snapshot node) :loop-guard))
+          "and the tree really did change under it")
+    ;; The next attempt reads the new tree: guard-b suppresses its only call,
+    ;; which trips the guard and settles the run (one handle call).
+    (run! (fn []))
+    (t/is (= [:a :b] @used) "the next attempt read the remounted handle")))
+
 (t/deftest test-loop-run-agent-turn-thinking-loop-guard-terminates
   ;; End-to-end: the model streams the same reasoning segment repeatedly;
   ;; the thinking-loop guard cuts the stream and settles the run with the

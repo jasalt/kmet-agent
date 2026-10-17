@@ -114,11 +114,14 @@
       nil)))
 
 (defn- handle-units
-  "Show the mounted units: kmet.cells' human rendering of the app root's
-   snapshot, one line per slot (cells.md §7)."
-  [{:keys [ui]} _]
-  (out ui :info "Units"
-       (cells/explain (app-runtime/snapshot (app-runtime/node)))))
+  "Show the mounted units: kmet.cells' human rendering of the run's
+   composition snapshot, one line per slot (cells.md §7). The session engine's
+   node when it has one — a session running in its own tree shows that tree —
+   and the app root otherwise."
+  [{:keys [ui] engine :runtime} _]
+  (let [node (or (some-> engine runtime/agent-state :node)
+                 (app-runtime/node))]
+    (out ui :info "Units" (cells/explain (app-runtime/snapshot node)))))
 
 (defn register-runtime-commands!
   "Register the engine-portable builtins (untagged: every front end

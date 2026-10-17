@@ -4,7 +4,9 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [kmet.agent.commands :as commands]
-            [kmet.agent.commands.builtins :as builtins]))
+            [kmet.agent.commands.builtins :as builtins]
+            [kmet.agent.runtime :as app-runtime]
+            [kmet.cells.core :as cells]))
 
 (t/use-fixtures :each
   (fn [f]
@@ -51,6 +53,18 @@
      {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
     (t/is (= "Units" (first @got)))
     (t/is (str/includes? (second @got) ":loop-guard"))))
+
+(t/deftest units-follows-the-session-engine-node
+  ;; A session that runs in its own tree shows that tree, not the app root
+  ;; (cells.md §5.6).
+  (builtins/register-runtime-commands!)
+  (let [mine (cells/mount! (app-runtime/runtime)
+                           [{:id :probe :name :kmet/loop-guard}])
+        got (atom nil)]
+    ((:handler (commands/find-command "units"))
+     {:runtime {:agent-state (atom {:node mine})}
+      :ui {:info (fn [label content] (reset! got [label content]))}} nil)
+    (t/is (str/includes? (second @got) ":probe"))))
 
 (t/deftest register-builtin-skips-a-taken-name
   (commands/register-command!
