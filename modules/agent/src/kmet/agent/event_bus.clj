@@ -6,7 +6,7 @@
    and the extension system (emit-event!).
 
    Mirrors pi's extension event types — see
-   src/kmet/pi-alignment.md, Appendix: Event
+   modules/agent/src/kmet/agent/development/pi-alignment.md, Appendix: Event
    Type Vocabulary — and pi's core/event-bus.js.")
 
 (def event-types

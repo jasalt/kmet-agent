@@ -11,7 +11,9 @@ Termux. The primary runtime is [Babashka](https://babashka.org/); native
 
 - Interactive terminal UI with differential rendering, overlays, and a
   multi-line editor.
-- Built-in `read`, `write`, `edit`, and `bash` tools.
+- Built-in `read`, `write`, `edit`, `bash`, and `run_code` tools — the last
+  runs sandboxed Clojure scripts that return only the output they emit.
+- Headless RPC mode over EDN stdin/stdout for editors and scripts.
 - Provider, authentication, model-catalog, OAuth, and custom-model support.
 - Local extensions, skills, prompt templates, themes, and packages.
 - EDNL sessions with branching, compaction, import/export, and sharing.
@@ -38,18 +40,19 @@ bb start --print "summarize the project"
 
 Self-contained release binaries skip the Babashka install: download the zip
 for your platform from
-[GitHub Releases](https://github.com/kmetia/kmet-agent/releases) — the `v0.1.0`
-release ships `kmet-0.1.0-<platform>.zip`, with `<platform>` one of
-`linux-amd64`, `linux-aarch64`, `macos-amd64`, `macos-aarch64`, and
+[GitHub Releases](https://github.com/kmetia/kmet-agent/releases) — releases
+ship `kmet-<version>-<platform>.zip` (currently `v0.1.2`), with `<platform>`
+one of `linux-amd64`, `linux-aarch64`, `macos-amd64`, `macos-aarch64`, and
 `windows-amd64`. Unzip it and run the executable inside the extracted folder:
 
 ```sh
-unzip kmet-0.1.0-linux-amd64.zip
-./kmet-0.1.0-linux-amd64/kmet --list-models
+unzip kmet-0.1.2-linux-amd64.zip
+./kmet-0.1.2-linux-amd64/kmet --list-models
 ```
 
 On Windows run `kmet.exe`; on Termux run the bundled `kmet.sh` launcher. Jolt
-releases are named `kmetj-0.1.0-<platform>.zip` and run as `kmetj`.
+releases follow the same scheme with a `kmetj-` prefix (`kmetj-<version>-<platform>.zip`)
+and run as `kmetj`.
 
 Use `jolt start` on the optional Jolt host. See
 [Getting started](docs/getting-started.md) for provider setup, sessions, and
@@ -79,7 +82,7 @@ to the code and people who own it. The longer etymology is in
 ## Project layout
 
 ```text
-modules/        — application modules and libraries (app, ai, libs, tui,
+modules/        — application modules and libraries (agent, ai, libs, tui,
                   loader, tk, reakt, hikap); each is a standalone classpath root
 extensions/     — opt-in shipped extensions
 jolt/           — Jolt provider scaffolding

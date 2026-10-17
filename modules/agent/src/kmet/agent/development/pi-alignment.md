@@ -1,32 +1,78 @@
 # kmet ↔ pi alignment: feature gap analysis
 
-Reference: `~/src/cvstree/pi/` — `packages/coding-agent/src/**`, `packages/tui/src/**`,
-`packages/ai/**`, `packages/agent/**`. Kmet side: `src/kmet/**`.
+Reference: `~/src/cvstree/pi/` at **v1.3.0** — `packages/coding-agent` (the app),
+`packages/ai`, `packages/tui`, `packages/agent` (pi-agent-core), plus the newer
+frontier packages `packages/chord`, `packages/durable`, `packages/env`,
+`packages/codemode`, `packages/mcp`, `packages/telemetry`, `packages/evals`.
+Kmet side: `modules/agent` (`kmet.agent.*`), `modules/ai` (`kmet.ai.*`),
+`modules/tui`, `modules/tk`, `modules/libs`, `modules/loader`, `modules/reakt`,
+`modules/hikap`.
 
 Goal: enumerate what pi exposes that kmet does not, so a "full alignment" pass has a
 concrete work list. "Aligned" means the behavior exists in kmet with equivalent
 semantics (EDN/Clojure adaptation); gaps are pi features with no kmet counterpart.
 
+Revision note: this pass refreshes the analysis against pi v1.3.0 (the previous
+snapshot was ~0.87). It records **no new scope decisions**: the frontier packages
+that appeared since the last audit are analysed in
+[pi since 0.87](#pi-since-087-the-new-package-frontier-analysis-only) with
+`decision: open`, and the historical decisions below still stand except where
+marked *reopened*.
+
 ## Summary
 
-kmet is a close port of pi's interactive TUI + agent core: the component/TUI
-framework, agent loop, tools, provider/auth subsystem (kmet.ai), sessions (EDNL),
-compaction, skills, prompt templates, themes, and the extension API (hooks,
-events, commands, tools, flags, renderers, agent control, tool hooks) are
-functionally aligned. The remaining gaps cluster in the CLI surface, rendering
-(mermaid/latex/search/images), the settings surface, and the extension
-`registerProvider` `streamSimple`/`refreshModels` (wire-layer custom
-provider streaming + dynamic model refresh). The 0.87.0 session-context wave
-is fully landed — see §7; per-model image input limits stay in §2.
+kmet is a close port of pi's *stable* interactive TUI + agent core: the
+component/TUI framework, agent loop, tools, provider/auth subsystem (kmet.ai),
+sessions (EDNL), compaction, skills, prompt templates, themes, and the
+extension API (hooks, events, commands, tools, flags, renderers, agent
+control, tool hooks) are functionally aligned. The 0.87.0 session-context wave
+is fully landed — see §7 — and since the last revision kmet also landed
+`--mode rpc` (`docs/rpc.md` + `kmet.agent.modes.rpc-client`), the builtin
+`run_code` sandbox, `kmet.libs.mcp` + the `mcp-adapter` extension, the loader
+module, and the Tk GUI.
 
-## Deliberately out of scope (locked decisions)
+The remaining stable-line gaps cluster in the CLI surface (§1), rendering
+(mermaid/latex/search/images and the terminal-override settings — §2), the
+settings surface (§4), and custom-provider streaming (pi's
+`registerNativeProvider` and virtual models — §5). Separately, pi 1.3.0 ships
+a frontier of packages kmet has no counterpart for — chord, durable, env,
+codemode, mcp, telemetry, evals — analysed without decisions below.
+
+## Historical decisions (recorded before the pi 1.3.0 audit)
+
+These were deliberate scope decisions. They still stand unless marked
+*reopened*; the frontier items below are undecided and do not change them.
 
 | Area | pi feature | kmet decision |
 |---|---|---|
-| Additional run modes | `--mode rpc` / `--mode json`, `pi server` / `pi client` / `pi rpc`, `packages/server`, `packages/client`, `packages/protocol` (CBOR), `docs/rpc.md`, `docs/sdk.md` | Not ported — kmet ships interactive + print modes only |
+| Additional run modes | `--mode json`, `--export`, `pi server` / `pi client` / `pi rpc`, `packages/server` / `packages/client` / `packages/protocol` (CBOR — removed in pi 1.3.0), `docs/sdk.md` | *Reopened, no decision recorded* — kmet now ships `--mode rpc` (EDN stdio, `docs/rpc.md`); interactive + print + RPC are the shipped modes. JSON mode, CLI `--export`, the SDK, and any remote/multi-client direction are undecided |
 | Project trust | `core/project-trust.ts`, `core/trust-manager.ts`, `/trust`, `trust-selector.ts`, `--approve`/`--no-approve`, `defaultProjectTrust`, `trust.json` | Not ported — project settings/extensions load unconditionally (`-a`/`-na` parse as no-ops on the package commands) |
 | Package sources: npm/git | `npm:`/`git:` installs (npm registry + git clone machinery in `core/package-manager.ts`), `pi update`/self-update, temporary `--extension` installs, per-package autoload deltas over npm/git identities | Not ported — kmet packages are local files/directories only (`kmet install ./dir`, `~`, absolute, relative; anything else errors with "Unsupported package source"). The remainder of the package manager IS ported (next section) |
 | Session interop / JSONL | pi JSONL session files, `/export` `.jsonl`, `--export` from JSONL | EDNL-only by design (see [Session storage and alignment](#session-storage-and-alignment)) — `/export` writes standalone HTML |
+
+## pi since 0.87: the new package frontier (analysis only)
+
+pi 1.3.0 ships packages that have no 0.87-era counterpart in this document.
+They are recorded here for a future decision; **nothing below is a kmet scope
+decision**.
+
+| Package | What it is (pi 1.3.0) | kmet counterpart / status | Decision |
+|---|---|---|---|
+| `packages/chord` | Typed host runtime for hot-reloadable plugins: objects with addresses and principals, TypeBox contracts, replicated JSON state (snapshot + deltas), hot reload, and RPC over JSON links (memory / IPC / WebSocket), plus child host processes, a transactional delta tracker, and bounded output streams | None. `kmet.libs.reakt` is an in-process reactive store and `kmet.libs.hikap` a component runtime; the extension runtime + event bus cover the single-process part | open |
+| `packages/durable` (experimental) | Commit-before-visible harness: conversations, entries, tasks, submissions, and documents are committed atomically before anything is observable; interrupted attempts and tool calls recover on reopen; per-conversation agents, code mode, subagents / child tasks, a task graph, and an `ExecutionEnv` boundary; storage adapters (memory, SQLite) | `kmet.agent.session.runtime` + `session.core`: one in-memory authoritative engine, EDNL entries appended as they are created, no open-attempt status or recovery, a single run per engine, no tasks/subagents | open |
+| `packages/env` | Remote execution: a Rust daemon over a framed stdin/stdout protocol plus `RemoteExecutionEnv` next to `NodeExecutionEnv`; SSH with host-key verification, sha-pinned daemon deployment; Linux/macOS/Termux/Windows | `kmet.agent.bash-executor` and the tools' direct `babashka.fs`/`babashka.process` use — local only | open |
+| `packages/codemode` | QuickJS sandbox where the only capability is tool calls; scripts get `tools`, `text`, `image`, `exit`, `store`, `load`, `models.classify()`, `models.generateImages()`. coding-agent 1.3 ships it as the built-in `codemode` extension with `tool_search`, `codemode.mode`, and `codemode.inlineBudget` | builtin `run_code`: SCI sandbox, full babashka/jolt surface, `emit`-only output, extension-contributed tool sources (design + measurements in `run_code.md`). Missing: persistent `store`/`load`, the `models` facade, separate output items, a `tool_search` equivalent | open |
+| `packages/mcp` | Standalone MCP client (stdio + Streamable HTTP). coding-agent 1.3 ships built-in MCP support: exposure control (`direct` / `model-only` / `codemode` / `deferred` / `hidden`), resource tools, OAuth, `/mcp`, `--no-mcp`, and the `registerMcpServer` / `getMcpServers` extension API | `kmet.libs.mcp` + the `mcp-adapter` extension: one lazy `mcp` proxy tool, EDN config, stdio + Streamable HTTP/SSE, OAuth, `/mcp`. The exposure model and the extension registration API have no kmet equivalent | open |
+| `packages/telemetry` | Vendor-neutral telemetry contracts: callback-based context/span, NOOP and in-memory reference adapters, conformance tests, typed schemas; no global state or exporter | `kmet.agent.debug` logging plus the measured notes in `perf.md`; no spans or contracts | open |
+| `packages/evals` | Behavioral evals (`vitest-evals`): documentation-lift and host evals, docker arms, lift reporting | `clojure.test` suites (fast / `^:slow`) and `scripts/repro_*`; no behavioral eval harness | open |
+| `packages/agent` | pi-agent-core: standalone agent runtime (see §6) | `kmet.agent.loop` covers the coding-agent equivalent | no port needed (unchanged) |
+
+Two earlier trees are gone as of 1.3.0: `packages/client`, `packages/server`,
+and `packages/protocol` (the CBOR routed-envelope stack) no longer exist, and
+the experimental client/server service slices under
+`coding-agent/src/experimental/` were removed with them. pi's RPC stays in
+coding-agent as `--mode rpc` (JSONL), and the remote-link story now lives in
+chord. Do not chase those trees when re-checking this document.
 
 ## Session storage and alignment
 
@@ -170,29 +216,37 @@ list/config` dispatch from `core.clj` to `kmet.agent.package-manager` (pi
 |---|---|
 | `pi auth check` / `pi auth print-api-key` / `pi auth print-bearer-token` | `cli/auth-check.ts`, `cli/auth-command.ts`, `cli/credential-print.ts` |
 | `pi update [source|self|--models|--all ...]` | `package-manager-cli.ts` |
+| `pi mcp list` / `add` / `remove` / `login` (server management) | `docs/mcp.md` |
 | `pi --export <session-file> [path]` | `main.ts` (`--export`) |
 
-**Flags** — kmet covers `-p/--print`, `-c/--continue`, `-r/--resume`, `--model`,
-`--provider`, `--models`, `--list-models`, `--system-prompt`, `--append-system-prompt`,
-`-t/--thinking`, `-d/--debug`, `-h/--help`, `@files`, positional messages
-(`modules/agent/src/kmet/core.clj` vs pi `cli/args.ts`). Missing:
+**Flags** — kmet covers `--mode text|edn|rpc`, `-p/--print`, `-c/--continue`,
+`-r/--resume`, `--session <id|path>`, `--session-dir`, `--model`, `--provider`,
+`--models`, `--list-models`, `--system-prompt`, `--append-system-prompt`,
+`-t/--thinking` (pi 1.3 moved `-t` to `--tools` — see below), `-d/--debug`,
+`-h/--help`, `-v/--version`, `--generate-models`, `@files`, and positional
+messages (`modules/agent/src/kmet/agent/core.clj` vs pi `cli/args.ts`).
+Missing, by pi's cli.md groups:
 
 | flag | purpose |
 |---|---|
 | `--api-key` | API key for a model specified via `--model`/`--models` |
-| `--exclude-tools`, `--tools`, `--no-tools`, `--no-builtin-tools` | tool selection for one run (kmet has the `:default-tools` setting and the in-TUI `/tools` selector only) |
-| `--extension` | load an extension file/dir for one run |
-| `--export` | export a session file to HTML/EDNL from the CLI |
-| `--fork` | start from a fork of a previous user message |
-| `--session`, `--session-dir`, `--session-id` | session selection (kmet has `--resume` browsing only) |
-| `--no-context-files`, `--no-extensions`, `--no-prompt-templates`, `--no-skills`, `--no-themes`, `--no-session` | disable subsystems for one run |
-| `--offline` (+ `PI_OFFLINE`) | skip all startup network operations |
-| `--prompt-template` | use a prompt template for one run |
-| `--skill` | invoke a skill for one run |
-| `--theme` | theme for one run |
-| `--tui-mode` | `regular` vs experimental `fullscreen` TUI — **postponed indefinitely** (the inline-scrollback model is deliberate; `tui.md` §15.1) |
-| `--verbose` | verbose logging |
-| `--version` | print version |
+| `--session-id` | open an exact project session id (or create it) |
+| `--fork <path|id>` | fork an existing session from the CLI (kmet has `/fork` in the TUI) |
+| `--no-session` | in-memory session that is not persisted |
+| `-n/--name` | session display name at startup (kmet has `/name`) |
+| `-t/--tools`, `-xt/--exclude-tools`, `-nbt/--no-builtin-tools`, `-nt/--no-tools` | tool selection for one run (kmet has the `:default-tools` setting and the in-TUI `/tools` selector only) |
+| `-e/--extension`, `-ne/--no-extensions` | load extensions / disable discovered ones for one run |
+| `--no-mcp` | disable MCP for one run |
+| `--skill`, `-ns/--no-skills` | load skills / disable discovered ones for one run |
+| `--prompt-template`, `-np/--no-prompt-templates` | load prompt templates / disable discovered ones for one run |
+| `--theme`, `--use-theme`, `--no-themes` | load / select / disable themes for one run |
+| `-nc/--no-context-files` | disable `AGENTS.md`/`CLAUDE.md` discovery |
+| `--mode json` | JSONL event stream (kmet print mode has `--mode text|edn`) |
+| `--export` | export a session file to HTML from the CLI |
+| `--tui-mode` | `regular` vs `fullscreen` TUI (pi 1.3 defaults to fullscreen) — **postponed indefinitely** (the inline-scrollback model is deliberate; `tui.md` §15.1) |
+| `--verbose` | verbose startup information (kmet has `-d/--debug` logging) |
+| `-a/--approve`, `-na/--no-approve` | project trust (historical decision); kmet parses these as no-ops on the package commands |
+| `--offline` (`PI_OFFLINE`) | skip automatic network activity at startup |
 
 ### 2. Interactive features & rendering
 
@@ -201,7 +255,8 @@ list/config` dispatch from `core.clj` to `kmet.agent.package-manager` (pi
 | **Mermaid diagram rendering** | `modes/interactive/components/mermaid.ts` + `markdown.mermaid` setting (`off`/`final`/`streaming`) | **Postponed indefinitely** (2026-09-10; rationale in `modules/tui/src/kmet/tui/tui.md` §15.1) |
 | **LaTeX rendering** (`$…$`, `$$…$$`) | `packages/tui/src/latex.ts`, wired in `tui/src/components/markdown.ts` | **Postponed indefinitely** (same) |
 | **Alt-screen search** (search overlay over the transcript) | `packages/tui/src/alt-screen-search.ts`, `tui-alt-screen.ts` | **Postponed indefinitely** (same — needs an alt-screen mode) |
-| **Images in chat** | `terminal.showImages`, `terminal.imageWidthCells`, `images.autoResize`, `images.blockImages` settings; `show-images-selector.ts` | **Partial** — the TUI half done (`tui.md` §10): `:terminal {:show-images :image-width-cells}` settings, terminal-support-gated `/settings` rows, and inline images (or the `imageFallback` text indicator when off/unsupported) in tool results and user/custom messages. `images.blockImages` done: `:images {:block-images}` setting + ungated `/settings` row, stripped per request in `app/loop.clj/call-llm` (pi: convertToLlmWithBlockImages — placeholder text, consecutive dedupe, stored context untouched). **Missing**: `images.autoResize` and the per-model `inputLimits.images.resize` catalog metadata (pi #9631: resize profiles in `models.json`, applied to attachments, `read`, and tool-result images). Both need a resizer backend decision — pi runs a Photon WASM resize pipeline and babashka has no ImageIO/AWT (see `app/tools/read.clj`); the generated catalogs carry no `:input-limits` keys yet
+| **Images in chat** | `terminal.showImages`, `terminal.imageWidthCells`, `images.autoResize`, `images.blockImages` settings; `show-images-selector.ts` | **Partial** — the TUI half done (`tui.md` §10): `:terminal {:show-images :image-width-cells}` settings, terminal-support-gated `/settings` rows, and inline images (or the `imageFallback` text indicator when off/unsupported) in tool results and user/custom messages. `images.blockImages` done: `:images {:block-images}` setting + ungated `/settings` row, stripped per request in `kmet.agent.loop/call-llm` (pi: convertToLlmWithBlockImages — placeholder text, consecutive dedupe, stored context untouched). **Missing**: `images.autoResize` and the per-model `inputLimits.images.resize` catalog metadata (pi #9631: resize profiles in `models.json`, applied to attachments, `read`, and tool-result images). Both need a resizer backend decision — pi runs a Photon WASM resize pipeline and babashka has no ImageIO/AWT (see `kmet.agent.tools.read`); the generated catalogs carry no `:input-limits` keys yet
+| **Terminal protocol overrides** | `terminal.hyperlinks`, `terminal.images`, `terminal.trueColor` settings | Missing — kmet's `kmet.libs.terminal` auto-detects hyperlinks, inline-image protocol, and true color; no per-setting override |
 | **Cache-miss notices** | `showCacheMissNotices` setting | Done — `:show-cache-miss-notices` setting, `session/detect-cache-miss` (pi detectMiss), notice at agent-end (≥ 20k tokens) |
 | **Skill invocation presentation** | `components/skill-invocation-message.ts` | **Done** — `kmet.agent.skills/parse-skill-block` + `kmet.agent.ui.tui.skill-message`: a `/skill:name` block renders as `[skill] name (ctrl+o to expand)` (collapsed) or the name + body as Markdown (expanded), with the trailing args as a normal user message below. Live and replay share the parse; the session still stores the expanded text |
 | **Custom entry rendering** | `registerEntryRenderer` + `components/custom-entry.ts` | Done — `extensions/register-entry-renderer!` + live entry sink; rendered at replay and on append (pi registerEntryRenderer + CustomEntryComponent) |
@@ -210,7 +265,12 @@ list/config` dispatch from `core.clj` to `kmet.agent.package-manager` (pi
 
 kmet covers: settings, model, thinking, scoped-models, export (HTML), import, share, copy, name,
 session, hotkeys, fork, clone, tree, login, logout, new, compact, resume, continue,
-reload, quit, help, tools, theme — full parity with pi's built-in command set.
+reload, quit, help, tools, theme — plus the mcp-adapter's `/mcp` and
+`/skill:name` autocomplete. pi 1.3.0's built-in set adds `/bug`, `/changelog`,
+`/llama`, and `/skill` (kmet has no `/skill` command; skills load through
+`/skill:name` and `enable-skill-commands`). `/trust` stays out of scope with
+project trust. pi's built-in MCP (`/mcp`) is feature-aligned through the
+extension.
 
 One flow difference: pi's manual compaction aborts the running operation first
 (`compact()` → `await this.abort()`), so `/compact` mid-response stops the
@@ -241,22 +301,28 @@ replace the built-in set, `+name`/`-name` modify it, scopes layer and
 `.kmet/SYSTEM.md` + `APPEND_SYSTEM.md` discovery, `KMET_PROVIDER`/
 `KMET_MODEL` env vars.
 
-Missing (pi `docs/settings.md`):
+Missing (pi v1.3.0 `docs/settings.md`):
 
 | setting | purpose |
 |---|---|
-| `enableInstallTelemetry`, `enableAnalytics`, `trackingId` | anonymous install/analytics pings (pi.dev infrastructure) |
-| `collapseChangelog` | show a condensed changelog after updates — kmet has no changelog surface |
-| `quietStartup` | disable verbose printing at startup |
-| `doubleEscapeAction` | double-escape behavior: `tree` / `fork` / `none` |
-| `tuiMode`, `fullscreenExitOutput`, `fullscreenScrollbar`, `fullscreenCopyOnSelect` | fullscreen TUI mode |
-| `httpProxy` | proxy URL applied as HTTP(S)_PROXY (kmet reads proxy env vars only — `libs/http.cljc`) |
-| `warnings.anthropicExtraUsage` | Anthropic subscription extra-usage warning |
-| `transport`, `websocketConnectTimeoutMs` | provider transport selection (`sse` / `websocket` / `websocket-cached` / `auto`) — kmet's `/settings` "HTTP transport" row is a different axis (`http-client`/`curl`) |
-| `cacheWarming` | prompt cache warming (`off` / `streaming` / `idle`, pi #9668 / `core/cache-warmer.ts`) — no kmet counterpart |
+| `modelThinkingLevels` | per-model startup thinking levels, keyed `provider/modelId` |
+| `thinkingBudgets` | per-level thinking token budgets |
+| `externalEditor` | command opened by the external-editor keybinding (kmet detects an editor; no setting) |
+| `codemode.mode`, `codemode.inlineBudget` | the built-in `codemode` tool's presentation and description budget — no kmet counterpart (kmet's `run_code` has fixed budgets) |
+| `terminal.hyperlinks`, `terminal.images`, `terminal.trueColor` | terminal capability overrides (kmet auto-detects only) |
 | `images.autoResize` | image resize before sending (needs a resizer backend — babashka has no ImageIO/AWT; `images.blockImages` is done — see §2) |
 | `markdown.codeBlockIndent`, `markdown.mermaid` | markdown rendering |
-| `thinkingBudgets` | per-level thinking token budgets |
+| `transport`, `websocketConnectTimeoutMs` | provider transport selection (`sse` / `websocket` / `websocket-cached` / `auto`) — kmet's `/settings` "HTTP transport" row is a different axis (`http-client`/`curl`) |
+| `cacheWarming` | prompt cache warming (`off` / `streaming` / `idle`, pi #9668 / `core/cache-warmer.ts`) — no kmet counterpart |
+| `httpProxy` | proxy URL applied as HTTP(S)_PROXY (kmet reads proxy env vars only — `libs/http.cljc`) |
+| `warnings.anthropicExtraUsage` | Anthropic subscription extra-usage warning |
+| `quietStartup` | disable verbose printing at startup |
+| `doubleEscapeAction` | double-escape behavior: `tree` / `fork` / `none` |
+| `collapseChangelog` | condensed changelog after updates — kmet has no changelog surface (pi also has `/changelog`) |
+| `enableInstallTelemetry`, `enableAnalytics` | anonymous install/analytics pings (pi.dev infrastructure) |
+| `tuiMode`, `fullscreenExitOutput`, `fullscreenScrollbar`, `fullscreenCopyOnSelect`, `fullscreenWheelScrollLines` | fullscreen TUI mode (pi 1.3 defaults to `fullscreen`) — **postponed indefinitely** with the mode |
+| `sessionShareDestination` | default destination for `/share` |
+| `npmCommand`, `defaultProjectTrust` | npm package lookup (n/a — local packages only) and project trust (historical decision) |
 
 Done (previously missing): `terminal.clearOnShrink` (`:terminal :clear-on-shrink` setting +
 row, live `tui-set-clear-on-shrink!`, env default preserved),
@@ -285,7 +351,7 @@ deadline never leaves a stalled response start (or the turn's spinner) hung.
 
 ### 5. Extension API
 
-Aligned (`app/extensions.cljc` + `app/event_bus.clj`): input + before-agent-start hooks,
+Aligned (`kmet.agent.extensions` + `kmet.agent.event-bus`): input + before-agent-start hooks,
 provider registration (incl. OAuth), `ctx.models.*` facades, the front-end
 binding (`extensions/bind-extensions!` — pi `bindExtensions` +
 `ExtensionMode`: `ctx.mode`/`ctx.has-ui` per front end, a headless
@@ -316,10 +382,15 @@ Full extension API surface (pi `core/extensions/types.ts`) — one remaining gap
 | `setModel`, `getThinkingLevel`, `setThinkingLevel` | **Done** — runtime capabilities (auth-gated setModel with the position-preserving thinking switch, validated levels) |
 | `exec` | **Done** — `extensions/exec` (babashka.process, string capture) |
 | `getActiveTools`/`getAllTools`/`setActiveTools` | **Done** — runtime-bound (`get-active-tools`/`set-active-tools`): `:enabled-tools` (runtime selection, pi: setActiveTools) and `:default-tools` (pi: defaultTools) filter the agent state, applied to the wire `:tools` and the run_code sandbox surface; `get-active-tools` returns the effective active names, `get-all-tools` the array |
-| `registerProvider` `streamSimple`/`refreshModels` | Partial — `registerProvider` config registration is done (`extensions/register-provider!` / `models/register-provider-config!`); `streamSimple`/`refreshModels` (wire-layer custom provider streaming + dynamic model refresh) still missing |
-| `context_with_system` event | **Missing** — pi runs it after every `context` handler over the full transcript (system messages included) and sends the result verbatim; dropping the leading system message is an extension error. kmet has one `:context` event over the outgoing message list (system prompt included — `call-llm` prepends it; tools travel separately, so a filtering handler cannot drop them), last non-nil `{:messages ...}` wins. Moved — see [`lifecycle.md`](../../lifecycle.md) L |
+| `registerProvider` (`streamSimple`/`refreshModels` at 0.87; `registerNativeProvider` + virtual models at 1.3) | Partial — provider *config* registration is done (`extensions/register-provider!` / `models/register-provider-config!`); wire-layer custom provider streaming (`registerNativeProvider`), dynamic model refresh, and `registerVirtualModel`/`unregisterVirtualModel` are missing |
+| `registerToolRenderer` | Missing — kmet tools carry their own renderer; there is no resolver chain like pi's `ToolRendererResolver` (load-order resolvers choosing how tool calls draw) |
+| `registerMcpServer` / `unregisterMcpServer` / `getMcpServers` | Missing — the `mcp-adapter` extension owns its `mcp.edn` config; extensions cannot contribute servers |
+| `onProviderStreamEvent` (`provider_stream_event`) | Missing — kmet's ai hook slots stop at `before_provider_request` / `before_provider_headers` / `after_provider_response` (`kmet.ai.hooks`) |
+| `getSettings`, `setSessionName`/`getSessionName` | Partial — no settings read facade and no session-name setter as extension API (kmet's `/name` command is the only path); label APIs (`set-label`) are done |
+| `context_with_system` event | **Done** — runs after `:context` over the full transcript and its result is sent verbatim; a result that drops the leading system message is reported and honored (see §7). kmet also has the single `:context` event over the conversation, where the last non-nil `{:messages ...}` wins |
 | Events: `resources_discover`, `session_before_switch`, `session_before_fork`, `session_before_compact`, `context`, `before_provider_request`, `before_provider_headers`, `after_provider_response` | **Done** — see Appendix (all ✅) |
 | Events: `session_info_changed`, `thinking_level_select` | **Done** — emitted by `/name` and `set-thinking-level!` |
+| Events: `mcp_servers_change`, `provider_stream_event`, `cache_warming_decision`, `ui_prompt_start`/`ui_prompt_end` | **Missing** — no extension MCP registration, no provider stream-event bridge, no cache warming, and no UI-prompt start/end pair (kmet's `request-ui!`/`respond!` answers dialogs without them) |
 | Events: `tool_call`/`tool_result` (transform) | **Done** — `extensions/register-tool-call-hook!`/`register-tool-result-hook!` chained as the agent's `:before-tool-call`/`:after-tool-call` callbacks (block / arg-rewrite / result-rewrite). Note: the transform chain is wired into the agent callbacks rather than fired as event-bus events; the event bus still carries the execution lifecycle via `:tool-execution-start`/`:tool-execution-update`/`:tool-execution-end` (see Appendix) |
 
 ### 6. Smaller gaps
@@ -363,8 +434,15 @@ Full extension API surface (pi `core/extensions/types.ts`) — one remaining gap
   indefinitely with their features (`tui.md` §15.1)
 - **Auth selector/dialog components** — pi `login-dialog.ts`, `oauth-selector.ts`,
   `session-selector-search.ts`; kmet's terminal `/login` covers the flows
+- **Built-in tool packaging** — pi 1.3 ships `grep`/`find`/`ls`/`powershell` as
+  built-ins and `codemode`/`tool_search` as built-in extensions; kmet keeps
+  read/write/edit/bash + `run_code` built in and ships the search tools as
+  opt-in extensions. MCP is built-in in pi 1.3 and an extension in kmet.
+  Feature-aligned, different packaging.
+- **Changelog / update surface** — pi has per-package CHANGELOGs, `/changelog`,
+  and `collapseChangelog`; kmet has none.
 - **`packages/agent` (`@earendil-works/pi-agent-core`)** — general-purpose agent library
-  layer; kmet's `app/loop.clj` covers the coding-agent equivalent, so no port needed
+  layer; kmet's `kmet.agent.loop` covers the coding-agent equivalent, so no port needed
 
 ### 7. Session context & agent-core (pi 0.87.0)
 
@@ -427,7 +505,7 @@ thrown auth error while also covering an oauth-bearer credential.
 
 ## Appendix: Event type vocabulary
 
-pi events (`core/extensions/types.ts`) → kmet status (`app/event_bus.clj` `event-types`).
+pi events (`core/extensions/types.ts`) → kmet status (`kmet.agent.event-bus` `event-types`).
 
 | pi event | kmet | notes |
 |---|---|---|
@@ -451,9 +529,13 @@ pi events (`core/extensions/types.ts`) → kmet status (`app/event_bus.clj` `eve
 | `thinking_level_select` | ✅ `:thinking-level-select` | emitted by `set-thinking-level!` on actual change |
 | `user_bash` | ✅ `:user-bash` | |
 | `input` | ✅ | input hooks (transform/handled) |
-| `before_provider_request` / `before_provider_headers` / `after_provider_response` | ✅ | defined in `event_bus.clj` and bridged to the ai-layer hooks (`ai/hooks.clj`) in `app/extensions.cljc`: emit-event! → hook apply → last non-nil result |
+| `before_provider_request` / `before_provider_headers` / `after_provider_response` | ✅ | defined in `kmet.agent.event-bus` and bridged to the ai-layer hooks (`kmet.ai.hooks`) in `kmet.agent.extensions`: emit-event! → hook apply → last non-nil result |
 | `resources_discover` | ✅ `:resources-discover` | fired after `:session-start`; `extensions/discover-resources!` applies contributed path sets into skills/prompts/themes registries (reloads dedup via `applied-resource-paths`) |
-| `project_trust` | — | out of scope (see locked decisions) |
+| `mcp_servers_change` | ❌ | pi 1.3 emits it when an extension registers/unregisters an MCP server; kmet has no extension MCP registration (see §5) |
+| `provider_stream_event` | ❌ | kmet's ai hook slots stop at `before_provider_request` / `before_provider_headers` / `after_provider_response` (`kmet.ai.hooks`); per-stream events are not bridged |
+| `cache_warming_decision` | ❌ | no cache warming in kmet |
+| `ui_prompt_start` / `ui_prompt_end` | ❌ | kmet's `request-ui!`/`respond!` dialogs emit no start/end pair |
+| `project_trust` | — | out of scope (historical decision) |
 
 kmet-only additions: `:status`, `:error`, `:queue-update`, `:context-replaced`,
 `:auto-retry-start`, `:auto-retry-end`, `:compaction-start`, `:compaction-end`.

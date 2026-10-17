@@ -3,8 +3,8 @@
 This file documents the application package and its contributor workflow.
 Implementation-specific references live beside their namespaces, not in the
 user-facing `docs/` directory: see [`tui/tui.md`](tui/tui.md),
-[`../../loader/modules/loader/src/kmet/loader/loader.md`](../../loader/modules/loader/src/kmet/loader/loader.md), [`extension.md`](extension.md),
-[`pi-alignment.md`](pi-alignment.md). Temporary
+[`../../../loader/src/kmet/loader/loader.md`](../../../loader/src/kmet/loader/loader.md), [`extension.md`](extension.md),
+[`agent/development/pi-alignment.md`](agent/development/pi-alignment.md). Temporary
 analysis notes (`run_code.md`, `perf.md`, and `jolt-bugs.md`) remain at the
 repository root by convention.
 

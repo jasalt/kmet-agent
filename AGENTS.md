@@ -11,7 +11,9 @@ change when behavior changes.
 |------|-------------------------|
 | Application layout and contributor workflow | [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
+| Tk GUI backend (`kmet.tk.*`, Jolt-only) | [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md) |
 | Extension contract and authoring | [`modules/agent/src/kmet/extension.md`](modules/agent/src/kmet/extension.md) |
+| pi alignment and feature-gap analysis | [`modules/agent/src/kmet/agent/development/pi-alignment.md`](modules/agent/src/kmet/agent/development/pi-alignment.md) |
 | Loader design and backends | [`modules/loader/src/kmet/loader/loader.md`](modules/loader/src/kmet/loader/loader.md) |
 | Jolt provider scaffolding and host integration | [`jolt/src/jolt/kmet/README.md`](jolt/src/jolt/kmet/README.md) |
 | User guides and examples | [`docs/README.md`](docs/README.md), [`docs/examples/README.md`](docs/examples/README.md) |
@@ -65,9 +67,9 @@ session-runtime split’s GUI-independent steps landed.)
   aliases it introduces must be in separate top-level forms.
 - Use a fresh process — `bb -e`, a scratch script, or a test — when a cold
   start matters: namespace load order, extension/config discovery,
-  reproducible bug reports (`scripts/repro_*.bb` is the place for a repro).
+  reproducible bug reports (`scripts/repros/` is the place for a repro).
 - The TUI cannot be driven from a REPL; use print mode or the tmux/pty capture
-  scripts in `scripts/` for real terminal behavior.
+  scripts in `scripts/capture/` for real terminal behavior.
 - A REPL session does not replace the changed-file gates (`bb test-changed`,
   `bb lint-changed`, `bb format-check-changed`).
 
@@ -139,7 +141,9 @@ session-runtime split’s GUI-independent steps landed.)
 
 ## Testing
 
-- Tests use `clojure.test` and mirror `src/kmet/` under `test/kmet/`.
+- Tests use `clojure.test` and live beside their module
+  (`modules/<module>/test/kmet/...`); cross-cutting and task-runner tests
+  live under the root `test/kmet/` (task tests under `test/kmet/tasks/`).
 - Mark tests that use real sleeps, network calls, terminal timeouts, or
   subprocesses with `^:slow`; the runner separates them between `bb test` and
   `bb test-ext`. Extension tests are separate projects and run from their own
@@ -160,6 +164,8 @@ session-runtime split’s GUI-independent steps landed.)
   the topic map; temporary project notes stay at the repository root.
 - TUI rules (components, Hiccup, `track!`, lifecycle/input, theming, and
   full-redraw behavior) live in [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md).
+- Tk GUI backend rules (`kmet.tk.*`, the Tcl adapter, widget sets) live in
+  [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md).
 - Jolt claims, guarded requires, loader capability floors, and native
   packaging live in [`jolt/src/jolt/kmet/README.md`](jolt/src/jolt/kmet/README.md)
   and [`docs/building.md`](docs/building.md).
@@ -183,4 +189,6 @@ session-runtime split’s GUI-independent steps landed.)
   this file, the coding-agent defaults, then general best practices. Explain a
   conflict and ask for confirmation rather than silently overriding it.
 - Before implementing a new feature, consult the relevant package document
-  and the reference implementation in `~/src/cvstree/pi/` when useful.
+  and the reference implementation in `~/src/cvstree/pi/` when useful; the
+  maintained gap list is
+  [`modules/agent/src/kmet/agent/development/pi-alignment.md`](modules/agent/src/kmet/agent/development/pi-alignment.md).
