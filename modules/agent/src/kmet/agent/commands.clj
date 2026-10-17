@@ -35,12 +35,21 @@
   [name]
   [:kmet/command name])
 
-(defn- registered
-  "{owner command} for the command named NAME. One owner registers commands
-   today, so `find-command` reads the only entry; P5 adds extension owners
-   and with them a precedence rule."
-  [name]
-  (scope/for-key (app-runtime/node) (command-key name)))
+(defn- command-key?
+  "True for a key the store holds a command under — other registries'
+   keys (a bare keyword like :tools/hooks) share the store, so shape is
+   checked before the head."
+  [k]
+  (and (vector? k) (= :kmet/command (first k))))
+
+(defn- command-registrations
+  "Every command on the tree, in display order: owners in first-registration
+   order, each owner's commands in its own registration order."
+  []
+  (let [node (app-runtime/node)]
+    (into []
+          (comp (filter (fn [[k _]] (command-key? k))) (map second))
+          (mapcat #(scope/owner-registrations node %) (scope/owners node)))))
 
 (defn register-command!
   "Register (or replace by :name) a slash command. Returns nil."
@@ -64,7 +73,7 @@
   ;; by key, not by owner: a unit owns several registries (§5.1)
   (let [node (app-runtime/node)]
     (doseq [[k owners] (scope/registrations node)
-            :when (= :kmet/command (first k))
+            :when (command-key? k)
             [owner v] owners]
       (scope/deregister! node owner k v)))
   nil)
@@ -94,17 +103,26 @@
   (or (nil? (:frontend cmd)) (= frontend (:frontend cmd))))
 
 (defn- all-registered-commands
-  "The commands currently registered, in registration order; register-command!
-   replaces by :name, so each name appears once."
+  "The effective registry, in display order: every name once, from the owner
+   that took it. Owners are searched in first-registration order, so a name an
+   extension registered before the builtins stays the extension's (which is
+   what `register-builtin!` skips on); a cross-owner collision between
+   extensions is settled when P5 gives them owners of their own. Owners share
+   the store with other registries, so the shape filter is what keeps this to
+   commands."
   []
-  (mapv second (scope/owner-registrations (app-runtime/node) commands-owner)))
+  (let [registrations (command-registrations)]
+    (into []
+          (comp (distinct)
+                (map (fn [name] (first (filter #(= name (:name %)) registrations)))))
+          (map :name registrations))))
 
 (defn get-commands
   "All registered slash commands, or those available to FRONTEND: a command
    with no :frontend tag is available to every front end, one with a tag
    only to that front end (dispatch and autocomplete filter by the
    installed capabilities)."
-  ([] (into [] (all-registered-commands)))
+  ([] (all-registered-commands))
   ([frontend]
    (filterv #(available-to? frontend %) (all-registered-commands))))
 
@@ -113,7 +131,7 @@
    available to that front end is returned (a nil :frontend tag means every
    front end)."
   ([name]
-   (some-> (first (registered name)) val))
+   (first (filter #(= (:name %) name) (all-registered-commands))))
   ([name frontend]
    (let [cmd (find-command name)]
      (when (available-to? frontend cmd) cmd))))

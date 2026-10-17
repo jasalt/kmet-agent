@@ -302,7 +302,9 @@ which is enough for `composition` and `explain`), and
 `(scope/deregister! node owner k v)` — the operation `register!` returns as a
 fn, public for the call that removes one entry while its owner stays live (an
 extension dropping one command), where `dispose!` removes everything the owner
-registered. Its value guard is what makes a stale removal a no-op.
+registered. Its value guard is what makes a stale removal a no-op — two
+registrations of an *equal* value are indistinguishable, so a fn from the
+earlier one does remove it.
 
 **Owners are slot paths.** A unit's registrations are owned by the unit's slot
 path — the composition and slot ids that reach it, `[:app :agent-loop :budget]`,

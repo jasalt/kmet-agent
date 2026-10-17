@@ -35,6 +35,46 @@
   (commands/unregister-command! "gone")
   (t/is (nil? (commands/find-command "gone"))))
 
+(t/deftest other-registries-share-the-store-without-interference
+  ;; A unit owns several registries (cells.md §5.1): a non-command key in the
+  ;; same store must not break listing or clearing, and its bare keyword key
+  ;; has no head to match on.
+  (let [node (app-runtime/node)
+        hook (fn [] nil)
+        dereg (scope/register! node [:app :test] :tools/hooks hook)]
+    (try
+      (commands/register-command!
+       {:name "only-command" :description "x" :handler (fn [_ _] nil)})
+      (t/is (= ["only-command"] (mapv :name (commands/get-commands))))
+      (commands/clear-commands!)
+      (t/is (empty? (commands/get-commands)))
+      (t/is (identical? hook (get (scope/for-key node :tools/hooks) [:app :test]))
+            "the other registry kept its value")
+      (finally (dereg)))))
+
+(t/deftest an-earlier-owners-command-owns-the-name
+  ;; Owners are searched in first-registration order, so an extension loaded
+  ;; before the builtins keeps a name it took — the rule register-builtin!
+  ;; skips on. unregister-command! and clear-commands! reach every owner.
+  (let [node (app-runtime/node)
+        extension-owner [:app :extensions "demo"]
+        demo {:name "taken" :description "extension" :handler (fn [_ _] nil)}]
+    ;; start the owner order from here: first-registration order is what the
+    ;; rule reads, and an earlier test may have touched the app's owner
+    (scope/dispose-owner! node commands/commands-owner)
+    (scope/register! node extension-owner [:kmet/command "taken"] demo)
+    (try
+      (commands/register-command!
+       {:name "taken" :description "builtin" :handler (fn [_ _] nil)})
+      (t/is (= "extension" (:description (commands/find-command "taken"))))
+      (t/is (= ["taken"] (mapv :name (commands/get-commands)))
+            "one entry per name, not one per owner")
+      (commands/unregister-command! "taken")
+      (t/is (nil? (commands/find-command "taken")) "every owner's entry went")
+      (finally
+        (scope/dispose-owner! node extension-owner)
+        (commands/clear-commands!)))))
+
 (t/deftest the-registry-lives-in-the-app-roots-store
   ;; The registry is the store, not an engine field: a registration is
   ;; readable through the store under the app's owner, and clear-commands!
@@ -45,7 +85,7 @@
                     (:handler (get (scope/for-key (app-runtime/node)
                                                   [:kmet/command "stored"])
                                    commands/commands-owner))))
-  (t/is (= 1 (count (commands/get-commands))) "in registration order")
+  (t/is (= 1 (count (commands/get-commands))))
   (commands/clear-commands!)
   (t/is (empty? (commands/get-commands)))
   (t/is (empty? (scope/for-key (app-runtime/node) [:kmet/command "stored"]))))

@@ -97,7 +97,8 @@ modules/agent/src/kmet/
 │   │                     submission chain, compaction queue,
 │   │                     subscribers, UI requests, disposal)
 │   ├── commands.clj / keybindings.clj / packages.clj / extensions.cljc —
-│   │                     slash command registry (ctx-shaped handlers:
+│   │                     slash command registry (app-root store,
+│   │                     [:app :commands] owner; ctx-shaped handlers:
 │   │                     {:runtime :ui :frontend}, front-end tags; the
 │   │                     engine-portable builtins live in
 │   │                     kmet.agent.commands.builtins), keymap, package +
