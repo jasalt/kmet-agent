@@ -272,18 +272,6 @@
     (t/is (nil? (cfg/get-api-key :nonexistent)))
     (t/is (nil? (cfg/get-api-key :openai)))))
 
-;; ─── get-theme ─────────────────────────────────────────────────────────────
-
-(t/deftest test-get-theme
-  (let [t (cfg/get-theme cfg/default-config)]
-    (t/is (some? t))
-    (t/is (= "dark" (:name t)))))
-
-(t/deftest test-get-theme-light-config
-  (let [c (assoc cfg/default-config :theme "light")
-        t (cfg/get-theme c)]
-    (t/is (= "light" (:name t)))))
-
 ;; ─── System prompt sources (pi: SYSTEM.md / APPEND_SYSTEM.md) ─────────────
 
 (t/deftest test-get-custom-prompt

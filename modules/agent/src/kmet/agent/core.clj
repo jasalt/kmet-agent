@@ -4,7 +4,8 @@
    kmet.agent.modes.interactive; print mode in kmet.agent.modes.print; RPC mode in
    kmet.agent.modes.rpc.
    pi: dist/cli.js."
-  (:require [kmet.agent.modes.interactive :as interactive]
+  (:require [kmet.agent.modes.config-command :as config-command]
+            [kmet.agent.modes.interactive :as interactive]
             [kmet.agent.modes.print :as print-mode]
             [kmet.agent.modes.rpc :as rpc-mode]
             [kmet.agent.config :as cfg]
@@ -322,7 +323,8 @@
     ;; checked before generic arg parsing, since
     ;; install/remove/update/list/config are not flags).
     (when (package-manager/package-command? args)
-      (System/exit (package-manager/run-package-command args)))
+      (System/exit (package-manager/run-package-command
+                    args {:run-config! config-command/run-config!})))
 
     (when (:help opts)
       (print-usage)

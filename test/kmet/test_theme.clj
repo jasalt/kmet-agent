@@ -3,10 +3,18 @@
             [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
+            [kmet.agent.config :as cfg]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.theme :as theme]))
 
 ;; ─── Theme record ──────────────────────────────────────────────────────────
+
+(t/deftest test-config-theme-name-resolves-through-the-store
+  (t/is (= "dark" (:name (theme/get-theme (cfg/get-theme-name cfg/default-config)))))
+  (t/is (= "light"
+           (:name (theme/get-theme (cfg/get-theme-name
+                                    (assoc cfg/default-config :theme "light")))))
+        "the config :theme name selects the store's theme"))
 
 (t/deftest test-theme-record
   (let [t theme/dark-theme]

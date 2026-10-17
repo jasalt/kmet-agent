@@ -203,8 +203,7 @@ front end:
 - The RPC front end ([`docs/rpc.md`](../../docs/rpc.md)) is the headless
   consumer and `kmet.agent.modes.rpc-client` is the scripted client;
   `test/kmet/modes/test_headless_guard.clj` asserts print and RPC reach no
-  interactive, TUI, or Tk namespace (the documented `kmet.tui.theme`
-  extension-ABI allowance aside).
+  interactive, TUI, or Tk namespace at all.
 
 Tier 1 malli boundary schemas for session entries, config, and auth landed.
 The GUI live milestone remains the final GUI-dependent work.

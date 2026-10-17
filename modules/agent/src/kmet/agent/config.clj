@@ -6,7 +6,6 @@
             [clojure.edn :as edn]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.tui.theme :as theme]
             [kmet.ai.auth :as auth]
             [kmet.agent.config-schema :as config-schema]
             [kmet.agent.debug :as debug]
@@ -758,9 +757,6 @@
 
 (defn get-theme-name [config]
   (:theme config "dark"))
-
-(defn get-theme [config]
-  (theme/get-theme (get-theme-name config)))
 
 (defn auto-resource-dirs
   "The fixed auto-discovery roots for a resource type (pi: RESOURCE_TYPES +

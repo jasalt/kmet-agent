@@ -8,6 +8,7 @@
             [babashka.fs :as fs]
             [kmet.agent.git-packages :as gitp]
             [kmet.agent.package-manager :as pm]
+            [kmet.agent.modes.config-command :as config-command]
             [kmet.agent.config :as cfg]
             [kmet.agent.packages :as pkgs]
             [kmet.agent.ui.tui.resource-config :as resource-config]
@@ -455,11 +456,25 @@
       (with-redefs-fn (assoc redefs #'tui/tui-start
                              (fn [_] (throw (ex-info "boom" {}))))
         (fn []
-          (t/is (thrown? Exception ((deref #'pm/run-config) nil)))
+          (t/is (thrown? Exception ((deref #'config-command/run-config!) nil)))
           (t/is (= 1 @disposed) "disposed on the throw path")))
       (reset! disposed 0)
       (with-redefs-fn (assoc redefs #'tui/tui-start (fn [_] nil))
         (fn []
-          (t/is (= 0 ((deref #'pm/run-config) nil)))
+          (t/is (= 0 ((deref #'config-command/run-config!) nil)))
           (t/is (= 1 @disposed) "disposed on the normal path"))))))
+
+(t/deftest run-config-is-injected-by-the-caller
+  (t/testing "the config subcommand's terminal UI is injected; the package
+            manager itself stays headless (kmet.agent.modes.config-command)"
+    (let [seen (atom nil)]
+      (t/is (= 0 (pm/run-package-command ["config" "-l"]
+                                         {:run-config! (fn [opts]
+                                                         (reset! seen opts)
+                                                         0)})))
+      (t/is (true? (:local @seen)) "the parsed options reach the injected UI"))
+    (let [{:keys [exit err]} (run "config")]
+      (t/is (= 1 exit))
+      (t/is (str/includes? err "requires a terminal UI")
+            "without the injection the config command reports the missing UI"))))
 

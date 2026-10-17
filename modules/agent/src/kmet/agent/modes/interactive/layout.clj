@@ -48,6 +48,12 @@
             [kmet.agent.modes.interactive.turn :as turn]
             [kmet.agent.modes.interactive.ui-registry :as ui-registry]))
 
+(defn- config-theme
+  "The theme record for CONFIG's :theme name — config owns the name, the TUI
+   owns the theme store, so the front end resolves it here."
+  [config]
+  (th/get-theme (cfg/get-theme-name config)))
+
 (defn maybe-show-cache-miss-notice!
   "pi: maybeShowCacheMissNotice — when :show-cache-miss-notices is on and
    the completed turn (RUN-MESSAGES) paid for a significant prompt-cache
@@ -517,7 +523,7 @@
             (tui-kb/set-global-keybindings! kmgr)
             (app-kb/set-key-hint-theme-fns!
              #(th/dim %)
-             #(th/fg (cfg/get-theme config) :muted %)))
+             #(th/fg (config-theme config) :muted %)))
 
         ;; Components (define before agent state so on-event can reference them)
         sp1 (spacer/make-spacer 1)
@@ -548,7 +554,7 @@
                state/fmt-header-compact state/fmt-header-full
                :expanded? (= :expanded mode) :padding-x 1 :padding-y 0))
         ;; B.2: loaded resources between header and chat (pi: showLoadedResources)
-        lr (loaded-resources/make-loaded-resources :theme (cfg/get-theme config)
+        lr (loaded-resources/make-loaded-resources :theme (config-theme config)
                                                    :expanded? (= :expanded (cfg/get-tool-display-mode config)))
         ;; B.3: queued steering/follow-up display (pi: updatePendingMessagesDisplay)
         pm (pending-messages/make-pending-messages
@@ -560,7 +566,7 @@
                             :autocomplete-max-visible (cfg/get-autocomplete-max-visible config)
                             :terminal-rows (fn [] (term/rows @(:terminal t)))
                             :border-fn (th/get-thinking-border-color
-                                        (cfg/get-theme config)
+                                        (config-theme config)
                                         (or (runtime/thinking-level engine) :off)))
         ;; B.6: footer data provider + footer (pi: FooterComponent; the
         ;; model line wraps to its own line when the stats line is too narrow)
@@ -575,7 +581,7 @@
              :model (runtime/model engine) :provider (runtime/provider engine) :thinking (runtime/thinking-level engine)
              ;; pi: the thinking suffix renders only for reasoning models
              :reasoning (boolean (:reasoning (models/get-model provider model))))
-        ftr (footer/make-footer :theme (cfg/get-theme config)
+        ftr (footer/make-footer :theme (config-theme config)
                                 :provider fdp
                             ;; pi: the "(auto)" badge reflects the autoCompact
                             ;; setting; overflow-only recovery doesn't count
@@ -644,13 +650,13 @@
                                                                             (skills/as-command-maps (skills/get-skills)))))
                                                ;; a fn: path completion follows a session switch's cwd
                                                :base-path #(fdp/fdp-get-cwd fdp)))
-    (editor/editor-set-autocomplete-theme! ed (th/get-select-list-theme (cfg/get-theme config)))
+    (editor/editor-set-autocomplete-theme! ed (th/get-select-list-theme (config-theme config)))
 
     ;; Status indicator: the default editor embeds the active status in its
     ;; own top border (pi: embedWorkingStatus); the standalone layer above
     ;; the editor only appears for a custom editor without a top-border fn.
     (let [si (status-indicator/make-status-indicator
-              :theme (cfg/get-theme config)
+              :theme (config-theme config)
               ;; Embedded color (pi: showWorkingStatusIndicator's colorFn):
               ;; while the ACTIVE editor carries the status, the spinner and
               ;; message take the editor border color — the thinking level —

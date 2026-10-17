@@ -22,9 +22,10 @@
     (->> (walk "modules/agent/src/kmet/agent")
          (remove #(str/includes? (slash %) "/ui/"))
          (remove #(str/includes? (slash %) "/modes/"))
-         (remove #(contains? #{"core.clj" "config.clj" "debug.clj" "extension.clj"
-                               "package_manager.clj" "version.clj"}
-                             (fs/file-name %)))
+         ;; core.clj is the composition root: it wires the modes and the TUI
+         ;; engines, so it legitimately requires them. Everything else in the
+         ;; app tree is scanned.
+         (remove #(= "core.clj" (fs/file-name %)))
          (filter #(re-find #"\.clj[ca]?$" (str %)))
          (map slash))))
 

@@ -11,13 +11,7 @@
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.agent.git-packages :as git]
-            [kmet.agent.packages :as pkgs]
-            [kmet.agent.ui.tui.resource-config :as resource-config]
-            [kmet.agent.config :as cfg]
-            [kmet.tui.core :as tui]
-            [kmet.tui.protocols :as protocols]
-            [kmet.tui.terminal :as term]
-            [kmet.tui.theme :as theme]))
+            [kmet.agent.packages :as pkgs]))
 
 ;; ─── Parsing (pi: parsePackageCommand — the install/remove/list subset) ───
 
@@ -435,82 +429,45 @@
           (doseq [pkg project] (format-pkg pkg))))))
   0)
 
-(defn- run-config
-  "pi handleConfigCommand — the resource configuration TUI (pi
-   cli/config-selector.ts: a standalone TuiMainScreen hosting the config
-   selector). The starting write scope is project-local whenever a `.kmet/`
-   project exists: kmet has no project-trust gate and project settings and
-   auto dirs load unconditionally, so project-defined resources are shown
-   enabled by default (pi starts global because its project mode needs
-   trust). Without a `.kmet/` dir it starts global; `-l` forces
-   project-local. The screen re-reads and writes the settings files
-   directly. Escape/ctrl+c close with exit code 0."
-  [{:keys [local]}]
-  (let [config (cfg/init!)
-        project-mode? (or local (fs/exists? (str (fs/path (fs/cwd) ".kmet"))))
-        ;; custom themes for the config's :theme name (pi: initTheme after
-        ;; the resource loader)
-        _ (theme/load-theme-paths! (pkgs/resolve-theme-paths))
-        terminal (term/create-terminal)
-        tui (tui/create-tui terminal)
-        ;; theme before the UI starts (pi: initTheme(settings.getTheme()))
-        _ (theme/init-theme! (cfg/get-theme-name config))
-        screen (resource-config/make-resource-config-screen
-                :write-scope (if project-mode? :project :global)
-                :project-mode? project-mode?
-                :rows (try (max 10 (term/rows terminal)) (catch Exception _ 24))
-                ;; The TUI publishes the live terminal size: Termux resizes
-                ;; for the soft keyboard, and the screen re-lays out from
-                ;; the size ref and forces a clean repaint on every height
-                ;; change (a diff against the old-height frame leaves stale
-                ;; rows and cursors on screen).
-                :size-ref (tui/tui-terminal-size-ref tui)
-                :request-render! (fn [] (tui/tui-request-render tui true))
-                :on-close (fn [] (tui/tui-stop tui)))]
-    (tui/tui-add-child tui screen)
-    (tui/tui-set-focus tui screen)
-    ;; the screen owns the terminal-size watch cancel; its dispose must run
-    ;; even when tui-start throws, or the cancel is lost with the screen
-    (try
-      (tui/tui-start tui)
-      (finally
-        (tui/tui-stop tui)
-        (protocols/dispose screen)))
-    0))
-
 (defn run-package-command
-  "Run a package subcommand (args includes the command word). Returns the
-   process exit code (pi: the CLI prints and sets process.exitCode; a
-   command error prints `Error: …` and returns 1 like pi's catch-all)."
-  [args]
-  (let [[raw-command & rest] args
-        command (if (= raw-command "uninstall") "remove" raw-command)]
-    (try
-      (cond
-        (nil? command) 0
-        (= command "config")
-        (let [opts (parse-command-args "config" rest)]
-          (cond
-            (:help opts) (do (print-config-help) 0)
-            (:invalid-option opts) (err-unknown-option "config" (:invalid-option opts))
-            (:invalid-argument opts) (err-usage "config"
-                                                (str "Unexpected argument " (:invalid-argument opts) "."))
-            :else (run-config opts)))
+  "Run a package subcommand (args includes the command word). OPTS carries
+   :run-config!, the `config` subcommand's terminal UI injected by the CLI
+   composition root (kmet.agent.modes.config-command/run-config!) — the
+   package manager itself stays headless. Returns the process exit code
+   (pi: the CLI prints and sets process.exitCode; a command error prints
+   `Error: …` and returns 1 like pi's catch-all)."
+  ([args] (run-package-command args nil))
+  ([args {:keys [run-config!]}]
+   (let [[raw-command & rest] args
+         command (if (= raw-command "uninstall") "remove" raw-command)]
+     (try
+       (cond
+         (nil? command) 0
+         (= command "config")
+         (let [opts (parse-command-args "config" rest)]
+           (cond
+             (:help opts) (do (print-config-help) 0)
+             (:invalid-option opts) (err-unknown-option "config" (:invalid-option opts))
+             (:invalid-argument opts) (err-usage "config"
+                                                 (str "Unexpected argument " (:invalid-argument opts) "."))
+             :else (if run-config!
+                     (run-config! opts)
+                     (err "config requires a terminal UI"))))
 
-        :else
-        (let [opts (parse-command-args command rest)]
-          (cond
-            (:help opts) (do (print-command-help command) 0)
-            (:unsupported opts) (err (unsupported-message (:unsupported opts)))
-            (:invalid-option opts) (err-unknown-option command (:invalid-option opts))
-            (:invalid-argument opts) (err-usage command
-                                                (str "Unexpected argument " (:invalid-argument opts) "."))
-            (and (#{"install" "remove"} command) (nil? (:source opts)))
-            (err-usage command (str "Missing " command " source."))
-            (= command "install") (run-install opts)
-            (= command "remove") (run-remove opts)
-            (= command "update") (run-update opts)
-            (= command "list") (print-list)
-            :else 0)))
-      (catch Exception e
-        (err (ex-message e))))))
+         :else
+         (let [opts (parse-command-args command rest)]
+           (cond
+             (:help opts) (do (print-command-help command) 0)
+             (:unsupported opts) (err (unsupported-message (:unsupported opts)))
+             (:invalid-option opts) (err-unknown-option command (:invalid-option opts))
+             (:invalid-argument opts) (err-usage command
+                                                 (str "Unexpected argument " (:invalid-argument opts) "."))
+             (and (#{"install" "remove"} command) (nil? (:source opts)))
+             (err-usage command (str "Missing " command " source."))
+             (= command "install") (run-install opts)
+             (= command "remove") (run-remove opts)
+             (= command "update") (run-update opts)
+             (= command "list") (print-list)
+             :else 0)))
+       (catch Exception e
+         (err (ex-message e)))))))
