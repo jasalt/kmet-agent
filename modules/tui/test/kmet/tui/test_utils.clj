@@ -86,3 +86,41 @@
           (#'u/visible-width-plain "─── ⏺ ⎿ café … ───")
           (#'u/visible-width-plain "plain ascii")))
       (t/is (zero? @calls) "the arithmetic path handled both"))))
+
+(def ^:private apply-sgr-code #'u/apply-sgr-code)
+(def ^:private reset-sgr-state #'u/reset-sgr-state)
+
+(t/deftest apply-sgr-code-characterization
+  (t/testing "non-SGR input leaves state unchanged"
+    (t/is (= (reset-sgr-state) (apply-sgr-code (reset-sgr-state) "plain text"))))
+  (t/testing "reset code clears attributes"
+    (let [state (assoc (reset-sgr-state) :bold true :fg "31")]
+      (t/is (= (reset-sgr-state) (apply-sgr-code state "\u001b[0m")))))
+  (t/testing "basic attribute on/off codes"
+    (t/is (= (assoc (reset-sgr-state) :bold true)
+             (apply-sgr-code (reset-sgr-state) "\u001b[1m")))
+    (t/is (= (assoc (reset-sgr-state) :italic true)
+             (apply-sgr-code (reset-sgr-state) "\u001b[3m")))
+    (t/is (= (assoc (reset-sgr-state) :bold false)
+             (apply-sgr-code (assoc (reset-sgr-state) :bold true) "\u001b[21m")))
+    (t/is (= (assoc (reset-sgr-state) :bold false :dim false)
+             (apply-sgr-code (assoc (reset-sgr-state) :bold true :dim true) "\u001b[22m"))))
+  (t/testing "basic foreground/background colors"
+    (t/is (= (assoc (reset-sgr-state) :fg "31")
+             (apply-sgr-code (reset-sgr-state) "\u001b[31m")))
+    (t/is (= (assoc (reset-sgr-state) :bg "41")
+             (apply-sgr-code (reset-sgr-state) "\u001b[41m")))
+    (t/is (= (assoc (reset-sgr-state) :fg nil)
+             (apply-sgr-code (assoc (reset-sgr-state) :fg "31") "\u001b[39m")))
+    (t/is (= (assoc (reset-sgr-state) :bg nil)
+             (apply-sgr-code (assoc (reset-sgr-state) :bg "41") "\u001b[49m"))))
+  (t/testing "extended 256 and truecolor"
+    (t/is (= (assoc (reset-sgr-state) :fg "38;5;196")
+             (apply-sgr-code (reset-sgr-state) "\u001b[38;5;196m")))
+    (t/is (= (assoc (reset-sgr-state) :bg "48;2;1;2;3")
+             (apply-sgr-code (reset-sgr-state) "\u001b[48;2;1;2;3m"))))
+  (t/testing "bright colors"
+    (t/is (= (assoc (reset-sgr-state) :fg "91")
+             (apply-sgr-code (reset-sgr-state) "\u001b[91m")))
+    (t/is (= (assoc (reset-sgr-state) :bg "101")
+             (apply-sgr-code (reset-sgr-state) "\u001b[101m")))))
