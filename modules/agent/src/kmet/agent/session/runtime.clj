@@ -49,9 +49,11 @@
             [kmet.agent.tools.registry :as tools-reg]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
-                   cwd turn-running? compaction-queued pending-ui run-callbacks])
+                   cwd turn-running? compaction-queued pending-compaction
+                   pending-ui run-callbacks])
 
-(declare cancel! turn-running? runtime-capabilities)
+(declare cancel! turn-running? runtime-capabilities subscribe!
+         start-pending-compactions!)
 
 (defonce ^:private default-engine-ref (atom nil))
 
@@ -247,6 +249,7 @@
                              :cwd (atom runtime-cwd)
                              :turn-running? (atom false)
                              :compaction-queued (atom [])
+                             :pending-compaction (atom [])
                              :pending-ui (atom {})
                              :run-callbacks (atom nil)
                              :event-listeners (atom {})
@@ -294,6 +297,14 @@
       ;; build-context callback always rides along
       :ui (merge (default-ui-port engine) ui-context)})
     (extensions/bind-runtime-capabilities! (runtime-capabilities engine))
+    ;; The internal subscriber is the only trigger for deferred manual
+    ;; compactions (see request-compaction!): a /compact that arrived while a
+    ;; prompt was running starts when that prompt settles — after the
+    ;; front end's teardown and the post-run compaction check.
+    (subscribe! engine
+                (fn [ev]
+                  (when (= :agent-settled (:type ev))
+                    (start-pending-compactions! engine))))
     engine))
 
 (defn session
@@ -409,13 +420,15 @@
    extension session handle at it, replace the agent's session and rebuild
    its in-memory context from the new branch, apply the session-derived
    model/thinking/tool settings when the opts :apply-settings? is true, drop
-   the compaction queue, and point the runtime cwd at the session's.
+   the compaction queue and any deferred compaction request (both belong to
+   the outgoing session), and point the runtime cwd at the session's.
    Callers own the before/after lifecycle events. Returns SESS."
   [engine sess {:keys [apply-settings?]}]
   (let [new-ag (assoc (agent-state engine) :session sess)]
     (reset! (:session engine) sess)
     (extensions/set-session! sess)
     (reset! (:compaction-queued engine) [])
+    (reset! (:pending-compaction engine) [])
     (reset! (:agent-state engine) new-ag)
     (agent/restore-session-context! new-ag)
     (when apply-settings?
@@ -463,7 +476,8 @@
 (defn new-session!
   "Start a fresh session in the runtime cwd (pi: runtimeHost.newSession):
    emit :session-before-switch (extensions may cancel), settle the in-flight
-   turn/compaction, emit :session-shutdown, create and switch to the new
+   turn/compaction (dropping a compaction deferred for the outgoing
+   session), emit :session-shutdown, create and switch to the new
    session, reset the loop's per-run state, and emit :session-start
    asynchronously. The opts :before-settle fn runs after the cancel check
    and before the settle wait — the front end cancels its own resources
@@ -479,6 +493,10 @@
        {:cancelled true}
        (do
          (when before-settle (before-settle))
+         ;; a compaction deferred for the outgoing session dies with it: the
+         ;; settle below cancels the running turn and would otherwise let the
+         ;; :agent-settled drain start the request against the swap
+         (reset! (:pending-compaction engine) [])
          (let [was-running (settle-for-switch! engine)]
            ;; pi: teardownCurrent — after the run is settled, tell extensions the
            ;; runtime is being torn down (reason :new, destination session file)
@@ -549,6 +567,7 @@
       (session/set-label! sess label-target label))
     (agent/restore-session-context! (agent-state engine))
     (reset! (:compaction-queued engine) [])
+    (reset! (:pending-compaction engine) [])
     (event-bus/emit-event!
      (cond-> {:type :session-tree
               :new-leaf-id @(:leaf-id sess)
@@ -827,6 +846,14 @@
   [engine]
   (or (some-> engine :compaction-queued deref) []))
 
+(defn pending-compaction
+  "Manual compaction requests waiting to run, in order
+   ({:custom-instructions s-or-nil :on-complete f :on-error f} — see
+   request-compaction!): a request that arrived while a prompt was running
+   waits for the settle, an idle one only for the drain to start."
+  [engine]
+  (or (some-> engine :pending-compaction deref) []))
+
 (defn queue-compaction-message!
   "Queue TEXT typed during compaction for delivery after it
    (pi: queueCompactionMessage); MODE is :steer or :follow-up."
@@ -1075,6 +1102,86 @@
   [engine]
   @(:compaction-error (agent-state engine)))
 
+(defn- run-manual-compaction!
+  "Run one queued manual compaction request and report it through the
+   request's callbacks. A :failed compaction reports through :on-error with
+   pi's `Compaction failed: …` message; a completed one (true, or false when
+   there was nothing to compact) and :aborted report through :on-complete —
+   the :compaction-end event carries the rest to the UI. An exception
+   escaping the compaction reports through :on-error too (logged either
+   way); one escaping a callback is contained so it cannot kill the drain."
+  [engine {:keys [custom-instructions on-complete on-error]}]
+  (let [outcome (try
+                  {:result (compact! engine custom-instructions :manual)}
+                  (catch Exception e
+                    ;; a future that swallows the exception hides real bugs,
+                    ;; so log it (pi: handleCompactCommand catches and ignores
+                    ;; — the events carry the failure)
+                    (debug/log-error "manual compaction failed: " e)
+                    {:error e}))]
+    (try
+      (if-let [e (:error outcome)]
+        (when on-error (on-error e))
+        (let [result (:result outcome)]
+          (if (= :failed result)
+            (when on-error
+              (on-error (ex-info (or (compaction-error engine)
+                                     "Compaction failed: Unknown error")
+                                 {:type :compaction-failed})))
+            (when on-complete (on-complete result)))))
+      (catch Exception e
+        (debug/log-error "compaction callback failed: " e)))))
+
+(defn- start-pending-compactions!
+  "Start the manual compactions queued in :pending-compaction — the deferred
+   ones from a running prompt and an idle request-compaction! alike. Runs on
+   a future so the caller/settle emit stays non-blocking, and serializes the
+   drains (locking on the queue): a settle and an idle request can both
+   trigger one, and two concurrent compact-context! calls would race — the
+   second returns false because one is in flight. When a newer prompt
+   already owns the runtime — or a compaction is somehow in flight — the
+   requests stay queued for the next settle. A disposed engine drops them."
+  [engine]
+  (when (and (not @(:disposed? engine))
+             (seq (pending-compaction engine)))
+    (future
+      (let [queue (:pending-compaction engine)]
+        (locking queue
+          (when-not (or (turn-running? engine)
+                        (compacting? engine))
+            (loop []
+              (when-not @(:disposed? engine)
+                (let [[claimed _] (swap-vals! queue
+                                              (fn [qs] (if (seq qs) (subvec qs 1) qs)))]
+                  (when-let [req (first claimed)]
+                    (run-manual-compaction! engine req)
+                    (recur)))))))))))
+
+(defn request-compaction!
+  "Request a manual compaction (CUSTOM-INSTRUCTIONS optional). While the
+   runtime is idle the compaction starts immediately; while a prompt is
+   still running it is queued and starts when the prompt settles — kmet's
+   cancel is cooperative, so compacting under a live run would race it (pi
+   instead aborts the run first). OPTS:
+     :on-complete — (fn [result]): a completed compaction (true, or false
+                    when there was nothing to compact), or :aborted.
+     :on-error    — (fn [error]): an exception escaping the compaction, or a
+                    :failed compaction with its `Compaction failed: …`
+                    message.
+   Returns :started (the compaction launched), :scheduled (deferred until
+   the running prompt settles), or :compacting (one is already in flight —
+   nothing is queued)."
+  ([engine] (request-compaction! engine nil nil))
+  ([engine custom-instructions opts]
+   (if (compacting? engine)
+     :compacting
+     (let [scheduled? (turn-running? engine)]
+       (swap! (:pending-compaction engine) conj
+              (assoc opts :custom-instructions custom-instructions))
+       (when-not scheduled?
+         (start-pending-compactions! engine))
+       (if scheduled? :scheduled :started)))))
+
 (defn has-queued-messages?
   "True when the steering or follow-up queue holds messages."
   [engine]
@@ -1278,6 +1385,7 @@
           (deref run 2000 nil))))
     (reset! (:subscribers engine) [])
     (reset! (:turn-running? engine) false)
+    (reset! (:pending-compaction engine) [])
     (some-> (:run-callbacks engine) (reset! nil))
     ;; no front end is listening after dispose: a waiting extension dialog
     ;; must not park the shutting-down process. Each request resolves with

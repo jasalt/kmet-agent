@@ -133,13 +133,14 @@ subscribed client sees the swap happen.
 
 | Command | Fields | Response data |
 |---|---|---|
-| `compact` | `:custom-instructions` (optional) | `{:accepted true}` |
+| `compact` | `:custom-instructions` (optional) | `{:accepted true}`, plus `:scheduled true` when deferred |
 | `set-auto-compaction` | `:enabled` (boolean) | — |
 
 `compact` launches on a future and answers `:accepted` immediately — the
 outcome arrives as `:compaction-end` / `:session-compact(-failed)` events
-(kmet's manual compaction stays escape-cancellable). A run in flight refuses
-with a failure response instead of aborting it. `cycle-model` and
+(kmet's manual compaction stays escape-cancellable). A run in flight defers
+the compaction instead of aborting it: the request is queued and starts when
+the run settles, and the response carries `:scheduled true`. `cycle-model` and
 `cycle-thinking-level` answer nil data when the model offers fewer than two
 choices.
 

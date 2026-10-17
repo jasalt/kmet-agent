@@ -229,6 +229,77 @@
         (is (true? @(:compaction-signal ag)) "escape during compaction signals it")
         (is (false? @(:signal ag)) "the run-cancel signal is untouched")))))
 
+(deftest test-request-compaction-starts-when-idle
+  (with-engine
+    (fn [engine _]
+      (let [completed (promise)]
+        (with-redefs [agent/compact-context! (fn [& _] true)]
+          (is (= :started (rt/request-compaction! engine nil {:on-complete #(deliver completed %)})))
+          (is (true? (deref completed 2000 ::timeout))
+              "an idle request starts immediately and reports its result"))
+        (reset! (:compacting? (rt/agent-state engine)) true)
+        (is (= :compacting (rt/request-compaction! engine nil nil))
+            "a compaction in flight refuses a second one")
+        (is (empty? (rt/pending-compaction engine))
+            "a refused request is not queued")))))
+
+(deftest test-request-compaction-defers-while-a-turn-runs
+  (with-engine
+    (fn [engine _]
+      (let [completed (promise)
+            seen (atom [])]
+        (reset! (:turn-running? engine) true)
+        (with-redefs [agent/compact-context!
+                      (fn [_ag instructions reason]
+                        (swap! seen conj [instructions reason])
+                        true)]
+          (is (= :scheduled
+                 (rt/request-compaction! engine "focus" {:on-complete #(deliver completed %)}))
+              "a live prompt defers the request")
+          (is (= ["focus"] (mapv :custom-instructions (rt/pending-compaction engine))))
+          ;; a settle while a newer prompt already owns the runtime leaves it
+          ;; queued for the next settle
+          ((:on-event (rt/agent-state engine)) {:type :agent-settled :outcome :completed})
+          (is (false? (realized? completed)) "a busy settle does not start it")
+          (is (= 1 (count (rt/pending-compaction engine))) "still queued")
+          (reset! (:turn-running? engine) false)
+          ((:on-event (rt/agent-state engine)) {:type :agent-settled :outcome :completed})
+          (is (true? (deref completed 2000 ::timeout))
+              "the settle event starts the deferred compaction")
+          (is (= [["focus" :manual]] @seen)
+              "it runs as a manual compaction with its instructions"))
+        (is (empty? (rt/pending-compaction engine)) "the queue drained")))))
+
+(deftest test-request-compaction-reports-failures
+  (with-engine
+    (fn [engine _]
+      (let [failed (promise)]
+        (with-redefs [agent/compact-context!
+                      (fn [ag & _]
+                        (reset! (:compaction-error ag) "Compaction failed: boom")
+                        :failed)]
+          (rt/request-compaction! engine nil {:on-error #(deliver failed (ex-message %))})
+          (is (= "Compaction failed: boom" (deref failed 2000 ::timeout))
+              ":failed reports pi's message through :on-error"))))))
+
+(deftest test-new-session-drops-a-deferred-compaction
+  (testing "a compaction deferred for the outgoing session dies with it —
+            starting a new session must not let the settle drain run it
+            against the swap"
+    (let [dir (str "target/test-session-runtime-new-" (System/currentTimeMillis))
+          sess (session/create-session dir {:cwd (str (fs/cwd))})]
+      (try
+        (let [engine (rt/bootstrap (assoc (test-config) :session-dir dir) {:session sess})]
+          (try
+            (reset! (:turn-running? engine) true)
+            (is (= :scheduled (rt/request-compaction! engine nil nil)))
+            (is (= 1 (count (rt/pending-compaction engine))))
+            (rt/new-session! engine)
+            (is (empty? (rt/pending-compaction engine))
+                "the deferred request is dropped before the settle")
+            (finally (rt/dispose! engine))))
+        (finally (fs/delete-tree dir))))))
+
 (deftest test-http-timeout-setters
   (with-engine
     (fn [engine _]

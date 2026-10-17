@@ -277,10 +277,13 @@ extension.
 
 One flow difference: pi's manual compaction aborts the running operation first
 (`compact()` → `await this.abort()`), so `/compact` mid-response stops the
-response and compacts. kmet refuses while a turn is streaming (the same answer
-for `/compact` and the extension UI's `compact`) — its cancel is cooperative,
-and the manual path clears the run signal so a stale Escape cannot abort the
-compaction, which makes abort-then-compact unsafe without an idle wait.
+response and compacts. kmet defers instead: a `/compact` (or an extension's
+`ctx.compact`) that arrives while a turn is streaming is queued and starts
+when the turn settles — its cancel is cooperative, and the manual path clears
+the run signal so a stale Escape cannot abort the compaction, which makes
+abort-then-compact unsafe without an idle wait. The deferred path reports
+`Compaction scheduled — it will run when the current response finishes.`; the
+RPC `compact` command answers `{:accepted true :scheduled true}`.
 
 ### 4. Settings
 

@@ -84,35 +84,32 @@
 
 (defn- handle-compact
   [{:keys [ui] engine :runtime} args]
-  (let [agent-state (runtime/agent-state engine)
-        instructions (when (seq args) args)]
-    (cond
-      (runtime/turn-running? engine)
-      (out ui :info "Compact" "Wait for the current response to finish before compacting.")
+  (let [instructions (when (seq args) args)
+        outcome (runtime/request-compaction!
+                 engine instructions
+                 {:on-complete (fn [result]
+                                 (when-not (= :aborted result)
+                                   ;; pi: handleCompactCommand ignores the
+                                   ;; thrown compaction error — compaction_end
+                                   ;; surfaces it (showError for manual); the
+                                   ;; completion reply is only for success and
+                                   ;; nothing-to-compact.
+                                   (out ui :info "Compact" (if result
+                                                             "Session compacted."
+                                                             "Nothing to compact (session too small)."))))})]
+    (case outcome
+      ;; A run in flight defers the compaction (kmet's cancel is cooperative,
+      ;; so compacting under a live run would race it — pi instead aborts the
+      ;; run first).
+      :scheduled
+      (out ui :info "Compact"
+           "Compaction scheduled — it will run when the current response finishes.")
 
-      @(:compacting? agent-state)
+      :compacting
       (out ui :info "Compact" "Compaction already in progress.")
 
-      :else
-      ;; Runs on a future so the input thread stays live and escape can
-      ;; cancel the compaction (pi: session.compact is async). The
-      ;; :compaction-end event reports an aborted compaction; only the
-      ;; result replies go here.
-      (future
-        (try
-          (let [result (runtime/compact! engine instructions :manual)]
-            (when-not (or (= :aborted result) (= :failed result))
-              ;; pi: handleCompactCommand ignores the thrown compaction error
-              ;; — compaction_end surfaces it (showError for manual); the
-              ;; future only replies for success and nothing-to-compact.
-              (out ui :info "Compact" (if result
-                                        "Session compacted."
-                                        "Nothing to compact (session too small)."))))
-          (catch Exception e
-            ;; pi: handleCompactCommand catches and ignores (the events carry
-            ;; the failure) — but a future that swallows the exception hides
-            ;; real bugs, so log it.
-            (debug/log-error "manual compaction failed: " e)))))))
+      ;; :started — the completion reply arrives through :on-complete
+      nil)))
 
 (defn register-runtime-commands!
   "Register the engine-portable builtins (untagged: every front end

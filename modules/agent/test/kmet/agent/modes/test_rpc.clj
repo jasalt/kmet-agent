@@ -335,6 +335,24 @@
       (is (false? (:success bad)))
       (is (str/includes? (:error bad) "boolean")))))
 
+(deftest test-compact-defers-while-a-run-is-in-flight
+  (testing "compact served while a run is active answers :accepted with
+            :scheduled true and queues the request for the settle"
+    (let [dir (str "target/test-rpc-compact-" (System/currentTimeMillis))
+          sess (session/create-session dir {:cwd (str (fs/cwd))})
+          engine (runtime/bootstrap (:config (opts)) {:session sess})]
+      (try
+        (reset! (:turn-running? engine) true)
+        (is (= {:type :response :command :compact :success true
+                :data {:accepted true :scheduled true}}
+               ((var rpc/command-compact) engine {:type :compact :id "c"})))
+        (is (= 1 (count (runtime/pending-compaction engine)))
+            "the request is queued for the settle")
+        (finally
+          (reset! (:turn-running? engine) false)
+          (runtime/dispose! engine)
+          (fs/delete-tree dir))))))
+
 (deftest test-model-commands
   (testing "set-model resolves an available record, cycle-model walks the
             catalog, get-available-models answers the snapshot"

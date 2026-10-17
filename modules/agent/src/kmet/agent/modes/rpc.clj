@@ -21,8 +21,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.skills :as skills]
-            [kmet.agent.config :as cfg]
-            [kmet.agent.debug :as debug]))
+            [kmet.agent.config :as cfg]))
 
 ;; ─── Records ───────────────────────────────────────────────────────────────
 
@@ -408,29 +407,24 @@
 ;; ─── Compaction ────────────────────────────────────────────────────────────
 
 (defn- command-compact
-  "Start a manual compaction (pi: compact). Accepted is not completed: the
-   response says :accepted and the outcome arrives as :compaction-end /
-   :session-compact(-failed) events. The work runs on a future so the reader
-   stays live — like the /compact builtin, abort can cancel it."
+  "Start a manual compaction (pi: compact), or defer it when a run is in
+   flight (see runtime/request-compaction!): accepted is not completed — the
+   response says :accepted (+ :scheduled true when the compaction was
+   deferred until the running prompt settles) and the outcome arrives as
+   :compaction-end / :session-compact(-failed) events. The work runs on a
+   future so the reader stays live — like the /compact builtin, abort can
+   cancel it."
   [engine command]
   (let [instructions (:custom-instructions command)]
     (cond
       (and (some? instructions) (not (string? instructions)))
       (failed :compact ":custom-instructions must be a string")
 
-      (runtime/turn-running? engine)
-      (failed :compact "Wait for the current response to finish before compacting")
-
-      (runtime/compacting? engine)
-      (failed :compact "Compaction already in progress")
-
       :else
-      (do (future
-            (try
-              (runtime/compact! engine instructions :manual)
-              (catch Exception e
-                (debug/log-error "RPC compaction failed: " e))))
-          (ok :compact {:accepted true})))))
+      (case (runtime/request-compaction! engine instructions nil)
+        :compacting (failed :compact "Compaction already in progress")
+        :scheduled (ok :compact {:accepted true :scheduled true})
+        (ok :compact {:accepted true})))))
 
 (defn- command-set-auto-compaction
   "Toggle proactive compaction (pi: set_auto_compaction)."

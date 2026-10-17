@@ -9,10 +9,11 @@
   "A minimal session-runtime engine for mode-level tests: the given
    :agent-state and :session atoms (exactly as the Engine record holds
    them), plus optional :config, :cwd (a value or an atom) and the
-   :turn-running?/:compaction-queued atoms. Subscribers, last-run and
-   disposal are fresh. Production builds engines through
+   :turn-running?/:compaction-queued/:pending-compaction atoms. Subscribers,
+   last-run and disposal are fresh. Production builds engines through
    kmet.agent.session.runtime/bootstrap."
-  [{:keys [agent-state session config cwd turn-running? compaction-queued]}]
+  [{:keys [agent-state session config cwd turn-running? compaction-queued
+           pending-compaction]}]
   (rt/map->Engine {:agent-state agent-state
                    :session session
                    :config (atom (or config {}))
@@ -24,6 +25,7 @@
                           (atom (or cwd (str (fs/cwd)))))
                    :turn-running? (or turn-running? (atom false))
                    :compaction-queued (or compaction-queued (atom []))
+                   :pending-compaction (or pending-compaction (atom []))
                    :pending-ui (atom {})
                    :run-callbacks (atom nil)}))
 

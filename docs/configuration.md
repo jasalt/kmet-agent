@@ -167,6 +167,8 @@ model:
  {"commandcode/deepseek/deepseek-v4.1-flash" {:reserve-tokens 400000}}}
 ```
 
-`/compact [instructions]` triggers it manually.
+`/compact [instructions]` triggers it manually. A `/compact` that arrives
+while a turn is running is deferred and starts when the turn settles
+(the RPC `compact` command answers `:scheduled true` for it).
 Escape aborts an in-progress compaction without cancelling the running turn
 (the turn continues on the pre-compaction context, pi: `abortCompaction`).

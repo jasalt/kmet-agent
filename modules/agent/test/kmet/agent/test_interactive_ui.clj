@@ -450,8 +450,8 @@
         ((:handler (commands/find-command "continue")) (command-ctx cs) ""))
       (t/is (= "No conversation to continue." (:content @msg))))))
 
-(deftest test-compact-refuses-while-running
-  (testing "/compact refuses while a run is active even when the status atom
+(deftest test-compact-schedules-while-running
+  (testing "/compact schedules while a run is active even when the status atom
             already reads idle — the settle window (a post-run compaction or
             a pre-settle continuation) keeps the run flag true, and the run
             flag is what counts (pi: isStreaming)"
@@ -467,9 +467,11 @@
             "precondition: the status atom already reads idle")
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
         ((:handler (commands/find-command "compact")) (command-ctx cs) ""))
-      (t/is (= "Wait for the current response to finish before compacting."
+      (t/is (= "Compaction scheduled — it will run when the current response finishes."
                (:content @msg))
-            "refuses while a turn is running"))))
+            "the request is deferred, not refused")
+      (t/is (= 1 (count (runtime/pending-compaction (:engine cs))))
+            "the compaction is queued for the settle"))))
 
 (deftest test-continue-starts-run-without-message
   (testing "/continue starts an agent run on the existing context with no new
@@ -2452,11 +2454,10 @@
         (h {:type :compaction-end :reason :threshold :result true :will-retry false}))
       (t/is (seq @started) "queued message prompted a run after compaction"))))
 
-(deftest test-ui-compact-refuses-while-a-turn-runs
-  (testing "the extension UI's compact refuses mid-turn — pi's compact() aborts
-            the running operation first, but kmet's cancel is cooperative and a
-            manual compaction clears the run signal, so refusing (like
-            /compact) is the safe answer"
+(deftest test-ui-compact-defers-while-a-turn-runs
+  (testing "the extension UI's compact defers mid-turn — pi's compact() aborts
+            the running operation first, but kmet's cancel is cooperative, so
+            the request is queued and starts when the prompt settles"
     (let [ag (agent/make-agent-state)
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :config cfg/default-config
@@ -2470,11 +2471,14 @@
           errors (atom [])]
       (with-redefs [agent/compact-context! (fn [& _]
                                              (throw (ex-info "must not compact" {})))]
-        @((:compact ctx)
-          {:on-error (fn [e] (swap! errors conj (ex-message e)))}))
-      (t/is (= ["Wait for the current response to finish before compacting."]
-               @errors)
-            "the caller is refused with an error, not compacted"))))
+        (t/is (nil? ((:compact ctx)
+                     {:custom-instructions "focus on tests"
+                      :on-error (fn [e] (swap! errors conj (ex-message e)))}))
+              "the request is accepted, not refused"))
+      (t/is (empty? @errors) "no error reaches the caller")
+      (t/is (= ["focus on tests"]
+               (mapv :custom-instructions (runtime/pending-compaction (:engine cs))))
+            "the request is queued with its instructions"))))
 
 (deftest test-ui-compact-reports-the-failure-message
   (testing "a failed compaction reaches the extension caller with pi's
@@ -2490,14 +2494,19 @@
                     {:fdp (fdp/make-footer-data-provider)}
                     nil)
           ctx ((:build-context registry))
-          errors (atom [])]
+          errors (atom [])
+          reported (promise)]
       (with-redefs [agent/compact-context!
                     (fn [ag & _]
                       (reset! (:compaction-error ag)
                               "Compaction failed: Summarization failed: provider exploded")
                       :failed)]
-        @((:compact ctx)
-          {:on-error (fn [e] (swap! errors conj (ex-message e)))}))
+        (t/is (nil? ((:compact ctx)
+                     {:on-error (fn [e]
+                                  (swap! errors conj (ex-message e))
+                                  (deliver reported true))}))
+              "a request while idle starts immediately (callbacks carry the outcome)")
+        (t/is (true? (deref reported 2000 ::timeout)) "the async failure is reported"))
       (t/is (= ["Compaction failed: Summarization failed: provider exploded"]
                @errors)
             "the message is reported verbatim, once"))))
@@ -2512,9 +2521,35 @@
       ((var builtins/register-builtin-commands!) cfg/default-config)
       (with-redefs [agent/compact-context! (fn [& _] (throw (ex-info "boom" {})))
                     debug/log-error (fn [& parts] (deliver logged (apply str parts)))]
-        @((:handler (commands/find-command "compact")) (command-ctx cs) ""))
-      (t/is (str/includes? (deref logged 2000 "") "boom")
-            "the escaping error is logged"))))
+        ((:handler (commands/find-command "compact")) (command-ctx cs) "")
+        (t/is (str/includes? (deref logged 2000 "") "boom")
+              "the escaping error is logged")))))
+
+(deftest test-compact-command-defers-mid-turn
+  (testing "/compact while a turn is running schedules the compaction instead
+            of refusing it — the request starts when the prompt settles"
+    (commands/clear-commands!)
+    (let [cs (compaction-cs)
+          ran (promise)]
+      (try
+        ((var builtins/register-builtin-commands!) cfg/default-config)
+        (reset! (:running-turn? cs) true)
+        (with-redefs [agent/compact-context!
+                      (fn [_ag instructions reason]
+                        (deliver ran [instructions reason])
+                        true)]
+          ((:handler (commands/find-command "compact")) (command-ctx cs) "focus")
+          (t/is (= ["Compaction scheduled — it will run when the current response finishes."]
+                   (mapv :content
+                         (filter #(and (= :info (:role %)) (= "Compact" (:label %)))
+                                 @(:messages-atom (:chat-history cs)))))
+                "the reply says the compaction is scheduled")
+          (t/is (not (realized? ran)) "nothing runs while the turn is live")
+          (reset! (:running-turn? cs) false)
+          ((var runtime/start-pending-compactions!) (:engine cs))
+          (t/is (= ["focus" :manual] (deref ran 2000 nil))
+                "the deferred compaction ran after the turn settled"))
+        (finally (commands/clear-commands!))))))
 
 (deftest test-cancel-during-compaction-keeps-turn
   (testing "escape during compaction aborts ONLY the compaction — a running

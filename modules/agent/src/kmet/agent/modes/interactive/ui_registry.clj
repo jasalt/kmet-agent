@@ -538,37 +538,28 @@
                                                                   (int (* 100.0 (/ tokens window))))})))
                              :compact (fn [& [{:keys [custom-instructions
                                                       on-complete on-error]}]]
-                                        (future
-                                          (try
-                                            (cond
-                                              ;; pi: compact() aborts the
-                                              ;; running operation first; kmet's
-                                              ;; cancel is cooperative and a
-                                              ;; manual compaction clears the run
-                                              ;; signal, so mid-turn the safe
-                                              ;; answer is to refuse (same as
-                                              ;; /compact)
-                                              (state/turn-running? cs)
-                                              (when on-error
-                                                (on-error (ex-info
-                                                           "Wait for the current response to finish before compacting."
-                                                           {:type :busy})))
-
-                                              :else
-                                              (let [r (runtime/compact! engine custom-instructions :manual)]
-                                                (if (and (= :failed r) on-error)
-                                                  ;; pi: compact() throws on
-                                                  ;; summarization failure →
-                                                  ;; onError fires with the
-                                                  ;; `Compaction failed: <cause>`
-                                                  ;; message (:compaction-error
-                                                  ;; already carries the prefix)
-                                                  (on-error (ex-info (or (runtime/compaction-error engine)
-                                                                         "Compaction failed: Unknown error")
-                                                                     {:type :compaction-failed}))
-                                                  (when on-complete (on-complete {:result r})))))
-                                            (catch Exception e
-                                              (when on-error (on-error e))))))
+                                        (case (runtime/request-compaction!
+                                               engine custom-instructions
+                                               {:on-complete (fn [result]
+                                                               (when on-complete
+                                                                 (on-complete {:result result})))
+                                                :on-error (fn [e]
+                                                            (when on-error (on-error e)))})
+                                          ;; A run in flight defers the
+                                          ;; compaction until it settles
+                                          ;; (kmet's cancel is cooperative —
+                                          ;; pi aborts the run first). Also
+                                          ;; the answer while a compaction is
+                                          ;; already in flight.
+                                          :compacting
+                                          (when on-error
+                                            (on-error (ex-info
+                                                       "Compaction already in progress."
+                                                       {:type :busy})))
+                                          ;; :started / :scheduled — the
+                                          ;; callbacks fire when the
+                                          ;; compaction runs (or fails)
+                                          nil))
                              :get-system-prompt (fn [] (runtime/system-prompt engine))
                              :get-system-prompt-options (fn []
                                                           (let [config (runtime/config (:engine cs))]

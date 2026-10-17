@@ -186,10 +186,12 @@ front end:
 
 - `kmet.agent.session.runtime` owns the agent state, the session lifecycle
   (`new-session!`, `resume!`, `fork!`, `clone!`, `switch-session!`), the
-  submission chain, the steer/follow-up queues, compaction, and the
-  extension runtime handle. Front ends call `bootstrap` once and drive the
-  engine through its operations: the TUI keeps its `CoreState` view state
-  plus the engine, and print/RPC modes construct no agent state at all.
+  submission chain, the steer/follow-up queues, compaction (a manual request
+  arriving mid-turn is deferred until the turn settles —
+  `request-compaction!`), and the extension runtime handle. Front ends call
+  `bootstrap` once and drive the engine through its operations: the TUI keeps
+  its `CoreState` view state plus the engine, and print/RPC modes construct
+  no agent state at all.
   Modes and app UI (kmet.agent.modes.**, kmet.agent.ui.**) use the runtime's
   front-end surface only — they never require `kmet.agent.loop` — and
   `kmet.agent.test-layer-guard` enforces that boundary.
