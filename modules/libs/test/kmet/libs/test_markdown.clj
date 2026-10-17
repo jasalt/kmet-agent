@@ -559,3 +559,47 @@
     (t/is (= [:heading :blank :paragraph :blank :code :blank :ul]
              (mapv :type ast)))
     (t/is (some #(= :strong (:type %)) (:content (nth ast 2))))))
+
+(t/deftest test-parse-characterization
+  (t/testing "empty and nil input yield a blank"
+    (t/is (= [{:type :blank}] (md/parse "")))
+    (t/is (= [{:type :blank}] (md/parse nil))))
+  (t/testing "headings, hr, and quote"
+    (t/is (= :heading (:type (first (md/parse "## Section")))))
+    (t/is (= 2 (:level (first (md/parse "## Section")))))
+    (t/is (= [{:type :hr}] (md/parse "---")))
+    (t/is (= :quote (:type (first (md/parse "> quoted"))))))
+  (t/testing "fenced code with language and unclosed fence at eof"
+    (t/is (= "clojure" (:lang (first (md/parse "```clojure\n(defn f [] 1)\n```")))))
+    (t/is (= :code (:type (first (md/parse "```\nline one\nline two")))))
+    (t/is (= "line one\nline two" (:text (first (md/parse "```\nline one\nline two"))))))
+  (t/testing "tables parse as :table with header and rows"
+    (let [t (first (md/parse "| a | b |\n|---|---|\n| 1 | 2 |"))]
+      (t/is (= :table (:type t)))
+      (t/is (= 2 (count (:header t))))
+      (t/is (= 1 (count (:rows t))))))
+  (t/testing "ordered lists keep markers"
+    (let [ol (first (md/parse "1. first\n2. second"))]
+      (t/is (= :ol (:type ol)))
+      (t/is (= ["1." "2."] (mapv :marker (:items ol))))))
+  (t/testing "unordered list with indented continuation"
+    (let [ul (first (md/parse "- item\n  continuation"))]
+      (t/is (= :ul (:type ul)))
+      (t/is (= 1 (count (:items ul))))))
+  (t/testing "blank line inside a list"
+    (let [ul (first (md/parse "- a\n\n- b"))]
+      (t/is (= :ul (:type ul)))
+      (t/is (= 3 (count (:items ul))))))
+  (t/testing "indented code fence inside a list item"
+    (let [ul (first (md/parse "- a\n  ```\n  x\n  ```"))]
+      (t/is (= :ul (:type ul)))
+      (t/is (= 1 (count (:items ul))))))
+  (t/testing "paragraph fallback for plain text"
+    (t/is (= :paragraph (:type (first (md/parse "just some text"))))))
+  (t/testing "indented continuation attaches to innermost list"
+    (let [ul (first (md/parse "- outer\n  - inner\n    cont"))]
+      (t/is (= :ul (:type ul)))
+      (t/is (= 1 (count (:items ul))))))
+  (t/testing "code fence inside list item has blocks"
+    (let [item (first (:items (first (md/parse "- a\n  ```\n  x\n  ```"))))]
+      (t/is (some #(= :code %) (map :type (:blocks item)))))))
