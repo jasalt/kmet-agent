@@ -1,7 +1,8 @@
 (ns kmet.agent.test-packages
-  "Package manager tests (pi: core/package-manager.ts local-source subset):
-   source parsing, path identity, settings persistence, filter patterns,
-   per-package resolution and the package resource loaders."
+  "Package manager tests (pi: core/package-manager.ts — the local and git
+   source subset): source parsing, path identity, settings persistence,
+   filter patterns, per-package resolution and the package resource
+   loaders."
   (:require [clojure.test :as t]
             [clojure.string :as str]
             [clojure.edn :as edn]
@@ -51,14 +52,20 @@
     (t/is (pkgs/local-source? "bare-name"))
     (t/is (= :local (:kind (pkgs/parse-source "  ./x  "))))
     (t/is (= "./x" (:path (pkgs/parse-source "  ./x  ")))))
-  (t/testing "remote sources (npm/git — not installable by kmet)"
+  (t/testing "remote sources are non-local; git ones parse as :git"
     (t/is (not (pkgs/local-source? "npm:@foo/bar")))
     (t/is (not (pkgs/local-source? "git:github.com/user/repo")))
     (t/is (not (pkgs/local-source? "git://host/repo")))
     (t/is (not (pkgs/local-source? "https://host/repo")))
     (t/is (not (pkgs/local-source? "ssh://git@host/repo")))
-    (t/is (= :remote (:kind (pkgs/parse-source "npm:foo@1.0.0"))))
-    (t/is (= :remote (:kind (pkgs/parse-source "git://host/x"))))))
+    (t/testing "git repositories"
+      (t/is (= :git (:kind (pkgs/parse-source "git:github.com/user/repo"))))
+      (t/is (= :git (:kind (pkgs/parse-source "https://github.com/user/repo"))))
+      (t/is (= "v1" (get-in (pkgs/parse-source "git:github.com/user/repo@v1") [:git :ref]))))
+    (t/testing "sources kmet cannot install stay :remote"
+      (t/is (= :remote (:kind (pkgs/parse-source "npm:foo@1.0.0"))))
+      (t/is (= :remote (:kind (pkgs/parse-source "github:user/repo"))))
+      (t/is (= :remote (:kind (pkgs/parse-source "git://host/x")))))))
 
 (defn- with-stubbed-cwd
   "Run F with the agent dir and cwd pointed at empty temp dirs, so the
@@ -121,6 +128,27 @@
       (let [res (with-stubbed-cwd #(pkgs/resolve-package-items {:packages ["npm:@foo/bar"]} nil))]
         (t/is (empty? (:extensions res)))
         (t/is (str/includes? (str out) "remote source"))))))
+
+(t/deftest test-git-package-not-installed-warns
+  (let [out (java.io.StringWriter.)]
+    (binding [*err* out]
+      (let [res (with-stubbed-cwd
+                  #(pkgs/resolve-package-items {:packages ["git:github.com/user/repo"]} nil))]
+        (t/is (empty? (:extensions res)))
+        (t/is (str/includes? (str out) "is not installed"))
+        (t/is (str/includes? (str out) "kmet install git:github.com/user/repo"))))))
+
+(t/deftest test-resolve-installed-git-package
+  (with-stubbed-cwd
+    (fn []
+      (let [checkout (str (fs/path (cfg/get-agent-dir) "git" "github.com" "user" "repo"))]
+        (fs/create-dirs (str checkout "/extensions"))
+        (spit (str checkout "/extensions/x.clj") "(ns pkg-x)\n")
+        (let [res (pkgs/resolve-package-items {:packages ["git:github.com/user/repo"]} nil)]
+          (t/is (= [(slash (str checkout "/extensions/x.clj"))]
+                   (slash (mapv :path (:extensions res)))))
+          (t/is (= "git:github.com/user/repo"
+                   (get-in (first (:extensions res)) [:metadata :source]))))))))
 
 ;; ─── Filters (object entries) ──────────────────────────────────────────────
 
@@ -264,6 +292,78 @@
         (let [listed (pkgs/list-configured-packages)]
           (t/is (= 1 (count listed)))
           (t/is (= :project (:scope (first listed)))))))))
+
+(t/deftest test-git-package-settings-identity
+  (with-isolated-settings
+    (fn [{:keys [global-dir]}]
+      (t/testing "add stores the git source verbatim"
+        (t/is (true? (pkgs/add-package-to-settings! "git:github.com/user/repo")))
+        (t/is (= ["git:github.com/user/repo"]
+                 (:packages (edn/read-string (slurp (str (fs/path global-dir "settings.edn"))))))))
+      (t/testing "another URL form or ref updates the same entry"
+        (t/is (true? (pkgs/add-package-to-settings! "git:https://github.com/user/repo@v2")))
+        (t/is (= ["git:https://github.com/user/repo@v2"]
+                 (:packages (edn/read-string (slurp (str (fs/path global-dir "settings.edn"))))))))
+      (t/testing "installed path is the managed checkout"
+        (let [checkout (str (fs/path global-dir "git" "github.com" "user" "repo"))]
+          (fs/create-dirs checkout)
+          (t/is (= (slash checkout)
+                   (slash (pkgs/get-installed-path "git:github.com/user/repo" :user))))))
+      (t/testing "remove matches by identity"
+        (t/is (true? (pkgs/remove-package-from-settings! "git:git@github.com:user/repo")))
+        (t/is (empty? (:packages (edn/read-string (slurp (str (fs/path global-dir "settings.edn")))))))))))
+
+(t/deftest test-git-subdirectory-packages
+  (with-isolated-settings
+    (fn [{:keys [global-dir]}]
+      (t/testing "two subdirectories of one repository are distinct settings entries"
+        (t/is (true? (pkgs/add-package-to-settings! "git:github.com/user/repo//packages/a")))
+        (t/is (true? (pkgs/add-package-to-settings! "git:github.com/user/repo//packages/b")))
+        (t/is (= ["git:github.com/user/repo//packages/a"
+                  "git:github.com/user/repo//packages/b"]
+                 (:packages (edn/read-string (slurp (str (fs/path global-dir "settings.edn"))))))))
+      (t/testing "the installed path is the subdirectory inside the shared checkout"
+        (let [sub (str (fs/path global-dir "git" "github.com" "user" "repo" "packages" "a"))]
+          (fs/create-dirs sub)
+          (t/is (= (slash sub)
+                   (slash (pkgs/get-installed-path "git:github.com/user/repo//packages/a" :user))))
+          (t/is (nil? (pkgs/get-installed-path "git:github.com/user/repo//packages/b" :user)))))
+      (t/testing "resolution uses the subdirectory as the package root"
+        (let [a (str (fs/path global-dir "git" "github.com" "user" "repo" "packages" "a"))]
+          (fs/create-dirs (str a "/extensions"))
+          (spit (str a "/extensions/x.clj") "(ns sub-a)\n")
+          (let [res (pkgs/resolve-package-items
+                     {:packages ["git:github.com/user/repo//packages/a"
+                                 "git:github.com/user/repo//packages/b"]}
+                     nil)]
+            (t/is (= [(slash (str a "/extensions/x.clj"))]
+                     (slash (mapv :path (:extensions res)))))
+            (t/is (= "git:github.com/user/repo//packages/a"
+                     (get-in (first (:extensions res)) [:metadata :source])))))))))
+
+(t/deftest test-git-subdir-file-is-a-single-extension
+  (with-stubbed-cwd
+    (fn []
+      (let [checkout (str (fs/path (cfg/get-agent-dir) "git" "github.com" "user" "repo"))
+            file (str checkout "/tools/ext.clj")]
+        (fs/create-dirs (str checkout "/tools"))
+        (spit file "(ns tool-ext)\n")
+        (let [res (pkgs/resolve-package-items
+                   {:packages ["git:github.com/user/repo//tools/ext.clj"]} nil)]
+          (t/is (= [(slash file)] (slash (mapv :path (:extensions res)))))
+          (t/is (true? (get-in (first (:extensions res)) [:metadata :single-extension]))))))))
+
+(t/deftest test-git-subdirectory-missing-dir-warns
+  (with-stubbed-cwd
+    (fn []
+      (let [checkout (str (fs/path (cfg/get-agent-dir) "git" "github.com" "user" "repo"))
+            out (java.io.StringWriter.)]
+        (fs/create-dirs checkout)
+        (binding [*err* out]
+          (let [res (pkgs/resolve-package-items
+                     {:packages ["git:github.com/user/repo//packages/a"]} nil)]
+            (t/is (empty? (:extensions res)))
+            (t/is (str/includes? (str out) "has no \"packages/a\" in its checkout"))))))))
 
 (t/deftest test-list-empty
   (with-isolated-settings

@@ -18,7 +18,8 @@ Extensions also load from the global dir (`~/.kmet/agent/extensions/`) and
 the project-local dir (`.kmet/extensions/`) at startup and on `/reload`.
 Use this for local development against an edited copy: symlink or copy the
 extension into one of those — or install it as a **package** with
-`kmet install <path>` (records the source in settings; see
+`kmet install <path>` (a local directory/file, or a git repository such as
+`git:github.com/user/repo`; records the source in settings — see
 [`docs/usage.md`](../docs/usage.md#package-subcommands) and
 `modules/agent/src/kmet/extension.md`):
 

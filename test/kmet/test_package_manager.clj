@@ -6,6 +6,7 @@
             [clojure.edn :as edn]
             [clojure.string :as str]
             [babashka.fs :as fs]
+            [kmet.agent.git-packages :as gitp]
             [kmet.agent.package-manager :as pm]
             [kmet.agent.config :as cfg]
             [kmet.agent.packages :as pkgs]
@@ -46,6 +47,7 @@
   (t/is (pm/package-command? ["install" "x"]))
   (t/is (pm/package-command? ["remove" "x"]))
   (t/is (pm/package-command? ["uninstall" "x"]))
+  (t/is (pm/package-command? ["update"]))
   (t/is (pm/package-command? ["list"]))
   (t/is (pm/package-command? ["config"]))
   (t/is (not (pm/package-command? ["--print" "hi"])))
@@ -56,10 +58,14 @@
 (t/deftest test-help-exits-zero
   (t/is (= 0 (:exit (run "install" "--help"))))
   (t/is (= 0 (:exit (run "remove" "-h"))))
+  (t/is (= 0 (:exit (run "update" "-h"))))
   (t/is (= 0 (:exit (run "list" "-h"))))
   (t/is (= 0 (:exit (run "config" "-h"))))
   (t/is (str/includes? (:out (run "install" "--help")) "kmet install <source>"))
+  (t/is (str/includes? (:out (run "install" "--help")) "git:github.com/user/repo"))
   (t/is (str/includes? (:out (run "remove" "-h")) "kmet uninstall"))
+  (t/is (str/includes? (:out (run "update" "--help")) "kmet update [source]"))
+  (t/is (str/includes? (:out (run "update" "--help")) "kmet cannot self-update"))
   (t/is (str/includes? (:out (run "config" "-h")) "~/.kmet/agent/settings.edn")))
 
 ;; ─── Parse errors (pi exit-code-1 conventions) ────────────────────────────
@@ -102,7 +108,92 @@
       (let [r (run "install" "npm:@foo/bar")]
         (t/is (= 1 (:exit r)))
         (t/is (str/includes? (:err r) "Unsupported package source"))
-        (t/is (str/includes? (:err r) "local directories and files only"))))))
+        (t/is (str/includes? (:err r) "npm installs are not ported"))))))
+
+(t/deftest test-install-git
+  (with-isolated-settings
+    (fn [{:keys [global-dir project-dir]}]
+      (let [calls (atom [])]
+        (with-redefs [gitp/install! (fn [source root]
+                                      (swap! calls conj [source root])
+                                      (fs/create-dirs (gitp/package-dir source root))
+                                      (str root))]
+          (t/testing "a global install clones under the agent git/ root"
+            (let [r (run "install" "git:github.com/user/repo@v1")]
+              (t/is (= 0 (:exit r)))
+              (t/is (str/includes? (:out r) "Installing git:github.com/user/repo@v1..."))
+              (t/is (str/includes? (:out r) "Installed git:github.com/user/repo@v1"))
+              (let [[source root] (first @calls)]
+                (t/is (= "github.com" (:host source)))
+                (t/is (= "v1" (:ref source)))
+                (t/is (= (str (fs/path global-dir "git")) root)))
+              (t/is (= ["git:github.com/user/repo@v1"]
+                       (:packages (edn/read-string (slurp (cfg/global-settings-path))))))))
+          (t/testing "a local install targets the project git/ root"
+            (let [r (run "install" "git:github.com/user/repo" "-l")]
+              (t/is (= 0 (:exit r)))
+              (t/is (= (str (fs/path project-dir "git")) (second (last @calls))))
+              (t/is (str/includes? (slurp (cfg/project-settings-path))
+                                   "git:github.com/user/repo")))))))))
+
+(t/deftest test-install-git-failure-writes-nothing
+  (with-isolated-settings
+    (fn [_]
+      (with-redefs [gitp/install! (fn [_ _]
+                                    (throw (ex-info "git clone failed"
+                                                    {:type :git-command-failed})))]
+        (let [r (run "install" "git:github.com/user/repo")]
+          (t/is (= 1 (:exit r)))
+          (t/is (str/includes? (:err r) "Error: git clone failed"))
+          (t/is (not (fs/exists? (cfg/global-settings-path)))))))))
+
+(t/deftest test-install-git-subdir
+  (with-isolated-settings
+    (fn [_]
+      (t/testing "a subdirectory the repository does not have fails without persisting"
+        (let [checkout (atom nil)]
+          (with-redefs [gitp/install! (fn [source root]
+                                        (reset! checkout (gitp/install-path root source))
+                                        (fs/create-dirs @checkout)
+                                        (str root))]
+            (let [r (run "install" "git:github.com/user/repo//packages/nope")]
+              (t/is (= 1 (:exit r)))
+              (t/is (str/includes? (:err r) "No directory \"packages/nope\""))
+              (t/is (str/includes? (:err r) "directories"))
+              (t/is (not (fs/exists? (cfg/global-settings-path))))
+              (t/is (not (fs/exists? @checkout))
+                    "the freshly cloned, unshared checkout is cleaned up")))))
+      (t/testing "an existing subdirectory records the source verbatim"
+        (with-redefs [gitp/install! (fn [source root]
+                                      (fs/create-dirs (gitp/package-dir source root))
+                                      (str root))]
+          (let [r (run "install" "git:github.com/user/repo//packages/a")]
+            (t/is (= 0 (:exit r)))
+            (t/is (= ["git:github.com/user/repo//packages/a"]
+                     (:packages (edn/read-string (slurp (cfg/global-settings-path))))))))))))
+
+(t/deftest test-install-git-subdir-keeps-existing-checkout
+  (with-isolated-settings
+    (fn [{:keys [global-dir]}]
+      (t/testing "a checkout that already existed is kept when the subdirectory is wrong"
+        (let [checkout (str (fs/path global-dir "git" "github.com" "user" "repo"))]
+          (fs/create-dirs checkout)
+          (with-redefs [gitp/install! (fn [_ root] (str root))]
+            (let [r (run "install" "git:github.com/user/repo//packages/nope")]
+              (t/is (= 1 (:exit r)))
+              (t/is (fs/exists? checkout))))))
+      (t/testing "a checkout a configured sibling uses is kept even when freshly cloned"
+        (cfg/save-setting! [:packages] ["git:github.com/user/repo//packages/a"])
+        (let [checkout (str (fs/path global-dir "git" "github.com" "user" "repo"))]
+          (fs/delete-tree checkout)
+          (with-redefs [gitp/install! (fn [_ root]
+                                        (fs/create-dirs checkout)
+                                        (str root))]
+            (let [r (run "install" "git:github.com/user/repo//packages/nope")]
+              (t/is (= 1 (:exit r)))
+              (t/is (fs/exists? checkout) "the sibling's checkout stays")
+              (t/is (= ["git:github.com/user/repo//packages/a"]
+                       (:packages (edn/read-string (slurp (cfg/global-settings-path)))))))))))))
 
 (t/deftest test-install-directory
   (with-isolated-settings
@@ -185,6 +276,132 @@
         (let [r (run "uninstall" pkg)]
           (t/is (= 0 (:exit r)))
           (t/is (str/includes? (:out r) (str "Removed " pkg))))))))
+
+;; ─── Git update (kmet: git packages only) ─────────────────────────────────
+
+(t/deftest test-remove-git
+  (with-isolated-settings
+    (fn [{:keys [global-dir]}]
+      (with-redefs [gitp/install! (fn [source root]
+                                    (fs/create-dirs (gitp/package-dir source root))
+                                    (str root))]
+        (run "install" "git:github.com/user/repo"))
+      (let [removed (atom nil)]
+        (with-redefs [gitp/remove! (fn [source root] (reset! removed [source root]))]
+          (let [r (run "remove" "git:github.com/user/repo")]
+            (t/is (= 0 (:exit r)))
+            (t/is (str/includes? (:out r) "Removed git:github.com/user/repo"))
+            (t/is (= (str (fs/path global-dir "git")) (second @removed)))
+            (t/is (empty? (:packages (edn/read-string
+                                      (slurp (cfg/global-settings-path))))))))))))
+
+(t/deftest test-remove-git-shared-checkout
+  (with-isolated-settings
+    (fn [_]
+      (cfg/save-setting! [:packages] ["git:github.com/user/repo//packages/a"
+                                      "git:github.com/user/repo//packages/b"])
+      (let [removed (atom [])]
+        (with-redefs [gitp/remove! (fn [source _root]
+                                     (swap! removed conj (gitp/repo-identity source)))]
+          (t/testing "removing one subdirectory keeps the shared checkout"
+            (let [r (run "remove" "git:github.com/user/repo//packages/a")]
+              (t/is (= 0 (:exit r)))
+              (t/is (empty? @removed))
+              (t/is (= 1 (count (:packages (edn/read-string
+                                            (slurp (cfg/global-settings-path)))))))))
+          (t/testing "removing the last user of the checkout deletes it"
+            (let [r (run "remove" "git:github.com/user/repo//packages/b")]
+              (t/is (= 0 (:exit r)))
+              (t/is (= ["github.com/user/repo"] @removed))
+              (t/is (empty? (:packages (edn/read-string
+                                        (slurp (cfg/global-settings-path)))))))))))))
+
+(t/deftest test-update-command
+  (with-isolated-settings
+    (fn [{:keys [global-dir]}]
+      (t/testing "nothing configured"
+        (let [r (run "update")]
+          (t/is (= 0 (:exit r)))
+          (t/is (str/includes? (:out r) "No git packages installed."))))
+      (cfg/save-setting! [:packages] ["git:github.com/user/repo" (str global-dir "/local-pkg")])
+      (let [calls (atom [])]
+        (with-redefs [gitp/update! (fn [source root] (swap! calls conj [source root]))]
+          (t/testing "a bare update updates every git package"
+            (let [r (run "update")]
+              (t/is (= 0 (:exit r)))
+              (t/is (= 1 (count @calls)))
+              (t/is (= (str (fs/path global-dir "git")) (second (first @calls))))
+              (t/is (str/includes? (:out r) "Updated packages"))))
+          (t/testing "--extensions is the explicit form of the same"
+            (let [r (run "update" "--extensions")]
+              (t/is (= 0 (:exit r)))
+              (t/is (= 2 (count @calls)))))
+          (t/testing "a source updates the matching git package by identity"
+            (let [r (run "update" "git:https://github.com/user/repo@v2")]
+              (t/is (= 0 (:exit r)))
+              (t/is (= 3 (count @calls)))
+              (t/is (str/includes? (:out r) "Updated git:https://github.com/user/repo@v2"))))
+          (t/testing "an unmatched source errors with the shorthand suggestion"
+            (let [r (run "update" "github.com/user/repo")]
+              (t/is (= 1 (:exit r)))
+              (t/is (str/includes? (:err r) "No matching package found"))
+              (t/is (str/includes? (:err r) "Did you mean git:github.com/user/repo?")))))))))
+
+(t/deftest test-update-git-subdirectories-dedupe-checkouts
+  (with-isolated-settings
+    (fn [_]
+      (cfg/save-setting! [:packages] ["git:github.com/user/repo//packages/a"
+                                      "git:github.com/user/repo//packages/b"])
+      (let [calls (atom [])]
+        (with-redefs [gitp/update! (fn [source root]
+                                     (swap! calls conj [(gitp/repo-identity source) root]))]
+          (t/testing "a bare update fetches each shared checkout once"
+            (let [r (run "update")]
+              (t/is (= 0 (:exit r)))
+              (t/is (= 1 (count @calls)))
+              (t/is (str/includes? (:out r) "Updated packages"))))
+          (t/testing "the repository URL matches every subdirectory package"
+            (let [r (run "update" "git:github.com/user/repo")]
+              (t/is (= 0 (:exit r)))
+              (t/is (= 2 (count @calls)))))
+          (t/testing "a subdirectory URL updates the same shared checkout"
+            (let [r (run "update" "git:github.com/user/repo//packages/a")]
+              (t/is (= 0 (:exit r)))
+              (t/is (= 3 (count @calls))))))))))
+
+(t/deftest test-update-local-and-npm
+  (with-isolated-settings
+    (fn [{:keys [global-dir]}]
+      (let [pkg (str (fs/path global-dir "pkg"))]
+        (fs/create-dirs pkg)
+        (cfg/save-setting! [:packages] [pkg])
+        (t/testing "a matched local source has nothing to update"
+          (let [r (run "update" pkg)]
+            (t/is (= 0 (:exit r)))
+            (t/is (str/includes? (:out r) "Local packages load from disk")))))
+      (t/testing "an unmatched local source errors (pi identity match)"
+        (let [r (run "update" "./not-configured")]
+          (t/is (= 1 (:exit r)))
+          (t/is (str/includes? (:err r) "No matching package found"))))
+      (t/testing "npm sources are not supported"
+        (let [r (run "update" "npm:@foo/bar")]
+          (t/is (= 1 (:exit r)))
+          (t/is (str/includes? (:err r) "git packages only")))))))
+
+(t/deftest test-update-unsupported-options
+  (with-isolated-settings
+    (fn [_]
+      (doseq [[args text] [[["update" "--self"] "self-update"]
+                           [["update" "--models"] "kmet --generate-models"]
+                           [["update" "--all"] "self-update"]
+                           [["update" "--force"] "self-update"]
+                           [["update" "--extension" "git:github.com/user/repo"]
+                            "kmet update <source>"]
+                           [["update" "self"] "self-update"]
+                           [["update" "pi"] "self-update"]]]
+        (let [r (apply run args)]
+          (t/is (= 1 (:exit r)) (pr-str args))
+          (t/is (str/includes? (:err r) text) (pr-str args)))))))
 
 ;; ─── List ──────────────────────────────────────────────────────────────────
 

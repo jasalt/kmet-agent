@@ -1,8 +1,8 @@
 (ns kmet.agent.packages
   "Package manager + resource resolution (pi: core/package-manager.ts + the
-   package part of core/resource-loader.ts — the local directory/file source
-   subset; npm and git installs are deliberately out of scope, see
-   src/kmet/pi-alignment.md).
+   package part of core/resource-loader.ts — local directory/file sources
+   plus managed git checkouts; npm installs are deliberately out of scope,
+   see src/kmet/pi-alignment.md.
 
    A fifth, app-provided layer sits after packages: the bundled extensions
    (kmet.agent.extensions.bundled) — the shipped
@@ -30,7 +30,10 @@
       :autoload false            ;; project delta over the user entry
       :extensions [\"+x.clj\"]     ;; per-type filter patterns}
 
-   Sources are local files or directories only. A file loads as a single
+   Sources are local files or directories, or git repositories installed as
+   managed checkouts (kmet.agent.git-packages; a checkout lives under the
+   scope's git/ root, and a `git:…//subdir` source is one package directory
+   inside it). A file loads as a single
    extension (pi: \"If the path is a file, it loads as a single extension\").
    A directory loads with pi's package rules: a directory with an
    extension.edn manifest is one kmet extension; otherwise resources come
@@ -55,6 +58,7 @@
             [babashka.fs :as fs]
             [kmet.agent.extensions.bundled :as bundled-extensions]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.git-packages :as git]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
             [kmet.agent.config :as cfg]))
@@ -80,13 +84,21 @@
     (not (some #(str/starts-with? s %) remote-prefixes))))
 
 (defn parse-source
-  "Parse a source string (pi: parseSource). Returns
-   {:kind :local :path PATH} or {:kind :remote :prefix P :spec S}."
+  "Parse a source string (pi: parseSource). Returns {:kind :local :path
+   PATH}, {:kind :git :spec S :git <parsed git source>}, or
+   {:kind :remote :prefix P :spec S} for the sources kmet cannot install
+   (npm among them)."
   [source]
   (let [s (str/trim (str source))]
-    (if-let [p (some #(when (str/starts-with? s %) %) remote-prefixes)]
-      {:kind :remote :prefix p :spec s}
-      {:kind :local :path s})))
+    (cond
+      (str/starts-with? s "npm:") {:kind :remote :prefix "npm:" :spec s}
+      (local-source? s) {:kind :local :path s}
+      :else
+      (if-let [parsed (git/parse-git-url s)]
+        {:kind :git :spec s :git parsed}
+        (if-let [p (some #(when (str/starts-with? s %) %) remote-prefixes)]
+          {:kind :remote :prefix p :spec s}
+          {:kind :local :path s})))))
 
 ;; ─── Path helpers (pi: resolvePath / normalize / relative) ────────────────
 
@@ -182,24 +194,28 @@
 
 (defn package-identity
   "The identity of a package for dedupe (pi: getPackageIdentity): local
-   packages are their resolved absolute path, remote ones their spec."
+   packages are their resolved absolute path, git packages host/path (every
+   URL form and ref of one repository matches), other remote ones their
+   spec."
   [source scope]
   (let [parsed (parse-source source)]
-    (if (= :local (:kind parsed))
-      (str "local:" (resolve-path (:path parsed) (base-dir-for-scope scope)))
+    (case (:kind parsed)
+      :local (str "local:" (resolve-path (:path parsed) (base-dir-for-scope scope)))
+      :git (str "remote:" (git/git-identity (:git parsed)))
       (str "remote:" (:spec parsed)))))
 
 (defn normalize-source-for-settings
-  "The form a local SOURCE takes in the settings file of SCOPE: the path
-   relative to the scope base dir when possible, otherwise a relative
-   `../..` path, never the input verbatim (pi:
-   normalizePackageSourceForSettings — relative(baseDir, resolve(source)))."
+  "The form a SOURCE takes in the settings file of SCOPE: a remote source
+   (git among them) is stored verbatim (pi), a local path relative to the
+   scope base dir when possible — otherwise a relative `../..` path, never
+   the input verbatim (pi: normalizePackageSourceForSettings —
+   relative(baseDir, resolve(source)))."
   [source scope]
   (let [parsed (parse-source source)]
-    (if (= :remote (:kind parsed))
-      (str source)
+    (if (= :local (:kind parsed))
       (relative-posix (base-dir-for-scope scope)
-                      (resolve-path (:path parsed) (str (fs/cwd)))))))
+                      (resolve-path (:path parsed) (str (fs/cwd))))
+      (str source))))
 
 (defn- packages-of
   "The :packages entries of a settings map (pi: settings.packages ?? [])."
@@ -232,9 +248,15 @@
    side resolves against the current working directory, the configured side
    against its own scope base)."
   [existing-source existing-scope input-source]
-  (let [parsed (parse-source input-source)]
-    (if (= :remote (:kind parsed))
-      (= (str existing-source) (:spec parsed))
+  (let [parsed (parse-source input-source)
+        existing (parse-source (str existing-source))]
+    (case (:kind parsed)
+      ;; git sources match by repository identity (pi), so SSH/HTTPS/
+      ;; shorthand forms and a ref change update the same settings entry
+      :git (and (= :git (:kind existing))
+                (= (git/git-identity (:git parsed))
+                   (git/git-identity (:git existing))))
+      :remote (= (str existing-source) (:spec parsed))
       (= (resolve-source-path existing-source existing-scope)
          (resolve-path (:path parsed) (str (fs/cwd)))))))
 
@@ -281,14 +303,35 @@
           true)
       false)))
 
+(defn git-install-root
+  "The managed git checkout root of SCOPE (pi: getGitInstallRoot): the
+   scope base dir's git/ subdirectory — ~/.kmet/agent/git for user packages,
+   .kmet/git for project packages."
+  [scope]
+  (str (fs/path (base-dir-for-scope scope) "git")))
+
 (defn get-installed-path
   "The resolved path of SOURCE in SCOPE when it exists on disk, else nil
-   (pi: getInstalledPath)."
+   (pi: getInstalledPath). For a git source that is its managed checkout."
   [source scope]
   (let [parsed (parse-source source)]
-    (when (= :local (:kind parsed))
-      (let [p (resolve-source-path (:path parsed) scope)]
-        (when (fs/exists? p) p)))))
+    (case (:kind parsed)
+      :local (let [p (resolve-source-path (:path parsed) scope)]
+               (when (fs/exists? p) p))
+      :git (let [p (git/package-dir (:git parsed) (git-install-root scope))]
+             (when (fs/exists? p) p))
+      nil)))
+
+(defn- package-root
+  "The directory a parsed package SOURCE resolves to for SCOPE: a local
+   path resolved against the scope base dir, or the package directory of a
+   git source (its checkout, or checkout/subdir for `//subdir`). nil for
+   sources kmet cannot install (npm)."
+  [parsed scope]
+  (case (:kind parsed)
+    :local (resolve-source-path (:path parsed) scope)
+    :git (git/package-dir (:git parsed) (git-install-root scope))
+    nil))
 
 (defn list-configured-packages
   "All configured packages from both settings files with their scope and
@@ -892,8 +935,8 @@
                    parsed (parse-source source)]]
        (if (= :remote (:kind parsed))
          (binding [*out* *err*]
-           (println "Warning: package" source "is a remote source; kmet supports"
-                    "local directories and files only — skipping"))
+           (println "Warning: package" source "is a remote source; kmet installs"
+                    "local directories/files and git: repositories — skipping"))
          (let [delta? (and (= scope :project) (autoload-disabled? entry))
                ;; pi findAutoloadDeltaBase: a delta entry resolves its path
                ;; from the user entry of the same identity; without one it
@@ -905,10 +948,23 @@
                                                   (package-identity source :project)))
                                       (source-of entry)))
                                   entries))
-               resolved (resolve-source-path (or delta-base source)
-                                             (if delta-base :user scope))]
-           (when (fs/exists? resolved)
-             (resolve-local-entry acc resolved entry scope source)))))
+               root (package-root (parse-source (or delta-base source))
+                                  (if delta-base :user scope))]
+           (if (and root (fs/exists? root))
+             (resolve-local-entry acc root entry scope source)
+             (when (= :git (:kind parsed))
+               (binding [*out* *err*]
+                 (let [root-scope (if delta-base :user scope)
+                       dir (get-in parsed [:git :dir])
+                       checkout (when dir
+                                  (git/install-path (git-install-root root-scope)
+                                                    (:git parsed)))]
+                   (if (and dir (some-> checkout fs/exists?))
+                     (println "Warning: git package" source "has no"
+                              (str "\"" dir "\"") "in its checkout — skipping")
+                     (println "Warning: git package" source "is not installed — run"
+                              (str "\"kmet install " source "\"")
+                              "(or \"kmet update\") to install it; skipping")))))))))
      (resolve-bundled-layer acc bundled)
      (into {} (for [[type {:keys [order items]}] @acc]
                 [type (finalize-items {:order order :items items})])))))

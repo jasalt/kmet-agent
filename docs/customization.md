@@ -1,7 +1,7 @@
 # Customization
 
 Use the package commands in [Usage](usage.md#package-subcommands) to manage
-local packages, then use the guides below to customize the resources they
+packages, then use the guides below to customize the resources they
 provide.
 
 ## Themes
@@ -15,8 +15,12 @@ color values, installation, and live reload; complete starting points are in
 ## Skills & Extensions
 
 - **Packages**: share any mix of extensions, skills, prompt templates and
-  themes as a local directory or file. `kmet install ./package [-l]` records
-  the source in the settings `:packages` list; a package directory loads as a
+  themes as a local directory or file, or a git repository
+  (`kmet install ./package [-l]`, `kmet install git:github.com/user/repo`
+  or `git:github.com/user/repo//packages/foo` for a package inside a
+  repository; git checkouts update with `kmet update`). `kmet install`
+  records the source in the settings `:packages` list; a package directory
+  loads as a
   single extension (contains `extension.edn`) or scans its conventional
   `extensions/`, `skills/`, `prompts/`, `themes/` subdirectories. Filter what a
   package loads with the object form — `{:source "../pkg" :extensions

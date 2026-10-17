@@ -195,8 +195,9 @@
   (println "  -h, --help            Show this help")
   (println)
   (println "Package subcommands:")
-  (println "  install <source>     Add a local package (directory or file) to settings")
+  (println "  install <source>     Add a package (local dir/file or git: repo) to settings")
   (println "  remove <source>      Remove a package (alias: uninstall)")
+  (println "  update [source]      Update installed git packages (all, or one source)")
   (println "  list                 List installed packages")
   (println "  config               Enable/disable resources (TUI)")
   (println)
@@ -318,8 +319,8 @@
   (let [opts (parse-args args)]
 
     ;; Package subcommands (pi: package-manager-cli dispatch in main.ts —
-    ;; checked before generic arg parsing, since install/remove/list/config
-    ;; are not flags).
+    ;; checked before generic arg parsing, since
+    ;; install/remove/update/list/config are not flags).
     (when (package-manager/package-command? args)
       (System/exit (package-manager/run-package-command args)))
 

@@ -71,25 +71,58 @@ reference, and the client library.
 
 ### Package subcommands
 
-Install, remove, list and configure **packages** — extensions, skills,
-prompt templates and themes bundled in a local directory or file (pi's
-`install`/`remove`/`list`/`config` with local sources; npm/git package
-installs are not ported):
+Install, remove, update, list and configure **packages** — extensions,
+skills, prompt templates and themes bundled in a local directory or file,
+or in a git repository (pi's `install`/`remove`/`update`/`list`/`config`;
+npm installs are not ported):
 
 ```sh
-kmet install ./path/to/package [-l]   # add a local dir/file package to settings
-kmet remove ./path/to/package [-l]    # remove it again (alias: kmet uninstall)
-kmet list                             # show configured packages
-kmet config [-l]                      # enable/disable resources (TUI)
+kmet install ./path/to/package [-l]        # local dir/file package
+kmet install git:github.com/user/repo [-l] # git repository (managed checkout)
+kmet install git:github.com/user/repo//packages/foo  # a package dir inside it
+kmet remove <source> [-l]                  # remove it (alias: kmet uninstall)
+kmet update [source]                       # update installed git packages
+kmet list                                  # show configured packages
+kmet config [-l]                           # enable/disable resources (TUI)
 ```
 
 - A **file** source loads as a single extension; a **directory** loads as one
 extension (contains `extension.edn`) or scans its conventional `extensions/`,
 `skills/`, `prompts/`, `themes/` subdirectories (pi package rules).
+- A **git** source is `git:host/path[@ref]` (`git:git@host:path` and
+  `https://…`/`ssh://…`/`git://…` URLs also work, with or without the `git:`
+  prefix); `@ref`/`#ref` pins a checkout to a branch, tag, or commit. The
+  repository is cloned into a managed checkout under the scope's `git/` root
+  (`~/.kmet/agent/git/<host>/<path>`, or `.kmet/git/<host>/<path>` with
+  `-l`) — kmet never expands or edits it.
+- **Packages inside a repository**: append `//subdir` to name a directory (or
+  a single file, which loads as one extension) in the checkout —
+  `git:github.com/user/repo//packages/foo`,
+  `git:github.com/user/repo@v1//packages/foo`. This is how a monorepo
+  contributes several packages: every subdirectory source of one repository
+  shares its checkout (one clone), while each `//subdir` is its own package
+  with its own settings entry, filters and config-screen row. `kmet install`
+  verifies the directory exists, listing the checkout's directories on a
+  typo — a checkout cloned solely for that failed install is removed again
+  (one a sibling package or an earlier install uses stays).
+- `kmet update` fetches and hard-resets a checkout: a pinned source to its
+  configured ref, an unpinned one to its origin upstream (or default)
+  branch. With no source, `kmet update` updates every installed git package;
+  `kmet update <source>` accepts any URL form of the repository, and a
+  repository URL updates all of its subdirectory packages (one fetch per
+  checkout).
+- `kmet remove` deletes the managed checkout together with the last settings
+  entry that uses it — removing one `//subdir` package of a shared checkout
+  keeps the checkout for its siblings. A configured git package that is not
+  installed yet (or whose subdirectory is gone) is skipped with a warning at
+  load — run `kmet install` or `kmet update`. kmet cannot self-update, and
+  npm installs are not ported: pi's `--self`, `--models`, `--all`, `--force`
+  and `--extension` have no equivalent (bare `kmet update` is the
+  all-packages form).
 - Sources are recorded in `:packages` in `~/.kmet/agent/settings.edn` (global)
-or `.kmet/settings.edn` with `-l` (project), stored relative to the settings
-file. Configured packages load at startup and on `/reload`, after the auto
-resource dirs.
+or `.kmet/settings.edn` with `-l` (project); local paths are stored relative
+to the settings file, git sources verbatim. Configured packages load at
+startup and on `/reload`, after the auto resource dirs.
 - `kmet config` opens a TUI listing every discovered resource — packages,
   top-level settings entries and the auto dirs — with a checkbox; space
   toggles, Tab switches global/project scope (project scope cycles

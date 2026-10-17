@@ -105,6 +105,7 @@
     kmet.agent.test-prompts
     kmet.agent.test-extensions
     kmet.agent.test-packages
+    kmet.agent.test-git-packages
     kmet.agent.test-bundled-extensions
     kmet.test-package-manager
     kmet.agent.ui.tui.test-resource-config

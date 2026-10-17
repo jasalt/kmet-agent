@@ -16,7 +16,11 @@ modules/agent/src/kmet/
 ├── config.clj          — Configuration loading (settings.edn, env vars)
 ├── debug.clj           — Debug/error logging
 ├── extension.clj       — the extension contract root (`kmet.agent.extension`)
-├── package_manager.clj — the install/remove/list/config CLI
+├── package_manager.clj — the install/remove/update/list/config CLI
+│                         (git sources: kmet.agent.git-packages)
+├── git_packages.clj — git source parsing + managed checkouts
+│                      (pi: utils/git.ts + the git half of
+│                      core/package-manager.ts)
 ├── libs/               — Generic, self-contained helpers (edit diffing,
 │                         process tree, SSE framing, the outbound-HTTP
 │                         boundary, terminal protocol + images, YAML

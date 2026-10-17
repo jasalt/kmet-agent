@@ -47,7 +47,7 @@ These were deliberate scope decisions. They still stand unless marked
 |---|---|---|
 | Additional run modes | `--mode json`, `--export`, `pi server` / `pi client` / `pi rpc`, `packages/server` / `packages/client` / `packages/protocol` (CBOR — removed in pi 1.3.0), `docs/sdk.md` | *Reopened, no decision recorded* — kmet now ships `--mode rpc` (EDN stdio, `docs/rpc.md`); interactive + print + RPC are the shipped modes. JSON mode, CLI `--export`, the SDK, and any remote/multi-client direction are undecided |
 | Project trust | `core/project-trust.ts`, `core/trust-manager.ts`, `/trust`, `trust-selector.ts`, `--approve`/`--no-approve`, `defaultProjectTrust`, `trust.json` | Not ported — project settings/extensions load unconditionally (`-a`/`-na` parse as no-ops on the package commands) |
-| Package sources: npm/git | `npm:`/`git:` installs (npm registry + git clone machinery in `core/package-manager.ts`), `pi update`/self-update, temporary `--extension` installs, per-package autoload deltas over npm/git identities | Not ported — kmet packages are local files/directories only (`kmet install ./dir`, `~`, absolute, relative; anything else errors with "Unsupported package source"). The remainder of the package manager IS ported (next section) |
+| Package sources: npm/git | `npm:`/`git:` installs (npm registry + git clone machinery in `core/package-manager.ts`), `pi update`/self-update, temporary `--extension` installs, per-package autoload deltas over npm/git identities | **Git ported, npm not.** kmet installs git repositories as managed checkouts (`kmet install git:github.com/user/repo[@ref]`, `kmet.agent.git-packages`, pi's parseGitUrl/clone/updateGit) and `kmet update` updates them (all or one source; no self-update, model refresh, `--force` or `--extension`). npm sources and temporary `--extension` installs are not ported; other remote sources error with "Unsupported package source". **kmet extension beyond pi:** `//subdir` names a package directory inside a repository (`git:host/repo//packages/foo`) — several packages may share one managed checkout, pi's `GitSource` has no subdirectory. The remainder of the package manager IS ported (next section) |
 | Session interop / JSONL | pi JSONL session files, `/export` `.jsonl`, `--export` from JSONL | EDNL-only by design (see [Session storage and alignment](#session-storage-and-alignment)) — `/export` writes standalone HTML |
 
 ## pi since 0.87: the new package frontier (analysis only)
@@ -127,7 +127,7 @@ through `gh gist`; `/copy` copies the last assistant text with platform
 clipboard support and an OSC 52 fallback. JSONL export/import remains out of
 scope by the EDNL-only decision.
 
-## Ported: the resource resolution & local-source package manager
+## Ported: the resource resolution & package manager
 
 pi `core/package-manager.ts` (the full resolve pipeline) +
 `package-manager-cli.ts` + `cli/config-selector.ts`
@@ -198,24 +198,27 @@ Kmet adaptations (deliberate deviations):
   `join(cwd, CONFIG_DIR_NAME, type)`); the retired `:*-dir` settings keys
   warn at load and point at the top-level entries. The agent dir honors
   `KMET_CODING_AGENT_DIR` (pi `ENV_AGENT_DIR`).
-- Remote (npm/git) entries in settings warn and are skipped at load instead
-  of being auto-installed.
-- `pi update` (extension updates, model-catalog refresh, self-update) is not
-  ported; `kmet --generate-models` covers the model-catalog piece.
+- Remote sources other than git (npm) in settings warn and are skipped at
+  load instead of being auto-installed; a git entry resolves to its managed
+  checkout when installed and warns when not (run `kmet install`/`kmet update`).
+- `pi update`'s self-update, model-catalog refresh, `--force` and
+  `--extension` are not ported; the git-package half is `kmet update` and
+  `kmet --generate-models` covers the model-catalog piece.
 
 ## Gap analysis
 
 ### 1. CLI surface
 
-**Subcommands** — pi's package commands are ported for local sources (see
-“Ported: the local-source package manager”): `kmet install/remove/uninstall/
-list/config` dispatch from `core.clj` to `kmet.agent.package-manager` (pi
-`package-manager-cli.ts`) before generic arg parsing. Still missing:
+**Subcommands** — pi's package commands are ported for local and git
+sources (see “Ported: the resource resolution & package manager”):
+`kmet install/remove/uninstall/update/list/config` dispatch from `core.clj`
+to `kmet.agent.package-manager` (pi `package-manager-cli.ts`) before generic
+arg parsing. Still missing:
 
 | pi command | ref |
 |---|---|
 | `pi auth check` / `pi auth print-api-key` / `pi auth print-bearer-token` | `cli/auth-check.ts`, `cli/auth-command.ts`, `cli/credential-print.ts` |
-| `pi update [source|self|--models|--all ...]` | `package-manager-cli.ts` |
+| `pi update --self/--models/--all/--force/--extension` | `package-manager-cli.ts` — self-update, model refresh and temporary installs are not ported; the git-package half is `kmet update` (bare = all, one source, `--extensions`; no-op `-a`/`-na`) |
 | `pi mcp list` / `add` / `remove` / `login` (server management) | `docs/mcp.md` |
 | `pi --export <session-file> [path]` | `main.ts` (`--export`) |
 

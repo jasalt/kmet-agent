@@ -15,7 +15,8 @@ Termux. The primary runtime is [Babashka](https://babashka.org/); native
   runs sandboxed Clojure scripts that return only the output they emit.
 - Headless RPC mode over EDN stdin/stdout for editors and scripts.
 - Provider, authentication, model-catalog, OAuth, and custom-model support.
-- Local extensions, skills, prompt templates, themes, and packages.
+- Local extensions, skills, prompt templates, themes, and packages (local
+  or git).
 - EDNL sessions with branching, compaction, import/export, and sharing.
 - Cross-platform source runs and self-contained executables.
 
