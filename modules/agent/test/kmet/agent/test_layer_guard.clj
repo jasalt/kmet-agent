@@ -1,10 +1,18 @@
 (ns kmet.agent.test-layer-guard
-  "Guard (engine.md §8): app business logic (kmet.agent.*, excluding
+  "Guard (app layer boundary): app business logic (kmet.agent.*, excluding
    kmet.agent.ui.tui.** and the extension-ABI injection) must not require the
-   terminal/Tk front ends or the interactive mode."
+   terminal/Tk front ends or the interactive mode, and the front-end layers
+   (kmet.agent.modes.**, kmet.agent.ui.**) drive the engine only through
+   kmet.agent.session.runtime."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
             [babashka.fs :as fs]))
+
+(defn- slash
+  "PATH with the platform separator normalized to / — the guards strip and
+   compare path fragments, which must not depend on the host separators."
+  [path]
+  (str/replace (str path) "\\" "/"))
 
 (defn- app-source-files []
   (letfn [(walk [dir]
@@ -12,13 +20,13 @@
                       (if (fs/directory? f) (walk f) [f]))
                     (fs/list-dir dir)))]
     (->> (walk "modules/agent/src/kmet/agent")
-         (remove #(str/includes? (str %) "/ui/"))
-         (remove #(str/includes? (str %) "/modes/"))
+         (remove #(str/includes? (slash %) "/ui/"))
+         (remove #(str/includes? (slash %) "/modes/"))
          (remove #(contains? #{"core.clj" "config.clj" "debug.clj" "extension.clj"
                                "package_manager.clj" "version.clj"}
                              (fs/file-name %)))
          (filter #(re-find #"\.clj[ca]?$" (str %)))
-         (map str))))
+         (map slash))))
 
 (defn- ns-form [path]
   (try (read-string (slurp path))
@@ -54,7 +62,7 @@
                     (fs/list-dir dir)))]
     (->> (concat (walk "modules/agent/src/kmet/agent/modes")
                  (walk "modules/agent/src/kmet/agent/ui"))
-         (map str)
+         (map slash)
          (filter #(re-find #"\.clj[ca]?$" %))
          (sort))))
 
