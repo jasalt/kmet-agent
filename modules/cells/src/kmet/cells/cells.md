@@ -134,7 +134,7 @@ Seven functions; they are the module's whole surface.
 
 | fn | signature | mutates? | notes |
 |---|---|---|---|
-| `runtime` | `(runtime host-map)` → `rt` | no | one key — the resolution backends (§8) |
+| `runtime` | `(runtime host-map)` → `rt` | no | one host key — the resolution backends (§8); `rt` carries a fresh root node, so repeated `mount!` calls diff against it (§6.2) |
 | `check` | `(check rt entries)` → `[] \| [err …]` | no | pure pre-flight (§4). No scopes, no code, no effects |
 | `mount!` | `(mount! rt entries)` / `(mount! rt entries {:parent node})` → `node` | yes | `check` first, then mount. **Diff-applying and idempotent** (§6.3); the `:parent` form creates a child node (§5.6) |
 | `dispose!` | `(dispose! node)` / `(dispose! node owner)` | yes | LIFO per owner (§5.2) |
@@ -185,7 +185,7 @@ the only non-data value.
  :config agent-loop-schema}
 
 ;; a leaf that subscribes to the bus when it is mounted
-{:start (fn [node self] (register! node self {:on-event :turn-end} on-turn-end))
+{:start (fn [node owner] (register! node owner {:on-event :turn-end} on-turn-end))
  :handle (fn [node input] …)}
 
 ;; any extra keys are host metadata: preserved, printed, never interpreted
@@ -201,11 +201,13 @@ schemas and per-front-end tags are host conventions carried in the descriptor,
 not framework fields to argue about.
 
 **The mount hook.** `:start` runs once when the unit is admitted, with the
-node and the unit's own descriptor, and is where a unit installs anything it
+node and the unit's own owner path (`[:app :agent-loop :budget]` — the path its
+registrations are collected onto), and is where a unit installs anything it
 owns — an event listener, a tool, a command, a timer — through `register!`,
 whose deregister fns are collected onto the unit itself. It returns nil, or a
 teardown fn that runs *after* everything its body registered (the unit's own
-resource unwinds last). There is no `:stop`: one hook plus auto-collected
+resource unwinds last). A truthy return that is not callable is a mount error,
+not a teardown. There is no `:stop`: one hook plus auto-collected
 disposers is the whole teardown model, and a unit that needs another order can
 do its work in the returned fn.
 
@@ -294,8 +296,9 @@ the caller no longer *has to* keep it: `register!` attaches it to the owner
 `this.caller.collect` worth copying.
 
 **Owners are slot paths.** A unit's registrations are owned by the unit's slot
-path — the composition and slot ids that reach it, `[:app :agent-loop :budget]`
-— so replacing its slot disposes whatever it installed: the `:start` +
+path — the composition and slot ids that reach it, `[:app :agent-loop :budget]`,
+which `:start` receives as its second argument — so replacing its slot disposes
+whatever it installed: the `:start` +
 `register!` path. An extension's own registrations (anything `init(api)`
 installs outside a unit) are owned by `[:app :extensions <extension-name>]`.
 Both are flat keys in one store: a unit's registrations and an extension's
@@ -331,6 +334,21 @@ Callers take it **once per attempt** rather than per dispatch:
 - capability tables (tools, commands) are read from the same snapshot, which
   closes the existing race where a tool unloads between the model's `tool_use`
   and its execution and execution fails with "unknown tool".
+
+The map is the ABI (§7, §12 Q4); one composition's snapshot looks like:
+
+```clojure
+{:budget {:handle budget-spend               ; the unit's resolved handle
+          :owner  [:app :agent-loop :budget] ; where its registrations are owned
+          :config {:usd 5.00}                ; only when the entry supplied one
+          :keys   #{[:on-event :turn-end]}   ; only what :start registered
+          :effect :pure}                     ; the descriptor's other keys, verbatim
+ :inner  {:handle run-inner :owner [:app :agent-loop :inner]}}
+```
+
+`(composition node)` is the `:app` composition and `(composition node :agent-loop)`
+the group's own; an unknown id is nil. Owner paths carry the tree position, so
+one level plus its owners is enough to read where a unit sits.
 
 ### 5.5 State belongs to the scope
 
@@ -382,6 +400,13 @@ node state, so it is shared by construction; what a child node isolates is
 composition and registrations, which is what a subagent's own model, tool
 subset and hooks need (pi's `durable`, recorded *open* in `pi-alignment.md`).
 
+Child nodes hang off the node, not off the slot whose unit mounted them:
+replacing or dropping a slot disposes that unit's owners (§5.1) but does not
+end children it created — the run that mounted one disposes it (`finally`
+above), and whole-node `dispose!` is what ends children someone forgot. That is
+why §8 gates unit removal on a quiescent boundary: a child outliving the unit
+that started it is a host bug, not a lifetime the store can infer.
+
 ---
 
 ## 6. The manifest
@@ -409,6 +434,12 @@ name a backend that is gone) and `mount!` never mounts it. `:app` is the root
 composition and not a valid `:id`. Composition ids — the ids of entries whose
 units carry `:units` — are unique across the whole entry list; slot ids are
 unique within one composition, and a leaf id may repeat under different groups.
+A unit's inline `:units` are defaults the same composition mounts: an entry
+whose `:id` matches one replaces it, an entry with a new id adds a slot.
+`:into` names entry-declared compositions only — to mount children under a
+group, declare the group as an entry; inline groups (`:units` inside `:units`)
+are private to their unit. Inline group ids still occupy the composition space,
+and `mount!` refuses a mount that uses one twice.
 
 ### 6.2 Diffing by `:id`
 
@@ -419,6 +450,13 @@ from the list is **disposed**. An entry with a generated id is
 removed-plus-added on every read and therefore remounts — the reason `:id` is
 required. Removal is not a separate operation: unmounting is `mount!` with a
 smaller list, which is what makes P5's reload a single call.
+
+A slot is kept when its owner path, resolved unit, `:name` and `:config` are
+all unchanged; the path is compared because a composition id can be reached
+under a new parent after a rename, and its registrations must move with it.
+Disposing one owner's registrations (`dispose!` with a path, §5.2) is not an
+unmount: the slot stays in the snapshot, and an identical re-mount does not
+re-run its `:start`.
 
 ### 6.3 `check` / `mount!`
 
@@ -449,6 +487,16 @@ before the throw in place, and the 13 pending resets in `bootstrap` are the
 compensating hack; with per-owner scopes, a throwing `init` disposes its own
 scope and the process is back where it started.
 
+`mount!` is likewise not transactional — `:start` runs as the walk reaches each
+slot, so a later `:start` that throws leaves earlier slots mounted. What it
+does not do is leave a node the snapshot cannot describe: a throwing `:start`
+unwinds its own owner before the error propagates, and the mount table is
+written as each slot is admitted, so `composition` names exactly what is
+mounted and a retry diffs against the truth. Structural errors are caught
+earlier still: composition ids are validated over the whole effective tree
+before anything is touched, so a duplicate id leaves the node exactly as it
+was (§6.1).
+
 ### 6.4 Resolution and backends
 
 `:name` resolves through a backend the **host** supplies:
@@ -460,7 +508,10 @@ scope and the process is back where it started.
 
 The host supplies them as an ordered vector of `[kind resolve-fn]` pairs;
 there must be at least one, they are tried in order, and a miss reports every
-kind attempted.
+kind attempted. A backend should return the *same* descriptor value for a name
+while it is loaded: the diff compares resolved units by value, so one that
+rebuilds an equal-but-fresh descriptor (a new closure per call) remounts on
+every pass.
 
 **The framework never loads code, and never sees a classpath.** Dynamic
 loading, isolation and artifact discovery stay in `kmet.loader` and
@@ -495,7 +546,8 @@ isolation boundary, for free.
 
 `(composition node)` returns the mounted data: per slot its resolved handle,
 config, the unit's own host metadata, and the registry keys its `:start`
-installed (§8.1). `(explain snapshot)` renders that value for a human, and is
+installed (§8.1; the exact map is §5.4's). `(explain snapshot)` renders that
+value for a human, and is
 what `/units` prints.
 
 The split is deliberate: the data form is what tests assert and what a diff
@@ -537,7 +589,7 @@ registers a listener:
 
 ;; an extension's unit
 {:config [:map [:threshold :int]]
- :start  (fn [node self] (subscribe! node self :turn-end on-turn-end))
+ :start  (fn [node owner] (subscribe! node owner :turn-end on-turn-end))
  :handle (fn [node input] …)}
 ```
 
@@ -732,10 +784,10 @@ explicit request.
    metadata key would be printable and checkable against the bus's declared
    vocabulary. Whether it earns its place should be decided at P5 with the
    extensions that would use it, not invented now.
-4. **`composition` (data) as an ABI.** `explain`'s string form is cosmetic and
-   free to change; the data form is what tests assert and what a future host
-   would replicate, so its shape is a compatibility surface. Decide that rule
-   before `/units` ships (P2).
+4. **`composition` (data) as an ABI.** **Settled with P1**: §5.4's entry shape
+   is the compatibility surface — `explain`'s string form stays cosmetic and
+   free to change. Changing the shape is now a deliberate, documented act,
+   which is what a future host that replicates entries needs.
 5. **Policy for sandbox-authored entries.** §8.2 makes a model-authored entry
    list mechanically possible; *whether* a run may contribute one, and to which
    slots, is a capability decision belonging to `run_code` and the host's `rt` —

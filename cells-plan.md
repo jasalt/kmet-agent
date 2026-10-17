@@ -16,7 +16,7 @@ a landed phase's row leaves the phase table (see cells.md §9).
 ## 1. The shape, end to end
 
 The smallest complete reading of this document: the module's surface, the
-host's side, and what comes back — the reading P0 and P1 are built from.
+host's side, and what comes back — the reading P0 and P1 were built from.
 **Scaffolding: deleted when P2 lands (cells.md §9)**, because by then `kmet.cells.core`
 and `kmet.agent.runtime` are the shape and a second copy of it can only drift.
 
@@ -33,8 +33,8 @@ and `kmet.agent.runtime` are the shape and a second copy of it can only drift.
 ;; ─── the agent's units (kmet.agent.runtime) ────────────────────────────────
 (def builtin-units
   {:kmet/agent-loop {:config agent-loop-schema
-                     :start  (fn [node self]   ; installed at mount, owned by this slot
-                               (register! node self {:on-event :agent-settled} on-settled))
+                     :start  (fn [node owner]  ; installed at mount, owned by this slot path
+                               (register! node owner {:on-event :agent-settled} on-settled))
                      :handle run-agent-turn    ; runs *and* owns slots
                      :units  {:inner        {:handle run-inner}
                               :settle       {:handle run-settle}
@@ -125,9 +125,10 @@ disposal (cells.md §5.6).
 
 ## 2. Staged plan
 
-**P0 has landed** — the store, `spec`, the four facade fns, the toy tests and
-the module wiring are in the tree; its row left this table (the git log is the
-record). Each phase is independently landable and gated by the changed-file
+**P0 and P1 have landed** — the store, `spec`, the seven facade fns, the
+mount table with its `:id` diff, the snapshot and `explain`, the toy tests and
+the module wiring are in the tree; their rows left this table (the git log is
+the record). Each phase is independently landable and gated by the changed-file
 tasks (`bb test-changed`, `bb lint-changed`, `bb format-check-changed`) plus
 `test-self-contained` / `test_modules_manifest` / `test_module_deps` as the
 regression proof (the agent guards, `test-layer-guard` and
@@ -138,7 +139,6 @@ the first unit is mounted in the tree.
 
 | phase | side | what lands | notes |
 |---|---|---|---|
-| **P1** | framework | `mount!` and the `:id` diff (add / replace / dispose) in `mount`, `explain`, `composition`, the `{:parent …}` arity while it is being written | additive; `core` completes to its seven functions |
 | **P2** | agent | `kmet.agent.runtime` (`cells/runtime` + `:builtin` backend); the 15 registries consolidated behind one mounted store; `loop-guard` as the first slot (read directly by the loop until P3); snapshot taken once per attempt (cells.md §5.4); `/units` (new surface); a per-registry decision on each of the 13 items `bootstrap` used to reset | the root node mounts in `core/-main` before `packages/load-extensions!`, so extension-time registrations already have an owner — that ordering is what retires the pending buffers; deletes the 15 dispatchers, both bootstrap halves, the load-order hack; **no behavior change to existing paths** |
 | **P3** | agent | `run-agent-turn` wrapped as one group; its stage fns lifted into slots it calls; the routing `case` becomes a data table the loop's namespace owns | straight refactor — no new execution model (cells.md §A.2) |
 | **P4** | agent | session runtime, TUI and extension surfaces as entries; one mount table; old config keys as aliases | the four ad-hoc mount mechanisms become one entry list (cells.md §1.3) |
@@ -148,15 +148,13 @@ the first unit is mounted in the tree.
 
 Two cells.md §12 decisions gate P2 rather than a later phase: **Q1**
 (capability snapshot timing) lands with P2, where the tool-unload race the
-snapshot closes lives; and **Q4** (`composition`'s data form as an ABI) must be
-settled before `/units` ships — `/units` is new surface, and `explain`'s string
-form is only the cosmetic half.
+snapshot closes lives; and **Q4** (`composition`'s data form as an ABI) was
+settled with P1 — §5.4 pins the shape before `/units` ships, and `explain`'s
+string form is only the cosmetic half.
 
-P1 is additive and behaviour-free: nothing in the tree changes meaning, so a
-subtle difference is impossible rather than merely unlikely. P2 is
-deliberately behavior-preserving for existing paths, and it is the change where
-a subtle difference would be hardest to notice; P3, a pure refactor, is the
-*lowest*-risk phase after P2 — which is the main reason for the cells.md §A.2 cuts.
+P2 is deliberately behavior-preserving for existing paths, and it is the change
+where a subtle difference would be hardest to notice; P3, a pure refactor, is
+the *lowest*-risk phase after P2 — which is the main reason for the cells.md §A.2 cuts.
 
 Landing a phase also deletes the scaffolding that phase makes redundant (cells.md §9):
 P2's landing removes §1, P5's removes the host sketches in cells.md §8, and a landed

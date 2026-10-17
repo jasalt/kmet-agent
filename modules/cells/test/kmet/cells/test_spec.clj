@@ -13,7 +13,10 @@
    :kmet/bad-units {:units "not a map"}
    :kmet/bad-child {:handle (fn [_ _]) :units {:oops 1}}
    :kmet/nil-handle {:handle nil}
-   :kmet/bad-schema {:config 42 :handle (fn [_ _])}})
+   :kmet/bad-schema {:config 42 :handle (fn [_ _])}
+   :kmet/nested-group {:handle (fn [_ _])
+                       :units {:inner {:handle (fn [_ _])
+                                       :units {:x {:handle (fn [_ _])}}}}}})
 
 (def ^:private rt
   (spec/runtime {:resolve [[:builtin (fn [nm] (get units nm))]
@@ -99,6 +102,13 @@
   (is (= :entry (:key (first (spec/check rt [42])))))
   (is (= :id (:key (first (spec/check rt [{:name :kmet/stage}])))))
   (is (= :name (:key (first (spec/check rt [{:id :x}]))))))
+
+(deftest inline-groups-are-not-entry-compositions
+  (let [[e] (spec/check rt [{:id :g :name :kmet/nested-group}
+                            {:id :child :into :inner :name :kmet/stage}])]
+    (is (= :into (:key e)))
+    (is (= [:app :child] (:path e)))
+    (is (str/includes? (:error e) "no composition :inner"))))
 
 (deftest nil-handles-are-rejected
   (let [[e] (spec/check rt [{:id :x :name :kmet/nil-handle}])]

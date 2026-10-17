@@ -54,9 +54,13 @@
 
 (defn node
   "A fresh node with an empty store. `mount!` (P1) is the public constructor;
-   this exists so `register!`/`dispose!` are usable before the tree does."
-  []
-  {:store (atom (empty-store)) :parent nil :children []})
+   this exists so `register!`/`dispose!` are usable before the tree does. A
+   node holds its parent link and live children (cells.md §5.6)."
+  ([] (node nil))
+  ([parent]
+   {:store (atom (empty-store))
+    :parent parent
+    :children (atom [])}))
 
 (defn register!
   "Install v under the host-shaped key k for owner (a slot path). Returns a
@@ -88,6 +92,12 @@
   "The set of keys owner registered — what `composition`/`explain` report."
   [node owner]
   (into #{} (map :key) (get-in @(:store node) [:by-owner owner])))
+
+(defn owners
+  "Every owner path on the store, in first-registration order — what
+   `mount!`'s subtree disposal walks (cells.md §5.1)."
+  [node]
+  (:owner-order @(:store node)))
 
 (defn registrations
   "The host-facing view: {key {owner value}}."
@@ -138,8 +148,9 @@
     nil))
 
 (defn dispose!
-  "Dispose a node (every owner in reverse registration order, then the store)
-   or one owner. LIFO, isolated and reported; never waits (cells.md §5.2–§5.3)."
+  "Dispose every owner on a store (reverse registration order, then the
+   store itself). The public node teardown, which ends children first, is
+   `kmet.cells.mount/dispose-node!` (cells.md §5.2–§5.3)."
   ([node]
    (let [owners (reverse (:owner-order @(:store node)))]
      (doseq [owner owners]
