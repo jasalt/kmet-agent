@@ -1,7 +1,10 @@
 (ns kmet.agent.test-commands
-  "Tests for kmet.agent.commands — slash command registry."
-  (:require [clojure.test :as t]
-            [kmet.agent.commands :as commands]))
+  "Tests for kmet.agent.commands — slash command registry, and the runtime
+   builtins' registry-facing behavior."
+  (:require [clojure.string :as str]
+            [clojure.test :as t]
+            [kmet.agent.commands :as commands]
+            [kmet.agent.commands.builtins :as builtins]))
 
 (t/use-fixtures :each
   (fn [f]
@@ -38,6 +41,16 @@
     (let [ctx {:runtime :engine :ui :ui :frontend :interactive}]
       ((:handler (commands/find-command "echo")) ctx "hello"))
     (t/is (= [{:runtime :engine :ui :ui :frontend :interactive} "hello"] @received))))
+
+(t/deftest units-lists-the-mounted-tree
+  ;; The /units surface renders kmet.cells' snapshot of the app root, which
+  ;; carries the builtin units (kmet.agent.runtime).
+  (builtins/register-runtime-commands!)
+  (let [got (atom nil)]
+    ((:handler (commands/find-command "units"))
+     {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
+    (t/is (= "Units" (first @got)))
+    (t/is (str/includes? (second @got) ":loop-guard"))))
 
 (t/deftest register-builtin-skips-a-taken-name
   (commands/register-command!

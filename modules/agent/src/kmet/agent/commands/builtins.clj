@@ -8,9 +8,11 @@
             [kmet.agent.debug :as debug]
             [kmet.agent.commands :as commands]
             [kmet.agent.loop :as agent]
+            [kmet.agent.runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
-            [kmet.agent.session.runtime :as runtime]))
+            [kmet.agent.session.runtime :as runtime]
+            [kmet.cells.core :as cells]))
 
 (defn- out
   "Call a shared command-UI capability; an absent capability is inert (a
@@ -111,10 +113,21 @@
       ;; :started — the completion reply arrives through :on-complete
       nil)))
 
+(defn- handle-units
+  "Show the mounted units: kmet.cells' human rendering of the app root's
+   snapshot, one line per slot (cells.md §7)."
+  [{:keys [ui]} _]
+  (out ui :info "Units"
+       (cells/explain (app-runtime/snapshot (app-runtime/node)))))
+
 (defn register-runtime-commands!
   "Register the engine-portable builtins (untagged: every front end
    dispatches them). A front end calls this with its builtin registration."
   []
+  (commands/register-builtin!
+   {:name "units"
+    :description "List the units mounted in the app's composition tree"
+    :handler handle-units})
   (commands/register-builtin!
    {:name "continue"
     :description "Continue where the agent left off (e.g. after a network error)"

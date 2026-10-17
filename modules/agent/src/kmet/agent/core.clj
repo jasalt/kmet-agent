@@ -18,6 +18,7 @@
             [kmet.ai.model-gen :as model-gen]
             [kmet.ai.models :as models]
             [kmet.agent.model-resolver :as resolver]
+            [kmet.agent.runtime :as runtime]
             [kmet.agent.debug :as debug]
             [kmet.agent.version :as version]
             [kmet.tui.fuzzy :as fuzzy]
@@ -377,6 +378,12 @@
     ;; model resolves) — so --model/--provider and settings.edn can select
     ;; extension-registered providers, and print mode gets extension hooks.
     (let [config (cfg/init!)]
+      ;; The composition root first: extension loading below registers into
+      ;; the root's owners (cells.md §8.2), so it has to exist before any
+      ;; init(api) runs. kmet.agent.runtime mounts the default entries as its
+      ;; namespace loads; later phases assemble the config-derived entries
+      ;; here.
+      (runtime/node)
       ;; One unified load per type (pi: resourceLoader — top-level entries,
       ;; auto dirs, then packages in precedence order)
       (packages/load-extensions!)

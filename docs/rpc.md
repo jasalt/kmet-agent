@@ -161,7 +161,7 @@ A `prompt` whose trimmed text is `/<name> ...` dispatches through the same
 registry the TUI uses, with the command context
 `{:runtime engine :ui rpc-command-ui :frontend :rpc}`:
 
-- `/continue`, `/name`, `/export`, `/compact` — the engine-portable builtins
+- `/continue`, `/name`, `/export`, `/compact`, `/units` — the engine-portable builtins
 - extension commands registered for any front end
 
 The response is `{:disposition :handled}`; nothing reaches the model. Unknown
