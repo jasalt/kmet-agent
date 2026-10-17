@@ -14,28 +14,42 @@
    "ai" 1
    "tui" 2
    "tk" 2
-   "app" 3})
+   "agent" 3})
 
-(defn- module-deps [module]
-  (let [deps (-> (str "modules/" module "/deps.edn")
-                 slurp
-                 edn/read-string)
-        local (->> (get deps :deps {})
-                   (keep (fn [[_ spec]]
-                           (when (map? spec)
-                             (:local/root spec))))
-                   (map #(str/replace (fs/file-name %) (re-pattern "\\.\\.$") ""))
-                   (map #(last (str/split % #"/"))))
-        _ (assert (vector? local))]
-    local))
+(defn- module-roots
+  "Every modules/<name> carrying a deps.edn. fs/list-dir already returns
+   modules/<name>, so the root path is used as-is: re-prefixing \"modules\"
+   builds modules/modules/... and silently scans nothing."
+  []
+  (->> (fs/list-dir "modules")
+       (filter #(fs/exists? (fs/path % "deps.edn")))
+       (sort-by str)))
+
+(defn- module-deps
+  "The sibling module names ROOT depends on, taken from its deps.edn
+   :local/root entries."
+  [root]
+  (->> (get (edn/read-string (slurp (fs/file root "deps.edn"))) :deps {})
+       (keep (fn [[_ spec]]
+               (when (map? spec)
+                 (:local/root spec))))
+       (map #(last (str/split (str %) #"/")))
+       vec))
 
 (deftest module-dependencies-flow-downward
   (testing "every module depends only on lower layers"
-    (doseq [module (sort-by str (fs/list-dir "modules"))]
-      (when (fs/exists? (fs/path "modules" module "deps.edn"))
-        (let [deps (module-deps module)]
-          (doseq [dep deps]
-            (is (contains? module-rank dep)
-                (str module " depends on unknown module " dep))
+    (let [roots (module-roots)]
+      (is (seq roots)
+          "no module roots scanned — check the module path handling")
+      (doseq [root roots
+              :let [module (str (fs/file-name root))]]
+        (is (contains? module-rank module)
+            (str module " has no entry in module-rank"))
+        (doseq [dep (module-deps root)]
+          (is (contains? module-rank dep)
+              (str module " depends on unknown module " dep))
+          (when (and (contains? module-rank module)
+                     (contains? module-rank dep))
             (is (< (module-rank dep) (module-rank module))
-                (str module " must not depend on " dep))))))))
+                (str module " (" (module-rank module) ") must not depend on "
+                     dep " (" (module-rank dep) ")"))))))))

@@ -40,11 +40,10 @@
            distinct))))
 
 (def ^:private temporary-leaks
-  ;; Known pre-existing violations (engine.md §3.6/§5 finding F). Remove an
+  ;; Known pre-existing violations of the app layer boundary. Remove an
   ;; entry when the corresponding leak is fixed; new violations fail this
   ;; test.
-  {"kmet.agent.extensions.core" ["kmet.tui."]
-   "kmet.agent.extensions.context" ["kmet.tui." "kmet.agent.modes."]})
+  {"kmet.agent.extensions.core" ["kmet.tui."]})
 
 (deftest app-layer-does-not-require-front-ends
   (testing "no new kmet.agent namespace reaches the TUI/Tk/interactive layers"
