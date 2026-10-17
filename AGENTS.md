@@ -23,7 +23,10 @@ User-facing documentation belongs in `docs/`. Implementation notes belong next
 to their source package. The temporary notes `run_code.md`, `perf.md`,
 `jolt-bugs.md`, `windows.md`, `pi-tools.md`, and `tcl.md` intentionally
 remain at the project root. (`engine.md` was folded/retired once the
-session-runtime split’s GUI-independent steps landed.)
+session-runtime split’s GUI-independent steps landed.) `cell-plan.md` is the
+transitional implementation plan for `modules/cell` — its design document is
+`modules/cell/src/kmet/cell/cell.md` — and it stays at the root until its
+phases land.
 
 ## Basic development flow
 
