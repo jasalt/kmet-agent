@@ -2340,6 +2340,10 @@
       (t/is (= [{:text "hello during compaction" :mode :steer}]
                (runtime/compaction-queued (:engine cs)))
             "message queued with steer mode")
+      (t/is (= ["hello during compaction"]
+               @(:steering-atom (:pending-messages-comp cs)))
+            "queued message shows in the pending steering display (pi:
+             queueCompactionMessage → updatePendingMessagesDisplay)")
       (t/is (empty? @(:messages (runtime/agent-state (:engine cs))))
             "message NOT sent to the agent"))))
 
@@ -2354,7 +2358,11 @@
         ((var turn/handle-follow-up) cs))
       (t/is (= [{:text "later message" :mode :follow-up}]
                (runtime/compaction-queued (:engine cs)))
-            "message queued with follow-up mode"))))
+            "message queued with follow-up mode")
+      (t/is (= ["later message"]
+               @(:follow-up-atom (:pending-messages-comp cs)))
+            "queued follow-up shows in the pending display (pi:
+             queueCompactionMessage → updatePendingMessagesDisplay)"))))
 
 (deftest test-flush-compaction-queue-prompts-when-idle
   (testing "compaction_end flushes the queue: the first non-extension message

@@ -410,10 +410,15 @@
   (status/update-pending-messages! cs))
 
 (defn- queue-compaction-message!
-  "Queue a message typed during compaction in the runtime's queue (the
-   front end display reads it back through runtime/compaction-queued)."
+  "Queue a message typed during compaction in the runtime's queue and
+   refresh the pending display (pi: queueCompactionMessage →
+   updatePendingMessagesDisplay — the front end display reads the queue
+   back through runtime/compaction-queued, so without the refresh a
+   message queued during compaction stays invisible until the next
+   queue/message event)."
   [cs text mode]
-  (runtime/queue-compaction-message! (:engine cs) text mode))
+  (runtime/queue-compaction-message! (:engine cs) text mode)
+  (status/update-pending-messages! cs))
 
 (defn interactive-command-ui
   "The interactive command-UI value (ctx :ui): the shared capabilities the
