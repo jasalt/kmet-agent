@@ -44,6 +44,14 @@
   [node comp-id id record]
   (swap! (:mounted node) assoc-in [comp-id id] record))
 
+(defn- publish-composition!
+  "Mark COMP-ID as mounted, empty until its slots land: the walk reaching a
+   composition is what makes it part of the snapshot, so an empty one is `{}`
+   rather than unknown — the same state a composition whose slots were all
+   dropped is left in."
+  [node comp-id]
+  (swap! (:mounted node) update comp-id #(or % {})))
+
 (defn- forget-composition!
   "Drop COMP-ID and every composition under it from the live table, reading
    OLD (the pre-walk table) for the nested ids — called where a slot's subtree
@@ -160,6 +168,7 @@
   (let [current (get old comp-id {})
         slots (get tree comp-id)
         slot-ids (set (map :id slots))]
+    (publish-composition! node comp-id)
     (doseq [[id record] current
             :when (not (contains? slot-ids id))]
       (dispose-subtree! node (:owner record))

@@ -18,6 +18,15 @@
     (is (nil? (cells/composition node :nope)))
     (is (identical? (:root rt) node))))
 
+(deftest an-empty-composition-is-mounted-not-unknown
+  (let [rt (rt-with {:k/group {:handle :h/group :units {}}})
+        node (:root rt)]
+    (cells/mount! rt [])
+    (is (= {} (cells/composition node)) "the walk reached :app, so it exists empty")
+    (cells/mount! rt [{:id :group :name :k/group}])
+    (is (= {} (cells/composition node :group))
+        "a group with no slots is the same state, not nil")))
+
 (deftest inline-units-are-defaults-and-entries-replace-them
   (let [rt (rt-with {:k/group {:handle :h/group
                                :units {:inner {:handle :h/inner}
