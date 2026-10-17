@@ -659,6 +659,124 @@
   [{:keys [lang lines]}]
   {:type :code :lang lang :text (str/join "\n" lines)})
 
+(defn- code-fence-open?
+  [fc trimmed]
+  (and (= fc \`) (re-matches code-fence-re trimmed)))
+
+(defn- hr-line?
+  [fc trimmed]
+  (and (contains? marker-first-chars fc) (re-matches hr-re trimmed)))
+
+(defn- heading-line?
+  [fc trimmed]
+  (and (= fc \#) (re-matches heading-re trimmed)))
+
+(defn- quote-line?
+  [fc trimmed]
+  (and (= fc \>) (re-matches quote-re trimmed)))
+
+(defn- list-line?
+  [fc trimmed]
+  (and (contains? marker-first-chars fc)
+       (or (re-matches ul-re trimmed) (re-matches ol-re trimmed))))
+
+(defn- table-start?
+  [lines i]
+  (let [line (nth lines i)]
+    (and (table-row? line)
+         (seq (split-table-row line))
+         (table-separator? (split-table-row (nth lines (inc i) ""))))))
+
+(defn- blank-line?
+  [trimmed line]
+  (and (zero? (count trimmed)) (re-matches empty-re line)))
+
+(defn- continuation-line?
+  [stack indent]
+  (and (seq @stack) (> indent (:indent (peek @stack)))))
+
+(defn- handle-code-state
+  [i result stack code-state trimmed line]
+  (if (re-matches code-fence-re trimmed)
+    (let [code-tok (code-token @code-state)]
+      (if (:in-item? @code-state)
+        (attach-block! stack code-tok)
+        (vswap! result conj! code-tok))
+      (vreset! code-state nil)
+      (inc i))
+    (do (vswap! code-state update :lines conj
+                (strip-indent (:indent @code-state) line))
+        (inc i))))
+
+(defn- handle-code-fence
+  [i result stack code-state trimmed indent]
+  (let [lang (or (second (re-find code-fence-re trimmed)) "")]
+    (if (and (seq @stack) (> indent (:indent (peek @stack))))
+      (vreset! code-state {:lang lang :lines [] :indent indent :in-item? true})
+      (do (close-all-lists! stack result)
+          (vreset! code-state {:lang lang :lines [] :indent indent})))
+    (inc i)))
+
+(defn- handle-hr
+  [i result stack]
+  (close-all-lists! stack result)
+  (vswap! result conj! {:type :hr})
+  (inc i))
+
+(defn- handle-heading
+  [i result stack trimmed]
+  (close-all-lists! stack result)
+  (let [[_ level-str content] (re-find heading-re trimmed)]
+    (vswap! result conj! {:type :heading :level (count level-str)
+                          :content (parse-inline content)}))
+  (inc i))
+
+(defn- handle-quote
+  [i result stack trimmed]
+  (close-all-lists! stack result)
+  (let [[_ content] (re-find quote-re trimmed)]
+    (vswap! result conj! {:type :quote :content (parse-inline content)}))
+  (inc i))
+
+(defn- handle-list
+  [i result stack indent trimmed]
+  (add-list-line! stack result indent trimmed)
+  (inc i))
+
+(defn- handle-table
+  [lines i result stack]
+  (close-all-lists! stack result)
+  (+ i (parse-table! lines i result)))
+
+(defn- handle-blank
+  [i result stack]
+  (add-blank-line! stack result)
+  (inc i))
+
+(defn- handle-continuation
+  [i stack line]
+  (add-continuation! stack line)
+  (inc i))
+
+(defn- handle-paragraph
+  [i result stack line]
+  (close-all-lists! stack result)
+  (vswap! result conj! {:type :paragraph :content (parse-inline line)})
+  (inc i))
+
+(defn- parse-dispatch-line
+  [lines i result stack code-state line trimmed fc indent]
+  (cond
+    (code-fence-open? fc trimmed) (handle-code-fence i result stack code-state trimmed indent)
+    (hr-line? fc trimmed) (handle-hr i result stack)
+    (heading-line? fc trimmed) (handle-heading i result stack trimmed)
+    (quote-line? fc trimmed) (handle-quote i result stack trimmed)
+    (list-line? fc trimmed) (handle-list i result stack indent trimmed)
+    (table-start? lines i) (handle-table lines i result stack)
+    (blank-line? trimmed line) (handle-blank i result stack)
+    (continuation-line? stack indent) (handle-continuation i stack line)
+    :else (handle-paragraph i result stack line)))
+
 (defn parse
   "Parse Markdown TEXT into a vector of block tokens (the AST).
 
@@ -690,93 +808,17 @@
   (let [lines (str/split-lines (or text ""))
         result (volatile! (transient []))
         code-state (volatile! nil)
-        stack (volatile! [])]
+        stack (volatile! [])
+        n (count lines)]
     (loop [i 0]
-      (when (< i (count lines))
+      (when (< i n)
         (let [line (nth lines i)
               trimmed (str/trim line)
               fc (when (pos? (count trimmed)) (nth trimmed 0))
-              indent (leading-indent line)
-              next-i (cond
-                       ;; Inside a code block: accumulate raw lines (leading
-                       ;; whitespace up to the fence indent stripped) until the
-                       ;; closing fence, then emit (or attach to a list item).
-                       @code-state
-                       (if (re-matches code-fence-re trimmed)
-                         (let [code-tok (code-token @code-state)]
-                           (if (:in-item? @code-state)
-                             (attach-block! stack code-tok)
-                             (vswap! result conj! code-tok))
-                           (vreset! code-state nil)
-                           (inc i))
-                         ;; conj the raw line; joining once at the close keeps
-                         ;; this linear (str-concatenating per line copied the
-                         ;; whole accumulated block each time — O(n^2)).
-                         (do (vswap! code-state update :lines conj
-                                     (strip-indent (:indent @code-state) line))
-                             (inc i)))
-
-                       ;; Code fence open: inside a list item when indented
-                       ;; deeper than the innermost list. The fc gates before
-                       ;; each regex are necessary-prefix checks (a line that
-                       ;; fails them cannot match), so plain prose lines skip
-                       ;; fence/hr/heading/quote/list/empty in one set lookup.
-                       (and (= fc \`) (re-matches code-fence-re trimmed))
-                       (let [lang (or (second (re-find code-fence-re trimmed)) "")]
-                         (if (and (seq @stack) (> indent (:indent (peek @stack))))
-                           (vreset! code-state {:lang lang :lines [] :indent indent :in-item? true})
-                           (do (close-all-lists! stack result)
-                               (vreset! code-state {:lang lang :lines [] :indent indent})))
-                         (inc i))
-
-                       (and (contains? marker-first-chars fc)
-                            (re-matches hr-re trimmed))
-                       (do (close-all-lists! stack result)
-                           (vswap! result conj! {:type :hr})
-                           (inc i))
-
-                       (and (= fc \#) (re-matches heading-re trimmed))
-                       (do (close-all-lists! stack result)
-                           (let [[_ level-str content] (re-find heading-re trimmed)]
-                             (vswap! result conj! {:type :heading :level (count level-str)
-                                                   :content (parse-inline content)}))
-                           (inc i))
-
-                       (and (= fc \>) (re-matches quote-re trimmed))
-                       (do (close-all-lists! stack result)
-                           (let [[_ content] (re-find quote-re trimmed)]
-                             (vswap! result conj! {:type :quote :content (parse-inline content)}))
-                           (inc i))
-
-                       ;; List line (before tables: a pipe in list content must
-                       ;; not turn the item into a table header)
-                       (and (contains? marker-first-chars fc)
-                            (or (re-matches ul-re trimmed) (re-matches ol-re trimmed)))
-                       (do (add-list-line! stack result indent trimmed)
-                           (inc i))
-
-                       ;; GFM table: a pipe row immediately followed by a
-                       ;; separator row
-                       (and (table-row? line)
-                            (seq (split-table-row line))
-                            (table-separator? (split-table-row (nth lines (inc i) ""))))
-                       (do (close-all-lists! stack result)
-                           (+ i (parse-table! lines i result)))
-
-                       (and (zero? (count trimmed)) (re-matches empty-re line))
-                       (do (add-blank-line! stack result)
-                           (inc i))
-
-                       ;; Indented continuation of the innermost list item
-                       (and (seq @stack) (> indent (:indent (peek @stack))))
-                       (do (add-continuation! stack line)
-                           (inc i))
-
-                       :else
-                       (do (close-all-lists! stack result)
-                           (vswap! result conj! {:type :paragraph :content (parse-inline line)})
-                           (inc i)))]
-          (recur next-i))))
+              indent (leading-indent line)]
+          (recur (if @code-state
+                   (handle-code-state i result stack code-state trimmed line)
+                   (parse-dispatch-line lines i result stack code-state line trimmed fc indent))))))
     ;; Flush an unclosed code block at end of input (attach when inside a list)
     (when-let [cs @code-state]
       (let [code-tok (code-token cs)]
