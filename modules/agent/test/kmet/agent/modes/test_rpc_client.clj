@@ -1,5 +1,5 @@
 (ns kmet.agent.modes.test-rpc-client
-  "End-to-end RPC client tests (engine.md step 6d): spawn a real `--mode rpc`
+  "End-to-end RPC client tests: spawn a real `--mode rpc`
    process and drive it over real stdin/stdout through
    kmet.agent.modes.rpc-client. ^:slow — a subprocess spawn plus the child's cold
    start loading the catalogs.

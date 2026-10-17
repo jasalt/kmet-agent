@@ -1,7 +1,7 @@
 (ns kmet.agent.session.schema
   "Malli schemas for session files: the header and the entry union.
 
-   Used at the session boundary (engine.md section 4.3 / step 7): the header is
+   Used at the session boundary: the header is
    validated on every load, and entries are validated on skip or under
    --debug (see kmet.agent.session.core)."
   (:require [malli.core :as m]

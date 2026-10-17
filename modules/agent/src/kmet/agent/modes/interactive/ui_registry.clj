@@ -682,7 +682,7 @@
                   (reset! current-editor-atom ed)
                   (when (tui/tui-has-overlay? t) (tui/tui-hide-overlay t))
                   (tui/tui-request-render t))}]
-    ;; Bind the front end's extension surface (engine.md §4.5): the
+    ;; Bind the front end's extension surface: the
     ;; capability map plus the front-end kind extensions branch on
     ;; (ctx.mode / ctx.has-ui). bootstrap bound the headless defaults; the
     ;; live widgets replace them here.

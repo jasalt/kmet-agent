@@ -437,7 +437,7 @@
      :set-title #(state/update-terminal-title! cs)}))
 
 (defn command-context
-  "The slash-command handler context (engine.md §10.3): :runtime is the
+  "The slash-command handler context: :runtime is the
    session-runtime engine, :ui the front end's command-UI value
    (interactive-command-ui), :frontend the front-end kind."
   [cs]

@@ -9,7 +9,7 @@
    dialogs and input belong to the front end (kmet.agent.modes.*), which
    subscribes to the event stream instead of reaching into the agent.
 
-   Design rules (engine.md §4.1):
+   Design rules:
 
    - The event stream is the truth. `subscribe!` takes a fn of one plain
      EDN event; callbacks run on the emitting thread and must not block.
@@ -267,7 +267,7 @@
                              :prompt-templates (atom @prompts/pending-prompt-templates)})]
     ;; Runtime-scoped extension handle: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent. The
-    ;; front-end binding is runtime-scoped too (engine.md §4.5): bootstrap
+    ;; front-end binding is runtime-scoped too: bootstrap
     ;; installs the headless port and the front-end kind, dispose! unbinds.
     ;; A front end with its own port re-binds after its widgets exist.
     (event-bus/set-default-event-listener-atom! (:event-listeners engine))
@@ -404,8 +404,8 @@
       (catch Exception e (debug/log "session-start: " e)))))
 
 (defn switch-session!
-  "Swap the live session to SESS (the runtime owns the swap — engine.md
-   §4.4; front ends keep the UX around it): point the session atom and the
+  "Swap the live session to SESS (the runtime owns the swap; front ends
+   keep the UX around it): point the session atom and the
    extension session handle at it, replace the agent's session and rebuild
    its in-memory context from the new branch, apply the session-derived
    model/thinking/tool settings when the opts :apply-settings? is true, drop
@@ -765,7 +765,7 @@
   (reset! (:turn-running? engine) false)
   (agent/cancel-turn (agent-state engine)))
 
-;; ─── UI requests (the port's async answer protocol, engine.md §4.5) ───────
+;; ─── UI requests (the port's async answer protocol) ──────────────────────
 
 (defn respond!
   "Answer the pending :ui-request ID with VALUE (pi: the RPC
@@ -785,7 +785,7 @@
   (:default (get @(:pending-ui engine) id)))
 
 (defn request-ui!
-  "Ask the bound front end for an answer (engine.md §4.5): builds
+  "Ask the bound front end for an answer: builds
    `{:type :ui-request :id ... :kind ...}` merged with PAYLOAD, delivers it
    to the port's :request capability, and returns a promise of the answer.
 

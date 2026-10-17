@@ -1,5 +1,5 @@
 (ns kmet.agent.modes.test-rpc
-  "RPC-mode tests (engine.md step 6a; pi: modes/rpc/rpc-mode.ts) — run()
+  "RPC-mode tests (pi: modes/rpc/rpc-mode.ts) — run()
    serves EDN commands and streams wire events: ids correlate without
    ordering, a malformed record answers a parse response without an id, and
    EOF disposes the engine."
@@ -188,7 +188,7 @@
 (deftest test-eof-streams-the-terminal-settle-of-an-in-flight-run
   (testing "stdin EOF disposes the engine; a run still active is cancelled
             and its terminal :agent-settled reaches the stream before the
-            subscriber is dropped (engine.md §4.1's terminal-event
+            subscriber is dropped (the terminal-event
             contract)"
     (with-redefs [agent/run-agent-turn
                   (fn [ag _]

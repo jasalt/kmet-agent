@@ -1,5 +1,5 @@
 (ns kmet.agent.modes.rpc-client
-  "Thin client for `--mode rpc` (engine.md step 6d; pi:
+  "Thin client for `--mode rpc` (pi:
    modes/rpc/rpc-client.ts). `start` spawns a kmet RPC process (`bb start` /
    `jolt start`, or a dist binary through :command) and gives a script four
    primitives:

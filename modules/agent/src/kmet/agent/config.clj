@@ -285,7 +285,7 @@
     ;; above — load-config is the single choke point every entry mode
     ;; passes through, so the transport setting applies in interactive
     ;; and print mode alike).
-    ;; Boundary validation (engine.md step 7): debug-only.
+    ;; Boundary validation: debug-only.
     (when (and (debug/enabled?) (not (config-schema/validate-config? with-env)))
       (binding [*out* *err*]
         (println "Warning: Wrong-shape config" (pr-str (config-schema/explain-config with-env)))))

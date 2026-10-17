@@ -16,7 +16,7 @@
         ;; the two Maven-only set members need declaring here; cljfmt above
         ;; serves both the format tasks and the set.
         parinferish/parinferish {:mvn/version "0.8.0"}
-        ;; Boundary schemas (engine.md step 7): validate files and, later,
+        ;; Boundary schemas: validate files and, later,
         ;; wire records at the edges. Prefer malli.core + malli.error only.
         metosin/malli {:mvn/version "0.20.1"}}
  ;; Each :doc is a one-line `bb tasks` summary, a blank line, then the

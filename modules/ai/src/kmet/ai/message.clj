@@ -1,7 +1,7 @@
 (ns kmet.ai.message
   "Malli schemas for provider messages and their content blocks.
 
-   This namespace is a boundary aid (engine.md §4.3 / step 7): messages cross
+   This namespace is a boundary aid: messages cross
    the session-file and (eventually) wire boundaries, so their shape is
    described here rather than ad hoc in every caller. Converters remain in
    the loop and providers; this schema only validates."

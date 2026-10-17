@@ -1393,7 +1393,7 @@ registration function returns a deregister fn; the nullable api's deregister
 fns remove the corresponding registration.
 
 For runtime integration tests, `load-extension!` + `unload-extension!` against
-the real registries (see `../test/kmet/app/test_extensions.clj`).
+the real registries (see `modules/agent/test/kmet/agent/test_extensions.clj`).
 
 ## Example
 

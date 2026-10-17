@@ -897,7 +897,7 @@ upgrades that must satisfy the same suite.
   `:load-fn` / `:namespaces` overrides and definitions per fork. The
   extension runtime uses this — one base per shared-namespace set, forked
   per extension (`kmet.agent.extensions.core/shared-context`).
-- `modules/agent/src/kmet/app/extensions.cljc` — replace `create-context` +
+- `modules/agent/src/kmet/agent/extensions/context.cljc` — replace `create-context` +
   `make-load-fn` + `jars-for` plumbing with `loader/sci-loader` + policies
   (`allow` over the root for the shared layers; per-extension deps resolver
   injected). `load-extension!` / `unload-extension!` keep their shape

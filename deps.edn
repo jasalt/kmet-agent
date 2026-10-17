@@ -145,7 +145,7 @@
         ;; so dropping that pin cannot silently drop it from the set.
         parinferish/parinferish {:mvn/version "0.8.0"}
         borkdude/edamame {:mvn/version "1.6.44"}
-        ;; Boundary schemas (engine.md step 7) — see bb.edn for rationale.
+        ;; Boundary schemas — see bb.edn for rationale.
         metosin/malli {:mvn/version "0.20.1"}
         ;; kmet's own RFC 0014 provider lib (jolt/ dir): the JDK classes the
         ;; jolt ecosystem lacks. Empty by design — v0.8.22 supplies every

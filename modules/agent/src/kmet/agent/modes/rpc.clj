@@ -1,6 +1,6 @@
 (ns kmet.agent.modes.rpc
   "RPC mode — headless, long-lived: EDN commands on stdin, protocol records
-   on stdout (engine.md step 6; pi: modes/rpc/rpc-mode.ts). A command is a
+   on stdout (pi: modes/rpc/rpc-mode.ts). A command is a
    map with a :type and an optional string :id the matching response
    repeats; events are the print-mode wire projection
    (event-bus/wire-event). Extension UI dialogs and output channels arrive
@@ -107,7 +107,7 @@
         (ok type {:disposition :queued}))
     (failed type (str (name type) " requires a non-empty :message string"))))
 
-;; ─── The extension UI port (engine.md §6.2) ────────────────────────────────
+;; ─── The extension UI port ────────────────────────────────────────────────
 
 (def ^:private dialog-methods
   "Request kinds the client answers (pi: the dialog extension UI methods)."
@@ -142,7 +142,7 @@
       (extensions/ui-request-default kind))))
 
 (defn- ui-port
-  "The RPC UI port (engine.md §6.2): the headless degraded answers plus
+  "The RPC UI port: the headless degraded answers plus
    everything the protocol carries — dialogs through :request and the
    fire-and-forget output channels. ENGINE-REF holds the engine (the port is
    built before bootstrap, which installs it). Widget hiccup cannot cross
@@ -189,7 +189,7 @@
    :notify (:notify port)})
 
 (defn- dispatch-command
-  "Dispatch a slash-command prompt through the registry (engine.md §6.3): a
+  "Dispatch a slash-command prompt through the registry: a
    command available to :rpc runs with the command ctx {:runtime :ui
    :frontend}; an extension command receives the extension context (pi:
    handler(args, ctx)) and executes immediately, even mid-stream. Returns
@@ -680,7 +680,7 @@
             (finally
               ;; dispose first: it cancels an in-flight run and waits for
               ;; the terminal :agent-settled, which must reach the subscriber
-              ;; before dispose clears it (engine.md §4.1). The unsubscribe
+              ;; before dispose clears it. The unsubscribe
               ;; after is then a no-op.
               (runtime/dispose! engine)
               (unsubscribe))))

@@ -1,6 +1,6 @@
 (ns kmet.agent.test-ui-port
-  "Front-end extension binding + UI request/response contract (engine.md
-   step 4, §4.5): bind-extensions! carries the front-end kind (ctx.mode /
+  "Front-end extension binding + UI request/response contract: bind-extensions!
+   carries the front-end kind (ctx.mode /
    ctx.has-ui), the headless port auto-answers, and request-ui!/respond!
    pair a request with its answer."
   (:require [babashka.fs :as fs]

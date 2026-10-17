@@ -177,7 +177,7 @@
 
 (defn path->ns
   "Source/test file path to its namespace symbol
-   (src/kmet/app/ui/model_selector.clj → kmet.agent.ui.tui.model-selector;
+   (modules/agent/src/kmet/agent/ui/tui/model_selector.clj → kmet.agent.ui.tui.model-selector;
    tasks/kmet/tasks/build.cljc → kmet.tasks.build;
    extensions/clojure/src/kmet/extensions/clojure/core.clj → kmet.extensions.clojure.core;
    extensions/tools.clj → kmet.extensions.tools). Accepts either

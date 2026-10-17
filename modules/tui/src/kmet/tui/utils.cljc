@@ -17,7 +17,7 @@
 (def ANSI-CODE-RE
   "ANSI CSI (ESC [ … final byte) and OSC (ESC ] … BEL/ST/0x9C) sequences.
    Delegated to kmet.libs.terminal so app code can share it without a TUI
-   require (engine.md step 8, finding F)."
+   require."
   terminal/ANSI-CODE-RE)
 
 ;; ansi-code-at lives in the ANSI-window-slicing section below; the

@@ -1,5 +1,5 @@
 (ns kmet.agent.commands.builtins
-  "Engine-portable builtin slash commands (engine.md step 4): they run
+  "Engine-portable builtin slash commands: they run
    against the command ctx's :runtime and the shared command-UI
    capabilities (:message, :info, :warning, :set-title), so any front end
    can dispatch them. The interactive mode registers its view-bound

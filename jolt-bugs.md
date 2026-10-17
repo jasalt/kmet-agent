@@ -9,7 +9,7 @@ on #1316/#1364 were already removed 2026-10-15. Also checked:
 `jolt-lang/http-client` `v0.1.2` (`00455b8`, unchanged; `HEAD` is that same
 revision), the versions now pinned by the project. `:jolt/min-version` names
 `0.8.22`, so a source build matches the tag. Two further defects (`#1379`,
-`#1380`) were found porting the RPC front end (engine.md step 6d) and filed
+`#1380`) were found porting the RPC front end and filed
 2026-10-15 against this revision.
 
 Re-checked the same day: both were closed on `main` by

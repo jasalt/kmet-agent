@@ -547,7 +547,7 @@
   (when-let [f (runtime-capability capability)]
     (apply f args)))
 
-;; ─── UI requests (the port's async answer protocol, engine.md §4.5) ──────
+;; ─── UI requests (the port's async answer protocol) ─────────────────────
 
 (def ui-request-defaults
   "Default answer per :ui-request :kind — what a front end without a
