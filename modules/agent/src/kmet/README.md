@@ -130,6 +130,11 @@ listed in the root `AGENTS.md` topic map.
 
 ### Layer boundaries
 
+- `kmet.cells.*` is the composition runtime (`modules/cells`, rank 0): it
+  turns declarative unit descriptors into a mounted node with per-owner
+  lifetime. It requires no `kmet.*` namespace outside its own tree — the host
+  supplies the resolution backends — and `test_self_contained` enforces it. Design:
+  `modules/cells/src/kmet/cells/cells.md`.
 - `kmet.loader.*` is now an outer module (`modules/loader`); it may use third-party deps and
   `kmet.loader.*`, but no other `kmet.*` namespace.
 - `kmet.libs.*` is generic and self-contained; it may not require non-libs

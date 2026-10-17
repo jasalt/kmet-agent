@@ -5,7 +5,8 @@
 ;; projects are not workspace modules: each is an independently loadable
 ;; extension with its own deps.edn.
 {:modules
- [{:name "reakt" :src "modules/reakt/src" :test "modules/reakt/test" :rank 0}
+ [{:name "cells" :src "modules/cells/src" :test "modules/cells/test" :rank 0}
+  {:name "reakt" :src "modules/reakt/src" :test "modules/reakt/test" :rank 0}
   {:name "hikap" :src "modules/hikap/src" :test "modules/hikap/test" :rank 1}
   {:name "libs" :src "modules/libs/src" :test "modules/libs/test" :rank 0}
   {:name "tui" :src "modules/tui/src" :test "modules/tui/test" :rank 2}

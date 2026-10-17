@@ -175,6 +175,15 @@
   []
   (boolean (some #(str/starts-with? % ".clj-kondo") (changed-files))))
 
+(def ^:private module-root-re
+  "Matches a `modules/<name>/{src,test}/` root after `path->ns` has dotted
+   the path. Derived from modules.edn (like source-roots) so a new module
+   cannot silently stop having its root stripped."
+  (re-pattern (str "^modules\\.(?:"
+                   (str/join "|" (map #(java.util.regex.Pattern/quote (str (:name %)))
+                                      (modules/modules)))
+                   ")\\.(?:src|test)\\.")))
+
 (defn path->ns
   "Source/test file path to its namespace symbol
    (modules/agent/src/kmet/agent/ui/tui/model_selector.clj → kmet.agent.ui.tui.model-selector;
@@ -197,7 +206,8 @@
          (str/replace #"\.(?:clj[c]?|jolt)$" "")
          (str/replace "_" "-")
          (str/replace "/" ".")
-         (str/replace #"^(?:modules\.(?:reakt|hikap|libs|tui|ai|agent|loader|tk)\.src\.|modules\.(?:reakt|libs|ai|tui|agent|tk|loader)\.test\.)|^test\.|^tasks\." "")))))
+         (str/replace module-root-re "")
+         (str/replace #"^test\.|^tasks\." "")))))
 
 (defn- read-ns-form
   "First form of PATH (the ns form), or nil when unreadable."
