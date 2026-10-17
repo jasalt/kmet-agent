@@ -1626,50 +1626,64 @@
        (contains? #{:openai-responses :azure-openai-responses
                     :openai-codex-responses :openai-completions} (:api mm))))
 
-(defn- apply-thinking-level-metadata
-  "pi applyThinkingLevelMetadata rules for kmet's providers (deepseek-v4
-   maps, opencode-go glm-5.2/kimi-k2.6, opencode grok-build-0.1, copilot
-   claude overrides + adaptive thinking maps, gemini-3 maps)."
+(defn- deepseek-v4-model?
+  "True when MM is a deepseek-v4 openai-completions model."
+  [mm]
+  (and (= :openai-completions (:api mm))
+       (str/includes? (:id mm) "deepseek-v4")))
+
+(defn- adaptive-high-model?
+  "True when ID is a Claude/sonnet adaptive-high thinking model."
+  [id]
+  (or (str/includes? id "opus-4-7")
+      (str/includes? id "opus-4.7")
+      (str/includes? id "opus-4-8")
+      (str/includes? id "opus-4.8")
+      (str/includes? id "opus-5")
+      (str/includes? id "opus.5")
+      (str/includes? id "sonnet-5")
+      (str/includes? id "sonnet.5")))
+
+(defn- adaptive-max-model?
+  "True when ID is a Claude/sonnet adaptive-max thinking model."
+  [id]
+  (or (str/includes? id "opus-4-6")
+      (str/includes? id "opus-4.6")
+      (str/includes? id "sonnet-4-6")
+      (str/includes? id "sonnet-4.6")
+      (adaptive-high-model? id)))
+
+(defn- gemini3-pro-model?
+  "True when ID names a gemini-3 pro model."
+  [id]
+  (boolean (re-matches #"(?i).*gemini-3(?:\.\d+)?-pro.*" id)))
+
+(defn- gemini3-flash-model?
+  "True when ID names a gemini-3 flash model."
+  [id]
+  (or (boolean (re-matches #"(?i).*gemini-3(?:\.\d+)?-flash.*" id))
+      (= id "gemini-flash-latest")
+      (= id "gemini-flash-lite-latest")))
+
+(defn- gemma4-model?
+  "True when ID names a gemma-4 model."
+  [id]
+  (boolean (re-matches #"(?i).*gemma-?4.*" id)))
+
+(defn- apply-gpt-responses-thinking-metadata
+  "GPT-5/6 Responses-family thinking rules."
   [mm]
   (let [id (:id mm)
         provider (:provider mm)
-        deepseek-v4? (and (= :openai-completions (:api mm))
-                          (str/includes? id "deepseek-v4"))
-        adaptive-high? (or (str/includes? id "opus-4-7")
-                           (str/includes? id "opus-4.7")
-                           (str/includes? id "opus-4-8")
-                           (str/includes? id "opus-4.8")
-                           (str/includes? id "opus-5")
-                           (str/includes? id "opus.5")
-                           (str/includes? id "sonnet-5")
-                           (str/includes? id "sonnet.5"))
-        adaptive-max? (or (str/includes? id "opus-4-6")
-                          (str/includes? id "opus-4.6")
-                          (str/includes? id "sonnet-4-6")
-                          (str/includes? id "sonnet-4.6")
-                          adaptive-high?)
-        gemini3-pro? (re-matches #"(?i).*gemini-3(?:\.\d+)?-pro.*" id)
-        gemini3-flash? (or (re-matches #"(?i).*gemini-3(?:\.\d+)?-flash.*" id)
-                           (= id "gemini-flash-latest")
-                           (= id "gemini-flash-lite-latest"))
-        gemma4? (re-matches #"(?i).*gemma-?4.*" id)
-        copilot-override (get {"claude-opus-4.7" {:minimal "low"}
-                               "claude-opus-4.8" {:minimal "low"}
-                               "claude-opus-5" {:minimal "low"}
-                               "claude-sonnet-4.6" {:minimal "low" :max "max"}}
-                              id)]
+        api (:api mm)]
     (cond-> mm
-      ;; openai-responses gpt-5* cannot disable thinking (pi: off: null);
-      ;; the explicit none-reasoning set below overrides back to "none".
-      (and (contains? #{:openai-responses :azure-openai-responses} (:api mm))
+      (and (contains? #{:openai-responses :azure-openai-responses} api)
            (str/starts-with? id "gpt-5"))
       (merge-thinking-level-map {:off nil})
-      ;; GPT-6 Responses models support the full effort range. Astra and
-      ;; GPT-6.1 Sol reject `none`; Sol and Luna accept it.
       (and (contains? #{"gpt-6-astra" "gpt-6-sol" "gpt-6-luna" "gpt-6.1-sol"} id)
            (contains? #{:openai-responses :azure-openai-responses
                         :openai-codex-responses}
-                      (:api mm)))
+                      api))
       (merge-thinking-level-map {:off (when (contains? #{"gpt-6-sol" "gpt-6-luna"} id)
                                         "none")
                                  :minimal nil :low "low" :medium "medium"
@@ -1678,14 +1692,21 @@
       (merge-thinking-level-map {:minimal "low"})
       (and (= :github-copilot provider) (str/starts-with? id "gpt-6"))
       (merge-thinking-level-map {:minimal nil})
-      (and (= :openai-responses (:api mm))
+      (and (= :openai-responses api)
            (= :openai provider)
            (contains? openai-responses-none-reasoning-models id))
       (merge-thinking-level-map {:off "none"})
       (and (= :xai provider)
-           (= :openai-responses (:api mm))
+           (= :openai-responses api)
            (= id xai-responses-model-id))
-      (merge-thinking-level-map xai-responses-effort-level-map)
+      (merge-thinking-level-map xai-responses-effort-level-map))))
+
+(defn- apply-gpt-capability-thinking-metadata
+  "GPT capability (xhigh/max/codex/5.5) thinking rules."
+  [mm]
+  (let [id (:id mm)
+        provider (:provider mm)]
+    (cond-> mm
       (supports-openai-xhigh? id)
       (merge-thinking-level-map {:xhigh "xhigh"})
       (supports-openai-max? mm)
@@ -1695,8 +1716,16 @@
       (and (= :openai provider) (= id "gpt-5.5"))
       (merge-thinking-level-map {:minimal nil})
       (str/ends-with? id "gpt-5.5-pro")
-      (merge-thinking-level-map {:off nil :minimal nil :low nil})
-      deepseek-v4?
+      (merge-thinking-level-map {:off nil :minimal nil :low nil}))))
+
+(defn- apply-provider-thinking-metadata
+  "Provider-specific (deepseek/opencode/zai/anthropic) thinking rules."
+  [mm]
+  (let [id (:id mm)
+        provider (:provider mm)
+        api (:api mm)]
+    (cond-> mm
+      (deepseek-v4-model? mm)
       (merge-thinking-level-map {:minimal nil :low nil :medium nil
                                  :high "high" :max "max"})
       (and (= :opencode-go provider) (= id "glm-5.2"))
@@ -1704,37 +1733,54 @@
                                  :high "high" :max "max"})
       (and (contains? #{:zai :zai-coding-cn} provider) (= id "glm-5.2"))
       (merge-thinking-level-map {:xhigh "xhigh"})
-      ;; pi: adaptive thinking models carry the compat (kimi-coding always;
-      ;; claude 4.6+ on anthropic-messages) — the xhigh/max maps already
-      ;; merge above
-      (and (= :anthropic-messages (:api mm)) (or adaptive-max?
-                                                 (str/includes? id "fable-5")))
+      (and (= :anthropic-messages api)
+           (or (adaptive-max-model? id)
+               (str/includes? id "fable-5")))
       (merge-compat {:force-adaptive-thinking true})
       (and (= :opencode-go provider) (= id "kimi-k2.6"))
       (merge-thinking-level-map {:minimal nil :low nil :medium nil})
       (and (= :opencode provider) (= id "grok-build-0.1"))
-      (merge-thinking-level-map {:off nil :minimal nil :low nil :medium nil})
-      adaptive-max?
+      (merge-thinking-level-map {:off nil :minimal nil :low nil :medium nil}))))
+
+(defn- apply-adaptive-thinking-metadata
+  "Adaptive (max/high/fable/copilot-override) thinking rules."
+  [mm]
+  (let [id (:id mm)
+        copilot-override (get {"claude-opus-4.7" {:minimal "low"}
+                               "claude-opus-4.8" {:minimal "low"}
+                               "claude-opus-5" {:minimal "low"}
+                               "claude-sonnet-4.6" {:minimal "low" :max "max"}}
+                              id)]
+    (cond-> mm
+      (adaptive-max-model? id)
       (merge-thinking-level-map {:max "max"})
-      adaptive-high?
+      (adaptive-high-model? id)
       (merge-thinking-level-map {:xhigh "xhigh" :max "max"})
       (str/includes? id "fable-5")
       (merge-thinking-level-map {:off nil :xhigh "xhigh" :max "max"})
       copilot-override
-      (merge-thinking-level-map copilot-override)
-      gemini3-pro?
+      (merge-thinking-level-map copilot-override))))
+
+(defn- apply-gemini-thinking-metadata
+  "Gemini/gemma thinking rules."
+  [mm]
+  (let [id (:id mm)]
+    (cond-> mm
+      (gemini3-pro-model? id)
       (merge-thinking-level-map {:off nil :minimal nil :low "LOW"
                                  :medium nil :high "HIGH"})
-      gemini3-flash?
+      (gemini3-flash-model? id)
       (merge-thinking-level-map {:off nil})
-      gemma4?
+      (gemma4-model? id)
       (merge-thinking-level-map {:off nil :minimal "MINIMAL" :low nil
-                                 :medium nil :high "HIGH"})
-      ;; Batch 2 rules (pi applyThinkingLevelMetadata): groq's qwen
-      ;; reasoning toggle, fireworks glm-5p2 effort levels, openrouter
-      ;; mercury-2 (always-thinking) + z-ai/glm-5.2, the openrouter
-      ;; deepseek-v4 variant (native effort + xhigh), and moonshot
-      ;; kimi-k2.7-code (always-thinking)
+                                 :medium nil :high "HIGH"}))))
+
+(defn- apply-batch2-thinking-metadata
+  "Batch-2 provider thinking rules."
+  [mm]
+  (let [id (:id mm)
+        provider (:provider mm)]
+    (cond-> mm
       (and (= :groq provider) (= id "qwen/qwen3.6-27b"))
       (merge-thinking-level-map {:minimal nil :low nil :medium nil
                                  :high "default"})
@@ -1745,11 +1791,24 @@
       (merge-thinking-level-map {:off nil})
       (and (= :openrouter provider) (= id "z-ai/glm-5.2"))
       (merge-thinking-level-map {:xhigh "xhigh"})
-      (and (= :openrouter provider) deepseek-v4?)
+      (and (= :openrouter provider) (deepseek-v4-model? mm))
       (merge-thinking-level-map {:xhigh "xhigh" :max nil})
       (and (contains? #{:moonshotai :moonshotai-cn} provider)
            (contains? #{"kimi-k2.7-code" "kimi-k2.7-code-highspeed"} id))
       (merge-thinking-level-map {:off nil}))))
+
+(defn- apply-thinking-level-metadata
+  "pi applyThinkingLevelMetadata rules for kmet's providers (deepseek-v4
+   maps, opencode-go glm-5.2/kimi-k2.6, opencode grok-build-0.1, copilot
+   claude overrides + adaptive thinking maps, gemini-3 maps)."
+  [mm]
+  (-> mm
+      apply-gpt-responses-thinking-metadata
+      apply-gpt-capability-thinking-metadata
+      apply-provider-thinking-metadata
+      apply-adaptive-thinking-metadata
+      apply-gemini-thinking-metadata
+      apply-batch2-thinking-metadata))
 
 (defn- apply-thinking-maps
   "thinking-level-map pipeline (pi order): effort maps from the models.dev

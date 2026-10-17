@@ -496,3 +496,28 @@
         (t/is (nil? (:supports-strict-mode (delta (detect (model p url)))))
               (str p " must not emit strict tools"))))))
 
+(t/deftest test-apply-thinking-level-metadata-characterization
+  (let [apply #'mg/apply-thinking-level-metadata]
+    (t/testing "deepseek-v4 gets high/max thinking levels"
+      (t/is (= {:minimal nil :low nil :medium nil :high "high" :max "max"}
+               (:thinking-level-map (apply {:id "deepseek-v4" :provider :deepseek
+                                            :api :openai-completions})))))
+    (t/testing "gpt-5 responses cannot disable thinking"
+      (t/is (= {:off nil}
+               (:thinking-level-map (apply {:id "gpt-5" :provider :openai
+                                            :api :openai-responses})))))
+    (t/testing "gemini-3 pro gets LOW/HIGH thinking levels"
+      (t/is (= {:off nil :minimal nil :low "LOW" :medium nil :high "HIGH"}
+               (:thinking-level-map (apply {:id "gemini-3-pro" :provider :google
+                                            :api :google-generative-ai})))))
+    (t/testing "adaptive-max claude gets max"
+      (t/is (= {:max "max"}
+               (:thinking-level-map (apply {:id "claude-opus-4-6" :provider :anthropic
+                                            :api :anthropic-messages})))))
+    (t/testing "gpt-5.5-pro disables off/minimal/low"
+      (t/is (= {:off nil :minimal nil :low nil :xhigh "xhigh"}
+               (:thinking-level-map (apply {:id "gpt-5.5-pro" :provider :openai
+                                            :api :openai-responses})))))
+    (t/testing "non-matching model is unchanged"
+      (t/is (nil? (:thinking-level-map (apply {:id "some-model" :provider :foo
+                                               :api :bar})))))))
