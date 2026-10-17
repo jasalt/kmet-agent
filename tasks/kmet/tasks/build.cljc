@@ -31,7 +31,8 @@
             [clojure.string :as str]
             [kmet.libs.archive :as archive]
             [kmet.libs.http :as http]
-            [kmet.agent.version :as version-lib]))
+            [kmet.agent.version :as version-lib]
+            [kmet.tasks.modules :as modules]))
 
 (def ^:private gh-api-url
   "https://api.github.com/repos/babashka/babashka/releases/latest")
@@ -434,7 +435,7 @@
   []
   (bb-only! "kmet.tasks.build/uberjar*")
   (stage-bundled-extensions!)
-  (write-uberjar! jar-path main-class ["modules/reakt/src" "modules/hikap/src" "modules/agent/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/loader/src" "modules/tk/src"]
+  (write-uberjar! jar-path main-class (modules/module-src-paths)
                   {:extra-roots [bundled-staging-root]}))
 
 (defn test-uberjar*
@@ -448,10 +449,8 @@
   (generate-test-main!)
   (stage-bundled-extensions!)
   (write-uberjar! test-jar-path test-main-class
-                  ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/hikap/test"
-                   "modules/agent/src" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test"
-                   "modules/ai/src" "modules/ai/test" "modules/loader/src" "modules/loader/test"
-                   "modules/tk/src" "modules/tk/test" "tasks" "test" test-entry-root]
+                  (into (modules/module-paths)
+                        (concat (modules/roots) [test-entry-root]))
                   {:extra-roots [bundled-staging-root]}))
 
 ;; ─── Assembling artifacts ──────────────────────────────────────────────────

@@ -22,22 +22,26 @@
   (:require [babashka.fs :as fs]
             [babashka.process :as proc]
             [clojure.java.io :as io]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [kmet.tasks.modules :as modules]))
 
 (def baseline-file
   ".kmet-changed-baseline")
 
 (def ^:private source-roots
   "The classpath source roots the changed-file scan and the require graph
-   cover, in listing order. test/ is a root too but holds only tests — its
-   files reach the graph through the same scan (see project-files for how
-   the roots are enumerated)."
-  ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/hikap/test" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/agent/src" "modules/agent/test" "modules/loader/src" "modules/loader/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions"])
+   cover, in listing order — modules.edn's module trees, extra roots and the
+   extension tree (kmet.tasks.modules/scan-roots). test/ is a root too but
+   holds only tests — its files reach the graph through the same scan (see
+   project-files for how the roots are enumerated)."
+  (modules/scan-roots))
 
 (def ^:private changed-path-re
   "Changed-file paths that are lint/format/scan material: a .clj[c] file under
    one of `source-roots`."
-  #"(?:modules/(?:reakt|hikap|libs|tui|ai|agent|loader|tk)/src|modules/(?:reakt|hikap|libs|ai|tui|agent|tk|loader)/test|test|tasks|extensions)/.*\.(?:clj[c]?|jolt)")
+  (re-pattern (str "(?:" (str/join "|" (map #(java.util.regex.Pattern/quote %)
+                                            source-roots))
+                   ")/.*\\.(?:clj[c]?|jolt)")))
 
 (defn- git-repo?
   []

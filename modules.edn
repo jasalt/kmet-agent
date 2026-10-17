@@ -1,0 +1,29 @@
+;; The workspace manifest — see tasks/kmet/tasks/modules.clj for the readers.
+;;
+;; Classpath and embed order is the listing order (it decides shadowing);
+;; :rank is the layering guard's ordering (kmet.test-module-deps). Extension
+;; projects are not workspace modules: each is an independently loadable
+;; extension with its own deps.edn.
+{:modules
+ [{:name "reakt" :src "modules/reakt/src" :test "modules/reakt/test" :rank 0}
+  {:name "hikap" :src "modules/hikap/src" :test "modules/hikap/test" :rank 1}
+  {:name "libs" :src "modules/libs/src" :test "modules/libs/test" :rank 0}
+  {:name "tui" :src "modules/tui/src" :test "modules/tui/test" :rank 2}
+  {:name "ai" :src "modules/ai/src" :test "modules/ai/test" :rank 1}
+  {:name "agent" :src "modules/agent/src" :test "modules/agent/test" :rank 3}
+  {:name "loader" :src "modules/loader/src" :test "modules/loader/test" :rank 0}
+  {:name "tk" :src "modules/tk/src" :test "modules/tk/test" :rank 2}]
+
+ :extension-root "extensions"
+ :extensions
+ [{:name "clojure" :src "extensions/clojure/src" :test "extensions/clojure/test"}
+  {:name "tree-sitter" :src "extensions/tree-sitter/src" :test "extensions/tree-sitter/test"}
+  {:name "review" :src "extensions/review/src" :test "extensions/review/test"}]
+
+ ;; Classpath roots beyond the module and extension trees; :test marks the root
+ ;; that holds tests (the runner scans module test dirs, this root, and the
+ ;; extension test dirs).
+ :roots [{:path "test" :test true} {:path "tasks"}]
+
+ ;; jolt's :jolt/build :embed packager roots beside the module sources.
+ :jolt-embed-extra ["target/kmet-version" "target/kmet-bundled"]}

@@ -3,18 +3,13 @@
   (:require [clojure.edn :as edn]
             [clojure.test :refer [deftest is testing]]
             [babashka.fs :as fs]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [kmet.tasks.modules :as modules]))
 
 (def ^:private module-rank
-  "Higher layers appear later; a module may depend only on lower-ranked ones."
-  {"reakt" 0
-   "libs" 0
-   "loader" 0
-   "hikap" 1
-   "ai" 1
-   "tui" 2
-   "tk" 2
-   "agent" 3})
+  "Higher layers appear later; a module may depend only on lower-ranked ones.
+   The ranks live in modules.edn (kmet.tasks.modules)."
+  (into {} (map (juxt :name :rank) (modules/modules))))
 
 (defn- module-roots
   "Every modules/<name> carrying a deps.edn. fs/list-dir already returns

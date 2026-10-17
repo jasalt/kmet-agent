@@ -6,7 +6,8 @@
    this static graph."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
-            [babashka.fs :as fs]))
+            [babashka.fs :as fs]
+            [kmet.tasks.modules :as modules]))
 
 (defn- ns-file
   "The source file defining namespace N (clj, then cljc, then cljs)."
@@ -17,7 +18,7 @@
                              [(str root "/" p)
                               (str root "/" (str/replace p ".clj" ".cljc"))
                               (str root "/" (str/replace p ".clj" ".cljs"))])
-                           ["modules/reakt/src" "modules/hikap/src" "modules/agent/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "src"])))))
+                           (conj (modules/module-src-paths) "src"))))))
 
 (defn- required-namespaces
   "The kmet.* namespaces PATH's ns form requires. Reads the ns form itself —

@@ -39,15 +39,17 @@
             [babashka.process :as p]
             [clojure.string :as str]
             [kmet.tasks.changed :as changed]
+            [kmet.tasks.modules :as modules]
             [kmet.libs.json :as json]))
 
 ;; ─── reader views ─────────────────────────────────────────────────────────
 
 (def default-paths
-  "The lint corpus: the shared tree on both hosts (src/, test/, tasks/) plus
-   jolt/ — the provider lib is jolt-only code, excluded from the babashka view
-   and linted by the jolt one."
-  ["modules/reakt/src" "modules/hikap/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/agent/src" "modules/loader/src" "modules/tk/src" "test" "tasks" "extensions" "jolt"])
+  "The lint corpus: the shared tree on both hosts (module srcs, test/,
+   tasks/) plus the extension tree and jolt/ — the provider lib is jolt-only
+   code, excluded from the babashka view and linted by the jolt one."
+  (into (modules/module-src-paths)
+        (concat (modules/roots) [(modules/extension-root) "jolt"])))
 
 (def ^:private views
   "The two reader views of the tree; every gate runs both.

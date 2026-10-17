@@ -12,7 +12,8 @@
    interpreter runs rewrite-clj), so a full-tree jolt run is minutes — the
    changed-file task (`jolt format-check-changed`) and babashka remain the
    practical gates for the whole tree."
-  (:require [kmet.tasks.changed :as changed]))
+  (:require [kmet.tasks.changed :as changed]
+            [kmet.tasks.modules :as modules]))
 
 (defn- cljfmt-op
   "cljfmt.tool's FIX or CHECK fn. Loaded lazily — the format tasks are its
@@ -36,15 +37,7 @@
    sha256-manifested and owned by the model generators, not cljfmt).
    Gitignored trees are never traversed (kmet.tasks.changed/project-files)."
   []
-  (->> (changed/project-files ["modules/reakt/src" "modules/reakt/test"
-                               "modules/hikap/src" "modules/hikap/test"
-                               "modules/libs/src" "modules/libs/test"
-                               "modules/tui/src" "modules/tui/test"
-                               "modules/ai/src" "modules/ai/test"
-                               "modules/agent/src" "modules/agent/test"
-                               "modules/loader/src" "modules/loader/test"
-                               "modules/tk/src" "modules/tk/test"
-                               "test" "tasks" "extensions"]
+  (->> (changed/project-files (modules/scan-roots)
                               ["clj" "cljs" "cljc" "cljd" "bb" "edn" "jolt"])
        (remove #(re-find #"/(image_)?model_data/" %))
        vec))
