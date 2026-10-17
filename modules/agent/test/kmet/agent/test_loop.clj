@@ -1863,12 +1863,11 @@
   ;; the run settles), and the mount's entry config supplies the threshold
   ;; (cells.md §5.4, §6.1, §8.1).
   (let [calls (atom [])
-        seen (atom 0)
         spy (fn [state threshold tool-calls]
               (swap! calls conj threshold)
-              (if (< 1 (swap! seen inc))
-                {:suppressed tool-calls :survivors [] :state state}
-                {:suppressed [] :survivors tool-calls :state state}))
+              ;; Suppress the batch: the run trips the guard and settles, and
+              ;; the entry config's threshold is what the batch was judged by.
+              {:suppressed tool-calls :survivors [] :state state})
         rt (cells/runtime {:resolve [[:builtin (fn [_] {:handle spy})]]})
         mine (cells/mount! rt [{:id :loop-guard :name :kmet/loop-guard
                                 :config {:threshold 7}}])]
