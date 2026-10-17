@@ -1,12 +1,15 @@
 (ns kmet.agent.test-session-runtime
-  "Tests for kmet.agent.session.runtime: the engine front ends drive
-   (engine.md §4.1, step 1)."
+  "Tests for kmet.agent.session.runtime: the engine front ends drive, and
+   the front-end surface (state accessors + operations) modes and app UI
+   use to read and drive it."
   (:require [babashka.fs :as fs]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is testing]]
+            [kmet.agent.config :as cfg]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
-            [kmet.agent.session.runtime :as rt]))
+            [kmet.agent.session.runtime :as rt]
+            [kmet.ai.models :as models]))
 
 (defn- test-config
   "A sparse run config — every derived option falls back to its default."
@@ -122,6 +125,164 @@
         (is (= {:steering [] :follow-up []} (:queues snap)))
         (is (= :completed (:last-outcome snap)))
         (is (not (contains? snap :subscribers)) "the snapshot is a view, not the engine")))))
+
+(deftest test-front-end-state-accessors
+  (with-engine
+    (fn [engine _]
+      (let [ag (rt/agent-state engine)]
+        (is (= "deepseek-v4-flash" (rt/model engine)))
+        (is (= :opencode-go (rt/provider engine)))
+        (with-redefs [models/get-model (fn [p id] {:provider p :id id})]
+          (is (= {:provider :opencode-go :id "deepseek-v4-flash"}
+                 (rt/model-record engine))
+              "the record resolves from the live provider/model"))
+        (is (= :off (rt/thinking-level engine)))
+        (reset! (:thinking ag) :high)
+        (is (= :high (rt/thinking-level engine))
+            "accessors read the live atom, not a captured record")
+        (is (= @(:system ag) (rt/system-prompt engine)))
+        (is (false? (rt/compacting? engine)))
+        (reset! (:compacting? ag) true)
+        (is (true? (rt/compacting? engine)))
+        (is (nil? (rt/compaction-error engine)))
+        (reset! (:compaction-error ag) "boom")
+        (is (= "boom" (rt/compaction-error engine)))
+        (is (false? (rt/cancel-signal engine)))
+        (reset! (:signal ag) true)
+        (is (true? (rt/cancel-signal engine)))
+        (is (false? (rt/has-queued-messages? engine)))
+        (rt/steer! engine "queued")
+        (is (true? (rt/has-queued-messages? engine))
+            "a queued steer message makes the engine non-idle for extensions")))))
+
+(deftest test-run-options-are-live-and-merge
+  (with-engine
+    (fn [engine _]
+      (is (= :all (:steering-mode (rt/run-options engine))))
+      (rt/set-run-options! engine {:context-window 12345})
+      (is (= 12345 (:context-window (rt/run-options engine)))
+          "the option applies live")
+      (is (= :all (:steering-mode (rt/run-options engine)))
+          "merge keeps untouched options")
+      (rt/set-run-options! engine {:steering-mode :one-at-a-time})
+      (is (= :one-at-a-time (:steering-mode (rt/run-options engine))))
+      (is (= 12345 (:context-window (rt/run-options engine)))))))
+
+(deftest test-snapshot-carries-queue-and-compaction-state
+  (with-engine
+    (fn [engine _]
+      (rt/set-scoped-models! engine ["opencode-go/a" "opencode-go/b"])
+      (rt/set-run-options! engine {:steering-mode :one-at-a-time
+                                   :follow-up-mode :all
+                                   :auto-compact false})
+      (reset! (:compacting? (rt/agent-state engine)) true)
+      (let [snap (rt/snapshot engine)]
+        (is (= ["opencode-go/a" "opencode-go/b"] (:scoped-models snap)))
+        (is (true? (:compacting? snap)))
+        (is (= :one-at-a-time (:steering-mode snap)))
+        (is (= :all (:follow-up-mode snap)))
+        (is (false? (:auto-compact snap)))))))
+
+(deftest test-set-system-prompt-replaces-prompt-and-opts
+  (with-engine
+    (fn [engine _]
+      (let [ag (rt/agent-state engine)
+            opts {:cwd "target/test-prompt-cwd"}]
+        (rt/set-system-prompt! engine "custom prompt" opts)
+        (is (= "custom prompt" (rt/system-prompt engine)))
+        (is (= opts @(:system-prompt-opts ag)))))))
+
+(deftest test-active-tools-follow-the-default-selection
+  (with-engine
+    (fn [engine _]
+      (is (contains? (set (map :name (rt/active-tools engine))) "read")
+          "the bootstrap default set is active")
+      (is (= ["read" "bash"]
+             (rt/apply-default-tools! engine ["read" "bash"]))
+          "the applied selection is returned")
+      (let [names (set (map :name (rt/active-tools engine)))]
+        (is (contains? names "read"))
+        (is (contains? names "bash"))
+        (is (not (contains? names "write"))
+            "built-ins outside the selection are inactive")))))
+
+(deftest test-add-context-message-and-bash-result
+  (with-engine
+    (fn [engine _]
+      (let [before (count (rt/messages engine))]
+        (rt/add-context-message! engine {:role :custom :content "note"})
+        (is (= (inc before) (count (rt/messages engine))))
+        (is (= [{:type :text :text "note"}] (:content (last (rt/messages engine))))
+            "string content is normalized to a text block"))
+      (rt/add-bash-result! engine "echo hi" {:output "hi" :exit-code 0} false)
+      (let [entry (last (rt/messages engine))]
+        (is (= :bash (:role entry)) "an idle bash result reaches the context")
+        (is (= "echo hi" (:command entry)))
+        (is (= "hi" (:output entry)))))))
+
+(deftest test-abort-compaction-signals
+  (with-engine
+    (fn [engine _]
+      (let [ag (rt/agent-state engine)]
+        (is (false? @(:compaction-signal ag)))
+        (is (nil? (rt/abort-compaction! engine)))
+        (is (true? @(:compaction-signal ag)) "escape during compaction signals it")
+        (is (false? @(:signal ag)) "the run-cancel signal is untouched")))))
+
+(deftest test-http-timeout-setters
+  (with-engine
+    (fn [engine _]
+      (rt/set-http-idle-timeout-ms! engine 5000)
+      (is (= 5000 (:http-idle-timeout-ms (rt/run-options engine))))
+      (rt/set-http-total-timeout-ms! engine 9000)
+      (is (= 9000 (:http-total-timeout-ms (rt/run-options engine))))
+      (rt/set-http-total-timeout-ms! engine nil)
+      (is (nil? (:http-total-timeout-ms (rt/run-options engine)))
+          "nil follows the idle timeout"))))
+
+(deftest test-switch-model-applies-the-rank-rule-and-persists
+  (with-engine
+    (fn [engine _]
+      (let [ag (rt/agent-state engine)
+            reasoner (models/map->Model {:provider :test-native :id "reasoner"
+                                         :reasoning true})
+            plain (models/map->Model {:provider :test-native :id "plain"
+                                      :reasoning false})
+            persisted (atom ::none)]
+        (with-redefs [models/get-model (fn [p id]
+                                         (when (= p :test-native)
+                                           (case id
+                                             "reasoner" reasoner
+                                             "plain" plain
+                                             nil)))
+                      cfg/set-default-model! (fn [p id] (reset! persisted [p id]))]
+          (reset! (:provider ag) :test-native)
+          (reset! (:model ag) "reasoner")
+          (reset! (:thinking ag) :low)
+          (testing "a non-reasoning target drops the reasoning level to :off"
+            (is (= :off (rt/switch-model! engine plain nil)))
+            (is (= "plain" (rt/model engine)) "the model is applied")
+            (is (= :off (rt/thinking-level engine)) "the clamped level is applied")
+            (is (= [:test-native "plain"] @persisted) "persisted as the default"))
+          (testing "an explicit level wins and is clamped to the target"
+            (is (= :high (rt/switch-model! engine reasoner :high)))
+            (is (= :high (rt/thinking-level engine)))
+            (is (= [:test-native "reasoner"] @persisted))))))))
+
+(deftest test-generate-branch-summary-forwards-to-the-agent
+  (with-engine
+    (fn [engine _]
+      (let [signal (atom false)
+            seen (atom nil)]
+        (with-redefs [agent/generate-branch-summary
+                      (fn [ag entries instructions sig replace?]
+                        (reset! seen [ag entries instructions sig replace?])
+                        {:summary "s"})]
+          (is (= {:summary "s"}
+                 (rt/generate-branch-summary engine [{:id "e1"}] "instr" signal true)))
+          (is (identical? (rt/agent-state engine) (nth @seen 0))
+              "the wrapper hands the live agent state over")
+          (is (= [[{:id "e1"}] "instr" signal true] (subvec @seen 1))))))))
 
 (deftest test-session-directory-helpers
   (let [dir (str "target/test-session-runtime-dirs-" (System/currentTimeMillis))
