@@ -474,10 +474,7 @@
                {:cwd (str (fs/cwd))})
         e2 (rt/bootstrap (test-config) {:session sess2})]
     (try
-      (doseq [k [:markdown-transformers :entry-renderers
-                 :message-renderers
-                 :event-listeners :flags :cli-flags
-                 :applied-resource-paths]]
+      (doseq [k [:event-listeners :flags :cli-flags :applied-resource-paths]]
         (is (not (identical? (k e1) (k e2)))
             (str "engine-owned " k " is not shared")))
       ;; The tool registry, the commands registry and the extension hooks

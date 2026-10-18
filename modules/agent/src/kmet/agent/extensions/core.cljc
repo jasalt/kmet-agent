@@ -163,24 +163,22 @@
 
 ;; ─── Registries (the storage; api capabilities wire into these) ──────────
 (defonce ^:private extensions (atom []))
-(defonce pending-entry-renderers (atom {}))
-(defn- current-entry-renderer-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :entry-renderers)
-      pending-entry-renderers))
-(defonce pending-message-renderers (atom {}))
-(defn- current-message-renderer-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :message-renderers)
-      pending-message-renderers))
-(defonce pending-markdown-transformers (atom []))
-(defn- current-markdown-transformer-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :markdown-transformers)
-      pending-markdown-transformers))
+;; Renderers live in the app root's store under the registering extension's
+;; owner ([:app :extensions <name>], cells.md §5.1), addressed by
+;; [:kmet/entry-renderer <custom-type>] / [:kmet/message-renderer
+;; <custom-type>]: a type holds one renderer, so a re-registration replaces
+;; it, and the registration is disposed with its owner rather than reset by
+;; hand.
+(defn- entry-renderer-key
+  "The store key addressing an entry renderer by CUSTOM-TYPE."
+  [custom-type]
+  [:kmet/entry-renderer custom-type])
+
+(defn- message-renderer-key
+  "The store key addressing a message renderer by CUSTOM-TYPE."
+  [custom-type]
+  [:kmet/message-renderer custom-type])
+
 (defonce pending-flags (atom {}))
 (defn- current-flag-registry []
   (or (some-> (do (require 'kmet.agent.session.runtime)
@@ -210,13 +208,6 @@
 
 ;; ─── Input / before-agent-start hooks (pi: pi.on('input') / ──────────────
 ;; ─── 'before_agent_start'; applied by modes.interactive + app.loop) ──────
-
-(defn- register-hook!
-  "Add HOOK to the hook vector ATOM and return the deregister fn (identity
-   removal — a re-registered hook is a distinct value)."
-  [hook-atom hook]
-  (swap! hook-atom conj hook)
-  (fn [] (swap! hook-atom (fn [hs] (remove #(identical? % hook) hs)))))
 
 (defn extension-owner
   "The owner path an extension's registrations belong to: anything its
@@ -323,26 +314,33 @@
 
 ;; ─── Renderers + tool hooks (extension api) ───────────────────────────────
 
+(defn- renderer-for
+  "The renderer registered for CUSTOM-TYPE under the key fn KEY, or nil.
+   Owners are searched in first-registration order, so the owner that took
+   the type keeps it."
+  [key custom-type]
+  (let [node (app-runtime/node)
+        by-owner (scope/for-key node (key custom-type))]
+    (some #(get by-owner %) (scope/owners node))))
+
 (defn register-entry-renderer!
-  "Register a renderer for a custom entry type (extension api:
+  "Register OWNER's renderer for a custom entry type (extension api:
    register-entry-renderer!). RENDERER — (fn [entry]) returning a chat
    message map (or bare component) or nil. Returns a deregister fn."
-  [custom-type renderer]
-  (swap! (current-entry-renderer-registry) assoc custom-type renderer)
-  (fn [] (swap! (current-entry-renderer-registry) dissoc custom-type)))
+  [owner custom-type renderer]
+  (scope/register! (app-runtime/node) owner (entry-renderer-key custom-type) renderer))
 
 (defn get-entry-renderer [custom-type]
-  (get @(current-entry-renderer-registry) custom-type))
+  (renderer-for entry-renderer-key custom-type))
 
 (defn register-message-renderer!
-  "Register a renderer for a custom MESSAGE type (extension api:
+  "Register OWNER's renderer for a custom MESSAGE type (extension api:
    register-message-renderer!). Returns a deregister fn."
-  [custom-type renderer]
-  (swap! (current-message-renderer-registry) assoc custom-type renderer)
-  (fn [] (swap! (current-message-renderer-registry) dissoc custom-type)))
+  [owner custom-type renderer]
+  (scope/register! (app-runtime/node) owner (message-renderer-key custom-type) renderer))
 
 (defn get-message-renderer [custom-type]
-  (get @(current-message-renderer-registry) custom-type))
+  (renderer-for message-renderer-key custom-type))
 
 (defn register-tool-call-hook!
   "Register OWNER's tool-call hook (extension api: on-tool-call): (fn [ctx])
@@ -389,7 +387,7 @@
       (fn [] nil)))
 
 (defn register-markdown-transformer!
-  "Register a markdown transformer (extension api:
+  "Register OWNER's markdown transformer (extension api:
    register-markdown-transformer! — pi: registerMarkdownTransformer):
    (fn [markdown {:keys [message-type is-streaming available-width]}])
    → string, applied to user/assistant message markdown before rendering,
@@ -397,13 +395,14 @@
    render — streaming chunks re-transform the accumulated text). A
    transformer that throws is skipped (pi: keep the current markdown and
    continue). Returns a deregister fn."
-  [transformer]
-  (register-hook! (current-markdown-transformer-registry) transformer))
+  [owner transformer]
+  (register-app-hook! owner :markdown-transformer transformer))
 
 (defn get-markdown-transformers
-  "Registered markdown transformers in registration order."
+  "Registered markdown transformers in registration order (owners in
+   first-registration order, each owner's in its own)."
   []
-  @(current-markdown-transformer-registry))
+  (hooks-of :markdown-transformer))
 
 (defn apply-markdown-transformers
   "Apply the registered markdown transformers to MARKDOWN in registration
@@ -417,7 +416,7 @@
                 (if (string? r) r acc))
               (catch Exception _ acc)))
           markdown
-          @(current-markdown-transformer-registry)))
+          (hooks-of :markdown-transformer)))
 
 ;; ─── CLI flags (extension api: register-flag! / get-flag) ─────────────────
 
@@ -1014,15 +1013,20 @@
                              dereg))
      :register-markdown-transformer! (fn [transformer]
                                        (let [dereg (register-markdown-transformer!
+                                                    (extension-owner name)
                                                     (loader-aware ext transformer))]
                                          (track dereg)
                                          dereg))
      :register-entry-renderer! (fn [custom-type renderer]
-                                 (register-entry-renderer! custom-type renderer)
-                                 (track (fn [] (swap! (current-entry-renderer-registry) dissoc custom-type))))
+                                 (let [dereg (register-entry-renderer!
+                                              (extension-owner name) custom-type renderer)]
+                                   (track dereg)
+                                   dereg))
      :register-message-renderer! (fn [custom-type renderer]
-                                   (register-message-renderer! custom-type renderer)
-                                   (track (fn [] (swap! (current-message-renderer-registry) dissoc custom-type))))
+                                   (let [dereg (register-message-renderer!
+                                                (extension-owner name) custom-type renderer)]
+                                     (track dereg)
+                                     dereg))
      ;; tag aliases (kmet.libs.hikap.alias): the registry is process-global, so the
      ;; registration MUST be tracked — unload removes exactly this fn's
      ;; registration (a later re-registration by another owner survives)

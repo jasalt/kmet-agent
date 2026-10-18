@@ -484,6 +484,7 @@
                                    :session-atom (atom sess)
                                    :agent-state (atom (agent/make-agent-state))})
           dereg (extensions/register-entry-renderer!
+                 (extensions/extension-owner "test-entry-render")
                  "test-entry-render"
                  (fn [_]
                    {:role :info :label "Entry" :content "rendered entry"}))]
@@ -845,8 +846,10 @@
             crashing the replay; a bare-component result is wrapped"
     (let [component (container/make-container)
           dereg-boom (extensions/register-entry-renderer!
+                      (extensions/extension-owner "test-entry-boom")
                       "boom-entry" (fn [_] (throw (ex-info "kaput" {}))))
           dereg-comp (extensions/register-entry-renderer!
+                      (extensions/extension-owner "test-entry-comp")
                       "comp-entry" (fn [_] component))]
       (try
         (let [sess-dir (str "target/test-interactive-entry-rdr-" (System/currentTimeMillis))

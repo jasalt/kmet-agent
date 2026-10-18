@@ -254,9 +254,6 @@
                              :pending-ui (atom {})
                              :run-callbacks (atom nil)
                              :event-listeners (atom {})
-                             :markdown-transformers (atom (vec @extensions/pending-markdown-transformers))
-                             :entry-renderers (atom (into {} @extensions/pending-entry-renderers))
-                             :message-renderers (atom (into {} @extensions/pending-message-renderers))
                              :flags (atom @extensions/pending-flags)
                              :cli-flags (atom @extensions/pending-cli-flags)
                              :applied-resource-paths (atom @extensions/pending-applied-resource-paths)})]
@@ -266,9 +263,6 @@
     ;; installs the headless port and the front-end kind, dispose! unbinds.
     ;; A front end with its own port re-binds after its widgets exist.
     (event-bus/set-default-event-listener-atom! (:event-listeners engine))
-    (reset! extensions/pending-markdown-transformers [])
-    (reset! extensions/pending-entry-renderers {})
-    (reset! extensions/pending-message-renderers {})
     (reset! extensions/pending-flags {})
     (reset! extensions/pending-cli-flags {})
     (reset! extensions/pending-applied-resource-paths #{})
