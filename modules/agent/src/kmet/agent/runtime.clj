@@ -23,8 +23,9 @@
    ;; (cells.md §5.1). It has no children — commands are registrations, not
    ;; units — and no handle for the host to read.
    :kmet/commands {:units {}}
-   ;; the same address shape for the tool registry: [/units] lists the custom
-   ;; tools and contributed sources registered under [:app :tools].
+   ;; the same address shape for the tool registry: the custom tools and
+   ;; contributed sources registered under [:app :tools] report as its keys
+   ;; in /units (cells.md §5.1).
    :kmet/tools {:units {}}})
 
 (def default-entries

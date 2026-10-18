@@ -80,6 +80,7 @@
   )
 
 ;; ─── Extended tool registry ────────────────────────────────────────────────
+
 (def tools-owner
   "The app's tool registry owner: the `:tools` slot kmet.agent.runtime
    mounts at the root for it (cells.md §5.1)."
@@ -97,8 +98,8 @@
   (and (vector? k) (= :kmet/tool (first k))))
 
 (defn- registered-tools
-  "The tree's custom tools as {name tool}, in registration order (a later
-   registration of a name replaces the earlier)."
+  "The tree's custom tools as {name tool}; the store holds one value per
+   (owner, key), so a re-registration of a name replaces the earlier one."
   []
   (reduce (fn [acc [k _ v]]
             (if (tool-key? k) (assoc acc (second k) v) acc))
