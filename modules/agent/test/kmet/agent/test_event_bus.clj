@@ -148,6 +148,27 @@
       (t/is (= [0 2 4 5 6 7 8 9 99] @seen)
             "a removed listener stays gone; a later registration lands last"))))
 
+(t/deftest test-collect-and-boundary-inherit-registration-order
+  ;; F11 reads the same vector for all three emitters, so collect's
+  ;; [owner result] pairs and the boundary fold are ordered too — not just
+  ;; emit's last-non-nil.
+  (event-bus/clear-event-listeners!)
+  (event-bus/on-event :resources-discover [:app :extensions "a"]
+                      (fn [_] {:skill-paths ["/a"]}))
+  (event-bus/on-event :resources-discover (fn [_] {:prompt-paths ["/h"]}))
+  (event-bus/on-event :resources-discover [:app :extensions "b"]
+                      (fn [_] {:skills ["/b"]}))
+  (t/is (= [[:app :extensions "a"] nil [:app :extensions "b"]]
+           (mapv first (event-bus/emit-event-collect! {:type :resources-discover})))
+        "collect pairs follow registration order across owners")
+  (let [order (atom [])]
+    (event-bus/clear-event-listeners!)
+    (event-bus/on-event :turn-end (fn [_] (swap! order conj :first) {:entries [:a]}))
+    (event-bus/on-event :turn-end (fn [_] (swap! order conj :second) {:entries [:b]}))
+    (t/is (= {:entries [:b]} (event-bus/emit-boundary! {:type :turn-end :entries []}))
+          "the later handler's keys win, as documented")
+    (t/is (= [:first :second] @order) "handlers run in registration order")))
+
 (t/deftest test-an-unknown-event-type-is-reported
   ;; A typo'd :turn-ended used to register silently; the vocabulary is
   ;; documented, not a gate, so the registration lands and the typo is

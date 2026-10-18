@@ -1218,9 +1218,9 @@
     (extensions/clear-extensions!)
     (let [dir "target/test-ext-ctx-events"
           probes (atom [])
-          unsub-a (event-bus/on-event :probe-a
+          unsub-a (event-bus/on-event :session-info-changed
                                       (fn [ev] (swap! probes conj [:a ev])))
-          unsub-b (event-bus/on-event :probe-b
+          unsub-b (event-bus/on-event :queue-update
                                       (fn [ev] (swap! probes conj [:b (:mode ev)])))
           content (str "(ns ctx-events (:require [kmet.agent.extension :as ext]))\n"
                        "(defn init [api]\n"
@@ -1228,11 +1228,11 @@
                        "                                :description \"pc\"\n"
                        "                                :handler (fn [c a] nil)})\n"
                        "  (ext/on-event api :session-start\n"
-                       "    (fn [ev ctx] (ext/emit-event! api {:type :probe-a\n"
+                       "    (fn [ev ctx] (ext/emit-event! api {:type :session-info-changed\n"
                        "                                        :from (:type ev)\n"
                        "                                        :cmds (ext/get-commands api)})))\n"
                        "  (ext/on-event api :session-tree\n"
-                       "    (fn [ev ctx] (ext/emit-event! api {:type :probe-b :mode (:mode ctx)}))))\n")]
+                       "    (fn [ev ctx] (ext/emit-event! api {:type :queue-update :mode (:mode ctx)}))))\n")]
       (fs/create-dirs dir)
       (spit (str dir "/ext.clj") content)
       (let [result (extensions/load-extension! (str dir "/ext.clj"))]

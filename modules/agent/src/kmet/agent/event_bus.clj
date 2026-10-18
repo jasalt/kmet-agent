@@ -435,8 +435,10 @@
   ([event-type callback] (on-event event-type nil callback))
   ([event-type owner callback]
    (when-not (known-event-type? event-type)
-     (debug/log-error "event-bus: unknown event type " (pr-str event-type)
-                      " — see kmet.agent.event-bus/event-types"))
+     (debug/log-error "event-bus: " (pr-str event-type)
+                      " is not a documented event type — registered anyway "
+                      "(custom types are allowed; typos are the usual cause: "
+                      "kmet.agent.event-bus/event-types)"))
    (register-listener! event-type {:callback callback :owner owner})))
 
 (defn clear-event-listeners!
