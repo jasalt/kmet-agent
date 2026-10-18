@@ -6,6 +6,7 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.commands.builtins :as builtins]
             [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.tools.registry :as tools-reg]
             [kmet.cells.core :as cells]
             [kmet.cells.scope :as scope]))
 
@@ -112,17 +113,27 @@
 
 (t/deftest units-lists-the-mounted-tree
   ;; The /units surface renders kmet.cells' snapshot of the app root, which
-  ;; carries the builtin units (kmet.agent.runtime) — and the commands
-  ;; registry's address, so its keys report as that slot's (cells.md §5.1).
+  ;; carries the builtin units (kmet.agent.runtime) — and the commands and
+  ;; tools registries' addresses, so their keys report as those slots'
+  ;; (cells.md §5.1).
   (builtins/register-runtime-commands!)
-  (let [got (atom nil)]
-    ((:handler (commands/find-command "units"))
-     {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
-    (t/is (= "Units" (first @got)))
-    (t/is (str/includes? (second @got) ":loop-guard"))
-    (t/is (str/includes? (second @got) ":commands"))
-    (t/is (str/includes? (second @got) "[:kmet/command \"units\"]")
-          "the registered command shows as the registry slot's key")))
+  (tools-reg/register-tool! {:name "units-probe" :description "d"
+                             :parameters {:type "object" :properties {}}
+                             :execute (fn [_] {:content "ok"})})
+  (try
+    (let [got (atom nil)]
+      ((:handler (commands/find-command "units"))
+       {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
+      (t/is (= "Units" (first @got)))
+      (t/is (str/includes? (second @got) ":loop-guard"))
+      (t/is (str/includes? (second @got) ":commands"))
+      (t/is (str/includes? (second @got) "[:kmet/command \"units\"]")
+            "the registered command shows as the registry slot's key")
+      (t/is (str/includes? (second @got) ":tools"))
+      (t/is (str/includes? (second @got) "[:kmet/tool \"units-probe\"]")
+            "a registered tool shows as the tools registry slot's key"))
+    (finally
+      (tools-reg/unregister-tool! "units-probe"))))
 
 (t/deftest a-remount-keeps-the-registry
   ;; The commands slot is part of the app's entry list, so /reload's remount

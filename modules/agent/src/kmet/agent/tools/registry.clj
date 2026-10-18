@@ -1,5 +1,13 @@
 (ns kmet.agent.tools.registry
-  "Tool registry — built-in tool map, custom tool registration, schema conversion, execution."
+  "Tool registry — built-in tool map, custom tool registration, schema
+   conversion, execution. Custom tools and contributed tool sources live in
+   the app root's store, under the `[:app :tools]` owner (`kmet.agent.runtime`
+   mounts the `:tools` slot for it, so their keys report under it in
+   `/units`), addressed by `[:kmet/tool <name>]` and `[:kmet/tool-source
+   <id>]`: visible to every engine, outliving one, and disposed with their
+   owner rather than copied into an engine and reset by hand (cells.md
+   §5.1). The extension ABI registers here today; P5 gives each extension its
+   own owner."
   (:require [clojure.string :as str]
             [kmet.libs.json :as json]
             [kmet.agent.runtime :as app-runtime]
@@ -71,18 +79,7 @@
    ;; ships the same way (extensions/powershell.clj, Windows-only)
   )
 
-;; ─── Tool schema helpers ────────────────────────────────────────────────────
-
 ;; ─── Extended tool registry ────────────────────────────────────────────────
-;;
-;; Custom tools and contributed tool sources live in the app root's store,
-;; under the `[:app :tools]` owner (`kmet.agent.runtime` mounts the `:tools`
-;; slot for it, so the registry's keys show in `/units`). A registration is
-;; visible to every engine and outlives one, and it is disposed with its
-;; owner rather than copied into an engine and reset by hand (cells.md
-;; §5.1). The extension ABI registers here today; P5 gives each extension its
-;; own owner.
-
 (def tools-owner
   "The app's tool registry owner: the `:tools` slot kmet.agent.runtime
    mounts at the root for it (cells.md §5.1)."

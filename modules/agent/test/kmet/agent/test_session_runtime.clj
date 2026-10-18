@@ -454,11 +454,11 @@
                  :applied-resource-paths :skills :prompt-templates]]
         (is (not (identical? (k e1) (k e2)))
             (str "engine-owned " k " is not shared")))
-      ;; Commands and the extension hooks are the app's, not an engine's
-      ;; (P2): neither engine owns them, so a registration reaches both, and a
-      ;; deregistered hook is gone from the tree every engine reads — the
-      ;; pending buffer could only fill the first engine, and its stale copy
-      ;; outlived an unload.
+      ;; The tool registry, the commands registry and the extension hooks
+      ;; are the app's, not an engine's (P2): neither engine owns them, so a
+      ;; registration reaches both, and a deregistered hook is gone from the
+      ;; tree every engine reads — the pending buffer could only fill the
+      ;; first engine, and its stale copy outlived an unload.
       (let [fired (atom 0)
             dereg (extensions/register-input-hook!
                    (extensions/extension-owner "test-hooks-app-wide")
