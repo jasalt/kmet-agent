@@ -6,8 +6,8 @@
    `/units`), addressed by `[:kmet/tool <name>]` and `[:kmet/tool-source
    <id>]`: visible to every engine, outliving one, and disposed with their
    owner rather than copied into an engine and reset by hand (cells.md
-   §5.1). The extension ABI registers here today; P5 gives each extension its
-   own owner."
+   §5.1). The extension ABI registers under its own owner path, so unload
+   disposes what an extension added."
   (:require [clojure.string :as str]
             [kmet.libs.json :as json]
             [kmet.agent.runtime :as app-runtime]
