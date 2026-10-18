@@ -441,7 +441,7 @@
       ;; outlived an unload.
       (let [fired (atom 0)
             dereg (extensions/register-input-hook!
-                   (extensions/extension-owner "test-hooks")
+                   (extensions/extension-owner "test-hooks-app-wide")
                    (fn [_] (swap! fired inc) nil))]
         (commands/register-command!
          {:name "app-wide-demo" :handler (fn [& _] nil)})

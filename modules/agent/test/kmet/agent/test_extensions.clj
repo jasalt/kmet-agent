@@ -1703,3 +1703,47 @@
       (t/is (= [:a1 :a2 :b1] @seen)
             "one owner's hooks are adjacent, in its registration order")
       (finally (dereg-a1) (dereg-b1) (dereg-a2)))))
+
+(t/deftest test-extension-hooks-are-disposed-on-unload
+  ;; End to end: ext/on-input and ext/on-before-agent-start register under the
+  ;; extension's own owner on the app tree, so unload — which runs the tracked
+  ;; deregisters — takes them with it. The pending buffers this replaced kept
+  ;; a copy the next engine picked up, so an unloaded extension's hook returned.
+  (extensions/clear-extensions!)
+  (let [dir "target/test-ext-hook-unload"]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/hook_ext"))
+    (spit (str dir "/extension.edn")
+          "{:name \"hook-ext\" :entry hook-ext.main :loader [:sci :jolt]}\n")
+    (spit (str dir "/hook_ext/main.clj")
+          (str "(ns hook-ext.main\n  (:require [kmet.agent.extension :as ext]))\n"
+               "(defn init [api]\n"
+               "  (ext/on-input api (fn [{:keys [text]}]\n"
+               "                      {:action :transform :text (str text \"-hooked\")}))\n"
+               "  (ext/on-before-agent-start api (fn [_] {:system-prompt \"HOOK SYS\"})))\n"))
+    (try
+      (let [result (extensions/load-extension! dir)
+            owner (extensions/extension-owner "hook-ext")]
+        (t/is (nil? (:error result)) (str "loaded: " (:error result)))
+        (t/is (str/includes? (:text (extensions/apply-input-hooks "hi" :interactive))
+                             "hi-hooked")
+              "the extension's input hook runs")
+        (t/is (str/includes? (str (:system-prompt
+                                   (extensions/apply-before-agent-start-hooks "p" "orig")))
+                             "HOOK SYS")
+              "and its before-agent-start hook")
+        (t/is (= 2 (count (scope/owner-registrations (rt/node) owner)))
+              "both live under the extension's owner")
+        (extensions/unload-all-extensions!)
+        (t/is (not (str/includes? (:text (extensions/apply-input-hooks "hi" :interactive))
+                                  "-hooked"))
+              "unload removes the input hook")
+        (t/is (not (str/includes? (str (:system-prompt
+                                        (extensions/apply-before-agent-start-hooks "p" "orig")))
+                                  "HOOK SYS"))
+              "and the before-agent-start hook")
+        (t/is (empty? (scope/owner-registrations (rt/node) owner))
+              "with nothing left under the owner"))
+      (finally
+        (extensions/unload-all-extensions!)
+        (fs/delete-tree dir)))))

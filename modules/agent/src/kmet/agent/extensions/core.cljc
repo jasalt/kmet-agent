@@ -233,7 +233,7 @@
 (defn extension-owner
   "The owner path an extension's registrations belong to: anything its
    `init(api)` installs outside a unit (cells.md §5.1). A registration is
-   disposed with the owner, so unloading an extension drops what it added."
+   disposed with its owner, and unload deregisters what the extension added."
   [extension-name]
   [:app :extensions extension-name])
 
@@ -252,7 +252,7 @@
   "Register HOOK for OWNER (an `extension-owner` path) on the app tree and
    return cells' deregister fn. Hooks are read from the tree rather than
    copied into each engine, so one registered before an engine exists reaches
-   every engine and stays gone once deregistered (P2)."
+   every engine and stays gone once deregistered."
   [owner kind hook]
   (scope/register! (app-runtime/node) owner (hook-key kind) hook))
 
