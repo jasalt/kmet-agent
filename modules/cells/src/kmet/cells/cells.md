@@ -316,6 +316,18 @@ Both are flat keys in one store: a unit's registrations and an extension's
 dispose independently without a scope tree, and a group disposes its children's
 owners before its own. Node nesting is a separate axis (§5.6).
 
+**An owner need not be a mounted slot.** The agent's slash command registry
+belongs to the node without a unit of its own: it registers under
+`[:app :commands]`, a slot-path shape with no slot behind it. The store allows
+it — `register!` takes a path, and disposal walks *owners*, so the node's
+teardown reaches it with the rest (§5.6) — and it is the honest state of a
+registry whose writers are front ends and extensions rather than a mount:
+§4's shape check requires a unit to declare `:handle` or `:units`, and a
+registry has neither to declare. The cost is reported scope: `composition` and `explain`
+describe **mounted slots** (§5.4, §7), so a slot-less owner's keys do not appear
+in `/units` — its own listing surface is where they show. A registry that later
+earns a unit with a `:start` becomes an ordinary slot and reports like one.
+
 ### 5.2 Disposal is LIFO, isolated and logged
 
 Reverse of registration order, each cleanup wrapped so one failure cannot skip

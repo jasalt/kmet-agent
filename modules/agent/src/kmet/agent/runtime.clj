@@ -22,7 +22,12 @@
 (def default-entries
   "The entries the app mounts at its root: units with no per-session config
    and no front-end surface. Config-derived and front-end-shaped units mount
-   with the session (P4)."
+   with the session (P4).
+
+   The slash command registry is deliberately absent: it registers under
+   `[:app :commands]` (kmet.agent.commands) without a unit, since `check`
+   requires a unit to declare `:handle` or `:units` and it has neither to
+   declare (cells.md §5.1)."
   [{:id :loop-guard :name :kmet/loop-guard}])
 
 (defn runtime
