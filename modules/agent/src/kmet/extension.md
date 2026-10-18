@@ -590,6 +590,26 @@ with the same `:id`/`:into` overrides):
   before `shutdown(api)` runs — disposing whatever the slot's `:start`
   registered.
 
+A unit can also be declared in `extension.edn`, so the host has the data before
+it runs any of the extension's code:
+
+```edn
+{:name "my-ext" :entry my-ext.main :loader [:jolt :sci]
+ :units {:my-ext/routing                      ; the name :ext resolves
+         {:unit  {:config [:map [:threshold :int]]}   ; the schema; no :handle
+          :entry {:id :routing :config {:threshold 3}}}}} ; where it mounts
+```
+
+`register-unit!` under the declared name binds it — the publication supplies the
+`:handle` (and may override the declaration's `:entry`/`:unit`), the declaration
+fills in what the call leaves out — and mounts it once the handles exist. While
+the manifest is being read, the declarations are validated: names are keywords,
+the `:config` schema must compile, an entry `:config` must satisfy it, and
+`:handle`/`:start`/`:units` are refused (code belongs to the publication). So a
+malformed manifest fails the load *before* anything evaluates, and a declared
+name that `init` never publishes fails it after — a manifest promises a handle
+for every unit it declares.
+
 ### Tool execute contract
 
 By default `:execute` receives `(fn [args])`. A tool that declares

@@ -106,6 +106,11 @@
 ;; per (extension, name); `unpublish-extension!` drops everything one
 ;; extension published, which is unload's first step.
 ;;
+;; `extension.edn` may declare a unit the same way minus its code
+;; (`declare-extension-unit!`): that record carries :declared? and neither
+;; resolves nor mounts until a publication of the same name binds it — which
+;; lets the host validate the manifest before the extension's code evaluates.
+;;
 ;; Mounting and unmounting are the caller's boundary decision — the store
 ;; never waits, and `unload-extension!` is called at quiescent points
 ;; (`/reload`, bootstrap) — cells.md §5.3, §8.
@@ -115,15 +120,48 @@
 (defn extension-unit
   "The publication for NAME as {:unit <descriptor> :extension <name>}, or nil
    — what the `:ext` backend reads. A name is namespaced to its extension
-   (`:budget/spend`), so a repeat means a re-publication."
+   (`:budget/spend`), so a repeat means a re-publication; a manifest
+   declaration does not resolve until its handle binds it (cells.md §8.2)."
   [nm]
-  (when-let [publication (last (filter #(= nm (:name %)) @publications))]
+  (when-let [publication (last (filter #(and (= nm (:name %))
+                                             (not (:declared? %)))
+                                       @publications))]
     (select-keys publication [:unit :extension])))
 
 (defn- published-entries
-  "The entries the loaded extensions published, in publication order."
+  "The entries the loaded extensions published, in publication order. A
+   declaration mounts nothing until it is bound."
   []
-  (mapv :entry @publications))
+  (into [] (comp (remove :declared?) (map :entry)) @publications))
+
+(defn- ensure-name-free!
+  "Refuse NAME when another extension already holds it: a published name lives
+   in its publisher's namespace (cells.md §8.2)."
+  [ext-name name]
+  (when-let [owner (some #(when (and (= name (:name %))
+                                     (not= ext-name (:extension %)))
+                            (:extension %))
+                         @publications)]
+    (throw (ex-info (str "kmet.agent.runtime: " name " is already published by "
+                         (pr-str owner) " — a published name lives in its "
+                         "extension's namespace")
+                    {:type ::duplicate-unit-name
+                     :extension ext-name
+                     :name name
+                     :published-by owner}))))
+
+(defn- store!
+  "Store PUBLICATION for EXT-NAME, replacing an earlier record for the same
+   (extension, name) — the declaration it binds, or a re-publication. Nothing
+   mounts here."
+  [ext-name publication]
+  (swap! publications
+         (fn [ps]
+           (conj (into [] (remove #(and (= ext-name (:extension %))
+                                        (= (:name publication) (:name %)))
+                                  ps))
+                 publication)))
+  publication)
 
 (defn runtime
   "A composition runtime over the builtin units and the extensions' published
@@ -158,44 +196,73 @@
       (remount!)
       true)))
 
+(defn declare-extension-unit!
+  "Store EXT-NAME's `extension.edn` declaration for NAME (cells.md §8.2): the
+   unit's `:config` schema and metadata, and the `:entry` that mounts it — but
+   no `:handle`, which the extension's code supplies when it publishes the same
+   name. Declaring mounts nothing and the name does not resolve, so the host
+   can validate the manifest before the extension's code evaluates. Returns
+   nil."
+  [ext-name {:keys [name entry unit] :as declaration}]
+  (when-not (and (keyword? name) (map? entry) (or (nil? unit) (map? unit)))
+    (throw (ex-info (str "kmet.agent.runtime: a declared unit needs :name "
+                         "(a keyword), :entry and an optional :unit map, got: "
+                         (pr-str declaration))
+                    {:type ::bad-unit-declaration
+                     :extension ext-name
+                     :declaration declaration})))
+  (ensure-name-free! ext-name name)
+  (store! ext-name (assoc declaration :extension ext-name :declared? true))
+  nil)
+
+(defn unbound-declarations
+  "The declared unit names of EXT-NAME that nothing bound yet: a manifest
+   promises a handle for every unit it declares, so a non-empty answer fails
+   the load (cells.md §8.2)."
+  [ext-name]
+  (into [] (comp (filter #(and (:declared? %) (= ext-name (:extension %))))
+                 (map :name))
+        @publications))
+
 (defn publish-extension-unit!
   "Publish EXT-NAME's unit: NAME (a namespaced keyword) resolves through the
    `:ext` backend to the publication's `:unit`, and its `:entry` mounts in the
-   app root. Re-publishing (extension, name) replaces the earlier record, so
-   the tree diffs instead of accumulating; another extension holding the name
-   is refused, since a name lives in its publisher's namespace. Returns a
-   deregister fn.
+   app root. A declaration of the same name (`extension.edn`) supplies what the
+   code leaves out — the `:config` schema, the entry that mounts it — and
+   binding replaces it. Re-publishing (extension, name) replaces the earlier
+   record, so the tree diffs instead of accumulating; another extension holding
+   the name is refused, since a name lives in its publisher's namespace.
+   Returns a deregister fn.
 
    Remounts immediately; a mount the checks refuse drops the publication
    before the error reaches the caller (cells.md §6.3)."
   [ext-name {:keys [name entry unit] :as publication}]
-  (when-not (and (keyword? name) (map? entry) (map? unit))
+  (when-not (and (keyword? name) (map? unit))
     (throw (ex-info (str "kmet.agent.runtime: a published unit needs :name "
-                         "(a keyword), :entry and :unit maps, got: "
+                         "(a keyword) and a :unit map, got: "
                          (pr-str publication))
                     {:type ::bad-unit-publication
                      :extension ext-name
                      :publication publication})))
-  (when-let [owner (some #(when (and (= name (:name %))
-                                     (not= ext-name (:extension %)))
-                            (:extension %))
-                         @publications)]
-    (throw (ex-info (str "kmet.agent.runtime: " name " is already published by "
-                         (pr-str owner) " — a published name lives in its "
-                         "extension's namespace")
-                    {:type ::duplicate-unit-name
-                     :extension ext-name
-                     :name name
-                     :published-by owner})))
-  (let [publication (assoc publication
+  (ensure-name-free! ext-name name)
+  (let [declaration (some #(when (and (:declared? %)
+                                      (= ext-name (:extension %))
+                                      (= name (:name %)))
+                             %)
+                          @publications)
+        publication (assoc publication
                            :extension ext-name
-                           :entry (assoc entry :name name))]
-    (swap! publications
-           (fn [ps]
-             (conj (into [] (remove #(and (= ext-name (:extension %))
-                                          (= name (:name %)))
-                                    ps))
-                   publication)))
+                           :entry (assoc (merge (:entry declaration) entry)
+                                         :name name)
+                           :unit (merge (:unit declaration) unit))]
+    (when-not (:id (:entry publication))
+      (throw (ex-info (str "kmet.agent.runtime: " name " has no entry :id — "
+                           "neither the publication nor the manifest says "
+                           "where it mounts")
+                      {:type ::bad-unit-publication
+                       :extension ext-name
+                       :publication publication})))
+    (store! ext-name publication)
     (try
       (remount!)
       (catch Throwable t
@@ -209,9 +276,9 @@
       (drop-publications! #(identical? % publication)))))
 
 (defn unpublish-extension!
-  "Drop every unit and entry EXT-NAME published and remount without them —
-   unload's first step, before `shutdown(api)` and the loader release
-   (cells.md §8.2). Returns true when anything was dropped."
+  "Drop every unit, declaration and entry EXT-NAME published and remount
+   without them — unload's first step, before `shutdown(api)` and the loader
+   release (cells.md §8.2). Returns true when anything was dropped."
   [ext-name]
   (drop-publications! #(= ext-name (:extension %))))
 

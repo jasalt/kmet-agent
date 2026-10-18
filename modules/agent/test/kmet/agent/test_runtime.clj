@@ -231,6 +231,67 @@
         (stale-a)
         (stale-b)))))
 
+(deftest a-manifest-declaration-waits-for-its-handle
+  ;; The declaration is the data half of a publication (extension.edn :units):
+  ;; it neither resolves nor mounts until a publication of the same name binds
+  ;; it, so the host can validate the manifest first (cells.md §8.2).
+  (let [node (runtime/node)
+        before (runtime/snapshot node)]
+    (is (nil? (runtime/declare-extension-unit!
+               "decl-ext" {:name :decl-ext/unit
+                           :unit {:config [:map [:n :int]]}
+                           :entry {:id :decl-ext :into :app :config {:n 7}}})))
+    (is (nil? (runtime/extension-unit :decl-ext/unit)))
+    (is (nil? (runtime/unit-handle node :decl-ext)))
+    (is (= [:decl-ext/unit] (runtime/unbound-declarations "decl-ext")))
+    (is (= (set (keys before)) (set (keys (runtime/snapshot node))))
+        "the tree is untouched")
+    (is (true? (runtime/unpublish-extension! "decl-ext"))
+        "unload drops declarations too")
+    (is (= [] (runtime/unbound-declarations "decl-ext")))))
+
+(deftest publishing-binds-a-declaration
+  (let [node (runtime/node)]
+    (runtime/declare-extension-unit!
+     "bind-ext" {:name :bind-ext/unit
+                 :unit {:config [:map [:n :int]]}
+                 :entry {:id :bind-ext :into :app :config {:n 7}}})
+    (let [dereg (runtime/publish-extension-unit!
+                 "bind-ext" {:name :bind-ext/unit
+                             :unit {:handle (fn [_ n] (* n 3))}})]
+      (try
+        (is (some? (runtime/extension-unit :bind-ext/unit))
+            "the bound name resolves")
+        (is (= 21 ((runtime/unit-handle node :bind-ext) node 7)))
+        (is (= {:n 7} (runtime/config (runtime/snapshot node) :bind-ext))
+            "the declaration's entry config mounts")
+        (is (= [] (runtime/unbound-declarations "bind-ext")))
+        (finally
+          (dereg))))))
+
+(deftest a-publication-needs-where-it-mounts
+  (is (= :kmet.agent.runtime/bad-unit-publication
+         (:type (ex-data (try (runtime/publish-extension-unit!
+                               "no-entry-ext" {:name :no-entry-ext/unit
+                                               :unit {:handle identity}})
+                              (catch Exception e e))))))
+  (is (nil? (runtime/unit-handle (runtime/node) :no-entry-ext))))
+
+(deftest a-declaration-cannot-take-a-published-name
+  (let [stale (runtime/publish-extension-unit!
+               "owner-ext" {:name :owner-ext/unit
+                            :unit {:handle identity}
+                            :entry {:id :owner-ext}})]
+    (try
+      (is (= :kmet.agent.runtime/duplicate-unit-name
+             (:type (ex-data (try (runtime/declare-extension-unit!
+                                   "thief-ext" {:name :owner-ext/unit
+                                                :entry {:id :thief-ext}})
+                                  (catch Exception e e))))))
+      (is (= "owner-ext" (:extension (runtime/extension-unit :owner-ext/unit))))
+      (finally
+        (stale)))))
+
 (deftest a-remount-reaches-a-changed-unit
   ;; A mounted slot holds the handle value it was mounted with, so a reloaded
   ;; unit needs a remount: the diff keeps unchanged slots and remounts the

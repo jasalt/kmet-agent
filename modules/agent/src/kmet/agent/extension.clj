@@ -133,9 +133,12 @@
               :config}; its :name is filled from :name. An entry whose :id and
               :into match one of a group's inline stage defaults replaces it;
               an id another entry already uses is a duplicate-id error.
-   Re-publishing a name replaces the earlier unit. Returns a deregister fn;
-   on unload the unit and its entry go together, disposing whatever the
-   slot's `:start` registered."
+   A name `extension.edn` declares under :units must be published here: the
+   declaration supplies the unit's :config schema and the entry that mounts
+   it, and publishing binds the :handle (what the code leaves out comes from
+   the declaration; what both carry, from this call). Re-publishing a name
+   replaces the earlier unit. Returns a deregister fn; on unload the unit and
+   its entry go together, disposing whatever the slot's `:start` registered."
   [api spec] ((:register-unit! api) spec))
 
 (defn get-all-tools [api] ((:get-all-tools api)))
