@@ -450,6 +450,38 @@
         (extensions/unload-all-extensions!)
         (fs/delete-tree dir)))))
 
+(t/deftest test-a-declaration-survives-a-swallowed-publish-failure
+  ;; init's publication is refused (its entry config does not match the
+  ;; declared schema) and init swallows the error: the bind restored the
+  ;; declaration it consumed, so the promise still fails the load.
+  (extensions/clear-extensions!)
+  (let [dir "target/test-ext-manifest-swallowed"]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/man_swallow"))
+    (spit (str dir "/extension.edn")
+          (str "{:name \"man-swallow\" :entry man-swallow.main :loader [:sci :jolt]\n"
+               " :units {:man-swallow/unit {:unit {:config [:map [:n :int]]}\n"
+               "                            :entry {:id :man-swallow :config {:n 1}}}}}\n"))
+    (spit (str dir "/man_swallow/main.clj")
+          (str "(ns man-swallow.main\n  (:require [kmet.agent.extension :as ext]))\n"
+               "(defn init [api]\n"
+               "  (try\n"
+               "    (ext/register-unit! api\n"
+               "      {:name :man-swallow/unit\n"
+               "       :entry {:config {:n \"not-an-int\"}}\n"
+               "       :unit {:handle (fn [_ n] n)}})\n"
+               "    (catch Exception _ nil)))\n"))
+    (try
+      (let [result (extensions/load-extension! dir)]
+        (t/is (str/includes? (str (:error result)) ":man-swallow/unit")
+              "the declaration the failed bind restored is still unbound")
+        (t/is (nil? (rt/extension-unit :man-swallow/unit)))
+        (t/is (nil? (rt/unit-handle (rt/node) :man-swallow)))
+        (t/is (empty? (extensions/get-loaded-extensions))))
+      (finally
+        (extensions/unload-all-extensions!)
+        (fs/delete-tree dir)))))
+
 (t/deftest test-manifest-units-are-checked-before-the-code-evaluates
   ;; The declarations are validated while the manifest is read: every fixture's
   ;; entry namespace is deliberately absent, so an error about it would mean
@@ -475,6 +507,7 @@
         (try
           (let [result (extensions/load-extension! dir)]
             (t/is (some? (:error result)) (str case " fails the load"))
+            (t/is (nil? (:extension result)) "and names no extension")
             (t/is (str/includes? (str (:error result)) expectation)
                   (str case ": " (:error result)))
             (t/is (nil? (rt/extension-unit :ghost/unit)))

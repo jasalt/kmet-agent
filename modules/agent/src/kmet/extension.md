@@ -601,8 +601,11 @@ it runs any of the extension's code:
 ```
 
 `register-unit!` under the declared name binds it — the publication supplies the
-`:handle` (and may override the declaration's `:entry`/`:unit`), the declaration
-fills in what the call leaves out — and mounts it once the handles exist. While
+`:handle` (and may override the declaration's `:entry`/`:unit`), the record it
+replaces fills in what the call leaves out — and mounts it once the handles
+exist. A refused mount puts that record back, so a declaration a failed bind
+consumed is still counted, and `init` that swallows the error does not slip
+past the "every declared unit is bound" rule. While
 the manifest is being read, the declarations are validated: names are keywords,
 the `:config` schema must compile, an entry `:config` must satisfy it, and
 `:handle`/`:start`/`:units` are refused (code belongs to the publication). So a

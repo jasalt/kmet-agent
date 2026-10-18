@@ -38,8 +38,9 @@ color values, installation, and live reload; complete starting points are in
   extra paths go in top-level `:extensions` settings entries (`KMET_CODING_AGENT_DIR`
   moves the agent dir). An extension is a Clojure
   namespace defining `(defn init [api])` (and optionally `(defn shutdown [api])`),
-  depending only on `kmet.agent.extension`. A manifest dir declares `{:name :entry
-  :files}` — its own source deps. Loaded at startup, reloadable via `/reload`, and
+  depending only on `kmet.agent.extension`. A manifest dir declares `{:name
+  :entry :loader}` — `:units` may declare units up front for the code to bind,
+  and `deps.edn` carries its own source deps. Loaded at startup, reloadable via `/reload`, and
   unloadable at runtime; unload runs shutdown + deregisters everything.
   Shipped opt-in extensions live in [`extensions/`](../extensions/)
   ([usage](../extensions/README.md)); writing your own:

@@ -188,6 +188,47 @@
     (is (= (set (keys before)) (set (keys (runtime/snapshot node))))
         "and the tree is unchanged")))
 
+(deftest a-refused-bind-restores-the-declaration
+  ;; A publication that binds a declaration and then fails its mount must not
+  ;; consume the declaration: the load still reports the unit unbound, and a
+  ;; corrected publication binds it.
+  (let [node (runtime/node)
+        decl {:name :restore-ext/unit
+              :unit {:config [:map [:n :int]]}
+              :entry {:id :restore-ext :config {:n "not-an-int"}}}]
+    (runtime/declare-extension-unit! "restore-ext" decl)
+    (is (thrown? Exception
+                 (runtime/publish-extension-unit!
+                  "restore-ext" {:name :restore-ext/unit
+                                 :unit {:handle identity}})))
+    (is (= [:restore-ext/unit] (runtime/unbound-declarations "restore-ext"))
+        "the declaration is back")
+    (is (nil? (runtime/extension-unit :restore-ext/unit)))
+    (is (nil? (runtime/unit-handle node :restore-ext)))
+    (is (true? (runtime/unpublish-extension! "restore-ext"))
+        "unload still drops it")))
+
+(deftest a-re-publication-inherits-what-it-replaces
+  (let [node (runtime/node)
+        dereg (runtime/publish-extension-unit!
+               "inherit-ext" {:name :inherit-ext/unit
+                              :unit {:config [:map [:n :int]]
+                                     :handle (fn [_ n] (* n 2))}
+                              :entry {:id :inherit-ext :config {:n 4}}})]
+    (try
+      (let [again (runtime/publish-extension-unit!
+                   "inherit-ext" {:name :inherit-ext/unit
+                                  :unit {:handle (fn [_ n] (* n 5))}})]
+        (try
+          (is (= 20 ((runtime/unit-handle node :inherit-ext) node 4))
+              "the new handle")
+          (is (= {:n 4} (runtime/config (runtime/snapshot node) :inherit-ext))
+              "the entry it replaced still mounts")
+          (finally
+            (again))))
+      (finally
+        (dereg)))))
+
 (deftest a-malformed-publication-is-refused
   (is (= :kmet.agent.runtime/bad-unit-publication
          (:type (ex-data (try (runtime/publish-extension-unit!
@@ -268,6 +309,18 @@
         (is (= [] (runtime/unbound-declarations "bind-ext")))
         (finally
           (dereg))))))
+
+(deftest a-declaration-may-leave-the-descriptor-to-the-publication
+  (runtime/declare-extension-unit! "thin-ext" {:name :thin-ext/unit
+                                               :entry {:id :thin-ext}})
+  (let [node (runtime/node)
+        dereg (runtime/publish-extension-unit!
+               "thin-ext" {:name :thin-ext/unit
+                           :unit {:handle (fn [_ _] :ok)}})]
+    (try
+      (is (= :ok ((runtime/unit-handle node :thin-ext) node nil)))
+      (finally
+        (dereg)))))
 
 (deftest a-publication-needs-where-it-mounts
   (is (= :kmet.agent.runtime/bad-unit-publication

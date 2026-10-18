@@ -110,6 +110,9 @@
 ;; (`declare-extension-unit!`): that record carries :declared? and neither
 ;; resolves nor mounts until a publication of the same name binds it — which
 ;; lets the host validate the manifest before the extension's code evaluates.
+;; A publication inherits what the record it replaces leaves out (its
+;; declaration, or an earlier publication) and puts it back if the mount is
+;; refused.
 ;;
 ;; Mounting and unmounting are the caller's boundary decision — the store
 ;; never waits, and `unload-extension!` is called at quiescent points
@@ -184,6 +187,22 @@
   []
   (cells/mount! app-rt (into default-entries (published-entries))))
 
+(defn- previous-record
+  "The record (extension EXT-NAME, name NAME) currently holds, or nil — the
+   declaration a publication binds, or the publication it replaces."
+  [ext-name name]
+  (some #(when (and (= ext-name (:extension %)) (= name (:name %))) %)
+        @publications))
+
+(defn- restore!
+  "Put PUBLICATION back to the record it replaced — PREVIOUS, or nothing when
+   it replaced nothing — and remount. The refused-mount rollback: a failed
+   publication must not consume the declaration it was binding."
+  [publication previous]
+  (let [without (into [] (remove #(identical? % publication)) @publications)]
+    (reset! publications (if previous (conj without previous) without))
+    (remount!)))
+
 (defn- drop-publications!
   "Remove the publications matching PRED and remount when any went — the
    tree's slots and the list stay in step. Returns true when something was
@@ -227,15 +246,16 @@
 (defn publish-extension-unit!
   "Publish EXT-NAME's unit: NAME (a namespaced keyword) resolves through the
    `:ext` backend to the publication's `:unit`, and its `:entry` mounts in the
-   app root. A declaration of the same name (`extension.edn`) supplies what the
-   code leaves out — the `:config` schema, the entry that mounts it — and
-   binding replaces it. Re-publishing (extension, name) replaces the earlier
-   record, so the tree diffs instead of accumulating; another extension holding
-   the name is refused, since a name lives in its publisher's namespace.
-   Returns a deregister fn.
+   app root. The record this call replaces — a declaration (`extension.edn`) or
+   an earlier publication — supplies what the call leaves out: the `:config`
+   schema, the entry that mounts it. Re-publishing (extension, name) replaces
+   the earlier record, so the tree diffs instead of accumulating; another
+   extension holding the name is refused, since a name lives in its publisher's
+   namespace. Returns a deregister fn.
 
-   Remounts immediately; a mount the checks refuse drops the publication
-   before the error reaches the caller (cells.md §6.3)."
+   Remounts immediately; a mount the checks refuse drops the publication and
+   restores what it replaced, then surfaces the mount's error (cells.md
+   §6.3)."
   [ext-name {:keys [name entry unit] :as publication}]
   (when-not (and (keyword? name) (map? unit))
     (throw (ex-info (str "kmet.agent.runtime: a published unit needs :name "
@@ -245,16 +265,12 @@
                      :extension ext-name
                      :publication publication})))
   (ensure-name-free! ext-name name)
-  (let [declaration (some #(when (and (:declared? %)
-                                      (= ext-name (:extension %))
-                                      (= name (:name %)))
-                             %)
-                          @publications)
+  (let [previous (previous-record ext-name name)
         publication (assoc publication
                            :extension ext-name
-                           :entry (assoc (merge (:entry declaration) entry)
+                           :entry (assoc (merge (:entry previous) entry)
                                          :name name)
-                           :unit (merge (:unit declaration) unit))]
+                           :unit (merge (:unit previous) unit))]
     (when-not (:id (:entry publication))
       (throw (ex-info (str "kmet.agent.runtime: " name " has no entry :id — "
                            "neither the publication nor the manifest says "
@@ -267,9 +283,9 @@
       (remount!)
       (catch Throwable t
         ;; the checks ran before anything was touched (or a `:start` threw
-        ;; mid-walk): drop the publication and re-sync, then surface the
-        ;; mount's error rather than a cleanup's
-        (try (drop-publications! #(identical? % publication))
+        ;; mid-walk): undo the store and re-sync, then surface the mount's
+        ;; error rather than a cleanup's
+        (try (restore! publication previous)
              (catch Throwable _))
         (throw t)))
     (fn deregister []

@@ -677,11 +677,17 @@ publisher's namespace. The host mounts its root node *before* loading any
 extension, so `init(api)` always has a scope to register into — that ordering
 is what retires the pending buffers — and `remount!` is the assembly point
 whose entry list is the defaults plus what the loaded extensions published. An
-extension's units may also be declared in `extension.edn` as data —
-descriptors with their `:config` schemas but no `:handle` — and the host
-validates those with malli *before evaluating the extension's code*; the handle
-binds when the extension loads, and `check` covers the entries whose units are
-implementable. Unloading is three steps in order: drop the extension's
+extension's units may also be declared in `extension.edn` as data — a `:units`
+map of namespaced name → `{:unit <descriptor minus :handle> :entry <entry>}` —
+and the host validates those with malli *before evaluating the extension's
+code*: the name, the unit's `:config` schema, the entry that mounts it, and the
+entry's `:config` against that schema. A declaration mounts nothing and does
+not resolve: the name binds when `init(api)` publishes it (the publication
+supplies the `:handle`, the declaration fills in what the call leaves out),
+and a declared name nothing publishes fails the load — a manifest promises a
+handle for every unit it declares. `check` covers the entries whose units are
+implementable, which is at bind time; before that, the manifest data is what
+is checked. Unloading is three steps in order: drop the extension's
 published units and entries and remount without them (drops them from the
 snapshot and disposes their owners), `shutdown(api)`, `loader/unload!` — after
 which every handle that came from that context is dead and nothing refers to it.

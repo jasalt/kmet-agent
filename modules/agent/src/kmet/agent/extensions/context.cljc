@@ -654,7 +654,10 @@
    no `:handle`/:start/:units, which the extension's code supplies when it
    publishes the name. Everything is checked here, before any code evaluates,
    which is what declaring in the manifest is for; the host malli-validates the
-   declared entry config against the declared schema too."
+   declared entry config against the declared schema too. A declaration must
+   mount somewhere (`:entry` is required) and may leave the descriptor to the
+   publication (`:unit` is optional), the same rule the runtime's
+   `declare-extension-unit!` applies."
   [path manifest]
   (let [units (:units manifest)]
     (when (and units (not (map? units)))
@@ -666,15 +669,15 @@
                  (let [bad (fn [msg data]
                              (throw (ex-info (str "extension.edn :units " nm
                                                   " " msg)
-                                             (merge {:path path :units nm}
+                                             (merge {:path path :unit nm}
                                                     data))))]
                    (when-not (keyword? nm)
                      (bad "must be named by a keyword (namespaced to this extension)"
                           {:name nm}))
                    (when-not (map? declaration)
                      (bad "must be a map" {:declaration declaration}))
-                   (when-not (map? unit)
-                     (bad "declares no :unit map for the code to bind its handle into"
+                   (when-not (or (nil? unit) (map? unit))
+                     (bad ":unit must be a map (the code binds its :handle into it)"
                           {:unit unit}))
                    (doseq [k [:handle :start :units]]
                      (when (contains? unit k)
