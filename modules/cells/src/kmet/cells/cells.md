@@ -737,7 +737,7 @@ foreign `kmet.*` require and a second consumer could take the module as-is.
 
 | scaffolding | deleted when | what remains |
 |---|---|---|
-| §8.1/§8.2's host sketches | P5 lands: the `:ext` backend exists in `kmet.agent.runtime` (the sandbox sketch stays until codemode is scheduled) | "one backend per isolation mechanism", the handle-lifetime invariant (§6.4) |
+| §8.1/§8.2's host sketches | P5a lands: the `:ext` backend exists in `kmet.agent.runtime` (the sandbox sketch stays until codemode is scheduled) | "one backend per isolation mechanism", the handle-lifetime invariant (§6.4) |
 | §5.6's child-mount snippet | the first child node ships (P7) | "nodes nest; domains do not" |
 | `cells-plan.md` §2 (the phase table) | continuously — a landed phase's row comes out; the git log is its record | the phases still ahead |
 
