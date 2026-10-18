@@ -427,8 +427,7 @@
                {:cwd (str (fs/cwd))})
         e2 (rt/bootstrap (test-config) {:session sess2})]
     (try
-      (doseq [k [:tool-call-hooks
-                 :tool-result-hooks :markdown-transformers :entry-renderers
+      (doseq [k [:markdown-transformers :entry-renderers
                  :message-renderers :custom-tools :tool-sources
                  :event-listeners :flags :cli-flags
                  :applied-resource-paths :skills :prompt-templates]]
@@ -463,3 +462,40 @@
         (rt/dispose! e1)
         (fs/delete-tree dir1)
         (fs/delete-tree dir2)))))
+
+(deftest test-tool-hooks-come-from-the-app-tree
+  ;; The transform chain reads the store (P2), so a hook an extension
+  ;; registered reaches the engine — and leaves when it is deregistered.
+  ;; test-extensions covers the load/unload wiring end to end.
+  (with-engine
+    (fn [engine _sess]
+      (let [ag (rt/agent-state engine)
+            before (fn [ctx] (@(:before-tool-call ag) ctx))
+            after (fn [ctx] (@(:after-tool-call ag) ctx))
+            owner (extensions/extension-owner "test-tool-hooks")
+            hook-call (fn [{:keys [tool-name args]}]
+                        (if (= "kmet-test-danger" tool-name)
+                          {:block true :reason "not that one"}
+                          {:args (assoc args :patched true)}))
+            hook-result (fn [{:keys [result]}]
+                          {:content (str "wrapped:" (:content result))
+                           :is-error false})
+            dereg-call (extensions/register-tool-call-hook! owner hook-call)
+            dereg-result (extensions/register-tool-result-hook! owner hook-result)]
+        (try
+          (is (= {:block true :reason "not that one"}
+                 (before {:tool-name "kmet-test-danger" :args {}}))
+              "a tool-call hook can block a call and says why")
+          (is (true? (:patched (:args (before {:tool-name "read" :args {}}))))
+              "or rewrite its arguments")
+          (is (= "wrapped:ok"
+                 (:content (after {:tool-name "read"
+                                   :result {:content "ok" :is-error false}})))
+              "a tool-result hook rewrites the result")
+          (finally (dereg-call) (dereg-result)))
+        (is (not-any? #(identical? hook-call %)
+                      (extensions/get-tool-call-hooks))
+            "a deregistered tool-call hook leaves the registry")
+        (is (not-any? #(identical? hook-result %)
+                      (extensions/get-tool-result-hooks))
+            "so does a tool-result hook")))))

@@ -175,18 +175,6 @@
                   ((resolve 'kmet.agent.session.runtime/default-engine)))
               :message-renderers)
       pending-message-renderers))
-(defonce pending-tool-call-hooks (atom []))
-(defn- current-tool-call-hook-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :tool-call-hooks)
-      pending-tool-call-hooks))
-(defonce pending-tool-result-hooks (atom []))
-(defn- current-tool-result-hook-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :tool-result-hooks)
-      pending-tool-result-hooks))
 (defonce pending-markdown-transformers (atom []))
 (defn- current-markdown-transformer-registry []
   (or (some-> (do (require 'kmet.agent.session.runtime)
@@ -356,29 +344,22 @@
 (defn get-message-renderer [custom-type]
   (get @(current-message-renderer-registry) custom-type))
 
-(defn- register-tracked-hook!
-  "register-hook! plus a deregister closure covering the current registry and
-   its pending twin."
-  [cur-reg pending-reg hook]
-  (register-hook! cur-reg hook)
-  (fn []
-    (doseq [reg [cur-reg pending-reg]]
-      (swap! reg (fn [hs] (remove #(identical? % hook) hs))))))
-
 (defn register-tool-call-hook!
-  "Register a tool-call hook (extension api: on-tool-call): (fn [ctx]) →
-   nil | {:block true :reason} | {:args transformed}. Returns a deregister fn."
-  [hook]
-  (register-tracked-hook! (current-tool-call-hook-registry) pending-tool-call-hooks hook))
+  "Register OWNER's tool-call hook (extension api: on-tool-call): (fn [ctx])
+   → nil | {:block true :reason} | {:args transformed}. Returns a deregister
+   fn."
+  [owner hook]
+  (register-app-hook! owner :tool-call hook))
 
 (defn register-tool-result-hook!
-  "Register a tool-result hook (extension api: on-tool-result): (fn [ctx])
-   → nil | {:content ... :is-error ...} overrides. Returns a deregister fn."
-  [hook]
-  (register-tracked-hook! (current-tool-result-hook-registry) pending-tool-result-hooks hook))
+  "Register OWNER's tool-result hook (extension api: on-tool-result):
+   (fn [ctx]) → nil | {:content ... :is-error ...} overrides. Returns a
+   deregister fn."
+  [owner hook]
+  (register-app-hook! owner :tool-result hook))
 
-(defn get-tool-call-hooks [] @(current-tool-call-hook-registry))
-(defn get-tool-result-hooks [] @(current-tool-result-hook-registry))
+(defn get-tool-call-hooks [] (hooks-of :tool-call))
+(defn get-tool-result-hooks [] (hooks-of :tool-result))
 
 ;; ─── Shortcuts + markdown transformers (extension api) ────────────────────
 
@@ -1004,19 +985,11 @@
                                         (extension-owner name) h))))
      :on-tool-call (fn [hook]
                      (let [h (loader-aware ext hook)]
-                       (register-tool-call-hook! h)
-                       (track (fn []
-                                (doseq [reg [(current-tool-call-hook-registry)
-                                             pending-tool-call-hooks]]
-                                  (swap! reg (fn [hs] (remove #(identical? % h) hs))))))))
+                       (track (register-tool-call-hook! (extension-owner name) h))))
 
      :on-tool-result (fn [hook]
                        (let [h (loader-aware ext hook)]
-                         (register-tool-result-hook! h)
-                         (track (fn []
-                                  (doseq [reg [(current-tool-result-hook-registry)
-                                               pending-tool-result-hooks]]
-                                    (swap! reg (fn [hs] (remove #(identical? % h) hs))))))))
+                         (track (register-tool-result-hook! (extension-owner name) h))))
 
      :register-flag! (fn [flag-name & [opts]]
                        (let [dereg (register-flag! flag-name opts)]

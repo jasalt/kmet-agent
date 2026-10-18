@@ -1725,9 +1725,11 @@
                "(defn init [api]\n"
                "  (ext/on-input api (fn [{:keys [text]}]\n"
                "                      {:action :transform :text (str text \"-hooked\")}))\n"
-               "  (ext/on-before-agent-start api (fn [_] {:system-prompt \"HOOK SYS\"})))\n"))
+               "  (ext/on-before-agent-start api (fn [_] {:system-prompt \"HOOK SYS\"}))\n"
+               "  (ext/on-tool-call api (fn [_] {:args {:by \"hook-ext\"}})))\n"))
     (try
-      (let [result (extensions/load-extension! dir)
+      (let [tool-hooks (count (extensions/get-tool-call-hooks))
+            result (extensions/load-extension! dir)
             owner (extensions/extension-owner "hook-ext")]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
         (t/is (str/includes? (:text (extensions/apply-input-hooks "hi" :interactive))
@@ -1737,12 +1739,16 @@
                                    (extensions/apply-before-agent-start-hooks "p" "orig")))
                              "HOOK SYS")
               "and its before-agent-start hook")
-        (t/is (= 2 (count (scope/owner-registrations (rt/node) owner)))
-              "both live under the extension's owner")
+        (t/is (= (inc tool-hooks) (count (extensions/get-tool-call-hooks)))
+              "and its tool-call hook reaches the transform chain")
+        (t/is (= 3 (count (scope/owner-registrations (rt/node) owner)))
+              "all three live under the extension's owner")
         (extensions/unload-all-extensions!)
+        (t/is (= tool-hooks (count (extensions/get-tool-call-hooks)))
+              "unload removes the tool-call hook")
         (t/is (not (str/includes? (:text (extensions/apply-input-hooks "hi" :interactive))
                                   "-hooked"))
-              "unload removes the input hook")
+              "the input hook")
         (t/is (not (str/includes? (str (:system-prompt
                                         (extensions/apply-before-agent-start-hooks "p" "orig")))
                                   "HOOK SYS"))
