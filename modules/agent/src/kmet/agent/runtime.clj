@@ -408,8 +408,7 @@
     (reduce (fn [acc owner]
               (let [regs (scope/owner-registrations node owner)]
                 (cond
-                  (empty? regs) acc
-                  (contains? slots owner) acc
+                  (or (empty? regs) (contains? slots owner)) acc
                   :else (let [parent (->> slots
                                           (filter #(path-prefix? % owner))
                                           (sort-by count)

@@ -2373,24 +2373,44 @@
       (t/is (= "Tool bash not found" (:content (:result end)))))))
 
 (t/deftest test-loop-undeclared-tool-call-settles-as-error-in-sequential-batch
-  ;; the guard lives in both executors — a :sequential tool in the batch
-  ;; switches the whole batch to the sequential path
+  ;; the guard lives in both executors — the scheduling redef puts this batch
+  ;; on the sequential path, and the event order proves it: the sequential
+  ;; executor prepares and runs one call at a time, while the parallel path
+  ;; prepares the whole batch first
   (let [events (atom [])
         executed (atom [])
+        calls (atom 0)
         agent (loop/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :default-tools ["read"])]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   ;; force the sequential executor for this batch
-                  loop/tool-execution-mode (constantly :sequential)
-                  llm/send-message (stub-llm-tool-then-text (atom 0))
+                  loop/has-sequential-tool-call? (constantly true)
+                  llm/send-message
+                  (fn [opts]
+                    (future
+                      (if (= 1 (swap! calls inc))
+                        (do (doseq [tc [{:id "tc1" :name "read" :arguments "{}" :index 0}
+                                        {:id "tc2" :name "bash" :arguments "{}" :index 1}]]
+                              (when-let [on-tc (:on-tool-call opts)] (on-tc tc)))
+                            (when-let [on-done (:on-done opts)] (on-done :tool-calls)))
+                        (do (when-let [on-text (:on-text opts)] (on-text "ok"))
+                            (when-let [on-done (:on-done opts)] (on-done :stop))))
+                      :done))
                   tools/execute-tool (fn [name _ _] (swap! executed conj name)
                                        {:content "should not run" :is-error false})]
-      (t/is (= :sequential (#'loop/tool-execution-mode "bash"))
-            "the batch is on the sequential path")
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
-    (t/is (empty? @executed) "an undeclared call must not execute")
-    (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]
+    (t/is (= ["read"] @executed)
+          "the declared call executed; the undeclared one never did")
+    (t/is (= [[:tool-execution-start "read"] [:tool-execution-end "read"]
+              [:tool-execution-start "bash"] [:tool-execution-end "bash"]]
+             (into []
+                   (comp (filter #(#{:tool-execution-start :tool-execution-end} (:type %)))
+                         (map (juxt :type :tool-name)))
+                   @events))
+          "one call prepared and run at a time — the sequential executor")
+    (let [end (first (filter #(and (= :tool-execution-end (:type %)) (= "bash" (:tool-name %)))
+                             @events))]
       (t/is (true? (:is-error end)))
       (t/is (= "Tool bash not found" (:content (:result end)))))))
 

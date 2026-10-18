@@ -143,8 +143,7 @@ disposal off the list of things to design separately.
 
 Seven functions; they are the module's **composition** surface — not the
 whole of what a host calls. The store's own API (`kmet.cells.scope`) is the
-second, lower surface, and the host uses it directly (ten source files, 52
-call sites in `modules/agent/src` and `modules/tui/src`): every registry kmet
+second, lower surface, and the host uses it directly: every registry kmet
 keeps — commands, tools, skills, prompts, hooks, renderers, flags — lists and
 removes through `scope/owner-registrations`, `scope/ordered-registrations`
 and `scope/deregister!`, because a registry's listing and removal need the
@@ -406,16 +405,17 @@ Callers take it **once per attempt** rather than per dispatch:
 - a mid-run manifest change affects the *next* attempt, never the streaming one
   in flight;
 - an in-flight invocation already holds its closure, so nothing dangles;
-- the tools are captured as one map when the request is built, and the wire
-  list the model is offered, the declared set a call is checked against, and
-  the registry the call is dispatched to are all that one capture. This
-  closes the race where a tool unloads between the model's `tool_use` and its
-  execution and execution fails with "unknown tool" — a tool that appears
-  mid-request is not dispatched either, because the model was never offered
-  it (F4). The capture is not this snapshot: tools are registrations, not
-  units (§5.1); it is the same discipline applied to the one table a request
-  reads. Commands need no capture — the front end resolves one as it
-  dispatches the typed input, with no model round-trip in between.
+- the tools are captured once when the request is built — one list, threaded
+  through the turn — and the wire list the model is offered, the declared set
+  a call is checked against, and the registry the call is dispatched to all
+  come from that one value. This closes the race where a tool unloads between
+  the model's `tool_use` and its execution and execution fails with "unknown
+  tool" — a tool that appears mid-request is not dispatched either, because
+  the model was never offered it (F4). The capture is not this snapshot:
+  tools are registrations, not units (§5.1); it is the same discipline applied
+  to the one table a request reads. Commands need no capture — the front end
+  resolves one as it dispatches the typed input, with no model round-trip in
+  between.
 
 The map is the ABI (§7, §12 Q4); one composition's snapshot looks like:
 

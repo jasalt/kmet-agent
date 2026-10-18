@@ -726,26 +726,14 @@ Be precise and concise in your responses."}}]
     (emit agent {:type :message-start :message msg})
     msg))
 
-(defn- tool-execution-mode
-  "Execution mode for a tool name: :sequential or :parallel. DECLARED-TOOLS —
-   the request's captured tool map, when the caller has one — decides, so the
-   batch's scheduling agrees with the dispatch and the wire list; without it
-   the live registry answers. Unregistered/unknown tools default to :parallel
-   (pi default)."
-  ([tool-name] (tool-execution-mode tool-name nil))
-  ([tool-name declared-tools]
-   (or (:execution-mode (if declared-tools
-                          (get declared-tools tool-name)
-                          (tools/get-tool tool-name)))
-       :parallel)))
-
 (defn- has-sequential-tool-call?
   "True if any tool call targets a :sequential tool — the whole batch then runs
-   sequentially (pi: hasSequentialToolCall). Scheduled against the same
-   captured map the batch dispatches with, so a tool unloaded between the
-   request and the batch still gets its mode."
+   sequentially (pi: hasSequentialToolCall). Resolved against the request's
+   captured tool map, like the dispatch, so a tool unloaded between the request
+   and the batch keeps its mode; an unregistered call defaults to :parallel
+   (pi default)."
   [tool-calls declared-tools]
-  (boolean (some #(= :sequential (tool-execution-mode (:name %) declared-tools))
+  (boolean (some #(= :sequential (:execution-mode (get declared-tools (:name %))))
                  tool-calls)))
 
 (defn- await-all-tool-results!
@@ -776,11 +764,11 @@ Be precise and concise in your responses."}}]
 
 (defn- prepare-tool-call!
   "Run one tool call's preparation: emit :tool-execution-start, then either settle
-   it immediately when the tool is undeclared (pi: prepareToolCall's
-   tools.find) or run the before-tool-call hook and return TC with any
-   rewritten :arguments. Scheduling of the execution itself stays with the
-   caller (parallel vs sequential)."
-  [agent assistant-msg tc declared]
+   it immediately when the tool is not in the request's captured tool map (pi:
+   prepareToolCall's tools.find) or run the before-tool-call hook and return TC
+   with any rewritten :arguments. Scheduling of the execution itself stays with
+   the caller (parallel vs sequential)."
+  [agent assistant-msg tc declared-tools]
   (let [tc-id (:id tc)
         tc-name (:name tc)
         tc-args (:arguments tc)]
@@ -788,7 +776,7 @@ Be precise and concise in your responses."}}]
                  :tool-call-id tc-id
                  :tool-name tc-name
                  :args tc-args})
-    (if-not (contains? declared tc-name)
+    (if-not (contains? declared-tools tc-name)
       ;; undeclared call settles as an error without executing, but the
       ;; after hook still runs in finish-tool-call!
       (assoc tc :kmet/blocked
@@ -855,10 +843,9 @@ Be precise and concise in your responses."}}]
    (cells.md §5.4)."
   [agent tool-calls assistant-msg declared-tools & [append?]]
   (let [finalized (atom {})
-        ;; the names declared for this request — a call outside the set is
+        ;; the names declared for this request — a call outside the map is
         ;; an immediate error, never executed; the map is also the dispatch
         ;; override, so execution agrees with what the model was offered
-        declared (into #{} (keys declared-tools))
         emit-end! (fn [tc result]
                     (emit agent {:type :tool-execution-end
                                  :tool-call-id (:id tc)
@@ -874,7 +861,7 @@ Be precise and concise in your responses."}}]
         settle! (fn [tc result]
                   (swap! finalized assoc (:id tc) result)
                   (emit-end! tc result))
-        prepared (mapv #(prepare-tool-call! agent assistant-msg % declared)
+        prepared (mapv #(prepare-tool-call! agent assistant-msg % declared-tools)
                        tool-calls)
         ;; Blocked calls settle during preparation (pi: an immediate
         ;; outcome's end fires right away), not after the batch.
@@ -932,17 +919,14 @@ Be precise and concise in your responses."}}]
    DECLARED-TOOLS map decides the declared set and the dispatch; results in
    source order."
   [agent tool-calls assistant-msg declared-tools & [append?]]
-  (let [tool-results (atom [])
-        ;; see the parallel executor — an undeclared call never executes, and
-        ;; the captured map overrides the live registry
-        declared (into #{} (keys declared-tools))]
+  (let [tool-results (atom [])]
     (doseq [tc tool-calls]
       (let [tc-id (:id tc)
             tc-name (:name tc)
             tc-args (:arguments tc)
             ;; shared preparation: emits the start event and runs the
             ;; before-tool-call hook (+ undeclared handling)
-            prepared (prepare-tool-call! agent assistant-msg tc declared)
+            prepared (prepare-tool-call! agent assistant-msg tc declared-tools)
             args (:arguments prepared)
             raw (if (contains? prepared :kmet/blocked)
                   (:kmet/blocked prepared)
