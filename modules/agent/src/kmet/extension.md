@@ -584,7 +584,8 @@ with the same `:id`/`:into` overrides):
   omitted = the app root) and the entry's `:config`. An id another entry
   already uses is a duplicate-id error, not a silent replacement.
 - `:unit`'s fns (`:start`, `:handle`, …) run in the extension's context, like
-  every other registered callback.
+  every other registered callback — a unit that owns inline `:units` does not
+  cover its children's fns, so publish a child that runs code as its own unit.
 - Returns a deregister fn. On unload the entry and the unit go together —
   before `shutdown(api)` runs — disposing whatever the slot's `:start`
   registered.

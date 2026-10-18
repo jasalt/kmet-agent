@@ -105,6 +105,10 @@
 ;; goes into the tree the same way the host's own entries do. One publication
 ;; per (extension, name); `unpublish-extension!` drops everything one
 ;; extension published, which is unload's first step.
+;;
+;; Mounting and unmounting are the caller's boundary decision — the store
+;; never waits, and `unload-extension!` is called at quiescent points
+;; (`/reload`, bootstrap) — cells.md §5.3, §8.
 
 (defonce ^:private publications (atom []))
 

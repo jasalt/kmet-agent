@@ -125,7 +125,10 @@
    SPEC:
      :name  — a keyword namespaced to this extension (`:budget/spend`); it
               resolves the unit through the host's `:ext` backend
-     :unit  — the descriptor: :handle, the :config schema, :start, …
+     :unit  — the descriptor: :handle, the :config schema, :start, … — its
+              fns run in this extension's context like every other
+              registered callback (a unit that owns inline `:units` does not
+              cover its children's, so publish those as their own units)
      :entry — where it mounts, as the host's entry shape (§6.1): {:id :into
               :config}; its :name is filled from :name. An entry whose :id and
               :into match one of a group's inline stage defaults replaces it;

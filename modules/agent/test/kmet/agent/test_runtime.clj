@@ -116,16 +116,21 @@
         dereg (runtime/publish-extension-unit!
                "probe-ext" {:name :probe-ext/double
                             :unit probe
-                            :entry {:id :probe-ext :config {:n 21}}})
-        snapshot (runtime/snapshot node)]
-    (is (= {:unit probe :extension "probe-ext"}
-           (runtime/extension-unit :probe-ext/double)))
-    (is (= 42 ((runtime/unit-handle node :probe-ext) node 21)))
-    (is (= {:n 21} (runtime/config snapshot :probe-ext)))
-    (is (= [:app :probe-ext] (:owner (:probe-ext snapshot))))
-    (is (true? (dereg)) "the deregister fn drops the publication")
-    (is (nil? (runtime/unit-handle node :probe-ext)))
-    (is (nil? (runtime/extension-unit :probe-ext/double)))))
+                            :entry {:id :probe-ext :config {:n 21}}})]
+    (try
+      (let [snapshot (runtime/snapshot node)]
+        (is (= {:unit probe :extension "probe-ext"}
+               (runtime/extension-unit :probe-ext/double)))
+        (is (= 42 ((runtime/unit-handle node :probe-ext) node 21)))
+        (is (= {:n 21} (runtime/config snapshot :probe-ext)))
+        (is (= [:app :probe-ext] (:owner (:probe-ext snapshot)))))
+      (is (str/includes? (runtime/explain node) "[:app :probe-ext]")
+          "the published slot shows in /units")
+      (is (true? (dereg)) "the deregister fn drops the publication")
+      (is (nil? (runtime/unit-handle node :probe-ext)))
+      (is (nil? (runtime/extension-unit :probe-ext/double)))
+      (finally
+        (dereg)))))
 
 (deftest the-ext-backend-is-tried-after-builtin
   ;; Backends are tried in the host's declared order: a publication cannot
@@ -137,12 +142,15 @@
                              :unit {:handle shadow}
                              :entry {:id :shadow-retry :into :agent-loop
                                      :config {:max-retries 1}}})]
-    (is (= shadow (:handle (:unit (runtime/extension-unit :kmet/retry))))
-        "published under the builtin name")
-    (is (not (identical? shadow
-                         (runtime/handle (runtime/snapshot node :agent-loop) :retry-policy)))
-        "the mounted stage is the builtin's descriptor")
-    (is (true? (dereg)))))
+    (try
+      (is (= shadow (:handle (:unit (runtime/extension-unit :kmet/retry))))
+          "published under the builtin name")
+      (is (not (identical? shadow
+                           (runtime/handle (runtime/snapshot node :agent-loop) :retry-policy)))
+          "the mounted stage is the builtin's descriptor")
+      (is (true? (dereg)))
+      (finally
+        (dereg)))))
 
 (deftest re-publishing-a-name-replaces-the-earlier-unit
   (let [node (runtime/node)
@@ -155,13 +163,17 @@
                              :entry {:id :re-ext}}))
         stale (publish :one)
         dereg (publish :two)]
-    (is (= :two ((runtime/unit-handle node :re-ext) node nil)))
-    (is (= 2 @starts) "the re-publication remounted the slot")
-    (stale)
-    (is (= :two ((runtime/unit-handle node :re-ext) node nil))
-        "a stale deregister is a no-op")
-    (is (true? (dereg)))
-    (is (nil? (runtime/unit-handle node :re-ext)))))
+    (try
+      (is (= :two ((runtime/unit-handle node :re-ext) node nil)))
+      (is (= 2 @starts) "the re-publication remounted the slot")
+      (stale)
+      (is (= :two ((runtime/unit-handle node :re-ext) node nil))
+          "a stale deregister is a no-op")
+      (is (true? (dereg)))
+      (is (nil? (runtime/unit-handle node :re-ext)))
+      (finally
+        (stale)
+        (dereg)))))
 
 (deftest a-refused-mount-drops-the-publication
   (let [node (runtime/node)
@@ -208,14 +220,16 @@
                  "ext-a" {:name :ext-a/unit :unit unit :entry {:id :ext-a}})
         stale-b (runtime/publish-extension-unit!
                  "ext-b" {:name :ext-b/unit :unit unit :entry {:id :ext-b}})]
-    (is (true? (runtime/unpublish-extension! "ext-a")))
-    (is (nil? (runtime/unit-handle node :ext-a)))
-    (is (some? (runtime/unit-handle node :ext-b)))
-    (is (not (runtime/unpublish-extension! "ext-a")) "nothing left to drop")
-    (is (true? (runtime/unpublish-extension! "ext-b")))
-    (is (nil? (runtime/unit-handle node :ext-b)))
-    (stale-a)
-    (stale-b)))
+    (try
+      (is (true? (runtime/unpublish-extension! "ext-a")))
+      (is (nil? (runtime/unit-handle node :ext-a)))
+      (is (some? (runtime/unit-handle node :ext-b)))
+      (is (not (runtime/unpublish-extension! "ext-a")) "nothing left to drop")
+      (is (true? (runtime/unpublish-extension! "ext-b")))
+      (is (nil? (runtime/unit-handle node :ext-b)))
+      (finally
+        (stale-a)
+        (stale-b)))))
 
 (deftest a-remount-reaches-a-changed-unit
   ;; A mounted slot holds the handle value it was mounted with, so a reloaded
