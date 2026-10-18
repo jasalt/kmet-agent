@@ -75,8 +75,10 @@
 
 (def default-entries
   "The entries the app mounts at its root: the loop group and the domains'
-   addresses. The group carries its stages inline; config-derived and
-   front-end-shaped units mount with the session (P4)."
+   addresses. The group carries its stages inline; the session, extension and
+   UI slots are addresses the engine and the front end register their live
+   values under (cells.md §5.1). A config-derived entry waits on the engine
+   having its own node: this tree is shared (cells.md §8)."
   [{:id :agent-loop :name :kmet/agent-loop}
    {:id :commands :name :kmet/commands}
    {:id :tools :name :kmet/tools}

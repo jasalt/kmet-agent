@@ -2355,8 +2355,9 @@ Be precise and concise in your responses."}}]
    Repeat-loop guard (kmet-specific): the batch is filtered through the
    `:loop-guard` slot's handle, read from the attempt's snapshot — the unit is
    a mount, not a namespace (cells.md §5.4, §8.1). Its entry config supplies
-   the threshold when the mount carries one, and cfg's value is the default
-   until P4 maps config keys onto entries. Suppressed calls get a synthetic
+   the threshold when the mount carries one; cfg's value is the default until
+   the engine runs on its own node (cells.md §8's host rules). Suppressed calls
+   get a synthetic
    guard result (transcript stays coherent — no dangling tool ids, and the
    user sees why in the tool box); survivors execute normally. When a batch is
    ALL suppressed — or cumulative suppressions reach 2×threshold (mixed
