@@ -44,9 +44,12 @@
                  (fn [entries] (into [] (remove #(= k (:key %))) entries)))))
 
 (defn- remember-owner
+  ;; `(some #{owner} order)` would be wrong here: the set returns nil for a
+  ;; nil owner (and false for false), so the owner would be appended every
+  ;; time.
   [s owner]
   (update s :owner-order
-          (fn [order] (if (some #{owner} order) order (conj order owner)))))
+          (fn [order] (if (some #(= owner %) order) order (conj order owner)))))
 
 (defn- add-cleanup
   [m owner f]

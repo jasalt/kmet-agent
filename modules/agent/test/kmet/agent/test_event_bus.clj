@@ -56,6 +56,19 @@
     (t/is (= 2 (count @log)))
     (t/is (str/includes? (first @log) "42"))))
 
+(t/deftest test-emit-collect-pairs-each-result-with-its-owner
+  ;; Resource discovery applies a contribution under the owner that made it,
+  ;; so the collect emitter reports the pair (P5c).
+  (event-bus/clear-event-listeners!)
+  (event-bus/on-event :probe-collect [:app :extensions "a"]
+                      (fn [_] {:skill-paths ["/a"]}))
+  (event-bus/on-event :probe-collect (fn [_] {:prompt-paths ["/host"]}))
+  (event-bus/on-event :probe-collect [:app :extensions "b"] (fn [_] nil))
+  (t/is (= {[:app :extensions "a"] {:skill-paths ["/a"]}
+            nil {:prompt-paths ["/host"]}}
+           (into {} (event-bus/emit-event-collect! {:type :probe-collect})))
+        "the nil result is skipped, the host's registration carries no owner"))
+
 (t/deftest test-event-no-listeners
   (t/testing "Emitting with no listeners should not throw"
     (event-bus/clear-event-listeners!)

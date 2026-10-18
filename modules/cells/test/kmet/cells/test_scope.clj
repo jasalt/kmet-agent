@@ -24,6 +24,16 @@
     (scope/register! n :other [:k] :v3)
     (is (= {:owner :v2 :other :v3} (scope/for-key n [:k])))))
 
+(deftest a-nil-owner-replaces-like-any-other
+  ;; `remember-owner` must not use the owner as a set member: `#{nil}` as a
+  ;; predicate answers nil for a nil owner, which reads as "not seen" and
+  ;; appends it again — one owner's registrations then list every time.
+  (let [n (scope/node)]
+    (scope/register! n nil [:k] :v1)
+    (scope/register! n nil [:k] :v2)
+    (is (= [[[:k] nil :v2]] (scope/ordered-registrations n)))
+    (is (= [nil] (scope/owners n)))))
+
 (deftest dispose-owner-is-lifo-and-per-owner
   (let [n (scope/node)
         order (atom [])]

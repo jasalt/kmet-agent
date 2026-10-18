@@ -20,7 +20,7 @@
    owner and the `[:kmet/command <name>]` key: a registration is visible to
    every front end and outlives an engine, and it is disposed with its owner
    rather than reset by hand (cells.md §5.1). The extension ABI registers
-   here today; P5 gives each extension its own owner."
+   under its own owner path, so unload disposes what an extension added."
   (:require [clojure.string :as str]
             [kmet.agent.runtime :as app-runtime]
             [kmet.cells.scope :as scope]))
@@ -64,21 +64,28 @@
          (scope/ordered-registrations (app-runtime/node)))))
 
 (defn register-command!
-  "Register (or replace by :name) a slash command. The store key is derived
-   from :name, so a command is always addressed by its own name. Returns nil."
-  [cmd]
-  (scope/register! (app-runtime/node) commands-owner (command-key (:name cmd)) cmd)
-  nil)
+  "Register (or replace by :name) a slash command, owned by OWNER — the
+   app's registry by default; an extension passes its own owner path
+   (`kmet.agent.extensions.core/extension-owner`) so unloading it disposes
+   the command with the owner (cells.md §5.1). The store key is derived from
+   :name, so a command is always addressed by its own name. Returns nil."
+  ([cmd] (register-command! cmd commands-owner))
+  ([cmd owner]
+   (scope/register! (app-runtime/node) owner (command-key (:name cmd)) cmd)
+   nil))
 
 (defn unregister-command!
-  "Remove a slash command by :name, from whichever owner registered it.
-   Returns nil."
-  [name]
-  (let [node (app-runtime/node)
-        k (command-key name)]
-    (doseq [[owner v] (scope/for-key node k)]
-      (scope/deregister! node owner k v)))
-  nil)
+  "Remove a slash command by :name, from whichever owner registered it, or —
+   with OWNER — only that owner's registration (an extension dropping one of
+   its own; another owner's same-name command survives). Returns nil."
+  ([name] (unregister-command! name nil))
+  ([name owner]
+   (let [node (app-runtime/node)
+         k (command-key name)
+         by-owner (scope/for-key node k)]
+     (doseq [[o v] (if owner (select-keys by-owner [owner]) by-owner)]
+       (scope/deregister! node o k v)))
+   nil))
 
 (defn clear-commands!
   "Remove every registered command (mainly for tests). Returns nil."

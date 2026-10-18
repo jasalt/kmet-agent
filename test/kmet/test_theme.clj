@@ -316,8 +316,8 @@
 ;; ─── Theme file loading ───────────────────────────────────────────────────
 
 (t/deftest test-load-themes-from-dir-non-existent
-  (t/testing "Loading from non-existent dir should not throw"
-    (t/is (nil? (theme/load-themes-from-dir "/nonexistent/themes")))))
+  (t/testing "Loading from a non-existent dir loads nothing and does not throw"
+    (t/is (= [] (theme/load-themes-from-dir "/nonexistent/themes")))))
 
 (defn- complete-theme-edn
   "A theme map with every required color token (pi schema requires them

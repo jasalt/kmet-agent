@@ -6,6 +6,7 @@
             [clojure.test :refer [deftest is testing]]
             [kmet.agent.commands :as commands]
             [kmet.agent.config :as cfg]
+            [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as agent]
             [kmet.agent.prompts :as prompts]
@@ -494,6 +495,26 @@
       (is (false? (rt/wait-idle! engine 30)) "a stuck compaction times out")
       (reset! (:compacting? (rt/agent-state engine)) false)
       (is (true? (rt/wait-idle! engine 100)) "idle again after both clear"))))
+
+(deftest test-an-engine-adopts-the-subscriptions-registered-before-it
+  ;; Extensions subscribe at load, before any engine exists, and the engine's
+  ;; listener atom is what the bus reads from then on: it starts from what the
+  ;; process already has. A fresh atom orphaned every extension handler —
+  ;; :resources-discover included — because nothing re-registers them.
+  (event-bus/clear-event-listeners!)
+  (let [fired (atom 0)
+        dereg (event-bus/on-event :probe-adopt (fn [_] (swap! fired inc)))]
+    (try
+      (let [dir (str "target/test-adopt-listeners-" (System/currentTimeMillis))
+            sess (session/create-session dir {:cwd (str (fs/cwd))})
+            engine (rt/bootstrap (test-config) {:session sess})]
+        (try
+          (event-bus/emit-event! {:type :probe-adopt})
+          (is (= 1 @fired) "the subscription registered before the engine fires")
+          (finally
+            (rt/dispose! engine)
+            (fs/delete-tree dir))))
+      (finally (dereg)))))
 
 (deftest test-two-engines-do-not-cross-contaminate
   (let [dir1 (str "target/test-multi-engine-a-" (System/currentTimeMillis))

@@ -40,7 +40,7 @@
   (let [node (runtime/node)
         snapshot (runtime/snapshot node)]
     (is (= [] (cells/check (runtime/runtime) runtime/default-entries)))
-    (is (= [:agent-loop :commands :extensions :prompts :session :skills :tools :ui]
+    (is (= [:agent-loop :commands :extensions :prompts :session :skills :themes :tools :ui]
            (sort (keys snapshot))))
     (is (= [:app :agent-loop] (:owner (:agent-loop snapshot))))
     (is (nil? (runtime/handle snapshot :agent-loop))

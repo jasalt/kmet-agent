@@ -557,8 +557,6 @@ this way — run_code.md T2):
   `run_code` itself.
 - The registration is removed automatically when the extension unloads.
 
-- The registration is removed automatically when the extension unloads.
-
 ### Units (`register-unit!`)
 
 Publishes a unit into the host's composition tree (`kmet.cells`, `cells.md`
@@ -866,7 +864,8 @@ memory and serves extension skills through the `read` tool under their
 `/skill:name` expansion. Themes need no new api:
 `kmet.tui.theme` is shared by reference — call `make-theme` +
 `register-theme!` in `init` and `unregister-theme!` on unload. Every
-registration returns a deregister fn tracked for automatic unload.
+registration goes under the extension's owner, so unload disposes it; the
+returned deregister fn drops it earlier.
 
 ### Contributing resource paths (`resources_discover`)
 
@@ -888,10 +887,12 @@ directory kmet was launched in.
 ```
 
 Unlike the provider events, **every** handler's result is collected (pi
-collects each contribution). The paths load into the skills/prompts/theme
-registries; already-applied paths are skipped on later discoveries (pi:
-mergePaths dedup — discovery fires after every session start, but a
-reload re-applies after the registries clear).
+collects each contribution). The paths load under the owner that contributed
+them — the extension's `[:app :extensions <name>]` — so unloading the
+extension takes its skills, prompts and themes with it, and discovery firing
+again (it follows every session start) re-registers the same names in place
+instead of duplicating them: the store's one-value-per-owner-and-key rule is
+the dedup, so there is no applied-path set to reset (pi: mergePaths dedup).
 
 ### Cancellable session before-events
 

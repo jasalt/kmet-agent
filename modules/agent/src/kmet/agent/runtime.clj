@@ -11,11 +11,27 @@
 
    P5a adds the `:ext` backend: an extension publishes units and the entries
    that carry them during `init(api)` (cells.md §8.2), and `remount!` is the
-   assembly point for the defaults plus what the loaded extensions published."
+   assembly point for the defaults plus what the loaded extensions published.
+   P5c gives every extension registration an owner: what `init(api)` installs
+   lands on `[:app :extensions <name>]` (commands, tools, skills, prompts,
+   hooks, renderers, flags, contributed resources), so unloading an extension
+   is one LIFO dispose of that owner plus the fns it recorded for what lives
+   outside the tree."
   (:require [clojure.string :as str]
+            [kmet.agent.debug :as debug]
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.retry :as retry]
-            [kmet.cells.core :as cells]))
+            [kmet.cells.core :as cells]
+            [kmet.cells.scope :as scope]))
+
+(defn- with-reported-cleanups
+  "Run F with the store's cleanup reporter bound to
+   `kmet.agent.debug/log-error` (cells.md §5.2): a failing cleanup is reported
+   and never skips the rest, and the report reaches the agent's error log."
+  [f]
+  (binding [scope/*error-reporter*
+            (fn [t] (debug/log-error "cells cleanup failed: " t))]
+    (f)))
 
 (def ^:private loop-guard-unit
   "The repeat-loop guard's descriptor: the loop group's inline stage default,
@@ -66,6 +82,9 @@
    ;; the skill registry's address: package- and extension-loaded skills
    ;; report under it.
    :kmet/skills {:units {}}
+   ;; the theme registry's address: themes loaded from contributed paths
+   ;; report under it (the theme store itself is the TUI layer's own).
+   :kmet/themes {:units {}}
    ;; the session surface's address: the live session and the context / entry
    ;; sinks the engine installs report under it (cells.md §5.1, §5.6).
    :kmet/session {:units {}}
@@ -92,6 +111,7 @@
    {:id :tools :name :kmet/tools}
    {:id :prompts :name :kmet/prompts}
    {:id :skills :name :kmet/skills}
+   {:id :themes :name :kmet/themes}
    {:id :session :name :kmet/session}
    {:id :extensions :name :kmet/extensions}
    {:id :ui :name :kmet/ui}])
@@ -195,7 +215,8 @@
    registrations (cells.md §6.2, §6.4). `/reload` and every publish/unpublish
    call do this."
   []
-  (cells/mount! app-rt (into default-entries (published-entries))))
+  (with-reported-cleanups
+    #(cells/mount! app-rt (into default-entries (published-entries)))))
 
 (defn- restore!
   "Put PUBLICATION back to the record it replaced — PREVIOUS, or nothing when
@@ -314,6 +335,20 @@
    `init(api)` has an owner to register under (cells.md §8.2)."
   []
   @app-node)
+
+(defn dispose-owner!
+  "Dispose OWNER's registrations on the app root, LIFO and isolated — an
+   extension's own registrations when it unloads, or a slot's when it is
+   replaced. Failures are reported, not swallowed (cells.md §5.2)."
+  [owner]
+  (with-reported-cleanups #(cells/dispose! (node) owner)))
+
+(defn report-cleanup-failure!
+  "Report throwing cleanup T through the same reporter — for the deregister fns
+   the extension runtime runs itself (what lives outside the tree; cells.md
+   §5.2)."
+  [t]
+  (with-reported-cleanups #(scope/*error-reporter* t)))
 
 (defn snapshot
   "Take a composition read: the root, or COMPOSITION-ID's own slots (the

@@ -537,7 +537,7 @@ pi events (`core/extensions/types.ts`) → kmet status (`kmet.agent.event-bus` `
 | `user_bash` | ✅ `:user-bash` | |
 | `input` | ✅ | input hooks (transform/handled) |
 | `before_provider_request` / `before_provider_headers` / `after_provider_response` | ✅ | defined in `kmet.agent.event-bus` and bridged to the ai-layer hooks (`kmet.ai.hooks`) in `kmet.agent.extensions`: emit-event! → hook apply → last non-nil result |
-| `resources_discover` | ✅ `:resources-discover` | fired after `:session-start`; `extensions/discover-resources!` applies contributed path sets into skills/prompts/themes registries (reloads dedup via `applied-resource-paths`) |
+| `resources_discover` | ✅ `:resources-discover` | fired after `:session-start`; `extensions/discover-resources!` applies contributed path sets into the skills/prompts/themes registries, each under the owner that contributed it (re-discovery replaces in place, unload takes them with the extension) |
 | `mcp_servers_change` | ❌ | pi 1.3 emits it when an extension registers/unregisters an MCP server; kmet has no extension MCP registration (see §5) |
 | `provider_stream_event` | ❌ | kmet's ai hook slots stop at `before_provider_request` / `before_provider_headers` / `after_provider_response` (`kmet.ai.hooks`); per-stream events are not bridged |
 | `cache_warming_decision` | ❌ | no cache warming in kmet |

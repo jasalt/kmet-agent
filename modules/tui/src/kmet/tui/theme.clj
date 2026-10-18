@@ -858,15 +858,18 @@
   @themes)
 
 (defn load-theme-file!
-  "Load and register a theme from an EDN file at PATH; warnings print to
-   stderr on failure (pi: loadThemeFromPath + register — the package-resource
-   theme load unit)."
+  "Load and register a theme from an EDN file at PATH, returning the theme (or
+   nil when it failed to load — warnings print to stderr, pi:
+   loadThemeFromPath + register — the package-resource theme load unit)."
   [path]
   (try
-    (register-theme! (load-theme-from-path path))
+    (let [theme (load-theme-from-path path)]
+      (register-theme! theme)
+      theme)
     (catch Exception e
       (binding [*out* *err*]
-        (println "Warning: Failed to load theme" (fs/file-name path) ":" (ex-message e))))))
+        (println "Warning: Failed to load theme" (fs/file-name path) ":" (ex-message e)))
+      nil)))
 
 (defn theme-files-in-dir
   "Theme .edn files directly inside DIR. Returns the ordered file paths."
@@ -880,12 +883,14 @@
 
 (defn load-theme-paths!
   "Load and register themes from explicit .edn file paths (the package-
-   resource unit). Same warning behavior as load-theme-file!."
+   resource unit), returning the themes that loaded. Same warning behavior as
+   load-theme-file!."
   [paths]
-  (doseq [p paths] (load-theme-file! p)))
+  (into [] (keep load-theme-file!) paths))
 
 (defn load-themes-from-dir
-  "Load all .edn theme files from a directory."
+  "Load all .edn theme files from a directory, returning the themes that
+   loaded."
   [dir]
   (load-theme-paths! (theme-files-in-dir dir)))
 

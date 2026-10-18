@@ -418,13 +418,20 @@
    event-type — keyword from kmet.agent.event-bus/event-types
                 (e.g. :agent-start, :turn-start, :message-update,
                  :tool-execution-start, :user-bash, :status)
+   owner      — optional: the path the subscription belongs to (an
+                extension's `[:app :extensions <name>]`). The collect
+                emitter reports it beside the handler's result, so a
+                contribution can be applied under the owner that made it
+                (resource discovery, cells.md §5.1).
    callback   — (fn [event-map])
    Returns a deregister function."
-  [event-type callback]
-  (let [listeners (default-event-listeners)
-        id (random-uuid)]
-    (swap! listeners update event-type assoc id callback)
-    (fn [] (swap! (default-event-listeners) update event-type dissoc id))))
+  ([event-type callback] (on-event event-type nil callback))
+  ([event-type owner callback]
+   (let [listeners (default-event-listeners)
+         id (random-uuid)]
+     (swap! listeners update event-type assoc id {:callback callback
+                                                  :owner owner})
+     (fn [] (swap! (default-event-listeners) update event-type dissoc id)))))
 
 (defn clear-event-listeners!
   "Remove all event listeners (for testing)."
@@ -452,22 +459,28 @@
   (let [type (:type event)
         listeners (get @(default-event-listeners) type)]
     (when listeners
-      (reduce (fn [acc [_ cb]]
-                (let [result (invoke-handler cb event)]
+      (reduce (fn [acc [_ {:keys [callback]}]]
+                (let [result (invoke-handler callback event)]
                   (if (some? result) result acc)))
               nil
               listeners))))
 
 (defn emit-event-collect!
-  "Emit an event and return EVERY non-nil handler result as a vector
-   (pi: emitResourcesDiscover collects each handler's contribution — unlike
-   emit-event!, results are not reduced to the last non-nil). Throwing
-   handlers are skipped and warned, same as emit-event!."
+  "Emit an event and return EVERY non-nil handler result as [owner result]
+   pairs (pi: emitResourcesDiscover collects each handler's contribution —
+   unlike emit-event!, results are not reduced to the last non-nil). OWNER is
+   what `on-event` was registered with, nil for a host registration, so a
+   caller can apply a contribution under the owner that made it.
+   Throwing handlers are skipped and warned, same as emit-event!."
   [event]
   (let [type (:type event)
         listeners (get @(default-event-listeners) type)]
     (when listeners
-      (into [] (keep (fn [[_ cb]] (invoke-handler cb event))) listeners))))
+      (into []
+            (keep (fn [[_ {:keys [owner callback]}]]
+                    (when-let [result (invoke-handler callback event)]
+                      [owner result])))
+            listeners))))
 
 (defn emit-boundary!
   "Emit an actionable boundary event (a :turn-end or :agent-before-settle
@@ -481,8 +494,8 @@
   (let [type (:type event)
         listeners (get @(default-event-listeners) type)]
     (when listeners
-      (reduce (fn [acc [_ cb]]
-                (let [result (invoke-handler cb (if acc (merge event acc) event))]
+      (reduce (fn [acc [_ {:keys [callback]}]]
+                (let [result (invoke-handler callback (if acc (merge event acc) event))]
                   (if (map? result) (merge acc result) acc)))
               nil
               listeners))))

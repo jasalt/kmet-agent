@@ -107,21 +107,27 @@
           (scope/ordered-registrations (app-runtime/node))))
 
 (defn register-tool!
-  "Register a custom tool after normalizing its provider-facing schema.
+  "Register a custom tool after normalizing its provider-facing schema,
+   owned by OWNER — the app's registry by default; an extension passes its
+   own owner path so unloading it disposes the tool (cells.md §5.1).
    Returns cells' deregister fn."
-  [tool]
-  (let [tool (tool/normalize-tool-definition tool)]
-    (scope/register! (app-runtime/node) tools-owner (tool-key (:name tool)) tool)))
+  ([tool] (register-tool! tool tools-owner))
+  ([tool owner]
+   (let [tool (tool/normalize-tool-definition tool)]
+     (scope/register! (app-runtime/node) owner (tool-key (:name tool)) tool))))
 
 (defn unregister-tool!
-  "Remove a custom tool by name, from whichever owner registered it.
-   Returns nil."
-  [name]
-  (let [node (app-runtime/node)
-        k (tool-key name)]
-    (doseq [[owner v] (scope/for-key node k)]
-      (scope/deregister! node owner k v)))
-  nil)
+  "Remove a custom tool by name, from whichever owner registered it, or —
+   with OWNER — only that owner's registration (an extension dropping one of
+   its own; another owner's same-name tool survives). Returns nil."
+  ([name] (unregister-tool! name nil))
+  ([name owner]
+   (let [node (app-runtime/node)
+         k (tool-key name)
+         by-owner (scope/for-key node k)]
+     (doseq [[o v] (if owner (select-keys by-owner [owner]) by-owner)]
+       (scope/deregister! node o k v)))
+   nil))
 
 (defn get-all-tools
   "Get all available tools (built-in + custom). A custom tool that reuses a
@@ -160,26 +166,30 @@
         (scope/ordered-registrations (app-runtime/node))))
 
 (defn register-tool-source!
-  "Register (or replace) an extension-contributed tool source. ID identifies
-   the source; TOOLS-FN is a 0-arg fn returning {name → tool map} — the same
-   shape a registered tool map has (:name :label :description :parameters
-   :execute, optional :streams?/:contextual?/:prepare-arguments).
-   Contributed tools join the run_code sandbox's surface only; the registry
-   shadows a colliding name. Re-registering under the same ID replaces the
-   source; the next run_code call resolves the new catalog. Returns cells'
-   deregister fn."
-  [id tools-fn]
-  (scope/register! (app-runtime/node) tools-owner (tool-source-key id) tools-fn))
+  "Register (or replace) an extension-contributed tool source, owned by OWNER
+   — the app's registry by default; an extension passes its own owner path so
+   unloading it disposes the source (cells.md §5.1). ID identifies the source;
+   TOOLS-FN is a 0-arg fn returning {name → tool map} — the same shape a
+   registered tool map has (:name :label :description :parameters :execute,
+   optional :streams?/:contextual?/:prepare-arguments). Contributed tools join
+   the run_code sandbox's surface only; the registry shadows a colliding name.
+   Re-registering under the same ID replaces the source; the next run_code
+   call resolves the new catalog. Returns cells' deregister fn."
+  ([id tools-fn] (register-tool-source! id tools-fn tools-owner))
+  ([id tools-fn owner]
+   (scope/register! (app-runtime/node) owner (tool-source-key id) tools-fn)))
 
 (defn unregister-tool-source!
   "Remove a contributed tool source by ID, from whichever owner registered
-   it. Returns nil."
-  [id]
-  (let [node (app-runtime/node)
-        k (tool-source-key id)]
-    (doseq [[owner v] (scope/for-key node k)]
-      (scope/deregister! node owner k v)))
-  nil)
+   it, or — with OWNER — only that owner's registration. Returns nil."
+  ([id] (unregister-tool-source! id nil))
+  ([id owner]
+   (let [node (app-runtime/node)
+         k (tool-source-key id)
+         by-owner (scope/for-key node k)]
+     (doseq [[o v] (if owner (select-keys by-owner [owner]) by-owner)]
+       (scope/deregister! node o k v)))
+   nil))
 
 (defn get-contributed-tools
   "Merge every registered source's current tools. A source that throws or

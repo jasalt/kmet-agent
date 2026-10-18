@@ -255,7 +255,15 @@
                              :pending-compaction (atom [])
                              :pending-ui (atom {})
                              :run-callbacks (atom nil)
-                             :event-listeners (atom {})})]
+                             ;; Adopt the process's subscribers: extensions
+                             ;; register their event handlers at load, before
+                             ;; any engine exists, and the engine's own atom is
+                             ;; what `emit-event!` reads from here on — a fresh
+                             ;; atom would orphan every one of them (cells.md
+                             ;; §5.1: a subscription's owner is its
+                             ;; registrant, not the engine). Disposal drops
+                             ;; them with the engine: v1 is single-engine.
+                             :event-listeners (atom @(event-bus/default-event-listener-atom))})]
     ;; Runtime-scoped extension surface: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent, and the
     ;; front-end binding carries the headless port and kind. Both are

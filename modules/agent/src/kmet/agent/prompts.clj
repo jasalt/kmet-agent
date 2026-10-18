@@ -12,8 +12,8 @@
    to every engine, outliving one, and disposed with their owner rather than
    copied into an engine and reset by hand (cells.md §5.1). A name holds one
    template, so re-registering replaces the earlier one — pi's loader assigns
-   into a name-keyed map the same way. The extension ABI registers here
-   today; P5 gives each extension its own owner."
+   into a name-keyed map the same way. Extension registrations carry the
+   extension's own owner path, so unloading it disposes the template."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
@@ -206,14 +206,18 @@
    one template: re-registering under the same name replaces the earlier
    one.
    OPTS: :name (command name), :content (raw .md), :location (display
-   locator, e.g. `my-ext:prompts/foo.md`), :extension (owner name).
+   locator, e.g. `my-ext:prompts/foo.md`), :extension (owner name), :owner
+   (the owner path the registration belongs to — an extension passes
+   `extension-owner`, so unloading it disposes the template; the app's
+   registry by default).
    Returns a deregister fn removing exactly this template — a no-op when the
    content failed to parse."
-  [{:keys [name content location extension]}]
+  [{:keys [name content location extension owner]}]
   (if-let [t (make-template-from-content content name
                                          (or location (str (or extension "prompt")))
                                          extension)]
-    (scope/register! (app-runtime/node) prompts-owner (prompt-key (:name t)) t)
+    (scope/register! (app-runtime/node) (or owner prompts-owner)
+                     (prompt-key (:name t)) t)
     (fn [] nil)))
 
 (defn prompt-template-files-in-dir
@@ -231,33 +235,38 @@
 
 (defn load-prompt-template-files!
   "Load prompt templates from explicit .md file paths (the package-resource
-   unit, pi: package prompts load). Adds them to the registry, reports load
-   failures as warnings on stderr (pi: prompt resource diagnostics), and
+   unit, pi: package prompts load) under OWNER (the app's registry by
+   default; a resource contribution passes its own owner path, so the
+   templates go with it — cells.md §5.1). Adds them to the registry, reports
+   load failures as warnings on stderr (pi: prompt resource diagnostics), and
    returns the loaded templates."
-  [file-paths]
-  (let [loaded (volatile! [])
-        warnings (volatile! [])]
-    (doseq [f file-paths]
-      (when (str/ends-with? (fs/file-name (str f)) ".md")
-        (let [result (load-template-from-file (str f))]
-          (when-let [t (:template result)]
-            (vswap! loaded conj t))
-          (vswap! warnings into (:diagnostics result)))))
-    (doseq [{:keys [message path]} @warnings]
-      (binding [*out* *err*]
-        (println (str "Warning: prompt template at " path ": " message))))
-    (let [ts @loaded
-          node (app-runtime/node)]
-      (doseq [t ts]
-        (scope/register! node prompts-owner (prompt-key (:name t)) t))
-      ts)))
+  ([file-paths] (load-prompt-template-files! file-paths prompts-owner))
+  ([file-paths owner]
+   (let [loaded (volatile! [])
+         warnings (volatile! [])]
+     (doseq [f file-paths]
+       (when (str/ends-with? (fs/file-name (str f)) ".md")
+         (let [result (load-template-from-file (str f))]
+           (when-let [t (:template result)]
+             (vswap! loaded conj t))
+           (vswap! warnings into (:diagnostics result)))))
+     (doseq [{:keys [message path]} @warnings]
+       (binding [*out* *err*]
+         (println (str "Warning: prompt template at " path ": " message))))
+     (let [ts @loaded
+           node (app-runtime/node)
+           owner (or owner prompts-owner)]
+       (doseq [t ts]
+         (scope/register! node owner (prompt-key (:name t)) t))
+       ts))))
 
 (defn load-prompt-templates-from-dir
   "Load .md prompt templates from a directory (non-recursive, pi:
-   loadTemplatesFromDir). Adds them to the registry; returns the loaded
-   templates."
-  [dir]
-  (load-prompt-template-files! (prompt-template-files-in-dir dir)))
+   loadTemplatesFromDir) under OWNER (the app's registry by default). Adds
+   them to the registry; returns the loaded templates."
+  ([dir] (load-prompt-templates-from-dir dir prompts-owner))
+  ([dir owner]
+   (load-prompt-template-files! (prompt-template-files-in-dir dir) owner)))
 
 (defn get-prompt-templates
   []

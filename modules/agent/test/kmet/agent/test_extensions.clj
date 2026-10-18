@@ -482,6 +482,120 @@
         (extensions/unload-all-extensions!)
         (fs/delete-tree dir)))))
 
+(t/deftest test-extension-registrations-are-owned-by-the-extension
+  ;; P5c: what init(api) registers lands on [:app :extensions <name>], so
+  ;; unload is one LIFO dispose of that owner instead of a tracked deregister
+  ;; per registration (cells.md §5.1). Only what lives outside the store —
+  ;; here an event subscription — stays on the extension's own list.
+  (extensions/clear-extensions!)
+  (let [dir "target/test-ext-owned-registrations"]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/owned_ext"))
+    (spit (str dir "/extension.edn")
+          "{:name \"owned-ext\" :entry owned-ext.main :loader [:sci :jolt]}\n")
+    (spit (str dir "/owned_ext/main.clj")
+          (str "(ns owned-ext.main\n  (:require [kmet.agent.extension :as ext]))\n"
+               "(defn init [api]\n"
+               "  (ext/register-command! api {:name \"owned-cmd\" :description \"d\"\n"
+               "                              :handler (fn [_ _] nil)})\n"
+               "  (ext/register-tool! api {:name \"owned-tool\" :label \"T\"\n"
+               "                           :description \"d\" :parameters []\n"
+               "                           :execute (fn [_] {:content \"ok\"})})\n"
+               "  (ext/register-tool-source! api :owned-source (fn [] {}))\n"
+               "  (ext/register-skill! api \"---\\nname: owned-skill\\ndescription: d\\n---\\nbody\")\n"
+               "  (ext/register-prompt! api {:name \"owned-prompt\" :content \"body\"})\n"
+               "  (ext/register-flag! api \"owned-flag\")\n"
+               "  (ext/on-event api :session-start (fn [_ _] nil)))\n"))
+    (try
+      (let [result (extensions/load-extension! dir)
+            owner [:app :extensions "owned-ext"]]
+        (t/is (nil? (:error result)) (str "loaded: " (:error result)))
+        (doseq [k [[:kmet/command "owned-cmd"]
+                   [:kmet/tool "owned-tool"]
+                   [:kmet/tool-source :owned-source]
+                   [:kmet/skill "owned-skill"]
+                   [:kmet/prompt "owned-prompt"]
+                   [:kmet/flag "owned-flag"]]]
+          (t/is (= [owner] (vec (keys (scope/for-key (rt/node) k))))
+                (str k " is owned by the extension")))
+        (t/is (= 1 (count @(:deregister-fns (first (extensions/registered-extensions)))))
+              "only the event subscription stays on the tracked list")
+        (extensions/unload-all-extensions!)
+        (t/is (nil? (commands/find-command "owned-cmd")))
+        (t/is (nil? (tools/get-tool "owned-tool")))
+        (t/is (nil? (skills/get-skill "owned-skill")))
+        (t/is (nil? (prompts/get-prompt-template "owned-prompt")))
+        (t/is (empty? (scope/for-key (rt/node) [:kmet/flag "owned-flag"]))
+              "one dispose took everything the extension registered"))
+      (finally
+        (extensions/clear-extensions!)
+        (fs/delete-tree dir)))))
+
+(t/deftest test-contributed-resource-paths-are-owned-by-the-contributor
+  ;; P5c: a :resources-discover contribution loads under the contributor's
+  ;; owner, so re-discovery replaces instead of duplicating (no applied-path
+  ;; set) and unload takes the skills, prompts and themes with it.
+  (extensions/clear-extensions!)
+  (event-bus/clear-event-listeners!)
+  (let [dir "target/test-ext-resource-owner"
+        skill-dir (str dir "/skills")
+        prompt-dir (str dir "/prompts")
+        theme-dir (str dir "/themes")
+        owner [:app :extensions "res-owner"]]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/res_owner"))
+    (fs/create-dirs skill-dir)
+    (fs/create-dirs prompt-dir)
+    (fs/create-dirs theme-dir)
+    (spit (str dir "/extension.edn")
+          "{:name \"res-owner\" :entry res-owner.main :loader [:sci :jolt]}\n")
+    (spit (str dir "/res_owner/main.clj")
+          (str "(ns res-owner.main\n  (:require [kmet.agent.extension :as ext]))\n"
+               "(defn init [api]\n"
+               "  (ext/on-event api :resources-discover\n"
+               "    (fn [_ _]\n"
+               (pr-str {:skill-paths [skill-dir]
+                        :prompt-paths [prompt-dir]
+                        :theme-paths [theme-dir]})
+               ")))\n"))
+    (spit (str skill-dir "/SKILL.md")
+          "---\nname: res-owned-skill\ndescription: From res-owner\n---\nbody")
+    (spit (str prompt-dir "/res-owned-prompt.md") "Prompt body from res-owner")
+    (spit (str theme-dir "/res-owned-theme.edn")
+          (pr-str {:name "res-owned-theme"
+                   :colors (into {} (map (fn [k] [(name k) "#000000"])
+                                         (concat theme/FG-TOKENS theme/BG-TOKENS)))}))
+    (try
+      (let [result (extensions/load-extension! dir)]
+        (t/is (nil? (:error result)) (str "loaded: " (:error result))))
+      (t/is (= {:skill-paths [skill-dir] :prompt-paths [prompt-dir]
+                :theme-paths [theme-dir]}
+               (extensions/discover-resources! :startup))
+            "the collected paths are reported")
+      (doseq [k [[:kmet/skill "res-owned-skill"]
+                 [:kmet/prompt "res-owned-prompt"]
+                 [:kmet/theme "res-owned-theme"]]]
+        (t/is (= [owner] (vec (keys (scope/for-key (rt/node) k))))
+              (str k " is owned by the contributor")))
+      (t/is (some? (theme/get-theme-by-name "res-owned-theme")))
+      (extensions/discover-resources! :startup)
+      (t/is (= 1 (count (filter #(= "res-owned-skill" (:name %)) (skills/get-skills)))))
+      (t/is (= 1 (count (filter #(= "res-owned-prompt" (:name %))
+                                (prompts/get-prompt-templates)))))
+      (t/is (= 1 (count (filter (fn [[k _ _]] (= [:kmet/theme "res-owned-theme"] k))
+                                (scope/ordered-registrations (rt/node)))))
+            "a second discovery re-registers in place")
+      (extensions/unload-all-extensions!)
+      (t/is (nil? (skills/get-skill "res-owned-skill")))
+      (t/is (nil? (prompts/get-prompt-template "res-owned-prompt")))
+      (t/is (nil? (theme/get-theme-by-name "res-owned-theme"))
+            "the owner's teardown removed the theme from the theme store")
+      (t/is (empty? (scope/for-key (rt/node) [:kmet/theme "res-owned-theme"])))
+      (finally
+        (extensions/clear-extensions!)
+        (event-bus/clear-event-listeners!)
+        (fs/delete-tree dir)))))
+
 (t/deftest test-manifest-units-are-checked-before-the-code-evaluates
   ;; The declarations are validated while the manifest is read: every fixture's
   ;; entry namespace is deliberately absent, so an error about it would mean

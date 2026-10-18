@@ -335,8 +335,12 @@
         (skills/load-skills-from-dir tmp-dir)
         (binding [*err* (java.io.StringWriter.)]
           (skills/register-extension-skill! "---\nname: dup\ndescription: Ext.\n---\nExt body"
-                                            {:location "e:dup/SKILL.md" :extension "e"}))
+                                            {:location "e:dup/SKILL.md" :extension "e"
+                                             :owner [:app :extensions "e"]}))
         (t/is (= "File version." (:description (skills/get-skill "dup"))))
+        (t/is (not (contains? (scope/for-key (app-runtime/node) [:kmet/skill "dup"])
+                              [:app :extensions "e"]))
+              "the colliding extension registration was refused, not shadowed")
         (finally (fs/delete-tree tmp-dir)
                  (skills/clear-skills!)))))
   (t/testing "missing description is rejected"
@@ -348,17 +352,20 @@
     (skills/clear-skills!)))
 
 (t/deftest test-extension-skill-deregister-targets-its-registration
-  ;; A colliding registration is not made, so its deregister is a no-op and
-  ;; cannot remove the winner; the winner's own fn removes exactly it.
+  ;; Two extensions claim one name: the second is refused (its deregister is a
+  ;; no-op and cannot remove the winner); the winner's own fn removes exactly
+  ;; its registration.
   (skills/clear-skills!)
   (try
     (let [dereg-winner (skills/register-extension-skill!
                         "---\nname: dereg-winner\ndescription: Winner.\n---\nW"
-                        {:location "a:skills/dereg-winner/SKILL.md" :extension "a"})
+                        {:location "a:skills/dereg-winner/SKILL.md" :extension "a"
+                         :owner [:app :extensions "a"]})
           dereg-loser (binding [*err* (java.io.StringWriter.)]
                         (skills/register-extension-skill!
                          "---\nname: dereg-winner\ndescription: Loser.\n---\nL"
-                         {:location "b:skills/dereg-winner/SKILL.md" :extension "b"}))]
+                         {:location "b:skills/dereg-winner/SKILL.md" :extension "b"
+                          :owner [:app :extensions "b"]}))]
       (dereg-loser)
       (t/is (= "Winner." (:description (skills/get-skill "dereg-winner")))
             "the loser's no-op left the winner in place")

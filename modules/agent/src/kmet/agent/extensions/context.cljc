@@ -1272,13 +1272,21 @@
   nil)
 
 (defn load-themes-from-dir!
-  "Apply THEME-DIR's theme files through the shared kmet.tui.theme library.
-   The theme store is an extension-ABI shared library — host-requires! loads
-   it with the rest of the TUI layer on the first extension load — and this
-   namespace owns that call-time door, so plain app code (resource discovery
-   in kmet.agent.extensions.core) never requires kmet.tui.* at the ns level."
+  "Apply THEME-DIR's theme files through the shared kmet.tui.theme library and
+   return the themes that loaded. The theme store is an extension-ABI shared
+   library — host-requires! loads it with the rest of the TUI layer on the
+   first extension load — and this namespace owns that call-time door, so
+   plain app code (resource discovery in kmet.agent.extensions.core) never
+   requires kmet.tui.* at the ns level."
   [dir]
   ((requiring-resolve 'kmet.tui.theme/load-themes-from-dir) dir))
+
+(defn unregister-theme!
+  "Remove NAME from the shared theme store — the door for the teardown a
+   contributed theme's owner records (cells.md §5.1). Returns nil."
+  [name]
+  ((requiring-resolve 'kmet.tui.theme/unregister-theme!) name)
+  nil)
 
 ;; ─── The shared base context (per-extension forks) ───────────────────────
 

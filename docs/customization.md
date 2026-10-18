@@ -41,7 +41,8 @@ color values, installation, and live reload; complete starting points are in
   depending only on `kmet.agent.extension`. A manifest dir declares `{:name
   :entry :loader}` — `:units` may declare units up front for the code to bind,
   and `deps.edn` carries its own source deps. Loaded at startup, reloadable via `/reload`, and
-  unloadable at runtime; unload runs shutdown + deregisters everything.
+  unloadable at runtime; unload runs shutdown then disposes everything it
+  registered.
   Shipped opt-in extensions live in [`extensions/`](../extensions/)
   ([usage](../extensions/README.md)); writing your own:
   [`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md)

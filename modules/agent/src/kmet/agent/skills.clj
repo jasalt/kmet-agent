@@ -17,8 +17,8 @@
    engine, outliving one, and disposed with their owner rather than copied into
    an engine and reset by hand (cells.md §5.1). A name holds one skill — the
    key is the name — so the existing first-wins collision rule is enforced
-   before registering. The extension ABI registers here today; P5 gives each
-   extension its own owner."
+   before registering. Extension registrations carry the extension's own
+   owner path, so unloading it disposes the skill (cells.md §5.1)."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
@@ -188,31 +188,52 @@
 
 ;; ─── Public API ────────────────────────────────────────────────────────────
 
-(defn- add-skill!
-  "Add SKILL to the registry unless its name collides (first wins, pi).
-   Returns {:deregister f} when it was added — f removes exactly this
-   registration — else {:collision diagnostic}."
+(defn- skill-collision
+  "The collision diagnostic for SKILL at LOCATION, whose name the already
+   registered skill returned by `skill-for` holds (pi: the winner keeps the
+   name, the loser is reported)."
   [skill location]
-  (if-let [existing (skill-for (:name skill))]
-    {:collision
-     {:type "collision"
-      :message (str "name \"" (:name skill) "\" collision")
-      :path (str location)
-      :winner-path (str (or (:location existing) (:file-path existing)))
-      :loser-path (str location)}}
-    {:deregister (scope/register! (app-runtime/node) skills-owner
-                                  (skill-key (:name skill)) skill)}))
+  (let [winner (skill-for (:name skill))]
+    {:type "collision"
+     :message (str "name \"" (:name skill) "\" collision")
+     :path (str location)
+     :winner-path (str (or (:location winner) (:file-path winner)))
+     :loser-path (str location)}))
+
+(defn- add-skill!
+  "Add SKILL to the registry under OWNER, or refuse it in favour of the owner
+   that already holds the name (first wins, pi): a name holds one skill, and
+   the first owner to register it keeps it. A re-registration under the same
+   owner replaces it, which is what makes re-applying a directory (resource
+   discovery) or a reload idempotent. Returns {:deregister f} when it was
+   registered — f removes exactly this registration — else {:collision
+   diagnostic}."
+  [owner skill location]
+  (let [node (app-runtime/node)
+        k (skill-key (:name skill))
+        by-owner (scope/for-key node k)]
+    (if (and (seq by-owner) (not (contains? by-owner owner)))
+      {:collision (skill-collision skill location)}
+      {:deregister (scope/register! node owner k skill)})))
 
 (defn- add-skill-results!
-  "Register parsed skill results ({:skill ... :diagnostics ...}), collecting
-   collision diagnostics, then print all diagnostics to stderr and return
-   them (pi: keep the first skill on a name collision)."
-  [results]
-  (let [collisions (volatile! [])]
+  "Register parsed skill results ({:skill ... :diagnostics ...}) under OWNER,
+   collecting collision diagnostics, then print all diagnostics to stderr and
+   return them. The first skill of a name wins within one batch too (pi's
+   discovery walk): a later file of the same scan is reported as a collision
+   rather than replacing it."
+  [owner results]
+  (let [collisions (volatile! [])
+        seen (volatile! #{})]
     (doseq [{:keys [skill]} results]
       (when skill
-        (when-let [collision (:collision (add-skill! skill (:file-path skill)))]
-          (vswap! collisions conj collision))))
+        (let [nm (:name skill)
+              duplicate? (contains? @seen nm)]
+          (vswap! seen conj nm)
+          (if duplicate?
+            (vswap! collisions conj (skill-collision skill (:file-path skill)))
+            (when-let [collision (:collision (add-skill! owner skill (:file-path skill)))]
+              (vswap! collisions conj collision))))))
     (let [diagnostics (into (vec (mapcat :diagnostics results)) @collisions)]
       (doseq [{:keys [type message path]} diagnostics]
         (binding [*out* *err*]
@@ -241,34 +262,44 @@
 
 (defn load-skills-from-dir
   "Load skills from a directory using pi's discovery rules. Skills are added
-   to the registry; on name collision the first skill found wins (pi: keep the
-   first, emit a collision diagnostic). Returns the diagnostics for this dir
-   (warning/collision maps), printed to stderr."
-  [dir]
-  (let [d (io/file dir)]
-    (if-not (fs/directory? d)
-      []
-      (add-skill-results! (load-skills-dir (str d))))))
+   to the registry under OWNER (the app's registry by default; an extension or
+   a resource contribution passes its own owner path so the skills go with it
+   — cells.md §5.1); on name collision another owner's skill wins (pi: keep
+   the first, emit a collision diagnostic) while the same owner's is
+   replaced. Returns the diagnostics for this dir (warning/collision maps),
+   printed to stderr."
+  ([dir] (load-skills-from-dir dir skills-owner))
+  ([dir owner]
+   (let [d (io/file dir)]
+     (if-not (fs/directory? d)
+       []
+       (add-skill-results! (or owner skills-owner) (load-skills-dir (str d)))))))
 
 (defn load-skills-from-files!
   "Load skills from explicit skill file paths (SKILL.md files or flat .md
-   files — the package-resource unit, pi: package skills load). Same
-   registration, collision and warning behavior as load-skills-from-dir.
-   Returns the diagnostics."
-  [file-paths]
-  (add-skill-results! (mapv load-skill-from-file file-paths)))
+   files — the package-resource unit, pi: package skills load) under OWNER
+   (the app's registry by default). Same registration, collision and warning
+   behavior as load-skills-from-dir. Returns the diagnostics."
+  ([file-paths] (load-skills-from-files! file-paths skills-owner))
+  ([file-paths owner]
+   (add-skill-results! (or owner skills-owner)
+                       (mapv load-skill-from-file file-paths))))
 
 (defn register-extension-skill!
   "Register a skill from an extension's bundled SKILL.md content string
    (the extension reads its own resource via io/resource and hands the
    content over, so jarred skills need no filesystem path).
    OPTS: :location (display locator, e.g. `my-ext:skills/mcp/SKILL.md`),
-   :fallback-name (when frontmatter has no name), :extension (owner name).
-   Same validation/collision rules as dir loading (first wins). The body is
+   :fallback-name (when frontmatter has no name), :extension (owner name),
+   :owner (the owner path the registration belongs to — an extension passes
+   `extension-owner`, so unloading it disposes the skill; the app's registry
+   by default).
+   Same validation/collision rules as dir loading (another owner's skill wins
+   the name, the same owner's is replaced). The body is
    served through the read tool under :location (pass it verbatim) as well
    as /skill:name expansion. Returns a
    deregister fn removing exactly this skill."
-  [raw-content {:keys [location fallback-name extension]}]
+  [raw-content {:keys [location fallback-name extension owner]}]
   (let [{:keys [skill diagnostics]} (parse-skill-content raw-content
                                                          (or fallback-name
                                                              (str (or extension "skill")))
@@ -279,7 +310,8 @@
       (binding [*out* *err*]
         (println (str "Warning: skill " type " at " path ": " message))))
     (if skill
-      (let [{:keys [collision deregister]} (add-skill! skill location)]
+      (let [{:keys [collision deregister]} (add-skill! (or owner skills-owner)
+                                                       skill location)]
         (when collision
           (binding [*out* *err*]
             (println (str "Warning: skill collision at " (:path collision) ": "

@@ -43,8 +43,11 @@
    link table, unload closes the
    loader, and the loader itself stays out of the shared set (host
    machinery, not contract). Optional
-   (defn shutdown [api]) runs on unload, which also unregisters everything
-   the extension registered (each registration tracks its deregister fn).
+   (defn shutdown [api]) runs on unload, which also disposes everything
+   the extension registered: what lives in the app tree is owned by
+   `[:app :extensions <name>]` (one LIFO dispose), and what lives outside it
+   — event subscriptions, aliases, shortcuts, model providers — deregisters
+   through the fns the extension recorded.
 
    Extensions load at startup (core.clj), are re-loaded by /reload, and can
    be unloaded/reloaded at runtime via unload-extension! /
@@ -200,10 +203,6 @@
 (defonce ^:private session-atom (atom nil))
 (defonce ^:private context-sink-atom (atom nil))
 (defonce ^:private entry-sink-atom (atom nil))
-;; Paths discover-resources! has already applied since the last extension
-;; reload. Process state, not a registration: the applied skills and prompts
-;; live on the tree, and re-applying the same directory would duplicate them.
-(defonce ^:private applied-resource-paths (atom #{}))
 
 ;; ─── Input / before-agent-start hooks (pi: pi.on('input') / ──────────────
 ;; ─── 'before_agent_start'; applied by modes.interactive + app.loop) ──────
@@ -214,6 +213,18 @@
    disposed with its owner, and unload deregisters what the extension added."
   [extension-name]
   [:app :extensions extension-name])
+
+(def themes-owner
+  "The app's theme registry owner: the `:themes` slot kmet.agent.runtime
+   mounts at the root for it. Themes live in the TUI layer's own store, so the
+   registration under this path is the host's record of one and the teardown
+   that removes it (cells.md §5.1)."
+  [:app :themes])
+
+(defn- theme-key
+  "The store key addressing a loaded theme by NAME."
+  [name]
+  [:kmet/theme name])
 
 (defonce ^:private hook-seq (atom 0))
 
@@ -994,13 +1005,14 @@
 (declare loader-aware loader-aware-map)
 
 (defn- create-extension-api
-  "Build the api map for an extension. Every registration records its
-   deregister fn so unload removes exactly what this extension added."
+  "Build the api map for an extension. A registration that lives in the app
+   tree (commands, tools, tool sources, skills, prompts, hooks, renderers,
+   flags) lands under the extension's own owner path, so unload disposes it
+   with one LIFO dispose (cells.md §5.1); the registrations that live outside
+   the tree (event subscriptions, aliases, shortcuts, model providers) record
+   their deregister fn on the extension instead."
   [ext]
   (let [track (fn [f] (track-deregister! ext f) f)
-        ;; tool-source ids this extension registered — re-registering the
-        ;; same id (catalog sync) must not stack deregister fns
-        source-ids (atom #{})
         name (:name ext)]
     {:extension-name name
      :extension-path (:path ext)
@@ -1015,31 +1027,31 @@
                           ;; the handler is stored under :extension-handler so
                           ;; the runner can pass it the extension context
                           ;; (pi: handler(args, ctx)) while builtin commands
-                          ;; keep receiving CoreState
+                          ;; keep receiving CoreState. Registered under the
+                          ;; extension's own owner, so unload disposes it
+                          ;; (cells.md §5.1).
                           (let [cmd (loader-aware-map
                                      ext (assoc cmd :extension-handler
                                                 (:handler cmd)))]
-                            (commands/register-command! cmd)
-                            (track (fn [] (commands/unregister-command! (:name cmd))))))
-     :unregister-command! commands/unregister-command!
+                            (commands/register-command! cmd (extension-owner name))))
+     :unregister-command! (fn [cmd-name]
+                            (commands/unregister-command! cmd-name (extension-owner name)))
      ;; sanitized — other extensions must not see :handler/:extension-handler
      :get-commands #(mapv (fn [c] (select-keys c [:name :description]))
                           (commands/get-commands))
      :register-tool! (fn [tool]
-                       (tools/register-tool! (loader-aware-map ext tool))
-                       (track (fn [] (tools/unregister-tool! (:name tool)))))
-     :unregister-tool! tools/unregister-tool!
+                       (tools/register-tool! (loader-aware-map ext tool)
+                                             (extension-owner name)))
+     :unregister-tool! (fn [tool-name]
+                         (tools/unregister-tool! tool-name (extension-owner name)))
      ;; sandbox-only tools: contributed into the run_code tool's surface, never
      ;; the model's tool set (mcp-adapter's MCP catalog — run_code.md T2)
      :register-tool-source! (fn [id tools-fn]
-                              (tools/register-tool-source! id tools-fn)
-                              (if (contains? @source-ids id)
-                                nil
-                                (do (swap! source-ids conj id)
-                                    (track (fn [] (tools/unregister-tool-source! id))))))
+                              (tools/register-tool-source!
+                               id tools-fn (extension-owner name)))
      :unregister-tool-source! (fn [id]
-                                (swap! source-ids disj id)
-                                (tools/unregister-tool-source! id))
+                                (tools/unregister-tool-source!
+                                 id (extension-owner name)))
      ;; a unit the extension contributes to the host's tree (cells.md §8.2):
      ;; :name (namespaced to this extension) resolves through the runtime's
      ;; :ext backend, :unit is the descriptor, :entry says where it mounts.
@@ -1059,31 +1071,29 @@
      :get-active-tools get-active-tools
      :set-active-tools set-active-tools
      :on-event (fn [event-type handler]
-                 (let [dereg (event-bus/on-event event-type
-                                                 (wrap-event-handler
-                                                  (loader-aware ext handler)))]
+                 (let [dereg (event-bus/on-event
+                              event-type (extension-owner name)
+                              (wrap-event-handler (loader-aware ext handler)))]
                    (track dereg)
                    dereg))
      :emit-event! event-bus/emit-event!
+     ;; The hooks, renderers and flags live in the app tree under the
+     ;; extension's own owner, so the store's disposal is their teardown and
+     ;; they are NOT tracked: the tracked list stays for what lives outside
+     ;; the tree (subscriptions, aliases, shortcuts, model providers).
      :on-input (fn [hook]
-                 (let [h (loader-aware ext hook)]
-                   (track (register-input-hook! (extension-owner name) h))))
+                 (register-input-hook! (extension-owner name) (loader-aware ext hook)))
      :on-before-agent-start (fn [hook]
-                              (let [h (loader-aware ext hook)]
-                                (track (register-before-agent-start-hook!
-                                        (extension-owner name) h))))
+                              (register-before-agent-start-hook!
+                               (extension-owner name) (loader-aware ext hook)))
      :on-tool-call (fn [hook]
-                     (let [h (loader-aware ext hook)]
-                       (track (register-tool-call-hook! (extension-owner name) h))))
-
+                     (register-tool-call-hook! (extension-owner name)
+                                               (loader-aware ext hook)))
      :on-tool-result (fn [hook]
-                       (let [h (loader-aware ext hook)]
-                         (track (register-tool-result-hook! (extension-owner name) h))))
-
+                       (register-tool-result-hook! (extension-owner name)
+                                                   (loader-aware ext hook)))
      :register-flag! (fn [flag-name & [opts]]
-                       (let [dereg (register-flag! (extension-owner name) flag-name opts)]
-                         (track dereg)
-                         dereg))
+                       (register-flag! (extension-owner name) flag-name opts))
      :get-flag get-flag
      :register-shortcut! (fn [key-id & [opts]]
                            (let [dereg (register-shortcut!
@@ -1093,21 +1103,15 @@
                              (track dereg)
                              dereg))
      :register-markdown-transformer! (fn [transformer]
-                                       (let [dereg (register-markdown-transformer!
-                                                    (extension-owner name)
-                                                    (loader-aware ext transformer))]
-                                         (track dereg)
-                                         dereg))
+                                       (register-markdown-transformer!
+                                        (extension-owner name)
+                                        (loader-aware ext transformer)))
      :register-entry-renderer! (fn [custom-type renderer]
-                                 (let [dereg (register-entry-renderer!
-                                              (extension-owner name) custom-type renderer)]
-                                   (track dereg)
-                                   dereg))
+                                 (register-entry-renderer!
+                                  (extension-owner name) custom-type renderer))
      :register-message-renderer! (fn [custom-type renderer]
-                                   (let [dereg (register-message-renderer!
-                                                (extension-owner name) custom-type renderer)]
-                                     (track dereg)
-                                     dereg))
+                                   (register-message-renderer!
+                                    (extension-owner name) custom-type renderer))
      ;; tag aliases (kmet.libs.hikap.alias): the registry is process-global, so the
      ;; registration MUST be tracked — unload removes exactly this fn's
      ;; registration (a later re-registration by another owner survives)
@@ -1118,17 +1122,18 @@
      :register-skill! (fn [raw-content & [opts]]
                         ;; The extension reads its own bundled SKILL.md via
                         ;; io/resource and hands the content over, so jarred
-                        ;; skills need no filesystem path
-                        (let [dereg (skills/register-extension-skill!
-                                     raw-content
-                                     (assoc opts :extension name))]
-                          (track dereg)
-                          dereg))
+                        ;; skills need no filesystem path. Registered under the
+                        ;; extension's owner, so unload disposes it.
+                        (skills/register-extension-skill!
+                         raw-content
+                         (assoc opts
+                                :extension name
+                                :owner (extension-owner name))))
      :register-prompt! (fn [prompt & [opts]]
-                         (let [dereg (prompts/register-prompt-template!
-                                      (assoc (merge opts prompt) :extension name))]
-                           (track dereg)
-                           dereg))
+                         (prompts/register-prompt-template!
+                          (assoc (merge opts prompt)
+                                 :extension name
+                                 :owner (extension-owner name))))
      :set-model set-model
      :get-thinking-level get-thinking-level
      :set-thinking-level set-thinking-level
@@ -1388,11 +1393,14 @@
 (defn unload-extension!
   "Unload an extension in three steps (cells.md §8.2): drop the units and
    entries it published (remounting without them disposes their slots' owners),
-   shutdown (if initialized), then deregister what it registered and drop its
-   isolated context — namespaces and jars become unreachable, nothing global is
-   touched. Expects the Extension record (from the registry /
-   reload-extensions!); nil is a no-op — the load result map carries only its
-   :extension name, and (deref nil) would otherwise surface as a cryptic NPE."
+   shutdown (if initialized), then dispose what it registered — the
+   `[:app :extensions <name>]` owner (one LIFO dispose, reporting failures
+   through the scope's reporter) and the deregister fns recorded by the
+   registrations that live outside the tree — and drop its isolated context:
+   namespaces and jars become unreachable, nothing global is touched. Expects
+   the Extension record (from the registry / reload-extensions!); nil is a
+   no-op — the load result map carries only its :extension name, and
+   (deref nil) would otherwise surface as a cryptic NPE."
   [ext]
   (when ext
     (app-runtime/unpublish-extension! (:name ext))
@@ -1402,8 +1410,11 @@
              (catch Exception e
                (binding [*out* *err*]
                  (println "Warning: extension shutdown error:" (ex-message e)))))))
-    (doseq [f @(:deregister-fns ext)]
-      (try (f) (catch Exception _)))
+    ;; outside the tree first: a handler still subscribed while the store's
+    ;; registrations go would see a half-unloaded extension
+    (doseq [f (reverse @(:deregister-fns ext))]
+      (try (f) (catch Throwable t (app-runtime/report-cleanup-failure! t))))
+    (app-runtime/dispose-owner! (extension-owner (:name ext)))
     (when-let [l @(:loader ext)]
       (loader/unload! l))
     (reset! (:loader ext) nil)
@@ -1444,6 +1455,36 @@
   (some-> (first (filter #(= name (:name %)) @extensions))
           :jars deref))
 
+(defn- load-contributed-themes!
+  "Load DIR's theme files and register them under OWNER. The theme store is
+   the TUI layer's own (`kmet.tui.theme`, shared by reference), outside the
+   app tree, so the registration records the theme under OWNER — one owner
+   key, so a re-application replaces it instead of stacking teardowns — and
+   its teardown removes the theme from the store when the owner goes
+   (cells.md §5.1)."
+  [owner dir]
+  (let [node (app-runtime/node)
+        owner (or owner themes-owner)]
+    (doseq [{:keys [name] :as theme} (context/load-themes-from-dir! dir)]
+      (let [k (theme-key name)]
+        (when-not (contains? (scope/for-key node k) owner)
+          (scope/add-teardown! node owner
+                               (fn [] (context/unregister-theme! name))))
+        (scope/register! node owner k theme)))))
+
+(defn- apply-contributed-paths!
+  "Apply the resource paths one contributor contributed: skill and prompt
+   directories load into their registries, theme directories into the theme
+   store. OWNER is the contributor — an extension's owner path, or nil for a
+   host handler, which lands in the app's own registries. Loading under an
+   owner is what makes re-application idempotent (the registries replace per
+   owner and key) and unload complete (disposing the owner takes the
+   resources with it)."
+  [owner {:keys [skill-paths prompt-paths theme-paths]}]
+  (doseq [p skill-paths] (skills/load-skills-from-dir p owner))
+  (doseq [p prompt-paths] (prompts/load-prompt-templates-from-dir p owner))
+  (doseq [p theme-paths] (load-contributed-themes! owner p)))
+
 (defn discover-resources!
   "pi: extendResourcesFromExtensions — fire the :resources-discover event
    (payload {:cwd :reason}) after :session-start and apply every handler's
@@ -1451,50 +1492,36 @@
    skills/prompts registries, :theme-paths into the theme store (pi:
    resourceLoader.extendResources → updateSkills/Prompts/ThemesFromPaths;
    paths are directories). ALL handler results are collected (pi collects
-   each handler's contribution — see emit-event-collect!). Paths already
-   applied since the last extension reload are skipped — discovery fires
-   after every session-start (pi re-scans with mergePaths dedup; kmet's
-   prompt loader would duplicate without the tracking). A throwing handler
-   is skipped (its paths are lost). Returns the collected
+   each handler's contribution — see emit-event-collect!), each applied under
+   the owner that contributed it, so re-discovery after the next session
+   start replaces the same names instead of duplicating them (pi's mergePaths
+   dedup, done by the store rather than a path set) and unloading an
+   extension takes its resources with it. A throwing handler is skipped (its
+   paths are lost). Returns the collected
    {:skill-paths [...] :prompt-paths [...] :theme-paths [...]}."
   [reason]
-  (let [results (event-bus/emit-event-collect!
-                 {:type :resources-discover
-                  :cwd (str (fs/cwd))
-                  :reason reason})
-        paths (reduce (fn [acc r]
-                        (cond-> acc
-                          (seq (:skill-paths r))
-                          (update :skill-paths into (:skill-paths r))
-                          (seq (:prompt-paths r))
-                          (update :prompt-paths into (:prompt-paths r))
-                          (seq (:theme-paths r))
-                          (update :theme-paths into (:theme-paths r))))
-                      {:skill-paths [] :prompt-paths [] :theme-paths []}
-                      results)]
-    (let [applied applied-resource-paths]
-      (doseq [p (:skill-paths paths)]
-        (when-not (contains? @applied p)
-          (skills/load-skills-from-dir p)
-          (swap! applied conj p)))
-      (doseq [p (:prompt-paths paths)]
-        (when-not (contains? @applied p)
-          (prompts/load-prompt-templates-from-dir p)
-          (swap! applied conj p)))
-      (doseq [p (:theme-paths paths)]
-        (when-not (contains? @applied p)
-          ;; theme loading is an extension-ABI shared library; the context
-          ;; namespace owns the call-time door (see its load-themes-from-dir!)
-          (context/load-themes-from-dir! p)
-          (swap! applied conj p))))
-    paths))
+  (let [contributions (event-bus/emit-event-collect!
+                       {:type :resources-discover
+                        :cwd (str (fs/cwd))
+                        :reason reason})]
+    (doseq [[owner result] contributions]
+      (apply-contributed-paths! owner result))
+    (reduce (fn [acc [_ r]]
+              (cond-> acc
+                (seq (:skill-paths r))
+                (update :skill-paths into (:skill-paths r))
+                (seq (:prompt-paths r))
+                (update :prompt-paths into (:prompt-paths r))
+                (seq (:theme-paths r))
+                (update :theme-paths into (:theme-paths r))))
+            {:skill-paths [] :prompt-paths [] :theme-paths []}
+            contributions)))
 
 (defn clear-extensions!
-  "Unload all extensions (used by /reload and tests)."
+  "Unload all extensions (used by /reload and tests). The resources an
+   extension contributed were registered under its owner, so disposing that
+   owner already took them: nothing else needs resetting."
   []
-  ;; extension-contributed resources are re-discovered on the next
-  ;; session-start after a reload (the loaders are cleared too)
-  (reset! applied-resource-paths #{})
   (unload-all-extensions!))
 
 (defn registered-extensions
