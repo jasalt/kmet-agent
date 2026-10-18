@@ -464,13 +464,30 @@ runtime (e.g. from another extension or a REPL):
 | Operation | Function | Effect |
 |---|---|---|
 | Load | `kmet.agent.extensions.core/load-extension!` (path) | load one file or manifest dir; returns `{:extension name :error nil :loader-kind :sci\|:jolt}`, `{:extension nil :error msg}` on failure, or `{:extension name :skipped true :reason :unsupported-loader …}` when the host offers none of the declared backends |
-| Unload | `kmet.agent.extensions.core/unload-extension!` (record) | run `shutdown`, deregister everything, remove namespaces |
+| Unload | `kmet.agent.extensions.core/unload-extension!` (record) | run `shutdown`, dispose the extension's registrations, remove namespaces |
 | Reload | `kmet.agent.extensions.core/reload-extensions!` (dirs) | unload all, reload from the given container dirs |
 | List | `kmet.agent.extensions.core/get-loaded-extensions` | `[{:name .. :path .. :loader-kind ..}]` |
 
 A failing `init` is rolled back: the loader unloads whatever was registered
 before the error and reports `{:extension nil :error msg}` — no partial state
 lingers.
+
+What `init(api)` registers is **owned**: commands, tools and tool sources,
+skills, prompts, hooks, renderers, flags, and the resources a
+`:resources-discover` contribution loads land in the app tree under
+`[:app :extensions <name>]` (cells.md §5.1), so unload disposes them with one
+LIFO dispose — a failing cleanup is reported and never skips the rest. What
+lives outside the tree — event subscriptions, tag aliases, shortcuts,
+terminal-input listeners, model providers — records its deregister fn on the
+extension, and unload runs those in reverse registration order after
+`shutdown`.
+
+A registration is addressed by name, and a contested name follows its
+registry's rule: commands, prompt templates, skills and flags belong to the
+first registration that took it (extensions load before the builtins, so an
+extension's name beats a builtin's), while tools and tool sources layer — the
+last definition shadows the earlier ones. Unloading a winner restores what a
+shadowed registration was hiding.
 
 Unload is registration-complete, not screen-complete. `unload-extension!`
 runs `shutdown`, deregisters every registration and drops the extension's
@@ -870,7 +887,11 @@ returned deregister fn drops it earlier.
 ### Contributing resource paths (`resources_discover`)
 
 After `:session-start` (startup, `/new`, `/reload`), kmet fires
-`:resources-discover` (pi: resources_discover — fired after session_start)
+`:resources-discover` (pi: resources_discover — fired after session_start).
+The one-shot `--print`/json runs create a runtime without emitting
+`:session-start`, so neither these handlers nor their paths reach them — an
+extension that must add a skill there should register it in `init(api)`
+(`register-skill!`) instead.
 so extensions (and user config) can contribute skill, prompt-template and
 theme paths (directories). Session *switches* (`/resume`, `/import`,
 `/fork`, `/clone`) fire neither event by design: they import the session's
@@ -1290,7 +1311,8 @@ Use it to contribute UI by name: a tree site embeds
   current registration at call time, so reload never strands the old fn —
   the new fn takes effect on the component's next body run.
 - The registration is removed automatically when the extension unloads
-  (the returned deregister fn is tracked like every other registration).
+  (the alias registry is process-global, so unload runs the deregister fn it
+  returned).
   Do **not** use `kmet.libs.hikap.alias/defalias` in an extension — it registers
   directly and would survive the unload.
 - Names must be qualified keywords that no rendering backend declares as

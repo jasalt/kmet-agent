@@ -531,6 +531,35 @@
         (extensions/clear-extensions!)
         (fs/delete-tree dir)))))
 
+(t/deftest test-a-terminal-input-listener-is-tracked
+  ;; The front end's listener registry lives outside the app tree, so its
+  ;; unsubscriber is what records on the extension and unload runs it
+  ;; (cells.md §5.1 — tracked is the outside-the-tree half).
+  (extensions/clear-extensions!)
+  (let [dir "target/test-ext-terminal-input"
+        handlers (atom [])
+        unsubscribed (atom [])]
+    (fs/delete-tree dir)
+    (fs/create-dirs dir)
+    (spit (str dir "/ext.clj")
+          (str "(ns term-ext (:require [kmet.agent.extension :as ext]))\n"
+               "(defn init [api]\n"
+               "  (ext/ui-on-terminal-input api (fn [_data] nil)))\n"))
+    (extensions/bind-extensions!
+     {:mode :interactive :has-ui true
+      :ui {:on-terminal-input (fn [handler]
+                                (swap! handlers conj handler)
+                                (fn [] (swap! unsubscribed conj :unsub)))}})
+    (try
+      (t/is (nil? (:error (extensions/load-extension! (str dir "/ext.clj")))))
+      (t/is (= 1 (count @handlers)) "the listener reached the front end's registry")
+      (extensions/unload-all-extensions!)
+      (t/is (= [:unsub] @unsubscribed) "unload ran the unsubscriber it recorded")
+      (finally
+        (extensions/clear-extensions!)
+        (extensions/unbind-extensions!)
+        (fs/delete-tree dir)))))
+
 (t/deftest test-contributed-resource-paths-are-owned-by-the-contributor
   ;; P5c: a :resources-discover contribution loads under the contributor's
   ;; owner, so re-discovery replaces instead of duplicating (no applied-path
@@ -1082,6 +1111,39 @@
         (t/is (some? (:error result)))
         (t/is (empty? (extensions/get-loaded-extensions))))
       (fs/delete-tree dir))))
+
+(t/deftest test-a-failed-init-rolls-back-what-it-registered
+  ;; The rollback runs the same unload path, so what init(api) registered
+  ;; before throwing is disposed with the extension's owner (cells.md §5.1) —
+  ;; no command, tool or skill outlives a failed load.
+  (extensions/clear-extensions!)
+  (let [dir "target/test-ext-init-rollback"]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/rb_ext"))
+    (spit (str dir "/extension.edn")
+          "{:name \"rb-ext\" :entry rb-ext.main :loader [:sci :jolt]}\n")
+    (spit (str dir "/rb_ext/main.clj")
+          (str "(ns rb-ext.main\n  (:require [kmet.agent.extension :as ext]))\n"
+               "(defn init [api]\n"
+               "  (ext/register-command! api {:name \"rb-cmd\" :description \"d\"\n"
+               "                              :handler (fn [_ _] nil)})\n"
+               "  (ext/register-tool! api {:name \"rb-tool\" :label \"T\"\n"
+               "                           :description \"d\" :parameters []\n"
+               "                           :execute (fn [_] {:content \"ok\"})})\n"
+               "  (ext/register-skill! api \"---\\nname: rb-skill\\ndescription: d\\n---\\nbody\")\n"
+               "  (throw (ex-info \"init failed\" {})))\n"))
+    (try
+      (let [result (extensions/load-extension! dir)]
+        (t/is (some? (:error result)) "the load fails")
+        (t/is (empty? (extensions/get-loaded-extensions)))
+        (t/is (nil? (commands/find-command "rb-cmd")) "the command was rolled back")
+        (t/is (nil? (tools/get-tool "rb-tool")) "the tool was rolled back")
+        (t/is (nil? (skills/get-skill "rb-skill")) "the skill was rolled back")
+        (t/is (empty? (scope/for-key (rt/node) [:kmet/command "rb-cmd"]))
+              "and the owner holds nothing"))
+      (finally
+        (extensions/clear-extensions!)
+        (fs/delete-tree dir)))))
 
 (t/deftest test-extension-contexts-are-forked-and-isolated
   ;; the SCI backend builds the shared layers once and forks that base per

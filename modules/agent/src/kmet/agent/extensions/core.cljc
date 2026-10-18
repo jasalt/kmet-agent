@@ -942,12 +942,18 @@
    their own components with the shared kmet.tui.* layer
    (pi: ctx.ui.custom hosting extension-built pi-tui components) — the api
    carries no host-built dialogs or theme lookups (kmet.tui.theme is
-   shared directly)."
-  []
+   shared directly).
+
+   TRACK records the deregister fns of the registrations the front end holds
+   (a terminal-input listener; that registry lives in the UI, outside the app
+   tree) so unload removes exactly what this extension added. The rest of the
+   map is calls and live UI state, which `/reload`'s `ui-reset!` restores
+   (extension.md: unload is registration-complete, not screen-complete)."
+  [track]
   {:notify ui-notify
    :custom ui-custom
    :chat-info ui-chat-info
-   :on-terminal-input ui-on-terminal-input
+   :on-terminal-input (fn [handler] (track (ui-on-terminal-input handler)))
    :set-status ui-set-status
    :set-widget ui-set-widget
    :set-footer ui-set-footer
@@ -1140,7 +1146,7 @@
      :send-user-message send-user-message
      :send-message! send-message!
      :exec exec
-     :ui (api-ui)
+     :ui (api-ui track)
      :models (api-models track)
      :session (api-session)}))
 
@@ -1393,14 +1399,15 @@
 (defn unload-extension!
   "Unload an extension in three steps (cells.md §8.2): drop the units and
    entries it published (remounting without them disposes their slots' owners),
-   shutdown (if initialized), then dispose what it registered — the
-   `[:app :extensions <name>]` owner (one LIFO dispose, reporting failures
-   through the scope's reporter) and the deregister fns recorded by the
-   registrations that live outside the tree — and drop its isolated context:
-   namespaces and jars become unreachable, nothing global is touched. Expects
-   the Extension record (from the registry / reload-extensions!); nil is a
-   no-op — the load result map carries only its :extension name, and
-   (deref nil) would otherwise surface as a cryptic NPE."
+   shutdown (if initialized), then dispose what it registered — the deregister
+   fns recorded by the registrations that live outside the tree, in reverse
+   registration order, then one LIFO dispose of its
+   `[:app :extensions <name>]` owner, both reporting a failing cleanup through
+   the scope's reporter — and drop its isolated context: namespaces and jars
+   become unreachable, nothing global is touched. Expects the Extension record
+   (from the registry / reload-extensions!); nil is a no-op — the load result
+   map carries only its :extension name, and (deref nil) would otherwise
+   surface as a cryptic NPE."
   [ext]
   (when ext
     (app-runtime/unpublish-extension! (:name ext))

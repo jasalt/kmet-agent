@@ -892,7 +892,10 @@
 (defn load-theme-paths!
   "Load and register themes from explicit .edn file paths (the package-
    resource unit), returning the themes that loaded. Same warning behavior as
-   load-theme-file!."
+   load-theme-file!. Registration is by name, so re-reading a path replaces
+   the theme it names; nothing here removes a theme whose file left the list —
+   the callers re-read their configured paths (there is no clear-all), and an
+   extension-contributed theme is removed by its owner's teardown."
   [paths]
   (into [] (keep load-theme-file!) paths))
 
