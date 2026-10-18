@@ -190,17 +190,18 @@
 
 (defn- add-skill!
   "Add SKILL to the registry unless its name collides (first wins, pi).
-   Returns a collision diagnostic map, or nil."
+   Returns {:deregister f} when it was added — f removes exactly this
+   registration — else {:collision diagnostic}."
   [skill location]
   (if-let [existing (skill-for (:name skill))]
-    {:type "collision"
-     :message (str "name \"" (:name skill) "\" collision")
-     :path (str location)
-     :winner-path (str (or (:location existing) (:file-path existing)))
-     :loser-path (str location)}
-    (do (scope/register! (app-runtime/node) skills-owner
-                         (skill-key (:name skill)) skill)
-        nil)))
+    {:collision
+     {:type "collision"
+      :message (str "name \"" (:name skill) "\" collision")
+      :path (str location)
+      :winner-path (str (or (:location existing) (:file-path existing)))
+      :loser-path (str location)}}
+    {:deregister (scope/register! (app-runtime/node) skills-owner
+                                  (skill-key (:name skill)) skill)}))
 
 (defn- add-skill-results!
   "Register parsed skill results ({:skill ... :diagnostics ...}), collecting
@@ -210,7 +211,7 @@
   (let [collisions (volatile! [])]
     (doseq [{:keys [skill]} results]
       (when skill
-        (when-let [collision (add-skill! skill (:file-path skill))]
+        (when-let [collision (:collision (add-skill! skill (:file-path skill)))]
           (vswap! collisions conj collision))))
     (let [diagnostics (into (vec (mapcat :diagnostics results)) @collisions)]
       (doseq [{:keys [type message path]} diagnostics]
@@ -277,13 +278,14 @@
     (doseq [{:keys [type message path]} diagnostics]
       (binding [*out* *err*]
         (println (str "Warning: skill " type " at " path ": " message))))
-    (when skill
-      (when-let [collision (add-skill! skill location)]
-        (binding [*out* *err*]
-          (println (str "Warning: skill collision at " (:path collision) ": "
-                        (:message collision))))))
-    (fn [] (scope/deregister! (app-runtime/node) skills-owner
-                              (skill-key (:name skill)) skill))))
+    (if skill
+      (let [{:keys [collision deregister]} (add-skill! skill location)]
+        (when collision
+          (binding [*out* *err*]
+            (println (str "Warning: skill collision at " (:path collision) ": "
+                          (:message collision)))))
+        (or deregister (fn [] nil)))
+      (fn [] nil))))
 
 (defn- skill-content-for-path
   "The SKILL.md text for RAW-PATH when it names a registered extension
