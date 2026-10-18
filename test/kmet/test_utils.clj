@@ -2,6 +2,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :as t]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.session.runtime :as rt]
             [kmet.tui.utils :as u]))
 
@@ -42,6 +43,21 @@
                                   :cwd (:cwd cs)
                                   :turn-running? (:running-turn? cs)
                                   :compaction-queued (:compaction-queued cs)})))
+
+(defn clear-extension-wiring!
+  "Reset the process-global extension wiring a front end install leaves
+   behind: the binding (front-end kind + capability map) and the
+   session/context/entry sinks, which close over the installing test's fake
+   CoreState. Call from a test's finally so a later test — in this namespace
+   or another one run in the same process — never sees the fake context.
+   A leaked :interactive binding (the registry install bound the kind, only
+   the port was cleared) used to break test-extensions' headless
+   expectations when test-interactive ran first."
+  []
+  (extensions/set-session! nil)
+  (extensions/set-context-sink! nil)
+  (extensions/set-entry-sink! nil)
+  (extensions/unbind-extensions!))
 
 (defn slash
   "The /-separated form of path values — strings, Paths/Files, or maps, sets

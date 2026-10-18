@@ -67,18 +67,6 @@
   (fn [_ component & [opts]]
     (reset! ref (or (:focus-target opts) component))))
 
-(defn- clear-installed-context!
-  "Reset the global extension wiring a `build-extension-ui-registry` install
-   leaves behind: the binding (capability map + front-end kind) plus the
-   session/context/entry sinks, which close over the installing test's fake
-   cs. Call from a test's finally so later tests never see the fake
-   context."
-  []
-  (extensions/set-session! nil)
-  (extensions/set-context-sink! nil)
-  (extensions/set-entry-sink! nil)
-  (extensions/unbind-extensions!))
-
 (defn- command-ctx
   "The command context for CS: the engine-portable builtins take it directly
    (the interactive registry unwraps its own commands from :state)."
@@ -1675,7 +1663,7 @@
                 (t/is (contains? usage :percent)))))
           ;; Registry installation is a side effect: clean up even if a
           ;; capability throws, so later contexts cannot see the fake cs.
-          (finally (clear-installed-context!)))))))
+          (finally (tu/clear-extension-wiring!)))))))
 
 (deftest test-build-context-idle-follows-the-run-and-compaction-flags
   (testing "the extension ctx's idle state, wait-for-idle and abort follow the
@@ -1719,7 +1707,7 @@
           (t/is (false? @(:signal ag)) "idle → abort does nothing"))
         (finally
           (reset! (:turn-running? (:engine cs)) false)
-          (clear-installed-context!))))))
+          (tu/clear-extension-wiring!))))))
 
 (deftest test-build-context-resolves-current-model
   (let [native (m/map->Model {:provider :test-native :id "test-model"
@@ -1757,7 +1745,7 @@
           (reset! (:provider (runtime/agent-state (:engine cs))) :missing)
           (t/is (nil? (:model (extensions/build-extension-context)))))
         (finally
-          (clear-installed-context!))))))
+          (tu/clear-extension-wiring!))))))
 
 (deftest test-build-context-resolves-scoped-models
   (let [native (m/map->Model {:provider :test-native :id "test-model"})
@@ -1803,7 +1791,7 @@
           (reset! (:scoped-models ag) [])
           (t/is (= [] (:scoped-models (extensions/build-extension-context)))))
         (finally
-          (clear-installed-context!))))))
+          (tu/clear-extension-wiring!))))))
 
 (deftest test-extension-reset-closes-open-dialogs
   (testing "the registry :reset teardown closes an open ui-custom dialog
@@ -1852,7 +1840,7 @@
           (t/is (false? (tui/tui-has-overlay? ui)) "the overlay stack is empty")
           (t/is (empty? @logged) "no disposed-while-mounted violation"))
         (finally
-          (clear-installed-context!))))))
+          (tu/clear-extension-wiring!))))))
 
 (defn- build-extension-registry
   "The /reload fixture both widget-reset tests drive: an extension UI
@@ -1920,7 +1908,7 @@
   [{:keys [hdr sp1]}]
   (protocols/dispose hdr)
   (protocols/dispose sp1)
-  (clear-installed-context!))
+  (tu/clear-extension-wiring!))
 
 (deftest test-reset-disposes-extension-widgets-header-and-editor
   (testing "finding 1: the /reload :reset path, the header swap and the
@@ -2260,7 +2248,7 @@
           (t/is (= "draft" (editor/editor-get-text ed))))
         (finally
           (commands/clear-commands!)
-          (clear-installed-context!))))))
+          (tu/clear-extension-wiring!))))))
 
 ;; ─── Compaction queue (pi: queueCompactionMessage / flushCompactionQueue) ──
 
@@ -2469,16 +2457,19 @@
                     nil)
           ctx ((:build-context registry))
           errors (atom [])]
-      (with-redefs [agent/compact-context! (fn [& _]
-                                             (throw (ex-info "must not compact" {})))]
-        (t/is (nil? ((:compact ctx)
-                     {:custom-instructions "focus on tests"
-                      :on-error (fn [e] (swap! errors conj (ex-message e)))}))
-              "the request is accepted, not refused"))
-      (t/is (empty? @errors) "no error reaches the caller")
-      (t/is (= ["focus on tests"]
-               (mapv :custom-instructions (runtime/pending-compaction (:engine cs))))
-            "the request is queued with its instructions"))))
+      (try
+        (with-redefs [agent/compact-context! (fn [& _]
+                                               (throw (ex-info "must not compact" {})))]
+          (t/is (nil? ((:compact ctx)
+                       {:custom-instructions "focus on tests"
+                        :on-error (fn [e] (swap! errors conj (ex-message e)))}))
+                "the request is accepted, not refused"))
+        (t/is (empty? @errors) "no error reaches the caller")
+        (t/is (= ["focus on tests"]
+                 (mapv :custom-instructions (runtime/pending-compaction (:engine cs))))
+              "the request is queued with its instructions")
+        (finally
+          (tu/clear-extension-wiring!))))))
 
 (deftest test-ui-compact-reports-the-failure-message
   (testing "a failed compaction reaches the extension caller with pi's
@@ -2496,20 +2487,23 @@
           ctx ((:build-context registry))
           errors (atom [])
           reported (promise)]
-      (with-redefs [agent/compact-context!
-                    (fn [ag & _]
-                      (reset! (:compaction-error ag)
-                              "Compaction failed: Summarization failed: provider exploded")
-                      :failed)]
-        (t/is (nil? ((:compact ctx)
-                     {:on-error (fn [e]
-                                  (swap! errors conj (ex-message e))
-                                  (deliver reported true))}))
-              "a request while idle starts immediately (callbacks carry the outcome)")
-        (t/is (true? (deref reported 2000 ::timeout)) "the async failure is reported"))
-      (t/is (= ["Compaction failed: Summarization failed: provider exploded"]
-               @errors)
-            "the message is reported verbatim, once"))))
+      (try
+        (with-redefs [agent/compact-context!
+                      (fn [ag & _]
+                        (reset! (:compaction-error ag)
+                                "Compaction failed: Summarization failed: provider exploded")
+                        :failed)]
+          (t/is (nil? ((:compact ctx)
+                       {:on-error (fn [e]
+                                    (swap! errors conj (ex-message e))
+                                    (deliver reported true))}))
+                "a request while idle starts immediately (callbacks carry the outcome)")
+          (t/is (true? (deref reported 2000 ::timeout)) "the async failure is reported"))
+        (t/is (= ["Compaction failed: Summarization failed: provider exploded"]
+                 @errors)
+              "the message is reported verbatim, once")
+        (finally
+          (tu/clear-extension-wiring!))))))
 
 (deftest test-compact-command-logs-an-escaping-error
   (testing "the /compact future logs an exception escaping compact-context!

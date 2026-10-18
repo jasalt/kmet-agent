@@ -508,10 +508,7 @@
             "the entry request was made after the message was appended")
         (finally
           (dereg)
-          (extensions/set-session! nil)
-          (extensions/set-context-sink! nil)
-          (extensions/set-entry-sink! nil)
-          (extensions/clear-ui-registry!)
+          (tu/clear-extension-wiring!)
           (fs/delete-tree dir))))))
 
 (deftest replay-branch-restores-tool-rendering
