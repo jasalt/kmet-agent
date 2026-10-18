@@ -125,6 +125,18 @@
   [node]
   (:by-key @(:store node)))
 
+(defn ordered-registrations
+  "Every registration on the node as [key owner value]: owners in
+   first-registration order, each owner's registrations in its own
+   registration order — the order a host registry lists and reads in
+   (cells.md §5.1). Linear in the whole store; one key's owners are
+   `for-key`."
+  [node]
+  (into []
+        (mapcat (fn [owner]
+                  (map (fn [[k v]] [k owner v]) (owner-registrations node owner))))
+        (owners node)))
+
 (defn for-key
   "Every value registered under k: {owner value}."
   [node k]

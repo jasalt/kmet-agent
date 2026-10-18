@@ -898,26 +898,29 @@
 (t/deftest test-loop-before-agent-start-hooks
   (let [events (atom [])
         sent (atom nil)
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
-    (extensions/clear-before-agent-start-hooks!)
-    (extensions/register-before-agent-start-hook!
-     (fn [_]
-       {:system-prompt "EXTRA SYSTEM PROMPT"
-        :message {:role :info :label "ext" :content "injected note"}}))
-    (with-redefs [cfg/get-api-key (fn [_] "test-key")
-                  llm/send-message
-                  (fn [opts]
-                    (reset! sent opts)
-                    (future
-                      (when-let [on-done (:on-done opts)]
-                        (on-done :stop))
-                      :done))]
-      ;; deref inside with-redefs keeps the rebinding until the turn completes
-      @(loop/run-agent-turn agent
-                            {:message "hi"
-                             :on-done (fn [_])
-                             :on-error (fn [_])}))
-    (extensions/clear-before-agent-start-hooks!)
+        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))
+        ;; one test-owned owner, so the hook cannot outlive the test (P2:
+        ;; hooks live on the app tree under their owner, not in an engine)
+        dereg (extensions/register-before-agent-start-hook!
+               [:app :test-loop-hooks]
+               (fn [_]
+                 {:system-prompt "EXTRA SYSTEM PROMPT"
+                  :message {:role :info :label "ext" :content "injected note"}}))]
+    (try
+      (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                    llm/send-message
+                    (fn [opts]
+                      (reset! sent opts)
+                      (future
+                        (when-let [on-done (:on-done opts)]
+                          (on-done :stop))
+                        :done))]
+        ;; deref inside with-redefs keeps the rebinding until the turn completes
+        @(loop/run-agent-turn agent
+                              {:message "hi"
+                               :on-done (fn [_])
+                               :on-error (fn [_])}))
+      (finally (dereg)))
     (t/is (str/includes? (get-in @sent [:messages 0 :content 0 :text])
                          "EXTRA SYSTEM PROMPT")
           "before-agent-start system prompt override reaches the LLM call")

@@ -17,6 +17,7 @@
             [kmet.ai.models :as models]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.extensions.context :as ext-context]
+            [kmet.agent.runtime :as rt]
             [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.prompts :as prompts]
@@ -25,7 +26,8 @@
             [kmet.agent.tools.core :as tools]
             [kmet.ai.hooks :as ai-hooks]
             [kmet.libs.hikap.alias :as alias]
-            [kmet.tui.theme :as theme]))
+            [kmet.tui.theme :as theme]
+            [kmet.cells.scope :as scope]))
 
 ;; ─── Extension exec (extension api: exec) ────────────────────────────────
 
@@ -1652,3 +1654,52 @@
         (extensions/unload-all-extensions!)
         (skills/clear-skills!)
         (fs/delete-if-exists jar)))))
+
+;; ─── Extension hooks live on the app tree (P2) ────────────────────────────
+
+(t/deftest extension-hooks-live-on-the-app-tree
+  ;; cells.md §5.1: whatever an extension's init(api) installs outside a unit
+  ;; belongs to [:app :extensions <name>]. Hooks are read from the tree rather
+  ;; than copied into each engine, so one registered with no engine running
+  ;; reaches every engine, and deregistering removes the only copy.
+  (let [owner (extensions/extension-owner "test-hooks")
+        node (rt/node)
+        dereg (extensions/register-input-hook!
+               owner (fn [{:keys [text]}] {:action :transform :text (str text "!")}))]
+    (try
+      (t/is (= "hi!" (:text (extensions/apply-input-hooks "hi" :interactive)))
+            "the registered hook is read back from the tree")
+      (t/is (= 1 (count (scope/owner-registrations node owner)))
+            "registered under the extension's own owner")
+      (t/is (every? #(= [:kmet/hook :input] (subvec % 0 2))
+                    (scope/owner-keys node owner))
+            "keyed per hook, so one owner can hold several of a kind")
+      (let [dereg-start (extensions/register-before-agent-start-hook!
+                         owner (fn [_] {:system-prompt "SYS"}))]
+        (try
+          (t/is (= "SYS" (:system-prompt
+                          (extensions/apply-before-agent-start-hooks "p" "orig")))
+                "before-agent-start hooks read the same tree")
+          (finally (dereg-start))))
+      (finally (dereg)))
+    (t/is (= "hi" (:text (extensions/apply-input-hooks "hi" :interactive)))
+          "deregistering stops it")
+    (t/is (empty? (scope/owner-registrations node owner))
+          "and leaves no registration behind")))
+
+(t/deftest hooks-run-owner-by-owner-in-registration-order
+  ;; The store's order is the module's (cells.md §5.1): owners in
+  ;; first-registration order, each owner's own registrations in its own
+  ;; order — so one extension's hooks stay together and in its own sequence.
+  (let [a (extensions/extension-owner "test-hook-order-a")
+        b (extensions/extension-owner "test-hook-order-b")
+        seen (atom [])
+        hook (fn [tag] (fn [_] (swap! seen conj tag) nil))
+        dereg-a1 (extensions/register-input-hook! a (hook :a1))
+        dereg-b1 (extensions/register-input-hook! b (hook :b1))
+        dereg-a2 (extensions/register-input-hook! a (hook :a2))]
+    (try
+      (extensions/apply-input-hooks "hi" :interactive)
+      (t/is (= [:a1 :a2 :b1] @seen)
+            "one owner's hooks are adjacent, in its registration order")
+      (finally (dereg-a1) (dereg-b1) (dereg-a2)))))

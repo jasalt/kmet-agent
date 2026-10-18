@@ -58,11 +58,10 @@
    first-registration order, each owner's commands in its own registration
    order, each name once."
   []
-  (let [node (app-runtime/node)]
-    (distinct
-     (into []
-           (keep (fn [[k _]] (when (command-key? k) (second k))))
-           (mapcat #(scope/owner-registrations node %) (scope/owners node))))))
+  (distinct
+   (into []
+         (keep (fn [[k _ _]] (when (command-key? k) (second k))))
+         (scope/ordered-registrations (app-runtime/node)))))
 
 (defn register-command!
   "Register (or replace by :name) a slash command. The store key is derived
@@ -86,9 +85,8 @@
   []
   ;; by key, not by owner: a unit owns several registries (§5.1)
   (let [node (app-runtime/node)]
-    (doseq [[k owners] (scope/registrations node)
-            :when (command-key? k)
-            [owner v] owners]
+    (doseq [[k owner v] (scope/ordered-registrations node)
+            :when (command-key? k)]
       (scope/deregister! node owner k v)))
   nil)
 

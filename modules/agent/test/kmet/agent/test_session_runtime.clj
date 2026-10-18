@@ -427,19 +427,30 @@
                {:cwd (str (fs/cwd))})
         e2 (rt/bootstrap (test-config) {:session sess2})]
     (try
-      (doseq [k [:input-hooks :before-agent-start-hooks :tool-call-hooks
+      (doseq [k [:tool-call-hooks
                  :tool-result-hooks :markdown-transformers :entry-renderers
                  :message-renderers :custom-tools :tool-sources
                  :event-listeners :flags :cli-flags
                  :applied-resource-paths :skills :prompt-templates]]
         (is (not (identical? (k e1) (k e2)))
             (str "engine-owned " k " is not shared")))
-      ;; Commands are the app's, not an engine's (P2): neither engine owns the
-      ;; registry, so a registration reaches both and the name is found with
-      ;; no engine at all — the pending buffer could only fill the first one.
-      (commands/register-command!
-       {:name "app-wide-demo" :handler (fn [& _] nil)})
-      (is (some? (commands/find-command "app-wide-demo")))
+      ;; Commands and the extension hooks are the app's, not an engine's
+      ;; (P2): neither engine owns them, so a registration reaches both, and a
+      ;; deregistered hook is gone from the tree every engine reads — the
+      ;; pending buffer could only fill the first engine, and its stale copy
+      ;; outlived an unload.
+      (let [fired (atom 0)
+            dereg (extensions/register-input-hook!
+                   (extensions/extension-owner "test-hooks")
+                   (fn [_] (swap! fired inc) nil))]
+        (commands/register-command!
+         {:name "app-wide-demo" :handler (fn [& _] nil)})
+        (is (some? (commands/find-command "app-wide-demo")))
+        (extensions/apply-input-hooks "hello" :interactive)
+        (is (= 1 @fired) "the hook fires from the app tree alone")
+        (dereg)
+        (extensions/apply-input-hooks "hello" :interactive)
+        (is (= 1 @fired) "and a deregistered hook stays gone"))
       (let [e1-events (atom [])
             e2-events (atom [])]
         (rt/subscribe! e1 #(swap! e1-events conj %))

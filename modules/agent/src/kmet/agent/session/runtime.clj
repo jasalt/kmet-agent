@@ -253,8 +253,6 @@
                              :pending-ui (atom {})
                              :run-callbacks (atom nil)
                              :event-listeners (atom {})
-                             :input-hooks (atom (vec @extensions/pending-input-hooks))
-                             :before-agent-start-hooks (atom (vec @extensions/pending-before-agent-start-hooks))
                              :custom-tools (atom @tools-reg/pending-custom-tools)
                              :tool-sources (atom @tools-reg/pending-tool-sources)
                              :tool-call-hooks (atom (vec @extensions/pending-tool-call-hooks))

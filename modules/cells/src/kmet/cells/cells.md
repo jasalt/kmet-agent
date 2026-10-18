@@ -299,6 +299,11 @@ Two more store operations exist for the host that owns one registry of many:
 `(scope/owner-registrations node owner)` → `[[key value] …]` in registration
 order, which is what a registry's own listing needs (`owner-keys` is a set,
 which is enough for `composition` and `explain`), and
+`(scope/ordered-registrations node)` → `[[key owner value] …]` across owners —
+owners in first-registration order, each owner's in its own — which is the
+order a *host* registry reads in: filtering the triples by key shape and taking
+the values is how a registry whose entries are not addressed one by one (the
+agent's hooks, later its tools and renderers) gets its effective list. And
 `(scope/deregister! node owner k v)` — the operation `register!` returns as a
 fn, public for the call that removes one entry while its owner stays live (an
 extension dropping one command), where `dispose!` removes everything the owner
@@ -848,8 +853,10 @@ are named rather than line-numbered, since lines drift and names do not.
   dispatch, which is why the pending buffers are the normal path rather than a
   fallback.
 - **`pending-input-hooks` and `pending-before-agent-start-hooks`** — copied into
-  the engine but *never* reset, unlike the other 13: process-lifetime hooks, or
-  a leak that outlives the extensions that filled it? P2 decides per buffer.
+  the engine but *never* reset, unlike the other 13. P2 settled them as
+  process-lifetime hooks rather than a leak: they live on the app tree under
+  the registering extension's owner, so every engine reads the same set and no
+  stale copy outlives an unload.
 - **`kmet.agent.loop/run-agent-turn`** — ~260 lines carrying the loop's
   architecture in its docstring. Its stages are already named functions
   (`resolve-endpoint`, `call-llm`, `execute-tool-calls!`, `turn-context`,

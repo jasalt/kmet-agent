@@ -60,6 +60,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.context :as context]
             [kmet.agent.prompts :as prompts]
+            [kmet.agent.runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
@@ -75,7 +76,8 @@
             ;; extension load (its requires resolve to the bb ports there).
             #?(:jolt [kmet.agent.extensions.libs])
             #?(:jolt [kmet.loader.jolt-loader :as loader-jolt])
-            [kmet.agent.extension]))
+            [kmet.agent.extension]
+            [kmet.cells.scope :as scope]))
 
 ;; ─── Provider-event bridges (pi: context / context_with_system /
 ;; ─── before_provider_request / before_provider_headers /
@@ -161,18 +163,6 @@
 
 ;; ─── Registries (the storage; api capabilities wire into these) ──────────
 (defonce ^:private extensions (atom []))
-(defonce pending-input-hooks (atom []))
-(defn- current-input-hook-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :input-hooks)
-      pending-input-hooks))
-(defonce pending-before-agent-start-hooks (atom []))
-(defn- current-before-agent-start-hook-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :before-agent-start-hooks)
-      pending-before-agent-start-hooks))
 (defonce pending-entry-renderers (atom {}))
 (defn- current-entry-renderer-registry []
   (or (some-> (do (require 'kmet.agent.session.runtime)
@@ -240,31 +230,56 @@
   (swap! hook-atom conj hook)
   (fn [] (swap! hook-atom (fn [hs] (remove #(identical? % hook) hs)))))
 
-(defn- register-pending-hook!
-  "Register HOOK in CUR-FN's registry and return a deregister fn removing it
-   from CUR-FN and PENDING-ATOM."
-  [cur-fn pending-atom hook]
-  (let [reg (cur-fn)]
-    (swap! reg conj hook)
-    (fn []
-      (doseq [reg [(cur-fn) pending-atom]]
-        (swap! reg (fn [hs] (remove #(identical? % hook) hs)))))))
+(defn extension-owner
+  "The owner path an extension's registrations belong to: anything its
+   `init(api)` installs outside a unit (cells.md §5.1). A registration is
+   disposed with the owner, so unloading an extension drops what it added."
+  [extension-name]
+  [:app :extensions extension-name])
+
+(defonce ^:private hook-seq (atom 0))
+
+(defn- hook-key
+  "A fresh key for one hook: a hook is not addressed by name and one owner may
+   hold several of a kind, so each registration gets its own key."
+  [kind]
+  [:kmet/hook kind (swap! hook-seq inc)])
+
+(defn- hook-key? [kind k]
+  (and (vector? k) (= :kmet/hook (first k)) (= kind (second k))))
+
+(defn- register-app-hook!
+  "Register HOOK for OWNER (an `extension-owner` path) on the app tree and
+   return cells' deregister fn. Hooks are read from the tree rather than
+   copied into each engine, so one registered before an engine exists reaches
+   every engine and stays gone once deregistered (P2)."
+  [owner kind hook]
+  (scope/register! (app-runtime/node) owner (hook-key kind) hook))
+
+(defn- hooks-of
+  "Every KIND hook on the app tree, in the order the store reports it: owners
+   in first-registration order, each owner's in its own registration order."
+  [kind]
+  (into []
+        (keep (fn [[k _ v]] (when (hook-key? kind k) v)))
+        (scope/ordered-registrations (app-runtime/node))))
 
 (defn register-input-hook!
-  "Register an input hook (extension api: on-input). Fires for agent
+  "Register OWNER's input hook (extension api: on-input). Fires for agent
    messages submitted from the interactive input path. Hook:
    (fn [{:keys [text source streaming-behavior images]}]) returning
    {:action :handled} to consume, {:action :transform :text ... :images ...}
    to rewrite, or nil. Returns a deregister fn."
-  [hook]
-  (register-pending-hook! current-input-hook-registry pending-input-hooks hook))
+  [owner hook]
+  (register-app-hook! owner :input hook))
 
 (defn register-before-agent-start-hook!
-  "Register a before-agent-start hook (extension api: on-before-agent-start).
-   Hook: (fn [{:keys [prompt system-prompt]}]) returning a map with
-   :system-prompt and/or :message, or nil. Returns a deregister fn."
-  [hook]
-  (register-pending-hook! current-before-agent-start-hook-registry pending-before-agent-start-hooks hook))
+  "Register OWNER's before-agent-start hook (extension api:
+   on-before-agent-start). Hook: (fn [{:keys [prompt system-prompt]}]) returning
+   a map with :system-prompt and/or :message, or nil. Returns a deregister
+   fn."
+  [owner hook]
+  (register-app-hook! owner :before-agent-start hook))
 
 (defn apply-input-hooks
   "Run all input hooks in registration order over text and images
@@ -272,7 +287,7 @@
    | {:action :pass ...}."
   [text source & [{:keys [streaming-behavior images]}]]
   (let [initial-images (or images [])]
-    (loop [hooks @(current-input-hook-registry)
+    (loop [hooks (hooks-of :input)
            current text
            current-images initial-images]
       (if-let [hook (first hooks)]
@@ -298,7 +313,7 @@
   "Run all before-agent-start hooks in registration order.
    Returns {:system-prompt string-or-nil :messages [msg ...]}."
   [prompt system-prompt]
-  (loop [hooks @(current-before-agent-start-hook-registry)
+  (loop [hooks (hooks-of :before-agent-start)
          current-prompt system-prompt
          messages []]
     (if-let [hook (first hooks)]
@@ -317,9 +332,6 @@
                  messages)))
       {:system-prompt (when (not= current-prompt system-prompt) current-prompt)
        :messages messages})))
-
-(defn clear-input-hooks! [] (reset! (current-input-hook-registry) []))
-(defn clear-before-agent-start-hooks! [] (reset! (current-before-agent-start-hook-registry) []))
 
 ;; ─── Renderers + tool hooks (extension api) ───────────────────────────────
 
@@ -985,15 +997,11 @@
      :emit-event! event-bus/emit-event!
      :on-input (fn [hook]
                  (let [h (loader-aware ext hook)]
-                   (register-input-hook! h)
-                   (track (fn [] (swap! (current-input-hook-registry)
-                                        (fn [hs] (remove #(identical? % h) hs)))))))
+                   (track (register-input-hook! (extension-owner name) h))))
      :on-before-agent-start (fn [hook]
                               (let [h (loader-aware ext hook)]
-                                (register-before-agent-start-hook! h)
-                                (track (fn []
-                                         (swap! (current-before-agent-start-hook-registry)
-                                                (fn [hs] (remove #(identical? % h) hs)))))))
+                                (track (register-before-agent-start-hook!
+                                        (extension-owner name) h))))
      :on-tool-call (fn [hook]
                      (let [h (loader-aware ext hook)]
                        (register-tool-call-hook! h)
