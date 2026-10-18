@@ -1059,49 +1059,46 @@
       (t/is (contains? (get-in @state [:labels]) "id1")))))
 
 (t/deftest test-markdown-transformers
-  (testing "applied in registration order, last wins per position"
-    (extensions/clear-extensions!)
-    (let [owner (extensions/extension-owner "test-markdown-transformers")
-          d1 (extensions/register-markdown-transformer!
-              owner (fn [md _ctx] (str "a[" md "]")))
-          d2 (extensions/register-markdown-transformer!
-              owner (fn [md _ctx] (str "b[" md "]")))]
-      (t/is (= "b[a[hi]]"
-               (extensions/apply-markdown-transformers
-                "hi" {:message-type :user :is-streaming false :available-width 80}))
-            "transformers chain in registration order (pi: applyMarkdownTransformers)")
-      (d1)
-      (t/is (= "b[hi]" (extensions/apply-markdown-transformers "hi" {}))
-            "dereg removes exactly its own transformer")
-      (d2)
-      (t/is (= "hi" (extensions/apply-markdown-transformers "hi" {})))))
-  (testing "a throwing transformer is skipped, the chain continues"
-    (extensions/clear-extensions!)
-    (let [owner (extensions/extension-owner "test-markdown-transformers")
-          d1 (extensions/register-markdown-transformer!
-              owner (fn [_md _ctx] (throw (ex-info "boom" {}))))
-          d2 (extensions/register-markdown-transformer!
-              owner (fn [md _ctx] (str "ok[" md "]")))]
-      (t/is (= "ok[hi]" (extensions/apply-markdown-transformers "hi" {}))
-            "pi: keep the current markdown and continue")
-      (d1) (d2)))
-  (testing "non-string results are ignored"
-    (extensions/clear-extensions!)
-    (let [owner (extensions/extension-owner "test-markdown-transformers")
-          d1 (extensions/register-markdown-transformer!
-              owner (fn [_md _ctx] {:not :a-string}))
-          d2 (extensions/register-markdown-transformer!
-              owner (fn [md _ctx] (str md "!")))]
-      (t/is (= "hi!" (extensions/apply-markdown-transformers "hi" {})))
-      (d1) (d2)))
-  (testing "the registration is the owner's key on the app tree"
-    (let [owner (extensions/extension-owner "test-markdown-owner")
-          dereg (extensions/register-markdown-transformer! owner (fn [md _] md))]
-      (t/is (seq (scope/owner-keys (rt/node) owner))
-            "the transformer registered under its owner's path")
-      (dereg)
-      (t/is (empty? (scope/owner-keys (rt/node) owner))
-            "and the deregister fn removes that key"))))
+  (let [owner (extensions/extension-owner "test-markdown-transformers")]
+    (testing "applied in registration order, last wins per position"
+      (extensions/clear-extensions!)
+      (let [d1 (extensions/register-markdown-transformer!
+                owner (fn [md _ctx] (str "a[" md "]")))
+            d2 (extensions/register-markdown-transformer!
+                owner (fn [md _ctx] (str "b[" md "]")))]
+        (t/is (= "b[a[hi]]"
+                 (extensions/apply-markdown-transformers
+                  "hi" {:message-type :user :is-streaming false :available-width 80}))
+              "transformers chain in registration order (pi: applyMarkdownTransformers)")
+        (d1)
+        (t/is (= "b[hi]" (extensions/apply-markdown-transformers "hi" {}))
+              "dereg removes exactly its own transformer")
+        (d2)
+        (t/is (= "hi" (extensions/apply-markdown-transformers "hi" {})))))
+    (testing "a throwing transformer is skipped, the chain continues"
+      (extensions/clear-extensions!)
+      (let [d1 (extensions/register-markdown-transformer!
+                owner (fn [_md _ctx] (throw (ex-info "boom" {}))))
+            d2 (extensions/register-markdown-transformer!
+                owner (fn [md _ctx] (str "ok[" md "]")))]
+        (t/is (= "ok[hi]" (extensions/apply-markdown-transformers "hi" {}))
+              "pi: keep the current markdown and continue")
+        (d1) (d2)))
+    (testing "non-string results are ignored"
+      (extensions/clear-extensions!)
+      (let [d1 (extensions/register-markdown-transformer!
+                owner (fn [_md _ctx] {:not :a-string}))
+            d2 (extensions/register-markdown-transformer!
+                owner (fn [md _ctx] (str md "!")))]
+        (t/is (= "hi!" (extensions/apply-markdown-transformers "hi" {})))
+        (d1) (d2)))
+    (testing "the registration is the owner's key on the app tree"
+      (let [dereg (extensions/register-markdown-transformer! owner (fn [md _] md))]
+        (t/is (seq (scope/owner-keys (rt/node) owner))
+              "the transformer registered under its owner's path")
+        (dereg)
+        (t/is (empty? (scope/owner-keys (rt/node) owner))
+              "and the deregister fn removes that key")))))
 
 (t/deftest test-renderer-ownership
   (testing "a renderer is its owner's key on the app tree"
