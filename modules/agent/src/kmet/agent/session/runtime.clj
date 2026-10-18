@@ -23,6 +23,11 @@
      kind), and `dispose!` unbinds them. A front end with its own UI port
      (interactive) re-binds after its widgets exist —
      `extensions/bind-extensions!` is the front-end-owned install point.
+   - Registrations are not engine state (P2): commands, tools, skills,
+     prompt templates, hooks, renderers, markdown transformers and flags
+     live on the app root's store (`kmet.agent.runtime`), each under an
+     owner path, so every engine reads the same set and a registration
+     outlives the engine that happened to be current when it was made.
    - `dispose!` cancels an in-flight run and waits (bounded) for it to
      settle before clearing the subscribers, so the terminal
      `:agent-settled` event reaches them; the settle path runs in the
