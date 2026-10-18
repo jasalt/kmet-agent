@@ -3,8 +3,10 @@
             [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
+            [kmet.agent.runtime :as app-runtime]
             [kmet.agent.skills :as skills]
-            [kmet.agent.tools.core :as tools]))
+            [kmet.agent.tools.core :as tools]
+            [kmet.cells.scope :as scope]))
 
 ;; ─── Skills ────────────────────────────────────────────────────────────────
 
@@ -16,6 +18,27 @@
       (t/is (some? loaded))
       (t/is (= name (:name loaded)))
       (t/is (= description (:description loaded))))))
+
+(t/deftest test-skill-registry-lives-in-the-app-roots-store
+  ;; The registry is the store, not an engine field: a skill is readable
+  ;; under the app's owner by its name key, and the registration's
+  ;; deregister fn removes exactly it.
+  (let [dereg (skills/register-skill! "stored-skill" "Stored.")]
+    (t/is (= "stored-skill"
+             (:name (get (scope/for-key (app-runtime/node)
+                                        [:kmet/skill "stored-skill"])
+                         skills/skills-owner)))
+          "the skill is addressed by its own name")
+    (dereg)
+    (t/is (nil? (skills/get-skill "stored-skill")) "the returned fn removes it")))
+
+(t/deftest test-skill-registry-survives-a-remount
+  (try
+    (skills/register-skill! "remount-skill" "Survives.")
+    (app-runtime/remount!)
+    (t/is (some? (skills/get-skill "remount-skill"))
+          "the skills slot is in the app's entry list; a remount keeps it")
+    (finally (skills/clear-skills!))))
 
 (t/deftest test-get-skill-not-found
   (t/is (nil? (skills/get-skill "nonexistent"))))

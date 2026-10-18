@@ -29,7 +29,10 @@
    :kmet/tools {:units {}}
    ;; the prompt-template registry's address: package- and extension-loaded
    ;; templates report under it.
-   :kmet/prompts {:units {}}})
+   :kmet/prompts {:units {}}
+   ;; the skill registry's address: package- and extension-loaded skills
+   ;; report under it.
+   :kmet/skills {:units {}}})
 
 (def default-entries
   "The entries the app mounts at its root: units with no per-session config
@@ -38,7 +41,8 @@
   [{:id :loop-guard :name :kmet/loop-guard}
    {:id :commands :name :kmet/commands}
    {:id :tools :name :kmet/tools}
-   {:id :prompts :name :kmet/prompts}])
+   {:id :prompts :name :kmet/prompts}
+   {:id :skills :name :kmet/skills}])
 
 (defn runtime
   "A composition runtime over the builtin units: resolution plus a fresh root

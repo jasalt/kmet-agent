@@ -9,13 +9,24 @@
 
    Deviations from pi: no .gitignore/.ignore/.fdignore support (kmet scans only
    its own skills dirs); frontmatter parses via kmet.libs.yaml (a minimal YAML
-   subset parser — babashka has no YAML lib)."
+   subset parser — babashka has no YAML lib).
+
+   Skills live in the app root's store, under the `[:app :skills]` owner
+   (`kmet.agent.runtime` mounts the `:skills` slot for it, so their keys report
+   under it in `/units`), addressed by `[:kmet/skill <name>]`: visible to every
+   engine, outliving one, and disposed with their owner rather than copied into
+   an engine and reset by hand (cells.md §5.1). A name holds one skill — the
+   key is the name — so the existing first-wins collision rule is enforced
+   before registering. The extension ABI registers here today; P5 gives each
+   extension its own owner."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.agent.debug :as debug]
+            [kmet.agent.runtime :as app-runtime]
             [kmet.agent.tools.read :as read]
             [kmet.agent.tools.registry :as tools-registry]
+            [kmet.cells.scope :as scope]
             [kmet.libs.yaml :as yaml]))
 
 ;; ─── Constants (pi: MAX_NAME_LENGTH / MAX_DESCRIPTION_LENGTH) ─────────────
@@ -23,14 +34,39 @@
 (def ^:private max-name-length 64)
 (def ^:private max-description-length 1024)
 
-;; ─── Skill state ──────────────────────────────────────────────────────────
+;; ─── Skill registry ───────────────────────────────────────────────────────
 
-(defonce pending-skills (atom []))
-(defn- current-skill-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :skills)
-      pending-skills))
+(def skills-owner
+  "The app's skill registry owner: the `:skills` slot kmet.agent.runtime
+   mounts at the root for it (cells.md §5.1)."
+  [:app :skills])
+
+(defn- skill-key
+  "The store key addressing a skill by NAME."
+  [name]
+  [:kmet/skill name])
+
+(defn- skill-key?
+  "True for a key the store holds a skill under — other registries' keys
+   share the store, so shape is checked before the head."
+  [k]
+  (and (vector? k) (= :kmet/skill (first k))))
+
+(defn- registered-skills
+  "The tree's skills, in registration order."
+  []
+  (into []
+        (keep (fn [[k _ v]] (when (skill-key? k) v)))
+        (scope/ordered-registrations (app-runtime/node))))
+
+(defn- skill-for
+  "The skill named NAME, or nil. Owners are searched in first-registration
+   order, so the owner that took the name keeps it; the key is derived from
+   :name, so lookup and listing agree."
+  [name]
+  (let [node (app-runtime/node)
+        by-owner (scope/for-key node (skill-key name))]
+    (some #(get by-owner %) (scope/owners node))))
 
 ;; ─── Validation (pi: validateName / validateDescription) ──────────────────
 
@@ -96,17 +132,19 @@
 
 (defn register-skill!
   "Register a programmatic skill (no backing file, so the model cannot read it
-   on demand — pi has no equivalent; kept for kmet's API and tests)."
+   on demand — pi has no equivalent; kept for kmet's API and tests). Returns
+   cells' deregister fn."
   [name description]
-  (swap! (current-skill-registry) conj {:name name
-                                        :description description
-                                        :body nil
-                                        :raw nil
-                                        :location nil
-                                        :extension nil
-                                        :file-path nil
-                                        :base-dir nil
-                                        :disable-model-invocation false}))
+  (scope/register! (app-runtime/node) skills-owner (skill-key name)
+                   {:name name
+                    :description description
+                    :body nil
+                    :raw nil
+                    :location nil
+                    :extension nil
+                    :file-path nil
+                    :base-dir nil
+                    :disable-model-invocation false}))
 
 (defn- load-skill-from-file
   "Load a skill from a SKILL.md (or flat .md) file. Returns {:skill
@@ -154,13 +192,14 @@
   "Add SKILL to the registry unless its name collides (first wins, pi).
    Returns a collision diagnostic map, or nil."
   [skill location]
-  (if-let [existing (first (filter #(= (:name %) (:name skill)) @(current-skill-registry)))]
+  (if-let [existing (skill-for (:name skill))]
     {:type "collision"
      :message (str "name \"" (:name skill) "\" collision")
      :path (str location)
      :winner-path (str (or (:location existing) (:file-path existing)))
      :loser-path (str location)}
-    (do (swap! (current-skill-registry) conj skill)
+    (do (scope/register! (app-runtime/node) skills-owner
+                         (skill-key (:name skill)) skill)
         nil)))
 
 (defn- add-skill-results!
@@ -180,11 +219,14 @@
       diagnostics)))
 
 (defn clear-skills!
-  "Remove all loaded skills and reset the registry (pi: resourceLoader.reload
-   re-discovers from scratch). Used by /reload."
+  "Remove every loaded skill (pi: resourceLoader.reload re-discovers from
+   scratch). Used by /reload."
   []
-  (doseq [reg [(current-skill-registry) pending-skills]]
-    (reset! reg [])))
+  (let [node (app-runtime/node)]
+    (doseq [[k owner v] (scope/ordered-registrations node)
+            :when (skill-key? k)]
+      (scope/deregister! node owner k v)))
+  nil)
 
 (defn discover-skill-files
   "Discover skill files under DIR using pi's discovery rules (a dir
@@ -240,9 +282,8 @@
         (binding [*out* *err*]
           (println (str "Warning: skill collision at " (:path collision) ": "
                         (:message collision))))))
-    (fn []
-      (doseq [reg [(current-skill-registry) pending-skills]]
-        (swap! reg (fn [ss] (remove #(identical? % skill) ss)))))))
+    (fn [] (scope/deregister! (app-runtime/node) skills-owner
+                              (skill-key (:name skill)) skill))))
 
 (defn- skill-content-for-path
   "The SKILL.md text for RAW-PATH when it names a registered extension
@@ -259,7 +300,7 @@
                 (when (or (= p loc)
                           (str/ends-with? p (str "/" loc)))
                   (or (:raw s) (:body s))))))
-          @(current-skill-registry))))
+          (registered-skills))))
 
 ;; tools.read cannot require this namespace (skills -> registry -> read
 ;; would cycle), so the locator resolver is pushed there at load time.
@@ -267,11 +308,11 @@
 
 (defn get-skills
   []
-  @(current-skill-registry))
+  (registered-skills))
 
 (defn get-skill
   [name]
-  (first (filter #(= name (:name %)) @(current-skill-registry))))
+  (skill-for name))
 
 (defn expand-skill-command
   "Expand /skill:name args into the skill body wrapped in a <skill> block

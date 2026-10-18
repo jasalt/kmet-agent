@@ -10,6 +10,7 @@
             [kmet.agent.loop :as agent]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.session.core :as session]
+            [kmet.agent.skills :as skills]
             [kmet.agent.session.runtime :as rt]
             [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.registry :as tools-reg]
@@ -75,6 +76,17 @@
     (is (= "Body" (:content (prompts/get-prompt-template "outlives-template"))))
     (finally
       (prompts/clear-prompt-templates!))))
+
+(deftest test-skills-outlive-an-engine
+  ;; Skills are the app's too (P2): one registered while an engine runs is
+  ;; found after its disposal, and looked up by name from the store.
+  (with-engine
+    (fn [_engine _sess]
+      (skills/register-skill! "outlives-skill" "A skill that outlives the engine.")))
+  (try
+    (is (= "outlives-skill" (:name (skills/get-skill "outlives-skill"))))
+    (finally
+      (skills/clear-skills!))))
 
 (deftest test-bootstrap-builds-the-engine
   (with-engine
@@ -465,7 +477,7 @@
       (doseq [k [:markdown-transformers :entry-renderers
                  :message-renderers
                  :event-listeners :flags :cli-flags
-                 :applied-resource-paths :skills]]
+                 :applied-resource-paths]]
         (is (not (identical? (k e1) (k e2)))
             (str "engine-owned " k " is not shared")))
       ;; The tool registry, the commands registry and the extension hooks
