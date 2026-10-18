@@ -38,9 +38,10 @@
   (let [node (runtime/node)
         snapshot (runtime/snapshot node)]
     (is (= [] (cells/check (runtime/runtime) runtime/default-entries)))
-    (is (= [:loop-guard :commands :tools :prompts :skills] (keys snapshot)))
-    (is (= [:app :loop-guard] (:owner (:loop-guard snapshot))))
-    (is (fn? (runtime/handle snapshot :loop-guard)))
+    (is (= [:agent-loop :commands :tools :prompts :skills] (keys snapshot)))
+    (is (= [:app :agent-loop] (:owner (:agent-loop snapshot))))
+    (is (nil? (runtime/handle snapshot :agent-loop))
+        "the group's stages carry the handles, not the group itself")
     (is (= [:app :commands] (:owner (:commands snapshot)))
         "the commands registry's address, so its keys report under it")
     (is (= [:app :tools] (:owner (:tools snapshot)))
@@ -51,24 +52,49 @@
         "the skill registry's address, so its keys report under it")
     (is (identical? node (runtime/node)) "one app tree per process")))
 
+(deftest the-loop-group-carries-its-stage-defaults
+  (let [node (runtime/node)
+        stages (runtime/snapshot node :agent-loop)]
+    (is (= [:loop-guard] (keys stages)))
+    (is (= [:app :agent-loop :loop-guard] (:owner (:loop-guard stages))))
+    (is (fn? (runtime/handle stages :loop-guard)))
+    (is (nil? (runtime/config stages :loop-guard))
+        "an inline stage default carries no entry config")))
+
+(deftest an-entry-overrides-a-group-stage
+  (let [rt (runtime/runtime)
+        node (cells/mount! rt [{:id :agent-loop :name :kmet/agent-loop}
+                               {:id :loop-guard :into :agent-loop
+                                :name :kmet/loop-guard
+                                :config {:threshold 7}}])
+        stages (runtime/snapshot node :agent-loop)]
+    (is (= {:threshold 7} (runtime/config stages :loop-guard)))
+    (is (= [:app :agent-loop :loop-guard] (:owner (:loop-guard stages))))))
+
+(deftest explain-renders-the-group-tree
+  (let [text (runtime/explain (runtime/node))]
+    (is (str/includes? text "[:app :agent-loop] :agent-loop"))
+    (is (str/includes? text "\n  [:app :agent-loop :loop-guard] :loop-guard")
+        "a group's slots indent under it")))
+
 (deftest a-remount-reaches-a-changed-unit
   ;; A mounted slot holds the handle value it was mounted with, so a reloaded
   ;; unit needs a remount: the diff keeps unchanged slots and remounts the
-  ;; changed one (cells.md §6.2, §6.4).
+  ;; changed one (cells.md §6.2, §6.4). The loop group's inline stage is the
+  ;; unit under test: reloading kmet.agent.runtime rebuilds the descriptor.
   (let [changed (fn [& _] :changed)
-        node (runtime/node)]
+        node (runtime/node)
+        stage #(runtime/handle (runtime/snapshot node :agent-loop) :loop-guard)]
     (try
       (with-redefs [runtime/builtin-units
-                    (assoc runtime/builtin-units :kmet/loop-guard {:handle changed})]
+                    (assoc runtime/builtin-units :kmet/agent-loop
+                           {:units {:loop-guard {:handle changed}}})]
         (runtime/remount!)
-        (is (identical? changed
-                        (runtime/handle (runtime/snapshot node) :loop-guard)))
+        (is (identical? changed (stage)))
         (is (identical? node (runtime/node)) "into the same tree"))
       (finally
         (runtime/remount!)))
-    (is (not (identical? changed
-                         (runtime/handle (runtime/snapshot node) :loop-guard)))
-        "the real unit is back")))
+    (is (not (identical? changed (stage))) "the real unit is back")))
 
 (deftest a-missing-slot-says-which-and-where
   (let [mine (cells/mount! (runtime/runtime) [{:id :probe :name :kmet/loop-guard}])

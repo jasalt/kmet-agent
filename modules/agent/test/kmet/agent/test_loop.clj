@@ -1861,18 +1861,25 @@
     (t/is (identical? mine (:node (loop/make-agent-state :node mine))))))
 
 (t/deftest test-loop-runs-the-guard-mounted-in-its-node
-  ;; The guard is reached through the store, not the namespace: a spy mounted
-  ;; in the run's own node filters the batch (and trips it on the second, so
-  ;; the run settles), and the mount's entry config supplies the threshold
-  ;; (cells.md §5.4, §6.1, §8.1).
+  ;; The guard is reached through the store, not the namespace: a spy
+  ;; replacing the loop group's stage in the run's own node filters the batch
+  ;; (and trips it on the second, so the run settles), and the entry config
+  ;; supplies the threshold (cells.md §5.4, §6.1, §8.1).
   (let [calls (atom [])
         spy (fn [state threshold tool-calls]
               (swap! calls conj threshold)
               ;; Suppress the batch: the run trips the guard and settles, and
               ;; the entry config's threshold is what the batch was judged by.
               {:suppressed tool-calls :survivors [] :state state})
-        rt (cells/runtime {:resolve [[:builtin (fn [_] {:handle spy})]]})
-        mine (cells/mount! rt [{:id :loop-guard :name :kmet/loop-guard
+        ;; only the guard stage is a spy; the loop group itself is the real
+        ;; unit, so the entry can replace its inline default
+        rt (cells/runtime {:resolve [[:builtin (fn [nm]
+                                                 (if (= :kmet/loop-guard nm)
+                                                   {:handle spy}
+                                                   (get runtime/builtin-units nm)))]]})
+        mine (cells/mount! rt [{:id :agent-loop :name :kmet/agent-loop}
+                               {:id :loop-guard :into :agent-loop
+                                :name :kmet/loop-guard
                                 :config {:threshold 7}}])]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   tools/execute-tool
@@ -1906,8 +1913,10 @@
         guard-b (fn [state _threshold tool-calls]
                   (swap! used conj :b)
                   {:suppressed tool-calls :survivors [] :state state})
-        table (atom (assoc runtime/builtin-units
-                           :kmet/loop-guard {:handle guard-a}))
+        group-with (fn [handle]
+                     (assoc runtime/builtin-units
+                            :kmet/agent-loop {:units {:loop-guard {:handle handle}}}))
+        table (atom (group-with guard-a))
         rt (cells/runtime {:resolve [[:builtin (fn [nm] (get @table nm))]]})
         node (cells/mount! rt runtime/default-entries)
         run! (fn [on-first-call]
@@ -1931,11 +1940,10 @@
                      (loop/make-agent-state :node node :on-event (fn [_]))
                      {:message "run" :on-done (fn [_]) :on-error (fn [_])}))))]
     ;; The tree changes while the first attempt is in flight.
-    (run! (fn [] (reset! table (assoc runtime/builtin-units
-                                      :kmet/loop-guard {:handle guard-b}))
+    (run! (fn [] (reset! table (group-with guard-b))
             (cells/mount! rt runtime/default-entries)))
     (t/is (= [:a] @used) "the attempt kept the handle it started with")
-    (t/is (= guard-b (runtime/handle (runtime/snapshot node) :loop-guard))
+    (t/is (= guard-b (runtime/handle (runtime/snapshot node :agent-loop) :loop-guard))
           "and the tree really did change under it")
     ;; The next attempt reads the new tree: guard-b suppresses its only call,
     ;; which trips the guard and settles the run (one handle call).

@@ -2488,7 +2488,7 @@ Be precise and concise in your responses."}}]
    :agent-end is emitted here with this attempt's accumulated messages
    (RUN-TOKEN keys the accumulator) and :will-retry."
   [agent run-token {:keys [on-text on-thinking on-error]}]
-  (let [units (runtime/snapshot (:node agent)) ; one read per attempt (cells.md §5.4)
+  (let [units (runtime/snapshot (:node agent) :agent-loop) ; the loop group, one read per attempt (cells.md §5.4)
         text-buf (atom "")
         agent-end (fn [error will-retry]
                     (when-let [s (:session agent)]

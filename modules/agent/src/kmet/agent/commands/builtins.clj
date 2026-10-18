@@ -11,8 +11,7 @@
             [kmet.agent.runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
-            [kmet.agent.session.runtime :as runtime]
-            [kmet.cells.core :as cells]))
+            [kmet.agent.session.runtime :as runtime]))
 
 (defn- out
   "Call a shared command-UI capability; an absent capability is inert (a
@@ -114,14 +113,14 @@
       nil)))
 
 (defn- handle-units
-  "Show the mounted units: kmet.cells' human rendering of the run's
-   composition snapshot, one line per slot (cells.md §7). The session engine's
-   node when it has one — a session running in its own tree shows that tree —
-   and the app root otherwise."
+  "Show the mounted units: the run's composition tree, a group's slots
+   indented under it (cells.md §5.6, §7). The session engine's node when it
+   has one — a session running in its own tree shows that tree — and the app
+   root otherwise."
   [{:keys [ui] engine :runtime} _]
   (let [node (or (some-> engine runtime/agent-state :node)
                  (app-runtime/node))]
-    (out ui :info "Units" (cells/explain (app-runtime/snapshot node)))))
+    (out ui :info "Units" (app-runtime/explain node))))
 
 (defn register-runtime-commands!
   "Register the engine-portable builtins (untagged: every front end

@@ -3,25 +3,39 @@
    into one node (cells.md §8.1–§8.2). This is the host side of kmet.cells;
    the session engine a front end drives is kmet.agent.session.runtime.
 
-   P2 fills the table in one unit at a time: a namespace fn becomes a unit's
-   `:handle`, and its caller reads that handle from an attempt's snapshot
-   instead of requiring the namespace. What a unit registers in `:start`
-   (event subscribers, tools, commands, renderers) then has an owner — its
-   slot path — so it is disposed with the mount instead of reset by hand."
-  (:require [kmet.agent.loop-guard :as loop-guard]
+   P4 groups the loop's stages into the loop's own composition: `:kmet/agent-loop`
+   carries them as inline defaults, so the same descriptor mounts as the root
+   loop and as a subagent's loop. What a unit registers in `:start` (event
+   subscribers, tools, commands, renderers) then has an owner — its slot path —
+   so it is disposed with the mount instead of reset by hand."
+  (:require [clojure.string :as str]
+            [kmet.agent.loop-guard :as loop-guard]
             [kmet.cells.core :as cells]))
+
+(def ^:private loop-guard-unit
+  "The repeat-loop guard's descriptor: the loop group's inline stage default,
+   and a resolvable name so an entry can replace it with a configured one
+   (`:into :agent-loop`)."
+  {:config [:map [:threshold :int]]
+   :handle loop-guard/loop-guard-filter})
 
 (def builtin-units
   "kmet's own units by name. A unit is a descriptor (cells.md §3): `:start`
    runs at mount with `(node owner-path)` and `:handle` is the value a caller
-   reaches through the snapshot."
-  {:kmet/loop-guard
-   {:config [:map [:threshold :int]]
-    :handle loop-guard/loop-guard-filter}
+   reaches through the snapshot.
+
+   `:kmet/agent-loop` is the loop's composition (cells.md §5.6): its inline
+   `:units` are the stages a loop mounts with — today the repeat-loop guard —
+   so the same descriptor mounts as the root loop and as a subagent's loop. An
+   entry with the same id and `:into :agent-loop` replaces one."
+  {:kmet/agent-loop
+   {:units {:loop-guard loop-guard-unit}}
+   ;; the guard's own name, so an entry can override the inline default
+   :kmet/loop-guard loop-guard-unit
    ;; an address, not a container: the slash command registry registers under
    ;; this slot's path, so the slot is what makes its keys visible in /units
-   ;; (cells.md §5.1). It has no children — commands are registrations, not
-   ;; units — and no handle for the host to read.
+   ;; (cells.md §5.1). Commands are registrations, not units — the group is
+   ;; empty — and there is no handle for the host to read.
    :kmet/commands {:units {}}
    ;; the same address shape for the tool registry: the custom tools and
    ;; contributed sources registered under [:app :tools] report as its keys
@@ -35,10 +49,10 @@
    :kmet/skills {:units {}}})
 
 (def default-entries
-  "The entries the app mounts at its root: units with no per-session config
-   and no front-end surface. Config-derived and front-end-shaped units mount
-   with the session (P4)."
-  [{:id :loop-guard :name :kmet/loop-guard}
+  "The entries the app mounts at its root: the loop group and the four
+   registries' addresses. The group carries its stages inline; config-derived
+   and front-end-shaped units mount with the session (P4)."
+  [{:id :agent-loop :name :kmet/agent-loop}
    {:id :commands :name :kmet/commands}
    {:id :tools :name :kmet/tools}
    {:id :prompts :name :kmet/prompts}
@@ -80,11 +94,28 @@
   @app-node)
 
 (defn snapshot
-  "Take an attempt's composition read: thread the value through the attempt so
-   a mid-attempt change to the tree cannot alter a running one (cells.md
-   §5.4)."
+  "Take a composition read: the root, or COMPOSITION-ID's own slots (the
+   loop's stages are `:agent-loop`; cells.md §5.4, §5.6). Thread the value
+   through the attempt so a mid-attempt change to the tree cannot alter a
+   running one."
+  ([node] (cells/composition node))
+  ([node composition-id] (cells/composition node composition-id)))
+
+(defn explain
+  "Render NODE's composition tree for a human: `cells/explain` per composition,
+   each group's slots indented under the slot that mounts it (a group is a
+   composition id in the node's mount table). `/units` prints this;
+   `cells/composition` stays the stable form (cells.md §7)."
   [node]
-  (cells/composition node))
+  (letfn [(lines [comp-id depth]
+            (let [pad (apply str (repeat (* 2 depth) " "))]
+              (into []
+                    (mapcat (fn [[slot entry]]
+                              (cons (str pad (cells/explain {slot entry}))
+                                    (when (some? (cells/composition node slot))
+                                      (lines slot (inc depth))))))
+                    (sort-by (comp :owner val) (cells/composition node comp-id)))))]
+    (str/join "\n" (lines :app 0))))
 
 (defn handle
   "The handle mounted at SLOT-ID in SNAPSHOT, or nil."

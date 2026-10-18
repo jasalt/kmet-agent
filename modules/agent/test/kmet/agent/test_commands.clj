@@ -124,6 +124,7 @@
       ((:handler (commands/find-command "units"))
        {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
       (t/is (= "Units" (first @got)))
+      (t/is (str/includes? (second @got) ":agent-loop"))
       (t/is (str/includes? (second @got) ":loop-guard"))
       (t/is (str/includes? (second @got) ":commands"))
       (t/is (str/includes? (second @got) "[:kmet/command \"units\"]")
