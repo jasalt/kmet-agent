@@ -3,7 +3,8 @@
    serves EDN commands and streams wire events: ids correlate without
    ordering, a malformed record answers a parse response without an id, and
    EOF disposes the engine."
-  (:require [clojure.test :as t :refer [deftest is testing]]
+  (:require [kmet.agent.runtime :as app-runtime]
+            [clojure.test :as t :refer [deftest is testing]]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -490,11 +491,11 @@
 (deftest test-get-commands-lists-the-rpc-surface
   (testing "get-commands reports registry commands (extension vs builtin),
             prompt templates and skills, filtered to this front end"
-    (commands/register-command! {:name "ext-demo" :description "An extension command"
-                                 :extension-handler (fn [& _] nil)})
-    (commands/register-command! {:name "tui-only" :description "Interactive only"
-                                 :frontend :interactive
-                                 :handler (fn [& _] nil)})
+    (commands/register-command! (app-runtime/node) {:name "ext-demo" :description "An extension command"
+                                                    :extension-handler (fn [& _] nil)})
+    (commands/register-command! (app-runtime/node) {:name "tui-only" :description "Interactive only"
+                                                    :frontend :interactive
+                                                    :handler (fn [& _] nil)})
     (try
       (with-redefs [prompts/get-prompt-templates (fn [] [{:name "template" :description "T"}])
                     skills/get-skills (fn [] [{:name "demo" :description "S"}])]
@@ -507,8 +508,8 @@
           (is (= :skill (:source (by-name "skill:demo"))))
           (is (not (contains? by-name "tui-only")) "interactive-only filtered out")))
       (finally
-        (commands/unregister-command! "ext-demo")
-        (commands/unregister-command! "tui-only")))))
+        (commands/unregister-command! (app-runtime/node) "ext-demo")
+        (commands/unregister-command! (app-runtime/node) "tui-only")))))
 
 (defn- records-so-far
   "The records OUT holds so far (a thread-safe snapshot: write-record!
@@ -680,13 +681,13 @@
             ctx and answers handled; unknown slash text stays a prompt"
     (let [handled (promise)
           texts (atom [])]
-      (commands/register-command!
-       {:name "rpc-demo" :description "Demo"
-        :handler (fn [ctx args]
-                   (deliver handled {:args args
-                                     :frontend (:frontend ctx)
-                                     :has-runtime? (some? (:runtime ctx))})
-                   ((:info (:ui ctx)) "Demo" (str "ran " args)))})
+      (commands/register-command! (app-runtime/node)
+                                  {:name "rpc-demo" :description "Demo"
+                                   :handler (fn [ctx args]
+                                              (deliver handled {:args args
+                                                                :frontend (:frontend ctx)
+                                                                :has-runtime? (some? (:runtime ctx))})
+                                              ((:info (:ui ctx)) "Demo" (str "ran " args)))})
       (try
         (with-redefs [agent/run-agent-turn
                       (fn [_ opts]
@@ -707,7 +708,7 @@
             (is (= {:disposition :started} (:data unknown)))
             (is (= ["/nope" "plain"] @texts)
                 "unknown slash and plain text reach the run as prompts")))
-        (finally (commands/unregister-command! "rpc-demo"))))))
+        (finally (commands/unregister-command! (app-runtime/node) "rpc-demo"))))))
 
 (deftest test-portable-builtin-over-prompt
   (testing "the real engine-portable builtins dispatch over prompt (the
@@ -721,24 +722,24 @@
 (deftest test-prompt-dispatches-extension-commands
   (testing "an extension command over prompt gets the extension context"
     (let [seen (promise)]
-      (commands/register-command!
-       {:name "rpc-ext" :description "Ext"
-        :extension-handler (fn [ctx args]
-                             (deliver seen {:mode (:mode ctx)
-                                            :has-ui (:has-ui ctx)
-                                            :args args}))})
+      (commands/register-command! (app-runtime/node)
+                                  {:name "rpc-ext" :description "Ext"
+                                   :extension-handler (fn [ctx args]
+                                                        (deliver seen {:mode (:mode ctx)
+                                                                       :has-ui (:has-ui ctx)
+                                                                       :args args}))})
       (try
         (let [[_ records] (run-lines [{:type :prompt :id 1 :message "/rpc-ext x"}])
               resp (first (responses records))]
           (is (= {:disposition :handled} (:data resp)))
           (is (= {:mode :rpc :has-ui true :args "x"} (deref seen 1000 nil))))
-        (finally (commands/unregister-command! "rpc-ext")))))
+        (finally (commands/unregister-command! (app-runtime/node) "rpc-ext")))))
   (testing "extension commands execute immediately, even mid-stream (pi)"
     (with-redefs [agent/run-agent-turn (fn [_ _] nil)]  ;; never settles
       (let [seen (atom [])]
-        (commands/register-command!
-         {:name "rpc-ext-mid" :description "Ext"
-          :extension-handler (fn [_ctx args] (swap! seen conj args))})
+        (commands/register-command! (app-runtime/node)
+                                    {:name "rpc-ext-mid" :description "Ext"
+                                     :extension-handler (fn [_ctx args] (swap! seen conj args))})
         (try
           (let [[_ records] (run-lines [{:type :prompt :id 1 :message "go"}
                                         {:type :prompt :id 2 :message "/rpc-ext-mid y"}])
@@ -746,7 +747,7 @@
             (is (= {:disposition :started} (:data started)))
             (is (= {:disposition :handled} (:data ext)))
             (is (= ["y"] @seen)))
-          (finally (commands/unregister-command! "rpc-ext-mid")))))))
+          (finally (commands/unregister-command! (app-runtime/node) "rpc-ext-mid")))))))
 
 (deftest test-unknown-session-fails-startup
   (testing "--session matching nothing reports to stderr and returns nil"

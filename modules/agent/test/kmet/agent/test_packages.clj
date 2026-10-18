@@ -3,7 +3,8 @@
    source subset): source parsing, path identity, settings persistence,
    filter patterns, per-package resolution and the package resource
    loaders."
-  (:require [clojure.test :as t]
+  (:require [kmet.agent.runtime :as app-runtime]
+            [clojure.test :as t]
             [clojure.string :as str]
             [clojure.edn :as edn]
             [babashka.fs :as fs]
@@ -413,12 +414,12 @@
 
 (defn- with-empty-registries
   [f]
-  (skills/clear-skills!)
-  (prompts/clear-prompt-templates!)
+  (skills/clear-skills! (app-runtime/node))
+  (prompts/clear-prompt-templates! (app-runtime/node))
   (try (f)
        (finally
-         (skills/clear-skills!)
-         (prompts/clear-prompt-templates!))))
+         (skills/clear-skills! (app-runtime/node))
+         (prompts/clear-prompt-templates! (app-runtime/node)))))
 
 (defn- with-settings
   "Run F with user settings pointing at PACKAGES (absolute temp paths, so
@@ -440,8 +441,8 @@
     (fn []
       (let [dir (make-package (tmp-dir))]
         (with-settings (fn []
-                         (pkgs/load-skills!)
-                         (pkgs/load-prompts!)
+                         (pkgs/load-skills! (app-runtime/node))
+                         (pkgs/load-prompts! (app-runtime/node))
                          (t/is (= #{"skill-a" "flat-skill"}
                                   (set (map :name (skills/get-skills)))))
                          (t/is (= #{"x" "y"}
@@ -453,7 +454,7 @@
     (fn []
       (let [dir (make-package (tmp-dir))]
         (with-settings (fn []
-                         (pkgs/load-skills!)
+                         (pkgs/load-skills! (app-runtime/node))
                          (t/is (= #{"skill-a"}
                                   (set (map :name (skills/get-skills))))))
           {:source dir :skills ["-skills/flat.md"]})))))

@@ -16,23 +16,23 @@
 (t/use-fixtures :each tu/with-clean-app-registries)
 
 (t/deftest register-and-find
-  (commands/register-command!
-   {:name "test" :description "Test command" :handler (fn [_ _] :ok)})
+  (commands/register-command! (app-runtime/node)
+                              {:name "test" :description "Test command" :handler (fn [_ _] :ok)})
   (t/is (= "test" (:name (commands/find-command "test"))))
   (t/is (nil? (commands/find-command "missing"))))
 
 (t/deftest register-replaces-by-name
-  (commands/register-command!
-   {:name "dup" :description "first" :handler (fn [_ _] :one)})
-  (commands/register-command!
-   {:name "dup" :description "second" :handler (fn [_ _] :two)})
+  (commands/register-command! (app-runtime/node)
+                              {:name "dup" :description "first" :handler (fn [_ _] :one)})
+  (commands/register-command! (app-runtime/node)
+                              {:name "dup" :description "second" :handler (fn [_ _] :two)})
   (t/is (= 1 (count (filter #(= (:name %) "dup") (commands/get-commands)))))
   (t/is (= "second" (:description (commands/find-command "dup")))))
 
 (t/deftest unregister-removes
-  (commands/register-command!
-   {:name "gone" :description "x" :handler (fn [_ _] nil)})
-  (commands/unregister-command! "gone")
+  (commands/register-command! (app-runtime/node)
+                              {:name "gone" :description "x" :handler (fn [_ _] nil)})
+  (commands/unregister-command! (app-runtime/node) "gone")
   (t/is (nil? (commands/find-command "gone"))))
 
 (t/deftest other-registries-share-the-store-without-interference
@@ -43,10 +43,10 @@
         hook (fn [] nil)
         dereg (scope/register! node [:app :test] :tools/hooks hook)]
     (try
-      (commands/register-command!
-       {:name "only-command" :description "x" :handler (fn [_ _] nil)})
+      (commands/register-command! (app-runtime/node)
+                                  {:name "only-command" :description "x" :handler (fn [_ _] nil)})
       (t/is (= ["only-command"] (mapv :name (commands/get-commands))))
-      (commands/clear-commands!)
+      (commands/clear-commands! (app-runtime/node))
       (t/is (empty? (commands/get-commands)))
       (t/is (identical? hook (get (scope/for-key node :tools/hooks) [:app :test]))
             "the other registry kept its value")
@@ -64,29 +64,29 @@
     (scope/dispose-owner! node commands/commands-owner)
     (scope/register! node extension-owner [:kmet/command "taken"] demo)
     (try
-      (commands/register-command!
-       {:name "taken" :description "builtin" :handler (fn [_ _] nil)})
+      (commands/register-command! (app-runtime/node)
+                                  {:name "taken" :description "builtin" :handler (fn [_ _] nil)})
       (t/is (= "extension" (:description (commands/find-command "taken"))))
       (t/is (= ["taken"] (mapv :name (commands/get-commands)))
             "one entry per name, not one per owner")
-      (commands/unregister-command! "taken")
+      (commands/unregister-command! (app-runtime/node) "taken")
       (t/is (nil? (commands/find-command "taken")) "every owner's entry went")
       (finally
         (scope/dispose-owner! node extension-owner)
-        (commands/clear-commands!)))))
+        (commands/clear-commands! (app-runtime/node))))))
 
 (t/deftest the-registry-lives-in-the-app-roots-store
   ;; The registry is the store, not an engine field: a registration is
   ;; readable through the store under the app's owner, and clear-commands!
   ;; removes it by key (a unit owns several registries — cells.md §5.1).
-  (commands/register-command!
-   {:name "stored" :description "x" :handler (fn [_ _] nil)})
+  (commands/register-command! (app-runtime/node)
+                              {:name "stored" :description "x" :handler (fn [_ _] nil)})
   (t/is (identical? (:handler (commands/find-command "stored"))
                     (:handler (get (scope/for-key (app-runtime/node)
                                                   [:kmet/command "stored"])
                                    commands/commands-owner))))
   (t/is (= 1 (count (commands/get-commands))))
-  (commands/clear-commands!)
+  (commands/clear-commands! (app-runtime/node))
   (t/is (empty? (commands/get-commands)))
   (t/is (empty? (scope/for-key (app-runtime/node) [:kmet/command "stored"]))))
 
@@ -94,18 +94,18 @@
   ;; The palette and :get-commands list in registration order, and replacing a
   ;; command moves it to the end — the vector registry's order, kept by the
   ;; store's per-owner order.
-  (commands/register-command! {:name "beta" :description "x" :handler (fn [_ _] nil)})
-  (commands/register-command! {:name "alpha" :description "x" :handler (fn [_ _] nil)})
+  (commands/register-command! (app-runtime/node) {:name "beta" :description "x" :handler (fn [_ _] nil)})
+  (commands/register-command! (app-runtime/node) {:name "alpha" :description "x" :handler (fn [_ _] nil)})
   (t/is (= ["beta" "alpha"] (mapv :name (commands/get-commands))))
-  (commands/register-command! {:name "beta" :description "again" :handler (fn [_ _] nil)})
+  (commands/register-command! (app-runtime/node) {:name "beta" :description "again" :handler (fn [_ _] nil)})
   (t/is (= ["alpha" "beta"] (mapv :name (commands/get-commands)))))
 
 (t/deftest handler-receives-ctx-and-args
   (let [received (atom nil)]
-    (commands/register-command!
-     {:name "echo"
-      :description "echo args"
-      :handler (fn [ctx args] (reset! received [ctx args]))})
+    (commands/register-command! (app-runtime/node)
+                                {:name "echo"
+                                 :description "echo args"
+                                 :handler (fn [ctx args] (reset! received [ctx args]))})
     (let [ctx {:runtime :engine :ui :ui :frontend :interactive}]
       ((:handler (commands/find-command "echo")) ctx "hello"))
     (t/is (= [{:runtime :engine :ui :ui :frontend :interactive} "hello"] @received))))
@@ -116,9 +116,9 @@
   ;; tools registries' addresses, so their keys report as those slots'
   ;; (cells.md §5.1).
   (builtins/register-runtime-commands!)
-  (tools-reg/register-tool! {:name "units-probe" :description "d"
-                             :parameters {:type "object" :properties {}}
-                             :execute (fn [_] {:content "ok"})})
+  (tools-reg/register-tool! (app-runtime/node) {:name "units-probe" :description "d"
+                                                :parameters {:type "object" :properties {}}
+                                                :execute (fn [_] {:content "ok"})})
   (try
     (let [got (atom nil)]
       ((:handler (commands/find-command "units"))
@@ -133,13 +133,13 @@
       (t/is (str/includes? (second @got) "[:kmet/tool \"units-probe\"]")
             "a registered tool shows as the tools registry slot's key"))
     (finally
-      (tools-reg/unregister-tool! "units-probe"))))
+      (tools-reg/unregister-tool! (app-runtime/node) "units-probe"))))
 
 (t/deftest a-remount-keeps-the-registry
   ;; The commands slot is part of the app's entry list, so /reload's remount
   ;; diffs it as unchanged and the registrations stay (cells.md §6.2).
-  (commands/register-command!
-   {:name "survives-reload" :description "x" :handler (fn [_ _] nil)})
+  (commands/register-command! (app-runtime/node)
+                              {:name "survives-reload" :description "x" :handler (fn [_ _] nil)})
   (app-runtime/remount!)
   (t/is (some? (commands/find-command "survives-reload"))))
 
@@ -156,19 +156,19 @@
     (t/is (str/includes? (second @got) ":probe"))))
 
 (t/deftest register-builtin-skips-a-taken-name
-  (commands/register-command!
-   {:name "mine" :description "extension version" :handler (fn [_ _] nil)})
-  (commands/register-builtin! {:name "mine" :description "builtin" :handler (fn [_ _] nil)})
-  (commands/register-builtin! {:name "fresh" :description "builtin" :handler (fn [_ _] nil)})
+  (commands/register-command! (app-runtime/node)
+                              {:name "mine" :description "extension version" :handler (fn [_ _] nil)})
+  (commands/register-builtin! (app-runtime/node) {:name "mine" :description "builtin" :handler (fn [_ _] nil)})
+  (commands/register-builtin! (app-runtime/node) {:name "fresh" :description "builtin" :handler (fn [_ _] nil)})
   (t/is (= "extension version" (:description (commands/find-command "mine"))))
   (t/is (= "builtin" (:description (commands/find-command "fresh"))))
   (t/is (nil? (:frontend (commands/find-command "fresh")))
         "engine-portable builtins carry no front-end tag"))
 
 (t/deftest clear-removes-all
-  (commands/register-command!
-   {:name "a" :description "a" :handler (fn [_ _] nil)})
-  (commands/register-command!
-   {:name "b" :description "b" :handler (fn [_ _] nil)})
-  (commands/clear-commands!)
+  (commands/register-command! (app-runtime/node)
+                              {:name "a" :description "a" :handler (fn [_ _] nil)})
+  (commands/register-command! (app-runtime/node)
+                              {:name "b" :description "b" :handler (fn [_ _] nil)})
+  (commands/clear-commands! (app-runtime/node))
   (t/is (empty? (commands/get-commands))))

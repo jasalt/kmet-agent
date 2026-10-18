@@ -3,7 +3,8 @@
    SkillInvocationMessageComponent): a `/skill:name` block renders as a
    collapsible invocation instead of dumping its body into the transcript,
    and the trailing args stay a normal user message."
-  (:require [clojure.string :as str]
+  (:require [kmet.agent.runtime :as app-runtime]
+            [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.skills :as skills]
@@ -69,11 +70,11 @@
 (deftest test-parse-round-trips-the-expander
   ;; the parser is the inverse of what expand-skill-command builds — keep
   ;; them in step (both live in kmet.agent.skills)
-  (let [deregister (skills/register-extension-skill!
-                    (str "---\nname: round-trip-demo\ndescription: a demo skill\n---\n"
-                         "# Body\n\nStep one.\n")
-                    {:location "test-ext:skills/round-trip/SKILL.md"
-                     :extension "test-ext"})]
+  (let [deregister (skills/register-extension-skill! (app-runtime/node)
+                                                     (str "---\nname: round-trip-demo\ndescription: a demo skill\n---\n"
+                                                          "# Body\n\nStep one.\n")
+                                                     {:location "test-ext:skills/round-trip/SKILL.md"
+                                                      :extension "test-ext"})]
     (try
       (testing "no args"
         (let [expanded (skills/expand-skill-command "/skill:round-trip-demo")

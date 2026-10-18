@@ -47,12 +47,12 @@
   ;; them — with the engine atom they were its copy of the pending buffer.
   (with-engine
     (fn [_engine _sess]
-      (commands/register-command!
-       {:name "outlives-demo" :handler (fn [& _] nil)})))
+      (commands/register-command! (app/node)
+                                  {:name "outlives-demo" :handler (fn [& _] nil)})))
   (try
     (is (some? (commands/find-command "outlives-demo")))
     (finally
-      (commands/unregister-command! "outlives-demo"))))
+      (commands/unregister-command! (app/node) "outlives-demo"))))
 
 (deftest test-tools-outlive-an-engine
   ;; Custom tools and contributed sources are the app's too (P2): registered
@@ -61,41 +61,42 @@
   (with-engine
     (fn [_engine _sess]
       (tools-reg/register-tool!
+       (app/node)
        {:name "outlives-tool" :label "Outlives" :description "d"
         :parameters {:type "object" :properties {}}
         :execute (fn [_] {:content "ok"})})
-      (tools-reg/register-tool-source! ::outlives
+      (tools-reg/register-tool-source! (app/node) ::outlives
                                        (fn [] {"sandbox-outlives" {}}))))
   (try
     (is (contains? (tools-reg/get-all-tools) "outlives-tool"))
     (is (contains? (tools-reg/get-contributed-tools) "sandbox-outlives"))
     (finally
-      (tools-reg/unregister-tool! "outlives-tool")
-      (tools-reg/unregister-tool-source! ::outlives))))
+      (tools-reg/unregister-tool! (app/node) "outlives-tool")
+      (tools-reg/unregister-tool-source! (app/node) ::outlives))))
 
 (deftest test-prompt-templates-outlive-an-engine
   ;; Prompt templates are the app's too (P2): one registered while an engine
   ;; runs is found after its disposal, and looked up by name from the store.
   (with-engine
     (fn [_engine _sess]
-      (prompts/register-prompt-template!
-       {:name "outlives-template" :content "---\ndescription: d\n---\nBody"
-        :location "my-ext:prompts/outlives.md" :extension "my-ext"})))
+      (prompts/register-prompt-template! (app/node)
+                                         {:name "outlives-template" :content "---\ndescription: d\n---\nBody"
+                                          :location "my-ext:prompts/outlives.md" :extension "my-ext"})))
   (try
     (is (= "Body" (:content (prompts/get-prompt-template "outlives-template"))))
     (finally
-      (prompts/clear-prompt-templates!))))
+      (prompts/clear-prompt-templates! (app/node)))))
 
 (deftest test-skills-outlive-an-engine
   ;; Skills are the app's too (P2): one registered while an engine runs is
   ;; found after its disposal, and looked up by name from the store.
   (with-engine
     (fn [_engine _sess]
-      (skills/register-skill! "outlives-skill" "A skill that outlives the engine.")))
+      (skills/register-skill! (app/node) "outlives-skill" "A skill that outlives the engine.")))
   (try
     (is (= "outlives-skill" (:name (skills/get-skill "outlives-skill"))))
     (finally
-      (skills/clear-skills!))))
+      (skills/clear-skills! (app/node)))))
 
 (deftest test-bootstrap-builds-the-engine
   (with-engine
@@ -533,12 +534,12 @@
       ;; The pending buffer could only fill the first engine, and its stale
       ;; copy outlived an unload.
       (let [fired (atom 0)
-            dereg (extensions/register-input-hook!
-                   (extensions/extension-owner "test-hooks-app-wide")
-                   (fn [_] (swap! fired inc) nil))]
+            dereg (extensions/register-input-hook! (app/node)
+                                                   (extensions/extension-owner "test-hooks-app-wide")
+                                                   (fn [_] (swap! fired inc) nil))]
         (try
-          (commands/register-command!
-           {:name "app-wide-demo" :handler (fn [& _] nil)})
+          (commands/register-command! (app/node)
+                                      {:name "app-wide-demo" :handler (fn [& _] nil)})
           (is (some? (commands/find-command "app-wide-demo")))
           (extensions/apply-input-hooks "hello" :interactive)
           (is (= 1 @fired) "the hook fires from the app tree alone")
@@ -546,7 +547,7 @@
           (extensions/apply-input-hooks "hello" :interactive)
           (is (= 1 @fired) "and a deregistered hook stays gone")
           (finally
-            (commands/unregister-command! "app-wide-demo"))))
+            (commands/unregister-command! (app/node) "app-wide-demo"))))
       (let [e1-events (atom [])
             e2-events (atom [])]
         (rt/subscribe! e1 #(swap! e1-events conj %))
@@ -577,8 +578,8 @@
             hook-result (fn [{:keys [result]}]
                           {:content (str "wrapped:" (:content result))
                            :is-error false})
-            dereg-call (extensions/register-tool-call-hook! owner hook-call)
-            dereg-result (extensions/register-tool-result-hook! owner hook-result)]
+            dereg-call (extensions/register-tool-call-hook! (app/node) owner hook-call)
+            dereg-result (extensions/register-tool-result-hook! (app/node) owner hook-result)]
         (try
           (is (= {:block true :reason "not that one" :terminate true}
                  (before {:tool-name "kmet-test-danger" :args {}}))

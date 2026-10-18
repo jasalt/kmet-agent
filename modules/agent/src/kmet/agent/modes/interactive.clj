@@ -13,6 +13,7 @@
             [kmet.agent.debug :as debug]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.modes.interactive.theme-controller :as theme-ctrl]
@@ -174,7 +175,9 @@
                               :else :new)})
               ;; pi: resources_discover fires after session_start (reason
               ;; startup for non-reload session starts)
-              (extensions/discover-resources! :startup))
+              (extensions/discover-resources!
+               (or (runtime/agent-node (:engine cs)) (app-runtime/node))
+               :startup))
             (catch Exception e
               (debug/log "session-start: " e))))
         ;; Theme detection + application (pi: startup applyFromSettings) —

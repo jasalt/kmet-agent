@@ -49,6 +49,7 @@
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
+            [kmet.agent.runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
@@ -165,8 +166,8 @@
         ;; the resolved session (the layout/print-mode policy output); any
         ;; :agent-opts override is folded back in below via the agent state
         sess (:session opts)
-        _ (packages/load-skills!)
-        _ (packages/load-prompts!)
+        _ (packages/load-skills! (app-runtime/node))
+        _ (packages/load-prompts! (app-runtime/node))
         provider (or provider (cfg/get-provider config))
         model (or model (models/resolve-config-model config))
         model-rec (models/get-model provider model)
@@ -384,11 +385,11 @@
    session_start on every runtime creation (startup, resume, new, fork) and
    extension handlers may block on dialog promises. The resources_discover
    pass follows (pi: extendResourcesFromExtensions after session_start)."
-  [payload]
+  [engine payload]
   (future
     (try
       (event-bus/emit-event! payload)
-      (extensions/discover-resources! :startup)
+      (extensions/discover-resources! (or (agent-node engine) (app-runtime/node)) :startup)
       (catch Exception e (debug/log "session-start: " e)))))
 
 (defn switch-session!
@@ -500,6 +501,7 @@
              ;; previousSessionFile) — on a future, handlers may block on dialog
              ;; promises (same as /reload).
              (emit-session-start-async!
+              engine
               (cond-> {:type :session-start :reason :new}
                 previous-file (assoc :previous-session-file previous-file)))
              {:session new-session :was-running was-running})))))))
@@ -517,6 +519,7 @@
       (let [sess (session/load-session path)]
         (switch-session! engine sess {:apply-settings? true})
         (emit-session-start-async!
+         engine
          (cond-> {:type :session-start :reason :resume}
            previous-file (assoc :previous-session-file previous-file)))
         {:session sess}))))

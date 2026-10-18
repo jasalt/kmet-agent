@@ -113,6 +113,7 @@
   ;; aliases this extension registered
   (let [dereg-fns (atom [])
         api ((var extensions/create-extension-api)
+             (rt/node)
              {:name "alias-test" :path "target/test-ext-alias.clj"
               :deregister-fns dereg-fns})
         f (fn [_attrs _children] [:text {:padding-x 0 :padding-y 0} "x"])]
@@ -183,6 +184,7 @@
   (testing "api :agent-dir is the host agent dir (KMET_CODING_AGENT_DIR-aware)"
     (with-redefs [cfg/get-agent-dir (fn [] "/sandbox/agent")]
       (let [api ((var extensions/create-extension-api)
+                 (rt/node)
                  {:name "agent-dir-test" :path "target/test-ext-agent-dir.clj"
                   :deregister-fns (atom [])})]
         (t/is (= "/sandbox/agent" (:agent-dir api)))
@@ -191,6 +193,7 @@
 (t/deftest test-extension-provider-registration
   (testing "api :models register-provider! / unregister-provider! (pi ctx.registerProvider)"
     (let [api ((var extensions/create-extension-api)
+               (rt/node)
                {:name "prov-test" :path "target/test-ext-prov.clj"
                 :deregister-fns (atom [])})]
       (models/load-catalogs!)
@@ -599,7 +602,7 @@
         (t/is (nil? (:error result)) (str "loaded: " (:error result))))
       (t/is (= {:skill-paths [skill-dir] :prompt-paths [prompt-dir]
                 :theme-paths [theme-dir]}
-               (extensions/discover-resources! :startup))
+               (extensions/discover-resources! (rt/node) :startup))
             "the collected paths are reported")
       (doseq [k [[:kmet/skill "res-owned-skill"]
                  [:kmet/prompt "res-owned-prompt"]
@@ -607,7 +610,7 @@
         (t/is (= [owner] (vec (keys (scope/for-key (rt/node) k))))
               (str k " is owned by the contributor")))
       (t/is (some? (theme/get-theme-by-name "res-owned-theme")))
-      (extensions/discover-resources! :startup)
+      (extensions/discover-resources! (rt/node) :startup)
       (t/is (= 1 (count (filter #(= "res-owned-skill" (:name %)) (skills/get-skills)))))
       (t/is (= 1 (count (filter #(= "res-owned-prompt" (:name %))
                                 (prompts/get-prompt-templates)))))
@@ -1473,10 +1476,10 @@
   (let [owner (extensions/extension-owner "test-markdown-transformers")]
     (testing "applied in registration order, last wins per position"
       (extensions/clear-extensions!)
-      (let [d1 (extensions/register-markdown-transformer!
-                owner (fn [md _ctx] (str "a[" md "]")))
-            d2 (extensions/register-markdown-transformer!
-                owner (fn [md _ctx] (str "b[" md "]")))]
+      (let [d1 (extensions/register-markdown-transformer! (rt/node)
+                                                          owner (fn [md _ctx] (str "a[" md "]")))
+            d2 (extensions/register-markdown-transformer! (rt/node)
+                                                          owner (fn [md _ctx] (str "b[" md "]")))]
         (t/is (= "b[a[hi]]"
                  (extensions/apply-markdown-transformers
                   "hi" {:message-type :user :is-streaming false :available-width 80}))
@@ -1488,23 +1491,23 @@
         (t/is (= "hi" (extensions/apply-markdown-transformers "hi" {})))))
     (testing "a throwing transformer is skipped, the chain continues"
       (extensions/clear-extensions!)
-      (let [d1 (extensions/register-markdown-transformer!
-                owner (fn [_md _ctx] (throw (ex-info "boom" {}))))
-            d2 (extensions/register-markdown-transformer!
-                owner (fn [md _ctx] (str "ok[" md "]")))]
+      (let [d1 (extensions/register-markdown-transformer! (rt/node)
+                                                          owner (fn [_md _ctx] (throw (ex-info "boom" {}))))
+            d2 (extensions/register-markdown-transformer! (rt/node)
+                                                          owner (fn [md _ctx] (str "ok[" md "]")))]
         (t/is (= "ok[hi]" (extensions/apply-markdown-transformers "hi" {}))
               "pi: keep the current markdown and continue")
         (d1) (d2)))
     (testing "non-string results are ignored"
       (extensions/clear-extensions!)
-      (let [d1 (extensions/register-markdown-transformer!
-                owner (fn [_md _ctx] {:not :a-string}))
-            d2 (extensions/register-markdown-transformer!
-                owner (fn [md _ctx] (str md "!")))]
+      (let [d1 (extensions/register-markdown-transformer! (rt/node)
+                                                          owner (fn [_md _ctx] {:not :a-string}))
+            d2 (extensions/register-markdown-transformer! (rt/node)
+                                                          owner (fn [md _ctx] (str md "!")))]
         (t/is (= "hi!" (extensions/apply-markdown-transformers "hi" {})))
         (d1) (d2)))
     (testing "the registration is the owner's key on the app tree"
-      (let [dereg (extensions/register-markdown-transformer! owner (fn [md _] md))]
+      (let [dereg (extensions/register-markdown-transformer! (rt/node) owner (fn [md _] md))]
         (t/is (seq (scope/owner-keys (rt/node) owner))
               "the transformer registered under its owner's path")
         (dereg)
@@ -1514,8 +1517,8 @@
 (t/deftest test-renderer-ownership
   (testing "a renderer is its owner's key on the app tree"
     (let [owner (extensions/extension-owner "test-renderer-owner")
-          dereg (extensions/register-entry-renderer!
-                 owner "probe-entry" (fn [_] {:role :info}))]
+          dereg (extensions/register-entry-renderer! (rt/node)
+                                                     owner "probe-entry" (fn [_] {:role :info}))]
       (t/is (contains? (scope/owner-keys (rt/node) owner)
                        [:kmet/entry-renderer "probe-entry"])
             "the renderer registers under its owner's path")
@@ -1525,8 +1528,8 @@
             "and the deregister fn removes that key")))
   (testing "message renderers share the shape"
     (let [owner (extensions/extension-owner "test-message-renderer-owner")
-          dereg (extensions/register-message-renderer!
-                 owner "probe-message" (fn [_] {:role :info}))]
+          dereg (extensions/register-message-renderer! (rt/node)
+                                                       owner "probe-message" (fn [_] {:role :info}))]
       (t/is (contains? (scope/owner-keys (rt/node) owner)
                        [:kmet/message-renderer "probe-message"]))
       (t/is (some? (extensions/get-message-renderer "probe-message")))
@@ -1538,10 +1541,10 @@
     (let [first-owner (extensions/extension-owner "test-renderer-first")
           second-owner (extensions/extension-owner "test-renderer-second")
           renderer (fn [_] {:role :info :content "first"})
-          dereg (extensions/register-entry-renderer! first-owner "taken-type" renderer)]
+          dereg (extensions/register-entry-renderer! (rt/node) first-owner "taken-type" renderer)]
       (try
-        (extensions/register-entry-renderer!
-         second-owner "taken-type" (fn [_] {:role :info :content "second"}))
+        (extensions/register-entry-renderer! (rt/node)
+                                             second-owner "taken-type" (fn [_] {:role :info :content "second"}))
         (t/is (identical? renderer (extensions/get-entry-renderer "taken-type")))
         (finally
           (dereg)
@@ -1551,7 +1554,7 @@
   ;; A flag is the registering owner's key on the app tree; the --ext-* value
   ;; get-flag coerces is process argv (set-cli-flags!), not engine state.
   (let [owner (extensions/extension-owner "test-flag-owner")
-        dereg (extensions/register-flag! owner "probe-flag"
+        dereg (extensions/register-flag! (rt/node) owner "probe-flag"
                                          {:type :boolean :default false})]
     (try
       (t/is (contains? (scope/owner-keys (rt/node) owner) [:kmet/flag "probe-flag"])
@@ -1724,7 +1727,7 @@
                                      {:skill-paths [skill-dir]
                                       :prompt-paths [prompt-dir]
                                       :theme-paths [theme-dir]})))
-        (let [result (extensions/discover-resources! :startup)]
+        (let [result (extensions/discover-resources! (rt/node) :startup)]
           (t/is (some? (skills/get-skill "ext-skill"))
                 "contributed skill dir loads into the skills registry")
           (t/is (some? (prompts/get-prompt-template "ext-prompt"))
@@ -1737,7 +1740,7 @@
                    result)
                 "the collected path lists are returned")))
       (testing "re-discovery after session-start dedups (pi: mergePaths)"
-        (extensions/discover-resources! :startup)
+        (extensions/discover-resources! (rt/node) :startup)
         (t/is (= 1 (count (filter #(= "ext-prompt" (:name %))
                                   (prompts/get-prompt-templates))))
               "the prompt is not loaded twice"))
@@ -1747,7 +1750,7 @@
                                    (fn [_] (throw (ex-info "boom" {})))))
         ;; The throwing listener prints a warning to stderr — suppress it.
         (binding [*err* (java.io.StringWriter.)]
-          (extensions/discover-resources! :reload))
+          (extensions/discover-resources! (rt/node) :reload))
         (t/is (some? (skills/get-skill "ext-skill"))
               "the good handler's paths were already applied")
         (t/is (= [:startup :startup :reload] @seen-reasons)
@@ -1756,8 +1759,8 @@
         (doseq [u @unsubs] (u))
         (event-bus/clear-event-listeners!)
         (extensions/clear-extensions!)
-        (skills/clear-skills!)
-        (prompts/clear-prompt-templates!)
+        (skills/clear-skills! (rt/node))
+        (prompts/clear-prompt-templates! (rt/node))
         (fs/delete-tree dir)))))
 
 (t/deftest test-jar-extension-load-resource-unload
@@ -1899,8 +1902,8 @@
   ;; ext/register-skill! / ext/register-prompt! (no host enumeration);
   ;; unload deregisters exactly what the extension added.
   (extensions/clear-extensions!)
-  (skills/clear-skills!)
-  (prompts/clear-prompt-templates!)
+  (skills/clear-skills! (rt/node))
+  (prompts/clear-prompt-templates! (rt/node))
   (let [dir "target/test-ext-selfreg"]
     (fs/delete-tree dir)
     (fs/create-dirs (str dir "/selfreg"))
@@ -1930,8 +1933,8 @@
         (t/is (= "Template body hi" (prompts/expand-prompt-template "/selfreg-tpl hi"
                                                                     (prompts/get-prompt-templates)))))
       (finally
-        (skills/clear-skills!)
-        (prompts/clear-prompt-templates!)
+        (skills/clear-skills! (rt/node))
+        (prompts/clear-prompt-templates! (rt/node))
         (extensions/unload-all-extensions!)
         (t/is (nil? (skills/get-skill "selfreg-skill")) "unload removes the skill")
         (t/is (nil? (prompts/get-prompt-template "selfreg-tpl")) "unload removes the template")
@@ -1971,8 +1974,8 @@
     (t/is (str/includes? (skills/expand-skill-command "/skill:clojure-edit")
                          "clojure_edit")))
   (extensions/unload-all-extensions!)
-  (skills/clear-skills!)
-  (prompts/clear-prompt-templates!))
+  (skills/clear-skills! (rt/node))
+  (prompts/clear-prompt-templates! (rt/node)))
 
 (t/deftest test-manifest-loader-declaration
   ;; the manifest :loader declaration + host selection: :sci on babashka,
@@ -2111,7 +2114,7 @@
   ;; tool, expand its skill, unload. Needs the cljfmt/parinferish closure
   ;; from the network cache (slow).
   (extensions/clear-extensions!)
-  (skills/clear-skills!)
+  (skills/clear-skills! (rt/node))
   (let [jar "target/test-packed-clojure.jar"]
     (fs/delete-if-exists jar)
     (try
@@ -2129,7 +2132,7 @@
                              "clojure_edit")))
       (finally
         (extensions/unload-all-extensions!)
-        (skills/clear-skills!)
+        (skills/clear-skills! (rt/node))
         (fs/delete-if-exists jar)))))
 
 ;; ─── Extension hooks live on the app tree (P2) ────────────────────────────
@@ -2141,10 +2144,10 @@
   ;; reaches every engine, and deregistering removes the only copy.
   (let [owner (extensions/extension-owner "test-hooks")
         node (rt/node)
-        dereg (extensions/register-input-hook!
-               owner (fn [{:keys [text]}] {:action :transform :text (str text "!")}))
-        dereg-start (extensions/register-before-agent-start-hook!
-                     owner (fn [_] {:system-prompt "SYS"}))]
+        dereg (extensions/register-input-hook! (rt/node)
+                                               owner (fn [{:keys [text]}] {:action :transform :text (str text "!")}))
+        dereg-start (extensions/register-before-agent-start-hook! (rt/node)
+                                                                  owner (fn [_] {:system-prompt "SYS"}))]
     (try
       (t/is (= "hi!" (:text (extensions/apply-input-hooks "hi" :interactive)))
             "the registered hook is read back from the tree")
@@ -2170,9 +2173,9 @@
         b (extensions/extension-owner "test-hook-order-b")
         seen (atom [])
         hook (fn [tag] (fn [_] (swap! seen conj tag) nil))
-        dereg-a1 (extensions/register-input-hook! a (hook :a1))
-        dereg-b1 (extensions/register-input-hook! b (hook :b1))
-        dereg-a2 (extensions/register-input-hook! a (hook :a2))
+        dereg-a1 (extensions/register-input-hook! (rt/node) a (hook :a1))
+        dereg-b1 (extensions/register-input-hook! (rt/node) b (hook :b1))
+        dereg-a2 (extensions/register-input-hook! (rt/node) a (hook :a2))
         ;; owners share the store with every other registry: a key of another
         ;; shape under the same owner is neither read nor a reason to throw
         dereg-foreign (scope/register! (rt/node) a :tools/hooks {:event :turn-end})]
@@ -2243,9 +2246,9 @@
   (let [owner (extensions/extension-owner "test-hook-neighbours")
         seen (atom [])
         shared (fn [_] (swap! seen conj :shared) nil)
-        dereg-shared-1 (extensions/register-input-hook! owner shared)
-        dereg-other (extensions/register-input-hook! owner (fn [_] (swap! seen conj :other) nil))
-        dereg-shared-2 (extensions/register-input-hook! owner shared)]
+        dereg-shared-1 (extensions/register-input-hook! (rt/node) owner shared)
+        dereg-other (extensions/register-input-hook! (rt/node) owner (fn [_] (swap! seen conj :other) nil))
+        dereg-shared-2 (extensions/register-input-hook! (rt/node) owner shared)]
     (try
       (extensions/apply-input-hooks "hi" :interactive)
       (t/is (= [:shared :other :shared] @seen) "all three registrations run")

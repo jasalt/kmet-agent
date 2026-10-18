@@ -60,9 +60,9 @@
    would see them. Hook, renderer and flag registrations are per-owner and
    tests deregister what they register."
   []
-  (commands/clear-commands!)
-  (prompts/clear-prompt-templates!)
-  (skills/clear-skills!)
+  (commands/clear-commands! (app/node))
+  (prompts/clear-prompt-templates! (app/node))
+  (skills/clear-skills! (app/node))
   (cells/dispose! (app/node) extensions/themes-owner))
 
 (defn with-clean-app-registries

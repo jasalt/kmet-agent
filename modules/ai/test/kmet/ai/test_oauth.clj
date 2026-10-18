@@ -4,7 +4,8 @@
    credential refresh on expiry (5-min skew), serialized credential ops,
    copilot available-model-ids filtering + proxy-ep base-url, and the /login
    auth-type selection."
-  (:require [clojure.string :as str]
+  (:require [kmet.agent.runtime :as app-runtime]
+            [clojure.string :as str]
             [clojure.test :as t :refer [testing]]
             [clojure.edn :as edn]
             [babashka.fs :as fs]
@@ -636,7 +637,7 @@
       (t/is (nil? (find nil))))))
 
 (t/deftest test-login-command-auth-type-selection
-  (commands/clear-commands!)
+  (commands/clear-commands! (app-runtime/node))
   (models/load-catalogs!)
   ((var builtins/register-builtin-commands!) cfg/default-config)
   (let [started (atom nil)
@@ -667,7 +668,7 @@
               (t/is (= :api-key (first @started))))))))))
 
 (t/deftest test-login-command-reference-resolution
-  (commands/clear-commands!)
+  (commands/clear-commands! (app-runtime/node))
   (models/load-catalogs!)
   ((var builtins/register-builtin-commands!) cfg/default-config)
   (let [started (atom nil)
@@ -699,7 +700,7 @@
 ;; ─── /logout credential kinds ───────────────────────────────────────────────
 
 (t/deftest test-logout-removes-oauth-credential
-  (commands/clear-commands!)
+  (commands/clear-commands! (app-runtime/node))
   (models/load-catalogs!)
   ((var builtins/register-builtin-commands!) cfg/default-config)
   (with-auth-file

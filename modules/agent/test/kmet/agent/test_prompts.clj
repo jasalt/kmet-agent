@@ -103,7 +103,7 @@
       ;; non-recursive: subdir templates are not discovered
       (io/make-parents (base "sub/nested.md"))
       (spit (base "sub/nested.md") "---\ndescription: Nested\n---\nNested body")
-      (let [loaded (prompts/load-prompt-templates-from-dir tmp-dir)]
+      (let [loaded (prompts/load-prompt-templates-from-dir (app-runtime/node) tmp-dir)]
         (t/is (= ["comp" "emptyhint" "review"] (mapv :name (sort-by :name loaded))))
         (let [review (prompts/get-prompt-template "review")
               comp (prompts/get-prompt-template "comp")]
@@ -129,7 +129,7 @@
       (spit (base "nofm.md") "First line without frontmatter.\nSecond line.")
       (io/make-parents (base "dotted.name.md"))
       (spit (base "dotted.name.md") "---\ndescription: Dotted\n---\nDotted")
-      (let [loaded (prompts/load-prompt-templates-from-dir tmp-dir)]
+      (let [loaded (prompts/load-prompt-templates-from-dir (app-runtime/node) tmp-dir)]
         (t/is (= [".hidden" "crlf" "dotted.name" "nofm"] (mapv :name (sort-by :name loaded))))
         (t/testing "hidden .md files load (pi has no hidden check in prompts)"
           (t/is (= "Hidden file template" (:description (prompts/get-prompt-template ".hidden")))))
@@ -151,17 +151,17 @@
         (spit (str tmp-dir "/plain.md") "\n\nFirst meaningful line.\nSecond line.")
         (io/make-parents (str tmp-dir "/long.md"))
         (spit (str tmp-dir "/long.md") long-line)
-        (prompts/load-prompt-templates-from-dir tmp-dir)
+        (prompts/load-prompt-templates-from-dir (app-runtime/node) tmp-dir)
         (t/is (= "First meaningful line." (:description (prompts/get-prompt-template "plain"))))
         (t/is (= (str (subs long-line 0 60) "...")
                  (:description (prompts/get-prompt-template "long"))))
         (finally (fs/delete-tree tmp-dir))))))
 
 (t/deftest test-load-prompt-templates-from-dir-non-existent
-  (t/is (= [] (prompts/load-prompt-templates-from-dir "/nonexistent/prompts"))))
+  (t/is (= [] (prompts/load-prompt-templates-from-dir (app-runtime/node) "/nonexistent/prompts"))))
 
 (t/deftest test-load-prompt-templates-warns-on-unreadable-file
-  (prompts/clear-prompt-templates!)
+  (prompts/clear-prompt-templates! (app-runtime/node))
   (let [tmp-dir (str "target/test-prompts-warn-" (System/currentTimeMillis))
         good (str tmp-dir "/good.md")
         missing (str tmp-dir "/missing.md")
@@ -170,29 +170,29 @@
       (io/make-parents good)
       (spit good "---\ndescription: Loads fine.\n---\nGood body.")
       (binding [*err* err]
-        (prompts/load-prompt-template-files! [good missing]))
+        (prompts/load-prompt-template-files! (app-runtime/node) [good missing]))
       (t/testing "the valid template still loads"
         (t/is (= "Loads fine." (:description (prompts/get-prompt-template "good")))))
       (t/testing "the unreadable template is reported, not silently skipped"
         (t/is (str/includes? (str err) (str "Warning: prompt template at " missing))))
       (finally
-        (prompts/clear-prompt-templates!)
+        (prompts/clear-prompt-templates! (app-runtime/node))
         (fs/delete-tree tmp-dir)))))
 
 (t/deftest test-load-prompt-templates-non-string-frontmatter
-  (prompts/clear-prompt-templates!)
+  (prompts/clear-prompt-templates! (app-runtime/node))
   (let [tmp-dir (str "target/test-prompts-types-" (System/currentTimeMillis))]
     (try
       (io/make-parents (str tmp-dir "/typed.md"))
       (spit (str tmp-dir "/typed.md")
             "---\ndescription: true\nargument-hint: 42\n---\nReal first line.")
-      (prompts/load-prompt-templates-from-dir tmp-dir)
+      (prompts/load-prompt-templates-from-dir (app-runtime/node) tmp-dir)
       (let [tpl (prompts/get-prompt-template "typed")]
         (t/testing "non-string frontmatter values are ignored (pi: typeof checks)"
           (t/is (= "Real first line." (:description tpl)))
           (t/is (nil? (:argument-hint tpl)))))
       (finally
-        (prompts/clear-prompt-templates!)
+        (prompts/clear-prompt-templates! (app-runtime/node))
         (fs/delete-tree tmp-dir)))))
 
 ;; ─── Autocomplete shape (pi: interactive-mode templateCommands) ────────────
@@ -210,32 +210,32 @@
     (try
       (io/make-parents f)
       (spit f "---\ndescription: Template to clear.\n---\nBody.")
-      (prompts/load-prompt-templates-from-dir tmp-dir)
+      (prompts/load-prompt-templates-from-dir (app-runtime/node) tmp-dir)
       (t/is (some? (prompts/get-prompt-template "clear-me")))
-      (prompts/clear-prompt-templates!)
+      (prompts/clear-prompt-templates! (app-runtime/node))
       (t/is (nil? (prompts/get-prompt-template "clear-me")))
       (finally (fs/delete-tree tmp-dir)))))
 
 (t/deftest test-register-prompt-template
-  (prompts/clear-prompt-templates!)
-  (let [dereg (prompts/register-prompt-template!
-               {:name "ext-tpl" :content "---\ndescription: Ext template\n---\nHello $1"
-                :location "my-ext:prompts/ext-tpl.md" :extension "my-ext"})]
+  (prompts/clear-prompt-templates! (app-runtime/node))
+  (let [dereg (prompts/register-prompt-template! (app-runtime/node)
+                                                 {:name "ext-tpl" :content "---\ndescription: Ext template\n---\nHello $1"
+                                                  :location "my-ext:prompts/ext-tpl.md" :extension "my-ext"})]
     (t/is (some? (prompts/get-prompt-template "ext-tpl")))
     (t/is (= "Hello hi" (prompts/expand-prompt-template "/ext-tpl hi"
                                                         (prompts/get-prompt-templates))))
     (dereg)
     (t/is (nil? (prompts/get-prompt-template "ext-tpl")) "deregister removes the template"))
-  (prompts/clear-prompt-templates!))
+  (prompts/clear-prompt-templates! (app-runtime/node)))
 
 (t/deftest test-prompt-templates-live-in-the-app-roots-store
   ;; The registry is the store, not an engine field: a template is readable
   ;; under the app's owner by its name key, and clear removes by key.
-  (prompts/clear-prompt-templates!)
+  (prompts/clear-prompt-templates! (app-runtime/node))
   (try
-    (prompts/register-prompt-template!
-     {:name "stored-tpl" :content "---\ndescription: d\n---\nBody"
-      :location "my-ext:prompts/stored.md" :extension "my-ext"})
+    (prompts/register-prompt-template! (app-runtime/node)
+                                       {:name "stored-tpl" :content "---\ndescription: d\n---\nBody"
+                                        :location "my-ext:prompts/stored.md" :extension "my-ext"})
     (t/is (= "stored-tpl"
              (:name (get (scope/for-key (app-runtime/node)
                                         [:kmet/prompt "stored-tpl"])
@@ -245,24 +245,24 @@
     (app-runtime/remount!)
     (t/is (some? (prompts/get-prompt-template "stored-tpl"))
           "the prompts slot is in the app's entry list; a remount keeps it")
-    (prompts/clear-prompt-templates!)
+    (prompts/clear-prompt-templates! (app-runtime/node))
     (t/is (empty? (scope/for-key (app-runtime/node) [:kmet/prompt "stored-tpl"])))
     (finally
-      (prompts/clear-prompt-templates!))))
+      (prompts/clear-prompt-templates! (app-runtime/node)))))
 
 (t/deftest test-re-registering-a-name-replaces-the-template
   ;; A name holds one template: pi's loader assigns into a name-keyed map,
   ;; and the store's key is the name, so the later registration wins and one
   ;; deregister fn cannot remove it (the store's value guard).
-  (prompts/clear-prompt-templates!)
+  (prompts/clear-prompt-templates! (app-runtime/node))
   (try
-    (prompts/register-prompt-template!
-     {:name "dup-tpl" :content "---\ndescription: first\n---\nOne"
-      :location "a.md" :extension "a"})
-    (prompts/register-prompt-template!
-     {:name "dup-tpl" :content "---\ndescription: second\n---\nTwo"
-      :location "b.md" :extension "b"})
+    (prompts/register-prompt-template! (app-runtime/node)
+                                       {:name "dup-tpl" :content "---\ndescription: first\n---\nOne"
+                                        :location "a.md" :extension "a"})
+    (prompts/register-prompt-template! (app-runtime/node)
+                                       {:name "dup-tpl" :content "---\ndescription: second\n---\nTwo"
+                                        :location "b.md" :extension "b"})
     (t/is (= ["dup-tpl"] (mapv :name (prompts/get-prompt-templates))))
     (t/is (= "Two" (:content (prompts/get-prompt-template "dup-tpl"))))
     (finally
-      (prompts/clear-prompt-templates!))))
+      (prompts/clear-prompt-templates! (app-runtime/node)))))

@@ -238,12 +238,15 @@
   (and (vector? k) (= :kmet/hook (first k)) (= kind (second k))))
 
 (defn- register-app-hook!
-  "Register HOOK for OWNER (an `extension-owner` path) on the app tree and
+  "Register HOOK for OWNER (an `extension-owner` path) on NODE and
    return cells' deregister fn. Hooks are read from the tree rather than
    copied into each engine, so one registered before an engine exists reaches
-   every engine and stays gone once deregistered."
-  [owner kind hook]
-  (scope/register! (app-runtime/node) owner (hook-key kind) hook))
+   every engine and stays gone once deregistered. NODE is the composition
+   node the registration lands on: the app root for an app-wide registration,
+   the node a unit's `:start` receives for that unit's own tree (cells.md
+   §8.1)."
+  [node owner kind hook]
+  (scope/register! node owner (hook-key kind) hook))
 
 (defn- hooks-of
   "Every KIND hook on the app tree, in the order the store reports it: owners
@@ -259,16 +262,16 @@
    (fn [{:keys [text source streaming-behavior images]}]) returning
    {:action :handled} to consume, {:action :transform :text ... :images ...}
    to rewrite, or nil. Returns a deregister fn."
-  [owner hook]
-  (register-app-hook! owner :input hook))
+  [node owner hook]
+  (register-app-hook! node owner :input hook))
 
 (defn register-before-agent-start-hook!
   "Register OWNER's before-agent-start hook (extension api:
    on-before-agent-start). Hook: (fn [{:keys [prompt system-prompt]}]) returning
    a map with :system-prompt and/or :message, or nil. Returns a deregister
    fn."
-  [owner hook]
-  (register-app-hook! owner :before-agent-start hook))
+  [node owner hook]
+  (register-app-hook! node owner :before-agent-start hook))
 
 (defn apply-input-hooks
   "Run all input hooks in registration order over text and images
@@ -337,8 +340,8 @@
   "Register OWNER's renderer for a custom entry type (extension api:
    register-entry-renderer!). RENDERER — (fn [entry]) returning a chat
    message map (or bare component) or nil. Returns a deregister fn."
-  [owner custom-type renderer]
-  (scope/register! (app-runtime/node) owner (entry-renderer-key custom-type) renderer))
+  [node owner custom-type renderer]
+  (scope/register! node owner (entry-renderer-key custom-type) renderer))
 
 (defn get-entry-renderer [custom-type]
   (renderer-for entry-renderer-key custom-type))
@@ -346,8 +349,8 @@
 (defn register-message-renderer!
   "Register OWNER's renderer for a custom MESSAGE type (extension api:
    register-message-renderer!). Returns a deregister fn."
-  [owner custom-type renderer]
-  (scope/register! (app-runtime/node) owner (message-renderer-key custom-type) renderer))
+  [node owner custom-type renderer]
+  (scope/register! node owner (message-renderer-key custom-type) renderer))
 
 (defn get-message-renderer [custom-type]
   (renderer-for message-renderer-key custom-type))
@@ -356,15 +359,15 @@
   "Register OWNER's tool-call hook (extension api: on-tool-call): (fn [ctx])
    → nil | {:block true :reason} | {:args transformed}. Returns a deregister
    fn."
-  [owner hook]
-  (register-app-hook! owner :tool-call hook))
+  [node owner hook]
+  (register-app-hook! node owner :tool-call hook))
 
 (defn register-tool-result-hook!
   "Register OWNER's tool-result hook (extension api: on-tool-result):
    (fn [ctx]) → nil | {:content ... :is-error ...} overrides. Returns a
    deregister fn."
-  [owner hook]
-  (register-app-hook! owner :tool-result hook))
+  [node owner hook]
+  (register-app-hook! node owner :tool-result hook))
 
 (defn get-tool-call-hooks
   "Every tool-call hook on the app tree (extension api: on-tool-call), owners
@@ -405,8 +408,8 @@
    render — streaming chunks re-transform the accumulated text). A
    transformer that throws is skipped (pi: keep the current markdown and
    continue). Returns a deregister fn."
-  [owner transformer]
-  (register-app-hook! owner :markdown-transformer transformer))
+  [node owner transformer]
+  (register-app-hook! node owner :markdown-transformer transformer))
 
 (defn get-markdown-transformers
   "Registered markdown transformers in registration order (owners in
@@ -442,8 +445,8 @@
   "Register OWNER's CLI flag (extension api: register-flag!). NAME — without
    the leading --; opts: :type (:boolean|:string) :default. Returns a
    deregister fn."
-  [owner name & [{:keys [type default]}]]
-  (scope/register! (app-runtime/node) owner (flag-key name)
+  [node owner name & [{:keys [type default]}]]
+  (scope/register! node owner (flag-key name)
                    {:type (or type :string) :default default}))
 
 (defn set-cli-flags! [flag-map]
@@ -1011,13 +1014,16 @@
 (declare loader-aware loader-aware-map)
 
 (defn- create-extension-api
-  "Build the api map for an extension. A registration that lives in the app
-   tree (commands, tools, tool sources, skills, prompts, hooks, renderers,
-   flags) lands under the extension's own owner path, so unload disposes it
-   with one LIFO dispose (cells.md §5.1); the registrations that live outside
-   the tree (event subscriptions, aliases, shortcuts, model providers) record
-   their deregister fn on the extension instead."
-  [ext]
+  "Build the api map for an extension, its app-tree capabilities bound to
+   NODE — the app root at load time (extensions load before any engine), so a
+   unit's own node can build the same surface for its `:start` later. A
+   registration that lives in the app tree (commands, tools, tool sources,
+   skills, prompts, hooks, renderers, flags) lands under the extension's own
+   owner path, so unload disposes it with one LIFO dispose (cells.md §5.1);
+   the registrations that live outside the tree (event subscriptions, aliases,
+   shortcuts, model providers) record their deregister fn on the extension
+   instead."
+  [node ext]
   (let [track (fn [f] (track-deregister! ext f) f)
         name (:name ext)]
     {:extension-name name
@@ -1039,25 +1045,25 @@
                           (let [cmd (loader-aware-map
                                      ext (assoc cmd :extension-handler
                                                 (:handler cmd)))]
-                            (commands/register-command! cmd (extension-owner name))))
+                            (commands/register-command! node cmd (extension-owner name))))
      :unregister-command! (fn [cmd-name]
-                            (commands/unregister-command! cmd-name (extension-owner name)))
+                            (commands/unregister-command! node cmd-name (extension-owner name)))
      ;; sanitized — other extensions must not see :handler/:extension-handler
      :get-commands #(mapv (fn [c] (select-keys c [:name :description]))
                           (commands/get-commands))
      :register-tool! (fn [tool]
-                       (tools/register-tool! (loader-aware-map ext tool)
+                       (tools/register-tool! node (loader-aware-map ext tool)
                                              (extension-owner name)))
      :unregister-tool! (fn [tool-name]
-                         (tools/unregister-tool! tool-name (extension-owner name)))
+                         (tools/unregister-tool! node tool-name (extension-owner name)))
      ;; sandbox-only tools: contributed into the run_code tool's surface, never
      ;; the model's tool set (mcp-adapter's MCP catalog — run_code.md T2)
      :register-tool-source! (fn [id tools-fn]
                               (tools/register-tool-source!
-                               id tools-fn (extension-owner name)))
+                               node id tools-fn (extension-owner name)))
      :unregister-tool-source! (fn [id]
                                 (tools/unregister-tool-source!
-                                 id (extension-owner name)))
+                                 node id (extension-owner name)))
      ;; a unit the extension contributes to the host's tree (cells.md §8.2):
      ;; :name (namespaced to this extension) resolves through the runtime's
      ;; :ext backend, :unit is the descriptor, :entry says where it mounts.
@@ -1088,18 +1094,18 @@
      ;; they are NOT tracked: the tracked list stays for what lives outside
      ;; the tree (subscriptions, aliases, shortcuts, model providers).
      :on-input (fn [hook]
-                 (register-input-hook! (extension-owner name) (loader-aware ext hook)))
+                 (register-input-hook! node (extension-owner name) (loader-aware ext hook)))
      :on-before-agent-start (fn [hook]
                               (register-before-agent-start-hook!
-                               (extension-owner name) (loader-aware ext hook)))
+                               node (extension-owner name) (loader-aware ext hook)))
      :on-tool-call (fn [hook]
-                     (register-tool-call-hook! (extension-owner name)
+                     (register-tool-call-hook! node (extension-owner name)
                                                (loader-aware ext hook)))
      :on-tool-result (fn [hook]
-                       (register-tool-result-hook! (extension-owner name)
+                       (register-tool-result-hook! node (extension-owner name)
                                                    (loader-aware ext hook)))
      :register-flag! (fn [flag-name & [opts]]
-                       (register-flag! (extension-owner name) flag-name opts))
+                       (register-flag! node (extension-owner name) flag-name opts))
      :get-flag get-flag
      :register-shortcut! (fn [key-id & [opts]]
                            (let [dereg (register-shortcut!
@@ -1110,14 +1116,15 @@
                              dereg))
      :register-markdown-transformer! (fn [transformer]
                                        (register-markdown-transformer!
+                                        node
                                         (extension-owner name)
                                         (loader-aware ext transformer)))
      :register-entry-renderer! (fn [custom-type renderer]
                                  (register-entry-renderer!
-                                  (extension-owner name) custom-type renderer))
+                                  node (extension-owner name) custom-type renderer))
      :register-message-renderer! (fn [custom-type renderer]
                                    (register-message-renderer!
-                                    (extension-owner name) custom-type renderer))
+                                    node (extension-owner name) custom-type renderer))
      ;; tag aliases (kmet.libs.hikap.alias): the registry is process-global, so the
      ;; registration MUST be tracked — unload removes exactly this fn's
      ;; registration (a later re-registration by another owner survives)
@@ -1131,12 +1138,13 @@
                         ;; skills need no filesystem path. Registered under the
                         ;; extension's owner, so unload disposes it.
                         (skills/register-extension-skill!
-                         raw-content
+                         node raw-content
                          (assoc opts
                                 :extension name
                                 :owner (extension-owner name))))
      :register-prompt! (fn [prompt & [opts]]
                          (prompts/register-prompt-template!
+                          node
                           (assoc (merge opts prompt)
                                  :extension name
                                  :owner (extension-owner name))))
@@ -1330,7 +1338,7 @@
                   (throw (ex-info (str "Extension " (:name ext)
                                        " does not define an init fn")
                                   {:path path})))
-                (let [api (create-extension-api ext)]
+                (let [api (create-extension-api (app-runtime/node) ext)]
                   (reset! (:api ext) api)
                   ((loader-aware ext (deref init-var)) api)
                   (reset! (:initialized? ext) true)
@@ -1469,9 +1477,8 @@
    the value it registered, so a re-application's earlier teardown (holding
    the replaced value) and another contributor's later registration both
    survive it (cells.md §5.1)."
-  [owner dir]
-  (let [node (app-runtime/node)
-        owner (or owner themes-owner)]
+  [node owner dir]
+  (let [owner (or owner themes-owner)]
     (doseq [{:keys [name] :as theme} (context/load-themes-from-dir! dir)]
       (scope/add-teardown! node owner
                            (fn [] (context/unregister-theme! name theme)))
@@ -1485,10 +1492,10 @@
    owner is what makes re-application idempotent (the registries replace per
    owner and key) and unload complete (disposing the owner takes the
    resources with it)."
-  [owner {:keys [skill-paths prompt-paths theme-paths]}]
-  (doseq [p skill-paths] (skills/load-skills-from-dir p owner))
-  (doseq [p prompt-paths] (prompts/load-prompt-templates-from-dir p owner))
-  (doseq [p theme-paths] (load-contributed-themes! owner p)))
+  [node owner {:keys [skill-paths prompt-paths theme-paths]}]
+  (doseq [p skill-paths] (skills/load-skills-from-dir node p owner))
+  (doseq [p prompt-paths] (prompts/load-prompt-templates-from-dir node p owner))
+  (doseq [p theme-paths] (load-contributed-themes! node owner p)))
 
 (defn discover-resources!
   "pi: extendResourcesFromExtensions — fire the :resources-discover event
@@ -1504,13 +1511,13 @@
    extension takes its resources with it. A throwing handler is skipped (its
    paths are lost). Returns the collected
    {:skill-paths [...] :prompt-paths [...] :theme-paths [...]}."
-  [reason]
+  [node reason]
   (let [contributions (event-bus/emit-event-collect!
                        {:type :resources-discover
                         :cwd (str (fs/cwd))
                         :reason reason})]
     (reduce (fn [acc [owner result]]
-              (apply-contributed-paths! owner result)
+              (apply-contributed-paths! node owner result)
               (cond-> acc
                 (seq (:skill-paths result))
                 (update :skill-paths into (:skill-paths result))

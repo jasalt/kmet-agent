@@ -64,33 +64,35 @@
          (scope/ordered-registrations (app-runtime/node)))))
 
 (defn register-command!
-  "Register (or replace by :name) a slash command, owned by OWNER — the
-   app's registry by default; an extension passes its own owner path
+  "Register (or replace by :name) a slash command on NODE, owned by OWNER —
+   the app's registry by default; an extension passes its own owner path
    (`kmet.agent.extensions.core/extension-owner`) so unloading it disposes
-   the command with the owner (cells.md §5.1). The store key is derived from
-   :name, so a command is always addressed by its own name. Returns nil."
-  ([cmd] (register-command! cmd commands-owner))
-  ([cmd owner]
-   (scope/register! (app-runtime/node) owner (command-key (:name cmd)) cmd)
+   the command with the owner (cells.md §5.1). NODE is the composition node
+   the registration lands on: the app root for an app-wide registration, the
+   node a unit's `:start` receives for that unit's own tree (cells.md §8.1).
+   The store key is derived from :name, so a command is always addressed by
+   its own name. Returns nil."
+  ([node cmd] (register-command! node cmd commands-owner))
+  ([node cmd owner]
+   (scope/register! node owner (command-key (:name cmd)) cmd)
    nil))
 
 (defn unregister-command!
-  "Remove a slash command by :name, from whichever owner registered it, or —
-   with OWNER — only that owner's registration (an extension dropping one of
-   its own; another owner's same-name command survives). Returns nil."
-  ([name] (unregister-command! name nil))
-  ([name owner]
-   (scope/deregister-key! (app-runtime/node) (command-key name) owner)
+  "Remove a slash command by :name from NODE, whichever owner registered it,
+   or — with OWNER — only that owner's registration (an extension dropping
+   one of its own; another owner's same-name command survives). Returns nil."
+  ([node name] (unregister-command! node name nil))
+  ([node name owner]
+   (scope/deregister-key! node (command-key name) owner)
    nil))
 
 (defn clear-commands!
-  "Remove every registered command (mainly for tests). Returns nil."
-  []
+  "Remove every command registered on NODE (mainly for tests). Returns nil."
+  [node]
   ;; by key, not by owner: a unit owns several registries (§5.1)
-  (let [node (app-runtime/node)]
-    (doseq [[k owner v] (scope/ordered-registrations node)
-            :when (command-key? k)]
-      (scope/deregister! node owner k v)))
+  (doseq [[k owner v] (scope/ordered-registrations node)
+          :when (command-key? k)]
+    (scope/deregister! node owner k v))
   nil)
 
 (defn command-line?
@@ -144,10 +146,10 @@
      (when (available-to? frontend cmd) cmd))))
 
 (defn register-builtin!
-  "Register CMD unless a command already took the name (extensions load
-   before builtins; an extension command owns the name when taken). Used
+  "Register CMD on NODE unless a command already took the name (extensions
+   load before builtins; an extension command owns the name when taken). Used
    for the engine-portable builtins: no front-end tag, so every front end
    dispatches them. Returns nil."
-  [cmd]
+  [node cmd]
   (when-not (find-command (:name cmd))
-    (register-command! cmd)))
+    (register-command! node cmd)))

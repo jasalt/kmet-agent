@@ -123,27 +123,33 @@
 
 (defn register-runtime-commands!
   "Register the engine-portable builtins (untagged: every front end
-   dispatches them). A front end calls this with its builtin registration."
+   dispatches them) on the app root. A front end calls this with its
+   builtin registration."
   []
   (commands/register-builtin!
+   (app-runtime/node)
    {:name "units"
     :description "List the units mounted in the app's composition tree"
     :handler handle-units})
   (commands/register-builtin!
+   (app-runtime/node)
    {:name "continue"
     :description "Continue where the agent left off (e.g. after a network error)"
     :handler handle-continue})
   (commands/register-builtin!
+   (app-runtime/node)
    {:name "name"
     :description "Set session display name"
     :argument-hint "<name>"
     :handler handle-name})
   (commands/register-builtin!
+   (app-runtime/node)
    {:name "export"
     :description "Export session to HTML (JSONL is not supported by design)"
     :argument-hint "<path>"
     :handler handle-export})
   (commands/register-builtin!
+   (app-runtime/node)
    {:name "compact"
     :description "Manually compact the session context"
     :argument-hint "<instructions>"

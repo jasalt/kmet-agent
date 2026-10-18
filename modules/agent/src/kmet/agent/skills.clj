@@ -132,10 +132,11 @@
 
 (defn register-skill!
   "Register a programmatic skill (no backing file, so the model cannot read it
-   on demand — pi has no equivalent; kept for kmet's API and tests). Returns
-   cells' deregister fn."
-  [name description]
-  (scope/register! (app-runtime/node) skills-owner (skill-key name)
+   on demand — pi has no equivalent; kept for kmet's API and tests) on NODE
+   (the app root for an app-wide registration, a unit's own node in `:start`).
+   Returns cells' deregister fn."
+  [node name description]
+  (scope/register! node skills-owner (skill-key name)
                    {:name name
                     :description description
                     :body nil
@@ -208,9 +209,8 @@
    discovery) or a reload idempotent. Returns {:deregister f} when it was
    registered — f removes exactly this registration — else {:collision
    diagnostic}."
-  [owner skill location]
-  (let [node (app-runtime/node)
-        k (skill-key (:name skill))
+  [node owner skill location]
+  (let [k (skill-key (:name skill))
         by-owner (scope/for-key node k)]
     (if (and (seq by-owner) (not (contains? by-owner owner)))
       {:collision (skill-collision skill location)}
@@ -222,7 +222,7 @@
    return them. The first skill of a name wins within one batch too (pi's
    discovery walk): a later file of the same scan is reported as a collision
    rather than replacing it."
-  [owner results]
+  [node owner results]
   (let [collisions (volatile! [])
         seen (volatile! #{})]
     (doseq [{:keys [skill]} results]
@@ -232,7 +232,7 @@
           (vswap! seen conj nm)
           (if duplicate?
             (vswap! collisions conj (skill-collision skill (:file-path skill)))
-            (when-let [collision (:collision (add-skill! owner skill (:file-path skill)))]
+            (when-let [collision (:collision (add-skill! node owner skill (:file-path skill)))]
               (vswap! collisions conj collision))))))
     (let [diagnostics (into (vec (mapcat :diagnostics results)) @collisions)]
       (doseq [{:keys [type message path]} diagnostics]
@@ -241,13 +241,12 @@
       diagnostics)))
 
 (defn clear-skills!
-  "Remove every loaded skill (pi: resourceLoader.reload re-discovers from
-   scratch). Used by /reload."
-  []
-  (let [node (app-runtime/node)]
-    (doseq [[k owner v] (scope/ordered-registrations node)
-            :when (skill-key? k)]
-      (scope/deregister! node owner k v)))
+  "Remove every loaded skill from NODE (pi: resourceLoader.reload
+   re-discovers from scratch). Used by /reload."
+  [node]
+  (doseq [[k owner v] (scope/ordered-registrations node)
+          :when (skill-key? k)]
+    (scope/deregister! node owner k v))
   nil)
 
 (defn discover-skill-files
@@ -268,21 +267,21 @@
    the first, emit a collision diagnostic) while the same owner's is
    replaced. Returns the diagnostics for this dir (warning/collision maps),
    printed to stderr."
-  ([dir] (load-skills-from-dir dir skills-owner))
-  ([dir owner]
+  ([node dir] (load-skills-from-dir node dir skills-owner))
+  ([node dir owner]
    (let [d (io/file dir)]
      (if-not (fs/directory? d)
        []
-       (add-skill-results! (or owner skills-owner) (load-skills-dir (str d)))))))
+       (add-skill-results! node (or owner skills-owner) (load-skills-dir (str d)))))))
 
 (defn load-skills-from-files!
   "Load skills from explicit skill file paths (SKILL.md files or flat .md
    files — the package-resource unit, pi: package skills load) under OWNER
    (the app's registry by default). Same registration, collision and warning
    behavior as load-skills-from-dir. Returns the diagnostics."
-  ([file-paths] (load-skills-from-files! file-paths skills-owner))
-  ([file-paths owner]
-   (add-skill-results! (or owner skills-owner)
+  ([node file-paths] (load-skills-from-files! node file-paths skills-owner))
+  ([node file-paths owner]
+   (add-skill-results! node (or owner skills-owner)
                        (mapv load-skill-from-file file-paths))))
 
 (defn register-extension-skill!
@@ -299,7 +298,7 @@
    served through the read tool under :location (pass it verbatim) as well
    as /skill:name expansion. Returns a
    deregister fn removing exactly this skill."
-  [raw-content {:keys [location fallback-name extension owner]}]
+  [node raw-content {:keys [location fallback-name extension owner]}]
   (let [{:keys [skill diagnostics]} (parse-skill-content raw-content
                                                          (or fallback-name
                                                              (str (or extension "skill")))
@@ -310,7 +309,7 @@
       (binding [*out* *err*]
         (println (str "Warning: skill " type " at " path ": " message))))
     (if skill
-      (let [{:keys [collision deregister]} (add-skill! (or owner skills-owner)
+      (let [{:keys [collision deregister]} (add-skill! node (or owner skills-owner)
                                                        skill location)]
         (when collision
           (binding [*out* *err*]

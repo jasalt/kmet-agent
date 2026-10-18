@@ -212,11 +212,11 @@
    registry by default).
    Returns a deregister fn removing exactly this template — a no-op when the
    content failed to parse."
-  [{:keys [name content location extension owner]}]
+  [node {:keys [name content location extension owner]}]
   (if-let [t (make-template-from-content content name
                                          (or location (str (or extension "prompt")))
                                          extension)]
-    (scope/register! (app-runtime/node) (or owner prompts-owner)
+    (scope/register! node (or owner prompts-owner)
                      (prompt-key (:name t)) t)
     (fn [] nil)))
 
@@ -240,8 +240,8 @@
    templates go with it — cells.md §5.1). Adds them to the registry, reports
    load failures as warnings on stderr (pi: prompt resource diagnostics), and
    returns the loaded templates."
-  ([file-paths] (load-prompt-template-files! file-paths prompts-owner))
-  ([file-paths owner]
+  ([node file-paths] (load-prompt-template-files! node file-paths prompts-owner))
+  ([node file-paths owner]
    (let [loaded (volatile! [])
          warnings (volatile! [])]
      (doseq [f file-paths]
@@ -254,7 +254,6 @@
        (binding [*out* *err*]
          (println (str "Warning: prompt template at " path ": " message))))
      (let [ts @loaded
-           node (app-runtime/node)
            owner (or owner prompts-owner)]
        (doseq [t ts]
          (scope/register! node owner (prompt-key (:name t)) t))
@@ -264,22 +263,21 @@
   "Load .md prompt templates from a directory (non-recursive, pi:
    loadTemplatesFromDir) under OWNER (the app's registry by default). Adds
    them to the registry; returns the loaded templates."
-  ([dir] (load-prompt-templates-from-dir dir prompts-owner))
-  ([dir owner]
-   (load-prompt-template-files! (prompt-template-files-in-dir dir) owner)))
+  ([node dir] (load-prompt-templates-from-dir node dir prompts-owner))
+  ([node dir owner]
+   (load-prompt-template-files! node (prompt-template-files-in-dir dir) owner)))
 
 (defn get-prompt-templates
   []
   (registered-prompt-templates))
 
 (defn clear-prompt-templates!
-  "Remove every loaded prompt template (pi: resourceLoader.reload
+  "Remove every loaded prompt template from NODE (pi: resourceLoader.reload
    re-discovers from scratch). Used by /reload."
-  []
-  (let [node (app-runtime/node)]
-    (doseq [[k owner v] (scope/ordered-registrations node)
-            :when (prompt-key? k)]
-      (scope/deregister! node owner k v)))
+  [node]
+  (doseq [[k owner v] (scope/ordered-registrations node)
+          :when (prompt-key? k)]
+    (scope/deregister! node owner k v))
   nil)
 
 (defn get-prompt-template

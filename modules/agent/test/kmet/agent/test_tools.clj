@@ -73,17 +73,17 @@
   (t/testing "one resolution path: a custom tool reusing a built-in's name is
               listed AND resolved (custom shadows built-in, pi's layering)"
     (try
-      (tools/register-tool! {:name "read" :label "Shadow read"
-                             :description "shadow"
-                             :parameters {:type "object" :properties {}}
-                             :execute (fn [_] {:content "shadow"})})
+      (tools/register-tool! (app-runtime/node) {:name "read" :label "Shadow read"
+                                                :description "shadow"
+                                                :parameters {:type "object" :properties {}}
+                                                :execute (fn [_] {:content "shadow"})})
       (t/is (= (get (tools/get-all-tools) "read") (tools/get-tool "read"))
             "get-tool resolves the same map get-all-tools lists")
       (t/is (= "Shadow read" (:label (tools/get-tool "read"))))
       (t/is (= "shadow" (:content (tools/execute-tool "read" {})))
             "dispatch executes the listed record")
       (finally
-        (tools/unregister-tool! "read")
+        (tools/unregister-tool! (app-runtime/node) "read")
         (t/is (= "Read file" (:label (tools/get-tool "read"))))))))
 
 (t/deftest test-select-tools
@@ -339,12 +339,12 @@
       (t/is (nil? (:status (tools/get-tool tool-name)))
             (str tool-name " has no status line"))))
   (t/testing "a registered extension tool can opt in via its definition map"
-    (tools/register-tool! {:name "status-custom" :status true
-                           :execute (fn [_] {:content "x"})})
+    (tools/register-tool! (app-runtime/node) {:name "status-custom" :status true
+                                              :execute (fn [_] {:content "x"})})
     (try
       (t/is (true? (:status (tools/get-tool "status-custom"))))
       (finally
-        (tools/unregister-tool! "status-custom")))
+        (tools/unregister-tool! (app-runtime/node) "status-custom")))
     (t/is (nil? (tools/get-tool "status-custom")))))
 
 (t/deftest test-tool-quiet-titles
@@ -815,38 +815,38 @@
                 :description "A custom tool"
                 :parameters {:type "object" :properties {} :required []}
                 :execute (fn [_] {:content "done"}))]
-    (tools/register-tool! custom)
+    (tools/register-tool! (app-runtime/node) custom)
     (t/is (contains? (tools/get-all-tools) "custom"))
     (let [result (tools/execute-tool "custom" {})]
       (t/is (= "done" (:content result))))
-    (tools/unregister-tool! "custom")
+    (tools/unregister-tool! (app-runtime/node) "custom")
     (t/is (not (contains? (tools/get-all-tools) "custom")))))
 
 (t/deftest test-tools-register-normalizes-provider-schema
   (t/testing "argument-less extension tools get an object schema"
     (let [name "schema-less-tool"]
-      (tools/register-tool! {:name name
-                             :description "No arguments"
-                             :execute (fn [_] {:content "ok"})})
+      (tools/register-tool! (app-runtime/node) {:name name
+                                                :description "No arguments"
+                                                :execute (fn [_] {:content "ok"})})
       (try
         (t/is (= {:type "object" :properties {} :required []}
                  (:parameters (tools/get-tool name))))
         (finally
-          (tools/unregister-tool! name)))))
+          (tools/unregister-tool! (app-runtime/node) name)))))
   (t/testing "extension :params are converted to provider schema"
     (let [name "compact-schema-tool"]
-      (tools/register-tool! {:name name
-                             :description "Compact params"
-                             :params {:value {:type :string
-                                              :description "A value"}}
-                             :execute (fn [_] {:content "ok"})})
+      (tools/register-tool! (app-runtime/node) {:name name
+                                                :description "Compact params"
+                                                :params {:value {:type :string
+                                                                 :description "A value"}}
+                                                :execute (fn [_] {:content "ok"})})
       (try
         (t/is (= {:type "object"
                   :properties {"value" {:type "string" :description "A value"}}
                   :required ["value"]}
                  (:parameters (tools/get-tool name))))
         (finally
-          (tools/unregister-tool! name))))))
+          (tools/unregister-tool! (app-runtime/node) name))))))
 
 (t/deftest test-tool-registry-lives-in-the-app-roots-store
   ;; The registry is the store, not an engine field: a registration is
@@ -855,27 +855,27 @@
                     :parameters {:type "object" :properties {}}
                     :execute (fn [_] {:content "ok"})}]
     (try
-      (tools/register-tool! registered)
+      (tools/register-tool! (app-runtime/node) registered)
       (t/is (= "stored-tool"
                (:name (get (scope/for-key (app-runtime/node)
                                           [:kmet/tool "stored-tool"])
                            tools-registry/tools-owner))))
       (t/is (contains? (tools/get-all-tools) "stored-tool"))
       (finally
-        (tools/unregister-tool! "stored-tool")))
+        (tools/unregister-tool! (app-runtime/node) "stored-tool")))
     (t/is (empty? (scope/for-key (app-runtime/node) [:kmet/tool "stored-tool"])))))
 
 (t/deftest test-tool-source-registry-lives-in-the-app-roots-store
   (let [source (fn [] {"sandbox-stored" {}})]
     (try
-      (tools/register-tool-source! "stored-source" source)
+      (tools/register-tool-source! (app-runtime/node) "stored-source" source)
       (t/is (identical? source
                         (get (scope/for-key (app-runtime/node)
                                             [:kmet/tool-source "stored-source"])
                              tools-registry/tools-owner)))
       (t/is (contains? (tools/get-contributed-tools) "sandbox-stored"))
       (finally
-        (tools/unregister-tool-source! "stored-source")))
+        (tools/unregister-tool-source! (app-runtime/node) "stored-source")))
     (t/is (empty? (scope/for-key (app-runtime/node)
                                  [:kmet/tool-source "stored-source"])))))
 
@@ -885,26 +885,26 @@
   (let [one {:name "guarded-tool" :description "one"
              :parameters {:type "object" :properties {}}
              :execute (fn [_] {:content "one"})}
-        stale (tools/register-tool! one)]
+        stale (tools/register-tool! (app-runtime/node) one)]
     (try
-      (tools/register-tool! (assoc one :description "two"))
+      (tools/register-tool! (app-runtime/node) (assoc one :description "two"))
       (stale)
       (t/is (= "two" (:description (tools/get-tool "guarded-tool")))
             "the replaced registration's deregister is a no-op")
       (finally
-        (tools/unregister-tool! "guarded-tool")))))
+        (tools/unregister-tool! (app-runtime/node) "guarded-tool")))))
 
 (t/deftest test-tool-registry-survives-a-remount
   ;; The tools slot is part of the app's entry list, so /reload's remount
   ;; diffs it as unchanged and the registrations stay (cells.md §6.2).
   (try
-    (tools/register-tool! {:name "survives-reload" :description "d"
-                           :parameters {:type "object" :properties {}}
-                           :execute (fn [_] {:content "ok"})})
+    (tools/register-tool! (app-runtime/node) {:name "survives-reload" :description "d"
+                                              :parameters {:type "object" :properties {}}
+                                              :execute (fn [_] {:content "ok"})})
     (app-runtime/remount!)
     (t/is (contains? (tools/get-all-tools) "survives-reload"))
     (finally
-      (tools/unregister-tool! "survives-reload"))))
+      (tools/unregister-tool! (app-runtime/node) "survives-reload"))))
 
 (t/deftest test-tools-prepare-arguments
   (t/testing "pi prepareToolCallArguments: the shim rewrites args before execution"
@@ -915,13 +915,13 @@
                   :parameters {:type "object" :properties {} :required []}
                   :prepare-arguments (fn [args] (assoc args "normalized" true))
                   :execute (fn [args] {:content (str "got " (count args) " keys")}))]
-      (tools/register-tool! custom)
+      (tools/register-tool! (app-runtime/node) custom)
       (try
         (let [result (tools/execute-tool "prepare-args" {"raw" 1})]
           (t/is (= "got 2 keys" (:content result))
                 "execute receives the prepared args (raw + normalized)"))
         (finally
-          (tools/unregister-tool! "prepare-args")))))
+          (tools/unregister-tool! (app-runtime/node) "prepare-args")))))
   (t/testing "a throwing shim surfaces as a tool error (pi: validation failure)"
     (let [custom (tools/make-tool
                   :name "prepare-throws"
@@ -930,13 +930,13 @@
                   :parameters {:type "object" :properties {} :required []}
                   :prepare-arguments (fn [_] (throw (ex-info "bad args" {})))
                   :execute (fn [_] {:content "unreachable"}))]
-      (tools/register-tool! custom)
+      (tools/register-tool! (app-runtime/node) custom)
       (try
         (let [result (tools/execute-tool "prepare-throws" {})]
           (t/is (:is-error result))
           (t/is (.contains (:content result) "bad args")))
         (finally
-          (tools/unregister-tool! "prepare-throws"))))))
+          (tools/unregister-tool! (app-runtime/node) "prepare-throws"))))))
 
 ;; ─── Edge cases ──────────────────────────────────────────────────────────
 

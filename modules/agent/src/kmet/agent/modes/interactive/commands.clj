@@ -317,6 +317,7 @@
    autocomplete and dispatch filter them out."
   [cmd]
   (commands/register-builtin!
+   (app-runtime/node)
    (assoc cmd
           :frontend :interactive
           :handler (fn [ctx args]
@@ -655,10 +656,10 @@
               ;; pi: model-runtime.refresh — recompose providers from models.edn
               _ (models/load-models-config!)
               ;; pi: resourceLoader.reload (skills, prompts)
-              _ (skills/clear-skills!)
-              _ (prompts/clear-prompt-templates!)
-              _ (packages/load-skills!)
-              _ (packages/load-prompts!)
+              _ (skills/clear-skills! (app-runtime/node))
+              _ (prompts/clear-prompt-templates! (app-runtime/node))
+              _ (packages/load-skills! (app-runtime/node))
+              _ (packages/load-prompts! (app-runtime/node))
               ;; pi: _rebuildSystemPrompt with new sources — the prompt is
               ;; built over the CURRENTLY active tool set (pi:
               ;; getActiveToolNames), so a pre-reload set-active-tools
@@ -720,7 +721,9 @@
             (try (event-bus/emit-event! {:type :session-start :reason :reload})
                  ;; pi: resources_discover fires after session_start (reason
                  ;; reload) — extensions contribute skill/prompt/theme paths
-                 (extensions/discover-resources! :reload)
+                 (extensions/discover-resources!
+                  (or (runtime/agent-node (:engine cs)) (app-runtime/node))
+                  :reload)
                  (catch Exception e (debug/log "session-start: " e))))
           (chat-history/chat-history-add-message! chat-history
                                                   {:role :info :label "Reload"

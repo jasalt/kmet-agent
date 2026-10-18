@@ -671,6 +671,15 @@ before-agent-start hooks, entry and message renderers, markdown transformers,
 tool and command registrations): they are registrations made in `:start`,
 owned by the unit, and disposed with it.
 
+The host's registration helpers take that node as their first argument —
+`register-command!`, `register-tool!`, `register-skill!`,
+`register-extension-skill!`, the hook, renderer and flag registrations,
+`load-skills-from-dir` and `discover-resources!` — so a unit's `:start`
+passes the node it was handed and lands on its own tree (F3). The app root
+appears only at the host's own edges: extension load, front-end builtin
+registration and package resource loading. Reads still answer for the app
+root; a child node's lookups take its node when a child loop needs them.
+
 ### 8.2 Isolated nodes
 
 Isolation is the host's, one backend per mechanism. The extension backend is

@@ -447,7 +447,8 @@
                        ;; pi: the import switch emits session_start (reason
                        ;; resume) like /resume — extensions restore from the
                        ;; imported branch
-                       (runtime/emit-session-start-async! {:type :session-start :reason :resume})
+                       (runtime/emit-session-start-async! (:engine cs)
+                                                          {:type :session-start :reason :resume})
                        (chat-history/chat-history-show-status!
                         chat (str "Session imported from: " (:source plan)))
                        (tui/tui-request-render (:tui cs))))

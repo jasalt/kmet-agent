@@ -122,15 +122,15 @@
     ;; a dedicated search tool in the active set suppresses the shell rule
     ;; (pi: buildRules — grep/find/ls); the stand-in mirrors the grep extension
     (try
-      (tools-registry/register-tool! {:name "grep"
-                                      :description "stand-in for the grep extension"
-                                      :prompt-snippet "stand-in for the grep extension"
-                                      :execute (fn [_] {:content ""})})
+      (tools-registry/register-tool! (runtime/node) {:name "grep"
+                                                     :description "stand-in for the grep extension"
+                                                     :prompt-snippet "stand-in for the grep extension"
+                                                     :execute (fn [_] {:content ""})})
       (loop/set-active-tools! agent ["bash" "read" "grep"])
       (t/is (str/includes? @(:system agent) "- grep:"))
       (t/is (not (str/includes? @(:system agent) "Use bash for file operations")))
       (finally
-        (tools-registry/unregister-tool! "grep")))
+        (tools-registry/unregister-tool! (runtime/node) "grep")))
     ;; restore all
     (loop/set-active-tools! agent nil)
     (t/is (nil? @(:enabled-tools agent)))
@@ -901,11 +901,11 @@
         agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))
         ;; one test-owned owner, so the hook cannot outlive the test (P2:
         ;; hooks live on the app tree under their owner, not in an engine)
-        dereg (extensions/register-before-agent-start-hook!
-               [:app :test-loop-hooks]
-               (fn [_]
-                 {:system-prompt "EXTRA SYSTEM PROMPT"
-                  :message {:role :info :label "ext" :content "injected note"}}))]
+        dereg (extensions/register-before-agent-start-hook! (runtime/node)
+                                                            [:app :test-loop-hooks]
+                                                            (fn [_]
+                                                              {:system-prompt "EXTRA SYSTEM PROMPT"
+                                                               :message {:role :info :label "ext" :content "injected note"}}))]
     (try
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message
@@ -2471,12 +2471,12 @@
   ;; pipeline refactor)
   (let [seen (atom nil)
         calls (atom 0)]
-    (tools/register-tool!
-     (tools/make-tool :name "rewrite-seq-tool" :label "Seq"
-                      :description "sequential rewrite test tool"
-                      :parameters {:x (tools/param :x :string "x")}
-                      :execute (fn [_] {:content "seq" :is-error false})
-                      :execution-mode :sequential))
+    (tools/register-tool! (runtime/node)
+                          (tools/make-tool :name "rewrite-seq-tool" :label "Seq"
+                                           :description "sequential rewrite test tool"
+                                           :parameters {:x (tools/param :x :string "x")}
+                                           :execute (fn [_] {:content "seq" :is-error false})
+                                           :execution-mode :sequential))
     (try
       (let [agent (loop/make-agent-state)]
         (reset! (:before-tool-call agent)
@@ -2502,7 +2502,7 @@
           @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])})))
       (t/is (= {:x "rewritten"} @seen))
       (finally
-        (tools/unregister-tool! "rewrite-seq-tool")))))
+        (tools/unregister-tool! (runtime/node) "rewrite-seq-tool")))))
 
 (t/deftest test-loop-scripted-calls-fire-tool-hooks
   ;; the run's agent-level hooks reach calls made inside a script: the loop
@@ -4260,12 +4260,12 @@
         release-first (promise)
         release-second (promise)
         agent (loop/make-agent-state)]
-    (tools/register-tool!
-     (tools/make-tool :name "seq-tool" :label "Seq"
-                      :description "sequential test tool"
-                      :parameters {:x (tools/param :x :string "x")}
-                      :execute (fn [_] {:content "seq" :is-error false})
-                      :execution-mode :sequential))
+    (tools/register-tool! (runtime/node)
+                          (tools/make-tool :name "seq-tool" :label "Seq"
+                                           :description "sequential test tool"
+                                           :parameters {:x (tools/param :x :string "x")}
+                                           :execute (fn [_] {:content "seq" :is-error false})
+                                           :execution-mode :sequential))
     (try
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message
@@ -4306,7 +4306,7 @@
               (deliver release-first true)
               (deliver release-second true)))))
       (finally
-        (tools/unregister-tool! "seq-tool")))))
+        (tools/unregister-tool! (runtime/node) "seq-tool")))))
 
 ;; ─── Phase 3: compaction ─────────────────────────────────────────────────
 
@@ -6124,11 +6124,11 @@
       (t/is (= #{"read"} (builtin-names ag)))
       (t/testing "extension tools registered later stay active"
         (try
-          (tools-registry/register-tool! {:name "default-tools-ext"
-                                          :description "d"
-                                          :execute (fn [_] {:content ""})})
+          (tools-registry/register-tool! (runtime/node) {:name "default-tools-ext"
+                                                         :description "d"
+                                                         :execute (fn [_] {:content ""})})
           (t/is (contains? (all-names ag) "default-tools-ext"))
-          (finally (tools-registry/unregister-tool! "default-tools-ext"))))
+          (finally (tools-registry/unregister-tool! (runtime/node) "default-tools-ext"))))
       (t/testing "an explicit set-active-tools! selection replaces the default"
         (loop/set-active-tools! ag ["bash"])
         (t/is (= #{"bash"} (all-names ag))))

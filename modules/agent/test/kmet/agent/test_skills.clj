@@ -18,7 +18,7 @@
 (t/deftest test-register-skill
   (let [name "test-skill"
         description "A skill for testing."]
-    (skills/register-skill! name description)
+    (skills/register-skill! (app-runtime/node) name description)
     (let [loaded (skills/get-skill name)]
       (t/is (some? loaded))
       (t/is (= name (:name loaded)))
@@ -28,7 +28,7 @@
   ;; The registry is the store, not an engine field: a skill is readable
   ;; under the app's owner by its name key, and the registration's
   ;; deregister fn removes exactly it.
-  (let [dereg (skills/register-skill! "stored-skill" "Stored.")]
+  (let [dereg (skills/register-skill! (app-runtime/node) "stored-skill" "Stored.")]
     (t/is (= "stored-skill"
              (:name (get (scope/for-key (app-runtime/node)
                                         [:kmet/skill "stored-skill"])
@@ -39,11 +39,11 @@
 
 (t/deftest test-skill-registry-survives-a-remount
   (try
-    (skills/register-skill! "remount-skill" "Survives.")
+    (skills/register-skill! (app-runtime/node) "remount-skill" "Survives.")
     (app-runtime/remount!)
     (t/is (some? (skills/get-skill "remount-skill"))
           "the skills slot is in the app's entry list; a remount keeps it")
-    (finally (skills/clear-skills!))))
+    (finally (skills/clear-skills! (app-runtime/node)))))
 
 (t/deftest test-get-skill-not-found
   (t/is (nil? (skills/get-skill "nonexistent"))))
@@ -76,7 +76,7 @@
   (t/testing "skills are listed as available_skills XML"
     (let [name "test-prompt-skill"
           description "Prompt skill description."
-          _ (skills/register-skill! name description)
+          _ (skills/register-skill! (app-runtime/node) name description)
           result (skills/build-system-prompt :cwd "/tmp")]
       (t/is (str/includes? result "<available_skills>"))
       (t/is (str/includes? result name))
@@ -140,14 +140,14 @@
 (t/deftest test-get-skills-returns-list
   (let [name "test-gs"
         description "GS description"]
-    (skills/register-skill! name description)
+    (skills/register-skill! (app-runtime/node) name description)
     (let [all (skills/get-skills)]
       (t/is (sequential? all))
       (t/is (some #(= name (:name %)) all)))))
 
 (t/deftest test-load-skills-from-dir-non-existent
   (t/testing "Loading from non-existent dir should not throw"
-    (t/is (empty? (skills/load-skills-from-dir "/nonexistent/skills")))))
+    (t/is (empty? (skills/load-skills-from-dir (app-runtime/node) "/nonexistent/skills")))))
 
 (t/deftest test-load-skills-from-dir
   (t/testing "SKILL.md directories are discovered as skill roots"
@@ -159,7 +159,7 @@
         (spit skill-file
               "---\nname: my-skill\ndescription: Test skill for discovery.\n---\n# My Skill\nDo the thing.")
         (spit (str tmp-dir "/note.txt") "not a skill")
-        (skills/load-skills-from-dir tmp-dir)
+        (skills/load-skills-from-dir (app-runtime/node) tmp-dir)
         (let [loaded (skills/get-skill "my-skill")]
           (t/is (some? loaded))
           (t/is (= "my-skill" (:name loaded)))
@@ -173,7 +173,7 @@
       (try
         (io/make-parents f)
         (spit f "---\nname: flat-skill\ndescription: Flat skill description.\n---\n# Flat Skill")
-        (skills/load-skills-from-dir tmp-dir)
+        (skills/load-skills-from-dir (app-runtime/node) tmp-dir)
         (let [loaded (skills/get-skill "flat-skill")]
           (t/is (some? loaded))
           (t/is (= "Flat skill description." (:description loaded))))
@@ -189,7 +189,7 @@
         (spit skill-file "---\nname: no-desc-skill\n---\n# No description")
         ;; missing-description diagnostic is printed to stderr — suppress it.
         (binding [*err* (java.io.StringWriter.)]
-          (skills/load-skills-from-dir tmp-dir))
+          (skills/load-skills-from-dir (app-runtime/node) tmp-dir))
         (t/is (nil? (skills/get-skill "no-desc-skill")))
         (finally (fs/delete-tree tmp-dir))))))
 
@@ -201,7 +201,7 @@
       (try
         (io/make-parents skill-file)
         (spit skill-file "---\ndescription: No name in frontmatter.\n---\n# Fallback")
-        (skills/load-skills-from-dir tmp-dir)
+        (skills/load-skills-from-dir (app-runtime/node) tmp-dir)
         (let [loaded (skills/get-skill "fallback-skill")]
           (t/is (some? loaded))
           (t/is (= "fallback-skill" (:name loaded))))
@@ -216,7 +216,7 @@
         (io/make-parents skill-file)
         (spit skill-file "---\n---\n# Empty frontmatter")
         (let [diags (binding [*err* (java.io.StringWriter.)]
-                      (skills/load-skills-from-dir tmp-dir))]
+                      (skills/load-skills-from-dir (app-runtime/node) tmp-dir))]
           (t/is (some #(= "description is required" (:message %)) diags)))
         (t/is (nil? (skills/get-skill "empty-fm")))
         (finally (fs/delete-tree tmp-dir))))))
@@ -230,7 +230,7 @@
         (io/make-parents skill-file)
         (spit skill-file
               "---\nname: nested-meta\ndescription: Real description.\nmetadata:\n  description: FAKE\n  name: FAKE\n---\n# Nested")
-        (skills/load-skills-from-dir tmp-dir)
+        (skills/load-skills-from-dir (app-runtime/node) tmp-dir)
         (let [loaded (skills/get-skill "nested-meta")]
           (t/is (some? loaded))
           (t/is (= "nested-meta" (:name loaded)))
@@ -248,7 +248,7 @@
         (spit f1 "---\nname: collision-skill\ndescription: First version.\n---\n# One")
         (spit f2 "---\nname: collision-skill\ndescription: Second version.\n---\n# Two")
         (let [diags (binding [*err* (java.io.StringWriter.)]
-                      (skills/load-skills-from-dir tmp-dir))
+                      (skills/load-skills-from-dir (app-runtime/node) tmp-dir))
               loaded (skills/get-skill "collision-skill")]
           (t/is (= "First version." (:description loaded)))
           (t/is (some #(= "collision" (:type %)) diags)))
@@ -261,7 +261,7 @@
     (try
       (io/make-parents skill-file)
       (spit skill-file "---\nname: expand-target\ndescription: Test.\n---\n# My Skill\nDo the thing.")
-      (skills/load-skills-from-dir tmp-dir)
+      (skills/load-skills-from-dir (app-runtime/node) tmp-dir)
       (t/testing "/skill:name expands to a <skill> block (frontmatter stripped)"
         (let [expanded (skills/expand-skill-command "/skill:expand-target")]
           (t/is (str/includes? expanded "<skill name=\"expand-target\""))
@@ -301,16 +301,16 @@
       (t/is (= "" (skills/format-skills-for-prompt []))))))
 
 (t/deftest test-clear-skills
-  (skills/register-skill! "clear-me" "Will be cleared.")
-  (skills/clear-skills!)
+  (skills/register-skill! (app-runtime/node) "clear-me" "Will be cleared.")
+  (skills/clear-skills! (app-runtime/node))
   (t/is (nil? (skills/get-skill "clear-me"))))
 
 (t/deftest test-register-extension-skill
   (t/testing "content registration parses, validates and expands from memory"
-    (skills/clear-skills!)
-    (let [dereg (skills/register-extension-skill!
-                 "---\nname: ext-mem\ndescription: In-memory skill\n---\n# Body\nDo it."
-                 {:location "my-ext:skills/ext-mem/SKILL.md" :extension "my-ext"})]
+    (skills/clear-skills! (app-runtime/node))
+    (let [dereg (skills/register-extension-skill! (app-runtime/node)
+                                                  "---\nname: ext-mem\ndescription: In-memory skill\n---\n# Body\nDo it."
+                                                  {:location "my-ext:skills/ext-mem/SKILL.md" :extension "my-ext"})]
       (let [loaded (skills/get-skill "ext-mem")]
         (t/is (some? loaded))
         (t/is (= "# Body\nDo it." (:body loaded)))
@@ -326,15 +326,15 @@
       (dereg)
       (t/is (nil? (skills/get-skill "ext-mem")) "deregister removes the skill")))
   (t/testing "first wins on collision with a file skill"
-    (skills/clear-skills!)
+    (skills/clear-skills! (app-runtime/node))
     (let [tmp-dir (str "target/test-skills-extcoll-" (System/currentTimeMillis))]
       (try
         (io/make-parents (str tmp-dir "/s/SKILL.md"))
         (spit (str tmp-dir "/s/SKILL.md")
               "---\nname: dup\ndescription: File version.\n---\nFile body")
-        (skills/load-skills-from-dir tmp-dir)
+        (skills/load-skills-from-dir (app-runtime/node) tmp-dir)
         (binding [*err* (java.io.StringWriter.)]
-          (skills/register-extension-skill! "---\nname: dup\ndescription: Ext.\n---\nExt body"
+          (skills/register-extension-skill! (app-runtime/node) "---\nname: dup\ndescription: Ext.\n---\nExt body"
                                             {:location "e:dup/SKILL.md" :extension "e"
                                              :owner [:app :extensions "e"]}))
         (t/is (= "File version." (:description (skills/get-skill "dup"))))
@@ -342,30 +342,30 @@
                               [:app :extensions "e"]))
               "the colliding extension registration was refused, not shadowed")
         (finally (fs/delete-tree tmp-dir)
-                 (skills/clear-skills!)))))
+                 (skills/clear-skills! (app-runtime/node))))))
   (t/testing "missing description is rejected"
-    (skills/clear-skills!)
+    (skills/clear-skills! (app-runtime/node))
     (binding [*err* (java.io.StringWriter.)]
-      (skills/register-extension-skill! "---\nname: nodesc\n---\nNo desc"
+      (skills/register-extension-skill! (app-runtime/node) "---\nname: nodesc\n---\nNo desc"
                                         {:location "e:nodesc/SKILL.md" :extension "e"}))
     (t/is (nil? (skills/get-skill "nodesc")))
-    (skills/clear-skills!)))
+    (skills/clear-skills! (app-runtime/node))))
 
 (t/deftest test-extension-skill-deregister-targets-its-registration
   ;; Two extensions claim one name: the second is refused (its deregister is a
   ;; no-op and cannot remove the winner); the winner's own fn removes exactly
   ;; its registration.
-  (skills/clear-skills!)
+  (skills/clear-skills! (app-runtime/node))
   (try
-    (let [dereg-winner (skills/register-extension-skill!
-                        "---\nname: dereg-winner\ndescription: Winner.\n---\nW"
-                        {:location "a:skills/dereg-winner/SKILL.md" :extension "a"
-                         :owner [:app :extensions "a"]})
+    (let [dereg-winner (skills/register-extension-skill! (app-runtime/node)
+                                                         "---\nname: dereg-winner\ndescription: Winner.\n---\nW"
+                                                         {:location "a:skills/dereg-winner/SKILL.md" :extension "a"
+                                                          :owner [:app :extensions "a"]})
           dereg-loser (binding [*err* (java.io.StringWriter.)]
-                        (skills/register-extension-skill!
-                         "---\nname: dereg-winner\ndescription: Loser.\n---\nL"
-                         {:location "b:skills/dereg-winner/SKILL.md" :extension "b"
-                          :owner [:app :extensions "b"]}))]
+                        (skills/register-extension-skill! (app-runtime/node)
+                                                          "---\nname: dereg-winner\ndescription: Loser.\n---\nL"
+                                                          {:location "b:skills/dereg-winner/SKILL.md" :extension "b"
+                                                           :owner [:app :extensions "b"]}))]
       (dereg-loser)
       (t/is (= "Winner." (:description (skills/get-skill "dereg-winner")))
             "the loser's no-op left the winner in place")
@@ -373,14 +373,14 @@
       (t/is (nil? (skills/get-skill "dereg-winner")) "the winner's fn removes it")
       (t/is (empty? (scope/for-key (app-runtime/node)
                                    [:kmet/skill "dereg-winner"]))))
-    (finally (skills/clear-skills!))))
+    (finally (skills/clear-skills! (app-runtime/node)))))
 
 (t/deftest test-extension-skill-readable-via-read-tool
   (t/testing "extension skill bodies load through the read tool under their location"
-    (skills/clear-skills!)
-    (let [dereg (skills/register-extension-skill!
-                 "---\nname: read-me\ndescription: Readable skill\n---\n# Body\nDo it."
-                 {:location "my-ext:skills/read-me/SKILL.md" :extension "my-ext"})]
+    (skills/clear-skills! (app-runtime/node))
+    (let [dereg (skills/register-extension-skill! (app-runtime/node)
+                                                  "---\nname: read-me\ndescription: Readable skill\n---\n# Body\nDo it."
+                                                  {:location "my-ext:skills/read-me/SKILL.md" :extension "my-ext"})]
       (try
         (t/testing "exact location resolves"
           (let [result (tools/execute-tool "read" {:path "my-ext:skills/read-me/SKILL.md"})]
@@ -406,4 +406,4 @@
           (dereg)
           (let [result (tools/execute-tool "read" {:path "my-ext:skills/read-me/SKILL.md"})]
             (t/is (:is-error result))))
-        (finally (skills/clear-skills!))))))
+        (finally (skills/clear-skills! (app-runtime/node)))))))

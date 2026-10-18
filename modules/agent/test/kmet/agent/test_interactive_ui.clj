@@ -2,7 +2,8 @@
   "Tests for the interactive-mode extension UI helpers: the autocomplete
    factory wrapper chain (pi: setupAutocompleteProvider) and the custom
    editor duck-typed transfer (pi: setCustomEditorComponent)."
-  (:require [clojure.string :as str]
+  (:require [kmet.agent.runtime :as app-runtime]
+            [clojure.string :as str]
             [clojure.test :as t :refer [deftest testing]]
             [kmet.agent.debug :as debug]
             [kmet.tui.autocomplete :as ac]
@@ -155,7 +156,7 @@
 (deftest test-builtin-login-logout-registered
   (testing "login/logout are real builtins inside register-builtin-commands!
             (not dropped or left as top-level forms)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [login (commands/find-command "login")
           logout (commands/find-command "logout")]
@@ -169,7 +170,7 @@
 (deftest test-view-builtin-through-the-command-ctx
   (testing "the registry adapter unwraps :state for a view-bound builtin:
             /help dispatched through the real command ctx reaches the chat"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           msgs (atom [])
@@ -184,7 +185,7 @@
 (deftest test-name-command-portable
   (testing "/name runs from the command ctx: it renames the session and
             reports through the shared UI capabilities (no CoreState)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str "target/test-name-command-" (System/currentTimeMillis))
           sess (session/create-session dir)
@@ -206,9 +207,9 @@
   (testing "builtin registration skips names an extension already took
             (extensions load before the layout is built; the shipped /tools
             extension replaces the builtin tools listing)"
-    (commands/clear-commands!)
-    (commands/register-command!
-     {:name "tools" :description "extension version" :handler (fn [_ _] nil)})
+    (commands/clear-commands! (app-runtime/node))
+    (commands/register-command! (app-runtime/node)
+                                {:name "tools" :description "extension version" :handler (fn [_ _] nil)})
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (t/is (= "extension version" (:description (commands/find-command "tools")))
           "extension command survives builtin registration")
@@ -217,7 +218,7 @@
 (deftest test-login-logout-unmatched-reference
   (testing "an unmatched /login reference opens the provider selector pre-filled;
            /logout always opens the stored-credential selector (pi)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [sel-ref (atom nil)]
       (with-redefs [dock/mount! (fn [_ component & _] (reset! sel-ref component))
@@ -239,7 +240,7 @@
 
 (deftest test-model-command-switches-model
   (testing "/model resolves provider/model patterns and switches the agent"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
@@ -272,7 +273,7 @@
 
 (deftest test-thinking-command-registered
   (testing "/thinking is a real builtin inside register-builtin-commands!"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [c (commands/find-command "thinking")]
       (t/is (some? c) "thinking registered")
@@ -286,7 +287,7 @@
   (testing "/thinking <level> applies the level to the session AND saves it
             as the settings default — the choice survives a restart (kmet
             deviation: pi's direct command stays session-scoped)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :deepseek :model "deepseek-v4-pro")
@@ -328,7 +329,7 @@
 (deftest test-thinking-command-bare-opens-selector
   (testing "bare /thinking mounts the level selector for a reasoning model;
             a model without supported levels gets the cycle status"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [status (atom nil)
@@ -368,7 +369,7 @@
   (testing "the mounted selector's Ctrl+S path runs the mode's persist logic:
             agent level set + [:thinking] saved to settings (pi Ctrl+S →
             selectThinkingLevel(level, true))"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :deepseek :model "deepseek-v4-pro")
@@ -402,7 +403,7 @@
 
 (deftest test-continue-registered
   (testing "/continue is a real builtin inside register-builtin-commands!"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [c (commands/find-command "continue")]
       (t/is (some? c) "continue registered")
@@ -412,7 +413,7 @@
 
 (deftest test-continue-refuses-while-running
   (testing "/continue refuses while the agent is running"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           msg (atom nil)
@@ -430,7 +431,7 @@
 
 (deftest test-continue-refuses-empty-context
   (testing "/continue refuses when there is no conversation to continue"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           msg (atom nil)
@@ -447,7 +448,7 @@
             already reads idle — the settle window (a post-run compaction or
             a pre-settle continuation) keeps the run flag true, and the run
             flag is what counts (pi: isStreaming)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           msg (atom nil)
@@ -469,7 +470,7 @@
   (testing "/continue starts an agent run on the existing context with no new
             user message — the model picks up the interrupted turn (e.g. after
             a network error the last entry is an unanswered user message)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           _ (swap! (:messages ag) conj
@@ -726,7 +727,7 @@
 
 (deftest test-scoped-models-settings-registered
   (testing "scoped-models and settings are real builtins"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [scoped (commands/find-command "scoped-models")
           settings (commands/find-command "settings")]
@@ -739,7 +740,7 @@
 (deftest test-hotkeys-registered-with-real-handler
   (testing "/hotkeys is a real builtin: its handler mounts the hiccup view,
             which shows wired actions only"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [hotkeys (commands/find-command "hotkeys")]
@@ -836,7 +837,7 @@
 (deftest test-import-registered-and-path-errors
   (testing "/import is a real builtin; pi's usage and file errors surface as
             Error: lines before any confirmation is mounted"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cmd (commands/find-command "import")
@@ -880,7 +881,7 @@
 (deftest test-import-confirm-flow
   (testing "/import copies the file into the active session's directory and
             resumes it when the Yes/No confirm is accepted"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str (fs/absolutize (str "target/test-import-flow-" (System/currentTimeMillis))))
@@ -980,7 +981,7 @@
 (deftest test-import-cancellation-paths
   (testing "/import leaves the session and the filesystem alone when the
             confirmation is declined, escaped, or cancelled by an extension"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str (fs/absolutize (str "target/test-import-cancel-" (System/currentTimeMillis))))]
@@ -1035,7 +1036,7 @@
   (testing "a recorded cwd that no longer exists keeps the current runtime
             cwd — kmet says so and continues (pi: MissingSessionCwdError asks
             for a fallback cwd)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str (fs/absolutize (str "target/test-import-gone-cwd-" (System/currentTimeMillis))))
@@ -1067,7 +1068,7 @@
   (testing "/export without a path writes into the session's runtime cwd —
             where its tools work (pi resolves its default against the process
             cwd; kmet's runtime cwd follows the session)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str (fs/absolutize (str "target/test-export-cwd-" (System/currentTimeMillis))))
@@ -1111,7 +1112,7 @@
   (testing "/resume and /tree refuse while a response is streaming, like
             /import, /fork and /clone (pi: teardownCurrent aborts the run and
             switches; kmet waits instead)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str (fs/absolutize (str "target/test-mid-turn-guards-"
@@ -1248,7 +1249,7 @@
 (deftest test-scoped-models-selector-initial-state
   (testing "/scoped-models opens the selector with session scoped models, then
             settings :enabled-models patterns, else nil (all enabled)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
@@ -1293,7 +1294,7 @@
 (deftest test-scoped-models-edit-updates-session
   (testing "selector edits write the session scoped list and clear on all-enabled"
     (install-app-keybindings!)
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
@@ -1323,7 +1324,7 @@
 (deftest test-scoped-models-save-drops-models-no-longer-available
   (testing "Ctrl+S excludes models that became unavailable after opening the selector"
     (install-app-keybindings!)
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (let [kept (m/map->Model {:provider :test-provider :id "kept"})
           disappeared (m/map->Model {:provider :test-provider :id "disappeared"})
           disabled (m/map->Model {:provider :test-provider :id "disabled"})
@@ -1363,7 +1364,7 @@
   (testing "/settings opens a settings list whose thinking row changes the
             session level and persists to settings"
     (install-app-keybindings!)
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4.1-flash"
@@ -1399,7 +1400,7 @@
   (testing "/settings Block images row flips the agent knob and persists
             (pi: block-images, ungated — unlike the terminal image rows)"
     (install-app-keybindings!)
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
@@ -1434,7 +1435,7 @@
 (deftest test-settings-retry-rows
   (testing "/settings retry rows apply live to the agent and persist"
     (install-app-keybindings!)
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
@@ -1503,7 +1504,7 @@
   (testing "/settings HTTP transport row switches the runtime transport
             (platform → curl → platform) and persists"
     (install-app-keybindings!)
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
@@ -1544,7 +1545,7 @@
   (testing "/theme takes the whole argument string (a string is a seq of
             chars — (first args) would yield the first character)"
     (install-app-keybindings!)
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [saved (atom nil)
@@ -2197,7 +2198,7 @@
             the /tools dialog cannot put the submitted '/tools' line back
             into the editor — while a dialog opened outside a submit still
             restores the draft it covered"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (let [ui (tui/create-tui nil)
           ed (editor/make-editor)
           ch (chat-history/make-chat-history)
@@ -2229,12 +2230,12 @@
           :widgets-above-atom (atom {})
           :widgets-below-atom (atom {})}
          nil)
-        (commands/register-command!
-         {:name "tools"
-          :description "test"
-          :extension-handler (fn [_ctx _args]
-                               (reset! seen (extensions/ui-get-editor-text))
-                               (extensions/ui-custom factory {}))})
+        (commands/register-command! (app-runtime/node)
+                                    {:name "tools"
+                                     :description "test"
+                                     :extension-handler (fn [_ctx _args]
+                                                          (reset! seen (extensions/ui-get-editor-text))
+                                                          (extensions/ui-custom factory {}))})
         (editor/editor-set-text! ed "/tools")
         (submit "/tools")
         (t/is (= "" @seen)
@@ -2251,7 +2252,7 @@
           (@close-ref nil)
           (t/is (= "draft" (editor/editor-get-text ed))))
         (finally
-          (commands/clear-commands!)
+          (commands/clear-commands! (app-runtime/node))
           (tu/clear-extension-wiring!))))))
 
 ;; ─── Compaction queue (pi: queueCompactionMessage / flushCompactionQueue) ──
@@ -2398,20 +2399,20 @@
 (deftest test-extension-command-during-compaction-executes
   (testing "extension commands execute immediately during compaction
             (pi: isExtensionCommand → prompt() executes)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (let [cs (compaction-cs)
           ran (atom nil)]
-      (commands/register-command!
-       {:name "my-ext-cmd"
-        :description "test"
-        :extension-handler (fn [_ctx args] (reset! ran args))})
+      (commands/register-command! (app-runtime/node)
+                                  {:name "my-ext-cmd"
+                                   :description "test"
+                                   :extension-handler (fn [_ctx args] (reset! ran args))})
       (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
       (with-redefs [tui/tui-request-render (fn [_] nil)
                     state/update-footer! (fn [_] nil)]
         ((var turn/handle-submit) cs "/my-ext-cmd arg1"))
       (t/is (= "arg1" @ran) "extension command executed immediately")
       (t/is (empty? (runtime/compaction-queued (:engine cs))) "not queued")
-      (commands/clear-commands!))))
+      (commands/clear-commands! (app-runtime/node)))))
 
 (deftest test-restore-queued-includes-compaction-queue
   (testing "Alt+Up / cancel restores the compaction queue alongside the
@@ -2513,7 +2514,7 @@
   (testing "the /compact future logs an exception escaping compact-context!
             (pi: handleCompactCommand catches and ignores — the events carry
             the failure; kmet logs it so a future never swallows a bug)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (let [cs (compaction-cs)
           logged (promise)]
       ((var builtins/register-builtin-commands!) cfg/default-config)
@@ -2526,7 +2527,7 @@
 (deftest test-compact-command-defers-mid-turn
   (testing "/compact while a turn is running schedules the compaction instead
             of refusing it — the request starts when the prompt settles"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (let [cs (compaction-cs)
           ran (promise)]
       (try
@@ -2547,7 +2548,7 @@
           ((var runtime/start-pending-compactions!) (:engine cs))
           (t/is (= ["focus" :manual] (deref ran 2000 nil))
                 "the deferred compaction ran after the turn settled"))
-        (finally (commands/clear-commands!))))))
+        (finally (commands/clear-commands! (app-runtime/node)))))))
 
 (deftest test-cancel-during-compaction-keeps-turn
   (testing "escape during compaction aborts ONLY the compaction — a running
@@ -2595,27 +2596,27 @@
 (deftest test-follow-up-extension-command-executes-during-compaction
   (testing "Alt+Enter with an extension command during compaction executes
             immediately (pi: handleFollowUp → isExtensionCommand → prompt)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     (let [cs (compaction-cs)
           ed @(:current-editor-atom cs)
           ran (atom nil)]
-      (commands/register-command!
-       {:name "my-fu-cmd"
-        :description "test"
-        :extension-handler (fn [_ctx args] (reset! ran args))})
+      (commands/register-command! (app-runtime/node)
+                                  {:name "my-fu-cmd"
+                                   :description "test"
+                                   :extension-handler (fn [_ctx args] (reset! ran args))})
       (editor/editor-set-text! ed "/my-fu-cmd arg")
       (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
       (with-redefs [tui/tui-request-render (fn [_] nil)]
         ((var turn/handle-follow-up) cs))
       (t/is (= "arg" @ran) "extension command executed immediately")
       (t/is (empty? (runtime/compaction-queued (:engine cs))) "not queued")
-      (commands/clear-commands!))))
+      (commands/clear-commands! (app-runtime/node)))))
 
 ;; ─── /followup command (pi: no equivalent — slash form of Alt+Enter) ──────
 
 (deftest test-followup-command-registered
   (testing "/followup is a real builtin inside register-builtin-commands!"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [c (commands/find-command "followup")]
       (t/is (some? c) "followup registered")
@@ -2627,7 +2628,7 @@
   (testing "/followup <text> while the agent runs queues the args as a
             follow-up (pi: handleFollowUp semantics) — nothing reaches the
             chat or context until the loop consumes it"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cs (compaction-cs)]
       (reset! (:turn-running? (:engine cs)) true)
@@ -2643,7 +2644,7 @@
 (deftest test-followup-command-submits-when-idle
   (testing "/followup <text> while idle starts a run with the args as the
             message — Alt+Enter's idle path (pi: handleFollowUp → submit)"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cs (compaction-cs)
           started (atom [])]
@@ -2665,7 +2666,7 @@
 (deftest test-followup-command-queues-during-compaction
   (testing "/followup <text> during compaction queues as follow-up (pi:
             handleFollowUp → queueCompactionMessage(text, followUp))"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cs (compaction-cs)]
       (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
@@ -2678,7 +2679,7 @@
 
 (deftest test-followup-command-blank-args-usage
   (testing "/followup with no args shows usage instead of queueing anything"
-    (commands/clear-commands!)
+    (commands/clear-commands! (app-runtime/node))
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cs (compaction-cs)
           msg (atom nil)]
