@@ -7,7 +7,11 @@
    carries them as inline defaults, so the same descriptor mounts as the root
    loop and as a subagent's loop. What a unit registers in `:start` (event
    subscribers, tools, commands, renderers) then has an owner — its slot path —
-   so it is disposed with the mount instead of reset by hand."
+   so it is disposed with the mount instead of reset by hand.
+
+   P5a adds the `:ext` backend: an extension publishes units and the entries
+   that carry them during `init(api)` (cells.md §8.2), and `remount!` is the
+   assembly point for the defaults plus what the loaded extensions published."
   (:require [clojure.string :as str]
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.retry :as retry]
@@ -77,8 +81,12 @@
   "The entries the app mounts at its root: the loop group and the domains'
    addresses. The group carries its stages inline; the session, extension and
    UI slots are addresses the engine and the front end register their live
-   values under (cells.md §5.1). A config-derived entry waits on the engine
-   having its own node: this tree is shared (cells.md §8)."
+   values under (cells.md §5.1). Extensions' published entries mount in the
+   same list, after these (§8.2); an id one of these already uses is the
+   plan's duplicate-id error, not a replacement — the replaceable defaults are
+   a group's inline stages, which an entry with the same `:id`/`:into`
+   overrides. A config-derived entry waits on the engine having its own node:
+   this tree is shared (cells.md §8)."
   [{:id :agent-loop :name :kmet/agent-loop}
    {:id :commands :name :kmet/commands}
    {:id :tools :name :kmet/tools}
@@ -88,27 +96,107 @@
    {:id :extensions :name :kmet/extensions}
    {:id :ui :name :kmet/ui}])
 
+;; ─── Extension units (the `:ext` backend) ────────────────────────────────
+;;
+;; An extension publishes units during `init(api)` (cells.md §8.2). A
+;; publication is {:extension <name> :name <keyword> :entry <entry>
+;; :unit <descriptor>}: the name resolves through the `:ext` backend and the
+;; entry mounts the unit in the app root, so what an extension contributes
+;; goes into the tree the same way the host's own entries do. One publication
+;; per (extension, name); `unpublish-extension!` drops everything one
+;; extension published, which is unload's first step.
+
+(defonce ^:private publications (atom []))
+
+(defn extension-unit
+  "The publication for NAME as {:unit <descriptor> :extension <name>}, or nil
+   — what the `:ext` backend reads. A name is namespaced to its extension
+   (`:budget/spend`), so a repeat means a re-publication."
+  [nm]
+  (when-let [publication (last (filter #(= nm (:name %)) @publications))]
+    (select-keys publication [:unit :extension])))
+
+(defn- published-entries
+  "The entries the loaded extensions published, in publication order."
+  []
+  (mapv :entry @publications))
+
 (defn runtime
-  "A composition runtime over the builtin units: resolution plus a fresh root
-   node for `mount!` to target."
+  "A composition runtime over the builtin units and the extensions' published
+   ones: resolution (`:builtin` first, then `:ext`) plus a fresh root node for
+   `mount!` to target."
   []
   (cells/runtime
-   {:resolve [[:builtin (fn [nm] (get builtin-units nm))]]}))
+   {:resolve [[:builtin (fn [nm] (get builtin-units nm))]
+              [:ext (fn [nm] (:unit (extension-unit nm)))]]}))
 
 (defonce ^:private app-rt (runtime))
 
 (defn remount!
-  "Diff the default entries into the app root — mount them the first time and
-   re-diff after that, so a unit whose namespace was reloaded remounts and its
-   new handle reaches the app: a mounted slot holds the handle value it was
-   mounted with (cells.md §6.2, §6.4). `/reload` calls this, and `node` calls
-   it once.
-
-   These entries are the root's complete slot list — `mount!` drops what the
-   list no longer names (§6.2) — so a later phase that mounts more into this
-   tree extends `default-entries` rather than mounting beside them."
+  "Synchronize the app root with the current entry list: the defaults plus the
+   entries the loaded extensions published. Mounts them the first time and
+   re-diffs after that, so a unit whose namespace was reloaded remounts, an
+   extension's new unit appears, and a dropped one is disposed with its
+   registrations (cells.md §6.2, §6.4). `/reload` and every publish/unpublish
+   call do this."
   []
-  (cells/mount! app-rt default-entries))
+  (cells/mount! app-rt (into default-entries (published-entries))))
+
+(defn- drop-publications!
+  "Remove the publications matching PRED and remount when any went — the
+   tree's slots and the list stay in step. Returns true when something was
+   dropped."
+  [pred]
+  (let [before @publications
+        kept (into [] (remove pred) before)]
+    (when (< (count kept) (count before))
+      (reset! publications kept)
+      (remount!)
+      true)))
+
+(defn publish-extension-unit!
+  "Publish EXT-NAME's unit: NAME (a namespaced keyword) resolves through the
+   `:ext` backend to the publication's `:unit`, and its `:entry` mounts in the
+   app root. Re-publishing (extension, name) replaces the earlier record, so
+   the tree diffs instead of accumulating. Returns a deregister fn.
+
+   Remounts immediately; a mount the checks refuse drops the publication
+   before the error reaches the caller (cells.md §6.3)."
+  [ext-name {:keys [name entry unit] :as publication}]
+  (when-not (and (keyword? name) (map? entry) (map? unit))
+    (throw (ex-info (str "kmet.agent.runtime: a published unit needs :name "
+                         "(a keyword), :entry and :unit maps, got: "
+                         (pr-str publication))
+                    {:type ::bad-unit-publication
+                     :extension ext-name
+                     :publication publication})))
+  (let [publication (assoc publication
+                           :extension ext-name
+                           :entry (assoc entry :name name))]
+    (swap! publications
+           (fn [ps]
+             (conj (into [] (remove #(and (= ext-name (:extension %))
+                                          (= name (:name %)))
+                                    ps))
+                   publication)))
+    (try
+      (remount!)
+      (catch Throwable t
+        ;; the checks ran before anything was touched (or a `:start` threw
+        ;; mid-walk): drop the publication and re-sync, then surface the
+        ;; mount's error rather than a cleanup's
+        (try (drop-publications! #(identical? % publication))
+             (catch Throwable _))
+        (throw t)))
+    (fn deregister []
+      (drop-publications! #(identical? % publication)))))
+
+(defn unpublish-extension!
+  "Drop every unit and entry EXT-NAME published and remount without them —
+   unload's first step, before `shutdown(api)` and the loader release
+   (cells.md §8.2). Returns true when anything was dropped."
+  [ext-name]
+  (drop-publications! #(= ext-name (:extension %))))
 
 (defonce ^:private app-node
   ;; The once latch: the first deref mounts, and mounting returns the same

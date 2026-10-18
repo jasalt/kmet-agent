@@ -557,6 +557,37 @@ this way — run_code.md T2):
   `run_code` itself.
 - The registration is removed automatically when the extension unloads.
 
+- The registration is removed automatically when the extension unloads.
+
+### Units (`register-unit!`)
+
+Publishes a unit into the host's composition tree (`kmet.cells`, `cells.md`
+§8.2) — for contributing a *slot* rather than an entry in a registry: a policy
+a list-shaped slot the host consults, or a replacement for one of a group's
+stage defaults (the loop's guard and retry policy are inline stages an entry
+with the same `:id`/`:into` overrides):
+
+```clojure
+(ext/register-unit! api
+  {:name  :my-ext/routing                  ; resolves through the host's :ext backend
+   :unit  {:config [:map [:threshold :int]] ; malli schema the entry's :config is checked against
+           :handle (fn [node input] ...)    ; what a caller reaches through the snapshot
+           :start (fn [node owner] ...)}    ; optional: register! what the unit owns
+   :entry {:id :routing :into :app          ; the host slot (cells.md §6.1)
+           :config {:threshold 3}}})
+```
+
+- `:name` is namespaced to the extension; re-publishing a name replaces the
+  earlier unit, so the tree diffs instead of accumulating.
+- `:entry` is the host's entry shape: `:id` (the slot), `:into` (the group;
+  omitted = the app root) and the entry's `:config`. An id another entry
+  already uses is a duplicate-id error, not a silent replacement.
+- `:unit`'s fns (`:start`, `:handle`, …) run in the extension's context, like
+  every other registered callback.
+- Returns a deregister fn. On unload the entry and the unit go together —
+  before `shutdown(api)` runs — disposing whatever the slot's `:start`
+  registered.
+
 ### Tool execute contract
 
 By default `:execute` receives `(fn [args])`. A tool that declares

@@ -16,10 +16,12 @@
     (is (= {} (cells/composition node))
         "the root composition now exists, empty")))
 
-(deftest a-miss-names-the-builtin-backend
+(deftest a-miss-names-every-backend
   (let [[error] (cells/check (runtime/runtime) [{:id :nope :name :kmet/nope}])]
     (is (= :name (:key error)))
-    (is (str/includes? (:error error) ":builtin"))))
+    (is (str/includes? (:error error) ":builtin"))
+    (is (str/includes? (:error error) ":ext")
+        "a miss reports every backend tried, in the host's order")))
 
 (deftest a-builtin-unit-resolves-mounts-and-is-readable
   (with-redefs [runtime/builtin-units
@@ -105,6 +107,97 @@
         "the nested stage renders once, under its real parent")
     (is (not (str/includes? text "\n  [:app :group :sub :deep]"))
         "the deep stage is not re-rendered under the root leaf")))
+
+(deftest an-extension-unit-resolves-and-mounts
+  ;; P5a: a publication is {:name :entry :unit} — the name resolves through
+  ;; the `:ext` backend, and the entry mounts the unit in the app root.
+  (let [node (runtime/node)
+        probe {:handle (fn [_ n] (* 2 n)) :config [:map [:n :int]]}
+        dereg (runtime/publish-extension-unit!
+               "probe-ext" {:name :probe-ext/double
+                            :unit probe
+                            :entry {:id :probe-ext :config {:n 21}}})
+        snapshot (runtime/snapshot node)]
+    (is (= {:unit probe :extension "probe-ext"}
+           (runtime/extension-unit :probe-ext/double)))
+    (is (= 42 ((runtime/unit-handle node :probe-ext) node 21)))
+    (is (= {:n 21} (runtime/config snapshot :probe-ext)))
+    (is (= [:app :probe-ext] (:owner (:probe-ext snapshot))))
+    (is (true? (dereg)) "the deregister fn drops the publication")
+    (is (nil? (runtime/unit-handle node :probe-ext)))
+    (is (nil? (runtime/extension-unit :probe-ext/double)))))
+
+(deftest the-ext-backend-is-tried-after-builtin
+  ;; Backends are tried in the host's declared order: a publication cannot
+  ;; shadow a builtin name, so the entry gets kmet's own retry unit.
+  (let [node (runtime/node)
+        shadow (fn [& _] :shadow)
+        dereg (runtime/publish-extension-unit!
+               "shadow-ext" {:name :kmet/retry
+                             :unit {:handle shadow}
+                             :entry {:id :shadow-retry :into :agent-loop
+                                     :config {:max-retries 1}}})]
+    (is (= shadow (:handle (:unit (runtime/extension-unit :kmet/retry))))
+        "published under the builtin name")
+    (is (not (identical? shadow
+                         (runtime/handle (runtime/snapshot node :agent-loop) :retry-policy)))
+        "the mounted stage is the builtin's descriptor")
+    (is (true? (dereg)))))
+
+(deftest re-publishing-a-name-replaces-the-earlier-unit
+  (let [node (runtime/node)
+        starts (atom 0)
+        publish (fn [tag]
+                  (runtime/publish-extension-unit!
+                   "re-ext" {:name :re-ext/unit
+                             :unit {:start (fn [_ _] (swap! starts inc) nil)
+                                    :handle (fn [_ _] tag)}
+                             :entry {:id :re-ext}}))
+        stale (publish :one)
+        dereg (publish :two)]
+    (is (= :two ((runtime/unit-handle node :re-ext) node nil)))
+    (is (= 2 @starts) "the re-publication remounted the slot")
+    (stale)
+    (is (= :two ((runtime/unit-handle node :re-ext) node nil))
+        "a stale deregister is a no-op")
+    (is (true? (dereg)))
+    (is (nil? (runtime/unit-handle node :re-ext)))))
+
+(deftest a-refused-mount-drops-the-publication
+  (let [node (runtime/node)
+        before (runtime/snapshot node)]
+    (is (thrown? Exception
+                 (runtime/publish-extension-unit!
+                  "bad-ext" {:name :bad-ext/unit
+                             :unit {:handle identity :config [:map [:n :int]]}
+                             :entry {:id :bad-ext :config {:n "not-an-int"}}})))
+    (is (nil? (runtime/extension-unit :bad-ext/unit))
+        "the publication did not survive the refused mount")
+    (is (= (set (keys before)) (set (keys (runtime/snapshot node))))
+        "and the tree is unchanged")))
+
+(deftest a-malformed-publication-is-refused
+  (is (= :kmet.agent.runtime/bad-unit-publication
+         (:type (ex-data (try (runtime/publish-extension-unit!
+                               "x" {:name "not-a-keyword" :entry {} :unit {}})
+                              (catch Exception e e))))))
+  (is (nil? (runtime/extension-unit "not-a-keyword"))))
+
+(deftest unpublishing-one-extension-leaves-anothers
+  (let [node (runtime/node)
+        unit {:handle (fn [_ _] :ok)}
+        stale-a (runtime/publish-extension-unit!
+                 "ext-a" {:name :ext-a/unit :unit unit :entry {:id :ext-a}})
+        stale-b (runtime/publish-extension-unit!
+                 "ext-b" {:name :ext-b/unit :unit unit :entry {:id :ext-b}})]
+    (is (true? (runtime/unpublish-extension! "ext-a")))
+    (is (nil? (runtime/unit-handle node :ext-a)))
+    (is (some? (runtime/unit-handle node :ext-b)))
+    (is (not (runtime/unpublish-extension! "ext-a")) "nothing left to drop")
+    (is (true? (runtime/unpublish-extension! "ext-b")))
+    (is (nil? (runtime/unit-handle node :ext-b)))
+    (stale-a)
+    (stale-b)))
 
 (deftest a-remount-reaches-a-changed-unit
   ;; A mounted slot holds the handle value it was mounted with, so a reloaded

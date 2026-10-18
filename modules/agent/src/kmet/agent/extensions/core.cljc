@@ -1040,6 +1040,16 @@
      :unregister-tool-source! (fn [id]
                                 (swap! source-ids disj id)
                                 (tools/unregister-tool-source! id))
+     ;; a unit the extension contributes to the host's tree (cells.md §8.2):
+     ;; :name (namespaced to this extension) resolves through the runtime's
+     ;; :ext backend, :unit is the descriptor, :entry says where it mounts.
+     ;; Re-publishing a name replaces the earlier publication.
+     :register-unit! (fn [{:keys [unit] :as publication}]
+                       (let [dereg (app-runtime/publish-extension-unit!
+                                    name
+                                    (assoc publication :unit (loader-aware-map ext unit)))]
+                         (track dereg)
+                         dereg))
      ;; pi: createBashTool — the bash tool constructor with its options
      ;; (spawnHook / exposeSessionEnvironment / commandPrefix / shellPath /
      ;; operations). The built-in bash tool is the same constructor with
@@ -1363,14 +1373,16 @@
                     (str "load failed: " (.getName (class e))))}))))
 
 (defn unload-extension!
-  "Unload an extension: shutdown (if initialized), deregister everything it
-   registered, then drop its isolated context — namespaces and jars become
-   unreachable, nothing global is touched. Expects the Extension record
-   (from the registry / reload-extensions!); nil is a no-op — the load
-   result map carries only its :extension name, and (deref nil) would
-   otherwise surface as a cryptic NPE."
+  "Unload an extension in three steps (cells.md §8.2): drop the units and
+   entries it published (remounting without them disposes their slots' owners),
+   shutdown (if initialized), then deregister what it registered and drop its
+   isolated context — namespaces and jars become unreachable, nothing global is
+   touched. Expects the Extension record (from the registry /
+   reload-extensions!); nil is a no-op — the load result map carries only its
+   :extension name, and (deref nil) would otherwise surface as a cryptic NPE."
   [ext]
   (when ext
+    (app-runtime/unpublish-extension! (:name ext))
     (when (and @(:initialized? ext) @(:entry-ns ext))
       (when-let [shutdown (extension-var ext @(:entry-ns ext) 'shutdown)]
         (try ((loader-aware ext (deref shutdown)) @(:api ext))
