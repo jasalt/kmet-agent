@@ -2727,6 +2727,96 @@ Be precise and concise in your responses."}}]
        (or (has-queued-messages? agent)
            (before-settle! agent))))
 
+(def ^:private attempt-routes
+  "The prompt state machine's routing table: one handler per `run-attempt!`
+   outcome. A handler receives the driver context — `:agent`, `:on-done`,
+   `:on-error`, `:begin-attempt!` (fresh accumulator) and
+   `:continue-attempt!` (drain the queue, then begin) — and the attempt's
+   outcome, and returns `:again` to run another attempt or `:stop` to settle
+   the prompt. `run-agent-turn` owns the `recur`."
+  {:settled
+   (fn [{:keys [agent on-done continue-attempt!]} outcome]
+     ;; pi: _handlePostAgentRun's post-run compaction check, then
+     ;; queued-message continuation, then _runBeforeSettleBoundary. A
+     ;; threshold compaction never retries the turn (pi: _checkCompaction
+     ;; returns hasQueuedMessages). on-done stays the prompt's teardown
+     ;; (the UI's running-turn? hinges on it) and fires only once no
+     ;; attempt is pending.
+     (maybe-compact! agent)
+     (if (continue-prompt? agent)
+       (do (continue-attempt!) :again)
+       (do (when on-done (on-done (:text outcome)))
+           :stop)))
+
+   :error
+   (fn [{:keys [agent continue-attempt!]} _outcome]
+     ;; pi: a terminal error ends the attempt, but _handlePostAgentRun still
+     ;; runs the compaction check (an error response has no usable usage, so
+     ;; the estimate decides) before the pre-settle boundary — a handler can
+     ;; revive the prompt. on-done stays unsent: the error was surfaced
+     ;; instead.
+     (maybe-compact! agent)
+     (if (continue-prompt? agent)
+       (do (continue-attempt!) :again)
+       :stop))
+
+   :aborted
+   (fn [_driver _outcome]
+     ;; Cancelled: the prompt ends here, without the pre-settle boundary
+     ;; (pi: the prompt loop's abort exits before _runBeforeSettleBoundary;
+     ;; the :turn-end boundary of an aborted turn has already run).
+     :stop)
+
+   :retry
+   (fn [{:keys [agent begin-attempt!]} outcome]
+     (let [{:keys [error action]} outcome
+           {:keys [attempt delay-ms max-attempts]} action]
+       (reset! (:retry-count agent) attempt)
+       (emit agent {:type :auto-retry-start
+                    :attempt attempt
+                    :max-attempts max-attempts
+                    :delay-ms delay-ms
+                    :error-message error})
+       ;; pi: _prepareRetry omits the failed attempt from the model
+       ;; projection before the backoff, so the retried request (and every
+       ;; later rebuild) cannot re-send it
+       (omit-recovery-attempt! agent (:attempt-entry outcome))
+       (if (retry/backoff-sleep! (:signal agent) delay-ms)
+         ;; Same context — a new low-level run with a fresh accumulator
+         ;; (pi: agent.continue, one agent_end per attempt)
+         (do (begin-attempt!) :again)
+         ;; Cancelled during backoff
+         (do (emit agent {:type :auto-retry-end
+                          :success false
+                          :attempt attempt
+                          :final-error "Retry cancelled"})
+             (reset! (:retry-count agent) 0)
+             (set-agent-status! agent :idle)
+             :stop))))
+
+   :overflow
+   (fn [{:keys [agent on-error begin-attempt! continue-attempt!]} outcome]
+     (let [error (:error outcome)]
+       (reset! (:overflow-recovered agent) true)
+       ;; pi: _checkCompaction's overflow case omits the failed attempt
+       ;; before the recovery compaction, so neither the compaction input
+       ;; nor the retry re-sends it
+       (omit-recovery-attempt! agent (:attempt-entry outcome))
+       (if (= true (compact-for-overflow! agent))
+         ;; The compaction shrank the context — retry the interrupted turn
+         ;; (pi: _checkCompaction → continue).
+         (do (begin-attempt!) :again)
+         ;; Nothing to compact, or the compaction failed/was aborted: a
+         ;; retry would overflow again. pi settles here (_checkCompaction
+         ;; returns false); kmet surfaces the overflow so the turn does not
+         ;; end silently and the UI leaves "Working". The pre-settle
+         ;; boundary still runs, as it does after any non-retry attempt.
+         (do (close-retry-and-surface-error! agent error on-error)
+             (if (continue-prompt? agent)
+               (do (continue-attempt!) :again)
+               (do (set-agent-status! agent :idle)
+                   :stop))))))})
+
 (defn run-agent-turn
   "Run the agent loop until it settles, owning the attempt/retry state
    machine (pi: _runAgentPrompt). Each attempt is a low-level run with its
@@ -2765,6 +2855,9 @@ Be precise and concise in your responses."}}]
               ask for one (pi: _runBeforeSettleBoundary); with no attempt
               pending the prompt settles — on-done runs and :agent-settled
               fires from the finally.
+   The attempt/retry state machine dispatches each `run-attempt!` outcome
+   through `attempt-routes`; a handler returns :again (another attempt) or
+   :stop (settle), and this function owns the `recur`.
 
    Cancellation: cancel-turn sets the signal and delivers {:cancelled true}
    to the in-flight LLM promise (active-call); the attempt exits quietly
@@ -2855,96 +2948,23 @@ Be precise and concise in your responses."}}]
               ;; hooks, and the pre-run compaction check run once per prompt,
               ;; not once per attempt (pi: prompt() vs continue()).
               (prepare-run! agent message images)
-              (loop []
-                (emit agent {:type :agent-start})
-                (set-agent-status! agent :thinking)
-                (let [outcome (run-attempt! agent @attempt-token opts)]
-                  (case (:status outcome)
-                    :settled
-                    ;; pi: _handlePostAgentRun's post-run compaction check,
-                    ;; then queued-message continuation, then
-                    ;; _runBeforeSettleBoundary. A threshold compaction never
-                    ;; retries the turn (pi: _checkCompaction returns
-                    ;; hasQueuedMessages). on-done stays the prompt's teardown
-                    ;; (the UI's running-turn? hinges on it) and fires only
-                    ;; once no attempt is pending.
-                    (do (maybe-compact! agent)
-                        (if (continue-prompt? agent)
-                          (do (continue-attempt!) (recur))
-                          (when on-done (on-done (:text outcome)))))
-
-                    :error
-                    ;; pi: a terminal error ends the attempt, but
-                    ;; _handlePostAgentRun still runs the compaction check
-                    ;; (an error response has no usable usage, so the
-                    ;; estimate decides) before the pre-settle boundary — a
-                    ;; handler can revive the prompt. on-done stays unsent:
-                    ;; the error was surfaced instead.
-                    (do (maybe-compact! agent)
-                        (when (continue-prompt? agent)
-                          (continue-attempt!)
-                          (recur)))
-
-                    :aborted
-                    ;; Cancelled: the prompt ends here, without the
-                    ;; pre-settle boundary (pi: the prompt loop's abort exits
-                    ;; before _runBeforeSettleBoundary; the :turn-end boundary
-                    ;; of an aborted turn has already run).
-                    nil
-
-                    :retry
-                    (let [{:keys [error action]} outcome
-                          {:keys [attempt delay-ms max-attempts]} action]
-                      (reset! (:retry-count agent) attempt)
-                      (emit agent {:type :auto-retry-start
-                                   :attempt attempt
-                                   :max-attempts max-attempts
-                                   :delay-ms delay-ms
-                                   :error-message error})
-                      ;; pi: _prepareRetry omits the failed attempt from the
-                      ;; model projection before the backoff, so the retried
-                      ;; request (and every later rebuild) cannot re-send it
-                      (omit-recovery-attempt! agent (:attempt-entry outcome))
-                      (if (retry/backoff-sleep! (:signal agent) delay-ms)
-                        ;; Same context — a new low-level run with a fresh
-                        ;; accumulator (pi: agent.continue, one agent_end per
-                        ;; attempt)
-                        (do (begin-attempt!) (recur))
-                        ;; Cancelled during backoff
-                        (do (emit agent {:type :auto-retry-end
-                                         :success false
-                                         :attempt attempt
-                                         :final-error "Retry cancelled"})
-                            (reset! (:retry-count agent) 0)
-                            (set-agent-status! agent :idle))))
-
-                    :overflow
-                    (let [error (:error outcome)]
-                      (reset! (:overflow-recovered agent) true)
-                      ;; pi: _checkCompaction's overflow case omits the failed
-                      ;; attempt before the recovery compaction, so neither the
-                      ;; compaction input nor the retry re-sends it
-                      (omit-recovery-attempt! agent (:attempt-entry outcome))
-                      (if (= true (compact-for-overflow! agent))
-                        ;; The compaction shrank the context — retry the
-                        ;; interrupted turn (pi: _checkCompaction → continue).
-                        (do (begin-attempt!) (recur))
-                        ;; Nothing to compact, or the compaction failed/was
-                        ;; aborted: a retry would overflow again. pi settles
-                        ;; here (_checkCompaction returns false); kmet surfaces
-                        ;; the overflow so the turn does not end silently and
-                        ;; the UI leaves "Working". The pre-settle boundary
-                        ;; still runs, as it does after any non-retry attempt.
-                        (do (close-retry-and-surface-error! agent error on-error)
-                            (if (continue-prompt? agent)
-                              (do (continue-attempt!) (recur))
-                              (set-agent-status! agent :idle)))))
-
-                    ;; Unreachable: run-attempt! returns one of the five
-                    ;; outcomes. Throwing (rather than a bare case failure)
-                    ;; names the culprit.
-                    (throw (ex-info "Unknown attempt outcome"
-                                    {:outcome outcome})))))
+              (let [driver {:agent agent
+                            :on-done on-done
+                            :on-error on-error
+                            :begin-attempt! begin-attempt!
+                            :continue-attempt! continue-attempt!}]
+                (loop []
+                  (emit agent {:type :agent-start})
+                  (set-agent-status! agent :thinking)
+                  (let [outcome (run-attempt! agent @attempt-token opts)
+                        ;; Unreachable: run-attempt! returns one of the five
+                        ;; outcomes. Throwing (rather than ignoring a failed
+                        ;; look-up) names the culprit.
+                        handler (or (attempt-routes (:status outcome))
+                                    (throw (ex-info "Unknown attempt outcome"
+                                                    {:outcome outcome})))]
+                    (when (= :again (handler driver outcome))
+                      (recur)))))
               (catch Exception e
                 (reset! (:status agent) :error)
                 ;; The settle event reports the run's outcome; an exception
