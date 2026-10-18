@@ -680,6 +680,13 @@ appears only at the host's own edges: extension load, front-end builtin
 registration and package resource loading. Reads still answer for the app
 root; a child node's lookups take its node when a child loop needs them.
 
+A subscription may also carry its node: `on-event` takes an optional scope,
+an emission carries the emitting node, and a scoped listener sees its own node
+and its descendants (a child loop's events) while a process-wide listener —
+an extension's — keeps hearing every emission. An app-level emission (no
+emitting node) reaches scoped listeners too, so a unit still sees the host's
+session events. The registry stays one process-level structure (F13, §12 Q3).
+
 ### 8.2 Isolated nodes
 
 Isolation is the host's, one backend per mechanism. The extension backend is
@@ -910,7 +917,10 @@ explicit request.
    copy nor clear it (the F10 follow-up), so a subscription survives an engine
    and a second bootstrap sees it; dispatch reads it in registration order
    (the load order pi iterates), and a handler failure is reported through
-   `kmet.agent.debug/log-error` instead of a console.
+   `kmet.agent.debug/log-error` instead of a console. Scoping (§8.1) is a
+   property of the subscription, not of the registry: the scoped-subscription
+   follow-up (F13) adds the emitting node to the entry and the emission, so
+   one registry still answers for the whole process.
 4. **`composition` (data) as an ABI.** **Settled with P1**: §5.4's entry shape
    is the compatibility surface — `explain`'s string form stays cosmetic and
    free to change. Changing the shape is now a deliberate, documented act,

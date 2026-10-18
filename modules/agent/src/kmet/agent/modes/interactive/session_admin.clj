@@ -437,7 +437,8 @@
                  (if (:cancel (event-bus/emit-event!
                                {:type :session-before-switch
                                 :reason :resume
-                                :target-session-file (:path plan)}))
+                                :target-session-file (:path plan)}
+                               (runtime/agent-node (:engine cs))))
                    (chat-history/chat-history-show-status! chat "Import cancelled")
                    (do (session/copy-imported-session! plan)
                        (let [sess (session/load-session (:path plan))]
@@ -596,7 +597,8 @@
               :label label}
         ext-result (event-bus/emit-event! {:type :session-before-tree
                                            :preparation prep
-                                           :signal abort-atom})
+                                           :signal abort-atom}
+                                          (runtime/agent-node (:engine cs)))
         custom-instructions (or (:custom-instructions ext-result) custom-instructions)
         replace-instructions? (if (contains? (or ext-result {}) :replace-instructions)
                                 (:replace-instructions ext-result)

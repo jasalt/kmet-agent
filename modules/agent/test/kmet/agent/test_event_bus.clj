@@ -2,7 +2,8 @@
   (:require [clojure.test :as t]
             [clojure.string :as str]
             [kmet.agent.debug :as debug]
-            [kmet.agent.event-bus :as event-bus]))
+            [kmet.agent.event-bus :as event-bus]
+            [kmet.cells.scope :as cells-scope]))
 
 ;; ─── Event vocabulary ─────────────────────────────────────────────────────
 
@@ -228,6 +229,56 @@
   (with-redefs [debug/log-error (fn [& _])]
     (t/is (= {:continue true} (event-bus/emit-boundary! {:type :agent-before-settle}))
           "an errored boundary handler is skipped, later handlers still run")))
+
+;; ─── Scoped subscriptions (F13) ───────────────────────────────────────────
+
+(t/deftest test-a-scoped-listener-hears-its-own-subtree
+  ;; A unit subscribes with the node its :start was handed: child events reach
+  ;; it, a parent's or sibling's do not, and an unscoped listener (an
+  ;; extension) keeps hearing everything (cells.md §8.1).
+  (let [root (cells-scope/node)
+        child (cells-scope/node root)
+        grandchild (cells-scope/node child)
+        sibling (cells-scope/node root)
+        scoped (atom [])
+        unscoped (atom [])]
+    (event-bus/clear-event-listeners!)
+    (event-bus/on-event :turn-start nil (fn [e] (swap! scoped conj (:from e))) child)
+    (event-bus/on-event :turn-start (fn [e] (swap! unscoped conj (:from e))))
+    (event-bus/emit-event! {:type :turn-start :from :child} child)
+    (event-bus/emit-event! {:type :turn-start :from :grandchild} grandchild)
+    (t/is (= [:child :grandchild] @scoped)
+          "the listener hears its own node and its descendants")
+    (event-bus/emit-event! {:type :turn-start :from :root} root)
+    (event-bus/emit-event! {:type :turn-start :from :sibling} sibling)
+    (t/is (= [:child :grandchild] @scoped) "the parent and a sibling stay out")
+    (event-bus/emit-event! {:type :turn-start :from :app-wide})
+    (t/is (= [:child :grandchild :app-wide] @scoped)
+          "a process-wide emission is app-level and reaches it")
+    (t/is (= [:child :grandchild :root :sibling :app-wide] @unscoped)
+          "the unscoped listener keeps hearing every emission")))
+
+(t/deftest test-collect-and-boundary-respect-scope
+  (let [root (cells-scope/node)
+        child (cells-scope/node root)
+        sibling (cells-scope/node root)]
+    (event-bus/clear-event-listeners!)
+    (event-bus/on-event :resources-discover [:app :extensions "wide"]
+                        (fn [_] {:skill-paths ["/wide"]}))
+    (event-bus/on-event :resources-discover [:app :extensions "child"]
+                        (fn [_] {:skill-paths ["/child"]}) child)
+    (t/is (= [[:app :extensions "wide"] [:app :extensions "child"]]
+             (mapv first (event-bus/emit-event-collect! {:type :resources-discover} child)))
+          "collect takes the process-wide and the in-subtree contribution")
+    (t/is (= [[:app :extensions "wide"]]
+             (mapv first (event-bus/emit-event-collect! {:type :resources-discover} sibling)))
+          "a sibling's contribution is not collected")
+    (event-bus/clear-event-listeners!)
+    (event-bus/on-event :turn-end (fn [_] {:entries [:wide]}))
+    (event-bus/on-event :turn-end nil (fn [_] {:entries [:child]}) child)
+    (t/is (= {:entries [:wide]} (event-bus/emit-boundary! {:type :turn-end} sibling)))
+    (t/is (= {:entries [:child]} (event-bus/emit-boundary! {:type :turn-end} child))
+          "the in-subtree handler runs after the process-wide one")))
 
 (t/deftest test-event-vocabulary-partition
   (t/is (every? #(contains? event-bus/event-types %) event-bus/app-event-types)

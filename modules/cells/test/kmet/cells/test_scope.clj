@@ -158,3 +158,19 @@
     (is (= {[:k] {:a 2}} (scope/registrations n))
         "the refusal is scoped to the pass, not to the owner path forever")
     (is (= [:a] (scope/owners n)))))
+
+(deftest in-subtree-walks-parents
+  (let [root (scope/node)
+        child (scope/node root)
+        grandchild (scope/node child)
+        sibling (scope/node root)]
+    (is (scope/in-subtree? root root))
+    (is (scope/in-subtree? child root))
+    (is (scope/in-subtree? grandchild root))
+    (is (scope/in-subtree? grandchild child))
+    (is (not (scope/in-subtree? root child)))
+    (is (not (scope/in-subtree? sibling child)))
+    (is (scope/in-subtree? root nil)
+        "a nil root is the process-wide scope")
+    (is (scope/in-subtree? nil nil))
+    (is (not (scope/in-subtree? nil root)))))

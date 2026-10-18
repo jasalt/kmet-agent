@@ -172,7 +172,8 @@
                {:type :session-start
                 :reason (cond (:resume opts) :resume
                               (:continue opts) :continue
-                              :else :new)})
+                              :else :new)}
+               (runtime/agent-node (:engine cs)))
               ;; pi: resources_discover fires after session_start (reason
               ;; startup for non-reload session starts)
               (extensions/discover-resources!

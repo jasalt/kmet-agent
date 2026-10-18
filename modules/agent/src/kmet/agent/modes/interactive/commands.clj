@@ -645,7 +645,8 @@
         ;; pi: session.reload → emitSessionShutdownEvent(reason reload)
         ;; BEFORE the runner is torn down, so extensions can persist
         ;; state; then extension shutdown/start
-              _ (event-bus/emit-event! {:type :session-shutdown :reason :reload})
+              _ (event-bus/emit-event! {:type :session-shutdown :reason :reload}
+                                       (runtime/agent-node (:engine cs)))
               _ (extensions/ui-reset!)
               _ (extensions/clear-extensions!)
               ;; per-extension load results — the loaders only warn on
@@ -718,7 +719,8 @@
           ;; Runs on a future — handlers may block on dialog promises, which
           ;; must never happen on the input thread.
           (future
-            (try (event-bus/emit-event! {:type :session-start :reason :reload})
+            (try (event-bus/emit-event! {:type :session-start :reason :reload}
+                                        (runtime/agent-node (:engine cs)))
                  ;; pi: resources_discover fires after session_start (reason
                  ;; reload) — extensions contribute skill/prompt/theme paths
                  (extensions/discover-resources!

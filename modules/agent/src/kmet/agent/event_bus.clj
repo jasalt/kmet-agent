@@ -11,8 +11,11 @@
 
    The extension bus itself is a process-level registry: a subscription lives
    from an extension's load to its unload, in registration order, and no
-   engine owns, copies or clears it (cells.md §12 Q3)."
-  (:require [kmet.agent.debug :as debug]))
+   engine owns, copies or clears it (cells.md §12 Q3). A subscription may
+   carry a scope — the node it listens to — so a unit in a child tree hears
+   its own subtree's events and a sibling's listeners do not (cells.md §8.1)."
+  (:require [kmet.agent.debug :as debug]
+            [kmet.cells.scope :as scope]))
 
 (def event-types
   "Map of event type keyword → description. The canonical vocabulary.
@@ -402,10 +405,10 @@
 ;; adopts nor wipes it (cells.md §12 Q3).
 
 (defonce ^:private listeners
-  ;; {event-type [{:callback f :owner path} …]} — one vector per type, so
-  ;; iteration is registration order. A deregister removes its own entry by
-  ;; identity; an entry already gone is a no-op (a reload deregisters what a
-  ;; previous load installed).
+  ;; {event-type [{:callback f :owner path :scope node} …]} — one vector per
+  ;; type, so iteration is registration order. A deregister removes its own
+  ;; entry by identity; an entry already gone is a no-op (a reload deregisters
+  ;; what a previous load installed).
   (atom {}))
 
 (defn- register-listener!
@@ -419,6 +422,15 @@
                (assoc ls event-type (into [] (remove #(identical? % entry)) entries))
                ls)))))
 
+(defn- visible
+  "The entries an emission from NODE reaches: NODE nil (a process-wide
+   emission) reaches every entry, and a scoped entry sees NODE when it is its
+   own node or a descendant (cells.md §5.6, §8.1)."
+  [entries node]
+  (if (nil? node)
+    entries
+    (filterv #(scope/in-subtree? node (:scope %)) entries)))
+
 (defn on-event
   "Register a callback for an event type.
    event-type — keyword from kmet.agent.event-bus/event-types
@@ -430,16 +442,22 @@
                 contribution can be applied under the owner that made it
                 (resource discovery, cells.md §5.1).
    callback   — (fn [event-map])
+   scope      — optional: the node this listener listens to; it sees events
+                emitted from that node and its descendants. nil (the
+                default) is process-wide, which is what an extension wants;
+                a unit's `:start` passes the node it was handed (cells.md
+                §8.1).
    Returns a deregister function. A type outside the vocabulary is reported
    and registered anyway: the vocabulary is documented, not a gate."
-  ([event-type callback] (on-event event-type nil callback))
-  ([event-type owner callback]
+  ([event-type callback] (on-event event-type nil callback nil))
+  ([event-type owner callback] (on-event event-type owner callback nil))
+  ([event-type owner callback scope]
    (when-not (known-event-type? event-type)
      (debug/log-error "event-bus: " (pr-str event-type)
                       " is not a documented event type — registered anyway "
                       "(custom types are allowed; typos are the usual cause: "
                       "kmet.agent.event-bus/event-types)"))
-   (register-listener! event-type {:callback callback :owner owner})))
+   (register-listener! event-type {:callback callback :owner owner :scope scope})))
 
 (defn clear-event-listeners!
   "Remove all event listeners (for testing)."
@@ -461,16 +479,20 @@
 (defn emit-event!
   "Emit an event to all registered listeners, in registration order.
    event — map with :type keyword and any additional data.
+   node  — the emitting node when the event belongs to one subtree (a child
+           loop passes its node); nil (or absent) is a process-wide
+           emission.
    Returns the last non-nil handler result (pi: runner.emit — the tree
    navigation reads :session-before-tree results: :cancel, :summary, ...)."
-  [event]
-  (let [entries (get @listeners (:type event))]
-    (when entries
-      (reduce (fn [acc {:keys [callback]}]
-                (let [result (invoke-handler callback event)]
-                  (if (some? result) result acc)))
-              nil
-              entries))))
+  ([event] (emit-event! event nil))
+  ([event node]
+   (let [entries (visible (get @listeners (:type event)) node)]
+     (when (seq entries)
+       (reduce (fn [acc {:keys [callback]}]
+                 (let [result (invoke-handler callback event)]
+                   (if (some? result) result acc)))
+               nil
+               entries)))))
 
 (defn emit-event-collect!
   "Emit an event and return EVERY non-nil handler result as [owner result]
@@ -479,15 +501,17 @@
    the last non-nil). OWNER is
    what `on-event` was registered with, nil for a host registration, so a
    callers can apply a contribution under the owner that made it.
+   NODE scopes the emission like `emit-event!`.
    Throwing handlers are skipped and reported, same as emit-event!."
-  [event]
-  (let [entries (get @listeners (:type event))]
-    (when entries
-      (into []
-            (keep (fn [{:keys [owner callback]}]
-                    (when-let [result (invoke-handler callback event)]
-                      [owner result])))
-            entries))))
+  ([event] (emit-event-collect! event nil))
+  ([event node]
+   (let [entries (visible (get @listeners (:type event)) node)]
+     (when (seq entries)
+       (into []
+             (keep (fn [{:keys [owner callback]}]
+                     (when-let [result (invoke-handler callback event)]
+                       [owner result])))
+             entries)))))
 
 (defn emit-boundary!
   "Emit an actionable boundary event (a :turn-end or :agent-before-settle
@@ -495,17 +519,19 @@
    (pi: runner.emitBoundary): a handler receives the event merged with the
    accumulated result so far and returns a map ({:entries [...] :continue
    bool}) whose keys replace the accumulated ones; nil (or a non-map) keeps
-   them. Handlers run in registration order. Returns the accumulated map —
-   nil when no handler returned one.
+   them. Handlers run in registration order. NODE scopes the emission like
+   `emit-event!`. Returns the accumulated map — nil when no handler returned
+   one.
    Throwing handlers are skipped and reported, same as emit-event!."
-  [event]
-  (let [entries (get @listeners (:type event))]
-    (when entries
-      (reduce (fn [acc {:keys [callback]}]
-                (let [result (invoke-handler callback (if acc (merge event acc) event))]
-                  (if (map? result) (merge acc result) acc)))
-              nil
-              entries))))
+  ([event] (emit-boundary! event nil))
+  ([event node]
+   (let [entries (visible (get @listeners (:type event)) node)]
+     (when (seq entries)
+       (reduce (fn [acc {:keys [callback]}]
+                 (let [result (invoke-handler callback (if acc (merge event acc) event))]
+                   (if (map? result) (merge acc result) acc)))
+               nil
+               entries)))))
 
 (defn get-event-types
   "List all registered event types."

@@ -193,7 +193,8 @@
                  {:type :user-bash
                   :command command
                   :exclude-from-context? exclude-from-context?
-                  :cwd (state/runtime-cwd cs)}))
+                  :cwd (state/runtime-cwd cs)}
+                 (runtime/agent-node (:engine cs))))
 
             ;; ── Spawn hook (pi: BashSpawnHook) — extensions can modify command ──
             spawn-hook nil]

@@ -397,7 +397,7 @@ Be precise and concise in your responses."}}]
   ([agent ui-event ext-event]
    (when-let [cb (:on-event agent)]
      (cb ui-event))
-   (event-bus/emit-event! ext-event)))
+   (event-bus/emit-event! ext-event (:node agent))))
 
 (defn- user-message
   "Build a user message map. text — string; images — optional vector of
@@ -2241,7 +2241,7 @@ Be precise and concise in your responses."}}]
   [agent event]
   (when-let [cb (:on-event agent)]
     (cb event))
-  (event-bus/emit-boundary! event))
+  (event-bus/emit-boundary! event (:node agent)))
 
 (defn- finish-turn!
   "Finish a turn (pi: the session's wrapped finishTurn, installed by

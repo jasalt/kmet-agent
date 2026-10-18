@@ -59,7 +59,7 @@ one — and a landed phase's row leaves this table.
 
 ## 3. Landed-phase follow-ups
 
-The P0–P5c review left four follow-ups in landed work. Each is a defect, a
+The P0–P5c review left three follow-ups in landed work. Each is a defect, a
 contract gap or a hygiene item in something already built and stands alone. A
 row leaves this table when it lands, its notes carry the evidence and any
 prerequisite, and §4 orders the landing. The ids are
@@ -72,25 +72,19 @@ host.
 | **F4** | agent | the attempt's tool map is captured once and passed to `execute-tool`'s `:tools` (the sandbox override exists); or §5.4's claim is deleted | the loop builds `:tools (active-tools agent)` at request time and `execute-tool` resolves per call, so a tool dropped between `tool_use` and execution still settles as "Unknown tool" — the race §5.4 and §12 Q1 say P2 closed. The command table has the same shape |
 | **F5** | agent | `kmet.agent.runtime/explain` reads `scope/owner-registrations` for owners under a slot path — or adds an `/extensions` section — as §7 specifies | a registration under `[:app :extensions "my-ext"]` leaves `/units` unchanged; P5c landed every extension registration on that owner, so the view shows nothing for exactly the registrations it migrated |
 | **F8** | docs | §5.1's `*owner*` sentence goes (no such binding exists); §5.4's snapshot claim follows F4; §8.1's subscriber-is-a-unit example is rewritten to §12 Q3's process-level bus (or Q3 is reopened); §2.2 stops calling `core`'s seven fns the whole surface (consumers require `kmet.cells.scope` at 48 sites across six namespaces — promote the reads to `core` or state the split); `rt`'s contract names the singleton/quiescent-boundary and descriptor-stability sharp edges | after F4 and F10, so the amended text matches the code. §6.4 states descriptor stability as a rule, not as a failure mode with no diagnostic; §8's host rules and the process globals deserve the same |
-| **F13** | agent | settle child-node event scope before P7: `emit-event!` has no node/owner dimension, so a child loop's events reach every process subscriber and an extension cannot subscribe to one instance | `:owner` is read only by `emit-event-collect!`; the engine's `:subscribers` is the only scoped list and it is not cells-owned. Either the bus gains an owner filter or child runs carry their own subscriber list — a design answer, landed with F3; after F10 the registry is process-level and ordered, so that pass also decides whether it moves onto a store node (owner-tagged registrations, `/units` visibility) or keeps its own structure with a read-time scope filter |
 
 ## 4. Sequencing
 
-The remaining follow-ups land in two batches; each batch is one change, gated
-by the changed-file tasks and the guards §2 names, and starts after the batch
-its prerequisites sit in. The mount correction (F1, F2, F6), the store's
-follow-ups (F7, F9), the bus's (F10, F11, F12) and the host contracts' node
-threading (F3) landed first. The order is dependency and risk, not id order:
-F13 is P7's other prerequisite, and F8 edits contracts F4 and F10 settle.
+The remaining follow-ups land in one batch, gated by the changed-file tasks
+and the guards §2 names. The mount correction (F1, F2, F6), the store's
+follow-ups (F7, F9), the bus's (F10, F11, F12), the host contracts' node
+threading (F3) and child-node event scope (F13) landed first; F8 comes last
+because it rewrites the text F4 and F10 settle.
 
-1. **Child-node event scope (F13).** F3 threaded the node through the host's
-   registration helpers; F13 decides the bus's answer to the same question —
-   an owner filter on the process registry, a per-run subscriber list, or the
-   registry moving onto a store node — because child-node isolation is not
-   real until a child's events stop reaching every process subscriber.
-2. **Agent promises and docs (F4, F5, F8).** F4 closes the tool race or deletes
+1. **Agent promises and docs (F4, F5, F8).** F4 closes the tool race or deletes
    §5.4's claim, F5 makes extension registrations visible in `/units`, and F8
    comes last because it rewrites the text F4 and F10 settle.
 
-**P7 is deferred** until batch 1 lands; its design (cells.md §5.6) and its
-missing pieces stay recorded in §2.
+**P7 is unblocked**: its prerequisites (F3's node threading and F13's event
+scope) have landed, and the remaining batch (F4, F5, F8) does not gate it. Its
+design (cells.md §5.6) and its missing pieces stay recorded in §2.

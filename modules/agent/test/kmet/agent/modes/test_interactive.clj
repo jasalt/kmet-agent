@@ -994,7 +994,7 @@
                       extensions/ui-reset! (fn [] nil)
                       extensions/clear-extensions! (fn [] nil)
                       extensions/discover-resources! (fn [_ _] nil)
-                      event-bus/emit-event! (fn [_] nil)]
+                      event-bus/emit-event! (fn [& _] nil)]
           ((var builtins/handle-reload) cs nil))
         (is (= {:show-images true :image-width-cells 120} @subs/image-settings-atom)
             "live image settings re-seeded from the reloaded config")
@@ -1036,7 +1036,7 @@
                                  extensions/ui-reset! (fn [] nil)
                                  extensions/clear-extensions! (fn [] nil)
                                  extensions/discover-resources! (fn [_ _] nil)
-                                 event-bus/emit-event! (fn [_] nil)]
+                                 event-bus/emit-event! (fn [& _] nil)]
                      ((var builtins/handle-reload) cs nil)))]
       (try
         (reload :expanded)
@@ -1087,7 +1087,7 @@
                     extensions/ui-reset! (fn [] nil)
                     extensions/clear-extensions! (fn [] nil)
                     extensions/discover-resources! (fn [_ _] nil)
-                    event-bus/emit-event! (fn [_] nil)]
+                    event-bus/emit-event! (fn [& _] nil)]
         ((var builtins/handle-reload) cs nil))
       (is (= (str (fs/cwd)) @loader-cwd)
           "context files load from the launch dir, not the active session's cwd")

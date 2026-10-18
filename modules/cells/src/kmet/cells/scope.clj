@@ -67,6 +67,16 @@
     :parent parent
     :children (atom [])}))
 
+(defn in-subtree?
+  "True when NODE is ROOT or a descendant of it (cells.md §5.6). A nil ROOT
+   is the process-wide scope: every node — nil included — is in it."
+  [node root]
+  (cond
+    (nil? root) true
+    (nil? node) false
+    (identical? node root) true
+    :else (recur (:parent node) root)))
+
 (defn deregister!
   "Drop OWNER's registration for K when its value is still V — a stale call
    cannot remove a newer registration. It is the targeted removal for a live

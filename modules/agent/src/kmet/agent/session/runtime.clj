@@ -388,7 +388,7 @@
   [engine payload]
   (future
     (try
-      (event-bus/emit-event! payload)
+      (event-bus/emit-event! payload (agent-node engine))
       (extensions/discover-resources! (or (agent-node engine) (app-runtime/node)) :startup)
       (catch Exception e (debug/log "session-start: " e)))))
 
@@ -420,11 +420,11 @@
     sess))
 
 (defn- extension-cancelled?
-  "Emit a before-event (session-before-switch / session-before-fork) and
-   report whether an extension cancelled the pending operation (pi:
-   emitBeforeSwitch/emitBeforeFork → cancel)."
-  [event]
-  (boolean (:cancel (event-bus/emit-event! event))))
+  "Emit a before-event (session-before-switch / session-before-fork) from the
+   engine's node and report whether an extension cancelled the pending
+   operation (pi: emitBeforeSwitch/emitBeforeFork → cancel)."
+  [node event]
+  (boolean (:cancel (event-bus/emit-event! event node))))
 
 (defn- settle-for-switch!
   "Settle an in-flight turn and compaction before a session swap so the
@@ -465,7 +465,8 @@
   ([engine] (new-session! engine nil))
   ([engine {:keys [before-settle]}]
    (let [previous-file (:file (session engine))]
-     (if (extension-cancelled? {:type :session-before-switch
+     (if (extension-cancelled? (agent-node engine)
+                               {:type :session-before-switch
                                 :reason :new
                                 :target-session-file previous-file})
        {:cancelled true}
@@ -480,7 +481,8 @@
            ;; runtime is being torn down (reason :new, destination session file)
            ;; so they can persist state before the swap.
            (event-bus/emit-event! {:type :session-shutdown :reason :new
-                                   :target-session-file previous-file})
+                                   :target-session-file previous-file}
+                                  (agent-node engine))
            (let [cwd (cwd engine)
                  sessions-dir (cfg/get-session-dir (config engine))
                  new-session (session/create-session (ensure-cwd-session-dir sessions-dir cwd)
@@ -512,7 +514,8 @@
    Returns {:session sess} | {:cancelled true}."
   [engine path]
   (let [previous-file (:file (session engine))]
-    (if (extension-cancelled? {:type :session-before-switch
+    (if (extension-cancelled? (agent-node engine)
+                              {:type :session-before-switch
                                :reason :resume
                                :target-session-file path})
       {:cancelled true}
@@ -553,7 +556,8 @@
               :new-leaf-id @(:leaf-id sess)
               :old-leaf-id old-leaf
               :from-extension? (boolean from-extension?)}
-       summary-entry (assoc :summary-entry summary-entry)))
+       summary-entry (assoc :summary-entry summary-entry))
+     (agent-node engine))
     summary-entry))
 
 (defn fork!
@@ -568,7 +572,8 @@
         entry (session/get-entry sess entry-id)]
     (cond
       (nil? entry) {:error :unknown-entry}
-      (extension-cancelled? {:type :session-before-fork
+      (extension-cancelled? (agent-node engine)
+                            {:type :session-before-fork
                              :entry-id entry-id
                              :position :at})
       {:cancelled true}
@@ -600,7 +605,8 @@
       (nil? sess) {:error :no-session}
       (nil? @(:leaf-id sess)) {:error :no-leaf}
       (not (fs/exists? (:file sess))) {:error :not-persisted}
-      (extension-cancelled? {:type :session-before-fork
+      (extension-cancelled? (agent-node engine)
+                            {:type :session-before-fork
                              :entry-id @(:leaf-id sess)
                              :position :at})
       {:cancelled true}
@@ -635,7 +641,8 @@
     (event-bus/emit-event!
      {:type :session-info-changed
       :session-file (:file sess)
-      :name sanitized})
+      :name sanitized}
+     (agent-node engine))
     sanitized))
 
 (defn export-html!
