@@ -17,18 +17,19 @@
    reaches through the snapshot."
   {:kmet/loop-guard
    {:config [:map [:threshold :int]]
-    :handle loop-guard/loop-guard-filter}})
+    :handle loop-guard/loop-guard-filter}
+   ;; an address, not a container: the slash command registry registers under
+   ;; this slot's path, so the slot is what makes its keys visible in /units
+   ;; (cells.md §5.1). It has no children — commands are registrations, not
+   ;; units — and no handle for the host to read.
+   :kmet/commands {:units {}}})
 
 (def default-entries
   "The entries the app mounts at its root: units with no per-session config
    and no front-end surface. Config-derived and front-end-shaped units mount
-   with the session (P4).
-
-   The slash command registry is deliberately absent: it registers under
-   `[:app :commands]` (kmet.agent.commands) without a unit, since `check`
-   requires a unit to declare `:handle` or `:units` and it has neither to
-   declare (cells.md §5.1)."
-  [{:id :loop-guard :name :kmet/loop-guard}])
+   with the session (P4)."
+  [{:id :loop-guard :name :kmet/loop-guard}
+   {:id :commands :name :kmet/commands}])
 
 (defn runtime
   "A composition runtime over the builtin units: resolution plus a fresh root

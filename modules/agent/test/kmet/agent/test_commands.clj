@@ -112,13 +112,25 @@
 
 (t/deftest units-lists-the-mounted-tree
   ;; The /units surface renders kmet.cells' snapshot of the app root, which
-  ;; carries the builtin units (kmet.agent.runtime).
+  ;; carries the builtin units (kmet.agent.runtime) — and the commands
+  ;; registry's address, so its keys report as that slot's (cells.md §5.1).
   (builtins/register-runtime-commands!)
   (let [got (atom nil)]
     ((:handler (commands/find-command "units"))
      {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
     (t/is (= "Units" (first @got)))
-    (t/is (str/includes? (second @got) ":loop-guard"))))
+    (t/is (str/includes? (second @got) ":loop-guard"))
+    (t/is (str/includes? (second @got) ":commands"))
+    (t/is (str/includes? (second @got) "[:kmet/command \"units\"]")
+          "the registered command shows as the registry slot's key")))
+
+(t/deftest a-remount-keeps-the-registry
+  ;; The commands slot is part of the app's entry list, so /reload's remount
+  ;; diffs it as unchanged and the registrations stay (cells.md §6.2).
+  (commands/register-command!
+   {:name "survives-reload" :description "x" :handler (fn [_ _] nil)})
+  (app-runtime/remount!)
+  (t/is (some? (commands/find-command "survives-reload"))))
 
 (t/deftest units-follows-the-session-engine-node
   ;; A session that runs in its own tree shows that tree, not the app root

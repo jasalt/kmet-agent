@@ -38,9 +38,11 @@
   (let [node (runtime/node)
         snapshot (runtime/snapshot node)]
     (is (= [] (cells/check (runtime/runtime) runtime/default-entries)))
-    (is (= [:loop-guard] (keys snapshot)))
+    (is (= [:loop-guard :commands] (keys snapshot)))
     (is (= [:app :loop-guard] (:owner (:loop-guard snapshot))))
     (is (fn? (runtime/handle snapshot :loop-guard)))
+    (is (= [:app :commands] (:owner (:commands snapshot)))
+        "the commands registry's address, so its keys report under it")
     (is (identical? node (runtime/node)) "one app tree per process")))
 
 (deftest a-remount-reaches-a-changed-unit
@@ -50,7 +52,8 @@
   (let [changed (fn [& _] :changed)
         node (runtime/node)]
     (try
-      (with-redefs [runtime/builtin-units {:kmet/loop-guard {:handle changed}}]
+      (with-redefs [runtime/builtin-units
+                    (assoc runtime/builtin-units :kmet/loop-guard {:handle changed})]
         (runtime/remount!)
         (is (identical? changed
                         (runtime/handle (runtime/snapshot node) :loop-guard)))

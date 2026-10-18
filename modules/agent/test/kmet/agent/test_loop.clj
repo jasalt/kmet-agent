@@ -1903,7 +1903,8 @@
         guard-b (fn [state _threshold tool-calls]
                   (swap! used conj :b)
                   {:suppressed tool-calls :survivors [] :state state})
-        table (atom {:kmet/loop-guard {:handle guard-a}})
+        table (atom (assoc runtime/builtin-units
+                           :kmet/loop-guard {:handle guard-a}))
         rt (cells/runtime {:resolve [[:builtin (fn [nm] (get @table nm))]]})
         node (cells/mount! rt runtime/default-entries)
         run! (fn [on-first-call]
@@ -1927,7 +1928,8 @@
                      (loop/make-agent-state :node node :on-event (fn [_]))
                      {:message "run" :on-done (fn [_]) :on-error (fn [_])}))))]
     ;; The tree changes while the first attempt is in flight.
-    (run! (fn [] (reset! table {:kmet/loop-guard {:handle guard-b}})
+    (run! (fn [] (reset! table (assoc runtime/builtin-units
+                                      :kmet/loop-guard {:handle guard-b}))
             (cells/mount! rt runtime/default-entries)))
     (t/is (= [:a] @used) "the attempt kept the handle it started with")
     (t/is (= guard-b (runtime/handle (runtime/snapshot node) :loop-guard))

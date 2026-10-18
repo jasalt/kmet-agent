@@ -26,14 +26,9 @@
             [kmet.cells.scope :as scope]))
 
 (def commands-owner
-  "The app's command registry owner — the root's `:commands` slot path.
-
-   No unit is mounted there, and none can be behaviour-less: the shape check
-   requires a unit to declare `:handle` or `:units` (cells.md §4), and this
-   registry has neither to declare — its writers are the front ends and the
-   extension ABI. Registrations are still disposed with the node, and its own
-   listing is where they show; `/units` reports mounted slots only
-   (cells.md §5.1)."
+  "The app's command registry owner: the `:commands` slot kmet.agent.runtime
+   mounts at the root for it (cells.md §5.1). Registrations are addressed by
+   key under this path, so they show in `/units` as that slot's keys."
   [:app :commands])
 
 (defn- command-key
