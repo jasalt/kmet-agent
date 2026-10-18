@@ -183,6 +183,14 @@ rather than one application-database atom. Prefer explicit runtime
 registration tables/maps over compile-time multimethod registries. Use
 `defn-` and `def-` for implementation details that are not public API.
 
+The registries a front end or extension can reach — commands, tools, skills,
+prompt templates, hooks, renderers, markdown transformers, flags — live in the
+app root's store (`kmet.cells.scope`, reached through `kmet.agent.runtime`),
+addressed by host-shaped keys under an owner path: a unit's slot path, or
+`[:app :extensions <name>]` for an extension's own registrations. The
+registration is disposed with that owner (P2), so a new extension point is a
+key on that store, not a process-global atom copied into each engine.
+
 ### Session runtime and front ends
 
 The session-runtime split puts one session runtime behind every

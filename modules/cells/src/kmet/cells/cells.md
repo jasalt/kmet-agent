@@ -12,12 +12,14 @@ inside a unit's handle. Events belong to the host's bus. What the framework
 owns is what exists, how it is configured, how it is wired, and how long it
 lives.
 
-Status: **design locked; P0 landed.** The plan — phases and worked shape — is
+Status: **design locked; P0–P2 landed.** The plan is
 [`cells-plan.md`](../../../../../cells-plan.md) at the repository root: a
 transitional document that shrinks as the phases land (§9). P0 landed the store
-(`kmet.cells.scope`), `spec`, the facade's four fns, the toy tests and the
-`modules.edn` / `deps.edn` / `bb.edn` wiring; nothing in the tree consumes the
-module yet.
+(`kmet.cells.scope`), `spec`, the facade's fns, the toy tests and the
+`modules.edn` / `deps.edn` / `bb.edn` wiring; P1 the mount table, snapshot and
+`explain`; P2 `kmet.agent.runtime` and the app root's store, with every kmet
+registry (commands, tools, skills, prompts, renderers, transformers, flags,
+hooks) registered on it and the engine's pending buffers and dispatchers gone.
 
 ## Contents
 
@@ -40,7 +42,9 @@ A. [Measurements and the cut record](#a-measurements-and-the-cut-record)
 ## 1. Why this exists
 
 Three structural problems in the agent module, each already paid for
-repeatedly. The measurements behind them are in §A.
+repeatedly — the pre-P2 state, recorded as the motivation. The measurements
+behind them are in §A; §1.1 is the part P2 retired, §1.2 and §1.3 the parts
+still ahead.
 
 ### 1.1 Registries have no owner
 
@@ -84,9 +88,11 @@ architecture) is a fifth, invisible one.
 
 ### 1.4 What the module deletes, and what it does not replace
 
-Deletes: the pending/bound duality and its two bootstrap halves; the 15
-dispatchers; the load-order `require`/`resolve` hack; the `applied-resource-paths`
-reset; FIFO-and-silent extension teardown; four ad-hoc mount mechanisms.
+Deletes (the first four with P2, the teardown with P5, the mount mechanisms
+with P4): the pending/bound duality and its two bootstrap halves; the 15
+dispatchers; the load-order `require`/`resolve` hack; the
+`applied-resource-paths` reset; FIFO-and-silent extension teardown; four ad-hoc
+mount mechanisms.
 
 Does *not* replace, and must not grow into: `kmet.loader` (code-loading
 backends), `kmet.libs.hikap.component` (UI component runtime), `kmet.libs.reakt`
@@ -227,7 +233,8 @@ A group is a **namespace of slots** — a naming, lookup and lifetime boundary.
 It is **not** an execution order: the framework never invokes a group's
 children. The owning handle decides what to call, in what order, how many
 times, and under what conditions; it reads slots from the snapshot (§5.4) and
-calls them. `run-agent-turn` in `cells-plan.md` §1 is the worked example.
+calls them. `run-agent-turn` in `kmet.agent.loop` is the worked example — it
+reads the loop guard from the attempt's snapshot.
 
 A slot holds a group just as happily as a leaf, so a slot that means "a bag of
 policies" is `{:units {:a … :b …}}` and the caller iterates it — the same shape
@@ -238,10 +245,11 @@ declare one. That limitation is real and belongs to the host.
 
 ### 3.2 The shape, end to end
 
-The worked shape — the module's surface, the host's side, what comes back — is
-[`cells-plan.md`](../../../../../cells-plan.md) §1: scaffolding for the build, and it
-comes out when P2 lands (§9). The contracts it illustrates are here: §2.2's seven
-functions, §3.1's rule, §4's checks.
+The worked shape now *is* the code: `kmet.cells.core` for the module's surface
+and `kmet.agent.runtime` for the host's side. The pre-P2 sketch lived in
+[`cells-plan.md`](../../../../../cells-plan.md) §1 and was deleted as scaffolding
+when P2 landed (§9). The contracts are here: §2.2's seven functions, §3.1's
+rule, §4's checks.
 
 ---
 
@@ -697,10 +705,10 @@ contribute entries at all, and to which slots, is a capability decision — the
 
 ## 9. Document set and shelf life
 
-Design, contracts and rationale live in this file. What the code will make
-obvious — the worked shape and the phases — lives in
-[`cells-plan.md`](../../../../../cells-plan.md) at the repository root, and
-is deleted as the phases land: two copies of a shape drift, and the document is
+Design, contracts and rationale live in this file. The phases still ahead — and
+the scaffolding each landing deletes — live in
+[`cells-plan.md`](../../../../../cells-plan.md) at the repository root, and a
+landed phase's row comes out: two copies of a phase drift, and the document is
 always the stale one.
 
 **Rank 0 is design**, not mechanics: the module requires no `kmet.*` namespace
@@ -710,7 +718,6 @@ foreign `kmet.*` require and a second consumer could take the module as-is.
 
 | scaffolding | deleted when | what remains |
 |---|---|---|
-| `cells-plan.md` §1 (the worked shape) | P2 lands: `kmet.cells.core` and `kmet.agent.runtime` *are* the shape | §2.2's API table and §3.1's rule |
 | §8.1/§8.2's host sketches | P5 lands: both backends exist in `kmet.agent.runtime` | "one backend per isolation mechanism", the handle-lifetime invariant (§6.4) |
 | §5.6's child-mount snippet | the first child node ships (P7) | "nodes nest; domains do not" |
 | `cells-plan.md` §2 (the phase table) | continuously — a landed phase's row comes out; the git log is its record | the phases still ahead |
@@ -829,10 +836,11 @@ explicit request.
 
 ### A.1 Measurements
 
-Taken from the tree when this document was written; the counts drive §1. P2
-changes the entries they cover as each registry moves onto the store — the
-plan's P2 row tracks what is left, not this table. Sites are named rather than
-line-numbered, since lines drift and names do not.
+Taken from the tree when this document was written; the counts drove the case
+for the store. P2 changed the entries they cover as each registry moved onto
+it, so the rows below are the pre-P2 snapshot, kept as the record of what was
+removed. Sites are named rather than line-numbered, since lines drift and names
+do not.
 
 | symptom | count |
 |---|---|
