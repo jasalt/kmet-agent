@@ -256,13 +256,12 @@
                              :pending-ui (atom {})
                              :run-callbacks (atom nil)
                              ;; Adopt the process's subscribers: extensions
-                             ;; register their event handlers at load, before
-                             ;; any engine exists, and the engine's own atom is
-                             ;; what `emit-event!` reads from here on — a fresh
-                             ;; atom would orphan every one of them (cells.md
-                             ;; §5.1: a subscription's owner is its
-                             ;; registrant, not the engine). Disposal drops
-                             ;; them with the engine: v1 is single-engine.
+                             ;; register their handlers at load, before any
+                             ;; engine exists, and `emit-event!` reads this
+                             ;; atom from here on (cells.md §5.1 — a
+                             ;; subscription's owner is its registrant, not
+                             ;; the engine). v1 is single-engine, so disposal
+                             ;; drops them with it.
                              :event-listeners (atom @(event-bus/default-event-listener-atom))})]
     ;; Runtime-scoped extension surface: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent, and the

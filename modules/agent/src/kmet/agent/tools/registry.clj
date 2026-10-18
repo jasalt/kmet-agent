@@ -123,9 +123,8 @@
   ([name] (unregister-tool! name nil))
   ([name owner]
    (let [node (app-runtime/node)
-         k (tool-key name)
-         by-owner (scope/for-key node k)]
-     (doseq [[o v] (if owner (select-keys by-owner [owner]) by-owner)]
+         k (tool-key name)]
+     (doseq [[o v] (scope/for-key node k) :when (or (nil? owner) (= owner o))]
        (scope/deregister! node o k v)))
    nil))
 
@@ -185,9 +184,8 @@
   ([id] (unregister-tool-source! id nil))
   ([id owner]
    (let [node (app-runtime/node)
-         k (tool-source-key id)
-         by-owner (scope/for-key node k)]
-     (doseq [[o v] (if owner (select-keys by-owner [owner]) by-owner)]
+         k (tool-source-key id)]
+     (doseq [[o v] (scope/for-key node k) :when (or (nil? owner) (= owner o))]
        (scope/deregister! node o k v)))
    nil))
 

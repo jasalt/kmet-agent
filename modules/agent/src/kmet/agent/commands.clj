@@ -81,9 +81,8 @@
   ([name] (unregister-command! name nil))
   ([name owner]
    (let [node (app-runtime/node)
-         k (command-key name)
-         by-owner (scope/for-key node k)]
-     (doseq [[o v] (if owner (select-keys by-owner [owner]) by-owner)]
+         k (command-key name)]
+     (doseq [[o v] (scope/for-key node k) :when (or (nil? owner) (= owner o))]
        (scope/deregister! node o k v)))
    nil))
 

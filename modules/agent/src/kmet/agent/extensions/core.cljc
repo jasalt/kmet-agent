@@ -1503,16 +1503,15 @@
                        {:type :resources-discover
                         :cwd (str (fs/cwd))
                         :reason reason})]
-    (doseq [[owner result] contributions]
-      (apply-contributed-paths! owner result))
-    (reduce (fn [acc [_ r]]
+    (reduce (fn [acc [owner result]]
+              (apply-contributed-paths! owner result)
               (cond-> acc
-                (seq (:skill-paths r))
-                (update :skill-paths into (:skill-paths r))
-                (seq (:prompt-paths r))
-                (update :prompt-paths into (:prompt-paths r))
-                (seq (:theme-paths r))
-                (update :theme-paths into (:theme-paths r))))
+                (seq (:skill-paths result))
+                (update :skill-paths into (:skill-paths result))
+                (seq (:prompt-paths result))
+                (update :prompt-paths into (:prompt-paths result))
+                (seq (:theme-paths result))
+                (update :theme-paths into (:theme-paths result))))
             {:skill-paths [] :prompt-paths [] :theme-paths []}
             contributions)))
 
