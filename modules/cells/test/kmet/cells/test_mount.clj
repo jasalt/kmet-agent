@@ -18,6 +18,14 @@
     (is (nil? (cells/composition node :nope)))
     (is (identical? (:root rt) node))))
 
+(deftest a-nil-node-reads-as-unknown
+  ;; runtime/snapshot threads a state's node through unconditionally — the
+  ;; loop's compaction paths read the group without a guard — so an absent
+  ;; node is "no composition", and /units renders it as nothing, not a crash.
+  (is (nil? (cells/composition nil)))
+  (is (nil? (cells/composition nil :group)))
+  (is (= "" (cells/explain (cells/composition nil)))))
+
 (deftest an-empty-composition-is-mounted-not-unknown
   (let [rt (rt-with {:k/group {:handle :h/group :units {}}})
         node (:root rt)]

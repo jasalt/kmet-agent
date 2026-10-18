@@ -45,8 +45,8 @@
 
 (defn composition
   "One composition's flat snapshot `{slot-id -> entry-map}` — `:app` when no id
-   is given, nil when the composition is unknown. Take it once per attempt
-   (cells.md §5.4)."
+   is given, nil when the composition is unknown (a nil node included). Take it
+   once per attempt (cells.md §5.4)."
   ([node]
    (mount/composition node))
   ([node id]

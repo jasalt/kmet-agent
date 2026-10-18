@@ -218,13 +218,15 @@
 
 (defn composition
   "One composition's flat snapshot `{slot-id -> entry-map}` — `:app` when no
-   id is given, nil when the composition is unknown. Take it once per attempt
+   id is given, nil when the composition is unknown (a nil node included, so
+   a caller can read a state's node unconditionally). Take it once per attempt
    (cells.md §5.4)."
   ([node] (composition node :app))
   ([node id]
-   (when-let [records (get @(:mounted node) id)]
-     (into {} (map (fn [[slot-id record]] [slot-id (snapshot-entry node record)]))
-           records))))
+   (when-let [mounted (:mounted node)]
+     (when-let [records (get @mounted id)]
+       (into {} (map (fn [[slot-id record]] [slot-id (snapshot-entry node record)]))
+             records)))))
 
 (defn dispose-node!
   "End a node: children first (cells.md §5.6), then every owner, then the

@@ -1553,8 +1553,8 @@ Be precise and concise in your responses."}}]
    retry path in this namespace spends: the run's options under the mounted
    :retry-policy entry's own config, so the budget the snapshot shows is the
    budget spent (cells.md §5.4, §6.1). The 2-arity reuses the attempt's one
-   snapshot read; the 1-arity takes the compaction path's own. Both assume
-   the state carries a node — make-agent-state defaults it to the app root."
+   snapshot read; the 1-arity takes the compaction path's own, which tolerates
+   a node-less state — the run's options stand alone."
   ([agent]
    (mounted-retry-policy agent (runtime/snapshot (:node agent) :agent-loop)))
   ([agent units]

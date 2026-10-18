@@ -390,8 +390,9 @@ The map is the ABI (§7, §12 Q4); one composition's snapshot looks like:
 ```
 
 `(composition node)` is the `:app` composition and `(composition node :agent-loop)`
-the group's own; an unknown id is nil. Owner paths carry the tree position, so
-one level plus its owners is enough to read where a unit sits.
+the group's own; an unknown id is nil, as is a node-less read — a caller may
+thread a state's node through unconditionally. Owner paths carry the tree
+position, so one level plus its owners is enough to read where a unit sits.
 
 ### 5.5 State belongs to the scope
 
