@@ -2944,30 +2944,30 @@ Be precise and concise in your responses."}}]
                                      (swap! (:run-messages agent) dissoc old))))
                 ;; pi: agent.continue() — the queued batch becomes the next
                 ;; attempt's prompt (steering first, then follow-up, per mode)
-                continue-attempt! (fn [] (drain-next-queue! agent) (begin-attempt!))]
+                continue-attempt! (fn [] (drain-next-queue! agent) (begin-attempt!))
+                driver {:agent agent
+                        :on-done on-done
+                        :on-error on-error
+                        :begin-attempt! begin-attempt!
+                        :continue-attempt! continue-attempt!}]
             (try
               (begin-attempt!)
               ;; Prompt-level setup — the user message, before-agent-start
               ;; hooks, and the pre-run compaction check run once per prompt,
               ;; not once per attempt (pi: prompt() vs continue()).
               (prepare-run! agent message images)
-              (let [driver {:agent agent
-                            :on-done on-done
-                            :on-error on-error
-                            :begin-attempt! begin-attempt!
-                            :continue-attempt! continue-attempt!}]
-                (loop []
-                  (emit agent {:type :agent-start})
-                  (set-agent-status! agent :thinking)
-                  (let [outcome (run-attempt! agent @attempt-token opts)
-                        ;; Unreachable: run-attempt! returns one of the five
-                        ;; outcomes. Throwing (rather than ignoring a failed
-                        ;; look-up) names the culprit.
-                        handler (or (attempt-routes (:status outcome))
-                                    (throw (ex-info "Unknown attempt outcome"
-                                                    {:outcome outcome})))]
-                    (when (= :again (handler driver outcome))
-                      (recur)))))
+              (loop []
+                (emit agent {:type :agent-start})
+                (set-agent-status! agent :thinking)
+                (let [outcome (run-attempt! agent @attempt-token opts)
+                      ;; Unreachable: run-attempt! returns one of the five
+                      ;; outcomes. Throwing (rather than ignoring a failed
+                      ;; look-up) names the culprit.
+                      handler (or (attempt-routes (:status outcome))
+                                  (throw (ex-info "Unknown attempt outcome"
+                                                  {:outcome outcome})))]
+                  (when (= :again (handler driver outcome))
+                    (recur))))
               (catch Exception e
                 (reset! (:status agent) :error)
                 ;; The settle event reports the run's outcome; an exception
