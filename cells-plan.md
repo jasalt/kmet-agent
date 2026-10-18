@@ -18,13 +18,12 @@ budget the loop reads from the mounted stage — and the session, extension and
 front-end surfaces as address slots whose installs own their process caches
 (P4); then the `:ext` backend: an extension publishes units and their entries
 during `init(api)`, `remount!` assembles the defaults with what the loaded
-extensions published, and unload drops both before `shutdown` (P5a); then the manifest's
-declared units — `extension.edn` `:units` validated with malli before any code
-evaluates, the `:handle` binding when `init(api)` publishes the name, and a
-declared name nothing binds failing the load (P5b). Their
-rows left this table (the git log is the record). Each remaining
-row is landable on its own — the notes name its prerequisites — and gated by
-the changed-file tasks (`bb test-changed`, `bb lint-changed`,
+extensions published, and unload drops both before `shutdown` (P5a); then the
+manifest's declared units — `extension.edn` `:units` validated with malli
+before any code evaluates, the `:handle` binding when `init(api)` publishes the
+name, and a declared name nothing binds failing the load (P5b). Their rows left
+this table (the git log is the record). Each remaining row is landable on its
+own — the notes name its prerequisites — and gated by the changed-file tasks (`bb test-changed`, `bb lint-changed`,
 `bb format-check-changed`) plus `test-self-contained` / `test_modules_manifest`
 / `test_module_deps` and the agent guards (`test-layer-guard`,
 `test-headless-guard`). **Framework first, agent second** was the build order;
@@ -38,9 +37,9 @@ the agent's `deps.edn` dep on cells landed with P2, its first consumer.
 With P4 landed, four of cells.md §1.3's mount mechanisms are absorbed: the
 loop's composition, bootstrap's stage order, and the session/UI surfaces. The
 `:extensions`/`:packages` keys land with P5c, where their units (the `:ext`
-backend, landed with P5a) exist. Extension entries arrive with each load, so `remount!` is the
-assembly point — the defaults plus the loaded extensions' entries, re-diffed by
-`:id` (cells.md §6.2). `:default-tools` stays a run-option — tools and commands
+backend, landed with P5a) exist. Extension entries arrive with each load, so
+`remount!` is the assembly point — the defaults plus the loaded extensions'
+entries, re-diffed by `:id` (cells.md §6.2). `:default-tools` stays a run-option — tools and commands
 are registrations, not units (cells.md §5.1) — and a per-session config-derived
 entry still waits on the engine running on its own node: the app tree is
 shared, so such an entry would be last-wins (cells.md §8's host rules).
