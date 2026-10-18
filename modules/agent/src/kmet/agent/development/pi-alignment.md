@@ -359,7 +359,8 @@ deadline never leaves a stalled response start (or the turn's spinner) hung.
 
 Aligned (`kmet.agent.extensions` + `kmet.agent.event-bus`): input + before-agent-start hooks,
 provider registration (incl. OAuth), `ctx.models.*` facades, the front-end
-binding (`extensions/bind-extensions!` — pi `bindExtensions` +
+binding (`extensions/install-front-end!`, over the raw `bind-extensions!`
+swap — pi `bindExtensions` +
 `ExtensionMode`: `ctx.mode`/`ctx.has-ui` per front end, a headless
 `noOpUIContext`-equivalent port, and the `request-ui!`/`respond!` host-dialog
 pair), the runtime capabilities (`bind-runtime-capabilities!` — pi

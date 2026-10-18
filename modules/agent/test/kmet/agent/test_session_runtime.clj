@@ -9,12 +9,14 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as agent]
             [kmet.agent.prompts :as prompts]
+            [kmet.agent.runtime :as app]
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
             [kmet.agent.session.runtime :as rt]
             [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.registry :as tools-reg]
             [kmet.ai.models :as models]
+            [kmet.cells.core :as cells]
             [kmet.test-utils :as tu]))
 
 ;; Several tests bootstrap real engines onto the app tree (loading the
@@ -107,7 +109,11 @@
         (is (= [] (rt/scoped-models engine)))
         (is (= :off @(:thinking ag)) "thinking defaults to off")
         (is (identical? sess (extensions/get-session))
-            "the extension session handle is installed")))))
+            "the extension session handle is installed")
+        (is (contains? (get-in (app/snapshot (:node ag)) [:session :keys]) :kmet/session)
+            "the live session is registered under the tree's [:app :session]")
+        (is (contains? (get-in (app/snapshot (:node ag)) [:ui :keys]) :kmet/ui-port)
+            "the front end's headless port is registered under [:app :ui]")))))
 
 (deftest test-subscribe-receives-and-unsubscribes
   (with-engine
@@ -172,13 +178,34 @@
 (deftest test-dispose-clears-subscribers-and-wiring
   (with-engine
     (fn [engine _]
-      (let [events (atom [])]
+      (let [events (atom [])
+            node (:node (rt/agent-state engine))]
         (rt/subscribe! engine #(swap! events conj %))
         (is (nil? (rt/dispose! engine)))
         (is (nil? (extensions/get-session)) "the extension session handle is cleared")
+        (is (empty? (get-in (app/snapshot node) [:session :keys]))
+            "dispose! drops the session surface's registrations with their owner")
+        (is (empty? (get-in (app/snapshot node) [:ui :keys]))
+            "dispose! drops the front-end surface's registrations")
         (is (nil? (rt/dispose! engine)) "dispose! is idempotent")
         (rt/cancel! engine)
         (is (empty? @events))))))
+
+(deftest test-session-install-is-owner-scoped
+  ;; The process cache is last-wins (one live front end at a time), but a
+  ;; registration belongs to the tree that installed it: an older tree's
+  ;; teardown cannot clear a newer tree's session (cells.md §5.1, §5.6).
+  (let [old (app/node)
+        newer (:root (app/runtime))]
+    (try
+      (extensions/install-session! old :old-session)
+      (extensions/install-session! newer :newer-session)
+      (is (= :newer-session (extensions/get-session)))
+      (cells/dispose! old [:app :session])
+      (is (= :newer-session (extensions/get-session))
+          "the older tree's teardown cannot clear the newer install")
+      (finally
+        (cells/dispose! newer [:app :session])))))
 
 (deftest test-snapshot-is-plain-data
   (with-engine

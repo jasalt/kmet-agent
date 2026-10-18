@@ -58,8 +58,9 @@ modules/agent/src/kmet/
 │       ├── resources.clj — loaded-resources sections
 │       ├── layout.clj — agent event handler + build-layout widget tree
 │       └── ui_registry.clj — ExtensionUIContext (widgets, dialogs, editor);
-│                         binds the front end's extension surface through
-│                         extensions/bind-extensions! (mode + port)
+│                         installs the front end's extension surface through
+│                         extensions/install-front-end! (mode + port,
+│                         registered under [:app :ui])
 ├── ai/                 — Provider/auth subsystem (pi: packages/ai — a standalone
 │   │                     library the agent depends on; self-contained)
 │   ├── models.clj      — Provider/model registry + committed EDN catalogs
@@ -189,7 +190,11 @@ app root's store (`kmet.cells.scope`, reached through `kmet.agent.runtime`),
 addressed by host-shaped keys under an owner path: a unit's slot path, or
 `[:app :extensions <name>]` for an extension's own registrations. The
 registration is disposed with that owner (P2), so a new extension point is a
-key on that store, not a process-global atom copied into each engine.
+key on that store, not a process-global atom copied into each engine. The
+runtime-owned surfaces follow the same rule: `bootstrap` registers the live
+session and its sinks under `[:app :session]` and the headless UI port under
+`[:app :ui]`, and `dispose!` drops those owners; the `extensions` atoms stay
+the no-node read cache for extension code with no node in hand (P4).
 
 ### Session runtime and front ends
 
@@ -215,7 +220,8 @@ front end:
   needs data not on the stream extends the event, not the reader.
 - Extension UI splits into runtime capabilities (installed by `bootstrap`,
   cleared by `dispose!`) and the front-end UI port
-  (`extensions/bind-extensions!`). Dialogs ask through
+  (`extensions/install-front-end!`, registered under `[:app :ui]`). Dialogs
+  ask through
   `request-ui!`/`respond!`, so an asynchronous client can answer later; the
   degraded headless answers and the per-front-end capability table are in
   [`extension.md`](extension.md).

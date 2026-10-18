@@ -6,8 +6,10 @@
   (:require [babashka.fs :as fs]
             [clojure.test :as t :refer [deftest testing]]
             [kmet.agent.extensions.core :as ex]
+            [kmet.agent.runtime :as app]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as rt]
+            [kmet.cells.core :as cells]
             [kmet.test-utils :as tu]))
 
 ;; The binding and the app tree's registrations are process-global state;
@@ -41,6 +43,22 @@
   (t/is (= :print (ex/extension-mode)))
   (t/is (false? (ex/extension-has-ui?)))
   (t/is (nil? (ex/ui-call :notify "hi" :info))))
+
+(deftest test-install-front-end-owns-the-port
+  (testing "install-front-end! registers the port on the tree; disposal restores headless"
+    (let [node (app/node)]
+      (try
+        (ex/install-front-end! node {:mode :interactive :has-ui true
+                                     :ui {:notify (fn [_ _] :notified)}})
+        (t/is (= :interactive (ex/extension-mode)))
+        (t/is (= :notified (ex/ui-call :notify "hi" :info)))
+        (t/is (contains? (get-in (app/snapshot node) [:ui :keys]) :kmet/ui-port)
+              "the port is the [:app :ui] owner's registration")
+        (finally
+          (cells/dispose! node [:app :ui])))
+      (t/is (= :print (ex/extension-mode))
+            "disposal restores the headless binding")
+      (t/is (empty? (get-in (app/snapshot node) [:ui :keys]))))))
 
 (deftest test-port-only-swap-preserves-kind
   (testing "set-ui-registry!/clear-ui-registry! swap the port, not the kind"

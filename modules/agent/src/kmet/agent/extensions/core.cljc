@@ -484,6 +484,20 @@
   (reset! extension-binding headless-binding)
   nil)
 
+(defn install-front-end!
+  "Install the front-end extension surface for NODE (the tree's [:app :ui]
+   owner) — the same map bind-extensions! takes (:mode, :has-ui, :ui). The
+   capability map is the owner's registration, the tree's copy of the port
+   that /units reports; the process binding stays the no-node read cache, and
+   node disposal restores the headless defaults. A front end with its own
+   widgets installs here once they exist. Returns nil."
+  [node {:keys [ui] :as surface}]
+  (when node
+    (scope/register! node [:app :ui] :kmet/ui-port (or ui {}))
+    (scope/add-teardown! node [:app :ui] unbind-extensions!))
+  (bind-extensions! surface)
+  nil)
+
 (defn extension-mode
   "The bound front-end kind — ctx.mode (pi: ExtensionMode)."
   []
@@ -785,6 +799,49 @@
   (reset! context-sink-atom nil)
   (reset! entry-sink-atom nil)
   nil)
+
+(defn- cache-surface!
+  "Register VALUE under OWNER/KEY on NODE and install it in CACHE, the
+   no-node read cache. The registration is what `composition`/`explain`
+   report and what node disposal drops; the owner's teardown clears CACHE
+   only while it still holds VALUE, so an outgoing registration can never
+   clear a newer install (a session switch, a front end's rebind —
+   cells.md §5.1).
+
+   Two degenerate shapes install the cache alone: NODE nil (a node-less
+   engine, e.g. a test double) has no tree to own the value, and VALUE nil
+   (a context-less run) has no live surface to own. Returns nil."
+  [node owner k cache v]
+  (when node
+    (when-let [prev @cache]
+      (scope/deregister! node owner k prev))
+    (when (some? v)
+      (scope/register! node owner k v)
+      (scope/add-teardown! node owner
+                           (fn []
+                             (when (identical? v @cache) (reset! cache nil))))))
+  (reset! cache v)
+  nil)
+
+(defn install-session!
+  "Install SESSION as the extension-facing live session for NODE (the
+   tree's [:app :session] owner): the process cache `get-session` reads and
+   the registration /units reports. Re-install after a session switch.
+   Returns nil."
+  [node session]
+  (cache-surface! node [:app :session] :kmet/session session-atom session))
+
+(defn install-context-sink!
+  "Install SINK, a fn receiving a custom message map, for NODE's
+   [:app :session] owner (`append-custom-message!` reads it). Returns nil."
+  [node sink]
+  (cache-surface! node [:app :session] :kmet/context-sink context-sink-atom sink))
+
+(defn install-entry-sink!
+  "Install SINK, a fn receiving an appended custom entry, for NODE's
+   [:app :session] owner (`append-custom-entry!` reads it). Returns nil."
+  [node sink]
+  (cache-surface! node [:app :session] :kmet/entry-sink entry-sink-atom sink))
 
 (defn append-custom-entry!
   "Append a custom entry (extension state, never in LLM context) to the live

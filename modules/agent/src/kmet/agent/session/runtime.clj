@@ -18,11 +18,13 @@
    - `:on-text`/`:on-thinking`/`:on-done`/`:on-error` stay sugar: `prompt!`
      passes them straight to `run-agent-turn`, derived from the same
      emission path, so they cannot drift from the stream.
-   - Extension wiring is runtime-scoped: `bootstrap` installs the session
+   - Extension wiring is runtime-scoped: `bootstrap` registers the session
      handle, the context sink and the headless UI port (with the front-end
-     kind), and `dispose!` unbinds them. A front end with its own UI port
-     (interactive) re-binds after its widgets exist —
-     `extensions/bind-extensions!` is the front-end-owned install point.
+     kind) on the engine's tree — the `[:app :session]` and `[:app :ui]`
+     owners — and `dispose!` drops those owners. The extension atoms stay
+     the no-node read cache for extension code that has no node in hand.
+     A front end with its own UI port (interactive) re-installs after its
+     widgets exist — `extensions/install-front-end!` is the install point.
    - Registrations are not engine state (P2): commands, tools, skills,
      prompt templates, hooks, renderers, markdown transformers and flags
      live on the app root's store (`kmet.agent.runtime`), each under an
@@ -50,7 +52,8 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
-            [kmet.agent.tools.core :as tools]))
+            [kmet.agent.tools.core :as tools]
+            [kmet.cells.core :as cells]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
                    cwd turn-running? compaction-queued pending-compaction
@@ -246,21 +249,26 @@
                              :pending-ui (atom {})
                              :run-callbacks (atom nil)
                              :event-listeners (atom {})})]
-    ;; Runtime-scoped extension handle: the session facades and the ctx
-    ;; :model/:scoped-models/:thinking-level read the live agent. The
-    ;; front-end binding is runtime-scoped too: bootstrap
-    ;; installs the headless port and the front-end kind, dispose! unbinds.
-    ;; A front end with its own port re-binds after its widgets exist.
-    (event-bus/set-default-event-listener-atom! (:event-listeners engine))
-    (extensions/set-session! (:session agent-state))
-    (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (agent-state engine) msg)))
-    (extensions/bind-extensions!
-     {:mode mode
-      :has-ui has-ui
-      ;; a front end supplies only its own capabilities; the runtime's
-      ;; build-context callback always rides along
-      :ui (merge (default-ui-port engine) ui-context)})
-    (extensions/bind-runtime-capabilities! (runtime-capabilities engine))
+    ;; Runtime-scoped extension surface: the session facades and the ctx
+    ;; :model/:scoped-models/:thinking-level read the live agent, and the
+    ;; front-end binding carries the headless port and kind. Both are
+    ;; registered on the engine's tree under [:app :session] / [:app :ui], so
+    ;; dispose! drops them with their owners while the process atoms stay the
+    ;; no-node read cache. A front end with its own port re-installs once its
+    ;; widgets exist.
+    (let [node (:node agent-state)]
+      (event-bus/set-default-event-listener-atom! (:event-listeners engine))
+      (extensions/install-session! node (:session agent-state))
+      (extensions/install-context-sink!
+       node (fn [msg] (agent/add-context-message! (agent-state engine) msg)))
+      (extensions/install-front-end!
+       node
+       {:mode mode
+        :has-ui has-ui
+        ;; a front end supplies only its own capabilities; the runtime's
+        ;; build-context callback always rides along
+        :ui (merge (default-ui-port engine) ui-context)})
+      (extensions/bind-runtime-capabilities! (runtime-capabilities engine)))
     ;; The internal subscriber is the only trigger for deferred manual
     ;; compactions (see request-compaction!): a /compact that arrived while a
     ;; prompt was running starts when that prompt settles — after the
@@ -390,7 +398,7 @@
   [engine sess {:keys [apply-settings?]}]
   (let [new-ag (assoc (agent-state engine) :session sess)]
     (reset! (:session engine) sess)
-    (extensions/set-session! sess)
+    (extensions/install-session! (:node new-ag) sess)
     (reset! (:compaction-queued engine) [])
     (reset! (:pending-compaction engine) [])
     (reset! (:agent-state engine) new-ag)
@@ -1340,11 +1348,11 @@
    Idempotent."
   [engine]
   (when (compare-and-set! (:disposed? engine) false true)
-    (let [agent-state (agent-state engine)
+    (let [ag (agent-state engine)
           run @(:last-run engine)
           run-pending? (and run (not (realized? run)))]
-      (when (or run-pending? @(:compacting? agent-state))
-        (agent/cancel-turn agent-state)
+      (when (or run-pending? @(:compacting? ag))
+        (agent/cancel-turn ag)
         (when run-pending?
           (deref run 2000 nil))))
     (reset! (:subscribers engine) [])
@@ -1361,7 +1369,13 @@
     ;; single engine, the process default points back at a fresh empty atom.
     (reset! (event-bus/default-event-listener-atom) {})
     (event-bus/set-default-event-listener-atom! (atom {}))
-    (extensions/set-session! nil)
-    (extensions/set-context-sink! nil)
+    ;; The extension surface is owner-scoped registrations on the engine's
+    ;; tree: dropping the owners runs their teardowns, which clear the
+    ;; process caches and restore the headless binding. A node-less engine
+    ;; (a test double) has no registrations, but its caches still clear.
+    (when-let [node (:node (agent-state engine))]
+      (cells/dispose! node [:app :session])
+      (cells/dispose! node [:app :ui]))
+    (extensions/clear-runtime!)
     (extensions/unbind-extensions!))
   nil)

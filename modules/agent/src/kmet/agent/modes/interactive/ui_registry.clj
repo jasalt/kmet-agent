@@ -190,7 +190,7 @@
 (defn build-extension-ui-registry
   "Create the ExtensionUIContext implementation for the live layout
    (pi: createExtensionUIContext). Returns the capability map installed via
-   extensions/bind-extensions! (front-end kind :interactive)."
+   extensions/install-front-end! (front-end kind :interactive)."
   [{:keys [tui cs]}
    {:keys [ed ftr hdr ch sp1 fdp header-container
            widgets-above-atom widgets-below-atom]}
@@ -673,28 +673,30 @@
                   (reset! current-editor-atom ed)
                   (when (tui/tui-has-overlay? t) (tui/tui-hide-overlay t))
                   (tui/tui-request-render t))}]
-    ;; Bind the front end's extension surface: the
+    ;; Install the front end's extension surface on the engine's tree: the
     ;; capability map plus the front-end kind extensions branch on
-    ;; (ctx.mode / ctx.has-ui). bootstrap bound the headless defaults; the
-    ;; live widgets replace them here.
-    (extensions/bind-extensions! {:mode :interactive :has-ui true :ui registry})
+    ;; (ctx.mode / ctx.has-ui). bootstrap installed the headless defaults;
+    ;; the live widgets replace them here.
     ;; Live session + context injection for extensions (pi:
     ;; ctx.sessionManager / custom messages flowing through the agent loop).
     ;; Installed once with the registry; reload mutates the same CoreState
     ;; (agent, session atom), so the wiring stays valid across reloads —
     ;; only /new, /resume, fork and clone re-register the session.
-    (extensions/set-session! (runtime/session (:engine cs)))
-    (extensions/set-context-sink!
-     (fn [msg] (runtime/add-context-message! (:engine cs) msg)))
-    (extensions/set-entry-sink!
-     (fn [entry]
-       (when-let [rendered (session-admin/run-entry-renderer
-                            (extensions/get-entry-renderer (:custom-type entry)) entry)]
-         (chat-history/chat-history-add-message!
-          (:chat-history cs)
-          (session-admin/renderer-result->message rendered))
-         ;; The sink appends to the untracked chat message vector; request
-         ;; a frame after the append rather than relying on an older watch.
-         (when t
-           (tui/tui-request-render t)))))
+    (let [node (:node (runtime/agent-state (:engine cs)))]
+      (extensions/install-front-end! node {:mode :interactive :has-ui true :ui registry})
+      (extensions/install-session! node (runtime/session (:engine cs)))
+      (extensions/install-context-sink!
+       node (fn [msg] (runtime/add-context-message! (:engine cs) msg)))
+      (extensions/install-entry-sink!
+       node
+       (fn [entry]
+         (when-let [rendered (session-admin/run-entry-renderer
+                              (extensions/get-entry-renderer (:custom-type entry)) entry)]
+           (chat-history/chat-history-add-message!
+            (:chat-history cs)
+            (session-admin/renderer-result->message rendered))
+           ;; The sink appends to the untracked chat message vector; request
+           ;; a frame after the append rather than relying on an older watch.
+           (when t
+             (tui/tui-request-render t))))))
     registry))

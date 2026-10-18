@@ -1052,7 +1052,8 @@ installs them, and they are inert headless.
 
 The `:ui` capability map dispatches through the **front-end binding**: one
 map per process, bound by the runtime for headless runs and replaced by a
-front end once its widgets exist (`extensions/bind-extensions!`). Branch on
+front end once its widgets exist (`extensions/install-front-end!`, which also
+registers the port under the tree's `[:app :ui]` owner). Branch on
 `(:mode ctx)` — `:interactive` (TUI), `:gui`, `:rpc`, `:print`, `:json` —
 and on `(:has-ui ctx)`. A headless front end binds a degraded port: widget,
 status and dialog calls are inert, getters return neutral values
