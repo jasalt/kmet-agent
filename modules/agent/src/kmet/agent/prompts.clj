@@ -4,20 +4,48 @@
    (non-recursive) with optional YAML frontmatter: description (falls back to
    the first non-empty body line, truncated to 60 chars) and argument-hint.
    The filename without .md is the command name: /name args expands to the
-   template body with $1, $@, ${1:-default}, ${@:N} placeholders substituted."
+   template body with $1, $@, ${1:-default}, ${@:N} placeholders substituted.
+
+   Templates live in the app root's store, under the `[:app :prompts]` owner
+   (`kmet.agent.runtime` mounts the `:prompts` slot for it, so their keys
+   report under it in `/units`), addressed by `[:kmet/prompt <name>]`: visible
+   to every engine, outliving one, and disposed with their owner rather than
+   copied into an engine and reset by hand (cells.md §5.1). A name holds one
+   template, so re-registering replaces the earlier one — pi's loader assigns
+   into a name-keyed map the same way. The extension ABI registers here
+   today; P5 gives each extension its own owner."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
+            [kmet.agent.runtime :as app-runtime]
+            [kmet.cells.scope :as scope]
             [kmet.libs.yaml :as yaml]))
 
 ;; ─── Template state ────────────────────────────────────────────────────────
 
-(defonce pending-prompt-templates (atom []))
-(defn- current-prompt-template-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :prompt-templates)
-      pending-prompt-templates))
+(def prompts-owner
+  "The app's prompt-template registry owner: the `:prompts` slot
+   kmet.agent.runtime mounts at the root for it (cells.md §5.1)."
+  [:app :prompts])
+
+(defn- prompt-key
+  "The store key addressing a template by NAME."
+  [name]
+  [:kmet/prompt name])
+
+(defn- prompt-key?
+  "True for a key the store holds a prompt template under — other registries'
+   keys share the store, so shape is checked before the head."
+  [k]
+  (and (vector? k) (= :kmet/prompt (first k))))
+
+(defn- registered-prompt-templates
+  "The tree's prompt templates, in registration order (a re-registration of a
+   name moves the template to the end)."
+  []
+  (into []
+        (keep (fn [[k _ v]] (when (prompt-key? k) v)))
+        (scope/ordered-registrations (app-runtime/node))))
 
 ;; ─── Argument parsing (pi: parseCommandArgs) ──────────────────────────────
 
@@ -165,16 +193,19 @@
 (defn register-prompt-template!
   "Register a prompt template from an extension's bundled .md content string
    (the extension reads its own resource via io/resource and hands the
-   content over, so jarred templates need no filesystem path).
+   content over, so jarred templates need no filesystem path). A name holds
+   one template: re-registering under the same name replaces the earlier
+   one.
    OPTS: :name (command name), :content (raw .md), :location (display
    locator, e.g. `my-ext:prompts/foo.md`), :extension (owner name).
-   Returns a deregister fn removing exactly this template."
+   Returns a deregister fn removing exactly this template — a no-op when the
+   content failed to parse."
   [{:keys [name content location extension]}]
-  (let [t (make-template-from-content content name
-                                      (or location (str (or extension "prompt")))
-                                      extension)]
-    (when t (swap! (current-prompt-template-registry) conj t))
-    (fn [] (doseq [reg [(current-prompt-template-registry) pending-prompt-templates]] (swap! reg (fn [ts] (remove #(identical? % t) ts)))))))
+  (if-let [t (make-template-from-content content name
+                                         (or location (str (or extension "prompt")))
+                                         extension)]
+    (scope/register! (app-runtime/node) prompts-owner (prompt-key (:name t)) t)
+    (fn [] nil)))
 
 (defn prompt-template-files-in-dir
   "Prompt template .md files directly inside DIR (non-recursive, pi:
@@ -206,8 +237,10 @@
     (doseq [{:keys [message path]} @warnings]
       (binding [*out* *err*]
         (println (str "Warning: prompt template at " path ": " message))))
-    (let [ts @loaded]
-      (swap! (current-prompt-template-registry) into ts)
+    (let [ts @loaded
+          node (app-runtime/node)]
+      (doseq [t ts]
+        (scope/register! node prompts-owner (prompt-key (:name t)) t))
       ts)))
 
 (defn load-prompt-templates-from-dir
@@ -219,18 +252,21 @@
 
 (defn get-prompt-templates
   []
-  @(current-prompt-template-registry))
+  (registered-prompt-templates))
 
 (defn clear-prompt-templates!
-  "Remove all loaded prompt templates (pi: resourceLoader.reload re-discovers
-   from scratch). Used by /reload."
+  "Remove every loaded prompt template (pi: resourceLoader.reload
+   re-discovers from scratch). Used by /reload."
   []
-  (doseq [reg [(current-prompt-template-registry) pending-prompt-templates]]
-    (reset! reg [])))
+  (let [node (app-runtime/node)]
+    (doseq [[k owner v] (scope/ordered-registrations node)
+            :when (prompt-key? k)]
+      (scope/deregister! node owner k v)))
+  nil)
 
 (defn get-prompt-template
   [name]
-  (first (filter #(= name (:name %)) @(current-prompt-template-registry))))
+  (first (filter #(= name (:name %)) (registered-prompt-templates))))
 
 ;; ─── Expansion (pi: expandPromptTemplate) ─────────────────────────────────
 

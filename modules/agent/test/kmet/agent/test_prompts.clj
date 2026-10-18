@@ -3,7 +3,9 @@
             [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.prompts :as prompts]))
+            [kmet.agent.prompts :as prompts]
+            [kmet.agent.runtime :as app-runtime]
+            [kmet.cells.scope :as scope]))
 
 ;; ─── parse-command-args (pi: parseCommandArgs) ─────────────────────────────
 
@@ -225,3 +227,39 @@
     (dereg)
     (t/is (nil? (prompts/get-prompt-template "ext-tpl")) "deregister removes the template"))
   (prompts/clear-prompt-templates!))
+
+(t/deftest test-prompt-templates-live-in-the-app-roots-store
+  ;; The registry is the store, not an engine field: a template is readable
+  ;; under the app's owner by its name key, and clear removes by key.
+  (prompts/clear-prompt-templates!)
+  (try
+    (prompts/register-prompt-template!
+     {:name "stored-tpl" :content "---\ndescription: d\n---\nBody"
+      :location "my-ext:prompts/stored.md" :extension "my-ext"})
+    (t/is (= "stored-tpl"
+             (:name (get (scope/for-key (app-runtime/node)
+                                        [:kmet/prompt "stored-tpl"])
+                         prompts/prompts-owner)))
+          "the template is addressed by its own name")
+    (t/is (= ["stored-tpl"] (mapv :name (prompts/get-prompt-templates))))
+    (prompts/clear-prompt-templates!)
+    (t/is (empty? (scope/for-key (app-runtime/node) [:kmet/prompt "stored-tpl"])))
+    (finally
+      (prompts/clear-prompt-templates!))))
+
+(t/deftest test-re-registering-a-name-replaces-the-template
+  ;; A name holds one template: pi's loader assigns into a name-keyed map,
+  ;; and the store's key is the name, so the later registration wins and one
+  ;; deregister fn cannot remove it (the store's value guard).
+  (prompts/clear-prompt-templates!)
+  (try
+    (prompts/register-prompt-template!
+     {:name "dup-tpl" :content "---\ndescription: first\n---\nOne"
+      :location "a.md" :extension "a"})
+    (prompts/register-prompt-template!
+     {:name "dup-tpl" :content "---\ndescription: second\n---\nTwo"
+      :location "b.md" :extension "b"})
+    (t/is (= ["dup-tpl"] (mapv :name (prompts/get-prompt-templates))))
+    (t/is (= "Two" (:content (prompts/get-prompt-template "dup-tpl"))))
+    (finally
+      (prompts/clear-prompt-templates!))))

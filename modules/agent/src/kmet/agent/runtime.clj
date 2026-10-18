@@ -26,7 +26,10 @@
    ;; the same address shape for the tool registry: the custom tools and
    ;; contributed sources registered under [:app :tools] report as its keys
    ;; in /units (cells.md §5.1).
-   :kmet/tools {:units {}}})
+   :kmet/tools {:units {}}
+   ;; the prompt-template registry's address: package- and extension-loaded
+   ;; templates report under it.
+   :kmet/prompts {:units {}}})
 
 (def default-entries
   "The entries the app mounts at its root: units with no per-session config
@@ -34,7 +37,8 @@
    with the session (P4)."
   [{:id :loop-guard :name :kmet/loop-guard}
    {:id :commands :name :kmet/commands}
-   {:id :tools :name :kmet/tools}])
+   {:id :tools :name :kmet/tools}
+   {:id :prompts :name :kmet/prompts}])
 
 (defn runtime
   "A composition runtime over the builtin units: resolution plus a fresh root

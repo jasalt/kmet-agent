@@ -260,8 +260,7 @@
                              :flags (atom @extensions/pending-flags)
                              :cli-flags (atom @extensions/pending-cli-flags)
                              :applied-resource-paths (atom @extensions/pending-applied-resource-paths)
-                             :skills (atom @skills/pending-skills)
-                             :prompt-templates (atom @prompts/pending-prompt-templates)})]
+                             :skills (atom @skills/pending-skills)})]
     ;; Runtime-scoped extension handle: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent. The
     ;; front-end binding is runtime-scoped too: bootstrap
@@ -275,7 +274,6 @@
     (reset! extensions/pending-cli-flags {})
     (reset! extensions/pending-applied-resource-paths #{})
     (reset! skills/pending-skills [])
-    (reset! prompts/pending-prompt-templates [])
     (set-default-engine! engine)
     (extensions/set-session! (:session agent-state))
     (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (agent-state engine) msg)))
