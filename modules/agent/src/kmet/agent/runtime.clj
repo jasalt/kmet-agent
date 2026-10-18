@@ -107,12 +107,12 @@
 ;; extension published, which is unload's first step.
 ;;
 ;; `extension.edn` may declare a unit the same way minus its code
-;; (`declare-extension-unit!`): that record carries :declared? and neither
-;; resolves nor mounts until a publication of the same name binds it — which
-;; lets the host validate the manifest before the extension's code evaluates.
-;; A publication inherits what the record it replaces leaves out (its
-;; declaration, or an earlier publication) and puts it back if the mount is
-;; refused.
+;; (`declare-extension-unit!`): its unit carries neither a `:handle` nor
+;; `:units`, so it neither resolves nor mounts until a publication of the same
+;; name binds it — which lets the host validate the manifest before the
+;; extension's code evaluates. A publication inherits what the record it
+;; replaces leaves out (its declaration, or an earlier publication) and puts it
+;; back if the mount is refused.
 ;;
 ;; Mounting and unmounting are the caller's boundary decision — the store
 ;; never waits, and `unload-extension!` is called at quiescent points
@@ -120,51 +120,61 @@
 
 (defonce ^:private publications (atom []))
 
+(defn- implementable?
+  "True when PUBLICATION's unit can mount at all — a `:handle` or inline
+   `:units`, the framework's own rule (`kmet.cells.spec`) — and false for a
+   manifest declaration, whose unit carries neither until its handle binds
+   (cells.md §8.2)."
+  [publication]
+  (let [unit (:unit publication)]
+    (boolean (or (:handle unit) (contains? unit :units)))))
+
+(defn- record-for
+  "The record holding NAME, or nil. At most one does: binding a declaration
+   replaces it and a name is exclusive to its publisher, so this is also the
+   record a publication replaces."
+  [nm]
+  (some #(when (= nm (:name %)) %) @publications))
+
 (defn extension-unit
   "The publication for NAME as {:unit <descriptor> :extension <name>}, or nil
    — what the `:ext` backend reads. A name is namespaced to its extension
-   (`:budget/spend`), so a repeat means a re-publication; a manifest
-   declaration does not resolve until its handle binds it (cells.md §8.2)."
+   (`:budget/spend`), so a repeat means a re-publication. A manifest
+   declaration resolves only once its handle binds it (cells.md §8.2)."
   [nm]
-  (when-let [publication (last (filter #(and (= nm (:name %))
-                                             (not (:declared? %)))
-                                       @publications))]
-    (select-keys publication [:unit :extension])))
+  (when-let [publication (record-for nm)]
+    (when (implementable? publication)
+      (select-keys publication [:unit :extension]))))
 
 (defn- published-entries
   "The entries the loaded extensions published, in publication order. A
    declaration mounts nothing until it is bound."
   []
-  (into [] (comp (remove :declared?) (map :entry)) @publications))
+  (into [] (comp (filter implementable?) (map :entry)) @publications))
 
 (defn- ensure-name-free!
   "Refuse NAME when another extension already holds it: a published name lives
    in its publisher's namespace (cells.md §8.2)."
   [ext-name name]
-  (when-let [owner (some #(when (and (= name (:name %))
-                                     (not= ext-name (:extension %)))
-                            (:extension %))
-                         @publications)]
-    (throw (ex-info (str "kmet.agent.runtime: " name " is already published by "
-                         (pr-str owner) " — a published name lives in its "
-                         "extension's namespace")
-                    {:type ::duplicate-unit-name
-                     :extension ext-name
-                     :name name
-                     :published-by owner}))))
+  (let [owner (:extension (record-for name))]
+    (when (and owner (not= ext-name owner))
+      (throw (ex-info (str "kmet.agent.runtime: " name " is already published by "
+                           (pr-str owner) " — a published name lives in its "
+                           "extension's namespace")
+                      {:type ::duplicate-unit-name
+                       :extension ext-name
+                       :name name
+                       :published-by owner})))))
 
 (defn- store!
-  "Store PUBLICATION for EXT-NAME, replacing an earlier record for the same
-   (extension, name) — the declaration it binds, or a re-publication. Nothing
-   mounts here."
-  [ext-name publication]
+  "Store PUBLICATION, replacing the record that held its name — the declaration
+   it binds, or the publication it replaces (a name is exclusive to its
+   publisher, so any match is ours). Nothing mounts here."
+  [publication]
   (swap! publications
          (fn [ps]
-           (conj (into [] (remove #(and (= ext-name (:extension %))
-                                        (= (:name publication) (:name %)))
-                                  ps))
-                 publication)))
-  publication)
+           (conj (into [] (remove #(= (:name publication) (:name %))) ps)
+                 publication))))
 
 (defn runtime
   "A composition runtime over the builtin units and the extensions' published
@@ -186,13 +196,6 @@
    call do this."
   []
   (cells/mount! app-rt (into default-entries (published-entries))))
-
-(defn- previous-record
-  "The record (extension EXT-NAME, name NAME) currently holds, or nil — the
-   declaration a publication binds, or the publication it replaces."
-  [ext-name name]
-  (some #(when (and (= ext-name (:extension %)) (= name (:name %))) %)
-        @publications))
 
 (defn- restore!
   "Put PUBLICATION back to the record it replaced — PREVIOUS, or nothing when
@@ -231,7 +234,7 @@
                      :extension ext-name
                      :declaration declaration})))
   (ensure-name-free! ext-name name)
-  (store! ext-name (assoc declaration :extension ext-name :declared? true))
+  (store! (assoc declaration :extension ext-name))
   nil)
 
 (defn unbound-declarations
@@ -239,7 +242,8 @@
    promises a handle for every unit it declares, so a non-empty answer fails
    the load (cells.md §8.2)."
   [ext-name]
-  (into [] (comp (filter #(and (:declared? %) (= ext-name (:extension %))))
+  (into [] (comp (filter #(and (= ext-name (:extension %))
+                               (not (implementable? %))))
                  (map :name))
         @publications))
 
@@ -265,7 +269,7 @@
                      :extension ext-name
                      :publication publication})))
   (ensure-name-free! ext-name name)
-  (let [previous (previous-record ext-name name)
+  (let [previous (record-for name)
         publication (assoc publication
                            :extension ext-name
                            :entry (assoc (merge (:entry previous) entry)
@@ -278,7 +282,7 @@
                       {:type ::bad-unit-publication
                        :extension ext-name
                        :publication publication})))
-    (store! ext-name publication)
+    (store! publication)
     (try
       (remount!)
       (catch Throwable t

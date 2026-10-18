@@ -647,17 +647,36 @@
                            (pr-str loaders))
                       {:path path :manifest manifest})))))
 
+(defn- unit-config-problem
+  "The declaration's `:config` complaint as [message data], or nil: the schema
+   must compile, and an `:entry` `:config` must satisfy it. Both run here,
+   before any code evaluates, which is what declaring in the manifest is for
+   (cells.md §8.2)."
+  [unit entry]
+  (when (contains? unit :config)
+    (let [{:keys [schema error]}
+          (try
+            {:schema (m/schema (:config unit))}
+            (catch Throwable t
+              {:error (ex-message t)}))]
+      (if error
+        [(str ":config is not a usable malli schema: " error)
+         {:config (:config unit)}]
+        (when (and (contains? entry :config)
+                   (not (m/validate schema (:config entry))))
+          [(str "declares an :entry :config its :unit :config schema refuses: "
+                (pr-str (me/humanize (m/explain schema (:config entry)))))
+           {:entry (:config entry)}])))))
+
 (defn- manifest-units
   "Validate MANIFEST's :units declarations at PATH and return them keyed by
    unit name (cells.md §8.2). A declaration is the data half of a publication:
    the unit's `:config` schema and metadata, plus the `:entry` that mounts it —
    no `:handle`/:start/:units, which the extension's code supplies when it
-   publishes the name. Everything is checked here, before any code evaluates,
-   which is what declaring in the manifest is for; the host malli-validates the
-   declared entry config against the declared schema too. A declaration must
-   mount somewhere (`:entry` is required) and may leave the descriptor to the
-   publication (`:unit` is optional), the same rule the runtime's
-   `declare-extension-unit!` applies."
+   publishes the name. A declaration must mount somewhere (`:entry` is
+   required) and may leave the descriptor to the publication (`:unit` is
+   optional), the same rule the runtime's `declare-extension-unit!` applies.
+   Everything is checked here, before any code evaluates."
   [path manifest]
   (let [units (:units manifest)]
     (when (and units (not (map? units)))
@@ -692,19 +711,8 @@
                               (not (keyword? (:into entry))))
                      (bad "declares an :into that is not a keyword"
                           {:entry entry}))
-                   (when (contains? unit :config)
-                     (let [schema (try
-                                    (m/schema (:config unit))
-                                    (catch Throwable t
-                                      (bad (str ":config is not a usable malli "
-                                                "schema: " (ex-message t))
-                                           {:config (:config unit)})))]
-                       (when (and (contains? entry :config)
-                                  (not (m/validate schema (:config entry))))
-                         (bad (str "declares an :entry :config its :unit :config "
-                                   "schema refuses: "
-                                   (pr-str (me/humanize (m/explain schema (:config entry)))))
-                              {:entry (:config entry)}))))
+                   (when-let [[msg data] (unit-config-problem unit entry)]
+                     (bad msg data))
                    [nm declaration])))
           units)))
 
