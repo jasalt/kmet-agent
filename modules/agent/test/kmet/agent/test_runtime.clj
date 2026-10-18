@@ -54,7 +54,7 @@
     (is (= [:app :session] (:owner (:session snapshot)))
         "the session surface's address, so its registrations report under it")
     (is (= [:app :extensions] (:owner (:extensions snapshot)))
-        "the extension surface's address, so the extensions' keys report")
+        "the extension surface's address; extensions register under it")
     (is (= [:app :ui] (:owner (:ui snapshot)))
         "the front-end surface's address, so its keys report under it")
     (is (identical? node (runtime/node)) "one app tree per process")))

@@ -65,9 +65,9 @@
    ;; the session surface's address: the live session and the context / entry
    ;; sinks the engine installs report under it (cells.md §5.1, §5.6).
    :kmet/session {:units {}}
-   ;; the extension surface's address: anything an extension's `init(api)`
-   ;; installs outside a unit is owned by [:app :extensions <name>], so the
-   ;; surface the extensions touch reports here.
+   ;; the extension surface's address: an extension's own registrations are
+   ;; owned by [:app :extensions <name>] — under this slot's path, so dropping
+   ;; the slot disposes them (each extension's keys stay on its own owner).
    :kmet/extensions {:units {}}
    ;; the front-end surface's address: the capability map a front end
    ;; installs for extensions (the UI port) reports under it.
