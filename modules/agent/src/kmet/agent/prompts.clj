@@ -47,6 +47,15 @@
         (keep (fn [[k _ v]] (when (prompt-key? k) v)))
         (scope/ordered-registrations (app-runtime/node))))
 
+(defn- prompt-template-for
+  "The template named NAME, or nil. Owners are searched in first-registration
+   order, so the owner that took the name keeps it; the key is derived from
+   :name, so lookup and listing agree."
+  [name]
+  (let [node (app-runtime/node)
+        by-owner (scope/for-key node (prompt-key name))]
+    (some #(get by-owner %) (scope/owners node))))
+
 ;; ─── Argument parsing (pi: parseCommandArgs) ──────────────────────────────
 
 (def ^:private js-space-separators
@@ -266,7 +275,7 @@
 
 (defn get-prompt-template
   [name]
-  (first (filter #(= name (:name %)) (registered-prompt-templates))))
+  (prompt-template-for name))
 
 ;; ─── Expansion (pi: expandPromptTemplate) ─────────────────────────────────
 
