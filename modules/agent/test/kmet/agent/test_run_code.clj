@@ -350,6 +350,8 @@
             (t/is (str/includes? (:content r) "blocked by hook|after"))
             (t/is (str/includes? (:content r) ":terminate true")
                   "a blocked inner call reports the hook's :terminate to the script")
+            (t/is (not (contains? r :terminate))
+                  "the inner hint stays inner: the outer call's result is the script's")
             (t/is (= 2 (count (get-in r [:details :calls]))))
             (t/is (not (:ok (get-in r [:details :calls 1])))))
           (t/is (= #{"run_code-0" "run_code-1"} (set (map :tool-call-id @payloads))))
