@@ -12,14 +12,15 @@ inside a unit's handle. Events belong to the host's bus. What the framework
 owns is what exists, how it is configured, how it is wired, and how long it
 lives.
 
-Status: **design locked; P0–P2 landed.** The plan is
+Status: **design locked; P0–P3 landed.** The plan is
 [`cells-plan.md`](../../../../../cells-plan.md) at the repository root: a
 transitional document that shrinks as the phases land (§9). P0 landed the store
 (`kmet.cells.scope`), `spec`, the facade's fns, the toy tests and the
 `modules.edn` / `deps.edn` / `bb.edn` wiring; P1 the mount table, snapshot and
 `explain`; P2 `kmet.agent.runtime` and the app root's store, with every kmet
 registry (commands, tools, skills, prompts, renderers, transformers, flags,
-hooks) registered on it and the engine's pending buffers and dispatchers gone.
+hooks) registered on it and the engine's pending buffers and dispatchers gone;
+P3 the prompt state machine's `attempt-routes` table in `kmet.agent.loop`.
 
 ## Contents
 
@@ -690,9 +691,9 @@ contribute entries at all, and to which slots, is a capability decision — the
   are order-independent (barring shadowing), so tool/command registration and
   removal stay as cheap as they are today. A unit may be mid-invocation, so its
   removal is gated on a quiescent boundary — one rule, both halves (§5.4).
-- **The loop's control flow stays in the loop.** Its routing table becomes data
-  the loop's own namespace owns and tests (P3), and its stage functions become
-  slots the loop's handle calls (P4). The framework gains no vocabulary for
+- **The loop's control flow stays in the loop.** Its routing table is data the
+  loop's own namespace owns and tests (P3); its stage functions become slots
+  the loop's handle calls (P4). The framework gains no vocabulary for
   iteration, routing or order.
 - **Declare the insertion points you want to offer.** The framework cannot
   invent one (§3.1); a list-valued slot (`{:units {…}}`) is how a host offers
