@@ -38,7 +38,8 @@
   (let [node (runtime/node)
         snapshot (runtime/snapshot node)]
     (is (= [] (cells/check (runtime/runtime) runtime/default-entries)))
-    (is (= [:agent-loop :commands :tools :prompts :skills] (keys snapshot)))
+    (is (= [:agent-loop :commands :extensions :prompts :session :skills :tools :ui]
+           (sort (keys snapshot))))
     (is (= [:app :agent-loop] (:owner (:agent-loop snapshot))))
     (is (nil? (runtime/handle snapshot :agent-loop))
         "the group's stages carry the handles, not the group itself")
@@ -50,6 +51,12 @@
         "the prompt-template registry's address, so its keys report under it")
     (is (= [:app :skills] (:owner (:skills snapshot)))
         "the skill registry's address, so its keys report under it")
+    (is (= [:app :session] (:owner (:session snapshot)))
+        "the session surface's address, so its registrations report under it")
+    (is (= [:app :extensions] (:owner (:extensions snapshot)))
+        "the extension surface's address, so the extensions' keys report")
+    (is (= [:app :ui] (:owner (:ui snapshot)))
+        "the front-end surface's address, so its keys report under it")
     (is (identical? node (runtime/node)) "one app tree per process")))
 
 (deftest the-loop-group-carries-its-stage-defaults

@@ -61,17 +61,30 @@
    :kmet/prompts {:units {}}
    ;; the skill registry's address: package- and extension-loaded skills
    ;; report under it.
-   :kmet/skills {:units {}}})
+   :kmet/skills {:units {}}
+   ;; the session surface's address: the live session and the context / entry
+   ;; sinks the engine installs report under it (cells.md §5.1, §5.6).
+   :kmet/session {:units {}}
+   ;; the extension surface's address: anything an extension's `init(api)`
+   ;; installs outside a unit is owned by [:app :extensions <name>], so the
+   ;; surface the extensions touch reports here.
+   :kmet/extensions {:units {}}
+   ;; the front-end surface's address: the capability map a front end
+   ;; installs for extensions (the UI port) reports under it.
+   :kmet/ui {:units {}}})
 
 (def default-entries
-  "The entries the app mounts at its root: the loop group and the four
-   registries' addresses. The group carries its stages inline; config-derived
-   and front-end-shaped units mount with the session (P4)."
+  "The entries the app mounts at its root: the loop group and the domains'
+   addresses. The group carries its stages inline; config-derived and
+   front-end-shaped units mount with the session (P4)."
   [{:id :agent-loop :name :kmet/agent-loop}
    {:id :commands :name :kmet/commands}
    {:id :tools :name :kmet/tools}
    {:id :prompts :name :kmet/prompts}
-   {:id :skills :name :kmet/skills}])
+   {:id :skills :name :kmet/skills}
+   {:id :session :name :kmet/session}
+   {:id :extensions :name :kmet/extensions}
+   {:id :ui :name :kmet/ui}])
 
 (defn runtime
   "A composition runtime over the builtin units: resolution plus a fresh root
