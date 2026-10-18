@@ -437,3 +437,17 @@
     (t/is (some? (theme/get-theme-by-name "dark")) "built-ins untouched")
     (theme/unregister-theme! "never-there") ;; no-op
     (t/is (some? (theme/get-theme-by-name "light")))))
+
+(t/deftest test-unregister-theme-value-guard
+  ;; The guarded removal is what a contributed theme's owner teardown uses: a
+  ;; later registration of the same name must survive it.
+  (let [first-theme (theme/make-theme {:name "guard-theme" :accent "#ffffff"})
+        later-theme (theme/make-theme {:name "guard-theme" :accent "#000000"})]
+    (theme/register-theme! first-theme)
+    (theme/register-theme! later-theme)
+    (theme/unregister-theme! "guard-theme" first-theme)
+    (t/is (identical? later-theme (theme/get-theme-by-name "guard-theme"))
+          "one contributor's teardown cannot drop another's registration")
+    (theme/unregister-theme! "guard-theme" later-theme)
+    (t/is (nil? (theme/get-theme-by-name "guard-theme")) "its own registration goes")))
+

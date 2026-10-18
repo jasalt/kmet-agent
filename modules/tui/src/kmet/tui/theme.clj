@@ -833,10 +833,18 @@
 
 (defn unregister-theme!
   "Remove the theme NAME from the registry (extension unload; built-ins
-   should never be unregistered). No-op when absent."
-  [theme-name]
-  (swap! themes dissoc (str theme-name))
-  nil)
+   should never be unregistered). No-op when absent. With THEME, remove it
+   only while NAME still holds that value — the guard that keeps one
+   contributor's teardown from dropping another's later registration, as
+   `kmet.cells.scope/deregister!` does for the store."
+  ([theme-name]
+   (swap! themes dissoc (str theme-name))
+   nil)
+  ([theme-name theme]
+   (swap! themes (fn [ts]
+                   (let [k (str theme-name)]
+                     (if (identical? theme (get ts k)) (dissoc ts k) ts))))
+   nil))
 
 (defn get-theme
   "Get a theme by name. Falls back to 'dark'."

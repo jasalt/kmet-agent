@@ -42,9 +42,11 @@
    extensions may pin different versions of the same library).
 
    Lifecycle: loaded at startup (and via /reload), reloadable and unloadable
-   at runtime. Unload calls shutdown (if defined), then unregisters
-   everything the extension registered. Registration calls therefore return
-   deregister fns where meaningful (e.g. on-event).
+   at runtime. Unload calls shutdown (if defined), then disposes everything
+   the extension registered: what it installed in the app tree is owned by
+   `[:app :extensions <name>]` and goes with one LIFO dispose, and what lives
+   outside the tree (event subscriptions, aliases, shortcuts, model
+   providers) deregisters through the fn its registration returned.
 
    All api fns are safe to call at any time. Agent control (send-message!,
    send-user-message, set-model, thinking level, active tools) dispatches
@@ -112,8 +114,7 @@
    the mcp-adapter's MCP catalog) without joining the model's tool set;
    re-registering under the same ID replaces the source and invalidates
    cached run_code surfaces. Removed automatically when the extension unloads.
-   Returns the deregister fn on the first registration under ID, nil on a
-   replace."
+   Returns the deregister fn."
   [api id tools-fn] ((:register-tool-source! api) id tools-fn))
 (defn unregister-tool-source!
   "Remove a sandbox tool source by ID."

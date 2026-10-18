@@ -1283,10 +1283,11 @@
 
 (defn unregister-theme!
   "Remove NAME from the shared theme store — the door for the teardown a
-   contributed theme's owner records (cells.md §5.1). Returns nil."
-  [name]
-  ((requiring-resolve 'kmet.tui.theme/unregister-theme!) name)
-  nil)
+   contributed theme's owner records (cells.md §5.1). With THEME, remove it
+   only while NAME still holds that value, so an owner's teardown cannot drop
+   a later contributor's registration. Returns nil."
+  ([name] ((requiring-resolve 'kmet.tui.theme/unregister-theme!) name) nil)
+  ([name theme] ((requiring-resolve 'kmet.tui.theme/unregister-theme!) name theme) nil))
 
 ;; ─── The shared base context (per-extension forks) ───────────────────────
 

@@ -94,7 +94,7 @@ architecture) is a fifth, invisible one.
 ### 1.4 What the module deletes, and what it does not replace
 
 Deletes (the first three with P2, the teardown and the `applied-resource-paths`
-state with P5, the mount mechanisms as their slots land, P4–P5): the
+state with P5a/P5c, the mount mechanisms as their slots land, P4–P5): the
 pending/bound duality and its two bootstrap halves; the 15 dispatchers; the
 load-order `require`/`resolve` hack; the `applied-resource-paths` reset;
 FIFO-and-silent extension teardown; four ad-hoc mount mechanisms.
@@ -594,7 +594,12 @@ isolation boundary, for free.
 config, the unit's own host metadata, and the registry keys its `:start`
 installed (§8.1; the exact map is §5.4's). `(explain snapshot)` renders that
 value for a human, and is
-what `/units` prints.
+what `/units` prints. It walks the slot tree, so an owner that is not a slot
+path — an extension's `[:app :extensions <name>]`, whose registrations are the
+ones `init(api)` made (§5.1) — is read from the store instead
+(`scope/for-key`, `scope/owner-registrations`); dropping the slot it hangs
+under still disposes it, because a slot's removal disposes its whole path
+subtree.
 
 The split is deliberate: the data form is what tests assert and what a diff
 shows; the string form is cosmetic and free to change (§12, question 4).
@@ -665,7 +670,12 @@ its descriptor (`extension-unit`); what remains a sketch is the sandbox:
 
 **Extensions.** `load-extension!` runs `init(api)` as it does today; the units
 it publishes through `register-unit!` resolve through `:ext`, and its
-registrations land on `[:app :extensions <name>]`. A publication is
+registrations land on `[:app :extensions <name>]` — commands, tools and tool
+sources, skills, prompts, hooks, renderers, flags, and the resources a
+`:resources-discover` contribution loads (the paths a handler returns load
+under the same owner, so a later discovery replaces them instead of
+duplicating and unload takes them back; the set the applied paths used to need
+is gone). A publication is
 `{:name <keyword> :entry <entry> :unit <descriptor>}`: the name is namespaced
 to the extension (`:budget/spend`), which is how an entry names one without a
 backend hint, and the entry is where it mounts — so an extension contributes a
@@ -689,8 +699,11 @@ handle for every unit it declares. `check` covers the entries whose units are
 implementable, which is at bind time; before that, the manifest data is what
 is checked. Unloading is three steps in order: drop the extension's
 published units and entries and remount without them (drops them from the
-snapshot and disposes their owners), `shutdown(api)`, `loader/unload!` — after
-which every handle that came from that context is dead and nothing refers to it.
+snapshot and disposes their owners), `shutdown(api)`, then deregister what
+remains — the fns recorded by the registrations that live outside the tree,
+run in reverse registration order, then one LIFO dispose of
+`[:app :extensions <name>]` — and `loader/unload!`, after which every handle
+that came from that context is dead and nothing refers to it.
 
 **Codemode.** A model-authored entry list is mounted into the run's **own node**
 with its **own `rt`** (§5.6), so it can resolve only the names the host
@@ -848,11 +861,25 @@ explicit request.
    add a policy here" a host-declared list slot, but the shape a host should
    use (`{:units {…}}` iterated by the caller vs a slot per phase) is not yet
    fixed by a real consumer — it should be settled at P5, not now.
+   **Settled at P5c**: the first real consumers were *registrations*, not
+   policies, and they needed no list slot at all — a host registry keeps its
+   fixed owner path and gains an owner argument, so an extension's entries land
+   on `[:app :extensions <name>]` and disposal is per owner (§5.1). A host that
+   wants a policy list still mounts a slot of its own (`{:units {…}}`, as the
+   loop group does): the two are not the same problem, and nothing in P5c
+   argues for a shared shape.
 3. **Declarative `:on` sugar.** §8.1 makes subscriptions imperative
    `register!` calls in `:start`. A declarative `{:on {:turn-end f}}` host
    metadata key would be printable and checkable against the bus's declared
    vocabulary. Whether it earns its place should be decided at P5 with the
    extensions that would use it, not invented now.
+   **Settled at P5c**: no sugar. A subscription is process-level — it must be
+   live before any engine mounts, and the bus reads it from the process's
+   listener set — so it is not a slot's registration and a mount-time `:on` key
+   would describe the wrong lifetime; the imperative `on-event` call plus the
+   extension's tracked deregister is what the consumers use (P5c also fixed
+   that call's lifetime: an engine adopts the process's subscribers instead of
+   replacing the set with an empty one).
 4. **`composition` (data) as an ABI.** **Settled with P1**: §5.4's entry shape
    is the compatibility surface — `explain`'s string form stays cosmetic and
    free to change. Changing the shape is now a deliberate, documented act,

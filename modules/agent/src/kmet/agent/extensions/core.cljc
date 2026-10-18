@@ -1458,19 +1458,18 @@
 (defn- load-contributed-themes!
   "Load DIR's theme files and register them under OWNER. The theme store is
    the TUI layer's own (`kmet.tui.theme`, shared by reference), outside the
-   app tree, so the registration records the theme under OWNER — one owner
-   key, so a re-application replaces it instead of stacking teardowns — and
-   its teardown removes the theme from the store when the owner goes
-   (cells.md §5.1)."
+   app tree, so the registration is the host's record of the theme and a
+   teardown that removes it from the store when the owner goes — guarded by
+   the value it registered, so a re-application's earlier teardown (holding
+   the replaced value) and another contributor's later registration both
+   survive it (cells.md §5.1)."
   [owner dir]
   (let [node (app-runtime/node)
         owner (or owner themes-owner)]
     (doseq [{:keys [name] :as theme} (context/load-themes-from-dir! dir)]
-      (let [k (theme-key name)]
-        (when-not (contains? (scope/for-key node k) owner)
-          (scope/add-teardown! node owner
-                               (fn [] (context/unregister-theme! name))))
-        (scope/register! node owner k theme)))))
+      (scope/add-teardown! node owner
+                           (fn [] (context/unregister-theme! name theme)))
+      (scope/register! node owner (theme-key name) theme))))
 
 (defn- apply-contributed-paths!
   "Apply the resource paths one contributor contributed: skill and prompt
