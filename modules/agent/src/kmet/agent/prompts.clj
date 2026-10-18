@@ -21,7 +21,7 @@
             [kmet.cells.scope :as scope]
             [kmet.libs.yaml :as yaml]))
 
-;; ─── Template state ────────────────────────────────────────────────────────
+;; ─── Template registry ────────────────────────────────────────────────────
 
 (def prompts-owner
   "The app's prompt-template registry owner: the `:prompts` slot
