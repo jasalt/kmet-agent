@@ -563,7 +563,7 @@ this way — run_code.md T2):
 
 Publishes a unit into the host's composition tree (`kmet.cells`, `cells.md`
 §8.2) — for contributing a *slot* rather than an entry in a registry: a policy
-a list-shaped slot the host consults, or a replacement for one of a group's
+in a list-shaped slot the host consults, or a replacement for one of a group's
 stage defaults (the loop's guard and retry policy are inline stages an entry
 with the same `:id`/`:into` overrides):
 
@@ -578,7 +578,8 @@ with the same `:id`/`:into` overrides):
 ```
 
 - `:name` is namespaced to the extension; re-publishing a name replaces the
-  earlier unit, so the tree diffs instead of accumulating.
+  earlier unit, so the tree diffs instead of accumulating, and another
+  extension holding the name is refused.
 - `:entry` is the host's entry shape: `:id` (the slot), `:into` (the group;
   omitted = the app root) and the entry's `:config`. An id another entry
   already uses is a duplicate-id error, not a silent replacement.

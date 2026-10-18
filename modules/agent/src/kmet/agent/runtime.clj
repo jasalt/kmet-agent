@@ -158,7 +158,9 @@
   "Publish EXT-NAME's unit: NAME (a namespaced keyword) resolves through the
    `:ext` backend to the publication's `:unit`, and its `:entry` mounts in the
    app root. Re-publishing (extension, name) replaces the earlier record, so
-   the tree diffs instead of accumulating. Returns a deregister fn.
+   the tree diffs instead of accumulating; another extension holding the name
+   is refused, since a name lives in its publisher's namespace. Returns a
+   deregister fn.
 
    Remounts immediately; a mount the checks refuse drops the publication
    before the error reaches the caller (cells.md §6.3)."
@@ -170,6 +172,17 @@
                     {:type ::bad-unit-publication
                      :extension ext-name
                      :publication publication})))
+  (when-let [owner (some #(when (and (= name (:name %))
+                                     (not= ext-name (:extension %)))
+                            (:extension %))
+                         @publications)]
+    (throw (ex-info (str "kmet.agent.runtime: " name " is already published by "
+                         (pr-str owner) " — a published name lives in its "
+                         "extension's namespace")
+                    {:type ::duplicate-unit-name
+                     :extension ext-name
+                     :name name
+                     :published-by owner})))
   (let [publication (assoc publication
                            :extension ext-name
                            :entry (assoc entry :name name))]

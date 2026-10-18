@@ -358,6 +358,33 @@
         (extensions/unload-all-extensions!)
         (fs/delete-tree dir)))))
 
+(t/deftest test-extension-init-failure-drops-the-published-unit
+  ;; The other rollback path: init publishes a unit and *then* throws. The
+  ;; load rollback drops the publication and its slot (cells.md §6.3, §8.2).
+  (extensions/clear-extensions!)
+  (let [dir "target/test-ext-unit-late-bad"]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/late_bad"))
+    (spit (str dir "/extension.edn")
+          "{:name \"late-bad-ext\" :entry late-bad.main :loader [:sci :jolt]}\n")
+    (spit (str dir "/late_bad/main.clj")
+          (str "(ns late-bad.main\n  (:require [kmet.agent.extension :as ext]))\n"
+               "(defn init [api]\n"
+               "  (ext/register-unit! api\n"
+               "    {:name :late-bad-ext/unit\n"
+               "     :unit {:handle (fn [_ _] nil)}\n"
+               "     :entry {:id :late-bad-ext}})\n"
+               "  (throw (ex-info \"boom\" {})))\n"))
+    (try
+      (let [result (extensions/load-extension! dir)]
+        (t/is (some? (:error result)) "the load fails after the publication")
+        (t/is (nil? (rt/extension-unit :late-bad-ext/unit)))
+        (t/is (nil? (rt/unit-handle (rt/node) :late-bad-ext)))
+        (t/is (empty? (extensions/get-loaded-extensions))))
+      (finally
+        (extensions/unload-all-extensions!)
+        (fs/delete-tree dir)))))
+
 (t/deftest test-extension-resource-in-a-late-callback
   ;; Every fn an extension registers runs in its own context whenever the app
   ;; calls it — including the fns inside a registration map that are not the

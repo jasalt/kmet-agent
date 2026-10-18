@@ -183,6 +183,24 @@
                               (catch Exception e e))))))
   (is (nil? (runtime/extension-unit "not-a-keyword"))))
 
+(deftest a-published-name-lives-in-its-extensions-namespace
+  (let [stale (runtime/publish-extension-unit!
+               "owner-ext" {:name :owner-ext/unit
+                            :unit {:handle identity}
+                            :entry {:id :owner-ext}})]
+    (try
+      (is (= :kmet.agent.runtime/duplicate-unit-name
+             (:type (ex-data (try (runtime/publish-extension-unit!
+                                   "impostor-ext"
+                                   {:name :owner-ext/unit
+                                    :unit {:handle identity}
+                                    :entry {:id :impostor-ext}})
+                                  (catch Exception e e))))))
+      (is (= "owner-ext" (:extension (runtime/extension-unit :owner-ext/unit))))
+      (is (nil? (runtime/unit-handle (runtime/node) :impostor-ext)))
+      (finally
+        (stale)))))
+
 (deftest unpublishing-one-extension-leaves-anothers
   (let [node (runtime/node)
         unit {:handle (fn [_ _] :ok)}

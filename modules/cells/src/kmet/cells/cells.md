@@ -649,13 +649,12 @@ owned by the unit, and disposed with it.
 
 ### 8.2 Isolated nodes
 
-Isolation is the host's, one backend per mechanism:
+Isolation is the host's, one backend per mechanism. The extension backend is
+code now — `kmet.agent.runtime`'s `:ext` entry, resolving a published name to
+its descriptor (`extension-unit`); what remains a sketch is the sandbox:
 
 ```clojure
 ;; kmet.agent.runtime
-
-(defn ext-backend []                  ; kmet.loader: SCI or native Jolt
-  (fn [nm] (some-> (extension-unit nm) :unit)))
 
 (defn sandbox-backend [run]           ; run_code's SCI sandbox
   (fn [nm]
@@ -664,18 +663,23 @@ Isolation is the host's, one backend per mechanism:
        :config (declared-config-schema run nm)})))    ; malli data, authored there
 ```
 
-**Extensions.** `load-extension!` runs `init(api)` as it does today; the
-descriptors it publishes resolve through `:ext`, and its registrations land on
-`[:app :extensions <name>]`. The host mounts its root node *before* loading any
+**Extensions.** `load-extension!` runs `init(api)` as it does today; the units
+it publishes through `register-unit!` resolve through `:ext`, and its
+registrations land on `[:app :extensions <name>]`. A publication is
+`{:name <keyword> :entry <entry> :unit <descriptor>}`: the name is namespaced
+to the extension (`:budget/spend`), which is how an entry names one without a
+backend hint, and the entry is where it mounts — so an extension contributes a
+slot the way the host's own entries do, and a later entry takes a default's
+slot when the ids match. The host mounts its root node *before* loading any
 extension, so `init(api)` always has a scope to register into — that ordering
-is what retires the pending buffers. An extension's units are named by keyword
-in the extension's namespace (`:budget/spend`), which is how an entry names one
-without a backend hint. An extension's units may also be declared in
-`extension.edn` as data — descriptors with their `:config` schemas but no
-`:handle` — and the host validates those with malli *before evaluating the
-extension's code*; the handle binds when the extension loads, and `check`
-covers the entries whose units are implementable. Unloading is three steps in
-order: `mount!` with the extension's entries removed (drops them from the
+is what retires the pending buffers — and `remount!` is the assembly point
+whose entry list is the defaults plus what the loaded extensions published. An
+extension's units may also be declared in `extension.edn` as data —
+descriptors with their `:config` schemas but no `:handle` — and the host
+validates those with malli *before evaluating the extension's code*; the handle
+binds when the extension loads, and `check` covers the entries whose units are
+implementable. Unloading is three steps in order: drop the extension's
+published units and entries and remount without them (drops them from the
 snapshot and disposes their owners), `shutdown(api)`, `loader/unload!` — after
 which every handle that came from that context is dead and nothing refers to it.
 
@@ -737,7 +741,7 @@ foreign `kmet.*` require and a second consumer could take the module as-is.
 
 | scaffolding | deleted when | what remains |
 |---|---|---|
-| §8.1/§8.2's host sketches | P5a lands: the `:ext` backend exists in `kmet.agent.runtime` (the sandbox sketch stays until codemode is scheduled) | "one backend per isolation mechanism", the handle-lifetime invariant (§6.4) |
+| §8.2's sandbox sketch | codemode is scheduled (the `:ext` half became code with P5a) | "one backend per isolation mechanism", the handle-lifetime invariant (§6.4) |
 | §5.6's child-mount snippet | the first child node ships (P7) | "nodes nest; domains do not" |
 | `cells-plan.md` §2 (the phase table) | continuously — a landed phase's row comes out; the git log is its record | the phases still ahead |
 
@@ -748,8 +752,8 @@ and it says so. It stays, as does §A.2.
 
 ## 10. Staged plan
 
-The phases — P0-P7, framework first and agent second — are laid out in
-`cells-plan.md` §2, together with the scaffolding each landing deletes. The
+The phases are laid out in `cells-plan.md` §2, with the slices a phase lands
+in, together with the scaffolding each landing deletes. The
 invariant they serve is here: every phase is landable on its own, gated by the
 changed-file tasks and by `test-layer-guard` / `test-headless-guard` /
 `test-self-contained`.
