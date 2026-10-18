@@ -1700,6 +1700,13 @@
       (extensions/apply-input-hooks "hi" :interactive)
       (t/is (= [:a1 :a2 :b1] @seen)
             "one owner's hooks are adjacent, in its registration order")
+      ;; owners share the store with every other registry: a key of another
+      ;; shape under the same owner is neither read nor a reason to throw
+      (scope/register! (rt/node) a :tools/hooks {:event :turn-end})
+      (reset! seen [])
+      (extensions/apply-input-hooks "hi" :interactive)
+      (t/is (= [:a1 :a2 :b1] @seen)
+            "another registry's key on the same owner is ignored")
       (finally (dereg-a1) (dereg-b1) (dereg-a2)))))
 
 (t/deftest test-extension-hooks-are-disposed-on-unload
@@ -1745,3 +1752,23 @@
       (finally
         (extensions/unload-all-extensions!)
         (fs/delete-tree dir)))))
+
+(t/deftest deregistering-one-hook-leaves-its-neighbours
+  ;; One registration, one key, one value guard: removing a hook leaves the
+  ;; owner's other hooks alone — including a second registration of the very
+  ;; same fn, which the identity removal this replaced also took.
+  (let [owner (extensions/extension-owner "test-hook-neighbours")
+        seen (atom [])
+        shared (fn [_] (swap! seen conj :shared) nil)
+        dereg-shared-1 (extensions/register-input-hook! owner shared)
+        dereg-other (extensions/register-input-hook! owner (fn [_] (swap! seen conj :other) nil))
+        dereg-shared-2 (extensions/register-input-hook! owner shared)]
+    (try
+      (extensions/apply-input-hooks "hi" :interactive)
+      (t/is (= [:shared :other :shared] @seen) "all three registrations run")
+      (reset! seen [])
+      (dereg-shared-1)
+      (extensions/apply-input-hooks "hi" :interactive)
+      (t/is (= [:other :shared] @seen)
+            "one registration is gone; its neighbours and the equal fn are not")
+      (finally (dereg-shared-1) (dereg-shared-2) (dereg-other)))))

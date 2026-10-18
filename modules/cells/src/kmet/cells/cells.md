@@ -308,6 +308,13 @@ everything the owner registered. Its value guard is what makes a stale removal
 a no-op — two registrations of an *equal* value are indistinguishable, so a fn
 from the earlier one does remove it.
 
+A registry's key shape is the host's vocabulary, and the store constrains it in
+one way: a key holds **one** value per owner. A registry whose entries are
+addressed one by one keys them by that address (`[:kmet/command <name>]`); one
+whose entries have no name gives each registration its own key (`[:kmet/hook
+<kind> <n>]` numbers them) rather than one shared key holding a collection that
+every registration would have to read back and rewrite.
+
 **Owners are slot paths.** A unit's registrations are owned by the unit's slot
 path — the composition and slot ids that reach it, `[:app :agent-loop :budget]`,
 which `:start` receives as its second argument — so replacing its slot disposes
