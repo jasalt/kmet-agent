@@ -153,6 +153,18 @@
   [node k]
   (get (registrations node) k {}))
 
+(defn deregister-key!
+  "Drop every registration under k — or, with OWNER, only that owner's. The
+   one call a host registry's name-addressed entry needs (a command, tool,
+   skill, prompt): with an owner it removes that owner's registration while
+   another owner's same-name one survives. Each removal keeps `deregister!`'s
+   value guard. Returns nil."
+  ([node k] (deregister-key! node k nil))
+  ([node k owner]
+   (doseq [[o v] (for-key node k)
+           :when (or (nil? owner) (= owner o))]
+     (deregister! node o k v))))
+
 (defn- run-cleanups!
   [cleanups]
   (doseq [f cleanups]

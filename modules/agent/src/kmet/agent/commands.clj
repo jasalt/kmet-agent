@@ -80,10 +80,7 @@
    its own; another owner's same-name command survives). Returns nil."
   ([name] (unregister-command! name nil))
   ([name owner]
-   (let [node (app-runtime/node)
-         k (command-key name)]
-     (doseq [[o v] (scope/for-key node k) :when (or (nil? owner) (= owner o))]
-       (scope/deregister! node o k v)))
+   (scope/deregister-key! (app-runtime/node) (command-key name) owner)
    nil))
 
 (defn clear-commands!

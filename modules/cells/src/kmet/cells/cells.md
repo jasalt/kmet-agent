@@ -317,7 +317,11 @@ each owner's in its own — which is the order a host registry reads in, filtere
 by key shape; and `(scope/deregister! node owner k v)`, the operation
 `register!` returns as a fn, for the call that removes one entry while its
 owner stays live (an extension dropping one command), where `dispose!` removes
-everything the owner registered. Its value guard is what makes a stale removal
+everything the owner registered. Its name-addressed form,
+`(scope/deregister-key! node k owner)`, is the same removal for a registry that
+addresses entries by name: it drops every owner's registration under `k`, or
+one owner's when the call fills an extension's own entry in. Its value guard is
+what makes a stale removal
 a no-op — two registrations of an *equal* value are indistinguishable, so a fn
 from the earlier one does remove it.
 

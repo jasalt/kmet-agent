@@ -34,6 +34,21 @@
     (is (= [[[:k] nil :v2]] (scope/ordered-registrations n)))
     (is (= [nil] (scope/owners n)))))
 
+(deftest deregister-key-spans-owners-or-just-one
+  ;; The name-addressed removal a host registry uses: every owner's entry, or
+  ;; one owner's when the caller names it (an extension dropping its own).
+  (let [n (scope/node)]
+    (scope/register! n :a [:k] :va)
+    (scope/register! n :b [:k] :vb)
+    (scope/deregister-key! n [:k] :a)
+    (is (= {:b :vb} (scope/for-key n [:k])) "only :a's registration went")
+    (scope/register! n :a [:k] :va2)
+    (scope/deregister-key! n [:k])
+    (is (= {} (scope/for-key n [:k])) "without an owner, every owner's went")
+    (is (empty? (scope/owner-registrations n :a))
+        "an owner that lost its last registration stays live until disposed; disposal goes
+        through `dispose!`")))
+
 (deftest dispose-owner-is-lifo-and-per-owner
   (let [n (scope/node)
         order (atom [])]

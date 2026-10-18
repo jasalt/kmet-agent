@@ -122,10 +122,7 @@
    its own; another owner's same-name tool survives). Returns nil."
   ([name] (unregister-tool! name nil))
   ([name owner]
-   (let [node (app-runtime/node)
-         k (tool-key name)]
-     (doseq [[o v] (scope/for-key node k) :when (or (nil? owner) (= owner o))]
-       (scope/deregister! node o k v)))
+   (scope/deregister-key! (app-runtime/node) (tool-key name) owner)
    nil))
 
 (defn get-all-tools
@@ -183,10 +180,7 @@
    it, or — with OWNER — only that owner's registration. Returns nil."
   ([id] (unregister-tool-source! id nil))
   ([id owner]
-   (let [node (app-runtime/node)
-         k (tool-source-key id)]
-     (doseq [[o v] (scope/for-key node k) :when (or (nil? owner) (= owner o))]
-       (scope/deregister! node o k v)))
+   (scope/deregister-key! (app-runtime/node) (tool-source-key id) owner)
    nil))
 
 (defn get-contributed-tools
