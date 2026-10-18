@@ -11,7 +11,8 @@
    registration order, then the owner's teardowns (a `:start` hook's
    returned fn, which unwinds after everything the hook registered). One
    failing cleanup never skips the rest; it is reported through
-   `*error-reporter*`."
+   `*error-reporter*`, as is a cleanup's attempt to register into the pass
+   that is clearing its owner."
   (:require [clojure.string :as str]))
 
 (def ^:dynamic *error-reporter*
@@ -27,7 +28,8 @@
   {:by-key {}        ; {key {owner value}} — the host-facing view
    :by-owner {}      ; {owner [{:key k :value v :deregister f}]} in LIFO order
    :teardowns {}     ; {owner [f]} — run after the owner's registrations
-   :owner-order []}) ; first-registration order, for whole-node disposal
+   :owner-order []   ; first-registration order, for whole-node disposal
+   :disposing nil})  ; nil, :node, or #{owner …} while a disposal pass runs
 
 (defn- remove-entry
   "Remove OWNER's registration for k and its by-owner entry, whatever value it
@@ -78,13 +80,29 @@
              s)))
   nil)
 
+(defn- closed-error
+  "The ex-info for a registration under OWNER in snapshot S, or nil when S
+   accepts it: a store mid-disposal refuses what the pass would drop
+   (cells.md §5.2)."
+  [s owner]
+  (let [disposing (:disposing s)]
+    (when (or (= :node disposing)
+              (contains? disposing owner))
+      (ex-info (str "cells: cannot register under " (pr-str owner)
+                    " while its disposal is running")
+               {:type ::closed-store :owner owner}))))
+
 (defn register!
   "Install v under the host-shaped key k for owner (a slot path). Returns a
-   deregister fn, collected onto owner — the caller need not keep it."
+   deregister fn, collected onto owner — the caller need not keep it. An
+   owner a disposal pass is clearing refuses the registration
+   (`::closed-store`, cells.md §5.2)."
   [node owner k v]
   (when (nil? v)
     (throw (ex-info "cannot register nil under a key"
                     {:type ::nil-registration :owner owner :key k})))
+  (when-let [closed (closed-error @(:store node) owner)]
+    (throw closed))
   (let [store (:store node)
         deregister (fn deregister [] (deregister! node owner k v))]
     (swap! store
@@ -97,8 +115,11 @@
 
 (defn add-teardown!
   "Collect f on owner; disposal runs teardowns after the owner's
-   registrations, LIFO. Where a `:start` hook's returned fn lands (cells.md §3)."
+   registrations, LIFO. Where a `:start` hook's returned fn lands (cells.md §3).
+   Refused by the closed-store rule `register!` applies."
   [node owner f]
+  (when-let [closed (closed-error @(:store node) owner)]
+    (throw closed))
   (swap! (:store node)
          (fn [s] (-> (update s :teardowns add-cleanup owner f)
                      (remember-owner owner))))
@@ -186,12 +207,34 @@
                        {}
                        by-key))))
 
+(defn- mark-disposing
+  "Mark OWNER as being disposed in store state S. A whole-node disposal keeps
+   its `:node` marker rather than narrowing to owners."
+  [s owner]
+  (update s :disposing
+          (fn [disposing]
+            (if (= :node disposing)
+              disposing
+              (conj (or disposing #{}) owner)))))
+
+(defn- unmark-disposing
+  "Clear OWNER's mark in S; a whole-node pass keeps its `:node` marker."
+  [s owner]
+  (update s :disposing
+          (fn [disposing]
+            (if (set? disposing)
+              (disj disposing owner)
+              disposing))))
+
 (defn dispose-owner!
-  "Dispose owner's registrations (LIFO), then its teardowns (LIFO). A throwing
-   cleanup is reported and never skips the rest. Idempotent."
+  "Dispose owner's registrations (LIFO), then its teardowns (LIFO). While the
+   pass runs the owner is closed: a cleanup that tries to register or add a
+   teardown under it is refused and reported, never dropped. A throwing cleanup
+   is reported and never skips the rest. Idempotent."
   [node owner]
   (let [store (:store node)
         {:keys [by-owner teardowns]} @store]
+    (swap! store mark-disposing owner)
     (run-cleanups! (map :deregister (rseq (vec (get by-owner owner)))))
     (run-cleanups! (reverse (get teardowns owner)))
     (swap! store
@@ -200,18 +243,22 @@
                  (update :by-owner dissoc owner)
                  (update :teardowns dissoc owner)
                  (update :owner-order (fn [order] (into [] (remove #{owner}) order)))
-                 (scrub-owner owner))))
+                 (scrub-owner owner)
+                 (unmark-disposing owner))))
     nil))
 
 (defn dispose!
-  "Dispose every owner on a store (reverse registration order, then the
-   store itself). The public node teardown, which ends children first, is
-   `kmet.cells.mount/dispose-node!` (cells.md §5.2–§5.3)."
+  "Dispose every owner on a store (reverse registration order, then the store
+   itself); the whole pass is closed, so a teardown cannot register into a
+   node that is going away. The public node teardown, which ends children
+   first, is `kmet.cells.mount/dispose-node!` (cells.md §5.2–§5.3)."
   ([node]
-   (let [owners (reverse (:owner-order @(:store node)))]
+   (let [store (:store node)
+         owners (reverse (:owner-order @store))]
+     (swap! store assoc :disposing :node)
      (doseq [owner owners]
        (dispose-owner! node owner))
-     (reset! (:store node) (empty-store))
+     (reset! store (empty-store))
      nil))
   ([node owner]
    (dispose-owner! node owner)))

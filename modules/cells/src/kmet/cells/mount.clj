@@ -30,12 +30,39 @@
        (<= (count prefix) (count path))
        (= prefix (subvec path 0 (count prefix)))))
 
+(def ^:private subtree-round-limit
+  "A subtree disposal rescans: an owner that appears under PREFIX while the
+   pass runs — a teardown registering under a new path inside the subtree it
+   is being disposed with — is disposed by the next round. The cap turns a
+   unit that keeps creating owners into a report, not a hung mount."
+  16)
+
+(defn- report-unsettled-subtree!
+  "Report a subtree disposal that did not settle: OWNERS still sit under
+   PREFIX after `subtree-round-limit` rounds."
+  [prefix owners]
+  (scope/*error-reporter*
+   (ex-info (str "cells: subtree " (pr-str prefix) " still owns "
+                 (pr-str (vec owners)) " after " subtree-round-limit
+                 " disposal rounds")
+            {:type ::unsettled-subtree :prefix prefix :owners (vec owners)})))
+
 (defn- dispose-subtree!
   "Dispose every owner at or under PREFIX in LIFO order — a replaced or
-   dropped slot takes its descendants' registrations with it (§5.1)."
+   dropped slot takes its descendants' registrations with it (§5.1). The pass
+   rescans, so an owner a teardown installs under PREFIX is disposed too, not
+   left as a ghost; a subtree that keeps growing is reported rather than
+   looped (see `subtree-round-limit`)."
   [node prefix]
-  (doseq [owner (reverse (filter #(prefix? prefix %) (scope/owners node)))]
-    (scope/dispose-owner! node owner)))
+  (loop [round 0]
+    (let [owners (vec (filter #(prefix? prefix %) (scope/owners node)))]
+      (when (seq owners)
+        (doseq [owner (reverse owners)]
+          (scope/dispose-owner! node owner))
+        (if (< round subtree-round-limit)
+          (recur (inc round))
+          (when-let [left (seq (filter #(prefix? prefix %) (scope/owners node)))]
+            (report-unsettled-subtree! prefix left)))))))
 
 (defn- publish!
   "Record one slot in the live mount table as it is admitted, so the table
@@ -98,8 +125,8 @@
   "Run the unit's `:start` with (node owner) — the owner path is what it
    registers under — collect its teardown, and return the slot record. A
    truthy return that is not a fn or var is a mount error, not a teardown, and
-   a throwing `:start` unwinds its own owner before the error propagates
-   (cells.md §6.3)."
+   a throwing `:start` unwinds everything under its owner before the error
+   propagates (cells.md §6.3)."
   [node owner unit entry]
   (when-let [start (:start unit)]
     (try
@@ -110,7 +137,7 @@
                           {:type ::bad-teardown :owner owner :value teardown})))
         (scope/add-teardown! node owner teardown))
       (catch Throwable t
-        (scope/dispose-owner! node owner)
+        (dispose-subtree! node owner)
         (throw t))))
   {:owner owner :unit unit :entry entry :handle (:handle unit)})
 

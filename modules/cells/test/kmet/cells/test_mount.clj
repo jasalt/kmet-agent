@@ -298,10 +298,11 @@
     (cells/dispose! node)
     (is (= [:var] @teardown-log))))
 
-(deftest a-throwing-start-unwinds-its-own-slot
+(deftest a-throwing-start-unwinds-its-whole-subtree
   (let [rt (rt-with {:k/bad {:handle :h/b
                              :start (fn [node owner]
                                       (cells/register! node owner [:k] :partial)
+                                      (cells/register! node (conj owner :child) [:k] :deep)
                                       (throw (ex-info "boom" {})))}})
         e (try (cells/mount! rt [{:id :bad :name :k/bad}])
                nil
@@ -310,8 +311,27 @@
     (is (some? e))
     (is (= {} (scope/registrations node))
         "the slot's registrations were unwound")
+    (is (= [] (scope/owners node))
+        "and so was everything the failed :start put under it")
     (is (empty? (cells/composition node))
         "and it never reached the table")))
+
+(deftest a-teardown-cannot-leave-a-ghost-under-its-subtree
+  (let [seen (atom [])
+        ghosting {:handle :h/a
+                  :units {:c {:handle :h/c
+                              :start (fn [node owner]
+                                       (fn []
+                                         (scope/register! node (conj owner :ghost) [:k] :v)
+                                         (swap! seen conj (scope/registrations node))))}}}
+        plain {:handle :h/b :units {:c {:handle :h/c}}}
+        rt (rt-with {:k/a ghosting :k/b plain})
+        node (cells/mount! rt [{:id :g :name :k/a}])]
+    (cells/mount! rt [{:id :g :name :k/b}])
+    (is (= [{[:k] {[:app :g :c :ghost] :v}}] @seen)
+        "the teardown did install its ghost — this is what used to leak")
+    (is (= {} (scope/registrations node)) "the subtree pass disposed it")
+    (is (= [] (scope/owners node)))))
 
 (deftest a-failed-mount-leaves-earlier-slots-recorded
   (let [rt (rt-with {:k/good {:handle :h/g

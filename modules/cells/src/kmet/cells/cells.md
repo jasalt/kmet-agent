@@ -364,6 +364,18 @@ a dynamic var because the module is rank 0 and cannot require `kmet.*` (§9).
 This is a bug fix, not a refactor: today's `(catch Exception _)` also misses
 `Throwable`, and the order is forwards.
 
+A store mid-disposal is **closed**: `register!`/`add-teardown!` under an owner
+whose disposal is running — or, while a whole node is disposed, under any
+owner — throws `:kmet.cells.scope/closed-store`, which a cleanup's own
+invocation reports like any other failure. The pass ends with the store empty,
+so a cleanup that tries to re-install something there is refused instead of
+dropped; before, `dispose!`'s final reset and `dispose-owner!`'s scrub dropped
+both the registration and its deregister fn in silence. The refusal is scoped
+to the pass: a disposed node's store accepts the next mount, and disposing one
+owner leaves its siblings open. A replaced slot's disposal covers every owner
+at or under its path and rescans, so an owner a teardown installs there is
+disposed too; a subtree that keeps growing is reported rather than looped.
+
 ### 5.3 The module has no clock
 
 `dispose!` never waits. Quiescence is the caller's decision — for the agent
@@ -542,7 +554,8 @@ scope and the process is back where it started.
 `mount!` is likewise not transactional — `:start` runs as the walk reaches each
 slot, so a later `:start` that throws leaves earlier slots mounted. What it
 does not do is leave a node the snapshot cannot describe: a throwing `:start`
-unwinds its own owner before the error propagates, and the mount table is
+unwinds its slot's whole subtree before the error propagates, and the mount
+table is
 written as each slot is admitted, so `composition` names exactly what is
 mounted and a retry diffs against the truth. Structural errors are caught
 earlier still: composition ids are validated over the whole effective tree

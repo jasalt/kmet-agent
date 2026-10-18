@@ -117,3 +117,44 @@
 
 (deftest nil-registrations-are-rejected
   (is (thrown? Exception (scope/register! (scope/node) :o [:k] nil))))
+
+(deftest registering-during-disposal-fails-loudly
+  ;; A teardown that tries to re-install something under the owner being
+  ;; disposed is refused through the reporter; the pass's own scrub used to
+  ;; drop both the registration and the teardown it added, silently.
+  (let [n (scope/node)
+        reported (atom [])]
+    (scope/add-teardown! n :a (fn [] (scope/register! n :a [:k] :v)))
+    (scope/add-teardown! n :a (fn [] (scope/add-teardown! n :a (fn []))))
+    (binding [scope/*error-reporter* (fn [t] (swap! reported conj (:type (ex-data t))))]
+      (scope/dispose! n :a))
+    (is (= [::scope/closed-store ::scope/closed-store] @reported))
+    (is (= {} (scope/registrations n)))
+    (is (= [] (scope/owners n)))))
+
+(deftest a-whole-node-disposal-closes-every-owner
+  (let [n (scope/node)
+        reported (atom [])]
+    (scope/add-teardown! n :a (fn [] (scope/register! n :ghost [:k] :v)))
+    (binding [scope/*error-reporter* (fn [t] (swap! reported conj (:type (ex-data t))))]
+      (scope/dispose! n))
+    (is (= [::scope/closed-store] @reported)
+        "a new owner cannot appear while the node is going away")
+    (is (= {} (scope/registrations n)))))
+
+(deftest disposal-leaves-other-owners-open
+  (let [n (scope/node)]
+    (scope/register! n :b [:k] :live)
+    (scope/add-teardown! n :a (fn [] (scope/register! n :b [:j] :new)))
+    (scope/dispose! n :a)
+    (is (= {[:k] {:b :live} [:j] {:b :new}} (scope/registrations n))
+        "only the owner being disposed is closed")))
+
+(deftest a-disposed-store-accepts-the-next-mount
+  (let [n (scope/node)]
+    (scope/register! n :a [:k] 1)
+    (scope/dispose! n)
+    (scope/register! n :a [:k] 2)
+    (is (= {[:k] {:a 2}} (scope/registrations n))
+        "the refusal is scoped to the pass, not to the owner path forever")
+    (is (= [:a] (scope/owners n)))))

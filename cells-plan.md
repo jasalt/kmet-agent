@@ -59,7 +59,7 @@ one — and a landed phase's row leaves this table.
 
 ## 3. Landed-phase follow-ups
 
-The P0–P5c review left ten follow-ups in landed work. Each is a defect, a
+The P0–P5c review left eight follow-ups in landed work. Each is a defect, a
 contract gap or a hygiene item in something already built and stands alone; F10
 is the event bus's. A row leaves this table when it lands, its notes carry the
 evidence and any prerequisite, and §4 orders the landing. The ids are
@@ -72,9 +72,7 @@ host.
 | **F3** | agent | registration helpers take a node (or a ctx carrying one) with `(app-runtime/node)` at the API edge only; the extension API hands its capabilities the node, so a unit's `:start` registers on its own tree | 30 `(app-runtime/node)` sites; only `install-front-end!`, `cache-surface!` and the resource loaders take a node. Child-node units register on the app root through commands, tools, prompts, skills, hooks, renderers, flags and themes. P7's prerequisite; every node roots at `:app`, so owner paths survive |
 | **F4** | agent | the attempt's tool map is captured once and passed to `execute-tool`'s `:tools` (the sandbox override exists); or §5.4's claim is deleted | the loop builds `:tools (active-tools agent)` at request time and `execute-tool` resolves per call, so a tool dropped between `tool_use` and execution still settles as "Unknown tool" — the race §5.4 and §12 Q1 say P2 closed. The command table has the same shape |
 | **F5** | agent | `kmet.agent.runtime/explain` reads `scope/owner-registrations` for owners under a slot path — or adds an `/extensions` section — as §7 specifies | a registration under `[:app :extensions "my-ext"]` leaves `/units` unchanged; P5c landed every extension registration on that owner, so the view shows nothing for exactly the registrations it migrated |
-| **F7** | framework | a closed store: registering after whole-node or whole-owner disposal fails loudly (optionally dispose owners until empty; offer the subtree read F5 wants) | a teardown that registers under its owner ends with `registrations {}` and no report — `dispose!`'s final `reset!` and `dispose-owner!`'s scrub drop the registration and its deregister fn silently |
 | **F8** | docs | §5.1's `*owner*` sentence goes (no such binding exists); §5.4's snapshot claim follows F4; §8.1's subscriber-is-a-unit example is rewritten to §12 Q3's process-level bus (or Q3 is reopened); §2.2 stops calling `core`'s seven fns the whole surface (consumers require `kmet.cells.scope` at 48 sites across six namespaces — promote the reads to `core` or state the split); `rt`'s contract names the singleton/quiescent-boundary and descriptor-stability sharp edges | after F4 and F10, so the amended text matches the code. §6.4 states descriptor stability as a rule, not as a failure mode with no diagnostic; §8's host rules and the process globals deserve the same |
-| **F9** | framework | `modules/cells/deps.edn` declares `metosin/malli` | it advertises `:deps {}` while `spec.clj` requires `malli.core`/`malli.error`; a `:local/root` consumer must bring it. One line; `test_self_contained` already treats malli as the one allowed library |
 | **F10** | agent | the bus's subscription lifetime becomes one thing: process-level per §12 Q3 (an engine adopts the set and disposal leaves it standing) or engine-owned (Q3 amended); today it adopts and then wipes, which is neither | an extension-path subscription registered before any engine fires for engine A, then A's `dispose!` empties the process listener set in place and installs an empty one: engine B starts blind while the extension is loaded. The adoption test stops at A; a second bootstrap is the regression test |
 | **F11** | agent | deterministic listener order: `on-event` keys listeners by random UUID, so dispatch is insertion order to eight listeners and hash order beyond, and a `/reload` re-register can reshuffle it | ten listeners dispatch `[0 7 4 3 5 1 9 6 8 2]`, three dispatch `[0 1 2]`; last-non-nil-wins, boundary `:entries` and collect order all inherit the ordering. pi iterates load order; the store's `owner-order` is the local precedent |
 | **F12** | agent | bus hygiene: per-handler isolation catches `Throwable` and reports through the agent's error reporter instead of a raw `println` to `*err*`; `on-event` warns on a type `known-event-type?` rejects | the store fixed exactly the `Exception`-misses-`Throwable` case (§1.2) and routes cleanups to `kmet.agent.debug/log-error`; the bus is the other per-handler isolation site and has both gaps. `known-event-type?` is tested but unused, so a typo'd `:turn-ended` registers silently |
@@ -82,24 +80,23 @@ host.
 
 ## 4. Sequencing
 
-The remaining follow-ups land in four batches; each batch is one change, gated
-by the changed-file tasks and the guards §2 names, and starts after the batch
-its prerequisites sit in. The mount correction (F1, F2, F6) landed first. The
-order is dependency and risk, not id order: F3 and F13 are P7's prerequisites,
-and F8 edits contracts F4 and F10 settle.
+The remaining follow-ups land in three batches; each batch is one change,
+gated by the changed-file tasks and the guards §2 names, and starts after the
+batch its prerequisites sit in. The mount correction (F1, F2, F6) and the
+store's follow-ups (F7, F9) landed first. The order is dependency and risk, not
+id order: F3 and F13 are P7's prerequisites, and F8 edits contracts F4 and F10
+settle.
 
-1. **Store and packaging (F7, F9).** Independent; F7 also decides whether F5's
-   subtree read is wanted.
-2. **Event bus (F10, F11, F12).** F10 decides the lifetime first — either way,
+1. **Event bus (F10, F11, F12).** F10 decides the lifetime first — either way,
    the answer lands in cells.md §12 Q3 — then F11 gives the bus the ordered
    registry its emit/collect/boundary paths inherit, then F12 the isolation and
    logging fixes.
-3. **Host contracts before child nodes (F3, F13).** F3 threads the node through
+2. **Host contracts before child nodes (F3, F13).** F3 threads the node through
    the registration helpers and the extension API; F13 settles event scope for
    child nodes. These are the prerequisites P7's deferral names.
-4. **Agent promises and docs (F4, F5, F8).** F4 closes the tool race or deletes
+3. **Agent promises and docs (F4, F5, F8).** F4 closes the tool race or deletes
    §5.4's claim, F5 makes extension registrations visible in `/units`, and F8
    comes last because it rewrites the text F4 and F10 settle.
 
-**P7 is deferred** until batch 3 lands; its design (cells.md §5.6) and its
+**P7 is deferred** until batch 2 lands; its design (cells.md §5.6) and its
 missing pieces stay recorded in §2.
