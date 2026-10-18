@@ -343,12 +343,16 @@
   [owner]
   (with-reported-cleanups #(cells/dispose! (node) owner)))
 
-(defn report-cleanup-failure!
-  "Report throwing cleanup T through the same reporter — for the deregister fns
-   the extension runtime runs itself (what lives outside the tree; cells.md
-   §5.2)."
-  [t]
-  (with-reported-cleanups #(scope/*error-reporter* t)))
+(defn dispose-deregisters!
+  "Run FNS — the deregister fns an extension recorded for what lives outside
+   the app tree — in reverse registration order, each isolated and a failure
+   reported through the same reporter the store uses instead of skipping the
+   rest (cells.md §1.2, §5.2). Returns nil."
+  [fns]
+  (with-reported-cleanups
+    #(doseq [f (reverse fns)]
+       (try (f) (catch Throwable t (scope/*error-reporter* t)))))
+  nil)
 
 (defn snapshot
   "Take a composition read: the root, or COMPOSITION-ID's own slots (the

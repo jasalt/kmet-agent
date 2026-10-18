@@ -1419,8 +1419,7 @@
                  (println "Warning: extension shutdown error:" (ex-message e)))))))
     ;; outside the tree first: a handler still subscribed while the store's
     ;; registrations go would see a half-unloaded extension
-    (doseq [f (reverse @(:deregister-fns ext))]
-      (try (f) (catch Throwable t (app-runtime/report-cleanup-failure! t))))
+    (app-runtime/dispose-deregisters! @(:deregister-fns ext))
     (app-runtime/dispose-owner! (extension-owner (:name ext)))
     (when-let [l @(:loader ext)]
       (loader/unload! l))
