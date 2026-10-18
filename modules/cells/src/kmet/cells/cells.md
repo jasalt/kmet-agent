@@ -12,7 +12,7 @@ inside a unit's handle. Events belong to the host's bus. What the framework
 owns is what exists, how it is configured, how it is wired, and how long it
 lives.
 
-Status: **design locked; P0–P3 landed.** The plan is
+Status: **design locked; P0–P4 landed.** The plan is
 [`cells-plan.md`](../../../../../cells-plan.md) at the repository root: a
 transitional document that shrinks as the phases land (§9). P0 landed the store
 (`kmet.cells.scope`), `spec`, the facade's fns, the toy tests and the
@@ -20,7 +20,11 @@ transitional document that shrinks as the phases land (§9). P0 landed the store
 `explain`; P2 `kmet.agent.runtime` and the app root's store, with every kmet
 registry (commands, tools, skills, prompts, renderers, transformers, flags,
 hooks) registered on it and the engine's pending buffers and dispatchers gone;
-P3 the prompt state machine's `attempt-routes` table in `kmet.agent.loop`.
+P3 the prompt state machine's `attempt-routes` table in `kmet.agent.loop`; P4
+the loop's stages as `:kmet/agent-loop`'s inline units (the repeat-loop guard
+and the retry policy, whose budget is read from the mounted stage) and the
+session, extension and front-end surfaces as address slots whose installs own
+their process caches.
 
 ## Contents
 
@@ -682,21 +686,32 @@ contribute entries at all, and to which slots, is a capability decision — the
 
 ### Host rules
 
-- **A few substitutable seams, not all code.** Only these become units: the
-  agent loop, compaction, the retry policy, the provider/model resolver, the
-  session store, the tool registry, the UI port. Ordinary code keeps calling
-  namespaces directly (`session/append-entry`, not `(svc :session)`), because
-  `kmet.agent.test-layer-guard`, `kmet.agent.test-headless-guard` and
-  `kmet.libs.test-self-contained` prove layer discipline *statically*, and a
-  dynamic lookup table cannot be checked by any of them.
+- **A few substitutable seams, not all code.** Only these become units with
+  handles: the agent loop, compaction, the retry policy, the provider/model
+  resolver, the tool registry. The session store and the UI port are slots too,
+  but their content is live state rather than a substitutable handle:
+  `bootstrap` and the front end register the session and the port under
+  `[:app :session]` / `[:app :ui]` (P4, §5.1), and extension code with no node
+  in hand reads them through the process cache (`get-session`, `ui-call`).
+  Ordinary code keeps calling namespaces directly (`session/append-entry`, not
+  `(svc :session)`), because `kmet.agent.test-layer-guard`,
+  `kmet.agent.test-headless-guard` and `kmet.libs.test-self-contained` prove
+  layer discipline *statically*, and a dynamic lookup table cannot be checked
+  by any of them.
+- **Config-derived entries mount where their config lives.** The app tree is
+  one node shared by every engine, so an entry carrying a per-session resolved
+  value (the guard's threshold, the retry budget, the default-tool selection)
+  would be last-wins across engines. Those values stay the engine's run options
+  until the engine runs on its own node — the child-node lifetime pattern of
+  §5.6.
 - **Capabilities unload any time; units only at a boundary.** Capability tables
   are order-independent (barring shadowing), so tool/command registration and
   removal stay as cheap as they are today. A unit may be mid-invocation, so its
   removal is gated on a quiescent boundary — one rule, both halves (§5.4).
 - **The loop's control flow stays in the loop.** Its routing table is data the
-  loop's own namespace owns and tests (P3); its stage functions become slots
-  the loop's handle calls (P4). The framework gains no vocabulary for
-  iteration, routing or order.
+  loop's own namespace owns and tests (P3); its stages are slots the loop reads
+  from the attempt's snapshot (the guard and the retry policy, P4). The
+  framework gains no vocabulary for iteration, routing or order.
 - **Declare the insertion points you want to offer.** The framework cannot
   invent one (§3.1); a list-valued slot (`{:units {…}}`) is how a host offers
   "extensions may add a policy here".
