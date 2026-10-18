@@ -141,7 +141,16 @@ disposal off the list of things to design separately.
 
 ### 2.2 Public API
 
-Seven functions; they are the module's whole surface.
+Seven functions; they are the module's **composition** surface — not the
+whole of what a host calls. The store's own API (`kmet.cells.scope`) is the
+second, lower surface, and the host uses it directly (ten source files, 52
+call sites in `modules/agent/src` and `modules/tui/src`): every registry kmet
+keeps — commands, tools, skills, prompts, hooks, renderers, flags — lists and
+removes through `scope/owner-registrations`, `scope/ordered-registrations`
+and `scope/deregister!`, because a registry's listing and removal need the
+store's order and its per-owner disposal, which these seven fns do not carry
+(P2, P5c). Promoting those reads into `core` would rename the calls, not
+remove the store from the host's view, so the split is stated instead.
 
 | fn | signature | mutates? | notes |
 |---|---|---|---|
@@ -223,9 +232,11 @@ disposers is the whole teardown model, and a unit that needs another order can
 do its work in the returned fn.
 
 This is what makes the event bus a first-class participant without teaching the
-framework anything about events: **a subscriber is a unit whose `:start`
-registers a listener.** The bus, its dispatch modes (emit / collect /
-waterfall) and its vocabulary stay in `kmet.agent.event-bus` (§8).
+framework anything about events: **a listener can be a registration a unit's
+`:start` makes**, and the host's bus additionally accepts process-level
+subscriptions from an extension's load (§8.1, §12 Q3). The bus, its dispatch
+modes (emit / collect / waterfall) and its vocabulary stay in
+`kmet.agent.event-bus` (§8).
 
 There is **no `:id` field**: a unit's id is the key it occupies in its group's
 `:units` map, which makes uniqueness structural rather than checked. There is
@@ -306,9 +317,12 @@ below, seen from outside:
 ```
 
 Registration returns a deregister fn, as it does today. The difference is that
-the caller no longer *has to* keep it: `register!` attaches it to the owner
-(via a bound `*owner*` in the extension case), which is the part of Cordis's
-`this.caller.collect` worth copying.
+the caller no longer *has to* keep it: the registration *is* the cleanup — it
+sits on its owner in the store, and disposing that owner removes it — which is
+the part of Cordis's `this.caller.collect` worth copying. Nothing binds an
+owner implicitly: the caller passes the owner it registers under (a unit
+passes the path its `:start` received, an extension its own
+`[:app :extensions <name>]`).
 
 Three store operations exist for the host that owns one registry of many:
 `(scope/owner-registrations node owner)` → `[[key value] …]` in registration
@@ -392,9 +406,16 @@ Callers take it **once per attempt** rather than per dispatch:
 - a mid-run manifest change affects the *next* attempt, never the streaming one
   in flight;
 - an in-flight invocation already holds its closure, so nothing dangles;
-- capability tables (tools, commands) are read from the same snapshot, which
-  closes the existing race where a tool unloads between the model's `tool_use`
-  and its execution and execution fails with "unknown tool".
+- the tools are captured as one map when the request is built, and the wire
+  list the model is offered, the declared set a call is checked against, and
+  the registry the call is dispatched to are all that one capture. This
+  closes the race where a tool unloads between the model's `tool_use` and its
+  execution and execution fails with "unknown tool" — a tool that appears
+  mid-request is not dispatched either, because the model was never offered
+  it (F4). The capture is not this snapshot: tools are registrations, not
+  units (§5.1); it is the same discipline applied to the one table a request
+  reads. Commands need no capture — the front end resolves one as it
+  dispatches the typed input, with no model round-trip in between.
 
 The map is the ABI (§7, §12 Q4); one composition's snapshot looks like:
 
@@ -573,10 +594,16 @@ was (§6.1).
 
 The host supplies them as an ordered vector of `[kind resolve-fn]` pairs;
 there must be at least one, they are tried in order, and a miss reports every
-kind attempted. A backend should return the *same* descriptor value for a name
-while it is loaded: the diff compares resolved units by value, so one that
-rebuilds an equal-but-fresh descriptor (a new closure per call) remounts on
-every pass.
+kind attempted.
+
+**Descriptor stability is a backend rule, not a nicety.** The diff compares
+resolved units by value, so a backend must return the *same* descriptor value
+for a name while it is loaded. One that rebuilds an equal-but-fresh descriptor
+(a new closure per call) remounts that name on every pass; the symptom is a
+mount that never settles — repeated remounts of an entry nothing changed — and
+the fix is a descriptor table keyed by name (the host keeps one:
+`kmet.agent.runtime/publications`, filled at load and emptied at unload),
+never a constructor called from the resolve fn.
 
 **The framework never loads code, and never sees a classpath.** Dynamic
 loading, isolation and artifact discovery stay in `kmet.loader` and
@@ -647,29 +674,51 @@ crosses the boundary: no event vocabulary (a subscriber reaches the bus through
 `:config` validates against the malli schema on its unit's `:config` field
 (§9), and payload validation stays host-side, at the event bus.
 
-### 8.1 Subscribers are units
+Three rules come with that boundary, each a sharp edge rather than a
+convenience:
 
-The agent's event bus is the host's, and a subscriber is a unit whose `:start`
-registers a listener:
+- **The host root is a process global.** kmet's app node is one store for the
+  process — every front end, engine and loaded extension shares it. A tree
+  that must not share config or registrations mounts its own node from its own
+  `rt` (`mount! {:parent …}` for a child of the root), which is what a
+  subagent's own model, tool subset and hooks need (§5.6); a per-session
+  *entry* in the shared root would be last-wins.
+- **Mutation is the caller's boundary decision.** `mount!` and `dispose!`
+  never wait — no lock, no quiescent detection, no retry. A host mutates the
+  live tree only where it knows nothing is mid-run (`/reload`, bootstrap, a
+  session swap); the store cannot infer that, and a disposal that races a read
+  is a host bug, not a store error (§5.3).
+- **A handle lives exactly as long as its owner** (§6.4): dropping an entry
+  and disposing its owner are one host move, at a quiescent point.
+
+### 8.1 Subscribers and the bus
+
+The agent's event bus is the host's own (`kmet.agent.event-bus`), and it is
+**process-level**: an extension subscribes with `on-event` when it loads —
+before any engine exists — and that subscription lives from load to unload, in
+registration order, in one registry no engine adopts, copies or clears (§12
+Q3). A unit subscribes the same way in its `:start`; what the node adds is the
+*scope*, not a second registry: `on-event` takes the node to listen to, an
+emission carries the emitting node, and a scoped listener sees its own node
+and its descendants (a child loop's events included). An app-level emission
+carries no node and reaches scoped listeners too, so a unit still sees the
+host's session events while a process-wide listener — an extension's — keeps
+hearing every emission (F13).
 
 ```clojure
 ;; kmet.agent.runtime — the host's subscriber convention
-(defn subscribe! [node owner evt handler]
-  (cells/register! node owner {:on-event evt} handler))
-
-;; an extension's unit
-{:config [:map [:threshold :int]]
- :start  (fn [node owner] (subscribe! node owner :turn-end on-turn-end))
- :handle (fn [node input] …)}
+(on-event :turn-end on-turn-end)          ; process-wide: an extension's
+(on-event :turn-end nil handler node)     ; this node's subtree: a unit's
 ```
 
-`explain` prints each unit's registry keys, so "which units listen to
-`:turn-end`" is answerable from the node instead of by grep — and because the
-keys are host-shaped, the host's view can group them however it likes. The
-same path covers the other listener-shaped capabilities (tool-call and
-before-agent-start hooks, entry and message renderers, markdown transformers,
-tool and command registrations): they are registrations made in `:start`,
-owned by the unit, and disposed with it.
+Everything else listener-shaped *is* a registration made in `:start` and owned
+by the unit: tool-call and before-agent-start hooks, entry and message
+renderers, markdown transformers, tool and command registrations. `explain`
+prints each unit's registry keys, so "which units listen to `:turn-end`" — and
+which unit registers what — is answerable from the node instead of by grep,
+and because the keys are host-shaped the host's view can group them however it
+likes (for the store owners that have no slot of their own, an extension's
+`[:app :extensions <name>]`, `/units` reads the store directly, §7).
 
 The host's registration helpers take that node as their first argument —
 `register-command!`, `register-tool!`, `register-skill!`,
@@ -679,13 +728,6 @@ passes the node it was handed and lands on its own tree (F3). The app root
 appears only at the host's own edges: extension load, front-end builtin
 registration and package resource loading. Reads still answer for the app
 root; a child node's lookups take its node when a child loop needs them.
-
-A subscription may also carry its node: `on-event` takes an optional scope,
-an emission carries the emitting node, and a scoped listener sees its own node
-and its descendants (a child loop's events) while a process-wide listener —
-an extension's — keeps hearing every emission. An app-level emission (no
-emitting node) reaches scoped listeners too, so a unit still sees the host's
-session events. The registry stays one process-level structure (F13, §12 Q3).
 
 ### 8.2 Isolated nodes
 
@@ -890,8 +932,10 @@ explicit request.
 
 1. **Capability snapshot timing.** §5.4's per-attempt snapshot of capability
    tables can land with the store (P0), the manifest (P1) or the agent's runtime
-   (P2); **settled as P2** (`cells-plan.md` §2), where the tool-unload race it
-   closes lives.
+   (P2); **settled as P2** (`cells-plan.md` §2). The tool-unload race it was
+   meant to close has a second half — dispatch, not just the wire list — and
+   that half is a capture of the request's own tool map (F4, §5.4): tools are
+   registrations, not units, so the snapshot does not carry them.
 2. **List-valued slots as the extension pattern.** §3.1/§8 make "extensions may
    add a policy here" a host-declared list slot, but the shape a host should
    use (`{:units {…}}` iterated by the caller vs a slot per phase) is not yet

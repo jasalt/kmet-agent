@@ -4,7 +4,8 @@
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is]]
             [kmet.agent.runtime :as runtime]
-            [kmet.cells.core :as cells]))
+            [kmet.cells.core :as cells]
+            [kmet.cells.scope :as scope]))
 
 (deftest an-empty-runtime-has-an-empty-root
   (let [rt (runtime/runtime)
@@ -88,6 +89,23 @@
     (is (str/includes? text "[:app :agent-loop] :agent-loop"))
     (is (str/includes? text "\n  [:app :agent-loop :loop-guard] :loop-guard")
         "a group's slots indent under it")))
+
+(deftest explain-reads-the-store-for-registrations-without-a-slot
+  ;; P5c lands every extension registration on [:app :extensions <name>] — an
+  ;; owner with no slot of its own, so the slot walk cannot reach it. /units
+  ;; reads those owners from the store (cells.md §5.1, §7), in registration
+  ;; order, under the slot they hang under.
+  (let [node (cells/mount! (runtime/runtime) runtime/default-entries)]
+    (scope/register! node [:app :extensions "probe-ext"]
+                     [:commands :probe-cmd] {:name "probe-cmd"})
+    (scope/register! node [:app :extensions "probe-ext"]
+                     [:tools :probe-tool] {:name "probe-tool"})
+    (let [text (runtime/explain node)]
+      (is (str/includes? text (str "\n  [:app :extensions \"probe-ext\"] keys="
+                                   "[[:commands :probe-cmd] [:tools :probe-tool]]"))
+          "the non-slot owner and its keys render under the extensions slot")
+      (is (not (str/includes? text "\n[:app :extensions \"probe-ext\"]"))
+          "indented under the slot it hangs under, not at the tree's root"))))
 
 (deftest explain-follows-the-owner-path-not-just-the-slot-id
   ;; Slot ids are unique per composition and may repeat across them, so a leaf

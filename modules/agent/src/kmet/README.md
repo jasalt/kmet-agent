@@ -192,7 +192,10 @@ addressed by host-shaped keys under an owner path: a unit's slot path, or
 the skills, prompts and themes a `:resources-discover` contribution loads
 (P5c). The
 registration is disposed with that owner (P2), so a new extension point is a
-key on that store, not a process-global atom copied into each engine. The
+key on that store, not a process-global atom copied into each engine. What the
+slot tree cannot reach — an extension's owner is not a slot — `/units` reads
+from the store itself, so those registrations are visible next to the tree
+(F5, cells.md §7). The
 runtime-owned surfaces follow the same rule: `bootstrap` registers the live
 session and its sinks under `[:app :session]` and the headless UI port under
 `[:app :ui]`, and `dispose!` drops those owners; the `extensions` atoms stay

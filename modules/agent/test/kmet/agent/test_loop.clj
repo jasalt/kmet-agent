@@ -2504,6 +2504,56 @@
       (finally
         (tools/unregister-tool! (runtime/node) "rewrite-seq-tool")))))
 
+(t/deftest test-a-tool-dropped-after-the-request-still-runs
+  ;; the request's tool map is captured once and threaded through the turn
+  ;; (cells.md §5.4): the wire list, the declared set and the dispatch all
+  ;; resolve against that capture, so a tool unloaded between the model's
+  ;; tool_use and its execution still runs — the race the snapshot discipline
+  ;; claims closed
+  (let [node (runtime/node)
+        events (atom [])
+        offered (atom nil)
+        calls (atom 0)]
+    (tools-registry/register-tool!
+     node
+     (tools/make-tool :name "capture-probe" :label "Probe"
+                      :description "captured-dispatch probe"
+                      :parameters {:x (tools/param :x :string "x")}
+                      :execute (fn [_] {:content "captured-ran" :is-error false}))
+     [:probe :test])
+    (try
+      (let [agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                      llm/send-message
+                      (fn [opts]
+                        (when (nil? @offered)
+                          (reset! offered (:tools opts)))
+                        ;; gone by the time the model's call comes back
+                        (tools-registry/unregister-tool! node "capture-probe" [:probe :test])
+                        (future
+                          (if (= 1 (swap! calls inc))
+                            (do (when-let [on-tc (:on-tool-call opts)]
+                                  (on-tc {:id "tc1" :name "capture-probe"
+                                          :arguments "{}" :index 0}))
+                                (when-let [on-done (:on-done opts)]
+                                  (on-done :tool-calls)))
+                            (do (when-let [on-text (:on-text opts)]
+                                  (on-text "done"))
+                                (when-let [on-done (:on-done opts)]
+                                  (on-done :stop))))
+                          :done))]
+          @(loop/run-agent-turn agent {:message "run tool"
+                                       :on-done (fn [_])
+                                       :on-error (fn [_])})))
+      (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]
+        (t/is (some #(= "capture-probe" (:name %)) @offered)
+              "the request offered the tool that was dropped")
+        (t/is (= "captured-ran" (:content (:result end)))
+              "dispatch resolves against the request's capture, not the live registry")
+        (t/is (false? (:is-error end))))
+      (finally
+        (tools-registry/unregister-tool! node "capture-probe" [:probe :test])))))
+
 (t/deftest test-loop-scripted-calls-fire-tool-hooks
   ;; the run's agent-level hooks reach calls made inside a script: the loop
   ;; binds run-code/*tool-hooks* and run-code/*assistant-message* around the batch,

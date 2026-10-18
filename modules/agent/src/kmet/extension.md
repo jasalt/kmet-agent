@@ -785,6 +785,8 @@ be passed for a per-tool override.
 (ext/on-event api :session-start (fn [ev ctx] ...))
 ;; handlers always receive (event ctx) — the extension context, built fresh
 ;; per event (pi: handler(event, ctx))
+;; a custom type is allowed — the vocabulary is documented, not a gate; an
+;; undeclared name is reported as a probable typo
 (ext/emit-event! api {:type :my-event :data 1})
 ```
 
@@ -802,7 +804,7 @@ Event types: `:agent-start` `:agent-end` `:agent-settled` `:turn-start`
 `:compaction-start` `:compaction-end`
 `:session-compact` `:session-compact-failed` `:context` `:context-with-system`
 `:before-provider-request` `:before-provider-headers`
-`:after-provider-response`.
+`:after-provider-response` `:resources-discover` `:loop-guard`.
 
 Most events are notification-only. Two things extend a run:
 

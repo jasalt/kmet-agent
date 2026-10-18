@@ -59,32 +59,30 @@ one — and a landed phase's row leaves this table.
 
 ## 3. Landed-phase follow-ups
 
-The P0–P5c review left three follow-ups in landed work. Each is a defect, a
-contract gap or a hygiene item in something already built and stands alone. A
-row leaves this table when it lands, its notes carry the evidence and any
-prerequisite, and §4 orders the landing. The ids are
-`F`-prefixed because `P6` was retired (presets had no design section and no
-consumer); the sides match §2's: *framework* is `modules/cells`, *agent* is the
-host.
+The P0–P5c review left a set of follow-ups in landed work, and all of them have
+landed (F1–F13; `git log` is the record — each landed row left this table). A
+new follow-up gets a row here: what lands, the evidence that it has not, and
+any prerequisite; §4 orders the landing. The ids were `F`-prefixed because
+`P6` was retired (presets had no design section and no consumer); the sides
+matched §2's: *framework* is `modules/cells`, *agent* is the host.
 
 | item | side | what lands | notes |
 |---|---|---|---|
-| **F4** | agent | the attempt's tool map is captured once and passed to `execute-tool`'s `:tools` (the sandbox override exists); or §5.4's claim is deleted | the loop builds `:tools (active-tools agent)` at request time and `execute-tool` resolves per call, so a tool dropped between `tool_use` and execution still settles as "Unknown tool" — the race §5.4 and §12 Q1 say P2 closed. The command table has the same shape |
-| **F5** | agent | `kmet.agent.runtime/explain` reads `scope/owner-registrations` for owners under a slot path — or adds an `/extensions` section — as §7 specifies | a registration under `[:app :extensions "my-ext"]` leaves `/units` unchanged; P5c landed every extension registration on that owner, so the view shows nothing for exactly the registrations it migrated |
-| **F8** | docs | §5.1's `*owner*` sentence goes (no such binding exists); §5.4's snapshot claim follows F4; §8.1's subscriber-is-a-unit example is rewritten to §12 Q3's process-level bus (or Q3 is reopened); §2.2 stops calling `core`'s seven fns the whole surface (consumers require `kmet.cells.scope` at 48 sites across six namespaces — promote the reads to `core` or state the split); `rt`'s contract names the singleton/quiescent-boundary and descriptor-stability sharp edges | after F4 and F10, so the amended text matches the code. §6.4 states descriptor stability as a rule, not as a failure mode with no diagnostic; §8's host rules and the process globals deserve the same |
+| **F14** | agent + docs | the empty address slots come out of `default-entries`: `runtime/explain`'s store walk renders every store owner, not only the ones a mounted slot prefixes, and cells.md §5.1's "A registry mounts its address" is rewritten to that store-read rule | raised with F5's landing, whose `store-owner-lines` (`kmet.agent.runtime`) hangs a non-slot owner under the **deepest slot path prefixing it** — an owner no slot prefixes never reaches `/units`, which is the only reason the eight `{:units {}}` entries (`:commands`, `:tools`, `:prompts`, `:skills`, `:themes`, `:session`, `:extensions`, `:ui`) are mounted: no handle, no config, no children, and the host's owners are those same hardcoded paths (`commands.clj` `commands-owner`, `tools/registry.clj` `tools-owner`, `prompts.clj` `prompts-owner`, `skills.clj` `skills-owner`, `extensions/core.cljc` `[:app :themes]`/`[:app :ui]`, `session/runtime.clj`). §5.1's second reason — "what disposes them when it goes" — is already notional for root defaults, which nothing drops (`session/runtime.clj` disposes `[:app :session]`/`[:app :ui]` by owner path). A deliberate design edit, not a cleanup: cells.md §5.1/§11 are rewritten in the same landing, and `test_commands/units-lists-the-mounted-tree` plus `test_runtime` move from slot lines to store lines, as do the five owner docstrings that name their slot (`commands.clj`, `prompts.clj`, `skills.clj`, `tools/registry.clj`, `extensions/core.cljc`). Prerequisite: F5 (landed) |
 
 ## 4. Sequencing
 
-The remaining follow-ups land in one batch, gated by the changed-file tasks
-and the guards §2 names. The mount correction (F1, F2, F6), the store's
-follow-ups (F7, F9), the bus's (F10, F11, F12), the host contracts' node
-threading (F3) and child-node event scope (F13) landed first; F8 comes last
-because it rewrites the text F4 and F10 settle.
+Every landed-phase follow-up has landed — the mount correction (F1, F2, F6),
+the store's (F7, F9), the bus's (F10, F11, F12), the host contracts' node
+threading (F3) and event scope (F13), and the agent promises and docs (F4, F5,
+F8) — each gated by the changed-file tasks and the guards §2 names. The order
+was dependency and risk, not id order: F4 before F8 (F8's §5.4 text follows
+F4), and F13 as P7's other prerequisite.
 
-1. **Agent promises and docs (F4, F5, F8).** F4 closes the tool race or deletes
-   §5.4's claim, F5 makes extension registrations visible in `/units`, and F8
-   comes last because it rewrites the text F4 and F10 settle.
+**F14 is the one outstanding follow-up**, and it lands only behind its
+prerequisite: F5's store walk. It removes the empty address slots and rewrites
+cells.md §5.1/§11 with them, so it is a design edit rather than a fixing pass —
+the changed-file tasks and the guards §2 names gate it like any other landing.
 
-**P7 is unblocked**: its prerequisites (F3's node threading and F13's event
-scope) have landed, and the remaining batch (F4, F5, F8) does not gate it. Its
-design (cells.md §5.6) and its missing pieces stay recorded in §2.
+**P7 is what remains.** Its prerequisites landed with F3 and F13; its design
+(cells.md §5.6) and its missing pieces stay recorded in §2.

@@ -315,18 +315,13 @@ Be precise and concise in your responses."}}]
 (defn active-tools
   "The tools sent to the LLM (pi: AgentSession.getActiveToolNames → the
    declared set): the registry filtered by the state's :enabled-tools and
-   :default-tools (see active-tools-for)."
+   :default-tools (see active-tools-for). Read once per request and threaded
+   through it — the wire list, the declared set and dispatch all resolve
+   against that one capture, so a tool unloaded mid-request still executes
+   (cells.md §5.4)."
   [agent]
   (active-tools-for {:enabled @(:enabled-tools agent)
                      :default-tools @(:default-tools agent)}))
-
-(defn declared-tool-names
-  "The names of the tools declared to the model for the current turn (the
-   active set). A tool call is resolved against this set before execution:
-   a disabled or hallucinated call settles as an error instead of running
-   (pi: prepareToolCall's tools.find → \"Tool X not found\")."
-  [agent]
-  (into #{} (map :name) (active-tools agent)))
 
 (defn set-active-tools!
   "Restrict the tools sent to the LLM to NAMES (a set or seq of tool
@@ -732,16 +727,26 @@ Be precise and concise in your responses."}}]
     msg))
 
 (defn- tool-execution-mode
-  "Execution mode for a tool name: :sequential or :parallel.
-   Unregistered/unknown tools default to :parallel (pi default)."
-  [tool-name]
-  (or (:execution-mode (tools/get-tool tool-name)) :parallel))
+  "Execution mode for a tool name: :sequential or :parallel. DECLARED-TOOLS —
+   the request's captured tool map, when the caller has one — decides, so the
+   batch's scheduling agrees with the dispatch and the wire list; without it
+   the live registry answers. Unregistered/unknown tools default to :parallel
+   (pi default)."
+  ([tool-name] (tool-execution-mode tool-name nil))
+  ([tool-name declared-tools]
+   (or (:execution-mode (if declared-tools
+                          (get declared-tools tool-name)
+                          (tools/get-tool tool-name)))
+       :parallel)))
 
 (defn- has-sequential-tool-call?
   "True if any tool call targets a :sequential tool — the whole batch then runs
-   sequentially (pi: hasSequentialToolCall)."
-  [tool-calls]
-  (boolean (some #(= :sequential (tool-execution-mode (:name %))) tool-calls)))
+   sequentially (pi: hasSequentialToolCall). Scheduled against the same
+   captured map the batch dispatches with, so a tool unloaded between the
+   request and the batch still gets its mode."
+  [tool-calls declared-tools]
+  (boolean (some #(= :sequential (tool-execution-mode (:name %) declared-tools))
+                 tool-calls)))
 
 (defn- await-all-tool-results!
   "Block until every tool future completes; returns tool-call-id → result.
@@ -843,12 +848,17 @@ Be precise and concise in your responses."}}]
    in the concurrent closure) instead of when the slowest sibling does;
    blocked and undeclared calls settle during preparation. Context/session
    results are appended afterwards, in source order. Returns results in
-   source order."
-  [agent tool-calls assistant-msg & [append?]]
+   source order.
+   DECLARED-TOOLS — the request's captured tool map (name → tool): the
+   declared set and the dispatch of every call resolve against that one
+   capture, so a tool unloaded after the request was built still runs
+   (cells.md §5.4)."
+  [agent tool-calls assistant-msg declared-tools & [append?]]
   (let [finalized (atom {})
         ;; the names declared for this request — a call outside the set is
-        ;; an immediate error, never executed (see declared-tool-names)
-        declared (declared-tool-names agent)
+        ;; an immediate error, never executed; the map is also the dispatch
+        ;; override, so execution agrees with what the model was offered
+        declared (into #{} (keys declared-tools))
         emit-end! (fn [tc result]
                     (emit agent {:type :tool-execution-end
                                  :tool-call-id (:id tc)
@@ -891,6 +901,7 @@ Be precise and concise in your responses."}}]
                                                    :assistant-message assistant-msg
                                                    :signal (:signal agent)
                                                    :ctx (extensions/build-extension-context)
+                                                   :tools declared-tools
                                                    :on-update (tool-on-update agent tc-id)}))]
                                      (settle! tc result)
                                      result))])
@@ -917,11 +928,14 @@ Be precise and concise in your responses."}}]
 
 (defn- execute-tool-calls-sequential!
   "Execute tool calls one at a time (pi: executeToolCallsSequential).
-   Same hooks and events as the parallel path; results in source order."
-  [agent tool-calls assistant-msg & [append?]]
+   Same hooks and events as the parallel path, and the same captured
+   DECLARED-TOOLS map decides the declared set and the dispatch; results in
+   source order."
+  [agent tool-calls assistant-msg declared-tools & [append?]]
   (let [tool-results (atom [])
-        ;; see the parallel executor — an undeclared call never executes
-        declared (declared-tool-names agent)]
+        ;; see the parallel executor — an undeclared call never executes, and
+        ;; the captured map overrides the live registry
+        declared (into #{} (keys declared-tools))]
     (doseq [tc tool-calls]
       (let [tc-id (:id tc)
             tc-name (:name tc)
@@ -940,6 +954,7 @@ Be precise and concise in your responses."}}]
                     :assistant-message assistant-msg
                     :signal (:signal agent)
                     :ctx (extensions/build-extension-context)
+                    :tools declared-tools
                     :on-update (tool-on-update agent tc-id)}))
             result (finish-tool-call! agent assistant-msg prepared args raw)
             result-msg (tool-result-message tc-id tc-name result)]
@@ -973,12 +988,18 @@ Be precise and concise in your responses."}}]
    The batch runs under run-code-tool/*assistant-message* so a scripted inner
    call carries the same assistant message in its hook payload as the outer
    run_code call (futures convey the binding; the bridge captures it on the
-   tool thread and hands it to its pool workers, which do not)."
-  [agent tool-calls assistant-msg & [append?]]
-  (binding [run-code-tool/*assistant-message* assistant-msg]
-    (if (has-sequential-tool-call? tool-calls)
-      (execute-tool-calls-sequential! agent tool-calls assistant-msg append?)
-      (execute-tool-calls-parallel! agent tool-calls assistant-msg append?))))
+   tool thread and hands it to its pool workers, which do not).
+
+   REQUEST-TOOLS is the tool list captured when the request was built, in
+   registry order; the declared set and the dispatch of every call in the
+   batch resolve against it, so a tool unloaded between the model's tool_use
+   and its execution still runs (cells.md §5.4)."
+  [agent tool-calls assistant-msg request-tools & [append?]]
+  (let [declared-tools (into {} (map (juxt :name identity)) request-tools)]
+    (binding [run-code-tool/*assistant-message* assistant-msg]
+      (if (has-sequential-tool-call? tool-calls declared-tools)
+        (execute-tool-calls-sequential! agent tool-calls assistant-msg declared-tools append?)
+        (execute-tool-calls-parallel! agent tool-calls assistant-msg declared-tools append?)))))
 
 ;; ─── Tool call accumulator ─────────────────────────────────────────────────
 
@@ -1046,8 +1067,11 @@ Be precise and concise in your responses."}}]
    Calls on-text for text deltas during streaming.
    Applies the transform-context hook (pi: transformContext) to the conversation
    before the system prompt is prepended, and prefers the per-run
-   system-prompt-override over the base system prompt."
-  [agent api-key text-buf on-text on-thinking]
+   system-prompt-override over the base system prompt.
+   REQUEST-TOOLS is the request's captured tool list (see
+   execute-tool-calls!): the wire list and the dispatch that follows resolve
+   against the same capture (cells.md §5.4)."
+  [agent api-key text-buf on-text on-thinking request-tools]
   (let [done-promise (promise)
         thinking-buf (atom "")
         ;; opaque provider signature over the reasoning block (anthropic
@@ -1100,7 +1124,7 @@ Be precise and concise in your responses."}}]
       :api-key api-key
       :base-url (:base-url ep)
       :messages messages
-      :tools (active-tools agent)
+      :tools request-tools
       :signal call-signal
       :idle-timeout-ms (:http-idle-timeout-ms @(:cfg agent))
       ;; Whole-request deadline enforced by the transport (HttpRequest.timeout
@@ -2377,8 +2401,12 @@ Be precise and concise in your responses."}}]
    alternating batches) — the guard trips. A successful write/edit resets the
    guard's memory of other calls (the world changed, so a repeated call
    observes new state); failed, blocked, or suppressed writes reset nothing,
-   and each writer's own signature is kept."
-  [agent units t result]
+   and each writer's own signature is kept.
+
+   REQUEST-TOOLS is the request's captured tool list, in registry order: the
+   guard's survivors execute against it, so a tool unloaded after the request
+   was built still runs (cells.md §5.4)."
+  [agent units t result request-tools]
   (let [assistant-msg (add-assistant-message! agent result)
         tool-calls (:tool-calls result)]
     (set-agent-status! agent :executing {:tool-calls tool-calls})
@@ -2406,7 +2434,7 @@ Be precise and concise in your responses."}}]
           ;; path appends ALL results (suppressed + survivor) in source order
           ;; below so tool_use/tool_result ordering stays strict-provider-safe
           exec-result (when (seq survivors)
-                        (execute-tool-calls! agent survivors assistant-msg false))
+                        (execute-tool-calls! agent survivors assistant-msg request-tools false))
           exec-results (or (:results exec-result) [])
           terminate? (:terminate exec-result)
           ;; Successful writes change the world, so earlier repeats observed
@@ -2550,9 +2578,13 @@ Be precise and concise in your responses."}}]
                           ;; checkpoint, after the queued messages joined the
                           ;; context and before the request is built
                           (prepare-request! agent)
-                          (let [{:keys [promise] :as call}
+                          (let [;; one read per request: the wire list, the
+                                ;; declared set and the dispatch below all
+                                ;; resolve against it (cells.md §5.4)
+                                request-tools (active-tools agent)
+                                {:keys [promise] :as call}
                                 (do (reset! text-buf "")
-                                    (call-llm agent (resolve-api-key agent) text-buf on-text on-thinking))]
+                                    (call-llm agent (resolve-api-key agent) text-buf on-text on-thinking request-tools))]
                             (reset! (:active-call agent) call)
                           ;; A cancel that landed while call-llm was still executing saw no
                           ;; active call to deliver (the promise is installed only now, and a
@@ -2675,7 +2707,7 @@ Be precise and concise in your responses."}}]
                                     (reset! (:overflow-recovered agent) false))
                                   (let [tool-calls (:tool-calls result)]
                                     (if (seq tool-calls)
-                                      (let [phase (tools-phase! agent units t result)]
+                                      (let [phase (tools-phase! agent units t result request-tools)]
                                         (cond
                                           (= :loop-guard phase)
                                         ;; Repeat-loop guard tripped: settle the

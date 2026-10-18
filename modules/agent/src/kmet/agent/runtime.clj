@@ -16,7 +16,17 @@
    lands on `[:app :extensions <name>]` (commands, tools, skills, prompts,
    hooks, renderers, flags, contributed resources), so unloading an extension
    is one LIFO dispose of that owner plus the fns it recorded for what lives
-   outside the tree."
+   outside the tree.
+
+   Three sharp edges come with the node, and the host owns all three
+   (cells.md §6.4, §8): `node` is the app root, a process global every front
+   end, engine and loaded extension shares — a tree that must not share config
+   or registrations mounts its own node from its own `runtime`; `mount!` and
+   `dispose!` never wait, so the host mutates the live tree only where nothing
+   is mid-run (`/reload`, bootstrap, a session swap); and a resolution backend
+   must return the same descriptor value for a name while it is loaded — the
+   diff compares units by value, so a fresh-but-equal descriptor remounts on
+   every pass (`publications` is that table here)."
   (:require [clojure.string :as str]
             [kmet.agent.debug :as debug]
             [kmet.agent.loop-guard :as loop-guard]
@@ -370,28 +380,74 @@
        (<= (count prefix) (count path))
        (= prefix (subvec path 0 (count prefix)))))
 
+(defn- slot-paths
+  "Every slot path in COMP-ID's subtree, COMP-ID's own path included — the
+   set `store-owner-lines` measures the store's owners against (cells.md §7)."
+  [node comp-id path]
+  (into #{path}
+        (mapcat (fn [[slot _]]
+                  (let [child (conj path slot)
+                        sub (cells/composition node slot)]
+                    ;; the same owner-path guard as the walk: an id that
+                    ;; collides with another subtree's composition is a leaf
+                    ;; here too
+                    (if (and sub (every? #(path-prefix? child (:owner %)) (vals sub)))
+                      (slot-paths node slot child)
+                      #{child}))))
+        (cells/composition node comp-id)))
+
+(defn- store-owner-lines
+  "The store's registrations that have no slot of their own, keyed by the
+   deepest slot path they hang under: an extension's `[:app :extensions
+   <name>]` owner — where P5c lands every registration `init(api)` makes — is
+   not a slot, so the slot walk cannot reach it and the store is the only
+   place to read it (cells.md §5.1, §7). One line per owner: `<owner>
+   keys=[…]`, in registration order."
+  [node]
+  (let [slots (slot-paths node :app [:app])]
+    (reduce (fn [acc owner]
+              (let [regs (scope/owner-registrations node owner)]
+                (cond
+                  (empty? regs) acc
+                  (contains? slots owner) acc
+                  :else (let [parent (->> slots
+                                          (filter #(path-prefix? % owner))
+                                          (sort-by count)
+                                          last)]
+                          (update acc parent (fnil conj [])
+                                  (str (pr-str owner)
+                                       " keys=" (pr-str (mapv first regs))))))))
+            {}
+            (scope/owners node))))
+
 (defn explain
   "Render NODE's composition tree for a human: `cells/explain` per composition,
    each group's slots indented under the slot that mounts it (a group is a
-   composition id in the node's mount table). `/units` prints this;
-   `cells/composition` stays the stable form (cells.md §7)."
+   composition id in the node's mount table), and the store's non-slot owners —
+   an extension's registrations — under the slot they hang under. `/units`
+   prints this; `cells/composition` stays the stable form (cells.md §7)."
   [node]
-  (letfn [(lines [comp-id path depth]
-            (let [pad (apply str (repeat (* 2 depth) " "))]
-              (into []
-                    (mapcat (fn [[slot entry]]
-                              (let [child-path (conj path slot)
-                                    sub (cells/composition node slot)]
-                                (cons (str pad (cells/explain {slot entry}))
-                                      ;; slot ids may repeat across compositions
-                                      ;; (only composition ids are global), so
-                                      ;; the owners must hang at this path
-                                      (when (and sub
-                                                 (every? #(path-prefix? child-path (:owner %))
-                                                         (vals sub)))
-                                        (lines slot child-path (inc depth)))))))
-                    (sort-by (comp :owner val) (cells/composition node comp-id)))))]
-    (str/join "\n" (lines :app [:app] 0))))
+  (let [extra (store-owner-lines node)]
+    (letfn [(lines [comp-id path depth]
+              (let [pad (apply str (repeat (* 2 depth) " "))
+                    child-pad (apply str (repeat (* 2 (inc depth)) " "))]
+                (into []
+                      (mapcat (fn [[slot entry]]
+                                (let [child-path (conj path slot)
+                                      sub (cells/composition node slot)]
+                                  (concat
+                                   [(str pad (cells/explain {slot entry}))]
+                                   (map #(str child-pad %)
+                                        (get extra child-path))
+                                   ;; slot ids may repeat across compositions
+                                   ;; (only composition ids are global), so
+                                   ;; the owners must hang at this path
+                                   (when (and sub
+                                              (every? #(path-prefix? child-path (:owner %))
+                                                      (vals sub)))
+                                     (lines slot child-path (inc depth)))))))
+                      (sort-by (comp :owner val) (cells/composition node comp-id)))))]
+      (str/join "\n" (lines :app [:app] 0)))))
 
 (defn handle
   "The handle mounted at SLOT-ID in SNAPSHOT, or nil."
