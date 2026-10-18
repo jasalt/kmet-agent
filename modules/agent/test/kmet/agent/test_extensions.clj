@@ -1136,6 +1136,28 @@
           (dereg)
           (scope/dispose-owner! (rt/node) second-owner))))))
 
+(t/deftest test-flag-ownership
+  ;; A flag is the registering owner's key on the app tree; the --ext-* value
+  ;; get-flag coerces is process argv (set-cli-flags!), not engine state.
+  (let [owner (extensions/extension-owner "test-flag-owner")
+        dereg (extensions/register-flag! owner "probe-flag"
+                                         {:type :boolean :default false})]
+    (try
+      (t/is (contains? (scope/owner-keys (rt/node) owner) [:kmet/flag "probe-flag"])
+            "the flag registers under its owner's path")
+      (t/is (false? (extensions/get-flag "probe-flag"))
+            "the registered default applies without argv")
+      (extensions/set-cli-flags! {"probe-flag" "true"})
+      (t/is (true? (extensions/get-flag "probe-flag"))
+            "the argv value is coerced by the registered :type")
+      (extensions/set-cli-flags! {"probe-flag" "false"})
+      (t/is (false? (extensions/get-flag "probe-flag")))
+      (finally
+        (extensions/set-cli-flags! {})
+        (dereg)
+        (t/is (nil? (extensions/get-flag "probe-flag"))
+              "the deregister fn removes the registered flag")))))
+
 (t/deftest test-register-shortcut-headless
   (testing "headless register-shortcut! returns a no-op dereg fn"
     (let [dereg (extensions/register-shortcut! "ctrl+alt+x"

@@ -179,18 +179,19 @@
   [custom-type]
   [:kmet/message-renderer custom-type])
 
-(defonce pending-flags (atom {}))
-(defn- current-flag-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :flags)
-      pending-flags))
-(defonce pending-cli-flags (atom {}))
-(defn- current-cli-flag-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :cli-flags)
-      pending-cli-flags))
+;; Flags register under the extension owner like the renderers, addressed by
+;; [:kmet/flag <name>]; the --ext-* values themselves are process argv, so
+;; they live in the global below rather than in an engine (see get-flag).
+(defn- flag-key
+  "The store key addressing a CLI flag by NAME."
+  [name]
+  [:kmet/flag name])
+
+;; The parsed --ext-* argv values by flag name, as set once at startup
+;; (kmet.agent.core). Process state: the values are the process's command
+;; line, not a per-engine registration.
+(defonce ^:private cli-flag-values (atom {}))
+
 (def ^:private headless-binding
   "The surface of a front end with no UI: pi's default mode (:print), no
    capabilities (every ui-call is inert) and no runtime capabilities."
@@ -199,12 +200,10 @@
 (defonce ^:private session-atom (atom nil))
 (defonce ^:private context-sink-atom (atom nil))
 (defonce ^:private entry-sink-atom (atom nil))
-(defonce pending-applied-resource-paths (atom #{}))
-(defn- current-applied-resource-path-registry []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :applied-resource-paths)
-      pending-applied-resource-paths))
+;; Paths discover-resources! has already applied since the last extension
+;; reload. Process state, not a registration: the applied skills and prompts
+;; live on the tree, and re-applying the same directory would duplicate them.
+(defonce ^:private applied-resource-paths (atom #{}))
 
 ;; ─── Input / before-agent-start hooks (pi: pi.on('input') / ──────────────
 ;; ─── 'before_agent_start'; applied by modes.interactive + app.loop) ──────
@@ -420,35 +419,39 @@
 
 ;; ─── CLI flags (extension api: register-flag! / get-flag) ─────────────────
 
+(defn- flag-for
+  "The flag registered under NAME, or nil. Owners are searched in
+   first-registration order, so the owner that took the name keeps it."
+  [name]
+  (let [node (app-runtime/node)
+        by-owner (scope/for-key node (flag-key name))]
+    (some #(get by-owner %) (scope/owners node))))
+
 (defn register-flag!
-  "Register a CLI flag (extension api: register-flag!). NAME — without the
-   leading --; opts: :type (:boolean|:string) :default. Returns a deregister
-   fn."
-  [name & [{:keys [type default]}]]
-  (let [reg (current-flag-registry)]
-    (swap! reg assoc name {:type (or type :string) :default default})
-    (fn []
-      (doseq [r [(current-flag-registry) pending-flags]]
-        (swap! r dissoc name)))))
+  "Register OWNER's CLI flag (extension api: register-flag!). NAME — without
+   the leading --; opts: :type (:boolean|:string) :default. Returns a
+   deregister fn."
+  [owner name & [{:keys [type default]}]]
+  (scope/register! (app-runtime/node) owner (flag-key name)
+                   {:type (or type :string) :default default}))
 
 (defn set-cli-flags! [flag-map]
-  (reset! (current-cli-flag-registry) (or flag-map {}))
+  (reset! cli-flag-values (or flag-map {}))
   nil)
 
 (defn get-flag
   "Value of a registered CLI flag: the argv value coerced by the registered
    :type, falling back to :default. nil for unregistered flags."
   [name]
-  (let [{:keys [type default]} (get @(current-flag-registry) name)]
-    (when (contains? @(current-flag-registry) name)
-      (let [raw (get @(current-cli-flag-registry) name)]
-        (case type
-          :boolean (let [v (if (nil? raw) default raw)]
-                     (if (string? v)
-                       (not (contains? #{"false" "0" ""} v))
-                       (boolean v)))
-          :string (or (when (string? raw) raw) default)
-          raw)))))
+  (when-let [{:keys [type default]} (flag-for name)]
+    (let [raw (get @cli-flag-values name)]
+      (case type
+        :boolean (let [v (if (nil? raw) default raw)]
+                   (if (string? v)
+                     (not (contains? #{"false" "0" ""} v))
+                     (boolean v)))
+        :string (or (when (string? raw) raw) default)
+        raw))))
 
 ;; ─── Extension binding (front-end kind + capability map) ─────────────────
 ;;
@@ -1000,7 +1003,7 @@
                          (track (register-tool-result-hook! (extension-owner name) h))))
 
      :register-flag! (fn [flag-name & [opts]]
-                       (let [dereg (register-flag! flag-name opts)]
+                       (let [dereg (register-flag! (extension-owner name) flag-name opts)]
                          (track dereg)
                          dereg))
      :get-flag get-flag
@@ -1376,7 +1379,7 @@
                           (update :theme-paths into (:theme-paths r))))
                       {:skill-paths [] :prompt-paths [] :theme-paths []}
                       results)]
-    (let [applied (current-applied-resource-path-registry)]
+    (let [applied applied-resource-paths]
       (doseq [p (:skill-paths paths)]
         (when-not (contains? @applied p)
           (skills/load-skills-from-dir p)
@@ -1398,9 +1401,7 @@
   []
   ;; extension-contributed resources are re-discovered on the next
   ;; session-start after a reload (the loaders are cleared too)
-  (doseq [reg [(current-applied-resource-path-registry)
-               pending-applied-resource-paths]]
-    (reset! reg #{}))
+  (reset! applied-resource-paths #{})
   (unload-all-extensions!))
 
 (defn registered-extensions

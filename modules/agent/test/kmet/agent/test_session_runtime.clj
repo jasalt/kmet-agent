@@ -474,14 +474,14 @@
                {:cwd (str (fs/cwd))})
         e2 (rt/bootstrap (test-config) {:session sess2})]
     (try
-      (doseq [k [:event-listeners :flags :cli-flags :applied-resource-paths]]
-        (is (not (identical? (k e1) (k e2)))
-            (str "engine-owned " k " is not shared")))
-      ;; The tool registry, the commands registry and the extension hooks
-      ;; are the app's, not an engine's (P2): neither engine owns them, so a
-      ;; registration reaches both, and a deregistered hook is gone from the
-      ;; tree every engine reads — the pending buffer could only fill the
-      ;; first engine, and its stale copy outlived an unload.
+      (is (not (identical? (:event-listeners e1) (:event-listeners e2)))
+          "the event listeners, still an engine's, are not shared")
+      ;; The registries moved in P2 — tools, commands, prompts, skills,
+      ;; renderers, flags and the extension hooks — are the app's, not an
+      ;; engine's: neither engine owns them, so a registration reaches both,
+      ;; and a deregistered hook is gone from the tree every engine reads.
+      ;; The pending buffer could only fill the first engine, and its stale
+      ;; copy outlived an unload.
       (let [fired (atom 0)
             dereg (extensions/register-input-hook!
                    (extensions/extension-owner "test-hooks-app-wide")

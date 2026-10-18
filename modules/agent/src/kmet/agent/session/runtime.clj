@@ -253,19 +253,13 @@
                              :pending-compaction (atom [])
                              :pending-ui (atom {})
                              :run-callbacks (atom nil)
-                             :event-listeners (atom {})
-                             :flags (atom @extensions/pending-flags)
-                             :cli-flags (atom @extensions/pending-cli-flags)
-                             :applied-resource-paths (atom @extensions/pending-applied-resource-paths)})]
+                             :event-listeners (atom {})})]
     ;; Runtime-scoped extension handle: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent. The
     ;; front-end binding is runtime-scoped too: bootstrap
     ;; installs the headless port and the front-end kind, dispose! unbinds.
     ;; A front end with its own port re-binds after its widgets exist.
     (event-bus/set-default-event-listener-atom! (:event-listeners engine))
-    (reset! extensions/pending-flags {})
-    (reset! extensions/pending-cli-flags {})
-    (reset! extensions/pending-applied-resource-paths #{})
     (set-default-engine! engine)
     (extensions/set-session! (:session agent-state))
     (extensions/set-context-sink! (fn [msg] (agent/add-context-message! (agent-state engine) msg)))
