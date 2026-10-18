@@ -489,8 +489,9 @@
    owner) — the same map bind-extensions! takes (:mode, :has-ui, :ui). The
    capability map is the owner's registration, the tree's copy of the port
    that /units reports; the process binding stays the no-node read cache, and
-   node disposal restores the headless defaults. A front end with its own
-   widgets installs here once they exist. Returns nil."
+   node disposal restores the headless defaults. A later port-only swap
+   (`set-ui-registry!`) updates the binding, not the registration. A front
+   end with its own widgets installs here once they exist. Returns nil."
   [node {:keys [ui] :as surface}]
   (when node
     (scope/register! node [:app :ui] :kmet/ui-port (or ui {}))
@@ -785,10 +786,20 @@
                           timeout-ms (assoc :timeout timeout-ms)))]
     {:exit (:exit @p) :out (:out @p) :err (:err @p)}))
 
-(defn set-session! [session] (reset! session-atom session) nil)
+(defn set-session!
+  "Point the no-node session cache at SESSION without registering it on a
+   tree: the node-less and testing primitive — engines install through
+   install-session!."
+  [session] (reset! session-atom session) nil)
 (defn get-session [] @session-atom)
-(defn set-context-sink! [f] (reset! context-sink-atom f) nil)
-(defn set-entry-sink! [f] (reset! entry-sink-atom f) nil)
+(defn set-context-sink!
+  "Point the no-node context-sink cache at F without registering it: the
+   node-less primitive — engines install through install-context-sink!."
+  [f] (reset! context-sink-atom f) nil)
+(defn set-entry-sink!
+  "Point the no-node entry-sink cache at F without registering it: the
+   node-less primitive — front ends install through install-entry-sink!."
+  [f] (reset! entry-sink-atom f) nil)
 
 (defn clear-runtime!
   "Teardown-only: drop the mode-bound runtime sinks (live session and the

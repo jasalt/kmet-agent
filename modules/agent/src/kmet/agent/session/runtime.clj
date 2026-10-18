@@ -70,6 +70,13 @@
   [engine]
   (some-> engine :agent-state deref))
 
+(defn agent-node
+  "The composition node the engine's agent runs on: the app root by default,
+   a child tree when the engine was bootstrapped onto one (cells.md §5.6);
+   nil for a bare test engine without agent state."
+  [engine]
+  (:node (agent-state engine)))
+
 (defn- extension-before-tool-call
   "Chain extension tool-call hooks (pi: beforeToolCall) — the runtime wires
    them for every front end, so write-reject / edit-warn hooks fire in
@@ -1373,7 +1380,7 @@
     ;; tree: dropping the owners runs their teardowns, which clear the
     ;; process caches and restore the headless binding. A node-less engine
     ;; (a test double) has no registrations, but its caches still clear.
-    (when-let [node (:node (agent-state engine))]
+    (when-let [node (agent-node engine)]
       (cells/dispose! node [:app :session])
       (cells/dispose! node [:app :ui]))
     (extensions/clear-runtime!)

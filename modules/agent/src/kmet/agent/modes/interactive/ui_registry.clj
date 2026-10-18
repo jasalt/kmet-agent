@@ -682,7 +682,7 @@
     ;; Installed once with the registry; reload mutates the same CoreState
     ;; (agent, session atom), so the wiring stays valid across reloads —
     ;; only /new, /resume, fork and clone re-register the session.
-    (let [node (:node (runtime/agent-state (:engine cs)))]
+    (let [node (runtime/agent-node (:engine cs))]
       (extensions/install-front-end! node {:mode :interactive :has-ui true :ui registry})
       (extensions/install-session! node (runtime/session (:engine cs)))
       (extensions/install-context-sink!

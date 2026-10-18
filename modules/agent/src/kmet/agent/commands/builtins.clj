@@ -118,8 +118,7 @@
    has one — a session running in its own tree shows that tree — and the app
    root otherwise."
   [{:keys [ui] engine :runtime} _]
-  (let [node (or (some-> engine runtime/agent-state :node)
-                 (app-runtime/node))]
+  (let [node (or (runtime/agent-node engine) (app-runtime/node))]
     (out ui :info "Units" (app-runtime/explain node))))
 
 (defn register-runtime-commands!
