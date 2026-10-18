@@ -2475,7 +2475,10 @@ Be precise and concise in your responses."}}]
                                   a message an :agent-end handler queues can
                                   start another attempt in the same prompt,
                                   and on-done is the prompt's teardown.
-     {:status :aborted}    — cancelled or terminal error
+     {:status :aborted}    — cancelled (the run signal fired)
+     {:status :error}      — terminal error: non-retryable, or the retry
+                             budget is spent. The error was surfaced; on-done
+                             stays unsent
      {:status :retry   :error err :action action} — transient error, budget left
      {:status :overflow :error err}               — context overflow
    :retry and :overflow carry :attempt-entry — the persisted session entry
