@@ -5086,7 +5086,7 @@
         node (cells/mount! rt [{:id :agent-loop :name :kmet/agent-loop}
                                {:id :retry-policy :into :agent-loop
                                 :name :kmet/retry
-                                :config {:max-retries 1 :base-delay-ms 1
+                                :config {:max-retries 1 :base-delay-ms 3
                                          :max-agent-delay-ms 5}}])
         agent (loop/make-agent-state
                :node node
@@ -5118,9 +5118,11 @@
       (t/is (= 2 @attempts) "the mount's budget ran the summarization retry")
       (t/is (some #(and (= :summarization-retry-scheduled (:type %))
                         (= 1 (:attempt %))
-                        (= 1 (:max-attempts %)))
+                        (= 1 (:max-attempts %))
+                        (= 3 (:delay-ms %)))
                   @events)
-            "the countdown carries the mounted budget, not the run's option")
+            "the countdown carries the mount's budget and backoff, not the
+             run's options")
       (t/is (some #(and (= :compaction (:role %)) (= "the summary" (:summary %)))
                   @(:entries sess))
             "the retried call's summary lands on the compaction entry")
