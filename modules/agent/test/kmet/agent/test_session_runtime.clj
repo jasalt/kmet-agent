@@ -11,6 +11,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as rt]
             [kmet.agent.tools.invoke :as invoke]
+            [kmet.agent.tools.registry :as tools-reg]
             [kmet.ai.models :as models]))
 
 (defn- test-config
@@ -41,6 +42,25 @@
     (is (some? (commands/find-command "outlives-demo")))
     (finally
       (commands/unregister-command! "outlives-demo"))))
+
+(deftest test-tools-outlive-an-engine
+  ;; Custom tools and contributed sources are the app's too (P2): registered
+  ;; while an engine runs, they are found after its disposal, where the
+  ;; pending buffer could only have filled the engine that was copied from.
+  (with-engine
+    (fn [_engine _sess]
+      (tools-reg/register-tool!
+       {:name "outlives-tool" :label "Outlives" :description "d"
+        :parameters {:type "object" :properties {}}
+        :execute (fn [_] {:content "ok"})})
+      (tools-reg/register-tool-source! ::outlives
+                                       (fn [] {"sandbox-outlives" {}}))))
+  (try
+    (is (contains? (tools-reg/get-all-tools) "outlives-tool"))
+    (is (contains? (tools-reg/get-contributed-tools) "sandbox-outlives"))
+    (finally
+      (tools-reg/unregister-tool! "outlives-tool")
+      (tools-reg/unregister-tool-source! ::outlives))))
 
 (deftest test-bootstrap-builds-the-engine
   (with-engine
@@ -429,7 +449,7 @@
         e2 (rt/bootstrap (test-config) {:session sess2})]
     (try
       (doseq [k [:markdown-transformers :entry-renderers
-                 :message-renderers :custom-tools :tool-sources
+                 :message-renderers
                  :event-listeners :flags :cli-flags
                  :applied-resource-paths :skills :prompt-templates]]
         (is (not (identical? (k e1) (k e2)))

@@ -2,12 +2,14 @@
   "Tool registry — built-in tool map, custom tool registration, schema conversion, execution."
   (:require [clojure.string :as str]
             [kmet.libs.json :as json]
+            [kmet.agent.runtime :as app-runtime]
             [kmet.agent.tools.tool :as tool]
             [kmet.agent.tools.read :as read]
             [kmet.agent.tools.write :as write]
             [kmet.agent.tools.edit :as edit]
             [kmet.agent.tools.bash :as bash]
-            [kmet.agent.tools.run-code :as run-code]))
+            [kmet.agent.tools.run-code :as run-code]
+            [kmet.cells.scope :as scope]))
 
 (declare built-in-tools)
 
@@ -72,35 +74,63 @@
 ;; ─── Tool schema helpers ────────────────────────────────────────────────────
 
 ;; ─── Extended tool registry ────────────────────────────────────────────────
+;;
+;; Custom tools and contributed tool sources live in the app root's store,
+;; under the `[:app :tools]` owner (`kmet.agent.runtime` mounts the `:tools`
+;; slot for it, so the registry's keys show in `/units`). A registration is
+;; visible to every engine and outlives one, and it is disposed with its
+;; owner rather than copied into an engine and reset by hand (cells.md
+;; §5.1). The extension ABI registers here today; P5 gives each extension its
+;; own owner.
 
-(defonce pending-custom-tools (atom {}))
+(def tools-owner
+  "The app's tool registry owner: the `:tools` slot kmet.agent.runtime
+   mounts at the root for it (cells.md §5.1)."
+  [:app :tools])
 
-(defn- current-custom-tool-registry
-  "The atom storing custom-tool definitions: the active engine's or the
-   pre-bootstrap pending buffer."
+(defn- tool-key
+  "The store key addressing a custom tool by NAME."
+  [name]
+  [:kmet/tool name])
+
+(defn- tool-key?
+  "True for a key the store holds a custom tool under — other registries'
+   keys share the store, so shape is checked before the head."
+  [k]
+  (and (vector? k) (= :kmet/tool (first k))))
+
+(defn- registered-tools
+  "The tree's custom tools as {name tool}, in registration order (a later
+   registration of a name replaces the earlier)."
   []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :custom-tools)
-      pending-custom-tools))
+  (reduce (fn [acc [k _ v]]
+            (if (tool-key? k) (assoc acc (second k) v) acc))
+          {}
+          (scope/ordered-registrations (app-runtime/node))))
 
 (defn register-tool!
-  "Register a custom tool after normalizing its provider-facing schema."
+  "Register a custom tool after normalizing its provider-facing schema.
+   Returns cells' deregister fn."
   [tool]
   (let [tool (tool/normalize-tool-definition tool)]
-    (swap! (current-custom-tool-registry) assoc (:name tool) tool)))
+    (scope/register! (app-runtime/node) tools-owner (tool-key (:name tool)) tool)))
 
 (defn unregister-tool!
-  "Remove a custom tool."
+  "Remove a custom tool by name, from whichever owner registered it.
+   Returns nil."
   [name]
-  (swap! (current-custom-tool-registry) dissoc name))
+  (let [node (app-runtime/node)
+        k (tool-key name)]
+    (doseq [[owner v] (scope/for-key node k)]
+      (scope/deregister! node owner k v)))
+  nil)
 
 (defn get-all-tools
   "Get all available tools (built-in + custom). A custom tool that reuses a
    built-in's name shadows it (pi: the extension registry is layered over the
    base definitions, custom wins)."
   []
-  (merge built-in-tools @(current-custom-tool-registry)))
+  (merge built-in-tools (registered-tools)))
 
 (defn get-tool
   "Get a tool by name — resolved through get-all-tools, so the map a caller
@@ -113,16 +143,23 @@
 ;; surface without joining get-all-tools (the model's tool set). The
 ;; mcp-adapter contributes its cached MCP catalog this way (run_code.md T2).
 
-(defonce pending-tool-sources (atom {}))
+(defn- tool-source-key
+  "The store key addressing a contributed tool source by ID."
+  [id]
+  [:kmet/tool-source id])
 
-(defn- current-tool-source-registry
-  "The atom storing extension-contributed tool source functions: the active
-   engine's or the pre-bootstrap pending buffer."
+(defn- tool-source-key?
+  "True for a key the store holds a contributed tool source under."
+  [k]
+  (and (vector? k) (= :kmet/tool-source (first k))))
+
+(defn- registered-tool-sources
+  "The tree's contributed tool sources in registration order: [[id fn] …].
+   A source re-registered under the same ID replaces the earlier one."
   []
-  (or (some-> (do (require 'kmet.agent.session.runtime)
-                  ((resolve 'kmet.agent.session.runtime/default-engine)))
-              :tool-sources)
-      pending-tool-sources))
+  (into []
+        (keep (fn [[k _ v]] (when (tool-source-key? k) [(second k) v])))
+        (scope/ordered-registrations (app-runtime/node))))
 
 (defn register-tool-source!
   "Register (or replace) an extension-contributed tool source. ID identifies
@@ -131,15 +168,19 @@
    :execute, optional :streams?/:contextual?/:prepare-arguments).
    Contributed tools join the run_code sandbox's surface only; the registry
    shadows a colliding name. Re-registering under the same ID replaces the
-   source; the next run_code call resolves the new catalog."
+   source; the next run_code call resolves the new catalog. Returns cells'
+   deregister fn."
   [id tools-fn]
-  (swap! (current-tool-source-registry) assoc id tools-fn)
-  nil)
+  (scope/register! (app-runtime/node) tools-owner (tool-source-key id) tools-fn))
 
 (defn unregister-tool-source!
-  "Remove a contributed tool source by ID."
+  "Remove a contributed tool source by ID, from whichever owner registered
+   it. Returns nil."
   [id]
-  (swap! (current-tool-source-registry) dissoc id)
+  (let [node (app-runtime/node)
+        k (tool-source-key id)]
+    (doseq [[owner v] (scope/for-key node k)]
+      (scope/deregister! node owner k v)))
   nil)
 
 (defn get-contributed-tools
@@ -147,10 +188,10 @@
    returns a non-map contributes nothing — a broken extension must not take
    the sandbox's surface down."
   []
-  (reduce (fn [acc tools-fn]
+  (reduce (fn [acc [_ tools-fn]]
             (let [tools (try (tools-fn) (catch Exception _ nil))]
               (if (map? tools) (merge acc tools) acc)))
-          {} (vals @(current-tool-source-registry))))
+          {} (registered-tool-sources)))
 
 ;; ─── Callable surfaces ─────────────────────────────────────────────────────
 

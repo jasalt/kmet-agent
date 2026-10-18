@@ -22,14 +22,18 @@
    ;; this slot's path, so the slot is what makes its keys visible in /units
    ;; (cells.md §5.1). It has no children — commands are registrations, not
    ;; units — and no handle for the host to read.
-   :kmet/commands {:units {}}})
+   :kmet/commands {:units {}}
+   ;; the same address shape for the tool registry: [/units] lists the custom
+   ;; tools and contributed sources registered under [:app :tools].
+   :kmet/tools {:units {}}})
 
 (def default-entries
   "The entries the app mounts at its root: units with no per-session config
    and no front-end surface. Config-derived and front-end-shaped units mount
    with the session (P4)."
   [{:id :loop-guard :name :kmet/loop-guard}
-   {:id :commands :name :kmet/commands}])
+   {:id :commands :name :kmet/commands}
+   {:id :tools :name :kmet/tools}])
 
 (defn runtime
   "A composition runtime over the builtin units: resolution plus a fresh root

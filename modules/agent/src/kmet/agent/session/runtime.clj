@@ -45,8 +45,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
-            [kmet.agent.tools.core :as tools]
-            [kmet.agent.tools.registry :as tools-reg]))
+            [kmet.agent.tools.core :as tools]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
                    cwd turn-running? compaction-queued pending-compaction
@@ -255,8 +254,6 @@
                              :pending-ui (atom {})
                              :run-callbacks (atom nil)
                              :event-listeners (atom {})
-                             :custom-tools (atom @tools-reg/pending-custom-tools)
-                             :tool-sources (atom @tools-reg/pending-tool-sources)
                              :markdown-transformers (atom (vec @extensions/pending-markdown-transformers))
                              :entry-renderers (atom (into {} @extensions/pending-entry-renderers))
                              :message-renderers (atom (into {} @extensions/pending-message-renderers))
@@ -271,8 +268,6 @@
     ;; installs the headless port and the front-end kind, dispose! unbinds.
     ;; A front end with its own port re-binds after its widgets exist.
     (event-bus/set-default-event-listener-atom! (:event-listeners engine))
-    (reset! tools-reg/pending-custom-tools {})
-    (reset! tools-reg/pending-tool-sources {})
     (reset! extensions/pending-markdown-transformers [])
     (reset! extensions/pending-entry-renderers {})
     (reset! extensions/pending-message-renderers {})

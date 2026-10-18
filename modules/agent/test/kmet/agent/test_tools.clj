@@ -3,13 +3,16 @@
             [clojure.string :as str]
             [clojure.test :as t]
             [babashka.fs :as fs]
+            [kmet.agent.runtime :as app-runtime]
             [kmet.agent.tools.core :as tools]
+            [kmet.agent.tools.registry :as tools-registry]
             [kmet.agent.tools.util :as tool-util]
             [kmet.agent.extensions.core :as extensions]
             [kmet.ai.api.shared :as schema-shared]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.bash-executor :as bash-exec]
             [kmet.agent.skills :as skills]
+            [kmet.cells.scope :as scope]
             [kmet.libs.process :as process]
             [kmet.test-utils :refer [slash]]))
 
@@ -844,6 +847,52 @@
                  (:parameters (tools/get-tool name))))
         (finally
           (tools/unregister-tool! name))))))
+
+(t/deftest test-tool-registry-lives-in-the-app-roots-store
+  ;; The registry is the store, not an engine field: a registration is
+  ;; readable under the app's owner, and unregister-tool! removes it by key.
+  (let [registered {:name "stored-tool" :description "d"
+                    :parameters {:type "object" :properties {}}
+                    :execute (fn [_] {:content "ok"})}]
+    (try
+      (tools/register-tool! registered)
+      (t/is (= "stored-tool"
+               (:name (get (scope/for-key (app-runtime/node)
+                                          [:kmet/tool "stored-tool"])
+                           tools-registry/tools-owner))))
+      (t/is (contains? (tools/get-all-tools) "stored-tool"))
+      (finally
+        (tools/unregister-tool! "stored-tool")))
+    (t/is (empty? (scope/for-key (app-runtime/node) [:kmet/tool "stored-tool"])))))
+
+(t/deftest test-tool-source-registry-lives-in-the-app-roots-store
+  (let [source (fn [] {"sandbox-stored" {}})]
+    (try
+      (tools/register-tool-source! "stored-source" source)
+      (t/is (identical? source
+                        (get (scope/for-key (app-runtime/node)
+                                            [:kmet/tool-source "stored-source"])
+                             tools-registry/tools-owner)))
+      (t/is (contains? (tools/get-contributed-tools) "sandbox-stored"))
+      (finally
+        (tools/unregister-tool-source! "stored-source")))
+    (t/is (empty? (scope/for-key (app-runtime/node)
+                                 [:kmet/tool-source "stored-source"])))))
+
+(t/deftest test-tool-register-returns-a-value-guarded-deregister
+  ;; register! returns its own deregister fn; a stale one cannot remove a
+  ;; newer registration of the same name (the store's value guard).
+  (let [one {:name "guarded-tool" :description "one"
+             :parameters {:type "object" :properties {}}
+             :execute (fn [_] {:content "one"})}
+        stale (tools/register-tool! one)]
+    (try
+      (tools/register-tool! (assoc one :description "two"))
+      (stale)
+      (t/is (= "two" (:description (tools/get-tool "guarded-tool")))
+            "the replaced registration's deregister is a no-op")
+      (finally
+        (tools/unregister-tool! "guarded-tool")))))
 
 (t/deftest test-tools-prepare-arguments
   (t/testing "pi prepareToolCallArguments: the shim rewrites args before execution"
