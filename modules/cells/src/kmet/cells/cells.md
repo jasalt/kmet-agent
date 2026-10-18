@@ -90,10 +90,10 @@ architecture) is a fifth, invisible one.
 ### 1.4 What the module deletes, and what it does not replace
 
 Deletes (the first three with P2, the teardown and the `applied-resource-paths`
-state with P5, the mount mechanisms with P4): the pending/bound duality and its
-two bootstrap halves; the 15 dispatchers; the load-order `require`/`resolve`
-hack; the `applied-resource-paths` reset; FIFO-and-silent extension teardown;
-four ad-hoc mount mechanisms.
+state with P5, the mount mechanisms as their slots land, P4–P5): the
+pending/bound duality and its two bootstrap halves; the 15 dispatchers; the
+load-order `require`/`resolve` hack; the `applied-resource-paths` reset;
+FIFO-and-silent extension teardown; four ad-hoc mount mechanisms.
 
 Does *not* replace, and must not grow into: `kmet.loader` (code-loading
 backends), `kmet.libs.hikap.component` (UI component runtime), `kmet.libs.reakt`
@@ -462,11 +462,13 @@ that started it is a host bug, not a lifetime the store can infer.
 
 One entry shape replaces the four current mechanisms. The old keys stay as
 **aliases** during migration — `:extensions`/`:packages` entries and
-`:default-tools` `+name`/`-name` merging are public configuration; they are
-translated to entries at load, not removed (`apply-default-tools!` semantics
-preserved exactly). There is no `:from` backend hint: backends are tried in the
-host's declared order and the first that resolves wins, so the common case
-needs no field and a miss reports every backend attempted.
+`:default-tools` `+name`/`-name` merging are public configuration; they are not
+removed. The resource keys become entries when extension units land (P5); the
+`:default-tools` selection stays a run-option (`apply-default-tools!` semantics
+preserved exactly), because tools are registrations, not units (§5.1). There
+is no `:from` backend hint: backends are tried in the host's declared order and
+the first that resolves wins, so the common case needs no field and a miss
+reports every backend attempted.
 
 `:disabled true` makes an entry inert: `check` skips it (a parked entry may
 name a backend that is gone) and `mount!` never mounts it. `:app` is the root
