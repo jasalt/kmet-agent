@@ -22,6 +22,10 @@
             [kmet.test-utils :as tu]
             [kmet.libs.concurrent :as concurrent]))
 
+;; The /login tests install the interactive builtins on the app tree; clear
+;; the process-global registrations between tests.
+(t/use-fixtures :each tu/with-clean-app-registries)
+
 ;; ─── Device-code poll state machine (pi pollOAuthDeviceCodeFlow) ───────────
 
 (defn- fake-clock-flow

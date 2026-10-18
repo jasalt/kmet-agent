@@ -2,8 +2,11 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :as t]
+            [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.prompts :as prompts]
             [kmet.agent.session.runtime :as rt]
+            [kmet.agent.skills :as skills]
             [kmet.tui.utils :as u]))
 
 (defn test-engine
@@ -43,6 +46,28 @@
                                   :cwd (:cwd cs)
                                   :turn-running? (:running-turn? cs)
                                   :compaction-queued (:compaction-queued cs)})))
+
+(defn clear-app-registries!
+  "Clear the process-global registrations a test leaves on the app tree:
+   commands, prompt templates and skills. A test that exercises a real
+   bootstrap loads the developer's own skills and prompts into the app tree,
+   and one that registers the builtin commands leaves the app's slash
+   registry filled; P2 made those registrations app-scoped rather than
+   per-engine, so a later namespace in the same process would see them. Hook,
+   renderer and flag registrations are per-owner and tests deregister what
+   they register."
+  []
+  (commands/clear-commands!)
+  (prompts/clear-prompt-templates!)
+  (skills/clear-skills!))
+
+(defn with-clean-app-registries
+  "clojure.test :each fixture: clear the app tree's process-global
+   registrations before and after each test (see clear-app-registries!)."
+  [f]
+  (clear-app-registries!)
+  (try (f)
+       (finally (clear-app-registries!))))
 
 (defn clear-extension-wiring!
   "Reset the process-global extension wiring a front end install leaves

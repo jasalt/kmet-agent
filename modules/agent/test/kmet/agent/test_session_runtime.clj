@@ -14,7 +14,13 @@
             [kmet.agent.session.runtime :as rt]
             [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.registry :as tools-reg]
-            [kmet.ai.models :as models]))
+            [kmet.ai.models :as models]
+            [kmet.test-utils :as tu]))
+
+;; Several tests bootstrap real engines onto the app tree (loading the
+;; developer's own skills and prompts) and register app-wide fixtures; clear
+;; the process-global registrations between tests.
+(clojure.test/use-fixtures :each tu/with-clean-app-registries)
 
 (defn- test-config
   "A sparse run config — every derived option falls back to its default."
@@ -486,14 +492,17 @@
             dereg (extensions/register-input-hook!
                    (extensions/extension-owner "test-hooks-app-wide")
                    (fn [_] (swap! fired inc) nil))]
-        (commands/register-command!
-         {:name "app-wide-demo" :handler (fn [& _] nil)})
-        (is (some? (commands/find-command "app-wide-demo")))
-        (extensions/apply-input-hooks "hello" :interactive)
-        (is (= 1 @fired) "the hook fires from the app tree alone")
-        (dereg)
-        (extensions/apply-input-hooks "hello" :interactive)
-        (is (= 1 @fired) "and a deregistered hook stays gone"))
+        (try
+          (commands/register-command!
+           {:name "app-wide-demo" :handler (fn [& _] nil)})
+          (is (some? (commands/find-command "app-wide-demo")))
+          (extensions/apply-input-hooks "hello" :interactive)
+          (is (= 1 @fired) "the hook fires from the app tree alone")
+          (dereg)
+          (extensions/apply-input-hooks "hello" :interactive)
+          (is (= 1 @fired) "and a deregistered hook stays gone")
+          (finally
+            (commands/unregister-command! "app-wide-demo"))))
       (let [e1-events (atom [])
             e2-events (atom [])]
         (rt/subscribe! e1 #(swap! e1-events conj %))

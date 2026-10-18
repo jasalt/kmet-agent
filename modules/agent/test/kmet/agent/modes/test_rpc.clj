@@ -16,7 +16,13 @@
             [kmet.agent.prompts :as prompts]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.skills :as skills]))
+            [kmet.agent.skills :as skills]
+            [kmet.test-utils :as tu]))
+
+;; RPC mode bootstraps real engines onto the app tree: the runtime commands it
+;; registers and the developer's own skills/prompts must not reach later
+;; namespaces.
+(t/use-fixtures :each tu/with-clean-app-registries)
 
 (defn- opts
   "Minimal run opts — :model/:provider bypass catalog resolution; sessions

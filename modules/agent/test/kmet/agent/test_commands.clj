@@ -8,13 +8,12 @@
             [kmet.agent.runtime :as app-runtime]
             [kmet.agent.tools.registry :as tools-reg]
             [kmet.cells.core :as cells]
-            [kmet.cells.scope :as scope]))
+            [kmet.cells.scope :as scope]
+            [kmet.test-utils :as tu]))
 
-(t/use-fixtures :each
-  (fn [f]
-    (commands/clear-commands!)
-    (f)
-    (commands/clear-commands!)))
+;; The builtins' registry-facing tests fill the app tree's slash registry;
+;; clear the process-global registrations before and after every test.
+(t/use-fixtures :each tu/with-clean-app-registries)
 
 (t/deftest register-and-find
   (commands/register-command!

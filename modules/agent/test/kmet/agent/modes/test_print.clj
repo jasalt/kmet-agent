@@ -11,7 +11,13 @@
             [kmet.ai.models :as m]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
-            [kmet.agent.extensions.core :as extensions]))
+            [kmet.agent.extensions.core :as extensions]
+            [kmet.test-utils :as tu]))
+
+;; Print mode bootstraps real engines onto the app tree, loading the
+;; developer's own skills and prompts; clear the process-global registrations
+;; so they do not reach later namespaces.
+(t/use-fixtures :each tu/with-clean-app-registries)
 
 (defn- opts
   "Minimal run opts — :model/:provider bypass catalog resolution;

@@ -1761,19 +1761,19 @@
         hook (fn [tag] (fn [_] (swap! seen conj tag) nil))
         dereg-a1 (extensions/register-input-hook! a (hook :a1))
         dereg-b1 (extensions/register-input-hook! b (hook :b1))
-        dereg-a2 (extensions/register-input-hook! a (hook :a2))]
+        dereg-a2 (extensions/register-input-hook! a (hook :a2))
+        ;; owners share the store with every other registry: a key of another
+        ;; shape under the same owner is neither read nor a reason to throw
+        dereg-foreign (scope/register! (rt/node) a :tools/hooks {:event :turn-end})]
     (try
       (extensions/apply-input-hooks "hi" :interactive)
       (t/is (= [:a1 :a2 :b1] @seen)
             "one owner's hooks are adjacent, in its registration order")
-      ;; owners share the store with every other registry: a key of another
-      ;; shape under the same owner is neither read nor a reason to throw
-      (scope/register! (rt/node) a :tools/hooks {:event :turn-end})
       (reset! seen [])
       (extensions/apply-input-hooks "hi" :interactive)
       (t/is (= [:a1 :a2 :b1] @seen)
             "another registry's key on the same owner is ignored")
-      (finally (dereg-a1) (dereg-b1) (dereg-a2)))))
+      (finally (dereg-a1) (dereg-b1) (dereg-a2) (dereg-foreign)))))
 
 (t/deftest test-extension-hooks-are-disposed-on-unload
   ;; End to end: ext/on-input and ext/on-before-agent-start register under the

@@ -6,7 +6,12 @@
             [kmet.agent.runtime :as app-runtime]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
-            [kmet.cells.scope :as scope]))
+            [kmet.cells.scope :as scope]
+            [kmet.test-utils :as tu]))
+
+;; The skill registry is process state on the app tree (P2): a test that loads
+;; a fixture skill must not leave it for the rest of the process.
+(t/use-fixtures :each tu/with-clean-app-registries)
 
 ;; ─── Skills ────────────────────────────────────────────────────────────────
 

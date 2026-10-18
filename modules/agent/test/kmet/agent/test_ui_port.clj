@@ -10,12 +10,16 @@
             [kmet.agent.session.runtime :as rt]
             [kmet.test-utils :as tu]))
 
-;; The binding is process-global state; every test starts and ends headless.
+;; The binding and the app tree's registrations are process-global state;
+;; every test starts and ends headless with a cleared tree (the bootstrap test
+;; loads the developer's own skills).
 (t/use-fixtures :each
   (fn [f]
     (ex/unbind-extensions!)
+    (tu/clear-app-registries!)
     (try (f)
-         (finally (ex/unbind-extensions!)))))
+         (finally (ex/unbind-extensions!)
+                  (tu/clear-app-registries!)))))
 
 (defn- bare-engine
   "A bare engine with just enough agent state for request/dispose tests."

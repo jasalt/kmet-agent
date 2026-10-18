@@ -58,6 +58,10 @@
             [kmet.agent.session.runtime :as runtime]
             [kmet.test-utils :as tu]))
 
+;; The tests that install the interactive builtins leave the app's slash
+;; registry filled; clear the process-global registrations between tests.
+(clojure.test/use-fixtures :each tu/with-clean-app-registries)
+
 (defn- make-handler
   "The real event handler over a standalone chat history and stub refs: the
    cs-dependent clauses (footer/status indicators) no-op through a nil

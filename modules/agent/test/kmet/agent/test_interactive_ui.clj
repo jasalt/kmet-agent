@@ -58,6 +58,10 @@
             [kmet.test-utils :as tu :refer [slash strip-ansi]]
             [kmet.libs.concurrent :as concurrent]))
 
+;; The interactive builtins register the app's whole slash registry; clear it
+;; so a later namespace never sees the tree filled by this one.
+(t/use-fixtures :each tu/with-clean-app-registries)
+
 (defn- capture-mount!
   "A dock/mount! stand-in for tests: records the component that receives
   keys (the :focus-target when given, else COMPONENT) in REF (pi:
