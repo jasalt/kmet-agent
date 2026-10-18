@@ -129,6 +129,23 @@
     (is (empty? (cells/composition node :g)))
     (is (= :h/l (get-in (cells/composition node) [:g :handle])))))
 
+(deftest a-replaced-group-remounts-its-unchanged-children
+  (let [starts (atom [])
+        child {:handle :h/c
+               :start (fn [node owner]
+                        (cells/register! node owner [:k] :child)
+                        (swap! starts conj owner)
+                        nil)}
+        rt (rt-with {:k/a {:handle :h/a :units {:c child}}
+                     :k/b {:handle :h/b :units {:c child}}})
+        node (cells/mount! rt [{:id :g :name :k/a}])]
+    (is (= {[:k] {[:app :g :c] :child}} (scope/registrations node)))
+    (cells/mount! rt [{:id :g :name :k/b}])
+    (is (= {[:k] {[:app :g :c] :child}} (scope/registrations node))
+        "the group's disposal took the child's registrations, so the child remounts")
+    (is (= [[:app :g :c] [:app :g :c]] @starts))
+    (is (= #{[:k]} (get-in (cells/composition node :g) [:c :keys])))))
+
 (deftest a-kept-group-is-not-remounted-when-a-child-arrives
   (let [starts (atom [])
         group {:handle :h/g :units {} :start (fn [_ owner] (swap! starts conj owner) nil)}
@@ -178,11 +195,16 @@
         rt (rt-with {:k/twice twice})
         node (cells/mount! rt [{:id :ok :name :k/twice}])
         before (cells/composition node)
-        e (try (cells/mount! rt [{:id :a :name :k/twice}
-                                 {:id :b :name :k/twice}])
+        entries [{:id :a :name :k/twice} {:id :b :name :k/twice}]
+        checked (cells/check rt entries)
+        e (try (cells/mount! rt entries)
                nil
                (catch Exception e e))]
-    (is (= :kmet.cells.mount/duplicate-composition (:type (ex-data e))))
+    (is (= :kmet.cells.mount/check-failed (:type (ex-data e))))
+    (is (= checked (:errors (ex-data e)))
+        "check and mount! report the same error vector")
+    (is (= [:id] (mapv :key checked)))
+    (is (= [:app :b :inner] (:path (first checked))))
     (is (= {[:k] {[:app :ok :inner :x] :x}} (scope/registrations node))
         "the pre-pass refuses before any owner is touched")
     (is (= before (cells/composition node)))
@@ -254,12 +276,27 @@
                (catch Exception e e))]
     (is (= :kmet.cells.mount/bad-opts (:type (ex-data e))))))
 
-(deftest a-non-callable-start-return-is-refused
-  (let [rt (rt-with {:k/l {:handle :h/l :start (fn [_ _] 42)}})
-        e (try (cells/mount! rt [{:id :x :name :k/l}])
-               nil
-               (catch Exception e e))]
-    (is (= :kmet.cells.mount/bad-teardown (:type (ex-data e))))))
+(deftest a-non-fn-start-return-is-refused
+  (doseq [teardown [{:not :a-fn} #{:not :a-fn} 42]]
+    (let [rt (rt-with {:k/l {:handle :h/l :start (fn [_ _] teardown)}})
+          e (try (cells/mount! rt [{:id :x :name :k/l}])
+                 nil
+                 (catch Exception e e))]
+      (is (= :kmet.cells.mount/bad-teardown (:type (ex-data e))) (pr-str teardown))
+      (is (= {} (scope/registrations (:root rt))) (pr-str teardown)))))
+
+(def ^:private teardown-log (atom []))
+
+(def ^:private var-teardown
+  (fn [] (swap! teardown-log conj :var)))
+
+(deftest a-var-teardown-is-accepted
+  (reset! teardown-log [])
+  (let [rt (rt-with {:k/l {:handle :h/l :start (fn [_ _] #'var-teardown)}})
+        node (cells/mount! rt [{:id :x :name :k/l}])]
+    (is (= [:app :x] (get-in (cells/composition node) [:x :owner])))
+    (cells/dispose! node)
+    (is (= [:var] @teardown-log))))
 
 (deftest a-throwing-start-unwinds-its-own-slot
   (let [rt (rt-with {:k/bad {:handle :h/b

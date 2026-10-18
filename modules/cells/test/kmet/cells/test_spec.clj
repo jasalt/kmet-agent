@@ -13,6 +13,9 @@
    :kmet/bad-units {:units "not a map"}
    :kmet/bad-child {:handle (fn [_ _]) :units {:oops 1}}
    :kmet/nil-handle {:handle nil}
+   :kmet/bad-handle {:handle 42}
+   :kmet/bad-start {:handle (fn [_ _]) :start 42}
+   :kmet/map-start {:handle (fn [_ _]) :start {}}
    :kmet/bad-schema {:config 42 :handle (fn [_ _])}
    :kmet/nested-group {:handle (fn [_ _])
                        :units {:inner {:handle (fn [_ _])
@@ -114,6 +117,26 @@
   (let [[e] (spec/check rt [{:id :x :name :kmet/nil-handle}])]
     (is (= :descriptor (:key e)))
     (is (= [:app :x] (:path e)))))
+
+(deftest handles-must-be-callable-and-starts-a-fn-or-var
+  (let [[e] (spec/check rt [{:id :h :name :kmet/bad-handle}])]
+    (is (= :handle (:key e)))
+    (is (= [:app :h] (:path e))))
+  (doseq [[id nm] {:s :kmet/bad-start :m :kmet/map-start}]
+    (let [[e] (spec/check rt [{:id id :name nm}])]
+      (is (= :start (:key e)) (pr-str nm))
+      (is (= [:app id] (:path e))))))
+
+(deftest duplicate-inline-composition-ids-are-refused-by-check
+  (let [twice {:handle (fn [_ _])
+               :units {:inner {:handle (fn [_ _])
+                               :units {:x {:handle (fn [_ _])}}}}}
+        rt (spec/runtime {:resolve [[:builtin (fn [_] twice)]]})
+        [e] (spec/check rt [{:id :a :name :k/twice}
+                            {:id :b :name :k/twice}])]
+    (is (= :id (:key e)))
+    (is (= [:app :b :inner] (:path e)))
+    (is (str/includes? (:error e) "must be unique"))))
 
 (deftest an-unusable-config-schema-is-reported
   (let [[e] (spec/check rt [{:id :bs :name :kmet/bad-schema :config {}}])]

@@ -69,62 +69,17 @@
   (forget-composition! node old id)
   (swap! (:mounted node) update comp-id (fnil dissoc {}) id))
 
-(defn- candidate-slot
-  "The `{:id :unit :entry}` view of a plan candidate."
-  [candidate]
-  (select-keys candidate [:id :unit :entry]))
-
-(defn- effective-slots
-  "A composition's slots: the owning unit's inline `:units` defaults with the
-   plan's entries merged in. An entry whose :id matches an inline slot
-   replaces it; other entries append in entry order."
-  [plan comp-id inline-units]
-  (let [entries (get (:compositions plan) comp-id)
-        by-id (into {} (map (juxt :id identity)) entries)]
-    (into []
-          (concat
-           (map (fn [id]
-                  (if-let [c (get by-id id)]
-                    (candidate-slot c)
-                    {:id id
-                     :unit (get inline-units id)
-                     :entry {:id id :into comp-id}}))
-                (keys inline-units))
-           (map candidate-slot
-                (remove #(contains? inline-units (:id %)) entries))))))
-
-(defn- effective-tree
-  "The composition tree `{comp-id [slot …]}` for PLAN, refusing a repeated id.
-   The tree doubles as the visited set, so a repeat in a sibling subtree is
-   refused too; building it before anything is mounted is what keeps a
-   structural error from touching a node (cells.md §6.1)."
-  [plan]
-  (let [tree (atom {})]
-    (letfn [(walk [comp-id inline-units]
-              (when (contains? @tree comp-id)
-                (throw (ex-info (str "cells: composition id " comp-id
-                                     " is used twice in one mount")
-                                {:type ::duplicate-composition :id comp-id})))
-              (let [slots (effective-slots plan comp-id inline-units)]
-                (swap! tree assoc comp-id slots)
-                (doseq [{:keys [id unit]} slots
-                        :when (contains? unit :units)]
-                  (walk id (:units unit)))))]
-      (walk :app {})
-      @tree)))
-
 (defn- checked-tree
-  "The tree `mount!` walks: SPEC's plan, its §4 errors thrown as ex-info, and
-   the duplicate-id refusal (cells.md §6.1–§6.3)."
+  "The tree `mount!` walks: SPEC's effective tree, its §4 errors thrown as
+   ex-info (cells.md §6.1–§6.3)."
   [rt entries]
-  (let [plan (spec/plan rt entries)
-        errors (:errors plan)]
+  (let [{:keys [tree errors]} (spec/effective-tree rt entries)]
     (when (seq errors)
       (throw (ex-info (str "cells: mount checks failed (" (count errors)
                            " error" (when (< 1 (count errors)) "s") "): "
                            (:error (first errors)))
                       {:type ::check-failed :errors errors})))
-    (effective-tree plan)))
+    tree))
 
 (defn- same-slot?
   "A slot is kept when its owner path, resolved unit, `:name` and `:config`
@@ -142,16 +97,16 @@
 (defn- admit!
   "Run the unit's `:start` with (node owner) — the owner path is what it
    registers under — collect its teardown, and return the slot record. A
-   truthy, non-callable return is a mount error, not a teardown, and a
-   throwing `:start` unwinds its own owner before the error propagates
+   truthy return that is not a fn or var is a mount error, not a teardown, and
+   a throwing `:start` unwinds its own owner before the error propagates
    (cells.md §6.3)."
   [node owner unit entry]
   (when-let [start (:start unit)]
     (try
       (when-let [teardown (start node owner)]
-        (when-not (ifn? teardown)
+        (when-not (spec/fn-or-var? teardown)
           (throw (ex-info (str "cells: :start for " (pr-str owner)
-                               " returned a non-callable teardown")
+                               " returned a teardown that is not a fn or var")
                           {:type ::bad-teardown :owner owner :value teardown})))
         (scope/add-teardown! node owner teardown))
       (catch Throwable t
@@ -161,9 +116,11 @@
 
 (defn- mount-composition
   "Mount COMP-ID's slots — from TREE, the pre-validated effective tree — at
-   owner prefix COMP-PATH, diffing against OLD (the pre-walk table). Each slot
-   is published as it is admitted; children mount after their parent's
-   `:start`, which is what makes children dispose first (cells.md §5.1)."
+   owner prefix COMP-PATH, diffing against OLD (the pre-walk table). A slot is
+   kept only while the live table still holds its record, so a subtree a
+   replacement disposed is never re-used. Each slot is published as it is
+   admitted; children mount after their parent's `:start`, which is what makes
+   children dispose first (cells.md §5.1)."
   [node old tree comp-id comp-path]
   (let [current (get old comp-id {})
         slots (get tree comp-id)
@@ -175,7 +132,7 @@
       (forget-slot! node old comp-id id))
     (doseq [{:keys [id entry unit]} slots]
       (let [owner (conj comp-path id)
-            existing (get current id)
+            existing (get-in @(:mounted node) [comp-id id])
             keep? (and existing (same-slot? existing owner unit entry))
             _ (when (and existing (not keep?))
                 (dispose-subtree! node (:owner existing))

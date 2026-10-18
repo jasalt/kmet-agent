@@ -1,5 +1,5 @@
 (ns kmet.cells.spec
-  "Descriptors, entries, resolution and the two checks (cells.md §3–§4, §6).
+  "Descriptors, entries, resolution and the checks (cells.md §3–§4, §6).
 
    A descriptor is plain data: a unit with `:handle`, `:units`, or both; its
    optional `:config` is a malli schema. An entry is a manifest record
@@ -7,9 +7,10 @@
    `:config` is a value validated against the resolved unit's schema.
 
    `check` is pure: it resolves names without loading anything, validates
-   configs, and returns [] or a vector of `{:path :entry :key :error} maps`.
-   It builds the mount plan and discards it; `mount!` (P1) re-plans rather
-   than accepting a plan (cells.md §6.3)."
+   configs, and returns [] or a vector of `{:path :entry :key :error}` maps.
+   It builds the mount plan plus the effective tree — a repeated composition
+   id is an error like any other — and discards both; `mount!` (P1) re-plans
+   rather than accepting a plan (cells.md §6.3)."
   (:require [clojure.string :as str]
             [malli.core :as m]
             [malli.error :as me]))
@@ -50,6 +51,12 @@
           :else (recur (next backends) (conj tried kind))))
       {:error (str "no backend resolved " nm " (tried " (str/join ", " tried) ")")})))
 
+(defn fn-or-var?
+  "True when X is callable as a fixed-arity fn — a fn or a var. The `:start`
+   hook and the teardown it returns are both held to this (cells.md §3)."
+  [x]
+  (or (fn? x) (var? x)))
+
 (defn- descriptor-errors
   "Check 1's shape rule over a unit and, recursively, its inline children."
   [id path unit]
@@ -64,8 +71,17 @@
     [(err path id :descriptor "unit must declare :handle or :units")]
 
     :else
-    (into [] (mapcat (fn [[slot child]] (descriptor-errors id (conj path slot) child)))
-          (:units unit))))
+    (into []
+          (concat
+           (when (and (contains? unit :handle)
+                      (not (ifn? (:handle unit))))
+             [(err path id :handle "unit :handle must be callable")])
+           (when (and (contains? unit :start)
+                      (not (fn-or-var? (:start unit))))
+             [(err path id :start "unit :start must be a fn or var")])
+           (mapcat (fn [[slot child]]
+                     (descriptor-errors id (conj path slot) child))
+                   (:units unit))))))
 
 (defn- config-errors
   "Check 2: an entry's :config against the unit's malli schema. A unit without
@@ -159,7 +175,8 @@
   "Build the mount plan from entries:
    `{:compositions {comp-id [{:id :entry :unit} …]} :errors [err …]}`.
    Compositions group resolved entries under their target composition (:app or
-   a group entry's id); inline `:units` defaults are merged by `mount!` (P1).
+   a group entry's id); inline `:units` defaults are merged by
+   `effective-tree` (cells.md §6.1).
    Slot ids are unique within a composition; composition ids globally."
   [rt entries]
   (let [entries (vec entries)
@@ -214,8 +231,61 @@
     {:compositions compositions
      :errors (into structural detailed)}))
 
-(defn check
-  "The §4 checks over entries: [] when they would mount, else a vector of
-   `{:path :entry :key :error}` maps. Pure — no scopes, no code, no effects."
+(defn- candidate-slot
+  "The `{:id :unit :entry}` view of a plan candidate."
+  [candidate]
+  (select-keys candidate [:id :unit :entry]))
+
+(defn- effective-slots
+  "A composition's slots: the owning unit's inline `:units` defaults with the
+   plan's entries merged in. An entry whose :id matches an inline slot
+   replaces it; other entries append in entry order."
+  [plan comp-id inline-units]
+  (let [entries (get (:compositions plan) comp-id)
+        by-id (into {} (map (juxt :id identity)) entries)]
+    (into []
+          (concat
+           (map (fn [id]
+                  (if-let [c (get by-id id)]
+                    (candidate-slot c)
+                    {:id id
+                     :unit (get inline-units id)
+                     :entry {:id id :into comp-id}}))
+                (keys inline-units))
+           (map candidate-slot
+                (remove #(contains? inline-units (:id %)) entries))))))
+
+(defn effective-tree
+  "The effective composition tree for ENTRIES over RT: `{:tree {comp-id
+   [slot …]} :errors [err …]}`. Plan errors win — a malformed unit has no tree
+   to walk — and otherwise the walk refuses a repeated composition id with the
+   same `{:path :entry :key :error}` shape (cells.md §4, §6.1). The tree
+   doubles as the visited set, so a repeat in a sibling subtree is refused
+   too."
   [rt entries]
-  (:errors (plan rt entries)))
+  (let [p (plan rt entries)]
+    (if-let [errors (seq (:errors p))]
+      {:tree nil :errors (vec errors)}
+      (let [tree (atom {})
+            errors (atom [])]
+        (letfn [(walk [comp-id path inline-units]
+                  (if (contains? @tree comp-id)
+                    (swap! errors conj
+                           (err path comp-id :id
+                                (str "composition id " comp-id
+                                     " must be unique")))
+                    (let [slots (effective-slots p comp-id inline-units)]
+                      (swap! tree assoc comp-id slots)
+                      (doseq [{:keys [id unit]} slots
+                              :when (contains? unit :units)]
+                        (walk id (conj path id) (:units unit))))))]
+          (walk :app [:app] {}))
+        {:tree @tree
+         :errors (vec @errors)}))))
+
+(defn check
+  "The §4 checks over entries plus the effective-tree walk (cells.md §6.1):
+   [] when they would mount, else a vector of `{:path :entry :key :error}`
+   maps. Pure — no scopes, no code, no effects."
+  [rt entries]
+  (:errors (effective-tree rt entries)))

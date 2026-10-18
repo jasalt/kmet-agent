@@ -217,8 +217,8 @@ registrations are collected onto), and is where a unit installs anything it
 owns — an event listener, a tool, a command, a timer — through `register!`,
 whose deregister fns are collected onto the unit itself. It returns nil, or a
 teardown fn that runs *after* everything its body registered (the unit's own
-resource unwinds last). A truthy return that is not callable is a mount error,
-not a teardown. There is no `:stop`: one hook plus auto-collected
+resource unwinds last). A truthy return that is neither a fn nor a var is a
+mount error, not a teardown. There is no `:stop`: one hook plus auto-collected
 disposers is the whole teardown model, and a unit that needs another order can
 do its work in the returned fn.
 
@@ -264,9 +264,11 @@ rule, §4's checks.
 internally before it touches anything. Both are decidable; a failure produces
 errors naming the entry and the failing key, never a bare boolean.
 
-1. **Shape** — every unit has at least one of `:handle` / `:units`; every
+1. **Shape** — every unit has at least one of `:handle` / `:units`; a unit's
+   `:handle` is callable and its `:start` a fn or var when present; every
    `:name` resolves through a backend (§6.4); every `:into` names a
-   composition that exists.
+   composition that exists; composition ids are unique over the effective
+   tree.
 2. **Config** — each entry's `:config` validates against the `:config` schema
    of the unit it targets (malli). An entry with no `:config` is not an error
    when the unit has a schema (the unit keeps its own defaults), and a unit
@@ -489,7 +491,7 @@ whose `:id` matches one replaces it, an entry with a new id adds a slot.
 `:into` names entry-declared compositions only — to mount children under a
 group, declare the group as an entry; inline groups (`:units` inside `:units`)
 are private to their unit. Inline group ids still occupy the composition space,
-and `mount!` refuses a mount that uses one twice.
+and `check` refuses a mount that uses one twice.
 
 ### 6.2 Diffing by `:id`
 
