@@ -1,6 +1,7 @@
 (ns kmet.agent.test-event-bus
   (:require [clojure.test :as t]
             [clojure.string :as str]
+            [kmet.agent.debug :as debug]
             [kmet.agent.event-bus :as event-bus]))
 
 ;; ─── Event vocabulary ─────────────────────────────────────────────────────
@@ -41,18 +42,18 @@
 (t/deftest test-event-register-and-emit
   (let [log (atom [])]
     (event-bus/clear-event-listeners!)
-    (event-bus/on-event :test-event (fn [e] (swap! log conj e)))
-    (event-bus/emit-event! {:type :test-event :data "hello"})
+    (event-bus/on-event :turn-start (fn [e] (swap! log conj e)))
+    (event-bus/emit-event! {:type :turn-start :data "hello"})
     (t/is (= 1 (count @log)))
-    (t/is (= :test-event (:type (first @log))))
+    (t/is (= :turn-start (:type (first @log))))
     (t/is (= "hello" (:data (first @log))))))
 
 (t/deftest test-event-multiple-listeners
   (let [log (atom [])]
     (event-bus/clear-event-listeners!)
-    (event-bus/on-event :multi (fn [e] (swap! log conj (str "a:" (:val e)))))
-    (event-bus/on-event :multi (fn [e] (swap! log conj (str "b:" (:val e)))))
-    (event-bus/emit-event! {:type :multi :val 42})
+    (event-bus/on-event :message-start (fn [e] (swap! log conj (str "a:" (:val e)))))
+    (event-bus/on-event :message-start (fn [e] (swap! log conj (str "b:" (:val e)))))
+    (event-bus/emit-event! {:type :message-start :val 42})
     (t/is (= 2 (count @log)))
     (t/is (str/includes? (first @log) "42"))))
 
@@ -60,13 +61,13 @@
   ;; Resource discovery applies a contribution under the owner that made it,
   ;; so the collect emitter reports the pair (P5c).
   (event-bus/clear-event-listeners!)
-  (event-bus/on-event :probe-collect [:app :extensions "a"]
+  (event-bus/on-event :resources-discover [:app :extensions "a"]
                       (fn [_] {:skill-paths ["/a"]}))
-  (event-bus/on-event :probe-collect (fn [_] {:prompt-paths ["/host"]}))
-  (event-bus/on-event :probe-collect [:app :extensions "b"] (fn [_] nil))
+  (event-bus/on-event :resources-discover (fn [_] {:prompt-paths ["/host"]}))
+  (event-bus/on-event :resources-discover [:app :extensions "b"] (fn [_] nil))
   (t/is (= {[:app :extensions "a"] {:skill-paths ["/a"]}
             nil {:prompt-paths ["/host"]}}
-           (into {} (event-bus/emit-event-collect! {:type :probe-collect})))
+           (into {} (event-bus/emit-event-collect! {:type :resources-discover})))
         "the nil result is skipped, the host's registration carries no owner"))
 
 (t/deftest test-event-no-listeners
@@ -77,66 +78,111 @@
 (t/deftest test-event-deregister
   (let [log (atom [])]
     (event-bus/clear-event-listeners!)
-    (let [dereg (event-bus/on-event :dereg-test (fn [e] (swap! log conj e)))]
-      (event-bus/emit-event! {:type :dereg-test :data "first"})
+    (let [dereg (event-bus/on-event :message-end (fn [e] (swap! log conj e)))]
+      (event-bus/emit-event! {:type :message-end :data "first"})
       (dereg)
-      (event-bus/emit-event! {:type :dereg-test :data "second"})
+      (event-bus/emit-event! {:type :message-end :data "second"})
       (t/is (= 1 (count @log)))
       (t/is (= "first" (:data (first @log)))))))
 
 (t/deftest test-event-types-distinct
   (event-bus/clear-event-listeners!)
-  (event-bus/on-event :type-a identity)
-  (event-bus/on-event :type-b identity)
+  (event-bus/on-event :agent-start identity)
+  (event-bus/on-event :agent-end identity)
   (let [types (event-bus/get-event-types)]
-    (t/is (contains? (set types) :type-a))
-    (t/is (contains? (set types) :type-b))))
+    (t/is (contains? (set types) :agent-start))
+    (t/is (contains? (set types) :agent-end))))
 
 (t/deftest test-event-clear
   (event-bus/clear-event-listeners!)
-  (event-bus/on-event :clear-test identity)
+  (event-bus/on-event :status identity)
   (event-bus/clear-event-listeners!)
   (t/is (empty? (event-bus/get-event-types))))
 
 (t/deftest test-event-listener-error-handling
-  (let [log (atom [])]
+  (let [log (atom [])
+        reported (atom [])]
     (event-bus/clear-event-listeners!)
-    (event-bus/on-event :err-test (fn [_] (throw (Exception. "boom"))))
-    (event-bus/on-event :err-test (fn [e] (swap! log conj (:data e))))
-    ;; The throwing listener prints a warning to stderr — suppress it.
-    (binding [*err* (java.io.StringWriter.)]
-      (event-bus/emit-event! {:type :err-test :data "ok"}))
+    (event-bus/on-event :error (fn [_] (throw (Exception. "boom"))))
+    (event-bus/on-event :error (fn [e] (swap! log conj (:data e))))
+    (with-redefs [debug/log-error (fn [& parts] (swap! reported conj parts))]
+      (event-bus/emit-event! {:type :error :data "ok"}))
     (t/is (= 1 (count @log)))
-    (t/is (= "ok" (first @log)))))
+    (t/is (= "ok" (first @log)))
+    (t/is (seq @reported) "the handler error reaches the agent's error reporter")))
 
 (t/deftest test-event-returns-last-non-nil-result
   (event-bus/clear-event-listeners!)
-  (event-bus/on-event :tree-prep (fn [_] {:summary "ext summary"}))
-  (event-bus/on-event :tree-prep (fn [_] nil))
+  (event-bus/on-event :session-before-tree (fn [_] {:summary "ext summary"}))
+  (event-bus/on-event :session-before-tree (fn [_] nil))
   (t/is (= {:summary "ext summary"}
-           (event-bus/emit-event! {:type :tree-prep :x 1}))
+           (event-bus/emit-event! {:type :session-before-tree :x 1}))
         "emit returns the last non-nil handler result (pi: runner.emit)")
   (t/is (nil? (event-bus/emit-event! {:type :unregistered :x 1}))
         "no listeners → nil"))
 
 (t/deftest test-event-handler-error-swallowed
   (event-bus/clear-event-listeners!)
-  (event-bus/on-event :bad (fn [_] (throw (ex-info "boom" {}))))
-  (event-bus/on-event :bad (fn [_] {:ok true}))
-  ;; The throwing listener prints a warning to stderr — suppress it.
-  (binding [*err* (java.io.StringWriter.)]
-    (t/is (= {:ok true} (event-bus/emit-event! {:type :bad}))
+  (event-bus/on-event :message-update (fn [_] (throw (ex-info "boom" {}))))
+  (event-bus/on-event :message-update (fn [_] {:ok true}))
+  (with-redefs [debug/log-error (fn [& _])]
+    (t/is (= {:ok true} (event-bus/emit-event! {:type :message-update}))
           "an errored handler doesn't prevent later handlers or throw")))
+
+(t/deftest test-listeners-dispatch-in-registration-order
+  ;; Deterministic order (F11): one vector per type, so ten listeners fire in
+  ;; the order they registered, and a removed one stays gone — the UUID-keyed
+  ;; map shuffled beyond eight entries and a /reload could reshuffle it.
+  (let [seen (atom [])]
+    (event-bus/clear-event-listeners!)
+    (let [deregs (mapv (fn [i] (event-bus/on-event :turn-end (fn [_] (swap! seen conj i))))
+                       (range 10))]
+      (event-bus/emit-event! {:type :turn-end})
+      (t/is (= (vec (range 10)) @seen)
+            "ten listeners fire in registration order")
+      ((deregs 1))
+      ((deregs 3))
+      (event-bus/on-event :turn-end (fn [_] (swap! seen conj 99)))
+      (reset! seen [])
+      (event-bus/emit-event! {:type :turn-end})
+      (t/is (= [0 2 4 5 6 7 8 9 99] @seen)
+            "a removed listener stays gone; a later registration lands last"))))
+
+(t/deftest test-an-unknown-event-type-is-reported
+  ;; A typo'd :turn-ended used to register silently; the vocabulary is
+  ;; documented, not a gate, so the registration lands and the typo is
+  ;; reported through the agent's error reporter (F12).
+  (let [reported (atom [])]
+    (event-bus/clear-event-listeners!)
+    (with-redefs [debug/log-error (fn [& parts] (swap! reported conj (apply str parts)))]
+      (event-bus/on-event :turn-ended identity))
+    (t/is (seq @reported) "the unknown type is reported")
+    (t/is (str/includes? (first @reported) "turn-ended"))
+    (t/is (contains? (set (event-bus/get-event-types)) :turn-ended)
+          "and the registration still lands")))
+
+(t/deftest test-a-throwable-does-not-stop-the-bus
+  ;; Throwable, not Exception (cells.md §1.2): an Error from one handler must
+  ;; not skip the handlers after it.
+  (let [log (atom [])
+        reported (atom [])]
+    (event-bus/clear-event-listeners!)
+    (event-bus/on-event :message-update (fn [_] (throw (AssertionError. "boom"))))
+    (event-bus/on-event :message-update (fn [e] (swap! log conj (:data e))))
+    (with-redefs [debug/log-error (fn [& parts] (swap! reported conj parts))]
+      (event-bus/emit-event! {:type :message-update :data "after"}))
+    (t/is (= ["after"] @log) "the handlers after the Error still run")
+    (t/is (seq @reported) "and the Error is reported like any handler failure")))
 
 ;; ─── Boundary dispatch (pi: runner.emitBoundary) ──────────────────────────
 
 (t/deftest test-boundary-threads-handler-results
   (let [seen (atom [])]
     (event-bus/clear-event-listeners!)
-    (event-bus/on-event :b1 (fn [e] (swap! seen conj e) {:entries [:a]}))
-    (event-bus/on-event :b1 (fn [e] (swap! seen conj e) {:continue true}))
+    (event-bus/on-event :turn-end (fn [e] (swap! seen conj e) {:entries [:a]}))
+    (event-bus/on-event :turn-end (fn [e] (swap! seen conj e) {:continue true}))
     (t/is (= {:entries [:a] :continue true}
-             (event-bus/emit-boundary! {:type :b1 :entries [] :continue false}))
+             (event-bus/emit-boundary! {:type :turn-end :entries [] :continue false}))
           "each handler's keys replace the accumulated ones")
     (t/is (= [] (:entries (first @seen))) "the first handler sees the event as given")
     (t/is (= [:a] (:entries (second @seen)))
@@ -147,20 +193,19 @@
 
 (t/deftest test-boundary-nil-and-non-map-results-keep-the-state
   (event-bus/clear-event-listeners!)
-  (event-bus/on-event :b2 (fn [_] {:entries [:a]}))
-  (event-bus/on-event :b2 (fn [_] nil))
-  (event-bus/on-event :b2 (fn [_] :bogus))
+  (event-bus/on-event :agent-settled (fn [_] {:entries [:a]}))
+  (event-bus/on-event :agent-settled (fn [_] nil))
+  (event-bus/on-event :agent-settled (fn [_] :bogus))
   (t/is (= {:entries [:a]}
-           (event-bus/emit-boundary! {:type :b2 :entries []}))
+           (event-bus/emit-boundary! {:type :agent-settled :entries []}))
         "a nil or non-map result leaves the accumulated state alone"))
 
 (t/deftest test-boundary-handler-error-swallowed
   (event-bus/clear-event-listeners!)
-  (event-bus/on-event :b3 (fn [_] (throw (ex-info "boom" {}))))
-  (event-bus/on-event :b3 (fn [_] {:continue true}))
-  ;; The throwing listener prints a warning to stderr — suppress it.
-  (binding [*err* (java.io.StringWriter.)]
-    (t/is (= {:continue true} (event-bus/emit-boundary! {:type :b3}))
+  (event-bus/on-event :agent-before-settle (fn [_] (throw (ex-info "boom" {}))))
+  (event-bus/on-event :agent-before-settle (fn [_] {:continue true}))
+  (with-redefs [debug/log-error (fn [& _])]
+    (t/is (= {:continue true} (event-bus/emit-boundary! {:type :agent-before-settle}))
           "an errored boundary handler is skipped, later handlers still run")))
 
 (t/deftest test-event-vocabulary-partition

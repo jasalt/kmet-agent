@@ -496,24 +496,19 @@
       (reset! (:compacting? (rt/agent-state engine)) false)
       (is (true? (rt/wait-idle! engine 100)) "idle again after both clear"))))
 
-(deftest test-an-engine-adopts-the-subscriptions-registered-before-it
-  ;; Extensions subscribe at load, before any engine exists, and the engine's
-  ;; listener atom is what the bus reads from then on: it starts from what the
-  ;; process already has. A fresh atom orphaned every extension handler —
-  ;; :resources-discover included — because nothing re-registers them.
+(deftest test-a-subscription-outlives-any-engine
+  ;; Extensions subscribe at load, before any engine exists, and the bus is a
+  ;; process-level registry (F10): an engine neither adopts nor wipes it, so
+  ;; a subscription is live before the first engine and after that engine is
+  ;; disposed — the engine-owned copy started the next one blind.
   (event-bus/clear-event-listeners!)
   (let [fired (atom 0)
-        dereg (event-bus/on-event :probe-adopt (fn [_] (swap! fired inc)))]
+        dereg (event-bus/on-event :message-start (fn [_] (swap! fired inc)))]
     (try
-      (let [dir (str "target/test-adopt-listeners-" (System/currentTimeMillis))
-            sess (session/create-session dir {:cwd (str (fs/cwd))})
-            engine (rt/bootstrap (test-config) {:session sess})]
-        (try
-          (event-bus/emit-event! {:type :probe-adopt})
-          (is (= 1 @fired) "the subscription registered before the engine fires")
-          (finally
-            (rt/dispose! engine)
-            (fs/delete-tree dir))))
+      (with-engine (fn [_ _] (event-bus/emit-event! {:type :message-start})))
+      (is (= 1 @fired) "the subscription registered before the engine fires")
+      (with-engine (fn [_ _] (event-bus/emit-event! {:type :message-start})))
+      (is (= 2 @fired) "and it survives the first engine's disposal")
       (finally (dereg)))))
 
 (deftest test-two-engines-do-not-cross-contaminate
@@ -528,8 +523,9 @@
                {:cwd (str (fs/cwd))})
         e2 (rt/bootstrap (test-config) {:session sess2})]
     (try
-      (is (not (identical? (:event-listeners e1) (:event-listeners e2)))
-          "the event listeners, still an engine's, are not shared")
+      ;; The bus is not an engine's (F10): its registry is process-level, so
+      ;; there is no per-engine listener storage to compare (see
+      ;; test-a-subscription-outlives-any-engine).
       ;; The registries moved in P2 — tools, commands, prompts, skills,
       ;; renderers, flags and the extension hooks — are the app's, not an
       ;; engine's: neither engine owns them, so a registration reaches both,

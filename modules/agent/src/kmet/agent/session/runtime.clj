@@ -254,15 +254,7 @@
                              :compaction-queued (atom [])
                              :pending-compaction (atom [])
                              :pending-ui (atom {})
-                             :run-callbacks (atom nil)
-                             ;; Adopt the process's subscribers: extensions
-                             ;; register their handlers at load, before any
-                             ;; engine exists, and `emit-event!` reads this
-                             ;; atom from here on (cells.md §5.1 — a
-                             ;; subscription's owner is its registrant, not
-                             ;; the engine). v1 is single-engine, so disposal
-                             ;; drops them with it.
-                             :event-listeners (atom @(event-bus/default-event-listener-atom))})]
+                             :run-callbacks (atom nil)})]
     ;; Runtime-scoped extension surface: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent, and the
     ;; front-end binding carries the headless port and kind. Both are
@@ -271,7 +263,6 @@
     ;; no-node read cache. A front end with its own port re-installs once its
     ;; widgets exist.
     (let [node (:node agent-state)]
-      (event-bus/set-default-event-listener-atom! (:event-listeners engine))
       (extensions/install-session! node (:session agent-state))
       (extensions/install-context-sink!
        node (fn [msg] (agent/add-context-message! (agent-state engine) msg)))
@@ -1379,10 +1370,6 @@
     (doseq [{:keys [promise default]} (vals @(:pending-ui engine))]
       (deliver promise default))
     (reset! (:pending-ui engine) {})
-    ;; drop this engine's extension event-listeners from circulation; with v1's
-    ;; single engine, the process default points back at a fresh empty atom.
-    (reset! (event-bus/default-event-listener-atom) {})
-    (event-bus/set-default-event-listener-atom! (atom {}))
     ;; The extension surface is owner-scoped registrations on the engine's
     ;; tree: dropping the owners runs their teardowns, which clear the
     ;; process caches and restore the headless binding. A node-less engine

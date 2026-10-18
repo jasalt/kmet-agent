@@ -7,7 +7,12 @@
 
    Mirrors pi's extension event types — see
    modules/agent/src/kmet/agent/development/pi-alignment.md, Appendix: Event
-   Type Vocabulary — and pi's core/event-bus.js.")
+   Type Vocabulary — and pi's core/event-bus.js.
+
+   The extension bus itself is a process-level registry: a subscription lives
+   from an extension's load to its unload, in registration order, and no
+   engine owns, copies or clears it (cells.md §12 Q3)."
+  (:require [kmet.agent.debug :as debug]))
 
 (def event-types
   "Map of event type keyword → description. The canonical vocabulary.
@@ -390,28 +395,29 @@
   (contains? event-types type))
 
 ;; ─── Extension event bus ──────────────────────────────────────────────────
-;; Global listener registry. Extensions register callbacks with on-event;
-;; the agent loop and app routes events through emit-event!.
+;; The process listener registry. Extensions register callbacks with
+;; on-event; the loop and the front ends route events through emit-event!.
+;; One structure, process-level: extensions subscribe at load, before any
+;; engine exists, and their lifetime is load → unload, so an engine neither
+;; adopts nor wipes it (cells.md §12 Q3).
 
-(defonce ^:private ^:dynamic *default-event-listener-atom*
-  (atom (atom {})))
+(defonce ^:private listeners
+  ;; {event-type [{:callback f :owner path} …]} — one vector per type, so
+  ;; iteration is registration order. A deregister removes its own entry by
+  ;; identity; an entry already gone is a no-op (a reload deregisters what a
+  ;; previous load installed).
+  (atom {}))
 
-(defn set-default-event-listener-atom!
-  "Install the event-listener atom owned by ENGINE as the process default
-   (v1 single-engine; multi-engine scopes these per engine later)."
-  [listener-atom]
-  (reset! *default-event-listener-atom* listener-atom))
-
-(defn default-event-listener-atom
-  "The process default event-listener atom (the one install/dispose treat
-   as current)."
-  []
-  @*default-event-listener-atom*)
-
-(defn- default-event-listeners
-  "The listener map atom used by event-listener registration and emission."
-  []
-  @*default-event-listener-atom*)
+(defn- register-listener!
+  "Add ENTRY to EVENT-TYPE's registrations and return its deregister fn."
+  [event-type entry]
+  (swap! listeners update event-type (fnil conj []) entry)
+  (fn deregister []
+    (swap! listeners
+           (fn [ls]
+             (if-let [entries (get ls event-type)]
+               (assoc ls event-type (into [] (remove #(identical? % entry)) entries))
+               ls)))))
 
 (defn on-event
   "Register a callback for an event type.
@@ -424,63 +430,62 @@
                 contribution can be applied under the owner that made it
                 (resource discovery, cells.md §5.1).
    callback   — (fn [event-map])
-   Returns a deregister function."
+   Returns a deregister function. A type outside the vocabulary is reported
+   and registered anyway: the vocabulary is documented, not a gate."
   ([event-type callback] (on-event event-type nil callback))
   ([event-type owner callback]
-   (let [listeners (default-event-listeners)
-         id (random-uuid)]
-     (swap! listeners update event-type assoc id {:callback callback
-                                                  :owner owner})
-     (fn [] (swap! (default-event-listeners) update event-type dissoc id)))))
+   (when-not (known-event-type? event-type)
+     (debug/log-error "event-bus: unknown event type " (pr-str event-type)
+                      " — see kmet.agent.event-bus/event-types"))
+   (register-listener! event-type {:callback callback :owner owner})))
 
 (defn clear-event-listeners!
   "Remove all event listeners (for testing)."
   []
-  (reset! (default-event-listeners) {}))
+  (reset! listeners {}))
 
 (defn- invoke-handler
-  "Call CB with EVENT, returning nil and warning on a throw — a broken
+  "Call CB with EVENT, returning nil and reporting a throw — a broken
    extension never breaks the bus (pi: the runner reports the handler error
-   and carries on)."
+   and carries on). Throwable, not Exception: an Error from one handler must
+   not stop the bus or skip the handlers after it (cells.md §1.2)."
   [cb event]
   (try
     (cb event)
-    (catch Exception e
-      (binding [*out* *err*]
-        (println "Warning: extension event handler error:" (ex-message e)))
+    (catch Throwable e
+      (debug/log-error "extension event handler error: " e)
       nil)))
 
 (defn emit-event!
-  "Emit an event to all registered listeners.
+  "Emit an event to all registered listeners, in registration order.
    event — map with :type keyword and any additional data.
    Returns the last non-nil handler result (pi: runner.emit — the tree
    navigation reads :session-before-tree results: :cancel, :summary, ...)."
   [event]
-  (let [type (:type event)
-        listeners (get @(default-event-listeners) type)]
-    (when listeners
-      (reduce (fn [acc [_ {:keys [callback]}]]
+  (let [entries (get @listeners (:type event))]
+    (when entries
+      (reduce (fn [acc {:keys [callback]}]
                 (let [result (invoke-handler callback event)]
                   (if (some? result) result acc)))
               nil
-              listeners))))
+              entries))))
 
 (defn emit-event-collect!
   "Emit an event and return EVERY non-nil handler result as [owner result]
-   pairs (pi: emitResourcesDiscover collects each handler's contribution —
-   unlike emit-event!, results are not reduced to the last non-nil). OWNER is
+   pairs, in registration order (pi: emitResourcesDiscover collects each
+   handler's contribution — unlike emit-event!, results are not reduced to
+   the last non-nil). OWNER is
    what `on-event` was registered with, nil for a host registration, so a
-   caller can apply a contribution under the owner that made it.
-   Throwing handlers are skipped and warned, same as emit-event!."
+   callers can apply a contribution under the owner that made it.
+   Throwing handlers are skipped and reported, same as emit-event!."
   [event]
-  (let [type (:type event)
-        listeners (get @(default-event-listeners) type)]
-    (when listeners
+  (let [entries (get @listeners (:type event))]
+    (when entries
       (into []
-            (keep (fn [[_ {:keys [owner callback]}]]
+            (keep (fn [{:keys [owner callback]}]
                     (when-let [result (invoke-handler callback event)]
                       [owner result])))
-            listeners))))
+            entries))))
 
 (defn emit-boundary!
   "Emit an actionable boundary event (a :turn-end or :agent-before-settle
@@ -488,19 +493,19 @@
    (pi: runner.emitBoundary): a handler receives the event merged with the
    accumulated result so far and returns a map ({:entries [...] :continue
    bool}) whose keys replace the accumulated ones; nil (or a non-map) keeps
-   them. Returns the accumulated map — nil when no handler returned one.
-   Throwing handlers are skipped and warned, same as emit-event!."
+   them. Handlers run in registration order. Returns the accumulated map —
+   nil when no handler returned one.
+   Throwing handlers are skipped and reported, same as emit-event!."
   [event]
-  (let [type (:type event)
-        listeners (get @(default-event-listeners) type)]
-    (when listeners
-      (reduce (fn [acc [_ {:keys [callback]}]]
+  (let [entries (get @listeners (:type event))]
+    (when entries
+      (reduce (fn [acc {:keys [callback]}]
                 (let [result (invoke-handler callback (if acc (merge event acc) event))]
                   (if (map? result) (merge acc result) acc)))
               nil
-              listeners))))
+              entries))))
 
 (defn get-event-types
   "List all registered event types."
   []
-  (keys @(default-event-listeners)))
+  (keys @listeners))

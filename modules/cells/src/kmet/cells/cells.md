@@ -893,12 +893,15 @@ explicit request.
    vocabulary. Whether it earns its place should be decided at P5 with the
    extensions that would use it, not invented now.
    **Settled at P5c**: no sugar. A subscription is process-level — it must be
-   live before any engine mounts, and the bus reads it from the process's
-   listener set — so it is not a slot's registration and a mount-time `:on` key
+   live before any engine mounts, and the bus reads its own process-level
+   registry — so it is not a slot's registration and a mount-time `:on` key
    would describe the wrong lifetime; the imperative `on-event` call plus the
-   extension's tracked deregister is what the consumers use (P5c also fixed
-   that call's lifetime: an engine adopts the process's subscribers instead of
-   replacing the set with an empty one).
+   extension's tracked deregister is what the consumers use. The registry is
+   one ordered structure the engine never owns: bootstrap and disposal neither
+   copy nor clear it (the F10 follow-up), so a subscription survives an engine
+   and a second bootstrap sees it; dispatch reads it in registration order
+   (the load order pi iterates), and a handler failure is reported through
+   `kmet.agent.debug/log-error` instead of a console.
 4. **`composition` (data) as an ABI.** **Settled with P1**: §5.4's entry shape
    is the compatibility surface — `explain`'s string form stays cosmetic and
    free to change. Changing the shape is now a deliberate, documented act,
