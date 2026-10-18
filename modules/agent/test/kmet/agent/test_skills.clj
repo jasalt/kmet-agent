@@ -342,6 +342,27 @@
     (t/is (nil? (skills/get-skill "nodesc")))
     (skills/clear-skills!)))
 
+(t/deftest test-extension-skill-deregister-targets-its-registration
+  ;; A colliding registration is not made, so its deregister is a no-op and
+  ;; cannot remove the winner; the winner's own fn removes exactly it.
+  (skills/clear-skills!)
+  (try
+    (let [dereg-winner (skills/register-extension-skill!
+                        "---\nname: dereg-winner\ndescription: Winner.\n---\nW"
+                        {:location "a:skills/dereg-winner/SKILL.md" :extension "a"})
+          dereg-loser (binding [*err* (java.io.StringWriter.)]
+                        (skills/register-extension-skill!
+                         "---\nname: dereg-winner\ndescription: Loser.\n---\nL"
+                         {:location "b:skills/dereg-winner/SKILL.md" :extension "b"}))]
+      (dereg-loser)
+      (t/is (= "Winner." (:description (skills/get-skill "dereg-winner")))
+            "the loser's no-op left the winner in place")
+      (dereg-winner)
+      (t/is (nil? (skills/get-skill "dereg-winner")) "the winner's fn removes it")
+      (t/is (empty? (scope/for-key (app-runtime/node)
+                                   [:kmet/skill "dereg-winner"]))))
+    (finally (skills/clear-skills!))))
+
 (t/deftest test-extension-skill-readable-via-read-tool
   (t/testing "extension skill bodies load through the read tool under their location"
     (skills/clear-skills!)
