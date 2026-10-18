@@ -22,8 +22,8 @@
 
 (defn- blocked-result
   "The canonical result of a blocked call (pi: beforeToolCall :block). The
-   hook's :terminate rides through — the loop's batch handling reads it; the
-   run_code bridge drops it (there is no batch)."
+   hook's :terminate rides through: the loop's batch handling reads it, and a
+   script's inner call reports it to the script."
   [hook-result]
   (cond-> {:content (or (:reason hook-result) "Tool execution was blocked")
            :is-error true}

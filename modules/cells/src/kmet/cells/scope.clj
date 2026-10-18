@@ -101,6 +101,12 @@
                      (remember-owner owner))))
   f)
 
+(defn- owner-entries
+  "OWNER's registrations in a store snapshot S: [[key value] …], in
+   registration order (a replacement moves to the end)."
+  [s owner]
+  (into [] (map (juxt :key :value)) (get-in s [:by-owner owner])))
+
 (defn owner-keys
   "The set of keys owner registered — what `composition`/`explain` report.
    A registry that lists itself in registration order wants
@@ -112,7 +118,7 @@
   "OWNER's registrations in registration order: [[key value] …]. Replacing a
    registration moves it to the end, as it does for the host's registry."
   [node owner]
-  (into [] (map (juxt :key :value)) (get-in @(:store node) [:by-owner owner])))
+  (owner-entries @(:store node) owner))
 
 (defn owners
   "Every owner path on the store, in first-registration order — what
@@ -129,13 +135,15 @@
   "Every registration on the node as [key owner value]: owners in
    first-registration order, each owner's registrations in its own
    registration order — the order a host registry lists and reads in
-   (cells.md §5.1). Linear in the whole store; one key's owners are
-   `for-key`."
+   (cells.md §5.1). One store snapshot, so a registration made while it runs
+   cannot split the answer; a single key's owners are `for-key`."
   [node]
-  (into []
-        (mapcat (fn [owner]
-                  (map (fn [[k v]] [k owner v]) (owner-registrations node owner))))
-        (owners node)))
+  (let [s @(:store node)]
+    (into []
+          (mapcat (fn [owner]
+                    (map (fn [[key value]] [key owner value])
+                         (owner-entries s owner))))
+          (:owner-order s))))
 
 (defn for-key
   "Every value registered under k: {owner value}."

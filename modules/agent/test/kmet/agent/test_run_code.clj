@@ -337,7 +337,7 @@
                              (swap! payloads conj ctx)
                              (when (= "run-code-test-echo" (:tool-name ctx))
                                (if (:block (:args ctx))
-                                 {:block true :reason "blocked by hook"}
+                                 {:block true :reason "blocked by hook" :terminate true}
                                  {:args (assoc (:args ctx) :hooked true)})))
                    :after (fn [ctx]
                             (when (= "run-code-test-echo" (:tool-name ctx))
@@ -348,6 +348,8 @@
             (t/is (str/includes? (:content r) ":n 1, :hooked true"))
             (t/is (str/includes? (:content r) "|after"))
             (t/is (str/includes? (:content r) "blocked by hook|after"))
+            (t/is (str/includes? (:content r) ":terminate true")
+                  "a blocked inner call reports the hook's :terminate to the script")
             (t/is (= 2 (count (get-in r [:details :calls]))))
             (t/is (not (:ok (get-in r [:details :calls 1])))))
           (t/is (= #{"run_code-0" "run_code-1"} (set (map :tool-call-id @payloads))))

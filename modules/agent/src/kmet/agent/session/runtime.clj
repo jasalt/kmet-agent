@@ -79,8 +79,9 @@
 (defn- extension-before-tool-call
   "Chain extension tool-call hooks (pi: beforeToolCall) — the runtime wires
    them for every front end, so write-reject / edit-warn hooks fire in
-   headless runs too. Returns nil | {:args ...} | the first blocking hook's
-   result verbatim, so its :terminate reaches the call's block result."
+   headless runs too. Every hook runs; the value is nil | {:args ...} | the
+   first blocking hook's result verbatim, so its :terminate reaches the call's
+   block result (a later block or rewrite is ignored once blocked)."
   [ctx]
   (loop [hooks (extensions/get-tool-call-hooks)
          blocked nil

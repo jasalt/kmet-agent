@@ -92,8 +92,8 @@
               → nil | {:content … :is-error …}
    nil = no hooks (extension code calling the tool outside a loop run).
    A scripted inner call carries a synthetic :tool-call-id and the turn's
-   :assistant-message (from *assistant-message*), and the hook's :terminate
-   hint is ignored (there is no batch)."
+   :assistant-message (from *assistant-message*); a blocked call's :terminate
+   rides through to the script's result — an inner call has no batch to stop."
   nil)
 
 (def ^:dynamic *assistant-message*
@@ -729,10 +729,9 @@
                                                  :bindings {:signal signal
                                                             :session-env-fn session-env-fn
                                                             :cwd cwd})))
-                              result (-> (invoke/finish-tool-call
-                                          (assoc call :after-hook (:after hooks))
-                                          executed)
-                                         (dissoc :terminate))]
+                              result (invoke/finish-tool-call
+                                      (assoc call :after-hook (:after hooks))
+                                      executed)]
                           (try
                             (swap! trace assoc-in [idx]
                                    (cond-> {:tool name

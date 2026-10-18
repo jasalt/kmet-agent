@@ -934,8 +934,9 @@ Scripted tool calls run through the same hooks: a `run_code` call's inner
 before hook (block with `{:block true :reason ...}`, or rewrite with
 `{:args ...}`) and the after hook (override `:content` / `:is-error`). Two
 caveats: an inner call carries a synthetic `:tool-call-id` (but the batch's
-assistant message), and a blocked call's `:terminate` hint is ignored
-(there is no batch). Inner calls still produce no tool-execution events and
+assistant message), and a blocked call's `:terminate` hint rides through to
+the script's result (there is no batch to stop). Inner calls still produce no
+tool-execution events and
 no transcript/session entries. A per-tool hook is policy, not a sandbox —
 the run_code sandbox can also shell out through `babashka.process`
 (`p/sh`/`p/shell`/`p/process`) which no per-tool hook covers — so blocking

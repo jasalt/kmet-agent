@@ -617,7 +617,7 @@ must emit it.
   `:content`/`:is-error` overrides apply, for blocked calls too. An inner
   call has a synthetic `:tool-call-id` but carries the batch's
   `:assistant-message` (`run-code/*assistant-message*`), and its `:terminate`
-  hint is dropped; it still emits no tool-execution event or
+  hint rides through to the script; it still emits no tool-execution event or
   transcript/session entry. A per-tool hook is policy, not a sandbox (the
   script can shell out via `babashka.process`), so gating the outer `run_code`
   call is the only real block.
@@ -730,8 +730,8 @@ additions; pi has no parallel-tool-call guidance.
   the before hook can block (the call settles with its reason and never
   executes) or rewrite args, the after hook can override `:content` /
   `:is-error` — for blocked calls too, loop parity. Caveats: an inner call
-  carries a synthetic `:tool-call-id`, its `:terminate` hint is ignored
-  (there is no batch), and it still produces no
+  carries a synthetic `:tool-call-id`, its `:terminate` hint rides through
+  (there is no batch to stop), and it still produces no
   tool-execution event, transcript or session entry. Mutation tools ride the
   same bridge; the callable set is every active tool, not a read-only subset.
   A per-tool gate is policy, not a sandbox — the script can also shell out
@@ -874,9 +874,9 @@ pipeline both callers use:
   gone. The sequential path now honors a before-hook arg rewrite (it
   previously ignored one while parallel honored it).
 - **Script** runs prepare → execute → finish inside its pool task; a blocked
-  call settles with the hook's reason (its `:terminate` hint is dropped — no
-  batch) and the after hook still runs, matching the loop. Promises, trace,
-  gate and discovery stay bridge-local.
+  call settles with the hook's reason (its `:terminate` hint rides through — no
+  batch to stop) and the after hook still runs, matching the loop. Promises,
+  trace, gate and discovery stay bridge-local.
 - **Hooks reach the script** through `run-code/*tool-hooks*`, bound in
   `run-agent-turn` as thunks over the agent's
   `:before-tool-call`/`:after-tool-call` (the mode-built chains over
