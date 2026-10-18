@@ -50,6 +50,20 @@
           agent-root (str/replace (str (fs/parent (:src agent-mod))) "\\" "/")]
       (is (= {:local/root agent-root} (get (:deps (read-edn "deps.edn")) 'kmetia/agent))))))
 
+(deftest extension-bb-edn-paths-cover-the-module-trees
+  (testing "an extension project's bb.edn lists its own trees and every module source"
+    (let [module-srcs (mapv #(str "../../" %) (modules/module-src-paths))]
+      (doseq [ext (modules/extensions)]
+        (let [dir (str (fs/path (modules/extension-root) (:name ext)))
+              bb-edn (str (fs/path dir "bb.edn"))]
+          (is (fs/exists? bb-edn) (str bb-edn " exists"))
+          (when (fs/exists? bb-edn)
+            (let [paths (:paths (read-edn bb-edn))]
+              (is (every? #(fs/directory? (fs/path dir %)) paths)
+                  (str bb-edn " declares only real directories"))
+              (is (every? (set paths) (into ["src" "test"] module-srcs))
+                  (str bb-edn " covers its own trees and the module sources")))))))))
+
 (deftest derived-test-registry-is-nonempty
   (testing "the scan covers every test root"
     (let [files (modules/test-namespace-files)]

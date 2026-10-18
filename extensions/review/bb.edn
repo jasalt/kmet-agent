@@ -1,4 +1,9 @@
-{:paths ["src" "test" "../../src"]
+{:paths ["src" "test"
+         "../../modules/cells/src" "../../modules/reakt/src"
+         "../../modules/hikap/src" "../../modules/libs/src"
+         "../../modules/tui/src" "../../modules/ai/src"
+         "../../modules/agent/src" "../../modules/loader/src"
+         "../../modules/tk/src"]
  :tasks
  {test {:doc "Run review extension tests (args: test namespace names)"
         :task (let [nss (or (some->> *command-line-args* (map symbol))

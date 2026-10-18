@@ -1,9 +1,17 @@
-{:paths ["src" "test" "../../src"]
- :deps {;; tests load ../../src, whose kmet.libs.http requires the
+{:paths ["src" "test"
+         "../../modules/cells/src" "../../modules/reakt/src"
+         "../../modules/hikap/src" "../../modules/libs/src"
+         "../../modules/tui/src" "../../modules/ai/src"
+         "../../modules/agent/src" "../../modules/loader/src"
+         "../../modules/tk/src"]
+ :deps {;; tests load the module trees, whose kmet.libs.http requires the
         ;; kmet.libs.json seam → clojure.data.json — bb >= 1.13.224 bundles
         ;; it (the built-in wins), declared for a standalone classpath and
         ;; version-aligned with the root deps.edn.
-        org.clojure/data.json {:mvn/version "2.5.2"}}
+        org.clojure/data.json {:mvn/version "2.5.2"}
+        ;; the module trees require malli at load time
+        ;; (kmet.agent.config-schema), pinned at the root deps.edn version.
+        metosin/malli {:mvn/version "0.20.1"}}
  :tasks
  {test {:doc "Run tree-sitter extension tests (args: namespace symbols; defaults to the offline set)"
         :task (let [nss (or (some->> *command-line-args* (map symbol))

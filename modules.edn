@@ -3,7 +3,8 @@
 ;; Classpath and embed order is the listing order (it decides shadowing);
 ;; :rank is the layering guard's ordering (kmet.test-module-deps). Extension
 ;; projects are not workspace modules: each is an independently loadable
-;; extension with its own deps.edn.
+;; extension with its own bb.edn test entry (and, when it needs library deps,
+;; a deps.edn).
 {:modules
  [{:name "cells" :src "modules/cells/src" :test "modules/cells/test" :rank 0}
   {:name "reakt" :src "modules/reakt/src" :test "modules/reakt/test" :rank 0}
