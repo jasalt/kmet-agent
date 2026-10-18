@@ -10,6 +10,7 @@
    so it is disposed with the mount instead of reset by hand."
   (:require [clojure.string :as str]
             [kmet.agent.loop-guard :as loop-guard]
+            [kmet.agent.retry :as retry]
             [kmet.cells.core :as cells]))
 
 (def ^:private loop-guard-unit
@@ -19,19 +20,33 @@
   {:config [:map [:threshold :int]]
    :handle loop-guard/loop-guard-filter})
 
+(def ^:private retry-unit
+  "The provider-error retry policy's descriptor: the loop group's second
+   inline stage default, and a resolvable name so an entry can replace it
+   (`:into :agent-loop`). The handle classifies an errored call into the
+   loop's next move — a retry with backoff, the overflow recovery, or
+   terminal; its config carries the budget and the backoff shape."
+  {:config [:map [:max-retries {:optional true} :int]
+            [:base-delay-ms {:optional true} :int]
+            [:max-agent-delay-ms {:optional true} :int]]
+   :handle retry/retry-decision})
+
 (def builtin-units
   "kmet's own units by name. A unit is a descriptor (cells.md §3): `:start`
    runs at mount with `(node owner-path)` and `:handle` is the value a caller
    reaches through the snapshot.
 
    `:kmet/agent-loop` is the loop's composition (cells.md §5.6): its inline
-   `:units` are the stages a loop mounts with — today the repeat-loop guard —
-   so the same descriptor mounts as the root loop and as a subagent's loop. An
-   entry with the same id and `:into :agent-loop` replaces one."
+   `:units` are the stages a loop mounts with — the repeat-loop guard and the
+   retry policy — so the same descriptor mounts as the root loop and as a
+   subagent's loop. An entry with the same id and `:into :agent-loop` replaces
+   one."
   {:kmet/agent-loop
-   {:units {:loop-guard loop-guard-unit}}
-   ;; the guard's own name, so an entry can override the inline default
+   {:units {:loop-guard loop-guard-unit
+            :retry-policy retry-unit}}
+   ;; the stages' own names, so an entry can override an inline default
    :kmet/loop-guard loop-guard-unit
+   :kmet/retry retry-unit
    ;; an address, not a container: the slash command registry registers under
    ;; this slot's path, so the slot is what makes its keys visible in /units
    ;; (cells.md §5.1). Commands are registrations, not units — the group is

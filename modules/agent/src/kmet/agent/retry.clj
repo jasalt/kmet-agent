@@ -216,9 +216,15 @@
        compact once, then retry the same turn
      {:kind :backoff :attempt n :delay-ms ms :max-attempts max-retries} —
        retryable within budget: exponential backoff, same turn
-     {:kind :terminal} — non-retryable or retries exhausted"
+     {:kind :terminal} — non-retryable or retries exhausted
+
+   STATE is one map: the errored message under :err, the run's :retry-count /
+   :overflow-recovered / :has-session, and the policy's :max-retries (default
+   3), :base-delay-ms (default 2000) and :max-agent-delay-ms (default 60s) —
+   the keys a mount's entry config carries."
   [{:keys [err retry-count max-retries base-delay-ms max-agent-delay-ms
-           overflow-recovered has-session]}]
+           overflow-recovered has-session]
+    :or {retry-count 0 max-retries 3}}]
   (cond
     (and (not overflow-recovered)
          (context-overflow? err)

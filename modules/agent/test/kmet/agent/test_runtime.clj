@@ -55,10 +55,13 @@
 (deftest the-loop-group-carries-its-stage-defaults
   (let [node (runtime/node)
         stages (runtime/snapshot node :agent-loop)]
-    (is (= [:loop-guard] (keys stages)))
+    (is (= [:loop-guard :retry-policy] (sort (keys stages))))
     (is (= [:app :agent-loop :loop-guard] (:owner (:loop-guard stages))))
+    (is (= [:app :agent-loop :retry-policy] (:owner (:retry-policy stages))))
     (is (fn? (runtime/handle stages :loop-guard)))
-    (is (nil? (runtime/config stages :loop-guard))
+    (is (fn? (runtime/handle stages :retry-policy)))
+    (is (nil? (runtime/config stages :loop-guard)))
+    (is (nil? (runtime/config stages :retry-policy))
         "an inline stage default carries no entry config")))
 
 (deftest an-entry-overrides-a-group-stage

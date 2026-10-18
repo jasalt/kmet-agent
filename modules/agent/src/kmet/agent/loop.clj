@@ -2489,6 +2489,11 @@ Be precise and concise in your responses."}}]
    (RUN-TOKEN keys the accumulator) and :will-retry."
   [agent run-token {:keys [on-text on-thinking on-error]}]
   (let [units (runtime/snapshot (:node agent) :agent-loop) ; the loop group, one read per attempt (cells.md §5.4)
+        retry-decide (runtime/require-handle units :retry-policy)
+        ;; the policy's values: an entry config over the run's options (the
+        ;; mount host seeds them until bootstrap mounts the configured entry)
+        retry-policy (merge (select-keys @(:cfg agent) [:max-retries :base-delay-ms :max-agent-delay-ms])
+                            (runtime/config units :retry-policy))
         text-buf (atom "")
         agent-end (fn [error will-retry]
                     (when-let [s (:session agent)]
@@ -2581,14 +2586,12 @@ Be precise and concise in your responses."}}]
                                            :error)]
                                   (finish-turn! agent t msg [])
                                   (let [{:keys [kind] :as action}
-                                        (retry/retry-decision
-                                         {:err err
-                                          :retry-count @(:retry-count agent)
-                                          :max-retries (:max-retries @(:cfg agent))
-                                          :base-delay-ms (:base-delay-ms @(:cfg agent))
-                                          :max-agent-delay-ms (:max-agent-delay-ms @(:cfg agent))
-                                          :overflow-recovered @(:overflow-recovered agent)
-                                          :has-session (some? (:session agent))})]
+                                        (retry-decide
+                                         (merge retry-policy
+                                                {:err err
+                                                 :retry-count @(:retry-count agent)
+                                                 :overflow-recovered @(:overflow-recovered agent)
+                                                 :has-session (some? (:session agent))}))]
                                     (if (= :backoff kind)
                                       (do (agent-end err true)
                                           {:status :retry :error err :action action
@@ -2619,14 +2622,12 @@ Be precise and concise in your responses."}}]
                                         msg (record-abandoned-attempt! agent result :error)
                                         _ (finish-turn! agent t msg [])
                                         {:keys [kind] :as action}
-                                        (retry/retry-decision
-                                         {:err err
-                                          :retry-count @(:retry-count agent)
-                                          :max-retries (:max-retries @(:cfg agent))
-                                          :base-delay-ms (:base-delay-ms @(:cfg agent))
-                                          :max-agent-delay-ms (:max-agent-delay-ms @(:cfg agent))
-                                          :overflow-recovered @(:overflow-recovered agent)
-                                          :has-session (some? (:session agent))})]
+                                        (retry-decide
+                                         (merge retry-policy
+                                                {:err err
+                                                 :retry-count @(:retry-count agent)
+                                                 :overflow-recovered @(:overflow-recovered agent)
+                                                 :has-session (some? (:session agent))}))]
                                     (case kind
                                     ;; Context overflow → the caller compacts
                                     ;; once, then retries (pi: overflow is

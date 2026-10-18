@@ -1902,6 +1902,46 @@
               "the mount's entry config reached the mounted handle")
         (t/is (= :idle @(:status agent)) "the run settled through the guard")))))
 
+(t/deftest test-loop-runs-the-retry-policy-mounted-in-its-node
+  ;; The retry policy is a group stage too: a spy replacing it decides the
+  ;; errored call's next move, and its entry config overrides the run's own
+  ;; option (cells.md §5.4, §6.1).
+  (let [seen (atom [])
+        spy (fn [state]
+              (swap! seen conj state)
+              (retry/retry-decision state))
+        rt (cells/runtime {:resolve [[:builtin (fn [nm]
+                                                 (if (= :kmet/retry nm)
+                                                   {:handle spy}
+                                                   (get runtime/builtin-units nm)))]]})
+        mine (cells/mount! rt [{:id :agent-loop :name :kmet/agent-loop}
+                               {:id :retry-policy :into :agent-loop
+                                :name :kmet/retry
+                                :config {:max-retries 1}}])
+        calls (atom 0)
+        ;; the run's own budget would end the error immediately; the mount's
+        ;; config is the one that counts
+        agent (loop/make-agent-state :node mine :max-retries 0
+                                     :base-delay-ms 1 :on-event (fn [_]))]
+    (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                  llm/send-message
+                  (fn [opts]
+                    (future
+                      (if (= 1 (swap! calls inc))
+                        (when-let [on-error (:on-error opts)]
+                          (on-error "connection lost"))
+                        (when-let [on-done (:on-done opts)]
+                          (on-done :stop)))
+                      :done))]
+      @(loop/run-agent-turn agent {:message "go" :on-done (fn [_]) :on-error (fn [_])}))
+    (t/is (= 1 (count @seen)) "the errored call reached the mounted handle")
+    (t/is (= 1 (:max-retries (first @seen)))
+          "the entry config's budget reached the policy")
+    (t/is (= 1 (:base-delay-ms (first @seen)))
+          "the run's backoff option rode along")
+    (t/is (= 2 @calls) "the policy's retry ran a second attempt")
+    (t/is (= :idle @(:status agent)) "the retried run settled")))
+
 (t/deftest test-loop-snapshot-survives-a-mid-attempt-change
   ;; cells.md §5.4: an attempt reads its units once. A change to the tree
   ;; during the attempt (here a remount) is invisible to it, and the next
@@ -1914,8 +1954,9 @@
                   (swap! used conj :b)
                   {:suppressed tool-calls :survivors [] :state state})
         group-with (fn [handle]
-                     (assoc runtime/builtin-units
-                            :kmet/agent-loop {:units {:loop-guard {:handle handle}}}))
+                     (update-in runtime/builtin-units
+                                [:kmet/agent-loop :units]
+                                assoc :loop-guard {:handle handle}))
         table (atom (group-with guard-a))
         rt (cells/runtime {:resolve [[:builtin (fn [nm] (get @table nm))]]})
         node (cells/mount! rt runtime/default-entries)
