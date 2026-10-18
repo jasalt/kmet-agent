@@ -295,21 +295,18 @@ the caller no longer *has to* keep it: `register!` attaches it to the owner
 (via a bound `*owner*` in the extension case), which is the part of Cordis's
 `this.caller.collect` worth copying.
 
-Two more store operations exist for the host that owns one registry of many:
+Three store operations exist for the host that owns one registry of many:
 `(scope/owner-registrations node owner)` → `[[key value] …]` in registration
-order, which is what a registry's own listing needs (`owner-keys` is a set,
-which is enough for `composition` and `explain`), and
-`(scope/ordered-registrations node)` → `[[key owner value] …]` across owners —
-owners in first-registration order, each owner's in its own — which is the
-order a *host* registry reads in: filtering the triples by key shape and taking
-the values is how a registry whose entries are not addressed one by one (the
-agent's hooks, later its tools and renderers) gets its effective list. And
-`(scope/deregister! node owner k v)` — the operation `register!` returns as a
-fn, public for the call that removes one entry while its owner stays live (an
-extension dropping one command), where `dispose!` removes everything the owner
-registered. Its value guard is what makes a stale removal a no-op — two
-registrations of an *equal* value are indistinguishable, so a fn from the
-earlier one does remove it.
+order, which a registry's own listing needs (`owner-keys` is a set, enough for
+`composition` and `explain`); `(scope/ordered-registrations node)` →
+`[[key owner value] …]` across owners — owners in first-registration order,
+each owner's in its own — which is the order a host registry reads in, filtered
+by key shape; and `(scope/deregister! node owner k v)`, the operation
+`register!` returns as a fn, for the call that removes one entry while its
+owner stays live (an extension dropping one command), where `dispose!` removes
+everything the owner registered. Its value guard is what makes a stale removal
+a no-op — two registrations of an *equal* value are indistinguishable, so a fn
+from the earlier one does remove it.
 
 **Owners are slot paths.** A unit's registrations are owned by the unit's slot
 path — the composition and slot ids that reach it, `[:app :agent-loop :budget]`,

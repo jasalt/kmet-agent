@@ -1665,23 +1665,21 @@
   (let [owner (extensions/extension-owner "test-hooks")
         node (rt/node)
         dereg (extensions/register-input-hook!
-               owner (fn [{:keys [text]}] {:action :transform :text (str text "!")}))]
+               owner (fn [{:keys [text]}] {:action :transform :text (str text "!")}))
+        dereg-start (extensions/register-before-agent-start-hook!
+                     owner (fn [_] {:system-prompt "SYS"}))]
     (try
       (t/is (= "hi!" (:text (extensions/apply-input-hooks "hi" :interactive)))
             "the registered hook is read back from the tree")
-      (t/is (= 1 (count (scope/owner-registrations node owner)))
-            "registered under the extension's own owner")
-      (t/is (every? #(= [:kmet/hook :input] (subvec % 0 2))
-                    (scope/owner-keys node owner))
-            "keyed per hook, so one owner can hold several of a kind")
-      (let [dereg-start (extensions/register-before-agent-start-hook!
-                         owner (fn [_] {:system-prompt "SYS"}))]
-        (try
-          (t/is (= "SYS" (:system-prompt
-                          (extensions/apply-before-agent-start-hooks "p" "orig")))
-                "before-agent-start hooks read the same tree")
-          (finally (dereg-start))))
-      (finally (dereg)))
+      (t/is (= "SYS" (:system-prompt
+                      (extensions/apply-before-agent-start-hooks "p" "orig")))
+            "before-agent-start hooks read the same tree")
+      (t/is (= 2 (count (scope/owner-registrations node owner)))
+            "both registered under the extension's own owner")
+      (t/is (= #{[:kmet/hook :input] [:kmet/hook :before-agent-start]}
+               (into #{} (map #(subvec % 0 2)) (scope/owner-keys node owner)))
+            "keyed per hook kind, so one owner can hold several")
+      (finally (dereg) (dereg-start)))
     (t/is (= "hi" (:text (extensions/apply-input-hooks "hi" :interactive)))
           "deregistering stops it")
     (t/is (empty? (scope/owner-registrations node owner))
