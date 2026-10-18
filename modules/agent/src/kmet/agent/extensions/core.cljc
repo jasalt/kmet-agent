@@ -358,8 +358,17 @@
   [owner hook]
   (register-app-hook! owner :tool-result hook))
 
-(defn get-tool-call-hooks [] (hooks-of :tool-call))
-(defn get-tool-result-hooks [] (hooks-of :tool-result))
+(defn get-tool-call-hooks
+  "Every tool-call hook on the app tree (extension api: on-tool-call), owners
+   in first-registration order, each owner's in its own."
+  []
+  (hooks-of :tool-call))
+
+(defn get-tool-result-hooks
+  "Every tool-result hook on the app tree (extension api: on-tool-result),
+   owners in first-registration order, each owner's in its own."
+  []
+  (hooks-of :tool-result))
 
 ;; ─── Shortcuts + markdown transformers (extension api) ────────────────────
 

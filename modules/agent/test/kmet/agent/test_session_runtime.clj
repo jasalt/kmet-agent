@@ -10,6 +10,7 @@
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as rt]
+            [kmet.agent.tools.invoke :as invoke]
             [kmet.ai.models :as models]))
 
 (defn- test-config
@@ -475,7 +476,7 @@
             owner (extensions/extension-owner "test-tool-hooks")
             hook-call (fn [{:keys [tool-name args]}]
                         (if (= "kmet-test-danger" tool-name)
-                          {:block true :reason "not that one"}
+                          {:block true :reason "not that one" :terminate true}
                           {:args (assoc args :patched true)}))
             hook-result (fn [{:keys [result]}]
                           {:content (str "wrapped:" (:content result))
@@ -483,9 +484,15 @@
             dereg-call (extensions/register-tool-call-hook! owner hook-call)
             dereg-result (extensions/register-tool-result-hook! owner hook-result)]
         (try
-          (is (= {:block true :reason "not that one"}
+          (is (= {:block true :reason "not that one" :terminate true}
                  (before {:tool-name "kmet-test-danger" :args {}}))
               "a tool-call hook can block a call and says why")
+          (is (= {:block {:content "not that one" :is-error true :terminate true}}
+                 (invoke/prepare-tool-call
+                  {:before-hook @(:before-tool-call ag)
+                   :tool-name "kmet-test-danger"
+                   :args {}}))
+              "its :terminate reaches the call's block result (extension.md:916)")
           (is (true? (:patched (:args (before {:tool-name "read" :args {}}))))
               "or rewrite its arguments")
           (is (= "wrapped:ok"

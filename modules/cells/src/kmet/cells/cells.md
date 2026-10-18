@@ -829,8 +829,10 @@ explicit request.
 
 ### A.1 Measurements
 
-Taken from the tree when this document was written; the counts drive §1. Sites
-are named rather than line-numbered, since lines drift and names do not.
+Taken from the tree when this document was written; the counts drive §1. P2
+changes the entries they cover as each registry moves onto the store — the
+plan's P2 row tracks what is left, not this table. Sites are named rather than
+line-numbered, since lines drift and names do not.
 
 | symptom | count |
 |---|---|
