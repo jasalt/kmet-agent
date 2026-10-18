@@ -77,6 +77,25 @@
     (is (str/includes? text "\n  [:app :agent-loop :loop-guard] :loop-guard")
         "a group's slots indent under it")))
 
+(deftest explain-follows-the-owner-path-not-just-the-slot-id
+  ;; Slot ids are unique per composition and may repeat across them, so a leaf
+  ;; can carry an id some other subtree uses for a composition. The walk must
+  ;; render each composition where it actually hangs.
+  (let [builtin (fn [nm]
+                  (case nm
+                    :u/group {:units {:sub {:units {:deep {:handle identity}}}}}
+                    :u/leaf {:handle identity}
+                    nil))
+        node (cells/mount! (cells/runtime {:resolve [[:builtin builtin]]})
+                           [{:id :group :name :u/group}
+                            {:id :sub :name :u/leaf}])
+        text (runtime/explain node)]
+    (is (str/includes? text "  [:app :group :sub] :sub"))
+    (is (= 1 (count (re-seq #"\[:app :group :sub :deep\]" text)))
+        "the nested stage renders once, under its real parent")
+    (is (not (str/includes? text "\n  [:app :group :sub :deep]"))
+        "the deep stage is not re-rendered under the root leaf")))
+
 (deftest a-remount-reaches-a-changed-unit
   ;; A mounted slot holds the handle value it was mounted with, so a reloaded
   ;; unit needs a remount: the diff keeps unchanged slots and remounts the

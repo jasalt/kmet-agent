@@ -210,9 +210,9 @@
          :default-tools (resolved :default-tools selection — the built-in
          tools active at startup, pi: defaultTools; nil = every built-in
          active, see kmet.agent.tools.registry/resolve-default-tools),
-         :node (the composition node this run reads its units from; default
-         the app root, kmet.agent.runtime/node — a subagent run passes its own
-         child node, which then has to carry the units the run reads,
+         :node (the composition node this run reads its loop group from;
+         default the app root, kmet.agent.runtime/node — a subagent run passes
+         its own child node, which then has to carry an :agent-loop group,
          cells.md §5.6)"
   [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools node]
       :or {provider :opencode-go

@@ -101,21 +101,36 @@
   ([node] (cells/composition node))
   ([node composition-id] (cells/composition node composition-id)))
 
+(defn- path-prefix?
+  "Whether PREFIX is PATH's leading segment list — the test that a composition
+   hangs at the walk's current path, not merely under the same slot id."
+  [prefix path]
+  (and (vector? path)
+       (<= (count prefix) (count path))
+       (= prefix (subvec path 0 (count prefix)))))
+
 (defn explain
   "Render NODE's composition tree for a human: `cells/explain` per composition,
    each group's slots indented under the slot that mounts it (a group is a
    composition id in the node's mount table). `/units` prints this;
    `cells/composition` stays the stable form (cells.md §7)."
   [node]
-  (letfn [(lines [comp-id depth]
+  (letfn [(lines [comp-id path depth]
             (let [pad (apply str (repeat (* 2 depth) " "))]
               (into []
                     (mapcat (fn [[slot entry]]
-                              (cons (str pad (cells/explain {slot entry}))
-                                    (when (some? (cells/composition node slot))
-                                      (lines slot (inc depth))))))
+                              (let [child-path (conj path slot)
+                                    sub (cells/composition node slot)]
+                                (cons (str pad (cells/explain {slot entry}))
+                                      ;; slot ids may repeat across compositions
+                                      ;; (only composition ids are global), so
+                                      ;; the owners must hang at this path
+                                      (when (and sub
+                                                 (every? #(path-prefix? child-path (:owner %))
+                                                         (vals sub)))
+                                        (lines slot child-path (inc depth)))))))
                     (sort-by (comp :owner val) (cells/composition node comp-id)))))]
-    (str/join "\n" (lines :app 0))))
+    (str/join "\n" (lines :app [:app] 0))))
 
 (defn handle
   "The handle mounted at SLOT-ID in SNAPSHOT, or nil."
