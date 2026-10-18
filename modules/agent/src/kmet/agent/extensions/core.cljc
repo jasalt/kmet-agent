@@ -315,12 +315,12 @@
 ;; ─── Renderers + tool hooks (extension api) ───────────────────────────────
 
 (defn- renderer-for
-  "The renderer registered for CUSTOM-TYPE under the key fn KEY, or nil.
+  "The renderer registered for CUSTOM-TYPE under the key fn KEY-FN, or nil.
    Owners are searched in first-registration order, so the owner that took
    the type keeps it."
-  [key custom-type]
+  [key-fn custom-type]
   (let [node (app-runtime/node)
-        by-owner (scope/for-key node (key custom-type))]
+        by-owner (scope/for-key node (key-fn custom-type))]
     (some #(get by-owner %) (scope/owners node))))
 
 (defn register-entry-renderer!

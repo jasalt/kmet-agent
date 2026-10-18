@@ -1103,6 +1103,42 @@
       (t/is (empty? (scope/owner-keys (rt/node) owner))
             "and the deregister fn removes that key"))))
 
+(t/deftest test-renderer-ownership
+  (testing "a renderer is its owner's key on the app tree"
+    (let [owner (extensions/extension-owner "test-renderer-owner")
+          dereg (extensions/register-entry-renderer!
+                 owner "probe-entry" (fn [_] {:role :info}))]
+      (t/is (contains? (scope/owner-keys (rt/node) owner)
+                       [:kmet/entry-renderer "probe-entry"])
+            "the renderer registers under its owner's path")
+      (t/is (some? (extensions/get-entry-renderer "probe-entry")))
+      (dereg)
+      (t/is (nil? (extensions/get-entry-renderer "probe-entry"))
+            "and the deregister fn removes that key")))
+  (testing "message renderers share the shape"
+    (let [owner (extensions/extension-owner "test-message-renderer-owner")
+          dereg (extensions/register-message-renderer!
+                 owner "probe-message" (fn [_] {:role :info}))]
+      (t/is (contains? (scope/owner-keys (rt/node) owner)
+                       [:kmet/message-renderer "probe-message"]))
+      (t/is (some? (extensions/get-message-renderer "probe-message")))
+      (dereg)
+      (t/is (nil? (extensions/get-message-renderer "probe-message")))))
+  (testing "the first owner that took a type keeps it"
+    ;; One renderer per custom type, so a later owner's re-registration cannot
+    ;; shadow the earlier one: lookup reads owners in first-registration order.
+    (let [first-owner (extensions/extension-owner "test-renderer-first")
+          second-owner (extensions/extension-owner "test-renderer-second")
+          renderer (fn [_] {:role :info :content "first"})
+          dereg (extensions/register-entry-renderer! first-owner "taken-type" renderer)]
+      (try
+        (extensions/register-entry-renderer!
+         second-owner "taken-type" (fn [_] {:role :info :content "second"}))
+        (t/is (identical? renderer (extensions/get-entry-renderer "taken-type")))
+        (finally
+          (dereg)
+          (scope/dispose-owner! (rt/node) second-owner))))))
+
 (t/deftest test-register-shortcut-headless
   (testing "headless register-shortcut! returns a no-op dereg fn"
     (let [dereg (extensions/register-shortcut! "ctrl+alt+x"
