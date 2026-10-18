@@ -5074,6 +5074,58 @@
               "the retried call's summary lands on the compaction entry")
         (finally (fs/delete-tree dir))))))
 
+(t/deftest test-loop-summarization-honors-the-mounted-retry-policy
+  ;; The summarization retries spend the mounted policy too: the entry
+  ;; config's budget wins over the run's option — here the option would
+  ;; suppress every retry and the mount allows one (cells.md §5.4).
+  (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
+        sess (session/create-session (str dir))
+        events (atom [])
+        attempts (atom 0)
+        rt (cells/runtime {:resolve [[:builtin (fn [nm] (get runtime/builtin-units nm))]]})
+        node (cells/mount! rt [{:id :agent-loop :name :kmet/agent-loop}
+                               {:id :retry-policy :into :agent-loop
+                                :name :kmet/retry
+                                :config {:max-retries 1 :base-delay-ms 1
+                                         :max-agent-delay-ms 5}}])
+        agent (loop/make-agent-state
+               :node node
+               :session sess
+               :compact-token-threshold 10
+               :keep-recent-tokens 40
+               :max-retries 0
+               :base-delay-ms 1
+               :max-agent-delay-ms 5
+               :on-event (fn [e] (swap! events conj e)))]
+    (try
+      (seed-context! sess 6)
+      ;; tiny backoff so the retry is instant
+      (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                    llm/send-message
+                    (fn [opts]
+                      (future
+                        (if (:tools opts)
+                          (do (when-let [on-text (:on-text opts)] (on-text "answer"))
+                              (when-let [on-done (:on-done opts)] (on-done :stop)))
+                          (if (= 1 (swap! attempts inc))
+                            (when-let [on-error (:on-error opts)]
+                              (on-error "rate limit exceeded"))
+                            (do (when-let [on-text (:on-text opts)] (on-text "the summary"))
+                                (when-let [on-done (:on-done opts)] (on-done :stop)))))
+                        :done))]
+        (binding [*err* (java.io.StringWriter.)]
+          @(loop/run-agent-turn agent {:message "go" :on-error (fn [_])})))
+      (t/is (= 2 @attempts) "the mount's budget ran the summarization retry")
+      (t/is (some #(and (= :summarization-retry-scheduled (:type %))
+                        (= 1 (:attempt %))
+                        (= 1 (:max-attempts %)))
+                  @events)
+            "the countdown carries the mounted budget, not the run's option")
+      (t/is (some #(and (= :compaction (:role %)) (= "the summary" (:summary %)))
+                  @(:entries sess))
+            "the retried call's summary lands on the compaction entry")
+      (finally (fs/delete-tree dir)))))
+
 (t/deftest test-loop-summarization-request-options
   (t/testing "the summarization request carries pi's options: a compaction
               reasons at the session's thinking level, a branch summary sends

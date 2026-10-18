@@ -1548,6 +1548,18 @@ Be precise and concise in your responses."}}]
         cap (+ base (shared/thinking-budget-for model thinking))]
     (min cap (or (:max-tokens model) cap))))
 
+(defn- mounted-retry-policy
+  "The flat policy {:max-retries :base-delay-ms :max-agent-delay-ms} every
+   retry path in this namespace spends: the run's options under the mounted
+   :retry-policy entry's own config, so the budget the snapshot shows is the
+   budget spent (cells.md §5.4, §6.1). The 2-arity reuses the attempt's one
+   snapshot read; the 1-arity takes the compaction path's own."
+  ([agent]
+   (mounted-retry-policy agent (runtime/snapshot (:node agent) :agent-loop)))
+  ([agent units]
+   (merge (select-keys @(:cfg agent) [:max-retries :base-delay-ms :max-agent-delay-ms])
+          (runtime/config units :retry-policy))))
+
 (defn- summarize!
   "LLM summarization of the pre-cut entries (pi: generateSummaryWithUsage via
    completeSummarization, retried with the configured retry policy). Returns
@@ -1569,7 +1581,7 @@ Be precise and concise in your responses."}}]
                                      {:signals signals
                                       :thinking @(:thinking agent)
                                       :max-tokens max-tokens})
-                @(:cfg agent)
+                (mounted-retry-policy agent)
                 (apply concurrent/or-signal signals)
                 (summarization-retry-callbacks agent {:source :compaction
                                                       :reason reason}))]
@@ -1625,7 +1637,7 @@ Be precise and concise in your responses."}}]
             result (retry/retry-call!
                     #(summarization-call agent msgs {:signals [signal]
                                                      :max-tokens max-tokens})
-                    @(:cfg agent)
+                    (mounted-retry-policy agent)
                     signal
                     (summarization-retry-callbacks agent {:source :branch-summary}))]
         (cond
@@ -2491,10 +2503,7 @@ Be precise and concise in your responses."}}]
   [agent run-token {:keys [on-text on-thinking on-error]}]
   (let [units (runtime/snapshot (:node agent) :agent-loop) ; the loop group, one read per attempt (cells.md §5.4)
         retry-decide (runtime/require-handle units :retry-policy)
-        ;; the policy's values: an entry config over the run's options (the
-        ;; mount host seeds them until bootstrap mounts the configured entry)
-        retry-policy (merge (select-keys @(:cfg agent) [:max-retries :base-delay-ms :max-agent-delay-ms])
-                            (runtime/config units :retry-policy))
+        retry-policy (mounted-retry-policy agent units)
         text-buf (atom "")
         agent-end (fn [error will-retry]
                     (when-let [s (:session agent)]
