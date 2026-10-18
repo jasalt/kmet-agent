@@ -669,8 +669,11 @@ registrations land on `[:app :extensions <name>]`. A publication is
 `{:name <keyword> :entry <entry> :unit <descriptor>}`: the name is namespaced
 to the extension (`:budget/spend`), which is how an entry names one without a
 backend hint, and the entry is where it mounts — so an extension contributes a
-slot the way the host's own entries do, and a later entry takes a default's
-slot when the ids match. The host mounts its root node *before* loading any
+slot the way the host's own entries do. An entry whose `:id` and `:into` match
+one of a group's inline stage defaults replaces it; against the host's own
+root entries a repeated id is the plan's duplicate-id error (§6.1), and a name
+another extension holds is refused too, since a published name lives in its
+publisher's namespace. The host mounts its root node *before* loading any
 extension, so `init(api)` always has a scope to register into — that ordering
 is what retires the pending buffers — and `remount!` is the assembly point
 whose entry list is the defaults plus what the loaded extensions published. An
