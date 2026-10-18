@@ -88,11 +88,11 @@ architecture) is a fifth, invisible one.
 
 ### 1.4 What the module deletes, and what it does not replace
 
-Deletes (the first four with P2, the teardown with P5, the mount mechanisms
-with P4): the pending/bound duality and its two bootstrap halves; the 15
-dispatchers; the load-order `require`/`resolve` hack; the
-`applied-resource-paths` reset; FIFO-and-silent extension teardown; four ad-hoc
-mount mechanisms.
+Deletes (the first three with P2, the teardown and the `applied-resource-paths`
+state with P5, the mount mechanisms with P4): the pending/bound duality and its
+two bootstrap halves; the 15 dispatchers; the load-order `require`/`resolve`
+hack; the `applied-resource-paths` reset; FIFO-and-silent extension teardown;
+four ad-hoc mount mechanisms.
 
 Does *not* replace, and must not grow into: `kmet.loader` (code-loading
 backends), `kmet.libs.hikap.component` (UI component runtime), `kmet.libs.reakt`
@@ -690,9 +690,9 @@ contribute entries at all, and to which slots, is a capability decision — the
   are order-independent (barring shadowing), so tool/command registration and
   removal stay as cheap as they are today. A unit may be mid-invocation, so its
   removal is gated on a quiescent boundary — one rule, both halves (§5.4).
-- **The loop's control flow stays in the loop.** Its stage functions become
-  slots the loop's handle calls, and its routing table becomes data the loop's
-  own namespace owns and tests (P3). The framework gains no vocabulary for
+- **The loop's control flow stays in the loop.** Its routing table becomes data
+  the loop's own namespace owns and tests (P3), and its stage functions become
+  slots the loop's handle calls (P4). The framework gains no vocabulary for
   iteration, routing or order.
 - **Declare the insertion points you want to offer.** The framework cannot
   invent one (§3.1); a list-valued slot (`{:units {…}}`) is how a host offers
@@ -718,7 +718,7 @@ foreign `kmet.*` require and a second consumer could take the module as-is.
 
 | scaffolding | deleted when | what remains |
 |---|---|---|
-| §8.1/§8.2's host sketches | P5 lands: both backends exist in `kmet.agent.runtime` | "one backend per isolation mechanism", the handle-lifetime invariant (§6.4) |
+| §8.1/§8.2's host sketches | P5 lands: the `:ext` backend exists in `kmet.agent.runtime` (the sandbox sketch stays until codemode is scheduled) | "one backend per isolation mechanism", the handle-lifetime invariant (§6.4) |
 | §5.6's child-mount snippet | the first child node ships (P7) | "nodes nest; domains do not" |
 | `cells-plan.md` §2 (the phase table) | continuously — a landed phase's row comes out; the git log is its record | the phases still ahead |
 
@@ -802,7 +802,7 @@ explicit request.
 - **Extensions are a backend, not a parallel system** — same descriptors, same
   manifest, same unload path.
 - **The loop converts inward-out** — `run-agent-turn` stays the public entry
-  through P3 so RPC, print mode and tests keep working unchanged.
+  through P4 so RPC, print mode and tests keep working unchanged.
 
 ---
 

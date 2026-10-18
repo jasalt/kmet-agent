@@ -21,14 +21,16 @@ the agent's `deps.edn` dep on cells landed with P2, its first consumer.
 
 | phase | side | what lands | notes |
 |---|---|---|---|
-| **P3** | agent | `run-agent-turn` wrapped as one group; its stage fns lifted into slots it calls; the routing `case` becomes a data table the loop's namespace owns | straight refactor — no new execution model (cells.md §A.2) |
-| **P4** | agent | session runtime, TUI and extension surfaces as entries; one mount table; old config keys as aliases | the four ad-hoc mount mechanisms become one entry list (cells.md §1.3) |
-| **P5** | agent | `extension.edn` `:config`/`:units`; `:ext` backend; reload = `mount!` diff + `dispose!` owner; `extensions/core.cljc` splits into loader/manifest/lifecycle; the ABI's `init(api)` registrations map onto the extension unit's `:start` | unload becomes the cells.md §8.2 three steps: `mount!` without the extension's entries (the diff disposes its owners), `shutdown(api)`, `loader/unload!` |
-| **P6** | agent | presets as a selector over the entry list | DSH's "the agent loop is itself a plugin", earned |
+| **P3** | agent | `run-agent-turn`'s routing `case` becomes an `attempt-routes` table in `kmet.agent.loop` — handlers return `:again`/`:stop`, `(recur)` stays in the driver | pure in-function refactor, no host change (cells.md §A.2) |
+| **P4** | agent | §1.3's five mount mechanisms — `:extensions`, `:packages`, `:default-tools`, bootstrap's stage order (the session engine and UI port ride it), and the loop's composition — become one entry list; the old keys load as aliases (§6.1) | one `mount!` diff replaces the hard-coded stage order, and `/reload` shrinks to remount + config re-read; the loop group mounts handle-less |
+| **P5** | agent | extension units — `extension.edn` `:units`/`:config`, published by `init(api)`, resolved by the `:ext` backend; unload = `mount!` without the extension's entries, `shutdown(api)`, `loader/unload!` | entries mount after the extension loads — `check` cannot resolve `:ext` names before it; `applied-resource-paths` (still reset at `clear-extensions!`) retires here (cells.md §1.4) |
+| **P6** (unscheduled) | agent | presets as a selector over the entry list | no consumer defined yet; the loop's `:handle` lands with its first caller (P6 or P7) |
 | **P7** (unscheduled) | agent | subagents: a tool unit mounts a child node with its own model, tool subset and hooks (cells.md §5.6) | pi's `durable` is recorded *open* in `pi-alignment.md`; no kmet scope decision |
 
-P3, a pure refactor of the loop, is the lowest-risk phase now that P2's registry
-move is in — which is the main reason for the cells.md §A.2 cuts.
+P3, a pure in-function refactor of the loop, is the lowest-risk phase now that
+P2's registry move is in — which is the main reason for the cells.md §A.2 cuts.
+The loop's own group is cells.md §1.3's fifth mount mechanism, so it lands with
+the other four at P4 instead of with the routing table.
 
 Landing a phase also deletes the scaffolding that phase makes redundant
 (cells.md §9): P5's landing removes the host sketches in cells.md §8, and a
