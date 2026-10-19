@@ -10,7 +10,7 @@
    (the registry's address: `/units` reads it from the store, so their keys
    report under it), addressed by `[:kmet/prompt <name>]`: visible
    to every engine, outliving one, and disposed with their owner rather than
-   copied into an engine and reset by hand (cells.md §5.1). A name holds one
+   copied into an engine and reset by hand (cells.md §2). A name holds one
    template, so re-registering replaces the earlier one — pi's loader assigns
    into a name-keyed map the same way. Extension registrations carry the
    extension's own owner path, so unloading it disposes the template."
@@ -25,7 +25,7 @@
 
 (def prompts-owner
   "The app's prompt-template registry owner — the registry's address (cells.md
-   §5.1). `/units` reads it from the store, so templates report under it."
+   §2). `/units` reads it from the store, so templates report under it."
   [:app :prompts])
 
 (defn- prompt-key
@@ -237,7 +237,7 @@
   "Load prompt templates from explicit .md file paths (the package-resource
    unit, pi: package prompts load) under OWNER (the app's registry by
    default; a resource contribution passes its own owner path, so the
-   templates go with it — cells.md §5.1). Adds them to the registry, reports
+   templates go with it — cells.md §2). Adds them to the registry, reports
    load failures as warnings on stderr (pi: prompt resource diagnostics), and
    returns the loaded templates."
   ([node file-paths] (load-prompt-template-files! node file-paths prompts-owner))

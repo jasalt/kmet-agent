@@ -72,9 +72,9 @@
   (some-> engine :agent-state deref))
 
 (defn agent-node
-  "The composition node the engine's agent runs on: the app root by default,
-   a child tree when the engine was bootstrapped onto one (cells.md §5.6);
-   nil for a bare test engine without agent state."
+  "The node the engine's agent runs on: the app root by default, a child
+   tree when the engine was bootstrapped onto one (cells.md §5); nil for a
+   bare test engine without agent state."
   [engine]
   (:node (agent-state engine)))
 

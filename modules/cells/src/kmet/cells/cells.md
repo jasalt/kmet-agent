@@ -1,1032 +1,127 @@
-# kmet Cells — unit mounting and lifetime (design + implementation plan)
+# kmet.cells — the store and its node
 
-`kmet.cells.*` is a generic composition runtime. It turns declarative **unit
-descriptors** into a mounted tree of live components, gives every registration
-a lifetime, and checks the mount before any of it runs. It knows nothing about
-agents, sessions, events, LLM providers, tools or extensions: the host injects
-only its name-resolution backends (§8).
+`kmet.cells.scope` is the module's only namespace: a per-node store of
+registrations with owner-scoped, LIFO disposal, and the node's parent/child
+lifetime. It is a leaf module (rank 0): no `kmet.*` require outside its own
+tree and no third-party library; `test_self_contained` enforces the first. The
+composition layer this module once carried — units, entries, resolution
+backends — was retired; the store and the node are the surviving contract.
 
-**It is not a workflow engine, and not an event framework.** Control flow —
-iteration, routing, the order in which a unit calls its own children — lives
-inside a unit's handle. Events belong to the host's bus. What the framework
-owns is what exists, how it is configured, how it is wired, and how long it
-lives.
+## 1. The store
 
-Status: **design locked; P0–P5c landed, and the F1–F14 follow-ups with them.**
-The plan is
-[`cells-plan.md`](../../../../../cells-plan.md) at the repository root: a
-transitional document that shrinks as the phases land (§9), and the git log is
-the detailed record.
-
-## Contents
-
-1. [Why this exists](#1-why-this-exists)
-2. [What it is](#2-what-it-is)
-3. [Descriptors](#3-descriptors)
-4. [The checks](#4-the-checks)
-5. [Mounting and lifetime](#5-mounting-and-lifetime)
-6. [The manifest](#6-the-manifest)
-7. [Visibility](#7-visibility)
-8. [The host contract](#8-the-host-contract)
-9. [Document set and shelf life](#9-document-set-and-shelf-life)
-10. [Staged plan](#10-staged-plan)
-11. [Design non-goals and rationale](#11-design-non-goals-and-rationale)
-12. [Open questions](#12-open-questions)
-A. [Measurements and the cut record](#a-measurements-and-the-cut-record)
-
----
-
-## 1. Why this exists
-
-Three structural problems in the agent module, each already paid for
-repeatedly — the pre-P2 state, recorded as the motivation. The measurements
-behind them are in §A; §1.1 is the part P2 retired, §1.2 and §1.3 the parts
-still ahead.
-
-### 1.1 Registries have no owner
-
-Extension-reachable features are process-global atoms with a hand-written
-"pending vs bound" duality: 15 `current-*-registry` dispatchers that fall back
-from the engine's copy to a `pending-*` buffer, 13 buffers, 15 registry copies
-and 13 resets inside `bootstrap`, `dispose!` mirroring the other half, and 22
-`default-engine` call sites. The duality is load-bearing, not dead code:
-`core/-main` loads extensions *before* mode dispatch, hence before `bootstrap`,
-so the pending buffers are the normal path for extension-provided tools,
-commands, skills and hooks. They exist because two things are conflated —
-**where a registration lives** (a global) and **which engine owns it**
-(per-engine copies of the same global). Those are the same atoms; §5 makes them
-the same atoms.
-
-### 1.2 Lifetime is enumerated by hand, and wrong at the edges
-
-`unload-extension!` runs `:deregister-fns` in **registration order, not
-reverse**, and swallows each cleanup's failure — against every established
-model (Effect-TS `Scope` and Effection both specify reverse order, because a
-later registration may hold what an earlier one provided).
-
-The tree already contains three register-and-dispose implementations:
-`hikap`'s store (`new-store` / `fetch-local` / `register-cleanup!` /
-`destroy-store!`, once-initialized locals plus LIFO cleanups, already tested),
-`reakt`'s `add-on-dispose!` / `dispose!`, and `Extension/:deregister-fns`.
-**A fourth container is not the missing piece** — the store is ~50 lines and
-one already exists. What is missing is the layer above it: composition, and the
-check that a mount is well formed. `kmet.cells.scope` does implement the store
-once more, but only because rank 0 forbids requiring `kmet.libs.hikap` (§9): it
-is the module's smallest part, and composition is the point.
-
-### 1.3 Mounting is four mechanisms
-
-`:extensions [...]` in settings, `:packages` entries with per-type filters,
-`:default-tools` with hand-rolled `+name`/`-name` modifiers, and `bootstrap`'s
-hard-coded stage order — each with its own config handling, its own way of being
-disabled, and its own way of being reloaded. The loop's own composition (its
-stages, in order, inside a 260-line function whose docstring carries the
-architecture) is a fifth, invisible one.
-
-### 1.4 What the module deletes, and what it does not replace
-
-Deletes (the first three with P2, the teardown and the `applied-resource-paths`
-state with P5a/P5c, the mount mechanisms as their slots land, P4–P5): the
-pending/bound duality and its two bootstrap halves; the 15 dispatchers; the
-load-order `require`/`resolve` hack; the `applied-resource-paths` reset;
-FIFO-and-silent extension teardown; four ad-hoc mount mechanisms.
-
-Does *not* replace, and must not grow into: `kmet.loader` (code-loading
-backends), `kmet.libs.hikap.component` (UI component runtime), `kmet.libs.reakt`
-(UI reactivity), `kmet.agent.config` (settings loading and merging),
-`kmet.agent.event-bus` (the host's event vocabulary), or the extension system
-(its ABI, isolation and artifact discovery stay in `kmet.agent.extensions.*`,
-which becomes one *backend* here).
-
----
-
-## 2. What it is
-
-### 2.1 Vocabulary
-
-| term | meaning |
-|---|---|
-| **unit** | a **handle**, a **`:units`** map of slots, or both — the loop is both |
-| **slot** | a unit's name within its group; the map key *is* the id |
-| **composition** | a group mounted as a named cross-section (`:app`, `:agent-loop`) |
-| **node** | a mounted tree plus its scope; what `mount!` returns, `dispose!` ends, and a handle receives as its first argument. A node may have a parent (§5.6) |
-| **scope** | a node's store of registries plus the owners that filled them |
-| **owner** | the path a registration belongs to — a unit's slot path, a registry's address (`[:app :commands]`), or an extension's key (`[:app :extensions <name>]`); disposal is per-owner |
-| **registration** | a value a unit or extension installs under a host-shaped key (a listener, a tool, a command, a timer), with its deregister fn collected automatically (§5.1) |
-| **snapshot** | the flat `{slot → resolved unit}` map a caller takes **once per attempt** (§5.4) |
-| **entry** | a manifest record from configuration: `{:id :name :config :disabled :into}` (§6) |
-| **backend** | a name → implementation resolver supplied by the host (§6.4) |
-| **runtime** (`rt`) | the host's resolution backends, validated once — a value, so several may coexist (tests, sandboxes) |
-
-Two of these are values with different lifetimes, and the distinction answers
-the question the vocabulary invites: **`rt` is immutable resolution** (several
-may coexist — a test's, a sandbox's), while **a node is a mounted lifetime**
-(a root per engine or test, a child per subagent, §5.6). Domains are neither —
-the loop, the tool registry, the session engine and the extensions live on one
-node, not one runtime each (§5.6).
-
-**The one rule: a group declares exactly the same fields as a leaf.** Both are
-a map with `:handle` *or* `:units`, plus an optional `:config` schema, plus
-whatever else the host wants to carry. Nothing outside can tell a group from a
-leaf, which is what lets a group occupy a slot and takes presets, diffing and
-disposal off the list of things to design separately.
-
-### 2.2 Public API
-
-Seven functions; they are the module's **composition** surface — not the
-whole of what a host calls. The store's own API (`kmet.cells.scope`) is the
-second, lower surface, and the host uses it directly: every registry kmet
-keeps — commands, tools, skills, prompts, hooks, renderers, flags — lists and
-removes through `scope/owner-registrations`, `scope/ordered-registrations`
-and `scope/deregister!`, because a registry's listing and removal need the
-store's order and its per-owner disposal, which these seven fns do not carry
-(P2, P5c). Promoting those reads into `core` would rename the calls, not
-remove the store from the host's view, so the split is stated instead.
-
-| fn | signature | mutates? | notes |
-|---|---|---|---|
-| `runtime` | `(runtime host-map)` → `rt` | no | one host key — the resolution backends (§8); `rt` carries a fresh root node, so repeated `mount!` calls diff against it (§6.2) |
-| `check` | `(check rt entries)` → `[] \| [err …]` | no | pure pre-flight (§4). No scopes, no code, no effects |
-| `mount!` | `(mount! rt entries)` / `(mount! rt entries {:parent node})` → `node` | yes | `check` first, then mount. **Diff-applying and idempotent** (§6.3); the `:parent` form creates a child node (§5.6) |
-| `dispose!` | `(dispose! node)` / `(dispose! node owner)` | yes | LIFO per owner (§5.2) |
-| `register!` | `(register! node owner k v)` → `deregister-fn` | yes | what a `:start` hook installs with; the fn is auto-collected onto `owner` |
-| `composition` | `(composition node)` / `(composition node id)` → snapshot | no | the flat slot map; taken **once per attempt** (§5.4) |
-| `explain` | `(explain snapshot)` → string | no | renders what `composition` returns, one line per slot |
-
-### 2.3 Naming conventions
-
-- **`!` marks mutation**, matching `kmet.libs.reakt` (`dispose!`),
-  `kmet.agent.extensions` (`register-command!`) and
-  `kmet.agent.session.runtime` (`switch-session!`). `composition` and
-  `explain` read state but do not change it, so they carry no bang.
-- **`mount!`, not `init` or `start`.** There is no activation state: a mounted
-  unit is wired, checked and live, in one state. `init` in the
-  Integrant/`component` sense builds an unstarted system that a second call
-  (`start`) activates — a distinction this design deliberately does not have —
-  and `init` is already the extension ABI's entry fn (`(defn init [api] …)`).
-- **`check`, not `validate` or `prepare`.** `validate` under-describes (the
-  call also resolves names and builds the mount plan) and over-promises (§4
-  proves a mount is well formed, not that it behaves). `prepare` implies a
-  caller-sequenced two-step and a `plan` value that can go stale between the
-  steps; `mount!` taking entries removes that state entirely. `check` is also
-  the repo's existing word for pre-flight verification (`bb check`).
-- **`dispose!`, not `unmount!`.** Disposal is per-owner, and that is what the
-  store models; removing units is `mount!` with a smaller entry list (§6.3).
-  Cordis draws the same line between a fiber's `dispose()` and a context's.
-- **`kmet.cells.core`** for the facade, matching every other module's
-  `<module>.core`.
-
----
-
-## 3. Descriptors
-
-Descriptors are **plain data** — printable, diffable, comparable in tests, and
-serializable if a future host needs to replicate them (§11.1). A handle fn is
-the only non-data value.
+A node is a map:
 
 ```clojure
-;; a leaf
-{:handle (fn [node input] …)
- :config [:map [:threshold :int]]}
-
-;; a subsystem: a handle plus its own slots (this is the loop)
-{:handle run-agent-turn
- :units  {:inner  {:handle run-inner}
-          :settle {:handle run-settle}}
- :config agent-loop-schema}
-
-;; a leaf that subscribes to the bus when it is mounted
-{:start (fn [node owner] (register! node owner {:on-event :turn-end} on-turn-end))
- :handle (fn [node input] …)}
-
-;; any extra keys are host metadata: preserved, printed, never interpreted
-{:handle … :effect :pure :address "grep" :execution-mode :parallel}
+{:store    (atom {:by-key {} :by-owner {} :teardowns {}
+                  :owner-order [] :disposing nil})
+ :parent   parent-node-or-nil
+ :children (atom [child …])}
 ```
 
-Four keys are interpreted: `:handle`, `:units`, `:start`, `:config`.
-**Everything else is preserved untouched** and printed verbatim by `explain` —
-the same rule `extension.edn`'s manifest parse already follows (it keeps
-unknown `:loader` kinds for forward compatibility). That one rule disposes of
-a whole class of design question: purity, addressing, execution mode, tool
-schemas and per-front-end tags are host conventions carried in the descriptor,
-not framework fields to argue about.
-
-**The mount hook.** `:start` runs once when the unit is admitted, with the
-node and the unit's own owner path (`[:app :agent-loop :budget]` — the path its
-registrations are collected onto), and is where a unit installs anything it
-owns — an event listener, a tool, a command, a timer — through `register!`,
-whose deregister fns are collected onto the unit itself. It returns nil, or a
-teardown fn that runs *after* everything its body registered (the unit's own
-resource unwinds last). A truthy return that is neither a fn nor a var is a
-mount error, not a teardown. There is no `:stop`: one hook plus auto-collected
-disposers is the whole teardown model, and a unit that needs another order can
-do its work in the returned fn.
-
-This is what makes the event bus a first-class participant without teaching the
-framework anything about events: **a listener can be a registration a unit's
-`:start` makes**, and the host's bus additionally accepts process-level
-subscriptions from an extension's load (§8.1, §12 Q3). The bus, its dispatch
-modes (emit / collect / waterfall) and its vocabulary stay in
-`kmet.agent.event-bus` (§8).
-
-There is **no `:id` field**: a unit's id is the key it occupies in its group's
-`:units` map, which makes uniqueness structural rather than checked. There is
-**no `:kind`**: `:handle` and `:units` already say what a unit is — and a unit
-with both *runs* and owns slots, which is the ordinary case for a subsystem.
-
-### 3.1 What a group is, and is not
-
-A group is a **namespace of slots** — a naming, lookup and lifetime boundary.
-It is **not** an execution order: the framework never invokes a group's
-children. The owning handle decides what to call, in what order, how many
-times, and under what conditions; it reads slots from the snapshot (§5.4) and
-calls them. `run-agent-turn` in `kmet.agent.loop` is the worked example: it
-reads its two stages once per attempt.
-
-A slot holds a group just as happily as a leaf, so a slot that means "a bag of
-policies" is `{:units {:a … :b …}}` and the caller iterates it — the same shape
-at every level. The cost of this honesty is that **the framework cannot invent
-an extension point**: an extension can replace a slot, or fill a list-valued
-slot the host consults, and a host that wants a new insertion point must
-declare one. That limitation is real and belongs to the host.
-
-### 3.2 The shape, end to end
-
-The worked shape now *is* the code: `kmet.cells.core` for the module's surface
-and `kmet.cells.scope` for the host's side — `kmet.agent.runtime` keeps the
-app's store node and its loop stages, with no mounted tree. The pre-P2 sketch
-lived in
-[`cells-plan.md`](../../../../../cells-plan.md) §1 and was deleted as scaffolding
-when P2 landed (§9). The contracts are here: §2.2's seven functions, §3.1's
-rule, §4's checks.
-
----
-
-## 4. The checks
-
-`check` runs these over the whole tree, and `mount!` runs them again
-internally before it touches anything. Both are decidable; a failure produces
-errors naming the entry and the failing key, never a bare boolean.
-
-1. **Shape** — every unit has at least one of `:handle` / `:units`; a unit's
-   `:handle` is callable and its `:start` a fn or var when present; every
-   `:name` resolves through a backend (§6.4); every `:into` names a
-   composition that exists; composition ids are unique over the effective
-   tree.
-2. **Config** — each entry's `:config` validates against the `:config` schema
-   of the unit it targets (malli). An entry with no `:config` is not an error
-   when the unit has a schema (the unit keeps its own defaults), and a unit
-   with no `:config` schema accepts any `:config` unchanged — a descriptor
-   without a schema has no contract to violate.
-
-**What the checks cannot prove.** That a mount is *well formed*, and nothing
-else. There is no verification of behavior, purity or wiring beyond
-resolvability, and deliberately no dependency checking at all: units do not
-declare dependencies, so "this unit waits for something nobody provides" is
-not expressible and therefore cannot be silently wrong. The DSH failure mode
-this replaces (§6.4) is prevented by not having the declaration, not by
-checking it.
-
-Subscriptions are not checked either, and do not need to be: a subscriber
-carries its handler (§3), so it cannot dangle the way a declaration can.
-Whether an event *name* exists is the host's bus business — the framework does
-not know the vocabulary. A host that wants that check walks `composition` and
-validates its own metadata, which is preserved for exactly this reason.
-
----
-
-## 5. Mounting and lifetime
-
-### 5.1 Scope and owners
-
-A scope is one store of registries plus the owners that filled them. The node
-wraps the store, and `cells/register!` / `cells/dispose!` are the operations
-below, seen from outside:
-
-```clojure
-(scope/register! node owner :tools/hooks hook)  ; → deregister fn, auto-collected onto OWNER
-(scope/dispose!  node owner)                    ; LIFO over that owner's registrations
-(scope/dispose!  node)                          ; every owner, then the store
-```
-
-Registration returns a deregister fn, as it does today. The difference is that
-the caller no longer *has to* keep it: the registration *is* the cleanup — it
-sits on its owner in the store, and disposing that owner removes it — which is
-the part of Cordis's `this.caller.collect` worth copying. Nothing binds an
-owner implicitly: the caller passes the owner it registers under (a unit
-passes the path its `:start` received, an extension its own
-`[:app :extensions <name>]`).
-
-Three store operations exist for the host that owns one registry of many:
-`(scope/owner-registrations node owner)` → `[[key value] …]` in registration
-order, which a registry's own listing needs (`owner-keys` is a set, enough for
-`composition` and `explain`); `(scope/ordered-registrations node)` →
-`[[key owner value] …]` across owners — owners in first-registration order,
-each owner's in its own — which is the order a host registry reads in, filtered
-by key shape; and `(scope/deregister! node owner k v)`, the operation
-`register!` returns as a fn, for the call that removes one entry while its
-owner stays live (an extension dropping one command), where `dispose!` removes
-everything the owner registered. Its name-addressed form,
-`(scope/deregister-key! node k owner)`, is the same removal for a registry that
-addresses entries by name: it drops every owner's registration under `k`, or
-one owner's when the call fills an extension's own entry in. Its value guard is
-what makes a stale removal
-a no-op — two registrations of an *equal* value are indistinguishable, so a fn
-from the earlier one does remove it.
-
-A registry's key shape is the host's vocabulary, and the store constrains it in
-one way: a key holds **one** value per owner. A registry whose entries are
-addressed one by one keys them by that address (`[:kmet/command <name>]`); one
-whose entries have no name gives each registration its own key (`[:kmet/hook
-<kind> <n>]` numbers them) rather than one shared key holding a collection that
-every registration would have to read back and rewrite.
-
-**Owners are paths.** A unit's registrations are owned by the unit's slot
-path — the composition and slot ids that reach it, `[:app :agent-loop :budget]`,
-which `:start` receives as its second argument — so replacing its slot disposes
-whatever it installed: the `:start` +
-`register!` path. An extension's own registrations (anything `init(api)`
-installs outside a unit) are owned by `[:app :extensions <extension-name>]`,
-and a registry's by its address (`[:app :commands]`) — owner paths that need
-no mounted slot (§7). All are flat keys in one store: a unit's registrations
-and an extension's dispose independently without a scope tree, and a group
-disposes its children's owners before its own. Node nesting is a separate axis
-(§5.6).
-
-**A registry's address is its owner path.** The agent's slash command registry
-is a host registry, not a unit: front ends and extensions register into it,
-and nothing runs at mount. Since a registration's owner is the path it
-registers under, the registry needs no slot: `/units` reads every store owner
-that no slot stands for and renders `[:app :commands]` with its keys (§7), and
-`dispose!` drops them by owner path exactly as it drops a unit's. `register!`
-takes any owner path, so a registry works — and stays visible — without a
-mounted unit standing in for it; it is simply not part of the composition
-tree.
-
-### 5.2 Disposal is LIFO, isolated and logged
-
-Reverse of registration order, each cleanup wrapped so one failure cannot skip
-the rest, and a failing cleanup reported through
-`kmet.cells.scope/*error-reporter*` — stderr by default, which the agent
-(`kmet.agent.runtime`) rebinds to `kmet.agent.debug/log-error`. The reporter is
-a dynamic var because the module is rank 0 and cannot require `kmet.*` (§9).
-This is a bug fix, not a refactor: today's `(catch Exception _)` also misses
-`Throwable`, and the order is forwards.
-
-A store mid-disposal is **closed**: `register!`/`add-teardown!` under an owner
-whose disposal is running — or, while a whole node is disposed, under any
-owner — throws `:kmet.cells.scope/closed-store`, which a cleanup's own
-invocation reports like any other failure. The pass ends with the store empty,
-so a cleanup that tries to re-install something there is refused instead of
-dropped; before, `dispose!`'s final reset and `dispose-owner!`'s scrub dropped
-both the registration and its deregister fn in silence. The refusal is scoped
-to the pass: a disposed node's store accepts the next mount, and disposing one
-owner leaves its siblings open. A replaced slot's disposal covers every owner
-at or under its path and rescans, so an owner a teardown installs there is
-disposed too; a subtree that keeps growing is reported rather than looped.
-
-### 5.3 The module has no clock
-
-`dispose!` never waits. Quiescence is the caller's decision — for the agent
-that is the `:agent-settled` boundary, where the runtime already knows no turn
-is streaming. A framework that slept on its own would be a second scheduler
-next to `kmet.libs.concurrent`, and the two would disagree.
-
-### 5.4 Snapshot discipline
-
-`(composition node id)` returns an immutable, **flat** `{slot → resolved unit}`
-map — flat because a handle looks up the units it may call, and nothing deeper.
-Callers take it **once per attempt** rather than per dispatch:
-
-- a mid-run manifest change affects the *next* attempt, never the streaming one
-  in flight;
-- an in-flight invocation already holds its closure, so nothing dangles;
-- the tools are captured once when the request is built — one list, threaded
-  through the turn — and the wire list the model is offered, the declared set
-  a call is checked against, and the registry the call is dispatched to all
-  come from that one value. This closes the race where a tool unloads between
-  the model's `tool_use` and its execution and execution fails with "unknown
-  tool" — a tool that appears mid-request is not dispatched either, because
-  the model was never offered it (F4). The capture is not this snapshot:
-  tools are registrations, not units (§5.1); it is the same discipline applied
-  to the one table a request reads. Commands need no capture — the front end
-  resolves one as it dispatches the typed input, with no model round-trip in
-  between.
-
-The map is the ABI (§7, §12 Q4); one composition's snapshot looks like:
-
-```clojure
-{:budget {:handle budget-spend               ; the unit's resolved handle
-          :owner  [:app :agent-loop :budget] ; where its registrations are owned
-          :config {:usd 5.00}                ; only when the entry supplied one
-          :keys   #{[:on-event :turn-end]}   ; only what :start registered
-          :effect :pure}                     ; the descriptor's other keys, verbatim
- :inner  {:handle run-inner :owner [:app :agent-loop :inner]}}
-```
-
-`(composition node)` is the `:app` composition and `(composition node :agent-loop)`
-the group's own; an unknown id is nil, as is a node-less read — a caller may
-thread a state's node through unconditionally. Owner paths carry the tree
-position, so one level plus its owners is enough to read where a unit sits.
-
-### 5.5 State belongs to the scope
-
-A unit's state belongs in the scope it was mounted in, and disposal kills it.
-Atoms created at namespace level by a unit are a bug: they outlive the mount,
-which is exactly the failure mode §1.1 documents. `explain` prints the slot
-tree with config provenance and owners so this is reviewable.
-
-### 5.6 Nodes nest; domains do not
-
-A node has an optional parent, and disposing a node disposes its children
-first. That is the whole nesting mechanism (~15 lines), and it exists for one
-purpose: **per-instance lifetimes** — a subagent, a sandboxed run, a test.
-
-Domains are **not** nodes. The loop is a slot; the tool registry, the session
-engine and the extension surface are owner-scoped registrations in the same
-node's store, addressed by owner path (`[:app :tools]`, `[:app :session]`, …;
-§5.1):
-
-```
-:app          {:agent-loop {…}}                  ; the composition tree
-store owners  {[:app :tools] […], [:app :session] […], …}  ; registrations
-```
-
-Splitting them into separate nodes would recreate exactly the cross-boundary
-question this design removes — "which node owns the tool registry?" — and would
-make one node's handle unable to call another's snapshot. The axes are:
-**domains → slots and owner paths**, **lifetime → owners**, **per-instance
-isolation → child nodes**. An extension is never its own node either: it
-registers under its own owner in the host's node, which is what "extensions
-are a backend, not a parallel system" means (§11.3).
-
-A unit does not know which node it is in — the node is its first argument (§3),
-so the same loop descriptor mounts as the root loop and as a subagent's loop,
-each with its own slots, registrations and disposal:
-
-```clojure
-(defn unit-handle [node id] (:handle (get (cells/composition node) id)))  ; host helper
-
-(let [child (cells/mount! rt
-                         [{:id :session    :name :example/sub-session :config {:model model}}
-                          {:id :agent-loop :name :example/loop     :config {:max-turns 20}}]
-                         {:parent node})]           ; the only new arity
-  (try ((unit-handle child :agent-loop) child prompt)
-       (finally (cells/dispose! child))))            ; child's registrations only
-```
-
-The child may be mounted with a *different* `rt` — a sandbox with its own
-name table, say — because `rt` is a value. Shared
-machinery (auth, the provider HTTP layer, session files) is namespace code, not
-node state, so it is shared by construction; what a child node isolates is
-composition and registrations, which is what a subagent's own model, tool
-subset and hooks need (pi's `durable`, recorded *open* in `pi-alignment.md`).
-
-Child nodes hang off the node, not off the slot whose unit mounted them:
-replacing or dropping a slot disposes that unit's owners (§5.1) but does not
-end children it created — the run that mounted one disposes it (`finally`
-above), and whole-node `dispose!` is what ends children someone forgot. That is
-why §8 gates unit removal on a quiescent boundary: a child outliving the unit
-that started it is a host bug, not a lifetime the store can infer.
-
----
-
-## 6. The manifest
-
-### 6.1 Entries
-
-```clojure
-{:id       :retry-policy   ; the slot id in the target composition (required)
- :name     :kmet/retry     ; what resolves it (§6.4)
- :config   {:max-retries 3}
- :disabled false
- :into     :agent-loop}    ; the group's slot id; defaults to :app
-```
-
-One entry shape replaces the four current mechanisms. The old keys stay as
-**configuration** — `:extensions`/`:packages` and `:default-tools`'s
-`+name`/`-name` merging are public settings; they are not removed. The
-`:default-tools` selection stays a run-option
-(`apply-default-tools!` semantics preserved exactly), because tools are
-registrations, not units (§5.1). There
-is no `:from` backend hint: backends are tried in the host's declared order and
-the first that resolves wins, so the common case needs no field and a miss
-reports every backend attempted.
-
-`:disabled true` makes an entry inert: `check` skips it (a parked entry may
-name a backend that is gone) and `mount!` never mounts it. `:app` is the root
-composition and not a valid `:id`. Composition ids — the ids of entries whose
-units carry `:units` — are unique across the whole entry list; slot ids are
-unique within one composition, and a leaf id may repeat under different groups.
-A unit's inline `:units` are defaults the same composition mounts: an entry
-whose `:id` matches one replaces it, an entry with a new id adds a slot.
-`:into` names entry-declared compositions only — to mount children under a
-group, declare the group as an entry; inline groups (`:units` inside `:units`)
-are private to their unit. Inline group ids still occupy the composition space,
-and `check` refuses a mount that uses one twice.
-
-### 6.2 Diffing by `:id`
-
-`mount!` diffs the entry list by `:id`: an id the target composition does not
-have is an **addition**; an id it has is a **replacement** (config or name
-change remounts that subtree, disposing what it displaced); an entry dropped
-from the list is **disposed**. An entry with a generated id is
-removed-plus-added on every read and therefore remounts — the reason `:id` is
-required. Removal is not a separate operation: unmounting is `mount!` with a
-smaller list, which is what makes P5's reload a single call.
-
-A slot is kept when its owner path, resolved unit, `:name` and `:config` are
-all unchanged; the path is compared because a composition id can be reached
-under a new parent after a rename, and its registrations must move with it.
-Disposing one owner's registrations (`dispose!` with a path, §5.2) is not an
-unmount: the slot stays in the snapshot, and an identical re-mount does not
-re-run its `:start`.
-
-### 6.3 `check` / `mount!`
-
-```
-(cells/check  rt entries)  ; → [] | [err …]   pure: no scopes, no code, no side effects
-(cells/mount! rt entries)  ; → node           check first, then scopes + resolution + mount
-```
-
-`check` is the transactional hinge, and `mount!` is the only way in. **`check`
-does build the plan** — it must resolve every name and validate every `:config`
-to answer at all — and then **discards it**: what comes back is the error
-vector, empty when the entries would mount. `mount!` re-plans rather than
-accepting one, because a plan is an artifact of a moment: between building it
-and mounting it an extension can load or unload and a backend can change, so a
-caller-held plan is either a stale hazard or — if `mount!` re-validates it
-anyway — a cache with no purpose. Re-planning costs a map lookup apiece plus
-malli on a small map, once per mount.
-
-Both calls resolve names **without loading anything** and run §4; `mount!`
-throws `ex-info` with the same errors instead of returning them. What a caller
-wants *instead of* a plan — "show me what would mount" — is a description
-rather than a mountable artifact, and the answer today is to mount and
-`explain`: mounting is cheap and reversible, which is what diffing by `:id`
-buys (§6.2).
-
-Today an extension that throws inside `init` leaves whatever it registered
-before the throw in place, and the 13 pending resets in `bootstrap` are the
-compensating hack; with per-owner scopes, a throwing `init` disposes its own
-scope and the process is back where it started.
-
-`mount!` is likewise not transactional — `:start` runs as the walk reaches each
-slot, so a later `:start` that throws leaves earlier slots mounted. What it
-does not do is leave a node the snapshot cannot describe: a throwing `:start`
-unwinds its slot's whole subtree before the error propagates, and the mount
-table is
-written as each slot is admitted, so `composition` names exactly what is
-mounted and a retry diffs against the truth. Structural errors are caught
-earlier still: composition ids are validated over the whole effective tree
-before anything is touched, so a duplicate id leaves the node exactly as it
-was (§6.1).
-
-### 6.4 Resolution and backends
-
-`:name` resolves through a backend the **host** supplies:
-
-| backend | resolves | evaluates code? |
-|---|---|---|
-| `:builtin` | a preloaded unit table (a var registry) | no |
-| `:ext` | a unit handle in an extension the host has loaded | no — the host's loader already did |
-
-The host supplies them as an ordered vector of `[kind resolve-fn]` pairs;
-there must be at least one, they are tried in order, and a miss reports every
-kind attempted.
-
-**Descriptor stability is a backend rule, not a nicety.** The diff compares
-resolved units by value, so a backend must return the *same* descriptor value
-for a name while it is loaded. One that rebuilds an equal-but-fresh descriptor
-(a new closure per call) remounts that name on every pass; the symptom is a
-mount that never settles — repeated remounts of an entry nothing changed — and
-the fix is a descriptor table keyed by name, never a constructor called from
-the resolve fn.
-
-**The framework never loads code, and never sees a classpath.** Dynamic
-loading, isolation and artifact discovery stay in `kmet.loader` and
-`kmet.agent.extensions.*`; this module resolves names to handles the loader
-already produced. That boundary keeps the module dependency-free (§9) and
-means it cannot become a second, weaker loader by accident.
-
-**No `inject`, no `PENDING`.** Cordis suspends a plugin until its declared
-services exist, with a documented failure mode: a dependency nobody provides
-waits forever, silently — DSH's own docs call PENDING a "legitimate state", so
-there is no error to find. A unit here declares no dependencies: its group's
-handle calls it, or it is reached from the snapshot by slot id. Nothing can
-wait, so nothing can wait forever.
-
-**Handles may come from anywhere.** The framework only ever calls a handle,
-`(handle node input)`, and never inspects it — so it may be a plain var, a
-function created inside an extension's loader context and shared by reference,
-or a function evaluated in `run_code`'s SCI sandbox. It cannot tell them apart,
-which is the point: **the host supplies one backend per isolation mechanism it
-has** (§8.2), and `kmet.loader` stays where it is. One invariant comes with it:
-**a handle is valid only while its owner is live**, so a host drops the entry
-and disposes the owner together, at a quiescent boundary (§5.4).
-
-Because `:name` resolves to a *descriptor*, a backend supplies the `:config`
-schema too — and a malli schema is data, so an isolated context can author its
-own config contract. That is Cordis's `Config` export working across an
-isolation boundary, for free.
-
----
-
-## 7. Visibility
-
-`(composition node)` returns the mounted data: per slot its resolved handle,
-config, the unit's own host metadata, and the registry keys its `:start`
-installed (§8.1; the exact map is §5.4's). `(explain snapshot)` renders that
-value for a human, one line per slot.
-
-The host's `/units` prints the store side instead: every owner — a registry's
-address (`[:app :commands]`), an extension's `[:app :extensions <name>]`, whose
-registrations are the ones `init(api)` made (§5.1) — read from the store
-(`scope/owners`, `scope/owner-registrations`) and printed as one flat line
-each, in registration order. No slot needs to stand for the owner: disposal is
-by owner path (§5.2), so a registration a unit or extension made is dropped
-whether or not a mounted unit occupies its address. The host no longer mounts
-a tree; its loop group is a plain stage map on the node (cells-plan.md §3).
-
-The split is deliberate: the data form is what tests assert and what a diff
-shows; the string form is cosmetic and free to change (§12, question 4).
-
-This is not a debugging nicety; it is the payoff that makes §1.3's trade worth
-it. Today the architecture of the loop lives in a docstring and is read by
-opening a 260-line function. After the change the slot tree *is* the
-architecture, and it must be readable — reviewed in diffs, printed on demand,
-asserted in tests. A composition nobody can print is a composition nobody can
-maintain.
-
-The **entry list** — plus each entry's config provenance — is the module's one
-replicable artifact: a future multi-process host (pi's `chord`, recorded as
-*open* in `modules/agent/src/kmet/agent/development/pi-alignment.md`) would ship
-entries and resolve names in the target process. Never the snapshot: it holds
-handles, which are fns and live-only (§6.4).
-
----
-
-## 8. The host contract
-
-The host supplies one thing: **the resolution backends** — an ordered vector
-of `[kind fn]` pairs, at least one. kmet itself no longer mounts a tree (its
-loop stages are plain data on the node); a host that does supplies at least
-one backend. Nothing else
-crosses the boundary: no event vocabulary (a subscriber reaches the bus through
-`register!`, §8.1), no config schema registry, no classpath. An entry's
-`:config` validates against the malli schema on its unit's `:config` field
-(§9), and payload validation stays host-side, at the event bus.
-
-Three rules come with that boundary, each a sharp edge rather than a
-convenience:
-
-- **The host root is a process global.** kmet's app node is one store for the
-  process — every front end, engine and loaded extension shares it. A tree
-  that must not share config or registrations mounts its own node from its own
-  `rt` (`mount! {:parent …}` for a child of the root), which is what a
-  subagent's own model, tool subset and hooks need (§5.6); a per-session
-  *entry* in the shared root would be last-wins.
-- **Mutation is the caller's boundary decision.** `mount!` and `dispose!`
-  never wait — no lock, no quiescent detection, no retry. A host mutates the
-  live tree only where it knows nothing is mid-run (`/reload`, bootstrap, a
-  session swap); the store cannot infer that, and a disposal that races a read
-  is a host bug, not a store error (§5.3).
-- **A handle lives exactly as long as its owner** (§6.4): dropping an entry
-  and disposing its owner are one host move, at a quiescent point.
-
-### 8.1 Subscribers and the bus
-
-The agent's event bus is the host's own (`kmet.agent.event-bus`), and it is
-**process-level**: an extension subscribes with `on-event` when it loads —
-before any engine exists — and that subscription lives from load to unload, in
-registration order, in one registry no engine adopts, copies or clears (§12
-Q3). A unit subscribes the same way in its `:start`; what the node adds is the
-*scope*, not a second registry: `on-event` takes the node to listen to, an
-emission carries the emitting node, and a scoped listener sees its own node
-and its descendants (a child loop's events included). An app-level emission
-carries no node and reaches scoped listeners too, so a unit still sees the
-host's session events while a process-wide listener — an extension's — keeps
-hearing every emission (F13).
-
-```clojure
-;; kmet.agent.runtime — the host's subscriber convention
-(on-event :turn-end on-turn-end)          ; process-wide: an extension's
-(on-event :turn-end nil handler node)     ; this node's subtree: a unit's
-```
-
-Everything else listener-shaped *is* a registration made in `:start` and owned
-by the unit: tool-call and before-agent-start hooks, entry and message
-renderers, markdown transformers, tool and command registrations. `explain`
-prints each unit's registry keys, so "which units listen to `:turn-end`" — and
-which unit registers what — is answerable from the node instead of by grep,
-and because the keys are host-shaped the host's view can group them however it
-likes (for the store owners that have no slot of their own — a registry's
-address, an extension's `[:app :extensions <name>]` — `/units` reads the store
-directly, §7).
-
-The host's registration helpers take that node as their first argument —
-`register-command!`, `register-tool!`, `register-skill!`,
-`register-extension-skill!`, the hook, renderer and flag registrations,
-`load-skills-from-dir` and `discover-resources!` — so a unit's `:start`
-passes the node it was handed and lands on its own tree (F3). The app root
-appears only at the host's own edges: extension load, front-end builtin
-registration and package resource loading. Reads still answer for the app
-root; a child node's lookups take its node when a child loop needs them.
-
-### 8.2 Isolated nodes
-
-Isolation is the host's, one backend per mechanism. What remains a sketch is
-the sandbox:
-
-```clojure
-;; the sandbox backend sketch
-
-(defn sandbox-backend [run]           ; run_code's SCI sandbox
-  (fn [nm]
-    (when-let [src (script-for run nm)]
-      {:handle (eval-handle-in-sandbox! run src)      ; fn created in-context
-       :config (declared-config-schema run nm)})))    ; malli data, authored there
-```
-
-**Extensions.** `load-extension!` runs `init(api)` as it does today, and its
-registrations land on `[:app :extensions <name>]` — commands, tools and tool
-sources, skills, prompts, hooks, renderers, flags, and the resources a
-`:resources-discover` contribution loads (the paths a handler returns load
-under the same owner, so a later discovery replaces them instead of
-duplicating and unload takes them back; the set the applied paths used to need
-is gone). The host creates its root node *before* loading any extension, so
-`init(api)` always has a scope to register into — that ordering is what
-retires the pending buffers. Unloading is two steps in order: `shutdown(api)`,
-then deregister what remains — the fns recorded by the registrations that live
-outside the tree, run in reverse registration order, then one LIFO dispose of
-`[:app :extensions <name>]` — and `loader/unload!`, after which every handle
-that came from that context is dead and nothing refers to it. The
-extension-units path — published entries, declared units and the `:ext`
-backend — is retired: an extension registers into the host's registries under
-its owner and adds no slots to the tree.
-
-**Codemode.** A model-authored entry list is mounted into the run's **own node**
-with its **own `rt`** (§5.6), so it can resolve only the names the host
-whitelisted, and it is disposed with the run that created it. Whether a run may
-contribute entries at all, and to which slots, is a capability decision — the
-`rt` is the gate (§12, question 5).
-
-### Host rules
-
-- **A few substitutable seams, not all code.** Only these become units with
-  handles: the agent loop, compaction, the retry policy, the provider/model
-  resolver, the tool registry. The session store and the UI port are
-  owner-scoped registrations too, but their content is live state rather than a
-  substitutable handle:
-  `bootstrap` and the front end register the session and the port under
-  `[:app :session]` / `[:app :ui]` (P4, §5.1), and extension code with no node
-  in hand reads them through the process cache (`get-session`, `ui-call`).
-  Ordinary code keeps calling namespaces directly (`session/append-entry`, not
-  `(svc :session)`), because `kmet.agent.test-layer-guard`,
-  `kmet.agent.test-headless-guard` and `kmet.libs.test-self-contained` prove
-  layer discipline *statically*, and a dynamic lookup table cannot be checked
-  by any of them.
-- **Config-derived entries mount where their config lives.** The app tree is
-  one node shared by every engine, so an entry carrying a per-session resolved
-  value (the guard's threshold, the retry budget, the default-tool selection)
-  would be last-wins across engines. Those values stay the engine's run options
-  until the engine runs on its own node — the child-node lifetime pattern of
-  §5.6.
-- **Capabilities unload any time; units only at a boundary.** Capability tables
-  are order-independent (barring shadowing), so tool/command registration and
-  removal stay as cheap as they are today. A unit may be mid-invocation, so its
-  removal is gated on a quiescent boundary — one rule, both halves (§5.4).
-- **The loop's control flow stays in the loop.** Its routing table is data the
-  loop's own namespace owns and tests (P3); its stages are a plain map on the
-  node, read once per attempt (the guard and the retry policy). The framework
-  gains no vocabulary for iteration, routing or order.
-- **Declare the insertion points you want to offer.** The framework cannot
-  invent one (§3.1); a list-valued slot (`{:units {…}}`) is how a host offers
-  "extensions may add a policy here".
-- **No new formats.** Session EDNL, provider wire schemas (`:parameters`),
-  extension ABI keys: unchanged. `extension.edn` keeps its whitelist-extract
-  manifest parse.
-
----
-
-## 9. Document set and shelf life
-
-Design, contracts and rationale live in this file. The phase still ahead lives
-in [`cells-plan.md`](../../../../../cells-plan.md) at the repository root, and a
-landed phase's row comes out: two copies of a phase drift, and the document is
-always the stale one. The scaffolding each landing deletes is the table below.
-
-**Rank 0 is design**, not mechanics: the module requires no `kmet.*` namespace
-outside its own `kmet.cells.*` and no third-party library (malli is a
-root-level dependency, not one of ours), so `test_self_contained` forbids a
-foreign `kmet.*` require and a second consumer could take the module as-is.
-
-| scaffolding | deleted when | what remains |
-|---|---|---|
-| §8.2's sandbox sketch | codemode is scheduled | "one backend per isolation mechanism", the handle-lifetime invariant (§6.4) |
-| §5.6's child-mount snippet | the first child node ships (P7) | "nodes nest; domains do not" |
-| `cells-plan.md` §2 (the phase table) | continuously — a landed phase's row comes out; the git log is its record | the phases still ahead |
-
-§A.1 is not scaffolding: it is a dated snapshot of the tree *before* the change,
-and it says so. It stays, as does §A.2.
-
----
-
-## 10. Staged plan
-
-The phase still ahead is laid out in `cells-plan.md` §2, with the slice it
-lands in; the scaffolding each landing deletes is the table above. The
-invariant they serve is here: every phase is landable on its own, gated by the
-changed-file tasks and by `test-layer-guard` / `test-headless-guard` /
-`test-self-contained`.
-
----
-
-## 11. Design non-goals and rationale
-
-Recorded so the analysis is not redone. Nothing here changes without an
-explicit request.
-
-### 11.1 Deliberately not adopted
-
-- **Cordis** (the design source) — ~50 lines of mechanism, already implemented
-  three times here (§1.2); `inject`/`PENDING` is for late-arriving services
-  (§6.4), and it is TypeScript.
-- **Effect-TS `Scope` / Effection** — confirms the primitive (a bag of
-  finalizers, closed once, run in reverse) and adds nothing above it;
-  structured concurrency stays the submission chain's business.
-- **Integrant / component / clip / donut.system / mount** — they solve bootstrap
-  manifests and dependency order, not scattered registries (§1.1); their
-  `init`/`start` split is not adopted (§2.3).
-- **Mycelium / Maestro** — adopted: hierarchical composition (a group occupies a
-  slot like a leaf). Not adopted: the pure-value pipeline (§4), FSM routing
-  (§A.2).
-- **Aero / any reader-tag config** — tags buy syntax where the need is
-  semantics; `{:kmet/env "X"}` / `{:kmet/ref [:providers :deepseek]}` as data
-  work on both hosts (jolt `:readers` unverified) and keep a tag syntax out of
-  the extension ABI, which shares the reader.
-- **pi's `chord` (multi-process plugin host)** — out of scope; §7's entry list
-  makes it a later, optional layer (recorded *open* in `pi-alignment.md`).
-- **A fourth store in `kmet.libs`** — the rejected first proposal: the
-  primitive already exists three times over (§1.2). Composition was missing,
-  not storage.
-- **re-frame / a single app-db** — `AgentState` deliberately uses per-field
-  atoms over one application-database atom; `reakt` + `track!` already supply
-  the UI dataflow.
-
-### 11.2 Deliberately not done
-
-- **Service-ifying ordinary code.** No dynamic lookup at ordinary call sites
-  (§8 host rules).
-- **Units for everything.** A unit is a sealed, substitutable seam with a
-  config contract; wrapping a function that is only ever called by its
-  neighbour adds indirection, a descriptor, and a place for the layer guards to
-  stop working. A registry's address is no exception: it is an owner path in
-  the store, read by `/units` and disposed by owner (§5.1, §7), not a mounted
-  unit standing in for one.
-- **One node per domain, or per session.** The loop, the tool registry, the
-  extensions and the session engine live on one node (§5.6); a session is a
-  slot, and switching sessions stays an in-place swap. Nodes nest only for
-  per-instance lifetimes.
-- **`inject` / `PENDING` / silent-wait** in the descriptor model (§6.4).
-- **Loading code in the framework.** No loader, no classpath, no sandbox — the
-  module stays rank 0 (§6.4), and each isolation mechanism is a host backend
-  (§8.2).
-- **A caller-held plan.** `check` builds the plan and discards it; `mount!`
-  takes entries and re-plans (§6.3). A plan is an artifact of a moment, and a
-  stale one is a hazard the design does not need to carry.
-- **The framework being generic-first.** It is written for kmet's two
-  consumers (the agent runtime and the extension system) with resolution
-  injected, not for an imagined third. `modules/loader/`'s "promotable to a
-  standalone library afterwards" is the right ambition and the wrong first
-  step.
-
-### 11.3 Recorded decisions
-
-- **The store lands before anything is mounted** (P0 → P1), and the registries
-  are consolidated onto it before the surfaces become entries (P2 → P4) —
-  without per-owner lifetime, every unit becomes another namespace-level global.
-- **Extensions are a backend, not a parallel system** — same descriptors, same
-  manifest, same unload path.
-- **The loop converts inward-out** — `run-agent-turn` stays the public entry
-  through P4 so RPC, print mode and tests keep working unchanged.
-
----
-
-## 12. Open questions
-
-1. **Capability snapshot timing.** §5.4's per-attempt snapshot of capability
-   tables can land with the store (P0), the manifest (P1) or the agent's runtime
-   (P2); **settled as P2** (`cells-plan.md` §2). The tool-unload race it was
-   meant to close has a second half — dispatch, not just the wire list — and
-   that half is a capture of the request's own tool map (F4, §5.4): tools are
-   registrations, not units, so the snapshot does not carry them.
-2. **List-valued slots as the extension pattern.** §3.1/§8 make "extensions may
-   add a policy here" a host-declared list slot, but the shape a host should
-   use (`{:units {…}}` iterated by the caller vs a slot per phase) is not yet
-   fixed by a real consumer — it should be settled at P5, not now.
-   **Settled at P5c**: the first real consumers were *registrations*, not
-   policies, and they needed no list slot at all — a host registry keeps its
-   fixed owner path and gains an owner argument, so an extension's entries land
-   on `[:app :extensions <name>]` and disposal is per owner (§5.1). A host that
-   wants a policy list still mounts a slot of its own (`{:units {…}}`, as the
-   loop group does): the two are not the same problem, and nothing in P5c
-   argues for a shared shape.
-3. **Declarative `:on` sugar.** §8.1 makes subscriptions imperative
-   `register!` calls in `:start`. A declarative `{:on {:turn-end f}}` host
-   metadata key would be printable and checkable against the bus's declared
-   vocabulary. Whether it earns its place should be decided at P5 with the
-   extensions that would use it, not invented now.
-   **Settled at P5c**: no sugar. A subscription is process-level — it must be
-   live before any engine mounts, and the bus reads its own process-level
-   registry — so it is not a slot's registration and a mount-time `:on` key
-   would describe the wrong lifetime; the imperative `on-event` call plus the
-   extension's tracked deregister is what the consumers use. The registry is
-   one ordered structure the engine never owns: bootstrap and disposal neither
-   copy nor clear it (the F10 follow-up), so a subscription survives an engine
-   and a second bootstrap sees it; dispatch reads it in registration order
-   (the load order pi iterates), and a handler failure is reported through
-   `kmet.agent.debug/log-error` instead of a console. Scoping (§8.1) is a
-   property of the subscription, not of the registry: the scoped-subscription
-   follow-up (F13) adds the emitting node to the entry and the emission, so
-   one registry still answers for the whole process.
-4. **`composition` (data) as an ABI.** **Settled with P1**: §5.4's entry shape
-   is the compatibility surface — `explain`'s string form stays cosmetic and
-   free to change. Changing the shape is now a deliberate, documented act,
-   which is what a future host that replicates entries needs.
-5. **Policy for sandbox-authored entries.** §8.2 makes a model-authored entry
-   list mechanically possible; *whether* a run may contribute one, and to which
-   slots, is a capability decision belonging to `run_code` and the host's `rt` —
-   settle it when the feature is wanted, not now.
-
----
-
-## A. Measurements and the cut record
-
-### A.1 Measurements
-
-Taken from the tree when this document was written; the counts drove the case
-for the store. P2 changed the entries they cover as each registry moved onto
-it, so the rows below are the pre-P2 snapshot, kept as the record of what was
-removed. Sites are named rather than line-numbered, since lines drift and names
-do not.
-
-| symptom | count |
-|---|---|
-| `current-*-registry` dispatchers (`(or (<engine field>) pending-atom)`) | 15 |
-| `defonce pending-*` buffers | 15, of which 13 are drained by `bootstrap` |
-| registry copies + pending resets inside `bootstrap` | 15 in, 13 out |
-| `default-engine` call sites | 22 |
-| `register-*!` fns — of which document returning a deregister fn | 39, 14 |
-
-- **`kmet.agent.session.runtime/bootstrap`** — copies 15 registries into the
-  engine record, then resets 13 pending buffers; **`dispose!`** mirrors the
-  teardown. Adding one extension point is four edits: a pending atom, a
-  `current-*-registry`, a register fn, and both halves of
-  bootstrap/dispose.
-- **`current-applied-resource-path-registry`** — reaches the engine through a
-  call-time `(require 'kmet.agent.session.runtime)` plus `resolve`, to dodge a
-  load-order cycle.
-- **`clear-extensions!`** — resets `pending-applied-resource-paths` by hand,
-  because that registry outlives the extensions that filled it.
-- **`kmet.agent.extensions.core`** — `track-deregister!` fills
-  `:deregister-fns` with `conj`; `unload-extension!` runs them with `doseq`
-  inside `(try (f) (catch Exception _))`.
-- **`kmet.agent.core/-main`** — `packages/load-extensions!` runs before mode
-  dispatch, which is why the pending buffers are the normal path rather than a
-  fallback.
-- **`pending-input-hooks` and `pending-before-agent-start-hooks`** — copied into
-  the engine but *never* reset, unlike the other 13. P2 settled them as
-  process-lifetime hooks rather than a leak: they live on the app tree under
-  the registering extension's owner, so every engine reads the same set and no
-  stale copy outlives an unload.
-- **`kmet.agent.loop/run-agent-turn`** — ~260 lines carrying the loop's
-  architecture in its docstring. Its stages are already named functions
-  (`resolve-endpoint`, `call-llm`, `execute-tool-calls!`, `turn-context`,
-  `prepare-next-turn!`, `finish-turn!`, `complete-turn!`, `turn-outcome`), and
-  `turn-outcome` already returns routing data (`:aborted | :error |
-  :completed`) — but the routing is a `case` with `(recur)` transitions and a
-  `(throw (ex-info "Unknown attempt outcome" …))` for anything unhandled: a
-  dispatch table written as control flow (P3).
-
-### A.2 Cut in review
-
-What earlier drafts carried and dropped, recorded so it is not re-added by
-reflex — each cut made against the inventory of units the phases actually need.
-
-| cut | why |
-|---|---|
-| `:kind` and four of its five values | `:handle`/`:units` already says what a unit is, and `:pipe`/`:fan`/`:loop` only mean something if the framework executes children in order — it does not |
-| `:dispatches`, the total-dispatch check, P3's risk | routing is how a unit is implemented; keeping the loop's table in the loop's namespace preserves its retry/overflow/abort ordering (P3) |
-| `:in`/`:out`, the event-closure check, the `:events` vocabulary, the grain rule | superseded by the mount hook + `register!` (§3, §8.1): a subscriber carries its handler, so it cannot dangle, unlike a declaration. Names, dispatch modes and the vocabulary stay the bus's |
-| `:effect` (purity) | the only mechanical consequence was a nil scope, and purity is not verifiable; it rides as host metadata like `:address` (§3) |
-| `:id` in descriptors, the uniqueness check | the group's `:units` key *is* the id, so uniqueness is structural |
-| `:address`, `:from` | addressing is the host's registry key; the backend hint is inferred by trying backends in order (§6.1) |
-| `unmount!`, a separate `tree` | `mount!` is diff-applying, so removal is a smaller entry list; `composition` *is* the mounted data, so `tree` was a second name for it (§6.3) |
-| nested *owners* | owners stay flat; what nests is nodes, for per-instance lifetimes only (§5.6) |
-| a config/payload schema registry on the runtime | an entry validates against its unit's own `:config`; payloads are the bus's business (§8) |
-
-**The invariant that made the cuts safe:** a group declares the same fields as
-a leaf, so nothing outside can tell them apart. Every mechanism above
-disposal, config validation, checking, diffing, presets — was built on that
-rule and survived the cuts untouched.
+plus whatever a host hangs on it (the app's node carries `:loop-stages`, an
+atom holding the loop's stage map). `register!` is the only writer of a
+registration; the store is an atom so writes are imperative while the node
+stays the value callers pass around.
+
+A registration is one `(owner, key) → value`. Re-registering replaces it and
+moves it to the end of the owner's registrations. `nil` is not a value
+(`::nil-registration`). `register!` returns a deregister fn collected onto the
+owner; the caller need not keep it — disposing the owner is the cleanup.
+
+A key holds one value per owner. A registry that addresses its entries by name
+keys them by that name (`[:kmet/command "deploy"]`); a registry without names
+gives each registration its own key (`[:kmet/hook :turn-end 0]`) rather than
+sharing one key and rewriting a collection.
+
+## 2. Owner paths and keys
+
+Keys are the host's vocabulary; owners are paths (`[:app :commands]`,
+`[:app :extensions "name"]`, `[:app :session]`). Ownership is the address:
+nothing else has to exist for a registration to be addressable, and an owner
+is disposed as a whole — everything it registered, in LIFO order.
+
+- `register! node owner k v` → deregister fn
+- `deregister! node owner k v` — value-guarded, so a stale call is a no-op
+- `deregister-key! node k` / `(deregister-key! node k owner)` — remove by key
+- `add-teardown! node owner f` — cleanup for what lives outside the store
+- `owner-keys`, `owner-registrations`, `ordered-registrations`, `owners`,
+  `registrations`, `for-key` — reads
+
+`owners` is first-registration order; `owner-registrations` is that owner's
+registration order; `ordered-registrations` is `[key owner value]` across
+owners in that order. A deregister fn's value guard has one caveat: two
+registrations of an *equal* value are indistinguishable, so an earlier one's
+fn can remove the newer one.
+
+## 3. Disposal
+
+`dispose-owner! node owner` runs the owner's registrations in reverse
+registration order, then its teardowns in reverse order. The owner is
+**closed** for the pass: `register!`/`add-teardown!` under it — or under any
+owner during a store-wide pass — throws `::closed-store`; when a cleanup
+trips it, the cleanup runner reports it like any other failure. A throwing
+cleanup is reported through `*error-reporter*` and never skips the rest. The
+refusal is scoped to the pass; the store accepts the next registration
+afterwards.
+
+`dispose-store! node` disposes every owner in reverse owner order with the
+whole store closed, then resets it. `dispose-node! node` ends children first
+(reverse creation order), unlinks the node from its parent's `:children`, then
+runs `dispose-store!`. Both are idempotent.
+
+The module has no clock: disposal never waits. Quiescence is the caller's
+decision — the agent disposes at the `:agent-settled` boundary.
+
+The default `*error-reporter*` prints to stderr (rank 0 cannot require
+`kmet.agent.debug`); `kmet.agent.runtime` rebinds it to
+`kmet.agent.debug/log-error`.
+
+## 4. Reading the store
+
+Reads are one store snapshot: a registration made while a read runs cannot
+split the answer. `ordered-registrations` is the order a host registry lists
+in — owners by first registration, each owner's by its own. The host reads
+its loop stages **once per attempt** from the node's `:loop-stages`, not per
+tool call, so a mid-run change reaches the next attempt, never the one in
+flight.
+
+The same discipline covers the request's tool list: the wire list, the
+declared set and the dispatch all resolve against the one capture made when
+the request was built, so a tool unloaded mid-request still runs for the
+request that was offered it — and a tool added mid-request is not dispatched.
+
+## 5. Nodes
+
+`node` builds a node; a non-nil parent gets it in `:children` and sets
+`:parent`. `EXTRA` carries host fields; the node's `:store`, `:parent` and
+`:children` always win. `in-subtree?` walks parents; a nil root is the
+process-wide scope, so every node (nil included) is in it. A node is a value;
+the store and the children list are atoms.
+
+## 6. The host's view
+
+The app root is created by `kmet.agent.runtime/node` before extensions load;
+every front end, engine and extension registers into it. Extensions register
+under `[:app :extensions <name>]`, so unloading one is a `dispose-owner!` plus
+the fns the extension recorded for what lives outside the tree.
+
+`/units` prints one flat `<owner> keys=[…]` line per owner that holds
+registrations (`runtime/owner-listing`), in first-registration order.
+
+The loop's stages are plain data on the node: `{:loop-guard {:handle …}
+:retry-policy {:handle …}}`, with an optional `:config` per stage. The loop
+reads the map once per attempt; `/reload` re-seats it with
+`refresh-stages!`; a child node (`runtime/child-node`) carries its own map and
+is the per-run isolation boundary for subagents. The event bus is host-owned
+state of its own, not a store registration; a subscription may carry a node
+scope and then hears events from that node's subtree.
+
+## 7. Module rules
+
+- Rank 0: no `kmet.*` require outside `kmet.cells.*`, no third-party library.
+  `test_self_contained` enforces the require rule.
+- The store is an atom, the node a value: callers hold nodes, writes go
+  through the functions.
+- Failures are reported through `*error-reporter*`, never swallowed, and a
+  failing cleanup never skips the rest.
+- No clocks, timers or threads in the module; disposal never waits.

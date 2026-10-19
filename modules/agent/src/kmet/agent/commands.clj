@@ -19,14 +19,14 @@
    The registry lives in the app root's store, under the `[:app :commands]`
    owner and the `[:kmet/command <name>]` key: a registration is visible to
    every front end and outlives an engine, and it is disposed with its owner
-   rather than reset by hand (cells.md §5.1). The extension ABI registers
+   rather than reset by hand (cells.md §2). The extension ABI registers
    under its own owner path, so unload disposes what an extension added."
   (:require [clojure.string :as str]
             [kmet.agent.runtime :as app-runtime]
             [kmet.cells.scope :as scope]))
 
 (def commands-owner
-  "The app's command registry owner — the registry's address (cells.md §5.1).
+  "The app's command registry owner — the registry's address (cells.md §2).
    Registrations are addressed by key under this path, and `/units` reads the
    owner from the store, so they render under it."
   [:app :commands])
@@ -67,9 +67,9 @@
   "Register (or replace by :name) a slash command on NODE, owned by OWNER —
    the app's registry by default; an extension passes its own owner path
    (`kmet.agent.extensions.core/extension-owner`) so unloading it disposes
-   the command with the owner (cells.md §5.1). NODE is the composition node
-   the registration lands on: the app root for an app-wide registration, the
-   node a unit's `:start` receives for that unit's own tree (cells.md §8.1).
+   the command with the owner (cells.md §2). NODE is the node the registration
+   lands on: the app root for an app-wide registration, a child node a run
+   passes for its own tree (cells.md §6).
    The store key is derived from :name, so a command is always addressed by
    its own name. Returns nil."
   ([node cmd] (register-command! node cmd commands-owner))
@@ -89,7 +89,7 @@
 (defn clear-commands!
   "Remove every command registered on NODE (mainly for tests). Returns nil."
   [node]
-  ;; by key, not by owner: a unit owns several registries (§5.1)
+  ;; by key, not by owner: an owner holds several registries (cells.md §2)
   (doseq [[k owner v] (scope/ordered-registrations node)
           :when (command-key? k)]
     (scope/deregister! node owner k v))

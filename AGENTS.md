@@ -10,7 +10,6 @@ change when behavior changes.
 | Area | Authoritative reference |
 |------|-------------------------|
 | Application layout and contributor workflow | [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md) |
-| Composition runtime (`kmet.cells.*`) | [`modules/cells/src/kmet/cells/cells.md`](modules/cells/src/kmet/cells/cells.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
 | Tk GUI backend (`kmet.tk.*`, Jolt-only) | [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md) |
 | Extension contract and authoring | [`modules/agent/src/kmet/extension.md`](modules/agent/src/kmet/extension.md) |
@@ -24,10 +23,7 @@ User-facing documentation belongs in `docs/`. Implementation notes belong next
 to their source package. The temporary notes `run_code.md`, `perf.md`,
 `jolt-bugs.md`, `windows.md`, `pi-tools.md`, and `tcl.md` intentionally
 remain at the project root. (`engine.md` was folded/retired once the
-session-runtime split’s GUI-independent steps landed.) `cells-plan.md` is the
-transitional implementation plan for `modules/cells` — its design document is
-`modules/cells/src/kmet/cells/cells.md` — and it stays at the root until its
-phases land.
+session-runtime split’s GUI-independent steps landed.)
 
 ## Basic development flow
 

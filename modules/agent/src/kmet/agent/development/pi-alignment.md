@@ -74,6 +74,16 @@ the experimental client/server service slices under
 coding-agent as `--mode rpc` (JSONL), and the remote-link story now lives in
 chord. Do not chase those trees when re-checking this document.
 
+**Subagents (P7, deferred).** The durable row's subagent gap has a kmet
+sketch: a subagent tool runs on a child node (`kmet.agent.runtime/child-node`)
+carrying its own loop stage map, with its own model, tool subset and hooks in
+the child's state, and its registrations isolate by owner path under that
+node. Missing: the child-state builder (agent state from the child's model,
+stages, tool subset and hooks), a child session setup, and the tool-subset
+rule (the child state's `:default-tools`/active set — the tool registry reads
+the app root, so a child does not isolate it). This is the record the retired
+cells plan carried as P7.
+
 ## Session storage and alignment
 
 `kmet.agent.session.core` follows pi v3 `SessionManager` semantics in EDN/Clojure,

@@ -189,18 +189,16 @@ prompt templates, hooks, renderers, markdown transformers, flags — live in the
 app root's store (`kmet.cells.scope`, reached through `kmet.agent.runtime`),
 addressed by host-shaped keys under an owner path: a registry's address
 (`[:app :commands]`), or `[:app :extensions <name>]` for an extension's own
-registrations — including
-the skills, prompts and themes a `:resources-discover` contribution loads
-(P5c). The
-registration is disposed with that owner (P2), so a new extension point is a
-key on that store, not a process-global atom copied into each engine. `/units`
-prints every store owner — a registry's address, an extension's own
-registrations — one flat line each, from the store itself (F5, F14, cells.md
-§7). The
-runtime-owned surfaces follow the same rule: `bootstrap` registers the live
-session and its sinks under `[:app :session]` and the headless UI port under
-`[:app :ui]`, and `dispose!` drops those owners; the `extensions` atoms stay
-the no-node read cache for extension code with no node in hand (P4).
+registrations, including the skills, prompts and themes a
+`:resources-discover` contribution loads (P5c). The registration is disposed
+with that owner (P2), so a new extension point is a key on that store, not a
+process-global atom copied into each engine. `/units` prints every store
+owner — a registry's address, an extension's own registrations — one flat
+line each, from the store itself (F5, F14, cells.md §6). The runtime-owned
+surfaces follow the same rule: `bootstrap` registers the live session and its
+sinks under `[:app :session]` and the headless UI port under `[:app :ui]`, and
+`dispose-owner!` drops those owners; the `extensions` atoms stay the no-node
+read cache for extension code with no node in hand (P4).
 
 ### Session runtime and front ends
 

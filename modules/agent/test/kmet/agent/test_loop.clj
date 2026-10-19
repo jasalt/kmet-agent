@@ -1854,7 +1854,7 @@
 
 (t/deftest test-loop-agent-runs-in-the-app-node
   ;; The run's node defaults to the app's (kmet.agent.runtime), and a run can
-  ;; be pointed at its own tree for a child node (cells.md §5.6).
+  ;; be pointed at its own tree for a child node (cells.md §5).
   (t/is (identical? (runtime/node) (:node (loop/make-agent-state))))
   (let [mine (runtime/child-node)]
     (t/is (identical? mine (:node (loop/make-agent-state :node mine))))))
@@ -1862,8 +1862,8 @@
 (t/deftest test-loop-runs-the-guard-in-its-node
   ;; The guard is the node's stage, not a namespace read: a spy in the run's
   ;; own node filters the batch (and trips it on the second, so the run
-  ;; settles), and the stage config supplies the threshold (cells.md §5.4,
-  ;; §8.1).
+  ;; settles), and the stage config supplies the threshold (cells.md §4,
+  ;; §6).
   (let [calls (atom [])
         spy (fn [state threshold tool-calls]
               (swap! calls conj threshold)
@@ -1898,7 +1898,7 @@
 (t/deftest test-loop-runs-the-retry-policy-in-its-node
   ;; The retry policy is a node stage too: a spy replacing it decides the
   ;; errored call's next move, and its config overrides the run's own option
-  ;; (cells.md §5.4).
+  ;; (cells.md §4).
   (let [seen (atom [])
         spy (fn [state]
               (swap! seen conj state)
@@ -1930,7 +1930,7 @@
     (t/is (= :idle @(:status agent)) "the retried run settled")))
 
 (t/deftest test-loop-stages-survive-a-mid-attempt-change
-  ;; cells.md §5.4: an attempt reads its stages once. A change to the node's
+  ;; cells.md §4: an attempt reads its stages once. A change to the node's
   ;; stages during the attempt (here a refresh) is invisible to it, and the
   ;; next attempt reads the new map — the tool-unload race the rule closes.
   (let [used (atom [])
@@ -2510,9 +2510,9 @@
 
 (t/deftest test-a-tool-dropped-after-the-request-still-runs
   ;; the request's tool map is captured once and threaded through the turn
-  ;; (cells.md §5.4): the wire list, the declared set and the dispatch all
+  ;; (cells.md §4): the wire list, the declared set and the dispatch all
   ;; resolve against that capture, so a tool unloaded between the model's
-  ;; tool_use and its execution still runs — the race the snapshot discipline
+  ;; tool_use and its execution still runs — the race the one-read discipline
   ;; claims closed
   (let [node (runtime/node)
         events (atom [])
@@ -5131,7 +5131,7 @@
 (t/deftest test-loop-summarization-honors-the-node-retry-policy
   ;; The summarization retries spend the node's retry policy too: the stage
   ;; config's budget wins over the run's option — here the option would
-  ;; suppress every retry and the node allows one (cells.md §5.4).
+  ;; suppress every retry and the node allows one (cells.md §4).
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
         events (atom [])

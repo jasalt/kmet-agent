@@ -184,8 +184,8 @@
           "and the registration still lands")))
 
 (t/deftest test-a-throwable-does-not-stop-the-bus
-  ;; Throwable, not Exception (cells.md §1.2): an Error from one handler must
-  ;; not skip the handlers after it.
+  ;; Throwable, not Exception: an Error from one handler must not skip the
+  ;; handlers after it.
   (let [log (atom [])
         reported (atom [])]
     (event-bus/clear-event-listeners!)
@@ -233,9 +233,9 @@
 ;; ─── Scoped subscriptions (F13) ───────────────────────────────────────────
 
 (t/deftest test-a-scoped-listener-hears-its-own-subtree
-  ;; A unit subscribes with the node its :start was handed: child events reach
-  ;; it, a parent's or sibling's do not, and an unscoped listener (an
-  ;; extension) keeps hearing everything (cells.md §8.1).
+  ;; A run subscribes with its own node: child events reach it, a parent's or
+  ;; sibling's do not, and an unscoped listener (an extension) keeps hearing
+  ;; everything (cells.md §6).
   (let [root (cells-scope/node)
         child (cells-scope/node root)
         grandchild (cells-scope/node child)

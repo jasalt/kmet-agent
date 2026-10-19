@@ -11,9 +11,10 @@
 
    The extension bus itself is a process-level registry: a subscription lives
    from an extension's load to its unload, in registration order, and no
-   engine owns, copies or clears it (cells.md §12 Q3). A subscription may
-   carry a scope — the node it listens to — so a unit in a child tree hears
-   its own subtree's events and a sibling's listeners do not (cells.md §8.1)."
+   engine owns, copies or clears it (cells.md §6). A subscription may
+   carry a scope — the node it listens to — so a listener in a child tree
+   hears its own subtree's events and a sibling's listeners do not (cells.md
+   §6)."
   (:require [kmet.agent.debug :as debug]
             [kmet.cells.scope :as scope]))
 
@@ -402,7 +403,7 @@
 ;; on-event; the loop and the front ends route events through emit-event!.
 ;; One structure, process-level: extensions subscribe at load, before any
 ;; engine exists, and their lifetime is load → unload, so an engine neither
-;; adopts nor wipes it (cells.md §12 Q3).
+;; adopts nor wipes it (cells.md §6).
 
 (defonce ^:private listeners
   ;; {event-type [{:callback f :owner path :scope node} …]} — one vector per
@@ -425,7 +426,7 @@
 (defn- visible
   "The entries an emission from NODE reaches: NODE nil (a process-wide
    emission) reaches every entry, and a scoped entry sees NODE when it is its
-   own node or a descendant (cells.md §5.6, §8.1)."
+   own node or a descendant (cells.md §5, §6)."
   [entries node]
   (if (nil? node)
     entries
@@ -440,13 +441,12 @@
                 extension's `[:app :extensions <name>]`). The collect
                 emitter reports it beside the handler's result, so a
                 contribution can be applied under the owner that made it
-                (resource discovery, cells.md §5.1).
+                (resource discovery, cells.md §2).
    callback   — (fn [event-map])
    scope      — optional: the node this listener listens to; it sees events
                 emitted from that node and its descendants. nil (the
                 default) is process-wide, which is what an extension wants;
-                a unit's `:start` passes the node it was handed (cells.md
-                §8.1).
+                a child node a run passes for its own tree (cells.md §6).
    Returns a deregister function. A type outside the vocabulary is reported
    and registered anyway: the vocabulary is documented, not a gate."
   ([event-type callback] (on-event event-type nil callback nil))
@@ -468,7 +468,7 @@
   "Call CB with EVENT, returning nil and reporting a throw — a broken
    extension never breaks the bus (pi: the runner reports the handler error
    and carries on). Throwable, not Exception: an Error from one handler must
-   not stop the bus or skip the handlers after it (cells.md §1.2)."
+   not stop the bus or skip the handlers after it."
   [cb event]
   (try
     (cb event)

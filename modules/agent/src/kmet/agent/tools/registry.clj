@@ -6,7 +6,7 @@
    addressed by `[:kmet/tool <name>]` and `[:kmet/tool-source
    <id>]`: visible to every engine, outliving one, and disposed with their
    owner rather than copied into an engine and reset by hand (cells.md
-   §5.1). The extension ABI registers under its own owner path, so unload
+   §2). The extension ABI registers under its own owner path, so unload
    disposes what an extension added."
   (:require [clojure.string :as str]
             [kmet.libs.json :as json]
@@ -82,7 +82,7 @@
 ;; ─── Extended tool registry ────────────────────────────────────────────────
 
 (def tools-owner
-  "The app's tool registry owner — the registry's address (cells.md §5.1).
+  "The app's tool registry owner — the registry's address (cells.md §2).
    `/units` reads it from the store, so custom tools and contributed sources
    report under it."
   [:app :tools])
@@ -111,9 +111,9 @@
   "Register a custom tool on NODE after normalizing its provider-facing
    schema, owned by OWNER — the app's registry by default; an extension
    passes its own owner path so unloading it disposes the tool (cells.md
-   §5.1). NODE is the composition node the registration lands on: the app
-   root for an app-wide registration, the node a unit's `:start` receives
-   for that unit's own tree (cells.md §8.1). Returns cells' deregister fn."
+   §2). NODE is the node the registration lands on: the app root for an
+   app-wide registration, a child node a run passes for its own tree
+   (cells.md §6). Returns cells' deregister fn."
   ([node tool] (register-tool! node tool tools-owner))
   ([node tool owner]
    (let [tool (tool/normalize-tool-definition tool)]
@@ -167,7 +167,7 @@
 (defn register-tool-source!
   "Register (or replace) an extension-contributed tool source on NODE,
    owned by OWNER — the app's registry by default; an extension passes its
-   own owner path so unloading it disposes the source (cells.md §5.1). ID
+   own owner path so unloading it disposes the source (cells.md §2). ID
    identifies the source; TOOLS-FN is a 0-arg fn returning {name → tool map}
    — the same shape a registered tool map has (:name :label :description
    :parameters :execute, optional :streams?/:contextual?/:prepare-arguments).

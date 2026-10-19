@@ -15,10 +15,10 @@
    (the registry's address: `/units` reads it from the store, so their keys
    report under it), addressed by `[:kmet/skill <name>]`: visible to every
    engine, outliving one, and disposed with their owner rather than copied into
-   an engine and reset by hand (cells.md §5.1). A name holds one skill — the
+   an engine and reset by hand (cells.md §2). A name holds one skill — the
    key is the name — so the existing first-wins collision rule is enforced
    before registering. Extension registrations carry the extension's own
-   owner path, so unloading it disposes the skill (cells.md §5.1)."
+   owner path, so unloading it disposes the skill (cells.md §2)."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
@@ -37,7 +37,7 @@
 ;; ─── Skill registry ───────────────────────────────────────────────────────
 
 (def skills-owner
-  "The app's skill registry owner — the registry's address (cells.md §5.1).
+  "The app's skill registry owner — the registry's address (cells.md §2).
    `/units` reads it from the store, so skills report under it."
   [:app :skills])
 
@@ -133,7 +133,8 @@
 (defn register-skill!
   "Register a programmatic skill (no backing file, so the model cannot read it
    on demand — pi has no equivalent; kept for kmet's API and tests) on NODE
-   (the app root for an app-wide registration, a unit's own node in `:start`).
+   (the app root for an app-wide registration, a child node a run passes for
+   its own tree).
    Returns cells' deregister fn."
   [node name description]
   (scope/register! node skills-owner (skill-key name)
@@ -263,7 +264,7 @@
   "Load skills from a directory using pi's discovery rules. Skills are added
    to the registry under OWNER (the app's registry by default; an extension or
    a resource contribution passes its own owner path so the skills go with it
-   — cells.md §5.1); on name collision another owner's skill wins (pi: keep
+   — cells.md §2); on name collision another owner's skill wins (pi: keep
    the first, emit a collision diagnostic) while the same owner's is
    replaced. Returns the diagnostics for this dir (warning/collision maps),
    printed to stderr."

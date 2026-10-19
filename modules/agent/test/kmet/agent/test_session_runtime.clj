@@ -196,7 +196,7 @@
 (deftest test-session-install-is-owner-scoped
   ;; The process cache is last-wins (one live front end at a time), but a
   ;; registration belongs to the tree that installed it: an older tree's
-  ;; teardown cannot clear a newer tree's session (cells.md §5.1, §5.6).
+  ;; teardown cannot clear a newer tree's session (cells.md §2, §5).
   (let [old (app/node)
         newer (app/child-node)]
     (try

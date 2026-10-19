@@ -379,7 +379,7 @@
     ;; extension-registered providers, and print mode gets extension hooks.
     (let [config (cfg/init!)]
       ;; The runtime root first: extension loading below registers into the
-      ;; root's owners (cells.md §8.2), so it has to exist before any
+      ;; root's owners (cells.md §6), so it has to exist before any
       ;; init(api) runs.
       (runtime/node)
       ;; One unified load per type (pi: resourceLoader — top-level entries,

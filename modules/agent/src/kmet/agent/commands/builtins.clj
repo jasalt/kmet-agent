@@ -114,7 +114,7 @@
 
 (defn- handle-units
   "Show every store owner: its address and the keys registered under it, one
-   flat line each (registries, extension registrations; cells.md §5.1, §7).
+   flat line each (registries, extension registrations; cells.md §2, §6).
    The session engine's node when it has one — a session running in its own
    tree shows that tree — and the app root otherwise."
   [{:keys [ui] engine :runtime} _]

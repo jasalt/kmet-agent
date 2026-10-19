@@ -179,7 +179,7 @@
                                              ;;   {:window [signature...] :suppressed n}
                        node                  ;; the node this run reads its loop stages from:
                                              ;; the app root by default (kmet.agent.runtime),
-                                             ;; a child node for a subagent run (cells.md §5.6)
+                                             ;; a child node for a subagent run (cells.md §5)
                        ])
 
 (defn make-agent-state
@@ -213,7 +213,7 @@
          :node (the node this run reads its loop stages from; default the app
          root, kmet.agent.runtime/node — a subagent run passes its own child
          node, which carries its own :loop-guard and :retry-policy stages,
-         cells.md §5.6)"
+         cells.md §5)"
   [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools node]
       :or {provider :opencode-go
            thinking :off
@@ -318,7 +318,7 @@ Be precise and concise in your responses."}}]
    :default-tools (see active-tools-for). Read once per request and threaded
    through it — the wire list, the declared set and dispatch all resolve
    against that one capture, so a tool unloaded mid-request still executes
-   (cells.md §5.4)."
+   (cells.md §4)."
   [agent]
   (active-tools-for {:enabled @(:enabled-tools agent)
                      :default-tools @(:default-tools agent)}))
@@ -840,7 +840,7 @@ Be precise and concise in your responses."}}]
    DECLARED-TOOLS — the request's captured tool map (name → tool): the
    declared set and the dispatch of every call resolve against that one
    capture, so a tool unloaded after the request was built still runs
-   (cells.md §5.4)."
+   (cells.md §4)."
   [agent tool-calls assistant-msg declared-tools & [append?]]
   (let [finalized (atom {})
         ;; the names declared for this request — a call outside the map is
@@ -977,7 +977,7 @@ Be precise and concise in your responses."}}]
    REQUEST-TOOLS is the tool list captured when the request was built, in
    registry order; the declared set and the dispatch of every call in the
    batch resolve against it, so a tool unloaded between the model's tool_use
-   and its execution still runs (cells.md §5.4)."
+   and its execution still runs (cells.md §4)."
   [agent tool-calls assistant-msg request-tools & [append?]]
   (let [declared-tools (into {} (map (juxt :name identity)) request-tools)]
     (binding [run-code-tool/*assistant-message* assistant-msg]
@@ -1054,7 +1054,7 @@ Be precise and concise in your responses."}}]
    system-prompt-override over the base system prompt.
    REQUEST-TOOLS is the request's captured tool list (see
    execute-tool-calls!): the wire list and the dispatch that follows resolve
-   against the same capture (cells.md §5.4)."
+   against the same capture (cells.md §4)."
   [agent api-key text-buf on-text on-thinking request-tools]
   (let [done-promise (promise)
         thinking-buf (atom "")
@@ -2375,7 +2375,7 @@ Be precise and concise in your responses."}}]
 
    Repeat-loop guard (kmet-specific): the batch is filtered through the
    `:loop-guard` stage's handle, read from the attempt's stage map — the node
-   carries the stage, not a mount (cells.md §5.4, §8.1). Its config supplies
+   carries the stage (cells.md §4, §6). Its config supplies
    the threshold when the node carries one; cfg's value is the default.
    Suppressed calls get a synthetic
    guard result (transcript stays coherent — no dangling tool ids, and the
@@ -2388,7 +2388,7 @@ Be precise and concise in your responses."}}]
 
    REQUEST-TOOLS is the request's captured tool list, in registry order: the
    guard's survivors execute against it, so a tool unloaded after the request
-   was built still runs (cells.md §5.4)."
+   was built still runs (cells.md §4)."
   [agent stages t result request-tools]
   (let [assistant-msg (add-assistant-message! agent result)
         tool-calls (:tool-calls result)]
@@ -2513,7 +2513,7 @@ Be precise and concise in your responses."}}]
    :agent-end is emitted here with this attempt's accumulated messages
    (RUN-TOKEN keys the accumulator) and :will-retry."
   [agent run-token {:keys [on-text on-thinking on-error]}]
-  (let [stages (runtime/loop-stages (:node agent)) ; the node's stages, one read per attempt (cells.md §5.4)
+  (let [stages (runtime/loop-stages (:node agent)) ; the node's stages, one read per attempt (cells.md §4)
         retry-decide (get-in stages [:retry-policy :handle])
         retry-policy (mounted-retry-policy agent stages)
         text-buf (atom "")
@@ -2563,7 +2563,7 @@ Be precise and concise in your responses."}}]
                           (prepare-request! agent)
                           (let [;; one read per request: the wire list, the
                                 ;; declared set and the dispatch below all
-                                ;; resolve against it (cells.md §5.4)
+                                ;; resolve against it (cells.md §4)
                                 request-tools (active-tools agent)
                                 {:keys [promise] :as call}
                                 (do (reset! text-buf "")

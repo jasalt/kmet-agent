@@ -1,6 +1,6 @@
 (ns kmet.cells.test-self-contained
   "Guard: every kmet.cells.* namespace is self-contained — no kmet.* require
-   outside kmet.cells.* itself (cells.md §9). Clojure is the only library the
+   outside kmet.cells.* itself (cells.md §7). Clojure is the only library the
    store uses. Reads the ns form rather than the file text: the regex version
    in the libs guard's history silently checked almost nothing when a docstring
    contained `)`."

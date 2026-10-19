@@ -32,7 +32,7 @@
 
 (deftest a-child-node-joins-its-parents-children
   ;; The parent link is half the nesting contract: a child the parent's list
-  ;; does not hold would survive its parent's disposal (cells.md §5.6).
+  ;; does not hold would survive its parent's disposal (cells.md §5).
   (let [parent (runtime/child-node)
         child (runtime/child-node parent)]
     (is (some #(identical? % child) @(:children parent)))))

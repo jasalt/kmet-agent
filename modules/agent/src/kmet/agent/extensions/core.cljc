@@ -167,7 +167,7 @@
 ;; ─── Registries (the storage; api capabilities wire into these) ──────────
 (defonce ^:private extensions (atom []))
 ;; Renderers live in the app root's store under the registering extension's
-;; owner ([:app :extensions <name>], cells.md §5.1), addressed by
+;; owner ([:app :extensions <name>], cells.md §2), addressed by
 ;; [:kmet/entry-renderer <custom-type>] / [:kmet/message-renderer
 ;; <custom-type>]: a type holds one renderer, so a re-registration replaces
 ;; it, and the registration is disposed with its owner rather than reset by
@@ -208,8 +208,8 @@
 ;; ─── 'before_agent_start'; applied by modes.interactive + app.loop) ──────
 
 (defn extension-owner
-  "The owner path an extension's registrations belong to: anything its
-   `init(api)` installs outside a unit (cells.md §5.1). A registration is
+  "The owner path an extension's app-tree registrations belong to — what its
+   `init(api)` installs in the host's node (cells.md §2). A registration is
    disposed with its owner, and unload deregisters what the extension added."
   [extension-name]
   [:app :extensions extension-name])
@@ -218,7 +218,7 @@
   "The app's theme registry owner — the registry's address, read by `/units`
    from the store. Themes live in the TUI layer's own store, so the
    registration under this path is the host's record of one and the teardown
-   that removes it (cells.md §5.1)."
+   that removes it (cells.md §2)."
   [:app :themes])
 
 (defn- theme-key
@@ -241,10 +241,9 @@
   "Register HOOK for OWNER (an `extension-owner` path) on NODE and
    return cells' deregister fn. Hooks are read from the tree rather than
    copied into each engine, so one registered before an engine exists reaches
-   every engine and stays gone once deregistered. NODE is the composition
-   node the registration lands on: the app root for an app-wide registration,
-   the node a unit's `:start` receives for that unit's own tree (cells.md
-   §8.1)."
+   every engine and stays gone once deregistered. NODE is the node the
+   registration lands on: the app root for an app-wide registration, a child
+   node a run passes for its own tree (cells.md §6)."
   [node owner kind hook]
   (scope/register! node owner (hook-key kind) hook))
 
@@ -827,11 +826,11 @@
 
 (defn- cache-surface!
   "Register VALUE under OWNER/KEY on NODE and install it in CACHE, the
-   no-node read cache. The registration is what `composition`/`explain`
-   report and what node disposal drops; the owner's teardown clears CACHE
+   no-node read cache. The registration is what the store reports and what
+   node disposal drops; the owner's teardown clears CACHE
    only while it still holds VALUE, so an outgoing registration can never
    clear a newer install (a session switch, a front end's rebind —
-   cells.md §5.1).
+   cells.md §2).
 
    Two degenerate shapes install the cache alone: NODE nil (a node-less
    engine, e.g. a test double) has no tree to own the value, and VALUE nil
@@ -1016,10 +1015,10 @@
 (defn- create-extension-api
   "Build the api map for an extension, its app-tree capabilities bound to
    NODE — the app root at load time (extensions load before any engine), so a
-   unit's own node can build the same surface for its `:start` later. A
+   child node can build the same surface for its own run later. A
    registration that lives in the app tree (commands, tools, tool sources,
    skills, prompts, hooks, renderers, flags) lands under the extension's own
-   owner path, so unload disposes it with one LIFO dispose (cells.md §5.1);
+   owner path, so unload disposes it with one LIFO dispose (cells.md §2);
    the registrations that live outside the tree (event subscriptions, aliases,
    shortcuts, model providers) record their deregister fn on the extension
    instead."
@@ -1041,7 +1040,7 @@
                           ;; (pi: handler(args, ctx)) while builtin commands
                           ;; keep receiving CoreState. Registered under the
                           ;; extension's own owner, so unload disposes it
-                          ;; (cells.md §5.1).
+                          ;; (cells.md §2).
                           (let [cmd (loader-aware-map
                                      ext (assoc cmd :extension-handler
                                                 (:handler cmd)))]
@@ -1382,7 +1381,7 @@
                     (str "load failed: " (.getName (class e))))}))))
 
 (defn unload-extension!
-  "Unload an extension in two steps (cells.md §8.2): shutdown (if
+  "Unload an extension in two steps (cells.md §6): shutdown (if
    initialized), then dispose what it registered — the deregister fns recorded
    by the registrations that live outside the tree, in reverse registration
    order, then one LIFO dispose of its `[:app :extensions <name>]` owner, both
@@ -1450,7 +1449,7 @@
    teardown that removes it from the store when the owner goes — guarded by
    the value it registered, so a re-application's earlier teardown (holding
    the replaced value) and another contributor's later registration both
-   survive it (cells.md §5.1)."
+   survive it (cells.md §2)."
   [node owner dir]
   (let [owner (or owner themes-owner)]
     (doseq [{:keys [name] :as theme} (context/load-themes-from-dir! dir)]

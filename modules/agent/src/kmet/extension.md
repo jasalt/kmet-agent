@@ -475,7 +475,7 @@ lingers.
 What `init(api)` registers is **owned**: commands, tools and tool sources,
 skills, prompts, hooks, renderers, flags, and the resources a
 `:resources-discover` contribution loads land in the app tree under
-`[:app :extensions <name>]` (cells.md §5.1), so unload disposes them with one
+`[:app :extensions <name>]` (cells.md §2), so unload disposes them with one
 LIFO dispose — a failing cleanup is reported and never skips the rest. What
 lives outside the tree — event subscriptions, tag aliases, shortcuts,
 terminal-input listeners, model providers — records its deregister fn on the
