@@ -30,6 +30,7 @@
             [kmet.agent.ui.tui.subs :as s]
             [kmet.agent.debug :as debug]
             [kmet.libs.reakt.core :as r]
+            [kmet.libs.path :as path]
             [kmet.tui.components.input :as input]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]
@@ -65,15 +66,6 @@
       (< days 30) (str (quot days 7) "w")
       (< days 365) (str (quot days 30) "mo")
       :else (str (quot days 365) "y"))))
-
-(defn- shorten-path
-  "pi: shortenPath — replace the $HOME prefix with ~."
-  [path]
-  (let [home (System/getProperty "user.home")]
-    (cond
-      (str/blank? (str path)) (str path)
-      (and (seq home) (str/starts-with? path home)) (str "~" (subs path (count home)))
-      :else path)))
 
 (defn- normalize-message
   "pi: displayText.replace(control chars).trim — control characters become
@@ -738,9 +730,9 @@
         right-part (as-> (str (:message-count info) " "
                               (format-session-age (:modified info))) rp
                      (if (and (= :all (:scope st)) (seq (str (:cwd info))))
-                       (str (shorten-path (:cwd info)) " " rp) rp)
+                       (str (path/home-relative (:cwd info)) " " rp) rp)
                      (if (:show-path st)
-                       (str (shorten-path (:path info)) " " rp) rp))
+                       (str (path/home-relative (:path info)) " " rp) rp))
         cursor (if selected? (theme/fg th :accent "› ") "  ")
         available-for-msg (max 10 (- width 2 (u/visible-width prefix)
                                      (+ (u/visible-width right-part) 2)))

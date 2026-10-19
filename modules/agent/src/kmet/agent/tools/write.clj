@@ -3,13 +3,14 @@
    Pi: write.ts — success message matches pi's wording."
   (:require [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.tools.util :as tool-util]))
+            [kmet.agent.tools.util :as tool-util]
+            [kmet.libs.path :as path]))
 
 (defn title
   "Quiet one-liner body for the write tool: verb + `~`-shortened path — pure data, or nil when the path is missing/empty (the quiet branch falls back to the tool name). Nil-safe over partial streaming args."
   [args]
   (when-let [raw-path (tool-util/title-path-arg args)]
-    (str "write " (tool-util/shorten-title-path raw-path))))
+    (str "write " (path/home-relative raw-path))))
 
 (defn execute
   "Write content to a file (create or overwrite)."

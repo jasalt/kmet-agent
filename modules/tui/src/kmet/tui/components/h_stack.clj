@@ -53,10 +53,10 @@
                                              (u/composite-line (nth acc target)
                                                                (nth lines row)
                                                                x child-width safe-width)))))))))))))))
-  (invalidate [_this]
-    (doseq [e @entries-atom] (protocols/invalidate (stack/entry-component e))))
-  (dispose [_this]
-    (doseq [e @entries-atom] (protocols/dispose (stack/entry-component e)))))
+  (invalidate [this]
+    (stack/invalidate-children! this))
+  (dispose [this]
+    (stack/dispose-children! this)))
 
 ;; ─── Construction & API ────────────────────────────────────────────────────
 
@@ -68,21 +68,20 @@
               placement of short children within the row height"
   [children & {:keys [gap align] :or {gap 0 align :stretch}}]
   (map->HStack {:entries-atom (atom (vec children))
-                :gap-atom (atom (max 0 (long (Math/floor (double (or gap 0))))))
+                :gap-atom (atom (stack/normalize-gap gap))
                 :align-atom (atom align)}))
 
 (defn h-stack-add-child! [hs child]
-  (swap! (:entries-atom hs) conj child))
+  (stack/add-child! hs child))
 
 (defn h-stack-remove-child! [hs child]
-  (swap! (:entries-atom hs)
-         (fn [v] (vec (remove #(identical? (stack/entry-component %) child) v)))))
+  (stack/remove-child! hs child))
 
 (defn h-stack-clear! [hs]
-  (reset! (:entries-atom hs) []))
+  (stack/clear-children! hs))
 
 (defn h-stack-set-gap! [hs gap]
-  (reset! (:gap-atom hs) (max 0 (long (Math/floor (double (or gap 0)))))))
+  (stack/set-gap! hs gap))
 
 (defn h-stack-set-align! [hs align]
   (reset! (:align-atom hs) align))

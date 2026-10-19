@@ -30,12 +30,6 @@
 (defn- full-id [m]
   (model-catalog/model-full-id m))
 
-(defn- key-or
-  "The resolved key text for a keybinding id, or FALLBACK when unbound."
-  [id fallback]
-  (let [t (app-kb/key-text id)]
-    (if (seq t) t fallback)))
-
 ;; ─── Enabled-ids helpers (pi scoped-models-selector.ts) ───────────────────
 
 (defn- is-enabled? [enabled-ids id]
@@ -255,13 +249,13 @@
                      (str enabled-count "/" (count all-ids) " enabled"
                           (when (pos? unavailable-count)
                             (str " · " unavailable-count " unavailable"))))
-        parts [(str (key-or "tui.select.confirm" "enter") " toggle")
-               (str (key-or "app.models.enableAll" "ctrl+a") " all")
-               (str (key-or "app.models.clearAll" "ctrl+x") " clear")
-               (str (key-or "app.models.toggleProvider" "ctrl+p") " provider")
-               (str (key-or "app.models.reorderUp" "alt+up") "/"
-                    (key-or "app.models.reorderDown" "alt+down") " reorder")
-               (str (key-or "app.models.save" "ctrl+s") " save")
+        parts [(str (app-kb/key-label-or "tui.select.confirm" "enter") " toggle")
+               (str (app-kb/key-label-or "app.models.enableAll" "ctrl+a") " all")
+               (str (app-kb/key-label-or "app.models.clearAll" "ctrl+x") " clear")
+               (str (app-kb/key-label-or "app.models.toggleProvider" "ctrl+p") " provider")
+               (str (app-kb/key-label-or "app.models.reorderUp" "alt+up") "/"
+                    (app-kb/key-label-or "app.models.reorderDown" "alt+down") " reorder")
+               (str (app-kb/key-label-or "app.models.save" "ctrl+s") " save")
                count-text]
         base (str "  " (str/join " · " parts))]
     (if (:dirty st)
@@ -336,7 +330,7 @@
         (theme/fg th :accent (theme/bold "Model Configuration"))]
        [:text {:padding-x 1 :padding-y 0}
         (theme/fg th :muted
-                  (str "Session-only. " (key-or "app.models.save" "ctrl+s")
+                  (str "Session-only. " (app-kb/key-label-or "app.models.save" "ctrl+s")
                        " to save to settings."))]
        [:spacer {:lines 1}]
        [:input {:ref search-ref

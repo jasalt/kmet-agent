@@ -17,7 +17,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.registry :as registry]
             [kmet.libs.scope :as scope]
             [kmet.libs.yaml :as yaml]))
 
@@ -31,30 +31,19 @@
 (defn- prompt-key
   "The store key addressing a template by NAME."
   [name]
-  [:kmet/prompt name])
-
-(defn- prompt-key?
-  "True for a key the store holds a prompt template under — other registries'
-   keys share the store, so shape is checked before the head."
-  [k]
-  (and (vector? k) (= :kmet/prompt (first k))))
+  (registry/store-key :kmet/prompt name))
 
 (defn- registered-prompt-templates
-  "The tree's prompt templates, in registration order (a re-registration of a
-   name moves the template to the end)."
+  "The effective prompt templates in registration order (a re-registration of
+   a name moves the template to the end), one per name."
   []
-  (into []
-        (keep (fn [[k _ v]] (when (prompt-key? k) v)))
-        (scope/ordered-registrations (app-runtime/node))))
+  (mapv second (registry/effective-entries :kmet/prompt)))
 
 (defn- prompt-template-for
-  "The template named NAME, or nil. Owners are searched in first-registration
-   order, so the owner that took the name keeps it; the key is derived from
-   :name, so lookup and listing agree."
+  "The template named NAME, or nil (see `kmet.agent.registry/entry` for the
+   owner rule)."
   [name]
-  (let [node (app-runtime/node)
-        by-owner (scope/for-key node (prompt-key name))]
-    (some #(get by-owner %) (scope/owners node))))
+  (registry/entry :kmet/prompt name))
 
 ;; ─── Argument parsing (pi: parseCommandArgs) ──────────────────────────────
 
@@ -275,10 +264,7 @@
   "Remove every loaded prompt template from NODE (pi: resourceLoader.reload
    re-discovers from scratch). Used by /reload."
   [node]
-  (doseq [[k owner v] (scope/ordered-registrations node)
-          :when (prompt-key? k)]
-    (scope/deregister! node owner k v))
-  nil)
+  (registry/clear! :kmet/prompt node))
 
 (defn get-prompt-template
   [name]

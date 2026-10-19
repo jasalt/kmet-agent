@@ -12,6 +12,17 @@
   [dir-path]
   (path/safe-file-seq dir-path))
 
+;; ─── Tool-selection vocabulary ────────────────────────────────────────────
+
+(defn tool-selection-modifier?
+  "True when a :default-tools entry is a +name/-name modifier (pi:
+   isToolModifier). Shared by the settings merge (kmet.agent.config) and the
+   resolver (kmet.agent.tools.registry) so the vocabulary has one home."
+  [entry]
+  (and (string? entry)
+       (or (str/starts-with? entry "+")
+           (str/starts-with? entry "-"))))
+
 ;; ─── Runtime working directory ────────────────────────────────────────────
 
 (def ^:dynamic *cwd*
@@ -39,22 +50,6 @@
     (if (fs/absolute? p)
       p
       (str (fs/normalize (fs/path (cwd) p))))))
-
-(defn shorten-title-path
-  "Home-relative display path for a quiet title (pi: shortenPath).
-   Non-string input passes through — callers guard with string?/seq. Only
-   absolute paths fold; the ~-folded form is /-separated (a literal \"/\"
-   home check never matched on Windows)."
-  [p]
-  (let [home (System/getProperty "user.home" "")]
-    (if (and (string? p) (seq home) (fs/absolute? p))
-      (let [home* (str (fs/absolutize home))
-            abs (str (fs/absolutize p))]
-        (if (or (= abs home*) (fs/starts-with? abs home*))
-          (let [rel (str/replace (str (fs/relativize home* abs)) fs/file-separator "/")]
-            (if (empty? rel) "~" (str "~/" rel)))
-          p))
-      p)))
 
 (defn title-path-arg
   "First non-blank string among the :path / :file_path arg spellings, or

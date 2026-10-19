@@ -46,7 +46,7 @@
       (t/is (re-find #"b" (first lines))))))
 
 (t/deftest test-ansi-preserved
-  (let [styled (str (core/sgr 31) "red" (core/sgr 39))
+  (let [styled (str (u/sgr 31) "red" (u/sgr 39))
         c (tt/make-truncated-text styled :padding-x 0)
         lines (core/render c 20)]
     (t/is (re-find #"\u001b\[31m" (first lines)) "fg code kept on the shown prefix")))

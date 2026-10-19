@@ -562,12 +562,12 @@
         ;; B.5: editor dynamic height — max(5, rows*0.3) via :terminal-rows;
         ;; the fixed :height fallback stays at the default 12;
         ;; border color reflects the current thinking level (pi: updateEditorBorderColor)
-        ed (tui/make-editor :padding-x (cfg/get-editor-padding-x config)
-                            :autocomplete-max-visible (cfg/get-autocomplete-max-visible config)
-                            :terminal-rows (fn [] (term/rows @(:terminal t)))
-                            :border-fn (th/get-thinking-border-color
-                                        (config-theme config)
-                                        (or (runtime/thinking-level engine) :off)))
+        ed (editor/make-editor :padding-x (cfg/get-editor-padding-x config)
+                               :autocomplete-max-visible (cfg/get-autocomplete-max-visible config)
+                               :terminal-rows (fn [] (term/rows @(:terminal t)))
+                               :border-fn (th/get-thinking-border-color
+                                           (config-theme config)
+                                           (or (runtime/thinking-level engine) :off)))
         ;; B.6: footer data provider + footer (pi: FooterComponent; the
         ;; model line wraps to its own line when the stats line is too narrow)
         fdp (fdp/make-footer-data-provider

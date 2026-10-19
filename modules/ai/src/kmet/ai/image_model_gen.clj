@@ -38,12 +38,6 @@
   [dir]
   (str (fs/path dir "image-models.edn")))
 
-(defn- generated-at
-  "UTC timestamp, second precision (ISO-8601) — the same shape as the
-   provider-catalog manifest."
-  []
-  (str (subs (str (java.time.Instant/now)) 0 19) "Z"))
-
 (defn- clamp-cost
   "Clamp a negative pricing sentinel to 0 (pi leaves -1e6 in the generated
    file; kmet's chat openrouter catalogs clamp, and negative rates would
@@ -119,7 +113,7 @@
                       (catch Exception _ nil))
         old-generated (or (try (:generated-at (edn/read-string existing))
                                (catch Exception _ nil))
-                          (generated-at))
+                          (edn-w/generated-at))
         blob (fn [generated] {:schema-version 1
                               :generated-at generated
                               :provider {:id :openrouter :name "OpenRouter"}
@@ -130,7 +124,7 @@
       (do (println (str path " already up to date — nothing written."))
           false)
       (do (fs/create-dirs dir)
-          (spit path (str (edn-w/render (blob (generated-at))) "\n"))
+          (spit path (str (edn-w/render (blob (edn-w/generated-at))) "\n"))
           (println (str "Generated " path " (" (count models) " models)"))
           true))))
 

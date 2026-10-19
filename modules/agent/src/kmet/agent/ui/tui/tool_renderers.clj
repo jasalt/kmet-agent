@@ -5,6 +5,7 @@
             [clojure.java.io :as io]
             [babashka.fs :as fs]
             [kmet.libs.json :as json]
+            [kmet.libs.path :as path]
             [kmet.tui.theme :as theme]
             [kmet.tui.utils :as utils]
             [kmet.libs.terminal-image :as timg]
@@ -62,15 +63,6 @@
                text)]
     (str/replace text #"[^\t\n\r\u0020-\uFFF8\uFFFC-\uFFFF]" "")))
 
-(defn- shorten-path
-  "Pi: shortenPath — replace the home directory prefix with ~."
-  [path]
-  (let [home (str (fs/home))]
-    (if (and (pos? (count home))
-             (or (= path home) (str/starts-with? path (str home "/"))))
-      (str "~" (subs path (count home)))
-      path)))
-
 (defn- url-encode
   "Percent-encode a path for use in a file:// URL (pi: pathToFileURL)."
   [s]
@@ -119,7 +111,7 @@
       (theme/fg theme :error "[invalid arg]")
       (if (empty? s)
         (theme/fg theme :tool-output "...")
-        (link-path (theme/fg theme :accent (shorten-path s)) s cwd)))))
+        (link-path (theme/fg theme :accent (path/home-relative s)) s cwd)))))
 
 (defn- trim-trailing-empty-lines
   "Pi: trimTrailingEmptyLines — drop empty lines at the end of a vector."

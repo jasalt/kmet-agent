@@ -7,7 +7,8 @@
             [clojure.java.io :as io]
             [babashka.fs :as fs]
             [kmet.agent.bash-executor :as bash-exec]
-            [kmet.agent.tools.util :as tool-util])
+            [kmet.agent.tools.util :as tool-util]
+            [kmet.libs.path :as path])
   (:import [java.util Base64]
            [java.text Normalizer Normalizer$Form]
            [java.nio.charset StandardCharsets]))
@@ -246,7 +247,7 @@
   (when-let [raw-path (tool-util/title-path-arg args)]
     (let [offset (when (map? args) (:offset args))
           limit (when (map? args) (:limit args))]
-      (str "read " (tool-util/shorten-title-path raw-path)
+      (str "read " (path/home-relative raw-path)
            (when (or offset limit)
              (let [start (or offset 1)
                    end (when (and (number? limit) (pos? limit))

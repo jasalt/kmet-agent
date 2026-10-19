@@ -111,6 +111,10 @@ modules/agent/src/kmet/
 │   │                     extension loading;
 │   │                     extensions/context.cljc — per-extension SCI isolation
 │   ├── model_resolver.clj — model pattern/CLI resolution
+│   ├── registry.clj    — name-addressed registrations in the app root's
+│   │                     store (key shape, owner precedence, display order,
+│   │                     whole-registry clear) that commands, prompts,
+│   │                     skills and tools register through
 │   ├── tools/          — built-in tools: read, write, edit, bash
 │   │                     (grep/find/ls and the Windows-only powershell
 │   │                     ship as opt-in extensions in

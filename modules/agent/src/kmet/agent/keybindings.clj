@@ -232,6 +232,13 @@
   [id]
   (or ((tui-kb-var 'key-label-text) ((tui-kb-var 'get-global-keybindings)) id) ""))
 
+(defn key-label-or
+  "The human-facing key label for ID, or FALLBACK when the id is unbound —
+   the hint shape (tui.md §7: hints and help lines use the label form)."
+  [id fallback]
+  (let [label (key-label id)]
+    (if (seq label) label fallback)))
+
 (defn key-hint
   ([id desc]
    (let [{:keys [dim muted]} @theme-fns-atom]

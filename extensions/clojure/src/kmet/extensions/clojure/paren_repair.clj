@@ -12,7 +12,8 @@
             [kmet.extensions.clojure.edit-util :as util]
             [kmet.agent.ui.tui.tool-renderers :as renderers]
             [kmet.agent.extension :as ext]
-            [kmet.libs.edit-diff :as edit-diff]))
+            [kmet.libs.edit-diff :as edit-diff]
+            [kmet.libs.path :as path]))
 
 ;; ═══════════════════════════════════════════════════════════════════════════════
 ;; Core repair logic
@@ -98,12 +99,7 @@
   [args]
   (let [p (util/title-arg args :file_path)]
     (when (and (string? p) (seq p))
-      (let [home (System/getProperty "user.home" "")]
-        (str "clojure_paren_repair "
-             (if (and (seq home)
-                      (or (= p home) (clojure.string/starts-with? p (str home "/"))))
-               (str "~" (subs p (count home)))
-               p))))))
+      (str "clojure_paren_repair " (path/home-relative p)))))
 
 (defn execute
   "Tool entry point.  Returns {:content str :is-error bool}."

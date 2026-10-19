@@ -30,13 +30,13 @@
             [clojure.edn :as edn]
             [clojure.string :as str]))
 
-(defn- read-text
+(defn read-text
   "The text of PATH, or nil when the file does not exist."
   [path]
   (when (fs/exists? path)
     (slurp path)))
 
-(defn- write-text
+(defn write-text
   "Write TEXT to PATH (UTF-8), replacing any existing content."
   [path text]
   (spit path (str text)))

@@ -30,10 +30,10 @@
 (defcomponent VStack nil [entries-atom gap-atom]
   (render [_this width]
     (render-entries @entries-atom width @gap-atom))
-  (invalidate [_this]
-    (doseq [e @entries-atom] (protocols/invalidate (stack/entry-component e))))
-  (dispose [_this]
-    (doseq [e @entries-atom] (protocols/dispose (stack/entry-component e)))))
+  (invalidate [this]
+    (stack/invalidate-children! this))
+  (dispose [this]
+    (stack/dispose-children! this)))
 
 ;; ─── Construction & API ────────────────────────────────────────────────────
 
@@ -43,17 +43,16 @@
             pi's normalizeSize)"
   [children & {:keys [gap] :or {gap 0}}]
   (map->VStack {:entries-atom (atom (vec children))
-                :gap-atom (atom (max 0 (long (Math/floor (double (or gap 0))))))}))
+                :gap-atom (atom (stack/normalize-gap gap))}))
 
 (defn v-stack-add-child! [vs child]
-  (swap! (:entries-atom vs) conj child))
+  (stack/add-child! vs child))
 
 (defn v-stack-remove-child! [vs child]
-  (swap! (:entries-atom vs)
-         (fn [v] (vec (remove #(identical? (stack/entry-component %) child) v)))))
+  (stack/remove-child! vs child))
 
 (defn v-stack-clear! [vs]
-  (reset! (:entries-atom vs) []))
+  (stack/clear-children! vs))
 
 (defn v-stack-set-gap! [vs gap]
-  (reset! (:gap-atom vs) (max 0 (long (Math/floor (double (or gap 0)))))))
+  (stack/set-gap! vs gap))

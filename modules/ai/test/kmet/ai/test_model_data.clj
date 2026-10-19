@@ -11,6 +11,7 @@
             [kmet.libs.json :as json]
             [clojure.string :as str]
             [clojure.test :as t]
+            [kmet.ai.edn-writer :as edn-w]
             [kmet.ai.model-gen :as mg]
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.http :as http]
@@ -247,7 +248,7 @@
                   :gen-beta [(gen-model :gen-beta "b1")]}
         gen-at (atom "2026-08-08T00:00:01Z")]
     (try
-      (with-redefs [mg/generated-at (fn [] @gen-at)]
+      (with-redefs [edn-w/generated-at (fn [] @gen-at)]
         ;; initial generation writes both catalogs + the manifest
         (t/is (= 3 (mg/write-catalogs! dir catalogs)))
         ;; partial change at a later timestamp: only alpha + manifest rewrite

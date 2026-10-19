@@ -83,15 +83,6 @@
     (map? item) (str (or (:text item) (:content item) (:custom-type item)))
     :else (str item)))
 
-(defn- expand-queued-text
-  "Expand skill commands and prompt templates for a steered/follow-up
-   message (pi: steer/follow_up — extension commands are not allowed there,
-   so unlike prompt's expansion chain they are left as text)."
-  [text]
-  (-> text
-      (skills/expand-skill-command)
-      (prompts/expand-prompt-template (prompts/get-prompt-templates))))
-
 (defn- command-queue
   "The shared steer/follow-up path: the queues carry no image blocks, so
    reject :images rather than drop them; expand skill commands and prompt
@@ -102,7 +93,7 @@
     (throw (ex-info (str (name type) " does not support :images yet")
                     {:type :unsupported})))
   (if-let [text (message-of command)]
-    (do (enqueue! engine (expand-queued-text text))
+    (do (enqueue! engine (runtime/expand-queued-text text))
         (ok type {:disposition :queued}))
     (failed type (str (name type) " requires a non-empty :message string"))))
 
@@ -237,7 +228,7 @@
 
             (and running? behavior)
             (do ((if (= :steer behavior) runtime/steer! runtime/follow-up!)
-                 engine (expand-queued-text text))
+                 engine (runtime/expand-queued-text text))
                 (ok :prompt {:disposition :queued}))
 
             :else

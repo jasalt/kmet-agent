@@ -10,8 +10,9 @@
    disposes what an extension added."
   (:require [clojure.string :as str]
             [kmet.libs.json :as json]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.registry :as registry]
             [kmet.agent.tools.tool :as tool]
+            [kmet.agent.tools.util :as tool-util]
             [kmet.agent.tools.read :as read]
             [kmet.agent.tools.write :as write]
             [kmet.agent.tools.edit :as edit]
@@ -90,22 +91,13 @@
 (defn- tool-key
   "The store key addressing a custom tool by NAME."
   [name]
-  [:kmet/tool name])
-
-(defn- tool-key?
-  "True for a key the store holds a custom tool under — other registries'
-   keys share the store, so shape is checked before the head."
-  [k]
-  (and (vector? k) (= :kmet/tool (first k))))
+  (registry/store-key :kmet/tool name))
 
 (defn- registered-tools
   "The tree's custom tools as {name tool}; the store holds one value per
    (owner, key), so a re-registration of a name replaces the earlier one."
   []
-  (reduce (fn [acc [k _ v]]
-            (if (tool-key? k) (assoc acc (second k) v) acc))
-          {}
-          (scope/ordered-registrations (app-runtime/node))))
+  (into {} (registry/entries :kmet/tool)))
 
 (defn register-tool!
   "Register a custom tool on NODE after normalizing its provider-facing
@@ -149,20 +141,13 @@
 (defn- tool-source-key
   "The store key addressing a contributed tool source by ID."
   [id]
-  [:kmet/tool-source id])
-
-(defn- tool-source-key?
-  "True for a key the store holds a contributed tool source under."
-  [k]
-  (and (vector? k) (= :kmet/tool-source (first k))))
+  (registry/store-key :kmet/tool-source id))
 
 (defn- registered-tool-sources
   "The tree's contributed tool sources in registration order: [[id fn] …].
    A source re-registered under the same ID replaces the earlier one."
   []
-  (into []
-        (keep (fn [[k _ v]] (when (tool-source-key? k) [(second k) v])))
-        (scope/ordered-registrations (app-runtime/node))))
+  (mapv vec (registry/entries :kmet/tool-source)))
 
 (defn register-tool-source!
   "Register (or replace) an extension-contributed tool source on NODE,
@@ -296,11 +281,10 @@
 
 (defn tool-selection-modifier?
   "True when a :default-tools entry is a +name/-name modifier (pi:
-   isToolModifier)."
+   isToolModifier). The definition is kmet.agent.tools.util's, re-exported
+   for callers of the registry."
   [entry]
-  (and (string? entry)
-       (or (str/starts-with? entry "+")
-           (str/starts-with? entry "-"))))
+  (tool-util/tool-selection-modifier? entry))
 
 (defn resolve-default-tools
   "Resolve a merged :default-tools entry list to the initial built-in tool

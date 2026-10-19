@@ -14,12 +14,11 @@
             [kmet.extensions.lsp-adapter.tools :as tools]
             [kmet.agent.extension :as ext]
             [kmet.libs.concurrent :as concurrent]
+            [kmet.libs.path :as path]
             [kmet.libs.edn-store :as edn-store]
             [kmet.tui.theme :as theme]))
 
 (def ^:private state-atom (atom nil))
-
-(def ^:private home-str (str (fs/home)))
 
 (def ^:private spawn concurrent/spawn)
 
@@ -34,10 +33,7 @@
 (defn- short-root
   "ROOT with $HOME folded to ~."
   [root]
-  (let [r (str root)]
-    (if (str/starts-with? r home-str)
-      (str "~" (subs r (count home-str)))
-      r)))
+  (path/home-relative root))
 
 ;; ─── Footer status ────────────────────────────────────────────────────────
 

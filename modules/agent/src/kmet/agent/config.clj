@@ -10,6 +10,7 @@
             [kmet.agent.config-schema :as config-schema]
             [kmet.agent.debug :as debug]
             [kmet.agent.bash-executor :as bash-exec]
+            [kmet.agent.tools.util :as tool-util]
             [kmet.libs.http :as http]
             [kmet.libs.edn-store :as eds]))
 
@@ -111,15 +112,6 @@
 
 ;; ─── defaultTools scope merge (pi: SettingsManager.mergeDefaultTools) ──────
 
-(defn- tool-selection-modifier?
-  "True when a :default-tools entry is a +name/-name modifier. Kept local
-   to config so the settings merge stays free of the tools registry; the
-   resolver in kmet.agent.tools.registry owns the tool-name side."
-  [entry]
-  (and (string? entry)
-       (or (str/starts-with? entry "+")
-           (str/starts-with? entry "-"))))
-
 (defn merge-default-tools
   "Merge the user and project :default-tools entry lists (pi:
    SettingsManager.mergeDefaultTools): a project list of only +name/-name
@@ -131,7 +123,7 @@
   (cond
     (nil? project) user
     (not (and (sequential? user)
-              (every? tool-selection-modifier? project))) project
+              (every? tool-util/tool-selection-modifier? project))) project
     :else (into (vec user) project)))
 
 ;; load-config (above) applies the merged :http-transport and the shell

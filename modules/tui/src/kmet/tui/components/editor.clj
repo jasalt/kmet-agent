@@ -238,53 +238,36 @@
 
 ;; ─── Word navigation
 
-(defn- word-boundary-left [editor-lines cursor-line cursor-col]
-  (let [cl (max 0 cursor-line) cc (max 0 cursor-col)]
-    (if (and (zero? cl) (zero? cc))
-      [0 0]
-      (let [line (get editor-lines cl "")]
-        (if (> cc 0)
-          (let [before (subs line 0 cc)
-                no-trail (clojure.string/replace before #"\s+$" "")
-                trimmed (count no-trail)]
-            (if (zero? trimmed) [cl 0]
-                (let [last-char (subs no-trail (dec trimmed))
-                      word-char? (boolean (re-find #"^\w" last-char))]
-                  (loop [i (dec trimmed)]
-                    (if (<= i 0) [cl 0]
-                        (let [c (subs line i (inc i)) is-word (re-find #"^\w" c) is-space (re-find #"^\s" c)] (cond is-space (if word-char? [cl (inc i)] (recur (dec i))) word-char? (if is-word (recur (dec i)) [cl (inc i)]) :else (if is-word [cl (inc i)] (recur (dec i))))))))))
-          (if (> cl 0)
-            (let [prev-line (get editor-lines (dec cl) "")]
-              (if (zero? (count prev-line))
-                (word-boundary-left editor-lines (dec cl) 0)
-                (let [no-trail (clojure.string/replace prev-line #"\s+$" "")
-                      trimmed (count no-trail)]
-                  (if (zero? trimmed) [(dec cl) 0]
-                      (let [last-char (subs no-trail (dec trimmed))
-                            word-char? (boolean (re-find #"^\w" last-char))]
-                        (loop [i (dec trimmed)]
-                          (if (<= i 0) [(dec cl) 0]
-                              (let [c (subs prev-line i (inc i)) is-word (re-find #"^\w" c) is-space (re-find #"^\s" c)] (cond is-space (if word-char? [(dec cl) (inc i)] (recur (dec i))) word-char? (if is-word (recur (dec i)) [(dec cl) (inc i)]) :else (if is-word [(dec cl) (inc i)] (recur (dec i))))))))))))
-            [0 0]))))))
+(defn- word-boundary-left
+  "The [line column] one word left of CURSOR-LINE/CURSOR-COL, crossing
+   lines: a blank line is skipped (kmet.tui.components.editing owns the
+   single-line rule)."
+  [editor-lines cursor-line cursor-col]
+  (let [cl (max 0 cursor-line)
+        cc (max 0 cursor-col)]
+    (if (pos? cc)
+      [cl (edit/word-boundary-left (get editor-lines cl "") cc)]
+      (loop [line (dec cl)]
+        (if (neg? line)
+          [0 0]
+          (let [text (get editor-lines line "")]
+            (if (empty? text)
+              (recur (dec line))
+              [line (edit/word-boundary-left text (count text))])))))))
 
-(defn- word-boundary-right [editor-lines cursor-line cursor-col]
-  (let [cl (max 0 cursor-line) cc (max 0 cursor-col) total (count editor-lines)]
-    (if (and (>= cl (dec total)) (>= cc (count (get editor-lines cl "")))) [cl cc]
-        (let [line (get editor-lines cl "") n (count line)]
-          (if (< cc n)
-          ;; Pure Clojure word boundary detection
-            (let [after (subs line cc)
-                  skip-ws (count (take-while #(re-find #"^\s" (str %)) after))
-                  start (+ cc skip-ws)]
-              (if (>= start n)
-                (if (< cl (dec total)) [(inc cl) 0] [cl n])
-                (let [rest-str (subs line start)
-                      word-len (count (take-while #(re-find #"^\w" (str %)) rest-str))]
-                  (if (pos? word-len)
-                    [cl (+ start word-len)]
-                    (let [non-ws (count (take-while #(not (re-find #"^\s" (str %))) rest-str))]
-                      [cl (+ start (max 1 non-ws))])))))
-            (if (< cl (dec total)) [(inc cl) 0] [cl cc]))))))
+(defn- word-boundary-right
+  "The [line column] one word right of CURSOR-LINE/CURSOR-COL, crossing
+   lines (kmet.tui.components.editing owns the single-line rule)."
+  [editor-lines cursor-line cursor-col]
+  (let [cl (max 0 cursor-line)
+        cc (max 0 cursor-col)
+        total (count editor-lines)
+        text (get editor-lines cl "")]
+    (if (and (>= cl (dec total)) (>= cc (count text)))
+      [cl cc]
+      (if (>= cc (count text))
+        [(inc cl) 0]
+        [cl (edit/word-boundary-right text cc)]))))
 
 ;; ─── Marker-aware segmentation & paste store sync ────────────────────────
 ;; Paste markers ([paste #N ...]) act as atomic units for cursor movement,

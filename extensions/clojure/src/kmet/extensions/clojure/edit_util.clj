@@ -11,6 +11,7 @@
             [clojure.string :as str]
             [edamame.core :as e]
             [kmet.libs.edit-diff :as edit-diff]
+            [kmet.libs.path :as path]
             [parinferish.core :as parinferish]
             [rewrite-clj.node :as n]
             [rewrite-clj.parser :as p]
@@ -712,11 +713,7 @@
 
 (defn- title-home-path
   [p]
-  (let [home (System/getProperty "user.home" "")]
-    (if (and (seq home)
-             (or (= p home) (str/starts-with? p (str home "/"))))
-      (str "~" (subs p (count home)))
-      p)))
+  (path/home-relative p))
 
 (defn- title-nonblank
   [v]

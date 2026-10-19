@@ -62,6 +62,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.context :as context]
             [kmet.agent.prompts :as prompts]
+            [kmet.agent.registry :as registry]
             [kmet.agent.runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
@@ -173,12 +174,12 @@
 (defn- entry-renderer-key
   "The store key addressing an entry renderer by CUSTOM-TYPE."
   [custom-type]
-  [:kmet/entry-renderer custom-type])
+  (registry/store-key :kmet/entry-renderer custom-type))
 
 (defn- message-renderer-key
   "The store key addressing a message renderer by CUSTOM-TYPE."
   [custom-type]
-  [:kmet/message-renderer custom-type])
+  (registry/store-key :kmet/message-renderer custom-type))
 
 ;; Flags register under the extension owner like the renderers, addressed by
 ;; [:kmet/flag <name>]; the --ext-* values themselves are process argv, so
@@ -186,7 +187,7 @@
 (defn- flag-key
   "The store key addressing a CLI flag by NAME."
   [name]
-  [:kmet/flag name])
+  (registry/store-key :kmet/flag name))
 
 ;; The parsed --ext-* argv values by flag name, as set once at startup
 ;; (kmet.agent.core). Process state: the values are the process's command
@@ -222,7 +223,7 @@
 (defn- theme-key
   "The store key addressing a loaded theme by NAME."
   [name]
-  [:kmet/theme name])
+  (registry/store-key :kmet/theme name))
 
 (defonce ^:private hook-seq (atom 0))
 
@@ -324,15 +325,6 @@
 
 ;; ─── Renderers + tool hooks (extension api) ───────────────────────────────
 
-(defn- renderer-for
-  "The renderer registered for CUSTOM-TYPE under the key fn KEY-FN, or nil.
-   Owners are searched in first-registration order, so the owner that took
-   the type keeps it."
-  [key-fn custom-type]
-  (let [node (app-runtime/node)
-        by-owner (scope/for-key node (key-fn custom-type))]
-    (some #(get by-owner %) (scope/owners node))))
-
 (defn register-entry-renderer!
   "Register OWNER's renderer for a custom entry type (extension api:
    register-entry-renderer!). RENDERER — (fn [entry]) returning a chat
@@ -341,7 +333,7 @@
   (scope/register! node owner (entry-renderer-key custom-type) renderer))
 
 (defn get-entry-renderer [custom-type]
-  (renderer-for entry-renderer-key custom-type))
+  (registry/entry :kmet/entry-renderer custom-type))
 
 (defn register-message-renderer!
   "Register OWNER's renderer for a custom MESSAGE type (extension api:
@@ -350,7 +342,7 @@
   (scope/register! node owner (message-renderer-key custom-type) renderer))
 
 (defn get-message-renderer [custom-type]
-  (renderer-for message-renderer-key custom-type))
+  (registry/entry :kmet/message-renderer custom-type))
 
 (defn register-tool-call-hook!
   "Register OWNER's tool-call hook (extension api: on-tool-call): (fn [ctx])
@@ -430,14 +422,6 @@
 
 ;; ─── CLI flags (extension api: register-flag! / get-flag) ─────────────────
 
-(defn- flag-for
-  "The flag registered under NAME, or nil. Owners are searched in
-   first-registration order, so the owner that took the name keeps it."
-  [name]
-  (let [node (app-runtime/node)
-        by-owner (scope/for-key node (flag-key name))]
-    (some #(get by-owner %) (scope/owners node))))
-
 (defn register-flag!
   "Register OWNER's CLI flag (extension api: register-flag!). NAME — without
    the leading --; opts: :type (:boolean|:string) :default. Returns a
@@ -454,7 +438,7 @@
   "Value of a registered CLI flag: the argv value coerced by the registered
    :type, falling back to :default. nil for unregistered flags."
   [name]
-  (when-let [{:keys [type default]} (flag-for name)]
+  (when-let [{:keys [type default]} (registry/entry :kmet/flag name)]
     (let [raw (get @cli-flag-values name)]
       (case type
         :boolean (let [v (if (nil? raw) default raw)]

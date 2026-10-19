@@ -1,6 +1,7 @@
 (ns kmet.libs.path
   "Shared helpers for filesystem exploration used by opt-in search tools."
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 (def ^:private max-traverse-files
   "Traversal cap shared with the retired builtin (10k files)."
@@ -34,3 +35,20 @@
       p
       (str (fs/normalize
             (fs/path (or (:cwd ctx) (System/getProperty "user.dir")) p))))))
+
+(defn home-relative
+  "PATH with the user's home directory folded to `~` (the display form tool
+   output and pickers use). Only an absolute string inside home folds — a
+   relative path, a blank value, a non-string or a sibling whose name merely
+   starts with the home string passes through unchanged. The folded part is
+   `/`-separated on every platform, and home itself renders as `~`."
+  [path]
+  (if-not (and (string? path) (not (str/blank? path)) (fs/absolute? path))
+    path
+    (let [home (fs/absolutize (str (fs/home)))
+          abs (fs/absolutize path)]
+      (if (or (= abs home) (fs/starts-with? abs home))
+        (let [rel (str/replace (str (fs/relativize home abs))
+                               fs/file-separator "/")]
+          (if (empty? rel) "~" (str "~/" rel)))
+        path))))

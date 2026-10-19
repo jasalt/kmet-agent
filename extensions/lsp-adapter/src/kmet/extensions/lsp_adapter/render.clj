@@ -6,15 +6,15 @@
    error results). All styling goes through kmet.tui.theme; paths are
    shortened + hyperlinked via the shared host helpers in
    kmet.agent.ui.tui.tool-renderers."
-  (:require [babashka.fs :as fs]
-            [clojure.string :as str]
-            [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.ui.tui.tool-renderers :as shared]
-            [kmet.tui.components.container :as container]
-            [kmet.tui.components.spacer :as spacer]
-            [kmet.tui.components.text :as text]
-            [kmet.tui.theme :as theme]
-            [kmet.tui.utils :as utils]))
+  (:require             [clojure.string :as str]
+                        [kmet.agent.keybindings :as app-kb]
+                        [kmet.agent.ui.tui.tool-renderers :as shared]
+                        [kmet.tui.components.container :as container]
+                        [kmet.tui.components.spacer :as spacer]
+                        [kmet.tui.components.text :as text]
+                        [kmet.tui.theme :as theme]
+                        [kmet.tui.utils :as utils]
+                        [kmet.libs.path :as path]))
 
 ;; ─── Small helpers ────────────────────────────────────────────────────────
 
@@ -31,10 +31,7 @@
 (defn- fold-home
   "ROOT with $HOME folded to ~."
   [root]
-  (let [r (str root) home (str (fs/home))]
-    (if (str/starts-with? r home)
-      (str "~" (subs r (count home)))
-      r)))
+  (path/home-relative root))
 
 (defn- display-root
   "Section root relative to CWD when inside it, else home-folded absolute."

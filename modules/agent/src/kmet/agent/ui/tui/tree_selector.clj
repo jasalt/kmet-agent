@@ -23,6 +23,7 @@
             [kmet.agent.ui.tui.dock :as dock]
             [kmet.agent.config :as cfg]
             [kmet.libs.clipboard :as clipboard]
+            [kmet.libs.path :as path]
             [kmet.tui.components.input :as input]
             [kmet.tui.hikap :as h]
             [kmet.tui.core :as tui]
@@ -127,14 +128,6 @@
   (let [sr (:stop-reason entry)]
     (and (some? sr) (not= :stop sr) (not= :end-turn sr) (not= :tool-use sr))))
 
-(defn- shorten-path
-  "pi formatToolCall shortenPath — $HOME collapses to ~."
-  [path]
-  (let [home (System/getProperty "user.home")]
-    (if (and (seq home) (.startsWith path home))
-      (str "~" (subs path (count home)))
-      path)))
-
 (defn- format-tool-call
   "pi formatToolCall - per-tool argument digests ([read: p:o-l],
    [bash: cmd], [grep: /pat/ in dir], ...). Arguments carry keyword keys
@@ -147,7 +140,7 @@
                             (when (some? v) v)))
                         ks))
         path (fn [default & ks]
-               (shorten-path (str (or (apply get-arg ks) default))))
+               (path/home-relative (str (or (apply get-arg ks) default))))
         capped (fn [s n] (subs s 0 (min n (count s))))]
     (case tool-name
       "read" (let [p (path "" :path :file_path)

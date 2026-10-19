@@ -139,6 +139,46 @@
           (> total content-size) (distribute sizes entries (- total content-size) :shrink)
           :else sizes)))))
 
+;; ─── Shared child management (HStack/VStack) ───────────────────────────────
+
+(defn normalize-gap
+  "A gap option as a non-negative integer (pi: normalizeSize) — the one
+   coercion every stack uses for its :gap."
+  [gap]
+  (normalize-size gap 0))
+
+(defn add-child!
+  "Append CHILD (a component or stack entry map) to STACK's children."
+  [stack child]
+  (swap! (:entries-atom stack) conj child))
+
+(defn remove-child!
+  "Remove CHILD from STACK by identity (a stack entry's :component is what
+   identifies it). Returns the swapped vector."
+  [stack child]
+  (swap! (:entries-atom stack)
+         (fn [v] (vec (remove #(identical? (entry-component %) child) v)))))
+
+(defn clear-children!
+  "Remove every child from STACK."
+  [stack]
+  (reset! (:entries-atom stack) []))
+
+(defn set-gap!
+  "Set STACK's gap, normalized like its constructor."
+  [stack gap]
+  (reset! (:gap-atom stack) (normalize-gap gap)))
+
+(defn invalidate-children!
+  "Forward invalidation to every child (a stack's IComponent invalidate)."
+  [stack]
+  (doseq [e @(:entries-atom stack)] (protocols/invalidate (entry-component e))))
+
+(defn dispose-children!
+  "Dispose every child (a stack's IComponent dispose)."
+  [stack]
+  (doseq [e @(:entries-atom stack)] (protocols/dispose (entry-component e))))
+
 ;; ─── Render-loop vertical layout ───────────────────────────────────────────
 
 (defn render-stack

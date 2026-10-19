@@ -13,6 +13,7 @@
             [kmet.tui.components.spacer :as spacer]
             [kmet.tui.components.text :as text]
             [kmet.libs.highlight :as hl]
+            [kmet.libs.path :as path]
             [kmet.tui.theme :as theme]
             [kmet.tui.utils :as utils]))
 
@@ -26,11 +27,7 @@
 
 (defn- title-path
   [p]
-  (let [home (System/getProperty "user.home" "")]
-    (if (and (string? p) (seq home)
-             (or (= p home) (str/starts-with? p (str home "/"))))
-      (str "~" (subs p (count home)))
-      p)))
+  (if (string? p) (path/home-relative p) p))
 
 (defn- title-str
   [v]

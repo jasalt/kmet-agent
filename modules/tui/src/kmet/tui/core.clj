@@ -1,7 +1,7 @@
 (ns kmet.tui.core
   "TUI - Main class for managing terminal UI with differential rendering.
-   Primary entry point for kmet.tui — all public symbols are re-exported
-   from this namespace for convenience."
+   The public surface is the component protocols and their dispatching
+   accessors; components and helpers are required from their own namespaces."
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
             [kmet.tui.border :as border]
@@ -17,25 +17,9 @@
             [kmet.tui.keys :as keys]
             [kmet.tui.utils :as utils]
             [kmet.libs.terminal-image :as img]
-            [kmet.tui.components.text :as text]
-            [kmet.tui.components.spacer :as spacer]
-            [kmet.tui.components.container :as container]
-            [kmet.tui.components.box :as box]
-            [kmet.tui.components.input :as input]
             [kmet.tui.components.editor :as editor]
-            [kmet.tui.components.select-list :as select-list]
-            [kmet.tui.components.settings-list :as settings-list]
-            [kmet.tui.components.markdown :as markdown]
-            [kmet.tui.components.spinner :as spinner]
-            [kmet.tui.components.scroll-view :as scroll-view]
-            [kmet.tui.components.stack :as stack]
-            ;; pi-parity components (previously stubs — now implemented)
             [kmet.tui.components.alt-screen-flash :as alt-screen-flash]
-            [kmet.tui.components.cancellable-loader :as cancellable-loader]
-            [kmet.tui.components.truncated-text :as truncated-text]
-            [kmet.tui.components.h-stack :as h-stack]
-            [kmet.tui.components.v-stack :as v-stack]
-            [kmet.tui.components.dynamic-border :as dynamic-border]))
+            [kmet.tui.components.stack :as stack]))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; Protocol re-exports
@@ -1073,39 +1057,54 @@
 (def ^:private PASTE-START terminal/PASTE-START)
 (def ^:private PASTE-END terminal/PASTE-END)
 
+;; ─── Held-fragment flush timers ────────────────────────────────────────────
+;; A response fragment held while its full answer arrives must be flushed
+;; back into the input buffer after an idle timeout, or it is swallowed
+;; forever. Negotiation and terminal-response interception share the rule.
+
+(defn- cancel-held-flush!
+  "Cancel the pending held-fragment flush timer in TIMER-KEY."
+  [tui timer-key]
+  (when-let [t @(get tui timer-key)]
+    (future-cancel t)
+    (reset! (get tui timer-key) nil)))
+
+(defn- schedule-held-flush!
+  "After NEGOTIATION-FLUSH-TIMEOUT-MS, flush the fragment held in BUFFER-KEY
+   back into BUF. Guarded by the input generation (like
+   schedule-incomplete-flush!): a fragment is only flushed after true
+   idleness — if a new char arrived while sleeping, the response is still
+   coming and the flush is skipped (a stale flush would append the fragment
+   after the fresh char and the re-process would dispatch the char as a
+   key). TIMER-KEY makes an arm idempotent: one pending timer per buffer."
+  [tui timer-key buffer-key read-fn buf]
+  (when (and (nil? @(get tui timer-key))
+             (seq @(get tui buffer-key)))
+    (let [gen @(:input-generation tui)]
+      (reset! (get tui timer-key)
+              (future
+                (try
+                  (Thread/sleep terminal/NEGOTIATION-FLUSH-TIMEOUT-MS)
+                  (when (and (seq @(get tui buffer-key))
+                             (= gen @(:input-generation tui)))
+                    (swap! buf str @(get tui buffer-key))
+                    (reset! (get tui buffer-key) "")
+                    (process-input-buffer! tui read-fn buf))
+                  (catch Exception _))
+                (reset! (get tui timer-key) nil))))))
+
 ;; ─── Kitty protocol negotiation interception (pi: setupStdinBuffer) ────────
 
 (defn- clear-negotiation-timer!
   "Cancel a pending negotiation flush timer."
   [tui]
-  (when-let [t @(:negotiation-timer tui)]
-    (future-cancel t)
-    (reset! (:negotiation-timer tui) nil)))
+  (cancel-held-flush! tui :negotiation-timer))
 
 (defn- schedule-negotiation-flush!
-  "Port of pi's scheduleKeyboardProtocolNegotiationBufferFlush: after
-   NEGOTIATION-FLUSH-TIMEOUT-MS, flush any still-held negotiation fragment
-   back into the input buffer so it is not swallowed forever.
-   Guarded by the input generation (like schedule-incomplete-flush!): a
-   fragment is only flushed after true idleness — if a new char arrived
-   while sleeping, the response is still coming and the flush is skipped
-   (a stale flush would append the fragment after the fresh char and the
-   re-process would dispatch the char as a key)."
+  "Port of pi's scheduleKeyboardProtocolNegotiationBufferFlush: flush a held
+   negotiation fragment after the idle timeout (see schedule-held-flush!)."
   [tui read-fn buf]
-  (when (and (nil? @(:negotiation-timer tui))
-             (seq @(:negotiation-buffer tui)))
-    (let [gen @(:input-generation tui)]
-      (reset! (:negotiation-timer tui)
-              (future
-                (try
-                  (Thread/sleep terminal/NEGOTIATION-FLUSH-TIMEOUT-MS)
-                  (when (and (seq @(:negotiation-buffer tui))
-                             (= gen @(:input-generation tui)))
-                    (swap! buf str @(:negotiation-buffer tui))
-                    (reset! (:negotiation-buffer tui) "")
-                    (process-input-buffer! tui read-fn buf))
-                  (catch Exception _))
-                (reset! (:negotiation-timer tui) nil))))))
+  (schedule-held-flush! tui :negotiation-timer :negotiation-buffer read-fn buf))
 
 (defn- intercept-keyboard-negotiation!
   "Port of pi's setupStdinBuffer negotiation interception: while the Kitty
@@ -1167,30 +1166,13 @@
 (defn- clear-terminal-response-timer!
   "Cancel a pending terminal-response flush timer."
   [tui]
-  (when-let [t @(:terminal-response-timer tui)]
-    (future-cancel t)
-    (reset! (:terminal-response-timer tui) nil)))
+  (cancel-held-flush! tui :terminal-response-timer))
 
 (defn- schedule-terminal-response-flush!
-  "Flush a held terminal-response fragment back into the input buffer after
-   the flush timeout so it is never swallowed forever (mirrors the
-   negotiation flush). Guarded by the input generation: only flush after
-   true idleness, never while a response is still arriving."
+  "Flush a held terminal-response fragment after the idle timeout, so it is
+   never swallowed forever (see schedule-held-flush!)."
   [tui read-fn buf]
-  (when (and (nil? @(:terminal-response-timer tui))
-             (seq @(:terminal-response-buffer tui)))
-    (let [gen @(:input-generation tui)]
-      (reset! (:terminal-response-timer tui)
-              (future
-                (try
-                  (Thread/sleep terminal/NEGOTIATION-FLUSH-TIMEOUT-MS)
-                  (when (and (seq @(:terminal-response-buffer tui))
-                             (= gen @(:input-generation tui)))
-                    (swap! buf str @(:terminal-response-buffer tui))
-                    (reset! (:terminal-response-buffer tui) "")
-                    (process-input-buffer! tui read-fn buf))
-                  (catch Exception _))
-                (reset! (:terminal-response-timer tui) nil))))))
+  (schedule-held-flush! tui :terminal-response-timer :terminal-response-buffer read-fn buf))
 
 (defn- settle-osc-11-query!
   "Settle the OSC 11 query identified by PROMISE with COLOR (nil on
@@ -3161,72 +3143,16 @@
   nil)
 
 ;; ═══════════════════════════════════════════════════════════════════════════
-;; Re-exports — convenience aliases for all public symbols.
+;; Re-exports — the protocols and the protocol-dispatching accessors.
+;; Components, layouts and formatting helpers are required from their own
+;; namespaces (kmet.tui.components.*, kmet.tui.utils): re-exporting every
+;; public symbol made a second, drift-prone API surface.
 ;; ═══════════════════════════════════════════════════════════════════════════
 
-;; Terminal
+;; The one non-component protocol: the platform seam terminal backends
+;; implement (kmet.tui.terminal/ITerminal).
 (def ITerminal terminal/ITerminal)
-(def create-terminal terminal/create-terminal)
 
-;; Keys
-(def matches-key? keys/matches-key?)
-(def parse-key keys/parse-key)
-(def is-key-release? keys/is-key-release?)
-(def is-key-repeat? keys/is-key-repeat?)
-(def set-kitty-active! keys/set-kitty-active!)
-(def kitty-active? keys/kitty-active?)
-(def KEY-UP keys/KEY-UP)
-(def KEY-DOWN keys/KEY-DOWN)
-(def KEY-LEFT keys/KEY-LEFT)
-(def KEY-RIGHT keys/KEY-RIGHT)
-(def KEY-ENTER keys/KEY-ENTER)
-(def KEY-ESC keys/KEY-ESC)
-(def KEY-TAB keys/KEY-TAB)
-(def KEY-BACKSPACE keys/KEY-BACKSPACE)
-(def KEY-DELETE keys/KEY-DELETE)
-(def KEY-HOME keys/KEY-HOME)
-(def KEY-END keys/KEY-END)
-(def KEY-PAGE-UP keys/KEY-PAGE-UP)
-(def KEY-PAGE-DOWN keys/KEY-PAGE-DOWN)
-(def KEY-SPACE keys/KEY-SPACE)
-(def KEY-INSERT keys/KEY-INSERT)
-(def ctrl keys/ctrl)
-(def shift keys/shift)
-(def alt keys/alt)
-
-;; Utils
-(def visible-width utils/visible-width)
-(def truncate-to-width utils/truncate-to-width)
-(def wrap-text-with-ansi utils/wrap-text-with-ansi)
-(def apply-background-to-line utils/apply-background-to-line)
-(def strip-ansi-codes utils/strip-ansi-codes)
-(def sgr utils/sgr)
-(def slice-by-column utils/slice-by-column)
-
-;; Components
-(def make-text text/make-text)
-(def text-set! text/text-set!)
-(def make-spacer spacer/make-spacer)
-(def make-container container/make-container)
-(def container-add-child container/container-add-child)
-(def container-remove-child container/container-remove-child)
-(def container-clear container/container-clear)
-(def container-set-children! container/container-set-children!)
-(def container-replace-children! container/container-replace-children!)
-(def make-box box/make-box)
-(def box-add-child box/box-add-child)
-(def box-remove-child box/box-remove-child)
-(def box-clear box/box-clear)
-(def box-set-bg-fn box/box-set-bg-fn)
-(def box-set-padding-x! box/box-set-padding-x!)
-(def box-set-padding-y! box/box-set-padding-y!)
-(def make-input input/make-input)
-(def input-set-value! input/input-set-value!)
-(def input-get-value input/input-get-value)
-(def input-set-on-submit! input/input-set-on-submit!)
-(def input-set-on-escape! input/input-set-on-escape!)
-(def input-set-on-change! input/input-set-on-change!)
-(def make-editor editor/make-editor)
 ;; IEditorComponent members dispatch through the protocol when the target
 ;; implements it (custom editors from extensions), else the field-based fn
 ;; (Editor-shaped records). `ed` avoids shadowing the `editor` ns alias.
@@ -3270,104 +3196,3 @@
   (if (satisfies? protocols/IEditorComponent ed)
     (protocols/editor-add-to-history! ed text)
     (editor/editor-push-history! ed text)))
-(def editor-set-on-action! editor/editor-set-on-action!)
-(def editor-set-autocomplete-theme! editor/editor-set-autocomplete-theme!)
-(def editor-autocomplete-active? editor/editor-autocomplete-active?)
-(def editor-push-history! editor/editor-push-history!)
-(def editor-get-history editor/editor-get-history)
-(def editor-set-history! editor/editor-set-history!)
-(def editor-get-paste editor/editor-get-paste)
-(def editor-set-height! editor/editor-set-height!)
-(def editor-set-terminal-rows! editor/editor-set-terminal-rows!)
-(def editor-get-text-length editor/editor-get-text-length)
-
-;; SelectList
-(def make-select-list select-list/make-select-list)
-(def select-list-set-items! select-list/select-list-set-items!)
-(def select-list-get-selected select-list/select-list-get-selected)
-(def select-list-set-theme! select-list/select-list-set-theme!)
-(def default-theme select-list/default-theme)
-
-;; SettingsList
-(def make-settings-list settings-list/make-settings-list)
-(def settings-list-set-on-escape! settings-list/settings-list-set-on-escape!)
-(def settings-list-get-item settings-list/settings-list-get-item)
-(def settings-list-set-value! settings-list/settings-list-set-value!)
-
-;; Markdown
-(def make-markdown markdown/make-markdown)
-(def markdown-set-text! markdown/markdown-set-text!)
-(def markdown-append! markdown/markdown-append!)
-(def markdown-set-theme! markdown/markdown-set-theme!)
-(def markdown-set-padding-x! markdown/markdown-set-padding-x!)
-(def markdown-get-text markdown/markdown-get-text)
-
-;; Spinner
-(def make-spinner spinner/make-spinner)
-(def spinner-start! spinner/spinner-start!)
-(def spinner-set-start! spinner/spinner-set-start!)
-(def spinner-stop! spinner/spinner-stop!)
-(def spinner-active? spinner/spinner-active?)
-(def spinner-set-text! spinner/spinner-set-text!)
-(def spinner-set-prefix! spinner/spinner-set-prefix!)
-(def spinner-set-spinner-color-fn! spinner/spinner-set-spinner-color-fn!)
-(def spinner-set-message-color-fn! spinner/spinner-set-message-color-fn!)
-
-;; ScrollView + stack layout
-(def IScrollView scroll-view/IScrollView)
-(def make-scroll-view scroll-view/make-scroll-view)
-(def scroll-view-update-layout! scroll-view/update-layout!)
-(def scroll-view-render-window scroll-view/render-window)
-(def scroll-view-scroll-by! scroll-view/scroll-by!)
-(def scroll-view-scroll-to! scroll-view/scroll-to!)
-(def scroll-view-scroll-to-start! scroll-view/scroll-to-start!)
-(def scroll-view-scroll-to-end! scroll-view/scroll-to-end!)
-(def scroll-view-scroll-top scroll-view/scroll-top)
-(def scroll-view-follows-end? scroll-view/follows-end?)
-(def scroll-view-set-follow-end! scroll-view/scroll-view-set-follow-end!)
-(def scroll-view-set-primary! scroll-view/scroll-view-set-primary!)
-(def scroll-view-set-overscroll! scroll-view/scroll-view-set-overscroll!)
-(def scroll-view-set-scrollbar-style! scroll-view/scroll-view-set-scrollbar-style!)
-(def scroll-view-set-scrollbar-hide-delay-ms!
-  scroll-view/scroll-view-set-scrollbar-hide-delay-ms!)
-(def render-stack stack/render-stack)
-
-;; AltScreenFlash — transient messages composited over the screen bottom
-(def make-alt-screen-flash alt-screen-flash/make-alt-screen-flash)
-(def alt-screen-flash! alt-screen-flash/alt-screen-flash!)
-(def alt-screen-flash-dispose! alt-screen-flash/alt-screen-flash-dispose!)
-(def alt-screen-flash-set-request-render!
-  alt-screen-flash/alt-screen-flash-set-request-render!)
-
-;; CancellableLoader — Loader cancellable with Escape (pi: BorderedLoader)
-(def make-cancellable-loader cancellable-loader/make-cancellable-loader)
-(def cancellable-loader-aborted? cancellable-loader/cancellable-loader-aborted?)
-(def cancellable-loader-signal cancellable-loader/cancellable-loader-signal)
-(def cancellable-loader-set-on-abort! cancellable-loader/cancellable-loader-set-on-abort!)
-(def cancellable-loader-dispose! cancellable-loader/cancellable-loader-dispose!)
-
-;; TruncatedText — single-line truncating text
-(def make-truncated-text truncated-text/make-truncated-text)
-(def truncated-text-set-text! truncated-text/truncated-text-set-text!)
-
-;; DynamicBorder — theme-colored border line (pi: DynamicBorder)
-(def make-dynamic-border dynamic-border/make-dynamic-border)
-
-;; HStack / VStack — flexbox-style horizontal / vertical stacks
-(def make-h-stack h-stack/make-h-stack)
-(def h-stack-add-child! h-stack/h-stack-add-child!)
-(def h-stack-remove-child! h-stack/h-stack-remove-child!)
-(def h-stack-clear! h-stack/h-stack-clear!)
-(def h-stack-set-gap! h-stack/h-stack-set-gap!)
-(def h-stack-set-align! h-stack/h-stack-set-align!)
-(def make-v-stack v-stack/make-v-stack)
-(def v-stack-add-child! v-stack/v-stack-add-child!)
-(def v-stack-remove-child! v-stack/v-stack-remove-child!)
-(def v-stack-clear! v-stack/v-stack-clear!)
-(def v-stack-set-gap! v-stack/v-stack-set-gap!)
-
-;; Stack sizing (pi: allocateStackSizes) — shared by HStack/VStack
-(def stack-entry? stack/stack-entry?)
-(def entry-component stack/entry-component)
-(def visible-stack-entries stack/visible-stack-entries)
-(def allocate-stack-sizes stack/allocate-stack-sizes)

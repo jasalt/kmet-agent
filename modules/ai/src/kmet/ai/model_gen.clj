@@ -274,11 +274,6 @@
   (let [md (java.security.MessageDigest/getInstance "SHA-256")]
     (format "%064x" (BigInteger. 1 (.digest md (.getBytes s "UTF-8"))))))
 
-(defn- generated-at
-  "UTC timestamp, second precision (ISO-8601)."
-  []
-  (str (subs (str (java.time.Instant/now)) 0 19) "Z"))
-
 (defn- input-modalities
   "pi: modalities.input includes image ? [text image] : [text] (kmet ignores
    pdf/audio/video modalities)."
@@ -2538,7 +2533,7 @@
         ;; the no-op comparison
         manifest-on-disk (try (slurp (str dir "/manifest.edn"))
                               (catch Exception _ nil))
-        generated (generated-at)
+        generated (edn-w/generated-at)
         prev-manifest-generated (or (:generated-at (read-edn-file (str dir "/manifest.edn")))
                                     generated)
         ;; Per-file decision: render with the file's own timestamp so an

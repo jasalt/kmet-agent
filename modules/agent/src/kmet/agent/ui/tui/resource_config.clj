@@ -50,6 +50,7 @@
             [kmet.agent.ui.tui.subs :as s]
             [kmet.agent.config :as cfg]
             [kmet.libs.reakt.core :as r]
+            [kmet.libs.path :as path]
             [kmet.tui.components.input :as input]
             [kmet.libs.hikap.core :as engine]
             [kmet.tui.hikap :as hiccup]
@@ -108,17 +109,10 @@
     (= origin :package) (str source " (" (name scope) ")")
 
     :else
-    (if (not= source "auto")
-      (if (= scope :user) "User settings" "Project settings")
-      (let [home (System/getProperty "user.home")
-            disp (fn [d]
-                   (let [s (str d)]
-                     (if (and home (str/starts-with? s home))
-                       (str "~" (subs s (count home)))
-                       s)))]
-        (if (= scope :user)
-          (str "User (" (disp (or base-dir agent-dir)) "/)")
-          (str "Project (" (disp (or base-dir ".kmet")) "/)"))))))
+    (cond
+      (not= source "auto") (if (= scope :user) "User settings" "Project settings")
+      (= scope :user) (str "User (" (path/home-relative (or base-dir agent-dir)) "/)")
+      :else (str "Project (" (path/home-relative (or base-dir ".kmet")) "/)"))))
 
 (defn- build-groups
   "pi buildGroups — resolved items grouped per origin/scope/source/base-dir

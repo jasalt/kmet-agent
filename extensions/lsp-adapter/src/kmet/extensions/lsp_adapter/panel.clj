@@ -6,28 +6,24 @@
 
    Keys: up/down (or k/j) select · enter or r restart selected ·
    f refresh config · esc/q close."
-  (:require [babashka.fs :as fs]
-            [clojure.string :as str]
-            [kmet.tui.keys :as keys]
-            [kmet.tui.keybindings :as kb]
-            [kmet.tui.macros :refer [defcomponent]]
-            [kmet.tui.theme :as theme]
-            [kmet.tui.utils :as u]
-            [kmet.extensions.lsp-adapter.detect :as detect]
-            [kmet.extensions.lsp-adapter.runtime :as runtime]))
+  (:require             [clojure.string :as str]
+                        [kmet.tui.keys :as keys]
+                        [kmet.tui.keybindings :as kb]
+                        [kmet.tui.macros :refer [defcomponent]]
+                        [kmet.tui.theme :as theme]
+                        [kmet.tui.utils :as u]
+                        [kmet.libs.path :as path]
+                        [kmet.extensions.lsp-adapter.detect :as detect]
+                        [kmet.extensions.lsp-adapter.runtime :as runtime]))
 
-(defn- short-root [root home]
-  (let [r (str root)]
-    (if (str/starts-with? r home)
-      (str "~" (subs r (count home)))
-      r)))
+(defn- short-root [root]
+  (path/home-relative root))
 
 (defn- server-rows
   "One row-map per effective server, in registry order; state derived
    from live conns plus the broken set."
   [st]
-  (let [home (str (fs/home))
-        conns (group-by :name (runtime/all-conns st))
+  (let [conns (group-by :name (runtime/all-conns st))
         broken @(:broken st)]
     (for [{:keys [id]} (detect/effective-servers
                         (get-in (runtime/config st) [:servers]))
@@ -37,7 +33,7 @@
        :icon (cond b "✗" (seq roots) "●" :else "○")
        :detail (cond
                  b (str "broken " (:reason b))
-                 (seq roots) (str/join ", " (map #(short-root % home) roots))
+                 (seq roots) (str/join ", " (map short-root roots))
                  :else "idle")
        :docs (transduce (map #(count (runtime/open-docs %))) + 0
                         (get conns id []))})))

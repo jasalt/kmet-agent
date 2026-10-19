@@ -23,7 +23,7 @@
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.agent.debug :as debug]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.registry :as registry]
             [kmet.agent.tools.read :as read]
             [kmet.agent.tools.registry :as tools-registry]
             [kmet.libs.scope :as scope]
@@ -44,29 +44,18 @@
 (defn- skill-key
   "The store key addressing a skill by NAME."
   [name]
-  [:kmet/skill name])
-
-(defn- skill-key?
-  "True for a key the store holds a skill under — other registries' keys
-   share the store, so shape is checked before the head."
-  [k]
-  (and (vector? k) (= :kmet/skill (first k))))
+  (registry/store-key :kmet/skill name))
 
 (defn- registered-skills
   "The tree's skills, in registration order."
   []
-  (into []
-        (keep (fn [[k _ v]] (when (skill-key? k) v)))
-        (scope/ordered-registrations (app-runtime/node))))
+  (mapv second (registry/entries :kmet/skill)))
 
 (defn- skill-for
-  "The skill named NAME, or nil. Owners are searched in first-registration
-   order, so the owner that took the name keeps it; the key is derived from
-   :name, so lookup and listing agree."
+  "The skill named NAME, or nil (see `kmet.agent.registry/entry` for the
+   owner rule)."
   [name]
-  (let [node (app-runtime/node)
-        by-owner (scope/for-key node (skill-key name))]
-    (some #(get by-owner %) (scope/owners node))))
+  (registry/entry :kmet/skill name))
 
 ;; ─── Validation (pi: validateName / validateDescription) ──────────────────
 
@@ -212,7 +201,7 @@
    diagnostic}."
   [node owner skill location]
   (let [k (skill-key (:name skill))
-        by-owner (scope/for-key node k)]
+        by-owner (registry/by-owner :kmet/skill (:name skill))]
     (if (and (seq by-owner) (not (contains? by-owner owner)))
       {:collision (skill-collision skill location)}
       {:deregister (scope/register! node owner k skill)})))
@@ -245,10 +234,7 @@
   "Remove every loaded skill from NODE (pi: resourceLoader.reload
    re-discovers from scratch). Used by /reload."
   [node]
-  (doseq [[k owner v] (scope/ordered-registrations node)
-          :when (skill-key? k)]
-    (scope/deregister! node owner k v))
-  nil)
+  (registry/clear! :kmet/skill node))
 
 (defn discover-skill-files
   "Discover skill files under DIR using pi's discovery rules (a dir

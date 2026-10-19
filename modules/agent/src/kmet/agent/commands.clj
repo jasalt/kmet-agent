@@ -22,7 +22,7 @@
    rather than reset by hand (scope.md §2). The extension ABI registers
    under its own owner path, so unload disposes what an extension added."
   (:require [clojure.string :as str]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.registry :as registry]
             [kmet.libs.scope :as scope]))
 
 (def commands-owner
@@ -34,34 +34,20 @@
 (defn- command-key
   "The store key addressing a command by NAME."
   [name]
-  [:kmet/command name])
-
-(defn- command-key?
-  "True for a key the store holds a command under — other registries'
-   keys (a bare keyword like :tools/hooks) share the store, so shape is
-   checked before the head."
-  [k]
-  (and (vector? k) (= :kmet/command (first k))))
+  (registry/store-key :kmet/command name))
 
 (defn- command-for
-  "The command named NAME, or nil. Owners are searched in first-registration
-   order, so the owner that took the name keeps it — an extension loaded
-   before the builtins beats one of theirs, which is the rule
-   `register-builtin!` skips on."
+  "The command named NAME, or nil (see `kmet.agent.registry/entry` for the
+   owner rule)."
   [name]
-  (let [node (app-runtime/node)
-        by-owner (scope/for-key node (command-key name))]
-    (some #(get by-owner %) (scope/owners node))))
+  (registry/entry :kmet/command name))
 
 (defn- command-names
-  "Every command name on the tree, in display order: owners in
+  "Every effective command name in display order: owners in
    first-registration order, each owner's commands in its own registration
    order, each name once."
   []
-  (distinct
-   (into []
-         (keep (fn [[k _ _]] (when (command-key? k) (second k))))
-         (scope/ordered-registrations (app-runtime/node)))))
+  (mapv first (registry/effective-entries :kmet/command)))
 
 (defn register-command!
   "Register (or replace by :name) a slash command on NODE, owned by OWNER —
@@ -89,11 +75,7 @@
 (defn clear-commands!
   "Remove every command registered on NODE (mainly for tests). Returns nil."
   [node]
-  ;; by key, not by owner: an owner holds several registries (scope.md §2)
-  (doseq [[k owner v] (scope/ordered-registrations node)
-          :when (command-key? k)]
-    (scope/deregister! node owner k v))
-  nil)
+  (registry/clear! :kmet/command node))
 
 (defn command-line?
   "True when TEXT is a single-line command line: slash commands and bash

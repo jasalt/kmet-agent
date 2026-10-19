@@ -5,6 +5,7 @@
             [kmet.libs.hikap.core :as engine]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
+            [kmet.tui.components.text :as text]
             [kmet.libs.terminal-image :as timg]
             [kmet.agent.ui.tui.bash-execution :as be]
             [kmet.agent.ui.tui.tool-execution :as te]
@@ -907,7 +908,7 @@
 (deftest test-render-prebuilt-component
   (testing "a message carrying a pre-built :component renders it as-is"
     (let [ch (ch/make-chat-history)
-          comp (core/make-text "prebuilt!")]
+          comp (text/make-text "prebuilt!")]
       (ch/chat-history-add-message! ch {:component comp})
       (let [lines (plain-lines ch 40)]
         (is (some #(re-find #"prebuilt!" %) lines)

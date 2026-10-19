@@ -1,24 +1,15 @@
 (ns kmet.agent.modes.interactive.resources
   "The loaded-resources sections shown by the interactive mode's
    LoadedResources component (pi: showLoadedResources)."
-  (:require [clojure.string :as str]
-            [babashka.fs :as fs]
+  (:require [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
             [kmet.agent.context :as context]
             [kmet.agent.skills :as skills]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.extensions.core :as extensions]))
+            [kmet.agent.extensions.core :as extensions]
+            [kmet.libs.path :as path]))
 
 ;; ─── Loaded resources (pi: showLoadedResources) ────────────────────────────
-
-(defn- display-path
-  "Home-relative display path for a loaded resource (pi: formatDisplayPath)."
-  [p]
-  (let [p (str p)
-        home (System/getProperty "user.home")]
-    (if (and (seq home) (str/starts-with? p home))
-      (str "~" (subs p (count home)))
-      p)))
 
 (defn build-loaded-resource-sections
   "Pi: showLoadedResources — one section per loaded resource group (Context,
@@ -33,8 +24,8 @@
         sections (cond-> []
                    (seq context-files)
                    (conj {:name "Context"
-                          :items (mapv (comp display-path :path) context-files)
-                          :expanded-items (mapv #(str "  " (display-path (:path %))) context-files)})
+                          :items (mapv (comp path/home-relative :path) context-files)
+                          :expanded-items (mapv #(str "  " (path/home-relative (:path %))) context-files)})
                    (seq skills)
                    (conj {:name "Skills"
                           :items (mapv :name skills)
@@ -49,6 +40,6 @@
                    (conj {:name "Extensions"
                           :items (mapv :name extensions)
                           :expanded-items (mapv (fn [e]
-                                                  (str "  " (display-path (:path e))))
+                                                  (str "  " (path/home-relative (:path e))))
                                                 extensions)}))]
     sections))

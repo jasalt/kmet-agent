@@ -878,12 +878,13 @@
         c (commands/find-command name)]
     ((:extension-handler c) (extensions/build-extension-context) (or args ""))))
 
-(defn- expand-compaction-text
-  "Expand a compaction-queued message's skill commands and prompt templates
-   (pi: steer/followUp expand skill+template before queueing; prompt applies
-   the full chain). Queued text is raw (pre-hook); the flush applies input
-   hooks first (idle path) and expansion here matches pi's steer/followUp
-   for the running-turn path."
+(defn expand-queued-text
+  "Expand skill commands and prompt templates for a steered, follow-up or
+   compaction-queued message (pi: steer/followUp expand skill+template before
+   queueing; prompt applies the full chain). Queued text is raw (pre-hook);
+   the flush applies input hooks first (idle path) and expansion here matches
+   pi's steer/followUp for the running-turn path. Extension commands are not
+   expanded here — they are not allowed on the queue paths."
   [text]
   (-> text
       (skills/expand-skill-command)
@@ -909,9 +910,7 @@
                 nil ;; consumed — nothing to send
                 )
             text) ;; builtin command — not dispatched here (pi parity)
-          (-> text
-              (skills/expand-skill-command)
-              (prompts/expand-prompt-template (prompts/get-prompt-templates)))))
+          (expand-queued-text text)))
       text)))
 
 (defn- apply-input-hooks
@@ -943,9 +942,7 @@
          {:action :compaction-queued :text text})
      (if-let [hooked (apply-input-hooks engine text)]
        (let [out (if expand?
-                   (-> hooked
-                       (skills/expand-skill-command)
-                       (prompts/expand-prompt-template (prompts/get-prompt-templates)))
+                   (expand-queued-text hooked)
                    hooked)]
          (if (turn-running? engine)
            (do (steer! engine out) {:action :steered :text hooked})
@@ -964,8 +961,8 @@
     (execute-extension-command! (:text m))
     (if (and allow-prompt? (not (turn-running? engine)))
       (when-let [text (apply-input-hooks engine (:text m))]
-        (prompt! engine (merge run-opts {:text (expand-compaction-text text)})))
-      (let [text (expand-compaction-text (:text m))]
+        (prompt! engine (merge run-opts {:text (expand-queued-text text)})))
+      (let [text (expand-queued-text (:text m))]
         (if (= :follow-up (:mode m))
           (follow-up! engine text)
           (steer! engine text))))))

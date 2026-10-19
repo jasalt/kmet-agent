@@ -184,11 +184,6 @@
 ;; ─── Provider options (pi getLoginProviderOptions / getLogoutProviderOptions
 ;;    / findLoginProviderOptions / handleLoginCommand) ────────────────────────
 
-(defn- format-auth-type-label
-  "pi formatAuthSelectorProviderType."
-  [auth-type]
-  (if (= :oauth auth-type) "subscription" "API key"))
-
 (defn- api-key-login-path?
   "True when the provider offers an api-key login (env vars, models.edn
    configured key, or :auth-header) — openai-codex is oauth-only."
@@ -344,7 +339,7 @@
                                               (map :auth-type) distinct
                                               (sort-by {:oauth 0 :api-key 1}))
                                    pname (:name (first entries))
-                                   labels (map format-auth-type-label types)]
+                                   labels (map auth-selector/format-auth-type types)]
                                {:id id :name pname
                                 :type-desc (str/join "/" labels)
                                 :search (str/join " "

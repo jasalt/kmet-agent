@@ -43,12 +43,6 @@
   [level]
   (get level-descriptions level ""))
 
-(defn- key-or
-  "The resolved key text for a keybinding id, or FALLBACK when unbound."
-  [id fallback]
-  (let [t (app-kb/key-label id)]
-    (if (seq t) t fallback)))
-
 (defn- filtered-levels
   "LEVELS matching the search query, fuzzy over level name + description."
   [st]
@@ -199,7 +193,7 @@
         (theme/fg th :accent (theme/bold "Thinking Level"))]
        [:text {:padding-x 1 :padding-y 0}
         (theme/fg th :muted
-                  (str (key-or "app.thinking.cycle" "Shift+Tab")
+                  (str (app-kb/key-label-or "app.thinking.cycle" "Shift+Tab")
                        " cycles thinking levels in-session"))]
        [:spacer {:lines 1}]
        [:input {:ref search-ref
@@ -209,9 +203,9 @@
        (row-elements th st filtered selected)
        [:spacer {:lines 1}]
        [:text {:padding-x 1 :padding-y 0}
-        (theme/dim (str "  " (key-or "tui.select.confirm" "Enter") " to select · "
-                        (key-or "app.thinking.save" "Ctrl+S") " to set as default · "
-                        (key-or "tui.select.cancel" "Esc") " to cancel"))]
+        (theme/dim (str "  " (app-kb/key-label-or "tui.select.confirm" "Enter") " to select · "
+                        (app-kb/key-label-or "app.thinking.save" "Ctrl+S") " to set as default · "
+                        (app-kb/key-label-or "tui.select.cancel" "Esc") " to cancel"))]
        [:spacer {:lines 1}]
        [:dynamic-border {:color-fn border-fn}]])))
 

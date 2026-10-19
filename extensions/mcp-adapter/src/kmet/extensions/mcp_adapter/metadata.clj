@@ -31,15 +31,6 @@
             [clojure.edn :as edn]
             [kmet.extensions.mcp-adapter.config :as config]))
 
-(defn- read-text
-  [path]
-  (when (fs/exists? path)
-    (slurp path)))
-
-(defn- write-text
-  [path text]
-  (spit path (str text)))
-
 (def ^:private cache-version 1)
 (def ^:private max-age-ms (* 7 24 60 60 1000))
 
@@ -61,7 +52,7 @@
   [path]
   (try
     (when (fs/exists? path)
-      (let [raw (edn/read-string {:default (fn [_ _] nil)} (read-text path))]
+      (let [raw (edn/read-string {:default (fn [_ _] nil)} (config/read-text path))]
         (when (map? raw) raw)))
     (catch Exception _ nil)))
 
@@ -86,7 +77,7 @@
                   :servers (merge (:servers existing) (:servers entry-map))}
           tmp (str path ".tmp")]
       (fs/create-dirs (fs/parent path))
-      (write-text tmp (pr-str merged))
+      (config/write-text tmp (pr-str merged))
       (fs/move tmp path {:replace-existing true})
       nil)))
 

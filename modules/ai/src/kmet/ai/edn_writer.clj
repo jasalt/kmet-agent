@@ -114,3 +114,11 @@
   (if (and (map? v) (> (count (flat v)) width))
     (render-map v 0)
     (flat v)))
+
+;; ─── Catalog timestamps ────────────────────────────────────────────────────
+
+(defn generated-at
+  "UTC timestamp, second precision (ISO-8601) — the :generated-at value the
+   catalog generators stamp, kept here so both write the same shape."
+  []
+  (str (subs (str (java.time.Instant/now)) 0 19) "Z"))

@@ -20,7 +20,7 @@
 
 (def ^:private max-visible 8)
 
-(defn- format-auth-type
+(defn format-auth-type
   "pi formatAuthSelectorProviderType — the human label for an entry's auth
    type."
   [auth-type]
