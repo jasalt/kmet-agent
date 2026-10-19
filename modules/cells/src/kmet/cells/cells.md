@@ -12,19 +12,11 @@ inside a unit's handle. Events belong to the host's bus. What the framework
 owns is what exists, how it is configured, how it is wired, and how long it
 lives.
 
-Status: **design locked; P0–P4 landed.** The plan is
+Status: **design locked; P0–P5c landed, and the F1–F14 follow-ups with them.**
+The plan is
 [`cells-plan.md`](../../../../../cells-plan.md) at the repository root: a
-transitional document that shrinks as the phases land (§9). P0 landed the store
-(`kmet.cells.scope`), `spec`, the facade's fns, the toy tests and the
-`modules.edn` / `deps.edn` / `bb.edn` wiring; P1 the mount table, snapshot and
-`explain`; P2 `kmet.agent.runtime` and the app root's store, with every kmet
-registry (commands, tools, skills, prompts, renderers, transformers, flags,
-hooks) registered on it and the engine's pending buffers and dispatchers gone;
-P3 the prompt state machine's `attempt-routes` table in `kmet.agent.loop`; P4
-the loop's stages as `:kmet/agent-loop`'s inline units (the repeat-loop guard
-and the retry policy, whose budget is read from the mounted stage) and the
-session, extension and front-end surfaces as owner paths whose installs own
-their process caches.
+transitional document that shrinks as the phases land (§9), and the git log is
+the detailed record.
 
 ## Contents
 
@@ -838,11 +830,10 @@ contribute entries at all, and to which slots, is a capability decision — the
 
 ## 9. Document set and shelf life
 
-Design, contracts and rationale live in this file. The phases still ahead — and
-the scaffolding each landing deletes — live in
-[`cells-plan.md`](../../../../../cells-plan.md) at the repository root, and a
+Design, contracts and rationale live in this file. The phase still ahead lives
+in [`cells-plan.md`](../../../../../cells-plan.md) at the repository root, and a
 landed phase's row comes out: two copies of a phase drift, and the document is
-always the stale one.
+always the stale one. The scaffolding each landing deletes is the table below.
 
 **Rank 0 is design**, not mechanics: the module requires no `kmet.*` namespace
 outside its own `kmet.cells.*` and no third-party library (malli is a
@@ -862,8 +853,8 @@ and it says so. It stays, as does §A.2.
 
 ## 10. Staged plan
 
-The phases are laid out in `cells-plan.md` §2, with the slices a phase lands
-in, together with the scaffolding each landing deletes. The
+The phase still ahead is laid out in `cells-plan.md` §2, with the slice it
+lands in; the scaffolding each landing deletes is the table above. The
 invariant they serve is here: every phase is landable on its own, gated by the
 changed-file tasks and by `test-layer-guard` / `test-headless-guard` /
 `test-self-contained`.
