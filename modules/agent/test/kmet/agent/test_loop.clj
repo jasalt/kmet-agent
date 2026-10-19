@@ -17,6 +17,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.session.core :as session]
+            [kmet.agent.loop.tool-exec :as tool-exec]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
             [kmet.agent.loop-guard :as guard]
@@ -2326,7 +2327,7 @@
                :default-tools ["read"])]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   ;; force the sequential executor for this batch
-                  loop/has-sequential-tool-call? (constantly true)
+                  tool-exec/has-sequential-tool-call? (constantly true)
                   llm/send-message
                   (fn [opts]
                     (future

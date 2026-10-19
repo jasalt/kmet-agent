@@ -72,17 +72,16 @@
    attached to the initial user message; they flow to the provider as OpenAI
    image_url / Anthropic image blocks. The wire filter that honors
    :block-images lives in kmet.agent.loop.message."
-  (:require [kmet.agent.loop.state :as state]
+  (:require [kmet.agent.loop.completion :as completion]
+            [kmet.agent.loop.tool-exec :as tool-exec]
+            [kmet.agent.loop.state :as state]
             [kmet.agent.loop.message :as message]
-            [kmet.libs.json :as json]
             [clojure.string :as str]
             [kmet.ai.llm :as llm]
             [kmet.agent.compaction :as compaction]
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.retry :as retry]
             [kmet.agent.runtime :as runtime]
-            [kmet.agent.tools.core :as tools]
-            [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.util :as tools-util]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.tools.run-code :as run-code-tool]
@@ -119,477 +118,9 @@
   (reset! (:loop-guard agent) {:window [] :suppressed 0})
   (state/emit agent {:type :loop-guard :reason reason :details details}))
 
-(defn- has-sequential-tool-call?
-  "True if any tool call targets a :sequential tool — the whole batch then runs
-   sequentially (pi: hasSequentialToolCall). Resolved against the request's
-   captured tool map, like the dispatch, so a tool unloaded between the request
-   and the batch keeps its mode; an unregistered call defaults to :parallel
-   (pi default)."
-  [tool-calls declared-tools]
-  (boolean (some #(= :sequential (:execution-mode (get declared-tools (:name %))))
-                 tool-calls)))
-
-(defn- await-all-tool-results!
-  "Block until every tool future completes; returns tool-call-id → result.
-   A failed future turns into an error result so the batch can still settle
-   a result per tool call (pi: failToolCallsFromTruncatedMessage) instead
-   of leaving the assistant tool calls dangling in the saved context."
-  [futures]
-  (into {}
-        (map (fn [[tc-id f]]
-               [tc-id (try @f
-                           (catch Exception e
-                             {:content (str "Error executing tool: " (ex-message e))
-                              :is-error true}))]))
-        futures))
-
-(defn- tool-on-update
-  "Streaming callback for a tool execution (pi: tool onUpdate) — emits
-   :tool-execution-update with partial content so the UI can show live
-   output (e.g. bash) while the tool is still running."
-  [agent tc-id]
-  (fn [partial]
-    (when-let [content (:content partial)]
-      (state/emit agent {:type :tool-execution-update
-                         :tool-call-id tc-id
-                         :content content
-                         :is-partial true}))))
-
-(defn- prepare-tool-call!
-  "Run one tool call's preparation: emit :tool-execution-start, then either settle
-   it immediately when the tool is not in the request's captured tool map (pi:
-   prepareToolCall's tools.find) or run the before-tool-call hook and return TC
-   with any rewritten :arguments. Scheduling of the execution itself stays with
-   the caller (parallel vs sequential)."
-  [agent assistant-msg tc declared-tools]
-  (let [tc-id (:id tc)
-        tc-name (:name tc)
-        tc-args (:arguments tc)]
-    (state/emit agent {:type :tool-execution-start
-                       :tool-call-id tc-id
-                       :tool-name tc-name
-                       :args tc-args})
-    (if-not (contains? declared-tools tc-name)
-      ;; undeclared call settles as an error without executing, but the
-      ;; after hook still runs in finish-tool-call!
-      (assoc tc :kmet/blocked
-             {:content (str "Tool " tc-name " not found")
-              :is-error true})
-      (let [prep (invoke/prepare-tool-call
-                  {:tool-name tc-name
-                   :args tc-args
-                   :tool-call-id tc-id
-                   :assistant-message assistant-msg
-                   :before-hook @(:before-tool-call agent)})]
-        (cond
-          (:block prep)
-          (assoc tc :kmet/blocked (:block prep))
-
-          (contains? prep :args)
-          (assoc tc :arguments (:args prep))
-
-          :else tc)))))
-
-(defn- finish-tool-call!
-  "Apply the after-tool-call hook to RAW for the given TC (pi: after hooks),
-   preserving the rewritten ARGS. Returns the final result map."
-  [agent assistant-msg tc args raw]
-  (invoke/finish-tool-call
-   {:tool-name (:name tc)
-    :args args
-    :tool-call-id (:id tc)
-    :assistant-message assistant-msg
-    :after-hook @(:after-tool-call agent)}
-   raw))
-
-(defn- execute-tool-calls-parallel!
-  "Execute tool calls concurrently (pi: executeToolCallsParallel).
-   Preparation (start events + before hooks) is sequential; execution is
-   concurrent. Each call finalizes (after hook) and emits its
-   tool-execution-end inside its own future, so a tool flips to done — with
-   its own Took duration — the moment it finishes (pi: emitToolExecutionEnd
-   in the concurrent closure) instead of when the slowest sibling does;
-   blocked and undeclared calls settle during preparation. Context/session
-   results are appended afterwards, in source order. Returns results in
-   source order.
-   DECLARED-TOOLS — the request's captured tool map (name → tool): the
-   declared set and the dispatch of every call resolve against that one
-   capture, so a tool unloaded after the request was built still runs
-   (scope.md §4)."
-  [agent tool-calls assistant-msg declared-tools & [append?]]
-  (let [finalized (atom {})
-        ;; the names declared for this request — a call outside the map is
-        ;; an immediate error, never executed; the map is also the dispatch
-        ;; override, so execution agrees with what the model was offered
-        emit-end! (fn [tc result]
-                    (state/emit agent {:type :tool-execution-end
-                                       :tool-call-id (:id tc)
-                                       :tool-name (:name tc)
-                                       :args (:arguments tc)
-                                       :result result
-                                       :is-error (:is-error result false)}))
-        finish-call (fn [tc raw]
-                      (finish-tool-call! agent assistant-msg tc (:arguments tc) raw))
-        ;; Always record before emitting: the source-order appends below
-        ;; read the map after the futures finish, so a result is never lost
-        ;; to a failed emit.
-        settle! (fn [tc result]
-                  (swap! finalized assoc (:id tc) result)
-                  (emit-end! tc result))
-        prepared (mapv #(prepare-tool-call! agent assistant-msg % declared-tools)
-                       tool-calls)
-        ;; Blocked calls settle during preparation (pi: an immediate
-        ;; outcome's end fires right away), not after the batch.
-        _ (doseq [tc prepared :when (contains? tc :kmet/blocked)]
-            (settle! tc (finish-call tc (:kmet/blocked tc))))
-        pending (filterv #(not (contains? % :kmet/blocked)) prepared)
-        ;; pi: tools receive the session AbortSignal — Escape during a tool
-        ;; call must kill the child process, not just abandon the future.
-        ;; The cancel signal and the session env/cwd bindings come from the
-        ;; run-level binding in run-agent-turn (conveyed into these futures),
-        ;; so no per-future binding is needed (invoke/execute-tool-call's
-        ;; :bindings is the pool-worker path).
-        futures (into {} (map (fn [tc]
-                                [(:id tc)
-                                 (future
-                                   (let [tc-id (:id tc)
-                                         result (finish-call
-                                                 tc
-                                                 (invoke/execute-tool-call
-                                                  tools/execute-tool
-                                                  {:tool-name (:name tc)
-                                                   :args (:arguments tc)
-                                                   :tool-call-id tc-id
-                                                   :assistant-message assistant-msg
-                                                   :signal (:signal agent)
-                                                   :ctx (extensions/build-extension-context)
-                                                   :tools declared-tools
-                                                   :on-update (tool-on-update agent tc-id)}))]
-                                     (settle! tc result)
-                                     result))])
-                              pending))
-        raw-results (await-all-tool-results! futures)
-        ;; A future body that threw before settling (await-all already turns
-        ;; it into an error result) still records a result and emits its end
-        ;; event here — the fallback is settled as-is, never by re-running
-        ;; the failed after hook.
-        _ (doseq [tc pending :when (not (contains? @finalized (:id tc)))]
-            (settle! tc (get raw-results (:id tc))))]
-    ;; context + session in source order (skipped when the caller appends —
-    ;; the repeat-loop guard path appends everything itself in source order)
-    (when (not= false append?)
-      (doseq [tc prepared]
-        (let [result (get @finalized (:id tc))
-              result-msg (message/tool-result-message (:id tc) (:name tc) result)]
-          (state/append-persisted-message! agent result-msg))))
-    ;; pi: terminate stops the run after this batch — only when EVERY
-    ;; finalized call (blocked ones carry the hint, executed ones don't)
-    {:results (mapv #(get @finalized (:id %)) tool-calls)
-     :terminate (and (seq @finalized)
-                     (every? #(true? (:terminate %)) (vals @finalized)))}))
-
-(defn- execute-tool-calls-sequential!
-  "Execute tool calls one at a time (pi: executeToolCallsSequential).
-   Same hooks and events as the parallel path, and the same captured
-   DECLARED-TOOLS map decides the declared set and the dispatch; results in
-   source order."
-  [agent tool-calls assistant-msg declared-tools & [append?]]
-  (let [tool-results (atom [])]
-    (doseq [tc tool-calls]
-      (let [tc-id (:id tc)
-            tc-name (:name tc)
-            tc-args (:arguments tc)
-            ;; shared preparation: emits the start event and runs the
-            ;; before-tool-call hook (+ undeclared handling)
-            prepared (prepare-tool-call! agent assistant-msg tc declared-tools)
-            args (:arguments prepared)
-            raw (if (contains? prepared :kmet/blocked)
-                  (:kmet/blocked prepared)
-                  (invoke/execute-tool-call
-                   tools/execute-tool
-                   {:tool-name tc-name
-                    :args args
-                    :tool-call-id tc-id
-                    :assistant-message assistant-msg
-                    :signal (:signal agent)
-                    :ctx (extensions/build-extension-context)
-                    :tools declared-tools
-                    :on-update (tool-on-update agent tc-id)}))
-            result (finish-tool-call! agent assistant-msg prepared args raw)
-            result-msg (message/tool-result-message tc-id tc-name result)]
-        (when (not= false append?)
-          (state/append-persisted-message! agent result-msg))
-        (swap! tool-results conj result)
-        (state/emit agent {:type :tool-execution-end
-                           :tool-call-id tc-id
-                           :tool-name tc-name
-                           :args tc-args
-                           :result result
-                           :is-error (:is-error result false)})))
-    ;; pi: terminate rides on blocked results — the batch stops the run
-    ;; only when every call in it was blocked with :terminate
-    {:results @tool-results
-     :terminate (and (seq @tool-results)
-                     (every? #(true? (:terminate %)) @tool-results))}))
-
-(defn- execute-tool-calls!
-  "Execute tool calls. If any target tool is :sequential the whole batch runs
-   sequentially; otherwise tools run in parallel (pi: toolExecution mode).
-   Runs before/after-tool-call hooks and returns results in source order.
-   Calls outside the declared (active) tool set settle as errors without
-   executing — pi: prepareToolCall resolves against the request's tools.
-   APPEND? — whether the executor appends results to the context/session
-   itself (true by default). The repeat-loop guard path passes false and
-   appends ALL results (suppressed + survivor) in source order itself, so a
-   batch with suppressed calls keeps tool_use/tool_result ordering (strict
-   providers reject misordered results).
-
-   The batch runs under run-code-tool/*assistant-message* so a scripted inner
-   call carries the same assistant message in its hook payload as the outer
-   run_code call (futures convey the binding; the bridge captures it on the
-   tool thread and hands it to its pool workers, which do not).
-
-   REQUEST-TOOLS is the tool list captured when the request was built, in
-   registry order; the declared set and the dispatch of every call in the
-   batch resolve against it, so a tool unloaded between the model's tool_use
-   and its execution still runs (scope.md §4)."
-  [agent tool-calls assistant-msg request-tools & [append?]]
-  (let [declared-tools (into {} (map (juxt :name identity)) request-tools)]
-    (binding [run-code-tool/*assistant-message* assistant-msg]
-      (if (has-sequential-tool-call? tool-calls declared-tools)
-        (execute-tool-calls-sequential! agent tool-calls assistant-msg declared-tools append?)
-        (execute-tool-calls-parallel! agent tool-calls assistant-msg declared-tools append?)))))
-
 ;; ─── Tool call accumulator ─────────────────────────────────────────────────
 
-(defn- make-tc-accumulator []
-  (let [pending (atom {})]
-    [(fn [tc]
-       (let [idx (:index tc)
-             name (:name tc)]
-         (if name
-           (swap! pending assoc idx
-                  {:id (:id tc) :name name :arguments (or (:arguments tc) "")})
-           (swap! pending update-in [idx :arguments]
-                  (fn [old]
-                    (let [delta (or (:arguments tc) "")]
-                      (cond
-                        ;; Anthropic content_block_start seeds the tool's input as a
-                        ;; map ({}); input_json_delta then streams the partial JSON as
-                        ;; strings. pi keeps partialJson separate from arguments and
-                        ;; re-parses at content_block_stop — the deltas REPLACE the
-                        ;; map, never concat to it (pi: block.arguments =
-                        ;; parseStreamingJson(partialJson)). A map old must therefore
-                        ;; start the string accumulator fresh.
-                        (map? old) delta
-                        (nil? old) delta
-                        :else (str old delta))))))))
-     (fn []
-       (let [result (into []
-                          (for [[_idx {:keys [id name arguments]}] @pending]
-                            {:id id :name name
-                             :arguments (cond
-                                          ;; Already-parsed map (Anthropic/Google input blocks)
-                                          (map? arguments) arguments
-                                          ;; OpenAI-style JSON string: pi's parseStreamingJson never
-                                          ;; lets a raw string through — malformed/truncated JSON
-                                          ;; (or JSON that parses to a non-map) degrades to {} so
-                                          ;; tools fail validation instead of throwing
-                                          ;; ClassCastException on assoc/merge of a string.
-                                          (string? arguments)
-                                          (let [parsed (try (json/parse-string arguments true)
-                                                            (catch Exception _ nil))]
-                                            (if (map? parsed) parsed {}))
-                                          :else {})}))]
-         (reset! pending {})
-         result))]))
-
-;; ─── LLM call wrapper ─────────────────────────────────────────────────────
-
-(defn- resolve-endpoint
-  "api-type + base-url overrides for the next LLM call (Phase 2: llm resolves
-   the Model itself and derives api/base-url/thinking from it; only the
-   agent-level overrides flow through here)."
-  [agent]
-  {:api-type (:api-type agent)
-   :base-url (:base-url agent)})
-
-(defn- call-llm
-  "Send messages to LLM, return a promise that delivers {:text str :tool-calls [...] :stop-reason kw}.
-   On failure delivers {:error ex :text str :thinking str :tool-calls [...] :usage map
-   :thinking-signature str} — whatever partials arrived before the failure
-   (persisted with the errored attempt; pi: a failed stream's partial becomes
-   the final message with stopReason \"error\").
-   Returns {:promise p :partials f}: P resolves with the delivered map;
-   PARTIALS snapshots the buffers for cancel-turn so an aborted stream keeps
-   what arrived before the abort.
-   Calls on-text for text deltas during streaming.
-   Applies the transform-context hook (pi: transformContext) to the conversation
-   before the system prompt is prepended, and prefers the per-run
-   system-prompt-override over the base system prompt.
-   REQUEST-TOOLS is the request's captured tool list (see
-   execute-tool-calls!): the wire list and the dispatch that follows resolve
-   against the same capture (scope.md §4)."
-  [agent api-key text-buf on-text on-thinking request-tools]
-  (let [done-promise (promise)
-        thinking-buf (atom "")
-        ;; opaque provider signature over the reasoning block (anthropic
-        ;; signature_delta / gemini thoughtSignature) — captured for same-model
-        ;; replay; pi keeps it on the message's thinking content block
-        sig-buf (atom nil)
-        usage-buf (atom nil)
-        [tc-add tc-flush] (make-tc-accumulator)
-        ;; The thinking-loop guard's per-call stream cut. Tripping the
-        ;; run-level cancel signal would abort the HTTP stream, but it
-        ;; leaks into follow-up turns (they share the agent signal) — so
-        ;; the guard's cancel rides on call-signal, an OR-view the stream
-        ;; transport derefs each line (SSE) / before each poll (curl),
-        ;; while tool futures keep the run-level agent signal untouched.
-        ;; Read-only (kmet.libs.concurrent/or-signal) — the transport only
-        ;; derefs it, never reset!/add-watch.
-        guard-trip (atom false)
-        call-signal (concurrent/or-signal (:signal agent) guard-trip)
-        provider @(:provider agent)
-        ep (resolve-endpoint agent)
-        system (or @(:system-prompt-override agent) @(:system agent))
-        messages (if-let [tf @(:transform-context agent)]
-                   (tf @(:messages agent))
-                   @(:messages agent))
-        ;; Display-only :info messages (injected by before-agent-start hooks)
-        ;; never reach the provider — they exist for the UI/session only.
-        messages (into [] (remove #(= :info (:role %))) messages)
-        ;; Defensive: drop tool calls/results left dangling by a corrupted
-        ;; session (process death between recording an assistant tool-call
-        ;; message and its results) — strict providers reject those.
-        messages (message/drop-incomplete-tool-calls messages)
-        ;; pi: convertToLlmWithBlockImages — with :block-images on, strip
-        ;; every image from the wire messages (the transcript and session
-        ;; keep theirs). Read per request, so a mid-session toggle applies
-        ;; to the next call.
-        messages (if (:block-images @(:cfg agent))
-                   (message/block-message-images messages)
-                   messages)
-        messages (if system
-                   (into [{:role :system :content [{:type :text :text system}]}]
-                         (vec messages))
-                   (vec messages))]
-    ;; Assistant message lifecycle: streaming begins
-    (state/emit agent {:type :message-start
-                       :message {:role :assistant :content []}})
-    (llm/send-message
-     {:provider provider
-      :api-type (:api-type ep)
-      :model @(:model agent)
-      :api-key api-key
-      :base-url (:base-url ep)
-      :messages messages
-      :tools request-tools
-      :signal call-signal
-      ;; Provider-event bridges (pi: context / before_provider_request / …):
-      ;; read once for this attempt, so a handler installed mid-run reaches
-      ;; the next request and this one keeps the hooks it started with.
-      :hooks (extensions/provider-hooks)
-      :idle-timeout-ms (:http-idle-timeout-ms @(:cfg agent))
-      ;; Whole-request deadline enforced by the transport (HttpRequest.timeout
-      ;; / curl --max-time); the idle timeout above is separate and resets
-      ;; on every received byte.
-      :total-timeout-ms (retry/llm-total-timeout-ms @(:cfg agent))
-      :thinking @(:thinking agent)
-      :session-id (some-> (:session agent) :id)
-      :on-text (fn [t]
-                 ;; Suppress stragglers after the promise resolved (e.g. the
-                 ;; thinking-loop guard already settled the call — the stream
-                 ;; aborts on the next line, but same-chunk remainders still
-                 ;; dispatch). Without this they would append into a fresh
-                 ;; streaming bubble after on-done finalized the turn.
-                 (when-not (realized? done-promise)
-                   (swap! text-buf str t)
-                   (when on-text (on-text t))
-                   (state/emit agent {:type :message-update
-                                      :message {:role :assistant
-                                                :content [{:type :text :text @text-buf}]}
-                                      :delta {:type :text :content t}})))
-      :on-thinking (fn [t]
-                     ;; Same straggler suppression as :on-text (see above).
-                     (when-not (realized? done-promise)
-                       (swap! thinking-buf str t)
-                       (when on-thinking (on-thinking t))
-                       (state/emit agent {:type :message-update
-                                          :message {:role :assistant
-                                                    :content []
-                                                    :thinking @thinking-buf}
-                                          :delta {:type :thinking :content t}}))
-                     ;; Thinking-loop guard: a repeated reasoning segment
-                     ;; (>= 3× within the recent buffer) means the model is
-                     ;; stuck in a degenerate reasoning loop — cut the stream
-                     ;; instead of burning tokens. The per-call trip flag aborts
-                     ;; the HTTP/SSE read on the next line; the guard delivers
-                     ;; as an error so the loop's retry classifier sees it; it
-                     ;; must NOT be retryable (terminal-error! path).
-                     (when (and (:thinking-loop-guard-enabled @(:cfg agent))
-                                (not (realized? done-promise))
-                                (loop-guard/thinking-loop? @thinking-buf))
-                       (reset! guard-trip true)
-                       (deliver done-promise
-                                {:error loop-guard/thinking-loop-error
-                                 :text @text-buf
-                                 :thinking (str/trim @thinking-buf)
-                                 :tool-calls (tc-flush)
-                                 :usage @usage-buf
-                                 :thinking-signature @sig-buf})))
-      ;; signatures arrive as whole blobs (possibly repeated across deltas) —
-      ;; last-wins, never concatenated
-      :on-signature (fn [sig]
-                      (when (and sig (not (realized? done-promise)))
-                        (reset! sig-buf sig)))
-      :on-tool-call (fn [tc]
-                      (when-not (realized? done-promise)
-                        (tc-add tc)
-                        (state/emit agent {:type :message-update
-                                           :message {:role :assistant :content []}
-                                           :delta (assoc (select-keys tc [:id :name :arguments :index])
-                                                         :type :tool-call)})))
-      :on-usage (fn [usage]
-                  ;; Provider-native usage map — stored on the assistant
-                  ;; message for session persistence (pi: message.usage).
-                  (when-not (realized? done-promise)
-                    (reset! usage-buf usage)))
-      :on-done (fn [reason]
-                 (let [tool-calls (tc-flush)]
-                   (deliver done-promise
-                            {:text @text-buf
-                             :thinking (str/trim @thinking-buf)
-                             :tool-calls tool-calls
-                             :usage @usage-buf
-                             :thinking-signature @sig-buf
-                             :stop-reason reason})))
-      :on-error (fn [e]
-                  ;; Guard against double delivery: on the curl path the
-                  ;; stream error and close!'s transport-failure report can
-                  ;; both fire for one failure (e.g. abort! on idle timeout)
-                  (when-not (realized? done-promise)
-                    (deliver done-promise
-                             {:error e
-                              ;; Partials captured before the failure — recorded
-                              ;; on the errored attempt (pi: the failed stream's
-                              ;; partial becomes the final message)
-                              :text @text-buf
-                              :thinking (str/trim @thinking-buf)
-                              :tool-calls (tc-flush)
-                              :usage @usage-buf
-                              :thinking-signature @sig-buf})))})
-    ;; Snapshot closure — evaluated by cancel-turn at abort time
-    {:promise done-promise
-     :partials (fn []
-                 {:text @text-buf
-                  :thinking (str/trim @thinking-buf)
-                  :tool-calls (tc-flush)
-                  :usage @usage-buf
-                  :thinking-signature @sig-buf})}))
-
 ;; ─── Agent run ─────────────────────────────────────────────────────────────
-
-(declare resolve-api-key)
 
 (defn abort-compaction!
   "Abort the in-flight compaction without cancelling the agent run (pi:
@@ -642,7 +173,7 @@
    reports failures, it never throws into the retry driver (pi:
    completeSummarization)."
   [agent messages {:keys [signals thinking max-tokens]}]
-  (let [ep (resolve-endpoint agent)
+  (let [ep (completion/resolve-endpoint agent)
         signal (apply concurrent/or-signal signals)
         ;; Whole-request deadline, like a normal call; the deref below uses
         ;; the same value as its backstop when enabled, while an explicitly
@@ -680,7 +211,7 @@
            (cond-> {:provider @(:provider agent)
                     :api-type (:api-type ep)
                     :model @(:model agent)
-                    :api-key (resolve-api-key agent)
+                    :api-key (completion/resolve-api-key agent)
                     :base-url (:base-url ep)
                     :messages messages
                     :signal signal
@@ -1454,14 +985,6 @@
   (prepare-next-turn! agent turn-index assistant-msg tool-results)
   (finish-turn! agent turn-index assistant-msg tool-results))
 
-(defn- resolve-api-key
-  "Resolve the API key for the agent's provider, preferring the dynamic
-   get-api-key hook (pi: config.getApiKey, resolved per LLM call)."
-  [agent]
-  (if-let [kf @(:get-api-key agent)]
-    (kf @(:provider agent))
-    (cfg/get-api-key @(:provider agent))))
-
 (defn- prepare-run!
   "Per-run setup (pi: _systemPromptOverride / _overflowRecoveryAttempted
    resets, the per-prompt compaction-blocked reset, the submitted user
@@ -1579,7 +1102,7 @@
           ;; path appends ALL results (suppressed + survivor) in source order
           ;; below so tool_use/tool_result ordering stays strict-provider-safe
           exec-result (when (seq survivors)
-                        (execute-tool-calls! agent survivors assistant-msg request-tools false))
+                        (tool-exec/execute-tool-calls! agent survivors assistant-msg request-tools false))
           exec-results (or (:results exec-result) [])
           terminate? (:terminate exec-result)
           ;; Successful writes change the world, so earlier repeats observed
@@ -1729,7 +1252,7 @@
                                 request-tools (state/active-tools agent)
                                 {:keys [promise] :as call}
                                 (do (reset! text-buf "")
-                                    (call-llm agent (resolve-api-key agent) text-buf on-text on-thinking request-tools))]
+                                    (completion/call-llm agent (completion/resolve-api-key agent) text-buf on-text on-thinking request-tools))]
                             (reset! (:active-call agent) call)
                           ;; A cancel that landed while call-llm was still executing saw no
                           ;; active call to deliver (the promise is installed only now, and a
@@ -2064,7 +1587,7 @@
   [agent {:keys [message images on-text on-thinking on-done on-error]}]
   (state/set-run-signal! agent false)
   (let [provider @(:provider agent)
-        api-key (resolve-api-key agent)
+        api-key (completion/resolve-api-key agent)
         opts {:on-text on-text :on-thinking on-thinking
               :on-error on-error}]
     (if (not (or api-key (auth/configured? provider)))

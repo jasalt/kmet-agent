@@ -458,7 +458,7 @@
    guidelines, then the always-on ones. The parallel-batching rule is kmet's
    addition — pi has no parallel-tool-call guidance, while kmet's loop runs a
    batch's calls in parallel by default
-   (kmet.agent.loop/execute-tool-calls-parallel!)."
+   (kmet.agent.loop.tool-exec/execute-tool-calls-parallel!)."
   [selected-tools guidelines]
   (let [tool-set (set selected-tools)
         has-bash? (contains? tool-set "bash")
