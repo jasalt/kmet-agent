@@ -37,14 +37,6 @@
     (dereg)
     (t/is (nil? (skills/get-skill "stored-skill")) "the returned fn removes it")))
 
-(t/deftest test-skill-registry-survives-a-remount
-  (try
-    (skills/register-skill! (app-runtime/node) "remount-skill" "Survives.")
-    (app-runtime/remount!)
-    (t/is (some? (skills/get-skill "remount-skill"))
-          "the skills slot is in the app's entry list; a remount keeps it")
-    (finally (skills/clear-skills! (app-runtime/node)))))
-
 (t/deftest test-get-skill-not-found
   (t/is (nil? (skills/get-skill "nonexistent"))))
 

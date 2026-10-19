@@ -894,18 +894,6 @@
       (finally
         (tools/unregister-tool! (app-runtime/node) "guarded-tool")))))
 
-(t/deftest test-tool-registry-survives-a-remount
-  ;; The tools slot is part of the app's entry list, so /reload's remount
-  ;; diffs it as unchanged and the registrations stay (cells.md §6.2).
-  (try
-    (tools/register-tool! (app-runtime/node) {:name "survives-reload" :description "d"
-                                              :parameters {:type "object" :properties {}}
-                                              :execute (fn [_] {:content "ok"})})
-    (app-runtime/remount!)
-    (t/is (contains? (tools/get-all-tools) "survives-reload"))
-    (finally
-      (tools/unregister-tool! (app-runtime/node) "survives-reload"))))
-
 (t/deftest test-tools-prepare-arguments
   (t/testing "pi prepareToolCallArguments: the shim rewrites args before execution"
     (let [custom (tools/make-tool

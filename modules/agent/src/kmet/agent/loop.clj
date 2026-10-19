@@ -177,8 +177,8 @@
                        system-prompt-opts    ;; atom of the build-system-prompt options map (pi: _baseSystemPromptOptions)
                        loop-guard            ;; atom of per-run repeat-loop guard state:
                                              ;;   {:window [signature...] :suppressed n}
-                       node                  ;; the composition node this run reads its units
-                                             ;; from: the app root by default (kmet.agent.runtime),
+                       node                  ;; the node this run reads its loop stages from:
+                                             ;; the app root by default (kmet.agent.runtime),
                                              ;; a child node for a subagent run (cells.md §5.6)
                        ])
 
@@ -210,9 +210,9 @@
          :default-tools (resolved :default-tools selection — the built-in
          tools active at startup, pi: defaultTools; nil = every built-in
          active, see kmet.agent.tools.registry/resolve-default-tools),
-         :node (the composition node this run reads its loop group from;
-         default the app root, kmet.agent.runtime/node — a subagent run passes
-         its own child node, which then has to carry an :agent-loop group,
+         :node (the node this run reads its loop stages from; default the app
+         root, kmet.agent.runtime/node — a subagent run passes its own child
+         node, which carries its own :loop-guard and :retry-policy stages,
          cells.md §5.6)"
   [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools node]
       :or {provider :opencode-go
@@ -1558,16 +1558,16 @@ Be precise and concise in your responses."}}]
 
 (defn- mounted-retry-policy
   "The flat policy {:max-retries :base-delay-ms :max-agent-delay-ms} every
-   retry path in this namespace spends: the run's options under the mounted
-   :retry-policy entry's own config, so the budget the snapshot shows is the
-   budget spent (cells.md §5.4, §6.1). The 2-arity reuses the attempt's one
-   snapshot read; the 1-arity takes the compaction path's own, which tolerates
-   a node-less state — the run's options stand alone."
+   retry path in this namespace spends: the run's options under the node's
+   :retry-policy stage config, so the budget the loop reads is the budget
+   spent. The 2-arity reuses the attempt's one stage read; the 1-arity takes
+   the compaction path's own, which tolerates a node-less state — the run's
+   options stand alone."
   ([agent]
-   (mounted-retry-policy agent (runtime/snapshot (:node agent) :agent-loop)))
-  ([agent units]
+   (mounted-retry-policy agent (runtime/loop-stages (:node agent))))
+  ([agent stages]
    (merge (select-keys @(:cfg agent) [:max-retries :base-delay-ms :max-agent-delay-ms])
-          (runtime/config units :retry-policy))))
+          (:config (:retry-policy stages)))))
 
 (defn- summarize!
   "LLM summarization of the pre-cut entries (pi: generateSummaryWithUsage via
@@ -2374,11 +2374,10 @@ Be precise and concise in your responses."}}]
      :loop-guard — repeat-loop guard tripped (caller settles the run)
 
    Repeat-loop guard (kmet-specific): the batch is filtered through the
-   `:loop-guard` slot's handle, read from the attempt's snapshot — the unit is
-   a mount, not a namespace (cells.md §5.4, §8.1). Its entry config supplies
-   the threshold when the mount carries one; cfg's value is the default until
-   the engine runs on its own node (cells.md §8's host rules). Suppressed calls
-   get a synthetic
+   `:loop-guard` stage's handle, read from the attempt's stage map — the node
+   carries the stage, not a mount (cells.md §5.4, §8.1). Its config supplies
+   the threshold when the node carries one; cfg's value is the default.
+   Suppressed calls get a synthetic
    guard result (transcript stays coherent — no dangling tool ids, and the
    user sees why in the tool box); survivors execute normally. When a batch is
    ALL suppressed — or cumulative suppressions reach 2×threshold (mixed
@@ -2390,15 +2389,15 @@ Be precise and concise in your responses."}}]
    REQUEST-TOOLS is the request's captured tool list, in registry order: the
    guard's survivors execute against it, so a tool unloaded after the request
    was built still runs (cells.md §5.4)."
-  [agent units t result request-tools]
+  [agent stages t result request-tools]
   (let [assistant-msg (add-assistant-message! agent result)
         tool-calls (:tool-calls result)]
     (set-agent-status! agent :executing {:tool-calls tool-calls})
-    (let [threshold (or (:threshold (runtime/config units :loop-guard))
+    (let [threshold (or (get-in stages [:loop-guard :config :threshold])
                         (:loop-guard-threshold @(:cfg agent)))
           guard-enabled? (:loop-guard-enabled @(:cfg agent))
           guard-filter (when guard-enabled?
-                         (runtime/require-handle units :loop-guard))
+                         (get-in stages [:loop-guard :handle]))
           {:keys [suppressed survivors state]}
           (if guard-enabled?
             (guard-filter @(:loop-guard agent) threshold tool-calls)
@@ -2514,9 +2513,9 @@ Be precise and concise in your responses."}}]
    :agent-end is emitted here with this attempt's accumulated messages
    (RUN-TOKEN keys the accumulator) and :will-retry."
   [agent run-token {:keys [on-text on-thinking on-error]}]
-  (let [units (runtime/snapshot (:node agent) :agent-loop) ; the loop group, one read per attempt (cells.md §5.4)
-        retry-decide (runtime/require-handle units :retry-policy)
-        retry-policy (mounted-retry-policy agent units)
+  (let [stages (runtime/loop-stages (:node agent)) ; the node's stages, one read per attempt (cells.md §5.4)
+        retry-decide (get-in stages [:retry-policy :handle])
+        retry-policy (mounted-retry-policy agent stages)
         text-buf (atom "")
         agent-end (fn [error will-retry]
                     (when-let [s (:session agent)]
@@ -2691,7 +2690,7 @@ Be precise and concise in your responses."}}]
                                     (reset! (:overflow-recovered agent) false))
                                   (let [tool-calls (:tool-calls result)]
                                     (if (seq tool-calls)
-                                      (let [phase (tools-phase! agent units t result request-tools)]
+                                      (let [phase (tools-phase! agent stages t result request-tools)]
                                         (cond
                                           (= :loop-guard phase)
                                         ;; Repeat-loop guard tripped: settle the

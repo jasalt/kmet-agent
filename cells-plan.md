@@ -20,33 +20,31 @@ agent guards (`test-layer-guard`, `test-headless-guard`).
 
 | phase | side | what lands | notes |
 |---|---|---|---|
-| **P7** (deferred) | agent | subagents: a tool unit mounts a child node with its own model, tool subset and hooks (cells.md §5.6) | `mount! {:parent}` and `runtime/unit-handle` have landed, as have P7's prerequisites (F3's node threading, F13's event scope). Still missing: the loop group's `:handle` (the adapter that builds the child's agent state from its slots), a child session unit (`:kmet/sub-session` has no builtin), and the tool-subset rule (the child state's `:default-tools`/active set — the registry reads the app root, so a child does not isolate it). pi's `durable` stays *open* in `pi-alignment.md` |
+| **P7** (deferred) | agent | subagents: a subagent tool mounts a child node with its own model, stage map, tool subset and hooks (cells.md §5.6) | `runtime/child-node` gives a run its own node and stages, and P7's prerequisites (F3's node threading, F13's event scope) are met. Still missing: the child-state builder (agent state from the child's model, stages, tool subset and hooks), a child session setup, and the tool-subset rule (the child state's `:default-tools`/active set — the registry reads the app root, so a child does not isolate it). pi's `durable` stays *open* in `pi-alignment.md` |
 
 The `:extensions`/`:packages` settings keys stay the enable/disable surface and
 `:default-tools` stays a run-option (cells.md §6.1): what they enable lands as
-registrations, not entries. A per-session config-derived entry goes with the
-entry mechanism §3 retires (cells.md §8).
+registrations, not entries.
 
 ## 3. Reduction plan
 
-The composition layer is weighted for consumers it does not have: production
-mounts one group of two stages, `/units` renders it, and `/reload` remounts it.
-The store and the scope value are not speculative — the registries and node
-threading stand on them — so the reduction targets the composition layer, not
-the module.
+The composition layer is weighted for consumers it does not have: the host
+carries one static stage map and prints the store, and nothing but the
+framework's own tests mounts a tree. The store and the scope value are not
+speculative — the registries and node threading stand on them — so the
+reduction targets the composition layer, not the module.
 
 | step | side | what lands | notes |
 |---|---|---|---|
-| **R2** | agent | collapse entries to one static group: no `default-entries`, resolution backends, `spec` or `check`; `runtime/node` mounts the loop group directly; the loop reads its two stages from a plain map; `/units` becomes a flat owner listing | one group with two stages is all production mounts, and `check` has no caller outside tests. Touches `runtime.clj`, `loop.clj` (4 read sites), `session/runtime.clj` (dispose), `builtins.clj`, `test_runtime` / `test_loop`; `/units` text changes |
-| **R3** | framework + agent | shrink `modules/cells` to the store and a scope: keep `scope.clj` and a minimal node (parent, children, `in-subtree?`), delete `mount.clj` / `spec.clj` / `explain.clj` / `core.clj` and their tests; `mount! {:parent}` becomes `child-node` | ~600 src lines out (878 → ~300); `test_scope` (176 lines) is the store's contract and stays; `child-node` is what P7 needs, not descriptors. Prerequisite: R2 |
-| **R4** | docs | retire the framework documents with the layer: `cells.md` (1059 lines) becomes a short store-and-scope contract (or an agent README section); the AGENTS.md topic map loses the cells entry; this file retires when R2–R3 land (cells.md §9's rule) | P7's record stays in `pi-alignment.md` (`durable` open), as "a child scope" rather than descriptors |
+| **R3** | framework + agent | shrink `modules/cells` to the store and a scope: keep `scope.clj` and its node (parent, children, `in-subtree?`), delete `mount.clj` / `spec.clj` / `explain.clj` / `core.clj` and their tests; `kmet.cells.core`'s re-exports go with them | ~600 src lines out (878 → ~300); `test_scope` (176 lines) is the store's contract and stays; the host already uses `scope.clj` alone |
+| **R4** | docs | retire the framework documents with the layer: `cells.md` (~1k lines) becomes a short store-and-scope contract (or an agent README section); the AGENTS.md topic map loses the cells entry; this file retires when R3 lands (cells.md §9's rule) | P7's record stays in `pi-alignment.md` (`durable` open), as "a child node" rather than descriptors |
 | **R5** (optional) | agent | delete the dependency: port the store to `kmet.agent.registry`, drop the `modules.edn` row and the `deps.edn` entry | only if "no `kmet.cells` namespace" is itself a goal; costs the rank-0 self-containment and buys little over R3 |
 
 Each step is independently landable and gated like §2's. What the reduction
 gives up: extension-contributed slots and `:units` declarations (no consumer; a
 host API can carry a policy list if one appears), declared-unit validation,
 `/units`'s tree rendering (a flat owner listing remains), and P7 as designed —
-a subagent mounts a child scope, not a descriptor tree.
+a subagent mounts a child node, not a descriptor tree.
 
 ## 4. Follow-ups and sequencing
 

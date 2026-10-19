@@ -20,7 +20,6 @@
             [kmet.agent.loop :as loop]
             [kmet.agent.loop-guard :as guard]
             [kmet.agent.runtime :as runtime]
-            [kmet.cells.core :as cells]
             [kmet.agent.retry :as retry]
             [kmet.agent.config :as cfg]
             [kmet.agent.debug :as debug]
@@ -1857,30 +1856,24 @@
   ;; The run's node defaults to the app's (kmet.agent.runtime), and a run can
   ;; be pointed at its own tree for a child node (cells.md §5.6).
   (t/is (identical? (runtime/node) (:node (loop/make-agent-state))))
-  (let [mine (:root (runtime/runtime))]
+  (let [mine (runtime/child-node)]
     (t/is (identical? mine (:node (loop/make-agent-state :node mine))))))
 
-(t/deftest test-loop-runs-the-guard-mounted-in-its-node
-  ;; The guard is reached through the store, not the namespace: a spy
-  ;; replacing the loop group's stage in the run's own node filters the batch
-  ;; (and trips it on the second, so the run settles), and the entry config
-  ;; supplies the threshold (cells.md §5.4, §6.1, §8.1).
+(t/deftest test-loop-runs-the-guard-in-its-node
+  ;; The guard is the node's stage, not a namespace read: a spy in the run's
+  ;; own node filters the batch (and trips it on the second, so the run
+  ;; settles), and the stage config supplies the threshold (cells.md §5.4,
+  ;; §8.1).
   (let [calls (atom [])
         spy (fn [state threshold tool-calls]
               (swap! calls conj threshold)
               ;; Suppress the batch: the run trips the guard and settles, and
-              ;; the entry config's threshold is what the batch was judged by.
+              ;; the stage config's threshold is what the batch was judged by.
               {:suppressed tool-calls :survivors [] :state state})
-        ;; only the guard stage is a spy; the loop group itself is the real
-        ;; unit, so the entry can replace its inline default
-        rt (cells/runtime {:resolve [[:builtin (fn [nm]
-                                                 (if (= :kmet/loop-guard nm)
-                                                   {:handle spy}
-                                                   (get runtime/builtin-units nm)))]]})
-        mine (cells/mount! rt [{:id :agent-loop :name :kmet/agent-loop}
-                               {:id :loop-guard :into :agent-loop
-                                :name :kmet/loop-guard
-                                :config {:threshold 7}}])]
+        ;; the node carries the guard stage: the spy replaces the handle and
+        ;; its config supplies the threshold
+        mine (runtime/child-node nil {:loop-guard {:handle spy
+                                                   :config {:threshold 7}}})]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   tools/execute-tool
                   (fn [_ _ _] {:content "ok" :is-error false})
@@ -1897,27 +1890,21 @@
         @(loop/run-agent-turn agent {:message "run"
                                      :on-done (fn [_])
                                      :on-error (fn [_])})
-        (t/is (seq @calls) "the mounted handle filtered the batch")
+        (t/is (seq @calls) "the node's handle filtered the batch")
         (t/is (= [7] (distinct @calls))
-              "the mount's entry config reached the mounted handle")
+              "the stage config reached the node's handle")
         (t/is (= :idle @(:status agent)) "the run settled through the guard")))))
 
-(t/deftest test-loop-runs-the-retry-policy-mounted-in-its-node
-  ;; The retry policy is a group stage too: a spy replacing it decides the
-  ;; errored call's next move, and its entry config overrides the run's own
-  ;; option (cells.md §5.4, §6.1).
+(t/deftest test-loop-runs-the-retry-policy-in-its-node
+  ;; The retry policy is a node stage too: a spy replacing it decides the
+  ;; errored call's next move, and its config overrides the run's own option
+  ;; (cells.md §5.4).
   (let [seen (atom [])
         spy (fn [state]
               (swap! seen conj state)
               (retry/retry-decision state))
-        rt (cells/runtime {:resolve [[:builtin (fn [nm]
-                                                 (if (= :kmet/retry nm)
-                                                   {:handle spy}
-                                                   (get runtime/builtin-units nm)))]]})
-        mine (cells/mount! rt [{:id :agent-loop :name :kmet/agent-loop}
-                               {:id :retry-policy :into :agent-loop
-                                :name :kmet/retry
-                                :config {:max-retries 1}}])
+        mine (runtime/child-node nil {:retry-policy {:handle spy
+                                                     :config {:max-retries 1}}})
         calls (atom 0)
         ;; the run's own budget would end the error immediately; the mount's
         ;; config is the one that counts
@@ -1934,7 +1921,7 @@
                           (on-done :stop)))
                       :done))]
       @(loop/run-agent-turn agent {:message "go" :on-done (fn [_]) :on-error (fn [_])}))
-    (t/is (= 1 (count @seen)) "the errored call reached the mounted handle")
+    (t/is (= 1 (count @seen)) "the errored call reached the node's handle")
     (t/is (= 1 (:max-retries (first @seen)))
           "the entry config's budget reached the policy")
     (t/is (= 1 (:base-delay-ms (first @seen)))
@@ -1942,10 +1929,10 @@
     (t/is (= 2 @calls) "the policy's retry ran a second attempt")
     (t/is (= :idle @(:status agent)) "the retried run settled")))
 
-(t/deftest test-loop-snapshot-survives-a-mid-attempt-change
-  ;; cells.md §5.4: an attempt reads its units once. A change to the tree
-  ;; during the attempt (here a remount) is invisible to it, and the next
-  ;; attempt reads the new tree — the tool-unload race the rule closes.
+(t/deftest test-loop-stages-survive-a-mid-attempt-change
+  ;; cells.md §5.4: an attempt reads its stages once. A change to the node's
+  ;; stages during the attempt (here a refresh) is invisible to it, and the
+  ;; next attempt reads the new map — the tool-unload race the rule closes.
   (let [used (atom [])
         guard-a (fn [state _threshold tool-calls]
                   (swap! used conj :a)
@@ -1953,13 +1940,7 @@
         guard-b (fn [state _threshold tool-calls]
                   (swap! used conj :b)
                   {:suppressed tool-calls :survivors [] :state state})
-        group-with (fn [handle]
-                     (update-in runtime/builtin-units
-                                [:kmet/agent-loop :units]
-                                assoc :loop-guard {:handle handle}))
-        table (atom (group-with guard-a))
-        rt (cells/runtime {:resolve [[:builtin (fn [nm] (get @table nm))]]})
-        node (cells/mount! rt runtime/default-entries)
+        node (runtime/child-node nil {:loop-guard {:handle guard-a}})
         run! (fn [on-first-call]
                (let [calls (atom 0)]
                  (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -1980,16 +1961,19 @@
                    @(loop/run-agent-turn
                      (loop/make-agent-state :node node :on-event (fn [_]))
                      {:message "run" :on-done (fn [_]) :on-error (fn [_])}))))]
-    ;; The tree changes while the first attempt is in flight.
-    (run! (fn [] (reset! table (group-with guard-b))
-            (cells/mount! rt runtime/default-entries)))
+    ;; The node's stages change while the first attempt is in flight.
+    (run! (fn []
+            (with-redefs [runtime/default-loop-stages
+                          (assoc runtime/default-loop-stages
+                                 :loop-guard {:handle guard-b})]
+              (runtime/refresh-stages! node))))
     (t/is (= [:a] @used) "the attempt kept the handle it started with")
-    (t/is (= guard-b (runtime/handle (runtime/snapshot node :agent-loop) :loop-guard))
-          "and the tree really did change under it")
+    (t/is (= guard-b (get-in (runtime/loop-stages node) [:loop-guard :handle]))
+          "and the node really did change under it")
     ;; The next attempt reads the new tree: guard-b suppresses its only call,
     ;; which trips the guard and settles the run (one handle call).
     (run! (fn []))
-    (t/is (= [:a :b] @used) "the next attempt read the remounted handle")))
+    (t/is (= [:a :b] @used) "the next attempt read the refreshed handle")))
 
 (t/deftest test-loop-run-agent-turn-thinking-loop-guard-terminates
   ;; End-to-end: the model streams the same reasoning segment repeatedly;
@@ -5144,20 +5128,17 @@
               "the retried call's summary lands on the compaction entry")
         (finally (fs/delete-tree dir))))))
 
-(t/deftest test-loop-summarization-honors-the-mounted-retry-policy
-  ;; The summarization retries spend the mounted policy too: the entry
+(t/deftest test-loop-summarization-honors-the-node-retry-policy
+  ;; The summarization retries spend the node's retry policy too: the stage
   ;; config's budget wins over the run's option — here the option would
-  ;; suppress every retry and the mount allows one (cells.md §5.4).
+  ;; suppress every retry and the node allows one (cells.md §5.4).
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
         events (atom [])
         attempts (atom 0)
-        rt (cells/runtime {:resolve [[:builtin (fn [nm] (get runtime/builtin-units nm))]]})
-        node (cells/mount! rt [{:id :agent-loop :name :kmet/agent-loop}
-                               {:id :retry-policy :into :agent-loop
-                                :name :kmet/retry
-                                :config {:max-retries 1 :base-delay-ms 3
-                                         :max-agent-delay-ms 5}}])
+        node (runtime/child-node nil {:retry-policy {:config {:max-retries 1
+                                                              :base-delay-ms 3
+                                                              :max-agent-delay-ms 5}}})
         agent (loop/make-agent-state
                :node node
                :session sess

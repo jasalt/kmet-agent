@@ -54,7 +54,7 @@
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
-            [kmet.cells.core :as cells]))
+            [kmet.cells.scope :as scope]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
                    cwd turn-running? compaction-queued pending-compaction
@@ -1385,8 +1385,8 @@
     ;; process caches and restore the headless binding. A node-less engine
     ;; (a test double) has no registrations, but its caches still clear.
     (when-let [node (agent-node engine)]
-      (cells/dispose! node [:app :session])
-      (cells/dispose! node [:app :ui]))
+      (scope/dispose-owner! node [:app :session])
+      (scope/dispose-owner! node [:app :ui]))
     (extensions/clear-runtime!)
     (extensions/unbind-extensions!))
   nil)

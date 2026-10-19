@@ -7,7 +7,6 @@
             [kmet.agent.commands.builtins :as builtins]
             [kmet.agent.runtime :as app-runtime]
             [kmet.agent.tools.registry :as tools-reg]
-            [kmet.cells.core :as cells]
             [kmet.cells.scope :as scope]
             [kmet.test-utils :as tu]))
 
@@ -110,11 +109,10 @@
       ((:handler (commands/find-command "echo")) ctx "hello"))
     (t/is (= [{:runtime :engine :ui :ui :frontend :interactive} "hello"] @received))))
 
-(t/deftest units-lists-the-mounted-tree
-  ;; The /units surface renders kmet.cells' composition tree plus every store
-  ;; owner that is not a slot (kmet.agent.runtime): the loop group and its
-  ;; stages, and the commands and tools registries' owner paths with their
-  ;; keys (cells.md §5.1, §7).
+(t/deftest units-lists-the-store-owners
+  ;; The /units surface renders every store owner: the registries' owner paths
+  ;; with their keys, one flat line each (kmet.agent.runtime; cells.md §5.1,
+  ;; §7).
   (builtins/register-runtime-commands!)
   (tools-reg/register-tool! (app-runtime/node) {:name "units-probe" :description "d"
                                                 :parameters {:type "object" :properties {}}
@@ -124,8 +122,9 @@
       ((:handler (commands/find-command "units"))
        {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
       (t/is (= "Units" (first @got)))
-      (t/is (str/includes? (second @got) ":agent-loop"))
-      (t/is (str/includes? (second @got) ":loop-guard"))
+      (t/is (every? #(not (str/starts-with? % " "))
+                    (str/split-lines (second @got)))
+            "one flat line per owner, no indentation")
       (t/is (str/includes? (second @got) "[:app :commands] keys=")
             "the commands registry's address renders from the store")
       (t/is (str/includes? (second @got) "[:kmet/command \"units\"]")
@@ -137,25 +136,16 @@
     (finally
       (tools-reg/unregister-tool! (app-runtime/node) "units-probe"))))
 
-(t/deftest a-remount-keeps-the-registry
-  ;; The commands slot is part of the app's entry list, so /reload's remount
-  ;; diffs it as unchanged and the registrations stay (cells.md §6.2).
-  (commands/register-command! (app-runtime/node)
-                              {:name "survives-reload" :description "x" :handler (fn [_ _] nil)})
-  (app-runtime/remount!)
-  (t/is (some? (commands/find-command "survives-reload"))))
-
 (t/deftest units-follows-the-session-engine-node
-  ;; A session that runs in its own tree shows that tree, not the app root
-  ;; (cells.md §5.6).
+  ;; A session that runs in its own tree shows that tree, not the app root.
   (builtins/register-runtime-commands!)
-  (let [mine (cells/mount! (app-runtime/runtime)
-                           [{:id :probe :name :kmet/loop-guard}])
+  (let [mine (app-runtime/child-node)
         got (atom nil)]
+    (scope/register! mine [:app :probe] :k/probe "v")
     ((:handler (commands/find-command "units"))
      {:runtime {:agent-state (atom {:node mine})}
       :ui {:info (fn [label content] (reset! got [label content]))}} nil)
-    (t/is (str/includes? (second @got) ":probe"))))
+    (t/is (str/includes? (second @got) "[:app :probe] keys=[:k/probe]"))))
 
 (t/deftest register-builtin-skips-a-taken-name
   (commands/register-command! (app-runtime/node)

@@ -17,7 +17,6 @@
             [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.registry :as tools-reg]
             [kmet.ai.models :as models]
-            [kmet.cells.core :as cells]
             [kmet.cells.scope :as scope]
             [kmet.test-utils :as tu]))
 
@@ -199,16 +198,16 @@
   ;; registration belongs to the tree that installed it: an older tree's
   ;; teardown cannot clear a newer tree's session (cells.md §5.1, §5.6).
   (let [old (app/node)
-        newer (:root (app/runtime))]
+        newer (app/child-node)]
     (try
       (extensions/install-session! old :old-session)
       (extensions/install-session! newer :newer-session)
       (is (= :newer-session (extensions/get-session)))
-      (cells/dispose! old [:app :session])
+      (scope/dispose-owner! old [:app :session])
       (is (= :newer-session (extensions/get-session))
           "the older tree's teardown cannot clear the newer install")
       (finally
-        (cells/dispose! newer [:app :session])))))
+        (scope/dispose-owner! newer [:app :session])))))
 
 (deftest test-snapshot-is-plain-data
   (with-engine

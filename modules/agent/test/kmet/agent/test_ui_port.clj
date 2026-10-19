@@ -9,7 +9,6 @@
             [kmet.agent.runtime :as app]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as rt]
-            [kmet.cells.core :as cells]
             [kmet.cells.scope :as scope]
             [kmet.test-utils :as tu]))
 
@@ -56,7 +55,7 @@
         (t/is (contains? (scope/owner-keys node [:app :ui]) :kmet/ui-port)
               "the port is the [:app :ui] owner's registration")
         (finally
-          (cells/dispose! node [:app :ui])))
+          (scope/dispose-owner! node [:app :ui])))
       (t/is (= :print (ex/extension-mode))
             "disposal restores the headless binding")
       (t/is (empty? (scope/owner-keys node [:app :ui]))))))

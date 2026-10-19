@@ -113,14 +113,13 @@
       nil)))
 
 (defn- handle-units
-  "Show the mounted units: the run's composition tree — a group's slots
-   indented under it — and the store owners no slot stands for (registries,
-   extension registrations; cells.md §5.1, §5.6, §7). The session engine's
-   node when it has one — a session running in its own tree shows that tree —
-   and the app root otherwise."
+  "Show every store owner: its address and the keys registered under it, one
+   flat line each (registries, extension registrations; cells.md §5.1, §7).
+   The session engine's node when it has one — a session running in its own
+   tree shows that tree — and the app root otherwise."
   [{:keys [ui] engine :runtime} _]
   (let [node (or (runtime/agent-node engine) (app-runtime/node))]
-    (out ui :info "Units" (app-runtime/explain node))))
+    (out ui :info "Units" (app-runtime/owner-listing node))))
 
 (defn register-runtime-commands!
   "Register the engine-portable builtins (untagged: every front end
@@ -130,7 +129,7 @@
   (commands/register-builtin!
    (app-runtime/node)
    {:name "units"
-    :description "List the mounted units and store owners"
+    :description "List store owners and their registered keys"
     :handler handle-units})
   (commands/register-builtin!
    (app-runtime/node)

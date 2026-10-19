@@ -378,11 +378,9 @@
     ;; model resolves) — so --model/--provider and settings.edn can select
     ;; extension-registered providers, and print mode gets extension hooks.
     (let [config (cfg/init!)]
-      ;; The composition root first: extension loading below registers into
-      ;; the root's owners (cells.md §8.2), so it has to exist before any
-      ;; init(api) runs. kmet.agent.runtime mounts the default entries as its
-      ;; namespace loads; later phases assemble the config-derived entries
-      ;; here.
+      ;; The runtime root first: extension loading below registers into the
+      ;; root's owners (cells.md §8.2), so it has to exist before any
+      ;; init(api) runs.
       (runtime/node)
       ;; One unified load per type (pi: resourceLoader — top-level entries,
       ;; auto dirs, then packages in precedence order)

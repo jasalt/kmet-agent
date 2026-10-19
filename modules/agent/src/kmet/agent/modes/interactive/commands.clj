@@ -637,9 +637,9 @@
       (try
         ;; pi: settingsManager.reload() + theme re-registration
         (let [config (cfg/init!)
-              ;; a reloaded builtin unit's new handle reaches the app only by
-              ;; remounting: the mount holds the value it was mounted with
-              _ (app-runtime/remount!)
+              ;; a reloaded guard or retry unit reaches the next attempt by
+              ;; re-seating the app node's stages
+              _ (app-runtime/refresh-stages!)
               ;; pi: keybindings.reload() — re-read keybindings.edn
               _ (app-kb/reload-agent-keybindings!)
         ;; pi: session.reload → emitSessionShutdownEvent(reason reload)

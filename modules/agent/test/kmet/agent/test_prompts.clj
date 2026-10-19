@@ -242,9 +242,6 @@
                          prompts/prompts-owner)))
           "the template is addressed by its own name")
     (t/is (= ["stored-tpl"] (mapv :name (prompts/get-prompt-templates))))
-    (app-runtime/remount!)
-    (t/is (some? (prompts/get-prompt-template "stored-tpl"))
-          "the prompts slot is in the app's entry list; a remount keeps it")
     (prompts/clear-prompt-templates! (app-runtime/node))
     (t/is (empty? (scope/for-key (app-runtime/node) [:kmet/prompt "stored-tpl"])))
     (finally

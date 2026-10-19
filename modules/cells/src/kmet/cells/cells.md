@@ -151,7 +151,7 @@ remove the store from the host's view, so the split is stated instead.
 | `dispose!` | `(dispose! node)` / `(dispose! node owner)` | yes | LIFO per owner (§5.2) |
 | `register!` | `(register! node owner k v)` → `deregister-fn` | yes | what a `:start` hook installs with; the fn is auto-collected onto `owner` |
 | `composition` | `(composition node)` / `(composition node id)` → snapshot | no | the flat slot map; taken **once per attempt** (§5.4) |
-| `explain` | `(explain snapshot)` → string | no | renders what `composition` returns, one line per slot; `/units` renders this plus the store owners (§7) |
+| `explain` | `(explain snapshot)` → string | no | renders what `composition` returns, one line per slot |
 
 ### 2.3 Naming conventions
 
@@ -240,8 +240,8 @@ A group is a **namespace of slots** — a naming, lookup and lifetime boundary.
 It is **not** an execution order: the framework never invokes a group's
 children. The owning handle decides what to call, in what order, how many
 times, and under what conditions; it reads slots from the snapshot (§5.4) and
-calls them. `run-agent-turn` in `kmet.agent.loop` is the worked example — it
-reads the loop guard from the attempt's snapshot.
+calls them. `run-agent-turn` in `kmet.agent.loop` is the worked example: it
+reads its two stages once per attempt.
 
 A slot holds a group just as happily as a leaf, so a slot that means "a bag of
 policies" is `{:units {:a … :b …}}` and the caller iterates it — the same shape
@@ -253,7 +253,9 @@ declare one. That limitation is real and belongs to the host.
 ### 3.2 The shape, end to end
 
 The worked shape now *is* the code: `kmet.cells.core` for the module's surface
-and `kmet.agent.runtime` for the host's side. The pre-P2 sketch lived in
+and `kmet.cells.scope` for the host's side — `kmet.agent.runtime` keeps the
+app's store node and its loop stages, with no mounted tree. The pre-P2 sketch
+lived in
 [`cells-plan.md`](../../../../../cells-plan.md) §1 and was deleted as scaffolding
 when P2 landed (§9). The contracts are here: §2.2's seven functions, §3.1's
 rule, §4's checks.
@@ -455,19 +457,19 @@ question this design removes — "which node owns the tool registry?" — and wo
 make one node's handle unable to call another's snapshot. The axes are:
 **domains → slots and owner paths**, **lifetime → owners**, **per-instance
 isolation → child nodes**. An extension is never its own node either: it
-contributes entries into the host's node and registers under its own owner,
-which is what "extensions are a backend, not a parallel system" means (§11.3).
+registers under its own owner in the host's node, which is what "extensions
+are a backend, not a parallel system" means (§11.3).
 
 A unit does not know which node it is in — the node is its first argument (§3),
-so the same `:kmet/agent-loop` descriptor mounts as the root loop and as a
-subagent's loop, each with its own slots, registrations and disposal:
+so the same loop descriptor mounts as the root loop and as a subagent's loop,
+each with its own slots, registrations and disposal:
 
 ```clojure
 (defn unit-handle [node id] (:handle (get (cells/composition node) id)))  ; host helper
 
 (let [child (cells/mount! rt
-                         [{:id :session    :name :kmet/sub-session :config {:model model}}
-                          {:id :agent-loop :name :kmet/agent-loop  :config {:max-turns 20}}]
+                         [{:id :session    :name :example/sub-session :config {:model model}}
+                          {:id :agent-loop :name :example/loop     :config {:max-turns 20}}]
                          {:parent node})]           ; the only new arity
   (try ((unit-handle child :agent-loop) child prompt)
        (finally (cells/dispose! child))))            ; child's registrations only
@@ -635,17 +637,16 @@ isolation boundary, for free.
 `(composition node)` returns the mounted data: per slot its resolved handle,
 config, the unit's own host metadata, and the registry keys its `:start`
 installed (§8.1; the exact map is §5.4's). `(explain snapshot)` renders that
-value for a human, and is
-what `/units` prints. It renders the slot tree and every store owner that is
-not a slot: a slot's line carries the keys registered under its own path, and
-each remaining owner — a registry's address (`[:app :commands]`), an
-extension's `[:app :extensions <name>]`, whose registrations are the ones
-`init(api)` made (§5.1) — is read from the store (`scope/owners`,
-`scope/owner-registrations`) and printed as a line of its own, indented under
-the deepest slot or owner path that prefixes it, with its keys in registration
-order. No slot needs to stand for the owner: disposal is by owner path (§5.2),
-so a registration a unit or extension made is dropped whether or not a mounted
-unit occupies its address.
+value for a human, one line per slot.
+
+The host's `/units` prints the store side instead: every owner — a registry's
+address (`[:app :commands]`), an extension's `[:app :extensions <name>]`, whose
+registrations are the ones `init(api)` made (§5.1) — read from the store
+(`scope/owners`, `scope/owner-registrations`) and printed as one flat line
+each, in registration order. No slot needs to stand for the owner: disposal is
+by owner path (§5.2), so a registration a unit or extension made is dropped
+whether or not a mounted unit occupies its address. The host no longer mounts
+a tree; its loop group is a plain stage map on the node (cells-plan.md §3).
 
 The split is deliberate: the data form is what tests assert and what a diff
 shows; the string form is cosmetic and free to change (§12, question 4).
@@ -668,7 +669,9 @@ handles, which are fns and live-only (§6.4).
 ## 8. The host contract
 
 The host supplies one thing: **the resolution backends** — an ordered vector
-of `[kind fn]` pairs, at least one; kmet uses one, `:builtin`. Nothing else
+of `[kind fn]` pairs, at least one. kmet itself no longer mounts a tree (its
+loop stages are plain data on the node); a host that does supplies at least
+one backend. Nothing else
 crosses the boundary: no event vocabulary (a subscriber reaches the bus through
 `register!`, §8.1), no config schema registry, no classpath. An entry's
 `:config` validates against the malli schema on its unit's `:config` field
@@ -751,7 +754,7 @@ sources, skills, prompts, hooks, renderers, flags, and the resources a
 `:resources-discover` contribution loads (the paths a handler returns load
 under the same owner, so a later discovery replaces them instead of
 duplicating and unload takes them back; the set the applied paths used to need
-is gone). The host mounts its root node *before* loading any extension, so
+is gone). The host creates its root node *before* loading any extension, so
 `init(api)` always has a scope to register into — that ordering is what
 retires the pending buffers. Unloading is two steps in order: `shutdown(api)`,
 then deregister what remains — the fns recorded by the registrations that live
@@ -794,9 +797,9 @@ contribute entries at all, and to which slots, is a capability decision — the
   removal stay as cheap as they are today. A unit may be mid-invocation, so its
   removal is gated on a quiescent boundary — one rule, both halves (§5.4).
 - **The loop's control flow stays in the loop.** Its routing table is data the
-  loop's own namespace owns and tests (P3); its stages are slots the loop reads
-  from the attempt's snapshot (the guard and the retry policy, P4). The
-  framework gains no vocabulary for iteration, routing or order.
+  loop's own namespace owns and tests (P3); its stages are a plain map on the
+  node, read once per attempt (the guard and the retry policy). The framework
+  gains no vocabulary for iteration, routing or order.
 - **Declare the insertion points you want to offer.** The framework cannot
   invent one (§3.1); a list-valued slot (`{:units {…}}`) is how a host offers
   "extensions may add a policy here".
