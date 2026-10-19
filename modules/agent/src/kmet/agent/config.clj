@@ -67,7 +67,7 @@
    ;; display (terminal capability is consulted at render time)
    :terminal {:show-images true :image-width-cells 60}
    ;; pi: images.blockImages — true strips every image from provider calls
-   ;; (transcript untouched; see kmet.agent.loop/block-message-images)
+   ;; (transcript untouched; see kmet.agent.loop.message/block-message-images)
    :images {:block-images false}
    :system-prompt nil
    :append-system-prompt nil
