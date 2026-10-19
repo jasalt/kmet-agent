@@ -111,10 +111,10 @@
     (t/is (= [{:runtime :engine :ui :ui :frontend :interactive} "hello"] @received))))
 
 (t/deftest units-lists-the-mounted-tree
-  ;; The /units surface renders kmet.cells' snapshot of the app root, which
-  ;; carries the builtin units (kmet.agent.runtime) — and the commands and
-  ;; tools registries' addresses, so their keys report as those slots'
-  ;; (cells.md §5.1).
+  ;; The /units surface renders kmet.cells' composition tree plus every store
+  ;; owner that is not a slot (kmet.agent.runtime): the loop group and its
+  ;; stages, and the commands and tools registries' owner paths with their
+  ;; keys (cells.md §5.1, §7).
   (builtins/register-runtime-commands!)
   (tools-reg/register-tool! (app-runtime/node) {:name "units-probe" :description "d"
                                                 :parameters {:type "object" :properties {}}
@@ -126,12 +126,14 @@
       (t/is (= "Units" (first @got)))
       (t/is (str/includes? (second @got) ":agent-loop"))
       (t/is (str/includes? (second @got) ":loop-guard"))
-      (t/is (str/includes? (second @got) ":commands"))
+      (t/is (str/includes? (second @got) "[:app :commands] keys=")
+            "the commands registry's address renders from the store")
       (t/is (str/includes? (second @got) "[:kmet/command \"units\"]")
-            "the registered command shows as the registry slot's key")
-      (t/is (str/includes? (second @got) ":tools"))
+            "the registered command shows as the registry owner's key")
+      (t/is (str/includes? (second @got) "[:app :tools] keys=")
+            "the tools registry's address renders from the store")
       (t/is (str/includes? (second @got) "[:kmet/tool \"units-probe\"]")
-            "a registered tool shows as the tools registry slot's key"))
+            "a registered tool shows as the tools registry owner's key"))
     (finally
       (tools-reg/unregister-tool! (app-runtime/node) "units-probe"))))
 

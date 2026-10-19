@@ -7,8 +7,8 @@
    template body with $1, $@, ${1:-default}, ${@:N} placeholders substituted.
 
    Templates live in the app root's store, under the `[:app :prompts]` owner
-   (`kmet.agent.runtime` mounts the `:prompts` slot for it, so their keys
-   report under it in `/units`), addressed by `[:kmet/prompt <name>]`: visible
+   (the registry's address: `/units` reads it from the store, so their keys
+   report under it), addressed by `[:kmet/prompt <name>]`: visible
    to every engine, outliving one, and disposed with their owner rather than
    copied into an engine and reset by hand (cells.md §5.1). A name holds one
    template, so re-registering replaces the earlier one — pi's loader assigns
@@ -24,8 +24,8 @@
 ;; ─── Template registry ────────────────────────────────────────────────────
 
 (def prompts-owner
-  "The app's prompt-template registry owner: the `:prompts` slot
-   kmet.agent.runtime mounts at the root for it (cells.md §5.1)."
+  "The app's prompt-template registry owner — the registry's address (cells.md
+   §5.1). `/units` reads it from the store, so templates report under it."
   [:app :prompts])
 
 (defn- prompt-key

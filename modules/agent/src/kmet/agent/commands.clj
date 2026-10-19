@@ -26,9 +26,9 @@
             [kmet.cells.scope :as scope]))
 
 (def commands-owner
-  "The app's command registry owner: the `:commands` slot kmet.agent.runtime
-   mounts at the root for it (cells.md §5.1). Registrations are addressed by
-   key under this path, so they show in `/units` as that slot's keys."
+  "The app's command registry owner — the registry's address (cells.md §5.1).
+   Registrations are addressed by key under this path, and `/units` reads the
+   owner from the store, so they render under it."
   [:app :commands])
 
 (defn- command-key

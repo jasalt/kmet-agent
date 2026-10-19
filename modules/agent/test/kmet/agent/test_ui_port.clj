@@ -10,6 +10,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as rt]
             [kmet.cells.core :as cells]
+            [kmet.cells.scope :as scope]
             [kmet.test-utils :as tu]))
 
 ;; The binding and the app tree's registrations are process-global state;
@@ -52,13 +53,13 @@
                                      :ui {:notify (fn [_ _] :notified)}})
         (t/is (= :interactive (ex/extension-mode)))
         (t/is (= :notified (ex/ui-call :notify "hi" :info)))
-        (t/is (contains? (get-in (app/snapshot node) [:ui :keys]) :kmet/ui-port)
+        (t/is (contains? (scope/owner-keys node [:app :ui]) :kmet/ui-port)
               "the port is the [:app :ui] owner's registration")
         (finally
           (cells/dispose! node [:app :ui])))
       (t/is (= :print (ex/extension-mode))
             "disposal restores the headless binding")
-      (t/is (empty? (get-in (app/snapshot node) [:ui :keys]))))))
+      (t/is (empty? (scope/owner-keys node [:app :ui]))))))
 
 (deftest test-port-only-swap-preserves-kind
   (testing "set-ui-registry!/clear-ui-registry! swap the port, not the kind"

@@ -23,7 +23,7 @@ hooks) registered on it and the engine's pending buffers and dispatchers gone;
 P3 the prompt state machine's `attempt-routes` table in `kmet.agent.loop`; P4
 the loop's stages as `:kmet/agent-loop`'s inline units (the repeat-loop guard
 and the retry policy, whose budget is read from the mounted stage) and the
-session, extension and front-end surfaces as address slots whose installs own
+session, extension and front-end surfaces as owner paths whose installs own
 their process caches.
 
 ## Contents
@@ -119,7 +119,7 @@ which becomes one *backend* here).
 | **composition** | a group mounted as a named cross-section (`:app`, `:agent-loop`) |
 | **node** | a mounted tree plus its scope; what `mount!` returns, `dispose!` ends, and a handle receives as its first argument. A node may have a parent (§5.6) |
 | **scope** | a node's store of registries plus the owners that filled them |
-| **owner** | the path a registration belongs to — a unit's slot path, or an extension's key (`[:app :extensions <name>]`); disposal is per-owner |
+| **owner** | the path a registration belongs to — a unit's slot path, a registry's address (`[:app :commands]`), or an extension's key (`[:app :extensions <name>]`); disposal is per-owner |
 | **registration** | a value a unit or extension installs under a host-shaped key (a listener, a tool, a command, a timer), with its deregister fn collected automatically (§5.1) |
 | **snapshot** | the flat `{slot → resolved unit}` map a caller takes **once per attempt** (§5.4) |
 | **entry** | a manifest record from configuration: `{:id :name :config :disabled :into}` (§6) |
@@ -130,8 +130,8 @@ Two of these are values with different lifetimes, and the distinction answers
 the question the vocabulary invites: **`rt` is immutable resolution** (several
 may coexist — a test's, a sandbox's), while **a node is a mounted lifetime**
 (a root per engine or test, a child per subagent, §5.6). Domains are neither —
-the loop, the tool registry, the session engine and the extensions are slots in
-one node, not one runtime each (§5.6).
+the loop, the tool registry, the session engine and the extensions live on one
+node, not one runtime each (§5.6).
 
 **The one rule: a group declares exactly the same fields as a leaf.** Both are
 a map with `:handle` *or* `:units`, plus an optional `:config` schema, plus
@@ -159,7 +159,7 @@ remove the store from the host's view, so the split is stated instead.
 | `dispose!` | `(dispose! node)` / `(dispose! node owner)` | yes | LIFO per owner (§5.2) |
 | `register!` | `(register! node owner k v)` → `deregister-fn` | yes | what a `:start` hook installs with; the fn is auto-collected onto `owner` |
 | `composition` | `(composition node)` / `(composition node id)` → snapshot | no | the flat slot map; taken **once per attempt** (§5.4) |
-| `explain` | `(explain snapshot)` → string | no | renders what `composition` returns (what `/units` prints, §7) |
+| `explain` | `(explain snapshot)` → string | no | renders what `composition` returns, one line per slot; `/units` renders this plus the store owners (§7) |
 
 ### 2.3 Naming conventions
 
@@ -347,25 +347,27 @@ whose entries have no name gives each registration its own key (`[:kmet/hook
 <kind> <n>]` numbers them) rather than one shared key holding a collection that
 every registration would have to read back and rewrite.
 
-**Owners are slot paths.** A unit's registrations are owned by the unit's slot
+**Owners are paths.** A unit's registrations are owned by the unit's slot
 path — the composition and slot ids that reach it, `[:app :agent-loop :budget]`,
 which `:start` receives as its second argument — so replacing its slot disposes
 whatever it installed: the `:start` +
 `register!` path. An extension's own registrations (anything `init(api)`
-installs outside a unit) are owned by `[:app :extensions <extension-name>]`.
-Both are flat keys in one store: a unit's registrations and an extension's
-dispose independently without a scope tree, and a group disposes its children's
-owners before its own. Node nesting is a separate axis (§5.6).
+installs outside a unit) are owned by `[:app :extensions <extension-name>]`,
+and a registry's by its address (`[:app :commands]`) — owner paths that need
+no mounted slot (§7). All are flat keys in one store: a unit's registrations
+and an extension's dispose independently without a scope tree, and a group
+disposes its children's owners before its own. Node nesting is a separate axis
+(§5.6).
 
-**A registry mounts its address.** The agent's slash command registry is a
-host registry, not a unit: front ends and extensions register into it, and
-nothing runs at mount. It still gets a slot — `:commands` at the root,
-mounted as a group with no children — because a registration's owner is a
-slot path: the slot is what makes the registry's keys report under it in
-`/units` (§7), and what disposes them when it goes, exactly as for a
-unit's registrations. `register!` takes any owner path, so a registry that
-never earns a slot still works; it is simply not part of what `composition`
-describes.
+**A registry's address is its owner path.** The agent's slash command registry
+is a host registry, not a unit: front ends and extensions register into it,
+and nothing runs at mount. Since a registration's owner is the path it
+registers under, the registry needs no slot: `/units` reads every store owner
+that no slot stands for and renders `[:app :commands]` with its keys (§7), and
+`dispose!` drops them by owner path exactly as it drops a unit's. `register!`
+takes any owner path, so a registry works — and stays visible — without a
+mounted unit standing in for it; it is simply not part of the composition
+tree.
 
 ### 5.2 Disposal is LIFO, isolated and logged
 
@@ -446,20 +448,23 @@ A node has an optional parent, and disposing a node disposes its children
 first. That is the whole nesting mechanism (~15 lines), and it exists for one
 purpose: **per-instance lifetimes** — a subagent, a sandboxed run, a test.
 
-Domains are **not** nodes. The loop, the tool registry, the session engine and
-the extension surface are slots and owner-scoped registrations inside one node:
+Domains are **not** nodes. The loop is a slot; the tool registry, the session
+engine and the extension surface are owner-scoped registrations in the same
+node's store, addressed by owner path (`[:app :tools]`, `[:app :session]`, …;
+§5.1):
 
 ```
-:app  {:agent-loop {…}  :tools {…}  :session {…}  :extensions {…}  :ui {…}}
+:app          {:agent-loop {…}}                  ; the composition tree
+store owners  {[:app :tools] […], [:app :session] […], …}  ; registrations
 ```
 
 Splitting them into separate nodes would recreate exactly the cross-boundary
 question this design removes — "which node owns the tool registry?" — and would
 make one node's handle unable to call another's snapshot. The axes are:
-**domains → slots**, **lifetime → owners**, **per-instance isolation → child
-nodes**. An extension is never its own node either: it contributes entries into
-the host's node and registers under its own owner, which is what "extensions are
-a backend, not a parallel system" means (§11.3).
+**domains → slots and owner paths**, **lifetime → owners**, **per-instance
+isolation → child nodes**. An extension is never its own node either: it
+contributes entries into the host's node and registers under its own owner,
+which is what "extensions are a backend, not a parallel system" means (§11.3).
 
 A unit does not know which node it is in — the node is its first argument (§3),
 so the same `:kmet/agent-loop` descriptor mounts as the root loop and as a
@@ -640,12 +645,16 @@ isolation boundary, for free.
 config, the unit's own host metadata, and the registry keys its `:start`
 installed (§8.1; the exact map is §5.4's). `(explain snapshot)` renders that
 value for a human, and is
-what `/units` prints. It walks the slot tree, so an owner that is not a slot
-path — an extension's `[:app :extensions <name>]`, whose registrations are the
-ones `init(api)` made (§5.1) — is read from the store instead
-(`scope/for-key`, `scope/owner-registrations`); dropping the slot it hangs
-under still disposes it, because a slot's removal disposes its whole path
-subtree.
+what `/units` prints. It renders the slot tree and every store owner that is
+not a slot: a slot's line carries the keys registered under its own path, and
+each remaining owner — a registry's address (`[:app :commands]`), an
+extension's `[:app :extensions <name>]`, whose registrations are the ones
+`init(api)` made (§5.1) — is read from the store (`scope/owners`,
+`scope/owner-registrations`) and printed as a line of its own, indented under
+the deepest slot or owner path that prefixes it, with its keys in registration
+order. No slot needs to stand for the owner: disposal is by owner path (§5.2),
+so a registration a unit or extension made is dropped whether or not a mounted
+unit occupies its address.
 
 The split is deliberate: the data form is what tests assert and what a diff
 shows; the string form is cosmetic and free to change (§12, question 4).
@@ -717,8 +726,9 @@ renderers, markdown transformers, tool and command registrations. `explain`
 prints each unit's registry keys, so "which units listen to `:turn-end`" — and
 which unit registers what — is answerable from the node instead of by grep,
 and because the keys are host-shaped the host's view can group them however it
-likes (for the store owners that have no slot of their own, an extension's
-`[:app :extensions <name>]`, `/units` reads the store directly, §7).
+likes (for the store owners that have no slot of their own — a registry's
+address, an extension's `[:app :extensions <name>]` — `/units` reads the store
+directly, §7).
 
 The host's registration helpers take that node as their first argument —
 `register-command!`, `register-tool!`, `register-skill!`,
@@ -792,8 +802,9 @@ contribute entries at all, and to which slots, is a capability decision — the
 
 - **A few substitutable seams, not all code.** Only these become units with
   handles: the agent loop, compaction, the retry policy, the provider/model
-  resolver, the tool registry. The session store and the UI port are slots too,
-  but their content is live state rather than a substitutable handle:
+  resolver, the tool registry. The session store and the UI port are
+  owner-scoped registrations too, but their content is live state rather than a
+  substitutable handle:
   `bootstrap` and the front end register the session and the port under
   `[:app :session]` / `[:app :ui]` (P4, §5.1), and extension code with no node
   in hand reads them through the process cache (`get-session`, `ui-call`).
@@ -898,11 +909,13 @@ explicit request.
 - **Units for everything.** A unit is a sealed, substitutable seam with a
   config contract; wrapping a function that is only ever called by its
   neighbour adds indirection, a descriptor, and a place for the layer guards to
-  stop working.
-- **One node per domain, or per session.** The loop, tools, extensions and the
-  session engine are slots in one node (§5.6); a session is a slot, and
-  switching sessions stays an in-place swap. Nodes nest only for per-instance
-  lifetimes.
+  stop working. A registry's address is no exception: it is an owner path in
+  the store, read by `/units` and disposed by owner (§5.1, §7), not a mounted
+  unit standing in for one.
+- **One node per domain, or per session.** The loop, the tool registry, the
+  extensions and the session engine live on one node (§5.6); a session is a
+  slot, and switching sessions stays an in-place swap. Nodes nest only for
+  per-instance lifetimes.
 - **`inject` / `PENDING` / silent-wait** in the descriptor model (§6.4).
 - **Loading code in the framework.** No loader, no classpath, no sandbox — the
   module stays rank 0 (§6.4), and each isolation mechanism is a host backend

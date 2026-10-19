@@ -70,61 +70,27 @@
    `:units` are the stages a loop mounts with — the repeat-loop guard and the
    retry policy — so the same descriptor mounts as the root loop and as a
    subagent's loop. An entry with the same id and `:into :agent-loop` replaces
-   one."
+   one.
+
+   The host's registries — commands, tools, prompt templates, skills, themes,
+   and the session and front-end surfaces — are not units: their address is
+   the owner path they register under (`[:app :commands]`, `[:app :session]`,
+   …), and `/units` reads that address from the store (cells.md §5.1, §7)."
   {:kmet/agent-loop
    {:units {:loop-guard loop-guard-unit
             :retry-policy retry-unit}}
    ;; the stages' own names, so an entry can override an inline default
    :kmet/loop-guard loop-guard-unit
-   :kmet/retry retry-unit
-   ;; an address, not a container: the slash command registry registers under
-   ;; this slot's path, so the slot is what makes its keys visible in /units
-   ;; (cells.md §5.1). Commands are registrations, not units — the group is
-   ;; empty — and there is no handle for the host to read.
-   :kmet/commands {:units {}}
-   ;; the same address shape for the tool registry: the custom tools and
-   ;; contributed sources registered under [:app :tools] report as its keys
-   ;; in /units (cells.md §5.1).
-   :kmet/tools {:units {}}
-   ;; the prompt-template registry's address: package- and extension-loaded
-   ;; templates report under it.
-   :kmet/prompts {:units {}}
-   ;; the skill registry's address: package- and extension-loaded skills
-   ;; report under it.
-   :kmet/skills {:units {}}
-   ;; the theme registry's address: themes loaded from contributed paths
-   ;; report under it (the theme store itself is the TUI layer's own).
-   :kmet/themes {:units {}}
-   ;; the session surface's address: the live session and the context / entry
-   ;; sinks the engine installs report under it (cells.md §5.1, §5.6).
-   :kmet/session {:units {}}
-   ;; the extension surface's address: an extension's own registrations are
-   ;; owned by [:app :extensions <name>] — under this slot's path, so dropping
-   ;; the slot disposes them (each extension's keys stay on its own owner).
-   :kmet/extensions {:units {}}
-   ;; the front-end surface's address: the capability map a front end
-   ;; installs for extensions (the UI port) reports under it.
-   :kmet/ui {:units {}}})
+   :kmet/retry retry-unit})
 
 (def default-entries
-  "The entries the app mounts at its root: the loop group and the domains'
-   addresses. The group carries its stages inline; the session, extension and
-   UI slots are addresses the engine and the front end register their live
-   values under (cells.md §5.1). Extensions' published entries mount in the
-   same list, after these (§8.2); an id one of these already uses is the
-   plan's duplicate-id error, not a replacement — the replaceable defaults are
-   a group's inline stages, which an entry with the same `:id`/`:into`
-   overrides. A config-derived entry waits on the engine having its own node:
-   this tree is shared (cells.md §8)."
-  [{:id :agent-loop :name :kmet/agent-loop}
-   {:id :commands :name :kmet/commands}
-   {:id :tools :name :kmet/tools}
-   {:id :prompts :name :kmet/prompts}
-   {:id :skills :name :kmet/skills}
-   {:id :themes :name :kmet/themes}
-   {:id :session :name :kmet/session}
-   {:id :extensions :name :kmet/extensions}
-   {:id :ui :name :kmet/ui}])
+  "The entries the app mounts at its root: the loop group. Extensions'
+   published entries mount in the same list, after these (§8.2); an id one of
+   these already uses is the plan's duplicate-id error, not a replacement —
+   the replaceable defaults are a group's inline stages, which an entry with
+   the same `:id`/`:into` overrides. A config-derived entry waits on the
+   engine having its own node: this tree is shared (cells.md §8)."
+  [{:id :agent-loop :name :kmet/agent-loop}])
 
 ;; ─── Extension units (the `:ext` backend) ────────────────────────────────
 ;;
@@ -380,73 +346,94 @@
        (<= (count prefix) (count path))
        (= prefix (subvec path 0 (count prefix)))))
 
+(defn- deepest-prefix
+  "The longest of PATHS that properly prefixes PATH, or nil."
+  [paths path]
+  (last (sort-by count (filter #(and (path-prefix? % path)
+                                     (not= % path))
+                               paths))))
+
+(defn- child-composition
+  "The composition mounted at SLOT when it hangs at CHILD-PATH — every entry's
+   owner path prefixed by CHILD-PATH — or nil. Slot ids may repeat across
+   compositions (only composition ids are global), so an id another subtree
+   uses is a leaf here: both the walk and `slot-paths` stop at it."
+  [node slot child-path]
+  (let [sub (cells/composition node slot)]
+    (when (and sub
+               (every? #(path-prefix? child-path (:owner %)) (vals sub)))
+      sub)))
+
 (defn- slot-paths
-  "Every slot path in COMP-ID's subtree, COMP-ID's own path included — the
-   set `store-owner-lines` measures the store's owners against (cells.md §7)."
+  "Every slot path in COMP-ID's subtree — the set `store-owners-by-parent`
+   measures the store's owners against (cells.md §7)."
   [node comp-id path]
-  (into #{path}
+  (into #{}
         (mapcat (fn [[slot _]]
-                  (let [child (conj path slot)
-                        sub (cells/composition node slot)]
-                    ;; the same owner-path guard as the walk: an id that
-                    ;; collides with another subtree's composition is a leaf
-                    ;; here too
-                    (if (and sub (every? #(path-prefix? child (:owner %)) (vals sub)))
-                      (slot-paths node slot child)
+                  (let [child (conj path slot)]
+                    (if (child-composition node slot child)
+                      (conj (slot-paths node slot child) child)
                       #{child}))))
         (cells/composition node comp-id)))
 
-(defn- store-owner-lines
-  "The store's registrations that have no slot of their own, keyed by the
-   deepest slot path they hang under: an extension's `[:app :extensions
-   <name>]` owner — where P5c lands every registration `init(api)` makes — is
-   not a slot, so the slot walk cannot reach it and the store is the only
-   place to read it (cells.md §5.1, §7). One line per owner: `<owner>
-   keys=[…]`, in registration order."
-  [node]
-  (let [slots (slot-paths node :app [:app])]
+(defn- owner-line
+  "One store owner as `/units` prints it: `<owner> keys=[…]`, the owner's
+   registrations in registration order (cells.md §5.1, §7)."
+  [node owner]
+  (str (pr-str owner)
+       " keys=" (pr-str (mapv first (scope/owner-registrations node owner)))))
+
+(defn- store-owners-by-parent
+  "The store owners that hold registrations but have no slot of their own,
+   keyed by the deepest path that prefixes them — a slot path or another
+   owner path — or `[:app]` when nothing proper does. A registry's address
+   (`[:app :commands]`) and an extension's `[:app :extensions <name>]` — where
+   P5c lands every registration `init(api)` makes — hang under the root. A
+   slot's own keys already render in its line, so a slot path is not repeated
+   here (cells.md §5.1, §7). One entry per owner, in registration order."
+  [node slots]
+  (let [owners (scope/owners node)
+        hang-paths (into (set slots) owners)]
     (reduce (fn [acc owner]
-              (let [regs (scope/owner-registrations node owner)]
-                (cond
-                  (or (empty? regs) (contains? slots owner)) acc
-                  :else (let [parent (->> slots
-                                          (filter #(path-prefix? % owner))
-                                          (sort-by count)
-                                          last)]
-                          (update acc parent (fnil conj [])
-                                  (str (pr-str owner)
-                                       " keys=" (pr-str (mapv first regs))))))))
+              (if (or (empty? (scope/owner-keys node owner))
+                      (contains? slots owner))
+                acc
+                (let [parent (or (deepest-prefix hang-paths owner) [:app])]
+                  (update acc parent (fnil conj []) owner))))
             {}
-            (scope/owners node))))
+            owners)))
 
 (defn explain
   "Render NODE's composition tree for a human: `cells/explain` per composition,
-   each group's slots indented under the slot that mounts it (a group is a
-   composition id in the node's mount table), and the store's non-slot owners —
-   an extension's registrations — under the slot they hang under. `/units`
-   prints this; `cells/composition` stays the stable form (cells.md §7)."
+   each group's slots indented under the slot that mounts it, and every store
+   owner that is not a slot — a registry's address, an extension's
+   registrations — as a line of its own, indented under the deepest slot or
+   owner path that prefixes it (cells.md §5.1, §7). `/units` prints this;
+   `cells/composition` stays the stable form."
   [node]
-  (let [extra (store-owner-lines node)]
-    (letfn [(lines [comp-id path depth]
-              (let [pad (apply str (repeat (* 2 depth) " "))
-                    child-pad (apply str (repeat (* 2 (inc depth)) " "))]
-                (into []
-                      (mapcat (fn [[slot entry]]
-                                (let [child-path (conj path slot)
-                                      sub (cells/composition node slot)]
-                                  (concat
-                                   [(str pad (cells/explain {slot entry}))]
-                                   (map #(str child-pad %)
-                                        (get extra child-path))
-                                   ;; slot ids may repeat across compositions
-                                   ;; (only composition ids are global), so
-                                   ;; the owners must hang at this path
-                                   (when (and sub
-                                              (every? #(path-prefix? child-path (:owner %))
-                                                      (vals sub)))
-                                     (lines slot child-path (inc depth)))))))
-                      (sort-by (comp :owner val) (cells/composition node comp-id)))))]
-      (str/join "\n" (lines :app [:app] 0)))))
+  (let [store-owners (store-owners-by-parent node (slot-paths node :app [:app]))]
+    (letfn [(pad [depth] (apply str (repeat (* 2 depth) " ")))
+            (owner-lines [path depth]
+              (mapcat (fn [owner]
+                        (concat
+                         [(str (pad depth) (owner-line node owner))]
+                         ;; an owner registered at the root keys under its own
+                         ;; path: render it once, not into itself
+                         (when-not (= owner path)
+                           (owner-lines owner (inc depth)))))
+                      (get store-owners path)))
+            (slot-lines [comp-id path depth]
+              (mapcat (fn [[slot entry]]
+                        (let [child-path (conj path slot)]
+                          (concat
+                           [(str (pad depth) (cells/explain {slot entry}))]
+                           (owner-lines child-path (inc depth))
+                           (when (child-composition node slot child-path)
+                             (slot-lines slot child-path (inc depth))))))
+                      (sort-by (comp :owner val) (cells/composition node comp-id))))]
+      (str/join "\n"
+                (concat (slot-lines :app [:app] 0)
+                        (owner-lines [:app] 0))))))
 
 (defn handle
   "The handle mounted at SLOT-ID in SNAPSHOT, or nil."

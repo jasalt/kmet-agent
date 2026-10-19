@@ -18,6 +18,7 @@
             [kmet.agent.tools.registry :as tools-reg]
             [kmet.ai.models :as models]
             [kmet.cells.core :as cells]
+            [kmet.cells.scope :as scope]
             [kmet.test-utils :as tu]))
 
 ;; Several tests bootstrap real engines onto the app tree (loading the
@@ -112,9 +113,9 @@
         (is (= :off @(:thinking ag)) "thinking defaults to off")
         (is (identical? sess (extensions/get-session))
             "the extension session handle is installed")
-        (is (contains? (get-in (app/snapshot (:node ag)) [:session :keys]) :kmet/session)
+        (is (contains? (scope/owner-keys (:node ag) [:app :session]) :kmet/session)
             "the live session is registered under the tree's [:app :session]")
-        (is (contains? (get-in (app/snapshot (:node ag)) [:ui :keys]) :kmet/ui-port)
+        (is (contains? (scope/owner-keys (:node ag) [:app :ui]) :kmet/ui-port)
             "the front end's headless port is registered under [:app :ui]")))))
 
 (deftest test-subscribe-receives-and-unsubscribes
@@ -185,9 +186,9 @@
         (rt/subscribe! engine #(swap! events conj %))
         (is (nil? (rt/dispose! engine)))
         (is (nil? (extensions/get-session)) "the extension session handle is cleared")
-        (is (empty? (get-in (app/snapshot node) [:session :keys]))
+        (is (empty? (scope/owner-keys node [:app :session]))
             "dispose! drops the session surface's registrations with their owner")
-        (is (empty? (get-in (app/snapshot node) [:ui :keys]))
+        (is (empty? (scope/owner-keys node [:app :ui]))
             "dispose! drops the front-end surface's registrations")
         (is (nil? (rt/dispose! engine)) "dispose! is idempotent")
         (rt/cancel! engine)

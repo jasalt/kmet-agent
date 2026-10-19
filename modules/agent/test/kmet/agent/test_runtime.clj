@@ -41,25 +41,11 @@
   (let [node (runtime/node)
         snapshot (runtime/snapshot node)]
     (is (= [] (cells/check (runtime/runtime) runtime/default-entries)))
-    (is (= [:agent-loop :commands :extensions :prompts :session :skills :themes :tools :ui]
-           (sort (keys snapshot))))
+    (is (= [:agent-loop] (keys snapshot))
+        "the loop group is the only entry the host mounts by default")
     (is (= [:app :agent-loop] (:owner (:agent-loop snapshot))))
     (is (nil? (runtime/handle snapshot :agent-loop))
         "the group's stages carry the handles, not the group itself")
-    (is (= [:app :commands] (:owner (:commands snapshot)))
-        "the commands registry's address, so its keys report under it")
-    (is (= [:app :tools] (:owner (:tools snapshot)))
-        "the tool registry's address, so its keys report under it")
-    (is (= [:app :prompts] (:owner (:prompts snapshot)))
-        "the prompt-template registry's address, so its keys report under it")
-    (is (= [:app :skills] (:owner (:skills snapshot)))
-        "the skill registry's address, so its keys report under it")
-    (is (= [:app :session] (:owner (:session snapshot)))
-        "the session surface's address, so its registrations report under it")
-    (is (= [:app :extensions] (:owner (:extensions snapshot)))
-        "the extension surface's address; extensions register under it")
-    (is (= [:app :ui] (:owner (:ui snapshot)))
-        "the front-end surface's address, so its keys report under it")
     (is (identical? node (runtime/node)) "one app tree per process")))
 
 (deftest the-loop-group-carries-its-stage-defaults
@@ -90,22 +76,42 @@
     (is (str/includes? text "\n  [:app :agent-loop :loop-guard] :loop-guard")
         "a group's slots indent under it")))
 
-(deftest explain-reads-the-store-for-registrations-without-a-slot
-  ;; P5c lands every extension registration on [:app :extensions <name>] — an
-  ;; owner with no slot of its own, so the slot walk cannot reach it. /units
-  ;; reads those owners from the store (cells.md §5.1, §7), in registration
-  ;; order, under the slot they hang under.
+(deftest explain-reads-every-store-owner
+  ;; F14: /units renders every store owner, not only the ones a mounted slot
+  ;; prefixes. An extension's [:app :extensions <name>] — where P5c lands its
+  ;; registrations — and a registry's address ([:app :commands]) have no slot
+  ;; of their own, so the store is the only place to read them (cells.md §5.1,
+  ;; §7).
   (let [node (cells/mount! (runtime/runtime) runtime/default-entries)]
     (scope/register! node [:app :extensions "probe-ext"]
                      [:commands :probe-cmd] {:name "probe-cmd"})
     (scope/register! node [:app :extensions "probe-ext"]
                      [:tools :probe-tool] {:name "probe-tool"})
+    (scope/register! node [:app :extensions "probe-ext" :deep] :k/deep "d")
+    (scope/register! node [:app :commands]
+                     [:kmet/command "probe"] {:name "probe"})
+    (scope/register! node [:app :agent-loop :probe] :k/probe "v")
     (let [text (runtime/explain node)]
-      (is (str/includes? text (str "\n  [:app :extensions \"probe-ext\"] keys="
+      (is (str/includes? text (str "\n[:app :extensions \"probe-ext\"] keys="
                                    "[[:commands :probe-cmd] [:tools :probe-tool]]"))
-          "the non-slot owner and its keys render under the extensions slot")
-      (is (not (str/includes? text "\n[:app :extensions \"probe-ext\"]"))
-          "indented under the slot it hangs under, not at the tree's root"))))
+          "the owner no slot stands for renders from the store, in registration order")
+      (is (str/includes? text "\n  [:app :extensions \"probe-ext\" :deep] keys=[:k/deep]")
+          "an owner under another owner nests under it")
+      (is (not (str/includes? text "\n[:app :extensions \"probe-ext\" :deep]"))
+          "and is not re-rendered at the tree's root")
+      (is (str/includes? text "\n[:app :commands] keys=[[:kmet/command \"probe\"]]")
+          "a registry's address renders as its owner path")
+      (is (str/includes? text "\n  [:app :agent-loop :probe] keys=[:k/probe]")
+          "an owner under a slot hangs under it"))))
+
+(deftest explain-renders-a-root-owner
+  ;; An owner registered at the root path is not a slot: it renders as a line
+  ;; of its own, once, instead of being taken for a slot's owner path.
+  (let [node (cells/mount! (runtime/runtime) runtime/default-entries)]
+    (scope/register! node [:app] :k/root "r")
+    (let [text (runtime/explain node)]
+      (is (= 1 (count (re-seq #"\[:app\] keys=\[:k/root\]" text)))
+          "the root owner renders once, as a line of its own"))))
 
 (deftest explain-follows-the-owner-path-not-just-the-slot-id
   ;; Slot ids are unique per composition and may repeat across them, so a leaf

@@ -12,8 +12,8 @@
    subset parser — babashka has no YAML lib).
 
    Skills live in the app root's store, under the `[:app :skills]` owner
-   (`kmet.agent.runtime` mounts the `:skills` slot for it, so their keys report
-   under it in `/units`), addressed by `[:kmet/skill <name>]`: visible to every
+   (the registry's address: `/units` reads it from the store, so their keys
+   report under it), addressed by `[:kmet/skill <name>]`: visible to every
    engine, outliving one, and disposed with their owner rather than copied into
    an engine and reset by hand (cells.md §5.1). A name holds one skill — the
    key is the name — so the existing first-wins collision rule is enforced
@@ -37,8 +37,8 @@
 ;; ─── Skill registry ───────────────────────────────────────────────────────
 
 (def skills-owner
-  "The app's skill registry owner: the `:skills` slot kmet.agent.runtime
-   mounts at the root for it (cells.md §5.1)."
+  "The app's skill registry owner — the registry's address (cells.md §5.1).
+   `/units` reads it from the store, so skills report under it."
   [:app :skills])
 
 (defn- skill-key

@@ -1,9 +1,9 @@
 (ns kmet.agent.tools.registry
   "Tool registry — built-in tool map, custom tool registration, schema
    conversion, execution. Custom tools and contributed tool sources live in
-   the app root's store, under the `[:app :tools]` owner (`kmet.agent.runtime`
-   mounts the `:tools` slot for it, so their keys report under it in
-   `/units`), addressed by `[:kmet/tool <name>]` and `[:kmet/tool-source
+   the app root's store, under the `[:app :tools]` owner (the registry's
+   address: `/units` reads it from the store, so their keys report under it),
+   addressed by `[:kmet/tool <name>]` and `[:kmet/tool-source
    <id>]`: visible to every engine, outliving one, and disposed with their
    owner rather than copied into an engine and reset by hand (cells.md
    §5.1). The extension ABI registers under its own owner path, so unload
@@ -82,8 +82,9 @@
 ;; ─── Extended tool registry ────────────────────────────────────────────────
 
 (def tools-owner
-  "The app's tool registry owner: the `:tools` slot kmet.agent.runtime
-   mounts at the root for it (cells.md §5.1)."
+  "The app's tool registry owner — the registry's address (cells.md §5.1).
+   `/units` reads it from the store, so custom tools and contributed sources
+   report under it."
   [:app :tools])
 
 (defn- tool-key

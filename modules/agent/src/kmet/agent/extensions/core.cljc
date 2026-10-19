@@ -215,8 +215,8 @@
   [:app :extensions extension-name])
 
 (def themes-owner
-  "The app's theme registry owner: the `:themes` slot kmet.agent.runtime
-   mounts at the root for it. Themes live in the TUI layer's own store, so the
+  "The app's theme registry owner — the registry's address, read by `/units`
+   from the store. Themes live in the TUI layer's own store, so the
    registration under this path is the host's record of one and the teardown
    that removes it (cells.md §5.1)."
   [:app :themes])

@@ -154,7 +154,7 @@ startup and on `/reload`, after the auto resource dirs.
 | `/scoped-models` | Enable/disable/reorder the models Ctrl+P cycles through (Ctrl+S saves to settings) |
 | `/settings` | Settings menu — thinking, display, tool display, steering/follow-up mode, HTTP transport + timeouts, auto-compact, retry, repeat guard, images, skill commands, terminal progress, clear on shrink, theme (single or automatic light/dark) |
 | `/tools` | List available tools with parameters |
-| `/units` | List the mounted units — the app's composition tree, one line per slot |
+| `/units` | List the mounted units and registrations — the composition tree, one line per slot, and the store owners with their keys |
 | `/login [provider]` | Configure provider auth — API key, or OAuth: Copilot device-code, Codex browser/device, Anthropic & OpenRouter browser PKCE |
 | `/logout [provider]` | Remove stored provider credentials |
 | `/new` | Start a new session |

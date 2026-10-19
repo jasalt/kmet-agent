@@ -2,10 +2,10 @@
 
 Transitional: the build document for `modules/cells`. Design, contracts and
 rationale live in `modules/cells/src/kmet/cells/cells.md`; this file carries the
-phases still ahead (P7, deferred), the landed phases' review follow-ups (§3)
-and their sequencing (§4). It shrinks as they land: the mechanics came out with
-P0, the worked shape with P2 (the deleted §1, as cells.md §9 requires), and a
-landed phase's row leaves the phase table.
+phases still ahead (P7, deferred), the landed phases' review follow-ups (§3,
+none outstanding) and their sequencing (§4). It shrinks as they land: the
+mechanics came out with P0, the worked shape with P2 (the deleted §1, as
+cells.md §9 requires), and a landed phase's row leaves the phase table.
 
 ## 2. Staged plan
 
@@ -16,7 +16,7 @@ every registry it now carries (P2); then the prompt state machine's
 `attempt-routes` table in `kmet.agent.loop` (P3); then the loop's stages as
 `:kmet/agent-loop`'s inline units — the guard and the retry policy, whose
 budget the loop reads from the mounted stage — and the session, extension and
-front-end surfaces as address slots whose installs own their process caches
+front-end surfaces as owner paths whose installs own their process caches
 (P4); then the `:ext` backend: an extension publishes units and their entries
 during `init(api)`, `remount!` assembles the defaults with what the loaded
 extensions published, and unload drops both before `shutdown` (P5a); then the
@@ -60,29 +60,22 @@ one — and a landed phase's row leaves this table.
 ## 3. Landed-phase follow-ups
 
 The P0–P5c review left a set of follow-ups in landed work, and all of them have
-landed (F1–F13; `git log` is the record — each landed row left this table). A
-new follow-up gets a row here: what lands, the evidence that it has not, and
-any prerequisite; §4 orders the landing. The ids were `F`-prefixed because
-`P6` was retired (presets had no design section and no consumer); the sides
-matched §2's: *framework* is `modules/cells`, *agent* is the host.
-
-| item | side | what lands | notes |
-|---|---|---|---|
-| **F14** | agent + docs | the empty address slots come out of `default-entries`: `runtime/explain`'s store walk renders every store owner, not only the ones a mounted slot prefixes, and cells.md §5.1's "A registry mounts its address" is rewritten to that store-read rule | raised with F5's landing, whose `store-owner-lines` (`kmet.agent.runtime`) hangs a non-slot owner under the **deepest slot path prefixing it** — an owner no slot prefixes never reaches `/units`, which is the only reason the eight `{:units {}}` entries (`:commands`, `:tools`, `:prompts`, `:skills`, `:themes`, `:session`, `:extensions`, `:ui`) are mounted: no handle, no config, no children, and the host's owners are those same hardcoded paths (`commands.clj` `commands-owner`, `tools/registry.clj` `tools-owner`, `prompts.clj` `prompts-owner`, `skills.clj` `skills-owner`, `extensions/core.cljc` `[:app :themes]`/`[:app :ui]`, `session/runtime.clj`). §5.1's second reason — "what disposes them when it goes" — is already notional for root defaults, which nothing drops (`session/runtime.clj` disposes `[:app :session]`/`[:app :ui]` by owner path). A deliberate design edit, not a cleanup: cells.md §5.1/§11 are rewritten in the same landing, and `test_commands/units-lists-the-mounted-tree` plus `test_runtime` move from slot lines to store lines, as do the five owner docstrings that name their slot (`commands.clj`, `prompts.clj`, `skills.clj`, `tools/registry.clj`, `extensions/core.cljc`). Prerequisite: F5 (landed) |
+landed (F1–F14; `git log` is the record — each landed row left this table), so
+none is outstanding. A new follow-up gets a row here: what lands, the evidence
+that it has not, and any prerequisite; §4 orders the landing. The ids were
+`F`-prefixed because `P6` was retired (presets had no design section and no
+consumer); the sides matched §2's: *framework* is `modules/cells`, *agent* is
+the host.
 
 ## 4. Sequencing
 
 Every landed-phase follow-up has landed — the mount correction (F1, F2, F6),
 the store's (F7, F9), the bus's (F10, F11, F12), the host contracts' node
-threading (F3) and event scope (F13), and the agent promises and docs (F4, F5,
-F8) — each gated by the changed-file tasks and the guards §2 names. The order
-was dependency and risk, not id order: F4 before F8 (F8's §5.4 text follows
-F4), and F13 as P7's other prerequisite.
-
-**F14 is the one outstanding follow-up**, and it lands only behind its
-prerequisite: F5's store walk. It removes the empty address slots and rewrites
-cells.md §5.1/§11 with them, so it is a design edit rather than a fixing pass —
-the changed-file tasks and the guards §2 names gate it like any other landing.
+threading (F3) and event scope (F13), the agent promises and docs (F4, F5,
+F8), and the address-slot removal itself (F14) — each gated by the changed-file
+tasks and the guards §2 names. The order was dependency and risk, not id order:
+F4 before F8 (F8's §5.4 text follows F4), F14 behind F5's store walk, and F13
+as P7's other prerequisite. No follow-up is outstanding.
 
 **P7 is what remains.** Its prerequisites landed with F3 and F13; its design
 (cells.md §5.6) and its missing pieces stay recorded in §2.
