@@ -18,6 +18,7 @@
             [kmet.agent.ui.tui.chat-history :as chat-history]
             [kmet.agent.config :as cfg]
             [kmet.tui.core :as tui]
+            [kmet.tui.protocols :as protocols]
             [kmet.agent.modes.interactive.commands :as builtins]
             [kmet.agent.modes.interactive.auth :as interactive-auth]
             [kmet.test-utils :as tu]
@@ -662,9 +663,9 @@
           (t/is (nil? @started) "provider selector shown first")
           (testing "then choosing a provider starts its api-key flow"
             (let [provider-sel @sel-ref]
-              (t/is (= :login (:mode provider-sel)))
-              (let [on-select @(:on-select-atom provider-sel)]
-                (on-select "deepseek" :api-key))
+              (t/is (= :login (:mode @(:state-atom provider-sel))))
+              (swap! (:state-atom provider-sel) assoc :search "deepseek")
+              (protocols/handle-input provider-sel "\r")
               (t/is (= :api-key (first @started))))))))))
 
 (t/deftest test-login-command-reference-resolution
@@ -722,13 +723,13 @@
           ;; /logout takes no argument — it always opens the selector (pi)
           ((:handler (commands/find-command "logout")) cs "")
           (t/is (some? @sel-ref) "logout selector mounted")
-          (t/is (= :logout (:mode @sel-ref)))
+          (t/is (= :logout (:mode @(:state-atom @sel-ref))))
           (let [entry (some #(when (= "github-copilot" (:id %)) %)
                             (:entries @(:state-atom @sel-ref)))]
             (t/is (some? entry) "stored credential listed")
             (t/is (= :oauth (:auth-type entry)))
-            (let [on-select @(:on-select-atom @sel-ref)]
-              (on-select "github-copilot" :oauth)))
+            (swap! (:state-atom @sel-ref) assoc :search "github-copilot")
+            (protocols/handle-input @sel-ref "\r"))
           (t/is (= 1 (count @msgs)))
           (t/is (re-find #"Logged out of GitHub Copilot" (:content (first @msgs)))
                 "oauth logout names the provider")

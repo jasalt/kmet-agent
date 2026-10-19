@@ -10,19 +10,12 @@
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.dock :as dock]
+            [kmet.agent.ui.tui.filter-panel :as fp]
             [kmet.agent.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.ui.tui.model-catalog :as model-catalog]
-            [kmet.agent.ui.tui.subs :as s]
-            [kmet.libs.reakt.core :as r]
-            [kmet.libs.hikap.core :as engine]
-            [kmet.tui.hikap :as h]
-            [kmet.tui.components.input :as input]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]
-            [kmet.tui.macros :refer [defcomponent]]
-            [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]))
 
 (defn- fmt-model [provider model]
@@ -70,84 +63,6 @@
                                                            (when (not= clamped :off)
                                                              (str " (thinking " (name clamped) ")")))})
     (sync-footer-model! cs)))
-
-;; ─── ModelSelector component (pi ModelSelectorComponent) ───────────────────
-
-(declare filtered-items models-equal?)
-
-(defcomponent ModelSelector nil
-              [root search-ref state-atom
-               on-select-atom on-cancel-atom focused? cache-atom]
-
-  (render [this width] (protocols/render (:root this) width))
-
-  (handle-input [_this data]
-    (let [kmgr (kb/get-global-keybindings)
-          st @state-atom
-          filtered (filtered-items st)
-          n (count filtered)]
-      (cond
-        ;; Tab — toggle the all/scoped scope (pi tui.input.tab; consumed
-        ;; even when no scoped models exist, pi parity)
-        (kb/matches-key kmgr data "tui.input.tab")
-        (do (when (seq (:scoped-models st))
-              (let [new-scope (if (= :all (:scope st)) :scoped :all)
-                    ;; pi setScope: reset selection to current model position
-                    new-active (if (= :scoped new-scope)
-                                 (:scoped-models st)
-                                 (:all-models st))
-                    cur (:current st)
-                    idx (or (first (keep-indexed
-                                    (fn [i m] (when (models-equal? cur (:model m)) i))
-                                    new-active))
-                            0)]
-                (swap! state-atom assoc :scope new-scope :selected-idx idx)))
-            nil)
-
-        ;; Navigation (pi tui.select.up/down — wraps; rebuilds the rows so
-        ;; the selection arrow moves, pi updateList)
-        (kb/matches-key kmgr data "tui.select.up")
-        (do (when (pos? n)
-              (swap! state-atom assoc
-                     :selected-idx (if (zero? (:selected-idx st))
-                                     (dec n)
-                                     (dec (:selected-idx st)))))
-            nil)
-
-        (kb/matches-key kmgr data "tui.select.down")
-        (do (when (pos? n)
-              (swap! state-atom assoc
-                     :selected-idx (if (= (:selected-idx st) (dec n))
-                                     0
-                                     (inc (:selected-idx st)))))
-            nil)
-
-        ;; Enter — select the highlighted model (pi tui.select.confirm; no-op
-        ;; when nothing is filtered — pi guards on selectedModel)
-        (kb/matches-key kmgr data "tui.select.confirm")
-        (let [item (when (pos? n) (nth filtered (min (:selected-idx st) (dec n))))]
-          (when (and item (:model item))
-            (when-let [cb @on-select-atom]
-              (cb (:model item))))
-          nil)
-
-        ;; Escape / Ctrl+C — cancel (pi tui.select.cancel)
-        (kb/matches-key kmgr data "tui.select.cancel")
-        (do (when-let [cb @on-cancel-atom] (cb)) nil)
-
-        ;; Everything else — the search input (the visible filter, pi)
-        :else
-        (let [i (h/materialize-ref! _this (:search-ref _this))]
-          (protocols/handle-input i data)
-          (let [value (input/input-get-value i)]
-            (when (not= value (:search st))
-              (swap! state-atom assoc :search value :selected-idx 0))
-            nil)))))
-
-  ;; the root's reaction and the tag-owned search field are the selector's
-  ;; lifecycle: show-model-selector unwinds the root when the panel closes
-  (dispose [this]
-    (protocols/dispose (:root this))))
 
 ;; ─── Helpers (pi sortModels / filterModels / updateList / getScopeText) ────
 
@@ -198,80 +113,7 @@
        (let [th (theme/get-current-theme)]
          (theme/fg th :muted " (all/scoped)"))))
 
-(defn- row-elements
-  "Visible list rows + scroll counter + the selected model's info block (pi
-   updateList). Rows are keyed by full id, so a scrolling window reuses the
-   rows whose model stays visible."
-  [th st filtered selected start-idx end-idx]
-  (let [n (count filtered)]
-    (concat
-     (if (zero? n)
-       (list [:text {:key ::empty :padding-x 1 :padding-y 0
-                     :text (theme/fg th :muted "  No matching models")}])
-       (map (fn [i]
-              (let [{:keys [model]} (nth filtered i)
-                    is-selected (= i selected)
-                    is-current (models-equal? (:current st) model)
-                    prefix (if is-selected (theme/fg th :accent "→ ") "  ")
-                    id-text (if is-selected
-                              (theme/fg th :accent (:id model))
-                              (:id model))
-                    badge (theme/fg th :muted (str " [" (name (:provider model)) "]"))
-                    check (when is-current (theme/fg th :success " ✓"))]
-                [:text {:key (model-catalog/model-full-id model)
-                        :padding-x 1 :padding-y 0
-                        :text (str prefix id-text badge check)}]))
-            (range start-idx end-idx)))
-     (when (or (pos? start-idx) (< end-idx n))
-       (list [:text {:key ::position :padding-x 1 :padding-y 0
-                     :text (theme/fg th :muted
-                                     (str "  (" (inc selected) "/" n ")"))}]))
-     (when (pos? n)
-       (let [selected-model (:model (nth filtered selected))]
-         (concat
-          (list [:spacer {:key ::gap :lines 1}])
-          (map-indexed (fn [i line]
-                         [:text {:key [:info i] :padding-x 1 :padding-y 0
-                                 :text line}])
-                       (model-catalog/model-info-lines selected-model))))))))
-
-(defn- model-body
-  "The selector tree as a reactive body (dsl.md): the list window, the live
-   scope/hint labels and the selected model's info block re-derive from the
-   state atom; the search field is a tag-owned `[:input]` whose text is the
-   state's `:search` and whose emphasis is the panel's focus flag. BORDER-FN
-   is created once per selector so the border's :color-fn keeps identity
-   across passes."
-  [state-atom search-ref focused? border-fn]
-  (fn [_props]
-    (let [th (r/tracked-deref s/theme-sub)
-          st (r/tracked-deref state-atom)
-          filtered (filtered-items st)
-          n (count filtered)
-          selected (min (:selected-idx st) (max 0 (dec n)))
-          max-visible 10
-          start-idx (max 0 (min (- selected (quot max-visible 2))
-                                (- n max-visible)))
-          end-idx (min (+ start-idx max-visible) n)]
-      [:container {}
-       [:dynamic-border {:color-fn border-fn}]
-       [:spacer {:lines 1}]
-       (when-not (seq (:scoped-models st))
-         [:text {:padding-x 1 :padding-y 0}
-          (theme/fg th :warning
-                    "Only showing models from configured providers. Use /login to add providers.")])
-       (when (seq (:scoped-models st))
-         [:text {:padding-x 1 :padding-y 0 :text (scope-text-str st)}])
-       (when (seq (:scoped-models st))
-         [:text {:padding-x 1 :padding-y 0 :text (scope-hint-str)}])
-       [:spacer {:lines 1}]
-       [:input {:ref search-ref
-                :value (:search st)
-                :focused? (r/tracked-deref focused?)}]
-       [:spacer {:lines 1}]
-       (row-elements th st filtered selected start-idx end-idx)
-       [:spacer {:lines 1}]
-       [:dynamic-border {:color-fn border-fn}]])))
+;; ─── Construction ──────────────────────────────────────────────────────────
 
 (defn make-model-selector
   "Create the model selector component (pi ModelSelectorComponent).
@@ -281,41 +123,75 @@
    filter), :on-select (fn [model]), :on-cancel (fn)."
   [models scoped-models current-model & {:keys [search on-select on-cancel]}]
   (let [sorted (vec (sort-models current-model models))
-        st (atom {:all-models sorted
-                  :scoped-models (vec scoped-models)
-                  :scope (if (seq scoped-models) :scoped :all)
-                  :current current-model
-                  :selected-idx 0
-                  :search (or search "")})
-        ;; stable identity across passes — a fresh color-fn per body run
-        ;; would decline the border patch and rebuild it every time
-        border-fn (fn [s] (theme/fg (theme/get-current-theme) :accent s))
-        focused? (atom false)
-        sel (map->ModelSelector
-             {:root nil
-              :search-ref (engine/ref)
-              :state-atom st
-              :on-select-atom (atom on-select)
-              :on-cancel-atom (atom on-cancel)
-              :focused? focused?
-              :cache-atom (atom nil)})]
-    ;; initial selection: the current model when present, else the top row
-    ;; (pi loadModelsFromSnapshot — the index comes from the ACTIVE list:
-    ;; the scoped models when scoped, else all models); a pre-filled
-    ;; search moves to the top. The rows are a tracked root body — no
-    ;; refresh call, the state change alone re-derives.
-    (let [active (if (seq scoped-models) (vec scoped-models) sorted)
-          idx (first (keep-indexed (fn [i m] (when (models-equal? current-model m) i))
-                                   active))]
-      (swap! st assoc :selected-idx (if (seq search) 0 (or idx 0))))
-    (assoc sel :root (h/root (model-body st (:search-ref sel) focused? border-fn)))))
+        active (if (seq scoped-models) (vec scoped-models) sorted)
+        idx (fp/index-of #(models-equal? current-model %) active)
+        selected-idx (if (seq search) 0 (or idx 0))
+        render-row-fn (fn [th st item _ selected?]
+                        (let [{:keys [model]} item
+                              is-current (models-equal? (:current st) model)
+                              prefix (if selected? (theme/fg th :accent "→ ") "  ")
+                              id-text (if selected?
+                                        (theme/fg th :accent (:id model))
+                                        (:id model))
+                              badge (theme/fg th :muted (str " [" (name (:provider model)) "]"))
+                              check (when is-current (theme/fg th :success " ✓"))]
+                          [:text {:key (model-catalog/model-full-id model)
+                                  :padding-x 1 :padding-y 0
+                                  :text (str prefix id-text badge check)}]))
+        chrome-fn (fn [th st]
+                    (let [scoped? (seq (:scoped-models st))]
+                      {:header (keep identity
+                                     [(when-not scoped?
+                                        [:text {:padding-x 1 :padding-y 0}
+                                         (theme/fg th :warning
+                                                   "Only showing models from configured providers. Use /login to add providers.")])
+                                      (when scoped?
+                                        [:text {:padding-x 1 :padding-y 0 :text (scope-text-str st)}])
+                                      (when scoped?
+                                        [:text {:padding-x 1 :padding-y 0 :text (scope-hint-str)}])])
+                       :footer (when-let [item (fp/item-at (filtered-items st)
+                                                           (:selected-idx st))]
+                                 (model-catalog/model-info-rows (:model item)))}))
+        extra-key-fn (fn [state-atom data]
+                       ;; Tab toggles the scope; consumed even when no scoped
+                       ;; models exist (pi)
+                       (when (kb/matches-key (kb/get-global-keybindings) data
+                                             "tui.input.tab")
+                         (let [st @state-atom]
+                           (when (seq (:scoped-models st))
+                             (let [new-scope (if (= :all (:scope st)) :scoped :all)
+                                   new-active (if (= :scoped new-scope)
+                                                (:scoped-models st)
+                                                (:all-models st))
+                                   idx (or (fp/index-of #(models-equal? (:current st) (:model %))
+                                                        new-active)
+                                           0)]
+                               (swap! state-atom assoc :scope new-scope :selected-idx idx))))
+                         true))]
+    (fp/make-panel filtered-items
+                   render-row-fn
+                   :chrome chrome-fn
+                   :extra-key extra-key-fn
+                   :state {:all-models sorted
+                           :scoped-models (vec scoped-models)
+                           :scope (if (seq scoped-models) :scoped :all)
+                           :current current-model
+                           :selected-idx selected-idx}
+                   :search-text (or search "")
+                   :empty-text "No matching models"
+                   :on-select (when on-select
+                                (fn [item] (when (:model item) (on-select (:model item)))))
+                   :on-cancel on-cancel)))
 
-;; ─── IFocusable — the panel's flag; the tree derives the field's emphasis ──
+;; ─── Public helpers ────────────────────────────────────────────────────────
 
-(extend-type ModelSelector
-  protocols/IFocusable
-  (focused [this] @(:focused? this))
-  (set-focused! [this val] (reset! (:focused? this) val)))
+(defn resolve-model-ref
+  "/model reference resolution against the cached snapshot (pi
+   findExactModelMatch — session scoped models when set, else available)."
+  [cs term]
+  (resolver/resolve-model-reference
+   term
+   (model-catalog/scoped-or-available-models (:engine cs))))
 
 (defn show-model-selector
   "Model selector (pi ModelSelectorComponent, mounted via showSelector —
@@ -338,31 +214,13 @@
                                                        (subs id (inc slash))))))
                                (runtime/scoped-models (:engine cs))))
              current (runtime/model-record (:engine cs))
-             ;; late binding: the close callbacks reach the mounted
-             ;; selector through this atom (pi: showSelector's handle)
              sel-atom (atom nil)
-             ;; leave, then dispose: dispose unwinds the selector's root
-             ;; reaction and foreign input
-             close! (fn []
-                      (dock/close-atom! cs sel-atom))
+             close! (fn [] (fp/panel-close! cs sel-atom))
              sel (make-model-selector
                   available scoped current
                   :search search-term
                   :on-select (fn [m]
                                (close!)
-                               (apply-model-switch! cs m nil)
-                               (tui/tui-request-render (:tui cs)))
-                  :on-cancel (fn []
-                               (close!)
-                               (tui/tui-request-render (:tui cs))))]
-         (dock/mount! cs sel)
-         (reset! sel-atom sel)
-         (tui/tui-request-render (:tui cs)))))))
-
-(defn resolve-model-ref
-  "/model reference resolution against the cached snapshot (pi
-   findExactModelMatch — session scoped models when set, else available)."
-  [cs term]
-  (resolver/resolve-model-reference
-   term
-   (model-catalog/scoped-or-available-models (:engine cs))))
+                               (apply-model-switch! cs m nil))
+                  :on-cancel close!)]
+         (fp/show-panel! cs sel-atom sel))))))

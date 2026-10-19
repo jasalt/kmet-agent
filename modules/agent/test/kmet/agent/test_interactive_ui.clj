@@ -230,13 +230,13 @@
                                                                   :expires 9e99}})]
         ((:handler (commands/find-command "login")) {} "nonexistent-provider")
         (t/is (some? @sel-ref) "provider selector mounted")
-        (t/is (= :login (:mode @sel-ref)))
+        (t/is (= :login (:mode @(:state-atom @sel-ref))))
         (t/is (= "nonexistent-provider" (:search @(:state-atom @sel-ref)))
               "the typed reference pre-fills the filter")
         (reset! sel-ref nil)
         ((:handler (commands/find-command "logout")) {} "")
         (t/is (some? @sel-ref) "logout selector mounted")
-        (t/is (= :logout (:mode @sel-ref)))))))
+        (t/is (= :logout (:mode @(:state-atom @sel-ref))))))))
 
 (deftest test-model-command-switches-model
   (testing "/model resolves provider/model patterns and switches the agent"

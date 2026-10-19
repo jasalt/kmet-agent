@@ -34,10 +34,7 @@
    "ScrollView"                 :transparent-parent
    "SelectorDialog"    :transparent-parent
    "InputDialog"       :transparent-parent
-   "ModelSelector"              :transparent-parent
-   "ScopedModelsSelector"       :transparent-parent
-   "ThinkingSelector"           :transparent-parent
-   "AuthSelector"               :transparent-parent
+   "FilterPanel"                :transparent-parent
    "AuthMethodSelector"         :transparent-parent
    "LoginDialog"                :transparent-parent
    ;; delegates to a DSL root whose body tracks the status text atom
@@ -143,7 +140,7 @@
    when components are added or removed; a mismatch means the scan below
    silently lost forms (a scanner regression), so the convention checks
    would otherwise pass vacuously."
-  53)
+  50)
 
 (deftest caching-conventions
   (let [checked (atom [])]

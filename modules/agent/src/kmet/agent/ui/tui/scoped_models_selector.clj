@@ -11,20 +11,12 @@
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.dock :as dock]
+            [kmet.agent.ui.tui.filter-panel :as fp]
             [kmet.agent.ui.tui.model-catalog :as model-catalog]
-            [kmet.agent.ui.tui.subs :as s]
             [kmet.agent.config :as cfg]
-            [kmet.libs.reakt.core :as r]
-            [kmet.libs.hikap.core :as engine]
-            [kmet.tui.hikap :as h]
-            [kmet.tui.components.input :as input]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]
-            [kmet.tui.keys :as keys]
-            [kmet.tui.macros :refer [defcomponent]]
-            [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]))
 
 (defn- full-id [m]
@@ -109,130 +101,6 @@
 
 ;; ─── Component ─────────────────────────────────────────────────────────────
 
-(defcomponent ScopedModelsSelector nil
-              [root search-ref state-atom
-               on-change-atom on-persist-atom on-cancel-atom focused? cache-atom]
-
-  (render [this width] (protocols/render (:root this) width))
-
-  (handle-input [_this data]
-    (let [kmgr (kb/get-global-keybindings)
-          st @state-atom
-          filtered (filtered-items st)
-          n (count filtered)]
-      (cond
-        ;; Provider toggle FIRST: app.models.toggleProvider is ctrl+p (pi) and
-        ;; kmet's tui.select.up carries ctrl+p too, so the specific app action
-        ;; must win over the generic navigation leg (pi's order works only
-        ;; because its select.up is plain "up")
-        (kb/matches-key kmgr data "app.models.toggleProvider")
-        (let [item (when (pos? n) (nth filtered (min (:selected-idx st) (dec n))))]
-          (when-let [m (:model item)]
-            (let [all-ids (:all-ids st)
-                  provider (:provider m)
-                  provider-ids (filterv #(= provider (:provider (get (:model-map st) %)))
-                                        all-ids)
-                  all-on? (every? #(is-enabled? (:enabled-ids st) %) provider-ids)
-                  ids (if all-on?
-                        (clear-all (:enabled-ids st) all-ids provider-ids)
-                        (enable-all (:enabled-ids st) all-ids provider-ids))]
-              (swap! state-atom assoc :enabled-ids ids :dirty true)
-              (when-let [cb @on-change-atom] (cb ids))))
-          nil)
-
-        ;; Navigation (pi tui.select.up/down — wraps; rebuilds the rows so
-        ;; the selection arrow moves, pi updateList)
-        (kb/matches-key kmgr data "tui.select.up")
-        (do (when (pos? n)
-              (swap! state-atom assoc
-                     :selected-idx (if (zero? (:selected-idx st))
-                                     (dec n)
-                                     (dec (:selected-idx st)))))
-            nil)
-
-        (kb/matches-key kmgr data "tui.select.down")
-        (do (when (pos? n)
-              (swap! state-atom assoc
-                     :selected-idx (if (= (:selected-idx st) (dec n))
-                                     0
-                                     (inc (:selected-idx st)))))
-            nil)
-
-        ;; Reorder enabled models (pi app.models.reorderUp/Down)
-        (or (kb/matches-key kmgr data "app.models.reorderUp")
-            (kb/matches-key kmgr data "app.models.reorderDown"))
-        (let [delta (if (kb/matches-key kmgr data "app.models.reorderUp") -1 1)
-              item (when (pos? n) (nth filtered (min (:selected-idx st) (dec n))))]
-          (when (and item (:enabled item) (some? (:enabled-ids st)))
-            (let [ids (move (:enabled-ids st) (:full-id item) delta)]
-              ;; pi only moves within bounds — an out-of-bounds reorder is a
-              ;; no-op: it must not dirty the list or move the selection
-              (when (not= ids (:enabled-ids st))
-                (swap! state-atom assoc
-                       :enabled-ids ids :dirty true
-                       :selected-idx (max 0 (min (+ (:selected-idx st) delta) (dec n))))
-                (when-let [cb @on-change-atom] (cb ids)))))
-          nil)
-
-        ;; Enter — toggle the selected model (pi tui.select.confirm)
-        (kb/matches-key kmgr data "tui.select.confirm")
-        (let [item (when (pos? n) (nth filtered (min (:selected-idx st) (dec n))))]
-          (when item
-            (let [ids (toggle (:enabled-ids st) (:full-id item))]
-              (swap! state-atom assoc :enabled-ids ids :dirty true)
-              (when-let [cb @on-change-atom] (cb ids))))
-          nil)
-
-        ;; Enable all — filtered to the search query when active (pi
-        ;; app.models.enableAll)
-        (kb/matches-key kmgr data "app.models.enableAll")
-        (let [targets (when (seq (:search st)) (mapv :full-id filtered))
-              ids (enable-all (:enabled-ids st) (:all-ids st) targets)]
-          (swap! state-atom assoc :enabled-ids ids :dirty true)
-          (when-let [cb @on-change-atom] (cb ids))
-          nil)
-
-        ;; Clear all — filtered to the search query when active
-        (kb/matches-key kmgr data "app.models.clearAll")
-        (let [targets (when (seq (:search st)) (mapv :full-id filtered))
-              ids (clear-all (:enabled-ids st) (:all-ids st) targets)]
-          (swap! state-atom assoc :enabled-ids ids :dirty true)
-          (when-let [cb @on-change-atom] (cb ids))
-          nil)
-
-        ;; Save to settings (pi app.models.save)
-        (kb/matches-key kmgr data "app.models.save")
-        (do (when-let [cb @on-persist-atom] (cb (:enabled-ids st)))
-            (swap! state-atom assoc :dirty false)
-            nil)
-
-        ;; Ctrl+C — clear the search, or cancel when already empty
-        (keys/matches-key? data (keys/ctrl "c"))
-        (if (str/blank? (:search st))
-          (do (when-let [cb @on-cancel-atom] (cb)) nil)
-          (do (swap! state-atom assoc :search "" :selected-idx 0)
-              nil))
-
-        ;; Escape — cancel
-        (keys/matches-key? data "escape")
-        (do (when-let [cb @on-cancel-atom] (cb)) nil)
-
-        ;; Everything else — the search input
-        :else
-        (let [i (h/materialize-ref! _this (:search-ref _this))]
-          (protocols/handle-input i data)
-          (let [value (input/input-get-value i)]
-            (when (not= value (:search st))
-              (swap! state-atom assoc :search value :selected-idx 0))
-            nil)))))
-
-  ;; the root's reaction and the tag-owned search field are the selector's
-  ;; lifecycle: show-scoped-models-selector unwinds the root on close
-  (dispose [this]
-    (protocols/dispose (:root this))))
-
-;; ─── Rendering helpers (pi refresh / updateList / getFooterText) ──────────
-
 (defn- footer-text-str
   [st]
   (let [all-ids (:all-ids st)
@@ -262,88 +130,12 @@
       (str (theme/dim base) (theme/fg (theme/get-current-theme) :warning " (unsaved)"))
       (theme/dim base))))
 
-(defn- row-elements
-  "Visible rows + scroll counter + the selected model's info block (pi
-   updateList). Rows are keyed by full id, so a scrolling window reuses the
-   rows whose model stays visible."
-  [th st filtered selected start-idx end-idx]
-  (let [n (count filtered)]
-    (concat
-     (if (zero? n)
-       (list [:text {:key ::empty :padding-x 1 :padding-y 0
-                     :text (theme/fg th :muted "  No matching models")}])
-       (map (fn [i]
-              (let [{:keys [full-id model enabled]} (nth filtered i)
-                    is-selected (= i selected)
-                    prefix (if is-selected (theme/fg th :accent "→ ") "  ")
-                    id-text (if is-selected
-                              (theme/fg th :accent (:id model full-id))
-                              (:id model full-id))
-                    badge (theme/fg th :muted
-                                    (if model (str " [" (name (:provider model)) "]")
-                                        " [unavailable]"))
-                    status (if model
-                             (if (nil? (:enabled-ids st))
-                               ""
-                               (if enabled
-                                 (theme/fg th :success " ✓")
-                                 (theme/dim " ✗")))
-                             (theme/dim " ✗"))]
-                [:text {:key full-id :padding-x 1 :padding-y 0
-                        :text (str prefix id-text badge status)}]))
-            (range start-idx end-idx)))
-     (when (or (pos? start-idx) (< end-idx n))
-       (list [:text {:key ::position :padding-x 1 :padding-y 0
-                     :text (theme/fg th :muted
-                                     (str "  (" (inc selected) "/" n ")"))}]))
-     (when (pos? n)
-       (let [item (nth filtered selected)]
-         (concat
-          (list [:spacer {:key ::gap :lines 1}])
-          (map-indexed (fn [i line]
-                         [:text {:key [:info i] :padding-x 1 :padding-y 0
-                                 :text line}])
-                       (model-catalog/model-info-lines (:model item)))))))))
-
-(defn- scoped-models-body
-  "The selector tree as a reactive body (dsl.md): the list window, the
-   footer and the selected model's info block re-derive from the state
-   atom; the search field is a tag-owned `[:input]` whose text is the
-   state's `:search` and whose emphasis is the panel's focus flag.
-   BORDER-FN is created once per selector so the border's :color-fn keeps
-   identity across passes."
-  [state-atom search-ref focused? border-fn]
-  (fn [_props]
-    (let [th (r/tracked-deref s/theme-sub)
-          st (r/tracked-deref state-atom)
-          filtered (filtered-items st)
-          n (count filtered)
-          selected (min (:selected-idx st) (max 0 (dec n)))
-          max-visible 8
-          start-idx (max 0 (min (- selected (quot max-visible 2))
-                                (- n max-visible)))
-          end-idx (min (+ start-idx max-visible) n)]
-      [:container {}
-       [:dynamic-border {:color-fn border-fn}]
-       [:spacer {:lines 1}]
-       [:text {:padding-x 1 :padding-y 0}
-        (theme/fg th :accent (theme/bold "Model Configuration"))]
-       [:text {:padding-x 1 :padding-y 0}
-        (theme/fg th :muted
-                  (str "Session-only. " (app-kb/key-label-or "app.models.save" "ctrl+s")
-                       " to save to settings."))]
-       [:spacer {:lines 1}]
-       [:input {:ref search-ref
-                :value (:search st)
-                :focused? (r/tracked-deref focused?)}]
-       [:spacer {:lines 1}]
-       (row-elements th st filtered selected start-idx end-idx)
-       [:spacer {:lines 1}]
-       [:text {:padding-x 1 :padding-y 0 :text (footer-text-str st)}]
-       [:spacer {:lines 1}]
-       [:dynamic-border {:color-fn border-fn}]])))
-
-;; ─── Construction ──────────────────────────────────────────────────────────
+(defn- change-enabled!
+  "Record IDS as the enabled list (plus EXTRA state), mark the list dirty,
+   and hand IDS to ON-CHANGE."
+  [st-atom on-change ids & [extra]]
+  (swap! st-atom merge {:enabled-ids ids :dirty true} extra)
+  (when on-change (on-change ids)))
 
 (defn make-scoped-models-selector
   "Create the scoped-models selector component (pi
@@ -354,28 +146,113 @@
   [models enabled-ids & {:keys [on-change on-persist on-cancel]}]
   (let [model-map (into {} (map (fn [m] [(full-id m) m])) models)
         all-ids (mapv full-id models)
-        st (atom {:all-ids all-ids
-                  :model-map model-map
-                  :enabled-ids enabled-ids
-                  :selected-idx 0
-                  :search ""
-                  :dirty false})
-        ;; stable identity across passes — a fresh color-fn per body run
-        ;; would decline the border patch and rebuild it every time
-        border-fn (fn [s] (theme/fg (theme/get-current-theme) :accent s))
-        focused? (atom false)
-        sel (map->ScopedModelsSelector
-             {:root nil
-              :search-ref (engine/ref)
-              :state-atom st
-              :on-change-atom (atom on-change)
-              :on-persist-atom (atom on-persist)
-              :on-cancel-atom (atom on-cancel)
-              :focused? focused?
-              :cache-atom (atom nil)})]
-    ;; rows/footer are a tracked root body — no refresh call, the state
-    ;; change alone re-derives
-    (assoc sel :root (h/root (scoped-models-body st (:search-ref sel) focused? border-fn)))))
+        st-atom (atom {:all-ids all-ids
+                       :model-map model-map
+                       :enabled-ids enabled-ids
+                       :selected-idx 0
+                       :dirty false})
+        change! (partial change-enabled! st-atom on-change)
+        render-row-fn (fn [th st item _ selected?]
+                        (let [{:keys [full-id model enabled]} item
+                              prefix (if selected? (theme/fg th :accent "→ ") "  ")
+                              id-text (if selected?
+                                        (theme/fg th :accent (:id model full-id))
+                                        (:id model full-id))
+                              badge (theme/fg th :muted
+                                              (if model (str " [" (name (:provider model)) "]")
+                                                  " [unavailable]"))
+                              status (if model
+                                       (if (nil? (:enabled-ids st))
+                                         ""
+                                         (if enabled
+                                           (theme/fg th :success " ✓")
+                                           (theme/dim " ✗")))
+                                       (theme/dim " ✗"))]
+                          [:text {:key full-id :padding-x 1 :padding-y 0
+                                  :text (str prefix id-text badge status)}]))
+        chrome-fn (fn [th st]
+                    (let [info (when-let [item (fp/item-at (filtered-items st)
+                                                           (:selected-idx st))]
+                                 (model-catalog/model-info-rows (:model item)))
+                          footer-text [:text {:padding-x 1 :padding-y 0
+                                              :text (footer-text-str st)}]]
+                      {:header [[:text {:padding-x 1 :padding-y 0}
+                                 (theme/fg th :accent (theme/bold "Model Configuration"))]
+                                [:text {:padding-x 1 :padding-y 0}
+                                 (theme/fg th :muted
+                                           (str "Session-only. " (app-kb/key-label-or "app.models.save" "ctrl+s")
+                                                " to save to settings."))]]
+                       :footer (if (seq info)
+                                 (concat info [[:spacer {:lines 1}] footer-text])
+                                 [footer-text])}))
+        extra-key-fn (fn [state-atom data]
+                       (let [kmgr (kb/get-global-keybindings)
+                             st @state-atom
+                             filtered (filtered-items st)
+                             item (fp/item-at filtered (:selected-idx st))]
+                         (cond
+                             ;; Provider toggle FIRST: app.models.toggleProvider
+                             ;; is ctrl+p (pi) and tui.select.up carries ctrl+p
+                             ;; too, so the specific app action must win
+                           (kb/matches-key kmgr data "app.models.toggleProvider")
+                           (do (when-let [m (:model item)]
+                                 (let [all-ids (:all-ids st)
+                                       provider (:provider m)
+                                       provider-ids (filterv #(= provider (:provider (get (:model-map st) %)))
+                                                             all-ids)
+                                       all-on? (every? #(is-enabled? (:enabled-ids st) %) provider-ids)]
+                                   (change! (if all-on?
+                                              (clear-all (:enabled-ids st) all-ids provider-ids)
+                                              (enable-all (:enabled-ids st) all-ids provider-ids)))))
+                               true)
+
+                             ;; Reorder enabled models (pi app.models.reorderUp/Down)
+                           (or (kb/matches-key kmgr data "app.models.reorderUp")
+                               (kb/matches-key kmgr data "app.models.reorderDown"))
+                           (let [delta (if (kb/matches-key kmgr data "app.models.reorderUp") -1 1)]
+                             (when (and item (:enabled item) (some? (:enabled-ids st)))
+                               (let [ids (move (:enabled-ids st) (:full-id item) delta)]
+                                   ;; pi only moves within bounds — an
+                                   ;; out-of-bounds reorder is a no-op
+                                 (when (not= ids (:enabled-ids st))
+                                   (change! ids {:selected-idx
+                                                 (max 0 (min (+ (:selected-idx st) delta)
+                                                             (dec (count filtered))))}))))
+                             true)
+
+                             ;; Enable all — filtered to the search query when
+                             ;; active (pi app.models.enableAll)
+                           (kb/matches-key kmgr data "app.models.enableAll")
+                           (do (change! (enable-all (:enabled-ids st) (:all-ids st)
+                                                    (when (seq (:search st)) (mapv :full-id filtered))))
+                               true)
+
+                             ;; Clear all — filtered to the search query when active
+                           (kb/matches-key kmgr data "app.models.clearAll")
+                           (do (change! (clear-all (:enabled-ids st) (:all-ids st)
+                                                   (when (seq (:search st)) (mapv :full-id filtered))))
+                               true)
+
+                             ;; Save to settings (pi app.models.save)
+                           (kb/matches-key kmgr data "app.models.save")
+                           (do (when on-persist (on-persist (:enabled-ids st)))
+                               (swap! state-atom assoc :dirty false)
+                               true)
+
+                           :else nil)))
+        toggle-fn (fn [item]
+                    (when item
+                      (change! (toggle (:enabled-ids @st-atom) (:full-id item)))))]
+    (fp/make-panel filtered-items
+                   render-row-fn
+                   :chrome chrome-fn
+                   :extra-key extra-key-fn
+                   :state-atom st-atom
+                   :max-visible 8
+                   :empty-text "No matching models"
+                   :clear-on-ctrl-c? true
+                   :on-select toggle-fn
+                   :on-cancel on-cancel)))
 
 ;; ─── Public helpers ────────────────────────────────────────────────────────
 
@@ -391,8 +268,7 @@
   (let [sel-atom (atom nil)
         ;; leave, then dispose: dispose unwinds the selector's root
         ;; reaction and foreign input
-        close! (fn []
-                 (dock/close-atom! cs sel-atom))
+        close! (fn [] (fp/panel-close! cs sel-atom))
         available (models/get-available)
         session-scoped (runtime/scoped-models (:engine cs))
         patterns (cfg/get-enabled-models-live (runtime/config (:engine cs)))
@@ -447,21 +323,11 @@
                               (:chat-history cs)
                               {:role :assistant
                                :content "Model selection saved to settings."})))
-             :on-cancel (fn []
-                          (close!)
-                          (tui/tui-request-render (:tui cs))))]
-    ;; pi: showSelector — the selector replaces the editor dock
-    (dock/mount! cs sel)
-    (reset! sel-atom sel)))
+             :on-cancel close!)]
+    (fp/show-panel! cs sel-atom sel)))
 
 (defn scoped-models-get-enabled-ids
   "The selector's current enabled ids (nil = all enabled)."
   [sel]
   (:enabled-ids @(:state-atom sel)))
 
-;; ─── IFocusable — the panel's flag; the tree derives the field's emphasis ──
-
-(extend-type ScopedModelsSelector
-  protocols/IFocusable
-  (focused [this] @(:focused? this))
-  (set-focused! [this val] (reset! (:focused? this) val)))

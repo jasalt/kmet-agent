@@ -85,3 +85,11 @@
       [(theme/fg th :muted (str "  Model Name: " (:name model)))
        (theme/fg th :muted (cost-line model))]
       [(theme/fg th :muted "  Model unavailable")])))
+
+(defn model-info-rows
+  "MODEL-INFO-LINES as keyed text rows — the selectors' info block under the
+   list."
+  [model]
+  (map-indexed (fn [i line]
+                 [:text {:key [:info i] :padding-x 1 :padding-y 0 :text line}])
+               (model-info-lines model)))

@@ -7,11 +7,10 @@
    [subscription]/[API key] type labels when both types are listed."
   (:require [clojure.string :as str]
             [kmet.agent.keybindings :as app-kb]
+            [kmet.agent.ui.tui.filter-panel :as fp]
             [kmet.agent.ui.tui.subs :as s]
             [kmet.libs.reakt.core :as r]
-            [kmet.libs.hikap.core :as engine]
             [kmet.tui.hikap :as h]
-            [kmet.tui.components.input :as input]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.macros :refer [defcomponent]]
@@ -65,130 +64,6 @@
     :else
     (theme/fg th :success (str " ✓ " (:source status)))))
 
-(defcomponent AuthSelector nil
-              [root search-ref state-atom mode
-               on-select-atom on-cancel-atom focused? cache-atom]
-
-  (render [this width] (protocols/render (:root this) width))
-
-  (handle-input [_this data]
-    (let [kmgr (kb/get-global-keybindings)
-          st @state-atom
-          filtered (filtered-entries (:entries st) (:search st))
-          n (count filtered)]
-      (cond
-        ;; Up/Down — clamp at the ends, no wrap (pi OAuthSelectorComponent)
-        (or (kb/matches-key kmgr data "tui.select.up")
-            (kb/matches-key kmgr data "tui.select.down"))
-        (do (when (pos? n)
-              (let [idx (min (:selected-idx st) (dec n))
-                    next (if (kb/matches-key kmgr data "tui.select.up")
-                           (max 0 (dec idx))
-                           (min (dec n) (inc idx)))]
-                (when-not (= idx next)
-                  (swap! state-atom assoc :selected-idx next))))
-            nil)
-
-        ;; Enter — select the highlighted provider (pi tui.select.confirm;
-        ;; the search input's onSubmit does the same)
-        (kb/matches-key kmgr data "tui.select.confirm")
-        (do (when-let [entry (when (pos? n)
-                               (nth filtered (min (:selected-idx st) (dec n))))]
-              (when-let [cb @on-select-atom]
-                (cb (:id entry) (:auth-type entry))))
-            nil)
-
-        ;; Escape / Ctrl+C — cancel (pi tui.select.cancel)
-        (kb/matches-key kmgr data "tui.select.cancel")
-        (do (when-let [cb @on-cancel-atom] (cb)) nil)
-
-        ;; Everything else — the search input (the visible filter, pi)
-        :else
-        (let [i (h/materialize-ref! _this (:search-ref _this))]
-          (protocols/handle-input i data)
-          (let [value (input/input-get-value i)]
-            (when (not= value (:search st))
-              ;; pi filterProviders: clamp the selection to the new
-              ;; filtered count — it does not reset to the top
-              (swap! state-atom assoc :search value))
-            nil)))))
-
-  ;; the root's reaction and the tag-owned search field are the selector's
-  ;; lifecycle: the dock close paths unwind the root
-  (dispose [this]
-    (protocols/dispose (:root this))))
-
-;; ─── List rendering (pi updateList) ────────────────────────────────────────
-
-(defn- row-elements
-  "Visible rows + scroll counter + the empty state (pi updateList): a
-   viewport of MAX-VISIBLE rows centered on the selection, muted
-   [subscription]/[API key] labels when both types are present, the status
-   indicator, and the empty-state message. Keyed by [id auth-type] — a
-   provider may be listed once per auth type."
-  [th mode entries filtered selected show-types? start-idx end-idx]
-  (let [n (count filtered)]
-    (concat
-     (map (fn [i]
-            (let [entry (nth filtered i)
-                  is-selected (= i selected)
-                  name-text (if is-selected
-                              (str (theme/fg th :accent "→ ")
-                                   (theme/fg th :accent (:name entry)))
-                              (str "  " (theme/fg th :text (:name entry))))
-                  type-label (when show-types?
-                               (theme/fg th :muted
-                                         (str " [" (format-auth-type (:auth-type entry)) "]")))
-                  status (status-indicator th entry)]
-              [:truncated-text {:key [(:id entry) (:auth-type entry)]
-                                :padding-x 1
-                                :text (str name-text type-label status)}]))
-          (range start-idx end-idx))
-     (when (or (pos? start-idx) (< end-idx n))
-       (list [:truncated-text {:key ::position :padding-x 1
-                               :text (theme/fg th :muted
-                                               (str "  (" (inc selected) "/" n ")"))}]))
-     (when (zero? n)
-       (list [:truncated-text
-              {:key ::empty :padding-x 1
-               :text (theme/fg th :muted
-                               (str "  " (if (empty? entries)
-                                           (if (= :login mode)
-                                             "No providers available"
-                                             "No providers logged in. Use /login first.")
-                                           "No matching providers")))}])))))
-
-(defn- auth-body
-  "The selector tree as a reactive body (dsl.md): the header, the rows and
-   the scroll/empty rows re-derive from the state atom; the search field is a
-   tag-owned `[:input]` whose text is the state's `:search` and whose
-   emphasis is the panel's focus flag. BORDER-FN is created once per selector
-   so the border's :color-fn keeps identity across passes."
-  [state-atom search-ref focused? title mode border-fn]
-  (fn [_props]
-    (let [th (r/tracked-deref s/theme-sub)
-          st (r/tracked-deref state-atom)
-          entries (:entries st)
-          filtered (filtered-entries entries (:search st))
-          n (count filtered)
-          selected (max 0 (min (:selected-idx st) (max 0 (dec n))))
-          show-types? (< 1 (count (distinct (map :auth-type filtered))))
-          start-idx (max 0 (min (- selected (quot max-visible 2))
-                                (- n max-visible)))
-          end-idx (min (+ start-idx max-visible) n)]
-      [:container {}
-       [:dynamic-border {:color-fn border-fn}]
-       [:spacer {:lines 1}]
-       [:text {:padding-x 1 :padding-y 0} (theme/fg th :accent (theme/bold title))]
-       [:spacer {:lines 1}]
-       [:input {:ref search-ref
-                :value (:search st)
-                :focused? (r/tracked-deref focused?)}]
-       [:spacer {:lines 1}]
-       (row-elements th mode entries filtered selected show-types? start-idx end-idx)
-       [:spacer {:lines 1}]
-       [:dynamic-border {:color-fn border-fn}]])))
-
 (defn make-auth-selector
   "Create the auth provider selector (pi OAuthSelectorComponent).
    MODE — :login or :logout (title + empty-state wording); ENTRIES —
@@ -200,33 +75,46 @@
         title (if (= :login mode)
                 "Select provider to configure:"
                 "Select provider to logout:")
-        ;; stable identity across passes — a fresh color-fn per body run
-        ;; would decline the border patch and rebuild it every time
-        border-fn (fn [s] (theme/fg (theme/get-current-theme) :accent s))
-        st (atom {:entries entries
-                  :search (or search "")
-                  :selected-idx 0})
-        focused? (atom false)
-        sel (map->AuthSelector
-             {:root nil
-              :search-ref (engine/ref)
-              :state-atom st
-              :mode mode
-              :on-select-atom (atom on-select)
-              :on-cancel-atom (atom on-cancel)
-              :focused? focused?
-              :cache-atom (atom nil)})]
-    ;; rows are a tracked root body — no refresh call, the state change alone
-    ;; re-derives; the :search prefill is the state's initial value, written
-    ;; into the tag-owned field as its :value prop
-    (assoc sel :root (h/root (auth-body st (:search-ref sel) focused? title mode border-fn)))))
-
-;; ─── IFocusable — the panel's flag; the tree derives the field's emphasis ──
-
-(extend-type AuthSelector
-  protocols/IFocusable
-  (focused [this] @(:focused? this))
-  (set-focused! [this val] (reset! (:focused? this) val)))
+        empty-text (if (empty? entries)
+                     (if (= :login mode)
+                       "No providers available"
+                       "No providers logged in. Use /login first.")
+                     "No matching providers")
+        render-row-fn (fn [th st entry _ selected?]
+                        (let [filtered (filtered-entries (:entries st) (:search st))
+                              show-types? (< 1 (count (distinct (map :auth-type filtered))))
+                              name-text (if selected?
+                                          (str (theme/fg th :accent "→ ")
+                                               (theme/fg th :accent (:name entry)))
+                                          (str "  " (theme/fg th :text (:name entry))))
+                              type-label (when show-types?
+                                           (theme/fg th :muted
+                                                     (str " [" (format-auth-type (:auth-type entry)) "]")))
+                              status (status-indicator th entry)]
+                          [:truncated-text {:key [(:id entry) (:auth-type entry)]
+                                            :padding-x 1
+                                            :text (str name-text type-label status)}]))
+        chrome-fn (fn [th _st]
+                    {:header [[:text {:padding-x 1 :padding-y 0}
+                               (theme/fg th :accent (theme/bold title))]]})
+        render-empty (fn [th _st]
+                       [:truncated-text {:key ::empty :padding-x 1
+                                         :text (theme/fg th :muted
+                                                         (str "  " empty-text))}])]
+    (fp/make-panel (fn [st] (filtered-entries (:entries st) (:search st)))
+                   render-row-fn
+                   :chrome chrome-fn
+                   :render-empty render-empty
+                   :nav :clamp
+                   :state {:entries entries
+                           :mode mode
+                           :selected-idx 0}
+                   :max-visible max-visible
+                   :search-text (or search "")
+                   :search-resets-selection? false
+                   :on-select (when on-select
+                                (fn [entry] (on-select (:id entry) (:auth-type entry))))
+                   :on-cancel on-cancel)))
 
 ;; ─── Auth-method selector (pi ExtensionSelectorComponent) ─────────────────
 ;; The plain string-option list showLoginAuthTypeSelector renders: no
