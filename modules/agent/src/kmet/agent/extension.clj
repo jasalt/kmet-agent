@@ -67,9 +67,6 @@
 ;;   :register-tool! :unregister-tool! :get-all-tools :create-bash-tool
 ;;   :get-active-tools :set-active-tools
 ;;   :register-tool-source! :unregister-tool-source!  — sandbox tool sources
-;;   :register-unit!                                    — publish a unit into
-;;     the host's composition tree: {:name <keyword> :unit <descriptor>
-;;     :entry {:id :into :config}} (cells.md §6.1, §8.2)
 ;;   :on-event :emit-event!                             — event bus
 ;;   :on-input :on-before-agent-start                   — hooks
 ;;   :on-tool-call :on-tool-result                      — tool transforms
@@ -119,28 +116,6 @@
 (defn unregister-tool-source!
   "Remove a sandbox tool source by ID."
   [api id] ((:unregister-tool-source! api) id))
-
-(defn register-unit!
-  "Publish a unit into the host's composition tree (cells.md §8.2) and mount
-   it, so an extension contributes a slot the way the host's own entries do.
-   SPEC:
-     :name  — a keyword namespaced to this extension (`:budget/spend`); it
-              resolves the unit through the host's `:ext` backend
-     :unit  — the descriptor: :handle, the :config schema, :start, … — its
-              fns run in this extension's context like every other
-              registered callback (a unit that owns inline `:units` does not
-              cover its children's, so publish those as their own units)
-     :entry — where it mounts, as the host's entry shape (§6.1): {:id :into
-              :config}; its :name is filled from :name. An entry whose :id and
-              :into match one of a group's inline stage defaults replaces it;
-              an id another entry already uses is a duplicate-id error.
-   A name `extension.edn` declares under :units must be published here: the
-   declaration supplies the unit's :config schema and the entry that mounts
-   it, and publishing binds the :handle (what the code leaves out comes from
-   the declaration; what both carry, from this call). Re-publishing a name
-   replaces the earlier unit. Returns a deregister fn; on unload the unit and
-   its entry go together, disposing whatever the slot's `:start` registered."
-  [api spec] ((:register-unit! api) spec))
 
 (defn get-all-tools [api] ((:get-all-tools api)))
 (defn get-active-tools [api] ((:get-active-tools api)))
@@ -343,7 +318,6 @@
   "A test-fixture api that captures registrations into a state atom.
    Returns {:api ... :state atom}. State shape:
      {:commands {name cmd} :tools {name tool} :tool-sources {id fn}
-      :units {name spec}
       :handlers {event-type [handler ...]} :flags {name opts}
       :entry-renderers {custom-type renderer} :message-renderers {custom-type renderer}
       :aliases {alias-kw fn}
@@ -357,7 +331,7 @@
    pass a temp dir in tests that exercise agent-dir state)."
   ([] (create-nullable-api {}))
   ([{:keys [agent-dir]}]
-   (let [state (atom {:commands {} :tools {} :tool-sources {} :units {} :handlers {}
+   (let [state (atom {:commands {} :tools {} :tool-sources {} :handlers {}
                       :flags {} :entry-renderers {} :message-renderers {}
                       :aliases {}
                       :skills [] :prompts []
@@ -388,9 +362,6 @@
                                        (swap! state assoc-in [:tool-sources id] tools-fn)
                                        (fn [] (swap! state update :tool-sources dissoc id)))
               :unregister-tool-source! (fn [id] (swap! state update :tool-sources dissoc id))
-              :register-unit! (fn [{:keys [name] :as spec}]
-                                (swap! state assoc-in [:units name] spec)
-                                (fn [] (swap! state update :units dissoc name)))
               :get-all-tools (fn [] (vals (:tools @state)))
               :get-active-tools (fn [] (keys (:tools @state)))
               :set-active-tools (fn [names] (swap! state assoc :active-tools names))

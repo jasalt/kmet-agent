@@ -473,8 +473,8 @@ subagent's loop, each with its own slots, registrations and disposal:
        (finally (cells/dispose! child))))            ; child's registrations only
 ```
 
-The child may be mounted with a *different* `rt` — a sandbox whose only
-resolvable names are extension units, say — because `rt` is a value. Shared
+The child may be mounted with a *different* `rt` — a sandbox with its own
+name table, say — because `rt` is a value. Shared
 machinery (auth, the provider HTTP layer, session files) is namespace code, not
 node state, so it is shared by construction; what a child node isolates is
 composition and registrations, which is what a subagent's own model, tool
@@ -502,11 +502,11 @@ that started it is a host bug, not a lifetime the store can infer.
 ```
 
 One entry shape replaces the four current mechanisms. The old keys stay as
-**aliases** during migration — `:extensions`/`:packages` entries and
-`:default-tools` `+name`/`-name` merging are public configuration; they are not
-removed. The resource keys become entries when extension units land (P5); the
-`:default-tools` selection stays a run-option (`apply-default-tools!` semantics
-preserved exactly), because tools are registrations, not units (§5.1). There
+**configuration** — `:extensions`/`:packages` and `:default-tools`'s
+`+name`/`-name` merging are public settings; they are not removed. The
+`:default-tools` selection stays a run-option
+(`apply-default-tools!` semantics preserved exactly), because tools are
+registrations, not units (§5.1). There
 is no `:from` backend hint: backends are tried in the host's declared order and
 the first that resolves wins, so the common case needs no field and a miss
 reports every backend attempted.
@@ -598,9 +598,8 @@ resolved units by value, so a backend must return the *same* descriptor value
 for a name while it is loaded. One that rebuilds an equal-but-fresh descriptor
 (a new closure per call) remounts that name on every pass; the symptom is a
 mount that never settles — repeated remounts of an entry nothing changed — and
-the fix is a descriptor table keyed by name (the host keeps one:
-`kmet.agent.runtime/publications`, filled at load and emptied at unload),
-never a constructor called from the resolve fn.
+the fix is a descriptor table keyed by name, never a constructor called from
+the resolve fn.
 
 **The framework never loads code, and never sees a classpath.** Dynamic
 loading, isolation and artifact discovery stay in `kmet.loader` and
@@ -668,8 +667,8 @@ handles, which are fns and live-only (§6.4).
 
 ## 8. The host contract
 
-The host supplies one thing: **the resolution backends** —
-`{:resolve [[:builtin f] [:ext g]]}`, built and used in §3.2. Nothing else
+The host supplies one thing: **the resolution backends** — an ordered vector
+of `[kind fn]` pairs, at least one; kmet uses one, `:builtin`. Nothing else
 crosses the boundary: no event vocabulary (a subscriber reaches the bus through
 `register!`, §8.1), no config schema registry, no classpath. An entry's
 `:config` validates against the malli schema on its unit's `:config` field
@@ -733,12 +732,11 @@ root; a child node's lookups take its node when a child loop needs them.
 
 ### 8.2 Isolated nodes
 
-Isolation is the host's, one backend per mechanism. The extension backend is
-code now — `kmet.agent.runtime`'s `:ext` entry, resolving a published name to
-its descriptor (`extension-unit`); what remains a sketch is the sandbox:
+Isolation is the host's, one backend per mechanism. What remains a sketch is
+the sandbox:
 
 ```clojure
-;; kmet.agent.runtime
+;; the sandbox backend sketch
 
 (defn sandbox-backend [run]           ; run_code's SCI sandbox
   (fn [nm]
@@ -747,42 +745,22 @@ its descriptor (`extension-unit`); what remains a sketch is the sandbox:
        :config (declared-config-schema run nm)})))    ; malli data, authored there
 ```
 
-**Extensions.** `load-extension!` runs `init(api)` as it does today; the units
-it publishes through `register-unit!` resolve through `:ext`, and its
+**Extensions.** `load-extension!` runs `init(api)` as it does today, and its
 registrations land on `[:app :extensions <name>]` — commands, tools and tool
 sources, skills, prompts, hooks, renderers, flags, and the resources a
 `:resources-discover` contribution loads (the paths a handler returns load
 under the same owner, so a later discovery replaces them instead of
 duplicating and unload takes them back; the set the applied paths used to need
-is gone). A publication is
-`{:name <keyword> :entry <entry> :unit <descriptor>}`: the name is namespaced
-to the extension (`:budget/spend`), which is how an entry names one without a
-backend hint, and the entry is where it mounts — so an extension contributes a
-slot the way the host's own entries do. An entry whose `:id` and `:into` match
-one of a group's inline stage defaults replaces it; against the host's own
-root entries a repeated id is the plan's duplicate-id error (§6.1), and a name
-another extension holds is refused too, since a published name lives in its
-publisher's namespace. The host mounts its root node *before* loading any
-extension, so `init(api)` always has a scope to register into — that ordering
-is what retires the pending buffers — and `remount!` is the assembly point
-whose entry list is the defaults plus what the loaded extensions published. An
-extension's units may also be declared in `extension.edn` as data — a `:units`
-map of namespaced name → `{:unit <descriptor minus :handle> :entry <entry>}` —
-and the host validates those with malli *before evaluating the extension's
-code*: the name, the unit's `:config` schema, the entry that mounts it, and the
-entry's `:config` against that schema. A declaration mounts nothing and does
-not resolve: the name binds when `init(api)` publishes it (the publication
-supplies the `:handle`, the declaration fills in what the call leaves out),
-and a declared name nothing publishes fails the load — a manifest promises a
-handle for every unit it declares. `check` covers the entries whose units are
-implementable, which is at bind time; before that, the manifest data is what
-is checked. Unloading is three steps in order: drop the extension's
-published units and entries and remount without them (drops them from the
-snapshot and disposes their owners), `shutdown(api)`, then deregister what
-remains — the fns recorded by the registrations that live outside the tree,
-run in reverse registration order, then one LIFO dispose of
+is gone). The host mounts its root node *before* loading any extension, so
+`init(api)` always has a scope to register into — that ordering is what
+retires the pending buffers. Unloading is two steps in order: `shutdown(api)`,
+then deregister what remains — the fns recorded by the registrations that live
+outside the tree, run in reverse registration order, then one LIFO dispose of
 `[:app :extensions <name>]` — and `loader/unload!`, after which every handle
-that came from that context is dead and nothing refers to it.
+that came from that context is dead and nothing refers to it. The
+extension-units path — published entries, declared units and the `:ext`
+backend — is retired: an extension registers into the host's registries under
+its owner and adds no slots to the tree.
 
 **Codemode.** A model-authored entry list is mounted into the run's **own node**
 with its **own `rt`** (§5.6), so it can resolve only the names the host
@@ -823,8 +801,8 @@ contribute entries at all, and to which slots, is a capability decision — the
   invent one (§3.1); a list-valued slot (`{:units {…}}`) is how a host offers
   "extensions may add a policy here".
 - **No new formats.** Session EDNL, provider wire schemas (`:parameters`),
-  extension ABI keys: unchanged. `:units`/`:config` are additive to
-  `extension.edn`, whose manifest parse is already whitelist-extract.
+  extension ABI keys: unchanged. `extension.edn` keeps its whitelist-extract
+  manifest parse.
 
 ---
 
@@ -842,7 +820,7 @@ foreign `kmet.*` require and a second consumer could take the module as-is.
 
 | scaffolding | deleted when | what remains |
 |---|---|---|
-| §8.2's sandbox sketch | codemode is scheduled (the `:ext` half became code with P5a) | "one backend per isolation mechanism", the handle-lifetime invariant (§6.4) |
+| §8.2's sandbox sketch | codemode is scheduled | "one backend per isolation mechanism", the handle-lifetime invariant (§6.4) |
 | §5.6's child-mount snippet | the first child node ships (P7) | "nodes nest; domains do not" |
 | `cells-plan.md` §2 (the phase table) | continuously — a landed phase's row comes out; the git log is its record | the phases still ahead |
 

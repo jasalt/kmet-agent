@@ -71,30 +71,21 @@
     (ext/register-entry-renderer! api "er" (fn [_] {:role :info}))
     (ext/register-message-renderer! api "mr" (fn [_] {:role :info}))
     (ext/on-tool-call api (fn [_] nil))
-    (ext/register-unit! api {:name :nullable/unit
-                             :unit {:handle (fn [_ _] nil)}
-                             :entry {:id :nullable}})
     (t/is (contains? (:commands @state) "nc"))
     (t/is (contains? (:tools @state) "nt"))
     (t/is (= 1 (count (get-in @state [:handlers :session-start]))))
     (t/is (contains? (:flags @state) "nf"))
     (t/is (contains? (:entry-renderers @state) "er"))
     (t/is (contains? (:message-renderers @state) "mr"))
-    (t/is (contains? (:units @state) :nullable/unit))
     (t/is (= 1 (count (:tool-call-hooks @state))))))
 
 (t/deftest test-nullable-api-deregister-fns
   (let [{:keys [api state]} (ext/create-nullable-api)
         dereg-cmd (ext/register-command! api {:name "dc" :handler (fn [_ _] nil)})
-        dereg-unit (ext/register-unit! api {:name :nullable/unit
-                                            :unit {:handle (fn [_ _] nil)}
-                                            :entry {:id :nullable}})
         dereg-ev (ext/on-event api :agent-end (fn [_]))]
     (dereg-cmd)
-    (dereg-unit)
     (dereg-ev)
     (t/is (not (contains? (:commands @state) "dc")))
-    (t/is (not (contains? (:units @state) :nullable/unit)))
     (t/is (empty? (get-in @state [:handlers :agent-end])))))
 
 (t/deftest test-nullable-api-alias-registration
@@ -292,199 +283,6 @@
             "unload unmaps the native backend's context namespaces")
       (t/is (empty? (extensions/get-loaded-extensions))))))
 
-(t/deftest test-extension-publishes-a-unit
-  ;; P5a (cells.md §8.2): init publishes a unit through register-unit!; the
-  ;; runtime resolves the name through its :ext backend and mounts the entry
-  ;; in the app root. Unload drops the entry and the name *before* shutdown,
-  ;; which disposes the slot's registrations — the shutdown call sees it.
-  (extensions/clear-extensions!)
-  (let [dir "target/test-ext-unit"
-        events "target/unit-ext-events.txt"]
-    (fs/delete-tree dir)
-    (fs/delete-if-exists events)
-    (fs/create-dirs (str dir "/unit_ext"))
-    (spit (str dir "/extension.edn")
-          "{:name \"unit-ext\" :entry unit-ext.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/unit_ext/main.clj")
-          (str "(ns unit-ext.main\n  (:require [kmet.agent.extension :as ext]))\n"
-               "(def ^:private events \"target/unit-ext-events.txt\")\n"
-               "(defn init [api]\n"
-               "  (ext/register-unit! api\n"
-               "    {:name :unit-ext/double\n"
-               "     :unit {:config [:map [:n :int]]\n"
-               "            :handle (fn [_node n] (* 2 n))\n"
-               "            :start (fn [_node _owner]\n"
-               "                     (spit events \"mounted\\n\")\n"
-               "                     (fn [] (spit events \"disposed\\n\" :append true)))}\n"
-               "     :entry {:id :unit-ext :config {:n 21}}}))\n"
-               "(defn shutdown [_api]\n"
-               "  (spit events (str \"shutdown saw: \" (slurp events)) :append true))\n"))
-    (try
-      (let [result (extensions/load-extension! dir)]
-        (t/is (nil? (:error result)) (str "loaded: " (:error result)))
-        (t/is (= 42 ((rt/unit-handle (rt/node) :unit-ext) (rt/node) 21)))
-        (t/is (= {:n 21} (rt/config (rt/snapshot (rt/node)) :unit-ext)))
-        (t/is (= "mounted\n" (slurp events)))
-        (extensions/unload-extension! (first (extensions/registered-extensions)))
-        (t/is (nil? (rt/unit-handle (rt/node) :unit-ext)))
-        (t/is (nil? (rt/extension-unit :unit-ext/double)))
-        (t/is (str/includes? (slurp events) "shutdown saw: mounted\ndisposed")
-              "shutdown ran after the slot was disposed"))
-      (finally
-        (extensions/unload-all-extensions!)
-        (fs/delete-tree dir)
-        (fs/delete-if-exists events)))))
-
-(t/deftest test-extension-publish-failure-rolls-back
-  ;; A publication whose mount the checks refuse fails init; the load rollback
-  ;; leaves no publication and no slot behind (cells.md §6.3, §8.2).
-  (extensions/clear-extensions!)
-  (let [dir "target/test-ext-unit-bad"]
-    (fs/delete-tree dir)
-    (fs/create-dirs (str dir "/bad_unit"))
-    (spit (str dir "/extension.edn")
-          "{:name \"bad-unit-ext\" :entry bad-unit.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/bad_unit/main.clj")
-          (str "(ns bad-unit.main\n  (:require [kmet.agent.extension :as ext]))\n"
-               "(defn init [api]\n"
-               "  (ext/register-unit! api\n"
-               "    {:name :bad-unit-ext/unit\n"
-               "     :unit {:config [:map [:n :int]] :handle (fn [_ _] nil)}\n"
-               "     :entry {:id :bad-unit-ext :config {:n \"not-an-int\"}}}))\n"))
-    (try
-      (let [result (extensions/load-extension! dir)]
-        (t/is (some? (:error result)) "the load fails")
-        (t/is (nil? (rt/extension-unit :bad-unit-ext/unit)))
-        (t/is (nil? (rt/unit-handle (rt/node) :bad-unit-ext)))
-        (t/is (empty? (extensions/get-loaded-extensions))))
-      (finally
-        (extensions/unload-all-extensions!)
-        (fs/delete-tree dir)))))
-
-(t/deftest test-extension-init-failure-drops-the-published-unit
-  ;; The other rollback path: init publishes a unit and *then* throws. The
-  ;; load rollback drops the publication and its slot (cells.md §6.3, §8.2).
-  (extensions/clear-extensions!)
-  (let [dir "target/test-ext-unit-late-bad"]
-    (fs/delete-tree dir)
-    (fs/create-dirs (str dir "/late_bad"))
-    (spit (str dir "/extension.edn")
-          "{:name \"late-bad-ext\" :entry late-bad.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/late_bad/main.clj")
-          (str "(ns late-bad.main\n  (:require [kmet.agent.extension :as ext]))\n"
-               "(defn init [api]\n"
-               "  (ext/register-unit! api\n"
-               "    {:name :late-bad-ext/unit\n"
-               "     :unit {:handle (fn [_ _] nil)}\n"
-               "     :entry {:id :late-bad-ext}})\n"
-               "  (throw (ex-info \"boom\" {})))\n"))
-    (try
-      (let [result (extensions/load-extension! dir)]
-        (t/is (some? (:error result)) "the load fails after the publication")
-        (t/is (nil? (rt/extension-unit :late-bad-ext/unit)))
-        (t/is (nil? (rt/unit-handle (rt/node) :late-bad-ext)))
-        (t/is (empty? (extensions/get-loaded-extensions))))
-      (finally
-        (extensions/unload-all-extensions!)
-        (fs/delete-tree dir)))))
-
-(t/deftest test-manifest-declared-units-bind-when-the-extension-loads
-  ;; extension.edn may declare a unit (its :config schema and the :entry that
-  ;; mounts it) and the code supplies the :handle (cells.md §8.2): the
-  ;; manifest's entry config mounts for one unit, the publication's for the
-  ;; other, and unload drops both.
-  (extensions/clear-extensions!)
-  (let [dir "target/test-ext-manifest-units"]
-    (fs/delete-tree dir)
-    (fs/create-dirs (str dir "/man_units"))
-    (spit (str dir "/extension.edn")
-          (str "{:name \"man-units\" :entry man-units.main :loader [:sci :jolt]\n"
-               " :units {:man-units/triple {:unit {:config [:map [:n :int]]}\n"
-               "                            :entry {:id :man-units :config {:n 7}}}\n"
-               "         :man-units/double {:unit {:config [:map [:n :int]]}\n"
-               "                            :entry {:id :man-units-double :config {:n 5}}}}}\n"))
-    (spit (str dir "/man_units/main.clj")
-          (str "(ns man-units.main\n  (:require [kmet.agent.extension :as ext]))\n"
-               "(defn init [api]\n"
-               "  (ext/register-unit! api {:name :man-units/triple\n"
-               "                           :unit {:handle (fn [_ n] (* n 3))}})\n"
-               "  (ext/register-unit! api {:name :man-units/double\n"
-               "                           :entry {:config {:n 9}}\n"
-               "                           :unit {:handle (fn [_ n] (* n 2))}}))\n"))
-    (try
-      (let [result (extensions/load-extension! dir)
-            snapshot (rt/snapshot (rt/node))]
-        (t/is (nil? (:error result)) "the declared units bind")
-        (t/is (= 21 ((rt/unit-handle (rt/node) :man-units) (rt/node) 7))
-              "the code's handle")
-        (t/is (= 18 ((rt/unit-handle (rt/node) :man-units-double) (rt/node) 9)))
-        (t/is (= {:n 7} (rt/config snapshot :man-units))
-              "the declaration's entry config mounts")
-        (t/is (= {:n 9} (rt/config snapshot :man-units-double))
-              "what the publication carries wins over the declaration"))
-      (finally
-        (extensions/unload-all-extensions!)
-        (fs/delete-tree dir)))
-    (t/is (nil? (rt/unit-handle (rt/node) :man-units)))
-    (t/is (nil? (rt/unit-handle (rt/node) :man-units-double)))))
-
-(t/deftest test-a-declared-unit-nothing-binds-fails-the-load
-  ;; A manifest promises a handle for every unit it declares: init that
-  ;; publishes none of them fails the load, and the rollback leaves neither the
-  ;; declaration nor a slot (cells.md §8.2).
-  (extensions/clear-extensions!)
-  (let [dir "target/test-ext-manifest-unbound"]
-    (fs/delete-tree dir)
-    (fs/create-dirs (str dir "/man_unbound"))
-    (spit (str dir "/extension.edn")
-          (str "{:name \"man-unbound\" :entry man-unbound.main :loader [:sci :jolt]\n"
-               " :units {:man-unbound/unit {:unit {} :entry {:id :man-unbound}}}}\n"))
-    (spit (str dir "/man_unbound/main.clj")
-          (str "(ns man-unbound.main\n  (:require [kmet.agent.extension :as ext]))\n"
-               "(defn init [_api] nil)\n"))
-    (try
-      (let [result (extensions/load-extension! dir)]
-        (t/is (str/includes? (str (:error result)) ":man-unbound/unit")
-              "the error names the unbound declaration")
-        (t/is (nil? (rt/extension-unit :man-unbound/unit)))
-        (t/is (nil? (rt/unit-handle (rt/node) :man-unbound)))
-        (t/is (empty? (extensions/get-loaded-extensions))))
-      (finally
-        (extensions/unload-all-extensions!)
-        (fs/delete-tree dir)))))
-
-(t/deftest test-a-declaration-survives-a-swallowed-publish-failure
-  ;; init's publication is refused (its entry config does not match the
-  ;; declared schema) and init swallows the error: the bind restored the
-  ;; declaration it consumed, so the promise still fails the load.
-  (extensions/clear-extensions!)
-  (let [dir "target/test-ext-manifest-swallowed"]
-    (fs/delete-tree dir)
-    (fs/create-dirs (str dir "/man_swallow"))
-    (spit (str dir "/extension.edn")
-          (str "{:name \"man-swallow\" :entry man-swallow.main :loader [:sci :jolt]\n"
-               " :units {:man-swallow/unit {:unit {:config [:map [:n :int]]}\n"
-               "                            :entry {:id :man-swallow :config {:n 1}}}}}\n"))
-    (spit (str dir "/man_swallow/main.clj")
-          (str "(ns man-swallow.main\n  (:require [kmet.agent.extension :as ext]))\n"
-               "(defn init [api]\n"
-               "  (try\n"
-               "    (ext/register-unit! api\n"
-               "      {:name :man-swallow/unit\n"
-               "       :entry {:config {:n \"not-an-int\"}}\n"
-               "       :unit {:handle (fn [_ n] n)}})\n"
-               "    (catch Exception _ nil)))\n"))
-    (try
-      (let [result (extensions/load-extension! dir)]
-        (t/is (str/includes? (str (:error result)) ":man-swallow/unit")
-              "the declaration the failed bind restored is still unbound")
-        (t/is (nil? (rt/extension-unit :man-swallow/unit)))
-        (t/is (nil? (rt/unit-handle (rt/node) :man-swallow)))
-        (t/is (empty? (extensions/get-loaded-extensions))))
-      (finally
-        (extensions/unload-all-extensions!)
-        (fs/delete-tree dir)))))
-
 (t/deftest test-extension-registrations-are-owned-by-the-extension
   ;; P5c: what init(api) registers lands on [:app :extensions <name>], so
   ;; unload is one LIFO dispose of that owner instead of a tracked deregister
@@ -627,39 +425,6 @@
         (extensions/clear-extensions!)
         (event-bus/clear-event-listeners!)
         (fs/delete-tree dir)))))
-
-(t/deftest test-manifest-units-are-checked-before-the-code-evaluates
-  ;; The declarations are validated while the manifest is read: every fixture's
-  ;; entry namespace is deliberately absent, so an error about it would mean
-  ;; the code path was reached first.
-  (let [cases [["not-a-map" " :units [:nope]" "must be a map of unit name"]
-               ["bad-schema"
-                " :units {:ghost/unit {:unit {:config [:map [:n :nope]]} :entry {:id :ghost}}}"
-                "not a usable malli schema"]
-               ["config-mismatch"
-                (str " :units {:ghost/unit {:unit {:config [:map [:n :int]]}"
-                     " :entry {:id :ghost :config {:n \"x\"}}}}")
-                "its :unit :config schema refuses"]
-               ["declared-handle"
-                " :units {:ghost/unit {:unit {:handle ghost/h} :entry {:id :ghost}}}"
-                "cannot declare :handle"]]]
-    (doseq [[case fragment expectation] cases]
-      (let [dir (str "target/test-ext-manifest-bad-" case)]
-        (fs/delete-tree dir)
-        (fs/create-dirs dir)
-        (spit (str dir "/extension.edn")
-              (str "{:name \"man-bad\" :entry ghost.main :loader [:sci :jolt]"
-                   fragment "}\n"))
-        (try
-          (let [result (extensions/load-extension! dir)]
-            (t/is (some? (:error result)) (str case " fails the load"))
-            (t/is (nil? (:extension result)) "and names no extension")
-            (t/is (str/includes? (str (:error result)) expectation)
-                  (str case ": " (:error result)))
-            (t/is (nil? (rt/extension-unit :ghost/unit)))
-            (t/is (empty? (extensions/get-loaded-extensions))))
-          (finally
-            (fs/delete-tree dir)))))))
 
 (t/deftest test-extension-resource-in-a-late-callback
   ;; Every fn an extension registers runs in its own context whenever the app

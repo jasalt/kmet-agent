@@ -1064,16 +1064,6 @@
      :unregister-tool-source! (fn [id]
                                 (tools/unregister-tool-source!
                                  node id (extension-owner name)))
-     ;; a unit the extension contributes to the host's tree (cells.md §8.2):
-     ;; :name (namespaced to this extension) resolves through the runtime's
-     ;; :ext backend, :unit is the descriptor, :entry says where it mounts.
-     ;; Re-publishing a name replaces the earlier publication.
-     :register-unit! (fn [{:keys [unit] :as publication}]
-                       (let [dereg (app-runtime/publish-extension-unit!
-                                    name
-                                    (assoc publication :unit (loader-aware-map ext unit)))]
-                         (track dereg)
-                         dereg))
      ;; pi: createBashTool — the bash tool constructor with its options
      ;; (spawnHook / exposeSessionEnvironment / commandPrefix / shellPath /
      ;; operations). The built-in bash tool is the same constructor with
@@ -1223,7 +1213,7 @@
    built."
   [resolved path]
   (let [{:keys [name kind artifact entry-ns file declared-loaders legacy-loader?
-                declared-units bundled?]} resolved
+                bundled?]} resolved
         loader-kind (if (context/resource-kind? kind)
                       (context/forced-loader-kind resolved declared-loaders)
                       (context/select-loader-kind declared-loaders))]
@@ -1269,13 +1259,6 @@
                                    (or (context/jar-entry-source (:root artifact) "deps.edn") "{}")))
                            (context/deps-of-root artifact)))
                   jar-info (when jar? (context/jar-namespaces (:root artifact)))
-                  ;; the manifest's declarations come first: the host validates
-                  ;; them (at resolve) and stores them now, so the extension's
-                  ;; code can only bind handles into what it declared — and a
-                  ;; declaration nothing binds fails the load below.
-                  _ (doseq [[nm declaration] declared-units]
-                      (app-runtime/declare-extension-unit!
-                       name (assoc declaration :name nm)))
                   owns-ns? (if artifact
                              (fn [ns-sym] (context/artifact-owns-ns? artifact jar-info ns-sym))
                              (constantly false))
@@ -1341,13 +1324,7 @@
                 (let [api (create-extension-api (app-runtime/node) ext)]
                   (reset! (:api ext) api)
                   ((loader-aware ext (deref init-var)) api)
-                  (reset! (:initialized? ext) true)
-                  (when-let [unbound (seq (app-runtime/unbound-declarations name))]
-                    (throw (ex-info (str "Extension " name " declares "
-                                         (pr-str (vec unbound))
-                                         " in extension.edn but published no "
-                                         "unit under those names")
-                                    {:path path :units (vec unbound)}))))))
+                  (reset! (:initialized? ext) true))))
             (swap! extensions conj ext)
             (debug/log "extension loaded: " name " kind=" (clojure.core/name kind)
                        " loader=" (clojure.core/name loader-kind)
@@ -1405,20 +1382,17 @@
                     (str "load failed: " (.getName (class e))))}))))
 
 (defn unload-extension!
-  "Unload an extension in three steps (cells.md §8.2): drop the units and
-   entries it published (remounting without them disposes their slots' owners),
-   shutdown (if initialized), then dispose what it registered — the deregister
-   fns recorded by the registrations that live outside the tree, in reverse
-   registration order, then one LIFO dispose of its
-   `[:app :extensions <name>]` owner, both reporting a failing cleanup through
-   the scope's reporter — and drop its isolated context: namespaces and jars
-   become unreachable, nothing global is touched. Expects the Extension record
-   (from the registry / reload-extensions!); nil is a no-op — the load result
-   map carries only its :extension name, and (deref nil) would otherwise
-   surface as a cryptic NPE."
+  "Unload an extension in two steps (cells.md §8.2): shutdown (if
+   initialized), then dispose what it registered — the deregister fns recorded
+   by the registrations that live outside the tree, in reverse registration
+   order, then one LIFO dispose of its `[:app :extensions <name>]` owner, both
+   reporting a failing cleanup through the scope's reporter — and drop its
+   isolated context: namespaces and jars become unreachable, nothing global is
+   touched. Expects the Extension record (from the registry /
+   reload-extensions!); nil is a no-op — the load result map carries only its
+   :extension name, and (deref nil) would otherwise surface as a cryptic NPE."
   [ext]
   (when ext
-    (app-runtime/unpublish-extension! (:name ext))
     (when (and @(:initialized? ext) @(:entry-ns ext))
       (when-let [shutdown (extension-var ext @(:entry-ns ext) 'shutdown)]
         (try ((loader-aware ext (deref shutdown)) @(:api ext))

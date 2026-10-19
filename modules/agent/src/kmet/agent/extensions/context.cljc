@@ -7,8 +7,6 @@
             [clojure.edn :as edn]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [malli.core :as m]
-            [malli.error :as me]
             [sci.core :as sci]
             [kmet.libs.host :as host]
             [kmet.loader.sci-loader :as loader-sci]
@@ -647,81 +645,11 @@
                            (pr-str loaders))
                       {:path path :manifest manifest})))))
 
-(defn- unit-config-problem
-  "The declaration's `:config` complaint as [message data], or nil: the schema
-   must compile, and an `:entry` `:config` must satisfy it. Both run here,
-   before any code evaluates, which is what declaring in the manifest is for
-   (cells.md §8.2)."
-  [unit entry]
-  (when (contains? unit :config)
-    (let [{:keys [schema error]}
-          (try
-            {:schema (m/schema (:config unit))}
-            (catch Throwable t
-              {:error (ex-message t)}))]
-      (if error
-        [(str ":config is not a usable malli schema: " error)
-         {:config (:config unit)}]
-        (when (and (contains? entry :config)
-                   (not (m/validate schema (:config entry))))
-          [(str "declares an :entry :config its :unit :config schema refuses: "
-                (pr-str (me/humanize (m/explain schema (:config entry)))))
-           {:entry (:config entry)}])))))
-
-(defn- manifest-units
-  "Validate MANIFEST's :units declarations at PATH and return them keyed by
-   unit name (cells.md §8.2). A declaration is the data half of a publication:
-   the unit's `:config` schema and metadata, plus the `:entry` that mounts it —
-   no `:handle`/:start/:units, which the extension's code supplies when it
-   publishes the name. A declaration must mount somewhere (`:entry` is
-   required) and may leave the descriptor to the publication (`:unit` is
-   optional), the same rule the runtime's `declare-extension-unit!` applies.
-   Everything is checked here, before any code evaluates."
-  [path manifest]
-  (let [units (:units manifest)]
-    (when (and units (not (map? units)))
-      (throw (ex-info (str "extension.edn :units must be a map of unit name -> "
-                           "declaration, got: " (pr-str units))
-                      {:path path :units units})))
-    (into {}
-          (map (fn [[nm {:keys [unit entry] :as declaration}]]
-                 (let [bad (fn [msg data]
-                             (throw (ex-info (str "extension.edn :units " nm
-                                                  " " msg)
-                                             (merge {:path path :unit nm}
-                                                    data))))]
-                   (when-not (keyword? nm)
-                     (bad "must be named by a keyword (namespaced to this extension)"
-                          {:name nm}))
-                   (when-not (map? declaration)
-                     (bad "must be a map" {:declaration declaration}))
-                   (when-not (or (nil? unit) (map? unit))
-                     (bad ":unit must be a map (the code binds its :handle into it)"
-                          {:unit unit}))
-                   (doseq [k [:handle :start :units]]
-                     (when (contains? unit k)
-                       (bad (str "cannot declare " k " — that is code, and the "
-                                 "extension supplies it when it publishes the name")
-                            {:unit unit})))
-                   (when-not (map? entry)
-                     (bad "declares no :entry map to mount it" {:entry entry}))
-                   (when-not (keyword? (:id entry))
-                     (bad "declares no keyword :id in its :entry" {:entry entry}))
-                   (when (and (some? (:into entry))
-                              (not (keyword? (:into entry))))
-                     (bad "declares an :into that is not a keyword"
-                          {:entry entry}))
-                   (when-let [[msg data] (unit-config-problem unit entry)]
-                     (bad msg data))
-                   [nm declaration])))
-          units)))
-
 (defn- manifest-info
   "Validate the manifest map M of the artifact at PATH (FALLBACK-NAME names
    it when :name is absent): {:name :entry-ns :declared-loaders
-   :legacy-loader? :declared-units}. Throws on a non-symbol :entry, a malformed
-   :loader, or malformed :units declarations — all before any extension code
-   evaluates."
+   :legacy-loader?}. Throws on a non-symbol :entry or a malformed :loader — all
+   before any extension code evaluates."
   [path m fallback-name]
   (let [{:keys [declared-loaders legacy?]} (manifest-loaders path m)
         entry-ns (:entry m)]
@@ -732,8 +660,7 @@
     {:name (or (:name m) fallback-name)
      :entry-ns entry-ns
      :declared-loaders declared-loaders
-     :legacy-loader? legacy?
-     :declared-units (manifest-units path m)}))
+     :legacy-loader? legacy?}))
 
 (defn- canonical-path
   "The canonical display/identity path of a filesystem artifact root F
@@ -750,7 +677,7 @@
     (throw (ex-info (str "Extension archive " path " has no extension.edn")
                     {:path path})))
   (let [m (edn/read-string (jar-entry-source root "extension.edn"))
-        {:keys [name entry-ns declared-loaders legacy-loader? declared-units]}
+        {:keys [name entry-ns declared-loaders legacy-loader?]}
         (manifest-info path m (fs/file-name (io/file root)))]
     {:name name
      :kind :jar
@@ -758,7 +685,6 @@
      :entry-ns entry-ns
      :declared-loaders declared-loaders
      :legacy-loader? legacy-loader?
-     :declared-units declared-units
      :path (canonical-path (io/file root))}))
 
 (defn- dir-extension
@@ -769,7 +695,7 @@
       (throw (ex-info (str "Extension dir " path " has no extension.edn")
                       {:path path})))
     (let [m (edn/read-string (slurp manifest-file))
-          {:keys [name entry-ns declared-loaders legacy-loader? declared-units]}
+          {:keys [name entry-ns declared-loaders legacy-loader?]}
           (manifest-info path m (fs/file-name f))]
       {:name name
        :kind :dir
@@ -777,7 +703,6 @@
        :entry-ns entry-ns
        :declared-loaders declared-loaders
        :legacy-loader? legacy-loader?
-       :declared-units declared-units
        :path (canonical-path f)})))
 
 (defn- file-extension
@@ -795,16 +720,13 @@
 (defn resolve-extension
   "Resolve PATH into {:name str :kind :file/:dir/:jar :artifact map-or-nil
    :entry-ns symbol-or-nil :declared-loaders [kw ...] :legacy-loader? bool
-   :declared-units {kw declaration} :file io.File :path str}. :artifact
-   ({:kind :dir/:jar :root str}) is the strict-layout root for manifest
-   extensions; :entry-ns is the manifest :entry symbol; :declared-loaders is
-   the manifest's :loader declaration (defaulted for legacy manifests);
-   :declared-units are its :units declarations, validated and keyed by unit
-   name (empty for a plain-file extension, which has no manifest). A directory
-   must contain extension.edn; a jar must carry it at its root. A plain file is
-   the entry itself (:entry-ns nil — its ns is read from the file at load) and
-   implicitly supports both loaders. :path is the canonicalized
-   display/identity path."
+   :file io.File :path str}. :artifact ({:kind :dir/:jar :root str}) is the
+   strict-layout root for manifest extensions; :entry-ns is the manifest :entry
+   symbol; :declared-loaders is the manifest's :loader declaration (defaulted
+   for legacy manifests). A directory must contain extension.edn; a jar must
+   carry it at its root. A plain file is the entry itself (:entry-ns nil — its
+   ns is read from the file at load) and implicitly supports both loaders.
+   :path is the canonicalized display/identity path."
   [path]
   (let [f (io/file path)]
     (cond
@@ -838,7 +760,7 @@
     (let [manifest-key (str prefix "/extension.edn")]
       (if-let [r (io/resource manifest-key)]
         (let [m (edn/read-string (slurp r))
-              {:keys [name entry-ns declared-loaders legacy-loader? declared-units]}
+              {:keys [name entry-ns declared-loaders legacy-loader?]}
               (manifest-info manifest-key m name)]
           {:name name
            :kind :resource-dir
@@ -847,7 +769,6 @@
            :entry-ns entry-ns
            :declared-loaders declared-loaders
            :legacy-loader? legacy-loader?
-           :declared-units declared-units
            :path path
            :bundled? true})
         (throw (ex-info (str "Bundled extension resource missing: " manifest-key)
