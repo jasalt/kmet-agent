@@ -406,7 +406,7 @@
   [agent message images]
   (reset! (:system-prompt-override agent) nil)
   (reset! (:overflow-recovered agent) false)
-  (reset! (:compaction-blocked agent) false)
+  (compact/reset-compaction-blocked! agent)
   ;; pi: prompt() flushes messages a previous run deferred before building
   ;; the new prompt
   (state/flush-pending-custom-messages! agent)
@@ -1143,7 +1143,7 @@
    too (pi: abort() calls abortCompaction())."
   [agent]
   (state/set-run-signal! agent true)
-  (reset! (:compaction-signal agent) true)
+  (compact/abort-compaction! agent)
   (state/clear-queues! agent :aborted)
   (when-let [{:keys [promise partials]} @(:active-call agent)]
     (when-not (realized? promise)

@@ -25,6 +25,12 @@
             [kmet.ai.models :as models]
             [kmet.agent.config :as cfg]))
 
+(defn reset-compaction-blocked!
+  "Clear the per-prompt compaction gate (the driver calls this at run start;
+   compact-context! sets it when a compaction is already blocked)."
+  [agent]
+  (reset! (:compaction-blocked agent) false))
+
 (defn abort-compaction!
   "Abort the in-flight compaction without cancelling the agent run (pi:
    session.abortCompaction — escape during compaction touches only the

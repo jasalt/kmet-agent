@@ -1,5 +1,14 @@
 (ns kmet.agent.loop.tool-exec
-  "Tool-call preparation, hooks, and batch execution."
+  "Tool-call preparation, hooks, and batch execution.
+
+   Tool hooks (pi: beforeToolCall / afterToolCall): registered via
+   set-before-tool-call! / set-after-tool-call!. The before hook can block
+   execution ({:block true :reason ...}); the after hook can rewrite the
+   result (:content / :is-error).
+
+   Tool execution mode (pi: toolExecution): tools default to :parallel; if
+   any tool call targets a :sequential tool the whole batch runs
+   sequentially (see :execution-mode on the Tool record)."
   (:require [kmet.agent.loop.state :as state]
             [kmet.agent.loop.message :as message]
             [kmet.agent.tools.core :as tools]
@@ -9,7 +18,9 @@
 
 (defn has-sequential-tool-call?
   "True if any tool call targets a :sequential tool — the whole batch then runs
-   sequentially (pi: hasSequentialToolCall). Resolved against the request's
+   sequentially (pi: hasSequentialToolCall). Public for the batch-mode test;
+   execute-tool-calls! is the only production caller. Resolved against the
+   request's
    captured tool map, like the dispatch, so a tool unloaded between the request
    and the batch keeps its mode; an unregistered call defaults to :parallel
    (pi default)."

@@ -798,7 +798,7 @@ the target untouched — usage totals, replay and the TUI show the original —
 only the projection changes, and the live context is rebuilt so the next
 request already sees it. Entry ids come from the boundary payload
 (`:message-entry-id` / `:tool-result-entry-ids`) or from `(:session ctx)`
-(`get-branch`/`get-entry`). `kmet.agent.loop/append-context-edit!` is the same
+(`get-branch`/`get-entry`). `kmet.agent.loop.state/append-context-edit!` is the same
 operation outside a boundary handler.
 
 ### Bundled resources (`io/resource` + self-registration)

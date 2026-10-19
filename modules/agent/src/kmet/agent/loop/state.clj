@@ -254,7 +254,8 @@ Be precise and concise in your responses."}}]
     (vec (take 1 queue))))
 
 (defn drain-queue!
-  "Atomically remove and return the batch MODE selects from QUEUE-ATOM."
+  "Atomically remove and return the batch MODE selects from QUEUE-ATOM.
+   Public for the queue tests; the loop drains through inject-queued-messages!."
   [queue-atom mode]
   (loop []
     (let [v @queue-atom
