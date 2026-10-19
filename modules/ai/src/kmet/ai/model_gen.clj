@@ -382,6 +382,10 @@
                           (contains? #{"minimax-m2.7" "qwen3.5-plus" "qwen3.6-plus"} mid))
         api (if go-override? :openai-completions api)
         base (if go-override? (str base-path "/v1") base)
+        ;; No stealth reasoning fill here (see
+        ;; commandcode-stealth-reasoning-fill): these same models accept a
+        ;; switched-in foreign history with no reasoning replay when OpenCode
+        ;; serves them, so they keep the plain openai-completions conversion.
         compat (cond-> {}
                  (= api :openai-responses)
                  ;; opencode zen's responses path has no session affinity
@@ -2159,7 +2163,13 @@
    for an assistant message that carries no reasoning — an empty string is
    rejected too. A mid-session /model switch never replays the previous
    model's thinking (see openai-messages), so the fill is what keeps a
-   foreign history sendable."
+   foreign history sendable.
+
+   The requirement belongs to this route, not to the models: OpenCode serves
+   Beam through its own gateway, and switching into beam-free there accepted
+   a history whose previous (foreign) assistant turn carried no reasoning —
+   verified against the genuine opencode v2 client — so the opencode /
+   opencode-go entries deliberately stay without the fill."
   " ")
 
 (def ^:private commandcode-overrides
