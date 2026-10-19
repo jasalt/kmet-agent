@@ -577,7 +577,7 @@
                                                  "No agent messages to copy yet.")))))})
   (register-builtin-command!
    {:name "reload"
-    :description "Reload keybindings, extensions, skills, prompts, themes, context files, and units"
+    :description "Reload settings, extensions, skills, prompts, themes, and the builtin loop stages"
     :handler handle-reload})
   (register-builtin-command!
    {:name "theme"
@@ -624,10 +624,11 @@
     :handler (fn [cs _] (auth/handle-logout-command! cs))}))
 
 (defn handle-reload
-  "Reload settings, extensions, skills, prompts, themes, context files and
-   the builtin units, and rebuild the system prompt (pi: interactive-mode
-   handleReloadCommand → session.reload → _rebuildSystemPrompt). Refuses
-   while the agent is running (pi warns to wait for the current response)."
+  "Reload settings, extensions, skills, prompts, themes and context files,
+   re-seat the builtin loop stages, and rebuild the system prompt (pi:
+   interactive-mode handleReloadCommand → session.reload →
+   _rebuildSystemPrompt). Refuses while the agent is running (pi warns to wait
+   for the current response)."
   [cs _]
   (let [{:keys [chat-history]} cs]
     (if (state/turn-running? cs)
@@ -637,8 +638,8 @@
       (try
         ;; pi: settingsManager.reload() + theme re-registration
         (let [config (cfg/init!)
-              ;; a reloaded guard or retry unit reaches the next attempt by
-              ;; re-seating the app node's stages
+              ;; a reloaded loop stage reaches the next attempt by re-seating
+              ;; the app node's stages
               _ (app-runtime/refresh-stages!)
               ;; pi: keybindings.reload() — re-read keybindings.edn
               _ (app-kb/reload-agent-keybindings!)

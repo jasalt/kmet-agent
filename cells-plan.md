@@ -28,20 +28,17 @@ registrations, not entries.
 
 ## 3. Reduction plan
 
-The composition layer is weighted for consumers it does not have: the host
-carries one static stage map and prints the store, and nothing but the
-framework's own tests mounts a tree. The store and the scope value are not
-speculative — the registries and node threading stand on them — so the
-reduction targets the composition layer, not the module.
+The composition layer is gone (R1–R3): the agent uses `kmet.cells.scope`
+alone, and `modules/cells` is the store plus its node. What remains is the
+documentation and the optional dependency removal.
 
 | step | side | what lands | notes |
 |---|---|---|---|
-| **R3** | framework + agent | shrink `modules/cells` to the store and a scope: keep `scope.clj` and its node (parent, children, `in-subtree?`), delete `mount.clj` / `spec.clj` / `explain.clj` / `core.clj` and their tests; `kmet.cells.core`'s re-exports go with them | ~600 src lines out (878 → ~300); `test_scope` (176 lines) is the store's contract and stays; the host already uses `scope.clj` alone |
-| **R4** | docs | retire the framework documents with the layer: `cells.md` (~1k lines) becomes a short store-and-scope contract (or an agent README section); the AGENTS.md topic map loses the cells entry; this file retires when R3 lands (cells.md §9's rule) | P7's record stays in `pi-alignment.md` (`durable` open), as "a child node" rather than descriptors |
+| **R4** | docs | retire the framework documents: `cells.md` (~1k lines) becomes a short store-and-scope contract (or an agent README section); the AGENTS.md topic map loses the cells entry; this file retires with it (cells.md §9's rule) | P7's record stays in `pi-alignment.md` (`durable` open), as "a child node" rather than descriptors |
 | **R5** (optional) | agent | delete the dependency: port the store to `kmet.agent.registry`, drop the `modules.edn` row and the `deps.edn` entry | only if "no `kmet.cells` namespace" is itself a goal; costs the rank-0 self-containment and buys little over R3 |
 
-Each step is independently landable and gated like §2's. What the reduction
-gives up: extension-contributed slots and `:units` declarations (no consumer; a
+R4 and R5 are independently landable and gated like §2's. What the reduction
+gave up: extension-contributed slots and `:units` declarations (no consumer; a
 host API can carry a policy list if one appears), declared-unit validation,
 `/units`'s tree rendering (a flat owner listing remains), and P7 as designed —
 a subagent mounts a child node, not a descriptor tree.

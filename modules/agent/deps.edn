@@ -8,4 +8,5 @@
         kmetia/tui  {:local/root "../tui"}
         kmetia/ai   {:local/root "../ai"}
         kmetia/loader {:local/root "../loader"}
-        kmetia/tk     {:local/root "../tk"}}}
+        kmetia/tk     {:local/root "../tk"}
+        metosin/malli {:mvn/version "0.20.1"}}}

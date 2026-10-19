@@ -41,15 +41,12 @@
 (defn- new-node
   "A store node whose stage map is the defaults merged with STAGES: a stage's
    `:handle`/`:config` keys override the builtin entry, and the entry's other
-   keys carry over. A non-nil PARENT also gets the node in its `:children`, so
-   disposing the parent ends it (cells.md §5.6)."
+   keys carry over. A non-nil PARENT also gets the node in its `:children`
+   (`scope/node`), so `scope/dispose-node!` on the parent ends it (cells.md
+   §5.6)."
   [parent stages]
-  (let [node (assoc (scope/node parent)
-                    :loop-stages
-                    (atom (merge-with merge default-loop-stages stages)))]
-    (when parent
-      (swap! (:children parent) conj node))
-    node))
+  (scope/node parent
+              {:loop-stages (atom (merge-with merge default-loop-stages stages))}))
 
 (defn child-node
   "A fresh node carrying the loop stages — STAGES merged over the builtin

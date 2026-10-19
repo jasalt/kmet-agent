@@ -1,8 +1,9 @@
 (ns kmet.cells.test-scope
-  "The store: ownership, replacement, LIFO disposal, failure isolation.
-   Registration cleanups are the deregister fn itself, so their mutual order
-   is structural; what is observable — teardown LIFO, registrations before
-   teardowns, per-owner isolation — is tested here."
+  "The store and node lifetimes: ownership, replacement, LIFO disposal,
+   failure isolation, and children-first node teardown. Registration cleanups
+   are the deregister fn itself, so their mutual order is structural; what is
+   observable — teardown LIFO, registrations before teardowns, per-owner
+   isolation — is tested here."
   (:require [clojure.test :refer [deftest is]]
             [kmet.cells.scope :as scope]))
 
@@ -56,20 +57,20 @@
     (scope/add-teardown! n :a (fn [] (swap! order conj :a2)))
     (scope/add-teardown! n :b (fn [] (swap! order conj :b1)))
     (scope/register! n :a [:k] :v)
-    (scope/dispose! n :a)
+    (scope/dispose-owner! n :a)
     (is (= [:a2 :a1] @order) "teardowns are LIFO")
     (is (= {} (scope/for-key n [:k])) "a's registrations are gone")
-    (scope/dispose! n :b)
+    (scope/dispose-owner! n :b)
     (is (= [:a2 :a1 :b1] @order) "b was not touched by a's disposal")
     (is (= {} (scope/registrations n)))))
 
-(deftest whole-node-disposal-is-reverse-owner-order
+(deftest whole-store-disposal-is-reverse-owner-order
   (let [n (scope/node)
         order (atom [])]
     (scope/add-teardown! n :a (fn [] (swap! order conj :a)))
     (scope/add-teardown! n :b (fn [] (swap! order conj :b)))
     (scope/register! n :a [:k] :v)
-    (scope/dispose! n)
+    (scope/dispose-store! n)
     (is (= [:b :a] @order))
     (is (= {} (scope/registrations n)))))
 
@@ -81,7 +82,7 @@
     (scope/add-teardown! n :a (fn [] (throw (ex-info "boom" {}))))
     (scope/add-teardown! n :a (fn [] (swap! ran conj :last)))
     (binding [scope/*error-reporter* (fn [t] (swap! reported conj (ex-message t)))]
-      (scope/dispose! n :a))
+      (scope/dispose-owner! n :a))
     (is (= [:last :first] @ran) "LIFO, and the throw did not skip :first")
     (is (= ["boom"] @reported))))
 
@@ -90,7 +91,7 @@
         seen (atom ::unset)]
     (scope/register! n :a [:k] :v)
     (scope/add-teardown! n :a (fn [] (reset! seen (scope/for-key n [:k]))))
-    (scope/dispose! n :a)
+    (scope/dispose-owner! n :a)
     (is (= {} @seen) "the registration is gone before the teardown runs")))
 
 (deftest deregister-targets-one-owner-and-guards-replacement
@@ -127,37 +128,82 @@
     (scope/add-teardown! n :a (fn [] (scope/register! n :a [:k] :v)))
     (scope/add-teardown! n :a (fn [] (scope/add-teardown! n :a (fn []))))
     (binding [scope/*error-reporter* (fn [t] (swap! reported conj (:type (ex-data t))))]
-      (scope/dispose! n :a))
+      (scope/dispose-owner! n :a))
     (is (= [::scope/closed-store ::scope/closed-store] @reported))
     (is (= {} (scope/registrations n)))
     (is (= [] (scope/owners n)))))
 
-(deftest a-whole-node-disposal-closes-every-owner
+(deftest a-whole-store-disposal-closes-every-owner
   (let [n (scope/node)
         reported (atom [])]
     (scope/add-teardown! n :a (fn [] (scope/register! n :ghost [:k] :v)))
     (binding [scope/*error-reporter* (fn [t] (swap! reported conj (:type (ex-data t))))]
-      (scope/dispose! n))
+      (scope/dispose-store! n))
     (is (= [::scope/closed-store] @reported)
-        "a new owner cannot appear while the node is going away")
+        "a new owner cannot appear while the store is going away")
     (is (= {} (scope/registrations n)))))
 
 (deftest disposal-leaves-other-owners-open
   (let [n (scope/node)]
     (scope/register! n :b [:k] :live)
     (scope/add-teardown! n :a (fn [] (scope/register! n :b [:j] :new)))
-    (scope/dispose! n :a)
+    (scope/dispose-owner! n :a)
     (is (= {[:k] {:b :live} [:j] {:b :new}} (scope/registrations n))
         "only the owner being disposed is closed")))
 
-(deftest a-disposed-store-accepts-the-next-mount
+(deftest a-disposed-store-accepts-the-next-registration
   (let [n (scope/node)]
     (scope/register! n :a [:k] 1)
-    (scope/dispose! n)
+    (scope/dispose-store! n)
     (scope/register! n :a [:k] 2)
     (is (= {[:k] {:a 2}} (scope/registrations n))
         "the refusal is scoped to the pass, not to the owner path forever")
     (is (= [:a] (scope/owners n)))))
+
+(deftest node-extra-fields-are-merged-and-linked
+  ;; The host's fields must be on the node the parent holds: linking first and
+  ;; associng after would leave the parent with an unlinked twin.
+  (let [parent (scope/node)
+        child (scope/node parent {:host :field})]
+    (is (= :field (:host child)))
+    (is (identical? child (first @(:children parent))))))
+
+(deftest dispose-node-ends-children-in-reverse-order
+  (let [root (scope/node)
+        first-child (scope/node root)
+        second-child (scope/node root)
+        order (atom [])]
+    (scope/add-teardown! first-child :first (fn [] (swap! order conj :first)))
+    (scope/add-teardown! second-child :second (fn [] (swap! order conj :second)))
+    (scope/dispose-node! root)
+    (is (= [:second :first] @order)
+        "children dispose in reverse creation order, like registrations")))
+
+(deftest a-node-joins-and-leaves-its-parents-children
+  (let [parent (scope/node)
+        child (scope/node parent)]
+    (is (identical? child (first @(:children parent))))
+    (scope/register! parent :p [:k] :v)
+    (scope/dispose-node! child)
+    (is (empty? @(:children parent))
+        "a disposed child leaves its parent's list")
+    (is (= {[:k] {:p :v}} (scope/registrations parent))
+        "the parent's own store is untouched")))
+
+(deftest dispose-node-ends-children-first
+  (let [root (scope/node)
+        child (scope/node root)
+        grandchild (scope/node child)
+        order (atom [])]
+    (scope/add-teardown! root :root (fn [] (swap! order conj :root)))
+    (scope/add-teardown! child :child (fn [] (swap! order conj :child)))
+    (scope/add-teardown! grandchild :grand (fn [] (swap! order conj :grand)))
+    (scope/dispose-node! root)
+    (is (= [:grand :child :root] @order) "children first, depth first")
+    (is (empty? (scope/registrations root)))
+    (is (empty? @(:children root)))
+    (scope/dispose-node! root)
+    (is (= [:grand :child :root] @order) "a second disposal is a no-op")))
 
 (deftest in-subtree-walks-parents
   (let [root (scope/node)

@@ -8,7 +8,7 @@
             [kmet.agent.runtime :as app]
             [kmet.agent.session.runtime :as rt]
             [kmet.agent.skills :as skills]
-            [kmet.cells.core :as cells]
+            [kmet.cells.scope :as scope]
             [kmet.tui.utils :as u]))
 
 (defn test-engine
@@ -63,7 +63,7 @@
   (commands/clear-commands! (app/node))
   (prompts/clear-prompt-templates! (app/node))
   (skills/clear-skills! (app/node))
-  (cells/dispose! (app/node) extensions/themes-owner))
+  (scope/dispose-owner! (app/node) extensions/themes-owner))
 
 (defn with-clean-app-registries
   "clojure.test :each fixture: clear the app tree's process-global

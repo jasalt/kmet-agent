@@ -1,18 +1,17 @@
 (ns kmet.cells.scope
   "The store behind a node: registrations keyed by host-shaped keys, owned by
-   slot paths, with LIFO, isolated disposal (cells.md §5.1–§5.2).
+   owner paths, with LIFO, isolated disposal (cells.md §5.1–§5.2).
 
-   The store is an atom so `register!`/`dispose!` can be imperative while the
-   node stays the value a handle receives. There is one registration per
+   The store is an atom so `register!`/`dispose-owner!` can be imperative while
+   the node stays the value a handle receives. There is one registration per
    (owner, key) — re-registering replaces it, and a stale deregister fn from
    the replaced registration does nothing (the guard compares values, so an
    earlier registration of an *equal* value is indistinguishable and its fn
    does remove the newer one). Disposal runs an owner's cleanups in reverse
-   registration order, then the owner's teardowns (a `:start` hook's
-   returned fn, which unwinds after everything the hook registered). One
-   failing cleanup never skips the rest; it is reported through
-   `*error-reporter*`, as is a cleanup's attempt to register into the pass
-   that is clearing its owner."
+   registration order, then the owner's teardowns (fns for what lives outside
+   the store, run after its registrations). One failing cleanup never skips the
+   rest; it is reported through `*error-reporter*`, as is a cleanup's attempt to
+   register into the pass that is clearing its owner."
   (:require [clojure.string :as str]))
 
 (def ^:dynamic *error-reporter*
@@ -58,14 +57,20 @@
   (update m owner (fnil conj []) f))
 
 (defn node
-  "A fresh node with an empty store. `mount!` (P1) is the public constructor;
-   this exists so `register!`/`dispose!` are usable before the tree does. A
-   node holds its parent link and live children (cells.md §5.6)."
+  "A fresh node with an empty store. A non-nil PARENT also gets NODE in its
+   `:children`, so `dispose-node!` on the parent ends it; EXTRA carries the
+   host's own fields (a stage map), while the node's `:store`, `:parent` and
+   `:children` always win (cells.md §5.6)."
   ([] (node nil))
-  ([parent]
-   {:store (atom (empty-store))
-    :parent parent
-    :children (atom [])}))
+  ([parent] (node parent nil))
+  ([parent extra]
+   (let [n (merge extra
+                  {:store (atom (empty-store))
+                   :parent parent
+                   :children (atom [])})]
+     (when parent
+       (swap! (:children parent) conj n))
+     n)))
 
 (defn in-subtree?
   "True when NODE is ROOT or a descendant of it (cells.md §5.6). A nil ROOT
@@ -103,10 +108,10 @@
                {:type ::closed-store :owner owner}))))
 
 (defn register!
-  "Install v under the host-shaped key k for owner (a slot path). Returns a
-   deregister fn, collected onto owner — the caller need not keep it. An
-   owner a disposal pass is clearing refuses the registration
-   (`::closed-store`, cells.md §5.2)."
+  "Install v under the host-shaped key k for owner (an owner path, e.g.
+   `[:app :commands]`). Returns a deregister fn, collected onto owner — the
+   caller need not keep it. An owner a disposal pass is clearing refuses the
+   registration (`::closed-store`, cells.md §5.2)."
   [node owner k v]
   (when (nil? v)
     (throw (ex-info "cannot register nil under a key"
@@ -142,9 +147,8 @@
   (into [] (map (juxt :key :value)) (get-in s [:by-owner owner])))
 
 (defn owner-keys
-  "The set of keys owner registered — what `composition`/`explain` report.
-   A registry that lists itself in registration order wants
-   `owner-registrations`."
+  "The set of keys owner registered. A registry that lists itself in
+   registration order wants `owner-registrations`."
   [node owner]
   (into #{} (map :key) (get-in @(:store node) [:by-owner owner])))
 
@@ -155,8 +159,8 @@
   (owner-entries @(:store node) owner))
 
 (defn owners
-  "Every owner path on the store, in first-registration order — what
-   `mount!`'s subtree disposal walks (cells.md §5.1)."
+  "Every owner path on the store, in first-registration order (cells.md
+   §5.1)."
   [node]
   (:owner-order @(:store node)))
 
@@ -257,18 +261,27 @@
                  (unmark-disposing owner))))
     nil))
 
-(defn dispose!
-  "Dispose every owner on a store (reverse registration order, then the store
-   itself); the whole pass is closed, so a teardown cannot register into a
-   node that is going away. The public node teardown, which ends children
-   first, is `kmet.cells.mount/dispose-node!` (cells.md §5.2–§5.3)."
-  ([node]
-   (let [store (:store node)
-         owners (reverse (:owner-order @store))]
-     (swap! store assoc :disposing :node)
-     (doseq [owner owners]
-       (dispose-owner! node owner))
-     (reset! store (empty-store))
-     nil))
-  ([node owner]
-   (dispose-owner! node owner)))
+(defn dispose-store!
+  "Dispose every owner on NODE's store (reverse registration order, then the
+   store itself); the whole pass is closed, so a teardown cannot register into
+   a store that is going away. `dispose-node!` is the tree teardown, which
+   ends children first (cells.md §5.2–§5.3)."
+  [node]
+  (let [store (:store node)
+        owners (reverse (:owner-order @store))]
+    (swap! store assoc :disposing :node)
+    (doseq [owner owners]
+      (dispose-owner! node owner))
+    (reset! store (empty-store))
+    nil))
+
+(defn dispose-node!
+  "End a node: children first (reverse order), then the store; the node leaves
+   its parent's `:children`. Idempotent (cells.md §5.2–§5.3, §5.6)."
+  [node]
+  (doseq [child (reverse @(:children node))]
+    (dispose-node! child))
+  (when-let [parent (:parent node)]
+    (swap! (:children parent)
+           (fn [children] (into [] (remove #(identical? % node) children)))))
+  (dispose-store! node))

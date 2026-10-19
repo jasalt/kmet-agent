@@ -86,9 +86,8 @@ modules/agent/src/kmet/
 ├── agent/              — App business logic (pi: dist/core/)
 │   ├── loop.clj        — the agent loop; retry.clj — retry/error policy;
 │   │                     loop_guard.clj — repeat-loop guard
-│   ├── runtime.clj     — the composition runtime: builtin units, the
-│   │                     :builtin resolution backend, and the app root
-│   │                     node runs read their units from (P2)
+│   ├── runtime.clj     — the app root node (the store) and the loop's
+│   │                     stage map a run reads once per attempt
 │   ├── session/         — session subsystem:
 │   │   ├── core.clj     — EDNL sessions (storage, branch/tree,
 │   │   │                 compaction, import/export planning)
@@ -135,10 +134,11 @@ listed in the root `AGENTS.md` topic map.
 
 ### Layer boundaries
 
-- `kmet.cells.*` is the composition runtime (`modules/cells`, rank 0): it
-  turns declarative unit descriptors into a mounted node with per-owner
-  lifetime. It requires no `kmet.*` namespace outside its own tree — the host
-  supplies the resolution backends — and `test_self_contained` enforces it. Design:
+- `kmet.cells.scope` is the store and node lifetimes (`modules/cells`, rank 0):
+  registrations keyed by owner path, with LIFO, isolated disposal; a node
+  links its parent and children, and disposing one ends its children first. It
+  requires no `kmet.*` namespace outside its own tree and no third-party
+  library; `test_self_contained` enforces the require rule. Design:
   `modules/cells/src/kmet/cells/cells.md`.
 - `kmet.loader.*` is now an outer module (`modules/loader`); it may use third-party deps and
   `kmet.loader.*`, but no other `kmet.*` namespace.
