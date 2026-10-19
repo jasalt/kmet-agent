@@ -682,7 +682,7 @@
      :steering-mode (:steering-mode cfg)
      :follow-up-mode (:follow-up-mode cfg)
      :auto-compact (:auto-compact cfg)
-     :queues (agent/queued-messages agent-state)
+     :queues (agent-state/queued-messages agent-state)
      :last-outcome @(:last-outcome agent-state)}))
 
 (defn last-outcome
@@ -757,14 +757,14 @@
                     :message (:text opts))))
     nil))
 
-(defn steer! [engine text] (agent/steer! (agent-state engine) text))
-(defn follow-up! [engine text] (agent/follow-up! (agent-state engine) text))
-(defn queues [engine] (agent/queued-messages (agent-state engine)))
+(defn steer! [engine text] (agent-state/steer! (agent-state engine) text))
+(defn follow-up! [engine text] (agent-state/follow-up! (agent-state engine) text))
+(defn queues [engine] (agent-state/queued-messages (agent-state engine)))
 (defn clear-queues!
   "Drop the steering/follow-up queues (the restore-to-editor path clears
    them before cancelling); the loop emits the matching :queue-update."
   [engine]
-  (agent/clear-queues! (agent-state engine)))
+  (agent-state/clear-queues! (agent-state engine)))
 (defn cancel!
   "Cancel the in-flight run (if any): the turn flag drops synchronously and
    the loop settles the prompt with :outcome :aborted."
@@ -986,7 +986,7 @@
                         ;; pi: restoreQueue — the session queue is cleared too,
                         ;; so messages already delivered by the failed flush are
                         ;; not delivered again when the queue is re-flushed
-                       (agent/clear-queues! (agent-state engine))
+                       (agent-state/clear-queues! (agent-state engine))
                        (reset! (:compaction-queued engine) msgs))]
         (try
           (if will-retry
@@ -1038,8 +1038,8 @@
   [engine]
   (agent-state/cycle-thinking-level! (agent-state engine)))
 (defn set-auto-compact! [engine enabled?] (agent-state/set-auto-compact! (agent-state engine) enabled?))
-(defn set-steering-mode! [engine mode] (agent/set-steering-mode! (agent-state engine) mode))
-(defn set-follow-up-mode! [engine mode] (agent/set-follow-up-mode! (agent-state engine) mode))
+(defn set-steering-mode! [engine mode] (agent-state/set-steering-mode! (agent-state engine) mode))
+(defn set-follow-up-mode! [engine mode] (agent-state/set-follow-up-mode! (agent-state engine) mode))
 (defn set-block-images!
   "Block or allow image content in provider requests (the /settings row and
    /reload re-applying the config value)."
@@ -1170,7 +1170,7 @@
 (defn has-queued-messages?
   "True when the steering or follow-up queue holds messages."
   [engine]
-  (boolean (agent/has-queued-messages? (agent-state engine))))
+  (boolean (agent-state/has-queued-messages? (agent-state engine))))
 
 (defn cancel-signal
   "The current cancel signal value (extension ctx.signal)."
@@ -1315,7 +1315,7 @@
           busy? (turn-running? engine)]
       (cond
         ;; next-turn never triggers: it rides the next prompt
-        (= :next-turn deliver-as) (agent/queue-next-turn-message! ag msg)
+        (= :next-turn deliver-as) (agent-state/queue-next-turn-message! ag msg)
 
         ;; streaming with a trigger: into the run (steer is the default)
         (and busy? (not (false? trigger-turn)))
@@ -1328,7 +1328,7 @@
                          (prompt! engine {}))
 
         ;; streaming without a trigger: defer to the turn-end flush
-        busy? (agent/defer-custom-message! ag msg)
+        busy? (agent-state/defer-custom-message! ag msg)
 
         ;; idle without a trigger: append only
         :else (agent-state/append-custom-message! ag msg)))

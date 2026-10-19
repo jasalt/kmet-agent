@@ -2,18 +2,9 @@
   "Agent conversation loop — orchestrates user input, LLM calls, and tool execution.
    State machine: IDLE → THINKING → EXECUTING → THINKING → ... → IDLE
 
-   Queues (pi: steeringQueue / followUpQueue):
-     :steering  — user messages injected mid-run. Polled between turns (after
-                   tool results, before the next LLM call). Use steer!.
-     :follow-up — user messages processed after the current run settles.
-                   Polled when the inner loop drains; the run continues with
-                   them. Use follow-up!.
-   :steering-mode / :follow-up-mode control how many queued messages are
-   drained per poll cycle: :all takes everything, :one-at-a-time takes one.
-   Defaults are :all for steering and :one-at-a-time for follow-up.
-   Both queues are also drained at the prompt's attempt boundary when an
-   :agent-end handler queued a message: the next attempt starts from it (pi:
-   agent.continue's continue() — steering first, then follow-up).
+   Queues (pi: steeringQueue / followUpQueue) live in
+   kmet.agent.loop.state (steer!, follow-up!, the queue modes, and the
+   injection of drained messages into the context).
 
    Emits lifecycle events (see kmet.agent.event-bus) to the :on-event callback
    (UI) and to kmet.agent.event-bus/emit-event! (extension system).
@@ -595,78 +586,6 @@
                   :tool-calls (tc-flush)
                   :usage @usage-buf
                   :thinking-signature @sig-buf})}))
-
-;; ─── Queues ────────────────────────────────────────────────────────────────
-
-(defn- enqueue!
-  "Queue TEXT on AGENT's :steering / :follow-up queue (QUEUE-KEY) and emit
-   the queue-update snapshot — both queues ride every emit. Returns nil."
-  [agent queue-key text]
-  (swap! (get agent queue-key) conj text)
-  (state/emit agent {:type :queue-update
-                     :steering @(:steering agent)
-                     :follow-up @(:follow-up agent)})
-  nil)
-
-(defn steer!
-  "Queue a user message for mid-turn injection.
-   The agent loop polls the steering queue between turns (after tool results,
-   before the next LLM call) and injects queued messages into the context.
-   A message map is injected as a custom message (pi: the queues carry full
-   messages — sendMessage queues custom ones there)."
-  [agent text]
-  (enqueue! agent :steering text))
-
-(defn follow-up!
-  "Queue a user message to be processed after the current run settles.
-   The outer loop drains the follow-up queue when the inner loop finishes and
-   continues the run with the queued messages. A message map is injected as a
-   custom message (see steer!)."
-  [agent text]
-  (enqueue! agent :follow-up text))
-
-(defn clear-queues!
-  "Drop all pending steering and follow-up messages. REASON, when given, is
-   carried on the :queue-update as :reason — cancel-turn passes :aborted so
-   a headless consumer can tell a dropped queue from one the loop drained
-   (a drain that delivered everything also reports empty queues)."
-  ([agent] (clear-queues! agent nil))
-  ([agent reason]
-   (reset! (:steering agent) [])
-   (reset! (:follow-up agent) [])
-   (state/emit agent (cond-> {:type :queue-update :steering [] :follow-up []}
-                       reason (assoc :reason reason)))
-   nil))
-
-(defn queued-messages
-  "Return {:steering [...] :follow-up [...]} of currently queued messages."
-  [agent]
-  {:steering @(:steering agent)
-   :follow-up @(:follow-up agent)})
-
-(defn has-queued-messages?
-  "True if either queue has pending messages."
-  [agent]
-  (or (seq @(:steering agent))
-      (seq @(:follow-up agent))))
-
-(defn defer-custom-message!
-  "Defer a custom message sent while the agent is streaming: appending now
-   would put it between an assistant tool call and its result (pi:
-   _pendingCustomMessages). Nothing is persisted or emitted until the flush,
-   which lands the message once the turn's tool results are in the context
-   (see flush-pending-custom-messages!)."
-  [agent msg]
-  (swap! (:pending-custom agent) conj msg)
-  nil)
-
-(defn queue-next-turn-message!
-  "Queue a custom message that is injected with the next prompt rather than
-   the current turn (pi: deliverAs \"nextTurn\" → _pendingNextTurnMessages).
-   It never triggers a turn and never joins the steering/follow-up queues."
-  [agent msg]
-  (swap! (:pending-next-turn agent) conj msg)
-  nil)
 
 ;; ─── Agent run ─────────────────────────────────────────────────────────────
 
@@ -1347,7 +1266,7 @@
    before a handler's entries are committed — a runnable batch enables it)."
   [agent]
   (boolean (or (can-continue? agent)
-               (has-queued-messages? agent)
+               (state/has-queued-messages? agent)
                (seq @(:pending-custom agent)))))
 
 (defn- honor-continuation?
@@ -1985,7 +1904,7 @@
     ;; the boundary's entries are committed, before the continuation check
     (state/flush-pending-custom-messages! agent)
     (and (not @(:signal agent))
-         (or requested? (has-queued-messages? agent))
+         (or requested? (state/has-queued-messages? agent))
          (honor-continuation? agent :agent-before-settle))))
 
 (defn- continue-prompt?
@@ -1997,7 +1916,7 @@
    the continuation prompt). A cancelled prompt never continues."
   [agent]
   (and (not @(:signal agent))
-       (or (has-queued-messages? agent)
+       (or (state/has-queued-messages? agent)
            (before-settle! agent))))
 
 (def ^:private attempt-routes
@@ -2289,40 +2208,10 @@
   [agent]
   (state/set-run-signal! agent true)
   (reset! (:compaction-signal agent) true)
-  (clear-queues! agent :aborted)
+  (state/clear-queues! agent :aborted)
   (when-let [{:keys [promise partials]} @(:active-call agent)]
     (when-not (realized? promise)
       (deliver promise (merge {:cancelled true} (partials)))))
   (state/set-agent-status! agent :idle)
   nil)
-
-;; ─── Queue modes ───────────────────────────────────────────────────────────
-
-(def queue-batch-modes
-  "The modes :steering-mode / :follow-up-mode accept (pi: queue batch
-   modes)."
-  #{:all :one-at-a-time})
-
-(defn- set-queue-batch-mode!
-  [agent k mode]
-  (when-not (contains? queue-batch-modes mode)
-    (throw (ex-info (str "Unknown queue mode: " (pr-str mode))
-                    {:type :invalid-mode :mode mode})))
-  (swap! (:cfg agent) assoc k mode))
-
-(defn set-steering-mode!
-  "Set how many queued steering messages one injection delivers (pi:
-   setSteeringMode): :all drains the queue, :one-at-a-time delivers the
-   oldest. Live — the next drain reads the new value. Persisting belongs to
-   the caller (the /settings row saves it; the RPC command is
-   session-scoped)."
-  [agent mode]
-  (set-queue-batch-mode! agent :steering-mode mode))
-
-(defn set-follow-up-mode!
-  "Set how many queued follow-up messages one drain delivers (pi:
-   setFollowUpMode): :all drains, :one-at-a-time delivers the oldest.
-   Live, like set-steering-mode!."
-  [agent mode]
-  (set-queue-batch-mode! agent :follow-up-mode mode))
 

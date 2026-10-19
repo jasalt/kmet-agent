@@ -1036,18 +1036,18 @@
 (t/deftest test-loop-steer-queues-message
   (let [events (atom [])
         agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
-    (loop/steer! agent "first")
-    (loop/steer! agent "second")
+    (state/steer! agent "first")
+    (state/steer! agent "second")
     (t/is (= ["first" "second"] @(:steering agent)))
-    (t/is (loop/has-queued-messages? agent))
+    (t/is (state/has-queued-messages? agent))
     (t/is (= {:steering ["first" "second"] :follow-up []}
-             (loop/queued-messages agent)))
+             (state/queued-messages agent)))
     (t/is (= :queue-update (:type (last @events)))
           "steer! emits :queue-update")
-    (loop/clear-queues! agent)
+    (state/clear-queues! agent)
     (t/is (empty? @(:steering agent)))
     (t/is (empty? @(:follow-up agent)))
-    (t/is (not (loop/has-queued-messages? agent)))
+    (t/is (not (state/has-queued-messages? agent)))
     (t/is (= :queue-update (:type (last @events)))
           "clear-queues! emits :queue-update")
     (t/is (not (contains? (last @events) :reason))
@@ -1056,9 +1056,9 @@
 (t/deftest test-loop-followup-queues-message
   (let [events (atom [])
         agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
-    (loop/follow-up! agent "later")
+    (state/follow-up! agent "later")
     (t/is (= ["later"] @(:follow-up agent)))
-    (t/is (loop/has-queued-messages? agent))
+    (t/is (state/has-queued-messages? agent))
     (t/is (= :queue-update (:type (last @events)))
           "follow-up! emits :queue-update")))
 
@@ -1075,10 +1075,10 @@
                                              (:follow-up-mode @(:cfg agent)))))]
     (t/is (= [] (state/peek-queued-messages agent))
           "empty queues preview nothing")
-    (loop/steer! agent "s1")
-    (loop/steer! agent "s2")
+    (state/steer! agent "s1")
+    (state/steer! agent "s2")
     (t/is (= ["s1" "s2"] (state/peek-queued-messages agent)))
-    (loop/follow-up! agent "f1")
+    (state/follow-up! agent "f1")
     (t/is (= ["s1" "s2"] (state/peek-queued-messages agent))
           "steering wins while it has messages")
     (t/is (= ["s1" "s2"] @(:steering agent)) "peeking drains nothing")
@@ -1091,9 +1091,9 @@
     (t/is (= ["s2"] (state/peek-queued-messages agent))
           "the unconsumed message is still previewed")
     (swap! (:cfg agent) assoc :steering-mode :all)
-    (loop/clear-queues! agent)
-    (loop/follow-up! agent "f1")
-    (loop/follow-up! agent "f2")
+    (state/clear-queues! agent)
+    (state/follow-up! agent "f1")
+    (state/follow-up! agent "f2")
     (swap! (:cfg agent) assoc :follow-up-mode :all)
     (t/is (= ["f1" "f2"] (state/peek-queued-messages agent))
           "follow-up previews all queued messages when set to :all")
@@ -1105,8 +1105,8 @@
 (t/deftest test-loop-cancel-clears-queues
   (let [events (atom [])
         agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
-    (loop/steer! agent "x")
-    (loop/follow-up! agent "y")
+    (state/steer! agent "x")
+    (state/follow-up! agent "y")
     (loop/cancel-turn agent)
     (t/is (empty? @(:steering agent)) "cancel drops steering messages")
     (t/is (empty? @(:follow-up agent)) "cancel drops follow-up messages")
@@ -1138,7 +1138,7 @@
                       :done))
                   tools/execute-tool
                   (fn [_ _ _]
-                    (loop/steer! agent "steered")
+                    (state/steer! agent "steered")
                     {:content "ok" :is-error false})]
       ;; deref inside with-redefs keeps the rebinding until the run completes
       @(loop/run-agent-turn agent
@@ -1183,7 +1183,7 @@
                       :done))
                   tools/execute-tool
                   (fn [_ _ _]
-                    (loop/follow-up! agent "followup")
+                    (state/follow-up! agent "followup")
                     {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent
                             {:message "start"
@@ -1226,11 +1226,11 @@
                    :agent-end
                    (fn [_]
                      (when (compare-and-set! queue-once true false)
-                       (loop/steer! agent "steered by agent-end")
-                       (loop/follow-up! agent "followed up by agent-end"))))
+                       (state/steer! agent "steered by agent-end")
+                       (state/follow-up! agent "followed up by agent-end"))))
         dereg-settled (event-bus/on-event
                        :agent-settled
-                       (fn [_] (loop/follow-up! agent "queued by agent-settled")))]
+                       (fn [_] (state/follow-up! agent "queued by agent-settled")))]
     (try
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message
@@ -1295,8 +1295,8 @@
                       :done))
                   tools/execute-tool
                   (fn [_ _ _]
-                    (loop/steer! agent "s1")
-                    (loop/steer! agent "s2")
+                    (state/steer! agent "s1")
+                    (state/steer! agent "s2")
                     {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent
                             {:message "start"
@@ -1332,8 +1332,8 @@
                       :done))
                   tools/execute-tool
                   (fn [_ _ _]
-                    (loop/steer! agent "steered")
-                    (loop/follow-up! agent "followup")
+                    (state/steer! agent "steered")
+                    (state/follow-up! agent "followup")
                     {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent
                             {:message "start"
@@ -1416,8 +1416,8 @@
                       :done))
                   tools/execute-tool
                   (fn [_ _ _]
-                    (loop/follow-up! agent "f1")
-                    (loop/follow-up! agent "f2")
+                    (state/follow-up! agent "f1")
+                    (state/follow-up! agent "f2")
                     {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent
                             {:message "start"
@@ -1994,7 +1994,7 @@
                         :done)))
                   tools/execute-tool
                   (fn [_ _ _] {:content "ok" :is-error false})]
-      (loop/follow-up! agent "continue please")
+      (state/follow-up! agent "continue please")
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= 2 (count (filter #(= :loop-guard (:type %)) @events)))
           "each loop segment (initial run + follow-up) trips once")
@@ -3140,7 +3140,7 @@
       ;; Queue a follow-up during the backoff so the run continues into turn 2.
       (let [fut (loop/run-agent-turn agent {:message "hi" :on-error (fn [_])})]
         (Thread/sleep 100)
-        (loop/follow-up! agent "second")
+        (state/follow-up! agent "second")
         @fut))
     (let [ends (filter #(= :auto-retry-end (:type %)) @events)]
       ;; First turn: retry succeeded (1 end, success). Second turn: 503 is
@@ -3503,7 +3503,7 @@
                   llm/send-message (stub-llm-tool-then-text calls)
                   tools/execute-tool
                   (fn [_ _ _]
-                    (loop/follow-up! agent "queued follow-up")
+                    (state/follow-up! agent "queued follow-up")
                     {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent
                             {:message "run"
@@ -3531,7 +3531,7 @@
                     (future
                       (when (= 1 (swap! calls inc))
                         ;; the user queues a follow-up while this response streams
-                        (loop/follow-up! agent "queued follow-up"))
+                        (state/follow-up! agent "queued follow-up"))
                       (when-let [on-done (:on-done opts)]
                         (on-done :stop))
                       :done))]
@@ -4070,7 +4070,7 @@
       (event-bus/on-event :agent-before-settle
                           (fn [_]
                             (when (= 1 (swap! queued inc))
-                              (loop/follow-up! agent "settle follow-up"))))
+                              (state/follow-up! agent "settle follow-up"))))
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (stub-llm-text-turns calls ["first" "second"] opts)]
         @(loop/run-agent-turn agent {:message "run"
@@ -6082,8 +6082,8 @@
                       :done))
                   tools/execute-tool
                   (fn [_ _ _]
-                    (loop/steer! agent "steered")
-                    (loop/follow-up! agent "followup")
+                    (state/steer! agent "steered")
+                    (state/follow-up! agent "followup")
                     {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent
                             {:message "start"
@@ -6388,10 +6388,10 @@
           calls (atom 0)
           opts (atom [])]
       (try
-        (loop/queue-next-turn-message! agent {:role :custom
-                                              :custom-type :note
-                                              :content "queued"
-                                              :display true})
+        (state/queue-next-turn-message! agent {:role :custom
+                                               :custom-type :note
+                                               :content "queued"
+                                               :display true})
         (t/is (empty? @(:messages agent))
               "the message waits for a prompt — nothing is in context yet")
         (t/is (empty? (session/get-branch sess))
@@ -6424,10 +6424,10 @@
                         (swap! requests conj (:messages opts))
                         (if (= 1 (swap! calls inc))
                           (do
-                            (loop/defer-custom-message! agent {:role :custom
-                                                               :custom-type :note
-                                                               :content "deferred"
-                                                               :display true})
+                            (state/defer-custom-message! agent {:role :custom
+                                                                :custom-type :note
+                                                                :content "deferred"
+                                                                :display true})
                             (t/is (not-any? deferred? @(:messages agent))
                                   "not appended while the turn is in flight")
                             (when-let [on-tc (:on-tool-call opts)]
@@ -6464,10 +6464,10 @@
                         (future
                           (if (= 1 (swap! calls inc))
                             (do
-                              (loop/steer! agent {:role :custom
-                                                  :custom-type :note
-                                                  :content "steered"
-                                                  :display true})
+                              (state/steer! agent {:role :custom
+                                                   :custom-type :note
+                                                   :content "steered"
+                                                   :display true})
                               (when-let [on-tc (:on-tool-call opts)]
                                 (on-tc {:id "tc1" :name "bash" :arguments "{}" :index 0}))
                               (when-let [on-done (:on-done opts)]
@@ -6623,10 +6623,10 @@
                               ;; deferred once, during the settle window —
                               ;; after the last turn's flush
                               (when (= 1 (swap! ends inc))
-                                (loop/defer-custom-message! agent {:role :custom
-                                                                   :custom-type :note
-                                                                   :content "late"
-                                                                   :display true}))))
+                                (state/defer-custom-message! agent {:role :custom
+                                                                    :custom-type :note
+                                                                    :content "late"
+                                                                    :display true}))))
         (event-bus/on-event :agent-before-settle
                             (fn [e]
                               (swap! boundaries conj e)
@@ -6672,10 +6672,10 @@
                         (future
                           (when (= 1 (swap! calls inc))
                             ;; deferred mid-turn, still pending at the boundary
-                            (loop/defer-custom-message! agent {:role :custom
-                                                               :custom-type :note
-                                                               :content "late"
-                                                               :display true}))
+                            (state/defer-custom-message! agent {:role :custom
+                                                                :custom-type :note
+                                                                :content "late"
+                                                                :display true}))
                           (when-let [on-text (:on-text o)] (on-text "ok"))
                           (when-let [on-done (:on-done o)] (on-done :stop))
                           :done))]

@@ -2378,7 +2378,7 @@
       (t/is (seq @started) "a run started for the first message")
       (t/is (= "first" (get-in @started [1 :message])) "run carries the first message")
       (t/is (empty? (runtime/compaction-queued (:engine cs))) "queue drained")
-      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
+      (let [{:keys [steering follow-up]} (agent-state/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (= [] steering) "second (follow-up) not steered")
         (t/is (= ["second"] follow-up) "second queued as follow-up into the run")))))
 
@@ -2392,7 +2392,7 @@
                {:text "follow-msg" :mode :follow-up}])
       (with-redefs [tui/tui-request-render (fn [_] nil)]
         ((var turn/flush-compaction-queue!) cs true))
-      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
+      (let [{:keys [steering follow-up]} (agent-state/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (= ["steer-msg"] steering) "steer-mode queued into steering")
         (t/is (= ["follow-msg"] follow-up) "follow-up-mode queued into follow-up"))
       (t/is (empty? (runtime/compaction-queued (:engine cs))) "queue drained"))))
@@ -2420,7 +2420,7 @@
             session queues (pi: restoreQueuedMessagesToEditor → clearAllQueues)"
     (let [cs (compaction-cs)
           ed @(:current-editor-atom cs)]
-      (agent/steer! (runtime/agent-state (:engine cs)) "steer-msg")
+      (agent-state/steer! (runtime/agent-state (:engine cs)) "steer-msg")
       (reset! (:compaction-queued (:engine cs)) [{:text "compact-msg" :mode :steer}])
       (editor/editor-set-text! ed "draft")
       (let [n ((var turn/restore-queued-messages!) cs)]
@@ -2636,7 +2636,7 @@
       (with-redefs [tui/tui-request-render (fn [_] nil)
                     chat-history/chat-history-show-status! (fn [_ _] nil)]
         ((:handler (commands/find-command "followup")) cs "do the thing"))
-      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
+      (let [{:keys [steering follow-up]} (agent-state/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (= [] steering) "not steered into the running turn")
         (t/is (= ["do the thing"] follow-up) "args queued as follow-up"))
       (t/is (empty? @(:messages (runtime/agent-state (:engine cs))))
@@ -2660,7 +2660,7 @@
       (t/is (seq @started) "run-agent-turn called")
       (t/is (= "wrap it up" (get-in @started [1 :message]))
             "run carries the args as the message")
-      (let [{:keys [steering follow-up]} (agent/queued-messages (runtime/agent-state (:engine cs)))]
+      (let [{:keys [steering follow-up]} (agent-state/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (empty? steering) "nothing queued")
         (t/is (empty? follow-up) "nothing queued")))))
 
@@ -2689,7 +2689,7 @@
         ((:handler (commands/find-command "followup")) cs ""))
       (t/is (= "Usage: /followup <message>" (:content @msg))
             "usage info shown")
-      (t/is (empty? (:follow-up (agent/queued-messages (runtime/agent-state (:engine cs)))))
+      (t/is (empty? (:follow-up (agent-state/queued-messages (runtime/agent-state (:engine cs)))))
             "nothing queued for blank args"))))
 
 (deftest test-cancel-two-step-during-midrun-compaction
