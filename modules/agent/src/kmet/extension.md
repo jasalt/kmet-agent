@@ -64,7 +64,9 @@ caching behave identically, and there is nothing to reimplement.
 
 What is available: the core protocol records (`container`, `box`, `text`,
 `spacer`, `markdown`, `input`, `editor`, `editing`, `select-list`,
-`settings-list`, `stack`, `v-stack`, `h-stack`, `expandable-text`, `image`,
+`settings-list`, `filter-panel` (the filterable list panel the simple
+selectors share — the caller supplies rows, filtering and chrome), `stack`,
+`v-stack`, `h-stack`, `expandable-text`, `image`,
 `spinner`, ...), `kmet.tui.theme` (styling — including
 `theme/get-settings-list-theme` for the selector look),
 `kmet.libs.hikap.component` (`track!`/`track-deps` reactive caching,

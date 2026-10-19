@@ -275,3 +275,13 @@
   (let [{:keys [old]} (update-stack! cs (constantly []))]
     (doseq [e old :when (not (:borrowed? e))]
       (dispose! cs (:component e)))))
+
+(defn show-panel!
+  "Record PANEL in COMP-ATOM and mount it in place of the editor. The
+   record lands before the mount — the stack write can run a watch or input
+   handler that closes the panel synchronously, and it must find the panel
+   then. The mount requests the frame."
+  [cs comp-atom panel]
+  (reset! comp-atom panel)
+  (mount! cs panel)
+  nil)

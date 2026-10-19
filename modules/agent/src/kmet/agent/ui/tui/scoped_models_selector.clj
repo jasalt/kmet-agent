@@ -11,9 +11,10 @@
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.filter-panel :as fp]
+            [kmet.agent.ui.tui.dock :as dock]
             [kmet.agent.ui.tui.model-catalog :as model-catalog]
             [kmet.agent.config :as cfg]
+            [kmet.tui.components.filter-panel :as fp]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]
@@ -268,7 +269,7 @@
   (let [sel-atom (atom nil)
         ;; leave, then dispose: dispose unwinds the selector's root
         ;; reaction and foreign input
-        close! (fn [] (fp/panel-close! cs sel-atom))
+        close! (fn [] (dock/close-atom! cs sel-atom))
         available (models/get-available)
         session-scoped (runtime/scoped-models (:engine cs))
         patterns (cfg/get-enabled-models-live (runtime/config (:engine cs)))
@@ -324,7 +325,7 @@
                               {:role :assistant
                                :content "Model selection saved to settings."})))
              :on-cancel close!)]
-    (fp/show-panel! cs sel-atom sel)))
+    (dock/show-panel! cs sel-atom sel)))
 
 (defn scoped-models-get-enabled-ids
   "The selector's current enabled ids (nil = all enabled)."

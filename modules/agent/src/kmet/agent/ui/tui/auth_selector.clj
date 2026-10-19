@@ -7,9 +7,9 @@
    [subscription]/[API key] type labels when both types are listed."
   (:require [clojure.string :as str]
             [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.ui.tui.filter-panel :as fp]
             [kmet.agent.ui.tui.subs :as s]
             [kmet.libs.reakt.core :as r]
+            [kmet.tui.components.filter-panel :as fp]
             [kmet.tui.hikap :as h]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]

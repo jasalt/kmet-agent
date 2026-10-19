@@ -10,9 +10,10 @@
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.filter-panel :as fp]
+            [kmet.agent.ui.tui.dock :as dock]
             [kmet.agent.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.ui.tui.model-catalog :as model-catalog]
+            [kmet.tui.components.filter-panel :as fp]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]
@@ -215,7 +216,7 @@
                                (runtime/scoped-models (:engine cs))))
              current (runtime/model-record (:engine cs))
              sel-atom (atom nil)
-             close! (fn [] (fp/panel-close! cs sel-atom))
+             close! (fn [] (dock/close-atom! cs sel-atom))
              sel (make-model-selector
                   available scoped current
                   :search search-term
@@ -223,4 +224,4 @@
                                (close!)
                                (apply-model-switch! cs m nil))
                   :on-cancel close!)]
-         (fp/show-panel! cs sel-atom sel))))))
+         (dock/show-panel! cs sel-atom sel))))))

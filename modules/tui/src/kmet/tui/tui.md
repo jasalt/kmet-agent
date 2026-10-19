@@ -1456,6 +1456,7 @@ DSL tags of §2.2):
 | `editor` | multi-line editor: wrapping, undo/redo, kill-ring, history, paste markers, autocomplete hooks (focusable) |
 | `editing` | grapheme/cursor editing primitives behind the editor |
 | `select_list` / `settings_list` | interactive lists (focusable) |
+| `filter_panel` | filterable list panel — search, navigation, window, focus, frame; rows/chrome come from the caller |
 | `spinner` | animated indicator (time-animated — never cached) |
 | `cancellable_loader` | loader with abort signal |
 | `expandable_text` | collapsed/expanded long text (deref-aware caching) |

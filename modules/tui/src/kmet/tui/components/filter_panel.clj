@@ -1,21 +1,18 @@
-(ns kmet.agent.ui.tui.filter-panel
-  "Shared mechanics for the simple filterable selector panels (auth, model,
-   scoped-models, thinking): search state, navigation, the selection window,
-   focus, and dock lifetime. Item shape, filtering, row rendering, chrome
-   text and app-specific keys stay with the caller.
+(ns kmet.tui.components.filter-panel
+  "A filterable list panel: search state, selection navigation, the visible
+   window, focus, and the bordered frame around a caller-supplied body.
 
-   The panel owns the `{:search :selected-idx}` keys of the caller's state
-   atom; everything else in it is the caller's."
+   The panel provides the mechanics only — item shape, filtering, row
+   rendering, chrome text and extra keys stay with the caller (see
+   make-panel). The panel owns the `{:search :selected-idx}` keys of the
+   caller's state atom; everything else in it is the caller's."
   (:require [clojure.string :as str]
-            [kmet.agent.ui.tui.dock :as dock]
-            [kmet.agent.ui.tui.subs :as s]
+            [kmet.libs.hikap.core :as engine]
             [kmet.libs.reakt.core :as r]
             [kmet.tui.components.input :as input]
-            [kmet.tui.core :as tui]
-            [kmet.libs.hikap.core :as engine]
             [kmet.tui.hikap :as h]
-            [kmet.tui.keys :as keys]
             [kmet.tui.keybindings :as kb]
+            [kmet.tui.keys :as keys]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]))
@@ -65,7 +62,7 @@
 ;; ─── Component ─────────────────────────────────────────────────────────────
 
 (defcomponent FilterPanel nil
-              [root search-ref state-atom focused? cache-atom opts]
+              [root search-ref state-atom focused? opts]
 
   (render [this width] (protocols/render (:root this) width))
 
@@ -77,8 +74,8 @@
           selected (clamp-selected (:selected-idx st) n)
           extra (:extra-key opts)]
       (cond
-        ;; App-specific keys win first (pi: scoped-models' ctrl+p provider
-        ;; toggle is also tui.select.up, so the specific action must win)
+        ;; Caller keys win first: an extra key may alias a generic
+        ;; tui.select binding, so the specific action must win.
         (and extra (extra state-atom data)) nil
 
         ;; Ctrl+C — clear a non-empty search before cancelling (:clear-on-ctrl-c?
@@ -154,7 +151,7 @@
 (defn- panel-body
   [state-atom search-ref focused? border-fn opts]
   (fn [_props]
-    (let [th (r/tracked-deref s/theme-sub)
+    (let [th (r/tracked-deref theme/theme-atom)
           st (r/tracked-deref state-atom)
           filtered ((:items-fn opts) st)
           n (count filtered)
@@ -192,7 +189,7 @@
 
 (defn make-panel
   "Build a mechanics-only filter panel. The caller's state map supplies the
-   selector's own keys; the panel adds and owns `:search` and
+   caller's own keys; the panel adds and owns `:search` and
    `:selected-idx`.
 
    ITEMS-FN     (fn [state] -> filtered items, display order)
@@ -213,7 +210,8 @@
    :state-atom  an existing state atom to use instead of a new one
    :search-text initial filter text
    :search-resets-selection? move the selection to the top on a filter
-                change (default true; auth keeps the index and clamps)"
+                change (default true; pass false to keep the index and let
+                it clamp)"
   [items-fn render-row & {:keys [chrome extra-key on-select on-cancel
                                  empty-text render-empty max-visible nav
                                  state state-atom search-text
@@ -242,25 +240,5 @@
               :search-ref (engine/ref)
               :state-atom st
               :focused? focused?
-              :cache-atom (atom nil)
               :opts opts})]
     (assoc sel :root (h/root (panel-body st (:search-ref sel) focused? border-fn opts)))))
-
-;; ─── Dock lifetime ─────────────────────────────────────────────────────────
-
-(defn show-panel!
-  "Mount PANEL on CS in place of the editor and record it in COMP-ATOM —
-   the late-binding slot a panel's callbacks close through."
-  [cs comp-atom panel]
-  (dock/mount! cs panel)
-  (reset! comp-atom panel)
-  (tui/tui-request-render (:tui cs))
-  nil)
-
-(defn panel-close!
-  "Close whatever COMP-ATOM holds: leave the dock and dispose, then ask for
-   a frame. A never-mounted or already-closed atom is a no-op."
-  [cs comp-atom]
-  (dock/close-atom! cs comp-atom)
-  (tui/tui-request-render (:tui cs))
-  nil)

@@ -10,8 +10,9 @@
             [kmet.ai.api.shared :as shared]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.ui.tui.filter-panel :as fp]
+            [kmet.agent.ui.tui.dock :as dock]
             [kmet.agent.config :as cfg]
+            [kmet.tui.components.filter-panel :as fp]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.theme :as theme]))
@@ -150,7 +151,7 @@
    \"Current model does not support thinking\")."
   [cs & {:keys [on-select on-persist]}]
   (let [sel-atom (atom nil)
-        close! (fn [] (fp/panel-close! cs sel-atom))
+        close! (fn [] (dock/close-atom! cs sel-atom))
         sel (make-thinking-selector
              (available-levels cs)
              (runtime/thinking-level (:engine cs))
@@ -162,4 +163,4 @@
                            (close!)
                            (on-persist level))
              :on-cancel close!)]
-    (fp/show-panel! cs sel-atom sel)))
+    (dock/show-panel! cs sel-atom sel)))

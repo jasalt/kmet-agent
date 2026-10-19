@@ -1,18 +1,24 @@
-(ns kmet.agent.ui.tui.test-filter-panel
+(ns kmet.tui.components.test-filter-panel
   "Filter-panel base tests — navigation (wrap/clamp), confirm, ctrl+c
    clear/cancel, extra-key precedence, the visible window, and chrome/empty
    rendering."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [babashka.fs :as fs]
-            [kmet.agent.keybindings :as kb]
-            [kmet.agent.ui.tui.filter-panel :as fp]
-            [kmet.tui.core :as core]
+            [kmet.tui.components.filter-panel :as fp]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]))
 
 (defn- items [n] (mapv #(str "item-" %) (range n)))
+
+;; The keybinding manager is process-global; each test gets the stock TUI
+;; bindings and the previous manager back.
+(t/use-fixtures :each
+  (fn [f]
+    (let [prev (tui-kb/get-global-keybindings)]
+      (tui-kb/set-global-keybindings! (tui-kb/make-tui-keybindings-manager))
+      (try (f)
+           (finally (tui-kb/set-global-keybindings! prev))))))
 
 (defn- row-node [_th _st item _idx selected?]
   [:text {:key item :padding-x 1 :padding-y 0
@@ -21,8 +27,6 @@
 (defn- panel
   [& {:keys [n max-visible nav extra clear-on-ctrl-c? render-empty
              on-select on-cancel search-resets? chrome]}]
-  (let [dir (str (fs/create-dirs (fs/path "target" "test-filter-panel-keybindings")))]
-    (tui-kb/set-global-keybindings! (kb/create-agent-keybindings-manager dir)))
   (fp/make-panel
    (fn [st]
      (let [q (str/lower-case (:search st))]
@@ -193,7 +197,7 @@
                    :extra (fn [_st data]
                             (when (= data (str (char 16)))
                               (reset! toggled true))))]
-    ;; ctrl+p is both tui.select.up and the app's provider toggle
+    ;; ctrl+p is both tui.select.up and an extra key
     (press sel "ctrl+p")
     (t/is (true? @toggled) "the extra key consumed ctrl+p")
     (t/is (str/includes? (selected-row sel) "item-0")
@@ -222,17 +226,3 @@
                                                 :text "CUSTOM-EMPTY"}]))]
     (t/is (true? (boolean (some #(str/includes? % "CUSTOM-EMPTY") (rendered sel)))))
     (t/is (not-any? #(str/includes? % "No matches") (rendered sel)))))
-
-;; ─── Dock lifetime ─────────────────────────────────────────────────────────
-
-(t/deftest test-show-and-close
-  (let [cs {:tui (core/create-tui nil)
-            :dock-stack (atom [])
-            :current-editor-atom (atom nil)}
-        sel (panel :n 3)
-        sel-atom (atom nil)]
-    (fp/show-panel! cs sel-atom sel)
-    (t/is (identical? sel @sel-atom))
-    (t/is (= sel (:component (first @(:dock-stack cs)))))
-    (fp/panel-close! cs sel-atom)
-    (t/is (empty? @(:dock-stack cs)))))

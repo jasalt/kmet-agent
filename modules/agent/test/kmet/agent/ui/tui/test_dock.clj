@@ -260,6 +260,43 @@
     (t/is (nil? (top cs)))
     (t/is (empty? @disposed) "borrowed panels are the owner's to dispose")))
 
+;; ─── Recorded panels (show-panel!) ─────────────────────────────────────────
+
+(deftest show-panel-records-and-close-atom-releases
+  (testing "the recorded-panel pair mounts the panel and remembers it in
+            the caller's late-binding atom, then closes whatever it holds"
+    (let [cs (test-cs)
+          disposed (atom [])
+          p (panel disposed "panel")
+          panel-atom (atom nil)]
+      (tui-stubs #(dock/show-panel! cs panel-atom p))
+      (t/is (identical? p @panel-atom))
+      (t/is (identical? p (top cs)))
+      (tui-stubs #(dock/close-atom! cs panel-atom))
+      (t/is (nil? (top cs)))
+      (t/is (= ["panel"] @disposed)))))
+
+(deftest show-panel-records-before-publishing-the-stack
+  (testing "a stack watch that closes the recorded panel during the mount
+            finds it — the record lands first, as in state/mount-selector!"
+    (let [cs (test-cs)
+          disposed (atom [])
+          p (panel disposed "panel")
+          panel-atom (atom nil)
+          closed? (atom false)
+          stack (:dock-stack cs)]
+      (add-watch stack ::close-on-mount
+                 (fn [_ _ _ _]
+                   (when (and @panel-atom (not @closed?))
+                     (reset! closed? true)
+                     (tui-stubs #(dock/close-atom! cs panel-atom)))))
+      (try
+        (tui-stubs #(dock/show-panel! cs panel-atom p))
+        (finally (remove-watch stack ::close-on-mount)))
+      (t/is (true? @closed?) "the watch closed the panel during the mount")
+      (t/is (nil? (top cs)))
+      (t/is (= ["panel"] @disposed)))))
+
 ;; ─── dispose! (the owner's ordered close) ──────────────────────────────────
 
 (deftest dispose-leaves-the-stack-before-disposing
