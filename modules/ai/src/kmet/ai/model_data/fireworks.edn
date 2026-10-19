@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-16T07:28:00Z"
+ :generated-at "2026-10-19T13:06:14Z"
  :provider {:id :fireworks
             :name "Fireworks AI"
             :env-vars ["FIREWORKS_API_KEY"]
@@ -9,6 +9,21 @@
   {"accounts/fireworks/models/deepseek-v4p1-flash"
    {:id "accounts/fireworks/models/deepseek-v4p1-flash"
     :name "DeepSeek V4.1 Flash"
+    :provider :fireworks
+    :api :anthropic-messages
+    :base-url "https://api.fireworks.ai/inference"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 0.3 :output 1.2 :cache-read 0.006 :cache-write 0}
+    :context-window 1000000
+    :max-tokens 384000
+    :compat {:supports-long-cache-retention false
+             :send-session-affinity-headers true
+             :supports-cache-control-on-tools false
+             :supports-eager-tool-input-streaming false}}
+   "accounts/fireworks/models/deepseek-v4p1-flash-1017"
+   {:id "accounts/fireworks/models/deepseek-v4p1-flash-1017"
+    :name "DeepSeek V4.1 Flash 1017"
     :provider :fireworks
     :api :anthropic-messages
     :base-url "https://api.fireworks.ai/inference"

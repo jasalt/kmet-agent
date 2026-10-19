@@ -20,17 +20,23 @@
         max-tokens-field (max-tokens-key model-record)
         ;; pi: requiresReasoningContentOnAssistantMessages gates the
         ;; reasoning_content field (deepseek/opencode-go only; also derived
-        ;; from an explicit :thinking-format :deepseek — resolved-openai-compat)
-        messages-fn (if (:requires-reasoning-content-on-assistant-messages
-                         compat)
-                      openai-messages-with-reasoning
-                      openai-messages)]
+        ;; from an explicit :thinking-format :deepseek — resolved-openai-compat).
+        ;; The compat's :reasoning-content-fill is the value used when the
+        ;; message carries no same-model reasoning: "" for DeepSeek, a
+        ;; non-empty placeholder for endpoints that turn the field into a
+        ;; thinking block (Vercel stealth models).
+        requires-reasoning? (:requires-reasoning-content-on-assistant-messages
+                             compat)
+        messages (if requires-reasoning?
+                   (openai-messages-with-reasoning messages (:provider model-record) model-id
+                                                   (:reasoning-content-fill compat))
+                   (openai-messages messages (:provider model-record) model-id))]
     (cond-> {:model model-id
              ;; provider+model-id flow to the converters as the replay target:
              ;; a message's thinking echoes back as reasoning_content only
              ;; when the message was produced by this same model (mid-session
              ;; /model switches must not leak foreign CoT into the request)
-             :messages (messages-fn messages (:provider model-record) model-id)
+             :messages messages
              :stream true
              :stream_options {:include_usage true}}
       (seq tools) (assoc :tools (mapv #(tool->openai-schema %

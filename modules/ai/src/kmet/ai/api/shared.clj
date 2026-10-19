@@ -386,14 +386,19 @@
    PROVIDER and MODEL-ID identify the request's target; a message's own
    :thinking is sent back verbatim only when it was produced by that same
    provider+model (see openai-messages — cross-model CoT is never replayed);
-   everything else gets the empty-string fill."
-  [messages & [provider model-id]]
+   everything else gets FILL (default \"\"). FILL must be non-empty for
+   endpoints that turn the field into a thinking block and reject an empty
+   one (the stealth models: compat :reasoning-content-fill)."
+  [messages & [provider model-id fill]]
   (into []
         (keep (fn [m]
                 (let [role (name (:role m))
-                      ;; provenance-gated: "" unless this model said it
+                      ;; provenance-gated: FILL unless this model said it; an
+                      ;; empty same-model thinking also takes the fill (these
+                      ;; endpoints reject a blank reasoning block)
                       thinking (or (when (same-origin? m provider model-id)
-                                     (str/trim (or (:thinking m) "")))
+                                     (not-empty (str/trim (or (:thinking m) ""))))
+                                   fill
                                    "")]
                   (case role
                     "bash"
@@ -511,7 +516,10 @@
 
    Carries pi's full detected key set for parity; keys without a kmet
    consumer yet (:supports-store, :supports-developer-role,
-   :requires-tool-result-name, ...) are inert data. Routing maps
+   :requires-tool-result-name, ...) are inert data. :reasoning-content-fill is
+   the one kmet-only key: the placeholder an endpoint needs on assistant
+   messages without same-model reasoning (pi has no equivalent), defaulting
+   to the empty string. Routing maps
    (openRouterRouting/vercelGatewayRouting) and feature keys with no kmet
    implementation (zaiToolStream, deferredToolsMode,
    supportsOpenAIGrammarTools) are not ported. Unlike pi, URL matching is
@@ -569,6 +577,13 @@
      :requires-assistant-after-tool-result false
      :requires-thinking-as-text false
      :requires-reasoning-content-on-assistant-messages deepseek?
+     ;; kmet extension (no pi counterpart): the value a provider needs on
+     ;; every assistant message when no same-model reasoning exists. "" for
+     ;; the DeepSeek/opencode-go fill; endpoints that turn the field into a
+     ;; thinking block reject an empty one, so their models set a non-empty
+     ;; placeholder here. The default is present so an explicit compat value
+     ;; survives the key-wise merge above.
+     :reasoning-content-fill ""
      :thinking-format (cond
                         deepseek? :deepseek
                         zai? :zai

@@ -771,7 +771,21 @@
   ;; requires-reasoning-content-on-assistant-messages providers
   (let [msgs [{:role :assistant :content [{:type :text :text "answer"}]}]]
     (t/is (nil? (:reasoning_content (first (@#'shared/openai-messages msgs)))))
-    (t/is (= "" (:reasoning_content (first (@#'shared/openai-messages-with-reasoning msgs)))))))
+    (t/is (= "" (:reasoning_content (first (@#'shared/openai-messages-with-reasoning msgs))))))
+  ;; an explicit fill replaces the empty placeholder for endpoints that turn
+  ;; the field into a thinking block and reject an empty one — including a
+  ;; same-model message whose thinking is empty
+  (let [msgs [{:role :assistant
+               :content [{:type :text :text "answer"}]
+               :thinking "foreign CoT"
+               :provider :hetzner :model "Qwen3.8-27B"}
+              {:role :assistant
+               :content [{:type :text :text "answer"}]
+               :provider :commandcode :model "stealth/cat-jam:free"}]
+        reasoning (@#'shared/openai-messages-with-reasoning
+                   msgs :commandcode "stealth/cat-jam:free" " ")]
+    (t/is (= [" " " "] (mapv :reasoning_content reasoning))
+          "the fill applies where no same-model reasoning exists")))
 
 (t/deftest test-llm-empty-assistant-dropped
   ;; pi: "some providers require either content or tool_calls, but not none" —
@@ -1521,6 +1535,42 @@
               "foreign turn carries the required empty fill")
         (t/is (= "" (:reasoning_content a2))
               "no foreign CoT rides along on any assistant message")))))
+
+(t/deftest test-openai-payload-stealth-reasoning-fill
+  ;; CommandCode's stealth endpoints (Cat Jam, Beam) convert reasoning_content
+  ;; into a thinking block and reject an assistant message that carries an
+  ;; empty one — 400 "The stealth model could not complete the request." —
+  ;; which broke every request after a mid-session /model switch (the foreign
+  ;; reasoning is dropped by design, leaving no reasoning_content at all).
+  ;; The model's compat supplies a non-empty placeholder; same-model reasoning
+  ;; still takes precedence.
+  (let [stealth {:id "stealth/cat-jam:free" :name "Cat Jam" :provider :commandcode
+                 :base-url "https://api.commandcode.ai/provider/v1"
+                 :reasoning true :input [:text] :max-tokens 131072
+                 :compat {:requires-reasoning-content-on-assistant-messages true
+                          :reasoning-content-fill " "}}
+        msgs [{:role :user :content [{:type :text :text "hi"}]}
+              {:role :assistant :content [{:type :text :text "done"}]
+               :thinking "deepseek CoT"
+               :provider :commandcode :model "deepseek/deepseek-v4.1-flash"}
+              {:role :assistant :content [{:type :text :text "mine"}]
+               :thinking "own CoT"
+               :provider :commandcode :model "stealth/cat-jam:free"}]
+        payload (@#'completions/openai-payload stealth :high msgs [] "stealth/cat-jam:free")
+        [_ foreign own] (:messages payload)]
+    (t/is (= " " (:reasoning_content foreign))
+          "a pre-switch turn carries the non-empty fill, never the foreign CoT")
+    (t/is (= "own CoT" (:reasoning_content own))
+          "same-model reasoning still round-trips"))
+  ;; the shipped commandcode catalog carries the compat (commandcode-overrides
+  ;; must survive a regeneration)
+  (m/load-catalogs!)
+  (doseq [mid ["stealth/cat-jam:free" "reflection/beam:free"]]
+    (let [compat (:compat (m/get-model :commandcode mid))]
+      (t/is (true? (:requires-reasoning-content-on-assistant-messages compat))
+            (str mid " must send reasoning_content on every assistant message"))
+      (t/is (pos? (count (:reasoning-content-fill compat)))
+            (str mid " needs a non-empty fill — the endpoint rejects \"\"")))))
 
 (t/deftest test-reasoning-content-gating-data
   ;; pi: requiresReasoningContentOnAssistantMessages gates reasoning_content

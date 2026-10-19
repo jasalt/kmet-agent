@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-09T09:05:00Z"
+ :generated-at "2026-10-19T13:06:14Z"
  :provider {:id :baseten
             :name "Baseten"
             :env-vars ["BASETEN_API_KEY"]
@@ -99,6 +99,56 @@
     :cost {:input 0.3 :output 1.2 :cache-read 0.03 :cache-write 0}
     :context-window 1048576
     :max-tokens 32768
+    :compat {:supports-store false
+             :supports-developer-role false
+             :supports-reasoning-effort true
+             :thinking-format :openai
+             :max-tokens-field :max-tokens
+             :supports-long-cache-retention false
+             :supports-strict-mode true}}
+   "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+   {:id "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+    :name "DeepSeek V4.1 Flash 1017"
+    :provider :baseten
+    :api :openai-completions
+    :base-url "https://inference.baseten.co/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low nil
+                         :max "max"
+                         :medium nil
+                         :minimal nil
+                         :off "none"
+                         :xhigh nil}
+    :input [:text :image]
+    :cost {:input 0.3 :output 1.2 :cache-read 0 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 262144
+    :compat {:supports-store false
+             :supports-developer-role false
+             :supports-reasoning-effort true
+             :thinking-format :openai
+             :max-tokens-field :max-tokens
+             :supports-long-cache-retention false
+             :supports-strict-mode true}}
+   "deepseek-ai/DeepSeek-V4.1-Flash-1017-Fast"
+   {:id "deepseek-ai/DeepSeek-V4.1-Flash-1017-Fast"
+    :name "DeepSeek V4.1 Flash 1017 Fast"
+    :provider :baseten
+    :api :openai-completions
+    :base-url "https://inference.baseten.co/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low nil
+                         :max "max"
+                         :medium nil
+                         :minimal nil
+                         :off "none"
+                         :xhigh nil}
+    :input [:text :image]
+    :cost {:input 0.6 :output 2.4 :cache-read 0 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 262144
     :compat {:supports-store false
              :supports-developer-role false
              :supports-reasoning-effort true

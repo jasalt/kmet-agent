@@ -2152,17 +2152,34 @@
    name). Consulted when a direct price lookup misses."
   {"claude-haiku-4-5-20251001" "claude-haiku-4-5"})
 
+(def ^:private commandcode-stealth-reasoning-fill
+  "Non-empty reasoning_content placeholder for the CommandCode stealth
+   endpoints (Cat Jam, Beam). They convert reasoning_content into a thinking
+   block and answer 400 \"The stealth model could not complete the request.\"
+   for an assistant message that carries no reasoning — an empty string is
+   rejected too. A mid-session /model switch never replays the previous
+   model's thinking (see openai-messages), so the fill is what keeps a
+   foreign history sendable."
+  " ")
+
 (def ^:private commandcode-overrides
   "Explicit capability wins over refs. The hook for models whose
    capabilities are endpoint-bound rather than model-bound, and for endpoint
    ids whose canonical catalog home has retired the entry while the endpoint
    still serves it: OpenRouter dropped qwen/qwen3.6-max-preview in the
    2026-10-12 model bump, so its last committed profile is pinned here
-   (reproducing what the ref used to transfer)."
+   (reproducing what the ref used to transfer). The stealth entries pin the
+   reasoning-content replay their endpoint demands (see
+   commandcode-stealth-reasoning-fill): a /model switch drops the previous
+   model's thinking, leaving every earlier assistant turn without it."
   {"Qwen/Qwen3.6-Max-Preview" {:reasoning true
                                :input [:text]
                                :max-tokens 65536
-                               :compat {:thinking-format :openrouter}}})
+                               :compat {:thinking-format :openrouter}}
+   "stealth/cat-jam:free" {:compat {:requires-reasoning-content-on-assistant-messages true
+                                    :reasoning-content-fill commandcode-stealth-reasoning-fill}}
+   "reflection/beam:free" {:compat {:requires-reasoning-content-on-assistant-messages true
+                                    :reasoning-content-fill commandcode-stealth-reasoning-fill}}})
 
 (defn- warn-unresolved-commandcode-ref!
   "Warn when a LISTED canonical ref resolves to nil in this run's catalogs:
