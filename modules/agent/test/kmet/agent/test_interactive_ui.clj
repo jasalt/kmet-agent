@@ -44,7 +44,7 @@
             [kmet.ai.models :as m]
             [kmet.ai.auth :as auth]
             [kmet.agent.loop.compact :as agent-compact]
-            [kmet.agent.loop.state :as agent-state]
+            [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.tools.core :as tools]
             [kmet.libs.http :as http]
@@ -955,7 +955,7 @@
               _ (append-message! incoming "imported question")
               cs (import-test-cs outgoing)
               ag (runtime/agent-state (:engine cs))
-              active-names (fn [] (into #{} (map :name) (agent-state/active-tools ag)))
+              active-names (fn [] (into #{} (map :name) (loop-state/active-tools ag)))
               prompt-tool-names (fn []
                                   (into #{}
                                         (map :name)
@@ -965,7 +965,7 @@
           (t/is (not (contains? (active-names) "bash"))
                 "the configured surface excludes bash")
           (testing "a /tools selection in the outgoing session enables bash"
-            (agent-state/set-active-tools! ag (conj (vec (active-names)) "bash"))
+            (loop-state/set-active-tools! ag (conj (vec (active-names)) "bash"))
             (t/is (contains? (active-names) "bash"))
             (t/is (contains? (prompt-tool-names) "bash")
                   "the system prompt options follow the runtime selection"))
@@ -1273,12 +1273,12 @@
           ((:handler (commands/find-command "scoped-models")) cs "")
           (t/is (nil? (scoped-models-selector/scoped-models-get-enabled-ids @sel-ref))))
         (testing "session scoped models win"
-          (agent-state/set-scoped-models! ag ["opencode-go/deepseek-v4-flash"])
+          (loop-state/set-scoped-models! ag ["opencode-go/deepseek-v4-flash"])
           ((:handler (commands/find-command "scoped-models")) cs "")
           (t/is (= ["opencode-go/deepseek-v4-flash"]
                    (scoped-models-selector/scoped-models-get-enabled-ids @sel-ref))))
         (testing "settings :enabled-models patterns resolve"
-          (agent-state/set-scoped-models! ag [])
+          (loop-state/set-scoped-models! ag [])
           (with-redefs [cfg/get-enabled-models-live
                         (fn [_] ["opencode-go/deepseek-v4-flash"])]
             ((:handler (commands/find-command "scoped-models")) cs "")
@@ -1286,7 +1286,7 @@
                      (scoped-models-selector/scoped-models-get-enabled-ids @sel-ref)))))
         (testing "unresolved patterns survive as [unavailable] rows alongside
                   resolved ones (pi: no-match diagnostics appended)"
-          (agent-state/set-scoped-models! ag [])
+          (loop-state/set-scoped-models! ag [])
           (with-redefs [cfg/get-enabled-models-live
                         (fn [_] ["opencode-go/deepseek-v4-flash" "ghost/model"])]
             ((:handler (commands/find-command "scoped-models")) cs "")
@@ -1334,8 +1334,8 @@
           available-at-save [kept disabled]
           available-calls (atom 0)
           ag (agent/make-agent-state)
-          _ (agent-state/set-scoped-models! ag ["test-provider/kept"
-                                                "test-provider/disappeared"])
+          _ (loop-state/set-scoped-models! ag ["test-provider/kept"
+                                               "test-provider/disappeared"])
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :chat-history nil
                                    :footer-comp nil
@@ -2379,7 +2379,7 @@
       (t/is (seq @started) "a run started for the first message")
       (t/is (= "first" (get-in @started [1 :message])) "run carries the first message")
       (t/is (empty? (runtime/compaction-queued (:engine cs))) "queue drained")
-      (let [{:keys [steering follow-up]} (agent-state/queued-messages (runtime/agent-state (:engine cs)))]
+      (let [{:keys [steering follow-up]} (loop-state/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (= [] steering) "second (follow-up) not steered")
         (t/is (= ["second"] follow-up) "second queued as follow-up into the run")))))
 
@@ -2393,7 +2393,7 @@
                {:text "follow-msg" :mode :follow-up}])
       (with-redefs [tui/tui-request-render (fn [_] nil)]
         ((var turn/flush-compaction-queue!) cs true))
-      (let [{:keys [steering follow-up]} (agent-state/queued-messages (runtime/agent-state (:engine cs)))]
+      (let [{:keys [steering follow-up]} (loop-state/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (= ["steer-msg"] steering) "steer-mode queued into steering")
         (t/is (= ["follow-msg"] follow-up) "follow-up-mode queued into follow-up"))
       (t/is (empty? (runtime/compaction-queued (:engine cs))) "queue drained"))))
@@ -2421,7 +2421,7 @@
             session queues (pi: restoreQueuedMessagesToEditor → clearAllQueues)"
     (let [cs (compaction-cs)
           ed @(:current-editor-atom cs)]
-      (agent-state/steer! (runtime/agent-state (:engine cs)) "steer-msg")
+      (loop-state/steer! (runtime/agent-state (:engine cs)) "steer-msg")
       (reset! (:compaction-queued (:engine cs)) [{:text "compact-msg" :mode :steer}])
       (editor/editor-set-text! ed "draft")
       (let [n ((var turn/restore-queued-messages!) cs)]
@@ -2637,7 +2637,7 @@
       (with-redefs [tui/tui-request-render (fn [_] nil)
                     chat-history/chat-history-show-status! (fn [_ _] nil)]
         ((:handler (commands/find-command "followup")) cs "do the thing"))
-      (let [{:keys [steering follow-up]} (agent-state/queued-messages (runtime/agent-state (:engine cs)))]
+      (let [{:keys [steering follow-up]} (loop-state/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (= [] steering) "not steered into the running turn")
         (t/is (= ["do the thing"] follow-up) "args queued as follow-up"))
       (t/is (empty? @(:messages (runtime/agent-state (:engine cs))))
@@ -2661,7 +2661,7 @@
       (t/is (seq @started) "run-agent-turn called")
       (t/is (= "wrap it up" (get-in @started [1 :message]))
             "run carries the args as the message")
-      (let [{:keys [steering follow-up]} (agent-state/queued-messages (runtime/agent-state (:engine cs)))]
+      (let [{:keys [steering follow-up]} (loop-state/queued-messages (runtime/agent-state (:engine cs)))]
         (t/is (empty? steering) "nothing queued")
         (t/is (empty? follow-up) "nothing queued")))))
 
@@ -2690,7 +2690,7 @@
         ((:handler (commands/find-command "followup")) cs ""))
       (t/is (= "Usage: /followup <message>" (:content @msg))
             "usage info shown")
-      (t/is (empty? (:follow-up (agent-state/queued-messages (runtime/agent-state (:engine cs)))))
+      (t/is (empty? (:follow-up (loop-state/queued-messages (runtime/agent-state (:engine cs)))))
             "nothing queued for blank args"))))
 
 (deftest test-cancel-two-step-during-midrun-compaction

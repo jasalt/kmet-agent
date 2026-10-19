@@ -46,7 +46,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop.compact :as agent-compact]
-            [kmet.agent.loop.state :as agent-state]
+            [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.packages :as packages]
@@ -183,7 +183,7 @@
                             :cwd runtime-cwd
                             :context-files (context/load-project-context-files
                                             (cfg/get-agent-dir) (str (fs/cwd)))
-                            :tools (agent-state/active-tools-for
+                            :tools (loop-state/active-tools-for
                                     {:default-tools default-tools})}
         system-prompt (apply skills/build-system-prompt
                              (mapcat identity system-prompt-opts))
@@ -245,7 +245,7 @@
                                                                      t)))))}
                                     timeout-opts
                                     agent-opts)))
-        _ (agent-state/init-scoped-models! agent-state config)
+        _ (loop-state/init-scoped-models! agent-state config)
         engine (map->Engine {:agent-state (atom agent-state)
                              :session (atom (:session agent-state))
                              :config (atom config)
@@ -268,7 +268,7 @@
     (let [node (:node agent-state)]
       (extensions/install-session! node (:session agent-state))
       (extensions/install-context-sink!
-       node (fn [msg] (agent-state/add-context-message! (agent-state engine) msg)))
+       node (fn [msg] (loop-state/add-context-message! (agent-state engine) msg)))
       (extensions/install-front-end!
        node
        {:mode mode
@@ -410,14 +410,14 @@
     (reset! (:compaction-queued engine) [])
     (reset! (:pending-compaction engine) [])
     (reset! (:agent-state engine) new-ag)
-    (agent-state/restore-session-context! new-ag)
+    (loop-state/restore-session-context! new-ag)
     (when apply-settings?
       ;; pi: createRuntime builds a fresh session with the config-derived
       ;; tool set — the outgoing session's set-active-tools!/tools-selector
       ;; selection must not carry over (the switch also emits :session-start,
       ;; letting extensions restore their own per-session state).
-      (agent-state/set-active-tools! new-ag nil)
-      (agent-state/apply-session-settings! new-ag))
+      (loop-state/set-active-tools! new-ag nil)
+      (loop-state/apply-session-settings! new-ag))
     (apply-session-cwd! engine sess)
     sess))
 
@@ -550,7 +550,7 @@
         label-target (if summary-entry (:id summary-entry) target-leaf)]
     (when (and label label-target)
       (session/set-label! sess label-target label))
-    (agent-state/restore-session-context! (agent-state engine))
+    (loop-state/restore-session-context! (agent-state engine))
     (reset! (:compaction-queued engine) [])
     (reset! (:pending-compaction engine) [])
     (event-bus/emit-event!
@@ -630,7 +630,7 @@
   "The agent's in-memory context messages (pi: session.messages — what the
    next request sends, compaction summaries and context edits applied)."
   [engine]
-  (agent-state/get-context (agent-state engine)))
+  (loop-state/get-context (agent-state engine)))
 
 (defn set-session-name!
   "Set the session display name (the /name builtin and RPC set_session_name
@@ -683,7 +683,7 @@
      :steering-mode (:steering-mode cfg)
      :follow-up-mode (:follow-up-mode cfg)
      :auto-compact (:auto-compact cfg)
-     :queues (agent-state/queued-messages agent-state)
+     :queues (loop-state/queued-messages agent-state)
      :last-outcome @(:last-outcome agent-state)}))
 
 (defn last-outcome
@@ -758,14 +758,14 @@
                     :message (:text opts))))
     nil))
 
-(defn steer! [engine text] (agent-state/steer! (agent-state engine) text))
-(defn follow-up! [engine text] (agent-state/follow-up! (agent-state engine) text))
-(defn queues [engine] (agent-state/queued-messages (agent-state engine)))
+(defn steer! [engine text] (loop-state/steer! (agent-state engine) text))
+(defn follow-up! [engine text] (loop-state/follow-up! (agent-state engine) text))
+(defn queues [engine] (loop-state/queued-messages (agent-state engine)))
 (defn clear-queues!
   "Drop the steering/follow-up queues (the restore-to-editor path clears
    them before cancelling); the loop emits the matching :queue-update."
   [engine]
-  (agent-state/clear-queues! (agent-state engine)))
+  (loop-state/clear-queues! (agent-state engine)))
 (defn cancel!
   "Cancel the in-flight run (if any): the turn flag drops synchronously and
    the loop settles the prompt with :outcome :aborted."
@@ -987,7 +987,7 @@
                         ;; pi: restoreQueue — the session queue is cleared too,
                         ;; so messages already delivered by the failed flush are
                         ;; not delivered again when the queue is re-flushed
-                       (agent-state/clear-queues! (agent-state engine))
+                       (loop-state/clear-queues! (agent-state engine))
                        (reset! (:compaction-queued engine) msgs))]
         (try
           (if will-retry
@@ -1027,28 +1027,28 @@
   ([engine custom-instructions reason]
    (agent-compact/compact-context! (agent-state engine) custom-instructions reason)))
 
-(defn set-model! [engine model] (agent-state/set-model! (agent-state engine) model))
+(defn set-model! [engine model] (loop-state/set-model! (agent-state engine) model))
 (defn cycle-model!
   "Cycle the session model forward (1-arity) or in a direction (-1/1)."
   ([engine] (cycle-model! engine 1))
-  ([engine direction] (agent-state/cycle-model! (agent-state engine) direction)))
-(defn set-thinking-level! [engine level] (agent-state/set-thinking-level! (agent-state engine) level))
+  ([engine direction] (loop-state/cycle-model! (agent-state engine) direction)))
+(defn set-thinking-level! [engine level] (loop-state/set-thinking-level! (agent-state engine) level))
 (defn cycle-thinking-level!
   "Advance the thinking level through the current model's levels; returns
    the new level, or nil when the model offers fewer than two."
   [engine]
-  (agent-state/cycle-thinking-level! (agent-state engine)))
-(defn set-auto-compact! [engine enabled?] (agent-state/set-auto-compact! (agent-state engine) enabled?))
-(defn set-steering-mode! [engine mode] (agent-state/set-steering-mode! (agent-state engine) mode))
-(defn set-follow-up-mode! [engine mode] (agent-state/set-follow-up-mode! (agent-state engine) mode))
+  (loop-state/cycle-thinking-level! (agent-state engine)))
+(defn set-auto-compact! [engine enabled?] (loop-state/set-auto-compact! (agent-state engine) enabled?))
+(defn set-steering-mode! [engine mode] (loop-state/set-steering-mode! (agent-state engine) mode))
+(defn set-follow-up-mode! [engine mode] (loop-state/set-follow-up-mode! (agent-state engine) mode))
 (defn set-block-images!
   "Block or allow image content in provider requests (the /settings row and
    /reload re-applying the config value)."
   [engine blocked?]
-  (agent-state/set-block-images! (agent-state engine) blocked?))
+  (loop-state/set-block-images! (agent-state engine) blocked?))
 (defn scoped-models [engine] @(:scoped-models (agent-state engine)))
 (defn set-scoped-models! [engine models]
-  (agent-state/set-scoped-models! (agent-state engine) models))
+  (loop-state/set-scoped-models! (agent-state engine) models))
 
 ;; ─── Front-end surface ─────────────────────────────────────────────────────
 ;;
@@ -1171,7 +1171,7 @@
 (defn has-queued-messages?
   "True when the steering or follow-up queue holds messages."
   [engine]
-  (boolean (agent-state/has-queued-messages? (agent-state engine))))
+  (boolean (loop-state/has-queued-messages? (agent-state engine))))
 
 (defn cancel-signal
   "The current cancel signal value (extension ctx.signal)."
@@ -1203,25 +1203,25 @@
   "The LLM-visible active tool set (registry maps filtered by the enabled
    and default-tool selections)."
   [engine]
-  (agent-state/active-tools (agent-state engine)))
+  (loop-state/active-tools (agent-state engine)))
 
 (defn apply-default-tools!
   "Re-apply a :default-tools selection after a settings reload; returns the
    new selection."
   [engine selection]
-  (agent-state/apply-default-tools! (agent-state engine) selection))
+  (loop-state/apply-default-tools! (agent-state engine) selection))
 
 (defn add-context-message!
   "Append a context-only message (not persisted to the session) to the
    agent's in-memory context."
   [engine msg]
-  (agent-state/add-context-message! (agent-state engine) msg))
+  (loop-state/add-context-message! (agent-state engine) msg))
 
 (defn add-bash-result!
   "Record a !/!! bash execution result in the context and session (deferred
    while the agent streams; flushed when the run settles)."
   [engine command result exclude-from-context?]
-  (agent-state/add-bash-result! (agent-state engine) command result exclude-from-context?))
+  (loop-state/add-bash-result! (agent-state engine) command result exclude-from-context?))
 
 (defn abort-compaction!
   "Abort the in-flight compaction without cancelling a running turn."
@@ -1239,13 +1239,13 @@
 (defn set-http-idle-timeout-ms!
   "Set the SSE idle timeout live (0 disables)."
   [engine ms]
-  (agent-state/set-http-idle-timeout-ms! (agent-state engine) ms))
+  (loop-state/set-http-idle-timeout-ms! (agent-state engine) ms))
 
 (defn set-http-total-timeout-ms!
   "Set the whole-request total deadline live (nil follows the idle
    timeout; 0 disables it)."
   [engine ms]
-  (agent-state/set-http-total-timeout-ms! (agent-state engine) ms))
+  (loop-state/set-http-total-timeout-ms! (agent-state engine) ms))
 
 (defn set-run-options!
   "Merge M into the runtime-tunable run options (retry delays, loop-guard
@@ -1263,9 +1263,9 @@
   [engine model explicit-level]
   (let [ag (agent-state engine)
         old-model (models/get-model @(:provider ag) @(:model ag))
-        level (agent-state/switch-thinking-level old-model model @(:thinking ag) explicit-level)]
-    (agent-state/set-model! ag model)
-    (agent-state/set-thinking-level! ag level)
+        level (loop-state/switch-thinking-level old-model model @(:thinking ag) explicit-level)]
+    (loop-state/set-model! ag model)
+    (loop-state/set-thinking-level! ag level)
     (cfg/set-default-model! (:provider model) (:id model))
     level))
 
@@ -1316,7 +1316,7 @@
           busy? (turn-running? engine)]
       (cond
         ;; next-turn never triggers: it rides the next prompt
-        (= :next-turn deliver-as) (agent-state/queue-next-turn-message! ag msg)
+        (= :next-turn deliver-as) (loop-state/queue-next-turn-message! ag msg)
 
         ;; streaming with a trigger: into the run (steer is the default)
         (and busy? (not (false? trigger-turn)))
@@ -1325,14 +1325,14 @@
           (steer! engine msg))
 
         ;; idle with a trigger: append now, then run on the new context
-        trigger-turn (do (agent-state/append-custom-message! ag msg)
+        trigger-turn (do (loop-state/append-custom-message! ag msg)
                          (prompt! engine {}))
 
         ;; streaming without a trigger: defer to the turn-end flush
-        busy? (agent-state/defer-custom-message! ag msg)
+        busy? (loop-state/defer-custom-message! ag msg)
 
         ;; idle without a trigger: append only
-        :else (agent-state/append-custom-message! ag msg)))
+        :else (loop-state/append-custom-message! ag msg)))
     true))
 
 (defn runtime-capabilities
@@ -1345,13 +1345,13 @@
    :get-thinking-level #(deref (:thinking (agent-state engine)))
    :set-thinking-level (fn [level]
                          (when (shared/valid-thinking-level? level)
-                           (agent-state/set-thinking-level! (agent-state engine) level))
+                           (loop-state/set-thinking-level! (agent-state engine) level))
                          nil)
    :send-user-message #(send-user-message-capability engine %1 %2)
    :send-message! #(send-message-capability engine %1 %2)
-   :get-active-tools #(mapv :name (agent-state/active-tools (agent-state engine)))
+   :get-active-tools #(mapv :name (loop-state/active-tools (agent-state engine)))
    :set-active-tools (fn [names]
-                       (agent-state/set-active-tools! (agent-state engine) names)
+                       (loop-state/set-active-tools! (agent-state engine) names)
                        nil)})
 
 (defn dispose!

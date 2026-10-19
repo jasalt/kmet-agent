@@ -7,7 +7,7 @@
   (:require [clojure.string :as str]
             [kmet.agent.debug :as debug]
             [kmet.agent.commands :as commands]
-            [kmet.agent.loop.state :as agent-state]
+            [kmet.agent.loop.state :as loop-state]
             [kmet.agent.runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
@@ -36,7 +36,7 @@
       @(:compacting? agent-state)
       (out ui :info "Continue" "Wait for the in-progress compaction to finish before continuing.")
 
-      (empty? (agent-state/get-context agent-state))
+      (empty? (loop-state/get-context agent-state))
       (out ui :info "Continue" "No conversation to continue.")
 
       :else

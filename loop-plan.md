@@ -271,8 +271,8 @@ Source call sites:
 
 | File | Change |
 |---|---|
-| `session/runtime.clj` | add `[kmet.agent.loop.state :as agent-state]`; retarget the 31 state vars listed in the landing audit below; keep `agent/run-agent-turn` (1) and `agent/cancel-turn` (2) |
-| `commands/builtins.clj` | replace the loop require with `[kmet.agent.loop.state :as agent-state]`; `agent/get-context` → `agent-state/get-context` |
+| `session/runtime.clj` | add `[kmet.agent.loop.state :as loop-state]`; retarget the 31 state vars listed in the landing audit below; keep `agent/run-agent-turn` (1) and `agent/cancel-turn` (2) |
+| `commands/builtins.clj` | replace the loop require with `[kmet.agent.loop.state :as loop-state]`; `agent/get-context` → `loop-state/get-context` |
 | `session/runtime.clj` docstrings | `kmet.agent.loop/switch-thinking-level` → `kmet.agent.loop.state/switch-thinking-level` |
 
 Make `loop-guard-give-up!` private in `kmet.agent.loop` — the driver is its
@@ -295,9 +295,9 @@ Test call sites (all mechanical alias retargets; the constructors and
 
 | File | Change |
 |---|---|
-| `modes/test_interactive.clj` | `agent/set-block-images!` → `agent-state/set-block-images!` |
-| `modes/test_rpc.clj` | `agent/restore-session-context!` → `agent-state/restore-session-context!` |
-| `test_interactive_ui.clj` | `agent/active-tools`, `queued-messages`, `set-active-tools!`, `set-scoped-models!`, `steer!` → `agent-state/` |
+| `modes/test_interactive.clj` | `agent/set-block-images!` → `loop-state/set-block-images!` |
+| `modes/test_rpc.clj` | `agent/restore-session-context!` → `loop-state/restore-session-context!` |
+| `test_interactive_ui.clj` | `agent/active-tools`, `queued-messages`, `set-active-tools!`, `set-scoped-models!`, `steer!` → `loop-state/` |
 | `test_loop.clj` | add `[kmet.agent.loop.state :as state]`; retarget the 29 `loop/...` state tokens in its audit list; `loop/make-agent-state`, `loop/run-agent-turn`, `loop/cancel-turn` unchanged |
 
 `test_loop.clj` state tokens to retarget:

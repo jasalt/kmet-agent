@@ -20,7 +20,7 @@
             [kmet.agent.modes.interactive.session-admin :as session-admin]
             [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.loop.state :as agent-state]
+            [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
             [kmet.agent.ui.tui.bash-execution :as bash-execution]
@@ -974,7 +974,7 @@
       (try
         ;; stale live state — the reloaded config must overwrite it
         (reset! subs/image-settings-atom {:show-images false :image-width-cells 5})
-        (agent-state/set-block-images! ag false)
+        (loop-state/set-block-images! ag false)
         (with-redefs [cfg/init! (fn [] (assoc cfg/default-config
                                               :terminal {:show-images true :image-width-cells 120}
                                               :images {:block-images true}))
