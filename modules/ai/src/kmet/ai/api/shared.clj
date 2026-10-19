@@ -3,7 +3,6 @@
    openai-prompt-cache.ts + the shared thinking/usage/event helpers): URL construction,
    request headers, thinking levels, message transformers, cost and stream-event handling."
   (:require
-   [kmet.ai.hooks :as hooks]
    [kmet.ai.attribution :as attribution]
    [kmet.ai.auth :as auth]
    [kmet.libs.dynamic-value :as dynamic-value]
@@ -16,19 +15,19 @@
    [clojure.string :as str]))
 
 ;; ─── Provider-event hooks (pi: context / before_provider_request) ────────
-;; Re-exported from kmet.ai.hooks (the slots live there so the provider
-;; HTTP decorator kmet.ai.http can reach them without a require cycle); the
-;; context hook fires here (applied by kmet.ai.llm per call) and the
-;; request hook in each api builder.
+;; The hooks are `kmet.ai.llm/send-message` options (:on-context /
+;; :on-payload / :on-headers / :on-response), not registrations: the context
+;; hook fires in kmet.ai.llm, the payload hook here (each api builder applies
+;; it), and the header/response hooks in the kmet.ai.http decorator, which
+;; receives them as an argument.
 
-(def set-context-hook! hooks/set-context-hook!)
-(def apply-context-hook hooks/apply-context-hook)
-(def set-before-provider-request-hook! hooks/set-before-provider-request-hook!)
-(def apply-before-provider-request-hook hooks/apply-before-provider-request-hook)
-(def set-before-provider-headers-hook! hooks/set-before-provider-headers-hook!)
-(def apply-before-provider-headers-hook hooks/apply-before-provider-headers-hook)
-(def set-after-provider-response-hook! hooks/set-after-provider-response-hook!)
-(def apply-after-provider-response-hook hooks/apply-after-provider-response-hook)
+(defn on-payload
+  "Run the request's :on-payload hook over PAYLOAD (pi:
+   before_provider_request); nil keeps the payload unchanged."
+  [opts payload]
+  (if-let [f (:on-payload opts)]
+    (or (f payload) payload)
+    payload))
 
 ;; ─── Transport error classification ───────────────────────────────────────
 ;; Moved into kmet.libs.http (the single HTTP boundary owns the transport

@@ -7,7 +7,7 @@
    [clojure.string :as str]
    [kmet.ai.hash :as hash]
    [kmet.ai.constrained-sampling :as cs]
-   [kmet.ai.api.shared :refer [bash-execution-text content-text endpoint-url image-block? apply-before-provider-request-hook request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
+   [kmet.ai.api.shared :refer [bash-execution-text content-text endpoint-url image-block? on-payload request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (def mistral-tool-call-id-length 9)
 
@@ -185,11 +185,11 @@
     (try
       (let [model-id (or (:model opts) (:id model-record))
             url (or base-url (endpoint-url :mistral-conversations (:base-url model-record) model-id))
-            payload (apply-before-provider-request-hook
-                     (mistral-payload model-record effort
-                                      (mistral-messages messages model-record
-                                                        (make-mistral-tool-call-id-normalizer))
-                                      tools model-id session-id cache-retention))
+            payload (on-payload opts
+                                (mistral-payload model-record effort
+                                                 (mistral-messages messages model-record
+                                                                   (make-mistral-tool-call-id-normalizer))
+                                                 tools model-id session-id cache-retention))
             base-headers (request-headers
                           {"Authorization" (str "Bearer " api-key)
                            "Content-Type" "application/json"
@@ -210,7 +210,7 @@
                                          ;; distinct from an explicit disabled total.
                                        :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)
                                        :headers-timeout (headers-timeout-ms idle-timeout-ms)}
-                                      signal)]
+                                      signal (:hooks opts))]
         (let [[dispatch finalize] (responses-events-handler opts model-record)]
           (sse/process-mistral-stream response
                                       dispatch

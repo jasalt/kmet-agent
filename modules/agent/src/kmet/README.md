@@ -73,16 +73,22 @@ modules/agent/src/kmet/
 │   ├── llm.clj + api/  — LLM dispatcher + per-wire API builders
 │   │                     (openai/anthropic/google/responses/codex/azure/
 │   │                     bedrock/vertex/mistral; api/sse.clj holds the
-│   │                     provider stream parsers over kmet.libs.sse)
+│   │                     provider stream parsers over kmet.libs.sse;
+│   │                     wires.clj is the api-type → builder table — the
+│   │                     one place that names a wire)
 │   ├── image_models.clj — image-generation registry + :openrouter-images
 │   │                     wire (image_model_data/ catalog)
 │   ├── google_adc.clj  — vertex Application Default Credentials
 │   ├── usage.clj       — provider usage normalization (pi: normalizeUsage)
 │   ├── edn_writer.clj / hash.clj — deterministic catalog EDN, pi-parity hashes
-│   ├── attribution.clj / constrained_sampling.clj / hooks.clj —
+│   ├── attribution.clj / constrained_sampling.clj —
 │   │                     provider attribution headers, tool JSON-schema
-│   │                     constraints, injectable provider-event slots
-│   ├── http.clj        — provider streams over the kmet.libs.http boundary
+│   │                     constraints
+│   ├── slots.clj       — one-slot registration helpers (auth's config key
+│   │                     and OAuth sources)
+│   ├── http.clj        — provider streams over the kmet.libs.http boundary;
+│   │                     the request's :on-headers/:on-response hooks are
+│   │                     arguments (send-message opts)
 ├── agent/              — App business logic (pi: dist/core/)
 │   ├── loop.clj        — the agent loop; retry.clj — retry/error policy;
 │   │                     loop_guard.clj — repeat-loop guard

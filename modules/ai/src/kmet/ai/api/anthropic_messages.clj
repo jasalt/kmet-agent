@@ -6,7 +6,7 @@
    [kmet.ai.http :as ai-http]
    [kmet.ai.api.sse :as sse]
    [clojure.string :as str]
-   [kmet.ai.api.shared :refer [anthropic-thinking bash-execution-text copilot-dynamic-headers endpoint-url image-block? apply-before-provider-request-hook request-headers tool->anthropic-schema effective-total-timeout-ms headers-timeout-ms transport-error-message usage-with-cost]]))
+   [kmet.ai.api.shared :refer [anthropic-thinking bash-execution-text copilot-dynamic-headers endpoint-url image-block? on-payload request-headers tool->anthropic-schema effective-total-timeout-ms headers-timeout-ms transport-error-message usage-with-cost]]))
 
 (def default-anthropic-version "2023-06-01")
 
@@ -217,25 +217,25 @@
       (let [model-id (or (:model opts) (:id model-record))
             thinking (anthropic-thinking model-record effort)
             system (system-prompt-text messages)
-            payload (apply-before-provider-request-hook
-                     (cond-> {:model model-id
-                              :max_tokens (:max-tokens thinking (or (:max-tokens model-record) 4096))
-                              ;; replay context: signatures echo only when message provenance matches
-                              :messages (anthropic-messages
-                                         messages
-                                         {:provider (:id provider-record)
-                                          :model model-id
-                                          :allow-empty-signature
-                                          (-> model-record :compat :allow-empty-signature)})
-                              :stream true}
-                       (seq system) (assoc :system [{:type "text" :text system}])
-                       (seq tools) (assoc :tools (mapv #(tool->anthropic-schema %
-                                                                                (:supports-strict-tools (:compat model-record)))
-                                                       tools))
-                       (:thinking thinking) (assoc :thinking (:thinking thinking))
-                       ;; adaptive thinking (pi forceAdaptiveThinking): the
-                       ;; output_config effort rides alongside the thinking block
-                       (:output_config thinking) (assoc :output_config (:output_config thinking))))
+            payload (cond-> {:model model-id
+                             :max_tokens (:max-tokens thinking (or (:max-tokens model-record) 4096))
+                             ;; replay context: signatures echo only when message provenance matches
+                             :messages (anthropic-messages
+                                        messages
+                                        {:provider (:id provider-record)
+                                         :model model-id
+                                         :allow-empty-signature
+                                         (-> model-record :compat :allow-empty-signature)})
+                             :stream true}
+                      (seq system) (assoc :system [{:type "text" :text system}])
+                      (seq tools) (assoc :tools (mapv #(tool->anthropic-schema %
+                                                                               (:supports-strict-tools (:compat model-record)))
+                                                      tools))
+                      (:thinking thinking) (assoc :thinking (:thinking thinking))
+                      ;; adaptive thinking (pi forceAdaptiveThinking): the
+                      ;; output_config effort rides alongside the thinking block
+                      (:output_config thinking) (assoc :output_config (:output_config thinking)))
+            payload (on-payload opts payload)
             response (ai-http/request (or base-url (endpoint-url :anthropic-messages (:base-url model-record) model-id))
                                       {:headers (anthropic-request-headers model-record provider-record api-key session-id messages)
                                        :body (json/generate-string payload)
@@ -244,7 +244,7 @@
                                        ;; distinct from an explicit disabled total.
                                        :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)
                                        :headers-timeout (headers-timeout-ms idle-timeout-ms)}
-                                      signal)]
+                                      signal (:hooks opts))]
         (sse/process-anthropic-stream response
                                       (fn [event]
                                         (case (:type event)

@@ -402,7 +402,7 @@ Full extension API surface (pi `core/extensions/types.ts`) — one remaining gap
 | `registerProvider` (`streamSimple`/`refreshModels` at 0.87; `registerNativeProvider` + virtual models at 1.3) | Partial — provider *config* registration is done (`extensions/register-provider!` / `models/register-provider-config!`); wire-layer custom provider streaming (`registerNativeProvider`), dynamic model refresh, and `registerVirtualModel`/`unregisterVirtualModel` are missing |
 | `registerToolRenderer` | Missing — kmet tools carry their own renderer; there is no resolver chain like pi's `ToolRendererResolver` (load-order resolvers choosing how tool calls draw) |
 | `registerMcpServer` / `unregisterMcpServer` / `getMcpServers` | Missing — the `mcp-adapter` extension owns its `mcp.edn` config; extensions cannot contribute servers |
-| `onProviderStreamEvent` (`provider_stream_event`) | Missing — kmet's ai hook slots stop at `before_provider_request` / `before_provider_headers` / `after_provider_response` (`kmet.ai.hooks`) |
+| `onProviderStreamEvent` (`provider_stream_event`) | Missing — kmet's per-call provider hooks stop at `:on-context` / `:on-payload` / `:on-headers` / `:on-response` (`kmet.ai.llm/send-message`) |
 | `getSettings`, `setSessionName`/`getSessionName` | Partial — no settings read facade and no session-name setter as extension API (kmet's `/name` command is the only path); label APIs (`set-label`) are done |
 | `context_with_system` event | **Done** — runs after `:context` over the full transcript and its result is sent verbatim; a result that drops the leading system message is reported and honored (see §7). kmet also has the single `:context` event over the conversation, where the last non-nil `{:messages ...}` wins |
 | Events: `resources_discover`, `session_before_switch`, `session_before_fork`, `session_before_compact`, `context`, `before_provider_request`, `before_provider_headers`, `after_provider_response` | **Done** — see Appendix (all ✅) |
@@ -546,10 +546,10 @@ pi events (`core/extensions/types.ts`) → kmet status (`kmet.agent.event-bus` `
 | `thinking_level_select` | ✅ `:thinking-level-select` | emitted by `set-thinking-level!` on actual change |
 | `user_bash` | ✅ `:user-bash` | |
 | `input` | ✅ | input hooks (transform/handled) |
-| `before_provider_request` / `before_provider_headers` / `after_provider_response` | ✅ | defined in `kmet.agent.event-bus` and bridged to the ai-layer hooks (`kmet.ai.hooks`) in `kmet.agent.extensions`: emit-event! → hook apply → last non-nil result |
+| `before_provider_request` / `before_provider_headers` / `after_provider_response` | ✅ | defined in `kmet.agent.event-bus` and bridged to the per-call provider hooks (`kmet.agent.extensions.core/provider-hooks` → `kmet.ai.llm/send-message` opts) — the runtime reads them once per attempt: emit-event! → hook apply → last non-nil result |
 | `resources_discover` | ✅ `:resources-discover` | fired after `:session-start`; `extensions/discover-resources!` applies contributed path sets into the skills/prompts/themes registries, each under the owner that contributed it (re-discovery replaces in place, unload takes them with the extension) |
 | `mcp_servers_change` | ❌ | pi 1.3 emits it when an extension registers/unregisters an MCP server; kmet has no extension MCP registration (see §5) |
-| `provider_stream_event` | ❌ | kmet's ai hook slots stop at `before_provider_request` / `before_provider_headers` / `after_provider_response` (`kmet.ai.hooks`); per-stream events are not bridged |
+| `provider_stream_event` | ❌ | kmet's per-call provider hooks stop at `:on-context` / `:on-payload` / `:on-headers` / `:on-response` (`kmet.ai.llm/send-message`); per-stream events are not bridged |
 | `cache_warming_decision` | ❌ | no cache warming in kmet |
 | `ui_prompt_start` / `ui_prompt_end` | ❌ | kmet's `request-ui!`/`respond!` dialogs emit no start/end pair |
 | `project_trust` | — | out of scope (historical decision) |

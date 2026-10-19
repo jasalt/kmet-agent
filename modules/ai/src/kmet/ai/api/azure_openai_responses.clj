@@ -6,7 +6,7 @@
    [kmet.ai.api.sse :as sse]
    [clojure.string :as str]
    [kmet.ai.api.openai-responses :refer [responses-payload]]
-   [kmet.ai.api.shared :refer [getenv apply-before-provider-request-hook request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
+   [kmet.ai.api.shared :refer [getenv on-payload request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (defn normalize-azure-base-url
   "pi normalizeAzureBaseUrl: Azure hosts (.openai.azure.com /
@@ -93,9 +93,9 @@
             url (or base-url
                     (azure-endpoint-url (:base-url config) deployment
                                         (:api-version config)))
-            payload (apply-before-provider-request-hook
-                     (responses-payload model-record effort messages tools deployment
-                                        retention session-id))
+            payload (on-payload opts
+                                (responses-payload model-record effort messages tools deployment
+                                                   retention session-id))
             ;; azure sends no session-affinity headers (pi: the Azure client
             ;; sets none) — just the bearer + JSON content type
             headers (request-headers
@@ -110,7 +110,7 @@
                                          ;; distinct from an explicit disabled total.
                                        :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)
                                        :headers-timeout (headers-timeout-ms idle-timeout-ms)}
-                                      signal)]
+                                      signal (:hooks opts))]
         (let [[dispatch finalize] (responses-events-handler opts model-record)]
           (sse/process-responses-stream response
                                         dispatch

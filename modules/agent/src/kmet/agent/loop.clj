@@ -1110,6 +1110,10 @@ Be precise and concise in your responses."}}]
       :messages messages
       :tools request-tools
       :signal call-signal
+      ;; Provider-event bridges (pi: context / before_provider_request / …):
+      ;; read once for this attempt, so a handler installed mid-run reaches
+      ;; the next request and this one keeps the hooks it started with.
+      :hooks (extensions/provider-hooks)
       :idle-timeout-ms (:http-idle-timeout-ms @(:cfg agent))
       ;; Whole-request deadline enforced by the transport (HttpRequest.timeout
       ;; / curl --max-time); the idle timeout above is separate and resets
@@ -1500,6 +1504,7 @@ Be precise and concise in your responses."}}]
                     :total-timeout-ms deadline
                     :session-id (some-> (:session agent) :id)
                     :cache-retention :none
+                    :hooks (extensions/provider-hooks)
                     :max-tokens max-tokens
                     :on-text (fn [t] (swap! text-buf str t))
                     :on-tool-call (fn [tc] (swap! tc-buf conj tc))

@@ -209,8 +209,10 @@
          (str/replace module-root-re "")
          (str/replace #"^test\.|^tasks\." "")))))
 
-(defn- read-ns-form
-  "First form of PATH (the ns form), or nil when unreadable."
+(defn read-ns-form
+  "First form of PATH (the ns form), or nil when unreadable. Public for the
+   seam-direction guard (kmet.test-seam-requires), which reads edges this
+   namespace's graph does not need."
   [path]
   (try
     (with-open [r (java.io.PushbackReader. (io/reader path))]

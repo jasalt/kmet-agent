@@ -56,6 +56,76 @@
     (t/is (str/includes? (text-of (nth msgs 3)) "<summary>\nBRANCH\n</summary>"))
     (t/is (= "hi" (text-of (first msgs))))))
 
+(t/deftest test-request-opts-hooks
+  (t/testing "the attempt's :hooks map is merged and the context hook rewrites messages"
+    (let [seen (atom nil)
+          out (llm/request-opts
+               {:messages [{:role :user :content "hi"}]
+                :hooks {:on-context (fn [m] (reset! seen m) [{:role :user :content "ctx"}])
+                        :on-headers (fn [h] h)
+                        :on-payload (fn [p] p)}})]
+      (t/is (= [{:role :user :content "hi"}] @seen)
+            "the context hook sees the pre-conversion messages")
+      (t/is (= [{:role :user :content "ctx"}] (:messages out)))
+      (t/is (fn? (:on-headers (:hooks out)))
+            "the request-time pair is re-packed for kmet.ai.http")
+      (t/is (nil? (:on-response (:hooks out))) "a nil hook is dropped, not carried")
+      (t/is (fn? (:on-payload out)) "the payload hook reaches the builders")))
+  (t/testing "a flat :on-* key overrides the attempt map (per-call override)"
+    (let [f (fn [p] p)
+          out (llm/request-opts {:hooks {:on-payload (fn [_] :hook)} :on-payload f})]
+      (t/is (= f (:on-payload out)))))
+  (t/testing "no hooks — nil payload hook, empty hook map, messages untouched"
+    (let [out (llm/request-opts {:messages [{:role :user :content "hi"}]})]
+      (t/is (nil? (:on-payload out)))
+      (t/is (= {} (:hooks out)))
+      (t/is (= [{:role :user :content "hi"}] (:messages out))))))
+
+(t/deftest test-unknown-api-type
+  ;; An unknown wire reports through the async error channel like every other
+  ;; pre-request failure, naming the wires kmet.ai.wires knows.
+  (m/load-catalogs!)
+  (let [err (promise)]
+    (llm/send-message {:provider :deepseek
+                       :model "deepseek-flash"
+                       :api-key "k"
+                       :api-type :no-such-wire
+                       :messages [{:role :user :content "hi"}]
+                       :on-error (fn [msg] (deliver err msg))})
+    (let [msg (deref err 2000 :timeout)]
+      (t/is (string? msg))
+      (t/is (str/includes? msg "Unknown api-type: :no-such-wire"))
+      (t/is (str/includes? msg ":anthropic-messages")
+            "the error names the known set"))))
+
+(t/deftest test-send-message-threads-attempt-hooks
+  ;; The loop hands send-message the attempt's :hooks map; the context hook
+  ;; rewrites the transcript the wire builder receives and the request-time
+  ;; pair rides along for kmet.ai.http. The loop and bridge tests cover each
+  ;; end structurally — this is the join.
+  (m/load-catalogs!)
+  (let [request (atom nil)
+        seen (atom nil)]
+    (with-redefs [auth/resolve-provider-auth (fn [_] {:api-key "test-key"})
+                  responses/responses-request
+                  (fn [opts] (reset! request opts) (future nil))]
+      @(llm/send-message {:provider :openai
+                          :model "gpt-5.4"
+                          :messages [{:role :user :content "orig"}]
+                          :hooks {:on-context (fn [msgs]
+                                                (reset! seen msgs)
+                                                [{:role :user :content "rewritten"}])
+                                  :on-headers (fn [h] h)
+                                  :on-response (fn [_] nil)}}))
+    (t/is (= [{:role :user :content "orig"}] @seen)
+          "the context hook sees the pre-conversion transcript")
+    (t/is (= [{:role :user :content "rewritten"}] (:messages @request))
+          "the wire builder receives the rewritten transcript")
+    (t/is (fn? (:on-headers (:hooks @request)))
+          "the request-time pair reaches the builder's HTTP call")
+    (t/is (nil? (:on-context (:hooks @request)))
+          "the context hook is consumed here, not forwarded to the builder")))
+
 (t/deftest test-bash-execution-text
   (t/testing "derived from the entry's command/output (pi: bashExecutionToText)"
     (let [text (shared/bash-execution-text {:command "ls" :output "a\nb" :exit-code 0})]

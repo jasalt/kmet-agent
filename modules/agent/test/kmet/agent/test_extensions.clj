@@ -24,7 +24,6 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
-            [kmet.ai.hooks :as ai-hooks]
             [kmet.libs.hikap.alias :as alias]
             [kmet.tui.theme :as theme]
             [kmet.libs.scope :as scope]))
@@ -1374,15 +1373,26 @@
           (extensions/set-session! nil)
           (fs/delete-tree dir))))))
 
+(defn- on-context
+  "The bridge's :on-context hook (extensions/provider-hooks) — the request-time
+   context phases provider events flow through."
+  [messages]
+  ((:on-context (extensions/provider-hooks)) messages))
+
+(defn- on-payload [payload] ((:on-payload (extensions/provider-hooks)) payload))
+(defn- on-headers [headers] ((:on-headers (extensions/provider-hooks)) headers))
+(defn- on-response [status headers]
+  ((:on-response (extensions/provider-hooks)) {:status status :headers headers}))
+
 (t/deftest test-provider-event-bridges
-  (testing "bus events drive the ai-layer hooks; last non-nil handler result wins"
+  (testing "bus events drive the per-call provider hooks; last non-nil handler result wins"
     (let [u1 (event-bus/on-event :context
                                  (fn [_ev] {:messages ["first"]}))
           u2 (event-bus/on-event :context
                                  (fn [_ev] nil)) ;; nil result — first wins
           u3 (event-bus/on-event :context
                                  (fn [_ev] {:messages ["second"]}))]
-      (t/is (= ["second"] (ai-hooks/apply-context-hook ["orig"]))
+      (t/is (= ["second"] (on-context ["orig"]))
             "last non-nil handler result wins (pi chains)")
       (u1) (u2) (u3))
     (testing "a throwing handler is skipped"
@@ -1392,30 +1402,30 @@
                                    (fn [_ev] {:messages ["kept"]}))]
         ;; The throwing listener prints a warning to stderr — suppress it.
         (binding [*err* (java.io.StringWriter.)]
-          (t/is (= ["kept"] (ai-hooks/apply-context-hook ["orig"]))))
+          (t/is (= ["kept"] (on-context ["orig"]))))
         (u1) (u2))
-      (t/is (= ["orig"] (ai-hooks/apply-context-hook ["orig"]))
+      (t/is (= ["orig"] (on-context ["orig"]))
             "no handlers — passthrough"))
     (testing "before-provider-headers: the returned map replaces the headers"
       (let [u1 (event-bus/on-event :before-provider-headers
                                    (fn [_ev] {"x-api-key" "k"}))]
         (t/is (= {"x-api-key" "k"}
-                 (ai-hooks/apply-before-provider-headers-hook {"a" "b"})))
+                 (on-headers {"a" "b"})))
         (u1))
-      (t/is (= {"a" "b"} (ai-hooks/apply-before-provider-headers-hook {"a" "b"}))))
+      (t/is (= {"a" "b"} (on-headers {"a" "b"}))))
     (testing "before-provider-request: the last non-nil result replaces the payload"
       (let [u1 (event-bus/on-event :before-provider-request
                                    (fn [_ev] {:payload :replaced}))]
         (t/is (= {:payload :replaced}
-                 (ai-hooks/apply-before-provider-request-hook {:payload :orig}))
+                 (on-payload {:payload :orig}))
               "the bridge returns the handler's replacement payload")
         (u1))
-      (t/is (= {:payload :orig} (ai-hooks/apply-before-provider-request-hook {:payload :orig}))))
+      (t/is (= {:payload :orig} (on-payload {:payload :orig}))))
     (testing "after-provider-response fires with status/headers"
       (let [seen (atom nil)
             u1 (event-bus/on-event :after-provider-response
                                    (fn [ev] (reset! seen ev)))]
-        (ai-hooks/apply-after-provider-response-hook 200 {"h" "v"})
+        (on-response 200 {"h" "v"})
         (t/is (= 200 (:status @seen)))
         (t/is (= {"h" "v"} (:headers @seen)))
         (u1)))))
@@ -1437,7 +1447,7 @@
                                    (swap! seen conj [:with-system (mapv :role (:messages ev))])
                                    nil))]
       (try
-        (t/is (= [system-msg user-msg] (ai-hooks/apply-context-hook [system-msg user-msg]))
+        (t/is (= [system-msg user-msg] (on-context [system-msg user-msg]))
               "no replacement — the transcript passes through")
         (t/is (= [[:context [:user]] [:with-system [:system :user]]] @seen)
               "phase order, and what each phase sees")
@@ -1448,7 +1458,7 @@
                                   (fn [_] {:messages [{:role :user :content "pruned"}]}))]
         (try
           (t/is (= [system-msg {:role :user :content "pruned"}]
-                   (ai-hooks/apply-context-hook [system-msg {:role :user :content "orig"}]))
+                   (on-context [system-msg {:role :user :content "orig"}]))
                 "pi: restoreSystemMessages — a pruning handler keeps the prompt")
           (finally (u)))))
     (testing "a :context-with-system result is used verbatim, even without the prompt"
@@ -1457,7 +1467,7 @@
             u (event-bus/on-event :context-with-system (fn [_] {:messages [user-msg]}))
             err (java.io.StringWriter.)]
         (try
-          (let [out (binding [*err* err] (ai-hooks/apply-context-hook [system-msg user-msg]))]
+          (let [out (binding [*err* err] (on-context [system-msg user-msg]))]
             (t/is (= [user-msg] out) "honored as returned (pi: report, honor)")
             (t/is (str/includes? (str err) "removed the leading system message")
                   "and reported as an extension error"))

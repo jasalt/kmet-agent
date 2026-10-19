@@ -1,24 +1,17 @@
 (ns kmet.ai.llm
   "LLM API dispatcher (pi: the per-wire api/* files dispatched from the
    Model record): resolves auth/model, clamps thinking effort, and routes to
-   the per-API request builders in kmet.ai.api.*. The request builders and
-   their shared machinery live in kmet.ai.api.{shared,openai-completions,
-   openai-responses,openai-codex-responses,azure-openai-responses,
-   anthropic-messages,google-generative-ai,mistral-conversations,
-   google-vertex,bedrock-converse-stream}."
+   the per-API request builders through kmet.ai.wires — the one place that
+   names them. The builders and their shared machinery live in
+   kmet.ai.api.{shared,openai-completions,openai-responses,
+   openai-codex-responses,azure-openai-responses,anthropic-messages,
+   google-generative-ai,mistral-conversations,google-vertex,
+   bedrock-converse-stream}."
   (:require
    [kmet.ai.auth :as auth]
    [kmet.ai.models :as models]
-   [kmet.ai.api.anthropic-messages :refer [anthropic-request]]
-   [kmet.ai.api.azure-openai-responses :refer [azure-request]]
-   [kmet.ai.api.bedrock-converse-stream :refer [bedrock-request]]
-   [kmet.ai.api.google-generative-ai :refer [google-request]]
-   [kmet.ai.api.google-vertex :refer [vertex-request]]
-   [kmet.ai.api.mistral-conversations :refer [mistral-request]]
-   [kmet.ai.api.openai-codex-responses :refer [codex-request]]
-   [kmet.ai.api.openai-completions :refer [openai-request]]
-   [kmet.ai.api.openai-responses :refer [responses-request]]
-   [kmet.ai.api.shared :refer [ambient-auth-available? apply-context-hook effective-effort]]))
+   [kmet.ai.wires :as wires]
+   [kmet.ai.api.shared :refer [ambient-auth-available? effective-effort]]))
 
 (def ^:private compaction-summary-prefix
   "pi: COMPACTION_SUMMARY_PREFIX — the compacted-history preamble and
@@ -57,6 +50,28 @@
                                                    branch-summary-suffix)}]}
             m))
         messages))
+
+(defn request-opts
+  "Normalize a `send-message` opts map for one call.
+
+   Provider-event hooks are options, not installed globals (pi: StreamOptions
+   carry their hooks per call): the attempt's `:hooks` map — read once by the
+   runtime — is merged under any flat `:on-*` key, `:on-context` rewrites
+   `:messages` before the summary conversion (the last non-nil handler result
+   wins, pi: emitContext), and the two request-time hooks are re-packed into
+   the `:hooks` map kmet.ai.http takes. Returns a new map; OPTS is untouched."
+  [opts]
+  (let [hooks (merge (:hooks opts)
+                     (select-keys opts [:on-context :on-payload :on-headers :on-response]))]
+    (-> opts
+        (assoc :on-payload (:on-payload hooks)
+               ;; the request-time pair the HTTP decorator applies
+               :hooks (select-keys hooks [:on-headers :on-response]))
+        (update :messages #(if-let [f (:on-context hooks)] (or (f %) %) %))
+        ;; pi: convertToLlm — compaction/branch-summary roles become wrapped
+        ;; user messages at the provider edge (after the context hook, which
+        ;; still sees the role-preserving AgentMessages)
+        (update :messages convert-summary-messages))))
 
 (defn send-message
   "Send messages to LLM and receive streaming events via callbacks.
@@ -100,28 +115,29 @@
      :on-error    — (fn [message])
      :on-usage    — (fn [usage-map]) — provider-native usage from the final
                      stream chunk.
+     :hooks       — the provider-event bridge for this call, as the four
+                     hook keys below (the runtime reads it once per attempt
+                     and merges it in; a flat key overrides it).
+     :on-context  — (fn [messages]) → replacement messages, nil keeps them
+                     (pi: context event; applied before the summary
+                     conversion, so it still sees the summary roles).
+     :on-payload  — (fn [payload]) → replacement request payload, nil keeps
+                     it (pi: before_provider_request; each api builder
+                     applies it).
+     :on-headers  — (fn [headers]) → replacement header map (pi:
+                     before_provider_headers; applied by kmet.ai.http).
+     :on-response — (fn [{:keys [status headers]}]) — fire and forget (pi:
+                     after_provider_response).
 
    Returns: future that completes when the stream ends."
   [{:keys [provider model api-key] :or {provider :opencode-go} :as opts}]
-  (let [auth (auth/resolve-provider-auth provider)
+  (let [opts (request-opts opts)
+        auth (auth/resolve-provider-auth provider)
         ;; Resolve the key here when the caller didn't provide one (pi:
         ;; prepareRequest resolves auth per request) — so a direct call with
         ;; auth.edn / env credentials works, and the builders never see a nil
         ;; key that would produce an empty Authorization header.
-        api-key (or api-key (:api-key auth))
-        ;; An oauth credential's to-auth carries a per-credential base-url
-        ;; (pi applyAuth: auth.baseUrl overrides the model's — Copilot's
-        ;; proxy-ep endpoint). Keep it on the resolved model so each API
-        ;; builder still appends its endpoint path; an explicit agent-level
-        ;; :base-url remains a complete endpoint override.
-        ;; pi: emitContext — the context event fires before each LLM call;
-        ;; the hook (installed by the extension bridge) may replace the
-        ;; outgoing messages (first non-nil handler result wins)
-        opts (update opts :messages apply-context-hook)
-        ;; pi: convertToLlm — compaction/branch-summary roles become wrapped
-        ;; user messages at the provider edge (after the context hook, which
-        ;; still sees the role-preserving AgentMessages)
-        opts (update opts :messages convert-summary-messages)]
+        api-key (or api-key (:api-key auth))]
     (cond
       ;; google-vertex (ADC) and amazon-bedrock (ambient AWS credentials)
       ;; resolve their own auth — the api-key check is per-request below
@@ -134,6 +150,11 @@
 
       :else
       (let [m (models/get-model provider model)
+            ;; An oauth credential's to-auth carries a per-credential base-url
+            ;; (pi applyAuth: auth.baseUrl overrides the model's — Copilot's
+            ;; proxy-ep endpoint). Keep it on the resolved model so each API
+            ;; builder still appends its endpoint path; an explicit
+            ;; agent-level :base-url remains a complete endpoint override.
             m (if (and m (:base-url auth) (nil? (:base-url opts)))
                 (assoc m :base-url (:base-url auth))
                 m)
@@ -160,25 +181,16 @@
           (let [api (or (:api-type opts) (:api m))
                 p (models/get-provider provider)
                 effort (effective-effort m (:thinking opts))]
-            (case api
-              :openai-completions (openai-request (assoc opts :model-record m :provider-record p
-                                                         :effort effort :api-key api-key))
-              :openai-responses (responses-request (assoc opts :model-record m :provider-record p
-                                                          :effort effort :api-key api-key))
-              :openai-codex-responses (codex-request (assoc opts :model-record m :provider-record p
-                                                            :effort effort :api-key api-key))
-              :azure-openai-responses (azure-request (assoc opts :model-record m :provider-record p
-                                                            :effort effort :api-key api-key))
-              :anthropic-messages (anthropic-request (assoc opts :model-record m :provider-record p
-                                                            :effort effort :api-key api-key))
-              :google-generative-ai (google-request (assoc opts :model-record m :provider-record p
-                                                           :effort effort :api-key api-key))
-              :mistral-conversations (mistral-request (assoc opts :model-record m :provider-record p
-                                                             :effort effort :api-key api-key))
-              :google-vertex (vertex-request (assoc opts :model-record m :provider-record p
-                                                    :effort effort :api-key api-key))
-              :bedrock-converse-stream (bedrock-request (assoc opts :model-record m :provider-record p
-                                                               :effort effort :api-key api-key))
-              (future
-                (when-let [on-error (:on-error opts)]
-                  (on-error (str "Unknown api-type: " (name (:api-type opts)))))))))))))
+            (try
+              ((wires/request-fn api)
+               (assoc opts :model-record m :provider-record p
+                      :effort effort :api-key api-key))
+              (catch Throwable e
+                (if (= ::wires/unknown-api-type (:cause (ex-data e)))
+                  ;; An unknown wire reports through the async error channel
+                  ;; like every other pre-request failure (pi: the stream fn
+                  ;; reports, never throws into its caller).
+                  (future
+                    (when-let [on-error (:on-error opts)]
+                      (on-error (ex-message e))))
+                  (throw e))))))))))

@@ -10,7 +10,7 @@
    [clojure.string :as str]
    [kmet.ai.constrained-sampling :as cs]
    [kmet.ai.api.google-generative-ai :refer [google-messages google-thinking-config]]
-   [kmet.ai.api.shared :refer [getenv google-supports-strict-tool-sampling? apply-before-provider-request-hook request-headers responses-events-handler tool->google-schema effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
+   [kmet.ai.api.shared :refer [getenv google-supports-strict-tool-sampling? on-payload request-headers responses-events-handler tool->google-schema effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (def vertex-base-url
   "The Vertex endpoint template (pi VERTEX_BASE_URL — the SDK substitutes
@@ -51,24 +51,24 @@
             [contents system] (google-messages messages model-record
                                                {:provider (:id provider-record)})
             thinking-config (google-thinking-config model-record effort)
-            payload (apply-before-provider-request-hook
-                     (cond-> {:contents contents
-                              :generationConfig (cond-> {}
-                                                  (:max-tokens model-record)
-                                                  (assoc :maxOutputTokens (:max-tokens model-record))
-                                                  thinking-config
-                                                  (assoc :thinkingConfig thinking-config))}
-                       system (assoc :systemInstruction {:parts [{:text system}]})
-                       (seq tools) (assoc :tools [{:functionDeclarations
-                                                   (mapv #(tool->google-schema %
-                                                                               (google-supports-strict-tool-sampling? model-id))
-                                                         tools)}])
-                       ;; pi resolveGoogleFunctionCallingMode: a strict tool
-                       ;; forces the validated function-calling mode
-                       (some #(cs/resolve-json-schema-strict-sampling %
-                                                                      (google-supports-strict-tool-sampling? model-id))
-                             tools)
-                       (assoc :toolConfig {:functionCallingConfig {:mode "VALIDATED"}})))
+            payload (cond-> {:contents contents
+                             :generationConfig (cond-> {}
+                                                 (:max-tokens model-record)
+                                                 (assoc :maxOutputTokens (:max-tokens model-record))
+                                                 thinking-config
+                                                 (assoc :thinkingConfig thinking-config))}
+                      system (assoc :systemInstruction {:parts [{:text system}]})
+                      (seq tools) (assoc :tools [{:functionDeclarations
+                                                  (mapv #(tool->google-schema %
+                                                                              (google-supports-strict-tool-sampling? model-id))
+                                                        tools)}])
+                      ;; pi resolveGoogleFunctionCallingMode: a strict tool
+                      ;; forces the validated function-calling mode
+                      (some #(cs/resolve-json-schema-strict-sampling %
+                                                                     (google-supports-strict-tool-sampling? model-id))
+                            tools)
+                      (assoc :toolConfig {:functionCallingConfig {:mode "VALIDATED"}}))
+            payload (on-payload opts payload)
             ;; auth: GOOGLE_CLOUD_API_KEY (x-goog-api-key) or ADC
             ;; (Authorization: Bearer — the token is fetched + cached here)
             api-key (or api-key (auth/resolve-api-key :google-vertex))
@@ -89,7 +89,7 @@
                                              ;; distinct from an explicit disabled total.
                                            :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)
                                            :headers-timeout (headers-timeout-ms idle-timeout-ms)}
-                                          signal)]
+                                          signal (:hooks opts))]
             (let [[dispatch finalize] (responses-events-handler opts model-record)]
               (sse/process-google-stream response
                                          dispatch

@@ -15,7 +15,7 @@
             [kmet.libs.aws-sigv4 :as aws-sigv4]
             [kmet.libs.edn-store :as cred]
             [kmet.libs.dynamic-value :as dynamic-value]
-            [kmet.ai.hooks :as hooks]
+            [kmet.ai.slots :as slots]
             [kmet.ai.google-adc :as google-adc]))
 
 ;; ─── Env var table (pi env-api-keys.ts) ────────────────────────────────────
@@ -219,7 +219,7 @@
 
 ;; ─── Resolution (pi: credential-store resolveApiKey) ──────────────────────
 
-(defonce ^:private config-key-source (hooks/make-slot))
+(defonce ^:private config-key-source (slots/make-slot))
 
 (defn set-config-key-source!
   "Register the provider → raw models.edn/extension :api-key config value
@@ -227,7 +227,7 @@
    key). Kept behind a hook so auth stays dependency-free of the registry
    (no require cycle)."
   [f]
-  (hooks/set-slot! config-key-source f))
+  (slots/set-slot! config-key-source f))
 
 (defn config-key-source-installed?
   "True when a config-key source is registered (models/load-catalogs! or
@@ -239,26 +239,26 @@
   "Raw models.edn/extension :api-key config value for a provider (nil when
    none configured)."
   [provider]
-  (hooks/apply-slot config-key-source provider))
+  (slots/apply-slot config-key-source provider))
 
 ;; ─── OAuth (Phase 10) ─────────────────────────────────────────────────────
 ;; The OAuthAuth record for a provider lives on the Provider record; auth
 ;; reads it through a hook (like config-key-source) to stay dependency-free
 ;; of the registry.
 
-(defonce ^:private oauth-source (hooks/make-slot))
+(defonce ^:private oauth-source (slots/make-slot))
 
 (defn set-oauth-source!
   "Register the provider → OAuthAuth record source (set by
    models/load-catalogs!; nil returns no oauth). Kept behind a hook so auth
    stays dependency-free of the registry."
   [f]
-  (hooks/set-slot! oauth-source f))
+  (slots/set-slot! oauth-source f))
 
 (defn- provider-oauth
   "The OAuthAuth record for a provider, or nil."
   [provider]
-  (hooks/apply-slot oauth-source provider))
+  (slots/apply-slot oauth-source provider))
 
 (def ^:private oauth-min-validity-ms
   "Refresh when the token has less than this much validity left (pi

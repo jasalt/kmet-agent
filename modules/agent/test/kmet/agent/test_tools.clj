@@ -6,6 +6,7 @@
             [kmet.agent.runtime :as app-runtime]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.registry :as tools-registry]
+            [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.util :as tool-util]
             [kmet.agent.extensions.core :as extensions]
             [kmet.ai.api.shared :as schema-shared]
@@ -15,6 +16,16 @@
             [kmet.libs.scope :as scope]
             [kmet.libs.process :as process]
             [kmet.test-utils :refer [slash]]))
+
+(t/deftest test-invoke-requires-an-executor
+  (t/testing "the injected dispatcher is a named contract, not a silent nil (pi: StreamFn)"
+    (let [err (try (invoke/execute-tool-call nil {:tool-name "read" :args {}})
+                   nil
+                   (catch Throwable e e))]
+      (t/is (some? err))
+      (t/is (= ::invoke/missing-execute-tool (:cause (ex-data err))))
+      (t/is (str/includes? (ex-message err) "execute-tool-contract")
+            "the error points at the contract's docstring"))))
 
 (t/deftest test-tool-cwd-binding
   (t/testing "relative tool paths resolve against the bound runtime cwd (pi:

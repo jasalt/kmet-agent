@@ -4,7 +4,7 @@
    [kmet.libs.json :as json]
    [kmet.ai.http :as ai-http]
    [kmet.ai.api.sse :as sse]
-   [kmet.ai.api.shared :refer [copilot-dynamic-headers endpoint-url max-tokens-key openai-messages openai-messages-with-reasoning openai-thinking-params resolved-openai-compat apply-before-provider-request-hook request-headers responses-events-handler tool->openai-schema effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
+   [kmet.ai.api.shared :refer [copilot-dynamic-headers endpoint-url max-tokens-key openai-messages openai-messages-with-reasoning openai-thinking-params resolved-openai-compat on-payload request-headers responses-events-handler tool->openai-schema effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (defn openai-payload
   "Request body for an openai-completions request (pi buildParams):
@@ -66,8 +66,8 @@
     (try
       (let [model-id (or (:model opts) (:id model-record))
             url (or base-url (endpoint-url :openai-completions (:base-url model-record) model-id))
-            payload (apply-before-provider-request-hook
-                     (openai-payload model-record effort messages tools model-id))
+            payload (on-payload opts
+                                (openai-payload model-record effort messages tools model-id))
             response (ai-http/request url
                                       {:headers (openai-request-headers model-record provider-record api-key session-id messages)
                                        :body (json/generate-string payload)
@@ -76,7 +76,7 @@
                                          ;; distinct from an explicit disabled total.
                                        :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)
                                        :headers-timeout (headers-timeout-ms idle-timeout-ms)}
-                                      signal)
+                                      signal (:hooks opts))
             ;; The shared handler defers the terminal :done until the whole
             ;; stream is consumed (see its docstring): openai-completions
             ;; sends the usage-only chunk AFTER the finish_reason chunk, so

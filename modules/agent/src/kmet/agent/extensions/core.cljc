@@ -58,7 +58,6 @@
             [babashka.fs :as fs]
             [babashka.process :as proc]
             [kmet.ai.models :as models]
-            [kmet.ai.hooks :as ai-hooks]
             [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.context :as context]
@@ -126,28 +125,27 @@
 
       :else system-replaced)))
 
-(defn- install-provider-event-bridges!
-  "Wire the bus to the ai-layer hooks once (idempotent)."
+(defn provider-hooks
+  "The provider-event bridges, as `kmet.ai.llm/send-message` opts (pi: the
+   context / before_provider_request / before_provider_headers /
+   after_provider_response events). The runtime reads this once per attempt
+   and merges it into the request opts, so a handler installed mid-run
+   reaches the next request while an in-flight one keeps the hooks it
+   started with — the hooks are arguments, not installed globals."
   []
-  (ai-hooks/set-context-hook! emit-context-events)
-  (ai-hooks/set-before-provider-request-hook!
-   (fn [payload]
-     (let [result (event-bus/emit-event! {:type :before-provider-request
-                                          :payload payload})]
-       (if (some? result) result payload))))
-  (ai-hooks/set-before-provider-headers-hook!
-   (fn [headers]
-     (let [result (event-bus/emit-event! {:type :before-provider-headers
-                                          :headers headers})]
-       (if (map? result) result headers))))
-  (ai-hooks/set-after-provider-response-hook!
-   (fn [{:keys [status headers]}]
-     (event-bus/emit-event! {:type :after-provider-response
-                             :status status
-                             :headers headers})))
-  nil)
-
-(install-provider-event-bridges!)
+  {:on-context emit-context-events
+   :on-payload (fn [payload]
+                 (let [result (event-bus/emit-event! {:type :before-provider-request
+                                                      :payload payload})]
+                   (if (some? result) result payload)))
+   :on-headers (fn [headers]
+                 (let [result (event-bus/emit-event! {:type :before-provider-headers
+                                                      :headers headers})]
+                   (if (map? result) result headers)))
+   :on-response (fn [{:keys [status headers]}]
+                  (event-bus/emit-event! {:type :after-provider-response
+                                          :status status
+                                          :headers headers}))})
 
 ;; ─── Extension records ────────────────────────────────────────────────────
 (defrecord Extension [name path kind loader-kind bundled? artifact entry-ns loader jars api deregister-fns initialized? jar-files])

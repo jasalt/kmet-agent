@@ -526,7 +526,10 @@
                               {:message "hello"
                                :on-error (fn [e] (swap! errors conj e))}))
       (t/is (= [] @errors))
-      (t/is (some? @sent) "send-message ran — the ambient guard passed")))
+      (t/is (some? @sent) "send-message ran — the ambient guard passed")
+      (t/is (= #{:on-context :on-payload :on-headers :on-response}
+               (set (keys (:hooks @sent))))
+            "the attempt hands send-message the provider-event bridges (pi: StreamOptions)")))
   (t/testing "google-vertex with ADC configured"
     (let [agent (loop/make-agent-state)
           sent (atom nil)

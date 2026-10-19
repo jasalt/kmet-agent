@@ -6,7 +6,7 @@
    [kmet.ai.api.sse :as sse]
    [clojure.string :as str]
    [kmet.ai.constrained-sampling :as cs]
-   [kmet.ai.api.shared :refer [bash-execution-text content-text endpoint-url google-supports-strict-tool-sampling? image-block? apply-before-provider-request-hook request-headers tool->google-schema effective-total-timeout-ms headers-timeout-ms transport-error-message usage-with-cost]]))
+   [kmet.ai.api.shared :refer [bash-execution-text content-text endpoint-url google-supports-strict-tool-sampling? image-block? on-payload request-headers tool->google-schema effective-total-timeout-ms headers-timeout-ms transport-error-message usage-with-cost]]))
 
 (defn google-requires-tool-call-id?
   [model-id]
@@ -158,24 +158,24 @@
             [contents system] (google-messages messages model-record
                                                {:provider (:id provider-record)})
             thinking-config (google-thinking-config model-record effort)
-            payload (apply-before-provider-request-hook
-                     (cond-> {:contents contents
-                              :generationConfig (cond-> {}
-                                                  (:max-tokens model-record)
-                                                  (assoc :maxOutputTokens (:max-tokens model-record))
-                                                  thinking-config
-                                                  (assoc :thinkingConfig thinking-config))}
-                       system (assoc :systemInstruction {:parts [{:text system}]})
-                       (seq tools) (assoc :tools [{:functionDeclarations
-                                                   (mapv #(tool->google-schema %
-                                                                               (google-supports-strict-tool-sampling? model-id))
-                                                         tools)}])
-                       ;; pi resolveGoogleFunctionCallingMode: a strict tool
-                       ;; forces the validated function-calling mode
-                       (some #(cs/resolve-json-schema-strict-sampling %
-                                                                      (google-supports-strict-tool-sampling? model-id))
-                             tools)
-                       (assoc :toolConfig {:functionCallingConfig {:mode "VALIDATED"}})))
+            payload (cond-> {:contents contents
+                             :generationConfig (cond-> {}
+                                                 (:max-tokens model-record)
+                                                 (assoc :maxOutputTokens (:max-tokens model-record))
+                                                 thinking-config
+                                                 (assoc :thinkingConfig thinking-config))}
+                      system (assoc :systemInstruction {:parts [{:text system}]})
+                      (seq tools) (assoc :tools [{:functionDeclarations
+                                                  (mapv #(tool->google-schema %
+                                                                              (google-supports-strict-tool-sampling? model-id))
+                                                        tools)}])
+                      ;; pi resolveGoogleFunctionCallingMode: a strict tool
+                      ;; forces the validated function-calling mode
+                      (some #(cs/resolve-json-schema-strict-sampling %
+                                                                     (google-supports-strict-tool-sampling? model-id))
+                            tools)
+                      (assoc :toolConfig {:functionCallingConfig {:mode "VALIDATED"}}))
+            payload (on-payload opts payload)
             response (ai-http/request (or base-url (endpoint-url :google-generative-ai (:base-url model-record) model-id))
                                       {:headers (request-headers
                                                  {"x-goog-api-key" api-key
@@ -188,7 +188,7 @@
                                        ;; distinct from an explicit disabled total.
                                        :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)
                                        :headers-timeout (headers-timeout-ms idle-timeout-ms)}
-                                      signal)]
+                                      signal (:hooks opts))]
         (sse/process-google-stream response
                                    (fn [event]
                                      (case (:type event)

@@ -6,7 +6,7 @@
    [kmet.ai.api.sse :as sse]
    [clojure.string :as str]
    [kmet.ai.constrained-sampling :as cs]
-   [kmet.ai.api.shared :refer [bash-execution-text content-text copilot-dynamic-headers effort-value endpoint-url image-block? off-explicitly-null? apply-before-provider-request-hook request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
+   [kmet.ai.api.shared :refer [bash-execution-text content-text copilot-dynamic-headers effort-value endpoint-url image-block? off-explicitly-null? on-payload request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (defn normalize-id-part
   "pi normalizeIdPart: sanitize a tool-call id to [a-zA-Z0-9_-], cap at 64
@@ -254,9 +254,9 @@
       (let [model-id (or (:model opts) (:id model-record))
             url (or base-url (endpoint-url :openai-responses (:base-url model-record) model-id))
             retention (or cache-retention :short)
-            payload (apply-before-provider-request-hook
-                     (responses-payload model-record effort messages tools model-id
-                                        retention session-id))
+            payload (on-payload opts
+                                (responses-payload model-record effort messages tools model-id
+                                                   retention session-id))
             headers (responses-request-headers model-record provider-record api-key
                                                session-id retention messages)
             response (ai-http/request url
@@ -267,7 +267,7 @@
                                          ;; distinct from an explicit disabled total.
                                        :timeout (effective-total-timeout-ms total-timeout-ms idle-timeout-ms)
                                        :headers-timeout (headers-timeout-ms idle-timeout-ms)}
-                                      signal)]
+                                      signal (:hooks opts))]
         (let [[dispatch finalize] (responses-events-handler opts model-record)]
           (sse/process-responses-stream response
                                         dispatch
