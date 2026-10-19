@@ -54,7 +54,7 @@
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
-            [kmet.cells.scope :as scope]))
+            [kmet.libs.scope :as scope]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
                    cwd turn-running? compaction-queued pending-compaction
@@ -73,7 +73,7 @@
 
 (defn agent-node
   "The node the engine's agent runs on: the app root by default, a child
-   tree when the engine was bootstrapped onto one (cells.md §5); nil for a
+   tree when the engine was bootstrapped onto one (scope.md §5); nil for a
    bare test engine without agent state."
   [engine]
   (:node (agent-state engine)))

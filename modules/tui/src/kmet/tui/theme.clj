@@ -836,7 +836,7 @@
    should never be unregistered). No-op when absent. With THEME, remove it
    only while NAME still holds that value — the guard that keeps one
    contributor's teardown from dropping another's later registration, as
-   `kmet.cells.scope/deregister!` does for the store."
+   `kmet.libs.scope/deregister!` does for the store."
   ([theme-name]
    (swap! themes dissoc (str theme-name))
    nil)

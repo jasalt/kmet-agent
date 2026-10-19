@@ -12,7 +12,7 @@
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.bash-executor :as bash-exec]
             [kmet.agent.skills :as skills]
-            [kmet.cells.scope :as scope]
+            [kmet.libs.scope :as scope]
             [kmet.libs.process :as process]
             [kmet.test-utils :refer [slash]]))
 

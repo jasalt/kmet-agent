@@ -17,7 +17,7 @@
             [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.registry :as tools-reg]
             [kmet.ai.models :as models]
-            [kmet.cells.scope :as scope]
+            [kmet.libs.scope :as scope]
             [kmet.test-utils :as tu]))
 
 ;; Several tests bootstrap real engines onto the app tree (loading the
@@ -196,7 +196,7 @@
 (deftest test-session-install-is-owner-scoped
   ;; The process cache is last-wins (one live front end at a time), but a
   ;; registration belongs to the tree that installed it: an older tree's
-  ;; teardown cannot clear a newer tree's session (cells.md §2, §5).
+  ;; teardown cannot clear a newer tree's session (scope.md §2, §5).
   (let [old (app/node)
         newer (app/child-node)]
     (try

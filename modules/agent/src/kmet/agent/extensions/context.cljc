@@ -265,6 +265,7 @@
     kmet.libs.process
     kmet.libs.reakt.core
     kmet.libs.reakt.weak
+    kmet.libs.scope
     kmet.libs.sse
     kmet.libs.terminal
     kmet.libs.terminal-image
@@ -1205,7 +1206,7 @@
 (defn unregister-theme!
   "Remove THEME from the shared theme store while NAME still holds it — the
    door for the teardown a contributed theme's owner records, so one owner's
-   teardown cannot drop a later contributor's registration (cells.md §2).
+   teardown cannot drop a later contributor's registration (scope.md §2).
    Returns nil."
   [name theme]
   ((requiring-resolve 'kmet.tui.theme/unregister-theme!) name theme)

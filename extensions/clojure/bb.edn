@@ -1,5 +1,5 @@
 {:paths ["src" "test"
-         "../../modules/cells/src" "../../modules/reakt/src"
+         "../../modules/reakt/src"
          "../../modules/hikap/src" "../../modules/libs/src"
          "../../modules/tui/src" "../../modules/ai/src"
          "../../modules/agent/src" "../../modules/loader/src"

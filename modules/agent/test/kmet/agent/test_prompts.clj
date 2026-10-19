@@ -5,7 +5,7 @@
             [babashka.fs :as fs]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.runtime :as app-runtime]
-            [kmet.cells.scope :as scope]))
+            [kmet.libs.scope :as scope]))
 
 ;; ─── parse-command-args (pi: parseCommandArgs) ─────────────────────────────
 

@@ -1,6 +1,6 @@
-(ns kmet.cells.scope
+(ns kmet.libs.scope
   "The store behind a node: registrations keyed by host-shaped keys, owned by
-   owner paths, with LIFO, isolated disposal (cells.md §2–§3).
+   owner paths, with LIFO, isolated disposal (scope.md §2–§3).
 
    The store is an atom so `register!`/`dispose-owner!` can be imperative while
    the node stays the value callers pass around. There is one registration per
@@ -17,11 +17,11 @@
 (def ^:dynamic *error-reporter*
   "Called with the throwable a failing cleanup threw. The host may rebind it
    (`kmet.agent.runtime` binds it to `kmet.agent.debug/log-error`); the
-   default prints to stderr, because the module is rank 0 and cannot require
-   `kmet.*` (cells.md §7)."
+   default prints to stderr, because the namespace must not require `kmet.*`
+   (scope.md §7)."
   (fn [t]
     (binding [*out* *err*]
-      (println (str "kmet.cells: cleanup failed: " (str/trim (str (ex-message t))))))))
+      (println (str "kmet.libs.scope: cleanup failed: " (str/trim (str (ex-message t))))))))
 
 (defn- empty-store []
   {:by-key {}        ; {key {owner value}} — the host-facing view
@@ -60,7 +60,7 @@
   "A fresh node with an empty store. A non-nil PARENT also gets NODE in its
    `:children`, so `dispose-node!` on the parent ends it; EXTRA carries the
    host's own fields (a stage map), while the node's `:store`, `:parent` and
-   `:children` always win (cells.md §5)."
+   `:children` always win (scope.md §5)."
   ([] (node nil))
   ([parent] (node parent nil))
   ([parent extra]
@@ -73,7 +73,7 @@
      n)))
 
 (defn in-subtree?
-  "True when NODE is ROOT or a descendant of it (cells.md §5). A nil ROOT
+  "True when NODE is ROOT or a descendant of it (scope.md §5). A nil ROOT
    is the process-wide scope: every node — nil included — is in it."
   [node root]
   (cond
@@ -98,12 +98,12 @@
 (defn- closed-error
   "The ex-info for a registration under OWNER in snapshot S, or nil when S
    accepts it: a store mid-disposal refuses what the pass would drop
-   (cells.md §3)."
+   (scope.md §3)."
   [s owner]
   (let [disposing (:disposing s)]
     (when (or (= :node disposing)
               (contains? disposing owner))
-      (ex-info (str "cells: cannot register under " (pr-str owner)
+      (ex-info (str "kmet.libs.scope: cannot register under " (pr-str owner)
                     " while its disposal is running")
                {:type ::closed-store :owner owner}))))
 
@@ -111,7 +111,7 @@
   "Install v under the host-shaped key k for owner (an owner path, e.g.
    `[:app :commands]`). Returns a deregister fn, collected onto owner — the
    caller need not keep it. An owner a disposal pass is clearing refuses the
-   registration (`::closed-store`, cells.md §3)."
+   registration (`::closed-store`, scope.md §3)."
   [node owner k v]
   (when (nil? v)
     (throw (ex-info "cannot register nil under a key"
@@ -131,7 +131,7 @@
 (defn add-teardown!
   "Collect f on owner; disposal runs teardowns after the owner's
    registrations, LIFO. This is where a cleanup for what lives outside the
-   store lands — a process, a file handle, a host callback (cells.md §3).
+   store lands — a process, a file handle, a host callback (scope.md §3).
    Refused by the closed-store rule `register!` applies."
   [node owner f]
   (when-let [closed (closed-error @(:store node) owner)]
@@ -160,7 +160,7 @@
   (owner-entries @(:store node) owner))
 
 (defn owners
-  "Every owner path on the store, in first-registration order (cells.md
+  "Every owner path on the store, in first-registration order (scope.md
    §2)."
   [node]
   (:owner-order @(:store node)))
@@ -174,7 +174,7 @@
   "Every registration on the node as [key owner value]: owners in
    first-registration order, each owner's registrations in its own
    registration order — the order a host registry lists and reads in
-   (cells.md §2). One store snapshot, so a registration made while it runs
+   (scope.md §2). One store snapshot, so a registration made while it runs
    cannot split the answer; a single key's owners are `for-key`."
   [node]
   (let [s @(:store node)]
@@ -266,7 +266,7 @@
   "Dispose every owner on NODE's store (reverse registration order, then the
    store itself); the whole pass is closed, so a teardown cannot register into
    a store that is going away. `dispose-node!` is the tree teardown, which
-   ends children first (cells.md §3)."
+   ends children first (scope.md §3)."
   [node]
   (let [store (:store node)
         owners (reverse (:owner-order @store))]
@@ -278,7 +278,7 @@
 
 (defn dispose-node!
   "End a node: children first (reverse order), then the store; the node leaves
-   its parent's `:children`. Idempotent (cells.md §3, §5)."
+   its parent's `:children`. Idempotent (scope.md §3, §5)."
   [node]
   (doseq [child (reverse @(:children node))]
     (dispose-node! child))

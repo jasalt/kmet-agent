@@ -1,11 +1,11 @@
-(ns kmet.cells.test-scope
+(ns kmet.libs.test-scope
   "The store and node lifetimes: ownership, replacement, LIFO disposal,
    failure isolation, and children-first node teardown. Registration cleanups
    are the deregister fn itself, so their mutual order is structural; what is
    observable — teardown LIFO, registrations before teardowns, per-owner
    isolation — is tested here."
   (:require [clojure.test :refer [deftest is]]
-            [kmet.cells.scope :as scope]))
+            [kmet.libs.scope :as scope]))
 
 (deftest registrations-are-keyed-and-owned
   (let [n (scope/node)]

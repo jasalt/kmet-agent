@@ -27,7 +27,7 @@
             [kmet.ai.hooks :as ai-hooks]
             [kmet.libs.hikap.alias :as alias]
             [kmet.tui.theme :as theme]
-            [kmet.cells.scope :as scope]))
+            [kmet.libs.scope :as scope]))
 
 ;; ─── Extension exec (extension api: exec) ────────────────────────────────
 
@@ -286,7 +286,7 @@
 (t/deftest test-extension-registrations-are-owned-by-the-extension
   ;; P5c: what init(api) registers lands on [:app :extensions <name>], so
   ;; unload is one LIFO dispose of that owner instead of a tracked deregister
-  ;; per registration (cells.md §2). Only what lives outside the store —
+  ;; per registration (scope.md §2). Only what lives outside the store —
   ;; here an event subscription — stays on the extension's own list.
   (extensions/clear-extensions!)
   (let [dir "target/test-ext-owned-registrations"]
@@ -335,7 +335,7 @@
 (t/deftest test-a-terminal-input-listener-is-tracked
   ;; The front end's listener registry lives outside the app tree, so its
   ;; unsubscriber is what records on the extension and unload runs it
-  ;; (cells.md §2 — tracked is the outside-the-tree half).
+  ;; (scope.md §2 — tracked is the outside-the-tree half).
   (extensions/clear-extensions!)
   (let [dir "target/test-ext-terminal-input"
         handlers (atom [])
@@ -882,7 +882,7 @@
 
 (t/deftest test-a-failed-init-rolls-back-what-it-registered
   ;; The rollback runs the same unload path, so what init(api) registered
-  ;; before throwing is disposed with the extension's owner (cells.md §2) —
+  ;; before throwing is disposed with the extension's owner (scope.md §2) —
   ;; no command, tool or skill outlives a failed load.
   (extensions/clear-extensions!)
   (let [dir "target/test-ext-init-rollback"]
@@ -1903,7 +1903,7 @@
 ;; ─── Extension hooks live on the app tree (P2) ────────────────────────────
 
 (t/deftest extension-hooks-live-on-the-app-tree
-  ;; cells.md §2: whatever an extension's init(api) installs belongs to
+  ;; scope.md §2: whatever an extension's init(api) installs belongs to
   ;; [:app :extensions <name>]. Hooks are read from the tree rather than
   ;; copied into each engine, so one registered with no engine running
   ;; reaches every engine, and deregistering removes the only copy.
@@ -1931,7 +1931,7 @@
           "and leaves no registration behind")))
 
 (t/deftest hooks-run-owner-by-owner-in-registration-order
-  ;; The store's order is the module's (cells.md §2): owners in
+  ;; The store's order is the module's (scope.md §2): owners in
   ;; first-registration order, each owner's own registrations in its own
   ;; order — so one extension's hooks stay together and in its own sequence.
   (let [a (extensions/extension-owner "test-hook-order-a")

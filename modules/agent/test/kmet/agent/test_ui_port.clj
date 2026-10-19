@@ -9,7 +9,7 @@
             [kmet.agent.runtime :as app]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as rt]
-            [kmet.cells.scope :as scope]
+            [kmet.libs.scope :as scope]
             [kmet.test-utils :as tu]))
 
 ;; The binding and the app tree's registrations are process-global state;

@@ -3,7 +3,7 @@
             [clojure.string :as str]
             [kmet.agent.debug :as debug]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.cells.scope :as cells-scope]))
+            [kmet.libs.scope :as scope]))
 
 ;; ─── Event vocabulary ─────────────────────────────────────────────────────
 
@@ -235,11 +235,11 @@
 (t/deftest test-a-scoped-listener-hears-its-own-subtree
   ;; A run subscribes with its own node: child events reach it, a parent's or
   ;; sibling's do not, and an unscoped listener (an extension) keeps hearing
-  ;; everything (cells.md §6).
-  (let [root (cells-scope/node)
-        child (cells-scope/node root)
-        grandchild (cells-scope/node child)
-        sibling (cells-scope/node root)
+  ;; everything (scope.md §6).
+  (let [root (scope/node)
+        child (scope/node root)
+        grandchild (scope/node child)
+        sibling (scope/node root)
         scoped (atom [])
         unscoped (atom [])]
     (event-bus/clear-event-listeners!)
@@ -259,9 +259,9 @@
           "the unscoped listener keeps hearing every emission")))
 
 (t/deftest test-collect-and-boundary-respect-scope
-  (let [root (cells-scope/node)
-        child (cells-scope/node root)
-        sibling (cells-scope/node root)]
+  (let [root (scope/node)
+        child (scope/node root)
+        sibling (scope/node root)]
     (event-bus/clear-event-listeners!)
     (event-bus/on-event :resources-discover [:app :extensions "wide"]
                         (fn [_] {:skill-paths ["/wide"]}))

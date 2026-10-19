@@ -8,7 +8,7 @@
             [kmet.agent.runtime :as app]
             [kmet.agent.session.runtime :as rt]
             [kmet.agent.skills :as skills]
-            [kmet.cells.scope :as scope]
+            [kmet.libs.scope :as scope]
             [kmet.tui.utils :as u]))
 
 (defn test-engine

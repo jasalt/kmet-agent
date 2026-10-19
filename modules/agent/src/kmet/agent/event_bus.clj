@@ -11,12 +11,12 @@
 
    The extension bus itself is a process-level registry: a subscription lives
    from an extension's load to its unload, in registration order, and no
-   engine owns, copies or clears it (cells.md §6). A subscription may
+   engine owns, copies or clears it (scope.md §6). A subscription may
    carry a scope — the node it listens to — so a listener in a child tree
-   hears its own subtree's events and a sibling's listeners do not (cells.md
+   hears its own subtree's events and a sibling's listeners do not (scope.md
    §6)."
   (:require [kmet.agent.debug :as debug]
-            [kmet.cells.scope :as scope]))
+            [kmet.libs.scope :as scope]))
 
 (def event-types
   "Map of event type keyword → description. The canonical vocabulary.
@@ -403,7 +403,7 @@
 ;; on-event; the loop and the front ends route events through emit-event!.
 ;; One structure, process-level: extensions subscribe at load, before any
 ;; engine exists, and their lifetime is load → unload, so an engine neither
-;; adopts nor wipes it (cells.md §6).
+;; adopts nor wipes it (scope.md §6).
 
 (defonce ^:private listeners
   ;; {event-type [{:callback f :owner path :scope node} …]} — one vector per
@@ -426,7 +426,7 @@
 (defn- visible
   "The entries an emission from NODE reaches: NODE nil (a process-wide
    emission) reaches every entry, and a scoped entry sees NODE when it is its
-   own node or a descendant (cells.md §5, §6)."
+   own node or a descendant (scope.md §5, §6)."
   [entries node]
   (if (nil? node)
     entries
@@ -441,12 +441,12 @@
                 extension's `[:app :extensions <name>]`). The collect
                 emitter reports it beside the handler's result, so a
                 contribution can be applied under the owner that made it
-                (resource discovery, cells.md §2).
+                (resource discovery, scope.md §2).
    callback   — (fn [event-map])
    scope      — optional: the node this listener listens to; it sees events
                 emitted from that node and its descendants. nil (the
                 default) is process-wide, which is what an extension wants;
-                a child node a run passes for its own tree (cells.md §6).
+                a child node a run passes for its own tree (scope.md §6).
    Returns a deregister function. A type outside the vocabulary is reported
    and registered anyway: the vocabulary is documented, not a gate."
   ([event-type callback] (on-event event-type nil callback nil))

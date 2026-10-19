@@ -1,12 +1,12 @@
 (ns kmet.agent.runtime
   "The agent runtime: one store node and the loop's stage map.
 
-   `node` is the app root — the store (`kmet.cells.scope`) every front end,
+   `node` is the app root — the store (`kmet.libs.scope`) every front end,
    engine and loaded extension registers into, plus the loop's two stages as
-   plain data. The loop reads its stage map once per attempt (cells.md §4),
+   plain data. The loop reads its stage map once per attempt (scope.md §4),
    and a child node carries its own (P7).
 
-   Registrations are owned (cells.md §2): what `init(api)` installs lands on
+   Registrations are owned (scope.md §2): what `init(api)` installs lands on
    `[:app :extensions <name>]`, so unloading an extension is one LIFO dispose
    of that owner plus the fns it recorded for what lives outside the tree.
 
@@ -19,30 +19,30 @@
             [kmet.agent.debug :as debug]
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.retry :as retry]
-            [kmet.cells.scope :as scope]))
+            [kmet.libs.scope :as scope]))
 
 (defn- with-reported-cleanups
   "Run F with the store's cleanup reporter bound to
-   `kmet.agent.debug/log-error` (cells.md §3): a failing cleanup is reported
+   `kmet.agent.debug/log-error` (scope.md §3): a failing cleanup is reported
    and never skips the rest, and the report reaches the agent's error log."
   [f]
   (binding [scope/*error-reporter*
-            (fn [t] (debug/log-error "cells cleanup failed: " t))]
+            (fn [t] (debug/log-error "store cleanup failed: " t))]
     (f)))
 
 (def default-loop-stages
   "The loop's two stages, as the plain map the loop reads: each stage carries
-   its `:handle`, and an optional `:config` (the loop-guard threshold, the
+   a `:call` function, and an optional `:config` (the loop-guard threshold, the
    retry policy's budget and backoff shape). A node may carry an override; a
    subagent's node will."
-  {:loop-guard {:handle loop-guard/loop-guard-filter}
-   :retry-policy {:handle retry/retry-decision}})
+  {:loop-guard {:call loop-guard/loop-guard-filter}
+   :retry-policy {:call retry/retry-decision}})
 
 (defn- new-node
   "A store node whose stage map is the defaults merged with STAGES: a stage's
-   `:handle`/`:config` keys override the builtin entry, and the entry's other
+   `:call`/`:config` keys override the builtin entry, and the entry's other
    keys carry over. A non-nil PARENT also gets the node in its `:children`
-   (`scope/node`), so `scope/dispose-node!` on the parent ends it (cells.md
+   (`scope/node`), so `scope/dispose-node!` on the parent ends it (scope.md
    §5)."
   [parent stages]
   (scope/node parent
@@ -50,7 +50,7 @@
 
 (defn child-node
   "A fresh node carrying the loop stages — STAGES merged over the builtin
-   defaults — linked to PARENT for subtree queries and tree disposal (cells.md
+   defaults — linked to PARENT for subtree queries and tree disposal (scope.md
    §5). A run can point at one to get its own stage map (P7); a nil parent
    makes a root of its own."
   ([] (child-node nil))
@@ -62,7 +62,7 @@
 
 (defn node
   "The app's root node. -main reaches this before extension loading, so every
-   `init(api)` has an owner to register under (cells.md §6)."
+   `init(api)` has an owner to register under (scope.md §6)."
   []
   @app-node)
 
@@ -84,7 +84,7 @@
 (defn dispose-owner!
   "Dispose OWNER's registrations on the app root, LIFO and isolated — an
    extension's own registrations when it unloads. Failures are reported, not
-   swallowed (cells.md §3)."
+   swallowed (scope.md §3)."
   [owner]
   (with-reported-cleanups #(scope/dispose-owner! (node) owner)))
 
@@ -92,7 +92,7 @@
   "Run FNS — the deregister fns an extension recorded for what lives outside
    the app tree — in reverse registration order, each isolated and a failure
    reported through the same reporter the store uses instead of skipping the
-   rest (cells.md §3). Returns nil."
+   rest (scope.md §3). Returns nil."
   [fns]
   (with-reported-cleanups
     #(doseq [f (reverse fns)]
@@ -101,14 +101,14 @@
 
 (defn- owner-line
   "One store owner as `/units` prints it: `<owner> keys=[…]`, the owner's
-   registrations in registration order (cells.md §2, §6)."
+   registrations in registration order (scope.md §2, §6)."
   [owner registrations]
   (str (pr-str owner)
        " keys=" (pr-str (mapv first registrations))))
 
 (defn owner-listing
   "Render the store owners that hold registrations for `/units`: one
-   `<owner> keys=[…]` line each, in first-registration order, flat (cells.md
+   `<owner> keys=[…]` line each, in first-registration order, flat (scope.md
    §2, §6). An owner with only teardowns has nothing to show and is
    skipped."
   [node]

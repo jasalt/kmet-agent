@@ -7,7 +7,7 @@
             [kmet.agent.commands.builtins :as builtins]
             [kmet.agent.runtime :as app-runtime]
             [kmet.agent.tools.registry :as tools-reg]
-            [kmet.cells.scope :as scope]
+            [kmet.libs.scope :as scope]
             [kmet.test-utils :as tu]))
 
 ;; The builtins' registry-facing tests fill the app tree's slash registry;
@@ -35,7 +35,7 @@
   (t/is (nil? (commands/find-command "gone"))))
 
 (t/deftest other-registries-share-the-store-without-interference
-  ;; An owner can hold several registries (cells.md §2): a non-command key in
+  ;; An owner can hold several registries (scope.md §2): a non-command key in
   ;; the same store must not break listing or clearing, and its bare keyword
   ;; key has no head to match on.
   (let [node (app-runtime/node)
@@ -77,7 +77,7 @@
 (t/deftest the-registry-lives-in-the-app-roots-store
   ;; The registry is the store, not an engine field: a registration is
   ;; readable through the store under the app's owner, and clear-commands!
-  ;; removes it by key (an owner can hold several registries — cells.md §2).
+  ;; removes it by key (an owner can hold several registries — scope.md §2).
   (commands/register-command! (app-runtime/node)
                               {:name "stored" :description "x" :handler (fn [_ _] nil)})
   (t/is (identical? (:handler (commands/find-command "stored"))
@@ -111,7 +111,7 @@
 
 (t/deftest units-lists-the-store-owners
   ;; The /units surface renders every store owner: the registries' owner paths
-  ;; with their keys, one flat line each (kmet.agent.runtime; cells.md §2,
+  ;; with their keys, one flat line each (kmet.agent.runtime; scope.md §2,
   ;; §7).
   (builtins/register-runtime-commands!)
   (tools-reg/register-tool! (app-runtime/node) {:name "units-probe" :description "d"

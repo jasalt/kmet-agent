@@ -134,12 +134,12 @@ listed in the root `AGENTS.md` topic map.
 
 ### Layer boundaries
 
-- `kmet.cells.scope` is the store and node lifetimes (`modules/cells`, rank 0):
-  registrations keyed by owner path, with LIFO, isolated disposal; a node
+- `kmet.libs.scope` is the store and node lifetimes (in `modules/libs`, rank
+  0): registrations keyed by owner path, with LIFO, isolated disposal; a node
   links its parent and children, and disposing one ends its children first. It
-  requires no `kmet.*` namespace outside its own tree and no third-party
-  library; `test_self_contained` enforces the require rule. Design:
-  `modules/cells/src/kmet/cells/cells.md`.
+  is stricter than the rest of libs: no `kmet.*` require at all and no
+  third-party library; `kmet.libs.test-scope-self-contained` enforces the
+  require rule. Design: `modules/libs/src/kmet/libs/scope.md`.
 - `kmet.loader.*` is now an outer module (`modules/loader`); it may use third-party deps and
   `kmet.loader.*`, but no other `kmet.*` namespace.
 - `kmet.libs.*` is generic and self-contained; it may not require non-libs
@@ -186,7 +186,7 @@ registration tables/maps over compile-time multimethod registries. Use
 
 The registries a front end or extension can reach — commands, tools, skills,
 prompt templates, hooks, renderers, markdown transformers, flags — live in the
-app root's store (`kmet.cells.scope`, reached through `kmet.agent.runtime`),
+app root's store (`kmet.libs.scope`, reached through `kmet.agent.runtime`),
 addressed by host-shaped keys under an owner path: a registry's address
 (`[:app :commands]`), or `[:app :extensions <name>]` for an extension's own
 registrations, including the skills, prompts and themes a
@@ -194,7 +194,7 @@ registrations, including the skills, prompts and themes a
 with that owner (P2), so a new extension point is a key on that store, not a
 process-global atom copied into each engine. `/units` prints every store
 owner — a registry's address, an extension's own registrations — one flat
-line each, from the store itself (F5, F14, cells.md §6). The runtime-owned
+line each, from the store itself (F5, F14, scope.md §6). The runtime-owned
 surfaces follow the same rule: `bootstrap` registers the live session and its
 sinks under `[:app :session]` and the headless UI port under `[:app :ui]`, and
 `dispose-owner!` drops those owners; the `extensions` atoms stay the no-node

@@ -1,11 +1,12 @@
-# kmet.cells — the store and its node
+# kmet.libs.scope — the store and its node
 
-`kmet.cells.scope` is the module's only namespace: a per-node store of
-registrations with owner-scoped, LIFO disposal, and the node's parent/child
-lifetime. It is a leaf module (rank 0): no `kmet.*` require outside its own
-tree and no third-party library; `test_self_contained` enforces the first. The
-composition layer this module once carried — units, entries, resolution
-backends — was retired; the store and the node are the surviving contract.
+`kmet.libs.scope` is the store: a per-node registry of registrations with
+owner-scoped, LIFO disposal, and the node's parent/child lifetime. It lives in
+`kmet.libs` (rank 0) but is stricter than the rest of the library: no `kmet.*`
+require at all and no third-party library; `kmet.libs.test-scope-self-contained`
+enforces the first. The composition layer the old cells module carried —
+units, entries, resolution backends — was retired; the store and the node are
+the surviving contract.
 
 ## 1. The store
 
@@ -69,11 +70,11 @@ whole store closed, then resets it. `dispose-node! node` ends children first
 (reverse creation order), unlinks the node from its parent's `:children`, then
 runs `dispose-store!`. Both are idempotent.
 
-The module has no clock: disposal never waits. Quiescence is the caller's
+The store has no clock: disposal never waits. Quiescence is the caller's
 decision — the agent disposes at the `:agent-settled` boundary.
 
-The default `*error-reporter*` prints to stderr (rank 0 cannot require
-`kmet.agent.debug`); `kmet.agent.runtime` rebinds it to
+The default `*error-reporter*` prints to stderr (the namespace must not
+require `kmet.*`); `kmet.agent.runtime` rebinds it to
 `kmet.agent.debug/log-error`.
 
 ## 4. Reading the store
@@ -108,20 +109,20 @@ the fns the extension recorded for what lives outside the tree.
 `/units` prints one flat `<owner> keys=[…]` line per owner that holds
 registrations (`runtime/owner-listing`), in first-registration order.
 
-The loop's stages are plain data on the node: `{:loop-guard {:handle …}
-:retry-policy {:handle …}}`, with an optional `:config` per stage. The loop
+The loop's stages are plain data on the node: `{:loop-guard {:call …}
+:retry-policy {:call …}}`, with an optional `:config` per stage. The loop
 reads the map once per attempt; `/reload` re-seats it with
 `refresh-stages!`; a child node (`runtime/child-node`) carries its own map and
 is the per-run isolation boundary for subagents. The event bus is host-owned
 state of its own, not a store registration; a subscription may carry a node
 scope and then hears events from that node's subtree.
 
-## 7. Module rules
+## 7. Namespace rules
 
-- Rank 0: no `kmet.*` require outside `kmet.cells.*`, no third-party library.
-  `test_self_contained` enforces the require rule.
+- Rank 0: no `kmet.*` require at all, no third-party library.
+  `kmet.libs.test-scope-self-contained` enforces the require rule.
 - The store is an atom, the node a value: callers hold nodes, writes go
   through the functions.
 - Failures are reported through `*error-reporter*`, never swallowed, and a
   failing cleanup never skips the rest.
-- No clocks, timers or threads in the module; disposal never waits.
+- No clocks, timers or threads in the store; disposal never waits.
