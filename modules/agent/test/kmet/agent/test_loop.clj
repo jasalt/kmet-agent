@@ -1071,10 +1071,10 @@
   (let [agent (loop/make-agent-state)
         next-drain (fn []
                      (if (seq @(:steering agent))
-                       (#'state/drain-queue! (:steering agent)
-                                             (:steering-mode @(:cfg agent)))
-                       (#'state/drain-queue! (:follow-up agent)
-                                             (:follow-up-mode @(:cfg agent)))))]
+                       (state/drain-queue! (:steering agent)
+                                           (:steering-mode @(:cfg agent)))
+                       (state/drain-queue! (:follow-up agent)
+                                           (:follow-up-mode @(:cfg agent)))))]
     (t/is (= [] (state/peek-queued-messages agent))
           "empty queues preview nothing")
     (state/steer! agent "s1")

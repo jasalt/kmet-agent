@@ -5,8 +5,8 @@
    message accumulator, the steering/follow-up queues, the pending custom/
    bash/next-turn messages, the active tools, and the model/thinking
    settings. Every mutation goes through a function here: the driver
-   (kmet.agent.loop), completion and compaction call these operations
-   instead of touching an atom directly.
+   (kmet.agent.loop), completion, tool execution and compaction call these
+   operations instead of touching an atom directly.
 
    Queues (pi: steeringQueue / followUpQueue):
      :steering  — user messages injected mid-run. Polled between turns (after

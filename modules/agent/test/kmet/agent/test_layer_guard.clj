@@ -48,6 +48,15 @@
            (filter #(str/starts-with? % "kmet."))
            distinct))))
 
+(defn- path->ns
+  "The namespace named by a source file path under modules/agent/src."
+  [path]
+  (-> path
+      (str/replace #"^modules/agent/src/" "")
+      (str/replace #"\.clj[ca]?$" "")
+      (str/replace #"/" ".")
+      (str/replace #"_" "-")))
+
 (def ^:private temporary-leaks
   ;; Known pre-existing violations of the app layer boundary. Remove an
   ;; entry when the corresponding leak is fixed; new violations fail this
@@ -72,10 +81,7 @@
 (deftest app-layer-does-not-require-front-ends
   (testing "no new kmet.agent namespace reaches the TUI/Tk/interactive layers"
     (doseq [f (app-source-files)]
-      (let [ns-name (-> f (str/replace #"^modules/agent/src/" "")
-                        (str/replace #"\.clj[ca]?$" "")
-                        (str/replace #"/" ".")
-                        (str/replace #"_" "-"))
+      (let [ns-name (path->ns f)
             deps (required-kmet f)
             forbidden (remove (fn [d]
                                 (and (contains? temporary-leaks ns-name)
@@ -120,13 +126,6 @@
        (filter #(or (= "loop.clj" (fs/file-name %))
                     (str/includes? % "/agent/loop/")))
        sort))
-
-(defn- path->ns [path]
-  (-> path
-      (str/replace #"^modules/agent/src/" "")
-      (str/replace #"\.clj[ca]?$" "")
-      (str/replace #"/" ".")
-      (str/replace #"_" "-")))
 
 (deftest loop-modules-form-a-dag
   (testing "the loop submodules require only earlier modules (no cycles)"
