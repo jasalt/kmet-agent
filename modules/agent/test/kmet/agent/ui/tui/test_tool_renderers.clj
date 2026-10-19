@@ -427,6 +427,53 @@
       (is (= 12 (count lines)))
       (is (str/includes? (peek lines) "line 11")))))
 
+(defn- raw-line
+  "Render a renderer result and return its single ANSI-bearing line (a wide
+   width keeps a short call line unwrapped)."
+  [comp width]
+  (first (core/render comp width)))
+
+(defn- hl-line
+  "The styled form of CODE the shared highlighter produces for LANG — the
+   expected code segment of a call line."
+  [code lang]
+  (first (theme/render-highlighted th code lang)))
+
+(deftest test-code-call-syntax-highlighting
+  (testing "run_code and clj eval highlight as Clojure, with only the label bold"
+    (let [code "(defn f [x] x)"
+          run-code (raw-line (r/render-run-code-call "run_code" {:code code} th 120 {}) 120)
+          clj-eval (raw-line (r/render-code-call "clj eval $" code "" th 120 {}) 120)]
+      (is (str/starts-with? run-code (theme/fg th :tool-title (theme/bold "run $ "))))
+      (is (str/includes? run-code (hl-line code "clojure")))
+      (is (str/starts-with? clj-eval (theme/fg th :tool-title (theme/bold "clj eval $ "))))
+      (is (str/includes? clj-eval (hl-line code "clojure")))
+      (is (not (str/includes? run-code (theme/bold code))) "the code is not bold")))
+  (testing "collapsed and expanded render the same highlighted call line"
+    (let [code "(+ 1 2)"
+          render #(raw-line (r/render-run-code-call "run_code" {:code code} th 120
+                                                    {:expanded %}) 120)]
+      (is (= (render false) (render true)))))
+  (testing "a multi-line script keeps the prompt on its first line only"
+    (let [code "(defn f [x]\n  x)"
+          lines (mapv utils/strip-ansi-codes
+                      (core/render (r/render-run-code-call "run_code" {:code code} th 120 {}) 120))]
+      (is (= 2 (count lines)))
+      (is (str/starts-with? (first lines) "run $ (defn f [x]"))
+      (is (= "  x)" (str/trimr (second lines))))))
+  (testing "the highlight is memoized per block, leaving other renderer state intact"
+    (let [state (atom {:timer-id 7})
+          context #(hash-map :state @state :set-state! (fn [s] (reset! state s)))
+          call (fn [code] (r/render-run-code-call "run_code" {:code code} th 120 (context)))]
+      (call "(+ 1 2)")
+      (is (= "(+ 1 2)" (get-in @state [:call-highlight :code])))
+      (is (= 7 (:timer-id @state)) "the ticker's parked key survives set-state!")
+      (let [cached (:call-highlight @state)]
+        (call "(+ 1 2)")
+        (is (identical? cached (:call-highlight @state)) "unchanged code is not re-highlighted"))
+      (call "(+ 2 3)")
+      (is (= "(+ 2 3)" (get-in @state [:call-highlight :code]))))))
+
 (deftest test-run-code-result
   (testing "output preview and inner-call summary render"
     (let [context {:details {:calls [{:tool "read" :ok true}
