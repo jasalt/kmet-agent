@@ -144,3 +144,9 @@
           (is (contains? (get loop-module-edges ns-name #{}) dep)
               (str ns-name " may not require " dep)))))))
 
+(deftest the-loop-entry-point-is-pinned
+  (testing "kmet.agent.loop exposes only the driver entry points"
+    (is (= '#{make-agent-state run-agent-turn cancel-turn}
+           (set (keys (ns-publics 'kmet.agent.loop)))))))
+
+

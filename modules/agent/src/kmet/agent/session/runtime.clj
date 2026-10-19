@@ -45,6 +45,7 @@
             [kmet.agent.context :as context]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.loop.compact :as agent-compact]
             [kmet.agent.loop.state :as agent-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.model-resolver :as resolver]
@@ -1021,10 +1022,10 @@
 
 (defn compact!
   "Compact the session (manual /compact path); custom-instructions and
-   reason are loop/pi-shaped (see kmet.agent.loop/compact-context!)."
-  ([engine] (agent/compact-context! (agent-state engine)))
+   reason are loop/pi-shaped (see kmet.agent.loop.compact/compact-context!)."
+  ([engine] (agent-compact/compact-context! (agent-state engine)))
   ([engine custom-instructions reason]
-   (agent/compact-context! (agent-state engine) custom-instructions reason)))
+   (agent-compact/compact-context! (agent-state engine) custom-instructions reason)))
 
 (defn set-model! [engine model] (agent-state/set-model! (agent-state engine) model))
 (defn cycle-model!
@@ -1225,15 +1226,15 @@
 (defn abort-compaction!
   "Abort the in-flight compaction without cancelling a running turn."
   [engine]
-  (agent/abort-compaction! (agent-state engine)))
+  (agent-compact/abort-compaction! (agent-state engine)))
 
 (defn generate-branch-summary
   "LLM summary of abandoned branch entries for tree navigation. Returns
    {:summary str :usage map} | {:aborted true} | {:error msg}; SIGNAL
    aborts the call."
   [engine entries custom-instructions signal replace-instructions?]
-  (agent/generate-branch-summary (agent-state engine) entries custom-instructions
-                                 signal replace-instructions?))
+  (agent-compact/generate-branch-summary (agent-state engine) entries custom-instructions
+                                         signal replace-instructions?))
 
 (defn set-http-idle-timeout-ms!
   "Set the SSE idle timeout live (0 disables)."

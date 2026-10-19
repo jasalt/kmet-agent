@@ -8,6 +8,7 @@
             [kmet.agent.config :as cfg]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.loop.compact :as agent-compact]
             [kmet.agent.loop :as agent]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.runtime :as app]
@@ -328,7 +329,7 @@
   (with-engine
     (fn [engine _]
       (let [completed (promise)]
-        (with-redefs [agent/compact-context! (fn [& _] true)]
+        (with-redefs [agent-compact/compact-context! (fn [& _] true)]
           (is (= :started (rt/request-compaction! engine nil {:on-complete #(deliver completed %)})))
           (is (true? (deref completed 2000 ::timeout))
               "an idle request starts immediately and reports its result"))
@@ -344,7 +345,7 @@
       (let [completed (promise)
             seen (atom [])]
         (reset! (:turn-running? engine) true)
-        (with-redefs [agent/compact-context!
+        (with-redefs [agent-compact/compact-context!
                       (fn [_ag instructions reason]
                         (swap! seen conj [instructions reason])
                         true)]
@@ -369,7 +370,7 @@
   (with-engine
     (fn [engine _]
       (let [failed (promise)]
-        (with-redefs [agent/compact-context!
+        (with-redefs [agent-compact/compact-context!
                       (fn [ag & _]
                         (reset! (:compaction-error ag) "Compaction failed: boom")
                         :failed)]
@@ -440,7 +441,7 @@
     (fn [engine _]
       (let [signal (atom false)
             seen (atom nil)]
-        (with-redefs [agent/generate-branch-summary
+        (with-redefs [agent-compact/generate-branch-summary
                       (fn [ag entries instructions sig replace?]
                         (reset! seen [ag entries instructions sig replace?])
                         {:summary "s"})]

@@ -43,6 +43,7 @@
             [kmet.agent.ui.tui.thinking-selector :as thinking-selector]
             [kmet.ai.models :as m]
             [kmet.ai.auth :as auth]
+            [kmet.agent.loop.compact :as agent-compact]
             [kmet.agent.loop.state :as agent-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.tools.core :as tools]
@@ -2464,8 +2465,8 @@
           ctx ((:build-context registry))
           errors (atom [])]
       (try
-        (with-redefs [agent/compact-context! (fn [& _]
-                                               (throw (ex-info "must not compact" {})))]
+        (with-redefs [agent-compact/compact-context! (fn [& _]
+                                                       (throw (ex-info "must not compact" {})))]
           (t/is (nil? ((:compact ctx)
                        {:custom-instructions "focus on tests"
                         :on-error (fn [e] (swap! errors conj (ex-message e)))}))
@@ -2494,7 +2495,7 @@
           errors (atom [])
           reported (promise)]
       (try
-        (with-redefs [agent/compact-context!
+        (with-redefs [agent-compact/compact-context!
                       (fn [ag & _]
                         (reset! (:compaction-error ag)
                                 "Compaction failed: Summarization failed: provider exploded")
@@ -2519,7 +2520,7 @@
     (let [cs (compaction-cs)
           logged (promise)]
       ((var builtins/register-builtin-commands!) cfg/default-config)
-      (with-redefs [agent/compact-context! (fn [& _] (throw (ex-info "boom" {})))
+      (with-redefs [agent-compact/compact-context! (fn [& _] (throw (ex-info "boom" {})))
                     debug/log-error (fn [& parts] (deliver logged (apply str parts)))]
         ((:handler (commands/find-command "compact")) (command-ctx cs) "")
         (t/is (str/includes? (deref logged 2000 "") "boom")
@@ -2534,7 +2535,7 @@
       (try
         ((var builtins/register-builtin-commands!) cfg/default-config)
         (reset! (:running-turn? cs) true)
-        (with-redefs [agent/compact-context!
+        (with-redefs [agent-compact/compact-context!
                       (fn [_ag instructions reason]
                         (deliver ran [instructions reason])
                         true)]

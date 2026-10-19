@@ -90,8 +90,10 @@ modules/agent/src/kmet/
 │   │                     the request's :on-headers/:on-response hooks are
 │   │                     arguments (send-message opts)
 ├── agent/              — App business logic (pi: dist/core/)
-│   ├── loop.clj        — the agent loop; retry.clj — retry/error policy;
-│   │                     loop_guard.clj — repeat-loop guard
+│   ├── loop.clj        — the agent loop driver; loop/ — its submodules
+│   │                     (message, state, completion, tool_exec, compact)
+│   ├── retry.clj       — retry/error policy
+│   ├── loop_guard.clj  — repeat-loop guard
 │   ├── runtime.clj     — the app root node (the store) and the loop's
 │   │                     stage map a run reads once per attempt
 │   ├── session/         — session subsystem:
