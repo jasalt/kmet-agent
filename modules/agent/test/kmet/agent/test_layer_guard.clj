@@ -100,3 +100,47 @@
           (is (empty? forbidden)
               (str f " requires " (vec forbidden)
                    " — front ends drive kmet.agent.session.runtime instead")))))))
+
+(def ^:private loop-module-edges
+  "The only allowed kmet.agent.loop.* edges; a subset check, so the map can
+   name modules that do not exist yet."
+  {"kmet.agent.loop.message" #{}
+   "kmet.agent.loop.state" #{"kmet.agent.loop.message"}
+   "kmet.agent.loop.completion" #{"kmet.agent.loop.state" "kmet.agent.loop.message"}
+   "kmet.agent.loop.tool-exec" #{"kmet.agent.loop.state" "kmet.agent.loop.message"}
+   "kmet.agent.loop.compact" #{"kmet.agent.loop.state" "kmet.agent.loop.completion"}
+   "kmet.agent.loop" #{"kmet.agent.loop.message" "kmet.agent.loop.state"
+                       "kmet.agent.loop.completion" "kmet.agent.loop.tool-exec"
+                       "kmet.agent.loop.compact"}})
+
+(defn- loop-source-files
+  "The loop driver and its submodules."
+  []
+  (->> (app-source-files)
+       (filter #(or (= "loop.clj" (fs/file-name %))
+                    (str/includes? % "/agent/loop/")))
+       sort))
+
+(defn- path->ns [path]
+  (-> path
+      (str/replace #"^modules/agent/src/" "")
+      (str/replace #"\.clj[ca]?$" "")
+      (str/replace #"/" ".")
+      (str/replace #"_" "-")))
+
+(deftest loop-modules-form-a-dag
+  (testing "the loop submodules require only earlier modules (no cycles)"
+    (let [files (loop-source-files)]
+      (is (seq files) "no loop sources scanned — check the walk roots")
+      (doseq [f files
+              :let [ns-name (path->ns f)]]
+        (is (contains? loop-module-edges ns-name)
+            (str "no DAG entry for " ns-name))
+        (doseq [dep (required-kmet f)
+                :let [dep (str dep)]
+                :when (str/starts-with? dep "kmet.agent.loop")
+                :when (not (contains? #{"kmet.agent.loop-guard"
+                                        "kmet.agent.retry"} dep))]
+          (is (contains? (get loop-module-edges ns-name #{}) dep)
+              (str ns-name " may not require " dep)))))))
+

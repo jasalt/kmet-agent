@@ -17,6 +17,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.session.core :as session]
+            [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
             [kmet.agent.loop-guard :as guard]
             [kmet.agent.runtime :as runtime]
@@ -113,7 +114,7 @@
     (t/is (str/includes? @(:system agent) "- bash:"))
     (t/is (str/includes? @(:system agent) "Use bash for file operations"))
     ;; disable bash
-    (loop/set-active-tools! agent (mapv :name (remove #(= "bash" (:name %)) all-tools)))
+    (state/set-active-tools! agent (mapv :name (remove #(= "bash" (:name %)) all-tools)))
     (t/is (= (set (map :name (remove #(= "bash" (:name %)) all-tools)))
              @(:enabled-tools agent)))
     (t/is (not (str/includes? @(:system agent) "- bash:")))
@@ -125,23 +126,23 @@
                                                      :description "stand-in for the grep extension"
                                                      :prompt-snippet "stand-in for the grep extension"
                                                      :execute (fn [_] {:content ""})})
-      (loop/set-active-tools! agent ["bash" "read" "grep"])
+      (state/set-active-tools! agent ["bash" "read" "grep"])
       (t/is (str/includes? @(:system agent) "- grep:"))
       (t/is (not (str/includes? @(:system agent) "Use bash for file operations")))
       (finally
         (tools-registry/unregister-tool! (runtime/node) "grep")))
     ;; restore all
-    (loop/set-active-tools! agent nil)
+    (state/set-active-tools! agent nil)
     (t/is (nil? @(:enabled-tools agent)))
     (t/is (str/includes? @(:system agent) "- bash:"))
     (t/is (str/includes? @(:system agent) "Use bash for file operations"))
     ;; unknown tool names are filtered out of the enabled set (pi)
-    (loop/set-active-tools! agent ["read" "nonexistent-tool"])
+    (state/set-active-tools! agent ["read" "nonexistent-tool"])
     (t/is (= #{"read"} @(:enabled-tools agent)))
     (t/is (str/includes? @(:system agent) "- read:"))
     (t/is (not (str/includes? @(:system agent) "nonexistent-tool")))
     ;; a bare string is treated as a single tool name (untyped extensions)
-    (loop/set-active-tools! agent "write")
+    (state/set-active-tools! agent "write")
     (t/is (= #{"write"} @(:enabled-tools agent)))
     (t/is (str/includes? @(:system agent) "- write:"))))
 
@@ -157,7 +158,7 @@
                :system (skills/build-system-prompt :tools all-tools)
                :system-prompt-opts opts)]
     ;; restrict to read (as an extension would)
-    (loop/set-active-tools! agent ["read"])
+    (state/set-active-tools! agent ["read"])
     (t/is (= #{"read"} @(:enabled-tools agent)))
     ;; reload: prompt rebuilt over active set, opts updated
     (let [read-tool (first (filter #(= "read" (:name %)) all-tools))]
@@ -166,7 +167,7 @@
       (t/is (str/includes? @(:system agent) "- read:"))
       (t/is (not (str/includes? @(:system agent) "- bash:"))))
     ;; re-enable bash after the reload — must work (sources = full registry)
-    (loop/set-active-tools! agent ["read" "bash"])
+    (state/set-active-tools! agent ["read" "bash"])
     (t/is (= #{"read" "bash"} @(:enabled-tools agent)))
     (t/is (str/includes? @(:system agent) "- bash:"))))
 
@@ -174,9 +175,9 @@
 
 (t/deftest test-loop-get-context
   (let [agent (loop/make-agent-state)]
-    (t/is (empty? (loop/get-context agent)))
+    (t/is (empty? (state/get-context agent)))
     (swap! (:messages agent) conj {:role :user :content "hi"})
-    (t/is (= 1 (count (loop/get-context agent))))))
+    (t/is (= 1 (count (state/get-context agent))))))
 
 (t/deftest test-loop-restore-session-context
   ;; Restoring a session rebuilds the agent context from the session branch —
@@ -191,11 +192,11 @@
         (session/append-entry sess {:role :session_info :name "t"})
         (let [loaded (session/load-session (:file sess))
               agent (loop/make-agent-state :session loaded)]
-          (loop/restore-session-context! agent)
+          (state/restore-session-context! agent)
           (t/is (= [:user :assistant :user :assistant]
-                   (mapv :role (loop/get-context agent)))
+                   (mapv :role (state/get-context agent)))
                 "session_info entries are metadata — not context")
-          (t/is (= "steered" (-> (loop/get-context agent) (nth 2) :content first :text))
+          (t/is (= "steered" (-> (state/get-context agent) (nth 2) :content first :text))
                 "steered user message restored")))
       (finally
         (fs/delete-tree dir)))))
@@ -208,7 +209,7 @@
 (t/deftest test-loop-set-model
   (let [agent (loop/make-agent-state)
         model (models/map->Model {:provider :anthropic :id "gpt-4"})]
-    (loop/set-model! agent model)
+    (state/set-model! agent model)
     (t/is (= "gpt-4" @(:model agent)))
     (t/is (= :anthropic @(:provider agent)) "the provider follows the record")))
 
@@ -227,14 +228,14 @@
                                          :provider :anthropic
                                          :model "claude-sonnet")
             model (models/map->Model {:provider :openai :id "gpt-4o"})]
-        (loop/set-model! agent model)
+        (state/set-model! agent model)
         (let [branch (session/get-branch sess)]
           (t/is (= [:model-change] (mapv :role branch)))
           (t/is (= "gpt-4o" (:model (last branch))))
           (t/is (= :openai (:provider (last branch)))
                 "entry records the model's provider, not the previous provider")
           (t/is (= :openai @(:provider agent))))
-        (loop/set-model! agent model)
+        (state/set-model! agent model)
         (t/is (= 1 (count (session/get-branch sess)))
               "unchanged model: no duplicate entry"))
       (finally
@@ -255,7 +256,7 @@
           ;; lazy creation: file exists only after an assistant message
           (session/append-entry sess {:role :user :content "q"})
           (session/append-entry sess {:role :assistant :content "a"})
-          (loop/cycle-model! agent 1)
+          (state/cycle-model! agent 1)
           (t/is (= "b" @(:model agent)))
           (t/is (= :model-change (:role (last (session/get-branch sess)))))
           (let [loaded (session/load-session (:file sess))]
@@ -271,14 +272,14 @@
     (try
       (let [sess (session/create-session dir)
             agent (loop/make-agent-state :session sess :thinking :off)]
-        (loop/set-thinking-level! agent :high)
+        (state/set-thinking-level! agent :high)
         (t/is (= :high @(:thinking agent)))
         (t/is (= [:thinking-level-change] (mapv :role (session/get-branch sess))))
         (t/is (= :high (:thinking-level (last (session/get-branch sess)))))
-        (loop/set-thinking-level! agent :high)
+        (state/set-thinking-level! agent :high)
         (t/is (= 1 (count (session/get-branch sess)))
               "same level: no duplicate entry")
-        (loop/set-thinking-level! agent :off)
+        (state/set-thinking-level! agent :off)
         (t/is (= [:thinking-level-change :thinking-level-change]
                  (mapv :role (session/get-branch sess)))
               "explicit return to :off records a change"))
@@ -302,11 +303,11 @@
                                            :provider :opencode-go
                                            :model "gpt-4o"
                                            :thinking :off)]
-          (loop/restore-session-context! agent)
+          (state/restore-session-context! agent)
           (t/is (= "gpt-4o" @(:model agent)))
           (t/is (= :opencode-go @(:provider agent)))
           (t/is (= :off @(:thinking agent)))
-          (t/is (= [:user :assistant] (mapv :role (loop/get-context agent)))
+          (t/is (= [:user :assistant] (mapv :role (state/get-context agent)))
                 "change entries are metadata — not context")))
       (finally
         (fs/delete-tree dir)))))
@@ -328,8 +329,8 @@
                                     :content [{:type :tool_result :tool_use_id "a" :content "out"}]})
         (let [loaded (session/load-session (:file sess))
               agent (loop/make-agent-state :session loaded)]
-          (loop/restore-session-context! agent)
-          (let [ctx (loop/get-context agent)
+          (state/restore-session-context! agent)
+          (let [ctx (state/get-context agent)
                 assistant (second ctx)]
             (t/is (= [:user :assistant :tool] (mapv :role ctx)))
             (t/is (= [{:id "a" :name "bash" :arguments {}}]
@@ -370,7 +371,7 @@
                 _ (session/append-thinking-level-change! s :medium)
                 agent (loop/make-agent-state :session (session/load-session (:file s))
                                              :provider :test-prov :model "m1" :thinking :off)]
-            (t/is (loop/apply-session-settings! agent))
+            (t/is (state/apply-session-settings! agent))
             (t/is (= "m2" @(:model agent)) "authenticated derived model restored")
             (t/is (= :medium @(:thinking agent)) "recorded thinking restored"))))
       ;; no auth → model not restored, thinking still is
@@ -380,7 +381,7 @@
                 _ (session/append-thinking-level-change! s :high)
                 agent (loop/make-agent-state :session (session/load-session (:file s))
                                              :provider :test-prov :model "m1" :thinking :off)]
-            (t/is (loop/apply-session-settings! agent))
+            (t/is (state/apply-session-settings! agent))
             (t/is (= "m1" @(:model agent)) "unauth'd model not restored (pi: hasConfiguredAuth)")
             (t/is (= :high @(:thinking agent)) "thinking has no auth guard"))))
       ;; unrecorded thinking → current level kept (pi: hasThinkingEntry guard)
@@ -388,7 +389,7 @@
         (fn []
           (let [agent (loop/make-agent-state :session (session/load-session (:file (make-session)))
                                              :provider :test-prov :model "m1" :thinking :high)]
-            (t/is (loop/apply-session-settings! agent))
+            (t/is (state/apply-session-settings! agent))
             (t/is (= "m2" @(:model agent)))
             (t/is (= :high @(:thinking agent)) "unrecorded thinking keeps the current level"))))
       (finally
@@ -566,7 +567,7 @@
       @(loop/run-agent-turn agent
                             {:on-done (fn [_])
                              :on-error (fn [_])}))
-    (t/is (= 1 (count (filter #(= :user (:role %)) (loop/get-context agent))))
+    (t/is (= 1 (count (filter #(= :user (:role %)) (state/get-context agent))))
           "no new user message is added")
     (let [llm-msgs (:messages @sent)
           users (filter #(= :user (:role %)) llm-msgs)]
@@ -574,7 +575,7 @@
       (t/is (= "fix the bug" (get-in (first users) [:content 0 :text]))
             "the interrupted user message reaches the LLM")
       (t/is (= :system (-> llm-msgs first :role)) "system prompt prepended"))
-    (t/is (= :assistant (-> (loop/get-context agent) last :role))
+    (t/is (= :assistant (-> (state/get-context agent) last :role))
           "the continued turn lands as the final assistant message")
     (t/is (= :idle @(:status agent)))))
 
@@ -607,7 +608,7 @@
                              :on-error (fn [_])})
       (t/is (= :idle @(:status agent))
             "run settles idle after the terminal error — /continue and /compact stay usable")
-      (t/is (= 1 (count (filter #(= :user (:role %)) (loop/get-context agent))))
+      (t/is (= 1 (count (filter #(= :user (:role %)) (state/get-context agent))))
             "the user message stays in context after the error")
       ;; Turn 2: /continue — no new user message, the model picks up
       @(loop/run-agent-turn agent
@@ -617,7 +618,7 @@
     (let [users (filter #(= :user (:role %)) (:messages @sent))]
       (t/is (= 1 (count users)) "continue sends the context with one user message")
       (t/is (= "fix the bug" (get-in (first users) [:content 0 :text]))))
-    (t/is (= "fixed" (get-in (last (loop/get-context agent)) [:content 0 :text]))
+    (t/is (= "fixed" (get-in (last (state/get-context agent)) [:content 0 :text]))
           "the continued run completes the response")
     (t/is (= :idle @(:status agent)) "run settles idle after continue")))
 
@@ -994,7 +995,7 @@
           "the stored context keeps its images")
     (t/is (= [{:type :text :text "look at this"}
               {:type :image :data "CC" :mime-type "image/png"}]
-             (:content (first (filter #(= :user (:role %)) (loop/get-context agent)))))
+             (:content (first (filter #(= :user (:role %)) (state/get-context agent)))))
           "session/transcript user content is untouched")))
 
 (t/deftest test-loop-block-images-consecutive-dedupe
@@ -1021,7 +1022,7 @@
 (t/deftest test-loop-set-block-images-live
   (let [agent (loop/make-agent-state)]
     (t/is (false? (:block-images @(:cfg agent))))
-    (loop/set-block-images! agent true)
+    (state/set-block-images! agent true)
     (t/is (true? (:block-images @(:cfg agent))))
     (let [sent (run-turn-capturing-llm agent
                                        {:message "look"
@@ -1068,36 +1069,36 @@
   (let [agent (loop/make-agent-state)
         next-drain (fn []
                      (if (seq @(:steering agent))
-                       (#'loop/drain-queue! (:steering agent)
-                                            (:steering-mode @(:cfg agent)))
-                       (#'loop/drain-queue! (:follow-up agent)
-                                            (:follow-up-mode @(:cfg agent)))))]
-    (t/is (= [] (loop/peek-queued-messages agent))
+                       (#'state/drain-queue! (:steering agent)
+                                             (:steering-mode @(:cfg agent)))
+                       (#'state/drain-queue! (:follow-up agent)
+                                             (:follow-up-mode @(:cfg agent)))))]
+    (t/is (= [] (state/peek-queued-messages agent))
           "empty queues preview nothing")
     (loop/steer! agent "s1")
     (loop/steer! agent "s2")
-    (t/is (= ["s1" "s2"] (loop/peek-queued-messages agent)))
+    (t/is (= ["s1" "s2"] (state/peek-queued-messages agent)))
     (loop/follow-up! agent "f1")
-    (t/is (= ["s1" "s2"] (loop/peek-queued-messages agent))
+    (t/is (= ["s1" "s2"] (state/peek-queued-messages agent))
           "steering wins while it has messages")
     (t/is (= ["s1" "s2"] @(:steering agent)) "peeking drains nothing")
     (t/is (= ["f1"] @(:follow-up agent)) "peeking drains nothing")
     (swap! (:cfg agent) assoc :steering-mode :one-at-a-time)
-    (t/is (= ["s1"] (loop/peek-queued-messages agent))
+    (t/is (= ["s1"] (state/peek-queued-messages agent))
           ":one-at-a-time previews the single message the drain takes")
     (t/is (= ["s1"] (vec (next-drain)))
           "the preview is exactly what the next drain consumes")
-    (t/is (= ["s2"] (loop/peek-queued-messages agent))
+    (t/is (= ["s2"] (state/peek-queued-messages agent))
           "the unconsumed message is still previewed")
     (swap! (:cfg agent) assoc :steering-mode :all)
     (loop/clear-queues! agent)
     (loop/follow-up! agent "f1")
     (loop/follow-up! agent "f2")
     (swap! (:cfg agent) assoc :follow-up-mode :all)
-    (t/is (= ["f1" "f2"] (loop/peek-queued-messages agent))
+    (t/is (= ["f1" "f2"] (state/peek-queued-messages agent))
           "follow-up previews all queued messages when set to :all")
     (swap! (:cfg agent) assoc :follow-up-mode :one-at-a-time)
-    (t/is (= ["f1"] (loop/peek-queued-messages agent)))
+    (t/is (= ["f1"] (state/peek-queued-messages agent)))
     (t/is (= ["f1"] (vec (next-drain)))
           "the preview is exactly what the next drain consumes")))
 
@@ -1145,9 +1146,9 @@
                              :on-done (fn [_])
                              :on-error (fn [_])}))
     (t/is (= 2 @calls) "exactly two LLM calls: initial + steered")
-    (t/is (some #(= "steered" (get-in % [:content 0 :text])) (loop/get-context agent))
+    (t/is (some #(= "steered" (get-in % [:content 0 :text])) (state/get-context agent))
           "steered message should be in context")
-    (t/is (= "ok" (get-in (last (loop/get-context agent)) [:content 0 :text]))
+    (t/is (= "ok" (get-in (last (state/get-context agent)) [:content 0 :text]))
           "final response should see the steered message")
     (t/is (empty? @(:steering agent)) "steering queue drained")
     (let [queue-updates (filter #(= :queue-update (:type %)) @events)]
@@ -1190,7 +1191,7 @@
                              :on-error (fn [_])}))
     (t/is (= 3 @calls) "three LLM calls: initial, tool follow-up, queued follow-up")
     (t/is (= 1 @done-count) "on-done called once, at the very end")
-    (let [ctx (loop/get-context agent)]
+    (let [ctx (state/get-context agent)]
       (t/is (some #(= "followup" (get-in % [:content 0 :text])) ctx)
             "follow-up message should be in context")
       (t/is (some #(and (= :assistant (:role %))
@@ -1270,7 +1271,7 @@
              ends — it costs no extra attempt"))
     (t/is (= ["hi" "steered by agent-end" "followed up by agent-end"]
              (mapv #(get-in % [:content 0 :text])
-                   (filter #(= :user (:role %)) (loop/get-context agent)))))
+                   (filter #(= :user (:role %)) (state/get-context agent)))))
     (t/is (= ["queued by agent-settled"] @(:follow-up agent))
           "a message queued after the last :agent-end stays queued")
     (t/is (= :idle @(:status agent)))))
@@ -1302,8 +1303,8 @@
                              :on-done (fn [_])
                              :on-error (fn [_])}))
     (t/is (= 3 @calls) "three LLM calls: initial + one per steered message")
-    (t/is (some #(= "s1" (get-in % [:content 0 :text])) (loop/get-context agent)))
-    (t/is (some #(= "s2" (get-in % [:content 0 :text])) (loop/get-context agent)))
+    (t/is (some #(= "s1" (get-in % [:content 0 :text])) (state/get-context agent)))
+    (t/is (some #(= "s2" (get-in % [:content 0 :text])) (state/get-context agent)))
     (t/is (empty? @(:steering agent)) "steering queue drained")
     (t/is (= :idle @(:status agent)))))
 
@@ -1363,7 +1364,7 @@
                                       @events))]
         (t/is (some? user-start) ":message-start emitted for the submitted message")
         (t/is (= "hello" (get-in user-start [:message :content 0 :text])))
-        (t/is (empty? (loop/get-context agent))
+        (t/is (empty? (state/get-context agent))
               "message is display-only — not added to context without a run")))))
 
 ;; ─── Queue modes (per-queue) ───────────────────────────────────────────────
@@ -1381,7 +1382,7 @@
     (swap! (:cfg agent) assoc :follow-up-mode :one-at-a-time)
     (t/is (= :one-at-a-time (:steering-mode @(:cfg agent))))
     (t/is (= :one-at-a-time (:follow-up-mode @(:cfg agent))))
-    (loop/set-http-idle-timeout-ms! agent 60000)
+    (state/set-http-idle-timeout-ms! agent 60000)
     (t/is (= 60000 (:http-idle-timeout-ms @(:cfg agent))))))
 
 (t/deftest test-loop-auto-compact-flag
@@ -1389,7 +1390,7 @@
   ;; and is settable live (/settings row)
   (let [agent (loop/make-agent-state)]
     (t/is (true? (:auto-compact @(:cfg agent))))
-    (loop/set-auto-compact! agent false)
+    (state/set-auto-compact! agent false)
     (t/is (false? (:auto-compact @(:cfg agent))))
     (t/is (false? (loop/maybe-compact! agent))
           "no session → no proactive compaction regardless"))
@@ -1997,7 +1998,7 @@
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= 2 (count (filter #(= :loop-guard (:type %)) @events)))
           "each loop segment (initial run + follow-up) trips once")
-    (t/is (= 6 (count (filter #(= :tool (:role %)) (loop/get-context agent))))
+    (t/is (= 6 (count (filter #(= :tool (:role %)) (state/get-context agent))))
           "two segments x 3 tool entries (2 real + 1 suppressed each)")
     (t/is (= :idle @(:status agent)) "run settles idle")))
 
@@ -2648,7 +2649,7 @@
       (t/is (= 2 (count err-ends)) "initial failure + exhausted retry")
       (t/is (every? #(= "503 service unavailable" (:error-message %))
                     (map :message err-ends)))
-      (t/is (empty? (filter #(= :assistant (:role %)) (loop/get-context agent)))
+      (t/is (empty? (filter #(= :assistant (:role %)) (state/get-context agent)))
             "no assistant message entered the context"))))
 
 (t/deftest test-loop-agent-end-will-retry-ui-only
@@ -2783,7 +2784,7 @@
                   (:messages ae))
             ":agent-end reports the failed attempt"))
     ;; …but the live context only carries the user prompt and the recovery
-    (let [ctx (loop/get-context agent)]
+    (let [ctx (state/get-context agent)]
       (t/is (empty? (filter #(= :error (:stop-reason %)) ctx))
             "errored attempt excluded from the live context")
       (t/is (some #(and (= :assistant (:role %))
@@ -2854,7 +2855,7 @@
                :base-delay-ms 1
                :on-event (fn [e]
                            (when (= :agent-start (:type e))
-                             (swap! starts conj (loop/get-context @agent-ref)))))]
+                             (swap! starts conj (state/get-context @agent-ref)))))]
     (try
       (reset! agent-ref agent)
       (event-bus/on-event
@@ -2892,7 +2893,7 @@
         (t/is (not-any? #{"partial answer"} texts)
               "the retried request does not re-send the failed attempt"))
       (t/is (not-any? #(= "partial answer" (get-in % [:content 0 :text]))
-                      (loop/get-context agent))
+                      (state/get-context agent))
             "the live context excludes the failed attempt")
       (finally
         (event-bus/clear-event-listeners!)
@@ -2935,7 +2936,7 @@
           (t/is (= 1 (count aborted)))
           (t/is (= :assistant (:role (first aborted))))
           (t/is (= "half a thought" (get-in (first aborted) [:content 0 :text]))))
-        (t/is (empty? (filterv #(= :assistant (:role %)) (loop/get-context agent)))
+        (t/is (empty? (filterv #(= :assistant (:role %)) (state/get-context agent)))
               "aborted attempt excluded from the live context")
         (let [ae (first (filter #(= :agent-end (:type %)) @events))]
           (t/is (some #(= "half a thought" (get-in % [:content 0 :text]))
@@ -2961,7 +2962,7 @@
       @(loop/run-agent-turn agent {:message "hi"
                                    :on-done (fn [_])
                                    :on-error (fn [_])}))
-    (let [a (last (loop/get-context agent))]
+    (let [a (last (state/get-context agent))]
       (t/is (= :assistant (:role a)))
       (t/is (= "reasoning" (:thinking a)))
       (t/is (= "SIG123" (:thinking-signature a)))
@@ -2992,7 +2993,7 @@
     (t/is (= 1 @calls) "no auto-retry is scheduled")
     (t/is (empty? @errors) "no error surfaces")
     (t/is (= :idle @(:status agent)) "the run settles quietly")
-    (t/is (= [:user :assistant] (mapv :role (loop/get-context agent)))
+    (t/is (= [:user :assistant] (mapv :role (state/get-context agent)))
           "the empty assistant entry is recorded like any other")))
 
 (t/deftest test-loop-error-stop-reason-folds-to-error
@@ -3021,7 +3022,7 @@
     (t/is (= "Provider stopped with: error" (first @errors)))
     (t/is (= :idle @(:status agent))
           "run ends idle — a terminal error settles the agent (pi: agent_settled)")
-    (t/is (empty? (filterv #(= :assistant (:role %)) (loop/get-context agent)))
+    (t/is (empty? (filterv #(= :assistant (:role %)) (state/get-context agent)))
           "the errored attempt is excluded from the live context")))
 
 (t/deftest test-loop-auto-retry-on-network-error
@@ -3203,11 +3204,11 @@
                    :provider :test-prov :model "a"
                    :scoped-models ["test-prov/a" "test-prov/b" "test-prov/c"]
                    :on-event (fn [e] (swap! events conj e)))]
-        (t/is (= "b" (loop/cycle-model! agent 1)))
-        (t/is (= "c" (loop/cycle-model! agent 1)))
-        (t/is (= "a" (loop/cycle-model! agent 1)) "wraps around at the end")
-        (t/is (= "c" (loop/cycle-model! agent -1)) "cycles backward")
-        (t/is (= "b" (loop/cycle-model! agent -1)))
+        (t/is (= "b" (state/cycle-model! agent 1)))
+        (t/is (= "c" (state/cycle-model! agent 1)))
+        (t/is (= "a" (state/cycle-model! agent 1)) "wraps around at the end")
+        (t/is (= "c" (state/cycle-model! agent -1)) "cycles backward")
+        (t/is (= "b" (state/cycle-model! agent -1)))
         (let [ev (last @events)]
           (t/is (= :model-select (:type ev)) "cycle emits :model-select")
           (t/is (= :cycle (:source ev)))
@@ -3221,9 +3222,9 @@
     (with-test-provider
       (fn []
         (let [agent (loop/make-agent-state :provider :test-prov :model "a")]
-          (loop/set-scoped-models! agent ["test-prov/a" "test-prov/a" "test-prov/b"])
+          (state/set-scoped-models! agent ["test-prov/a" "test-prov/a" "test-prov/b"])
           (t/is (= ["test-prov/a" "test-prov/b"] @(:scoped-models agent)))
-          (t/is (= "b" (loop/cycle-model! agent 1))
+          (t/is (= "b" (state/cycle-model! agent 1))
                 "the duplicate would otherwise consume the next cycle slot")))))
   (t/testing "the initial scoped list is deduplicated too"
     (let [agent (loop/make-agent-state :scoped-models ["test-prov/a" "test-prov/a"])]
@@ -3234,8 +3235,8 @@
   (with-test-provider
     (fn []
       (let [agent (loop/make-agent-state :provider :test-prov :model "b")]
-        (t/is (= "c" (loop/cycle-model! agent 1)))
-        (t/is (= "a" (loop/cycle-model! agent 1)))))))
+        (t/is (= "c" (state/cycle-model! agent 1)))
+        (t/is (= "a" (state/cycle-model! agent 1)))))))
 
 (t/deftest test-loop-cycle-model-switches-provider
   ;; a scoped entry carries its provider — cycling can switch providers
@@ -3258,9 +3259,9 @@
         (let [agent (loop/make-agent-state
                      :provider :test-prov :model "a"
                      :scoped-models ["test-prov/a" "test-prov2/x"])]
-          (t/is (= "x" (loop/cycle-model! agent 1)))
+          (t/is (= "x" (state/cycle-model! agent 1)))
           (t/is (= :test-prov2 @(:provider agent)))
-          (t/is (= "a" (loop/cycle-model! agent 1)))
+          (t/is (= "a" (state/cycle-model! agent 1)))
           (t/is (= :test-prov @(:provider agent)))))
       (finally
         (models/clear-providers!)
@@ -3268,7 +3269,7 @@
 
 (t/deftest test-loop-cycle-model-no-models
   (let [agent (loop/make-agent-state :model "a")]
-    (t/is (nil? (loop/cycle-model! agent 1)) "no scoped models and no available models → nil")))
+    (t/is (nil? (state/cycle-model! agent 1)) "no scoped models and no available models → nil")))
 
 (t/deftest test-loop-init-scoped-models
   ;; pi: parsed.models ?? settingsManager.getEnabledModels — CLI/config
@@ -3278,24 +3279,24 @@
   (with-test-provider
     (fn []
       ;; config :models wins over :enabled-models (pi: parsed.models ?? …)
-      (let [agent (loop/init-scoped-models!
+      (let [agent (state/init-scoped-models!
                    (loop/make-agent-state)
                    {:models ["test-prov/b"] :enabled-models ["test-prov/a"]})]
         (t/is (= ["test-prov/b"] @(:scoped-models agent))))
       ;; :enabled-models falls back when :models is unset
-      (let [agent (loop/init-scoped-models!
+      (let [agent (state/init-scoped-models!
                    (loop/make-agent-state)
                    {:enabled-models ["test-prov/a" "test-prov/c"]})]
         (t/is (= ["test-prov/a" "test-prov/c"] @(:scoped-models agent))))
       ;; no patterns → list stays empty (no scoping)
-      (let [agent (loop/init-scoped-models!
+      (let [agent (state/init-scoped-models!
                    (loop/make-agent-state)
                    {:enabled-models nil})]
         (t/is (= [] @(:scoped-models agent))))
       ;; unresolved patterns are skipped with a stderr warning — suppress it
       ;; (hosts without per-var output capture, e.g. jolt, would leak it)
       (let [agent (binding [*err* (java.io.StringWriter.)]
-                    (loop/init-scoped-models!
+                    (state/init-scoped-models!
                      (loop/make-agent-state)
                      {:enabled-models ["test-prov/a" "ghost/model"]}))]
         (t/is (= ["test-prov/a"] @(:scoped-models agent)))))))
@@ -3333,24 +3334,24 @@
         b (thinking-model "b" [:low :medium :high :max]) ;; 4 levels
         c (thinking-model "c" [:low :high])             ;; 2 levels
         d (thinking-model "d" [:max])]                  ;; 1 level
-    (t/is (= :max (loop/switch-thinking-level a b :high nil))
+    (t/is (= :max (state/switch-thinking-level a b :high nil))
           "old highest → new highest")
-    (t/is (= :high (loop/switch-thinking-level a b :medium nil))
+    (t/is (= :high (state/switch-thinking-level a b :medium nil))
           "old second-highest → new second-highest")
-    (t/is (= :medium (loop/switch-thinking-level b a :high nil))
+    (t/is (= :medium (state/switch-thinking-level b a :high nil))
           "old second-highest (4 levels) → new second-highest (3 levels)")
-    (t/is (= :low (loop/switch-thinking-level b c :medium nil))
+    (t/is (= :low (state/switch-thinking-level b c :medium nil))
           "rank clamps to the new model's level count (3rd of 4 → last of 2)")
-    (t/is (= :max (loop/switch-thinking-level b d :medium nil))
+    (t/is (= :max (state/switch-thinking-level b d :medium nil))
           "rank clamps to the single available level")
-    (t/is (= :max (loop/switch-thinking-level a b :off nil))
+    (t/is (= :max (state/switch-thinking-level a b :off nil))
           ":off jumps to the reasoning model's highest (pi parity)")
-    (t/is (= :off (loop/switch-thinking-level a (models/map->Model
-                                                 {:id "n" :reasoning false})
-                                              :off nil))
+    (t/is (= :off (state/switch-thinking-level a (models/map->Model
+                                                  {:id "n" :reasoning false})
+                                               :off nil))
           "non-reasoning new model keeps :off")
     (t/is (= :high
-             (loop/switch-thinking-level
+             (state/switch-thinking-level
               a
               (models/map->Model {:id "no-off" :provider :test-prov
                                   :reasoning true :api :openai-completions
@@ -3361,9 +3362,9 @@
                                   :thinking-level-map {:off nil}})
               :off nil))
           "a model that can't disable thinking gets its highest")
-    (t/is (= :low (loop/switch-thinking-level a b :medium :low))
+    (t/is (= :low (state/switch-thinking-level a b :medium :low))
           "explicit level wins (clamped)")
-    (t/is (= :off (loop/switch-thinking-level a b :off :off))
+    (t/is (= :off (state/switch-thinking-level a b :off :off))
           "explicit :off wins when given")))
 
 (t/deftest test-loop-retry-setters
@@ -3382,16 +3383,16 @@
         agent (loop/make-agent-state :provider :p :model "a"
                                      :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [models/providers-atom (atom {:p {:models [a b]}})]
-      (loop/set-model! agent b)
+      (state/set-model! agent b)
       (let [ev (last @events)]
         (t/is (= :model-select (:type ev)))
         (t/is (identical? b (:model ev)))
         (t/is (identical? a (:previous-model ev)) "previous resolves against the old selection")
         (t/is (= :set (:source ev))))
       ;; setting the same model is a no-op (no event)
-      (loop/set-model! agent b)
+      (state/set-model! agent b)
       ;; nil is ignored (no state change, no event)
-      (loop/set-model! agent nil)
+      (state/set-model! agent nil)
       (t/is (= "b" @(:model agent)))
       (t/is (= :p @(:provider agent)))
       (t/is (= 1 (count (filter #(= :model-select (:type %)) @events)))))))
@@ -3544,7 +3545,7 @@
              (mapv :turn-index (filter #(= :turn-start (:type %)) @events)))
           "turn numbering resumes from the stopped turn")
     (t/is (= "queued follow-up"
-             (get-in (last (filter #(= :user (:role %)) (loop/get-context agent)))
+             (get-in (last (filter #(= :user (:role %)) (state/get-context agent)))
                      [:content 0 :text])))
     (t/is (= :idle @(:status agent)))))
 
@@ -3619,9 +3620,9 @@
         (t/is (= (:id (first appended)) (:parent-id (second appended)))
               "the second entry chains after the first"))
       (t/is (= "boundary note"
-               (get-in (last (loop/get-context agent)) [:content 0 :text]))
+               (get-in (last (state/get-context agent)) [:content 0 :text]))
             "the custom-message projected into the context")
-      (t/is (not-any? #(= "state" (:custom-type %)) (loop/get-context agent))
+      (t/is (not-any? #(= "state" (:custom-type %)) (state/get-context agent))
             "a :custom entry stays out of the context (pi: metadata/state)")
       (t/is (not-any? #(= "boundary note" (get-in % [:content 0 :text]))
                       (mapcat :messages (filter #(= :agent-end (:type %)) @events)))
@@ -3740,11 +3741,11 @@
     (t/is (= 1 calls)
           "an invalid batch drops the continuation too (pi: valid=false)")
     (t/is (str/includes? warn "invalid") "the invalid batch is reported")
-    (t/is (= [:user :assistant] (mapv :role (loop/get-context agent)))
+    (t/is (= [:user :assistant] (mapv :role (state/get-context agent)))
           "nothing was committed")))
 
 (t/deftest test-loop-append-context-edit-refreshes-the-context
-  ;; K: kmet.agent.loop/append-context-edit! — the session keeps the raw entry,
+  ;; K: kmet.agent.state/append-context-edit! — the session keeps the raw entry,
   ;; the live context is rebuilt from the projection (pi: appendContextEdit +
   ;; _refreshFinalizedContext)
   (let [dir (str (fs/create-dirs (fs/path "target" "test-loop-context-edit")))
@@ -3759,20 +3760,20 @@
                                      :on-error (fn [_])}))
       (let [branch (session/get-branch (:session agent))
             user-id (:id (first branch))
-            before (loop/get-context agent)]
+            before (state/get-context agent)]
         (t/is (= ["run" "first"] (mapv #(get-in % [:content 0 :text]) before)))
-        (t/is (= :context-edit (:role (loop/append-context-edit! agent user-id nil))))
-        (t/is (= ["first"] (mapv #(get-in % [:content 0 :text]) (loop/get-context agent)))
+        (t/is (= :context-edit (:role (state/append-context-edit! agent user-id nil))))
+        (t/is (= ["first"] (mapv #(get-in % [:content 0 :text]) (state/get-context agent)))
               "the omitted message leaves the live context")
         (t/is (= ["run" "first"]
                  (mapv #(get-in % [:content 0 :text])
                        (filter #(contains? #{:user :assistant} (:role %))
                                (session/get-branch (:session agent)))))
               "the raw branch keeps it")
-        (loop/append-context-edit! agent user-id {:content "rewritten"})
-        (t/is (= "rewritten" (get-in (first (loop/get-context agent)) [:content 0 :text]))
+        (state/append-context-edit! agent user-id {:content "rewritten"})
+        (t/is (= "rewritten" (get-in (first (state/get-context agent)) [:content 0 :text]))
               "a later edit restores the message with new content"))
-      (t/is (thrown? Exception (loop/append-context-edit! agent "missing" nil))
+      (t/is (thrown? Exception (state/append-context-edit! agent "missing" nil))
             "an unknown target throws (see session/append-context-edit!)")
       (finally
         (fs/delete-tree dir)))))
@@ -3814,7 +3815,7 @@
               "the draft was committed as a real session entry")
         (t/is (= ["second"]
                  (mapv #(get-in % [:content 0 :text])
-                       (filter #(= :user (:role %)) (loop/get-context agent))))
+                       (filter #(= :user (:role %)) (state/get-context agent))))
               "the live context no longer carries the omitted message")
         (t/is (some #(= "seed" (get-in % [:content 0 :text]))
                     (session/get-branch (:session agent)))
@@ -3930,7 +3931,7 @@
                                        :on-done (fn [_])
                                        :on-error (fn [_])}))
         (t/is (= 1 @calls) "pi checks the :end decision before :continue")
-        (t/is (= "nudge" (get-in (last (loop/get-context agent)) [:content 0 :text]))
+        (t/is (= "nudge" (get-in (last (state/get-context agent)) [:content 0 :text]))
               "the boundary's entries are committed regardless")
         (finally
           (event-bus/clear-event-listeners!))))))
@@ -4190,7 +4191,7 @@
         (t/is (= 2 (count (filter #(= :tool-execution-end (:type %)) @events))))
         (let [te (first (filter #(= :turn-end (:type %)) @events))]
           (t/is (= 2 (count (:tool-results te))) "turn-end carries both results"))
-        (t/is (= 2 (count (filter #(= :tool (:role %)) (loop/get-context agent))))
+        (t/is (= 2 (count (filter #(= :tool (:role %)) (state/get-context agent))))
               "both tool results appended to context")))))
 
 (t/deftest test-loop-parallel-end-events-fire-per-tool
@@ -4235,7 +4236,7 @@
         (t/is (= 2 (count (filter #(= :tool-execution-end (:type %)) @events))))
         (t/is (= ["fast done" "slow done"]
                  (mapv #(get-in % [:content 0 :content])
-                       (filter #(= :tool (:role %)) (loop/get-context agent))))
+                       (filter #(= :tool (:role %)) (state/get-context agent))))
               "results are still appended to context in source order")))))
 
 (t/deftest test-loop-parallel-after-tool-call-error-settles-once
@@ -4685,7 +4686,7 @@
         (t/is (some #(= "final answer" (get-in % [:content 0 :text])) run-msgs)
               ":agent-end carries the message added after the compaction")
         (t/is (not (some #(= "final question" (get-in % [:content 0 :text]))
-                         (loop/get-context agent)))
+                         (state/get-context agent)))
               "the mid-run compaction dropped the user message from the live
                context — agent-end still reports it (pi: newMessages)"))
       (t/is (= :idle @(:status agent)))
@@ -5775,7 +5776,7 @@
                     tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
         @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
       (t/is (= [{:role :user :content [{:type :text :text "replacement"}]}]
-               (loop/get-context agent))
+               (state/get-context agent))
             "prepare-next-turn :context replaces the conversation")
       (t/is (= 1 (count @(:entries sess)))
             "session rebuilt to match the replaced context")
@@ -5990,9 +5991,9 @@
         sess (session/create-session (str (fs/path dir "s")))
         agent (loop/make-agent-state :session sess)]
     (try
-      (loop/add-bash-result! agent "git st" {:output "clean\n" :exit-code 0} false)
-      (t/is (= 1 (count (loop/get-context agent))))
-      (t/is (= :bash (:role (first (loop/get-context agent)))))
+      (state/add-bash-result! agent "git st" {:output "clean\n" :exit-code 0} false)
+      (t/is (= 1 (count (state/get-context agent))))
+      (t/is (= :bash (:role (first (state/get-context agent)))))
       (t/is (= 1 (count @(:entries sess))))
       (t/is (empty? @(:pending-bash agent)))
       ;; No run in flight: the append is context-only (pi: newMessages starts
@@ -6008,12 +6009,12 @@
         agent (loop/make-agent-state :session sess)]
     (try
       (reset! (:status agent) :thinking)
-      (loop/add-bash-result! agent "git st" {:output "clean\n" :exit-code 0} false)
-      (t/is (empty? (loop/get-context agent)) "streaming: not added to context yet")
+      (state/add-bash-result! agent "git st" {:output "clean\n" :exit-code 0} false)
+      (t/is (empty? (state/get-context agent)) "streaming: not added to context yet")
       (t/is (empty? @(:entries sess)) "streaming: not appended to session yet")
       (t/is (= 1 (count @(:pending-bash agent))) "streaming: queued for later flush")
-      (loop/flush-pending-bash-messages! agent)
-      (t/is (= 1 (count (loop/get-context agent))))
+      (state/flush-pending-bash-messages! agent)
+      (t/is (= 1 (count (state/get-context agent))))
       (t/is (= 1 (count @(:entries sess))))
       (t/is (empty? @(:pending-bash agent)))
       ;; The flush appends context-only — a settled run's payload must not
@@ -6025,16 +6026,16 @@
 
 (t/deftest test-loop-add-bash-result-excluded
   (let [agent (loop/make-agent-state)]
-    (loop/add-bash-result! agent "ls" {:output "x" :exit-code 0} true)
-    (t/is (= true (:exclude-from-context? (first (loop/get-context agent)))))))
+    (state/add-bash-result! agent "ls" {:output "x" :exit-code 0} true)
+    (t/is (= true (:exclude-from-context? (first (state/get-context agent)))))))
 
 (t/deftest test-loop-add-bash-result-after-error
   ;; pi: isStreaming is false once a run has errored — the result lands
   ;; immediately instead of queueing for a flush that never comes
   (let [agent (loop/make-agent-state)]
     (reset! (:status agent) :error)
-    (loop/add-bash-result! agent "git st" {:output "clean\n" :exit-code 0} false)
-    (t/is (= 1 (count (loop/get-context agent))))
+    (state/add-bash-result! agent "git st" {:output "clean\n" :exit-code 0} false)
+    (t/is (= 1 (count (state/get-context agent))))
     (t/is (empty? @(:pending-bash agent)))))
 
 (t/deftest test-loop-interactive-chat-flow-with-steer-and-followup
@@ -6115,17 +6116,17 @@
   (t/testing "nil = all tools; set restricts; nil restores"
     (let [ag (loop/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")]
       (t/is (nil? @(:enabled-tools ag)))
-      (loop/set-active-tools! ag ["read" "write"])
+      (state/set-active-tools! ag ["read" "write"])
       (t/is (= #{"read" "write"} @(:enabled-tools ag)))
-      (loop/set-active-tools! ag nil)
+      (state/set-active-tools! ag nil)
       (t/is (nil? @(:enabled-tools ag))))))
 
 (t/deftest test-active-tools-default-tools
   (t/testing "a :default-tools selection filters built-ins; extension tools
               stay enabled; a runtime selection wins; nil restores the default"
     (let [builtins (set tools/builtin-tool-names)
-          builtin-names (fn [ag] (into #{} (filter builtins) (map :name (loop/active-tools ag))))
-          all-names (fn [ag] (set (map :name (loop/active-tools ag))))
+          builtin-names (fn [ag] (into #{} (filter builtins) (map :name (state/active-tools ag))))
+          all-names (fn [ag] (set (map :name (state/active-tools ag))))
           ag (loop/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
                                     :default-tools ["read"])]
       (t/is (= #{"read"} (builtin-names ag)))
@@ -6137,10 +6138,10 @@
           (t/is (contains? (all-names ag) "default-tools-ext"))
           (finally (tools-registry/unregister-tool! (runtime/node) "default-tools-ext"))))
       (t/testing "an explicit set-active-tools! selection replaces the default"
-        (loop/set-active-tools! ag ["bash"])
+        (state/set-active-tools! ag ["bash"])
         (t/is (= #{"bash"} (all-names ag))))
       (t/testing "nil restores the configured default surface"
-        (loop/set-active-tools! ag nil)
+        (state/set-active-tools! ag nil)
         (t/is (= #{"read"} (builtin-names ag))))
       (t/testing "no setting → every tool active"
         (let [fal (loop/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")]
@@ -6152,16 +6153,16 @@
               go inactive (pi: defaultTools controls the built-in
               surface)"
     (let [builtins (set tools/builtin-tool-names)
-          builtin-names (fn [ag] (into #{} (filter builtins) (map :name (loop/active-tools ag))))
+          builtin-names (fn [ag] (into #{} (filter builtins) (map :name (state/active-tools ag))))
           ag (loop/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
                                     :default-tools ["read"])]
       (t/is (= #{"read"} (builtin-names ag)))
-      (loop/apply-default-tools! ag ["read" "bash"])
+      (state/apply-default-tools! ag ["read" "bash"])
       (t/is (= #{"read" "bash"} (builtin-names ag)))
-      (loop/apply-default-tools! ag ["read"])
+      (state/apply-default-tools! ag ["read"])
       (t/is (= #{"read"} (builtin-names ag))
             "a tool removed from the setting goes inactive")
-      (loop/apply-default-tools! ag nil)
+      (state/apply-default-tools! ag nil)
       (t/is (= builtins (builtin-names ag))
             "a removed setting (nil) re-enables every built-in"))))
 
@@ -6170,8 +6171,8 @@
         ag (loop/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
                                   :thinking :off
                                   :on-event (fn [evt] (swap! events conj evt)))]
-    (loop/set-thinking-level! ag :high)
-    (loop/set-thinking-level! ag :high) ;; no change → no event
+    (state/set-thinking-level! ag :high)
+    (state/set-thinking-level! ag :high) ;; no change → no event
     (t/is (= 1 (count @events)))
     (t/is (= :thinking-level-select (:type (first @events))))
     (t/is (= :high (:level (first @events))))
@@ -6258,12 +6259,12 @@
 
 (t/deftest test-loop-set-http-total-timeout-ms!
   (let [agent (loop/make-agent-state :http-idle-timeout-ms 120000)]
-    (loop/set-http-total-timeout-ms! agent 60000)
+    (state/set-http-total-timeout-ms! agent 60000)
     (t/is (= 60000 (:http-total-timeout-ms @(:cfg agent))))
-    (loop/set-http-total-timeout-ms! agent nil)
+    (state/set-http-total-timeout-ms! agent nil)
     (t/is (nil? (:http-total-timeout-ms @(:cfg agent)))
           "nil resets to the use-idle default")
-    (loop/set-http-total-timeout-ms! agent 0)
+    (state/set-http-total-timeout-ms! agent 0)
     (t/is (= 0 (:http-total-timeout-ms @(:cfg agent))))
     (t/is (= 0 (#'retry/llm-total-timeout-ms @(:cfg agent)))
           "zero disables total timeout rather than following idle")))
@@ -6560,7 +6561,7 @@
       (let [seed-id (:id (first (session/get-branch sess)))]
         (session/append-context-edit! sess seed-id nil)
         (t/is (some #(= "seed" (get-in % [:content 0 :text]))
-                    (loop/get-context agent))
+                    (state/get-context agent))
               "the live context still carries the edited message — no rebuild ran")
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
                       llm/send-message (stub-llm-text-turns calls ["second"] requests)]
@@ -6572,7 +6573,7 @@
               "the request's install applied the edit with no rebuild between")
         (t/is (= ["second"] (request-user-texts (last @requests))))
         (t/is (not-any? #(= "seed" (get-in % [:content 0 :text]))
-                        (loop/get-context agent))
+                        (state/get-context agent))
               "the live context follows the installed projection"))
       (finally
         (fs/delete-tree dir)))))
@@ -6589,7 +6590,7 @@
         agent (loop/make-agent-state :session sess)]
     (try
       (extensions/set-session! sess)
-      (extensions/set-context-sink! (fn [msg] (loop/add-context-message! agent msg)))
+      (extensions/set-context-sink! (fn [msg] (state/add-context-message! agent msg)))
       (extensions/append-custom-message! :note "injected" true)
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (stub-llm-text-turns calls ["done"] requests)]

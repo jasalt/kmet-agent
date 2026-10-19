@@ -61,9 +61,8 @@
    a failure surfaces its cause behind pi's reason prefix
    (kmet.agent.compaction/compaction-failure-message).
 
-   Model management (pi: setModel / cycleModel): set-scoped-models! sets the
-   session scoped model list; cycle-model! moves through it emitting
-   :model-select. The :get-api-key atom holds a dynamic API key resolver.
+   Model management lives in kmet.agent.loop.state (set-scoped-models!,
+   cycle-model!, the thinking-level setters).
 
    Input hooks (pi: input extension event): applied at the interactive input
    path (modes.interactive handle-submit) via extensions/apply-input-hooks —
@@ -82,7 +81,8 @@
    attached to the initial user message; they flow to the provider as OpenAI
    image_url / Anthropic image blocks. The wire filter that honors
    :block-images lives in kmet.agent.loop.message."
-  (:require [kmet.agent.loop.message :as message]
+  (:require [kmet.agent.loop.state :as state]
+            [kmet.agent.loop.message :as message]
             [kmet.libs.json :as json]
             [clojure.string :as str]
             [kmet.ai.llm :as llm]
@@ -90,7 +90,6 @@
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.retry :as retry]
             [kmet.agent.runtime :as runtime]
-            [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.util :as tools-util]
@@ -100,7 +99,6 @@
             [kmet.agent.session.core :as session]
             [kmet.ai.models :as models]
             [kmet.ai.api.shared :as shared]
-            [kmet.agent.model-resolver :as resolver]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.debug :as debug]
@@ -109,296 +107,18 @@
 
 ;; ─── Agent state ───────────────────────────────────────────────────────────
 
-(defrecord AgentState [status        ;; :idle :thinking :executing :done :error
-                       messages      ;; atom of conversation message vectors
-                       session       ;; Session record or nil
-                       model         ;; model identifier
-                       provider      ;; provider keyword (registry id, e.g. :opencode-go)
-                       system        ;; system prompt string
-                       signal        ;; atom for cancellation
-                       thinking      ;; :off :low :medium :high :max
-                       on-event      ;; callback for state updates
-                       base-url      ;; full endpoint URL override (default: derived from the Model record)
-                       api-type      ;; wire api override (:openai-completions | :openai-responses | :anthropic-messages | :google-generative-ai)
-                       steering      ;; atom of vector of queued steer messages
-                       follow-up     ;; atom of vector of queued follow-up messages
-                       pending-custom ;; atom of vector of custom messages deferred while the agent
-                                      ;; is streaming — flushed at the end of the turn so one never
-                                      ;; lands between a tool call and its result (pi:
-                                      ;; _pendingCustomMessages)
-                       pending-next-turn ;; atom of vector of custom messages injected with the next
-                                         ;; prompt, alongside its user message (pi:
-                                         ;; _pendingNextTurnMessages)
-                       active-call      ;; atom of {:promise p :partials f} while an LLM call is in flight (for cancel)
-                       cfg              ;; atom of a config MAP — runtime-tunable knobs, replaced wholesale:
-                                        ;;   {:max-retries int :base-delay-ms int :max-agent-delay-ms int
-                                        ;;    :http-idle-timeout-ms int
-                                        ;;    :steering-mode :all|:one-at-a-time
-                                        ;;    :follow-up-mode :all|:one-at-a-time
-                                        ;;    :auto-compact bool :context-window int-or-nil}
-                       retry-count      ;; atom of int: retries performed for the in-flight LLM call
-                       before-tool-call ;; atom of (fn [ctx]) → {:block true :reason} | nil
-                       after-tool-call  ;; atom of (fn [ctx]) → override map | nil
-                       system-prompt-override ;; atom of string or nil (per-run override, pi: _systemPromptOverride)
-                       transform-context      ;; atom of (fn [messages]) → messages (pi: transformContext)
-                       prepare-next-turn      ;; atom of (fn [ctx]) → update map | nil (pi: prepareNextTurn)
-                       prepare-request        ;; atom of (fn [request]) → update map | nil (pi: config.prepareRequest —
-                                              ;; runs before every provider request, after prepareNextTurn)
-                       finish-turn            ;; atom of (fn [ctx]) → :end | :continue | nil — the loop's
-                                              ;; per-turn decision (pi: finishTurn)
-                       last-outcome           ;; atom of :completed | :error | :aborted: the last turn's
-                                              ;; outcome, reported by :agent-before-settle (pi: _lastActivityOutcome)
-                       get-api-key            ;; atom of (fn [provider]) → key | nil (dynamic auth)
-                       scoped-models          ;; atom of vector of "provider/id" full ids (scoped list for cycling; pi: session.scopedModels)
-                       overflow-recovered     ;; atom of bool: context-overflow compacted once this run
-                       compact-token-threshold ;; int or nil: compact when estimated tokens exceed this
-                       keep-recent-tokens     ;; int: cut-point budget in tokens (pi: keepRecentTokens, default 20000)
-                       compacting?           ;; atom of bool: a compaction is in progress (escape cancels it)
-                       compaction-signal     ;; atom of bool: abort the in-flight compaction (pi: AbortController —
-                                             ;; escape aborts only the compaction; the run continues)
-                       compaction-blocked    ;; atom of bool: an automatic compaction in this prompt aborted
-                                             ;; or failed — automatic checks stand down until the next prompt
-                                             ;; (pi: skipAbortedCheck / _overflowRecoveryAttempted, extended)
-                       compaction-error      ;; atom of string or nil: the last compaction failure message
-                                             ;; (pi: the Error compact() rejects with) — read by the
-                                             ;; /compact and extension error paths
-                       pending-bash          ;; atom of vector of bash entries queued while streaming
-                       run-messages          ;; atom of {run-token [message...]}: the messages
-                                             ;; appended during an in-flight run (pi: newMessages,
-                                             ;; agent-loop), keyed by the run that appended them so
-                                             ;; an older run's unwind can never report (or clear) a
-                                             ;; newer run's list. A mid-run context replacement
-                                             ;; (compaction, prepareNextTurn :context) does not
-                                             ;; touch it, so agent-end still reports the messages
-                                             ;; the replacement removed from the context
-                       run-token             ;; atom of the current run's token, or nil outside a
-                                             ;; run — nil makes appends context-only
-                       system-prompt-opts    ;; atom of the build-system-prompt options map (pi: _baseSystemPromptOptions)
-                       loop-guard            ;; atom of per-run repeat-loop guard state:
-                                             ;;   {:window [signature...] :suppressed n}
-                       node                  ;; the node this run reads its loop stages from:
-                                             ;; the app root by default (kmet.agent.runtime),
-                                             ;; a child node for a subagent run (scope.md §5)
-                       ])
-
 (defn make-agent-state
-  "Create a new agent state.
-   opts: :model, :provider, :system, :session, :on-event,
-         :thinking, :base-url, :api-type, :steering-mode, :follow-up-mode,
-         :max-retries (default 3), :base-delay-ms (default 2000),
-     :max-agent-delay-ms (default 60000 — pi maxAgentDelayMs, the backoff cap),
-     :branch-summary-reserve-tokens (default 16384 — pi
-     branchSummary.reserveTokens, the branch-summary input budget),
-         :before-tool-call, :after-tool-call, :system-prompt-override,
-         :transform-context, :prepare-next-turn, :prepare-request, :finish-turn,
-         :get-api-key, :scoped-models (default []),
-         :steering-mode (default :all), :follow-up-mode (default
-         :one-at-a-time),
-         :system-prompt-opts (build-system-prompt options map, pi:
-         _baseSystemPromptOptions),
-         :compact-token-threshold, :auto-compact (default true, pi:
-         autoCompact), :context-window, :compact-reserve-tokens (default 16384,
-         pi: reserveTokens), :keep-recent-tokens (default 20000, pi:
-         keepRecentTokens), :compact-model-overrides (default {} — pi
-         compaction.modelOverrides, exact \"provider/modelId\" keys),
-         :http-idle-timeout-ms (default 120000, pi:
-         httpIdleTimeoutMs; 0 disables), :http-total-timeout-ms (default 0
-         disables the total deadline; nil follows the idle timeout),
-         :block-images (default false, pi: images.blockImages — strip image
-         blocks from provider calls; transcript and session untouched),
-         :default-tools (resolved :default-tools selection — the built-in
-         tools active at startup, pi: defaultTools; nil = every built-in
-         active, see kmet.agent.tools.registry/resolve-default-tools),
-         :node (the node this run reads its loop stages from; default the app
-         root, kmet.agent.runtime/node — a subagent run passes its own child
-         node, which carries its own :loop-guard and :retry-policy stages,
-         scope.md §5)"
-  [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools node]
-      :or {provider :opencode-go
-           thinking :off
-           steering-mode :all
-           follow-up-mode :one-at-a-time
-           auto-compact true
-           max-retries 3
-           base-delay-ms 2000
-           max-agent-delay-ms retry/default-max-agent-delay-ms
-           scoped-models []
-           compact-reserve-tokens 16384
-           keep-recent-tokens 20000
-           compact-model-overrides {}
-           http-idle-timeout-ms 120000
-           http-total-timeout-ms 0
-           block-images false
-           loop-guard-enabled true
-           loop-guard-threshold 3
-           thinking-loop-guard-enabled true
-           node (runtime/node)
-           system "You are kmet, a minimal coding agent. Help the user with their tasks.
-Use the available tools to read, write, edit files, and execute commands.
-Be precise and concise in your responses."}}]
-  (map->AgentState {:status (atom :idle)
-                    :messages (atom [])
-                    :session session
-                    :model (atom model)
-                    :provider (atom provider)
-                    :system (atom system)
-                    :signal (atom false)
-                    :thinking (atom thinking)
-                    :enabled-tools (atom nil)
-                    :default-tools (atom default-tools)
-                    :on-event on-event
-                    :base-url base-url
-                    :api-type api-type
-                    :steering (atom [])
-                    :follow-up (atom [])
-                    :pending-custom (atom [])
-                    :pending-next-turn (atom [])
-                    :active-call (atom nil)
-                    :cfg (atom {:max-retries max-retries
-                                :base-delay-ms base-delay-ms
-                                :max-agent-delay-ms max-agent-delay-ms
-                                :http-idle-timeout-ms http-idle-timeout-ms
-                                :http-total-timeout-ms http-total-timeout-ms
-                                :steering-mode steering-mode
-                                :follow-up-mode follow-up-mode
-                                :auto-compact (boolean auto-compact)
-                                :block-images (boolean block-images)
-                                :context-window context-window
-                                :loop-guard-enabled (boolean loop-guard-enabled)
-                                :loop-guard-threshold (max 2 (long loop-guard-threshold))
-                                :thinking-loop-guard-enabled (boolean thinking-loop-guard-enabled)})
-                    :retry-count (atom 0)
-                    :before-tool-call (atom before-tool-call)
-                    :after-tool-call (atom after-tool-call)
-                    :system-prompt-override (atom system-prompt-override)
-                    :transform-context (atom transform-context)
-                    :prepare-next-turn (atom prepare-next-turn)
-                    :prepare-request (atom prepare-request)
-                    :finish-turn (atom finish-turn)
-                    :last-outcome (atom :completed)
-                    :get-api-key (atom get-api-key)
-                    :scoped-models (atom (vec (distinct scoped-models)))
-                    :overflow-recovered (atom false)
-                    :compact-token-threshold compact-token-threshold
-                    :compact-reserve-tokens compact-reserve-tokens
-                    :keep-recent-tokens keep-recent-tokens
-                    :compact-model-overrides compact-model-overrides
-                    :branch-summary-reserve-tokens branch-summary-reserve-tokens
-                    :compacting? (atom false)
-                    :compaction-signal (atom false)
-                    :compaction-blocked (atom false)
-                    :compaction-error (atom nil)
-                    :pending-bash (atom [])
-                    :run-messages (atom {})
-                    :run-token (atom nil)
-                    :system-prompt-opts (atom system-prompt-opts)
-                    :loop-guard (atom {:window [] :suppressed 0})
-                    :node node}))
-
-;; ─── Active tools (pi: ctx.setActiveTools) ──────────────────────
-
-(defn active-tools-for
-  "The tool set a selection resolves to, in registry order (see
-   registry/select-tools): ENABLED (the runtime allowlist, nil = all) wins;
-   otherwise DEFAULT-TOOLS (a resolved :default-tools selection, nil = every
-   built-in) excludes the built-ins it leaves out — extension tools stay
-   enabled (pi: defaultTools selects the built-in tools; extension/custom
-   tools remain enabled). The wire :tools and the run_code sandbox surface
-   both resolve through this."
-  [{:keys [enabled default-tools]}]
-  (vals (tools/select-tools (tools/get-all-tools)
-                            {:enabled enabled
-                             :exclude (when (nil? enabled)
-                                        (tools/default-tool-exclusions default-tools))})))
-
-(defn active-tools
-  "The tools sent to the LLM (pi: AgentSession.getActiveToolNames → the
-   declared set): the registry filtered by the state's :enabled-tools and
-   :default-tools (see active-tools-for). Read once per request and threaded
-   through it — the wire list, the declared set and dispatch all resolve
-   against that one capture, so a tool unloaded mid-request still executes
-   (scope.md §4)."
-  [agent]
-  (active-tools-for {:enabled @(:enabled-tools agent)
-                     :default-tools @(:default-tools agent)}))
-
-(defn set-active-tools!
-  "Restrict the tools sent to the LLM to NAMES (a set or seq of tool
-   names); nil restores the configured default surface — every tool, minus
-   the built-ins a :default-tools selection leaves out (pi: setActiveTools).
-   Also rebuilds the
-   system prompt to reflect the new tool set (pi: setActiveToolsByName —
-   only tools in the registry can be enabled; unknown names are ignored).
-   Validation runs against the LIVE tool registry, and the base prompt
-   options captured at build time (:system-prompt-opts, pi:
-   _baseSystemPromptOptions) are re-applied with the filtered set, so the
-   prompt's Available tools list and tool-derived guidelines stay in sync
-   with what the model can actually call. The updated options are stored
-   back, so a later rebuild from them — refresh-prompt-cwd! on a session
-   switch — keeps the same tool set (pi: _rebuildSystemPrompt).
-   Changes take effect on the next agent turn."
-  [agent names]
-  (let [names (cond
-                (nil? names) nil
-                (sequential? names) names
-                ;; a bare string is a single tool name (extensions pass
-                ;; through untyped; pi's string[] is enforced by TS)
-                (string? names) [names]
-                :else names)
-        enabled (when names (set names))
-        ;; validation source: the LIVE registry (pi: setActiveToolsByName
-        ;; validates against the tool registry) — captures extension tools
-        ;; registered after the system prompt was built
-        valid (if enabled
-                (filterv #(contains? enabled (:name %))
-                         (vals (tools/get-all-tools)))
-                ;; nil restores the configured default surface — a
-                ;; :default-tools selection stays in force
-                (active-tools-for {:default-tools @(:default-tools agent)}))
-        ;; pi filters unknown names out of the enabled set itself (only
-        ;; registry tools are stored); the prompt is built from VALID, so
-        ;; the two can never diverge
-        enabled (when enabled (into #{} (map :name) valid))
-        opts (assoc @(:system-prompt-opts agent) :tools valid)]
-    (reset! (:enabled-tools agent) enabled)
-    (when (seq @(:system-prompt-opts agent))
-      (reset! (:system-prompt-opts agent) opts)
-      (reset! (:system agent)
-              (apply skills/build-system-prompt (mapcat identity opts))))
-    nil))
-
-(defn apply-default-tools!
-  "Re-apply the :default-tools selection after a settings reload
-   (pi: AgentSession.reload — the new selection replaces the
-   accumulated one; tools it names are active, tools it omits are
-   not; extension tools in :enabled-tools are unaffected). An
-   explicit set-active-tools! selection wins over it. Returns the
-   new selection."
-  [agent selection]
-  (reset! (:default-tools agent) (vec (or selection tools/builtin-tool-names))))
-
-;; ─── Helpers ───────────────────────────────────────────────────────────────
-
-(defn- emit
-  "Route an event to the UI callback (:on-event) and the extension system
-   (event-bus/emit-event!). Extension listeners run inside emit-event!, which
-   catches per-listener exceptions so a broken extension can't kill the loop.
-   The 2-arity routes a different map to each sink; it exists for pi's
-   agent_end split, where the public event is decorated (e.g. :will-retry)
-   but the extension runner's copy is emitted before the decoration
-   (agent-session.ts, _emitExtensionEvent vs _emit)."
-  ([agent event] (emit agent event event))
-  ([agent ui-event ext-event]
-   (when-let [cb (:on-event agent)]
-     (cb ui-event))
-   (event-bus/emit-event! ext-event (:node agent))))
+  "Create a new agent state; see kmet.agent.loop.state/make-agent-state for
+   the options."
+  [& opts]
+  (apply state/make-agent-state opts))
 
 ;; ─── Repeat-loop guard: trip handling ──────────────────────────────────────
 ;; Detection (signatures, sliding window, thinking-loop) lives in
 ;; kmet.agent.loop-guard; settling the run stays here because it emits the
 ;; :loop-guard UI event.
 
-(defn loop-guard-give-up!
+(defn- loop-guard-give-up!
   "Settle the run after the repeat-loop guard trips: set the explanation as
    the final text (delivered via on-done) and reset the per-run guard state
    for the next run. Emits the :loop-guard event (the UI shows a warning
@@ -406,163 +126,7 @@ Be precise and concise in your responses."}}]
   [agent text-buf reason details]
   (reset! text-buf details)
   (reset! (:loop-guard agent) {:window [] :suppressed 0})
-  (emit agent {:type :loop-guard :reason reason :details details}))
-
-;; ─── Queue helpers ─────────────────────────────────────────────────────────
-
-(defn- queue-batch
-  "The messages MODE selects from QUEUE: :all takes everything,
-   :one-at-a-time the oldest."
-  [queue mode]
-  (if (= mode :all)
-    (vec queue)
-    (vec (take 1 queue))))
-
-(defn- drain-queue!
-  "Atomically remove and return the batch MODE selects from QUEUE-ATOM."
-  [queue-atom mode]
-  (loop []
-    (let [v @queue-atom
-          taken (queue-batch v mode)]
-      (if (empty? taken)
-        []
-        (if (compare-and-set! queue-atom v (subvec v (count taken)))
-          taken
-          (recur))))))
-
-(def ^:private ^:dynamic *run-token*
-  "The run token of the attempt executing on this thread, or nil outside a
-   run. Appends record against this token (see record-run-message!) so a late
-   append from an already-cancelled attempt can never land in a newer
-   prompt's accumulator after the agent's :run-token atom was republished.
-   `run-attempt!` binds it for the attempt's whole extent."
-  nil)
-
-(defn- record-run-message!
-  "Record MSG in the in-flight run's message list (pi: newMessages.push —
-   agent-loop). No-op outside a run, so an idle `!` bash result stays
-   context-only. The attempt's own token (the *run-token* binding) wins over
-   the agent's :run-token atom, which a newer prompt may already own. A
-   mid-run context replacement (compaction, prepareNextTurn :context) does
-   not touch the list, so agent-end still reports the run's messages once the
-   context no longer holds them. A `fnil` start tolerates the token being
-   published before its empty list."
-  [agent msg]
-  (when-some [token (or *run-token* @(:run-token agent))]
-    (swap! (:run-messages agent) update token (fnil conj []) msg))
-  nil)
-
-(defn- append-context-message!
-  "Append MSG to the live context only — never the run's message list. Used
-   for appends that must not enter `agent-end :messages` (the post-settle
-   pending-bash flush, pi: _flushPendingBashMessages runs after agent_end).
-   Returns MSG."
-  [agent msg]
-  (swap! (:messages agent) conj msg)
-  msg)
-
-(defn- append-message!
-  "Append MSG to the live context and to the run's message list. Every
-   context append that belongs to a run goes through here so the two cannot
-   diverge. Returns MSG."
-  [agent msg]
-  (append-context-message! agent msg)
-  (record-run-message! agent msg)
-  msg)
-
-(defn- add-user-message!
-  "Add a user message to context and session, emitting :message-start.
-   images — optional vector of image content blocks (pi: image attachments)."
-  [agent text & [images]]
-  (let [user-msg (message/user-message text images)]
-    (append-message! agent user-msg)
-    (when (:session agent)
-      (session/append-entry (:session agent)
-                            {:role :user :content (:content user-msg)}))
-    (emit agent {:type :message-start :message user-msg})))
-
-(defn- add-assistant-message!
-  "Add a final assistant message to context and session, emitting
-   :message-end. RESULT is call-llm's delivered map. Stamps provider/model
-   provenance and the captured thinking signature (pi: AssistantMessage
-   carries provider/model/api plus per-block signatures — converters replay
-   signatures only for same-provider-same-model messages and degrade
-   everything else to plain text). Returns the persisted session entry —
-   its :id is the turn boundary's :message-entry-id — when the agent has a
-   session, else the message."
-  [agent {:keys [text thinking tool-calls usage thinking-signature]}]
-  (let [assistant-msg (cond-> (assoc (message/assistant-message text thinking tool-calls usage)
-                                     :provider @(:provider agent)
-                                     :model @(:model agent))
-                        (seq thinking-signature) (assoc :thinking-signature thinking-signature))]
-    (append-message! agent assistant-msg)
-    (let [entry (when (:session agent)
-                  (session/append-entry (:session agent) assistant-msg))]
-      (emit agent {:type :message-end :message assistant-msg})
-      (or entry assistant-msg))))
-
-(defn- record-abandoned-attempt!
-  "Record an LLM attempt that never completed — stream error or user abort —
-   in the session history without adding it to the live context, emitting
-   :message-end (pi: a failed stream finalizes the partial as an
-   AssistantMessage with stopReason \"error\"/\"aborted\" — message_end
-   persists it to the session file; for errors _prepareRetry then durably
-   omits it from the model projection (see omit-recovery-attempt!) so the
-   retried request never sees it, resume included; a terminal error is not
-   omitted, so a resumed session shows it as a plain assistant message
-   carrying its partial text). RESULT is call-llm's delivered map with
-   whatever partials arrived before the abandonment.
-   Returns the persisted session entry — its :id is the recovery omission's
-   target — when the agent has a session, else the bare message."
-  [agent {:keys [text thinking tool-calls usage thinking-signature error]}
-   stop-reason]
-  (let [msg (cond-> (assoc (message/assistant-message text thinking tool-calls usage)
-                           :provider @(:provider agent)
-                           :model @(:model agent)
-                           :stop-reason stop-reason)
-              (seq thinking-signature) (assoc :thinking-signature thinking-signature)
-              error (assoc :error-message error))]
-    ;; pi pushes the aborted/errored message into newMessages before the
-    ;; stopReason check, so agent_end reports it even though it never enters
-    ;; the live context (_prepareRetry drops it from agent state).
-    (record-run-message! agent msg)
-    (let [entry (when (:session agent)
-                  (session/append-entry (:session agent) msg))]
-      (emit agent {:type :message-end :message msg})
-      (or entry msg))))
-
-(defn- add-custom-message!
-  "Add a before-agent-start injected message to context and session, emitting
-   :message-start. Role defaults to :info (display-only — rendered in the UI,
-   excluded from the LLM context); other roles pass through to the provider.
-   String :content is normalized to a text block so the message matches the
-   canonical kmet message format (session persistence and resume display)."
-  [agent m]
-  (let [msg (cond-> (assoc m :content (message/normalize-content (:content m)))
-              (not (contains? m :role)) (assoc :role :info))]
-    (append-message! agent msg)
-    (when (:session agent)
-      (session/append-entry (:session agent) msg))
-    (emit agent {:type :message-start :message msg})))
-
-(defn append-custom-message!
-  "Append a custom message outside a tool call/result pair: persist it as a
-   custom_message session entry, inject its context projection, and emit
-   :message-start (pi: _appendCustomMessage). The context append is
-   context-only — pi keeps these out of the loop's newMessages — so an idle
-   send and the pending-custom flush share this path. MSG is a canonical
-   {:role :custom :custom-type :content :display :details} map. Returns MSG."
-  [agent msg]
-  ;; the session keeps the raw content (its projection normalizes strings —
-  ;; pi: appendCustomMessageEntry stores the message as given); the context
-  ;; message is normalized here
-  (when-let [sess (:session agent)]
-    (session/append-custom-message-entry! sess (:custom-type msg) (:content msg)
-                                          (:display msg) (:details msg)))
-  (let [msg (assoc msg :content (message/normalize-content (:content msg)))]
-    (append-context-message! agent msg)
-    (emit agent {:type :message-start :message msg})
-    msg))
+  (state/emit agent {:type :loop-guard :reason reason :details details}))
 
 (defn- has-sequential-tool-call?
   "True if any tool call targets a :sequential tool — the whole batch then runs
@@ -595,10 +159,10 @@ Be precise and concise in your responses."}}]
   [agent tc-id]
   (fn [partial]
     (when-let [content (:content partial)]
-      (emit agent {:type :tool-execution-update
-                   :tool-call-id tc-id
-                   :content content
-                   :is-partial true}))))
+      (state/emit agent {:type :tool-execution-update
+                         :tool-call-id tc-id
+                         :content content
+                         :is-partial true}))))
 
 (defn- prepare-tool-call!
   "Run one tool call's preparation: emit :tool-execution-start, then either settle
@@ -610,10 +174,10 @@ Be precise and concise in your responses."}}]
   (let [tc-id (:id tc)
         tc-name (:name tc)
         tc-args (:arguments tc)]
-    (emit agent {:type :tool-execution-start
-                 :tool-call-id tc-id
-                 :tool-name tc-name
-                 :args tc-args})
+    (state/emit agent {:type :tool-execution-start
+                       :tool-call-id tc-id
+                       :tool-name tc-name
+                       :args tc-args})
     (if-not (contains? declared-tools tc-name)
       ;; undeclared call settles as an error without executing, but the
       ;; after hook still runs in finish-tool-call!
@@ -647,24 +211,6 @@ Be precise and concise in your responses."}}]
     :after-hook @(:after-tool-call agent)}
    raw))
 
-(defn- set-agent-status!
-  "Update the run's :status atom and emit the matching :status event. EXTRA, when
-   given, is merged into the event (e.g. {:tool-calls ...}) so the call site
-   does not repeat the reset/emit pair."
-  [agent status & [extra]]
-  (reset! (:status agent) status)
-  (emit agent (merge {:type :status :status status} (or extra {})))
-  nil)
-
-(defn- append-persisted-message!
-  "Append MSG to both the live context and the session (pi: append + append-entry).
-   Returns MSG. Centralizes the two-step append so context/session stay in sync."
-  [agent msg]
-  (append-message! agent msg)
-  (when (:session agent)
-    (session/append-entry (:session agent) msg))
-  msg)
-
 (defn- execute-tool-calls-parallel!
   "Execute tool calls concurrently (pi: executeToolCallsParallel).
    Preparation (start events + before hooks) is sequential; execution is
@@ -685,12 +231,12 @@ Be precise and concise in your responses."}}]
         ;; an immediate error, never executed; the map is also the dispatch
         ;; override, so execution agrees with what the model was offered
         emit-end! (fn [tc result]
-                    (emit agent {:type :tool-execution-end
-                                 :tool-call-id (:id tc)
-                                 :tool-name (:name tc)
-                                 :args (:arguments tc)
-                                 :result result
-                                 :is-error (:is-error result false)}))
+                    (state/emit agent {:type :tool-execution-end
+                                       :tool-call-id (:id tc)
+                                       :tool-name (:name tc)
+                                       :args (:arguments tc)
+                                       :result result
+                                       :is-error (:is-error result false)}))
         finish-call (fn [tc raw]
                       (finish-tool-call! agent assistant-msg tc (:arguments tc) raw))
         ;; Always record before emitting: the source-order appends below
@@ -744,7 +290,7 @@ Be precise and concise in your responses."}}]
       (doseq [tc prepared]
         (let [result (get @finalized (:id tc))
               result-msg (message/tool-result-message (:id tc) (:name tc) result)]
-          (append-persisted-message! agent result-msg))))
+          (state/append-persisted-message! agent result-msg))))
     ;; pi: terminate stops the run after this batch — only when EVERY
     ;; finalized call (blocked ones carry the hint, executed ones don't)
     {:results (mapv #(get @finalized (:id %)) tool-calls)
@@ -781,14 +327,14 @@ Be precise and concise in your responses."}}]
             result (finish-tool-call! agent assistant-msg prepared args raw)
             result-msg (message/tool-result-message tc-id tc-name result)]
         (when (not= false append?)
-          (append-persisted-message! agent result-msg))
+          (state/append-persisted-message! agent result-msg))
         (swap! tool-results conj result)
-        (emit agent {:type :tool-execution-end
-                     :tool-call-id tc-id
-                     :tool-name tc-name
-                     :args tc-args
-                     :result result
-                     :is-error (:is-error result false)})))
+        (state/emit agent {:type :tool-execution-end
+                           :tool-call-id tc-id
+                           :tool-name tc-name
+                           :args tc-args
+                           :result result
+                           :is-error (:is-error result false)})))
     ;; pi: terminate rides on blocked results — the batch stops the run
     ;; only when every call in it was blocked with :terminate
     {:results @tool-results
@@ -937,8 +483,8 @@ Be precise and concise in your responses."}}]
                          (vec messages))
                    (vec messages))]
     ;; Assistant message lifecycle: streaming begins
-    (emit agent {:type :message-start
-                 :message {:role :assistant :content []}})
+    (state/emit agent {:type :message-start
+                       :message {:role :assistant :content []}})
     (llm/send-message
      {:provider provider
       :api-type (:api-type ep)
@@ -968,20 +514,20 @@ Be precise and concise in your responses."}}]
                  (when-not (realized? done-promise)
                    (swap! text-buf str t)
                    (when on-text (on-text t))
-                   (emit agent {:type :message-update
-                                :message {:role :assistant
-                                          :content [{:type :text :text @text-buf}]}
-                                :delta {:type :text :content t}})))
+                   (state/emit agent {:type :message-update
+                                      :message {:role :assistant
+                                                :content [{:type :text :text @text-buf}]}
+                                      :delta {:type :text :content t}})))
       :on-thinking (fn [t]
                      ;; Same straggler suppression as :on-text (see above).
                      (when-not (realized? done-promise)
                        (swap! thinking-buf str t)
                        (when on-thinking (on-thinking t))
-                       (emit agent {:type :message-update
-                                    :message {:role :assistant
-                                              :content []
-                                              :thinking @thinking-buf}
-                                    :delta {:type :thinking :content t}}))
+                       (state/emit agent {:type :message-update
+                                          :message {:role :assistant
+                                                    :content []
+                                                    :thinking @thinking-buf}
+                                          :delta {:type :thinking :content t}}))
                      ;; Thinking-loop guard: a repeated reasoning segment
                      ;; (>= 3× within the recent buffer) means the model is
                      ;; stuck in a degenerate reasoning loop — cut the stream
@@ -1008,10 +554,10 @@ Be precise and concise in your responses."}}]
       :on-tool-call (fn [tc]
                       (when-not (realized? done-promise)
                         (tc-add tc)
-                        (emit agent {:type :message-update
-                                     :message {:role :assistant :content []}
-                                     :delta (assoc (select-keys tc [:id :name :arguments :index])
-                                                   :type :tool-call)})))
+                        (state/emit agent {:type :message-update
+                                           :message {:role :assistant :content []}
+                                           :delta (assoc (select-keys tc [:id :name :arguments :index])
+                                                         :type :tool-call)})))
       :on-usage (fn [usage]
                   ;; Provider-native usage map — stored on the assistant
                   ;; message for session persistence (pi: message.usage).
@@ -1057,9 +603,9 @@ Be precise and concise in your responses."}}]
    the queue-update snapshot — both queues ride every emit. Returns nil."
   [agent queue-key text]
   (swap! (get agent queue-key) conj text)
-  (emit agent {:type :queue-update
-               :steering @(:steering agent)
-               :follow-up @(:follow-up agent)})
+  (state/emit agent {:type :queue-update
+                     :steering @(:steering agent)
+                     :follow-up @(:follow-up agent)})
   nil)
 
 (defn steer!
@@ -1088,8 +634,8 @@ Be precise and concise in your responses."}}]
   ([agent reason]
    (reset! (:steering agent) [])
    (reset! (:follow-up agent) [])
-   (emit agent (cond-> {:type :queue-update :steering [] :follow-up []}
-                 reason (assoc :reason reason)))
+   (state/emit agent (cond-> {:type :queue-update :steering [] :follow-up []}
+                       reason (assoc :reason reason)))
    nil))
 
 (defn queued-messages
@@ -1103,65 +649,6 @@ Be precise and concise in your responses."}}]
   [agent]
   (or (seq @(:steering agent))
       (seq @(:follow-up agent))))
-
-(defn peek-queued-messages
-  "Preview the batch the loop would consume next, without draining anything:
-   the steering queue's while it has messages, otherwise the follow-up
-   queue's (pi: Agent.peekQueuedMessages — steering wins because the inner
-   loop polls it first). Each batch honors that queue's mode, so
-   :one-at-a-time previews a single message."
-  [agent]
-  (let [cfg @(:cfg agent)
-        steering (queue-batch @(:steering agent) (:steering-mode cfg))]
-    (if (seq steering)
-      steering
-      (queue-batch @(:follow-up agent) (:follow-up-mode cfg)))))
-
-;; ─── Bash result recording ────────────────────────────────────────────────
-
-(defn add-bash-result!
-  "Record a !/!! bash execution result in the agent context and session.
-   While the agent is streaming the entry is deferred (pi: recordBashResult
-   queues pending bash messages to preserve tool_use/tool_result ordering)
-   and flushed by run-agent-turn's finally once the run settles."
-  [agent command result exclude-from-context?]
-  (let [entry (session/make-bash-entry command result exclude-from-context?)]
-    (if (contains? #{:thinking :executing} @(:status agent))
-      (swap! (:pending-bash agent) conj entry)
-      (do (append-message! agent entry)
-          (when-let [sess (:session agent)]
-            (session/append-entry sess entry))))
-    nil))
-
-(defn flush-pending-bash-messages!
-  "Add queued bash results (recorded while the agent was streaming) to the
-   agent context and session (pi: _flushPendingBashMessages). Called by
-   run-agent-turn's finally so every exit path — settle, error, timeout, or
-   cancel — flushes them. Drains entries queued mid-flush via CAS. The
-   context-only append keeps them out of `agent-end :messages` (pi flushes
-   after agent_end)."
-  [agent]
-  (loop []
-    (let [pending @(:pending-bash agent)]
-      (when (seq pending)
-        (doseq [entry pending]
-          (append-context-message! agent entry)
-          (when-let [sess (:session agent)]
-            (session/append-entry sess entry)))
-        (when-not (compare-and-set! (:pending-bash agent) pending [])
-          (recur))))))
-
-(defn add-context-message!
-  "Inject a message into the agent's in-memory context without persisting it
-   (pi: custom messages flow through the agent loop — kmet extensions
-   persist a :custom-message entry via the session and inject the projection
-   here). Emits :message-start so the TUI renders it (the display flag is
-   honored by the TUI handler). String :content is normalized to a text
-   block, matching the canonical kmet message format."
-  [agent msg]
-  (let [msg (assoc msg :content (message/normalize-content (:content msg)))]
-    (append-message! agent msg)
-    (emit agent {:type :message-start :message msg})))
 
 (defn defer-custom-message!
   "Defer a custom message sent while the agent is streaming: appending now
@@ -1180,66 +667,6 @@ Be precise and concise in your responses."}}]
   [agent msg]
   (swap! (:pending-next-turn agent) conj msg)
   nil)
-
-(defn flush-pending-custom-messages!
-  "Append custom messages deferred while the agent was streaming, once the
-   current turn's tool results are in the context (pi:
-   _flushPendingCustomMessages — called at every turn end, before a new
-   prompt, at the pre-settle boundary, and by the prompt's settle flush).
-   Drains in a CAS loop, so a defer that lands mid-flush is still included
-   instead of being lost."
-  [agent]
-  (loop []
-    (when-let [msgs (seq (drain-queue! (:pending-custom agent) :all))]
-      (doseq [msg msgs]
-        (append-custom-message! agent msg))
-      (recur))))
-
-(defn- inject-next-turn-messages!
-  "Inject the custom messages queued for the next prompt alongside its user
-   message, then clear the queue (pi: prompt() pushes _pendingNextTurnMessages
-   after the user message and clears them). Each is persisted and recorded in
-   this attempt's messages."
-  [agent]
-  (loop []
-    (when-let [msgs (seq (drain-queue! (:pending-next-turn agent) :all))]
-      (doseq [msg msgs]
-        (record-run-message! agent (append-custom-message! agent msg)))
-      (recur))))
-
-(defn- inject-queued-messages!
-  "Drain one batch from QUEUE (per MODE) and inject it into the live
-   context: strings become user messages; maps are custom messages (pi: the
-   queues carry full messages — sendMessage queues custom ones there),
-   persisted and recorded in this attempt's messages here, as the loop
-   consumes them (pi: message_end persistence; the loop pushes a consumed
-   queue message into newMessages). Emits :queue-update when anything was
-   consumed; returns the number of messages injected."
-  [agent queue mode]
-  (let [msgs (drain-queue! queue mode)]
-    (doseq [m msgs]
-      (if (map? m)
-        (record-run-message! agent (append-custom-message! agent m))
-        (add-user-message! agent m)))
-    (when (seq msgs)
-      (emit agent {:type :queue-update
-                   :steering @(:steering agent)
-                   :follow-up @(:follow-up agent)}))
-    (count msgs)))
-
-(defn- drain-next-queue!
-  "Drain the queue the next low-level run should start from and inject its
-   messages into the live context (pi: Agent.continue — with an assistant
-   message last it drains the steering queue first and, when that is empty,
-   the follow-up queue, running the drained messages as the next run's
-   prompt). Each queue drains per its mode; returns the number of messages
-   injected (0 when both queues are empty)."
-  [agent]
-  (let [cfg @(:cfg agent)
-        [queue mode] (if (seq @(:steering agent))
-                       [(:steering agent) (:steering-mode cfg)]
-                       [(:follow-up agent) (:follow-up-mode cfg)])]
-    (inject-queued-messages! agent queue mode)))
 
 ;; ─── Agent run ─────────────────────────────────────────────────────────────
 
@@ -1270,17 +697,17 @@ Be precise and concise in your responses."}}]
   [agent source]
   {:on-retry-scheduled
    (fn [attempt max-attempts delay-ms error-message]
-     (emit agent {:type :summarization-retry-scheduled
-                  :attempt attempt
-                  :max-attempts max-attempts
-                  :delay-ms delay-ms
-                  :error-message error-message}))
+     (state/emit agent {:type :summarization-retry-scheduled
+                        :attempt attempt
+                        :max-attempts max-attempts
+                        :delay-ms delay-ms
+                        :error-message error-message}))
 
    :on-retry-attempt-start
-   (fn [] (emit agent (merge {:type :summarization-retry-attempt-start} source)))
+   (fn [] (state/emit agent (merge {:type :summarization-retry-attempt-start} source)))
 
    :on-retry-finished
-   (fn [& _] (emit agent {:type :summarization-retry-finished}))})
+   (fn [& _] (state/emit agent {:type :summarization-retry-finished}))})
 
 (defn- summarization-call
   "One summarization LLM call (pi: completeSummarization — the single call
@@ -1508,18 +935,6 @@ Be precise and concise in your responses."}}]
               {:summary (str compaction/branch-summary-preamble (:text result))
                :usage (:usage result)})))))))
 
-(defn- refresh-context-from-session!
-  "Rebuild the live context from the session projection — the canonical
-   context every request is built from (pi: _refreshFinalizedContext). Both
-   compaction and the append-only context edits land here, so the session
-   stays the source of truth: raw history, usage totals and the UI replay
-   are untouched. In-memory-only messages (add-context-message!, which never
-   persists) are not in the session and are dropped by the rebuild."
-  [agent]
-  (when-let [sess (:session agent)]
-    (reset! (:messages agent)
-            (message/drop-incomplete-tool-calls (session/build-context-messages sess)))))
-
 (defn- omit-recovery-attempt!
   "Durably omit a failed attempt's session entry from every future model
    projection (pi: _omitRecoveryAttempt): a nil context edit keeps the raw
@@ -1534,7 +949,7 @@ Be precise and concise in your responses."}}]
   (when-let [sess (:session agent)]
     (when-let [id (:id entry)]
       (session/append-context-edit! sess id nil))
-    (refresh-context-from-session! agent)))
+    (state/refresh-context-from-session! agent)))
 
 (defn- record-compaction!
   "Append the compaction entry for SUMMARY-RESULT (pi: appendCompaction),
@@ -1566,8 +981,8 @@ Be precise and concise in your responses."}}]
                       (assoc :details (:details summary-result))
                       from-extension?
                       (assoc :from-hook true)))]
-    (refresh-context-from-session! agent)
-    (emit agent {:type :context-replaced :messages @(:messages agent)})
+    (state/refresh-context-from-session! agent)
+    (state/emit agent {:type :context-replaced :messages @(:messages agent)})
     (debug/log "compacted session with LLM summary")
     {:summary (:summary summary-result)
      :first-kept-id first-kept-id
@@ -1583,25 +998,25 @@ Be precise and concise in your responses."}}]
   [agent reason result from-extension? aborted? failed? succeeded? error-message]
   (reset! (:compaction-error agent) error-message)
   (when succeeded?
-    (emit agent {:type :session-compact
-                 :compaction-entry (:entry result)
-                 :from-extension from-extension?
-                 :reason reason
-                 :will-retry (= reason :overflow)}))
-  (emit agent {:type :compaction-end
-               :reason reason
-               :from-extension from-extension?
-               :aborted aborted?
-               :result (when succeeded? (dissoc result :entry))
-               :error-message error-message
-               :will-retry (and succeeded? (= reason :overflow))})
+    (state/emit agent {:type :session-compact
+                       :compaction-entry (:entry result)
+                       :from-extension from-extension?
+                       :reason reason
+                       :will-retry (= reason :overflow)}))
+  (state/emit agent {:type :compaction-end
+                     :reason reason
+                     :from-extension from-extension?
+                     :aborted aborted?
+                     :result (when succeeded? (dissoc result :entry))
+                     :error-message error-message
+                     :will-retry (and succeeded? (= reason :overflow))})
   (when (or failed? aborted?)
-    (emit agent {:type :session-compact-failed
-                 :reason reason
-                 :error-message error-message
-                 :from-extension from-extension?
-                 :aborted aborted?
-                 :will-retry false})
+    (state/emit agent {:type :session-compact-failed
+                       :reason reason
+                       :error-message error-message
+                       :from-extension from-extension?
+                       :aborted aborted?
+                       :will-retry false})
     (reset! (:compaction-blocked agent) true))
   (cond
     (= result ::cancelled) false
@@ -1654,7 +1069,7 @@ Be precise and concise in your responses."}}]
       ;; next run — a stale true would abort the compaction immediately. The
       ;; auto paths keep it: an Escape at run start must still abort them.
       (when (= :manual reason)
-        (reset! (:signal agent) false))
+        (state/set-run-signal! agent false))
       ;; Every compaction starts with a fresh abort state (pi: a new
       ;; AbortController per run) — the previous compaction's signal must not
       ;; leak into this one.
@@ -1666,7 +1081,7 @@ Be precise and concise in your responses."}}]
       ;; when the emit throws.
       (reset! (:compacting? agent) true)
       (try
-        (emit agent {:type :compaction-start :reason reason})
+        (state/emit agent {:type :compaction-start :reason reason})
         (let [failure (volatile! nil)
               from-extension (volatile! false)
               result
@@ -1701,13 +1116,13 @@ Be precise and concise in your responses."}}]
                         ;; instead of the summarizer); a cancel still fires
                         ;; compaction_start/compaction_end, the end carrying
                         ;; :aborted true (pi parity)
-                        (let [before (emit agent {:type :session-before-compact
-                                                  :preparation prep
-                                                  :branch-entries entries
-                                                  :custom-instructions custom-instructions
-                                                  :reason reason
-                                                  :will-retry (= reason :overflow)
-                                                  :signal (:compaction-signal agent)})]
+                        (let [before (state/emit agent {:type :session-before-compact
+                                                        :preparation prep
+                                                        :branch-entries entries
+                                                        :custom-instructions custom-instructions
+                                                        :reason reason
+                                                        :will-retry (= reason :overflow)
+                                                        :signal (:compaction-signal agent)})]
                           (if (:cancel before)
                             ::cancelled
                             (let [supplied (:compaction before)
@@ -1823,21 +1238,6 @@ Be precise and concise in your responses."}}]
     (when (pos? (count @(:entries sess)))
       (compact-context! agent nil :overflow))))
 
-(defn- replace-context!
-  "Replace the in-memory conversation, rebuild the session file to match, and
-   emit :context-replaced so the UI can mirror the new context
-   (pi: prepareNextTurnWithContext context replacement)."
-  [agent messages]
-  (let [msgs (message/drop-incomplete-tool-calls (vec messages))]
-    (reset! (:messages agent) msgs)
-    (when-let [sess (:session agent)]
-      ;; Rebuild the session as a fresh linear branch mirroring the new
-      ;; context — atomic (temp file + rename) so a crash mid-write can't
-      ;; corrupt the file; serialized so a concurrent append (bash result)
-      ;; can't interleave with the rewrite.
-      (session/replace-entries! sess msgs))
-    (emit agent {:type :context-replaced :messages msgs})))
-
 (defn- apply-next-turn-update!
   "Apply a prepare-next-turn update map to the agent state.
    Supported keys: :model (a Model record, pi AgentLoopTurnUpdate.model —
@@ -1852,7 +1252,7 @@ Be precise and concise in your responses."}}]
                        (= (:id m) @(:model agent)))
           (reset! (:provider agent) (:provider m))
           (reset! (:model agent) (:id m))
-          (emit agent {:type :model-select :model m :previous-model previous :source :set}))))
+          (state/emit agent {:type :model-select :model m :previous-model previous :source :set}))))
     (when-let [s (:system update)] (reset! (:system agent) s))
     (when-let [th (:thinking update)]
       (let [model-rec (models/get-model @(:provider agent) @(:model agent))
@@ -1862,7 +1262,7 @@ Be precise and concise in your responses."}}]
         (reset! (:thinking agent) clamped)))
     (when-let [o (:system-prompt-override update)]
       (reset! (:system-prompt-override agent) o))
-    (when-let [c (:context update)] (replace-context! agent c))))
+    (when-let [c (:context update)] (state/replace-context! agent c))))
 
 (defn- apply-request-update!
   "Apply a :prepare-request update map to the agent state (pi: prepareRequest
@@ -1889,7 +1289,7 @@ Be precise and concise in your responses."}}]
    not durable unless the hook re-applies it (pi re-canonicalizes the same
    way)."
   [agent]
-  (refresh-context-from-session! agent)
+  (state/refresh-context-from-session! agent)
   (when-let [f @(:prepare-request agent)]
     (apply-request-update!
      agent
@@ -2013,12 +1413,12 @@ Be precise and concise in your responses."}}]
                        (= :context-edit (:role entry)))
               (vreset! edited? true))
             (doseq [msg (session/context-messages entry)]
-              (append-context-message! agent msg)
-              (emit agent {:type :message-start :message msg})))
+              (state/append-context-message! agent msg)
+              (state/emit agent {:type :message-start :message msg})))
           ;; an edit changes what the target projects into, so the live context
           ;; is rebuilt from the projection (pi: _commitBoundaryDrafts →
           ;; _refreshFinalizedContext)
-          (when @edited? (refresh-context-from-session! agent)))
+          (when @edited? (state/refresh-context-from-session! agent)))
         true)
     (do (binding [*out* *err*]
           (println "Warning: invalid" (name event)
@@ -2078,7 +1478,7 @@ Be precise and concise in your responses."}}]
    Pending messages include the deferred custom queue (pi:
    _getPendingBoundaryMessages)."
   [agent]
-  (merge {:pending-messages (into (peek-queued-messages agent) @(:pending-custom agent))
+  (merge {:pending-messages (into (state/peek-queued-messages agent) @(:pending-custom agent))
           :can-continue (boundary-can-continue? agent)
           :entries []
           :continue false}
@@ -2122,7 +1522,7 @@ Be precise and concise in your responses."}}]
     ;; pi: _handleAgentEvent flushes deferred custom messages after every
     ;; turn's boundary dispatch — the first point in the run where a context
     ;; append cannot land between a tool call and its result
-    (flush-pending-custom-messages! agent)
+    (state/flush-pending-custom-messages! agent)
     (cond
       (= :end decision) :end
       (or boundary-continues? (= :continue decision)) :continue
@@ -2154,23 +1554,23 @@ Be precise and concise in your responses."}}]
   (reset! (:compaction-blocked agent) false)
   ;; pi: prompt() flushes messages a previous run deferred before building
   ;; the new prompt
-  (flush-pending-custom-messages! agent)
+  (state/flush-pending-custom-messages! agent)
   ;; :agent-before-settle reports this run's last turn outcome
   (reset! (:last-outcome agent) :completed)
   ;; Repeat-loop guard is per-run: a legit bash ls x2 in run 1 must not
   ;; count toward a trip in run 2
   (reset! (:loop-guard agent) {:window [] :suppressed 0})
   (when message
-    (add-user-message! agent message images))
+    (state/add-user-message! agent message images))
   ;; pi: pending nextTurn messages ride with the prompt, after the user
   ;; message and before before_agent_start's injected messages
-  (inject-next-turn-messages! agent)
+  (state/inject-next-turn-messages! agent)
   (let [bas (extensions/apply-before-agent-start-hooks
              message @(:system agent))]
     (when (:system-prompt bas)
       (reset! (:system-prompt-override agent) (:system-prompt bas)))
     (doseq [m (:messages bas)]
-      (add-custom-message! agent m)))
+      (state/add-custom-message! agent m)))
   (maybe-compact! agent))
 
 (defn- close-retry-and-surface-error!
@@ -2181,14 +1581,14 @@ Be precise and concise in your responses."}}]
   [agent err on-error]
   (when (pos? @(:retry-count agent))
     (let [n @(:retry-count agent)]
-      (emit agent {:type :auto-retry-end
-                   :success false
-                   :attempt n
-                   :final-error err})
+      (state/emit agent {:type :auto-retry-end
+                         :success false
+                         :attempt n
+                         :final-error err})
       (reset! (:retry-count agent) 0)))
   (when on-error (on-error err))
   (reset! (:status agent) :error)
-  (emit agent {:type :error :message err}))
+  (state/emit agent {:type :error :message err}))
 
 (defn- terminal-error!
   "Non-retryable error or exhausted budget: close out any open retry span,
@@ -2204,7 +1604,7 @@ Be precise and concise in your responses."}}]
   (close-retry-and-surface-error! agent err on-error)
   ;; Will not be retried — pi: _willRetryAfterAgentEnd is false here.
   (agent-end err false)
-  (set-agent-status! agent :idle)
+  (state/set-agent-status! agent :idle)
   {:status :error})
 
 (defn- tools-phase!
@@ -2233,9 +1633,9 @@ Be precise and concise in your responses."}}]
    guard's survivors execute against it, so a tool unloaded after the request
    was built still runs (scope.md §4)."
   [agent stages t result request-tools]
-  (let [assistant-msg (add-assistant-message! agent result)
+  (let [assistant-msg (state/add-assistant-message! agent result)
         tool-calls (:tool-calls result)]
-    (set-agent-status! agent :executing {:tool-calls tool-calls})
+    (state/set-agent-status! agent :executing {:tool-calls tool-calls})
     (let [threshold (or (get-in stages [:loop-guard :config :threshold])
                         (:loop-guard-threshold @(:cfg agent)))
           guard-enabled? (:loop-guard-enabled @(:cfg agent))
@@ -2306,14 +1706,14 @@ Be precise and concise in your responses."}}]
                     suppressed? (contains? suppressed-by-id tc-id)
                     result-msg (message/tool-result-message tc-id tc-name res)]
                 (when suppressed?
-                  (emit agent {:type :tool-execution-start
-                               :tool-call-id tc-id :tool-name tc-name :args tc-args})
-                  (emit agent {:type :tool-execution-end
-                               :tool-call-id tc-id :tool-name tc-name :args tc-args
-                               :result res
-                               :is-error (:is-error res false)}))
-                (append-persisted-message! agent result-msg)))]
-      (set-agent-status! agent :thinking)
+                  (state/emit agent {:type :tool-execution-start
+                                     :tool-call-id tc-id :tool-name tc-name :args tc-args})
+                  (state/emit agent {:type :tool-execution-end
+                                     :tool-call-id tc-id :tool-name tc-name :args tc-args
+                                     :result res
+                                     :is-error (:is-error res false)}))
+                (state/append-persisted-message! agent result-msg)))]
+      (state/set-agent-status! agent :thinking)
       ;; pi: the post-turn hooks and the :turn-end boundary run
       ;; unconditionally — even when terminate stops the tool-call continuation
       (let [decision (complete-turn! agent t assistant-msg results)]
@@ -2332,7 +1732,7 @@ Be precise and concise in your responses."}}]
    boundary. Returns the merged decision — :end (settle), :continue (one more
    turn), or nil (the loop settles naturally)."
   [agent t result]
-  (complete-turn! agent t (add-assistant-message! agent result) []))
+  (complete-turn! agent t (state/add-assistant-message! agent result) []))
 
 (defn- run-attempt!
   "Run one low-level agent attempt — one :agent-start/:agent-end pair
@@ -2373,11 +1773,11 @@ Be precise and concise in your responses."}}]
                       ;; pi decorates the public agent_end with :will-retry but
                       ;; emits the extension runner's copy before the
                       ;; decoration (agent-session.ts) — send each its own map.
-                      (emit agent event (dissoc event :will-retry))))]
+                      (state/emit agent event (dissoc event :will-retry))))]
     ;; Bind this attempt's token for its whole extent so every append it makes
     ;; records against it even if a newer prompt replaces the agent's
     ;; :run-token (see *run-token*).
-    (binding [*run-token* run-token]
+    (binding [state/*run-token* run-token]
       ;; Outer loop: follow-up. No turn limit — the inner loop settles
       ;; only when the model stops calling tools and no messages are
       ;; queued (pi: runLoop while(true)).
@@ -2389,7 +1789,7 @@ Be precise and concise in your responses."}}]
                                    (empty? prev-tool-calls)
                                    (empty? @(:steering agent))))
                         (if @(:signal agent)
-                          (do (set-agent-status! agent :idle)
+                          (do (state/set-agent-status! agent :idle)
                               (agent-end nil false)
                               {:status :aborted}) ;; cancelled — exit quietly
                           {:status :settled :turn t})
@@ -2397,9 +1797,9 @@ Be precise and concise in your responses."}}]
                         ;; refreshes the pending display (pi: message_start →
                         ;; queue_update)
                         (do
-                          (inject-queued-messages! agent (:steering agent)
-                                                   (:steering-mode @(:cfg agent)))
-                          (emit agent {:type :turn-start :turn-index t})
+                          (state/inject-queued-messages! agent (:steering agent)
+                                                         (:steering-mode @(:cfg agent)))
+                          (state/emit agent {:type :turn-start :turn-index t})
                           ;; pi: config.prepareRequest — the per-request
                           ;; checkpoint, after the queued messages joined the
                           ;; context and before the request is built
@@ -2407,7 +1807,7 @@ Be precise and concise in your responses."}}]
                           (let [;; one read per request: the wire list, the
                                 ;; declared set and the dispatch below all
                                 ;; resolve against it (scope.md §4)
-                                request-tools (active-tools agent)
+                                request-tools (state/active-tools agent)
                                 {:keys [promise] :as call}
                                 (do (reset! text-buf "")
                                     (call-llm agent (resolve-api-key agent) text-buf on-text on-thinking request-tools))]
@@ -2427,7 +1827,7 @@ Be precise and concise in your responses."}}]
                               (reset! (:active-call agent) nil)
                               (cond
                                 (:cancelled result)
-                                (do (finish-turn! agent t (record-abandoned-attempt!
+                                (do (finish-turn! agent t (state/record-abandoned-attempt!
                                                            agent result :aborted) [])
                                     (agent-end nil false)
                                     {:status :aborted})
@@ -2450,7 +1850,7 @@ Be precise and concise in your responses."}}]
                                       ;; stalled attempt never loses its
                                       ;; text/thinking, while the retry classifier
                                       ;; still sees a normal error map.
-                                      msg (record-abandoned-attempt!
+                                      msg (state/record-abandoned-attempt!
                                            agent (merge ((:partials call)) {:error err})
                                            :error)]
                                   (finish-turn! agent t msg [])
@@ -2473,7 +1873,7 @@ Be precise and concise in your responses."}}]
                                 ;; error — settle the run with the explanation
                                 ;; (no auto-retry, no red error line; the
                                 ;; :loop-guard event shows a warning)
-                                  (do (finish-turn! agent t (record-abandoned-attempt!
+                                  (do (finish-turn! agent t (state/record-abandoned-attempt!
                                                              agent result :error) [])
                                       (loop-guard-give-up!
                                        agent text-buf :thinking
@@ -2488,7 +1888,7 @@ Be precise and concise in your responses."}}]
                                       ;; keeping it in the file). pi runs
                                       ;; finishTurn/turn_end for an errored
                                       ;; response too (the decision is dropped).
-                                        msg (record-abandoned-attempt! agent result :error)
+                                        msg (state/record-abandoned-attempt! agent result :error)
                                         _ (finish-turn! agent t msg [])
                                         {:keys [kind] :as action}
                                         (retry-decide
@@ -2524,9 +1924,9 @@ Be precise and concise in your responses."}}]
                                 ;; A retried LLM call succeeded — reset the budget
                                   (when (pos? retried)
                                     (reset! (:retry-count agent) 0)
-                                    (emit agent {:type :auto-retry-end
-                                                 :success true
-                                                 :attempt retried}))
+                                    (state/emit agent {:type :auto-retry-end
+                                                       :success true
+                                                       :attempt retried}))
                                   (when @(:overflow-recovered agent)
                                   ;; A non-error message ends overflow recovery
                                   ;; (pi resets on success)
@@ -2562,11 +1962,11 @@ Be precise and concise in your responses."}}]
             inner
             (let [turn' (:turn inner)]
               ;; Outer: poll the follow-up queue (pi: runLoop's outer poll)
-              (if (pos? (inject-queued-messages! agent (:follow-up agent)
-                                                 (:follow-up-mode @(:cfg agent))))
-                (do (set-agent-status! agent :thinking)
+              (if (pos? (state/inject-queued-messages! agent (:follow-up agent)
+                                                       (:follow-up-mode @(:cfg agent))))
+                (do (state/set-agent-status! agent :thinking)
                     (recur turn'))
-                (do (set-agent-status! agent :idle)
+                (do (state/set-agent-status! agent :idle)
                     (agent-end nil false)
                     {:status :settled :text @text-buf})))))))))
 
@@ -2583,7 +1983,7 @@ Be precise and concise in your responses."}}]
         requested? (requested-continuation? agent boundary :agent-before-settle)]
     ;; pi: _runBeforeSettleBoundary flushes deferred custom messages after
     ;; the boundary's entries are committed, before the continuation check
-    (flush-pending-custom-messages! agent)
+    (state/flush-pending-custom-messages! agent)
     (and (not @(:signal agent))
          (or requested? (has-queued-messages? agent))
          (honor-continuation? agent :agent-before-settle))))
@@ -2645,11 +2045,11 @@ Be precise and concise in your responses."}}]
      (let [{:keys [error action]} outcome
            {:keys [attempt delay-ms max-attempts]} action]
        (reset! (:retry-count agent) attempt)
-       (emit agent {:type :auto-retry-start
-                    :attempt attempt
-                    :max-attempts max-attempts
-                    :delay-ms delay-ms
-                    :error-message error})
+       (state/emit agent {:type :auto-retry-start
+                          :attempt attempt
+                          :max-attempts max-attempts
+                          :delay-ms delay-ms
+                          :error-message error})
        ;; pi: _prepareRetry omits the failed attempt from the model
        ;; projection before the backoff, so the retried request (and every
        ;; later rebuild) cannot re-send it
@@ -2659,12 +2059,12 @@ Be precise and concise in your responses."}}]
          ;; (pi: agent.continue, one agent_end per attempt)
          (do (begin-attempt!) :again)
          ;; Cancelled during backoff
-         (do (emit agent {:type :auto-retry-end
-                          :success false
-                          :attempt attempt
-                          :final-error "Retry cancelled"})
+         (do (state/emit agent {:type :auto-retry-end
+                                :success false
+                                :attempt attempt
+                                :final-error "Retry cancelled"})
              (reset! (:retry-count agent) 0)
-             (set-agent-status! agent :idle)
+             (state/set-agent-status! agent :idle)
              :stop))))
 
    :overflow
@@ -2687,7 +2087,7 @@ Be precise and concise in your responses."}}]
          (do (close-retry-and-surface-error! agent error on-error)
              (if (continue-prompt? agent)
                (do (continue-attempt!) :again)
-               (do (set-agent-status! agent :idle)
+               (do (state/set-agent-status! agent :idle)
                    :stop))))))})
 
 (defn run-agent-turn
@@ -2743,7 +2143,7 @@ Be precise and concise in your responses."}}]
    settles, with :error).
    Returns: future that completes when the prompt is done."
   [agent {:keys [message images on-text on-thinking on-done on-error]}]
-  (reset! (:signal agent) false)
+  (state/set-run-signal! agent false)
   (let [provider @(:provider agent)
         api-key (resolve-api-key agent)
         opts {:on-text on-text :on-thinking on-thinking
@@ -2754,8 +2154,8 @@ Be precise and concise in your responses."}}]
             ;; in the chat (pi emits message_start for prompt messages before
             ;; running the loop). Display-only: not added to context or
             ;; session since no LLM call will consume it.
-            (emit agent {:type :message-start
-                         :message (message/user-message message images)}))
+            (state/emit agent {:type :message-start
+                               :message (message/user-message message images)}))
           (when on-error
             (on-error (str "No API key for " (name provider)
                            ". Set the key in ~/.kmet/agent/auth.edn or the appropriate environment variable.")))
@@ -2766,7 +2166,7 @@ Be precise and concise in your responses."}}]
           ;; :last-outcome, which no finally touches on this early-return
           ;; path.
           (reset! (:last-outcome agent) :error)
-          (emit agent {:type :agent-settled :outcome :error})
+          (state/emit agent {:type :agent-settled :outcome :error})
           (future))
       ;; Bind the run's cancel signal for the whole prompt: it conveys into the
       ;; tool futures AND into synchronous extension code (custom tool
@@ -2795,7 +2195,7 @@ Be precise and concise in your responses."}}]
                 run-code-tool/*enabled-tools-fn*
                 (fn []
                   (when (or @(:enabled-tools agent) @(:default-tools agent))
-                    (into #{} (map :name) (active-tools agent))))
+                    (into #{} (map :name) (state/active-tools agent))))
                 ;; the run's agent-level tool hooks as thunks — a hook set
                 ;; mid-run is picked up, and scripted inner calls go through
                 ;; the same before/after semantics as the loop's own batches
@@ -2814,7 +2214,7 @@ Be precise and concise in your responses."}}]
                                      (swap! (:run-messages agent) dissoc old))))
                 ;; pi: agent.continue() — the queued batch becomes the next
                 ;; attempt's prompt (steering first, then follow-up, per mode)
-                continue-attempt! (fn [] (drain-next-queue! agent) (begin-attempt!))
+                continue-attempt! (fn [] (state/drain-next-queue! agent) (begin-attempt!))
                 driver {:agent agent
                         :on-done on-done
                         :on-error on-error
@@ -2827,8 +2227,8 @@ Be precise and concise in your responses."}}]
               ;; not once per attempt (pi: prompt() vs continue()).
               (prepare-run! agent message images)
               (loop []
-                (emit agent {:type :agent-start})
-                (set-agent-status! agent :thinking)
+                (state/emit agent {:type :agent-start})
+                (state/set-agent-status! agent :thinking)
                 (let [outcome (run-attempt! agent @attempt-token opts)
                       ;; Unreachable: run-attempt! returns one of the five
                       ;; outcomes. Throwing (rather than ignoring a failed
@@ -2847,30 +2247,30 @@ Be precise and concise in your responses."}}]
                 ;; extension event bus, which must not be able to skip the
                 ;; user-visible error path.
                 (when on-error (on-error (ex-message e)))
-                (emit agent {:type :error :message (ex-message e)})
+                (state/emit agent {:type :error :message (ex-message e)})
                 ;; Same settle rule as terminal-error!: an unhandled exception
                 ;; ends the run, and the agent is idle afterwards.
-                (set-agent-status! agent :idle))
+                (state/set-agent-status! agent :idle))
               (finally
                 ;; pi: _flushPendingBashMessages — bash results recorded while
                 ;; streaming are queued to preserve tool_use/tool_result ordering
                 ;; and land in the context/session once the prompt settles. The
                 ;; flush appends context-only, so those entries stay out of
                 ;; `agent-end :messages` (pi flushes after agent_end too).
-                (flush-pending-bash-messages! agent)
+                (state/flush-pending-bash-messages! agent)
                 ;; pi: _flushPendingCustomMessages — custom messages deferred
                 ;; while streaming land before the prompt settles
-                (flush-pending-custom-messages! agent)
+                (state/flush-pending-custom-messages! agent)
                 ;; pi: agent_settled fires once in a finally, after the
                 ;; pending-bash flush — success, retry, error, timeout, or
                 ;; abort; the prompt is fully settled (agent-session.js).
                 ;; :outcome lets a headless consumer tell how the prompt
                 ;; ended: a fired cancel signal is :aborted, otherwise the
                 ;; last turn's outcome.
-                (emit agent {:type :agent-settled
-                             :outcome (if @(:signal agent)
-                                        :aborted
-                                        @(:last-outcome agent))})
+                (state/emit agent {:type :agent-settled
+                                   :outcome (if @(:signal agent)
+                                              :aborted
+                                              @(:last-outcome agent))})
                 ;; Drop this prompt's accumulator entries: a newer prompt may
                 ;; already own the map (cancel clears the running flag before
                 ;; this finally runs).
@@ -2887,159 +2287,16 @@ Be precise and concise in your responses."}}]
    keeps what arrived), return status to :idle. A live compaction is aborted
    too (pi: abort() calls abortCompaction())."
   [agent]
-  (reset! (:signal agent) true)
+  (state/set-run-signal! agent true)
   (reset! (:compaction-signal agent) true)
   (clear-queues! agent :aborted)
   (when-let [{:keys [promise partials]} @(:active-call agent)]
     (when-not (realized? promise)
       (deliver promise (merge {:cancelled true} (partials)))))
-  (set-agent-status! agent :idle)
+  (state/set-agent-status! agent :idle)
   nil)
 
-;; ─── State helpers ─────────────────────────────────────────────────────────
-
-(defn get-context [agent]
-  @(:messages agent))
-
-(defn restore-session-context!
-  "Rebuild the agent's in-memory context from the session projection (pi: the
-   session is the source of truth — buildSessionContext). build-context walks
-   root→leaf through the latest compaction; compaction entries keep their roles
-   in the rebuilt messages (pi: compactionSummary AgentMessage; convertToLlm
-   wraps them at the wire), :info/:session_info are metadata and excluded, and
-   the append-only context edits (append-context-edit!) apply — an omitted
-   message is dropped, a rewritten one carries its replacement. Messages only —
-   like pi's buildSessionContext consumers, the agent's model/thinking are left
-   untouched here; the session-derived settings are applied on session load via
-   apply-session-settings! (pi: sdk.ts createAgentSession restore logic). No-op
-   without a session. Used when a session is resumed/continued (and on tree
-   navigation / fork / clone, which rebuild the context without touching the
-   model/thinking)."
-  [agent]
-  (refresh-context-from-session! agent))
-
-(defn append-context-edit!
-  "Append an append-only edit to one earlier entry's contribution to model
-   context (pi: appendContextEdit): a nil REPLACEMENT omits TARGET-ID from
-   every future provider context, {:content string-or-blocks} rewrites its
-   content. The session keeps the raw entry — usage totals, replay and the UI
-   are untouched — while the live context is rebuilt from the projection so the
-   next request already sees the change (pi: _refreshFinalizedContext). Returns
-   the appended :context-edit entry.
-
-   TARGET-ID must exist, lie on the active branch, and be a message entry
-   contributing editable model content (:user, :assistant, :tool, :bash,
-   :custom-message); otherwise this throws (see
-   kmet.agent.session.core/append-context-edit!). Throws {:type :no-session} without a
-   session. Nothing is emitted: the edit changes the model projection only,
-   and the UI deliberately keeps rendering the raw conversation (unlike
-   :context-replaced, which makes the UI mirror a new message list)."
-  [agent target-id replacement]
-  (if-let [sess (:session agent)]
-    (let [entry (session/append-context-edit! sess target-id replacement)]
-      (refresh-context-from-session! agent)
-      entry)
-    (throw (ex-info "No session to append a context edit to"
-                    {:type :no-session :target-id target-id}))))
-
-(defn apply-session-settings!
-  "Apply the session-derived model/thinking to the agent state (pi: sdk.ts
-   createAgentSession — the session restores its settings when loaded via
-   resume/continue; tree navigation, fork and clone never touch them). Only
-   recorded settings are applied:
-   - model: only when it resolves to an authenticated model (pi: getModel +
-     hasConfiguredAuth); otherwise the current model stays (pi falls back to
-     the settings default — kmet's current model IS that default).
-   - thinking: only when a :thinking-level-change entry is on the branch;
-     without one the current level stays (pi: hasThinkingEntry guard — the
-     settings default is kept, not pi's unrecorded \"off\" default).
-   Returns true when anything changed."
-  [agent]
-  (when-let [sess (:session agent)]
-    (let [{:keys [thinking-level model provider]}
-          (session/derive-context-settings sess)
-          authenticated-model? (some #(and (= provider (:provider %))
-                                           (= model (:id %)))
-                                     (models/get-available))
-          thinking-recorded? (some #(= :thinking-level-change (:role %))
-                                   (session/get-branch sess))
-          changed (volatile! false)]
-      (when authenticated-model?
-        (reset! (:model agent) model)
-        (reset! (:provider agent) provider)
-        (vreset! changed true))
-      (when thinking-recorded?
-        ;; Clamp the restored thinking level to the current model's capabilities
-        ;; (only for reasoning models; non-reasoning models keep the value as-is)
-        (let [model-rec (models/get-model @(:provider agent) @(:model agent))
-              clamped (if (:reasoning model-rec)
-                        (shared/clamp-thinking-level model-rec thinking-level)
-                        thinking-level)]
-          (reset! (:thinking agent) clamped))
-        (vreset! changed true))
-      @changed)))
-
-(defn set-model!
-  "Set the active model from a Model record (the provider follows the
-   record), emitting :model-select with the resolved records and persisting
-   a :model-change session entry (pi: setModel → appendModelChange). A call
-   selecting the current provider/id is a no-op (no entry, no event); nil is
-   ignored."
-  [agent model]
-  (when model
-    (let [previous (models/get-model @(:provider agent) @(:model agent))]
-      (when-not (and (= (:provider model) @(:provider agent))
-                     (= (:id model) @(:model agent)))
-        (reset! (:provider agent) (:provider model))
-        (reset! (:model agent) (:id model))
-        (when-let [sess (:session agent)]
-          (session/append-model-change! sess (:provider model) (:id model)))
-        (emit agent {:type :model-select
-                     :model model
-                     :previous-model previous
-                     :source :set})))))
-
-(defn set-scoped-models!
-  "Set the session scoped model list used by cycle-model! (pi:
-   session.setScopedModels — the list holds \"provider/id\" full ids; empty
-   = no scoping, cycle over all available models). Duplicate entries are
-   dropped (order-preserving): cycling steps one entry at a time, so a
-   duplicate would stall it."
-  [agent models]
-  (reset! (:scoped-models agent) (vec (distinct models))))
-
-(defn init-scoped-models!
-  "Seed the session scoped model list from the config at startup (pi:
-   parsed.models ?? settingsManager.getEnabledModels → resolveModelScope at
-   runtime creation): CLI/config :models patterns when set, else the settings
-   :enabled-models patterns. Patterns resolve against the catalog; unresolved
-   ones print a warning to stderr and are skipped (pi: no-match diagnostics).
-   Nothing set leaves the list empty — cycling falls back to all available
-   models and /model shows no scope toggle. Returns AGENT."
-  [agent config]
-  (when-let [patterns (or (seq (:models config))
-                          (seq (cfg/get-enabled-models config)))]
-    (let [{:keys [models warnings]}
-          (resolver/resolve-model-scope-models patterns (models/get-models))]
-      (doseq [w warnings]
-        (binding [*out* *err*] (println "Warning:" w)))
-      (set-scoped-models!
-       agent (mapv (fn [m] (str (name (:provider m)) "/" (:id m))) models))))
-  agent)
-
-(defn set-block-images!
-  "Block images from provider calls live (pi: setBlockImages) — the next
-   request strips every image block (see
-   kmet.agent.loop.message/block-message-images); the transcript and the
-   stored session keep theirs."
-  [agent blocked?]
-  (swap! (:cfg agent) assoc :block-images (boolean blocked?)))
-
-(defn set-auto-compact!
-  "Toggle proactive compaction live (pi: setAutoCompact); overflow recovery
-   is unaffected."
-  [agent enabled?]
-  (swap! (:cfg agent) assoc :auto-compact (boolean enabled?)))
+;; ─── Queue modes ───────────────────────────────────────────────────────────
 
 (def queue-batch-modes
   "The modes :steering-mode / :follow-up-mode accept (pi: queue batch
@@ -3069,131 +2326,3 @@ Be precise and concise in your responses."}}]
   [agent mode]
   (set-queue-batch-mode! agent :follow-up-mode mode))
 
-(defn set-http-idle-timeout-ms!
-  "Set the SSE idle timeout live (pi: setHttpIdleTimeoutMs); 0 disables."
-  [agent ms]
-  (swap! (:cfg agent) assoc :http-idle-timeout-ms (long ms)))
-
-(defn set-http-total-timeout-ms!
-  "Set the whole-request total deadline live; nil follows the idle timeout,
-   while zero disables the total deadline without changing the idle timeout."
-  [agent ms]
-  (swap! (:cfg agent) assoc :http-total-timeout-ms (some-> ms long)))
-
-(declare switch-thinking-level set-thinking-level!)
-
-(defn- scoped-model-entries
-  "Resolve scoped-list entries to available Model records (pi
-   _cycleScopedModel — filtered to the available snapshot; entries with no
-   auth drop out). Bare ids resolve against CURRENT-PROVIDER first."
-  [entries current-provider]
-  (let [available (set (map (fn [m] [(name (:provider m)) (:id m)])
-                            (models/get-available)))]
-    (into []
-          (keep (fn [entry]
-                  (let [m (resolver/resolve-scoped-model entry current-provider)]
-                    (when (and m (contains? available [(name (:provider m)) (:id m)])) m))))
-          entries)))
-
-(defn cycle-model!
-  "Cycle to the next/previous model in the scoped model list (pi: cycleModel
-   → _cycleScopedModel / _cycleAvailableModel; kmet deviation — thinking
-   follows the switch-thinking-level rank rule instead of pi's keep-with-
-   clamp). The session scoped list (set via /scoped-models, seeded from
-   config :models / settings :enabled-models) is used when non-empty;
-   otherwise all available models cycle. Entries are filtered to
-   authenticated models; a scoped entry may switch the provider. Returns the
-   new model id, or nil when fewer than two models are available."
-  [agent direction]
-  (let [current-provider @(:provider agent)
-        scoped (or (seq @(:scoped-models agent))
-                   (mapv (fn [m] (str (name (:provider m)) "/" (:id m)))
-                         (models/get-available)))
-        models (scoped-model-entries scoped current-provider)]
-    (when (> (count models) 1)
-      (let [current [(name @(:provider agent)) @(:model agent)]
-            idx (or (first (keep-indexed (fn [i m]
-                                           (when (= current [(name (:provider m)) (:id m)])
-                                             i))
-                                         models))
-                    -1)
-            previous @(:model agent)
-            next (nth models (mod (+ idx direction) (count models)))
-            old-model (models/get-model current-provider previous)
-            new-thinking (switch-thinking-level old-model next @(:thinking agent) nil)]
-        (reset! (:provider agent) (:provider next))
-        (reset! (:model agent) (:id next))
-        (when-let [sess (:session agent)]
-          (session/append-model-change! sess (:provider next) (:id next)))
-        (set-thinking-level! agent new-thinking)
-        (emit agent {:type :model-select
-                     :model next
-                     :previous-model old-model
-                     :source :cycle})
-        (:id next)))))
-
-(defn set-thinking-level!
-  "Set the thinking level, persisting a :thinking-level-change session entry
-   only when the level actually changes (pi: setThinkingLevel — only
-   persisted on change) and emitting :thinking-level-select with both
-   levels (pi ThinkingLevelSelectEvent)."
-  [agent level]
-  (when-not (= level @(:thinking agent))
-    (let [previous @(:thinking agent)]
-      (reset! (:thinking agent) level)
-      (when-let [sess (:session agent)]
-        (session/append-thinking-level-change! sess level))
-      (emit agent {:type :thinking-level-select
-                   :level level
-                   :previous-level previous}))))
-
-(defn cycle-thinking-level!
-  "Advance the thinking level through the current model's supported levels
-   (pi: session.cycleThinkingLevel), applying it via set-thinking-level! and
-   returning the new level. Returns nil when the model offers fewer than
-   two levels (pi: the command/action surfaces a status instead)."
-  [agent]
-  (let [model (models/get-model @(:provider agent) @(:model agent))
-        levels (if model (shared/get-supported-thinking-levels model) [:off])]
-    (when (> (count levels) 1)
-      (let [current @(:thinking agent)
-            idx (or (first (keep-indexed (fn [i l] (when (= l current) i)) levels))
-                    0)
-            next-level (nth levels (mod (inc idx) (count levels)))]
-        (set-thinking-level! agent next-level)
-        next-level))))
-
-(defn switch-thinking-level
-  "Thinking level when switching OLD-MODEL → NEW-MODEL (kmet-specific rule;
-   the rank mapping is a deliberate deviation from pi's keep-with-clamp):
-   the current level's rank among the old model's supported thinking levels
-   (highest = 1) maps to the same rank on the new model, clamped to the new
-   model's level count — an old highest stays the new highest, the old
-   second-highest becomes the new second-highest, and so on. With thinking
-   :off, a reasoning NEW-MODEL jumps to its highest level (pi parity); a
-   non-reasoning one stays :off. EXPLICIT-LEVEL wins when given (clamped to
-   the new model). Levels the old model can't express are clamped to its
-   range first; when there is no position to preserve (non-reasoning/unknown
-   old model), falls back to clamping CURRENT-LEVEL to the new model."
-  [old-model new-model current-level explicit-level]
-  (cond
-    explicit-level (shared/clamp-thinking-level new-model explicit-level)
-
-    (= current-level :off)
-    (if (:reasoning new-model)
-      (last (shared/get-supported-thinking-levels new-model))
-      :off)
-
-    :else
-    (let [old-think (vec (remove #{:off} (shared/get-supported-thinking-levels old-model)))
-          new-think (vec (remove #{:off} (shared/get-supported-thinking-levels new-model)))
-          old-effective (when (seq old-think)
-                          (shared/clamp-thinking-level old-model current-level))
-          i (when old-effective
-              (first (keep-indexed (fn [j l] (when (= l old-effective) j)) old-think)))]
-      (if (and i (seq new-think))
-        (let [rank (- (count old-think) i)                ;; 1 = highest
-              new-i (max 0 (min (dec (count new-think))
-                                (- (count new-think) rank)))]
-          (nth new-think new-i))
-        (shared/clamp-thinking-level new-model current-level)))))

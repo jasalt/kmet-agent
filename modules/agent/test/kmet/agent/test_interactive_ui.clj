@@ -43,6 +43,7 @@
             [kmet.agent.ui.tui.thinking-selector :as thinking-selector]
             [kmet.ai.models :as m]
             [kmet.ai.auth :as auth]
+            [kmet.agent.loop.state :as agent-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.tools.core :as tools]
             [kmet.libs.http :as http]
@@ -953,7 +954,7 @@
               _ (append-message! incoming "imported question")
               cs (import-test-cs outgoing)
               ag (runtime/agent-state (:engine cs))
-              active-names (fn [] (into #{} (map :name) (agent/active-tools ag)))
+              active-names (fn [] (into #{} (map :name) (agent-state/active-tools ag)))
               prompt-tool-names (fn []
                                   (into #{}
                                         (map :name)
@@ -963,7 +964,7 @@
           (t/is (not (contains? (active-names) "bash"))
                 "the configured surface excludes bash")
           (testing "a /tools selection in the outgoing session enables bash"
-            (agent/set-active-tools! ag (conj (vec (active-names)) "bash"))
+            (agent-state/set-active-tools! ag (conj (vec (active-names)) "bash"))
             (t/is (contains? (active-names) "bash"))
             (t/is (contains? (prompt-tool-names) "bash")
                   "the system prompt options follow the runtime selection"))
@@ -1271,12 +1272,12 @@
           ((:handler (commands/find-command "scoped-models")) cs "")
           (t/is (nil? (scoped-models-selector/scoped-models-get-enabled-ids @sel-ref))))
         (testing "session scoped models win"
-          (agent/set-scoped-models! ag ["opencode-go/deepseek-v4-flash"])
+          (agent-state/set-scoped-models! ag ["opencode-go/deepseek-v4-flash"])
           ((:handler (commands/find-command "scoped-models")) cs "")
           (t/is (= ["opencode-go/deepseek-v4-flash"]
                    (scoped-models-selector/scoped-models-get-enabled-ids @sel-ref))))
         (testing "settings :enabled-models patterns resolve"
-          (agent/set-scoped-models! ag [])
+          (agent-state/set-scoped-models! ag [])
           (with-redefs [cfg/get-enabled-models-live
                         (fn [_] ["opencode-go/deepseek-v4-flash"])]
             ((:handler (commands/find-command "scoped-models")) cs "")
@@ -1284,7 +1285,7 @@
                      (scoped-models-selector/scoped-models-get-enabled-ids @sel-ref)))))
         (testing "unresolved patterns survive as [unavailable] rows alongside
                   resolved ones (pi: no-match diagnostics appended)"
-          (agent/set-scoped-models! ag [])
+          (agent-state/set-scoped-models! ag [])
           (with-redefs [cfg/get-enabled-models-live
                         (fn [_] ["opencode-go/deepseek-v4-flash" "ghost/model"])]
             ((:handler (commands/find-command "scoped-models")) cs "")
@@ -1332,8 +1333,8 @@
           available-at-save [kept disabled]
           available-calls (atom 0)
           ag (agent/make-agent-state)
-          _ (agent/set-scoped-models! ag ["test-provider/kept"
-                                          "test-provider/disappeared"])
+          _ (agent-state/set-scoped-models! ag ["test-provider/kept"
+                                                "test-provider/disappeared"])
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :chat-history nil
                                    :footer-comp nil

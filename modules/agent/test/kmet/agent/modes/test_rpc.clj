@@ -13,6 +13,7 @@
             [kmet.ai.models :as models]
             [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.loop.state :as agent-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.session.core :as session]
@@ -416,7 +417,7 @@
                       (session/append-entry sess {:role :assistant
                                                   :content [{:type :text :text "hi there"}]
                                                   :usage {:input 10 :output 5}})
-                      (agent/restore-session-context! ag))
+                      (agent-state/restore-session-context! ag))
                     nil)]
       (let [[_ records] (run-lines [{:type :prompt :id 1 :message "hello"}
                                     {:type :get-messages :id 2}

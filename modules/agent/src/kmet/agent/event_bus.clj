@@ -181,7 +181,7 @@
 
    :thinking-level-select
    "Thinking level changed (pi: thinking_level_select, emitted by
-    loop/set-thinking-level! on an actual change).
+    kmet.agent.loop.state/set-thinking-level! on an actual change).
     Payload: :level, :previous-level."
 
    :session-info-changed
@@ -356,7 +356,7 @@
     :after-provider-response})
 
 (def loop-event-types
-  "The subset of event-types emitted by the agent loop (kmet.agent.loop/emit —
+  "The subset of event-types emitted by the agent loop (kmet.agent.loop.state/emit —
    routed to the UI :on-event callback and the extension bus). The UI event
    handler must consume every one of these."
   (apply dissoc event-types app-event-types))
