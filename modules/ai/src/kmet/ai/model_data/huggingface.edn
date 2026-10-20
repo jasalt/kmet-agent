@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-12T08:23:36Z"
+ :generated-at "2026-10-20T08:42:39Z"
  :provider {:id :huggingface
             :name "Hugging Face"
             :env-vars ["HF_TOKEN"]
@@ -606,6 +606,25 @@
                          :minimal nil
                          :off "none"
                          :xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 0.3 :output 1.2 :cache-read 0 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 384000
+    :compat {:supports-developer-role false :supports-strict-mode true}}
+   "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+   {:id "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+    :name "DeepSeek V4.1 Flash 1017"
+    :provider :huggingface
+    :api :openai-completions
+    :base-url "https://router.huggingface.co/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium nil
+                         :minimal nil
+                         :off nil
+                         :xhigh nil}
     :input [:text :image]
     :cost {:input 0.3 :output 1.2 :cache-read 0 :cache-write 0}
     :context-window 1048576

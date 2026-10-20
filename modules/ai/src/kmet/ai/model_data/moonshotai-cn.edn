@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-09T09:05:00Z"
+ :generated-at "2026-10-20T08:42:39Z"
  :provider {:id :moonshotai-cn
             :name "Moonshot AI (CN)"
             :env-vars ["MOONSHOT_API_KEY"]
@@ -14,7 +14,7 @@
     :base-url "https://api.moonshot.cn/v1"
     :reasoning true
     :input [:text :image]
-    :cost {:input 0.95 :output 4 :cache-read 0.16 :cache-write 0}
+    :cost {:input 0.9711 :output 4.0337 :cache-read 0.1643 :cache-write 0}
     :context-window 262144
     :max-tokens 262144
     :compat {:supports-store false
@@ -32,7 +32,7 @@
     :reasoning true
     :thinking-level-map {:off nil}
     :input [:text :image]
-    :cost {:input 0.95 :output 4 :cache-read 0.19 :cache-write 0}
+    :cost {:input 0.9711 :output 4.0337 :cache-read 0.1942 :cache-write 0}
     :context-window 262144
     :max-tokens 262144
     :compat {:supports-store false
@@ -50,7 +50,7 @@
     :reasoning true
     :thinking-level-map {:off nil}
     :input [:text :image]
-    :cost {:input 1.9 :output 8 :cache-read 0.38 :cache-write 0}
+    :cost {:input 1.9421 :output 8.0673 :cache-read 0.3884 :cache-write 0}
     :context-window 262144
     :max-tokens 262144
     :compat {:supports-store false
@@ -74,7 +74,7 @@
                          :off nil
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 3 :output 15 :cache-read 0.3 :cache-write 3}
+    :cost {:input 2.9879 :output 14.9395 :cache-read 0.2988 :cache-write 2.9879}
     :context-window 1048576
     :max-tokens 1048576
     :compat {:supports-store false

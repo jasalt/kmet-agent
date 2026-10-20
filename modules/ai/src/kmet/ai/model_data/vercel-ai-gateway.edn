@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-19T13:06:14Z"
+ :generated-at "2026-10-20T08:42:39Z"
  :provider {:id :vercel-ai-gateway
             :name "Vercel AI Gateway"
             :env-vars ["AI_GATEWAY_API_KEY"]
@@ -887,7 +887,7 @@
     :input [:text :image]
     :cost {:input 0.075 :output 0.3 :cache-read 0.0015 :cache-write 0}
     :context-window 1048576
-    :max-tokens 1048576}
+    :max-tokens 32768}
    "deepseek/deepseek-v4.1-flash-1017"
    {:id "deepseek/deepseek-v4.1-flash-1017"
     :name "DeepSeek V4.1 Flash 1017"
@@ -1251,6 +1251,17 @@
     :cost {:input 0.04 :output 0.15 :cache-read 0.004 :cache-write 0}
     :context-window 260000
     :max-tokens 65536}
+   "inception/mercury-3"
+   {:id "inception/mercury-3"
+    :name "Mercury 3"
+    :provider :vercel-ai-gateway
+    :api :anthropic-messages
+    :base-url "https://ai-gateway.vercel.sh"
+    :reasoning true
+    :input [:text]
+    :cost {:input 0.1 :output 0.35 :cache-read 0.01 :cache-write 0}
+    :context-window 1000000
+    :max-tokens 131072}
    "inception/mercury-coder-small"
    {:id "inception/mercury-coder-small"
     :name "Mercury Coder Small Beta"
@@ -3152,17 +3163,6 @@
     :cost {:input 1 :output 2 :cache-read 0.2 :cache-write 0}
     :context-window 256000
     :max-tokens 256000}
-   "stealth/cat-jam"
-   {:id "stealth/cat-jam"
-    :name "Cat Jam"
-    :provider :vercel-ai-gateway
-    :api :anthropic-messages
-    :base-url "https://ai-gateway.vercel.sh"
-    :reasoning true
-    :input [:text]
-    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
-    :context-window 1048576
-    :max-tokens 131072}
    "stealth/glyph-cluster"
    {:id "stealth/glyph-cluster"
     :name "Glyph Cluster"

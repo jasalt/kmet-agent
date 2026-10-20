@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-09T09:05:00Z"
+ :generated-at "2026-10-20T08:42:39Z"
  :provider {:id :cloudflare-workers-ai
             :name "Cloudflare Workers AI"
             :env-vars ["CLOUDFLARE_API_KEY" "CLOUDFLARE_ACCOUNT_ID"]
@@ -56,6 +56,31 @@
              :supports-long-cache-retention false
              :supports-strict-mode true
              :send-session-affinity-headers true}}
+   "@cf/deepseek-ai/deepseek-v4.1-flash-1017"
+   {:id "@cf/deepseek-ai/deepseek-v4.1-flash-1017"
+    :name "Deepseek V4.1 Flash 1017"
+    :provider :cloudflare-workers-ai
+    :api :openai-completions
+    :base-url "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low nil
+                         :max "max"
+                         :medium nil
+                         :minimal nil
+                         :off "none"
+                         :xhigh nil}
+    :input [:text :image]
+    :cost {:input 0.3 :output 1.2 :cache-read 0.006 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 1048576
+    :compat {:supports-store false
+             :supports-developer-role false
+             :requires-reasoning-content-on-assistant-messages true
+             :thinking-format :deepseek
+             :supports-long-cache-retention false
+             :supports-strict-mode true
+             :send-session-affinity-headers true}}
    "@cf/google/gemma-4-26b-a4b-it"
    {:id "@cf/google/gemma-4-26b-a4b-it"
     :name "Gemma 4 26B A4B IT"
@@ -65,11 +90,9 @@
     :reasoning true
     :thinking-level-map {:high "HIGH"
                          :low nil
-                         :max nil
                          :medium nil
                          :minimal "MINIMAL"
-                         :off nil
-                         :xhigh nil}
+                         :off nil}
     :input [:text :image]
     :cost {:input 0.1 :output 0.3 :cache-read 0.05 :cache-write 0}
     :context-window 256000
@@ -192,7 +215,7 @@
     :thinking-level-map {:high "high"
                          :low "low"
                          :max nil
-                         :medium "medium"
+                         :medium nil
                          :minimal nil
                          :off nil
                          :xhigh nil}

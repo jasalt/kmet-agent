@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-24T07:02:29Z"
+ :generated-at "2026-10-20T08:42:39Z"
  :provider {:id :minimax-cn
             :name "MiniMax (CN)"
             :env-vars ["MINIMAX_CN_API_KEY"]
@@ -14,7 +14,7 @@
     :base-url "https://api.minimaxi.com/anthropic"
     :reasoning true
     :input [:text]
-    :cost {:input 0.3 :output 1.2 :cache-read 0.06 :cache-write 0.375}
+    :cost {:input 0.3137 :output 1.2549 :cache-read 0.0627 :cache-write 0.3922}
     :context-window 204800
     :max-tokens 131072}
    "MiniMax-M2.7-highspeed"
@@ -25,7 +25,7 @@
     :base-url "https://api.minimaxi.com/anthropic"
     :reasoning true
     :input [:text]
-    :cost {:input 0.6 :output 2.4 :cache-read 0.06 :cache-write 0.375}
+    :cost {:input 0.6275 :output 2.5098 :cache-read 0.0627 :cache-write 0.3922}
     :context-window 204800
     :max-tokens 131072}
    "MiniMax-M3"
@@ -36,10 +36,10 @@
     :base-url "https://api.minimaxi.com/anthropic"
     :reasoning true
     :input [:text :image]
-    :cost {:input 0.3
-           :tiers [{:input 0.6 :input-tokens-above 512000 :output 2.4 :cache-read 0.12 :cache-write 0}]
-           :output 1.2
-           :cache-read 0.06
+    :cost {:input 0.3137
+           :tiers [{:input 0.6275 :input-tokens-above 512000 :output 2.5098 :cache-read 0.1255 :cache-write 0}]
+           :output 1.2549
+           :cache-read 0.0627
            :cache-write 0}
     :context-window 1000000
-    :max-tokens 512000}}}}
+    :max-tokens 524288}}}}
