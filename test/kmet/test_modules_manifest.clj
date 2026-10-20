@@ -50,6 +50,22 @@
           agent-root (str/replace (str (fs/parent (:src agent-mod))) "\\" "/")]
       (is (= {:local/root agent-root} (get (:deps (read-edn "deps.edn")) 'kmetia/agent))))))
 
+(deftest artifact-roots-drop-test-tooling-and-extension-trees
+  (testing "a resolved classpath ships no test tree, no tasks/ and no
+            extension project's src — the staged bundled tree ships instead"
+    (is (= ["modules/libs/src" "target/kmet-bundled"]
+           (modules/artifact-roots
+            ["modules/libs/src" "modules/libs/test"
+             "extensions/clojure/src" "extensions/clojure/test"
+             "test" "tasks" "target/kmet-bundled"])))
+    (testing "absolute roots answer the same"
+      (is (= ["/repo/modules/libs/src"]
+             (modules/artifact-roots
+              ["/repo/modules/libs/src" "/repo/extensions/clojure/src"
+               "/repo/test" "/repo/tasks"]))))
+    (testing "the classpath order is the jar's order"
+      (is (= ["a/src" "b/src"] (modules/artifact-roots ["a/src" "b/src"]))))))
+
 (deftest extension-bb-edn-paths-cover-the-module-trees
   (testing "an extension project's bb.edn lists its own trees and every module source"
     (let [module-srcs (mapv #(str "../../" %) (modules/module-src-paths))]

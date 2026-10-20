@@ -29,11 +29,17 @@
            :task (apply core/-main *command-line-args*)}
   start-clj {:doc "Start kmet under JVM Clojure (interactive TUI)"
              :requires ([babashka.process :as p])
-             :task (apply p/shell "clojure" "-M" "-m" "kmet.agent.core" *command-line-args*)}
-  uberjar {:doc "Build target/kmet.jar (run with: bb target/kmet.jar)"
+             :task (apply p/shell "clojure" "-M:clj-pin" "-m" "kmet.agent.core" *command-line-args*)}
+  uberjar {:doc "Build target/uberjar-bb.jar (run with: bb target/uberjar-bb.jar)\n\nThe babashka payload: an uberjar of src + runtime deps that `bb dist` appends to a babashka release binary. Not JVM-loadable (babashka's built-in namespaces have no source files) — `bb uberjar-jvm` builds the JVM artifact."
            :requires ([kmet.tasks.build :as build])
            :task (help/with-help (build/uberjar*))
            :override-builtin true}
+  uberjar-jvm {:doc "Build target/uberjar-jvm.jar (run with: java -jar target/uberjar-jvm.jar)\n\nA self-contained JVM uberjar: the modules, the model catalogs, the staged bundled extensions and a baked version, AOT-compiled behind the :gen-class entry kmet.agent.jvm-main, then smoke-tested (`--list-models` + `--version`). Assembled by tools.build under the deps.edn :build alias, so it needs the Clojure CLI; platform-independent, unlike the bb/jolt executables. `bb dist-jvm` packs it for release."
+               :requires ([babashka.process :as p])
+               :task (help/with-help (p/shell "clojure" "-M:build" "-m" "kmet.tasks.build-jvm"))}
+  dist-jvm {:doc "Package the JVM artifact (dist/kmet-<version>-jvm.zip: kmet.jar, the kmet/kmet.sh/kmet.bat/kmet.cmd/kmet.ps1 launchers and LICENSE)\n\nOne platform-independent zip, no cross-building: the uberjar is built and smoke-tested first, then packed by the same conventions `bb dist` / `jolt dist` use (`jvm` sits in the platform slot). Needs the Clojure CLI."
+            :requires ([babashka.process :as p])
+            :task (help/with-help (p/shell "clojure" "-M:build" "-m" "kmet.tasks.build-jvm" "--dist"))}
   dist    {:doc "Package self-contained kmet executables (one platform-qualified zip in dist/, each holding a folder with the executable and LICENSE; bb: uberjar + babashka binary; jolt: AOT via `jolt build`)\n\n`bb dist --help` / `jolt dist --help`: platforms, flags (--force, --smoke, --test, --dev, --out, --static/--dynamic, --boot, --target), artifact naming and layout, and the bundled-extension staging both packagers share."
            :requires ([kmet.tasks.build :as build] [kmet.tasks.build-jolt :as jbuild])
            :task (if (find-var 'clojure.core/*jolt-version*)

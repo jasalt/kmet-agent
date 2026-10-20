@@ -156,7 +156,18 @@
         ;; no-op; the scaffolding stays for the next gap. Inert on bb/JVM.
         jolt.kmet/providers {:local/root "jolt"}}
  :aliases
- {:dev {:extra-paths ["test"]}
+ {;; The Clojure version the JVM host runs, pinned once: the dev loop
+  ;; (`bb start-clj`) and the packaged uberjar (kmet.tasks.build-jvm resolves
+  ;; its basis with this alias) must not drift with whatever the builder's CLI
+  ;; or tools.build happens to pull — the JVM is the only host whose core the
+  ;; repo names. bb and jolt bring their own runtimes.
+  :clj-pin {:override-deps {org.clojure/clojure {:mvn/version "1.12.5"}}}
+  :dev {:extra-paths ["test"]}
+  ;; The JVM packager (`bb uberjar-jvm`, kmet.tasks.build-jvm): tools.build is
+  ;; build-only — the app never loads it, and the bb test/lint classpaths stay
+  ;; without it (clj-kondo's unresolved-namespace exception covers the lint
+  ;; view).
+  :build {:extra-deps {io.github.clojure/tools.build {:mvn/version "0.10.12"}}}
   :start {:main-opts ["-m" "kmet.agent.core"]}
   ;; jolt dist --test: the only source roots a test build adds — test/ and the
   ;; generated entry root (kmet.tasks.build/generate-test-main!). target/

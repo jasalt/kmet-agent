@@ -50,7 +50,7 @@
 (deftest test-expand
   (let [root (sandbox)]
     (try
-      (touch! root "target/kmet.jar")
+      (touch! root "target/uberjar-bb.jar")
       (touch! root "extensions/foo/target/x.jar")
       (touch! root "extensions/bar/README.md")
       (touch! root "debug.log")
@@ -73,7 +73,7 @@
 
 (deftest test-clean-removes-artifacts-and-keeps-source
   (let [root (sandbox)
-        gone ["target/kmet.jar" "target/bb-lint/src/a.clj" "dist/kmet-bin"
+        gone ["target/uberjar-bb.jar" "target/bb-lint/src/a.clj" "dist/kmet-bin"
               "extensions/foo/target/x.jar" ".cpcache/basis" ".jolt/cpcache/k.edn"
               ".clj-kondo/.cache/analysis" "debug.log" "kmet.error.log"
               ".kmet-changed-baseline"]
@@ -102,10 +102,10 @@
 (deftest test-dry-run-changes-nothing
   (let [root (sandbox)]
     (try
-      (touch! root "target/kmet.jar")
+      (touch! root "target/uberjar-bb.jar")
       (touch! root "dist/kmet-bin")
       (let [[{:keys [removed bytes dry-run?]} out] (capture! {:root root :dry-run? true})]
-        (is (exists-under? root "target/kmet.jar"))
+        (is (exists-under? root "target/uberjar-bb.jar"))
         (is (exists-under? root "dist/kmet-bin"))
         (is (true? dry-run?))
         (is (= #{"target" "dist"} (set removed)))

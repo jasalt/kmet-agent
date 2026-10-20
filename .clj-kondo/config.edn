@@ -50,6 +50,11 @@
  ;; each view sees the other branch's bindings go unused. The other view lints
  ;; it with the binding used, so an unused one is still caught there.
  :config-in-ns {kmet.agent.extensions {:linters {:unused-binding {:level :off}}}
-                kmet.agent.extensions.context {:linters {:unused-binding {:level :off}}}}
+                kmet.agent.extensions.context {:linters {:unused-binding {:level :off}}}
+                ;; the JVM packager runs under the deps.edn :build alias, whose
+                ;; only extra dep (tools.build) is on no other classpath — the
+                ;; lint view has no copy to resolve against
+                kmet.tasks.build-jvm {:linters {:unresolved-namespace
+                                                {:exclude [clojure.tools.build.api]}}}}
  :hooks {:analyze-call {kmet.tui.macros/defcomponent hooks.kmet-macros/defcomponent
                         kmet.libs.hikap.component/with-let     hooks.kmet-macros/with-let}}}

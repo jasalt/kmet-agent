@@ -4,10 +4,11 @@
    here, `bb dist` lands in kmet.tasks.build).
 
    Where the babashka packager downloads the official babashka binary and
-   appends target/kmet.jar, this one drives jolt's own AOT build, which links
-   the runtime, clojure.core, the stdlib, every dependency and the app into one
-   native executable. There is no jar step and nothing to download here — the
-   compile is the whole build — so the packager owns what the CLI does not:
+   appends target/uberjar-bb.jar, this one drives jolt's own AOT build, which
+   links the runtime, clojure.core, the stdlib, every dependency and the app
+   into one native executable. There is no jar step and nothing to download
+   here — the compile is the whole build — so the packager owns what the CLI
+   does not:
 
    - the release zip in dist/, under the platform vocabulary shared with
      babashka (kmetj-<ver>-<platform>.zip next to the other packager's

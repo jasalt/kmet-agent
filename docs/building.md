@@ -5,6 +5,9 @@ kmet ships as self-contained executables, packaged by the host-dispatched
 platform-qualified zip into `dist/` — `kmet-<version>-<platform>.zip` from
 babashka, `kmetj-<version>-<platform>.zip` from jolt — holding one top-level
 folder with the version-less executable (`kmet` / `kmetj`) and the LICENSE.
+The JVM host is the exception: its artifact is one platform-independent
+uberjar (`bb uberjar-jvm`), because there is no kmet binary to ship — a JVM
+runs the jar (see [JVM artifacts](#jvm-artifacts)).
 
 ## Babashka artifacts
 
@@ -14,7 +17,7 @@ uberjar appended (babashka detects the appended zip at startup and runs
 Cross-builds work from any host because packaging is download + concat only.
 
 ```sh
-bb uberjar              # Build target/kmet.jar (also runnable: bb target/kmet.jar)
+bb uberjar              # Build target/uberjar-bb.jar (also runnable: bb target/uberjar-bb.jar)
 bb dist                 # dist/kmet-<version>-<platform>.zip
 bb dist --all           # Every published platform
 bb dist macos-aarch64   # Explicit platforms; --force re-downloads, --smoke runs the post-build check
@@ -90,22 +93,74 @@ cross-compiling with `--target`/`--target-pack`, `--out DIR`, `--force`, and
 `--smoke` to run the freshly built binary (`--list-models` plus `--version`)
 before publishing.
 
+## JVM artifacts
+
+The JVM host's artifact is an ordinary uberjar — no native binary — so one
+file serves every platform and there is nothing to cross-build. `bb
+uberjar-jvm` assembles it through tools.build (under the `deps.edn` `:build`
+alias, so the task needs the Clojure CLI; it shells out, so any host can run
+it):
+
+```sh
+bb uberjar-jvm                      # Build target/uberjar-jvm.jar
+java -jar target/uberjar-jvm.jar    # ...and run it
+```
+
+The jar is AOT-compiled behind `kmet.agent.jvm-main`, the `:gen-class` entry
+(a manifest Main-Class must name a Java class, which a namespace only becomes
+through `:gen-class`), carries the model catalogs, the version baked into
+`kmet/version.txt`, and the bundled extensions staged under the same
+`extensions/<name>/src` resource keys `bb dist` and `jolt dist` embed — the
+set is identical across hosts. Extensions run on SCI there: babashka and the
+JVM are the SCI-only hosts (`modules/loader/src/kmet/loader/loader.md`). Every
+build ends with a smoke test (`java -jar … --version`), the check a jar that
+assembles but cannot start fails. A source checkout needs no build at all:
+`bb start-clj` runs `clojure -M:clj-pin -m kmet.agent.core`.
+
+The Clojure version is pinned once, in `deps.edn`'s `:clj-pin` alias — the dev
+run and the artifact resolve through it, so a tools.build or Clojure-CLI bump
+cannot silently change the runtime a release ships.
+
+`bb dist-jvm` packs the release zip with the same conventions as the other
+packagers: one top-level folder named after the zip holding the artifact and
+the LICENSE, with `jvm` in the platform slot because one jar serves every OS:
+
+```sh
+bb dist-jvm            # dist/kmet-<version>-jvm.zip
+unzip -l dist/kmet-0.1.3-jvm.zip
+#   kmet-0.1.3-jvm/kmet.jar      the uberjar
+#   kmet-0.1.3-jvm/kmet          POSIX launcher (java -jar, KMET_JAVA_OPTS)
+#   kmet-0.1.3-jvm/kmet.sh       the same script under its .sh name
+#   kmet-0.1.3-jvm/kmet.bat      cmd.exe launcher (the .cmd copy is identical)
+#   kmet-0.1.3-jvm/kmet.cmd      cmd.exe launcher
+#   kmet-0.1.3-jvm/kmet.ps1      PowerShell launcher (pwsh too)
+#   kmet-0.1.3-jvm/LICENSE
+```
+
+`bb uberjar` is a different artifact, not the JVM one without AOT: it builds
+`target/uberjar-bb.jar`, the payload `bb dist` appends to a babashka release
+binary. That jar carries no Clojure runtime and none of babashka's built-in
+namespaces (their sources are compiled into the binary), so only babashka can
+load it.
+
 ## Artifacts
 
-Both hosts write one platform-qualified zip into `dist/`, using the
-`<os>-<arch>` platform vocabulary they share (`linux-amd64`, `linux-aarch64`,
-`macos-amd64`, `macos-aarch64`, `windows-amd64`; jolt can also cross-compile
-`windows-aarch64`):
+The executable packagers write one platform-qualified zip each into `dist/`,
+using the `<os>-<arch>` platform vocabulary they share (`linux-amd64`,
+`linux-aarch64`, `macos-amd64`, `macos-aarch64`, `windows-amd64`; jolt can also
+cross-compile `windows-aarch64`). The JVM packager's zip is platform-
+independent, so its single slot reads `jvm`:
 
 | Host | Zip | Folder inside |
 |------|-----|---------------|
 | babashka | `dist/kmet-<version>-<platform>.zip` | `kmet-<version>-<platform>/kmet` (`kmet.exe` on Windows) |
 | jolt | `dist/kmetj-<version>-<platform>.zip` | `kmetj-<version>-<platform>/kmetj` (`kmetj.exe` on Windows) |
+| JVM | `dist/kmet-<version>-jvm.zip` | `kmet-<version>-jvm/kmet.jar` + launchers (`kmet`, `kmet.sh`, `kmet.bat`/`kmet.cmd`, `kmet.ps1`) |
 
 Each zip holds one top-level folder named after the zip (its file name
 minus `.zip`), so extracting never scatters files: the folder carries the
-version-less executable, its Termux launcher when the build wrote one, and
-the repository `LICENSE`. The executable carries no version — the zip name
+version-less executable (the jar for the JVM), its companion launcher when the
+build wrote one, and the repository `LICENSE`. The executable carries no version — the zip name
 carries version and platform — so `bb dist --all` keeps one zip per platform,
 and both hosts' artifacts line up in one `dist/` (e.g.
 `dist/kmet-0.8.0-linux-amd64.zip` next to
@@ -126,7 +181,7 @@ bare executable as well.
 
 Babashka binaries are downloaded through kmet's HTTP layer and cached in
 `target/build-cache/` (sha256-verified); `bb dist` always rebuilds a fresh
-`target/kmet.jar` first so artifacts never bundle stale sources. Jolt
+`target/uberjar-bb.jar` first so artifacts never bundle stale sources. Jolt
 compiles under `target/jolt/<platform>/<mode>/`; `--smoke` runs the freshly
 built binary (`--list-models` plus `--version`) before it is announced.
 
@@ -140,7 +195,8 @@ anything parsing leading digits), and `dev` outside a git checkout. Rolling
 tags such as `vnightly` never match. Artifact zip names carry the same
 string with the `v` stripped; `kmet --version` prints it, from the version
 baked at build time when running a packaged binary and from git in a source
-run (`bb start` / `jolt start`).
+run (`bb start` / `jolt start` / `bb start-clj`). The JVM uberjar carries no
+version in its file name — it reports the one baked into `kmet/version.txt`.
 
 ## Termux and Android
 

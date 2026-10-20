@@ -50,8 +50,16 @@
    (normalize-describe (git-out dir "describe" "--tags" "--always" "--dirty"
                                 "--match" "v[0-9]*"))))
 
+(defn artifact-version-of
+  "The artifact form of DESCRIBED, a checkout-version result: the leading `v`
+   stripped. Kept as the one place the rule lives, so a caller already holding
+   a describe result — the JVM packager bakes one into the jar and names the
+   release zip from it — never describes the checkout twice."
+  [described]
+  (str/replace described #"^v" ""))
+
 (defn artifact-version
   "checkout-version with the leading `v` stripped — the base version artifact
    names carry."
   ([] (artifact-version nil))
-  ([dir] (str/replace (checkout-version dir) #"^v" "")))
+  ([dir] (artifact-version-of (checkout-version dir))))

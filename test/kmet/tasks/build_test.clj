@@ -96,6 +96,34 @@
       (finally
         (fs/delete-tree dir)))))
 
+(deftest ^:bb-only pack-artifact-packs-an-explicit-file-set
+  ;; the JVM jar's layout — one folder holding the jar, its launchers and the
+  ;; LICENSE — goes through the same packer as the single-executable artifacts
+  (let [dir "target/test-dist-pack-files"
+        jar (str dir "/kmet.jar")
+        sh (str dir "/kmet")
+        bat (str dir "/kmet.bat")
+        zip (str dir "/kmet-1.2.3-jvm.zip")]
+    (fs/delete-tree dir)
+    (fs/create-dirs dir)
+    (spit jar "jar\n")
+    (spit sh "#!/bin/sh\n")
+    (spit bat "@echo off\r\n")
+    (try
+      (is (= zip (str (build/pack-artifact!
+                       zip {:files [{:name "kmet.jar" :file jar}
+                                    {:name "kmet" :file sh :executable? true}
+                                    {:name "kmet.bat" :file bat}]}))))
+      (is (= "kmet-1.2.3-jvm" (build/artifact-dir zip)))
+      (with-open [zf (java.util.zip.ZipFile. (fs/file zip))]
+        (let [names (set (map (fn [e] (.getName e))
+                              (enumeration-seq (.entries zf))))]
+          (is (= #{"kmet-1.2.3-jvm/kmet.jar" "kmet-1.2.3-jvm/kmet"
+                   "kmet-1.2.3-jvm/kmet.bat" "kmet-1.2.3-jvm/LICENSE"}
+                 names))))
+      (finally
+        (fs/delete-tree dir)))))
+
 (deftest ^:bb-only install-artifact-copies-the-executable-into-out
   (let [dir "target/test-dist-install"
         src "target/test-dist-install-src"
@@ -135,6 +163,9 @@
   (testing "jolt's executable is kmetj, in the same vocabulary"
     (is (= "kmetj" (build/artifact-base :jolt {})))
     (is (= "kmetj-test" (build/artifact-base :jolt {:test? true}))))
+  (testing "the JVM artifact is kmet with jvm in the platform slot"
+    (is (= "kmet" (build/artifact-base :jvm {})))
+    (is (= "dist/kmet-1.2.3-jvm.zip" (build/artifact-zip :jvm "1.2.3" "jvm" nil))))
   (testing "the executable is staged under target/, not dist/"
     (is (= "target/dist/linux-aarch64/kmet"
            (build/staged-executable :bb "linux-aarch64" {})))

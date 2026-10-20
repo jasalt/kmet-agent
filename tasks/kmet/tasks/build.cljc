@@ -1,9 +1,9 @@
 (ns kmet.tasks.build
   "Build self-contained kmet executables (the babashka host's half of the
    `dist` task — `jolt dist` runs kmet.tasks.build-jolt instead).
-   A binary is the official babashka release binary with target/kmet.jar (an
-   uberjar of src + runtime deps) appended — babashka detects the appended zip
-   at startup and runs the uberjar's -main (babashka wiki: Self-contained
+   A binary is the official babashka release binary with target/uberjar-bb.jar
+   (an uberjar of src + runtime deps) appended — babashka detects the appended
+   zip at startup and runs the uberjar's -main (babashka wiki: Self-contained
    executable). One artifact per dist platform, laid out by the same scheme
    the jolt packager uses: a dist/kmet-<ver>-<platform>.zip holding one
    top-level folder — kmet-<ver>-<platform>/ with the bare kmet executable,
@@ -16,12 +16,13 @@
    companion launcher script that unsets LD_PRELOAD, execs via
    $PREFIX/glibc/lib/ld-linux-*.so.1 and passes --jar <self> explicitly.
 
-   bb-only: the dist pipeline runs on babashka.classpath, which the jolt host
-   does not provide — uberjar* and -main fail fast with ::bb-only under jolt,
-   where the packager is kmet.tasks.build-jolt (jolt AOT-compiles instead of
-   appending an uberjar). pack-extension! needs no
-   classpath: it verifies and zips an artifact root through kmet.libs.archive,
-   which runs on both hosts."
+   bb-only: the dist pipeline runs on babashka.classpath, which no other host
+   provides — uberjar*, -main and the payload writer fail fast with ::bb-only
+   off babashka, where the packagers are kmet.tasks.build-jolt (jolt
+   AOT-compiles instead of appending an uberjar) and kmet.tasks.build-jvm (the
+   JVM uberjar). The namespace itself loads on every host so those two can
+   share the classpath-free halves — pack-extension! (kmet.libs.archive) and
+   stage-bundled-extensions! (fs + slurp/spit)."
   (:require #?@(:bb [[babashka.classpath :as bcp]])
             [babashka.fs :as fs]
             [babashka.process :as p]
@@ -30,6 +31,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [kmet.libs.archive :as archive]
+            [kmet.libs.host :as host]
             [kmet.libs.http :as http]
             [kmet.agent.version :as version-lib]
             [kmet.tasks.modules :as modules]))
@@ -39,9 +41,9 @@
 
 (def ^:private cache-dir "target/build-cache")
 (def ^:private dist-dir "dist")
-(def ^:private jar-path "target/kmet.jar")
+(def ^:private jar-path "target/uberjar-bb.jar")
 (def ^:private main-class "kmet.agent.core")
-(def ^:private test-jar-path "target/kmet-test.jar")
+(def ^:private test-jar-path "target/uberjar-bb-test.jar")
 
 (def ^:private test-main-class "kmet.tasks.test-main")
 
@@ -76,15 +78,29 @@
   "extensions")
 
 (defn- bb-only!
-  "Throw ::bb-only when invoked under the jolt host. kmet.tasks.build's dist
-   pipeline is the babashka packager (babashka.classpath uberjar); jolt has no
-   classpath, and `jolt build` packages a self-contained image instead —
-   callers on jolt get a fast, explicit failure rather than an unresolved-var
-   crash. Functions that need no classpath (pack-extension!) do not call it."
+  "Throw ::bb-only off the babashka host. kmet.tasks.build's dist pipeline is
+   the babashka packager (babashka.classpath uberjar); jolt packages a
+   self-contained image (`jolt build`) and the JVM gets kmet.tasks.build-jvm's
+   uberjar — callers elsewhere get a fast, explicit failure rather than an
+   unresolved-var crash. Functions that need no classpath (pack-extension!,
+   stage-bundled-extensions!) do not call it."
   [what]
-  (when (boolean (find-var 'clojure.core/*jolt-version*))
-    (throw (ex-info (str what " is bb-only — the jolt host has no classpath machinery")
+  (when-not (host/babashka?)
+    (throw (ex-info (str what " is bb-only — this host has no "
+                         "babashka.classpath")
                     {:type ::bb-only}))))
+
+(defn- bb-classpath
+  "The running babashka process's classpath, whose dependency jars the payload
+   writer copies in. Reader-conditional because the reference is resolved when
+   this namespace is compiled: the other hosts load the namespace for its
+   classpath-free halves (stage-bundled-extensions!) and have no
+   babashka.classpath at all."
+  []
+  (bb-only! "kmet.tasks.build/bb-classpath")
+  #?(:bb (bcp/get-classpath)
+     :default (throw (ex-info "kmet.tasks.build/bb-classpath is bb-only"
+                              {:type ::bb-only}))))
 
 ;; ─── Target table ──────────────────────────────────────────────────────────
 ;;
@@ -178,11 +194,12 @@
   (str/starts-with? (str platform) "windows-"))
 
 (defn artifact-base
-  "Artifact name without version or extension: kmet on babashka (:bb), kmetj
-   on jolt (:jolt) — the name the executable carries inside the zip's top
-   folder, and the base of the zip name — with -test for a --test build."
+  "Artifact name without version or extension: kmet on babashka (:bb) and on
+   the JVM (:jvm, whose zip carries `jvm` in the platform slot), kmetj on jolt
+   (:jolt) — the name the artifact carries inside the zip's top folder, and
+   the base of the zip name — with -test for a --test build."
   [host {:keys [test?]}]
-  (str (case host :bb "kmet" :jolt "kmetj") (when test? "-test")))
+  (str (case host :bb "kmet" :jvm "kmet" :jolt "kmetj") (when test? "-test")))
 
 (defn executable-name
   "Executable file name for HOST's artifact on PLATFORM: artifact-base plus
@@ -207,7 +224,9 @@
 (defn artifact-zip
   "The release zip in dist/, platform-qualified:
    <base>-<version>-<platform>[-dev].zip — kmet-... on babashka, kmetj-... on
-   jolt, kmet-test-/kmetj-test-... for --test builds. The version is kmet's,
+   jolt, kmet-test-/kmetj-test-... for --test builds. The JVM artifact passes
+   `jvm` as the platform: one jar runs everywhere, so there is nothing to
+   cross-build and no --test/--dev variant. The version is kmet's,
    not the compiling host's; -dev marks a jolt --dev build, a different
    artifact under the same sources."
   [host ver platform {:keys [test? dev?]}]
@@ -372,7 +391,7 @@
          ;; #"::?" split only worked on Unix and glued all Windows
          ;; classpath entries into one string, so no dep jar ever landed in
          ;; the uberjar (data.json etc. were missing)
-         dep-jars (->> (str/split (bcp/get-classpath)
+         dep-jars (->> (str/split (bb-classpath)
                                   (re-pattern (System/getProperty "path.separator")))
                        (filter #(and (str/ends-with? % ".jar")
                                      (not (fs/directory? %)))))]
@@ -429,9 +448,10 @@
      (fs/canonicalize jar))))
 
 (defn uberjar*
-  "Create target/kmet.jar in THIS process — the app uberjar `bb dist`
-   appends: Main-Class kmet.agent.core, every src/ file, then the dependency jars
-   and the staged bundled extensions (stage-bundled-extensions!)."
+  "Create target/uberjar-bb.jar in THIS process — the app uberjar `bb dist`
+   appends: Main-Class kmet.agent.core, every src/ file, then the dependency
+   jars and the staged bundled extensions (stage-bundled-extensions!). A
+   babashka payload, not a JVM jar: kmet.tasks.build-jvm builds that one."
   []
   (bb-only! "kmet.tasks.build/uberjar*")
   (stage-bundled-extensions!)
@@ -439,7 +459,7 @@
                   {:extra-roots [bundled-staging-root]}))
 
 (defn test-uberjar*
-  "Create target/kmet-test.jar — the jar `bb dist --test` appends:
+  "Create target/uberjar-bb-test.jar — the jar `bb dist --test` appends:
    Main-Class kmet.tasks.test-main, src/ + tasks/ + test/ and the generated
    test entry (generate-test-main!), plus the staged bundled extensions.
    Everything the runner can require is in the jar; on babashka it still
@@ -508,22 +528,27 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
 
 (defn pack-artifact!
   "Zip an assembled artifact for distribution: one top-level folder named
-   after the zip (artifact-dir) holding the executable, its Termux launcher
-   when the build wrote one, and the repository LICENSE. In-process through
-   kmet.libs.archive/write-zip! — no external zip program — on both hosts.
-   Returns ZIP."
-  [zip {:keys [exe launcher]}]
+   after the zip (artifact-dir) holding the artifact's files and the
+   repository LICENSE. An artifact is either one executable plus its optional
+   companion launcher ({:exe E :launcher L}) or an explicit :files coll of
+   {:name NAME :file FILE :executable? BOOL} whose NAME is relative to the
+   folder (the JVM jar ships kmet.jar with its two launchers). In-process
+   through kmet.libs.archive/write-zip! — no external zip program — on every
+   host. Returns ZIP."
+  [zip {:keys [exe launcher files]}]
   (when-not (fs/regular-file? license-path)
     (throw (ex-info (str "dist packaging needs the repository LICENSE at "
                          license-path " — run from the repo root")
                     {:type ::pack-error :path license-path})))
-  (let [root (artifact-dir zip)]
+  (let [root (artifact-dir zip)
+        files (or files
+                  (cond-> [{:name (str (fs/file-name exe))
+                            :file (str exe) :executable? true}]
+                    launcher (conj {:name (str (fs/file-name launcher))
+                                    :file (str launcher) :executable? true})))]
     (archive/write-zip!
      zip
-     (conj (cond-> [{:name (str root "/" (fs/file-name exe))
-                     :file (str exe) :executable? true}]
-             launcher (conj {:name (str root "/" (fs/file-name launcher))
-                             :file (str launcher) :executable? true}))
+     (conj (mapv #(assoc % :name (str root "/" (:name %))) files)
            {:name (str root "/LICENSE") :file license-path})))
   (println "packed" (str zip))
   zip)
@@ -905,7 +930,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
    current-host artifact after building (--list-models plus --version, or
    the packaged test runner for --test; skipped by default to keep local
    dist builds fast and side-effect free). A fresh uberjar
-   target/kmet.jar is always rebuilt
+   target/uberjar-bb.jar is always rebuilt
    first so artifacts never bundle stale sources."
   [& args]
   (bb-only! "kmet.tasks.build/-main (the bb half of the dist task)")

@@ -63,6 +63,38 @@
   []
   (into (module-paths) (concat (roots) (extension-paths))))
 
+(def ^:private non-artifact-root-names
+  "Directory names a built artifact never ships: every test tree in the
+   manifest is named `test`, and `tasks/` is the build tooling root."
+  #{"test" "tasks"})
+
+(defn- extension-src-root?
+  "An extension project's src tree is not an app source root: a packaged
+   artifact carries the staged bundled tree (extensions/<name>/src/…, the
+   resource keys the loader reads) instead of a kmet.extensions.* classpath
+   copy nobody requires."
+  [root]
+  (let [normalized (-> (str root)
+                       (str/replace "\\" "/")
+                       (str/replace #"/+$" ""))]
+    (boolean (some (fn [p] (or (= normalized p)
+                               (str/ends-with? normalized (str "/" p))))
+                   (extension-src-paths)))))
+
+(defn artifact-roots
+  "The classpath ROOTS a built artifact ships, in order: the list minus every
+   test tree, the tooling root, and the extension projects' src trees. A
+   resolved classpath carries every module's `test` dir because the module
+   deps.edn declares `src` and `test` (the runner shares the project's), and
+   the root deps.edn carries the extension projects a checkout run resolves
+   from — neither belongs in a release artifact, which ships the staged
+   bundled tree instead."
+  [roots]
+  (into []
+        (remove #(or (contains? non-artifact-root-names (fs/file-name (str %)))
+                     (extension-src-root? %)))
+        roots))
+
 (defn scan-roots
   "The trees the changed/lint/format scans walk. Extensions enter as one
    tree: extension.edn and any future layout beside src/test belong to the

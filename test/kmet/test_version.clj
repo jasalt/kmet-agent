@@ -45,6 +45,16 @@
     (with-redefs [version/git-out (constantly nil)]
       (is (= "dev" (version/artifact-version))))))
 
+(deftest artifact-version-of-strips-the-v-from-a-described-version
+  ;; a caller already holding a describe result (the JVM packager bakes one
+  ;; into the jar and names the release zip from it) never re-runs git
+  (is (= "1.2.3-4-gabc1234" (version/artifact-version-of "v1.2.3-4-gabc1234")))
+  (is (= "dev-g0a1b2c3" (version/artifact-version-of "dev-g0a1b2c3")))
+  (is (= "dev" (version/artifact-version-of "dev")))
+  (testing "one rule: artifact-version is the describe plus this"
+    (with-redefs [version/git-out (constantly "v9.9.9")]
+      (is (= (version/artifact-version-of "v9.9.9") (version/artifact-version))))))
+
 (defn- git-available? []
   (try
     (zero? (:exit (p/shell {:out :discard :err :discard :continue true}
