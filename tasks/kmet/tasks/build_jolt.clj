@@ -11,10 +11,12 @@
    does not:
 
    - the release zip in dist/, under the platform vocabulary shared with
-     babashka (kmetj-<ver>-<platform>.zip next to the other packager's
-     kmet-<ver>-<platform>.zip, so one dist/ carries both hosts' artifacts),
-     each holding one top-level folder named after the zip with the
-     executable, its Termux launcher when one is written, and the LICENSE;
+     babashka (kmetj-<ver>-<platform>-<link>.zip next to the other packager's
+     kmet-<ver>-<platform>.zip, so one dist/ carries both hosts' artifacts;
+     <link> is static or dynamic, since a static artifact is self-contained
+     and a dynamic one needs its native libraries on the host), each holding
+     one top-level folder named after the zip with the executable, its Termux
+     launcher when one is written, and the LICENSE;
    - a stable scratch dir under target/jolt/, so jolt's incremental build (and
      its <out>.build payload dir) survives across runs and never lands in dist/;
    - the native link mode: static by default on Windows, dynamic elsewhere,
@@ -308,14 +310,17 @@
 (defn- default-artifacts
   "The build's paths, /-joined strings (not Paths: the labels are printed and
    tested, and str of a Path renders with backslashes on Windows):
-     :exe  target/dist/<platform>/kmetj[.exe]      (kmetj-test for --test)
-     :zip  dist/kmetj-<ver>-<platform>[-dev].zip   (kmetj-test-... for --test)
+     :exe  target/dist/<platform>/kmetj[.exe]          (kmetj-test for --test)
+     :zip  dist/kmetj-<ver>-<platform>-<link>[-dev].zip
    The executable carries no version — it is the file zipped inside the
    artifact folder and copied by --out — while the zip name carries the
-   version and the platform, keeping dist/ flat. An nt platform takes the
-   .exe suffix, the way jolt's own output path does."
-  [ver platform mode {:keys [test?]}]
-  (let [opts {:test? test?}]
+   version, the platform and the native link mode, keeping dist/ flat. The
+   link mode is part of the name because the two are different artifacts: a
+   static build is self-contained, a dynamic one needs its native libraries
+   on the host, so a dist/ can hold both and a release page tells them apart.
+   An nt platform takes the .exe suffix, the way jolt's own output path does."
+  [ver platform mode {:keys [test? native-link]}]
+  (let [opts {:test? test? :native-link native-link}]
     {:exe (build/staged-executable :jolt platform opts)
      :zip (build/artifact-zip :jolt ver platform (assoc opts :dev? (= mode "dev")))}))
 
@@ -639,7 +644,8 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
    Build kmet's Jolt executable as the bare `kmetj` (kmetj.exe on Windows):
    one native binary with the runtime, clojure.core, the stdlib, the
    dependencies and kmet itself compiled in (the entry is kmet.agent.core),
-   packaged as dist/kmetj-<ver>-<platform>.zip with one top-level folder
+   packaged as dist/kmetj-<ver>-<platform>-<link>.zip (static or dynamic —
+   the two are different artifacts) with one top-level folder
    named after the zip (kmet.tasks.build/artifact-dir) holding the
    executable, its Termux launcher when one is written, and the LICENSE. A
    static build is self-contained; a dynamic one needs its native libraries
@@ -734,8 +740,8 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
      jolt dist --target tarm64le --target-pack ~/packs/tarm64le
                                         cross build for linux-aarch64
 
-   Artifacts land in dist/ as kmetj-<ver>-<platform>[-dev].zip
-   , each holding one top-level folder
+   Artifacts land in dist/ as kmetj-<ver>-<platform>-<link>[-dev].zip
+   (<link> is static or dynamic), each holding one top-level folder
    named after the zip with the bare kmetj (kmetj.exe on Windows), the
    Termux launcher when one is written, and the LICENSE. The executable
    itself is assembled under target/dist/; --out DIR copies it (and the
@@ -755,7 +761,8 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
           link-mode (native-link-mode platform native-link)
           ver (build/version)
           bin (scratch-bin platform mode {})
-          {:keys [exe zip]} (default-artifacts ver platform mode {})
+          {:keys [exe zip]} (default-artifacts ver platform mode
+                                               {:native-link link-mode})
           exe (fs/absolutize exe)
           zip (fs/absolutize zip)]
       (when (= :unknown-platform platform)

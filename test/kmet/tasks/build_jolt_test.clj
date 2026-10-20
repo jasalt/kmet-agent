@@ -119,14 +119,18 @@
   (is (= "kmetj" (build/artifact-base :jolt {})))
   (is (= "kmetj-test" (build/artifact-base :jolt {:test? true})))
   (is (= "kmetj.exe" (build/executable-name :jolt "windows-amd64" {})))
-  (testing "the zip carries the version and platform, not the compiling jolt's"
-    (is (= "dist/kmetj-1.2.3-linux-amd64.zip"
-           (build/artifact-zip :jolt "1.2.3" "linux-amd64" {})))
-    (is (= "dist/kmetj-1.2.3-linux-amd64-dev.zip"
-           (build/artifact-zip :jolt "1.2.3" "linux-amd64" {:dev? true})))
-    (is (= "dist/kmetj-test-1.2.3-linux-amd64-dev.zip"
+  (testing "the zip carries the version, platform and native link mode"
+    (is (= "dist/kmetj-1.2.3-linux-amd64-static.zip"
+           (build/artifact-zip :jolt "1.2.3" "linux-amd64" {:native-link :static})))
+    (is (= "dist/kmetj-1.2.3-linux-amd64-dynamic-dev.zip"
            (build/artifact-zip :jolt "1.2.3" "linux-amd64"
-                               {:test? true :dev? true})))))
+                               {:native-link :dynamic :dev? true})))
+    (is (= "dist/kmetj-test-1.2.3-linux-amd64-dynamic-dev.zip"
+           (build/artifact-zip :jolt "1.2.3" "linux-amd64"
+                               {:test? true :dev? true :native-link :dynamic}))))
+  (testing "static and dynamic builds are different artifacts"
+    (is (not= (build/artifact-zip :jolt "1.2.3" "linux-amd64" {:native-link :static})
+              (build/artifact-zip :jolt "1.2.3" "linux-amd64" {:native-link :dynamic})))))
 
 (deftest parse-args-defaults-to-an-optimized-host-build
   (is (= {:mode "optimized" :flags [] :native-link nil :boot nil :target nil
@@ -189,21 +193,22 @@
 (deftest default-artifacts-stage-the-executable-and-name-the-flat-zip
   (let [artifacts #'jbuild/default-artifacts]
     (is (= {:exe "target/dist/linux-amd64/kmetj"
-            :zip "dist/kmetj-1.2.3-linux-amd64.zip"}
-           (artifacts "1.2.3" "linux-amd64" "release" {})))
+            :zip "dist/kmetj-1.2.3-linux-amd64-static.zip"}
+           (artifacts "1.2.3" "linux-amd64" "release" {:native-link :static})))
     (testing "the windows executable takes the .exe suffix"
       (is (= {:exe "target/dist/windows-amd64/kmetj.exe"
-              :zip "dist/kmetj-1.2.3-windows-amd64.zip"}
-             (artifacts "1.2.3" "windows-amd64" "release" {}))))
+              :zip "dist/kmetj-1.2.3-windows-amd64-static.zip"}
+             (artifacts "1.2.3" "windows-amd64" "release" {:native-link :static}))))
     (testing "the dev tag sits on the zip, not on the executable"
-      (is (= "dist/kmetj-1.2.3-linux-amd64-dev.zip"
-             (:zip (artifacts "1.2.3" "linux-amd64" "dev" {}))))
+      (is (= "dist/kmetj-1.2.3-linux-amd64-dynamic-dev.zip"
+             (:zip (artifacts "1.2.3" "linux-amd64" "dev" {:native-link :dynamic}))))
       (is (= "target/dist/linux-amd64/kmetj"
-             (:exe (artifacts "1.2.3" "linux-amd64" "dev" {})))))
+             (:exe (artifacts "1.2.3" "linux-amd64" "dev" {:native-link :dynamic})))))
     (testing "--test names the test artifact"
       (is (= {:exe "target/dist/linux-amd64/kmetj-test"
-              :zip "dist/kmetj-test-1.2.3-linux-amd64.zip"}
-             (artifacts "1.2.3" "linux-amd64" "release" {:test? true}))))))
+              :zip "dist/kmetj-test-1.2.3-linux-amd64-static.zip"}
+             (artifacts "1.2.3" "linux-amd64" "release"
+                        {:test? true :native-link :static}))))))
 
 (deftest scratch-bin-names-the-built-executable
   (is (= "kmetj" (str (fs/file-name (@#'jbuild/scratch-bin "linux-amd64" "dev")))))

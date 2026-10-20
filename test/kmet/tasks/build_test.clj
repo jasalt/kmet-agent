@@ -100,10 +100,10 @@
   ;; the JVM jar's layout — one folder holding the jar, its launchers and the
   ;; LICENSE — goes through the same packer as the single-executable artifacts
   (let [dir "target/test-dist-pack-files"
-        jar (str dir "/kmet.jar")
-        sh (str dir "/kmet")
-        bat (str dir "/kmet.bat")
-        zip (str dir "/kmet-1.2.3-jvm.zip")]
+        jar (str dir "/kmetc.jar")
+        sh (str dir "/kmetc")
+        bat (str dir "/kmetc.bat")
+        zip (str dir "/kmetc-1.2.3-jvm.zip")]
     (fs/delete-tree dir)
     (fs/create-dirs dir)
     (spit jar "jar\n")
@@ -111,15 +111,15 @@
     (spit bat "@echo off\r\n")
     (try
       (is (= zip (str (build/pack-artifact!
-                       zip {:files [{:name "kmet.jar" :file jar}
-                                    {:name "kmet" :file sh :executable? true}
-                                    {:name "kmet.bat" :file bat}]}))))
-      (is (= "kmet-1.2.3-jvm" (build/artifact-dir zip)))
+                       zip {:files [{:name "kmetc.jar" :file jar}
+                                    {:name "kmetc" :file sh :executable? true}
+                                    {:name "kmetc.bat" :file bat}]}))))
+      (is (= "kmetc-1.2.3-jvm" (build/artifact-dir zip)))
       (with-open [zf (java.util.zip.ZipFile. (fs/file zip))]
         (let [names (set (map (fn [e] (.getName e))
                               (enumeration-seq (.entries zf))))]
-          (is (= #{"kmet-1.2.3-jvm/kmet.jar" "kmet-1.2.3-jvm/kmet"
-                   "kmet-1.2.3-jvm/kmet.bat" "kmet-1.2.3-jvm/LICENSE"}
+          (is (= #{"kmetc-1.2.3-jvm/kmetc.jar" "kmetc-1.2.3-jvm/kmetc"
+                   "kmetc-1.2.3-jvm/kmetc.bat" "kmetc-1.2.3-jvm/LICENSE"}
                  names))))
       (finally
         (fs/delete-tree dir)))))
@@ -163,9 +163,9 @@
   (testing "jolt's executable is kmetj, in the same vocabulary"
     (is (= "kmetj" (build/artifact-base :jolt {})))
     (is (= "kmetj-test" (build/artifact-base :jolt {:test? true}))))
-  (testing "the JVM artifact is kmet with jvm in the platform slot"
-    (is (= "kmet" (build/artifact-base :jvm {})))
-    (is (= "dist/kmet-1.2.3-jvm.zip" (build/artifact-zip :jvm "1.2.3" "jvm" nil))))
+  (testing "the JVM artifact is kmetc with jvm in the platform slot"
+    (is (= "kmetc" (build/artifact-base :jvm {})))
+    (is (= "dist/kmetc-1.2.3-jvm.zip" (build/artifact-zip :jvm "1.2.3" "jvm" nil))))
   (testing "the executable is staged under target/, not dist/"
     (is (= "target/dist/linux-aarch64/kmet"
            (build/staged-executable :bb "linux-aarch64" {})))
@@ -176,10 +176,11 @@
            (build/artifact-zip :bb "1.2.3-4-gabc1234" "linux-aarch64" {})))
     (is (= "dist/kmet-test-1.2.3-windows-amd64.zip"
            (build/artifact-zip :bb "1.2.3" "windows-amd64" {:test? true})))
-    (is (= "dist/kmetj-1.2.3-macos-aarch64.zip"
-           (build/artifact-zip :jolt "1.2.3" "macos-aarch64" {})))
-    (is (= "dist/kmetj-1.2.3-linux-amd64-dev.zip"
-           (build/artifact-zip :jolt "1.2.3" "linux-amd64" {:dev? true}))))
+    (is (= "dist/kmetj-1.2.3-macos-aarch64-static.zip"
+           (build/artifact-zip :jolt "1.2.3" "macos-aarch64" {:native-link :static})))
+    (is (= "dist/kmetj-1.2.3-linux-amd64-dynamic-dev.zip"
+           (build/artifact-zip :jolt "1.2.3" "linux-amd64"
+                               {:dev? true :native-link :dynamic}))))
   (testing "windows is the shared platform vocabulary"
     (is (true? (build/windows-platform? "windows-amd64")))
     (is (false? (build/windows-platform? "linux-amd64")))))

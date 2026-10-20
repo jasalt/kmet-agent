@@ -51,9 +51,11 @@ unzip kmet-0.1.2-linux-amd64.zip
 ./kmet-0.1.2-linux-amd64/kmet --list-models
 ```
 
-On Windows run `kmet.exe`; on Termux run the bundled `kmet.sh` launcher. Jolt
-releases follow the same scheme with a `kmetj-` prefix (`kmetj-<version>-<platform>.zip`)
-and run as `kmetj`.
+On Windows run `kmet.exe`; on Termux run the bundled `kmet.sh` launcher. The
+other hosts follow the same scheme with their own prefix and command: jolt's
+`kmetj-<version>-<platform>-<link>.zip` (`<link>` is `static` or `dynamic`)
+runs as `kmetj`, and the JVM's `kmetc-<version>-jvm.zip` runs as `kmetc`, so
+all three can be installed side by side and invoked by different names.
 
 Use `jolt start` on the optional Jolt host. See
 [Getting started](docs/getting-started.md) for provider setup, sessions, and

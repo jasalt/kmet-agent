@@ -2,8 +2,9 @@
 
 The commands below use `bb start` from a source checkout. If you built or
 installed a self-contained executable, use the same options with `kmet` in
-place of `bb start` (or unzip the built `dist/kmet-*.zip`, whose `kmet-*/`
-folder holds the `kmet` executable and the LICENSE; on Jolt it is `kmetj`).
+place of `bb start` (or unzip the built release zip, whose top folder holds
+the executable and the LICENSE — `kmet` on babashka, `kmetj` on Jolt,
+`kmetc` on the JVM).
 
 ### 1. Run from a checkout
 

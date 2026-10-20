@@ -1,6 +1,6 @@
 (ns kmet.tasks.build-jvm
   "The JVM packager — `bb uberjar-jvm` → target/uberjar-jvm.jar and
-   `bb dist-jvm` → dist/kmet-<version>-jvm.zip, the artifacts `java -jar`
+   `bb dist-jvm` → dist/kmetc-<version>-jvm.zip, the artifacts `java -jar`
    runs.
 
    kmet.tasks.build's uberjar is a different artifact, not a sibling of this
@@ -142,65 +142,71 @@
     (smoke! jar-path (str "kmet " ver))
     {:jar jar-path :version ver}))
 
+(def ^:private jar-name
+  "The jar's file name inside the release zip — what the launchers run. The
+   JVM host's command name prefixes it: kmetc, beside kmet (babashka) and
+   kmetj (jolt), so all three artifacts can sit on PATH and run as different
+   commands."
+  "kmetc.jar")
+
 (defn- posix-launcher
-  "The launcher shipped beside the jar as both `kmet` and `kmet.sh`: it runs
+  "The launcher shipped beside the jar as both `kmetc` and `kmetc.sh`: it runs
    the packaged uberjar with the host's java, passing every argument through.
    The extensionless copy is the command; the .sh copy is the same script under
    the name `bb dist`'s Termux launchers carry, which stays recognizable when a
    transfer drops the executable bit. KMET_JAVA_OPTS carries JVM options (heap
    size, -D flags) without editing the script."
   []
-  "#!/bin/sh
-# kmet on the JVM — run the packaged uberjar with the host's java.
-DIR=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)
-exec java $KMET_JAVA_OPTS -jar \"$DIR/kmet.jar\" \"$@\"
-")
+  (str "#!/bin/sh\n"
+       "# kmetc on the JVM — run the packaged uberjar with the host's java.\n"
+       "DIR=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\n"
+       "exec java $KMET_JAVA_OPTS -jar \"$DIR/" jar-name "\" \"$@\"\n"))
 
 (defn- cmd-launcher
   "The same launcher for cmd.exe, shipped under both PATHEXT names (.bat and
    .cmd, one script) with CRLF endings, as cmd expects."
   []
   (str "@echo off\r\n"
-       "rem kmet on the JVM - run the packaged uberjar with the host's java.\r\n"
-       "java %KMET_JAVA_OPTS% -jar \"%~dp0kmet.jar\" %*\r\n"))
+       "rem kmetc on the JVM - run the packaged uberjar with the host's java.\r\n"
+       "java %KMET_JAVA_OPTS% -jar \"%~dp0" jar-name "\" %*\r\n"))
 
 (defn- powershell-launcher
   "The launcher for PowerShell (Windows PowerShell 5 and pwsh). KMET_JAVA_OPTS
    is split into separate arguments, because PowerShell passes an unquoted
    variable as ONE argument — several JVM options would reach java glued
-   together. The zip stamps the POSIX executable bit too, so `./kmet.ps1` works
+   together. The zip stamps the POSIX executable bit too, so `./kmetc.ps1` works
    under pwsh on Unix."
   []
   (str "#!/usr/bin/env pwsh\r\n"
-       "# kmet on the JVM - run the packaged uberjar with the host's java.\r\n"
+       "# kmetc on the JVM - run the packaged uberjar with the host's java.\r\n"
        "$javaOpts = if ($env:KMET_JAVA_OPTS) { $env:KMET_JAVA_OPTS -split '\\s+' } else { @() }\r\n"
-       "& java @javaOpts -jar (Join-Path $PSScriptRoot 'kmet.jar') @args\r\n"
+       "& java @javaOpts -jar (Join-Path $PSScriptRoot '" jar-name "') @args\r\n"
        "exit $LASTEXITCODE\r\n"))
 
 (def ^:private launchers
-  "The launchers the artifact ships beside kmet.jar, by file name: the
-   extensionless `kmet` command and its .sh twin (the name `bb dist`'s Termux
+  "The launchers the artifact ships beside kmetc.jar, by file name: the
+   extensionless `kmetc` command and its .sh twin (the name `bb dist`'s Termux
    launchers carry, and still recognizable when a transfer drops the executable
    bit), the cmd.exe pair under both of its PATHEXT names, and PowerShell."
-  {"kmet" (posix-launcher)
-   "kmet.sh" (posix-launcher)
-   "kmet.bat" (cmd-launcher)
-   "kmet.cmd" (cmd-launcher)
-   "kmet.ps1" (powershell-launcher)})
+  {"kmetc" (posix-launcher)
+   "kmetc.sh" (posix-launcher)
+   "kmetc.bat" (cmd-launcher)
+   "kmetc.cmd" (cmd-launcher)
+   "kmetc.ps1" (powershell-launcher)})
 
 (defn- launcher-executable?
   "Does LAUNCHER carry the POSIX executable bit in the zip? The shell and pwsh
-   scripts do — `./kmet`, `./kmet.sh`, `./kmet.ps1` on Unix — the cmd.exe pair
-   does not (Windows ignores the bit either way)."
+   scripts do — `./kmetc`, `./kmetc.sh`, `./kmetc.ps1` on Unix — the cmd.exe
+   pair does not (Windows ignores the bit either way)."
   [launcher]
   (not (re-find #"\.(?:bat|cmd)$" launcher)))
 
 (defn dist!
   "Build the jar (smoke-tested) and pack the release zip:
-   dist/kmet-<version>-jvm.zip holding kmet-<version>-jvm/ with kmet.jar, the
-   launchers (kmet, kmet.sh, kmet.bat, kmet.cmd, kmet.ps1) and the LICENSE —
-   the layout `bb dist` / `jolt dist` pack, with `jvm` in the platform slot.
-   Returns the zip path."
+   dist/kmetc-<version>-jvm.zip holding kmetc-<version>-jvm/ with kmetc.jar,
+   the launchers (kmetc, kmetc.sh, kmetc.bat, kmetc.cmd, kmetc.ps1) and the
+   LICENSE — the layout `bb dist` / `jolt dist` pack, with `jvm` in the
+   platform slot. Returns the zip path."
   []
   (let [{:keys [version]} (build!)
         staging (fs/path "target/dist" dist-platform)
@@ -213,7 +219,7 @@ exec java $KMET_JAVA_OPTS -jar \"$DIR/kmet.jar\" \"$@\"
         (when (and (launcher-executable? name) (not (fs/windows?)))
           (fs/set-posix-file-permissions (str path) "rwxr-xr-x"))))
     (build/pack-artifact! zip
-                          {:files (into [{:name "kmet.jar" :file jar-path}]
+                          {:files (into [{:name jar-name :file jar-path}]
                                         (for [[name _] launchers]
                                           {:name name
                                            :file (str (fs/path staging name))

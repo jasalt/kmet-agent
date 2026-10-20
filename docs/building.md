@@ -1,13 +1,16 @@
 # Building
 
 kmet ships as self-contained executables, packaged by the host-dispatched
-`dist` task: `bb dist` on babashka, `jolt dist` on jolt. Each build writes a
-platform-qualified zip into `dist/` — `kmet-<version>-<platform>.zip` from
-babashka, `kmetj-<version>-<platform>.zip` from jolt — holding one top-level
-folder with the version-less executable (`kmet` / `kmetj`) and the LICENSE.
-The JVM host is the exception: its artifact is one platform-independent
-uberjar (`bb uberjar-jvm`), because there is no kmet binary to ship — a JVM
-runs the jar (see [JVM artifacts](#jvm-artifacts)).
+`dist` task: `bb dist` on babashka, `jolt dist` on jolt, `bb dist-jvm` for the
+JVM. Each build writes a platform-qualified zip into `dist/` —
+`kmet-<version>-<platform>.zip` from babashka,
+`kmetj-<version>-<platform>-<link>.zip` from jolt, and
+`kmetc-<version>-jvm.zip` for the JVM — holding one top-level folder with the
+version-less executable (`kmet` / `kmetj` / `kmetc`) and the LICENSE. The
+names are host-distinct so all three can be installed side by side and run
+as different commands. The JVM host's artifact is one platform-independent
+uberjar (`bb uberjar-jvm`), because there is no native kmet binary to ship —
+a JVM runs the jar (see [JVM artifacts](#jvm-artifacts)).
 
 ## Babashka artifacts
 
@@ -33,7 +36,7 @@ optimized emission (`--opt`, no inspector/procedure-source information) with
 its fast boot image; `--release` keeps Clojure backtraces at a larger size:
 
 ```sh
-jolt dist               # Optimized + fast-boot build → dist/kmetj-<version>-<platform>.zip
+jolt dist               # Optimized + fast-boot build → dist/kmetj-<version>-<platform>-<link>.zip
 jolt dist --release     # Release build: optimized plus Clojure backtraces
 jolt dist --dev         # Unoptimized build (quickest to produce, redefinable vars)
 jolt dist --out ~/bin   # additionally copy the executable there
@@ -62,7 +65,11 @@ and override the platform default:
 
 A static build asks `cc` for `libcrypto.a` and `libssl.a`, stages them under
 `target/jolt-native/<platform>/`, and verifies Jolt's generated Scheme uses
-static process-symbol loads for every file-backed `:jolt/native`. A Windows
+static process-symbol loads for every file-backed `:jolt/native`. The link
+mode is part of the zip's name (`kmetj-<version>-<platform>-static.zip` vs
+`-dynamic.zip`) because the two are different artifacts: a static build is
+self-contained, a dynamic one needs its native libraries where it runs, so a
+`dist/` can hold both and a release page tells them apart. A Windows
 static build also needs an MSYS2 MINGW64 toolchain — Jolt's Windows link
 names `-llz4`/`-lz`, which those packages supply:
 
@@ -154,18 +161,20 @@ fails the run, as on every host.
 
 `bb dist-jvm` packs the release zip with the same conventions as the other
 packagers: one top-level folder named after the zip holding the artifact and
-the LICENSE, with `jvm` in the platform slot because one jar serves every OS:
+the LICENSE, with `jvm` in the platform slot because one jar serves every OS.
+The `kmetc-` prefix keeps the JVM command distinct from babashka's `kmet` and
+jolt's `kmetj`, so all three install side by side:
 
 ```sh
-bb dist-jvm            # dist/kmet-<version>-jvm.zip
-unzip -l dist/kmet-0.1.3-jvm.zip
-#   kmet-0.1.3-jvm/kmet.jar      the uberjar
-#   kmet-0.1.3-jvm/kmet          POSIX launcher (java -jar, KMET_JAVA_OPTS)
-#   kmet-0.1.3-jvm/kmet.sh       the same script under its .sh name
-#   kmet-0.1.3-jvm/kmet.bat      cmd.exe launcher (the .cmd copy is identical)
-#   kmet-0.1.3-jvm/kmet.cmd      cmd.exe launcher
-#   kmet-0.1.3-jvm/kmet.ps1      PowerShell launcher (pwsh too)
-#   kmet-0.1.3-jvm/LICENSE
+bb dist-jvm            # dist/kmetc-<version>-jvm.zip
+unzip -l dist/kmetc-0.1.3-jvm.zip
+#   kmetc-0.1.3-jvm/kmetc.jar    the uberjar
+#   kmetc-0.1.3-jvm/kmetc        POSIX launcher (java -jar, KMET_JAVA_OPTS)
+#   kmetc-0.1.3-jvm/kmetc.sh     the same script under its .sh name
+#   kmetc-0.1.3-jvm/kmetc.bat    cmd.exe launcher (the .cmd copy is identical)
+#   kmetc-0.1.3-jvm/kmetc.cmd    cmd.exe launcher
+#   kmetc-0.1.3-jvm/kmetc.ps1    PowerShell launcher (pwsh too)
+#   kmetc-0.1.3-jvm/LICENSE
 ```
 
 `bb uberjar` is a different artifact, not the JVM one without AOT: it builds
@@ -180,29 +189,32 @@ The executable packagers write one platform-qualified zip each into `dist/`,
 using the `<os>-<arch>` platform vocabulary they share (`linux-amd64`,
 `linux-aarch64`, `macos-amd64`, `macos-aarch64`, `windows-amd64`; jolt can also
 cross-compile `windows-aarch64`). The JVM packager's zip is platform-
-independent, so its single slot reads `jvm`:
+independent, so its single slot reads `jvm`. Each host names its artifact
+so the three commands (`kmet`, `kmetj`, `kmetc`) can be installed together:
 
 | Host | Zip | Folder inside |
 |------|-----|---------------|
 | babashka | `dist/kmet-<version>-<platform>.zip` | `kmet-<version>-<platform>/kmet` (`kmet.exe` on Windows) |
-| jolt | `dist/kmetj-<version>-<platform>.zip` | `kmetj-<version>-<platform>/kmetj` (`kmetj.exe` on Windows) |
-| JVM | `dist/kmet-<version>-jvm.zip` | `kmet-<version>-jvm/kmet.jar` + launchers (`kmet`, `kmet.sh`, `kmet.bat`/`kmet.cmd`, `kmet.ps1`) |
+| jolt | `dist/kmetj-<version>-<platform>-<link>.zip` (`<link>` is `static` or `dynamic`) | `kmetj-<version>-<platform>-<link>/kmetj` (`kmetj.exe` on Windows) |
+| JVM | `dist/kmetc-<version>-jvm.zip` | `kmetc-<version>-jvm/kmetc.jar` + launchers (`kmetc`, `kmetc.sh`, `kmetc.bat`/`kmetc.cmd`, `kmetc.ps1`) |
 
 Each zip holds one top-level folder named after the zip (its file name
 minus `.zip`), so extracting never scatters files: the folder carries the
 version-less executable (the jar for the JVM), its companion launcher when the
 build wrote one, and the repository `LICENSE`. The executable carries no version — the zip name
 carries version and platform — so `bb dist --all` keeps one zip per platform,
-and both hosts' artifacts line up in one `dist/` (e.g.
+and every host's artifacts line up in one `dist/` (e.g.
 `dist/kmet-0.8.0-linux-amd64.zip` next to
-`dist/kmetj-0.8.0-linux-amd64.zip`). The executable is assembled under
+`dist/kmetj-0.8.0-linux-amd64-static.zip` and
+`dist/kmetc-0.8.0-jvm.zip`). The executable is assembled under
 `target/dist/<platform>/` (scratch, not part of the release layout); `--out
 DIR` copies it — and its Termux launcher, when the build wrote one — into
 `DIR` without the folder. A `--test` build swaps in the test runner
 (`kmet-test` / `kmetj-test`, zipped as
 `kmet-test-<version>-<platform>.zip` /
-`kmetj-test-<version>-<platform>.zip`), and a jolt `--dev` build tags its zip
-`-dev` (`kmetj-<version>-<platform>-dev.zip`).
+`kmetj-test-<version>-<platform>-<link>.zip`), a jolt `--dev` build tags its
+zip `-dev` (`kmetj-<version>-<platform>-<link>-dev.zip`), and every jolt zip
+names its native link mode.
 
 The executable bit survives extraction: neither host's zip API can record
 POSIX modes (babashka's bundled JDK and Jolt's runtime alike expose no

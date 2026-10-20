@@ -105,9 +105,9 @@
 ;; ─── Target table ──────────────────────────────────────────────────────────
 ;;
 ;; Keyed by dist platform — the os-arch name both packagers stamp on the
-;; release zips (kmet-<ver>-<platform>.zip here, kmetj-<ver>-<platform>.zip
-;; in the jolt packager), so one dist/ holds both hosts' artifacts for a
-;; machine under one platform string.
+;; release zips (kmet-<ver>-<platform>.zip here,
+;; kmetj-<ver>-<platform>-<link>.zip in the jolt packager), so one dist/ holds
+;; both hosts' artifacts for a machine under one platform string.
 ;; :asset    babashka release asset slug backing the platform
 ;;           (babashka-<version>-<asset>.(tar.gz|zip) + .sha256 sibling). The
 ;;           names differ for linux: every linux platform is built from the
@@ -180,13 +180,15 @@
 
 ;; ─── Naming ────────────────────────────────────────────────────────────────
 ;;
-;; Both packagers ship one platform-qualified zip in dist/
-;; (<host>-<version>-<platform>[-dev].zip) holding one top-level folder named
-;; after the zip (artifact-dir) with the bare executable — kmet on babashka,
-;; kmetj on jolt, no version in the name — its Termux launcher when one is
-;; written, and the repository LICENSE. Each host assembles that executable
-;; under target/dist/, and `--out DIR` additionally copies it (with the
-;; launcher, but without the folder) into DIR.
+;; Every packager ships one platform-qualified zip in dist/
+;; (<base>-<version>-<platform>[-<link>][-dev].zip) holding one top-level
+;; folder named after the zip (artifact-dir) with the bare executable — kmet
+;; on babashka, kmetj on jolt, kmetc on the JVM, no version in the name — its
+;; Termux launcher when one is written, and the repository LICENSE. Each host
+;; assembles that executable under target/dist/, and `--out DIR` additionally
+;; copies it (with the launcher, but without the folder) into DIR. The names
+;; are host-distinct on purpose: all three artifacts can be installed side by
+;; side and run as different commands.
 
 (defn windows-platform?
   "True for a dist platform whose executables carry the .exe suffix."
@@ -194,12 +196,14 @@
   (str/starts-with? (str platform) "windows-"))
 
 (defn artifact-base
-  "Artifact name without version or extension: kmet on babashka (:bb) and on
-   the JVM (:jvm, whose zip carries `jvm` in the platform slot), kmetj on jolt
-   (:jolt) — the name the artifact carries inside the zip's top folder, and
-   the base of the zip name — with -test for a --test build."
+  "Artifact name without version or extension — one name per host, so all
+   three artifacts can sit on PATH and run as different commands: kmet on
+   babashka (:bb), kmetj on jolt (:jolt), kmetc on the JVM (:jvm, whose zip
+   carries `jvm` in the platform slot). It is the name the artifact carries
+   inside the zip's top folder and the base of the zip name, with -test for a
+   --test build."
   [host {:keys [test?]}]
-  (str (case host :bb "kmet" :jvm "kmet" :jolt "kmetj") (when test? "-test")))
+  (str (case host :bb "kmet" :jvm "kmetc" :jolt "kmetj") (when test? "-test")))
 
 (defn executable-name
   "Executable file name for HOST's artifact on PLATFORM: artifact-base plus
@@ -223,15 +227,21 @@
 
 (defn artifact-zip
   "The release zip in dist/, platform-qualified:
-   <base>-<version>-<platform>[-dev].zip — kmet-... on babashka, kmetj-... on
-   jolt, kmet-test-/kmetj-test-... for --test builds. The JVM artifact passes
-   `jvm` as the platform: one jar runs everywhere, so there is nothing to
-   cross-build and no --test/--dev variant. The version is kmet's,
-   not the compiling host's; -dev marks a jolt --dev build, a different
-   artifact under the same sources."
-  [host ver platform {:keys [test? dev?]}]
+   <base>-<version>-<platform>[-<link>][-dev].zip — kmet-... on babashka,
+   kmetj-... on jolt, kmet-test-/kmetj-test-... for --test builds. A jolt
+   build passes its native link mode as :native-link (-static/-dynamic): a
+   static artifact is self-contained while a dynamic one needs its native
+   libraries on the host, so the two are different artifacts and the name
+   must say which is which. The JVM artifact passes `jvm` as the platform:
+   one jar runs everywhere, so there is nothing to cross-build and no
+   --test/--dev/link variant. The version is kmet's, not the compiling
+   host's; -dev marks a jolt --dev build, a different artifact under the same
+   sources."
+  [host ver platform {:keys [test? dev? native-link]}]
   (str dist-dir "/" (artifact-base host {:test? test?})
-       "-" ver "-" platform (when dev? "-dev") ".zip"))
+       "-" ver "-" platform
+       (when native-link (str "-" (name native-link)))
+       (when dev? "-dev") ".zip"))
 
 (defn artifact-dir
   "Top-level folder inside the release zip: the zip's own stem, so extracting
@@ -532,7 +542,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
    repository LICENSE. An artifact is either one executable plus its optional
    companion launcher ({:exe E :launcher L}) or an explicit :files coll of
    {:name NAME :file FILE :executable? BOOL} whose NAME is relative to the
-   folder (the JVM jar ships kmet.jar with its two launchers). In-process
+   folder (the JVM jar ships kmetc.jar with its launchers). In-process
    through kmet.libs.archive/write-zip! — no external zip program — on every
    host. Returns ZIP."
   [zip {:keys [exe launcher files]}]

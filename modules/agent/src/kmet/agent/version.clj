@@ -1,7 +1,8 @@
 (ns kmet.agent.version
   "kmet's checkout version — jolt's rule (jolt tools/version.sh), so the base
    version kmet stamps on its artifact zips (`kmet-<ver>-<platform>.zip` from
-   babashka, `kmetj-<ver>-<platform>.zip` from jolt) and reports from
+   babashka, `kmetj-<ver>-<platform>-<link>.zip` from jolt,
+   `kmetc-<ver>-jvm.zip` from the JVM packager) and reports from
    `kmet --version` reads like the compiler's:
 
      v0.8.0                on a release tag
