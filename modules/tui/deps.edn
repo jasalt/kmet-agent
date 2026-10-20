@@ -1,3 +1,4 @@
 {:paths ["src" "test"]
  :deps {kmetia/libs {:local/root "../libs"}
-        kmetia/hikap {:local/root "../hikap"}}}
+        kmetia/hikap {:local/root "../hikap"}
+        org.jline/jline-terminal {:mvn/version "4.4.0"}}}

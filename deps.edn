@@ -154,6 +154,7 @@
         jolt.kmet/providers {:local/root "jolt"}}
  :aliases
  {:dev {:extra-paths ["test"]}
+  :start {:main-opts ["-m" "kmet.agent.core"]}
   ;; jolt dist --test: the only source roots a test build adds — test/ and the
   ;; generated entry root (kmet.tasks.build/generate-test-main!). target/
   ;; scratch, so `bb clean` removes it. Kept separate from :dev so the build

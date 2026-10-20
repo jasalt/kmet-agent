@@ -872,8 +872,9 @@
   (strip-ansi s))
 
 (defn sgr
+  ([] "\u001b[m")
   ([code] (str "\u001b[" code "m"))
-  ([& codes] (str "\u001b[" (clojure.string/join \; codes) "m")))
+  ([code & codes] (str "\u001b[" (clojure.string/join \; (cons code codes)) "m")))
 
 (defn apply-background-to-line [line width bg-fn]
   (let [pad (max 0 (- width (visible-width line)))

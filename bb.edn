@@ -27,6 +27,9 @@
   start   {:doc "Start kmet (interactive TUI); `bb start --help` for kmet's CLI options"
            :requires ([kmet.agent.core :as core])
            :task (apply core/-main *command-line-args*)}
+  start-clj {:doc "Start kmet under JVM Clojure (interactive TUI)"
+             :requires ([babashka.process :as p])
+             :task (apply p/shell "clojure" "-M" "-m" "kmet.agent.core" *command-line-args*)}
   uberjar {:doc "Build target/kmet.jar (run with: bb target/kmet.jar)"
            :requires ([kmet.tasks.build :as build])
            :task (help/with-help (build/uberjar*))

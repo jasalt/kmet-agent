@@ -941,7 +941,7 @@
            base (System/getProperty "user.dir")
            roots (:roots (resolve-deps deps-map base))]
        (vec roots)))
-   :bb
+   :default
    (do
      (def bundled-artifacts
        "Artifacts babashka ships — clojure + spec are always bundled, and
