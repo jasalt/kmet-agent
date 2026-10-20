@@ -1,10 +1,10 @@
 {:paths ["src" "test"]
- :deps {kmetia/libs {:local/root "../libs"}
-        kmetia/hikap {:local/root "../hikap"}
-        kmetia/tui  {:local/root "../tui"}
-        kmetia/ai   {:local/root "../ai"}
-        kmetia/loader {:local/root "../loader"}
-        kmetia/tk     {:local/root "../tk"}
+ :deps {kmet/libs {:local/root "../libs"}
+        kmet/hikap {:local/root "../hikap"}
+        kmet/tui  {:local/root "../tui"}
+        kmet/ai   {:local/root "../ai"}
+        kmet/loader {:local/root "../loader"}
+        kmet/tk     {:local/root "../tk"}
         metosin/malli {:mvn/version "0.20.1"}
         babashka/fs {:mvn/version "0.5.34"}
         babashka/process {:mvn/version "0.6.25"}}}

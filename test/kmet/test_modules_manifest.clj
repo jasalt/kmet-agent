@@ -48,7 +48,7 @@
   (testing "the root deps.edn pulls the app module (which pulls the rest)"
     (let [agent-mod (some #(when (= "agent" (:name %)) %) (modules/modules))
           agent-root (str/replace (str (fs/parent (:src agent-mod))) "\\" "/")]
-      (is (= {:local/root agent-root} (get (:deps (read-edn "deps.edn")) 'kmetia/agent))))))
+      (is (= {:local/root agent-root} (get (:deps (read-edn "deps.edn")) 'kmet/agent))))))
 
 (deftest artifact-roots-drop-test-tooling-and-extension-trees
   (testing "a resolved classpath ships no test tree, no tasks/ and no

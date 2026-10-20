@@ -62,7 +62,7 @@
                 :windows ["libssl-3-x64.dll" "libssl-3.dll"
                           "libssl-1_1-x64.dll" "libssl.dll"]}]
 
- :deps {kmetia/agent {:local/root "modules/agent"}
+ :deps {kmet/agent {:local/root "modules/agent"}
 
         ;; babashka.fs / babashka.process are deliberately NOT deps: babashka
         ;; bundles them, and jolt vendors the same namespaces (built-in,
