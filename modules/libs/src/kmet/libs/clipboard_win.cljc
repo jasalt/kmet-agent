@@ -4,11 +4,14 @@
 
    kmet.libs.clipboard resolves this namespace at call time and only on
    Windows, so a Unix host never loads it; user32 and kernel32 are loaded
-   here, at namespace load. babashka.ffi and jolt.ffi expose the same
-   FFM-style seam for everything used here — the one host difference is the
-   string model: Jolt chars are code points, babashka/JVM chars are UTF-16
-   code units (see utf16-units)."
-  (:require [#?(:bb babashka.ffi :jolt jolt.ffi) :as ffi]))
+   here, at namespace load. The host FFI — babashka.ffi (bundled in babashka,
+   the standalone org.babashka/ffi on the JVM) or jolt.ffi — exposes the same
+   FFM-style seam for everything used here. On the JVM the library needs
+   JDK 22+ and native access (`:jvm` alias / the jar's Enable-Native-Access
+   manifest attribute); a call site that cannot load it falls back to the
+   platform tools. The one string-model difference is Jolt's: Jolt chars are
+   code points, babashka/JVM chars are UTF-16 code units (see utf16-units)."
+  (:require [#?(:jolt jolt.ffi :default babashka.ffi) :as ffi]))
 
 ;; user32 for the clipboard API, kernel32 for the global heap that the
 ;; clipboard takes ownership of.

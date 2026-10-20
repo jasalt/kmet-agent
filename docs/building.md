@@ -123,7 +123,14 @@ The Clojure version is pinned once, in `deps.edn`'s `:clj-pin` alias — the dev
 run and the artifact resolve through it, so a tools.build or Clojure-CLI bump
 cannot silently change the runtime a release ships. The `:jvm` alias beside it
 adds what only this host lacks: `org.clojure/tools.deps`, the in-process
-resolver for extension `:deps` (babashka bundles it; Jolt has `jolt.deps`).
+resolver for extension `:deps` (babashka bundles it; Jolt has `jolt.deps`), and
+`org.babashka/ffi`, the host FFI the Windows clipboard backend uses (babashka
+bundles `babashka.ffi`; Jolt has `jolt.ffi`). The alias also grants native
+access (`--enable-native-access=ALL-UNNAMED`), and the packaged jar carries the
+same grant as an `Enable-Native-Access` manifest attribute, so `java -jar`
+needs no flag. The FFI library needs the Class-File/FFM API of JDK 22+; an
+older JVM still runs the app, with the clipboard falling back to the platform
+tools.
 `bb start-jvm`, the JVM test tasks and the packager all resolve through
 `:jvm :clj-pin`, so the dev loop, the gate and the artifact share one
 classpath.
@@ -143,10 +150,7 @@ bb test-ext-changed-jvm   # slow suites of the changed files' namespaces
 `^:bb-only` tests (babashka's bundled SCI ports, `babashka.classpath`, Maven
 resolution through babashka's bundled tools.deps) are skipped off babashka, so
 the JVM run selects the portable surface; a namespace that cannot load still
-fails the run, as on every host. A test namespace that cannot even *load*
-elsewhere (the Windows clipboard file needs a host FFI namespace) declares
-`^{:hosts #{:bb :jolt}}` on its ns form: the runner reads the marker from the
-source and reports it as skipped instead of failing the run.
+fails the run, as on every host.
 
 `bb dist-jvm` packs the release zip with the same conventions as the other
 packagers: one top-level folder named after the zip holding the artifact and

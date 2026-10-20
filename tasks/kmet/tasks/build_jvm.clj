@@ -133,7 +133,11 @@
     (b/uber {:class-dir class-dir
              :uber-file jar-path
              :basis basis
-             :main main-class})
+             :main main-class
+             ;; babashka.ffi calls into java.lang.foreign; the manifest grant
+             ;; replaces the --enable-native-access flag for `java -jar`
+             ;; (JDKs older than 22 ignore the attribute)
+             :manifest {"Enable-Native-Access" "ALL-UNNAMED"}})
     (println "wrote" jar-path)
     (smoke! jar-path (str "kmet " ver))
     {:jar jar-path :version ver}))

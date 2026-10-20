@@ -1,4 +1,4 @@
-(ns ^{:hosts #{:bb :jolt}} kmet.libs.test-clipboard
+(ns kmet.libs.test-clipboard
   "Windows clipboard backend tests. kmet.libs.clipboard-win loads user32 and
    kernel32 at namespace load, so this file never requires it: the backend's
    vars are resolved at runtime and every test skips off Windows. The
@@ -6,27 +6,43 @@
    through the same API, so a default run never touches the user's
    clipboard.
 
-   ^:hosts #{:bb :jolt}: the FFI aliases below exist only there, so the file
-   cannot even load on the JVM (which has no FFI surface and falls back to the
-   platform tools); the runner reads this marker from the ns form and skips
-   the namespace there instead of failing the run."
+   The FFI namespace is resolved at first use, not required: the JVM library
+   needs JDK 22+, and an older JVM must still LOAD this file (every test here
+   skips there, as the backend falls back to the platform tools)."
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.libs.clipboard :as clipboard]
-            [kmet.libs.host :as host]
-            #?(:bb [babashka.ffi :as ffi] :jolt [jolt.ffi :as ffi])))
+            [kmet.libs.host :as host]))
+
+(def ^:private ffi
+  "The host's FFI namespace, resolved at first use: babashka.ffi on babashka
+   and on the JVM (the standalone org.babashka/ffi), jolt.ffi on Jolt. nil
+   when it cannot load — a JVM older than the Class-File/FFM API the library
+   needs (JDK 22+)."
+  (delay
+    (try
+      (let [ns-sym (if (host/jolt?) 'jolt.ffi 'babashka.ffi)]
+        (require ns-sym)
+        ns-sym)
+      (catch Exception _ nil))))
+
+(defn- ffi-var
+  "The value of the host FFI's var NAMED NM — a function, or the null pointer
+   for `null` — or nil when the FFI is unavailable."
+  [nm]
+  (some-> @ffi (ns-resolve nm) deref))
 
 (def ^:private win-read
   "The clipboard-reader bindings, created on first use (Windows only —
    load-library is unreachable elsewhere)."
   (delay
-    (when (host/windows?)
-      (ffi/load-library "user32.dll")
-      (ffi/load-library "kernel32.dll")
-      {:open (ffi/cfn "OpenClipboard" [:pointer] :int)
-       :close (ffi/cfn "CloseClipboard" [] :int)
-       :get (ffi/cfn "GetClipboardData" [:uint] :pointer)
-       :lock (ffi/cfn "GlobalLock" [:pointer] :pointer)
-       :unlock (ffi/cfn "GlobalUnlock" [:pointer] :int)})))
+    (when (and (host/windows?) @ffi)
+      ((ffi-var 'load-library) "user32.dll")
+      ((ffi-var 'load-library) "kernel32.dll")
+      {:open ((ffi-var 'cfn) "OpenClipboard" [:pointer] :int)
+       :close ((ffi-var 'cfn) "CloseClipboard" [] :int)
+       :get ((ffi-var 'cfn) "GetClipboardData" [:uint] :pointer)
+       :lock ((ffi-var 'cfn) "GlobalLock" [:pointer] :pointer)
+       :unlock ((ffi-var 'cfn) "GlobalUnlock" [:pointer] :int)})))
 
 (defn- win-var
   "A private var of the Windows backend, resolved at runtime so a Unix host
@@ -45,7 +61,7 @@
    terminator inside it."
   []
   (let [{:keys [open close get lock unlock]} @win-read
-        attempt (fn [] (open ffi/null))]
+        attempt (fn [] (open (ffi-var 'null)))]
     (when (loop [left 5]
             (cond
               (pos? (attempt)) true
@@ -53,12 +69,12 @@
               :else false))
       (try
         (let [hmem (get 13)]
-          (when-not (or (nil? hmem) (ffi/null? hmem))
-            (let [ptr (ffi/reinterpret (lock hmem) (* 2 1024 1024))]
+          (when-not (or (nil? hmem) ((ffi-var 'null?) hmem))
+            (let [ptr ((ffi-var 'reinterpret) (lock hmem) (* 2 1024 1024))]
               (try
                 (loop [i 0
                        units []]
-                  (let [unit (ffi/read ptr :uint16 (* 2 i))]
+                  (let [unit ((ffi-var 'read) ptr :uint16 (* 2 i))]
                     (if (zero? unit) units (recur (inc i) (conj units unit)))))
                 (finally (unlock hmem))))))
         (finally (close))))))

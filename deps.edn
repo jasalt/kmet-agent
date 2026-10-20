@@ -162,13 +162,23 @@
   ;; or tools.build happens to pull — the JVM is the only host whose core the
   ;; repo names. bb and jolt bring their own runtimes.
   :clj-pin {:override-deps {org.clojure/clojure {:mvn/version "1.12.5"}}}
-  ;; The JVM host's extension-dependency resolver. An extension's :deps are
-  ;; resolved in-process through clojure.tools.deps (kmet.agent.extensions.
-  ;; context/jars-for): babashka bundles it, and Jolt has its own resolver
-  ;; (jolt.deps) — the plain JVM classpath has neither, so a user extension
-  ;; declaring deps could not load there. `bb start-jvm`, the JVM test tasks
-  ;; and the JVM packager (which resolves its basis with this alias) opt in.
-  :jvm {:extra-deps {org.clojure/tools.deps {:mvn/version "0.28.1569"}}}
+  ;; The JVM host's runtime extras — the two libraries babashka bundles and
+  ;; Jolt provides natively, but a plain JVM classpath lacks:
+  ;; clojure.tools.deps (an extension's :deps are resolved in-process through
+  ;; kmet.agent.extensions.context/jars-for) and babashka.ffi (the Windows
+  ;; clipboard backend). `bb start-jvm`, the JVM test tasks and the JVM
+  ;; packager (which resolves its basis with this alias) opt in.
+  :jvm {:extra-deps {org.clojure/tools.deps {:mvn/version "0.28.1569"}
+                     ;; The Windows clipboard backend (kmet.libs.clipboard-win)
+                     ;; calls into the host FFI: babashka bundles babashka.ffi,
+                     ;; Jolt has jolt.ffi, and the JVM uses the standalone
+                     ;; library. It needs the Class-File/FFM API of JDK 22+;
+                     ;; an older JVM falls back to the platform tools.
+                     org.babashka/ffi {:mvn/version "0.1.2"}}
+        ;; Foreign calls need native access on modern JDKs (older ones ignore
+        ;; the flag). The packaged jar carries the same grant as the
+        ;; Enable-Native-Access manifest attribute.
+        :jvm-opts ["--enable-native-access=ALL-UNNAMED"]}
   :dev {:extra-paths ["test"]}
   ;; The JVM nREPL server (`bb nrepl-jvm`). Dev-only like :build — the app
   ;; never loads nrepl — and dependency-free beyond the Clojure runtime, so it
