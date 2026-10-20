@@ -21,8 +21,8 @@ change when behavior changes.
 
 User-facing documentation belongs in `docs/`. Implementation notes belong next
 to their source package. The temporary notes `run_code.md`, `perf.md`,
-`jolt-bugs.md`, `windows.md`, `pi-tools.md`, and `tcl.md` intentionally
-remain at the project root. (`engine.md` was folded/retired once the
+`jolt-bugs.md`, `windows.md`, `pi-tools.md`, `tcl.md`, `loop-plan.md`, and
+`kmet2.md` intentionally remain at the project root. (`engine.md` was folded/retired once the
 session-runtime split’s GUI-independent steps landed.)
 
 ## Basic development flow
