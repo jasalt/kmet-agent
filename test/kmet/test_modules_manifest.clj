@@ -36,15 +36,15 @@
     (is (= (modules/embed-paths) (get-in (read-edn "deps.edn") [:jolt/build :embed])))))
 
 (deftest dependencies-edn-point-at-manifest-modules
-  (testing "every module has a deps.edn whose :paths is the manifest layout"
-    (let [ext-paths (mapv #(str "../../" %) (modules/extension-paths))]
-      (doseq [mod (modules/modules)]
-        (let [dep-edn (read-edn (str (fs/path "modules" (:name mod) "deps.edn")))
-              expected (if (= "agent" (:name mod))
-                         (into ["src" "test"] ext-paths)
-                         ["src" "test"])]
-          (is (= expected (:paths dep-edn))
-              (str "modules/" (:name mod) "/deps.edn :paths"))))))
+  (testing "every module has a deps.edn whose :paths is the module layout"
+    (doseq [mod (modules/modules)]
+      (let [dep-edn (read-edn (str (fs/path "modules" (:name mod) "deps.edn")))]
+        (is (= ["src" "test"] (:paths dep-edn))
+            (str "modules/" (:name mod) "/deps.edn :paths")))))
+  (testing "the root deps.edn carries the task root and the extension projects
+            (a module local root may not name paths above itself)"
+    (is (= (into ["tasks"] (modules/extension-paths))
+           (:paths (read-edn "deps.edn")))))
   (testing "the root deps.edn pulls the app module (which pulls the rest)"
     (let [agent-mod (some #(when (= "agent" (:name %)) %) (modules/modules))
           agent-root (str/replace (str (fs/parent (:src agent-mod))) "\\" "/")]

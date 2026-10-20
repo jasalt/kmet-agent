@@ -1635,12 +1635,16 @@
   ;; the shipped commandcode catalog carries the compat (commandcode-overrides
   ;; must survive a regeneration)
   (m/load-catalogs!)
-  (doseq [mid ["stealth/cat-jam:free" "reflection/beam:free"]]
-    (let [compat (:compat (m/get-model :commandcode mid))]
-      (t/is (true? (:requires-reasoning-content-on-assistant-messages compat))
-            (str mid " must send reasoning_content on every assistant message"))
-      (t/is (pos? (count (:reasoning-content-fill compat)))
-            (str mid " needs a non-empty fill — the endpoint rejects \"\"")))))
+  ;; Only the live stealth id can be asserted here: the endpoint retired the
+  ;; cat-jam alias when Beam was unveiled, so the generated catalog drops it
+  ;; (process-commandcode ships what the endpoint lists). The ref and the
+  ;; override stay in the generator, so a reappearance transfers both again.
+  (let [mid "reflection/beam:free"
+        compat (:compat (m/get-model :commandcode mid))]
+    (t/is (true? (:requires-reasoning-content-on-assistant-messages compat))
+          (str mid " must send reasoning_content on every assistant message"))
+    (t/is (pos? (count (:reasoning-content-fill compat)))
+          (str mid " needs a non-empty fill — the endpoint rejects \"\""))))
 
 (t/deftest test-reasoning-content-gating-data
   ;; pi: requiresReasoningContentOnAssistantMessages gates reasoning_content
