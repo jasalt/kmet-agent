@@ -5,16 +5,37 @@
             [kmet.libs.host :as host]))
 
 (deftest detects-the-running-host
-  (let [jolt? (some? (find-var 'clojure.core/*jolt-version*))]
-    (testing "jolt? follows the *jolt-version* marker this test reads directly"
-      (is (= jolt? (host/jolt?))))
+  (let [jolt? (some? (find-var 'clojure.core/*jolt-version*))
+        babashka? (some? (System/getProperty "babashka.version"))]
+    (testing "the predicates follow the markers this test reads directly"
+      (is (= jolt? (host/jolt?)))
+      (is (= babashka? (host/babashka?)))
+      (is (= (and (not jolt?) (not babashka?)) (host/jvm?))))
     (testing "runtime-name and mark name the host the tests run on"
-      (is (= (if jolt? "jolt" "babashka") (host/runtime-name)))
-      (is (= (if jolt? "j" "b") (host/mark)))))
+      (is (= (cond jolt? "jolt" babashka? "babashka" :else "clojure")
+             (host/runtime-name)))
+      (is (= (cond jolt? "j" babashka? "b" :else "c") (host/mark)))))
   (testing "the mark is the single-letter badge of the runtime name"
-    (is (contains? #{"b" "j"} (host/mark))
-        "only babashka and jolt have badges")
+    (is (contains? #{"b" "j" "c"} (host/mark))
+        "babashka, jolt, and the Clojure JVM have badges")
     (is (= (subs (host/runtime-name) 0 1) (host/mark)))))
+
+(deftest runtime-name-and-mark-cover-the-jvm-host
+  (with-redefs [host/jolt? (constantly false)
+                host/babashka? (constantly false)]
+    (is (true? (host/jvm?)))
+    (is (= "clojure" (host/runtime-name)))
+    (is (= "c" (host/mark)) "the footer badges the JVM as Кc"))
+  (with-redefs [host/jolt? (constantly true)
+                host/babashka? (constantly false)]
+    (is (false? (host/jvm?)))
+    (is (= "jolt" (host/runtime-name)))
+    (is (= "j" (host/mark))))
+  (with-redefs [host/jolt? (constantly false)
+                host/babashka? (constantly true)]
+    (is (false? (host/jvm?)))
+    (is (= "babashka" (host/runtime-name)))
+    (is (= "b" (host/mark)))))
 
 (deftest stdout-tty?-answers-on-this-host
   (testing "the predicate is safe to call on either host — Jolt's

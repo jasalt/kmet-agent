@@ -2,9 +2,10 @@
   "Which runtime hosts this kmet process, plus the portable runtime predicates
    that paper over host differences.
 
-   kmet runs on babashka and on Jolt: Jolt defines the
-   clojure.core/*jolt-version* var, babashka does not — the
-   only supported non-Jolt host, so anything that isn't Jolt is babashka.
+   kmet runs on babashka, on Jolt, and on the Clojure JVM (`bb
+   start-clj`): Jolt defines the clojure.core/*jolt-version* var and
+   babashka sets the babashka.version system property; a process with
+   neither marker is the JVM.
    UI surfaces that name or badge the host (the welcome header logo, the
    footer's К mark) share this one detection instead of repeating it, and
    platform-specific branches (the terminal backend pick, app seams) share
@@ -19,6 +20,18 @@
    babashka does not."
   []
   (boolean (find-var 'clojure.core/*jolt-version*)))
+
+(defn babashka?
+  "True on the Babashka host: bb sets the \"babashka.version\" system
+   property; the JVM does not, and Jolt defines *jolt-version* instead."
+  []
+  (some? (System/getProperty "babashka.version")))
+
+(defn jvm?
+  "True on the Clojure JVM host — neither Babashka nor Jolt (`bb start-clj`
+   runs the app there)."
+  []
+  (and (not (jolt?)) (not (babashka?))))
 
 (defn windows?
   "True when the OS is Windows — the predicate the tree's platform branches
@@ -53,13 +66,18 @@
     (some? (System/console))))
 
 (defn runtime-name
-  "Name of the hosting runtime: \"jolt\" or \"babashka\"."
+  "Name of the hosting runtime: \"jolt\", \"babashka\", or \"clojure\" (the
+   JVM host that `bb start-clj` starts)."
   []
-  (if (jolt?) "jolt" "babashka"))
+  (cond
+    (jolt?) "jolt"
+    (babashka?) "babashka"
+    :else "clojure"))
 
 (defn mark
-  "Single-letter runtime mark for compact UI badges (the footer's Кb/Кj):
-   the runtime name's initial — \"b\" on babashka, \"j\" on Jolt."
+  "Single-letter runtime mark for compact UI badges (the footer's Кb/Кj/Кc):
+   the runtime name's initial — \"b\" on babashka, \"j\" on Jolt, \"c\" on
+   the Clojure JVM."
   []
   (subs (runtime-name) 0 1))
 

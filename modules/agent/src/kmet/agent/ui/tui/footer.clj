@@ -1,7 +1,8 @@
 (ns kmet.agent.ui.tui.footer
   "FooterComponent — Pi's two-line footer:
      line 1: accent cursive К mark + hosting-runtime letter (b: babashka,
-             j: jolt) + cwd (home-substituted) + git branch, dim
+             j: jolt, c: Clojure JVM) + cwd (home-substituted) + git branch,
+             dim
      line 2: usage stats (↑in ↓out R W CH%) + context % colored by usage,
              followed by the provider/model (left-aligned, kmet deviation
              from pi's right alignment) with a pi-aligned thinking suffix:
@@ -98,7 +99,7 @@
                        (str " • " session-name)))
             ;; cursive Cyrillic К mark before the folder, in the info-screen
             ;; accent (light blue) color; the hosting-runtime letter follows
-            ;; it (b: babashka, j: jolt)
+            ;; it (b: babashka, j: jolt, c: Clojure JVM)
             k-mark (str (theme/italic (theme/fg thm :accent (str "К" (host/mark)))) " ")
             pwd-line (u/truncate-to-width (str k-mark (theme/dim pwd)) width (theme/dim "..."))
             ;; ── Stats left (pi: statsParts) ──────────────────────────────

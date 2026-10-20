@@ -106,7 +106,7 @@
   (testing "the welcome header logo names the hosting runtime after kmet"
     (let [logo ((var state/fmt-header-logo))]
       (is (str/includes? logo (str "kmet (" (host/runtime-name) ")"))
-          "logo reads 'kmet (babashka)' / 'kmet (jolt)'"))))
+          "logo reads 'kmet (babashka)' / 'kmet (jolt)' / 'kmet (clojure)'"))))
 
 (deftest handle-new-session-clears-context
   (testing "/new (pi: handleClearCommand → runtimeHost.newSession) swaps in a
