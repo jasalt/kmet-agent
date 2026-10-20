@@ -22,7 +22,8 @@ describe instead of being mixed into this user guide. The temporary root notes
   OAuth, custom providers, and catalog refreshes.
 - [Customization](customization.md) — themes, skills, prompt templates,
   packages, and extensions.
-- [Building](building.md) — create self-contained Babashka and Jolt binaries.
+- [Building](building.md) — create self-contained Babashka, Jolt, and JVM
+  artifacts.
 - [About kmet](about.md) — the meaning and history behind the name.
 - [Examples](examples/README.md) — copyable settings and complete theme EDN
   files.

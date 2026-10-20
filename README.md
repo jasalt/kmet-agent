@@ -1,11 +1,13 @@
 # kmet
 
-A minimal coding agent built in Clojure/Babashka, with a terminal user interface,
+A minimal coding agent built in Clojure, with a terminal user interface,
 streaming LLM conversations, and a local tool loop.
 
 Inspired by [pi](https://pi.dev), kmet runs on Linux, macOS, Windows, WSL, and
-Termux. The primary runtime is [Babashka](https://babashka.org/); native
-[Jolt](https://github.com/jolt-lang/jolt) builds are also supported.
+Termux from one source tree on three hosts: [Babashka](https://babashka.org/)
+(the primary runtime), native [Jolt](https://github.com/jolt-lang/jolt)
+builds, and the JVM (JDK 22+ enables the native clipboard backend; older JDKs
+still run the app).
 
 ## Highlights
 
@@ -18,7 +20,8 @@ Termux. The primary runtime is [Babashka](https://babashka.org/); native
 - Local extensions, skills, prompt templates, themes, and packages (local
   or git).
 - EDNL sessions with branching, compaction, import/export, and sharing.
-- Cross-platform source runs and self-contained executables.
+- Cross-platform source runs on Babashka, Jolt, and the JVM, plus
+  self-contained executables.
 
 ## Quick start
 
@@ -39,27 +42,33 @@ bb start --list-models
 bb start --print "summarize the project"
 ```
 
+The same checkout runs on the optional hosts: `jolt start` on
+[Jolt](https://github.com/jolt-lang/jolt) and `bb start-jvm` on JVM Clojure,
+which needs the [Clojure CLI](https://clojure.org/guides/install_clojure) (and
+Java 22+ for the clipboard's native backend). Each host carries its own test
+and packaging tasks (`bb test-jvm`, `bb dist-jvm`).
+
 Self-contained release binaries skip the Babashka install: download the zip
 for your platform from
 [GitHub Releases](https://github.com/kmetia/kmet-agent/releases) — releases
-ship `kmet-<version>-<platform>.zip` (currently `v0.1.2`), with `<platform>`
+ship `kmet-<version>-<platform>.zip` (currently `v0.1.3`), with `<platform>`
 one of `linux-amd64`, `linux-aarch64`, `macos-amd64`, `macos-aarch64`, and
 `windows-amd64`. Unzip it and run the executable inside the extracted folder:
 
 ```sh
-unzip kmet-0.1.2-linux-amd64.zip
-./kmet-0.1.2-linux-amd64/kmet --list-models
+unzip kmet-0.1.3-linux-amd64.zip
+./kmet-0.1.3-linux-amd64/kmet --list-models
 ```
 
 On Windows run `kmet.exe`; on Termux run the bundled `kmet.sh` launcher. The
 other hosts follow the same scheme with their own prefix and command: jolt's
 `kmetj-<version>-<platform>-<link>.zip` (`<link>` is `static` or `dynamic`)
-runs as `kmetj`, and the JVM's `kmetc-<version>-jvm.zip` runs as `kmetc`, so
-all three can be installed side by side and invoked by different names.
+runs as `kmetj`, and the JVM's `kmetc-<version>-jvm.zip` ships an uberjar with
+launchers, needs a Java runtime, and runs as `kmetc`, so all three can be
+installed side by side and invoked by different names.
 
-Use `jolt start` on the optional Jolt host. See
-[Getting started](docs/getting-started.md) for provider setup, sessions, and
-installation details.
+See [Getting started](docs/getting-started.md) for provider setup, sessions,
+and installation details.
 
 ## Documentation
 
@@ -71,7 +80,7 @@ Start with the [user documentation](docs/README.md):
 - [Configuration](docs/configuration.md) — settings, prompts, compaction, and resource paths.
 - [Providers and authentication](docs/providers.md) — API keys, OAuth, and custom models.
 - [Customization](docs/customization.md) — themes, skills, prompts, packages, and extensions.
-- [Building](docs/building.md) — Babashka and Jolt distributions.
+- [Building](docs/building.md) — Babashka, Jolt, and JVM distributions.
 - [Examples](docs/examples/README.md) — copyable settings and theme files.
 
 ## The name
