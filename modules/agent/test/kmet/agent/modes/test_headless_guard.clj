@@ -7,7 +7,8 @@
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.tasks.modules :as modules]))
+            [kmet.tasks.modules :as modules]
+            [kmet.tasks.source-reader :as sr]))
 
 (defn- ns-file
   "The source file defining namespace N (clj, then cljc, then cljs)."
@@ -25,10 +26,7 @@
    reader conditionals resolve to this host's branch, which is exactly the
    view the running host loads."
   [path]
-  (let [form (try (read-string (slurp path))
-                  (catch Exception e
-                    (throw (ex-info (str "headless guard cannot read " path) {} e))))
-        ns-form (when (and (seq? form) (= 'ns (first form))) form)]
+  (let [ns-form (sr/read-ns-form path "headless guard")]
     (when ns-form
       (->> (for [clause (rest ns-form)
                  :when (and (seq? clause) (#{:require :require-macros} (first clause)))

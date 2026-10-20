@@ -45,14 +45,76 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [kmet.libs.host :as host]
-            [kmet.tasks.modules :as modules]))
+            [kmet.tasks.modules :as modules]
+            [kmet.tasks.source-reader :as source-reader]))
+
+(def jolt?
+  "True when running under the jolt host (its clojure.test port differs from
+   babashka's: no ref-based per-run counters, no ^:slow split, its own
+   process-wide counters and per-namespace fixtures/registry). The JVM host
+   has Clojure's own clojure.test and shares babashka's engine branch."
+  (host/jolt?))
+
+(def babashka?
+  "True on the babashka host — the only host whose runtime bundles
+   babashka.classpath, the bb SCI ports and the Maven deps resolver the
+   ^:bb-only tests exercise. Those vars are skipped on jolt and on the JVM."
+  (host/babashka?))
+
+(defn- host-key
+  "This host as the :bb/:jolt/:jvm keyword the ns-level ^:hosts metadata
+   uses."
+  []
+  (cond
+    jolt? :jolt
+    babashka? :bb
+    :else :jvm))
+
+(defn- ns-hosts
+  "The ^:hosts set of the test namespace in FILE, or nil. Read from the ns
+   form in the source — a namespace whose requires cannot even load on a host
+   (a bb/jolt FFI namespace on the JVM) cannot report its own metadata."
+  [file]
+  (try
+    ;; metadata in `(ns ^:marker the.name ...)` attaches to the NAME symbol
+    (when-let [form (source-reader/read-ns-form file "test runner")]
+      (:hosts (meta (second form))))
+    (catch Exception _ nil)))
+
+(defn- supported-file?
+  "True when the test namespace in FILE may load on this host: without a
+   ^:hosts marker every host runs it, with one only the listed hosts do."
+  [{:keys [file]}]
+  (let [hosts (ns-hosts file)]
+    (or (nil? hosts) (contains? hosts (host-key)))))
+
+(def ^:private test-files
+  "Every test-bearing file from the tree with this host's decision made:
+   {:ns SYM :file PATH :runs? bool}. One pass over
+   kmet.tasks.modules/test-namespace-files — no hand-maintained registry to
+   drift — with the ^:hosts marker read only off babashka."
+  (let [files (modules/test-namespace-files)]
+    (if babashka?
+      (mapv #(assoc % :runs? true) files)
+      (mapv #(assoc % :runs? (supported-file? %)) files))))
 
 (def all-namespaces
-  "Every test namespace, derived from the tree (kmet.tasks.modules/
-   test-namespaces) — there is no hand-maintained registry to drift. The
-   slow/fast split happens per test var via ^:slow metadata, so no namespace
-   is excluded from either run."
-  (modules/test-namespaces))
+  "Every test namespace this host runs, derived from the tree. The slow/fast
+   split happens per test var via ^:slow metadata; a namespace leaves the run
+   only when its ^:hosts marker names other hosts."
+  (into [] (comp (filter :runs?) (map :ns)) test-files))
+
+(def skipped-namespaces
+  "The test namespaces this host does not run because their ^:hosts marker
+   names other hosts (e.g. the Windows clipboard file needs a host FFI)."
+  (into [] (comp (remove :runs?) (map :ns)) test-files))
+
+(defn- hosts-note
+  "One line naming the ^:hosts-skipped namespaces, or nil when none."
+  []
+  (when (seq skipped-namespaces)
+    (str "Skipped on this host (^:hosts): "
+         (str/join ", " (map str skipped-namespaces)))))
 
 (defn- try-require
   "Require NS-SYM; returns nil on success, the throwable on failure."
@@ -75,19 +137,6 @@
   (if-let [e (try-require ns-sym)]
     {:vars [] :unloaded [ns-sym (load-failure-message e)]}
     {:vars (vals (ns-interns ns-sym))}))
-
-(def jolt?
-  "True when running under the jolt host (its clojure.test port differs from
-   babashka's: no ref-based per-run counters, no ^:slow split, its own
-   process-wide counters and per-namespace fixtures/registry). The JVM host
-   has Clojure's own clojure.test and shares babashka's engine branch."
-  (host/jolt?))
-
-(def babashka?
-  "True on the babashka host — the only host whose runtime bundles
-   babashka.classpath, the bb SCI ports and the Maven deps resolver the
-   ^:bb-only tests exercise. Those vars are skipped on jolt and on the JVM."
-  (host/babashka?))
 
 (defn- test-var? [v slow?]
   (and (:test (meta v))
@@ -443,6 +492,9 @@
         unloaded-count (count unloaded)]
     (when (or (empty? filters) (seq vars))
       (report-unloaded unloaded))
+    (when (or (empty? filters) (seq vars))
+      (when-let [note (hosts-note)]
+        (println (str "\n" note))))
     (when (and (seq filters) (empty? vars))
       (report-no-match unloaded filters))
     (println (str "\nRan " n-tests " tests containing " n-assertions " assertions in "

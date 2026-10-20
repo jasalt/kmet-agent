@@ -7,20 +7,19 @@
    kmet.libs.* namespace from reaching into kmet.loader.* too."
   (:require [clojure.test :as t :refer [deftest is]]
             [clojure.string :as str]
-            [babashka.fs :as fs]))
+            [babashka.fs :as fs]
+            [kmet.tasks.source-reader :as sr]))
 
 (defn- loader-files []
   (->> (fs/list-dir "modules/loader/src/kmet/loader")
        (filter #(re-find #"\.(?:clj[ca]?|jolt)$" (str %)))
        (map str)))
 
-(defn- ns-form [path]
+(defn- ns-form
   ;; Read the ns form itself — a regex over the file stops at the first `)`
   ;; inside the ns docstring and silently checks nothing.
-  (let [form (try (read-string (slurp path))
-                  (catch Exception e
-                    (throw (ex-info (str "self-containment guard cannot read " path) {} e))))]
-    (when (and (seq? form) (= 'ns (first form))) form)))
+  [path]
+  (sr/read-ns-form path "self-containment guard"))
 
 (defn- foreign-kmet-requires [path]
   (when-let [form (ns-form path)]

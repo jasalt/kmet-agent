@@ -2,7 +2,8 @@
   "The runner's own gate behavior: a namespace that could not load fails the
    run — it is reported and skipped per namespace, but its tests never ran, so
    a green result would silently shrink the gate."
-  (:require [clojure.string :as str]
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]
             [clojure.test :as t]
             [kmet.tasks.runner :as runner]))
 
@@ -36,6 +37,31 @@
     (t/is (= 0 exit))
     (t/is (str/includes? out "0 passed") out)
     (t/is (not (str/includes? out "failed to load")) out)))
+
+(t/deftest ns-hosts-marker-gates-the-whole-namespace
+  ;; a file whose requires cannot load on this host declares the hosts that
+  ;; can run it (the Windows clipboard test needs a host FFI); the runner
+  ;; reads the marker from the ns form, because a namespace that fails to load
+  ;; cannot report its own metadata
+  (fs/create-dirs "target")
+  (let [file (str (fs/path "target" (str "ns-hosts-" (System/nanoTime) ".clj")))]
+    (try
+      (spit file "(ns ^{:hosts #{:nowhere}} fixture.hosted
+  (:require [clojure.test :as t]))
+(deftest a-test (t/is true))
+")
+      (t/is (= #{:nowhere} (#'runner/ns-hosts file)))
+      (t/is (false? (#'runner/supported-file? {:file file}))
+            "a host outside the marker's set does not run the namespace")
+      (finally (fs/delete-if-exists file))))
+  (t/testing "no marker means every host runs it"
+    (let [file (str (fs/path "target" (str "ns-nohosts-" (System/nanoTime) ".clj")))]
+      (try
+        (spit file "(ns fixture.plain)
+")
+        (t/is (nil? (#'runner/ns-hosts file)))
+        (t/is (true? (#'runner/supported-file? {:file file})))
+        (finally (fs/delete-if-exists file))))))
 
 (t/deftest ^:bb-only unloadable-namespace-does-not-mark-the-baseline
   ;; the changed-files baseline is only recorded for a complete green run

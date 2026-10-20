@@ -6,7 +6,8 @@
    nothing when a docstring contained `)`."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
-            [babashka.fs :as fs]))
+            [babashka.fs :as fs]
+            [kmet.tasks.source-reader :as sr]))
 
 (defn- source-files []
   (->> (fs/glob "modules/libs/src/kmet/libs" "scope*.{clj,cljc}")
@@ -14,11 +15,7 @@
        sort))
 
 (defn- ns-form [path]
-  (let [form (try (read-string (slurp path))
-                  (catch Exception e
-                    (throw (ex-info (str "scope self-containment guard cannot read " path)
-                                    {} e))))]
-    (when (and (seq? form) (= 'ns (first form))) form)))
+  (sr/read-ns-form path "scope self-containment guard"))
 
 (defn- kmet-requires
   "Requires of any kmet.* namespace: the store may not compose sibling libs or

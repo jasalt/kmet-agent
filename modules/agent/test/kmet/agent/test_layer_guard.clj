@@ -6,7 +6,8 @@
    kmet.agent.session.runtime."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
-            [babashka.fs :as fs]))
+            [babashka.fs :as fs]
+            [kmet.tasks.source-reader :as sr]))
 
 (defn- slash
   "PATH with the platform separator normalized to / — the guards strip and
@@ -30,9 +31,7 @@
          (map slash))))
 
 (defn- ns-form [path]
-  (try (read-string (slurp path))
-       (catch Exception e
-         (throw (ex-info (str "layer guard cannot read " path) {} e)))))
+  (sr/read-ns-form path "layer guard"))
 
 (defn- required-kmet [path]
   (when-let [form (ns-form path)]

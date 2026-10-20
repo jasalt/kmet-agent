@@ -1,10 +1,15 @@
-(ns kmet.libs.test-clipboard
+(ns ^{:hosts #{:bb :jolt}} kmet.libs.test-clipboard
   "Windows clipboard backend tests. kmet.libs.clipboard-win loads user32 and
    kernel32 at namespace load, so this file never requires it: the backend's
    vars are resolved at runtime and every test skips off Windows. The
    roundtrip test is ^:slow — it sets CF_UNICODETEXT and reads it back
    through the same API, so a default run never touches the user's
-   clipboard."
+   clipboard.
+
+   ^:hosts #{:bb :jolt}: the FFI aliases below exist only there, so the file
+   cannot even load on the JVM (which has no FFI surface and falls back to the
+   platform tools); the runner reads this marker from the ns form and skips
+   the namespace there instead of failing the run."
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.libs.clipboard :as clipboard]
             [kmet.libs.host :as host]

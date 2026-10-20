@@ -26,7 +26,9 @@
     (is (not (help/help-requested? [])))
     (is (not (help/help-requested? ["--dry-run" "src"])))))
 
-(deftest with-help-test
+(deftest ^:bb-only with-help-test
+  ;; bb-only: the fake task binds babashka.tasks/*task*, which only the
+  ;; babashka host has (the wrapper itself is host-neutral)
   (testing "--help prints the whole task doc and skips the body"
     (with-fake-task {:name 'demo :doc "summary\n\ndetails"}
       (fn []

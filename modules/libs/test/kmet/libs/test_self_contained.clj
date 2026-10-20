@@ -5,7 +5,8 @@
    extractable as a third-party library package on its own."
   (:require [clojure.test :as t :refer [deftest is]]
             [clojure.string :as str]
-            [babashka.fs :as fs]))
+            [babashka.fs :as fs]
+            [kmet.tasks.source-reader :as sr]))
 
 (defn- lib-files []
   ;; recurse: src/kmet/libs/mcp/transport/*.clj is two levels down and the
@@ -22,10 +23,7 @@
   ;; Read the ns form itself. A regex over the file was the original
   ;; implementation and it silently checked almost nothing: `.*?` stops at
   ;; the first `)` inside the ns docstring, long before `:require`.
-  (let [form (try (read-string (slurp path))
-                  (catch Exception e
-                    (throw (ex-info (str "self-containment guard cannot read " path) {} e))))]
-    (when (and (seq? form) (= 'ns (first form))) form)))
+  (sr/read-ns-form path "self-containment guard"))
 
 (defn- kmet-requires [path]
   (when-let [form (ns-form path)]

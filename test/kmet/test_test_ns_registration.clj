@@ -48,7 +48,9 @@
 
 (deftest test-registry-is-the-derived-scan
   (testing "runner/all-namespaces and an independent re-derivation agree"
-    (let [derived (set runner/all-namespaces)
+    ;; a namespace whose ^:hosts marker excludes this host is skipped by
+    ;; design, not missing from the registry
+    (let [derived (into (set runner/all-namespaces) runner/skipped-namespaces)
           found (test-bearing-namespaces)]
       (is (seq found)
           "no test-bearing namespaces found — the scan is vacuous")
