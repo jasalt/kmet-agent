@@ -1,7 +1,4 @@
-{:paths ["src" "test"
-         "../../extensions/clojure/src" "../../extensions/clojure/test"
-         "../../extensions/tree-sitter/src" "../../extensions/tree-sitter/test"
-         "../../extensions/review/src" "../../extensions/review/test"]
+{:paths ["src" "test"]
  :deps {kmetia/libs {:local/root "../libs"}
         kmetia/hikap {:local/root "../hikap"}
         kmetia/tui  {:local/root "../tui"}
