@@ -351,10 +351,11 @@
 
 (def common-ports
   "Fallback ports probed when no port file identifies a live server, in
-   probe order: the conventional nREPL port (7888 — nREPL's documented
-   example and jolt's `nrepl-server` default) and the babashka nREPL default
-   (1667 — `bb nrepl-server` and kmet's `bb nrepl` task)."
-  [7888 1667])
+   probe order: kmet's task ports (7801 `bb nrepl`, 7802
+   `jolt nrepl-server`, 7803 `bb nrepl-jvm`), then the conventional nREPL
+   port (7888 — nREPL's documented example and jolt's built-in default) and
+   the babashka nREPL default (1667 — `bb nrepl-server`)."
+  [7801 7802 7803 7888 1667])
 
 (defn- port-file-candidates [dir]
   (keep (fn [file]

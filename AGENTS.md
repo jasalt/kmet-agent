@@ -31,12 +31,15 @@ session-runtime split’s GUI-independent steps landed.)
   equivalent.
 - `bb clean` removes build output and caches; `bb clean --dry-run` lists what
   it would remove. `jolt clean` is the native-host equivalent.
-- `bb nrepl` starts the development server on port 1667, blocks, and writes
-  no port file. `jolt nrepl-server [port]` (default 7888) starts the Jolt
-  equivalent and writes `.nrepl-port` (gitignored). `clojure_eval` discovers
-  port files first, then probes the common nREPL ports (7888, 1667), so a
-  lone `bb nrepl` is found; when both run the port file wins — pass
-  `port 1667` to target bb.
+- `bb nrepl` starts the development server on port 7801, blocks, and writes
+  no port file. `bb nrepl-jvm [port]` starts the JVM equivalent (default
+  7803, the app's JVM aliases) and writes `.nrepl-port` (gitignored); jolt's
+  built-in `jolt nrepl-server 7802` is the Jolt server, also writing
+  `.nrepl-port` (its own default is 7888, so pass 7802 or set
+  `JOLT_NREPL_PORT=7802`). `clojure_eval` discovers port files first, then
+  probes 7801, 7802, 7803 and the historical defaults 7888/1667. The three
+  servers use distinct ports, but the JVM and Jolt servers share the one
+  `.nrepl-port` file — pass `port` when both run.
 - `bb tasks` lists the one-line task summaries; `bb <task> --help` prints a
   task's full usage (the details `bb tasks` leaves out).
 - Use the changed-file tasks for the normal loop:
@@ -60,7 +63,8 @@ session-runtime split’s GUI-independent steps landed.)
 
 - Prefer the running host's nREPL as the inner loop: edit, then `clojure_eval`
   a `(require 'my.ns :reload)` and call the changed function. `bb nrepl` is
-  the bb reader view; `jolt nrepl-server` is the jolt view. Restart the server
+  the bb reader view, `bb nrepl-jvm` the JVM view, and `jolt nrepl-server`
+  the jolt view. Restart the server
   when structural redefinitions (protocols, records, macros) leave stale
   behavior.
 - `clojure_eval` returns only the last form's value, and a `require` and the

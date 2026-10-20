@@ -115,7 +115,9 @@ set is identical across hosts. Extensions run on SCI there: babashka and the
 JVM are the SCI-only hosts (`modules/loader/src/kmet/loader/loader.md`). Every
 build ends with a smoke test (`java -jar … --version`), the check a jar that
 assembles but cannot start fails. A source checkout needs no build at all:
-`bb start-jvm` runs `clojure -M:jvm:clj-pin -m kmet.agent.core`.
+`bb start-jvm` runs `clojure -M:jvm:clj-pin -m kmet.agent.core`; `bb nrepl-jvm
+[port]` opens an nREPL server on the same JVM classpath (default 7803) and
+writes `.nrepl-port` for `clojure_eval`.
 
 The Clojure version is pinned once, in `deps.edn`'s `:clj-pin` alias — the dev
 run and the artifact resolve through it, so a tools.build or Clojure-CLI bump
@@ -141,7 +143,10 @@ bb test-ext-changed-jvm   # slow suites of the changed files' namespaces
 `^:bb-only` tests (babashka's bundled SCI ports, `babashka.classpath`, Maven
 resolution through babashka's bundled tools.deps) are skipped off babashka, so
 the JVM run selects the portable surface; a namespace that cannot load still
-fails the run, as on every host.
+fails the run, as on every host. A test namespace that cannot even *load*
+elsewhere (the Windows clipboard file needs a host FFI namespace) declares
+`^{:hosts #{:bb :jolt}}` on its ns form: the runner reads the marker from the
+source and reports it as skipped instead of failing the run.
 
 `bb dist-jvm` packs the release zip with the same conventions as the other
 packagers: one top-level folder named after the zip holding the artifact and

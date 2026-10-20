@@ -290,7 +290,8 @@ bb lint            # clj-kondo over both reader views (babashka + jolt);
                    # `jolt lint` runs the same gate
 bb format          # cljfmt (fix) / bb format-check (verify)
 bb clean           # Remove build artifacts, caches, logs (--dry-run: list only)
-bb nrepl           # Start an nREPL server on port 1667 (blocks)
+bb nrepl           # Start an nREPL server on port 7801 (blocks)
+bb nrepl-jvm       # Start a JVM nREPL server on port 7803 (blocks)
 bb check           # Verify all source namespaces compile
 bb generate-models     # Regenerate provider + image model catalogs (network)
 kmet --generate-models # Refresh the user-level catalog caches (network)
@@ -303,9 +304,14 @@ bb help            # Show task entry points
 `bb tasks` prints one-line summaries; `bb <task> --help` (the same task works
 under `jolt`) prints a task's full usage, arguments and notes.
 
-The `bb nrepl` task starts a Babashka nREPL on port 1667 and writes no port
-file; for the Jolt reader view, `jolt nrepl-server [port]` starts the
-equivalent server (default 7888) and writes `.nrepl-port`.
+The `bb nrepl` task starts a Babashka nREPL on port 7801 and writes no port
+file; `bb nrepl-jvm [port]` starts the JVM equivalent (default 7803, under the
+app's JVM aliases and with the test paths) and writes `.nrepl-port`
+(gitignored), which `clojure_eval` discovers first. Jolt's built-in
+`jolt nrepl-server 7802` is the Jolt server (its own default is 7888, so pass
+7802 or set `JOLT_NREPL_PORT=7802`) and writes the same `.nrepl-port` file;
+when the JVM and Jolt servers both run, pass an explicit `port` to
+`clojure_eval`.
 
 The `*-changed` tasks are the iteration loop — they cover only the current
 changes (git diff vs HEAD + untracked, plus the namespaces/tests that

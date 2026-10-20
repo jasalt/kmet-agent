@@ -170,6 +170,10 @@
   ;; and the JVM packager (which resolves its basis with this alias) opt in.
   :jvm {:extra-deps {org.clojure/tools.deps {:mvn/version "0.28.1569"}}}
   :dev {:extra-paths ["test"]}
+  ;; The JVM nREPL server (`bb nrepl-jvm`). Dev-only like :build — the app
+  ;; never loads nrepl — and dependency-free beyond the Clojure runtime, so it
+  ;; adds nothing to the app classpath.
+  :nrepl {:extra-deps {nrepl/nrepl {:mvn/version "1.7.0"}}}
   ;; The JVM packager (`bb uberjar-jvm`, kmet.tasks.build-jvm): tools.build is
   ;; build-only — the app never loads it, and the bb test/lint classpaths stay
   ;; without it (clj-kondo's unresolved-namespace exception covers the lint

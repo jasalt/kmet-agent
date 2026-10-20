@@ -3,7 +3,7 @@
  ;; implementation lives there (see AGENTS.md § File layout). Both hosts
  ;; resolve kmet.tasks.* from it, and neither artifact carries it — the
  ;; uberjar walks src/, jolt's :jolt/build :embed does too.
-:paths ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/hikap/test" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/agent/src" "modules/agent/test" "modules/loader/src" "modules/loader/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions/clojure/src" "extensions/clojure/test" "extensions/tree-sitter/src" "extensions/tree-sitter/test" "extensions/review/src" "extensions/review/test"]
+ :paths ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/hikap/test" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/agent/src" "modules/agent/test" "modules/loader/src" "modules/loader/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions/clojure/src" "extensions/clojure/test" "extensions/tree-sitter/src" "extensions/tree-sitter/test" "extensions/review/src" "extensions/review/test"]
  :deps {dev.weavejester/cljfmt {:mvn/version "0.16.6"}
         ;; babashka >= 1.13.224 bundles data.json (2.5.2 as of 1.13.225) and
         ;; the built-in wins over any declared copy; pinned at the bundled
@@ -56,23 +56,23 @@
   test-jvm {:doc "Run the fast test suites on the JVM host (excludes ^:slow tests)\n\nSame runner, selection and filters as `bb test`, run under JVM Clojure with the app's JVM aliases (:jvm :clj-pin :dev) — the classpath the released JVM artifact gets. Needs the Clojure CLI."
             :requires ([babashka.process :as p])
             :task (help/with-help
-                   (apply p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
-                          "false" *command-line-args*))}
+                    (apply p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
+                           "false" *command-line-args*))}
   test-ext-jvm {:doc "Run ONLY the slow (^:slow) test suites on the JVM host\n\nSame runner and filters as `bb test-ext`, under JVM Clojure. Needs the Clojure CLI."
                 :requires ([babashka.process :as p])
                 :task (help/with-help
-                       (apply p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
-                              "true" *command-line-args*))}
+                        (apply p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
+                               "true" *command-line-args*))}
   test-changed-jvm {:doc "Run the non-slow JVM tests of namespaces affected by changed files\n\nSame affected-namespace set as `bb test-changed`, run under JVM Clojure; full gate: bb test-jvm. Needs the Clojure CLI."
                     :requires ([babashka.process :as p])
                     :task (help/with-help
-                           (p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
-                                    "false" "--changed"))}
+                            (p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
+                                     "false" "--changed"))}
   test-ext-changed-jvm {:doc "Run ONLY the slow (^:slow) JVM tests of namespaces affected by changed files\n\nFull gate: bb test-ext-jvm. Needs the Clojure CLI."
                         :requires ([babashka.process :as p])
                         :task (help/with-help
-                               (p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
-                                        "true" "--changed"))}
+                                (p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
+                                         "true" "--changed"))}
   changed {:doc "List files changed since the last commit (git; mtime-since-baseline fallback without git)"
            :requires ([kmet.tasks.changed :as changed])
            :task (help/with-help (doseq [f (changed/changed-files)] (println f)))}
@@ -95,11 +95,17 @@
   format-check-changed {:doc "Check formatting of changed files\n\nFull gate: bb format-check; jolt format-check-changed runs the same task."
                         :requires ([kmet.tasks.format :as fmt])
                         :task (help/with-help (fmt/format-check-changed!))}
-  nrepl  {:doc "Start nREPL server on port 1667 for interactive development"
+  nrepl  {:doc "Start nREPL server on port 7801 for interactive development"
           :task (help/with-help (do (require 'babashka.nrepl.server)
-                                    (println "Starting nREPL on port 1667...")
-                                    (babashka.nrepl.server/start-server! {:port 1667})
-                                    (println "nREPL started on port 1667")))}
+                                    (println "Starting nREPL on port 7801...")
+                                    (babashka.nrepl.server/start-server! {:port 7801})
+                                    (println "nREPL started on port 7801")))}
+  nrepl-jvm {:doc "Start a JVM nREPL server on port 7803 for interactive development\n\nUsage: bb nrepl-jvm [port]. Runs nrepl.cmdline under JVM Clojure with the app's JVM aliases (:jvm :clj-pin :dev), so the server sees the JVM classpath, extension-dependency resolution and the test paths. The kmet nREPL ports are 7801 (`bb nrepl`), 7802 (jolt's `nrepl-server`), and 7803 (this task); it writes .nrepl-port (gitignored), which `clojure_eval` discovers first."
+             :requires ([babashka.process :as p])
+             :task (help/with-help
+                     (p/shell "clojure" "-M:jvm:clj-pin:dev:nrepl"
+                              "-m" "nrepl.cmdline"
+                              "--port" (or (first *command-line-args*) "7803")))}
   check   {:doc "Verify all code compiles"
            :requires ([kmet.agent.core])
            :task (help/with-help (println "All source namespaces compile successfully."))
@@ -110,12 +116,12 @@
   check-model-data {:doc "Offline validation of committed provider + image catalogs + manifest"
                     :requires ([kmet.tasks.generate-models :as gen-models])
                     :task (help/with-help
-                           (let [errors (gen-models/validate-all!)]
-                             (if (seq errors)
-                               (do (println "Invalid model data:")
-                                   (doseq [e errors] (println "  -" e))
-                                   (System/exit 1))
-                               (println "Committed model data is valid."))))}
+                            (let [errors (gen-models/validate-all!)]
+                              (if (seq errors)
+                                (do (println "Invalid model data:")
+                                    (doseq [e errors] (println "  -" e))
+                                    (System/exit 1))
+                                (println "Committed model data is valid."))))}
   pack-extension {:doc "Verify an extension artifact root and pack it as .jar\n\nUsage: bb pack-extension <src-dir> [out.jar]; src-dir is the artifact root, e.g. extensions/clojure/src."
                   :requires ([kmet.tasks.build :as build])
                   :task (help/with-help (apply build/pack-extension! *command-line-args*))}
