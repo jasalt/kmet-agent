@@ -75,11 +75,15 @@
     :else "clojure"))
 
 (defn mark
-  "Single-letter runtime mark for compact UI badges (the footer's Кb/Кj/Кc):
-   the runtime name's initial — \"b\" on babashka, \"j\" on Jolt, \"c\" on
-   the Clojure JVM."
+  "Single-letter runtime mark for compact UI badges (the footer's Кб/Кј/Кц):
+   the Cyrillic transliteration of the runtime name's initial — \"б\" on
+   babashka, \"ј\" on Jolt, \"ц\" on the Clojure JVM — so the badge stays
+   pure Cyrillic beside the footer's К."
   []
-  (subs (runtime-name) 0 1))
+  (cond
+    (jolt?) "ј"
+    (babashka?) "б"
+    :else "ц"))
 
 (defn finite?
   "True when V is a finite number (portable replacement for

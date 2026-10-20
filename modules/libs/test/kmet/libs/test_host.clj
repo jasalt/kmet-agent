@@ -14,28 +14,32 @@
     (testing "runtime-name and mark name the host the tests run on"
       (is (= (cond jolt? "jolt" babashka? "babashka" :else "clojure")
              (host/runtime-name)))
-      (is (= (cond jolt? "j" babashka? "b" :else "c") (host/mark)))))
-  (testing "the mark is the single-letter badge of the runtime name"
-    (is (contains? #{"b" "j" "c"} (host/mark))
-        "babashka, jolt, and the Clojure JVM have badges")
-    (is (= (subs (host/runtime-name) 0 1) (host/mark)))))
+      (is (= (cond jolt? "ј" babashka? "б" :else "ц") (host/mark)))))
+  (testing "the mark is the single Cyrillic letter badge of the runtime name"
+    (is (contains? #{"б" "ј" "ц"} (host/mark))
+        "babashka, jolt, and the Clojure JVM have Cyrillic badges")
+    (is (= ({"jolt" "ј" "babashka" "б" "clojure" "ц"} (host/runtime-name))
+           (host/mark))
+        "the badge is the Cyrillic transliteration of the name's initial")
+    (is (every? #(<= 0x0400 (int %) 0x04FF) (host/mark))
+        "the badge is a Cyrillic letter, not a Latin one")))
 
 (deftest runtime-name-and-mark-cover-the-jvm-host
   (with-redefs [host/jolt? (constantly false)
                 host/babashka? (constantly false)]
     (is (true? (host/jvm?)))
     (is (= "clojure" (host/runtime-name)))
-    (is (= "c" (host/mark)) "the footer badges the JVM as Кc"))
+    (is (= "ц" (host/mark)) "the footer badges the JVM as Кц"))
   (with-redefs [host/jolt? (constantly true)
                 host/babashka? (constantly false)]
     (is (false? (host/jvm?)))
     (is (= "jolt" (host/runtime-name)))
-    (is (= "j" (host/mark))))
+    (is (= "ј" (host/mark))))
   (with-redefs [host/jolt? (constantly false)
                 host/babashka? (constantly true)]
     (is (false? (host/jvm?)))
     (is (= "babashka" (host/runtime-name)))
-    (is (= "b" (host/mark)))))
+    (is (= "б" (host/mark)))))
 
 (deftest stdout-tty?-answers-on-this-host
   (testing "the predicate is safe to call on either host — Jolt's
