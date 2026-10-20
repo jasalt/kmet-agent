@@ -5,16 +5,17 @@
    wall-clock time: sleeps, terminal-query timeouts; real network calls; and
    subprocess spawns — bash tool, shell commands, git).
    `bb test` runs all tests except ^:slow ones; `bb test-ext` runs only the
-   ^:slow tests. Both are selected at the individual test level — no whole
+   ^:slow tests; `bb test-jvm` / `bb test-ext-jvm` run the same two selections
+   under JVM Clojure. All are selected at the individual test level — no whole
    namespaces are excluded.
 
    A deftest marked ^:bb-only exercises bb-only behavior (kmet.tasks.build's
    packaging, bb-bundled SCI ports, Maven deps resolution, the packed-clojure
    extension closure, curl --compressed — babashka.classpath and the bundled
-   ports are bb/JVM-only): it runs under `bb test` and is skipped on
-   the jolt host. The namespace still loads there (a load gap would report it
-   unloaded), so calling a bb-only entry point under jolt surfaces as a fast
-   ::bb-only ex-info from the guarded function, not a crash.
+   ports exist on babashka only): it runs under `bb test` and is skipped on
+   the jolt and JVM hosts. The namespace still loads there (a load gap would
+   report it unloaded), so calling a bb-only entry point off babashka surfaces
+   as a fast ::bb-only ex-info from the guarded function, not a crash.
 
    The runner is TOLERANT per namespace: every test namespace is required
    inside a try. A namespace that cannot load under the host (a babashka-internal
@@ -22,10 +23,10 @@
    and the remaining namespaces still run — but the
    run FAILS (exit 1): a skipped namespace means its tests never ran, and a
    green result would silently shrink the gate. This is what lets the same
-   runner serve `bb test` and `jolt test` while the Jolt port is staged. On
-   a full run every unloadable namespace is listed with its load failure
-   reason; on a filtered run the list holds only the requested namespaces
-   that failed to load.
+   runner serve `bb test`, `jolt test` and the JVM tasks while the non-bb
+   ports are staged. On a full run every unloadable namespace is listed with
+   its load failure reason; on a filtered run the list holds only the
+   requested namespaces that failed to load.
 
    Filters select tests: a plain var name (e.g. `test-tool-bash`), an ns/var
    pair (e.g. `kmet.agent.test-loop/my-test`), or a whole namespace
@@ -43,6 +44,7 @@
    each namespace's :once/:each fixtures exactly like the bb engine."
   (:require [clojure.string :as str]
             [clojure.test :as t]
+            [kmet.libs.host :as host]
             [kmet.tasks.modules :as modules]))
 
 (def all-namespaces
@@ -77,14 +79,22 @@
 (def jolt?
   "True when running under the jolt host (its clojure.test port differs from
    babashka's: no ref-based per-run counters, no ^:slow split, its own
-   process-wide counters and per-namespace fixtures/registry)."
-  (boolean (find-var 'clojure.core/*jolt-version*)))
+   process-wide counters and per-namespace fixtures/registry). The JVM host
+   has Clojure's own clojure.test and shares babashka's engine branch."
+  (host/jolt?))
+
+(def babashka?
+  "True on the babashka host — the only host whose runtime bundles
+   babashka.classpath, the bb SCI ports and the Maven deps resolver the
+   ^:bb-only tests exercise. Those vars are skipped on jolt and on the JVM."
+  (host/babashka?))
 
 (defn- test-var? [v slow?]
   (and (:test (meta v))
-       ;; ^:bb-only vars run only under bb — the jolt host filters them out
-       ;; of whole-namespace selection (var filters ignore bb-only, like slow?)
-       (or (not jolt?) (not (:bb-only (meta v))))
+       ;; ^:bb-only vars run only under bb — jolt and the JVM host filter them
+       ;; out of whole-namespace selection (var filters ignore bb-only, like
+       ;; slow?)
+       (or babashka? (not (:bb-only (meta v))))
        (if slow? (:slow (meta v)) (not (:slow (meta v))))))
 
 (defn- var-matches-filter?
@@ -458,27 +468,15 @@
     ;; whole namespace from an otherwise green run).
     (exit! (if (or (pos? (+ fails errs)) (pos? unloaded-count)) 1 0))))
 
-(defn -main
-  "Run the test suites.
-   slow? selects ^:slow vs non-slow vars (`bb test` false, `bb test-ext`
-   true; `jolt test` false, `jolt test-ext` true — the same split works on
-   both hosts because ^:slow var metadata is preserved under jolt).
-   Remaining args are filters: plain test var names (`bb test test-tool-bash`),
-   ns/var pairs (`bb test-ext kmet.agent.test-loop/my-test`), or whole
-   namespaces (`bb test kmet.tui.test-fuzzy`, or ns/ with a trailing slash).
-   Whole-namespace filters select by slow?; var filters ignore slow?.
-   The skip report lists unloadable namespaces (full run: all of them;
-   filtered run: only the requested ones) with the load failure reason.
-   A full run without filters records the changed-files baseline after a
-   green result, so `bb test-changed` sees a clean slate.
-   ^:bb-only vars (bb-only behavior — kmet.tasks.build,
-   bb-bundled SCI ports, Maven deps, the packed-clojure closure, curl --compressed) run
-   under bb and are dropped from whole-namespace selection on jolt; var
-   filters ignore bb-only too, so an explicit request runs and reports the
-   underlying ::bb-only error."
-  [slow? & filters]
-  (let [selection (select-vars slow? (seq filters))]
-    (run-and-summarize selection (empty? filters))))
+(defn- slow-flag
+  "SLOW? as a boolean: the bb tasks pass the value (`bb test` false,
+   `bb test-ext` true), a JVM command line passes the string
+   \"false\"/\"true\"."
+  [v]
+  (cond
+    (boolean? v) v
+    (string? v) (= "true" (str/lower-case v))
+    :else (boolean v)))
 
 (defn run-ns-syms
   "Run the test vars of NS-SYMS matching SLOW? (true = ^:slow only, false =
@@ -493,3 +491,45 @@
                 {:vars [] :unloaded []}
                 ns-syms)]
     (run-and-summarize {:vars vars :unloaded unloaded} false)))
+
+(defn run-changed!
+  "Run the test namespaces the changed files affect (kmet.tasks.changed), with
+   SLOW? selecting ^:slow vs non-slow vars — the shared body of
+   `test-changed` / `test-ext-changed` on every host (the JVM twins included;
+   `bb.edn` calls this, and `-main`'s `--changed` flag).
+   Prints the nothing-to-run line and exits 0 when no test namespace is
+   affected."
+  [slow?]
+  (let [nss ((requiring-resolve 'kmet.tasks.changed/affected-test-nss))]
+    (if (seq nss)
+      (run-ns-syms nss slow?)
+      (println "No affected test namespaces — nothing to run."))))
+
+(defn -main
+  "Run the test suites.
+   slow? selects ^:slow vs non-slow vars (`bb test` false, `bb test-ext`
+   true; `jolt test` false, `jolt test-ext` true; the JVM tasks pass the same
+   values as strings — see slow-flag). The split works on all three hosts
+   because ^:slow var metadata survives jolt.
+   `--changed` as the first remaining arg selects the test namespaces the
+   changed files affect instead of the full tree (`bb test-changed`; the JVM
+   task `test-changed-jvm` is `-m kmet.tasks.runner false --changed`).
+   Remaining args are filters: plain test var names (`bb test
+   test-tool-bash`), ns/var pairs (`bb test-ext kmet.agent.test-loop/my-test`),
+   or whole namespaces (`bb test kmet.tui.test-fuzzy`, or ns/ with a trailing
+   slash). Whole-namespace filters select by slow?; var filters ignore slow?.
+   The skip report lists unloadable namespaces (full run: all of them;
+   filtered run: only the requested ones) with the load failure reason.
+   A full run without filters records the changed-files baseline after a
+   green result, so `bb test-changed` sees a clean slate.
+   ^:bb-only vars (bb-only behavior — kmet.tasks.build,
+   bb-bundled SCI ports, Maven deps, the packed-clojure closure, curl --compressed)
+   run under bb only: whole-namespace selection drops them on jolt and on the
+   JVM; var filters ignore bb-only too, so an explicit request runs and
+   reports the underlying ::bb-only error."
+  [slow? & args]
+  (let [slow? (slow-flag slow?)
+        args (vec args)]
+    (if (= "--changed" (first args))
+      (run-changed! slow?)
+      (run-and-summarize (select-vars slow? (seq args)) (empty? args)))))

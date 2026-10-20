@@ -115,11 +115,33 @@ set is identical across hosts. Extensions run on SCI there: babashka and the
 JVM are the SCI-only hosts (`modules/loader/src/kmet/loader/loader.md`). Every
 build ends with a smoke test (`java -jar … --version`), the check a jar that
 assembles but cannot start fails. A source checkout needs no build at all:
-`bb start-clj` runs `clojure -M:clj-pin -m kmet.agent.core`.
+`bb start-jvm` runs `clojure -M:jvm:clj-pin -m kmet.agent.core`.
 
 The Clojure version is pinned once, in `deps.edn`'s `:clj-pin` alias — the dev
 run and the artifact resolve through it, so a tools.build or Clojure-CLI bump
-cannot silently change the runtime a release ships.
+cannot silently change the runtime a release ships. The `:jvm` alias beside it
+adds what only this host lacks: `org.clojure/tools.deps`, the in-process
+resolver for extension `:deps` (babashka bundles it; Jolt has `jolt.deps`).
+`bb start-jvm`, the JVM test tasks and the packager all resolve through
+`:jvm :clj-pin`, so the dev loop, the gate and the artifact share one
+classpath.
+
+The test suites run on the JVM with the same runner and selection as the bb
+gate — the four tasks mirror `bb test` / `bb test-ext` / `bb test-changed` /
+`bb test-ext-changed`, take the same filters and affected-namespace set, and
+run under the JVM aliases:
+
+```sh
+bb test-jvm               # fast suites (non-^:slow), filters as `bb test`
+bb test-ext-jvm           # only the ^:slow suites
+bb test-changed-jvm       # fast suites of the changed files' namespaces
+bb test-ext-changed-jvm   # slow suites of the changed files' namespaces
+```
+
+`^:bb-only` tests (babashka's bundled SCI ports, `babashka.classpath`, Maven
+resolution through babashka's bundled tools.deps) are skipped off babashka, so
+the JVM run selects the portable surface; a namespace that cannot load still
+fails the run, as on every host.
 
 `bb dist-jvm` packs the release zip with the same conventions as the other
 packagers: one top-level folder named after the zip holding the artifact and
@@ -195,7 +217,7 @@ anything parsing leading digits), and `dev` outside a git checkout. Rolling
 tags such as `vnightly` never match. Artifact zip names carry the same
 string with the `v` stripped; `kmet --version` prints it, from the version
 baked at build time when running a packaged binary and from git in a source
-run (`bb start` / `jolt start` / `bb start-clj`). The JVM uberjar carries no
+run (`bb start` / `jolt start` / `bb start-jvm`). The JVM uberjar carries no
 version in its file name — it reports the one baked into `kmet/version.txt`.
 
 ## Termux and Android

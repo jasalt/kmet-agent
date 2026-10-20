@@ -41,7 +41,7 @@
 
 (defn- source-run?
   "True when kmet's own source files resolve off disk — a `bb start` /
-   `jolt start` / `bb start-clj` run from the checkout, as opposed to a
+   `jolt start` / `bb start-jvm` run from the checkout, as opposed to a
    packaged jar or embedded image."
   []
   (some-> (io/resource source-marker) str (str/starts-with? "file:")))

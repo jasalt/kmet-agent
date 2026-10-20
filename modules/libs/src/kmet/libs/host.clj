@@ -3,7 +3,7 @@
    that paper over host differences.
 
    kmet runs on babashka, on Jolt, and on the Clojure JVM (`bb
-   start-clj`): Jolt defines the clojure.core/*jolt-version* var and
+   start-jvm`): Jolt defines the clojure.core/*jolt-version* var and
    babashka sets the babashka.version system property; a process with
    neither marker is the JVM.
    UI surfaces that name or badge the host (the welcome header logo, the
@@ -28,7 +28,7 @@
   (some? (System/getProperty "babashka.version")))
 
 (defn jvm?
-  "True on the Clojure JVM host — neither Babashka nor Jolt (`bb start-clj`
+  "True on the Clojure JVM host — neither Babashka nor Jolt (`bb start-jvm`
    runs the app there)."
   []
   (and (not (jolt?)) (not (babashka?))))
@@ -67,7 +67,7 @@
 
 (defn runtime-name
   "Name of the hosting runtime: \"jolt\", \"babashka\", or \"clojure\" (the
-   JVM host that `bb start-clj` starts)."
+   JVM host that `bb start-jvm` starts)."
   []
   (cond
     (jolt?) "jolt"

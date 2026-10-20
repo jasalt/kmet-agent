@@ -116,7 +116,8 @@
   (let [ver (version-lib/checkout-version)
         staged (build/stage-bundled-extensions!)
         basis (packable-basis
-               (b/create-basis {:project "deps.edn" :aliases [:clj-pin]}))
+               (b/create-basis {:project "deps.edn"
+                                :aliases [:jvm :clj-pin]}))
         src-dirs (conj (->> (:classpath-roots basis)
                             (filter fs/directory?)
                             modules/artifact-roots)

@@ -27,9 +27,9 @@
   start   {:doc "Start kmet (interactive TUI); `bb start --help` for kmet's CLI options"
            :requires ([kmet.agent.core :as core])
            :task (apply core/-main *command-line-args*)}
-  start-clj {:doc "Start kmet under JVM Clojure (interactive TUI)"
+  start-jvm {:doc "Start kmet under JVM Clojure (interactive TUI)\n\nRuns with the app's JVM aliases (:jvm :clj-pin) — the classpath the released JVM artifact gets, extension-dependency resolution included."
              :requires ([babashka.process :as p])
-             :task (apply p/shell "clojure" "-M:clj-pin" "-m" "kmet.agent.core" *command-line-args*)}
+             :task (apply p/shell "clojure" "-M:jvm:clj-pin" "-m" "kmet.agent.core" *command-line-args*)}
   uberjar {:doc "Build target/uberjar-bb.jar (run with: bb target/uberjar-bb.jar)\n\nThe babashka payload: an uberjar of src + runtime deps that `bb dist` appends to a babashka release binary. Not JVM-loadable (babashka's built-in namespaces have no source files) — `bb uberjar-jvm` builds the JVM artifact."
            :requires ([kmet.tasks.build :as build])
            :task (help/with-help (build/uberjar*))
@@ -53,6 +53,26 @@
             :requires ([kmet.tasks.runner :as runner])
             :task (help/with-help (apply runner/-main true *command-line-args*))
             :override-builtin true}
+  test-jvm {:doc "Run the fast test suites on the JVM host (excludes ^:slow tests)\n\nSame runner, selection and filters as `bb test`, run under JVM Clojure with the app's JVM aliases (:jvm :clj-pin :dev) — the classpath the released JVM artifact gets. Needs the Clojure CLI."
+            :requires ([babashka.process :as p])
+            :task (help/with-help
+                   (apply p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
+                          "false" *command-line-args*))}
+  test-ext-jvm {:doc "Run ONLY the slow (^:slow) test suites on the JVM host\n\nSame runner and filters as `bb test-ext`, under JVM Clojure. Needs the Clojure CLI."
+                :requires ([babashka.process :as p])
+                :task (help/with-help
+                       (apply p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
+                              "true" *command-line-args*))}
+  test-changed-jvm {:doc "Run the non-slow JVM tests of namespaces affected by changed files\n\nSame affected-namespace set as `bb test-changed`, run under JVM Clojure; full gate: bb test-jvm. Needs the Clojure CLI."
+                    :requires ([babashka.process :as p])
+                    :task (help/with-help
+                           (p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
+                                    "false" "--changed"))}
+  test-ext-changed-jvm {:doc "Run ONLY the slow (^:slow) JVM tests of namespaces affected by changed files\n\nFull gate: bb test-ext-jvm. Needs the Clojure CLI."
+                        :requires ([babashka.process :as p])
+                        :task (help/with-help
+                               (p/shell "clojure" "-M:jvm:clj-pin:dev" "-m" "kmet.tasks.runner"
+                                        "true" "--changed"))}
   changed {:doc "List files changed since the last commit (git; mtime-since-baseline fallback without git)"
            :requires ([kmet.tasks.changed :as changed])
            :task (help/with-help (doseq [f (changed/changed-files)] (println f)))}
@@ -60,20 +80,12 @@
                     :requires ([kmet.tasks.changed :as changed])
                     :task (help/with-help (do (changed/mark-validated!)
                                               (println "Changed-files baseline updated.")))}
-  test-changed {:doc "Run the non-slow tests of namespaces affected by changed files\n\nRequire-graph closure over src/test/tasks/extensions; full gate: bb test."
-                :requires ([kmet.tasks.changed :as changed] [kmet.tasks.runner :as runner])
-                :task (help/with-help
-                       (let [nss (changed/affected-test-nss)]
-                         (if (seq nss)
-                           (runner/run-ns-syms nss false)
-                           (println "No affected test namespaces — nothing to run."))))}
-  test-ext-changed {:doc "Run ONLY the slow (^:slow) tests of namespaces affected by changed files\n\nRequire-graph closure; full gate: bb test-ext."
-                    :requires ([kmet.tasks.changed :as changed] [kmet.tasks.runner :as runner])
-                    :task (help/with-help
-                           (let [nss (changed/affected-test-nss)]
-                             (if (seq nss)
-                               (runner/run-ns-syms nss true)
-                               (println "No affected test namespaces — nothing to run."))))}
+  test-changed {:doc "Run the non-slow tests of namespaces affected by changed files\n\nRequire-graph closure over src/test/tasks/extensions; full gate: bb test; JVM twin: bb test-changed-jvm."
+                :requires ([kmet.tasks.runner :as runner])
+                :task (help/with-help (runner/run-changed! false))}
+  test-ext-changed {:doc "Run ONLY the slow (^:slow) tests of namespaces affected by changed files\n\nRequire-graph closure; full gate: bb test-ext; JVM twin: bb test-ext-changed-jvm."
+                    :requires ([kmet.tasks.runner :as runner])
+                    :task (help/with-help (runner/run-changed! true))}
   lint-changed {:doc "Lint changed files plus affected dependents over both reader views\n\nFull gate: bb lint (same on both hosts); lints everything when the clj-kondo config changed."
                 :requires ([kmet.tasks.lint :as lint])
                 :task (help/with-help (lint/lint-changed!))}

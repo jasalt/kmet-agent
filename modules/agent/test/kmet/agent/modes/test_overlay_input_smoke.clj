@@ -2,9 +2,9 @@
   "End-to-end pty regression for the overlay-focus incident: open the /lsp
    dialog, close it with ESC, type - the editor must receive the text.
    Drives this host's real app (`jolt start` under jolt, `bb start` under
-   babashka) through a pty via an inline python3 driver, so this is ^:slow
-   and skipped when python3 is unavailable or the host cannot fork a pty
-   (Windows).
+   babashka, `bb start-jvm` under the JVM host) through a pty via an inline
+   python3 driver, so this is ^:slow and skipped when python3 is unavailable
+   or the host cannot fork a pty (Windows).
 
    The driver stages key off OUTPUT markers, not wall-clock delays, so a
    slow or fast startup cannot make the sequence racy: each stage waits for
@@ -25,6 +25,8 @@
 (def ^:private driver
   "Staged pty driver: forks `<launcher> start` in a pty, writes each stage's
    bytes once its marker has appeared, and tees all output to OUTFILE.
+   LAUNCHER is `command:task` (the task defaults to `start`) so each host runs
+   its own start task: bb:start, jolt:start, bb:start-jvm.
    Stage format (comma-separated): MARKER|DELAY|HEXPAYLOAD, where MARKER is
    literal output text ('-' = no marker: DELAY after the previous write) and
    DELAY is a settle in seconds after the marker. Exits once every stage ran
@@ -32,8 +34,9 @@
    early EOF or a deadline with stages left unfired."
   "
 import fcntl, os, pty, select, struct, sys, termios, time
-outfile, cwd, deadline_s, launcher, raw_stages = (
+outfile, cwd, deadline_s, launcher_cmd, raw_stages = (
     sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4], sys.argv[5])
+launcher, _, task = launcher_cmd.partition(':')
 stages = [(m, float(d), bytes.fromhex(p))
           for m, d, p in (s.split('|', 2) for s in raw_stages.split(',') if s)]
 grace = 3.0
@@ -42,7 +45,7 @@ pid, fd = pty.fork()
 if pid == 0:
     os.environ['TERM'] = 'xterm-256color'
     os.chdir(cwd)
-    os.execvp(launcher, [launcher, 'start'])
+    os.execvp(launcher, [launcher, task or 'start'])
     os._exit(127)
 # 100x30 keeps the splash header and the /lsp panel rows on screen
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 100, 0, 0))
@@ -99,7 +102,12 @@ sys.exit(status)
                                       (str out-file)
                                       (str (fs/cwd))
                                       "75"
-                                      (if (host/jolt?) "jolt" "bb")
+                                      ;; the host's own start task (`bb start`
+                                      ;; forks babashka; the JVM runs through
+                                      ;; `bb start-jvm`, which starts JVM Clojure)
+                                      (cond (host/jolt?) "jolt:start"
+                                            (host/babashka?) "bb:start"
+                                            :else "bb:start-jvm")
                                       (str/join ","
                                                 (for [[marker delay hex] stages]
                                                   (str marker "|" delay "|" hex))))]

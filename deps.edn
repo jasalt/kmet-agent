@@ -157,11 +157,18 @@
         jolt.kmet/providers {:local/root "jolt"}}
  :aliases
  {;; The Clojure version the JVM host runs, pinned once: the dev loop
-  ;; (`bb start-clj`) and the packaged uberjar (kmet.tasks.build-jvm resolves
+  ;; (`bb start-jvm`) and the packaged uberjar (kmet.tasks.build-jvm resolves
   ;; its basis with this alias) must not drift with whatever the builder's CLI
   ;; or tools.build happens to pull — the JVM is the only host whose core the
   ;; repo names. bb and jolt bring their own runtimes.
   :clj-pin {:override-deps {org.clojure/clojure {:mvn/version "1.12.5"}}}
+  ;; The JVM host's extension-dependency resolver. An extension's :deps are
+  ;; resolved in-process through clojure.tools.deps (kmet.agent.extensions.
+  ;; context/jars-for): babashka bundles it, and Jolt has its own resolver
+  ;; (jolt.deps) — the plain JVM classpath has neither, so a user extension
+  ;; declaring deps could not load there. `bb start-jvm`, the JVM test tasks
+  ;; and the JVM packager (which resolves its basis with this alias) opt in.
+  :jvm {:extra-deps {org.clojure/tools.deps {:mvn/version "0.28.1569"}}}
   :dev {:extra-paths ["test"]}
   ;; The JVM packager (`bb uberjar-jvm`, kmet.tasks.build-jvm): tools.build is
   ;; build-only — the app never loads it, and the bb test/lint classpaths stay
