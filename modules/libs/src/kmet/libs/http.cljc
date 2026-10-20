@@ -43,6 +43,7 @@
    through curl with full status/headers parity. Proxy selection is
    transparent — callers never see the transport. `:proxy :none` forces a
    direct connection; the env seam is testable via a map (proxy-for-url)."
+  (:refer-clojure :exclude [get])
   (:require [babashka.fs :as fs]
             [babashka.http-client :as http]
             [babashka.process :as proc]
@@ -92,7 +93,7 @@
   "First non-blank value of the given env var names (upper- then lowercase,
    like curl)."
   [env & names]
-  (some (fn [n] (let [v (get env n)] (when (seq v) v))) names))
+  (some (fn [n] (let [v (clojure.core/get env n)] (when (seq v) v))) names))
 
 (defn- parse-socks-proxy-url
   "Parse a SOCKS proxy URL; a missing scheme defaults to socks5h — the
@@ -327,7 +328,7 @@
    they keep the implicit default's headers (accept, gzip, user-agent)."
   [p mode]
   (let [key [(when p [(:url p) (:scheme p) (:user p) (:pass p)]) mode]]
-    (or (get @client-cache key)
+    (or (clojure.core/get @client-cache key)
         (let [c (if p
                   (java-client p mode)
                   (http/client (assoc http/default-client-opts
@@ -797,7 +798,6 @@
       (curl-request (:url opts) opts p throw?)
       (native-request opts throw? p))))
 
-#_{:clj-kondo/ignore [:redefined-var]}
 (defn get
   "GET url (see request for OPTS)."
   [url opts]
