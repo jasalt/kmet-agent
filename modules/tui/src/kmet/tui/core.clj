@@ -28,6 +28,25 @@
 (def IComponent protocols/IComponent)
 (def IFocusable protocols/IFocusable)
 (def IEditorComponent protocols/IEditorComponent)
+
+(defn- follow-protocol!
+  "Keep re-export ALIAS naming PROTOCOL's current value. Clojure has no var
+  aliasing: `(def Alias Protocol)` is a VALUE snapshot, and every `extend`/
+  `extend-type` rebinds the protocol var to a new map carrying the added
+  impls. Babashka and Jolt extend in place, so a snapshot stays live there;
+  on the JVM it does not, and `(satisfies? kmet.tui.core/IComponent x)` then
+  answers false for every impl registered after this namespace loaded —
+  extension components (SCI `extend`s their record classes) and components
+  that extend a protocol later in the load order (SettingsList/Input and the
+  dialogs extending IFocusable). `alter-var-root` notifies var watches, so
+  the re-export tracks each extension."
+  [alias protocol]
+  (add-watch protocol ::follow
+             (fn [_ _ _ new] (alter-var-root alias (constantly new)))))
+
+(follow-protocol! #'IComponent #'protocols/IComponent)
+(follow-protocol! #'IFocusable #'protocols/IFocusable)
+(follow-protocol! #'IEditorComponent #'protocols/IEditorComponent)
 (defn render
   "One headless frame: drain the reaction batch queue, then render C at
    WIDTH. Mirrors the live loop (flush! runs on the loop's wake, before the
@@ -51,10 +70,33 @@
     (render c width)
     (finally (protocols/dispose c))))
 
-(def handle-input protocols/handle-input)
-(def invalidate protocols/invalidate)
-(def focused protocols/focused)
-(def set-focused! protocols/set-focused!)
+;; The protocol METHODS are re-exported as delegating fns, never captured:
+;; `extend` rebinds each method var to a fresh fn carrying a rebuilt
+;; MethodImplCache (per-method, per-extend). A captured copy keeps the cache
+;; built from the protocol map at capture time, so it cannot dispatch values
+;; whose implementations were registered later — exactly what SCI-backed
+;; extension components do (`extend` on their record classes). `(def render
+;; protocols/render)` would break extension components the same way; the
+;; resource-owning verbs below and `render` above all dispatch at call time.
+(defn handle-input
+  "Route input DATA to component C (pi: Component.handleInput)."
+  [c data]
+  (protocols/handle-input c data))
+
+(defn invalidate
+  "Clear C's cached render state (pi: Component.invalidate)."
+  [c]
+  (protocols/invalidate c))
+
+(defn focused
+  "True when focusable F currently has focus (pi: focusable.focused)."
+  [f]
+  (protocols/focused f))
+
+(defn set-focused!
+  "Set focusable F's focus state to VAL (pi: focusable.setFocused)."
+  [f val]
+  (protocols/set-focused! f val))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; Cursor

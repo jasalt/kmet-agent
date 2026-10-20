@@ -11,7 +11,6 @@
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.settings-list :as settings-list]
             [kmet.tui.core :as core]
-            [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]
             [kmet.agent.session.runtime :as runtime]
             [kmet.test-utils :as tu]))
@@ -116,12 +115,15 @@
             (doseq [_ (range 5)] (core/handle-input sl "\u007f"))
             (is (some #(str/includes? % "Auto-compact") (plain frame 100))))
           (testing "escape unwinds the panel: dock restored, frame disposed"
+            ;; observed at the dock's plain-fn entry point, not the protocol
+            ;; method: the JVM inlines protocol dispatch, so with-redefs on
+            ;; kmet.tui.protocols/dispose never sees the call there
             (let [disposed (atom nil)
-                  orig protocols/dispose]
-              (with-redefs [protocols/dispose (fn [c]
-                                                (when (identical? frame c)
-                                                  (reset! disposed c))
-                                                (orig c))]
+                  orig dock/dispose!]
+              (with-redefs [dock/dispose! (fn [cs c]
+                                            (when (identical? frame c)
+                                              (reset! disposed c))
+                                            (orig cs c))]
                 (core/handle-input sl "\u001b"))
               (is (empty? @(:dock-stack cs)) "the editor is restored")
               (is (identical? frame @disposed) "the frame's tree is disposed"))))))))

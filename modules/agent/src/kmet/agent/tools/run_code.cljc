@@ -181,23 +181,24 @@
 
 (defn- eval-with-io
   "Run THUNK with SCI's *out*/*err* bound to the capture writers (the
-   kmet.agent.extensions.core/with-sci-io pattern: babashka's SCI is wired to the
-   host streams, Jolt's sci vars are bound explicitly). Used by the eval
-   thread and by sandbox/spawn, whose future thread would otherwise print to
-   an unbound *out* on Jolt. Print length/level are bounded alongside: an
-   infinite seq must not print host code past the deadline, and host printing
-   is not interruptible — on babashka the host vars drive SCI's printer, on
-   Jolt sci has its own."
+   kmet.agent.extensions.core/with-sci-io pattern). Babashka's SCI is wired to
+   the host dynamic vars, so binding those reaches the sandbox; on Jolt and on
+   the JVM the standalone sci has its OWN out/err vars — bound explicitly, or
+   the sandbox's printlns hit an unbound sci var (SciUnbound cannot be cast to
+   Writer) and stream nothing. Used by the eval thread and by sandbox/spawn,
+   whose future thread would otherwise print outside the capture. Print
+   length/level are bounded alongside: an infinite seq must not print host
+   code past the deadline, and host printing is not interruptible."
   [out-w err-w thunk]
-  #?(:jolt (sci/binding [sci/out out-w
-                         sci/err err-w
-                         sci/print-length print-length-limit
-                         sci/print-level print-level-limit]
-             (thunk))
-     :default (binding [*out* out-w
-                        *err* err-w
-                        *print-length* print-length-limit
-                        *print-level* print-level-limit]
+  #?(:bb (binding [*out* out-w
+                   *err* err-w
+                   *print-length* print-length-limit
+                   *print-level* print-level-limit]
+           (thunk))
+     :default (sci/binding [sci/out out-w
+                            sci/err err-w
+                            sci/print-length print-length-limit
+                            sci/print-level print-level-limit]
                 (thunk))))
 
 ;; ─── Output capture ───────────────────────────────────────────────────────
@@ -512,11 +513,36 @@
               :when (copyable-namespace? s)]
           [s (copy-ns-publics s)])))
 
+;; referenced only from the :default reader branch, invisible to the bb lint view
+#_{:clj-kondo/ignore [:unused-private-var]}
+(def ^:private jvm-class-names
+  "The JVM sandbox's class surface: the java.lang core a script expects, the
+   java.io/java.util types the tool's contract names, and nothing else. bb
+   gets the whole host table (babashka.classes/all-classes); the JVM has no
+   such enumeration, and SCI's own JVM defaults resolve only java.lang.Exception
+   — so this list is explicit. Extend it when a script needs a new JDK type."
+  '[java.lang.System java.lang.Thread java.lang.Runtime java.lang.Math
+    java.lang.Object java.lang.String java.lang.StringBuilder
+    java.lang.Character java.lang.Boolean java.lang.Byte java.lang.Short
+    java.lang.Integer java.lang.Long java.lang.Float java.lang.Double
+    java.lang.Number java.lang.CharSequence java.lang.Comparable
+    java.lang.Iterable java.lang.Class java.lang.Enum java.lang.Cloneable
+    java.lang.Throwable java.lang.Exception java.lang.RuntimeException
+    java.lang.IllegalArgumentException java.lang.IllegalStateException
+    java.lang.NumberFormatException java.lang.UnsupportedOperationException
+    java.lang.IndexOutOfBoundsException java.lang.StackTraceElement
+    java.io.File java.io.IOException java.io.Reader java.io.Writer
+    java.io.InputStream java.io.OutputStream java.io.BufferedReader
+    java.io.BufferedWriter java.io.StringReader java.io.StringWriter
+    java.util.Date java.util.UUID java.util.List java.util.Map java.util.Set
+    java.util.ArrayList java.util.HashMap java.util.HashSet java.util.Collections])
+
 (defn- host-class-map
-  "symbol → Class for every class babashka exposes, under both its full and
-   simple name, so System/Thread/java.io.*/Throwable/… resolve as in a
-   babashka script. Empty where the host has no class table (jolt's SCI does
-   not expose one); SCI's small default class set still applies there."
+  "symbol → Class under both its full and simple name, so
+   System/Thread/java.io.*/Throwable/… resolve as in a babashka script. bb
+   answers its whole class table, the JVM an explicit java.lang/java.io/
+   java.util subset (SCI's JVM defaults alone resolve only Exception), and
+   Jolt nothing — its SCI exposes no class table."
   []
   #?(:bb
      (try
@@ -532,7 +558,16 @@
           {}
           (all-classes)))
        (catch Throwable _ {}))
-     :default {}))
+     :jolt {}
+     :default
+     (reduce (fn [m name-sym]
+               (try
+                 (let [c (Class/forName (str name-sym))
+                       simple (symbol (.getSimpleName c))]
+                   (assoc m name-sym c simple c))
+                 (catch Throwable _ m)))
+             {}
+             jvm-class-names)))
 
 (def ^:private extra-core-vars
   "Host clojure.core vars copied into the sandbox core as sci vars (macros keep
@@ -997,7 +1032,7 @@
   (str "Run a Clojure script with the active tools bridged in: one call can do a whole task — data work, loops over many files, chained or fanned-out tool calls — while every inner result stays out of the conversation. Only values you pass to (emit value) come back — stdout/stderr and the final value are discarded.\n\n"
        "Use it for general scripting and multi-step work — parse/transform/generate data, scan or filter many files with fs/slurp/sh, run a search→read→verify chain, or fan out N tool calls and reduce them. Use bash for one small command and read for one file.\n\n"
        "Tools: (tools/call \"name\" args) returns a promise — start independent calls before derefing. Batch with (tools/await-all (tools/call-many [{:name ... :args ...} ...])); discover with (tools/list) and (tools/describe \"name\"). Results are {:content :is-error :details :truncation :images}; branch on :is-error. (emit value) returns nil and may be called as often as needed — the emitted values are returned in order.\n\n"
-       "Sandbox: Clojure; on babashka a full babashka surface. Require clojure.*/babashka.* namespaces or the bundled libs (rewrite-clj, cljfmt, edamame, parinferish); on babashka you can also resolve System/java.io.*/Throwable. Aliases: fs, str/set/edn/walk, json, p, sh, tools, sandbox. :timeout is seconds (0/omitted = none). Output is capped at 16 KiB/2000 lines; :max-output-bytes raises it to 50 KiB."))
+       "Sandbox: Clojure; on babashka a full babashka surface, on the JVM the java.lang/java.io/java.util subset. Require clojure.*/babashka.* namespaces or the bundled libs (rewrite-clj, cljfmt, edamame, parinferish); System/java.io.*/Throwable resolve on babashka and the JVM (Jolt's SCI exposes no class table). Aliases: fs, str/set/edn/walk, json, p, sh, tools, sandbox. :timeout is seconds (0/omitted = none). Output is capped at 16 KiB/2000 lines; :max-output-bytes raises it to 50 KiB."))
 
 (defn title
   "Quiet one-liner body for the run_code tool: `run $ ` and the first code

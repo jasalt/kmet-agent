@@ -120,7 +120,13 @@
        {:render-fn #(protocols/render comp %)
         :invalidate-fn #(protocols/invalidate comp)
         :dispose-fn #(hiccup/dispose-tree! comp)}))
-    (satisfies? tui/IComponent x) x))
+    ;; the protocol var, not kmet.tui.core's re-exported value: `extend`
+    ;; (which is how SCI-backed extension components register their
+    ;; implementations) rewrites the protocol var's root, so a re-export
+    ;; captured at load time is a stale snapshot that misses impls added
+    ;; later — the extension panel then fails `satisfies?` on the JVM host
+    ;; and the dialog never mounts (bb's satisfies? is laxer)
+    (satisfies? protocols/IComponent x) x))
 
 (defn- transfer-editor!
   "Copy the app editor's wiring onto a custom editor component (pi:
