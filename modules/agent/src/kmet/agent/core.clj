@@ -31,11 +31,20 @@
   []
   (some-> (io/resource "kmet/version.txt") slurp str/trim not-empty))
 
+(def ^:private source-marker
+  "Classpath key of a kmet namespace source — the file source-run? stats. It
+   exists in every mode (sources ship in the jars and embedded stores), so
+   only the URL scheme tells a checkout from a packaged image. It must name a
+   real namespace: a stale path answers nil and pins `kmet --version` to `dev`
+   in every source run."
+  "kmet/agent/core.clj")
+
 (defn- source-run?
-  "True when kmet's own source files resolve off disk — a `bb start` / `jolt start`
-   from the checkout, as opposed to a packaged jar/embedded image."
+  "True when kmet's own source files resolve off disk — a `bb start` /
+   `jolt start` / `bb start-clj` run from the checkout, as opposed to a
+   packaged jar or embedded image."
   []
-  (some-> (io/resource "kmet/core.clj") str (str/starts-with? "file:")))
+  (some-> (io/resource source-marker) str (str/starts-with? "file:")))
 
 (defn- kmet-version
   "The version this kmet is: the baked kmet/version.txt when one is packaged

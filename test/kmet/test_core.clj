@@ -1,7 +1,8 @@
 (ns kmet.test-core
   "CLI surface tests — --list-models output (pi cli/list-models.ts), the
    --version flag, and its token-count formatting."
-  (:require [clojure.string :as str]
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.test :as t]
             [kmet.agent.core :as core]
             [kmet.ai.models :as models]
@@ -83,6 +84,13 @@
   (t/is (= ["hi"] (:messages (core/parse-args ["--mode" "edn" "hi"]))))
   (t/is (contains? (core/parse-args ["--mode"]) :mode)
         "a missing value is recorded (and rejected at dispatch)"))
+
+(t/deftest source-marker-resolves-on-the-classpath
+  ;; a stale marker path silently pins `kmet --version` to "dev" in every
+  ;; source run (the modules/app -> modules/agent rename left it naming
+  ;; kmet/core.clj, which no tree has)
+  (t/is (some? (io/resource @#'core/source-marker))
+        "the source-run marker must name a real namespace source"))
 
 (t/deftest test-kmet-version
   (t/testing "a packaged kmet reports the version it was built as"
