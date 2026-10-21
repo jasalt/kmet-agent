@@ -29,6 +29,11 @@ extra source roots, and the tasks read it instead of repeating the paths
 (the framework may require only `kmet.libs.*`) but its sources live in
 `modules/hikap`.
 
+The extension contract sits above the app tree, beside it:
+`modules/agent/src/kmet/extension.clj` (`kmet.extension`) is the one kmet
+namespace an extension may depend on; `kmet/agent/extensions/` is its
+runtime.
+
 The app module (`modules/agent/src/kmet/agent`):
 
 ```
@@ -44,8 +49,7 @@ kmet/agent/
 ├── app_runtime.clj     — the app root store node + the loop's stage map
 ├── registry.clj        — name-addressed registrations in the app root's
 │                         store (commands, prompts, skills, tools)
-├── extension.clj       — the extension contract root (`kmet.agent.extension`)
-├── extensions/         — the extension ABI implementation
+├── extensions/         — the extension runtime
 │   ├── core.cljc       — hook/renderer/shortcut/flag registries, bind and
 │   │                     install-front-end!, the extension UI ports
 │   ├── context.cljc    — per-extension SCI isolation

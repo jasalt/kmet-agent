@@ -18,7 +18,7 @@
 
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.agent.ui.tui.tool-renderers :as renderers]
             [kmet.libs.process :as process]))
 

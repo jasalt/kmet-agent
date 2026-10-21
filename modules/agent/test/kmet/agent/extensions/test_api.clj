@@ -6,7 +6,7 @@
             [clojure.string :as str]
             [babashka.fs :as fs]
             [babashka.process :as proc]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.agent.config :as cfg]
             [kmet.ai.models :as models]
             [kmet.agent.extensions.core :as extensions]

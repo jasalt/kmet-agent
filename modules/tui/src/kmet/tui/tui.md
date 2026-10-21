@@ -657,7 +657,7 @@ the process-global registry in `kmet.libs.hikap.alias`:
 - `defalias` defs the var to the **keyword**, not the fn — the var is not
   callable; use `register!` for a programmatic hook.
 - The registry is global and mutable. Extension aliases must be registered
-  through the extension api (`kmet.agent.extension/register-alias!`) so unload
+  through the extension api (`kmet.extension/register-alias!`) so unload
   removes them — a `defalias` in an extension registers directly and would
   survive unload. Register top-level fns, never closures over extension
   state (the registration keeps the closure, and what it closes over,

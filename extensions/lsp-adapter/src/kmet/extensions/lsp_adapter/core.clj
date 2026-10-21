@@ -12,7 +12,7 @@
             [kmet.extensions.lsp-adapter.render :as render]
             [kmet.extensions.lsp-adapter.runtime :as runtime]
             [kmet.extensions.lsp-adapter.tools :as tools]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.path :as path]
             [kmet.libs.edn-store :as edn-store]

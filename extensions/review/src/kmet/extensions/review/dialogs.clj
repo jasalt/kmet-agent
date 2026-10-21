@@ -15,7 +15,7 @@
    Each dialog returns a result via the ui-custom `close` callback.
    Cancel = `close nil` (or escape)."
   (:require [clojure.string :as str]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]

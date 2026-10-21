@@ -5,7 +5,7 @@
 ;; exclusion in one load.
 
 (ns cljfmt-ext.main
-  (:require [kmet.agent.extension :as ext]
+  (:require [kmet.extension :as ext]
             [cljfmt.config :as config]
             [cljfmt.core :as fmt]))
 

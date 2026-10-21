@@ -1,6 +1,6 @@
 (ns kmet.agent.extensions.core
   "Extension runtime: discovers, loads, reloads and unloads Clojure
-   extensions. The extension contract lives in kmet.agent.extension — extensions
+   extensions. The extension contract lives in kmet.extension — extensions
    depend on that namespace plus the shared library layers kmet.tui.*
    (the generic TUI layer; the port of pi's @earendil-works/pi-tui) and
    kmet.libs.* (generic, self-contained utilities) — all shared by
@@ -79,7 +79,7 @@
             ;; extension load (its requires resolve to the bb ports there).
             #?(:jolt [kmet.agent.extensions.libs])
             #?(:jolt [kmet.loader.jolt-loader :as loader-jolt])
-            [kmet.agent.extension]
+            [kmet.extension]
             [kmet.libs.scope :as scope]))
 
 ;; ─── Provider-event bridges (pi: context / context_with_system /

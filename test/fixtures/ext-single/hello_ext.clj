@@ -1,6 +1,6 @@
 (ns hello-ext
   "Sample single-file extension for tests."
-  (:require [kmet.agent.extension :as ext]))
+  (:require [kmet.extension :as ext]))
 
 ;; Tag alias contributed by the extension (kmet.libs.hikap.alias): the var holds
 ;; the KEYWORD so the extension's own tree sites can write [chip …], and

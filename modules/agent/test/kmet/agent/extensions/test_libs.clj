@@ -5,7 +5,7 @@
             [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.extensions.context :as ext-context]
             [kmet.agent.app-runtime :as rt]
@@ -168,7 +168,7 @@
     (spit (str dir "/extension.edn")
           "{:name \"hook-ext\" :entry hook-ext.main :loader [:sci :jolt]}\n")
     (spit (str dir "/hook_ext/main.clj")
-          (str "(ns hook-ext.main\n  (:require [kmet.agent.extension :as ext]))\n"
+          (str "(ns hook-ext.main\n  (:require [kmet.extension :as ext]))\n"
                "(defn init [api]\n"
                "  (ext/on-input api (fn [{:keys [text]}]\n"
                "                      {:action :transform :text (str text \"-hooked\")}))\n"

@@ -5,7 +5,7 @@
    IME candidate window follows the cursor). Used by the
    interactive mode's OAuth/API-key/auth-method prompts and the /tree
    flow. The app's own kit: extensions build their own dialogs with
-   kmet.tui.* and mount them via ui-custom (kmet.agent.extension docstring).
+   kmet.tui.* and mount them via ui-custom (kmet.extension docstring).
 
    The frame is a compiled hiccup tree (dsl.md): the border/spacer/title/
    hint chrome AND the interactive content (the `[:select-list]` /

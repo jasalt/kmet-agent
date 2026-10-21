@@ -15,7 +15,7 @@
 (require '[clojure.java.io :as io]
          '[clojure.string :as str])
 
-(require '[kmet.agent.extension :as ext]
+(require '[kmet.extension :as ext]
          '[kmet.agent.tools.registry :as registry]
          '[kmet.extensions.mcp-adapter.core :as mcp]
          '[kmet.extensions.mcp-adapter.config :as config])

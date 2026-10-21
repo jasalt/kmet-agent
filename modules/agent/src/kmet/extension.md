@@ -3,7 +3,7 @@
 An extension customises kmet with slash commands, tools, event handlers, hooks,
 CLI flags, custom message/entry renderers, UI contributions, and more. Extensions
 are **Clojure namespaces** with an explicit contract — they depend on exactly one
-namespace, `kmet.agent.extension`, and are loaded, reloaded and unloaded at runtime.
+namespace, `kmet.extension`, and are loaded, reloaded and unloaded at runtime.
 
 This document is the authoritative guide for writing extensions. Keep it up to
 date whenever the described behavior changes.
@@ -22,7 +22,7 @@ unregistered** afterwards.
 
 ```clojure
 (ns my.hello-ext
-  (:require [kmet.agent.extension :as ext]))
+  (:require [kmet.extension :as ext]))
 
 (defn init [api]
   (ext/register-command! api
@@ -212,7 +212,7 @@ Internal dependencies are declared in each file's `ns` form:
 ;; my_ext/main.clj
 (ns my-ext.main
   (:require [my-ext.helper :as helper]   ; internal dependency
-            [kmet.agent.extension :as ext]))   ; kmet core, resolved normally
+            [kmet.extension :as ext]))   ; kmet core, resolved normally
 
 (defn init [api]
   (ext/register-tool! api {:name (helper/tool-name)
@@ -300,7 +300,7 @@ evaluation context**. Every extension runs in its own isolated context:
   and the deps re-resolve.
 - kmet core and `clojure.*` / `babashka.*` namespaces are shared references
   (never re-evaluated), so extension registrations always reach the real
-  kmet registries. Extensions may depend only on `kmet.agent.extension` plus the
+  kmet registries. Extensions may depend only on `kmet.extension` plus the
   shared `kmet.tui.*` / `kmet.libs.*` libraries; other kmet internals are
   not resolvable from an extension context (the load fails with an explicit
   error) — the loader, `kmet.loader*`, is one of those internals.
@@ -368,7 +368,7 @@ The set is enumerated in `kmet.agent.extensions.libs`:
 
 Plus the libraries shared from the host itself: `clojure.*` (`core.async`
 and `rrb-vector` included), `babashka.fs`, `babashka.process`, and the kmet
-layers (`kmet.agent.extension`, `kmet.tui.*`, `kmet.libs.*` and the shared
+layers (`kmet.extension`, `kmet.tui.*`, `kmet.libs.*` and the shared
 renderer namespaces).
 
 The **guarantee is the namespace surface, not the version**: on babashka a
@@ -812,7 +812,7 @@ works for dir installs, symlinked checkouts and unexpanded jars:
 ```clojure
 (ns my-ext.main
   (:require [clojure.java.io :as io]
-            [kmet.agent.extension :as ext]))
+            [kmet.extension :as ext]))
 
 (defn init [api]
   (ext/register-skill! api (slurp (io/resource "skills/my-skill/SKILL.md"))
@@ -1407,7 +1407,7 @@ registered:
 ```clojure
 (ns my.hello-ext-test
   (:require [clojure.test :refer [deftest is]]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [my.hello-ext :as sut]))
 
 (deftest init-registers-hello-command
@@ -1436,7 +1436,7 @@ A complete extension showing the common pieces:
 (ns my.ext
   "Example: command + tool + event handler + status."
   (:require [clojure.string :as str]
-            [kmet.agent.extension :as ext]))
+            [kmet.extension :as ext]))
 
 (defn init [api]
   (ext/ui-set-status api "my-ext" "loaded")

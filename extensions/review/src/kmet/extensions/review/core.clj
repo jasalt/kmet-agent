@@ -16,7 +16,7 @@
    :session-start and :session-tree via the review-session entry."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.extensions.review.dialogs :as dlg]
             [kmet.extensions.review.git :as git]
             [kmet.extensions.review.prompts :as prompts]

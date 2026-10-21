@@ -11,7 +11,7 @@
             [clojure.string :as str]
             [kmet.extensions.clojure.edit-util :as util]
             [kmet.agent.ui.tui.tool-renderers :as renderers]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.libs.edit-diff :as edit-diff]
             [kmet.libs.path :as path]))
 

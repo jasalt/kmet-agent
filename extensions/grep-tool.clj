@@ -16,7 +16,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.libs.path :as path]
             [kmet.agent.ui.tui.tool-renderers :as renderers]))
 

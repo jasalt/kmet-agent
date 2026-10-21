@@ -6,7 +6,7 @@
             [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.libs.host :as host]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.app-runtime :as rt]
@@ -390,7 +390,7 @@
     (spit (str dir "/extension.edn") "{:name \"jar-ext\" :entry jar-ext.main :loader [:sci :jolt]}\n")
     (spit (str dir "/jar_ext/main.clj")
           (str "(ns jar-ext.main\n"
-               "  (:require [kmet.agent.extension :as ext]\n"
+               "  (:require [kmet.extension :as ext]\n"
                "            [jar-ext.helper :as helper]\n"
                "            [clojure.java.io :as io]))\n"
                "(defn init [api]\n"
@@ -492,7 +492,7 @@
     (spit (str dir "/extension.edn") "{:name \"dir-ext\" :entry dir-ext.main :loader [:sci :jolt]}\n")
     (spit (str dir "/dir_ext/main.clj")
           (str "(ns dir-ext.main\n"
-               "  (:require [kmet.agent.extension :as ext]\n"
+               "  (:require [kmet.extension :as ext]\n"
                "            [clojure.java.io :as io]))\n"
                "(defn init [api]\n"
                "  (ext/register-tool! api {:name \"dir-ext-tool\"\n"
@@ -526,7 +526,7 @@
     (spit (str dir "/extension.edn") "{:name \"selfreg\" :entry selfreg.main :loader [:sci :jolt]}\n")
     (spit (str dir "/selfreg/main.clj")
           (str "(ns selfreg.main\n"
-               "  (:require [kmet.agent.extension :as ext]\n"
+               "  (:require [kmet.extension :as ext]\n"
                "            [clojure.java.io :as io]))\n"
                "(defn init [api]\n"
                "  (ext/register-skill! api (slurp (io/resource \"SKILL.md\"))\n"

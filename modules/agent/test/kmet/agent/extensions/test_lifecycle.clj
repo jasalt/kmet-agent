@@ -5,7 +5,7 @@
   (:require [clojure.test :as t :refer [testing]]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.libs.host :as host]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.app-runtime :as rt]
@@ -75,7 +75,7 @@
     (spit (str dir "/extension.edn")
           "{:name \"owned-ext\" :entry owned-ext.main :loader [:sci :jolt]}\n")
     (spit (str dir "/owned_ext/main.clj")
-          (str "(ns owned-ext.main\n  (:require [kmet.agent.extension :as ext]))\n"
+          (str "(ns owned-ext.main\n  (:require [kmet.extension :as ext]))\n"
                "(defn init [api]\n"
                "  (ext/register-command! api {:name \"owned-cmd\" :description \"d\"\n"
                "                              :handler (fn [_ _] nil)})\n"
@@ -123,7 +123,7 @@
     (fs/delete-tree dir)
     (fs/create-dirs dir)
     (spit (str dir "/ext.clj")
-          (str "(ns term-ext (:require [kmet.agent.extension :as ext]))\n"
+          (str "(ns term-ext (:require [kmet.extension :as ext]))\n"
                "(defn init [api]\n"
                "  (ext/ui-on-terminal-input api (fn [_data] nil)))\n"))
     (extensions/bind-extensions!
@@ -160,7 +160,7 @@
     (spit (str dir "/extension.edn")
           "{:name \"res-owner\" :entry res-owner.main :loader [:sci :jolt]}\n")
     (spit (str dir "/res_owner/main.clj")
-          (str "(ns res-owner.main\n  (:require [kmet.agent.extension :as ext]))\n"
+          (str "(ns res-owner.main\n  (:require [kmet.extension :as ext]))\n"
                "(defn init [api]\n"
                "  (ext/on-event api :resources-discover\n"
                "    (fn [_ _]\n"

@@ -144,7 +144,7 @@ Answers are **hits** — data, never opened (§4.4).
 - `:ns` → the source's **location** (file path / artifact entry) or
   "already linked in another loader" (by-reference delegation, §4.3)
 - `:var` → the **var cell** (shared by reference — this is how
-  `kmet.agent.extension`, `kmet.tui.*`, `kmet.libs.*` are injected today)
+  `kmet.extension`, `kmet.tui.*`, `kmet.libs.*` are injected today)
 - `:class` → a class registration/token (jolt) or a real `Class` (JVM)
 - `:resource` → the resource's **location** (a URL or an embedded entry
   name — jolt has two kinds, and both open on demand); the loader wraps it
@@ -409,7 +409,7 @@ every host gets the same semantics for free. The generic backend is one
 implementation with a host seam for *where bytes come from*
 (`babashka.classes`/resource on bb, classpath on the JVM,
 `jolt.host/ns-source` on jolt) and the **share list** supplied by the app
-layer (the lib must not know `kmet.agent.extension`/`kmet.tui.*`/`kmet.libs.*`).
+layer (the lib must not know `kmet.extension`/`kmet.tui.*`/`kmet.libs.*`).
 
 Verified JVM facts (probed, not assumed): `proxy [java.lang.ClassLoader]`
 works and is the only viable route — `defineClass` is protected/final and

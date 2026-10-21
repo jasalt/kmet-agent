@@ -2,7 +2,7 @@
   "Sample multi-file (manifest) extension for tests."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [multi-ext.helper :as helper]))
 
 (defn init [api]

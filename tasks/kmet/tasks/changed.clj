@@ -253,7 +253,7 @@
 (defn- scan-graph
   "The require graph (ns → set of required kmet.* nss) and ns → file path,
    from every .clj file under the source roots. Extension namespaces join the
-   graph so changes to the extension contract (kmet.agent.extension, kmet.tui.*,
+   graph so changes to the extension contract (kmet.extension, kmet.tui.*,
    kmet.libs.*) pull dependent extension files into the lint closure.
    Cached per source-tree stamp: the affected-* helpers scan repeatedly in
    one process (bb test-changed/test-ext-changed and their tests) and the

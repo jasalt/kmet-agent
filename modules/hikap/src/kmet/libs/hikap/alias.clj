@@ -15,7 +15,7 @@
    Since the tree carries the keyword, the registry is process-global and
    mutable; registration is explicit and last-wins (an extension reload
    re-registers its aliases). Extension aliases must be registered through
-   the extension api (kmet.agent.extension/register-alias!) so unload removes
+   the extension api (kmet.extension/register-alias!) so unload removes
    them, and must be top-level fns — never closures over extension state,
    which the registration would keep reachable for as long as it lives.
 

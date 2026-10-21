@@ -74,7 +74,7 @@
     (let [nss (set (changed/affected-test-nss-by '[kmet.ai.models]))]
       (is (not (contains? nss 'kmet.tui.components.test-text)))))
   (testing "extension test namespaces now participate in root test selection"
-    (let [nss (set (changed/affected-test-nss-by '[kmet.agent.extension extensions.tools]))]
+    (let [nss (set (changed/affected-test-nss-by '[kmet.extension extensions.tools]))]
       (is (seq (filter #(str/starts-with? (str %) "kmet.extensions.") nss)))
       (is (contains? nss 'kmet.agent.extensions.test-api)))))
 

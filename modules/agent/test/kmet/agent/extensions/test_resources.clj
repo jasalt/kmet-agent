@@ -5,7 +5,7 @@
             [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.libs.host :as host]
             [kmet.ai.models :as models]
             [kmet.agent.extensions.core :as extensions]
@@ -150,7 +150,7 @@
     (fs/create-dirs (str dir "/prov_unload"))
     (spit (str dir "/extension.edn") "{:name \"prov-unload\" :entry prov-unload.main :loader [:sci :jolt]}\n")
     (spit (str dir "/prov_unload/main.clj")
-          (str "(ns prov-unload.main\n  (:require [kmet.agent.extension :as ext]))\n"
+          (str "(ns prov-unload.main\n  (:require [kmet.extension :as ext]))\n"
                "(defn init [api]\n"
                "  (ext/models-register-provider! api :prov-unload\n"
                "    {:base-url \"https://prov-unload.example/v1\" :api :openai-completions\n"
@@ -235,7 +235,7 @@
     (fs/create-dirs (str dir "/slurp_ext"))
     (spit (str dir "/extension.edn") "{:name \"slurp-ext\" :entry slurp-ext.main :loader [:sci :jolt]}\n")
     (spit (str dir "/slurp_ext/main.clj")
-          (str "(ns slurp-ext.main\n  (:require [kmet.agent.extension :as ext]))\n"
+          (str "(ns slurp-ext.main\n  (:require [kmet.extension :as ext]))\n"
                "(defn init [api]\n"
                "  (ext/register-tool! api {:name \"slurp-tool\"\n"
                "                           :description \"reads/writes via slurp/spit\"\n"
@@ -266,7 +266,7 @@
     (fs/create-dirs (str dir "/tr_ext"))
     (spit (str dir "/extension.edn") "{:name \"tr-ext\" :entry tr-ext.main :loader [:sci :jolt]}\n")
     (spit (str dir "/tr_ext/main.clj")
-          (str "(ns tr-ext.main\n  (:require [kmet.agent.extension :as ext]\n            [clojure.tools.reader :as r]\n            [clojure.tools.reader.reader-types :as rt]))\n"
+          (str "(ns tr-ext.main\n  (:require [kmet.extension :as ext]\n            [clojure.tools.reader :as r]\n            [clojure.tools.reader.reader-types :as rt]))\n"
                "(defn init [api]\n"
                "  (ext/register-tool! api {:name \"tr-tool\"\n"
                "                           :description \"uses the bundled tools.reader port\"\n"
@@ -301,7 +301,7 @@
     (spit (str dir "/extension.edn") "{:name \"spec-ext\" :entry spec-ext.main :loader [:sci :jolt]}\n")
     (spit (str dir "/spec_ext/main.clj")
           (str "(ns spec-ext.main\n"
-               "  (:require [kmet.agent.extension :as ext]\n"
+               "  (:require [kmet.extension :as ext]\n"
                "            [clojure.spec.alpha :as s]\n"
                "            [clojure.java.io :as io]))\n"
                "(s/def ::x int?)\n"
@@ -362,7 +362,7 @@
           (str/join
            "\n"
            ["(ns fixed-set-probe"
-            "  (:require [kmet.agent.extension :as ext]"
+            "  (:require [kmet.extension :as ext]"
             "            [cljfmt.config :as config]"
             "            [cljfmt.core :as fmt]"
             "            [clojure.spec.alpha :as s]"
@@ -466,7 +466,7 @@
     (spit (str dir "/extension.edn")
           "{:name \"rb-ext\" :entry rb-ext.main :loader [:sci :jolt]}\n")
     (spit (str dir "/rb_ext/main.clj")
-          (str "(ns rb-ext.main\n  (:require [kmet.agent.extension :as ext]))\n"
+          (str "(ns rb-ext.main\n  (:require [kmet.extension :as ext]))\n"
                "(defn init [api]\n"
                "  (ext/register-command! api {:name \"rb-cmd\" :description \"d\"\n"
                "                              :handler (fn [_ _] nil)})\n"
@@ -500,13 +500,13 @@
       (fs/delete-tree dir)
       (fs/create-dirs dir)
       (spit (str dir "/iso_a.clj")
-            (str "(ns fork-iso (:require [kmet.agent.extension :as ext]))\n"
+            (str "(ns fork-iso (:require [kmet.extension :as ext]))\n"
                  "(def tag :a)\n"
                  "(defn init [api]\n"
                  "  (ext/register-tool! api {:name \"fork-iso-a\" :description \"a\"\n"
                  "                           :execute (fn [_] {:content (name tag)})}))\n"))
       (spit (str dir "/iso_b.clj")
-            (str "(ns fork-iso (:require [kmet.agent.extension :as ext]))\n"
+            (str "(ns fork-iso (:require [kmet.extension :as ext]))\n"
                  "(def tag :b)\n"
                  "(defn init [api]\n"
                  "  (ext/register-tool! api {:name \"fork-iso-b\" :description \"b\"\n"
@@ -565,7 +565,7 @@
                                       (fn [ev] (swap! probes conj [:a ev])))
           unsub-b (event-bus/on-event :queue-update
                                       (fn [ev] (swap! probes conj [:b (:mode ev)])))
-          content (str "(ns ctx-events (:require [kmet.agent.extension :as ext]))\n"
+          content (str "(ns ctx-events (:require [kmet.extension :as ext]))\n"
                        "(defn init [api]\n"
                        "  (ext/register-command! api {:name \"probe-cmd\"\n"
                        "                                :description \"pc\"\n"
@@ -606,7 +606,7 @@
     (let [dir "target/test-ext-ctx-cmd"]
       (fs/create-dirs dir)
       (spit (str dir "/ext.clj")
-            (str "(ns ctx-cmd (:require [kmet.agent.extension :as ext]))\n"
+            (str "(ns ctx-cmd (:require [kmet.extension :as ext]))\n"
                  "(defn init [api]\n"
                  "  (ext/register-command! api\n"
                  "    {:name \"ctx-test\" :description \"d\"\n"
@@ -641,7 +641,7 @@
               "{:name \"internal-ns\" :entry kmet.extensions.myext.core :loader [:sci :jolt]}\n")
         (spit (str dir "/kmet/extensions/myext/core.clj")
               (str "(ns kmet.extensions.myext.core\n"
-                   "  (:require [kmet.agent.extension :as ext]\n"
+                   "  (:require [kmet.extension :as ext]\n"
                    "            [kmet.extensions.myext.internal :as internal]))\n"
                    "(defn init [api]\n"
                    "  (when-not (= 42 (internal/answer))\n"
@@ -657,7 +657,7 @@
       (let [result (load "app" "(ns bad-app (:require [kmet.agent.commands :as c]))\n(defn init [api] nil)\n")]
         (t/is (some? (:error result)))
         (t/is (str/includes? (:error result)
-                             "may depend only on kmet.agent.extension, kmet.tui.* and kmet.libs.*"))))
+                             "may depend only on kmet.extension, kmet.tui.* and kmet.libs.*"))))
     (testing "the loader is host machinery — not shared, not requireable"
       (let [result (load "loader-ns"
                          (str "(ns bad-loader (:require [kmet.loader.core :as ldr]))\n"
@@ -671,7 +671,7 @@
       ;; from the injected share map — an injected namespace would
       ;; resolve and the require would succeed
       (let [result (load "loader-top"
-                         (str "(ns loader-top (:require [kmet.agent.extension :as ext]))\n"
+                         (str "(ns loader-top (:require [kmet.extension :as ext]))\n"
                               "(require 'kmet.loader.core)\n"
                               "(defn init [api] nil)\n"))]
         (t/is (some? (:error result)))

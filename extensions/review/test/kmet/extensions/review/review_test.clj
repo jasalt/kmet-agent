@@ -7,7 +7,7 @@
    in the TUI."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.extensions.review.core :as review]
             [kmet.extensions.review.dialogs :as dlg]))
 

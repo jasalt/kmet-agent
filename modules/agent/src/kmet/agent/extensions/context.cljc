@@ -17,7 +17,7 @@
 ;; registry plus a per-extension loader that serves (1) the extension's own
 ;; files, (2) the jars its deps.edn declares (the complete transitive
 ;; closure, resolved in-process via clojure.tools.deps), and (3) anything else on
-;; the classpath. Global namespaces the extension may touch — kmet.agent.extension
+;; the classpath. Global namespaces the extension may touch — kmet.extension
 ;; (the contract), clojure.*, babashka.*, and the shared library layers
 ;; kmet.tui.* (pi: @earendil-works/pi-tui) and kmet.libs.* (generic
 ;; self-contained utilities) — are injected as shared references, never
@@ -520,7 +520,7 @@
   "Is NS-OBJ a host namespace extension contexts share? The scan's rule,
    used by the SCI path (which copies the vars into its context) and by the
    Jolt native path (which filters the host root with the same names).
-   kmet.agent.extension itself and the clojure.core patches are added on top by
+   kmet.extension itself and the clojure.core patches are added on top by
    build-context-namespaces."
   [ns-obj]
   (let [n (str (ns-name ns-obj))]
@@ -552,17 +552,17 @@
   "The shared host namespaces' names, scanned from all-ns: the native
    backend's host-root filter (create-jolt-loader) and the SCI base
    context's cache key (shared-context — the namespaces copied into the
-   base; the set changing invalidates it). kmet.agent.extension is the one
+   base; the set changing invalidates it). kmet.extension is the one
    explicit extra, the contract namespace itself (the clojure.core patches
    ride on clojure.core, which every host has without asking a loader)."
   []
-  (into (sorted-set 'kmet.agent.extension)
+  (into (sorted-set 'kmet.extension)
         (keep (fn [ns-obj] (when (shared-namespace? ns-obj) (ns-name ns-obj))))
         (all-ns)))
 
 (defn- build-context-namespaces
   "The shared namespace map for the base extension context (see
-   shared-context): kmet.agent.extension (the contract), the clojure.*/babashka.*
+   shared-context): kmet.extension (the contract), the clojure.*/babashka.*
    builtins (incl. slurp/spit, which SCI's builtin clojure.core lacks but
    bb's env has), and the shared library layers kmet.tui.* and kmet.libs.*.
    The loader (kmet.loader.*) lives outside this tree — host machinery,
@@ -571,7 +571,7 @@
    its fork instead (create-sci-loader). Values are deref'd (see
    shared-var-map): host Var objects cannot enter a SCI context."
   []
-  (into {'kmet.agent.extension (shared-var-map 'kmet.agent.extension)
+  (into {'kmet.extension (shared-var-map 'kmet.extension)
          ;; slurp/spit/file-seq are absent from SCI's builtin clojure.core —
          ;; inject the host fns so extensions can read/write files directly
          ;; (the mcp-adapter used to work around this with babashka.fs
@@ -825,7 +825,7 @@
 (defn- validate-entry-requires!
   "Fail fast with an actionable error when NS-FORM (the entry ns form, or
    any internal extension ns form validated by the load-fn) requires a
-   kmet.* namespace outside the shared set (kmet.agent.extension + kmet.tui.* +
+   kmet.* namespace outside the shared set (kmet.extension + kmet.tui.* +
    kmet.libs.*) or the extension's own internal namespaces (OWNS-NS?, a
    path-derived predicate — those resolve regardless of their prefix),
    or requires babashka.http-client directly (outbound HTTP must
@@ -900,10 +900,10 @@
                 {:extension ext-name :ns lib}))
 
         (and (str/starts-with? s "kmet.")
-             (not= lib 'kmet.agent.extension))
+             (not= lib 'kmet.extension))
         (throw (ex-info
                 (str "Extension " ext-name " requires " lib
-                     " — extensions may depend only on kmet.agent.extension, kmet.tui.* and kmet.libs.*")
+                     " — extensions may depend only on kmet.extension, kmet.tui.* and kmet.libs.*")
                 {:extension ext-name :ns lib}))))))
 
 (defn- shared-tui-namespaces
@@ -1092,7 +1092,7 @@
    keyed by ns symbol), declared deps (closure resolved lazily on first
    library require), then bb-bundled classpath namespaces. kmet.* beyond
    the contract and undeclared non-bundled libraries are rejected with
-   actionable errors — extensions must depend only on kmet.agent.extension.
+   actionable errors — extensions must depend only on kmet.extension.
 
    Every own-artifact source is require-validated on load (not just the
    entry namespace): a forbidden/misspelled kmet.* require or a direct
@@ -1144,7 +1144,7 @@
 
                   (str/starts-with? (str ns-sym) "kmet.")
                   (str "Extension " ext-name " requires " ns-sym
-                       " — extensions may depend only on kmet.agent.extension, kmet.tui.* and kmet.libs.*")
+                       " — extensions may depend only on kmet.extension, kmet.tui.* and kmet.libs.*")
 
                   :else
                   (str "Extension " ext-name " requires " ns-sym

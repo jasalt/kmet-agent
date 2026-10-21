@@ -1,7 +1,7 @@
 # Built-in extensions
 
 Extensions shipped with kmet, living in the repo so they stay in sync with
-the extension contract (`kmet.agent.extension`). They are **opt-in**: nothing here
+the extension contract (`kmet.extension`). They are **opt-in**: nothing here
 is loaded by default.
 
 ## Enabling an extension
@@ -73,7 +73,7 @@ never ship.
 - **Single-file extensions** (`*.clj` at the top level of the directory) —
   one namespace defining `(defn init [api])`, namespaced
   `kmet.extensions.<name>` (the file's stem). They cannot carry a
-  `deps.edn`, so they may only use `kmet.agent.extension` plus the shared
+  `deps.edn`, so they may only use `kmet.extension` plus the shared
   `kmet.tui.*` / `kmet.libs.*` library layers, the shared renderer
   namespaces (`kmet.agent.ui.tui.tool-renderers`, `kmet.agent.keybindings`),
   `clojure.*` / `babashka.*` builtins and the fixed bundled set
@@ -81,7 +81,7 @@ never ship.
   parinferish — see `modules/agent/src/kmet/extension.md` § Bundled extension libraries). They
   have **no tests** — the code is expected to
   stay small and self-contained; validate changes by loading the file
-  against `kmet.agent.extension/create-nullable-api` or the real runtime.
+  against `kmet.extension/create-nullable-api` or the real runtime.
 - **Directory-based extensions** (a subdirectory with an `extension.edn`
   manifest `{:name ... :entry my.ext.main :loader [:jolt :sci]}`) — separate
   projects with a **strict ns-path layout** (namespace `a.b/c` at `a/b/c.clj`
@@ -139,7 +139,7 @@ terminal background).
 
 ## Shipped extensions
 
-The extension authoring guide — the full `kmet.agent.extension` API contract —
+The extension authoring guide — the full `kmet.extension` API contract —
 lives in [`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md); keep it up to
 date whenever the contract changes.
 

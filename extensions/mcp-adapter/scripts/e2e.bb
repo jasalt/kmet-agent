@@ -11,7 +11,7 @@
 (require '[babashka.process :as proc]
          '[clojure.string :as str]
          '[clojure.java.io :as io]
-         '[kmet.agent.extension :as ext]
+         '[kmet.extension :as ext]
          '[kmet.extensions.mcp-adapter.core :as mcp]
          '[kmet.extensions.mcp-adapter.config :as config]
          '[kmet.extensions.mcp-adapter.metadata :as metadata])

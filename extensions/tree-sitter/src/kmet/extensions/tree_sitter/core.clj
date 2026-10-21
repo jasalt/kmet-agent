@@ -9,7 +9,7 @@
 
 (ns kmet.extensions.tree-sitter.core
   (:require [babashka.fs :as fs]
-            [kmet.agent.extension :as ext]
+            [kmet.extension :as ext]
             [kmet.extensions.tree-sitter.dispatch :as dispatch]
             [kmet.extensions.tree-sitter.hooks :as hooks]
             [kmet.extensions.tree-sitter.paths :as paths]

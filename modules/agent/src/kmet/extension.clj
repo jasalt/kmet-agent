@@ -1,4 +1,4 @@
-(ns kmet.agent.extension
+(ns kmet.extension
   "The kmet extension contract — the root namespace an extension may depend
    on (psi: the extension-api contract; pi: the `pi` object passed to the
    extension factory). Extensions may also use the shared library layers

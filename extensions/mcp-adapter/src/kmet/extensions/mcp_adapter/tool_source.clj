@@ -18,7 +18,7 @@
    (`@(tools/call \"server_tool\" args)`), and branch on the kmet result
    map (:is-error/:content), not on mcpScript's {:ok :data} envelope."
   (:require [kmet.extensions.mcp-adapter.tool-proxy :as proxy]
-            [kmet.agent.extension :as ext]))
+            [kmet.extension :as ext]))
 
 (def source-id
   "The tool-source id the adapter registers under (replaces the retired
