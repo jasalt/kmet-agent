@@ -757,24 +757,7 @@
                "sh"]]
       (t/is (false? (#'bash-exec/wsl-launcher-bash? p)) p))))
 
-;; ─── Unknown tool ─────────────────────────────────────────────────────────
-
-(t/deftest test-truncate-tail-surrogate-boundary
-  (t/testing "byte-cut landing mid-UTF8 keeps whole char boundary (pi truncateStringToBytesFromEnd)"
-    (let [s (str (apply str (repeat 9 "x")) "😀" (apply str (repeat 9 "y")))
-          ;; UTF-8 bytes = 9 + 4 + 9 = 22; max-bytes 10 → pi slices last 10 bytes
-          ;; skipping the partial emoji bytes at the boundary (byte 10 is inside emoji)
-          result (bash-exec/truncate-tail s :max-bytes 10)
-          content (:content result)]
-      (t/is (:truncated result))
-      ;; pi skips the incomplete UTF-8 char, so the cut lands on a whole
-      ;; char boundary: only the 9 trailing y's survive (9 bytes ≤ 10).
-      ;; (No lone-surrogate regex: Jolt strings are codepoint-indexed and
-      ;; its regex engine rejects surrogate ranges at compile time.)
-      (t/is (= "yyyyyyyyy" content))
-      ;; pi skips the incomplete UTF-8 char, so emoji is dropped
-      (t/is (not (str/includes? content "\uFFFD")) "no replacement char")
-      (t/is (<= (bash-exec/byte-length content) 10) "output fits byte limit"))))
+;; ─── Streaming decode ────────────────────────────────────────────────────
 
 (t/deftest test-bash-executor-streaming-utf8-decode
   (t/testing "a multi-byte char split across reads reassembles (pi TextDecoder stream: true)"
@@ -800,6 +783,8 @@
             "invalid bytes decode to U+FFFD, not throw")
       (t/is (= "\uFFFD" (feed [(byte-array [(unchecked-byte 0xE4)])]))
             "a stranded lead byte at EOF flushes as U+FFFD"))))
+
+;; ─── Unknown tool ─────────────────────────────────────────────────────────
 
 (t/deftest test-tool-unknown
   (let [result (tools/execute-tool "unknown-tool" {})]

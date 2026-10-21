@@ -13,7 +13,7 @@
    call, with a bounded capture tail)."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.agent.tools.bash-executor :as bash-exec]
+            [kmet.agent.tools.bash-output :as bash-out]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.tools.tool :as tool]
             [kmet.agent.tools.invoke :as invoke]
@@ -41,8 +41,8 @@
   (let [q (quot ms 1000)]
     (if (= ms (* q 1000)) q (/ ms 1000.0))))
 
-(def ^:private tool-max-output-bytes bash-exec/DEFAULT-MAX-BYTES)
-(def ^:private tool-max-output-lines bash-exec/DEFAULT-MAX-LINES)
+(def ^:private tool-max-output-bytes bash-out/DEFAULT-MAX-BYTES)
+(def ^:private tool-max-output-lines bash-out/DEFAULT-MAX-LINES)
 
 (def ^:private default-run-code-output-bytes (* 16 1024))
 (def ^:private default-capture-bytes (* 1 1024 1024))
@@ -412,7 +412,7 @@
    emit loop cannot grow the buffer without bound. Returns nil."
   [{:keys [emitted emitted-bytes on-update abort capture-limit]} v]
   (let [s (format-value v)
-        total (swap! emitted-bytes + (bash-exec/byte-length s))]
+        total (swap! emitted-bytes + (bash-out/byte-length s))]
     (when (and capture-limit (> total capture-limit))
       (compare-and-set! abort nil :output-limit)
       (throw (ex-info "run_code output limit exceeded"
@@ -828,18 +828,18 @@
 
 (defn- truncation-notice [t]
   (str "[run_code output truncated: " (:total-lines t) " lines / "
-       (bash-exec/format-size (:total-bytes t))
+       (bash-out/format-size (:total-bytes t))
        " total, showing the last " (:shown-lines t)
        " lines. Print less or return distilled data instead.]"))
 
 (defn- bound-content
-  "Cap BODY at the per-call byte/line budget (bash-executor's tail
-   truncation — the end holds the return value). TOTALS carries the capture's
-   full byte/line counts, which the retained tail no longer knows."
+  "Cap BODY at the per-call byte/line budget (bash-output's tail truncation
+   — the end holds the return value). TOTALS carries the capture's full
+   byte/line counts, which the retained tail no longer knows."
   [body totals max-bytes max-lines]
-  (let [t (bash-exec/truncate-tail body
-                                   :max-bytes max-bytes
-                                   :max-lines max-lines)
+  (let [t (bash-out/truncate-tail body
+                                  :max-bytes max-bytes
+                                  :max-lines max-lines)
         total-bytes (max (:total-bytes t) (:bytes totals))
         total-lines (max (:total-lines t) (:lines totals))
         truncated? (or (:truncated t)
@@ -927,14 +927,14 @@
                      :timeout (str "run_code timed out after " (ms->sec timeout-ms) "s")
                      :aborted "run_code aborted"
                      :output-limit (str "run_code output exceeded "
-                                        (bash-exec/format-size capture-bytes)
+                                        (bash-out/format-size capture-bytes)
                                         " — stopped")
                      :error (:error res)
                      nil)
         parts (cond-> (vec emitted)
                 error-text (conj error-text))
         body (if (seq parts) (str/join "\n" parts) "(no output)")
-        totals {:bytes (bash-exec/byte-length body) :lines (text-lines body)}
+        totals {:bytes (bash-out/byte-length body) :lines (text-lines body)}
         {:keys [content truncation]} (bound-content body totals output-bytes output-lines)
         calls @trace]
     (cond-> {:content content

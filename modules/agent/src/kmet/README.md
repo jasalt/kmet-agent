@@ -105,7 +105,10 @@ kmet/agent/
 │   ├── invoke.clj      — the shared invocation pipeline (loop + run_code)
 │   ├── util.clj        — path/argument helpers
 │   ├── bash_executor.clj — the bash tool's process engine (streaming,
-│   │                     truncation, temp-file spill)
+│   │                     temp-file spill, shell resolution)
+│   ├── bash_output.clj — the engine's pure half: size formatting, UTF-8
+│   │                     truncation and output sanitizing (read, run_code
+│   │                     and the renderers use it without the engine)
 │   └── config.clj      — the built-in tool rows for `kmet config`
 ├── modes/              — entry modes
 │   ├── interactive.clj — interactive TUI entry: run + session start-up

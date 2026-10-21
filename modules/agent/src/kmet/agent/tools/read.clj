@@ -6,7 +6,7 @@
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.tools.bash-executor :as bash-exec]
+            [kmet.agent.tools.bash-output :as bash-out]
             [kmet.agent.tools.util :as tool-util]
             [kmet.libs.path :as path])
   (:import [java.util Base64]
@@ -304,15 +304,15 @@
                           user-limited-lines (when (some? limit)
                                                (let [end (min (+ start-line limit) total-file-lines)]
                                                  (- end start-line)))
-                          truncation (bash-exec/truncate-head selected-content)
+                          truncation (bash-out/truncate-head selected-content)
                           output-text (cond
                                         (:first-line-exceeds-limit truncation)
-                                        (let [first-line-size (bash-exec/format-size
-                                                               (bash-exec/byte-length (nth all-lines start-line "")))]
+                                        (let [first-line-size (bash-out/format-size
+                                                               (bash-out/byte-length (nth all-lines start-line "")))]
                                           (str "[Line " start-line-display " is " first-line-size ", exceeds "
-                                               (bash-exec/format-size bash-exec/DEFAULT-MAX-BYTES)
+                                               (bash-out/format-size bash-out/DEFAULT-MAX-BYTES)
                                                " limit. Use bash: sed -n '" start-line-display "p' " raw-path
-                                               " | head -c " bash-exec/DEFAULT-MAX-BYTES "]"))
+                                               " | head -c " bash-out/DEFAULT-MAX-BYTES "]"))
 
                                         (:truncated truncation)
                                         (let [end-line-display (+ start-line-display (:output-lines truncation) -1)
@@ -322,7 +322,7 @@
                                                  (str "\n\n[Showing lines " start-line-display "-" end-line-display " of "
                                                       total-file-lines ". Use offset=" next-offset " to continue.]")
                                                  (str "\n\n[Showing lines " start-line-display "-" end-line-display " of "
-                                                      total-file-lines " (" (bash-exec/format-size bash-exec/DEFAULT-MAX-BYTES)
+                                                      total-file-lines " (" (bash-out/format-size bash-out/DEFAULT-MAX-BYTES)
                                                       " limit). Use offset=" next-offset " to continue.]"))))
 
                                         (and user-limited-lines (< (+ start-line user-limited-lines) total-file-lines))

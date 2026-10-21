@@ -6,6 +6,7 @@
    Streams live output via an optional on-update callback (pi: onUpdate)."
   (:require [clojure.string :as str]
             [kmet.agent.tools.bash-executor :as bash-exec]
+            [kmet.agent.tools.bash-output :as bash-out]
             [kmet.agent.tools.tool :as tool]
             [kmet.agent.tools.util :as tool-util]
             [kmet.libs.concurrent :as concurrent]))
@@ -57,8 +58,8 @@
   ;; interpolation of core/tools/bash.ts.
   (str "Execute a bash command in the current working directory. "
        "Returns stdout and stderr. Output is truncated to last "
-       bash-exec/DEFAULT-MAX-LINES " lines or "
-       (quot bash-exec/DEFAULT-MAX-BYTES 1024)
+       bash-out/DEFAULT-MAX-LINES " lines or "
+       (quot bash-out/DEFAULT-MAX-BYTES 1024)
        "KB (whichever is hit first). If truncated, full output "
        "is saved to a temp file. Optionally provide a timeout "
        "in seconds."))
@@ -83,7 +84,7 @@
                        (when (and (> @live-bytes max-live-bytes) (seq @live-chunks))
                          (let [c (first @live-chunks)]
                            (swap! live-chunks subvec 1)
-                           (swap! live-bytes - (bash-exec/byte-length c))
+                           (swap! live-bytes - (bash-out/byte-length c))
                            (recur)))))
         send-update (fn []
                       (when (and on-update (pos? @live-bytes))
@@ -108,11 +109,11 @@
                      :operations operations  ;; pi: BashOperations
                      :on-chunk (fn [chunk]
                                  (swap! live-chunks conj chunk)
-                                 (swap! live-bytes + (bash-exec/byte-length chunk))
+                                 (swap! live-bytes + (bash-out/byte-length chunk))
                                  (trim-live!)
                                  (send-update))
-                     :max-lines bash-exec/DEFAULT-MAX-LINES
-                     :max-bytes bash-exec/DEFAULT-MAX-BYTES})
+                     :max-lines bash-out/DEFAULT-MAX-LINES
+                     :max-bytes bash-out/DEFAULT-MAX-BYTES})
             {:keys [output exit-code cancelled truncated truncation full-output-path timed-out]} result
             ;; Pi: [Showing lines X-Y of Z. Full output: path] footer for the LLM
             ;; (stripped from the TUI display by the bash render-result, which
@@ -123,9 +124,9 @@
                            start-line (+ (- total-lines output-lines) 1)
                            end-line total-lines
                            limit-str (when (= (:truncated-by truncation) :bytes)
-                                       (str " (" (bash-exec/format-size
+                                       (str " (" (bash-out/format-size
                                                   (or (:max-bytes truncation)
-                                                      bash-exec/DEFAULT-MAX-BYTES))
+                                                      bash-out/DEFAULT-MAX-BYTES))
                                             " limit)"))]
                        (str "\n\n[Showing lines " start-line "-" end-line " of " total-lines
                             limit-str ". Full output: " full-output-path "]")))]

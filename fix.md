@@ -13,8 +13,9 @@ sample/theme-controller relocation, 7 test splits (`test_session`,
 extension documentation split (contract reference + `docs/extensions.md`),
 9 thinking-level policy moved to `kmet.ai.models`, plus the naming pass
 (`project_context`, `app_runtime`, `interactive/builtins`, `packages_cli`,
-`kmet.extension`) and carry-over 1 (façade-stubbing note in the agent
-README's session section).
+`kmet.extension`) and carry-overs 1 and 3 (façade-stubbing note, bash output
+split). Carry-over 2 (watch `session/store.clj`) is retired — the file stands
+at 566 lines and the façade's 63 names stay pinned by `test_facade.clj`.
 
 **Baseline before each item:** `bb check` compiles, `bb lint` 0/0,
 `bb test` = 3,915 tests / 22,645 assertions, `bb test-ext` green except the
@@ -81,13 +82,17 @@ a time, snapshotting render output.
    time and that a `with-redefs` on a façade alias cannot intercept the
    implementation namespaces (`context`/`stats`/`tree` call `store/*`
    directly).
-2. **`session/store.clj` is 566 lines** — the largest session module and the
-   one to watch. Split if the entry/usage helpers grow; the façade's public
-   surface (pinned by `session/test_facade.clj`) must stay 63 names.
-3. **Optional: `tools/bash_output.clj`.** `tools/bash_executor.clj` mixes
-   process execution with pure formatting/truncation. `ui/tui/bash_execution.clj`
-   and `ui/tui/tool_renderers.clj` require the whole engine only for
-   `format-size`, `byte-length`, and `truncate-*`. Moving the pure half into
-   `tools/bash_output.clj` keeps the UI out of the process engine; the
-   executor, `tools/bash`, and `tools/read` require both. Independent of the
-   items above.
+2. ~~**`session/store.clj` is 566 lines** — the largest session module and the
+   one to watch.~~ Retired: no split needed. If entry/usage helpers grow, the
+   façade's public surface (pinned by `session/test_facade.clj`) must stay 63
+   names.
+3. ~~**Optional: `tools/bash_output.clj`.**~~ Landed: the pure half of
+   `tools/bash_executor.clj` moved to `tools/bash_output.clj` — `format-size`,
+   `byte-length`, `truncate-head`/`truncate-tail`, `sanitize-output` and the
+   output budgets. `ui/tui/bash_execution.clj` and
+   `ui/tui/tool_renderers.clj` now require only that namespace (no process
+   engine), `read`/`run_code` take truncation and sizing from it, and the
+   executor keeps execution, shell resolution, env and temp-file spill. The
+   new namespace has its own unit tests
+   (`modules/agent/test/kmet/agent/tools/test_bash_output.clj`); the
+   truncate-tail test moved there from `test_tools.clj`.

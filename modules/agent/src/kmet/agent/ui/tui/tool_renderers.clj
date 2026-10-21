@@ -15,7 +15,7 @@
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.ui.tui.skill-message :as skill-message]
             [kmet.tui.hikap :as h]
-            [kmet.agent.tools.bash-executor :as bash-exec]))
+            [kmet.agent.tools.bash-output :as bash-out]))
 
 ;; ─── Shared render helpers (pi: render-utils.ts) ────────────────────────────
 
@@ -582,14 +582,14 @@
               (cond
                 first-line-exceeds-limit
                 (str "[First line exceeds "
-                     (bash-exec/format-size (or max-bytes bash-exec/DEFAULT-MAX-BYTES))
+                     (bash-out/format-size (or max-bytes bash-out/DEFAULT-MAX-BYTES))
                      " limit]")
                 (= truncated-by :lines)
                 (str "[Truncated: showing " output-lines " of " total-lines
-                     " lines (" (or max-lines bash-exec/DEFAULT-MAX-LINES) " line limit)]")
+                     " lines (" (or max-lines bash-out/DEFAULT-MAX-LINES) " line limit)]")
                 (= truncated-by :bytes)
                 (str "[Truncated: " output-lines " lines shown ("
-                     (bash-exec/format-size (or max-bytes bash-exec/DEFAULT-MAX-BYTES)) " limit)]"))))
+                     (bash-out/format-size (or max-bytes bash-out/DEFAULT-MAX-BYTES)) " limit)]"))))
           kids (concat
                 (when (seq lines)
                   (concat
@@ -930,8 +930,8 @@
      (when truncation
        (let [{:keys [total-lines shown-lines truncated-by max-bytes]} truncation
              size-str (when (= truncated-by :bytes)
-                        (bash-exec/format-size
-                         (or max-bytes bash-exec/DEFAULT-MAX-BYTES)))
+                        (bash-out/format-size
+                         (or max-bytes bash-out/DEFAULT-MAX-BYTES)))
              truncated-part (if (= truncated-by :bytes)
                               (str "Truncated: " shown-lines " lines shown ("
                                    size-str " limit)")

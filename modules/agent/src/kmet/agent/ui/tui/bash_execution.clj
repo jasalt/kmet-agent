@@ -19,7 +19,7 @@
             [kmet.tui.timers :as timers]
             [kmet.tui.utils :as u]
             [kmet.tui.components.spinner :as spinner]
-            [kmet.agent.tools.bash-executor :as bash-exec]
+            [kmet.agent.tools.bash-output :as bash-out]
             [kmet.agent.keybindings :as app-kb]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.agent.ui.tui.subs :as s]
@@ -149,7 +149,7 @@
           t (r/tracked-deref s/theme-sub)
           color-key (if exclude? :dim :bash-mode)
           full-output (str/join "\n" output-lines)
-          trunc-result (bash-exec/truncate-tail full-output)
+          trunc-result (bash-out/truncate-tail full-output)
           content (:content trunc-result)
           truncated (:truncated trunc-result)
           display-lines (if (seq content) (str/split-lines content) [])
