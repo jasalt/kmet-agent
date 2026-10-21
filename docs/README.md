@@ -22,13 +22,16 @@ describe instead of being mixed into this user guide. The temporary root notes
   OAuth, custom providers, and catalog refreshes.
 - [Customization](customization.md) — themes, skills, prompt templates,
   packages, and extensions.
+- [Writing extensions](extensions.md) — the authoring guide: layouts, loaders,
+  dependencies, UI contributions, and testing.
 - [Building](building.md) — create self-contained Babashka, Jolt, and JVM
   artifacts.
 - [About kmet](about.md) — the meaning and history behind the name.
 - [Examples](examples/README.md) — copyable settings and complete theme EDN
   files.
 
-For extension authors, the shipped extension overview is in
+For extension authors, [Writing extensions](extensions.md) is the authoring
+guide, the shipped extension overview is in
 [`extensions/README.md`](../extensions/README.md), and the authoritative
 `kmet.extension` contract is in [`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md).
 

@@ -44,4 +44,5 @@ color values, installation, and live reload; complete starting points are in
   registered.
   Shipped opt-in extensions live in [`extensions/`](../extensions/)
   ([usage](../extensions/README.md)); writing your own:
-  [`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md)
+  [the authoring guide](extensions.md) and the
+  [`kmet.extension` contract](../modules/agent/src/kmet/extension.md).

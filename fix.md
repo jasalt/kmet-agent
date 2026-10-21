@@ -9,10 +9,12 @@ when the list is empty.
 `run-attempt!`, `compact-context!`, the settings row table, and
 `replay-branch!` decomposed), 5 compaction + bash-executor ownership, 6 Tk
 sample/theme-controller relocation, 7 test splits (`test_session`,
-`test_loop`, `test_extensions`, `test_interactive_ui`, `test_llm`), 9
-thinking-level policy moved to `kmet.ai.models`, plus the naming pass
+`test_loop`, `test_extensions`, `test_interactive_ui`, `test_llm`), 8
+extension documentation split (contract reference + `docs/extensions.md`),
+9 thinking-level policy moved to `kmet.ai.models`, plus the naming pass
 (`project_context`, `app_runtime`, `interactive/builtins`, `packages_cli`,
-`kmet.extension`).
+`kmet.extension`) and carry-over 1 (façade-stubbing note in the agent
+README's session section).
 
 **Baseline before each item:** `bb check` compiles, `bb lint` 0/0,
 `bb test` = 3,915 tests / 22,645 assertions, `bb test-ext` green except the
@@ -20,20 +22,25 @@ pre-existing network-dependent `test-llm-copilot-responses-end-to-end`.
 
 ---
 
-## 8. Extension documentation (medium)
+## 8. Extension documentation (landed)
 
-`modules/agent/src/kmet/extension.md` is 1,465 lines and mixes three
-audiences: the API reference (what every `kmet.extension` fn takes and
-returns), the authoring guide (layout, manifests, loaders, isolation), and
-worked examples (`extensions/*`). The naming half of finding 8 is done.
+`modules/agent/src/kmet/extension.md` is now the **contract reference**
+(1,083 lines): the `init`/`shutdown` contract, allowed namespaces and
+isolation guarantees, the bundled-library table, the runtime lifecycle, and
+the full `kmet.extension` API surface. The authoring walkthrough — discovery,
+layouts (single file / manifest dir / jar), `:loader` backends and the Jolt
+host, `deps.edn`, the bundled-set and Babashka limits, HTTP and background
+work, the shared TUI library, testing workflow, worked example — moved to
+[`docs/extensions.md`](../docs/extensions.md) (535 lines). Cross-links were
+fixed in `AGENTS.md` (topic map), `docs/README.md`, `docs/customization.md`,
+`extensions/README.md` and `modules/loader/src/kmet/loader/loader.md`.
 
-Proposal: keep `extension.md` as the **contract reference** (the fn tables,
-the api map keys, the allowed namespaces, lifecycle guarantees) and move the
-authoring walkthrough + examples to `docs/extensions.md` (user-facing docs
-belong in `docs/` per `AGENTS.md`), with links both ways. `AGENTS.md`'s topic
-map and `extensions/README.md` follow. Target: contract ≤ ~700 lines.
-
-Do not rename `kmet.extension` again — it is the published ABI.
+The ≤700-line target was not reachable without dropping reference detail: the
+API surface alone is 891 lines. If a smaller contract is wanted later, the
+only separable bulk left is UI (`### Custom renderers`, `### UI`,
+`#### UI requests`, `#### Tag aliases`, ~270 lines) into an `extension-ui.md`
+in the same directory — not done, because the api reference reads better as
+one file and both audiences now have one document each.
 
 ## 3. List-screen extraction (large)
 
@@ -68,15 +75,12 @@ a time, snapshotting render output.
 
 ## Carry-overs
 
-1. **Façade stubbing is not universal.** `session.core` re-exports 63 vars as
-   `(def name impl/name)`, so `with-redefs` on `session/get-branch` replaces
-   the façade var only; internal callers read `store/get-branch` directly
-   (`session/context.clj:22,87,123`, `session/stats.clj:84,153`,
-   `session/tree.clj:15,188`). Tests that stub the façade
-   (`loop/test_compact.clj:616`, `modes/test_interactive.clj:1242`) rely on
-   the call path going through it. Document this in the agent README's
-   session section (a `with-redefs` on a façade alias cannot intercept the
-   implementation namespaces).
+1. ~~**Façade stubbing is not universal.**~~ Landed: `kmet.agent.session.core`
+   re-exports 63 vars as `(def name impl/name)`; `modules/agent/src/kmet/README.md`
+   § Session storage façade now records that the aliases capture values at load
+   time and that a `with-redefs` on a façade alias cannot intercept the
+   implementation namespaces (`context`/`stats`/`tree` call `store/*`
+   directly).
 2. **`session/store.clj` is 566 lines** — the largest session module and the
    one to watch. Split if the entry/usage helpers grow; the façade's public
    surface (pinned by `session/test_facade.clj`) must stay 63 names.

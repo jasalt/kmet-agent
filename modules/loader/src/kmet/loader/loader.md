@@ -34,7 +34,8 @@ last: the JVM host already gets isolation through SCI) and Phase 4
 (promotion).
 
 Related docs (repo-root relative): `modules/agent/src/kmet/extension.md` (the extension
-contract), `modules/tui/src/kmet/tui/tui.md` (house style for a package reference doc).
+contract), `docs/extensions.md` (the authoring guide), `modules/tui/src/kmet/tui/tui.md`
+(house style for a package reference doc).
 
 ---
 

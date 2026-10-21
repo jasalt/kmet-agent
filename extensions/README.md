@@ -12,7 +12,7 @@ all: `kmet config` lists every extension under “Bundled with kmet”
 the `:bundled-extensions` key (`["clojure" "-mcp-adapter"]` globally,
 `["+mcp-adapter"]` as a project delta). Bundled extensions are not
 packages — `kmet install`/`remove`/`list` cannot touch them — and nothing is
-ever extracted to disk (see `modules/agent/src/kmet/extension.md`).
+ever extracted to disk (see [`docs/extensions.md`](../docs/extensions.md)).
 
 Extensions also load from the global dir (`~/.kmet/agent/extensions/`) and
 the project-local dir (`.kmet/extensions/`) at startup and on `/reload`.
@@ -21,7 +21,7 @@ extension into one of those — or install it as a **package** with
 `kmet install <path>` (a local directory/file, or a git repository such as
 `git:github.com/user/repo`; records the source in settings — see
 [`docs/usage.md`](../docs/usage.md#package-subcommands) and
-`modules/agent/src/kmet/extension.md`):
+[`docs/extensions.md`](../docs/extensions.md)):
 
 ```bash
 # one-time setup: make the shipped extension a package (user scope)
@@ -89,12 +89,13 @@ never ship.
   `kmet.extensions.<name>.*`, the manifest entry at
   `kmet.extensions.<name>.core`. `:loader` lists the loader backends the extension
   supports (`:sci` / `:jolt`; the host picks its own preference — see
-  `modules/agent/src/kmet/extension.md` § Loader compatibility). They may carry a `deps.edn` for
+  [`docs/extensions.md`](../docs/extensions.md#loader-compatibility-loader)). They may carry a `deps.edn` for
   library dependencies (`:deps` only) and their own tests (run them from
   inside the directory, e.g. `bb test` against the extension's own deps).
 - **Jar/zip extensions** — the same layout packed as a single archive
   (`extension.edn` + `deps.edn` at the root, code at ns paths, resources by
-  exact name). The loader serves them unexpanded. See `modules/agent/src/kmet/extension.md` for
+  exact name). The loader serves them unexpanded. See
+  [`docs/extensions.md`](../docs/extensions.md#jarzip-extensions-no-expansion) for
   the format.
 
 All extension files — source **and any tests they carry** — are covered by
@@ -108,7 +109,9 @@ run from inside the extension directory against their own deps).
 
 Extensions build their own UI with the shared `kmet.tui.*` layer and mount
 it with `ui-custom` (pi: `ctx.ui.custom`) — the api carries no host-built
-dialogs. The factory receives `(tui theme keybindings close)` and returns a
+dialogs. The shared component library and its patterns are covered in
+[`docs/extensions.md`](../docs/extensions.md#building-ui). The factory receives
+`(tui theme keybindings close)` and returns a
 component (a `defcomponent`, or a duck-typed map `{:render :handle-input
 :invalidate}`); the host mounts it (overlay or editor dock), feeds it
 input, and `close` dismisses it. Pattern (extensions/tools.clj,
@@ -139,9 +142,12 @@ terminal background).
 
 ## Shipped extensions
 
-The extension authoring guide — the full `kmet.extension` API contract —
-lives in [`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md); keep it up to
-date whenever the contract changes.
+The extension authoring guide — layouts, manifests, loaders, dependencies, UI
+patterns, and testing — lives in [`docs/extensions.md`](../docs/extensions.md).
+The authoritative `kmet.extension` contract (the fn table, api map keys,
+allowed namespaces, lifecycle guarantees) lives in
+[`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md);
+keep both up to date whenever the contract changes.
 
 | Extension | Description |
 |-----------|-------------|

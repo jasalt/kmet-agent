@@ -259,6 +259,25 @@ front end:
 Tier 1 malli boundary schemas for session entries, config, and auth landed.
 The GUI live milestone remains the final GUI-dependent work.
 
+### Session storage façade
+
+`kmet.agent.session.core` re-exports the storage API (`store`, `listing`,
+`context`, `stats`, `tree`) as `(def name impl/name)` aliases; dependents
+require the façade, and `modules/agent/test/kmet/agent/session/test_facade.clj`
+pins its exact public surface. Two consequences for tests and REPL work:
+
+- The aliases capture values at load time — after redefining an
+  implementation var, reload `core` (or the whole tree) too.
+- A `with-redefs` on a façade alias cannot intercept a call made inside an
+  implementation namespace. `context`, `stats` and `tree` call
+  `store/get-branch`, `store/get-entry` and `store/append-entry` directly
+  (`context/derive-context-settings`, `context/append-context-edit!`,
+  `context/build-context`, `stats/get-prompt-history`,
+  `stats/get-last-assistant-text`, `tree/common-ancestor-id`,
+  `tree/fork-session`), so stubbing `session/get-branch` only affects callers
+  that go through the façade — redef the implementation var when the code
+  under test runs inside those namespaces.
+
 ### Portable host rules
 
 - Prefer `babashka.fs`, `babashka.process`, `clojure.string`, and
