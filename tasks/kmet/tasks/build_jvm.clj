@@ -83,10 +83,11 @@
 
 (defn- smoke!
   "Run the freshly built jar's CLI: `--list-models` must list the embedded
-   catalogs and `--version` must report EXPECTED, the version baked into the
-   jar. The checks a jar that assembles but cannot start — missing classes, a
-   broken manifest, model data left out — fails, the same pair `bb dist
-   --smoke` makes."
+   catalogs and both entries' `--version` must report EXPECTED, the version
+   baked into the jar. The checks a jar that assembles but cannot start —
+   missing classes, a broken manifest, model data left out, one app's sources
+   left out of the module embed — fails, the same checks `bb dist --smoke`
+   makes."
   [jar expected]
   (let [run (fn [& args]
               (apply p/shell {:out :string :err :string :continue true}
@@ -98,14 +99,21 @@
                  "models listed")
         (throw (ex-info "the JVM uberjar did not list its model catalogs"
                         {:type ::smoke-failed :exit exit :err (str err)}))))
-    (println "smoke test:" "java -jar" (str jar) "--version")
-    (let [{:keys [out exit err]} (run "--version")
-          reported (str/trim (str out))]
-      (if (and (zero? exit) (= reported expected))
-        (println "smoke test passed:" reported)
-        (throw (ex-info "the JVM uberjar did not report its baked version"
-                        {:type ::smoke-failed :exit exit :expected expected
-                         :reported reported :err (str err)}))))))
+    (println "smoke test:" "java -jar" (str jar) "--app old --version and --app new --version")
+    (let [versions (for [app ["old" "new"]]
+                     (let [{:keys [out exit err]} (run "--app" app "--version")
+                           reported (str/trim (str out))]
+                       (when-not (and (zero? exit) (= reported expected))
+                         (throw (ex-info (str "the JVM uberjar's --app " app
+                                              " did not report its baked version")
+                                         {:type ::smoke-failed :app app :exit exit
+                                          :expected expected :reported reported
+                                          :err (str err)})))
+                       reported))]
+      (if (apply = versions)
+        (println "smoke test passed:" (first versions) "(both entries)")
+        (throw (ex-info "the JVM uberjar's two entries disagree"
+                        {:type ::smoke-failed :versions versions :expected expected}))))))
 
 (defn build!
   "Assemble jar-path and smoke-test it. Returns {:jar PATH :version DESCRIBED}

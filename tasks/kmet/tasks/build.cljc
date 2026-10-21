@@ -589,11 +589,28 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
     (fs/create-dirs dir)
     (fs/create-temp-dir {:dir dir :prefix "smoke-"})))
 
+(defn- smoke-version!
+  "One entry's --version on the artifact: returns the reported string, throws
+   ::smoke-failed unless it equals EXPECTED (the baked version, not a
+   checkout). Both entries are checked because the --app hand-off is dynamic —
+   the part packaging can break while every namespace still compiles."
+  [run artifact app expected]
+  (let [res (run "--app" app "--version")
+        reported (str/trim (:out res))]
+    (when-not (and (zero? (:exit res)) (= reported expected))
+      (println (:err res))
+      (throw (ex-info (str "smoke test failed for " artifact " — --app " app
+                           " --version said " (pr-str reported)
+                           ", expected " (pr-str expected))
+                      {:type ::smoke-failed :exit (:exit res) :app app
+                       :version reported :expected expected})))
+    reported))
+
 (defn- smoke-test!
   "Run the freshly built current-host artifact. An app artifact: --list-models
-   must list the embedded catalogs (exit 0), and --version must report the
-   version the artifact was built as — the baked kmet/version.txt, not a
-   checkout. A --test artifact: `--test kmet.libs.test-archive` must run that
+   must list the embedded catalogs (exit 0), and both entries' --version must
+   report the same version the artifact was built as — the baked
+   kmet/version.txt, not a checkout. A --test artifact: `--test kmet.libs.test-archive` must run that
    namespace from an empty work dir (exit 0 and the Testing header), proving
    the runner and its tests travel in the artifact. Skipped for cross-built
    platforms."
@@ -631,18 +648,16 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
                (do (println (:err res))
                    (throw (ex-info (str "smoke test failed for " artifact)
                                    {:type ::smoke-failed :exit (:exit res)})))))
-           (println "smoke test:" cmd "--version")
-           (let [res (run "--version")
-                 reported (str/trim (:out res))
-                 expected (str "kmet " (version-lib/checkout-version))]
-             (if (and (zero? (:exit res)) (= reported expected))
-               (println "smoke test passed:" reported)
-               (do (println (:err res))
-                   (throw (ex-info (str "smoke test failed for " artifact
-                                        " — --version said " (pr-str reported)
-                                        ", expected " (pr-str expected))
-                                   {:type ::smoke-failed :exit (:exit res)
-                                    :version reported :expected expected})))))))))))
+           (println "smoke test:" cmd "--app old --version and --app new --version")
+           (let [expected (str "kmet " (version-lib/checkout-version))
+                 old (smoke-version! run artifact "old" expected)
+                 new (smoke-version! run artifact "new" expected)]
+             (if (= old new)
+               (println "smoke test passed:" old "(both entries)")
+               (throw (ex-info (str "smoke test failed for " artifact
+                                    " — the two entries disagree: "
+                                    (pr-str old) " vs " (pr-str new))
+                               {:type ::smoke-failed :old old :new new}))))))))))
 
 ;; ─── Extension packaging ──────────────────────────────────────────────────
 
