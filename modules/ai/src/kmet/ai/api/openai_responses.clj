@@ -6,7 +6,8 @@
    [kmet.ai.api.sse :as sse]
    [clojure.string :as str]
    [kmet.ai.constrained-sampling :as cs]
-   [kmet.ai.api.shared :refer [bash-execution-text content-text copilot-dynamic-headers effort-value endpoint-url image-block? off-explicitly-null? on-payload request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
+   [kmet.ai.models :as models]
+   [kmet.ai.api.shared :refer [bash-execution-text content-text copilot-dynamic-headers endpoint-url image-block? on-payload request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (defn normalize-id-part
   "pi normalizeIdPart: sanitize a tool-call id to [a-zA-Z0-9_-], cap at 64
@@ -194,10 +195,10 @@
    model), then :sampling-params merged last so their keys win."
   [model-record effort messages tools model-id cache-retention session-id]
   (let [effort-reasoning (when (and (:reasoning model-record) effort)
-                           {:effort (effort-value model-record effort)
+                           {:effort (models/effort-value model-record effort)
                             :summary "auto"})
         off-reasoning (when (and (:reasoning model-record) (nil? effort)
-                                 (not (off-explicitly-null? model-record)))
+                                 (not (models/off-explicitly-null? model-record)))
                         {:effort (or (get-in model-record [:thinking-level-map :off]) "none")})
         reasoning (or effort-reasoning off-reasoning)
         retention (or cache-retention :short)

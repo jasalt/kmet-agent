@@ -33,7 +33,6 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
-            [kmet.ai.api.shared :as shared]
             [kmet.ai.models :as models]))
 
 (defrecord AgentState [status        ;; :idle :thinking :executing :done :error
@@ -708,7 +707,7 @@ Be precise and concise in your responses."}}]
         ;; (only for reasoning models; non-reasoning models keep the value as-is)
         (let [model-rec (models/get-model @(:provider agent) @(:model agent))
               clamped (if (:reasoning model-rec)
-                        (shared/clamp-thinking-level model-rec thinking-level)
+                        (models/clamp-thinking-level model-rec thinking-level)
                         thinking-level)]
           (reset! (:thinking agent) clamped))
         (vreset! changed true))
@@ -861,7 +860,7 @@ Be precise and concise in your responses."}}]
    two levels (pi: the command/action surfaces a status instead)."
   [agent]
   (let [model (models/get-model @(:provider agent) @(:model agent))
-        levels (if model (shared/get-supported-thinking-levels model) [:off])]
+        levels (if model (models/get-supported-thinking-levels model) [:off])]
     (when (> (count levels) 1)
       (let [current @(:thinking agent)
             idx (or (first (keep-indexed (fn [i l] (when (= l current) i)) levels))
@@ -884,18 +883,18 @@ Be precise and concise in your responses."}}]
    old model), falls back to clamping CURRENT-LEVEL to the new model."
   [old-model new-model current-level explicit-level]
   (cond
-    explicit-level (shared/clamp-thinking-level new-model explicit-level)
+    explicit-level (models/clamp-thinking-level new-model explicit-level)
 
     (= current-level :off)
     (if (:reasoning new-model)
-      (last (shared/get-supported-thinking-levels new-model))
+      (last (models/get-supported-thinking-levels new-model))
       :off)
 
     :else
-    (let [old-think (vec (remove #{:off} (shared/get-supported-thinking-levels old-model)))
-          new-think (vec (remove #{:off} (shared/get-supported-thinking-levels new-model)))
+    (let [old-think (vec (remove #{:off} (models/get-supported-thinking-levels old-model)))
+          new-think (vec (remove #{:off} (models/get-supported-thinking-levels new-model)))
           old-effective (when (seq old-think)
-                          (shared/clamp-thinking-level old-model current-level))
+                          (models/clamp-thinking-level old-model current-level))
           i (when old-effective
               (first (keep-indexed (fn [j l] (when (= l old-effective) j)) old-think)))]
       (if (and i (seq new-think))
@@ -903,7 +902,7 @@ Be precise and concise in your responses."}}]
               new-i (max 0 (min (dec (count new-think))
                                 (- (count new-think) rank)))]
           (nth new-think new-i))
-        (shared/clamp-thinking-level new-model current-level)))))
+        (models/clamp-thinking-level new-model current-level)))))
 
 (defn set-run-signal!
   "Set the run's cancel signal (true cancels; the next prompt resets it).

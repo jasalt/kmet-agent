@@ -17,7 +17,6 @@
             [kmet.tui.components.spinner :as spinner]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.ai.models :as models]
-            [kmet.ai.api.shared :as shared]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.session.export :as session-export]
@@ -401,7 +400,7 @@
       (let [items (mapv (fn [l] {:value (name l)
                                  :label (name l)
                                  :description (thinking-selector/level-description l)})
-                        shared/thinking-levels)]
+                        models/thinking-levels)]
         (if (str/blank? prefix)
           items
           (fuzzy/fuzzy-filter items prefix

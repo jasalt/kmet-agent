@@ -12,7 +12,7 @@
    :curl, applied live to kmet.libs.http), and a theme row."
   (:require [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.theme-controller :as theme-ctrl]
-            [kmet.ai.api.shared :as shared]
+            [kmet.ai.models :as models]
             [kmet.agent.ui.tui.chat-history :as chat-history]
             [kmet.agent.ui.tui.footer :as footer]
             [kmet.agent.ui.tui.loaded-resources :as loaded-resources]
@@ -106,7 +106,7 @@
         frame-atom (atom nil)
         engine (:engine cs)
         model (runtime/model-record engine)
-        levels (if model (shared/get-supported-thinking-levels model) [:off])
+        levels (if model (models/get-supported-thinking-levels model) [:off])
         current (or (some #{(keyword (runtime/thinking-level engine))} levels) (first levels))
         config (runtime/config engine)
         retry-atom (atom (cfg/get-retry-settings-live config))

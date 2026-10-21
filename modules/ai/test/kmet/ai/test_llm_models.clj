@@ -110,39 +110,39 @@
    :thinking-level-map tlm :compat compat :max-tokens max-tokens})
 
 (t/deftest test-supported-thinking-levels
-  (t/is (= [:off] (shared/get-supported-thinking-levels (tmodel :reasoning false)))
+  (t/is (= [:off] (m/get-supported-thinking-levels (tmodel :reasoning false)))
         "non-reasoning models only support :off")
   (t/is (= [:off :minimal :low :medium :high]
-           (shared/get-supported-thinking-levels (tmodel :tlm nil)))
+           (m/get-supported-thinking-levels (tmodel :tlm nil)))
         "no map → everything except :xhigh/:max")
   (t/is (= [:off :high :max]
-           (shared/get-supported-thinking-levels
+           (m/get-supported-thinking-levels
             (tmodel :tlm {:minimal nil :low nil :medium nil :high "high" :max "max"})))
         "null map values mark levels unsupported")
   (t/is (= [:high]
-           (shared/get-supported-thinking-levels
+           (m/get-supported-thinking-levels
             (tmodel :tlm {:off nil :minimal nil :low nil :medium nil})))
         "a null :off means thinking cannot be disabled"))
 
 (t/deftest test-clamp-thinking-level
   (let [deepseek (tmodel :tlm {:minimal nil :low nil :medium nil :high "high" :max "max"})]
-    (t/is (= :max (@#'shared/clamp-thinking-level deepseek :low))
+    (t/is (= :max (m/clamp-thinking-level deepseek :low))
           "unsupported levels clamp to the highest supported")
-    (t/is (= :max (@#'shared/clamp-thinking-level deepseek :max)))
-    (t/is (= :off (@#'shared/clamp-thinking-level deepseek :off)))
-    (t/is (= :max (@#'shared/clamp-thinking-level deepseek :xhigh))
+    (t/is (= :max (m/clamp-thinking-level deepseek :max)))
+    (t/is (= :off (m/clamp-thinking-level deepseek :off)))
+    (t/is (= :max (m/clamp-thinking-level deepseek :xhigh))
           "xhigh unsupported → clamps to :max"))
-  (t/is (= :high (@#'shared/clamp-thinking-level (tmodel :tlm nil) :max))
+  (t/is (= :high (m/clamp-thinking-level (tmodel :tlm nil) :max))
         "no map → :max clamps to :high")
-  (t/is (= :high (@#'shared/clamp-thinking-level (tmodel :tlm nil) nil))
+  (t/is (= :high (m/clamp-thinking-level (tmodel :tlm nil) nil))
         "nil → clamps to highest supported")
-  (t/is (= :off (@#'shared/clamp-thinking-level (tmodel :reasoning false) :high))
+  (t/is (= :off (m/clamp-thinking-level (tmodel :reasoning false) :high))
         "non-reasoning model → everything clamps to :off"))
 
 (t/deftest test-effective-effort
-  (t/is (nil? (@#'shared/effective-effort (tmodel) :off)))
-  (t/is (= :low (@#'shared/effective-effort (tmodel) :low)))
-  (t/is (= :high (@#'shared/effective-effort (tmodel) :max))
+  (t/is (nil? (m/effective-effort (tmodel) :off)))
+  (t/is (= :low (m/effective-effort (tmodel) :low)))
+  (t/is (= :high (m/effective-effort (tmodel) :max))
         "no map → :max clamps to :high"))
 
 ;; ─── Thinking request shaping (pi per-api) ─────────────────────────────────

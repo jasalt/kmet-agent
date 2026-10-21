@@ -11,7 +11,7 @@
    [kmet.ai.auth :as auth]
    [kmet.ai.models :as models]
    [kmet.ai.wires :as wires]
-   [kmet.ai.api.shared :refer [ambient-auth-available? effective-effort]]))
+   [kmet.ai.api.shared :refer [ambient-auth-available?]]))
 
 (def ^:private compaction-summary-prefix
   "pi: COMPACTION_SUMMARY_PREFIX — the compacted-history preamble and
@@ -180,7 +180,7 @@
           :else
           (let [api (or (:api-type opts) (:api m))
                 p (models/get-provider provider)
-                effort (effective-effort m (:thinking opts))]
+                effort (models/effective-effort m (:thinking opts))]
             (try
               ((wires/request-fn api)
                (assoc opts :model-record m :provider-record p

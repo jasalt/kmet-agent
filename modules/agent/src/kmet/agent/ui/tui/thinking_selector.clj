@@ -7,7 +7,7 @@
    Ctrl+S also saves it as the default thinking level (pi persist: true),
    Esc cancels. Mounted in place of the editor (pi: showSelector)."
   (:require [clojure.string :as str]
-            [kmet.ai.api.shared :as shared]
+            [kmet.ai.models :as models]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.dock :as dock]
@@ -130,7 +130,7 @@
   [cs]
   (let [model (runtime/model-record (:engine cs))]
     (if model
-      (shared/get-supported-thinking-levels model)
+      (models/get-supported-thinking-levels model)
       [:off])))
 
 (defn default-thinking-level

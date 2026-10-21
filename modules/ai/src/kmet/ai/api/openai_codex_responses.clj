@@ -5,8 +5,9 @@
    [kmet.ai.http :as ai-http]
    [kmet.ai.api.sse :as sse]
    [clojure.string :as str]
+   [kmet.ai.models :as models]
    [kmet.ai.api.openai-responses :refer [clamp-prompt-cache-key responses-messages responses-tools]]
-   [kmet.ai.api.shared :refer [content-text effort-value on-payload request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
+   [kmet.ai.api.shared :refer [content-text on-payload request-headers responses-events-handler effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (def codex-default-base-url
   "pi DEFAULT_CODEX_BASE_URL: the ChatGPT backend the codex endpoint
@@ -77,7 +78,7 @@
   (let [system (first (for [m messages :when (= :system (:role m))]
                         (content-text (:content m))))
         reasoning (when (and (:reasoning model-record) effort)
-                    {:effort (effort-value model-record effort) :summary "auto"})]
+                    {:effort (models/effort-value model-record effort) :summary "auto"})]
     (cond-> {:model model-id
              :store false
              :stream true

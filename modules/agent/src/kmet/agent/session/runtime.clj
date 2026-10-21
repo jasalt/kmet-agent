@@ -39,7 +39,6 @@
             [kmet.agent.config :as cfg]
             [kmet.agent.debug :as debug]
             [kmet.libs.concurrent :as concurrent]
-            [kmet.ai.api.shared :as shared]
             [kmet.ai.models :as models]
             [kmet.agent.commands :as commands]
             [kmet.agent.context :as context]
@@ -189,7 +188,7 @@
                              (mapcat identity system-prompt-opts))
         thinking (let [raw (:thinking config :off)]
                    (if (:reasoning model-rec)
-                     (shared/clamp-thinking-level model-rec raw)
+                     (models/clamp-thinking-level model-rec raw)
                      raw))
         retry-settings (cfg/get-retry-settings config)
         loop-guard-settings (cfg/get-loop-guard-settings config)
@@ -1344,7 +1343,7 @@
   {:set-model #(set-model-capability engine %)
    :get-thinking-level #(deref (:thinking (agent-state engine)))
    :set-thinking-level (fn [level]
-                         (when (shared/valid-thinking-level? level)
+                         (when (models/valid-thinking-level? level)
                            (loop-state/set-thinking-level! (agent-state engine) level))
                          nil)
    :send-user-message #(send-user-message-capability engine %1 %2)

@@ -11,7 +11,6 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [kmet.ai.api.shared :as shared]
             [kmet.ai.models :as models]
             [kmet.agent.commands :as commands]
             [kmet.agent.commands.builtins :as builtins]
@@ -359,7 +358,7 @@
   "Set the thinking level (pi: set_thinking_level)."
   [engine command]
   (let [level (:level command)]
-    (if (shared/valid-thinking-level? level)
+    (if (models/valid-thinking-level? level)
       (do (runtime/set-thinking-level! engine level)
           (ok :set-thinking-level nil))
       (failed :set-thinking-level (str "Unknown thinking level: " (pr-str level))))))
@@ -378,7 +377,7 @@
   [engine _]
   (let [model (runtime/model-record engine)]
     (ok :get-available-thinking-levels
-        {:levels (if model (shared/get-supported-thinking-levels model) [:off])})))
+        {:levels (if model (models/get-supported-thinking-levels model) [:off])})))
 
 ;; ─── Queue modes ───────────────────────────────────────────────────────────
 

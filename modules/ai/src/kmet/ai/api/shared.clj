@@ -1,7 +1,8 @@
 (ns kmet.ai.api.shared
   "Shared LLM wire machinery (pi: api/transform-messages.ts, simple-options.ts,
-   openai-prompt-cache.ts + the shared thinking/usage/event helpers): URL construction,
-   request headers, thinking levels, message transformers, cost and stream-event handling."
+   openai-prompt-cache.ts + the shared thinking-param/usage/event helpers): URL
+   construction, request headers, thinking params, message transformers, cost and
+   stream-event handling."
   (:require
    [kmet.ai.attribution :as attribution]
    [kmet.ai.auth :as auth]
@@ -126,68 +127,6 @@
                        (str "provider \"" (name (:id provider)) "\"")))]
     (cond-> merged
       (:auth-header provider) (assoc "Authorization" (str "Bearer " api-key)))))
-
-(def thinking-levels
-  "All thinking levels in order (pi ThinkingLevel)."
-  [:off :minimal :low :medium :high :xhigh :max])
-
-(defn valid-thinking-level?
-  "True when LEVEL is one of the thinking levels (pi isValidThinkingLevel)."
-  [level]
-  (some #{level} thinking-levels))
-
-(defn get-supported-thinking-levels
-  "Levels a model can express (pi getSupportedThinkingLevels — public for
-   the /settings selector): non-reasoning models only :off; :xhigh/:max
-   require an entry in the model's thinking-level-map; a null map value
-   marks a level unsupported (absent entries are supported)."
-  [model]
-  (if-not (:reasoning model)
-    [:off]
-    (let [tlm (:thinking-level-map model)
-          has-entry? #(and (map? tlm) (contains? tlm %))]
-      (into []
-            (for [level thinking-levels
-                  :when (if (contains? #{:xhigh :max} level)
-                          (and (has-entry? level) (some? (get tlm level)))
-                          (not (and (has-entry? level) (nil? (get tlm level)))))]
-              level)))))
-
-(defn clamp-thinking-level
-  "The requested level when supported; :off stays :off; nil or unsupported
-   levels clamp to the highest supported level."
-  [model level]
-  (let [available (get-supported-thinking-levels model)]
-    (cond
-      ;; Explicit :off — respect it
-      (= level :off) :off
-      ;; Level is supported — use it
-      (some #{level} available) level
-      ;; Nil or unsupported — highest supported (or :off if nothing else)
-      :else (or (last available) :off))))
-
-(defn effort-value
-  "Wire reasoning_effort string for a level: the model's mapped value, else
-   the level name (pi: model.thinkingLevelMap?.[level] ?? level)."
-  [model level]
-  (let [mapped (get-in model [:thinking-level-map level])]
-    (if (nil? mapped) (name level) mapped)))
-
-(defn off-explicitly-null?
-  "True when the model's thinking-level-map pins :off to null — the provider
-   cannot disable thinking (pi: thinkingLevelMap?.off !== null gates the
-   disabled-thinking params)."
-  [model]
-  (let [tlm (:thinking-level-map model)]
-    (and (map? tlm) (contains? tlm :off) (nil? (:off tlm)))))
-
-(defn effective-effort
-  "Clamped thinking level for the resolved model; nil when off (pi
-   agent.ts: thinkingLevel === 'off' ? undefined : thinkingLevel, clamped by
-   the model's capability)."
-  [model thinking]
-  (let [clamped (clamp-thinking-level model (or thinking :off))]
-    (when-not (= :off clamped) clamped)))
 
 (defn content-text
   "Extract plain text from a message content block vector.
@@ -626,31 +565,31 @@
 
 (defn- openai-thinking-params-openrouter [model effort]
   (cond-> {}
-    effort (assoc :reasoning {:effort (effort-value model effort)})
-    (and (nil? effort) (not (off-explicitly-null? model)))
+    effort (assoc :reasoning {:effort (models/effort-value model effort)})
+    (and (nil? effort) (not (models/off-explicitly-null? model)))
     (assoc :reasoning {:effort (or (get-in model [:thinking-level-map :off]) "none")})))
 
 (defn- openai-thinking-params-deepseek [model effort effort?]
   (cond-> {}
     effort (assoc :thinking {:type "enabled"})
-    (and (nil? effort) (not (off-explicitly-null? model)))
+    (and (nil? effort) (not (models/off-explicitly-null? model)))
     (assoc :thinking {:type "disabled"})
     (and effort effort?)
-    (assoc :reasoning_effort (effort-value model effort))))
+    (assoc :reasoning_effort (models/effort-value model effort))))
 
 (defn- openai-thinking-params-qwen [model effort effort?]
   (cond-> {:enable_thinking (boolean effort)}
-    (and effort effort?) (assoc :reasoning_effort (effort-value model effort))))
+    (and effort effort?) (assoc :reasoning_effort (models/effort-value model effort))))
 
 (defn- openai-thinking-params-zai [model effort effort?]
   (cond-> {:thinking (if effort
                        {:type "enabled" :clear_thinking false}
                        {:type "disabled"})}
-    (and effort effort?) (assoc :reasoning_effort (effort-value model effort))))
+    (and effort effort?) (assoc :reasoning_effort (models/effort-value model effort))))
 
 (defn- openai-thinking-params-together [model effort effort?]
   (cond-> {:reasoning {:enabled (boolean effort)}}
-    (and effort effort?) (assoc :reasoning_effort (effort-value model effort))))
+    (and effort effort?) (assoc :reasoning_effort (models/effort-value model effort))))
 
 (defn- openai-thinking-params-qwen-chat-template [effort]
   {:chat_template_kwargs {:enable_thinking (boolean effort)
@@ -668,7 +607,7 @@
     (assoc :chat_template_args
            (resolve-template-values model effort (:chat-template-args compat)))
     (and effort effort?)
-    (assoc :reasoning_effort (effort-value model effort))
+    (assoc :reasoning_effort (models/effort-value model effort))
     (and (nil? effort) (string? (get-in model [:thinking-level-map :off])))
     (assoc :reasoning_effort (get-in model [:thinking-level-map :off]))))
 
@@ -677,13 +616,13 @@
 
 (defn- openai-thinking-params-string-thinking [model effort]
   (cond-> {}
-    effort (assoc :thinking (effort-value model effort))
-    (and (nil? effort) (not (off-explicitly-null? model)))
+    effort (assoc :thinking (models/effort-value model effort))
+    (and (nil? effort) (not (models/off-explicitly-null? model)))
     (assoc :thinking (or (get-in model [:thinking-level-map :off]) "none"))))
 
 (defn- openai-thinking-params-generic [model effort effort?]
   (cond
-    (and effort effort?) {:reasoning_effort (effort-value model effort)}
+    (and effort effort?) {:reasoning_effort (models/effort-value model effort)}
     (and (nil? effort) effort?)
     (let [off (get-in model [:thinking-level-map :off])]
       (if (string? off) {:reasoning_effort off} {}))
@@ -734,7 +673,7 @@
    reason; an unsupported level clamps to the model's highest, and
    xhigh/max use the high budget (pi clampReasoning)."
   [model level]
-  (get thinking-budgets (clamp-reasoning (effective-effort model level)) 0))
+  (get thinking-budgets (clamp-reasoning (models/effective-effort model level)) 0))
 
 (defn anthropic-adaptive-effort
   "pi mapThinkingLevelToEffort: the adaptive output_config effort — the
@@ -768,7 +707,7 @@
             budget (min budget (max 0 (- max-tokens min-answer-tokens)))]
         {:thinking {:type "enabled" :budget_tokens budget :display "summarized"}
          :max-tokens max-tokens}))
-    (off-explicitly-null? model) nil
+    (models/off-explicitly-null? model) nil
     :else {:thinking {:type "disabled"}
            :max-tokens (or (:max-tokens model) 4096)}))
 

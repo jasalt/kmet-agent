@@ -72,7 +72,6 @@
             [kmet.ai.auth :as auth]
             [kmet.agent.session.core :as session]
             [kmet.ai.models :as models]
-            [kmet.ai.api.shared :as shared]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.debug :as debug]))
@@ -120,7 +119,7 @@
     (when-let [th (:thinking update)]
       (let [model-rec (models/get-model @(:provider agent) @(:model agent))
             clamped (if (:reasoning model-rec)
-                      (shared/clamp-thinking-level model-rec th)
+                      (models/clamp-thinking-level model-rec th)
                       th)]
         (reset! (:thinking agent) clamped)))
     (when-let [o (:system-prompt-override update)]

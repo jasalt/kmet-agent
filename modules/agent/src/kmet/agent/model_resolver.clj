@@ -10,8 +10,7 @@
    model)."
   (:require [clojure.string :as str]
             [kmet.ai.models :as models]
-            [kmet.ai.auth :as auth]
-            [kmet.ai.api.shared :as shared]))
+            [kmet.ai.auth :as auth]))
 
 ;; ─── Alias / date matching (pi isAlias) ────────────────────────────────────
 
@@ -86,7 +85,7 @@
          (let [prefix (subs trimmed 0 colon)
                suffix (subs trimmed (inc colon))
                level (keyword suffix)]
-           (if (shared/valid-thinking-level? level)
+           (if (models/valid-thinking-level? level)
              (let [r (parse-model-pattern prefix models {:strict? strict?})]
                (if (:model r)
                  (assoc r :thinking-level (when-not (:warning r) level))
@@ -170,7 +169,7 @@
   (let [trimmed (str/trim model-ref)
         colon (str/last-index-of trimmed ":")
         suffix (when colon (subs trimmed (inc colon)))]
-    (if (and colon (shared/valid-thinking-level? (keyword suffix)))
+    (if (and colon (models/valid-thinking-level? (keyword suffix)))
       (let [m (find-exact-model-reference-match (subs trimmed 0 colon) models)]
         {:model m :thinking-level (when m (keyword suffix))})
       (let [m (find-exact-model-reference-match trimmed models)]
