@@ -57,18 +57,19 @@
             (throw (bad-args (str flag " takes no value") arg)))
 
           (contains? value-flags flag)
-          (let [k (value-flags flag)]
-            (if (= ::missing value)
-              (if-let [v (second in)]
-                (if (str/starts-with? v "-")
-                  (throw (bad-args (str flag " needs a value") arg))
-                  (recur (nnext in) (if (= :patch k)
-                                      (update opts :patch conj v)
-                                      (assoc opts k (keyword v)))))
-                (throw (bad-args (str flag " needs a value") arg)))
-              (recur (next in) (if (= :patch k)
-                                 (update opts :patch conj value)
-                                 (assoc opts k (keyword value))))))
+          (let [k (value-flags flag)
+                v (if (= ::missing value)
+                    (let [next-arg (second in)]
+                      (when (or (nil? next-arg) (str/starts-with? next-arg "-"))
+                        (throw (bad-args (str flag " needs a value") arg)))
+                      next-arg)
+                    value)
+                in (if (= ::missing value) (nnext in) (next in))]
+            (when (str/blank? v)
+              (throw (bad-args (str flag " needs a value") arg)))
+            (recur in (if (= :patch k)
+                        (update opts :patch conj v)
+                        (assoc opts k (keyword v)))))
 
           (str/starts-with? arg "-")
           (throw (bad-args (str "unknown option " arg) arg))
@@ -102,7 +103,7 @@
         composed (profile/compose (map catalog/describe-layer layers))]
     (assoc composed :profile chosen)))
 
-(defn dump-config
+(defn- dump-config
   "The `--dump-config` text: the composed rows the boot would mount, without
    booting anything."
   [opts]
@@ -114,7 +115,7 @@
 (defn- report [message]
   (binding [*out* *err*] (println "Error:" message) (flush)))
 
-(defn print-usage []
+(defn- print-usage []
   (println "Usage: kmet --app new [options] [messages...]")
   (println)
   (println "Options:")
@@ -133,7 +134,7 @@
     (println "the session log, the loop and print mode.")
     (println "  kmet --app new --dump-config   print the composed rows")
     (println "  kmet --app new --version       print the version")
-    (when (seq args) (println "Ignored arguments:" (pr-str (vec args))))
+    (when (seq args) (println "Arguments:" (pr-str (vec args))))
     (flush))
   1)
 

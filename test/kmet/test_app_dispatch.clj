@@ -67,7 +67,8 @@
           result (binding [*err* err] (bootstrap/dispatch! ["--app" "new"]))]
       (is (= ::bootstrap/missing-app result)
           "the bootstrap reports instead of exiting (the process entry exits)")
-      (is (str/includes? (str err) "carries only the kmet app")))))
+      (is (str/includes? (str err) "carries only the kmet app"))
+      (is (str/includes? (str err) "--app new")))))
 
 ;; ─── the two-direction load test ──────────────────────────────────────────
 

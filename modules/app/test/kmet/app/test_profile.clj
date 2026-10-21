@@ -102,7 +102,18 @@
     (is (= :kmet.app/bad-patch
            (error-type #(profile/compose
                          [{:patch [{:id :tool/ls :plugin 'x/y
-                                    :after :tool/read :before :tool/write}]}]))))))
+                                    :after :tool/read :before :tool/write}]}])))))
+  (testing "an anchor on a patch that replaces an existing row"
+    (is (= :kmet.app/bad-patch
+           (error-type #(profile/compose
+                         [{:rows [read-row]}
+                          {:patch [{:id :tool/read :config {:a 1}
+                                    :after :tool/write}]}])))))
+  (testing "removing a row and replacing its source at once"
+    (is (= :kmet.app/bad-patch
+           (error-type #(profile/compose
+                         [{:patch [{:id :tool/read :remove true
+                                    :plugin 'x/y}]}]))))))
 
 (deftest composition-errors-throw
   (testing "duplicate ids across stacked bundles"
@@ -119,7 +130,12 @@
   (is (= :kmet.app/unknown-bundle
          (error-type #(profile/layers {:bundles {}
                                        :profiles {:p {:bundles [[:nope {}]]}}}
-                                      :p)))))
+                                      :p))))
+  (is (= :kmet.app/bad-bundle-entry
+         (error-type #(profile/layers {:bundles {:bundle/a {:rows []}}
+                                       :profiles {:p {:bundles [:bundle/a]}}}
+                                      :p)))
+      "a bundle entry is [:bundle/name layer?], not a bare keyword"))
 
 (deftest a-bundle-stack-can-patch-its-bundle
   (testing "the [:bundle/x extra] second element is a layer applied right after"

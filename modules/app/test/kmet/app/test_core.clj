@@ -17,6 +17,7 @@
    and return the path."
   [content]
   (let [path (str "target/test-app-patch-" (System/nanoTime) ".edn")]
+    (io/make-parents path)
     (spit path content)
     path))
 
@@ -50,6 +51,8 @@
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--nope"]))))
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--profile"]))))
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--version=1"]))))
+  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--profile="])))
+      "an empty value is no value")
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-p" "hi"])))
       "kmet1's flags are not kmet2's"))
 
@@ -97,7 +100,11 @@
       (finally (io/delete-file path true))))
   (let [[code err] (err-str #(core/main ["--dump-config" "--profile" "nope"]))]
     (is (= 1 code))
-    (is (str/includes? err "unknown profile"))))
+    (is (str/includes? err "unknown profile")))
+  (let [[code err] (err-str #(core/main ["--dump-config" "--patch"
+                                         "target/definitely-missing-patch.edn"]))]
+    (is (= 1 code))
+    (is (str/includes? err "cannot read patch file"))))
 
 (deftest a-bare-run-says-what-is-missing
   (let [[code err] (err-str #(core/main ["hello"]))]

@@ -59,6 +59,18 @@
                        :profile profile-name
                        :known (vec (sort (keys (:profiles table))))}))))
 
+(defn- bundle-entry
+  "Check one `:bundles` entry — `[:bundle/name layer?]` — and return its
+   `[name layer]` pair."
+  [entry]
+  (when-not (and (vector? entry)
+                 (<= 1 (count entry) 2)
+                 (keyword? (first entry))
+                 (or (nil? (second entry)) (map? (second entry))))
+    (throw (ex-info (str "a :bundles entry is [:bundle/name layer?]: " (pr-str entry))
+                    {:type :kmet.app/bad-bundle-entry :entry entry})))
+  [(first entry) (second entry)])
+
 (defn- bundle [table bundle-name]
   (or (get (:bundles table) bundle-name)
       (throw (ex-info (str "unknown bundle: " (pr-str bundle-name))
@@ -67,19 +79,19 @@
                        :known (vec (sort (keys (:bundles table))))}))))
 
 (defn layers
-  "PROFILE's layers in application order: each bundle (followed by its
+  "PROFILE-NAME's layers in application order: each bundle (followed by its
    per-stack extra layer, the `[:bundle/x {:rows … :patch …}]` second
    element), then the profile's own rows and patches."
-  ([table] (layers table default-profile))
-  ([table profile-name]
-   (let [p (profile table (or profile-name default-profile))]
-     (into []
-           (concat
-            (mapcat (fn [[bundle-name extra]]
-                      (cond-> [(bundle table bundle-name)]
-                        (seq extra) (conj extra)))
-                    (:bundles p))
-            [(select-keys p [:rows :patch])])))))
+  [table profile-name]
+  (let [p (profile table profile-name)]
+    (into []
+          (concat
+           (mapcat (fn [entry]
+                     (let [[bundle-name extra] (bundle-entry entry)]
+                       (cond-> [(bundle table bundle-name)]
+                         (seq extra) (conj extra))))
+                   (:bundles p))
+           [(select-keys p [:rows :patch])]))))
 
 (defn- deep-merge [a b]
   (if (and (map? a) (map? b))
@@ -110,6 +122,9 @@
                     {:type :kmet.app/bad-patch :patch patch})))
   (when (and (:remove patch) (contains? patch :config))
     (throw (ex-info (str "a :remove patch cannot also set :config: " (pr-str patch))
+                    {:type :kmet.app/bad-patch :patch patch})))
+  (when (and (:remove patch) (contains? patch :plugin))
+    (throw (ex-info (str "a :remove patch cannot also set :plugin: " (pr-str patch))
                     {:type :kmet.app/bad-patch :patch patch})))
   (when (and (:after patch) (:before patch))
     (throw (ex-info (str "a patch insert takes :after or :before, not both: " (pr-str patch))
@@ -149,7 +164,11 @@
       (:remove patch) (if idx
                         (vec (concat (subvec rows 0 idx) (subvec rows (inc idx))))
                         (unknown-row id patch))
-      idx (assoc rows idx (patched-row (nth rows idx) patch))
+      idx (do (when (or (:after patch) (:before patch))
+                (throw (ex-info (str "a patch on an existing row takes no"
+                                     " :after/:before: " (pr-str patch))
+                                {:type :kmet.app/bad-patch :patch patch})))
+              (assoc rows idx (patched-row (nth rows idx) patch)))
       (contains? patch :plugin) (insert-row rows patch)
       :else (unknown-row id patch))))
 

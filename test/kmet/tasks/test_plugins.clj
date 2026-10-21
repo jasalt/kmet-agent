@@ -60,7 +60,10 @@
       "the declaration is not a map literal")
   (is (= :kmet.plugins/bad-declaration
          (error-type "(ns s)\n(srce/defplugin p {:name :p :inject :bogus :apply (fn [c x])})"))
-      "an :inject that is neither a vector nor a map"))
+      "an :inject that is neither a vector nor a map")
+  (is (= :kmet.plugins/bad-declaration
+         (error-type "(ns s)\n(srce/defplugin p {:name :p})"))
+      "no :apply"))
 
 (deftest render-is-the-file-format
   (is (= (str plugins/header

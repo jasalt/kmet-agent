@@ -68,20 +68,21 @@
                               {:type :kmet.agent/bad-app :value value})))))))))
 
 (defn app-available?
-  "Does this artifact carry ENTRY's app? The classpath resource is the proof —
-   a `--dev` build may stage only one app."
-  [entry]
-  (some? (io/resource (:resource entry))))
+  "Does this artifact carry APP (a key of `apps`)? The app's source resource is
+   the proof — a `--dev` build may stage only one app."
+  [app]
+  (when-let [entry (apps app)]
+    (some? (io/resource (:resource entry)))))
 
-(defn report-missing
+(defn- report-missing
   "Say that this artifact carries no such app; returns ::missing-app. Never
    exits — the process entry owns the exit code."
-  [{:keys [entry]}]
+  [app {:keys [entry]}]
   (binding [*out* *err*]
     (println (str "kmet: this artifact carries only the kmet app — no "
                   entry " here."
-                  " A `--dev` build, or an artifact older than the kmet2"
-                  " landing, has nothing to run for --app new.")))
+                  " A `--dev` build, or an artifact older than that app,"
+                  " has nothing to run for --app " (name app) ".")))
   ::missing-app)
 
 (defn dispatch!
@@ -90,8 +91,8 @@
   [args]
   (let [{:keys [app args]} (parse-app args)
         entry (apps app)]
-    (if-not (app-available? entry)
-      (report-missing entry)
+    (if-not (app-available? app)
+      (report-missing app entry)
       (apply (requiring-resolve (:entry entry)) args))))
 
 (defn- print-usage []
