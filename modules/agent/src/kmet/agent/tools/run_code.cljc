@@ -22,6 +22,7 @@
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.host :as host]
             [kmet.libs.process :as kprocess]
+            [kmet.libs.text :as text]
             [sci.core :as sci]))
 
 ;; ─── Constants ────────────────────────────────────────────────────────────
@@ -1035,12 +1036,11 @@
        "Sandbox: Clojure; on babashka a full babashka surface, on the JVM the java.lang/java.io/java.util subset. Require clojure.*/babashka.* namespaces or the bundled libs (rewrite-clj, cljfmt, edamame, parinferish); System/java.io.*/Throwable resolve on babashka and the JVM (Jolt's SCI exposes no class table). Aliases: fs, str/set/edn/walk, json, p, sh, tools, sandbox. :timeout is seconds (0/omitted = none). Output is capped at 16 KiB/2000 lines; :max-output-bytes raises it to 50 KiB."))
 
 (defn title
-  "Quiet one-liner body for the run_code tool: `run $ ` and the first code
-   line, shortened."
+  "Quiet one-liner body for the run_code tool: `run $ ` and the first
+   non-blank code line, shortened."
   [args]
   (when-let [code (tool-util/title-str-arg args :code)]
-    (let [line (first (str/split-lines code))
-          line (if (> (count line) 80) (str (subs line 0 80) "…") line)]
+    (when-let [line (text/title-line code)]
       (str "run $ " line))))
 
 (defn create-tool

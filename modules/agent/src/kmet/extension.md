@@ -640,8 +640,9 @@ hint and truncation warnings — the opt-in grep/find/ls and powershell tools
 use it), `shell-call-renderer` (the shell call line for a supplied prompt —
 bash is `(shell-call-renderer "$")`; the powershell tool uses `"ps $"`)
 and `render-code-call` (the `run_code`/`clojure_eval` call line: the code
-argument rendered verbatim and syntax-highlighted as Clojure, whatever the
-display mode, with only its label bold);
+argument rendered verbatim in the call line's bold tool-title text, no syntax
+highlighting, whatever the display mode; a leading blank line in the argument
+is dropped so the prompt is never alone above an empty line);
 the namespace is
 explicitly shared with extensions. Path display helpers are public too:
 `render-tool-path` (shortened, accent, hyperlinked path) and `link-path`

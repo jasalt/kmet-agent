@@ -433,46 +433,34 @@
   [comp width]
   (first (core/render comp width)))
 
-(defn- hl-line
-  "The styled form of CODE the shared highlighter produces for LANG — the
-   expected code segment of a call line."
-  [code lang]
-  (first (theme/render-highlighted th code lang)))
-
-(deftest test-code-call-syntax-highlighting
-  (testing "run_code and clj eval highlight as Clojure, with only the label bold"
+(deftest test-code-call-plain-rendering
+  (testing "run_code and clj eval render the code as bold tool-title text, no highlighting"
     (let [code "(defn f [x] x)"
           run-code (raw-line (r/render-run-code-call "run_code" {:code code} th 120 {}) 120)
           clj-eval (raw-line (r/render-code-call "clj eval $" code "" th 120 {}) 120)]
-      (is (str/starts-with? run-code (theme/fg th :tool-title (theme/bold "run $ "))))
-      (is (str/includes? run-code (hl-line code "clojure")))
-      (is (str/starts-with? clj-eval (theme/fg th :tool-title (theme/bold "clj eval $ "))))
-      (is (str/includes? clj-eval (hl-line code "clojure")))
-      (is (not (str/includes? run-code (theme/bold code))) "the code is not bold")))
-  (testing "collapsed and expanded render the same highlighted call line"
+      (is (str/starts-with? run-code (theme/fg th :tool-title (theme/bold (str "run $ " code)))))
+      (is (str/starts-with? clj-eval (theme/fg th :tool-title (theme/bold (str "clj eval $ " code)))))))
+  (testing "collapsed and expanded render the same call line"
     (let [code "(+ 1 2)"
           render #(raw-line (r/render-run-code-call "run_code" {:code code} th 120
                                                     {:expanded %}) 120)]
       (is (= (render false) (render true)))))
   (testing "a multi-line script keeps the prompt on its first line only"
     (let [code "(defn f [x]\n  x)"
-          lines (mapv utils/strip-ansi-codes
-                      (core/render (r/render-run-code-call "run_code" {:code code} th 120 {}) 120))]
+          lines (plain (r/render-run-code-call "run_code" {:code code} th 120 {}) 120)]
       (is (= 2 (count lines)))
       (is (str/starts-with? (first lines) "run $ (defn f [x]"))
       (is (= "  x)" (str/trimr (second lines))))))
-  (testing "the highlight is memoized per block, leaving other renderer state intact"
-    (let [state (atom {:timer-id 7})
-          context #(hash-map :state @state :set-state! (fn [s] (reset! state s)))
-          call (fn [code] (r/render-run-code-call "run_code" {:code code} th 120 (context)))]
-      (call "(+ 1 2)")
-      (is (= "(+ 1 2)" (get-in @state [:call-highlight :code])))
-      (is (= 7 (:timer-id @state)) "the ticker's parked key survives set-state!")
-      (let [cached (:call-highlight @state)]
-        (call "(+ 1 2)")
-        (is (identical? cached (:call-highlight @state)) "unchanged code is not re-highlighted"))
-      (call "(+ 2 3)")
-      (is (= "(+ 2 3)" (get-in @state [:call-highlight :code]))))))
+  (testing "a leading blank line is dropped instead of stranding the prompt"
+    (let [code "\n  \n(+ 1 2)\n(+ 3 4)"
+          lines (plain (r/render-code-call "clj eval $" code "" th 120 {}) 120)]
+      (is (= 2 (count lines)))
+      (is (str/starts-with? (first lines) "clj eval $ (+ 1 2)"))
+      (is (= "(+ 3 4)" (str/trimr (second lines))))))
+  (testing "blank-only code keeps the placeholder"
+    (let [lines (plain (r/render-code-call "run" "\n  \n" "" th 120 {}) 120)]
+      (is (= 1 (count lines)))
+      (is (str/includes? (first lines) "run ...")))))
 
 (deftest test-run-code-result
   (testing "output preview and inner-call summary render"

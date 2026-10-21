@@ -364,13 +364,17 @@
                                        ["read" {:path "src/a.clj"} "read src/a.clj"]
                                        ["write" {:path "src/a.clj"} "write src/a.clj"]
                                        ["edit" {:path "src/a.clj"} "edit src/a.clj"]
-                                       ["bash" {:command "ls -la"} "$ ls -la"]]]
+                                       ["bash" {:command "ls -la"} "$ ls -la"]
+                                       ["run_code" {:code "(+ 1 2)\n(+ 3 4)"} "run $ (+ 1 2)"]
+                                       ["run_code" {:code "\n\n(+ 1 2)"} "run $ (+ 1 2)"]]]
       (let [title (:title (tools/get-tool tool-name))]
         (t/is (fn? title) (str tool-name " defines :title"))
         (t/is (= expected (title args)))))
     (t/is (nil? ((:title (tools/get-tool "read")) nil)) "nil args → nil (quiet falls back to the name)")
     (t/is (nil? ((:title (tools/get-tool "read")) {})) "missing arg → nil")
-    (t/is (nil? ((:title (tools/get-tool "bash")) {:command ""})) "empty command → nil")))
+    (t/is (nil? ((:title (tools/get-tool "bash")) {:command ""})) "empty command → nil")
+    (t/is (nil? ((:title (tools/get-tool "run_code")) {:code "\n  "}))
+          "blank script → nil (no prompt-only title)")))
 
 ;; ─── Tool read ────────────────────────────────────────────────────────────
 

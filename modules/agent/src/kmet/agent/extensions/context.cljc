@@ -270,6 +270,7 @@
     kmet.libs.sse
     kmet.libs.terminal
     kmet.libs.terminal-image
+    kmet.libs.text
     kmet.libs.yaml])
 
 (defn- ns-path

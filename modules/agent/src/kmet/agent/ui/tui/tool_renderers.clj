@@ -6,6 +6,7 @@
             [babashka.fs :as fs]
             [kmet.libs.json :as json]
             [kmet.libs.path :as path]
+            [kmet.libs.text :as text]
             [kmet.tui.theme :as theme]
             [kmet.tui.utils :as utils]
             [kmet.libs.terminal-image :as timg]
@@ -855,39 +856,6 @@
    counts once, and the expand hint reports the rest."
   5)
 
-(defn- highlighted-code-lines
-  "CODE (Clojure — both code tools are) highlighted → vector of styled lines,
-   memoized per tool block in the renderer state under :call-highlight. A
-   running block repaints at least once a second (the elapsed ticker) and
-   again on every width or theme change; re-tokenizing the whole argument
-   each pass costs ~1 ms per KB (77 KB → ~100 ms). One entry per block:
-   streaming args replace it as the argument grows. Set-state merges onto
-   the map it read, so the ticker's parked :timer-id survives."
-  [theme code context]
-  (let [state (:state context)
-        cached (:call-highlight state)]
-    (if (and cached (= code (:code cached)))
-      (:lines cached)
-      (let [lines (theme/render-highlighted theme code "clojure")]
-        (when-let [set-state! (:set-state! context)]
-          (set-state! (assoc state :call-highlight {:code code :lines lines})))
-        lines))))
-
-(defn- call-code-head
-  "The `<label> <code>` head of a code tool's call line (run_code,
-   clojure_eval). LABEL is bold tool-title — the line's only bold part — and
-   CODE follows in its Clojure syntax colors. A missing argument keeps the
-   `...` placeholder, a non-string one the `[invalid arg]` error."
-  [label code theme context]
-  (let [lines (when (string? code) (highlighted-code-lines theme code context))
-        placeholder (theme/fg theme :tool-output "...")]
-    (str (theme/fg theme :tool-title (theme/bold (str label " ")))
-         (cond
-           (nil? code) placeholder
-           (not (string? code)) (theme/fg theme :error "[invalid arg]")
-           (seq lines) (str/join "\n" lines)
-           :else placeholder))))
-
 (defn shell-call-renderer
   "Build the shared call renderer for a shell tool with PROMPT (`$` for bash,
    `ps $` for PowerShell — pi: createShellRenderers(prompt)). The returned fn
@@ -1029,12 +997,21 @@
   "The shared call line for tools whose primary argument is code (run_code,
    clojure_eval): `<label> <code>` rendered verbatim, whatever the display
    mode (no head window, no expand hint — the bash call line's policy).
-   LABEL is plain text (styled bold tool-title — the line's only bold part);
-   CODE is syntax-highlighted as Clojure; SUFFIX is appended as given
+   LABEL and CODE are one bold tool-title line — no syntax highlighting, like
+   the shell call lines; a leading blank line in CODE is dropped so the
+   prompt is never alone above an empty line. SUFFIX is appended as given
    (pre-styled)."
-  [label code suffix theme _width context]
-  (h/compile-tree
-   (tool-text (str (call-code-head label code theme context) suffix))))
+  [label code suffix theme _width _context]
+  (let [code-str (if (string? code)
+                   (text/trim-leading-blank-lines code)
+                   (if (nil? code) "" nil))
+        code-display (cond
+                       (nil? code-str) (theme/fg theme :error "[invalid arg]")
+                       (empty? code-str) (theme/fg theme :tool-output "...")
+                       :else code-str)
+        code-line (theme/fg theme :tool-title
+                            (theme/bold (str label " " code-display)))]
+    (h/compile-tree (tool-text (str code-line suffix)))))
 
 (defn render-run-code-call
   "Call line for the run_code tool: `run $ <code>` (+ an explicit timeout

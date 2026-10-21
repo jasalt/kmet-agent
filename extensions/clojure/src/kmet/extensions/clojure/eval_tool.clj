@@ -13,6 +13,7 @@
             [kmet.agent.extension :as ext]
             [kmet.extensions.clojure.edit-util :as util]
             [kmet.extensions.clojure.nrepl :as nrepl]
+            [kmet.libs.text :as text]
             [kmet.tui.theme :as theme]))
 
 ;; ─── Args ─────────────────────────────────────────────────────────────────
@@ -135,13 +136,11 @@
     (renderers/render-code-call "clj eval $" code suffix theme width context)))
 
 (defn title
-  "Quiet-mode one-liner: `clj eval $ <first line of the code>`, shortened."
+  "Quiet-mode one-liner: `clj eval $ <first non-blank code line>`, shortened."
   [args]
   (let [code (or (:code args) (get args "code"))]
-    (when (string? code)
-      (let [line (first (str/split-lines code))
-            line (if (> (count line) 80) (str (subs line 0 80) "…") line)]
-        (when (seq line) (str "clj eval $ " line))))))
+    (when-let [line (text/title-line code)]
+      (str "clj eval $ " line))))
 
 ;; ─── Registration ─────────────────────────────────────────────────────────
 
