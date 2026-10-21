@@ -5,6 +5,7 @@
             [clojure.java.io :as io]
             [babashka.fs :as fs]
             [kmet.agent.session.core :as s]
+            [kmet.agent.session.listing :as listing]
             [kmet.ai.usage :as usage]
             [kmet.test-utils :refer [slash]]))
 
@@ -596,7 +597,7 @@
       (mk "b_oldest.ednl" (+ t0 60000))
       (mk "c_middle.ednl" (+ t0 120000))
       (mk "d_tie.ednl" (+ t0 120000))
-      (let [candidates (#'s/session-file-candidates dir)]
+      (let [candidates (@#'listing/session-file-candidates dir)]
         (t/is (= ["a_newest.ednl" "d_tie.ednl" "c_middle.ednl" "b_oldest.ednl"]
                  (mapv (comp fs/file-name :path) candidates)))
         (t/is (= [(+ t0 180000) (+ t0 120000) (+ t0 120000) (+ t0 60000)]

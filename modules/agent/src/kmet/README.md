@@ -76,8 +76,16 @@ kmet/agent/
 ├── loop_guard.clj      — repeat-loop guard stage
 ├── bash_executor.clj   — the bash tool's process engine
 ├── session/            — session subsystem
-│   ├── core.clj        — EDNL sessions (storage, branch/tree, context
-│   │                     projection, labels, entries, statistics)
+│   ├── core.clj        — the session API façade over store/listing/
+│   │                     context/stats/tree (what dependents require)
+│   ├── store.clj       — EDNL storage: Session record, ids, line parser
+│   │                     and torn-tail repair, atomic rewrite, appends
+│   ├── listing.clj     — on-disk discovery: header scan, session list,
+│   │                     delete and import
+│   ├── context.clj     — message context, append-only context edits,
+│   │                     cache-miss detection
+│   ├── stats.clj       — usage/tokens, counts, prompt history, activity
+│   ├── tree.clj        — branches, labels, tree projection, fork/clone
 │   ├── schema.clj      — malli schemas for session entries/header
 │   ├── export.clj      — standalone HTML session export
 │   └── runtime.clj     — the session runtime engine (bootstrap, lifecycle,
