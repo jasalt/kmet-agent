@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-21T17:19:24Z"
+ :generated-at "2026-10-21T10:11:51Z"
  :provider {:id :groq
             :name "Groq"
             :env-vars ["GROQ_API_KEY"]
@@ -83,7 +83,7 @@
                          :off nil
                          :xhigh nil}
     :input [:text]
-    :cost {:input 0.075 :output 0.3 :cache-read 0 :cache-write 0}
+    :cost {:input 0.075 :output 0.3 :cache-read 0.0375 :cache-write 0}
     :context-window 131072
     :max-tokens 65536
     :compat {:supports-strict-mode true}}
@@ -122,6 +122,6 @@
                          :xhigh nil}
     :input [:text :image]
     :cost {:input 0.8 :output 4 :cache-read 0 :cache-write 0}
-    :context-window 131042
+    :context-window 131072
     :max-tokens 16384
     :compat {:supports-strict-mode true}}}}}

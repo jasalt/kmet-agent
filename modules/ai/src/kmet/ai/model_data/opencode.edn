@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-19T13:06:14Z"
+ :generated-at "2026-10-21T10:11:51Z"
  :provider {:id :opencode
             :name "OpenCode (Zen)"
             :env-vars ["OPENCODE_API_KEY"]
@@ -1481,6 +1481,25 @@
                          :xhigh "xhigh"}
     :input [:text :image]
     :cost {:input 1.25 :output 4.25 :cache-read 0.15 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 131072
+    :compat {:session-affinity-format :openai-nosession}}
+   "muse-wonder-1.0"
+   {:id "muse-wonder-1.0"
+    :name "Muse Wonder"
+    :provider :opencode
+    :api :openai-responses
+    :base-url "https://opencode.ai/zen/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium "medium"
+                         :minimal "minimal"
+                         :off nil
+                         :xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 4 :output 20 :cache-read 0.2 :cache-write 0}
     :context-window 1048576
     :max-tokens 131072
     :compat {:session-affinity-format :openai-nosession}}}}}

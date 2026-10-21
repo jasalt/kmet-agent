@@ -441,14 +441,14 @@
                         (str cid " must carry the canonical max-tokens"))
                   (t/is (= (:input canonical) (:input cc))
                         (str cid " must carry the canonical input modalities"))))]
-    ;; Moonshot retired kimi-k2.5: Baseten still serves the same weights
-    ;; (toggle thinking); its endpoint-bound :baseten format does not
-    ;; transfer (commandcode-no-compat-refs).
-    (check "moonshotai/Kimi-K2.5" :baseten "moonshotai/Kimi-K2.5")
+    ;; Moonshot retired kimi-k2.5: Hugging Face still serves the same weights;
+    ;; its endpoint-bound :baseten format does not transfer
+    ;; (commandcode-no-compat-refs).
+    (check "moonshotai/Kimi-K2.5" :huggingface "moonshotai/Kimi-K2.5")
     ;; The token-plan catalog never carried this Qwen SKU: OpenRouter does.
     (check "Qwen/Qwen3.7-Flash" :openrouter "qwen/qwen3.7-flash")
-    ;; NVIDIA NIM dropped inkling: Baseten still serves it.
-    (check "thinkingmachines/inkling" :baseten "thinkingmachines/inkling")))
+    ;; NVIDIA NIM dropped inkling: OpenRouter still serves it.
+    (check "thinkingmachines/inkling" :openrouter "thinkingmachines/inkling")))
 
 (t/deftest test-commandcode-cat-jam-ref-follows-beam-rename
   "Cat Jam was the stealth codename for reflection's Beam 1.0: OpenCode

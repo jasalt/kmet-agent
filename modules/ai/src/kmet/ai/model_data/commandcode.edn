@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-20T08:42:39Z"
+ :generated-at "2026-10-21T10:20:44Z"
  :provider {:id :commandcode
             :name "Command Code"
             :env-vars ["CMD_API_KEY"]
@@ -846,17 +846,10 @@
     :api :openai-completions
     :base-url "https://api.commandcode.ai/provider/v1"
     :reasoning true
-    :thinking-level-map {:high "high"
-                         :low nil
-                         :max nil
-                         :medium nil
-                         :minimal nil
-                         :off "off"
-                         :xhigh nil}
     :input [:text :image]
     :cost {:input 0.6 :output 3 :cache-read 0.1 :cache-write 0}
     :context-window 256000
-    :max-tokens 262000}
+    :max-tokens 262144}
    "moonshotai/Kimi-K2.6"
    {:id "moonshotai/Kimi-K2.6"
     :name "Kimi K2.6"
@@ -934,6 +927,28 @@
     :reasoning false
     :input [:text]
     :cost {:input 0.2 :output 0.5 :cache-read 0.04 :cache-write 0}
+    :context-window 262144
+    :max-tokens 32768}
+   "ornith/ornith-1.5-122b"
+   {:id "ornith/ornith-1.5-122b"
+    :name "Ornith 1.5 122B"
+    :provider :commandcode
+    :api :openai-completions
+    :base-url "https://api.commandcode.ai/provider/v1"
+    :reasoning false
+    :input [:text]
+    :cost {:input 0.16 :output 0.64 :cache-read 0.02 :cache-write 0}
+    :context-window 262144
+    :max-tokens 32768}
+   "ornith/ornith-1.5-122b:free"
+   {:id "ornith/ornith-1.5-122b:free"
+    :name "Ornith 1.5 122B"
+    :provider :commandcode
+    :api :openai-completions
+    :base-url "https://api.commandcode.ai/provider/v1"
+    :reasoning false
+    :input [:text]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
     :context-window 262144
     :max-tokens 32768}
    "poolside/laguna-s-2.1-free"
@@ -1076,12 +1091,12 @@
                          :medium "medium"
                          :minimal "minimal"
                          :off "none"
-                         :xhigh "xhigh"}
+                         :xhigh nil}
     :input [:text :image]
     :cost {:input 1 :output 4.05 :cache-read 0.17 :cache-write 0}
     :context-window 256000
-    :max-tokens 32768
-    :compat {:thinking-format :openai}}
+    :max-tokens 471859
+    :compat {:thinking-format :openrouter}}
    "thinkingmachines/inkling-small"
    {:id "thinkingmachines/inkling-small"
     :name "Inkling Small"
@@ -1227,17 +1242,10 @@
     :api :openai-completions
     :base-url "https://api.commandcode.ai/provider/v1"
     :reasoning true
-    :thinking-level-map {:high "high"
-                         :low nil
-                         :max nil
-                         :medium nil
-                         :minimal nil
-                         :off "off"
-                         :xhigh nil}
     :input [:text]
     :cost {:input 1 :output 3.2 :cache-read 0.2 :cache-write 0}
     :context-window 200000
-    :max-tokens 202800}
+    :max-tokens 131072}
    "zai-org/GLM-5.1"
    {:id "zai-org/GLM-5.1"
     :name "GLM-5.1"
@@ -1245,17 +1253,10 @@
     :api :openai-completions
     :base-url "https://api.commandcode.ai/provider/v1"
     :reasoning true
-    :thinking-level-map {:high "high"
-                         :low nil
-                         :max nil
-                         :medium nil
-                         :minimal nil
-                         :off "off"
-                         :xhigh nil}
     :input [:text]
     :cost {:input 1.4 :output 4.4 :cache-read 0.26 :cache-write 0}
     :context-window 200000
-    :max-tokens 202800}
+    :max-tokens 131072}
    "zai-org/GLM-5.2"
    {:id "zai-org/GLM-5.2"
     :name "GLM-5.2"

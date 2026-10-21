@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-20T08:42:39Z"
+ :generated-at "2026-10-21T10:11:51Z"
  :provider {:id :huggingface
             :name "Hugging Face"
             :env-vars ["HF_TOKEN"]
@@ -124,7 +124,7 @@
     :input [:text]
     :cost {:input 0.3 :output 3 :cache-read 0 :cache-write 0}
     :context-window 262144
-    :max-tokens 131072
+    :max-tokens 81920
     :compat {:supports-developer-role false :supports-strict-mode true}}
    "Qwen/Qwen3-30B-A3B"
    {:id "Qwen/Qwen3-30B-A3B"
@@ -172,7 +172,7 @@
     :input [:text]
     :cost {:input 2 :output 2 :cache-read 0 :cache-write 0}
     :context-window 262144
-    :max-tokens 66536
+    :max-tokens 65536
     :compat {:supports-developer-role false :supports-strict-mode true}}
    "Qwen/Qwen3-Coder-Next"
    {:id "Qwen/Qwen3-Coder-Next"
@@ -196,7 +196,7 @@
     :input [:text]
     :cost {:input 0.25 :output 1 :cache-read 0 :cache-write 0}
     :context-window 262144
-    :max-tokens 66536
+    :max-tokens 32768
     :compat {:supports-developer-role false :supports-strict-mode true}}
    "Qwen/Qwen3-Next-80B-A3B-Thinking"
    {:id "Qwen/Qwen3-Next-80B-A3B-Thinking"
@@ -204,11 +204,11 @@
     :provider :huggingface
     :api :openai-completions
     :base-url "https://router.huggingface.co/v1"
-    :reasoning false
+    :reasoning true
     :input [:text]
     :cost {:input 0.3 :output 2 :cache-read 0 :cache-write 0}
     :context-window 262144
-    :max-tokens 131072
+    :max-tokens 32768
     :compat {:supports-developer-role false :supports-strict-mode true}}
    "Qwen/Qwen3-VL-235B-A22B-Instruct"
    {:id "Qwen/Qwen3-VL-235B-A22B-Instruct"
@@ -454,7 +454,7 @@
     :input [:text]
     :cost {:input 3 :output 5 :cache-read 0 :cache-write 0}
     :context-window 163840
-    :max-tokens 163840
+    :max-tokens 32768
     :compat {:supports-developer-role false :supports-strict-mode true}}
    "deepseek-ai/DeepSeek-V3"
    {:id "deepseek-ai/DeepSeek-V3"
