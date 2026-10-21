@@ -1,8 +1,9 @@
 # kmet2 — a Cordis-shaped kmet on shared modules
 
-Temporary note at the project root (the `loop-plan.md` convention). Fold into
-[`modules/srce/src/kmet/srce/srce.md`](modules/srce/src/kmet/srce/srce.md)
-once the kernel lands, and into
+Temporary note at the project root (the `loop-plan.md` convention). Kernel and
+application are separate notes: [`srce.md`](srce.md) is the kernel design
+(folds into `modules/srce/src/kmet/srce/srce.md`), and this file is the
+application side, which folds into
 [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md) /
 [`docs/building.md`](docs/building.md) once kmet2 boots.
 
@@ -26,7 +27,7 @@ one thing every other part is wired through. The name also stays clear of
 | 2 | Does kmet1 keep shipping? | **Yes** | `kmet.agent.*` is untouched; kmet1 is the regression oracle for every kmet2 landing |
 | 3 | Server mode scope | **Remote, multi-session, phase 1** | Tokens, per-session ownership, bounded fan-out and idle reaping are phase-1 work, not follow-ups |
 | 4 | Hosts | **bb, Jolt, JVM — all portable** | No host-private concurrency or FFI in `kmet.srce.*`, `kmet.app.*`, `kmet.mode.*`; threads/queues go through `kmet.libs.concurrent` and the kernel's awaitables |
-| 5 | Second UI provider | **`ui-tk`**, web later | Proves the `:ui` capability contract against an existing backend (`kmet.tk`, Jolt-only) |
+| 5 | Second UI provider | **`ui-tk`**, web later | Proves the `:ui` capability contract against an existing backend (`kmet.tk` is cross-host — Tcl through `babashka.ffi` on bb and `jolt.ffi` on Jolt, so the provider covers a second toolkit on two hosts and is absent on JVM) |
 | 6 | Tenancy | **Single principal in phase 1** | One bearer token per server, many clients; `:permissions` scoping is user-level control, not isolation. Multi-tenant later = token → principal → child ctx, one level above agents |
 | 7 | The kernel's name | **`srce`** — heart; Cordis is Latin for the same | One prefix, `srce/` alias. `kernel`, `kkernel`, `zrno`, `zrnce` rejected |
 | 8 | Plugin ABI | **A validated value**, no `IPlugin` protocol | Cordis's Base fields as a map (`:name :inject :config :provide :intercept :apply`) + malli; loading polymorphism stays on `kmet.loader.core/Loader`, and no host class identity crosses the SCI boundary |
@@ -37,7 +38,7 @@ one thing every other part is wired through. The name also stays clear of
 | 13 | Where the loop lives | **`:agents` registry + `:agentLoop` driver** (dsh's split) | `:agents` is the live registry; the driver provides `:agentLoop`; a preset swaps the loop without touching the registry |
 | 14 | Order of reuse | **bus → registry → tools → resources → session → loop → modes** | Each step produces what the next consumes; the first two landings leave kmet1 untouched |
 | 15 | Shipping and the entry point | **One artifact, two apps; `--app new` selects kmet2** | `dist` needs no parameterization; the flag is the migration lever, and kmet1 stays the default until it is deleted |
-| 16 | Kernel scope | **Full Cordis core port** — context, reflect/services, fiber, registry, events, logger, internal events | Clojure semantics, not JS syntax; the loader/HMR/console packages stay kmet layers; the Cordis conformance suite is the definition of done |
+| 16 | Kernel scope | **Full Cordis core port** — context, reflect/services, fiber, registry, events, logger, internal events | Clojure semantics, not JS syntax; the loader/HMR/console packages stay kmet layers; the conformance suite in [`srce.md`](srce.md) is the definition of done |
 
 "Remote" in phase 1 means **transport and concurrency, not tenancy**: one
 principal per process, many clients, per-agent approval scoping (see
@@ -45,78 +46,76 @@ principal per process, many clients, per-agent approval scoping (see
 already the shape of everything else — the token resolves to a principal, and
 each principal gets a child context under the root, exactly as an agent does.
 
-## What "Cordis architecture" means here
+Kernel and application are separate notes: the kernel's Cordis mapping, rules,
+drain owner, plugin ABI and conformance gate are [`srce.md`](srce.md); this
+file is the application side — services, agents, sessions, profiles, the
+artifact, and the landings.
 
-Cordis is the Koishi meta-framework. kmet2 ports its **kernel** — the context,
-reflection/service layer, fiber lifecycle, plugin registry, event bus, logger
-and internal events — to Clojure with the same observable semantics. The
-`@cordisjs/plugin-loader`, `plugin-hmr` and `plugin-logger-console` packages
-are separate Cordis packages, not the kernel; kmet's profiles/bundles/patches
-are the loader equivalent, HMR is deferred until the kernel settles, and the
-logger is a small service.
-
-| Mechanism | Cordis | srce |
-|---|---|---|
-| Context | side-effect scope; one `ctx` per plugin fiber; `extend`/`isolate`/`intercept` create children | **port** — a `kmet.srce.ctx` value over `kmet.libs.scope`; `extend`/`isolate`/`intercept` are the same operations without the JS prototype |
-| Services | name-keyed values resolved through the context chain; `get`/`set`/`provide`/`accessor`/`mixin`; availability `check`; isolation labels | **port** — one registration per seam and isolation label; all of `get`/`set`/`provide`/`accessor`/`mixin`, plus `check` |
-| `inject` | array = required services; object = per-service intercept config; pending until satisfied; a changed service rolls dependents back and re-applies | **port** — same; the optional form is a documented kmet2 extension, not a Cordis claim |
-| Reversible effects | every `ctx.effect`/`ctx.on`/`ctx.plugin` registration is tracked; LIFO; async disposers awaited; effect metadata tree | **port** — `kmet.libs.scope` is the effect tree; srce adds the per-fiber owner, effect labels and the awaitable wrapper |
-| Fiber lifecycle | `PENDING`/`LOADING`/`ACTIVE`/`FAILED`/`UNLOADING`/`DISPOSED`; `inertia`; `await`; `dispose` settles asynchronously | **port** — the same states over a portable Clojure awaitable; sync applies settle immediately, async applies when their awaitable resolves |
-| Event dispatch | `emit`/`parallel`/`serial`/`bail`/`waterfall`; `on`/`once`; `prepend`/`global`; context filters | **port** — all five modes, both registration options, and hook-level context filtering; the app bus keeps its node scoping on top |
-| Logger | `ctx.logger` service | **port** — a minimal `:logger` service; `kmet.agent.debug` is one sink |
-| Internal events | `internal/plugin`, `internal/status`, `internal/service`, `internal/get`, `internal/set`, `internal/update`, `internal/listener`, `internal/dispatch` | **port** — the kernel's observability surface |
-| Config | StandardSchema validator, or `{schema: true, Config: fn}` transform | **port** — malli validator, or `{:schema ... :transform fn}` |
-| Plugin identity | runtime keyed by the plugin callback; one runtime per callback; fibers per load; `provide`/`intercept` metadata | **port** — runtime keyed by the resolved plugin source; one runtime per source, many fibers per `plugin!`; `dispose-plugin!` ends them all |
-| `Service` base class, `@Inject`, TS declaration merging | JS/TS ergonomics | **map to Clojure** — `defservice`, records/protocols, `:inject` metadata; property mixins become `ctx` lookup keys plus the `srce` functions |
-| Plugin market | Koishi publishing | **not ported** — `extension.edn` and the extension dirs already do it |
-
-The definition of "full" is Cordis's **core contract**: every public operation
-in `cordis`'s context/reflect/fiber/registry/events/logger surface has a
-Clojure equivalent with the same observable behavior. It does not mean the
-JavaScript syntax or the separate optional packages.
-
-### Prior art: DSH
+## Prior art: DSH
 
 DeepSeek Harness (`dsh`, MIT, developer preview) is the reference harness built
 on Cordis, and five of its decisions are folded in below: the
 `:agents`/`:sessions` split (live handles vs the append-only log), the
 loop-as-driver that provides `:agentLoop` so modes wait for it,
-`--dump-config` (the composed tree with each plugin's state) instead of a flat
-list, `setup(child-ctx, agent)` composing an agent's scoped world
-before it is published, and the **profile/bundle/patch** composition model —
-ordered rows, patches by row id, explicit plugin sources — with vars and
-extension ids in place of npm package names, instead of a keyword plugin
-registry. What is not taken: web-first (TUI, then `ui-tk`, web
-later) and npm as the plugin boundary — kmet's isolated SCI contexts with a
-per-extension `deps.edn` are the stronger isolation story, and they already
-exist (`modules/agent/src/kmet/agent/extensions/context.cljc`).
+`--dump-config` (the composed row tree, assembled by the same patch algorithm
+the boot uses — no boot, no plugin state, `!!js` left unevaluated; the booted
+diagnostic is ours) instead of a flat list, `setup(child-ctx, agent)` composing
+an agent's scoped world before it is published, and the
+**profile/bundle/patch** composition model — ordered rows, patches by row id,
+explicit plugin sources — with vars and extension ids in place of npm package
+names, instead of a keyword plugin registry. What is not taken: web-first
+(TUI, then `ui-tk`, web later) and npm as the plugin boundary — kmet's isolated
+SCI contexts with a per-extension `deps.edn` are the stronger isolation story,
+and they already exist
+(`modules/agent/src/kmet/agent/extensions/context.cljc`).
 
-### What Cordis and dsh settle
+## What the seams settle
 
-These are no longer open questions. What remains is genuinely kmet-specific.
+Settled by the harness this port follows and by kmet1's own seam tests. The
+kernel rows (`inject`, event modes, effect ordering, fiber failures, multiple
+mounts) are in [`srce.md`](srce.md).
 
 | Question | Answer |
 |---|---|
-| `inject` meaning | `inject!` mounts with dependencies; `get` reads. Optional is a kmet2 extension, not Cordis semantics. |
-| Event modes | Cordis's five — `emit`, `parallel`, `serial`, `bail`, `waterfall`; `boundary!` is the app's threaded merge. |
-| Effect ordering and async | One fiber-owned effect list, LIFO across every effect kind; async disposers awaited. `scope` is the synchronous registration tree. |
-| Fiber failures | `:failed` state + `:plugin/failed`; dependents stay pending. |
-| Multiple mounts | One runtime per source, many fibers; `dispose-plugin!` ends all. |
 | `:agents` vs the loop | `:agents` is the live registry; the loop driver provides `:agentLoop` (dsh's `core/agent` / `core/agent-loop`). |
 | Agent creation / teardown | `create!` is serialized and rolls back a failed `setup`; `dispose!` is a loop-coordinated awaitable (dsh's `agent/created` + teardown ordering). |
-| Reload boundary | The turn boundary (`turn/end` / `agent/turn-stopping`), exposed as `:agent-settled`. |
+| Reload boundary | The turn boundary, exposed as `:agent-settled`; the kernel offers `drain-await`, the app decides when to wait (see "Reload and the turn boundary"). |
 | Per-agent capability set | An agent preset (a row set on the child ctx) plus an `isolate` realm for seams that must not inherit. |
 | Approvals | `:permissions` policy + `tools/pre-execute` waterfall + one `:approvals` delivery seam. |
 | Execution seams | `:workspace`/`:fs`/`:shell`/`:subprocess`/`:sandbox`/`:permissions`, not one `:bash` bundle. |
 | Profiles / HMR | Profiles stack bundles and patch by row id; HMR is a loader/profile feature, not the kernel. |
 | Plugin sources | Explicit sources in rows; the generated catalog is for validation and docs only. |
 
-Adopted later, when those features land: dsh's `ctx.systemPrompt`
-(prompt-section and tool-schema assembly) and `ctx.sessionProjections`
-(incremental derived state over the session log).
+Adopted from the start, because landings 4–6 cannot compose agents without
+them: `:systemPrompt` (per-agent sections are what `setup` registers, and a
+tool's prompt snippet belongs to the tool, not to one string builder) and the
+session projections behind `:projections` (the inbox and the turn boundary are
+derived state over the log). Deferred: dsh's session-format migration family,
+the browser transport, and telemetry.
 
 Still kmet-specific: the `:ui` capability contract, tenancy, the wire format,
 EDNL sessions, the extension ABI/SCI boundary, and the kmet1 migration.
+
+## Reload and the turn boundary
+
+The kernel can drain its queue (`drain-await`) and restart one fiber
+(`update!`); *when* the app waits is this document's rule, and it is a kmet
+rule rather than a borrowed one. Cordis reloads immediately on an epoch change,
+and dsh serializes reloads through its HMR queue (`ctx.hmr.runExclusive`), not
+through an agent boundary.
+
+- The loop awaits the drain at the turn's closing boundary, so a service
+  swapped between turns reaches the next attempt and never the one in flight —
+  the rule `scope.md` §4 states for loop stages, applied to services.
+- The boundary is `:agent-settled`: kmet1 already emits it once per prompt from
+  the loop's `finally`, and `session/runtime.clj` already treats it as
+  terminal. It is synchronous fire-and-forget today, so making it the quiesce
+  point gives the bus a serial/awaited path (or the handler calls
+  `drain-await`) — landing 2 cannot both claim `emit-event!` is untouched and
+  hand landing 7 an awaited boundary.
+- One owner per concern: `:agentLoop` owns the turn and the queued reload
+  (`request-reload!`), `:agents` answers `when-idle`, and `/reload` with no
+  agent mid-turn drains immediately.
 
 ## Why the three-way split has to go
 
@@ -125,7 +124,7 @@ requirements is blocked by a different one:
 
 | Mechanism | Where | Size | Blocks |
 |---|---|---|---|
-| the store node | `kmet.libs.scope`, resolved through `kmet.agent.runtime/node` | 24 `runtime/node` calls in 9 source files; ~217 `node` mentions across the 11 that require it | multi-session: every session resolves **the one** app node |
+| the store node | `kmet.libs.scope`, resolved through `kmet.agent.runtime/node` | 24 `runtime/node` calls in 8 source files; ~186 `node` mentions across the 13 that require it | multi-session: every session resolves **the one** app node |
 | process-global atoms | `modules/agent/src/kmet/agent/extensions/core.cljc` (`extension-binding`, `extensions`, `session-atom`, `context-sink-atom`, `entry-sink-atom`, `hook-seq`, `cli-flag-values`), `bash-executor` (`shell-options`), `tools/read` (`skill-content-resolver`), `keybindings` (`theme-fns-atom`), `run_code` (`bridge-queue`), `runtime` (`app-node`) | 18 `defonce` vars, 16 of them mutable cells | pluggable UI/modes: the UI port and the mode are process state, not per-context state |
 | the extension capability map | `kmet.agent.extension` (461 lines) + `modules/agent/src/kmet/agent/extensions/core.cljc` (1,585 lines) built once per `init` | 60 functions | every new service today is another key on that map |
 
@@ -160,7 +159,7 @@ and session log are below everything that consumes them. `agent` moves to
 **4**: it is the legacy app, above `app` (2) and the new `ui`/`mode` (3) only
 for the transition, and it is the one module deleted at retirement. That
 inversion is deliberate — it is exactly what lets landing 5 re-point kmet1's
-dispatch at `kmet.ui.tui` instead of forking 5,052 lines — and it ends with the
+dispatch at `kmet.ui.tui` instead of forking 16,813 lines of TUI — and it ends with the
 module. The cost of `app` at 2 is that rank 2 mixes "UI backends" with
 "shared services"; if the shared/version-specific cut turns out to be real once
 sessions land, split `app` into `services` (2) and `app` (3) — a subtree move
@@ -183,193 +182,14 @@ Wiring a module touches four manifests that the guard tests hold in step:
 `modules/<name>/deps.edn` — plus the `:deps`/`:local/root` edge in the module
 that depends on it.
 
-## The kernel
+## The extension host
 
-```
-modules/srce/src/kmet/
-├── srce.clj          — the public API: root/extend/child/isolate/intercept/get/set-service!/provide!/
-│                        accessor/mixin/inject!/plugin!/effect/on/once/emit!/parallel!/
-│                        serial!/bail!/waterfall!/fiber-await/dispose!/dispose-plugin!
-└── srce/
-    ├── srce.md       — design doc: the context model, the lifecycle, the Cordis mapping, the rules
-    ├── ctx.clj       — context values: parent, children, isolate/intercept maps, config, fiber
-    ├── reflect.clj   — get/set/provide/accessor/mixin, the service store, notify
-    ├── service.clj   — Service semantics: check, filter, invoke, resolve-config, defservice
-    ├── fiber.clj     — lifecycle states, effect tracking, inertia, await, dispose/update
-    ├── registry.clj  — plugin runtimes, inject normalization, plugin!/inject!, provide/intercept metadata
-    ├── event.clj     — emit/parallel/serial/bail/waterfall, on/once, prepend/global, filters
-    ├── logger.clj    — the logger service
-    ├── awaitable.clj — the portable awaitable (promise/future/IDeref) used by fibers and disposers
-    └── config.clj    — malli validation/transform, layered config
-```
-
-There is no `effect.clj`: `kmet.libs.scope` is the synchronous registration
-tree (owner paths, LIFO, closed-store guards), used as-is. Moving it up would
-break libs' self-containment rule (`kmet.libs.*` may require only
-`kmet.libs.*`), and a re-export shim would be a copy of a name rather than of
-the behavior. `kmet.srce.ctx` wraps `scope/node` for the store; the fiber adds
-the per-fiber effect list, effect labels and the awaitable wrapper on top, and
-`scope` is never asked to schedule async work.
-
-Consumers require exactly one namespace — the kernel's surface is Cordis's,
-and a second alias in every app file buys nothing:
-
-```clojure
-(ns kmet.app.session
-  (:require [kmet.srce :as srce]))
-
-(srce/root {:config {:cwd (fs/cwd)}})          ; the process root; kmet1's app-node
-(srce/extend ctx {:name :agent/7f3a})          ; a child with metadata
-(srce/isolate ctx #{:tools :llm})              ; seams that stop at this child
-(srce/intercept ctx :llm {:model "anthropic/claude"})
-(srce/get ctx :tools)                          ; or (:tools ctx) through ILookup
-(srce/set-service! ctx :tools new-table)      ; only the providing fiber
-(srce/provide! ctx :tools table {:check ready?})
-(srce/inject! ctx [:tools] handler)            ; Cordis's ctx.inject sugar → fiber
-(srce/plugin! ctx web-search-plugin {:max-results 5}) ; → fiber
-(srce/effect ctx f)                            ; → disposer
-(srce/on ctx :turn-end handler {:prepend true})
-(srce/emit! ctx :turn-end ev)                  ; sync, ignores results
-(srce/parallel! ctx :turn-end ev)              ; awaits all
-(srce/serial! ctx :turn-end ev)                ; awaits until bail
-(srce/bail! ctx :tool-call ev)                 ; sync until bail
-(srce/waterfall! ctx :tool-call ev next)       ; next-chain
-(srce/fiber-await fiber)                       ; settle
-(srce/dispose! fiber)                          ; awaitable; runs effects LIFO
-(srce/dispose-plugin! web-search-plugin)       ; every fiber of one runtime
-```
-
-The alias is derived from the name (`srce/`), as the repo's other requires
-are (`scope/`, `models/`, `protocols/`). The subnamespaces are srce
-internals; nothing above the kernel requires them directly. This is a
-deliberate single public surface, not the "delegating facade" the loop split
-forbids: the kernel is one subsystem with one contract, not a set of modules
-whose callers each pick their own.
-
-### Rules
-
-- **Full fiber lifecycle, portable awaitables.** Cordis's `inertia`, epochs and
-  awaited transitions are ported, not dropped: `apply` may return a disposer,
-  an awaitable, a seq of disposers, or nil; a disposer may return an
-  awaitable; `fiber-await`/`dispose!` settle when the transition finishes. The
-  scheduler is still a drain to fixpoint — `provide!`/`release!` mutates the
-  service map and enqueues a pass — but a pass starts each fiber transition
-  and awaits it, and a per-fiber epoch keeps a stale apply from landing after
-  a newer transition. The awaitable is `kmet.srce.awaitable` (a
-  `promise`/future/`IDeref` with a timeout, or a one-slot queue on a host
-  without promises), not a JS promise.
-- **Quiesce at the turn boundary.** Scope-level disposal never waits
-  (`scope.md` §3, §7); the *fiber* disposal is an awaitable, and the loop
-  awaits the kernel's queue at the turn's closing boundary — dsh's `turn/end`
-  / `agent/turn-stopping` (serial, no `next`), which kmet exposes as
-  `:agent-settled`. A tool swapped between turns reaches the next attempt and
-  never the one in flight — the rule `scope.md` §4 states for loop stages,
-  applied to services. One owner per concern: `:agentLoop` owns the turn and
-  the queued reload (`request-reload!`), `:agents` answers idle
-  (`:agents/idle?`), and `/reload` with no agent mid-turn drains immediately.
-- **No global node.** `kmet.agent.runtime/node`'s job is done by an explicit
-  `ctx` argument. Every `kmet.app.*` function takes `ctx` (or a bare node for
-  store-only calls); no arity resolves the root. A guard test bans
-  `runtime/node` in `kmet.srce.*`, `kmet.app.*`, `kmet.ui.*`, `kmet.mode.*`;
-  the explicit `node` threading migrates in landings 2–4. kmet1's call sites
-  pass `(runtime/node)`; once its boot creates the root ctx, that value *is*
-  the root ctx, so the call sites do not change again.
-- **One implementation per facility.** The effect tree is `kmet.libs.scope`,
-  used as-is — not copied, not re-exported (AGENTS.md "Shared layers are
-  extended, not copied"). The kernel adds the per-fiber owner, effect labels
-  and the awaitable wrapper; it never reimplements owner paths or LIFO
-  disposal.
-- **A plugin's effects are its return value.** `apply` returns a disposer, an
-  awaitable, a seq of disposers, or nil; a `shutdown` fn is accepted sugar.
-  Effect bodies may be sync or awaitable; the fiber runs registrations LIFO,
-  then the awaitable teardowns, and reports failures through `:logger`.
-- **Failures are states, not silence.** A throwing `apply` or effect marks the
-  fiber `:failed` with `{:error e}`, emits `:plugin/failed`, leaves dependents
-  pending, and is reported through `:logger`; `scope/*error-reporter*` keeps
-  its semantics.
-- **Cordis parity is the contract.** `srce.md` maps every public Cordis
-  operation to its srce equivalent, and the conformance suite mirrors Cordis's
-  tests: lifecycle transitions, inject (array/object/optional), service
-  `check`/`set`/`isolate`/`intercept`, effect LIFO with async disposers, all
-  five event modes with `prepend`/`once`, and the internal events.
-
-## Plugin ABI
-
-**No `IPlugin` protocol.** Cordis's `IPlugin` is a TypeScript union
-(`Function | Constructor | Object`) that exists because a JS class must be
-loadable as a plugin. A Clojure function is a value, a record is constructed
-*by* `apply`, so the union collapses to one shape; a protocol would add a
-vtable with one implementation, and would put host class identity on the SCI
-boundary the extension loader exists to keep clean. The plugin is a **validated
-value**:
-
-```clojure
-(def plugin-schema
-  [:map
-   [:name      keyword?]
-   [:inject    {:optional true} [:maybe inject-schema]]   ; [:tools] or {:tools intercept-config}
-   [:config    {:optional true} [:maybe :any]]             ; a malli schema, or {:schema ... :transform fn}
-   [:provide   {:optional true} [:maybe [:set keyword?]]]
-   [:intercept {:optional true} [:maybe :map]]
-   [:apply     fn?]]
-```
-
-| Cordis | kmet2 |
-|---|---|
-| `Plugin.Function (ctx, config)` | `:apply (fn [ctx cfg] …)` |
-| `Plugin.Object { apply }` | the plugin map |
-| `Plugin.Constructor` (`Service` subclass) | `(defrecord S …)` built inside `:apply` — never the plugin |
-| `Plugin.Base` (`name`/`Config`/`inject`/`provide`/`intercept`) | the map's keys; `:config` is a malli schema or transform |
-| `IPlugin` type | `plugin-schema`, checked once at load (`{:type ::bad-plugin :problems …}`) |
-| plugin identity / registry | runtime keyed by the resolved plugin source; one runtime per source, one fiber per `plugin!`; `dispose-plugin!` ends every fiber of a runtime |
-| plugin *source* polymorphism | `kmet.loader.core/Loader` protocol — reused as-is (SCI / Jolt native / classpath) |
-
-`defservice` is the Clojure `Service` base: a record/map registered from its
-constructor with `:name`, `:check`, `:invoke`, `:filter` and `:resolve-config`;
-it is sugar over `defrecord` + `provide!`, not a class hierarchy.
-
-`defplugin` is sugar over the map, not an interface — the same trade
-`kmet.tui.macros/defcomponent` makes, and the shape the extension docs already
-teach:
-
-```clojure
-(defplugin web-search
-  {:name    :tool/web-search
-   :inject  {:tools {:required true}}
-   :config  [:map [:max-results [:int {:min 1}]]]
-   :apply   (fn [ctx {:keys [max-results]}] …)})
-```
-
-It gives a named var (`web-search`, the source), a compile-time shape check,
-`:name` metadata, and a card in `kmet2 --dump-config` — the composed plugin
-tree with each plugin's state and resolved config, which is the drain made
-visible, and the first thing to read when a plugin sits in `:pending`.
-
-**Plugin sources are explicit; ids are for identity, not resolution.**
-`defplugin` defines the plugin var (the source) and records its metadata
-(`:name` as the id, `:inject`, the config schema). A profile row names the
-source — `kmet.app.tools.bash/plugin` for a built-in, `:ext/grep-tool` for an
-extension the host resolves — and the boot resolves that source, never a
-keyword. A **generated catalog** lists the known built-in ids for validation,
-docs and the `--dump-config` cards; it is a committed manifest checked the way
-the bundled-extensions manifest (`kmet/bundled-extensions.edn`) is, not a
-mutable registry. This is dsh's `cordis.yml` row model: `:id` identifies the
-row, the source names what to mount. An unknown source fails at load with
-`{:type ::unknown-plugin :source …}`.
-
-**One runtime, many fibers.** A plugin source is mounted any number of times:
-`plugin!` creates a fresh fiber each call — its own config, inject resolution,
-ctx, effects and lifecycle — and records it on that source's runtime, exactly
-as Cordis does. `dispose!` ends one fiber; `dispose-plugin!` ends every fiber of
-a source and drops the runtime. “Multiple places” means different parent
-contexts: a root mount and an agent-child mount share the runtime but see
-different services, and a profile's `:per-agent true` extension is the concrete
-case. A plugin that *provides* a service cannot be mounted twice in the same
-isolation scope — the second `provide` fails, as in Cordis; use `isolate` for a
-second service instance. Multiple mounts are allowed by default.
+An extension is a plugin whose source is resolved by the extension loader; this
+section is how the two models meet.
 
 **Extensions become plugins additively.** `extension.edn` gains an optional
-`:inject` (the same schema); the extension host wraps the extension as
+`:inject` (the kernel's schema, [`srce.md`](srce.md)); the extension host wraps the
+extension as
 
 ```clojure
 {:name   (keyword ext-name)
@@ -384,15 +204,19 @@ reload semantics for free, and its owner path still disposes on unload.
 
 **The host moves with the ABI.** The plugin host is not just
 `kmet.agent.extension`; it is `kmet.agent.extensions.core` (1,585) +
-`kmet.agent.extensions.context` (1,567), and `create-extension-api` closes over
+`kmet.agent.extensions.context` (1,568), and `create-extension-api` closes over
 the app node and ~40 registrations. Both host files and the zero-dependency ABI
 move into module `app` at rank 2 **keeping their namespaces** (the "Two axes"
 rule):
 
 - `kmet.agent.extension` has no `kmet.*` requires, so the file move is
-  mechanical; installed extensions keep `(require [kmet.agent.extension …])`,
-  and the loader's name whitelist (`kmet.agent.extension` + `kmet.libs.*` +
-  `kmet.tui.*`) is unchanged.
+  mechanical; installed extensions keep `(require [kmet.agent.extension …])`.
+  The loader's name whitelist is **not** just `kmet.agent.extension` +
+  `kmet.libs.*` + `kmet.tui.*`: it also admits exactly two `kmet.agent.*`
+  namespaces, `kmet.agent.ui.tui.tool-renderers` and `kmet.agent.keybindings`
+  (`extensions/context.cljc`). Both are ABI, both are required by shipped
+  directory extensions, and both therefore constrain the UI move: a namespace
+  that extensions may require cannot be renamed with a `sed`.
 - The host takes `ctx` instead of `(app-runtime/node)` and builds the api for
   the root or an agent context. kmet1 (`agent`, rank 4) may require the host
   (rank 2), and an extension's own `:require` resolves by name through the
@@ -417,9 +241,12 @@ rewrite.
 |---|---|---|
 | `:llm` `:models` | provider call, model registry, auth status | `kmet.ai.*` |
 | `:tools` `:commands` `:prompts` `:skills` `:modes` | registries: name → value, per-context | `agent.registry` + 4 namespaces |
-| `:agents` | live handles: `create!` / `resume!` / `get` / `list` / `roots`; a handle owns one agent, its session and its child context | `session/runtime.clj`'s `Engine` — already a handle |
-| `:agentLoop` | the driver: run a turn, abort, teardown ordering | the loop driver plugin (`kmet.agent.loop`) |
-| `:sessions` | the append-only session log and its persistence; storage backends sit behind it | `session/core.clj` (1.7k) |
+| `:agents` | live handles: `create!` / `resume!` / `dispose!` / `get` / `list` / `roots`, plus the control surface a front end drives — `send!` / `followup!` / `steer!` / `inject!` / `cancel!` / `when-idle` / `status`. A handle owns one agent, its session and its child context, and it is the **capability** that may tear it down; `get` returns the bare agent | `session/runtime.clj`'s `Engine` — already a handle, already 55 operations |
+| `:agentLoop` | the driver: run a turn, abort, teardown ordering; it also registers the creation factory on `:agents` (dsh's `setFactory`), so `:agents` has no `create!` until a loop is mounted | the loop driver plugin (`kmet.agent.loop`) |
+| `:sessions` | the append-only session log and its in-memory index, one log per agent | `session/core.clj` (1.7k) |
+| `:sessionPersistence` | the storage backend under `:sessions` (EDNL files first; a second backend shadows this key, not the log) | the file half of `session/core.clj` |
+| `:projections` | incremental derived state over the log — the inbox, the turn boundaries, the token meter — with a cache behind it | new |
+| `:systemPrompt` | ordered sections, dynamic contexts, prompt variables and tool schemas, assembled by a waterfall before each request; per-agent composition lands here | `skills.clj/build-system-prompt` (one fn) + `context.clj` + each tool's `:prompt-snippet` |
 | `:events` `:hooks` | three event domains (session/agent/capability) + 5 dispatch modes + hook chains | `event-bus.clj`, `apply-input-hooks` |
 | `:ui` | capability map: render, input, dialogs, notify, widget set | `extension-binding :ui`, lifted out |
 | `:approvals` | the one delivery seam for `:permissions :ask`: dialog, wire request/response, or headless default | new |
@@ -437,10 +264,12 @@ per-seam rather than all-or-nothing. Cordis's `ctx.tools` / `ctx.llm` /
 **`:agents` is the registry; the loop is a driver.** dsh's split, adopted:
 `core/agent` owns `:agents` (live handles + `agent/*` events) and
 `core/agent-loop` owns `:agentLoop` (the driver implementing the interface).
-`:agents` is always present; the loop plugin provides `:agentLoop`, so
+`:agents` exists as soon as the registry is mounted, but it has no `create!`
+until a loop registers the creation factory (dsh's `setFactory`), so
 `inject [:agentLoop]` holds mode/creation callers pending until a driver is
-mounted, and a preset that swaps the loop swaps one plugin. `check` covers a
-service that becomes unready later.
+mounted, and a preset that swaps the loop swaps one plugin — the teardown
+ordering lives with the factory that implemented it. `check` covers a service
+that becomes unready later.
 
 **No runtime schemas on service values.** A service value is mostly a map of
 fns, so a malli schema can only assert `fn?`; the catalog entry plus one
@@ -510,20 +339,28 @@ Today's providers, and the one that proves the contract is worth having:
 
 1. `:ui/terminal` — components over `kmet.libs.hikap.core`, which already
    takes its backend map as an argument.
-2. `:ui/tk` — the same contract, second backend (Jolt).
+2. `:ui/tk` — the same contract, second toolkit (Tk through
+   `babashka.ffi`/`jolt.ffi`: bb and Jolt, not JVM), starting from the existing
+   `kmet.agent.ui/gui` transcript rather than a blank page.
 3. `:ui/web` — later; a third backend, no app change.
 
-App plugins declare `:inject {:ui {:optional true}}` (or use
-`(srce/inject! ctx {:ui {:optional true}} …)`) and upgrade themselves when a
-richer UI attaches — the optional form is a kmet2 extension of Cordis's
-`inject`. The distinction to document once, on the first line of
+App plugins declare `:inject {:ui :optional}` (or use
+`(srce/inject! ctx {:ui :optional} …)`) and upgrade themselves when a richer UI
+attaches: the optional form (see [`srce.md`](srce.md)) puts the service in the epoch
+without holding the fiber pending. The distinction to document once, on the first line of
 each namespace: **`kmet.tui` renders components; `kmet.ui` decides which
 backend renders.**
 
-The cost is honest: `modes/interactive/*` is 5,052 lines (`layout.clj` 918,
-`ui_registry.clj` 708) written against `kmet.tui`. Landing 5 moves it wholesale
-into `kmet.ui.tui` and extracts capabilities incrementally; it does not rewrite
-it as view-model + renderer.
+The cost is honest and larger than it looks: `modes/interactive/*` is 5,052
+lines (`layout.clj` 918, `ui_registry.clj` 708), but the component library it
+is written against — `kmet.agent.ui/` — is another 11,761 lines in 40 files (36
+of them under `ui/tui/`), and that library is the part the rank guard actually
+constrains. A Tk transcript already exists (`kmet.agent.ui/gui/`, 646 lines:
+`transcript.clj` and `style.clj` over `kmet.tk.ttk.style`), so the second
+provider starts from a working backend. Landing 5a moves `kmet.agent.ui.*` and
+`modes/interactive/*` into `kmet.ui.tui` and extracts capabilities
+incrementally; it does not rewrite them as view-model + renderer. Landing 5b
+turns `ui/gui` into `kmet.ui.tk`.
 
 ## Pluggable modes
 
@@ -566,8 +403,19 @@ The `:agents` service value:
                      :setup (fn [agent-ctx agent] …)})  ; → handle
 (agents/resume! ctx id)                                ; rebuild from the log
 (agents/list ctx)   (agents/get ctx id)   (agents/roots ctx)
+(agents/send! handle msg {:target :next-turn})         ; queue; :next-step steers
+(agents/steer! handle msg)   (agents/follow-up! handle msg)
+(agents/inject! handle msg)                            ; out-of-band context
+(agents/cancel! handle {:kind :user})
+(agents/when-idle handle)                              ; the idle awaitable
+(agents/status handle)                                 ; :idle | :running
 (agents/dispose! handle)                               ; loop-coordinated awaitable
 ```
+
+The handle is the capability: `create!` resolves with it, `get` returns the
+bare agent, and a consumer that did not create the agent cannot dispose it. The
+two `send!` targets are the durable pending lists (`:next-turn` / `:next-step`)
+reconstructed from the log by `:projections`, not a second in-memory queue.
 
 `setup` runs before the handle is published: it composes the agent's scoped
 world (its tools, prompt sections, listeners) on its own context, so nothing
@@ -641,18 +489,20 @@ adds no new store.
 
 ### The measurement
 
-`kmet.agent` is 104 source files and 39,802 lines. Exactly 20 touch process
+`kmet.agent` is 104 source files and 39,765 lines. Exactly 20 touch process
 state; the other 84 are already pure functions of their arguments.
 
 | Bucket | Pattern | Files | Lines | Members |
 |---|---|---|---|---|
-| needs nothing | lift as-is | 84 | 28,178 | tool bodies (`write`/`edit`), `session/core.clj` (1.7k), the `event-types` vocabulary |
+| needs nothing | lift as-is | 84 | 28,178 | tool bodies (`write`/`edit`), the `event-types` vocabulary — with one caveat: `session/core.clj` (1,686 of those lines) needs no `ctx` but is not host-portable as written (`ReentrantLock`, `java.io.InputStreamReader`), so it belongs to the re-host, not to a mechanical lift |
 | one argument | parameterize | 7 | 4,076 | `registry` (3 `runtime/node` reads), `commands/builtins` (6), `modes/interactive/commands` (6), `session/runtime` (3), `loop/state` (2), `core` (1), `modes/interactive` (1) |
 | registry-wired | re-point | 4 | 1,305 | `tools/registry`, `skills`, `prompts`, `commands` |
 | owns state | re-host | 9 | 6,243 | `kmet.agent.extensions.core` (7 `defonce`s), `debug` (3), `kmet.agent.extensions.context` (2), `bash_executor`, `event_bus`, `keybindings`, `runtime`, `tools/read`, `tools/run_code` (1 each) |
 
-The fourth row is the only real re-hosting: 6,243 of 39,802 lines (~16%), plus
-another ~14% in the one-argument and registry-wired rows. It is the part that
+The fourth row is the only real re-hosting: 6,243 of 39,765 lines (~16%), plus
+`session/core.clj`'s lock (1,686 lines whose `ReentrantLock` must become a
+`kmet.libs.concurrent` primitive to satisfy decision 4), plus another ~14% in
+the one-argument and registry-wired rows. It is the part that
 owns state — precisely what the context replaces. The bus is the template:
 roughly three-fifths of `event-bus.clj` is the `event-types` vocabulary (pure
 data, lifts as-is), and the mechanism is one atom plus the three emitters
@@ -699,7 +549,7 @@ simply lives in the `app` module. Tests move the same way and keep their
 namespace (`kmet.tasks.modules/ns-symbol` derives it from the path).
 
 Renaming at lift time is the expensive option: `modules/agent/test` holds 354
-`with-redefs` sites, 14 of them referencing `kmet.agent.config` — the first clean
+`with-redefs` sites, and 14 test files reference `kmet.agent.config` — the first clean
 file anyone would lift. A rename owes a wrapper at the old name exposing
 *every* var kmet1 uses, and that wrapper still cannot intercept calls made
 *inside* the lifted code. Keeping the namespace keeps every interception point
@@ -730,10 +580,13 @@ the new prefixes from day one.
 
 1. **Remove the upward require.** `registry.clj` requires
    `kmet.agent.runtime` for `node`; while that edge exists the file cannot
-   live at rank 2. Parameterize it to take `ctx`/`node` and drop any arity that
-   resolves the root — *that commit is the extraction*. kmet1's call sites pass
-   `(runtime/node)`; a root-resolving wrapper, if one is needed, lives at rank
-   3, not in `app`.
+   live at rank 2. Parameterize it to take `ctx` and drop any arity that
+   resolves the root — *that commit is the extraction*. One signature defect
+   to settle in the same commit: `clear!` already takes a node, as its **last**
+   argument (`(clear! tag node)`), while `entry`/`entries`/`by-owner` take
+   none — normalize to `ctx` first and update its call sites, or the module
+   ships two conventions. kmet1's call sites pass `(runtime/node)`; a
+   root-resolving wrapper, if one is needed, lives at rank 3, not in `app`.
 2. Lift in reverse intra-module require order; compute it once with
    `kmet.tasks.changed/read-ns-form` + `ns-requires` — it is the only valid
    sequence.
@@ -807,8 +660,11 @@ bb start --app new              # the same switch from a checkout
 kmet                            # kmet1, the default, unchanged
 ```
 
-- The artifact's entry stays `kmet.agent.core` (`main-class` is unchanged in
-  `build.cljc` and `build_jvm.clj`), but that namespace becomes a **bootstrap**
+- The entry stays `kmet.agent.core`: `build.cljc`'s `main-class` and
+  `build_jolt.clj`'s `entry-ns` name it directly, while the JVM uberjar keeps
+  its own `main-class` — `kmet.agent.jvm-main`, which `build_jvm.clj` AOT
+  `:gen-class`es — and that class's `-main` must keep delegating to
+  `core/-main`. That namespace becomes a **bootstrap**
   with no app requires; kmet1's `-main` moves to `kmet.agent.cli`. The
   bootstrap parses `--app` (`new` | `old`, `old` the default), strips the flag
   from the argv, and hands off dynamically — never a static require — to
@@ -824,9 +680,10 @@ kmet                            # kmet1, the default, unchanged
 - `bb check` requires both app entries (`[kmet.agent.cli]`,
   `[kmet.app.core]`) in its task body, because the dispatch is dynamic and the
   load is the assertion; its `:requires` names the bootstrap only.
-- `dist` needs no parameterization: `main-class` stays `kmet.agent.core`, the
-  embed list is already every module's `src`, and the artifact names describe
-  the host, not the app.
+- `dist` needs no parameterization: the two entry constants stay put
+  (`kmet.agent.core` for the bb/jolt builds, `kmet.agent.jvm-main` for the JVM
+  uberjar), the embed list is already every module's `src`, and the artifact
+  names describe the host, not the app.
 - The one smoke test runs **both** entries (`--app old --version`,
   `--app new --version`), because the dynamic hand-off is the part packaging
   can break. It is still one test, not a per-app test.
@@ -843,12 +700,12 @@ Each is independently shippable and gated.
 
 | # | Landing | Ships |
 |---|---|---|
-| 0 | `modules/srce`: the full Cordis core — `ctx`/`reflect`/`service`/`fiber`/`registry`/`event`/`logger`/`awaitable`/`config` | srce unit tests + the Cordis conformance suite; no `kmet.agent.*` require |
-| 1 | module wiring + guards (module-based require, no-global-node, drain), `--app new` dispatch (bootstrap split: `kmet.agent.core` + `kmet.agent.cli`) + `check` requiring both entries, `defplugin` + the generated catalog, `--dump-config` | `kmet.test-module-deps` / `test-modules-manifest` green; each guard fails on a deliberate violation |
+| 0 | `modules/srce`: the full Cordis core — `ctx`/`reflect`/`service`/`fiber`/`registry`/`event`/`logger`/`util`/`awaitable`/`config` | srce unit tests + the conformance suite ([`srce.md`](srce.md)); no `kmet.agent.*` require |
+| 1 | module wiring + guards (module-based require, no-global-node, drain), `--app new` dispatch (bootstrap split: `kmet.agent.core` + `kmet.agent.cli`) + `check` requiring both entries, the generated plugin catalog, `--dump-config` over the composed rows | `kmet.test-module-deps` / `test-modules-manifest` green; each guard fails on a deliberate violation |
 | 2 | the bus: listener table into the runtime; `emit-event!` keeps its signature | contract test over both delivery paths; kmet1 green |
 | 3 | `registry` parameterized then lifted; `:tools` service; commands/prompts/skills re-pointed | contract tests over both backends; kmet1 green |
-| 4 | `Engine` → `:agents` (+ `:permissions` policy/request!/remember!) and one `:sessions` facade; the extension host + ABI moved into `app` (key-set contract test); `extension.edn :inject` + `grep-tool` ported as a plugin; the remaining `runtime/node` reads; the globals re-hosted | kmet2 runs `mode-print`; a shipped directory extension and `grep-tool` green; kmet1 untouched |
-| 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal` + `ui-tk`; modes as plugins | print/rpc/tui parity via `scripts/capture/`; tk provider on Jolt |
+| 4 | `Engine` → `:agents` (+ `:permissions` policy/request!/remember!) and `:sessions` + `:sessionPersistence`; the extension host + ABI moved into `app` (key-set contract test); `extension.edn :inject` + `grep-tool` ported as a plugin; the remaining `runtime/node` reads; the globals re-hosted; `session/core.clj`'s lock moved onto a `kmet.libs.concurrent` primitive | kmet2 runs `mode-print`; a shipped directory extension and `grep-tool` green; kmet1 untouched |
+| 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `ui/gui` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` registry (create/resume/list) + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end | two agents concurrently, one stalling client, an approval answered by a client |
 | 7 | loop re-hosted as a driver plugin; profiles as row+patch layers; presets = bundles | pi-alignment green; a tool swaps mid-session at the turn boundary (`:agent-settled`); a profile stacking a preset bundle boots |
 
@@ -868,12 +725,13 @@ working and the capture diff gates the switch.
 - `kmet.test-module-deps` — ranks stay strictly downward.
 - `kmet.test-modules-manifest` — `modules.edn`, `bb.edn`, `deps.edn` and the
   embed list stay in step.
-- New: srce self-containment (`kmet.srce.*` may require only `kmet.libs.*`,
-  `kmet.loader.*` and third-party code), the no-global-node guard, the
-  **module-based require guard** (a namespace may require only a strictly
-  lower-ranked module's file — built on `kmet.test-seam-requires`'s ns-form
-  reader and `kmet.test-module-deps`'s ranks), and the headless-mode
-  plugin-graph assertion.
+- New: the **module-based require guard** (a namespace may require only a
+  strictly lower-ranked module's file — built on `kmet.test-seam-requires`'s
+  ns-form reader and `kmet.test-module-deps`'s ranks), the no-global-node guard
+  (`runtime/node` banned in `kmet.srce.*`, `kmet.app.*`, `kmet.ui.*`,
+  `kmet.mode.*`), and the headless-mode plugin-graph assertion.
+- The kernel's own gates — the conformance suite, the drain test, srce
+  self-containment — are in [`srce.md`](srce.md).
 - New: a profile test — layers patch by row id, `--dump-config` resolves to
   the same rows the boot uses, and an unknown plugin source fails at load.
 - New: the two-direction load test — `kmet --app old --version` leaves
@@ -882,25 +740,11 @@ working and the capture diff gates the switch.
   `kmet.agent.loop`) appearing, and `kmet.agent.core`'s ns form requires
   neither app. It is what keeps someone from turning the dispatch into a
   static `:require`.
-- New: the Cordis conformance suite — lifecycle transitions, inject
-  (array/object/optional), service `check`/`set`/`isolate`/`intercept`, effect
-  LIFO with async disposers, all five event modes with `prepend`/`once`, and
-  the internal events.
-- New: a drain test that cycles a 3-plugin graph through provide/release/reload
-  to fixpoint, sync and async variants, and asserts no leaked registrations
-  (`scope/ordered-registrations` empty after disposal).
 
 ## Not doing
 
 - Forking the repo, or rewriting `kmet.libs.*` / `kmet.ai.*` / `kmet.tui.*` /
   `kmet.tk.*` / `kmet.loader.*`.
-- Porting JavaScript syntax rather than semantics: TS declaration merging,
-  decorators, prototype property mixins. The Clojure equivalents (`defservice`,
-  records/protocols, `:inject` metadata, `ctx` ILookup keys) are in scope.
-- Porting the separate `@cordisjs/plugin-loader` / `plugin-hmr` /
-  `plugin-logger-console` packages: profiles/bundles/patches are kmet's loader,
-  HMR is deferred until the kernel settles, and the logger is a small service.
-- The Koishi plugin market / `package.json` service manifest.
 - Multi-user accounts, quotas, or an ACL model in phase 1.
 - Renaming `kmet.agent.*` namespaces at lift time, or inventing intermediate
   prefixes (`kmet.shared.*`, `kmet.services.*`): every rename is paid once more
@@ -908,3 +752,5 @@ working and the capture diff gates the switch.
 - A web UI before `ui-tk` has proven the capability contract.
 - Deleting kmet1's `kmet.agent.*`; it stays until kmet2 passes the full gate
   set and the pi-alignment suite, then it is retired in one landing.
+- The kernel's own exclusions (JS syntax, the loader/HMR/console packages, the
+  plugin market, async stack splicing) are listed in [`srce.md`](srce.md).
