@@ -12,6 +12,16 @@
   "A var-addressable plugin map — the shape a `defplugin` var holds."
   {:name :app/sample :inject {:tools nil} :provide [] :apply (fn [_ _] nil)})
 
+(defn- run-main
+  "The `{:code :out :err}` of kmet2's entry on ARGS — `main` returns the exit
+   code and prints, so a command is read without forking a process."
+  [args]
+  (let [code (atom nil)
+        err (java.io.StringWriter.)
+        out (binding [*err* err]
+              (with-out-str (reset! code (core/main args))))]
+    {:code @code :out out :err (str err)}))
+
 (defn- scratch-patch!
   "Write CONTENT to a patch file under target/ (which /tmp-less hosts have)
    and return the path."
@@ -20,11 +30,6 @@
     (io/make-parents path)
     (spit path content)
     path))
-
-(defn- err-str [f]
-  (let [w (java.io.StringWriter.)
-        result (binding [*err* w] (f))]
-    [result (str w)]))
 
 (defn- error-type [f]
   (try (f) nil (catch Exception e (:type (ex-data e)))))
@@ -58,24 +63,25 @@
 
 (deftest version-prints-the-shared-string
   (with-redefs [version/kmet-version (constantly "v9.9.9")]
-    (let [code (atom nil)
-          out (with-out-str (reset! code (core/main ["--version"])))]
-      (is (zero? @code))
+    (let [{:keys [code out]} (run-main ["--version"])]
+      (is (zero? code))
       (is (= "kmet v9.9.9\n" out)))))
 
 (deftest help-prints-kmet2-flags
-  (let [out (with-out-str (is (zero? (core/main ["--help"]))))]
+  (let [{:keys [code out]} (run-main ["--help"])]
+    (is (zero? code))
     (is (str/includes? out "kmet --app new"))
     (is (str/includes? out "--dump-config"))
     (is (str/includes? out "--profile"))))
 
 (deftest dump-config-prints-the-built-in-composition
-  (let [out (with-out-str (is (zero? (core/main ["--dump-config"]))))]
+  (let [{:keys [code out]} (run-main ["--dump-config"])]
+    (is (zero? code))
     (is (str/starts-with? out "profile :tui rows=0 patches=0"))
     (is (str/ends-with? out "\n")))
-  (is (str/starts-with? (with-out-str (core/main ["--dump-config" "--profile" "rpc"]))
-                        "profile :rpc")
-      "--profile selects the composition"))
+  (let [{:keys [out]} (run-main ["--dump-config" "--profile" "rpc"])]
+    (is (str/starts-with? out "profile :rpc")
+        "--profile selects the composition")))
 
 (deftest dump-config-composes-a-patch-layer
   (let [path (scratch-patch!
@@ -83,7 +89,8 @@
                    " :config {:a 1}}]\n"
                    " :patch [{:id :app/sample :config {:b {:c 2}}}]}\n"))]
     (try
-      (let [out (with-out-str (is (zero? (core/main ["--dump-config" "--patch" path]))))]
+      (let [{:keys [code out]} (run-main ["--dump-config" "--patch" path])]
+        (is (zero? code))
         (is (str/starts-with? out "profile :tui rows=1 patches=1"))
         (is (str/includes? out ":app/sample"))
         (is (str/includes? out "inject={:tools nil}"))
@@ -94,20 +101,20 @@
 (deftest dump-config-reports-a-bad-layer
   (let [path (scratch-patch! "{:rows [] :nope 1}\n")]
     (try
-      (let [[code err] (err-str #(core/main ["--dump-config" "--patch" path]))]
+      (let [{:keys [code err]} (run-main ["--dump-config" "--patch" path])]
         (is (= 1 code))
         (is (str/includes? err "a patch file holds")))
       (finally (io/delete-file path true))))
-  (let [[code err] (err-str #(core/main ["--dump-config" "--profile" "nope"]))]
+  (let [{:keys [code err]} (run-main ["--dump-config" "--profile" "nope"])]
     (is (= 1 code))
     (is (str/includes? err "unknown profile")))
-  (let [[code err] (err-str #(core/main ["--dump-config" "--patch"
-                                         "target/definitely-missing-patch.edn"]))]
+  (let [{:keys [code err]} (run-main ["--dump-config" "--patch"
+                                      "target/definitely-missing-patch.edn"])]
     (is (= 1 code))
     (is (str/includes? err "cannot read patch file"))))
 
 (deftest a-bare-run-says-what-is-missing
-  (let [[code err] (err-str #(core/main ["hello"]))]
+  (let [{:keys [code err]} (run-main ["hello"])]
     (is (= 1 code))
     (is (str/includes? err "no runnable mode"))
     (is (str/includes? err "--dump-config"))))

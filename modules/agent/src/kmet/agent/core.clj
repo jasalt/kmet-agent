@@ -30,7 +30,11 @@
   :old)
 
 (def ^:private app-values
-  {"old" :old "new" :new})
+  "The CLI spellings of `apps`' keys, so a third app needs one entry only."
+  (into {} (map (fn [[app _]] [(name app) app])) apps))
+
+(defn- bad-app [message value]
+  (ex-info message {:type :kmet.agent/bad-app :value value}))
 
 (defn parse-app
   "Split ARGS into `{:app kw :args […]}`: the `--app old|new` (or
@@ -46,26 +50,20 @@
          seen? false]
     (if-not in
       {:app app :args out}
-      (let [arg (first in)
-            [value remaining] (cond
-                                (= "--app" arg)
-                                (let [v (second in)]
-                                  (when-not v
-                                    (throw (ex-info "--app needs a value (old or new)"
-                                                    {:type :kmet.agent/bad-app})))
-                                  [v (nnext in)])
-                                (str/starts-with? arg "--app=")
-                                [(subs arg (count "--app=")) (next in)]
-                                :else [::absent in])]
-        (if (= ::absent value)
+      (let [arg (first in)]
+        (if-not (or (= "--app" arg) (str/starts-with? arg "--app="))
           (recur (next in) (conj out arg) app seen?)
-          (do
+          (let [[value remaining] (if (= "--app" arg)
+                                    [(second in) (nnext in)]
+                                    [(subs arg (count "--app=")) (next in)])]
+            (when-not value
+              (throw (bad-app "--app needs a value (old or new)" nil)))
             (when seen?
-              (throw (ex-info "--app given twice" {:type :kmet.agent/bad-app :value value})))
+              (throw (bad-app "--app given twice" value)))
             (if-let [selected (get app-values value)]
               (recur remaining out selected true)
-              (throw (ex-info (str "unknown app: " value " (expected old or new)")
-                              {:type :kmet.agent/bad-app :value value})))))))))
+              (throw (bad-app (str "unknown app: " value " (expected old or new)")
+                              value)))))))))
 
 (defn app-available?
   "Does this artifact carry APP (a key of `apps`)? The app's source resource is
@@ -81,7 +79,7 @@
   (binding [*out* *err*]
     (println (str "kmet: this artifact carries only the kmet app — no "
                   entry " here."
-                  " A `--dev` build, or an artifact older than that app,"
+                  " A `--dev` build, or an artifact built before that app,"
                   " has nothing to run for --app " (name app) ".")))
   ::missing-app)
 

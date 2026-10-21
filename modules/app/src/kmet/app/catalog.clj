@@ -69,6 +69,9 @@
                            " `bb generate-plugins`")
                       {:type :kmet.app/unknown-plugin :source source}))))
 
+(defn- bad-row [row message]
+  (throw (ex-info message {:type :kmet.app/bad-row :row row})))
+
 (defn describe
   "The composition card for ROW: the row plus `:id`, `:name`, `:inject` and
    `:provide`. A var `:plugin` comes from the catalog (or the loaded var); an
@@ -78,19 +81,24 @@
   [row]
   (let [source (:plugin row)]
     (cond
+      (and (keyword? source) (str/starts-with? (str source) ":ext/"))
+      (merge {:name source :external true} row {:id (or (:id row) source)})
+
       (keyword? source)
-      (if (str/starts-with? (str source) ":ext/")
-        (merge {:name source :external true} row
-               {:id (or (:id row) source)})
-        (throw (ex-info (str "a keyword :plugin source is an :ext/… id the"
-                             " extension host resolves; a built-in source is a"
-                             " var symbol — got " (pr-str source))
-                        {:type :kmet.app/bad-row :row row})))
-      (symbol? source) (let [c (card source)]
-                         (merge c row {:id (or (:id row) (:name c))}))
-      :else (throw (ex-info (str "a row needs a :plugin source (a var symbol or"
-                                 " an :ext/… keyword), got " (pr-str row))
-                            {:type :kmet.app/bad-row :row row})))))
+      (bad-row row (str "a keyword :plugin source is an :ext/… id the extension"
+                        " host resolves; a built-in source is a var symbol — got "
+                        (pr-str source)))
+
+      (symbol? source)
+      (let [c (card source)]
+        (merge c row {:id (or (:id row) (:name c))}))
+
+      :else
+      (bad-row row (str "a row needs a :plugin source (a var symbol or an :ext/…"
+                        " keyword), got " (pr-str row))))))
+
+(defn- describe-patch [patch]
+  (if (:plugin patch) (describe patch) patch))
 
 (defn describe-layer
   "Describe a layer's rows, and its insert/replace patches (the ones carrying
@@ -98,6 +106,4 @@
   [layer]
   (cond-> layer
     (:rows layer) (update :rows #(mapv describe %))
-    (:patch layer) (update :patch #(mapv (fn [patch]
-                                           (if (:plugin patch) (describe patch) patch))
-                                         %))))
+    (:patch layer) (update :patch #(mapv describe-patch %))))

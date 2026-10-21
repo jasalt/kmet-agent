@@ -28,18 +28,31 @@
   {"--profile" :profile
    "--patch" :patch})
 
-(defn- bad-args [message & [value]]
-  (ex-info message {:type :kmet.app/bad-args :value value}))
+(defn- bad-args [message]
+  (ex-info message {:type :kmet.app/bad-args}))
 
 (defn- split-flag
   "ARG split into `[flag value]`; value is ::missing when the form carries no
    `=`."
   [arg]
-  (if (and (str/starts-with? arg "--")
-           (str/includes? arg "="))
-    (let [i (str/index-of arg "=")]
-      [(subs arg 0 i) (subs arg (inc i))])
+  (if-let [i (and (str/starts-with? arg "--") (str/index-of arg "="))]
+    [(subs arg 0 i) (subs arg (inc i))]
     [arg ::missing]))
+
+(defn- flag-value
+  "The value of value flag FLAG from VALUE (the `=` form's) or the next argument
+   in IN → `[value remaining]`. Throws :kmet.app/bad-args when the value is
+   missing, empty, or looks like the next flag."
+  [flag value in]
+  (let [[value in] (if (= ::missing value)
+                     (let [v (second in)]
+                       (when (or (nil? v) (str/starts-with? v "-"))
+                         (throw (bad-args (str flag " needs a value"))))
+                       [v (nnext in)])
+                     [value (next in)])]
+    (when (str/blank? value)
+      (throw (bad-args (str flag " needs a value"))))
+    [value in]))
 
 (defn parse-args
   "Parse kmet2's argv → `{:profile kw :patch [path …] :args [rest …] :version?
@@ -54,25 +67,17 @@
           (contains? bool-flags flag)
           (if (= ::missing value)
             (recur (next in) (assoc opts (bool-flags flag) true))
-            (throw (bad-args (str flag " takes no value") arg)))
+            (throw (bad-args (str flag " takes no value"))))
 
           (contains? value-flags flag)
           (let [k (value-flags flag)
-                v (if (= ::missing value)
-                    (let [next-arg (second in)]
-                      (when (or (nil? next-arg) (str/starts-with? next-arg "-"))
-                        (throw (bad-args (str flag " needs a value") arg)))
-                      next-arg)
-                    value)
-                in (if (= ::missing value) (nnext in) (next in))]
-            (when (str/blank? v)
-              (throw (bad-args (str flag " needs a value") arg)))
+                [v in] (flag-value flag value in)]
             (recur in (if (= :patch k)
                         (update opts :patch conj v)
                         (assoc opts k (keyword v)))))
 
           (str/starts-with? arg "-")
-          (throw (bad-args (str "unknown option " arg) arg))
+          (throw (bad-args (str "unknown option " arg)))
 
           :else (recur (next in) (update opts :args conj arg)))))))
 
@@ -86,10 +91,10 @@
                 (catch Exception e
                   (throw (ex-info (str "cannot read patch file " path ": " (ex-message e))
                                   {:type :kmet.app/bad-patch-file :path path} e))))]
-    (when-not (and (map? layer) (every? #{:rows :patch} (keys layer)))
+    (if (and (map? layer) (every? #{:rows :patch} (keys layer)))
+      layer
       (throw (ex-info (str "a patch file holds {:rows […] :patch […]}: " path)
-                      {:type :kmet.app/bad-patch-file :path path :content layer})))
-    layer))
+                      {:type :kmet.app/bad-patch-file :path path :content layer})))))
 
 (defn compose-config
   "Compose OPTS' profile plus its `--patch` layers, describing every row
@@ -144,26 +149,23 @@
 (defn main
   "Run kmet2 with ARGS and return the process exit code."
   [args]
-  (let [{version? :version? help? :help? dump-config? :dump-config?
-         leftover :args :as opts}
-        (try
-          (parse-args args)
-          (catch Exception e
-            (if (= :kmet.app/bad-args (:type (ex-data e)))
-              (do (report (ex-message e)) (print-usage) nil)
-              (throw e))))]
-    (if-not opts
-      1
-      (try
-        (cond
-          version? (do (println (str "kmet " (version/kmet-version))) (flush) 0)
-          help? (do (print-usage) (flush) 0)
-          dump-config? (do (print (dump-config opts)) (flush) 0)
-          :else (not-wired leftover))
-        (catch Exception e
-          (if (configuration-error? e)
-            (do (report (ex-message e)) 1)
-            (throw e)))))))
+  (try
+    (let [{version? :version? help? :help? dump-config? :dump-config?
+           leftover :args :as opts} (parse-args args)]
+      (cond
+        version? (do (println (str "kmet " (version/kmet-version))) (flush) 0)
+        help? (do (print-usage) (flush) 0)
+        dump-config? (do (print (dump-config opts)) (flush) 0)
+        :else (not-wired leftover)))
+    (catch Exception e
+      (cond
+        (= :kmet.app/bad-args (:type (ex-data e)))
+        (do (report (ex-message e)) (print-usage) 1)
+
+        (configuration-error? e)
+        (do (report (ex-message e)) 1)
+
+        :else (throw e)))))
 
 (defn -main
   "Process entry: kmet.app.core through the bootstrap's `--app new`."

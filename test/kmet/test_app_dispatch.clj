@@ -51,14 +51,18 @@
     (is (= ['kmet.agent.cli/-main ["-p" "--app is a flag"]]
            (dispatch-calls ["-p" "--app is a flag"])))))
 
+(defn- parse-error
+  "The :type parse-app throws for ARGS, or nil."
+  [args]
+  (try (bootstrap/parse-app args) nil
+       (catch Exception e (:type (ex-data e)))))
+
 (deftest bad-app-flags-are-reported
   (doseq [args [["--app" "neither"]
                 ["--app"]
                 ["--app" "old" "--app" "new"]
                 ["--app="]]]
-    (is (= :kmet.agent/bad-app
-           (try (bootstrap/parse-app args) nil
-                (catch Exception e (:type (ex-data e)))))
+    (is (= :kmet.agent/bad-app (parse-error args))
         (str "args " (pr-str args)))))
 
 (deftest a-missing-app-is-one-sentence

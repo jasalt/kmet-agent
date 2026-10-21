@@ -57,18 +57,18 @@
        (symbol? (first form))
        (= "defplugin" (name (first form)))))
 
+(defn- bad-declaration [form message]
+  (throw (ex-info message {:type :kmet.plugins/bad-declaration :form form})))
+
 (defn- declaration [ns-sym form]
   (let [[_ sym plugin] form]
     (when-not (and (symbol? sym) (map? plugin))
-      (throw (ex-info (str "defplugin declaration must be a symbol and a map literal: "
-                           (pr-str form))
-                      {:type :kmet.plugins/bad-declaration :form form})))
+      (bad-declaration form (str "defplugin declaration must be a symbol and a"
+                                 " map literal: " (pr-str form))))
     (when-not (keyword? (:name plugin))
-      (throw (ex-info (str "defplugin `" sym "` declares no keyword :name")
-                      {:type :kmet.plugins/bad-declaration :form form})))
+      (bad-declaration form (str "defplugin `" sym "` declares no keyword :name")))
     (when-not (contains? plugin :apply)
-      (throw (ex-info (str "defplugin `" sym "` declares no :apply")
-                      {:type :kmet.plugins/bad-declaration :form form})))
+      (bad-declaration form (str "defplugin `" sym "` declares no :apply")))
     (let [inject (try
                    (srce/normalize-inject (:inject plugin))
                    (catch Exception e

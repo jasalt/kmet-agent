@@ -63,13 +63,13 @@
   "Check one `:bundles` entry — `[:bundle/name layer?]` — and return its
    `[name layer]` pair."
   [entry]
-  (when-not (and (vector? entry)
-                 (<= 1 (count entry) 2)
-                 (keyword? (first entry))
-                 (or (nil? (second entry)) (map? (second entry))))
+  (if (and (vector? entry)
+           (<= 1 (count entry) 2)
+           (keyword? (first entry))
+           (or (nil? (second entry)) (map? (second entry))))
+    [(first entry) (second entry)]
     (throw (ex-info (str "a :bundles entry is [:bundle/name layer?]: " (pr-str entry))
-                    {:type :kmet.app/bad-bundle-entry :entry entry})))
-  [(first entry) (second entry)])
+                    {:type :kmet.app/bad-bundle-entry :entry entry}))))
 
 (defn- bundle [table bundle-name]
   (or (get (:bundles table) bundle-name)
@@ -105,43 +105,39 @@
   (throw (ex-info (str "patch targets an unknown row: " (pr-str id))
                   {:type :kmet.app/unknown-row :id id :patch patch})))
 
+(defn- bad-patch
+  "Throw :kmet.app/bad-patch about PATCH, with the entry it rejected appended."
+  [patch message]
+  (throw (ex-info (str message ": " (pr-str patch))
+                  {:type :kmet.app/bad-patch :patch patch})))
+
 (defn- check-patch!
   "Throw :kmet.app/bad-patch unless PATCH is a well-formed patch entry."
   [patch]
   (when-not (map? patch)
-    (throw (ex-info (str "a patch entry must be a map, got " (pr-str patch))
-                    {:type :kmet.app/bad-patch :patch patch})))
+    (bad-patch patch "a patch entry must be a map"))
   (when-not (contains? patch :id)
-    (throw (ex-info (str "a patch entry needs an :id, got " (pr-str patch))
-                    {:type :kmet.app/bad-patch :patch patch})))
+    (bad-patch patch "a patch entry needs an :id"))
   (when-let [bad (seq (remove patch-keys (keys patch)))]
-    (throw (ex-info (str "unknown patch keys " (vec bad) " in " (pr-str patch))
-                    {:type :kmet.app/bad-patch :patch patch :keys (vec bad)})))
+    (bad-patch patch (str "unknown patch keys " (vec bad))))
   (when-not (or (contains? patch :config) (contains? patch :plugin) (:remove patch))
-    (throw (ex-info (str "a patch entry changes nothing: " (pr-str patch))
-                    {:type :kmet.app/bad-patch :patch patch})))
+    (bad-patch patch "a patch entry changes nothing"))
   (when (and (:remove patch) (contains? patch :config))
-    (throw (ex-info (str "a :remove patch cannot also set :config: " (pr-str patch))
-                    {:type :kmet.app/bad-patch :patch patch})))
+    (bad-patch patch "a :remove patch cannot also set :config"))
   (when (and (:remove patch) (contains? patch :plugin))
-    (throw (ex-info (str "a :remove patch cannot also set :plugin: " (pr-str patch))
-                    {:type :kmet.app/bad-patch :patch patch})))
+    (bad-patch patch "a :remove patch cannot also set :plugin"))
   (when (and (:after patch) (:before patch))
-    (throw (ex-info (str "a patch insert takes :after or :before, not both: " (pr-str patch))
-                    {:type :kmet.app/bad-patch :patch patch})))
+    (bad-patch patch "a patch insert takes :after or :before, not both"))
   patch)
-
-(defn- merge-config [row patch]
-  (if-let [cfg (:config patch)]
-    (update row :config #(deep-merge (or % {}) cfg))
-    row))
 
 (defn- patched-row
   "The row a source/config patch produces: its source and card replaced (an
    insert/replace patch arrives already described), its config deep-merged."
   [row patch]
-  (merge-config (merge row (select-keys patch [:plugin :name :inject :provide :external]))
-                patch))
+  (let [row (merge row (select-keys patch [:plugin :name :inject :provide :external]))]
+    (if-let [cfg (:config patch)]
+      (update row :config #(deep-merge (or % {}) cfg))
+      row)))
 
 (defn- insert-row
   "Insert PATCH (a row with an explicit or defaulted :id) among ROWS,
@@ -165,9 +161,7 @@
                         (vec (concat (subvec rows 0 idx) (subvec rows (inc idx))))
                         (unknown-row id patch))
       idx (do (when (or (:after patch) (:before patch))
-                (throw (ex-info (str "a patch on an existing row takes no"
-                                     " :after/:before: " (pr-str patch))
-                                {:type :kmet.app/bad-patch :patch patch})))
+                (bad-patch patch "a patch on an existing row takes no :after/:before"))
               (assoc rows idx (patched-row (nth rows idx) patch)))
       (contains? patch :plugin) (insert-row rows patch)
       :else (unknown-row id patch))))
@@ -195,7 +189,7 @@
                       {:type :kmet.app/duplicate-row :ids (vec dupes)})))
     {:rows rows :patches patches}))
 
-(defn- pad [s width] (str s (apply str (repeat (max 0 (- width (count s))) \space))))
+(defn- pad [s width] (format (str "%-" width "s") s))
 
 (defn- render-row
   "One row line: id and source aligned, then the card (name when it differs,
