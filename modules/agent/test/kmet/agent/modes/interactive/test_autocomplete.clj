@@ -1,0 +1,74 @@
+(ns kmet.agent.modes.interactive.test-autocomplete
+  "The autocomplete factory wrapper chain (pi: setupAutocompleteProvider) and the
+   custom editor duck-typed transfer (pi: setCustomEditorComponent)."
+  (:require [clojure.test :as t :refer [deftest testing]]
+            [kmet.test-utils :as tu]
+            [kmet.tui.autocomplete :as ac]
+            [kmet.tui.components.editor :as editor]
+            [kmet.agent.modes.interactive.ui-registry :as ui-registry]
+            [kmet.agent.modes.interactive.test-support :as support]))
+
+;; The interactive builtins register the app's whole slash registry; clear it
+;; so a later namespace never sees the tree filled by this one.
+(t/use-fixtures :each tu/with-clean-app-registries)
+
+(defn- transfer-editor! [app-ed custom-ed kb]
+  ((var ui-registry/transfer-editor!) app-ed custom-ed kb))
+
+(deftest test-normalize-autocomplete-provider-protocol
+  (testing "an AutocompleteProvider passes through unchanged"
+    (let [p (ac/make-combined-provider :commands-fn (constantly []))]
+      (t/is (identical? p (support/normalize p))))))
+
+(deftest test-normalize-autocomplete-provider-map
+  (testing "a duck-typed map provider is adapted to the protocol"
+    (let [p (support/normalize {:get-suggestions (fn [_state] {:items [{:value "x" :label "X"}]
+                                                               :prefix "x"})
+                                :get-trigger-characters ["@"]})]
+      (t/is (satisfies? ac/AutocompleteProvider p))
+      (let [res (ac/get-suggestions p ["xa"] 0 1 {})]
+        (t/is (= "x" (:prefix res)))
+        (t/is (= "X" (-> res :items first :label))))
+      (t/is (= ["@"] (ac/get-trigger-characters p)))
+      ;; default apply-completion replaces the prefix
+      (let [st (ac/apply-completion p ["xa"] 0 1 {:value "xyz" :label "xyz"} "x")]
+        (t/is (= "xyza" (nth (:lines st) 0)))
+        (t/is (= 3 (:cursor-col st)))))))
+
+(deftest test-normalize-autocomplete-provider-nil
+  (testing "non-provider values normalize to nil"
+    (t/is (nil? (support/normalize nil)))
+    (t/is (nil? (support/normalize 42)))))
+
+(deftest test-transfer-editor!
+  (testing "transfer-editor! copies text callbacks, appearance, provider,
+            and action handlers onto a custom editor (pi duck-typing)"
+    (let [app-ed (editor/make-editor)
+          custom (editor/make-editor)
+          _ (editor/editor-set-on-submit! app-ed (fn [t] (println t)))
+          _ (editor/editor-set-on-action! app-ed "app.interrupt" (fn []))
+          _ (editor/editor-set-autocomplete-provider!
+             app-ed (ac/make-combined-provider :commands-fn (constantly [])))
+          _ (reset! (:border-fn app-ed) (fn [s] s))
+          _ (reset! (:terminal-rows-atom app-ed) (fn [] 24))
+          _ (reset! (:padding-x app-ed) 3)]
+      (transfer-editor! app-ed custom nil)
+      (t/is (identical? @(:on-submit app-ed) @(:on-submit custom))
+            "on-submit handler copied")
+      (t/is (contains? @(:action-handlers custom) "app.interrupt")
+            "app action handlers copied")
+      (t/is (some? @(:autocomplete-provider custom))
+            "autocomplete provider copied")
+      (t/is (identical? @(:border-fn app-ed) @(:border-fn custom))
+            "border fn copied (pi: borderColor property)")
+      (t/is (= 3 @(:padding-x custom)) "padding copied")
+      (t/is (some? @(:terminal-rows-atom custom))
+            "dynamic-height source copied"))))
+
+(deftest test-transfer-editor!-non-editor
+  (testing "transfer to a non-editor component is a no-op"
+    (let [app-ed (editor/make-editor)
+          plain {:render (fn [_] [""])}]
+      (t/is (nil? (transfer-editor! app-ed plain nil)))
+      (t/is (= [:render] (keys plain)) "plain map untouched"))))
+

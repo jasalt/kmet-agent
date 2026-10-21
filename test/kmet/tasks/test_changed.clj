@@ -76,7 +76,7 @@
   (testing "extension test namespaces now participate in root test selection"
     (let [nss (set (changed/affected-test-nss-by '[kmet.agent.extension extensions.tools]))]
       (is (seq (filter #(str/starts-with? (str %) "kmet.extensions.") nss)))
-      (is (contains? nss 'kmet.agent.test-extensions)))))
+      (is (contains? nss 'kmet.agent.extensions.test-api)))))
 
 (deftest affected-lint-file-closure
   (testing "a changed file, its dependents, and their transitive dependencies are linted together

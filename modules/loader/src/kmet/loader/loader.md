@@ -1113,8 +1113,8 @@ one exception: they are stored and compared by identity.
    **Done.**
 3. Phase 1 on Jolt: `jolt -e "(require 'kmet.loader.core)"`, the suite, then
    kmet's extension tests. **Done** — `jolt test
-   kmet.loader.test-core kmet.loader.test-sci-loader` and `kmet.agent.test-extensions`
-   are green on jolt.
+   kmet.loader.test-core kmet.loader.test-sci-loader` and the
+   `kmet.agent.extensions.test-*` namespaces are green on jolt.
 4. Phase 2 (Jolt native) — **done** in the Jolt repo, 27/27. Phase 3 (JVM,
    plus hybrid) is last and may follow promotion. Each backend must pass
    the *same* suite; a native backend that fails a case is a bug in the
