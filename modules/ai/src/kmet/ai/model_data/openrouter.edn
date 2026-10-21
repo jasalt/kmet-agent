@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-21T10:11:51Z"
+ :generated-at "2026-10-21T20:44:09Z"
  :provider {:id :openrouter
             :name "OpenRouter"
             :env-vars ["OPENROUTER_API_KEY"]
@@ -1003,7 +1003,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 0.44 :output 1.32 :cache-read 0.014 :cache-write 0}
+    :cost {:input 0.04444 :output 0.13332 :cache-read 0.001414 :cache-write 0}
     :context-window 1048576
     :max-tokens 131072
     :compat {:supports-developer-role false
@@ -1047,7 +1047,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 0.95526 :output 1.91052 :cache-read 0.079605 :cache-write 0}
+    :cost {:input 0.400548 :output 0.801096 :cache-read 0.033379 :cache-write 0}
     :context-window 1024000
     :max-tokens 384000
     :compat {:supports-developer-role false
@@ -1070,8 +1070,8 @@
                          :xhigh "xhigh"}
     :input [:text]
     :cost {:input 0.66 :output 1.98 :cache-read 0.022 :cache-write 0}
-    :context-window 1024000
-    :max-tokens 384000
+    :context-window 1048576
+    :max-tokens 393216
     :compat {:supports-developer-role false
              :requires-reasoning-content-on-assistant-messages true
              :thinking-format :openrouter
@@ -1091,7 +1091,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text :image]
-    :cost {:input 0.049 :output 0.375 :cache-read 0.001 :cache-write 0}
+    :cost {:input 0.02394 :output 0.375 :cache-read 0.000342 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
@@ -1764,7 +1764,7 @@
                          :minimal "MINIMAL"
                          :off nil}
     :input [:text :image]
-    :cost {:input 0.09 :output 0.3 :cache-read 0.05 :cache-write 0}
+    :cost {:input 0.0765 :output 0.255 :cache-read 0.0425 :cache-write 0}
     :context-window 262144
     :max-tokens 235929
     :compat {:supports-developer-role false
@@ -2809,7 +2809,7 @@
     :reasoning true
     :thinking-level-map {:off nil}
     :input [:text :image]
-    :cost {:input 0.6725 :output 3.1 :cache-read 0.18 :cache-write 0}
+    :cost {:input 0.6712 :output 3.35 :cache-read 0.18 :cache-write 0}
     :context-window 262144
     :max-tokens 235929
     :compat {:supports-developer-role false
@@ -5472,6 +5472,21 @@
     :compat {:supports-developer-role false
              :thinking-format :openrouter
              :supports-strict-mode true}}
+   "recursive/flint-v1.0:free"
+   {:id "recursive/flint-v1.0:free"
+    :name "Recursive: Flint (free)"
+    :provider :openrouter
+    :api :openai-completions
+    :base-url "https://openrouter.ai/api/v1"
+    :reasoning true
+    :thinking-level-map {:off nil}
+    :input [:text]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 262144
+    :max-tokens 235929
+    :compat {:supports-developer-role false
+             :thinking-format :openrouter
+             :supports-strict-mode true}}
    "reflection/beam-1.0-501b-a23b"
    {:id "reflection/beam-1.0-501b-a23b"
     :name "Reflection: Beam 1.0 501B A23B"
@@ -5677,7 +5692,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text]
-    :cost {:input 0.132 :output 0.528 :cache-read 0.033 :cache-write 0}
+    :cost {:input 0.0825 :output 0.33 :cache-read 0.020625 :cache-write 0}
     :context-window 262144
     :max-tokens 128000
     :compat {:supports-developer-role false
@@ -5719,7 +5734,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text]
-    :cost {:input 0.834 :output 2.501 :cache-read 0.042 :cache-write 0}
+    :cost {:input 0.7506 :output 2.2509 :cache-read 0.0378 :cache-write 0}
     :context-window 1048576
     :max-tokens 64000
     :compat {:supports-developer-role false
@@ -6329,7 +6344,7 @@
                          :off nil
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.041191 :output 0.12 :cache-read 0.00375 :cache-write 0}
+    :cost {:input 0.00441 :output 0.134175 :cache-read 0.00315 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
@@ -6553,7 +6568,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text]
-    :cost {:input 0.225 :output 8 :cache-read 0.23 :cache-write 0}
+    :cost {:input 0.1307 :output 8 :cache-read 0.13 :cache-write 0}
     :context-window 1048576
     :max-tokens 393216
     :compat {:supports-developer-role false
@@ -6574,7 +6589,7 @@
                          :off "none"
                          :xhigh "xhigh"}
     :input [:text]
-    :cost {:input 0.0475 :output 0.1568 :cache-read 0.028 :cache-write 0}
+    :cost {:input 0.0422 :output 0.1729 :cache-read 0.0275 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false
@@ -6638,7 +6653,7 @@
                          :off "none"
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.238 :output 24 :cache-read 0.228 :cache-write 0}
+    :cost {:input 0.238 :output 16 :cache-read 0.228 :cache-write 0}
     :context-window 1048576
     :max-tokens 131072
     :compat {:supports-developer-role false
@@ -6799,7 +6814,7 @@
                          :off nil
                          :xhigh nil}
     :input [:text :image]
-    :cost {:input 0.041191 :output 0.12 :cache-read 0.00375 :cache-write 0}
+    :cost {:input 0.00441 :output 0.134175 :cache-read 0.00315 :cache-write 0}
     :context-window 1048576
     :max-tokens 943718
     :compat {:supports-developer-role false

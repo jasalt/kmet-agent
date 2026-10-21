@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-21T10:11:51Z"
+ :generated-at "2026-10-21T20:44:09Z"
  :provider {:id :opencode
             :name "OpenCode (Zen)"
             :env-vars ["OPENCODE_API_KEY"]
@@ -134,21 +134,6 @@
     :context-window 1000000
     :max-tokens 128000
     :compat {:force-adaptive-thinking true}}
-   "claude-sonnet-4"
-   {:id "claude-sonnet-4"
-    :name "Claude Sonnet 4"
-    :provider :opencode
-    :api :anthropic-messages
-    :base-url "https://opencode.ai/zen"
-    :reasoning true
-    :input [:text :image]
-    :cost {:input 3
-           :tiers [{:input 6 :input-tokens-above 200000 :output 22.5 :cache-read 0.6 :cache-write 7.5}]
-           :output 15
-           :cache-read 0.3
-           :cache-write 3.75}
-    :context-window 200000
-    :max-tokens 64000}
    "claude-sonnet-4-5"
    {:id "claude-sonnet-4-5"
     :name "Claude Sonnet 4.5"
@@ -401,29 +386,6 @@
              :requires-reasoning-content-on-assistant-messages true
              :max-tokens-field :max-tokens
              :supports-strict-mode true}}
-   "deepseek-v4-flash-vision-exp"
-   {:id "deepseek-v4-flash-vision-exp"
-    :name "DeepSeek V4 Flash Vision Exp"
-    :provider :opencode
-    :api :openai-completions
-    :base-url "https://opencode.ai/zen/v1"
-    :reasoning true
-    :thinking-level-map {:high "high"
-                         :low nil
-                         :max "max"
-                         :medium nil
-                         :minimal nil
-                         :off nil
-                         :xhigh nil}
-    :input [:text :image]
-    :cost {:input 0.14 :output 0.28 :cache-read 0.028 :cache-write 0}
-    :context-window 1000000
-    :max-tokens 384000
-    :compat {:supports-store false
-             :supports-developer-role false
-             :requires-reasoning-content-on-assistant-messages true
-             :max-tokens-field :max-tokens
-             :supports-strict-mode true}}
    "deepseek-v4-pro"
    {:id "deepseek-v4-pro"
     :name "DeepSeek V4 Pro"
@@ -439,7 +401,7 @@
                          :off nil
                          :xhigh nil}
     :input [:text]
-    :cost {:input 1.74 :output 3.84 :cache-read 0.145 :cache-write 0}
+    :cost {:input 1.74 :output 3.48 :cache-read 0.145 :cache-write 0}
     :context-window 1000000
     :max-tokens 384000
     :compat {:supports-store false
@@ -491,6 +453,28 @@
     :compat {:supports-store false
              :supports-developer-role false
              :requires-reasoning-content-on-assistant-messages true
+             :max-tokens-field :max-tokens
+             :supports-strict-mode true}}
+   "flint-40b-free"
+   {:id "flint-40b-free"
+    :name "Flint 40B Free"
+    :provider :opencode
+    :api :openai-completions
+    :base-url "https://opencode.ai/zen/v1"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium "medium"
+                         :minimal nil
+                         :off nil
+                         :xhigh "xhigh"}
+    :input [:text]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 262144
+    :max-tokens 65536
+    :compat {:supports-store false
+             :supports-developer-role false
              :max-tokens-field :max-tokens
              :supports-strict-mode true}}
    "glm-5"
@@ -619,7 +603,7 @@
     :base-url "https://opencode.ai/zen/v1"
     :reasoning true
     :input [:text :image]
-    :cost {:input 0.6 :output 3 :cache-read 0.08 :cache-write 0}
+    :cost {:input 0.6 :output 3 :cache-read 0.1 :cache-write 0}
     :context-window 262144
     :max-tokens 65536
     :compat {:supports-store false
@@ -665,8 +649,8 @@
     :api :openai-completions
     :base-url "https://opencode.ai/zen/v1"
     :reasoning true
-    :thinking-level-map {:high nil
-                         :low nil
+    :thinking-level-map {:high "high"
+                         :low "low"
                          :max "max"
                          :medium nil
                          :minimal nil
@@ -858,6 +842,13 @@
     :api :openai-completions
     :base-url "https://opencode.ai/zen/v1"
     :reasoning true
+    :thinking-level-map {:high nil
+                         :low "low"
+                         :max nil
+                         :medium "medium"
+                         :minimal nil
+                         :off nil
+                         :xhigh "xhigh"}
     :input [:text :image]
     :cost {:input 2 :output 6 :cache-read 0.25 :cache-write 2.5}
     :context-window 262144
@@ -1258,11 +1249,11 @@
                          :off nil
                          :xhigh "xhigh"}
     :input [:text :image]
-    :cost {:input 2.5
-           :tiers [{:input 5 :input-tokens-above 272000 :output 22.5 :cache-read 0.5 :cache-write 6.25}]
-           :output 15
-           :cache-read 0.25
-           :cache-write 3.125}
+    :cost {:input 2
+           :tiers [{:input 4 :input-tokens-above 272000 :output 18 :cache-read 0.4 :cache-write 5}]
+           :output 12
+           :cache-read 0.2
+           :cache-write 2.5}
     :context-window 1050000
     :max-tokens 128000
     :compat {:session-affinity-format :openai-nosession
