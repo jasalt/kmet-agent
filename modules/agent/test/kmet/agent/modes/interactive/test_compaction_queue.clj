@@ -16,7 +16,7 @@
             [kmet.agent.modes.interactive.turn :as turn]
             [kmet.agent.commands :as commands]
             [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.loop.compact :as agent-compact]
+            [kmet.agent.compaction.stage :as agent-compact]
             [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.runtime :as runtime]

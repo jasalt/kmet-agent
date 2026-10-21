@@ -69,9 +69,12 @@ kmet/agent/
 │       ├── message.clj     message constructors + wire shapes
 │       ├── state.clj       agent state, event routing, queue writes
 │       ├── completion.clj  LLM request construction + provider call
-│       ├── tool_exec.clj   tool-call prep, hooks, batch execution
-│       └── compact.clj     compaction orchestration
-├── compaction.clj      — token estimation + summarization prompts
+│       └── tool_exec.clj   tool-call prep, hooks, batch execution
+├── compaction/         — the compaction subsystem
+│   ├── core.clj        — what compaction is: token estimation, cut point,
+│   │                     serialization, summarization/branch prompts
+│   └── stage.clj       — when the loop runs it: proactive/reactive triggers,
+│                         summarization call + retry, session replacement
 ├── retry.clj           — retry decision stage
 ├── loop_guard.clj      — repeat-loop guard stage
 ├── session/            — session subsystem

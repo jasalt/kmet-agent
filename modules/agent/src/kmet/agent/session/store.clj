@@ -514,7 +514,9 @@
    stays reachable (tree, fork) while being excluded from the LLM context.
    opts may carry :tokens-before, :usage, :details, :from-hook (true when an
    extension supplied the summary — pi: CompactionEntry.fromHook).
-   Returns the compaction entry, or nil when first-kept-id is not found."
+   Returns the compaction entry, or nil when first-kept-id is not found.
+   The compaction policy that calls this lives in kmet.agent.compaction.stage;
+   the entry shape belongs here, next to make-bash-entry."
   [session summary first-kept-id & [opts]]
   (when (some #(= (:id %) first-kept-id) @(:entries session))
     (append-entry session

@@ -1,18 +1,21 @@
-(ns kmet.agent.loop.compact
+(ns kmet.agent.compaction.stage
   "Proactive and reactive conversation compaction.
 
-   The session is compacted proactively (measured usage vs. the model's
-   context window) and reactively after a context-overflow error (compact
-   once, then retry). Compaction summarizes the pre-cut conversation via the
-   LLM (kmet.agent.compaction, pi: core/compaction) and replaces it with a
-   summary entry. The summarization call is retried with the configured
+   The compaction stage of the agent loop (owner: kmet.agent.compaction.core
+   is what compaction is — algorithms, cut point, prompts; this namespace is
+   when the loop runs it; kmet.agent.session.core owns the append-only
+   compact-with-summary! entry). The session is compacted proactively
+   (measured usage vs. the model's context window) and reactively after a
+   context-overflow error (compact once, then retry). Compaction summarizes
+   the pre-cut conversation via the LLM (pi: core/compaction) and replaces it
+   with a summary entry. The summarization call is retried with the configured
    retry policy (pi: completeSummarization → retryAssistantCall), reports
    :summarization-retry-* events while it backs off, and reasons at the
    session's thinking level; a failure surfaces its cause behind pi's reason
-   prefix (kmet.agent.compaction/compaction-failure-message)."
+   prefix (kmet.agent.compaction.core/compaction-failure-message)."
   (:require [clojure.string :as str]
             [kmet.ai.llm :as llm]
-            [kmet.agent.compaction :as compaction]
+            [kmet.agent.compaction.core :as core]
             [kmet.agent.debug :as debug]
             [kmet.agent.retry :as retry]
             [kmet.libs.concurrent :as concurrent]
@@ -205,14 +208,14 @@
    cost-attached provider usage, recorded on the compaction entry so the
    footer totals include it (pi: CompactionEntry.usage) — {:error message}
    when the call failed (pi: the `Summarization failed: …` the caller
-   wraps), or nil when a compaction/run cancel fired mid-call (the session
+   wraps), or nil when a core/run cancel fired mid-call (the session
    is left untouched)."
   [agent prep & [custom-instructions reason]]
   (let [provider @(:provider agent)
         max-tokens (when-let [mrec (models/get-model provider @(:model agent))]
                      (summarization-max-tokens (:settings prep) mrec @(:thinking agent)))
         signals [(:signal agent) (:compaction-signal agent)]
-        msgs (compaction/summarization-messages
+        msgs (core/summarization-messages
               (:messages prep) (:previous-summary prep) custom-instructions)
         result (retry/retry-call!
                 #(summarization-call agent msgs
@@ -228,7 +231,7 @@
       (seq (:tool-calls result))
       {:error "Summarization attempted to call a tool"}
       :else
-      (if-let [failure (compaction/summarization-failure result "Summarization")]
+      (if-let [failure (core/summarization-failure result "Summarization")]
         {:error failure}
         (do
           ;; pi appends whatever contentText returned — an empty string
@@ -260,7 +263,7 @@
         ;; pi: the summarized entries are budgeted to the model's context
         ;; window minus branchSummary.reserveTokens (prepareBranchEntries
         ;; keeps whole entries newest-first)
-        entries (compaction/prepare-branch-entries
+        entries (core/prepare-branch-entries
                  entries
                  (- (or (:context-window model) 128000)
                     (or (:branch-summary-reserve-tokens agent) 16384)))
@@ -268,7 +271,7 @@
     (if (empty? entries)
       ;; pi: nothing fits the budget — no summarization call
       {:summary "No content to summarize"}
-      (let [msgs (compaction/branch-summary-messages
+      (let [msgs (core/branch-summary-messages
                   (vec (mapcat session/context-messages entries))
                   custom-instructions
                   replace-instructions?)
@@ -283,7 +286,7 @@
           (seq (:tool-calls result))
           {:error "Branch summarization attempted to call a tool"}
           :else
-          (if-let [failure (compaction/summarization-failure result "Branch summarization")]
+          (if-let [failure (core/summarization-failure result "Branch summarization")]
             {:error failure}
             (do
               ;; pi prepends the preamble to whatever contentText returned —
@@ -291,7 +294,7 @@
               ;; empty summary stays diagnosable
               (when (str/blank? (:text result))
                 (debug/log "Warning: branch summarization returned an empty summary"))
-              {:summary (str compaction/branch-summary-preamble (:text result))
+              {:summary (str core/branch-summary-preamble (:text result))
                :usage (:usage result)})))))))
 
 (defn omit-recovery-attempt!
@@ -346,7 +349,7 @@
     {:summary (:summary summary-result)
      :first-kept-id first-kept-id
      :tokens-before tokens-before
-     :estimated-tokens-after (compaction/estimated-tokens
+     :estimated-tokens-after (core/estimated-tokens
                               (session/build-context-messages sess))
      :usage (:usage summary-result)
      :details (:details summary-result)
@@ -458,7 +461,7 @@
                     :aborted
                     (let [entries (session/get-branch sess)
                           settings (compaction-settings agent)
-                          prep (some-> (compaction/prepare entries (:keep-recent-tokens settings))
+                          prep (some-> (core/prepare entries (:keep-recent-tokens settings))
                                        (assoc :settings settings))]
                       (if (or (nil? prep) (empty? (:messages prep)))
                         ;; pi: compact() separates an already-compacted session
@@ -535,7 +538,7 @@
               aborted? (or (= result :aborted) (= result ::cancelled))
               failed? (= result :failed)
               error-message (when failed?
-                              (compaction/compaction-failure-message reason @failure))]
+                              (core/compaction-failure-message reason @failure))]
           (finish-compaction! agent reason result @from-extension aborted? failed? succeeded? error-message))
         (finally
           (reset! (:compacting? agent) false))))))
@@ -571,10 +574,10 @@
           ;; projection measures itself (pi: estimateProjectedContextTokens;
           ;; a stale edit usage source falls back to a pure estimate).
           measured (if (some #(= :context-edit (:role (:source %))) projected)
-                     (compaction/projected-context-tokens projected branch)
-                     (compaction/context-tokens branch))
-          has-usage? (boolean (some compaction/assistant-usage-tokens branch))
-          tokens (or measured (compaction/estimated-tokens projected-msgs))]
+                     (core/projected-context-tokens projected branch)
+                     (core/context-tokens branch))
+          has-usage? (boolean (some core/assistant-usage-tokens branch))
+          tokens (or measured (core/estimated-tokens projected-msgs))]
       (if (or (and token-threshold (>= tokens token-threshold))
               ;; the window check requires a positive window-reserve and fresh
               ;; measured usage: right after a compaction the last measured

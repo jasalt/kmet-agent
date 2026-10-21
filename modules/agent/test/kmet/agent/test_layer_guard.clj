@@ -107,6 +107,12 @@
         (is (empty? forbidden)
             (str ns-name " requires forbidden namespaces: " (vec (sort forbidden))))))))
 
+(def ^:private front-end-forbidden-prefixes
+  "Namespaces a front end must reach through kmet.agent.session.runtime: the
+   loop driver and its stages, and the compaction stage (the pure
+   kmet.agent.compaction.core helpers are fine — the footer reads tokens)."
+  ["kmet.agent.loop" "kmet.agent.compaction.stage"])
+
 (deftest front-ends-drive-the-runtime-not-the-loop
   (testing "modes and app UI reach the engine through the session runtime"
     (let [files (front-end-source-files)]
@@ -114,7 +120,9 @@
       (is (some #(str/includes? % "/modes/") files) "modes tree not scanned")
       (is (some #(str/includes? % "/ui/") files) "app UI tree not scanned")
       (doseq [f files]
-        (let [forbidden (filter #(str/starts-with? % "kmet.agent.loop")
+        (let [forbidden (filter (fn [d]
+                                  (some #(str/starts-with? d %)
+                                        front-end-forbidden-prefixes))
                                 (required-kmet f))]
           (is (empty? forbidden)
               (str f " requires " (vec forbidden)
@@ -151,10 +159,8 @@
    "kmet.agent.loop.state" #{"kmet.agent.loop.message"}
    "kmet.agent.loop.completion" #{"kmet.agent.loop.state" "kmet.agent.loop.message"}
    "kmet.agent.loop.tool-exec" #{"kmet.agent.loop.state" "kmet.agent.loop.message"}
-   "kmet.agent.loop.compact" #{"kmet.agent.loop.state" "kmet.agent.loop.completion"}
    "kmet.agent.loop" #{"kmet.agent.loop.message" "kmet.agent.loop.state"
-                       "kmet.agent.loop.completion" "kmet.agent.loop.tool-exec"
-                       "kmet.agent.loop.compact"}})
+                       "kmet.agent.loop.completion" "kmet.agent.loop.tool-exec"}})
 
 (defn- loop-source-files
   "The loop driver and its submodules."

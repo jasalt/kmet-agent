@@ -7,7 +7,7 @@
             [babashka.process :as proc]
             [kmet.agent.session.core :as session]
             [kmet.ai.usage :as usage]
-            [kmet.agent.compaction :as compaction]))
+            [kmet.agent.compaction.core :as core]))
 
 (defrecord FooterDataProvider [cwd-atom git-branch-atom git-branch-resolved?-atom
                                session-atom provider-count-atom context-window-atom
@@ -182,4 +182,4 @@
    that compaction never relieves."
   [provider]
   (when-let [sess (fdp-get-session provider)]
-    (compaction/context-tokens (session/get-branch sess))))
+    (core/context-tokens (session/get-branch sess))))

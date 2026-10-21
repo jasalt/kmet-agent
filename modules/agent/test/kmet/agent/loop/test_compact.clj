@@ -10,7 +10,7 @@
             [kmet.agent.tools.core :as tools]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.session.core :as session]
-            [kmet.agent.loop.compact :as compact]
+            [kmet.agent.compaction.stage :as compact]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
             [kmet.agent.runtime :as runtime]

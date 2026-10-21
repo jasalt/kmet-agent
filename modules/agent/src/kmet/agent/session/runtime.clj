@@ -44,7 +44,7 @@
             [kmet.agent.context :as context]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.loop.compact :as agent-compact]
+            [kmet.agent.compaction.stage :as agent-compact]
             [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.model-resolver :as resolver]
@@ -1021,7 +1021,7 @@
 
 (defn compact!
   "Compact the session (manual /compact path); custom-instructions and
-   reason are loop/pi-shaped (see kmet.agent.loop.compact/compact-context!)."
+   reason are loop/pi-shaped (see kmet.agent.compaction.stage/compact-context!)."
   ([engine] (agent-compact/compact-context! (agent-state engine)))
   ([engine custom-instructions reason]
    (agent-compact/compact-context! (agent-state engine) custom-instructions reason)))

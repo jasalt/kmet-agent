@@ -35,7 +35,7 @@
    :transform-context rewrites the conversation before each LLM call. The
    :system-prompt-override atom holds a per-run system prompt override.
 
-   Compaction (pi: auto-compaction) lives in kmet.agent.loop.compact.
+   Compaction (pi: auto-compaction) lives in kmet.agent.compaction.stage.
 
    Model management lives in kmet.agent.loop.state (set-scoped-models!,
    cycle-model!, the thinking-level setters).
@@ -57,7 +57,7 @@
    attached to the initial user message; they flow to the provider as OpenAI
    image_url / Anthropic image blocks. The wire filter that honors
    :block-images lives in kmet.agent.loop.message."
-  (:require [kmet.agent.loop.compact :as compact]
+  (:require [kmet.agent.compaction.stage :as compact]
             [kmet.agent.loop.completion :as completion]
             [kmet.agent.loop.tool-exec :as tool-exec]
             [kmet.agent.loop.state :as state]

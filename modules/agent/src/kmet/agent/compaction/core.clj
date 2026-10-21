@@ -1,10 +1,11 @@
-(ns kmet.agent.compaction
+(ns kmet.agent.compaction.core
   "LLM-based context compaction aligned with pi (pi: core/compaction/compaction.js).
    Token estimation, cut-point selection over the session projection (so
    append-only context edits shape both the summarized input and the reported
    token count), conversation serialization, and the summarization prompts.
-   Session replacement happens in kmet.agent.session.core (compact-with-summary!),
-   orchestration in kmet.agent.loop. Depends on session/project-entries for the
+   Session replacement happens in kmet.agent.session.core (compact-with-summary!,
+   the append-only entry constructor), orchestration in
+   kmet.agent.compaction.stage. Depends on session/project-entries for the
    projected cut point and kmet.ai.api.shared for the bash/custom wire text
    (pi: compaction.ts imports buildSessionContext from session-manager and
    convertToLlm from the message converters).
