@@ -51,7 +51,7 @@ The Parity matrix survives as the appendix, one row per Cordis member, tagged
 |---|---|---|
 | namespaces | 10 (`ctx` `reflect` `service` `fiber` `registry` `event` `logger` `awaitable` `utils` `config`) | 4 (`ctx` `fiber` `event` + the public `srce`) |
 | kernel lines | ~4k | ~700 |
-| conformance | 74 tests generated from 82 matrix rows | ~25 contract tests |
+| conformance | 74 tests generated from 82 matrix rows | ~45 contract tests, one per contract (§12) |
 | definition of done | Cordis parity | the contracts in §3–§7 |
 | async | awaitables, `inertia`, epochs, drain owner | synchronous kernel, thread rule (§8) |
 
@@ -63,27 +63,32 @@ synchronous `apply`.
 ## 1. The kernel
 
 ```
-modules/srce/src/kmet/
-├── srce.clj        — the public API (below); the one require app code needs
-└── srce/
-    ├── srce.md     — this file
-    ├── ctx.clj     — the ctx value, the tree, the service store, isolate, refresh
-    ├── fiber.clj   — mount/unmount, states, the effect list, plugin runtimes
-    └── event.clj   — on/once/emit!, the listener table, dispatch filters
+modules/srce/
+├── deps.edn           — rank 1: kmet.libs.*, kmet.loader.*, third-party code
+├── test/kmet/srce/    — the contract tests (§12)
+└── src/kmet/
+    ├── srce.clj       — the public API (below); the one require app code needs
+    └── srce/
+        ├── srce.md    — this file
+        ├── ctx.clj    — the ctx value, the tree, the service store, isolate, refresh
+        ├── fiber.clj  — mount/unmount, states, the effect list, plugin runtimes
+        └── event.clj  — on/once/emit!, the listener table, dispatch filters
 ```
 
-`kmet.srce` is rank 1; the subnamespaces are internal and nothing above the
-kernel requires them. Consumers require exactly one namespace — the kernel's
-surface is one contract, not a set of modules whose callers each pick their own:
+`kmet.srce` is rank 1 — it may require rank-0 code (`kmet.libs.*`, and
+`kmet.loader.*` when it resolves sources), nothing at its own rank or above;
+the subnamespaces are internal and nothing above the kernel requires them.
+Consumers require exactly one namespace — the kernel's surface is one contract,
+not a set of modules whose callers each pick their own:
 
 ```clojure
 (ns kmet.app.session
   (:require [kmet.srce :as srce]))
 
-(srce/root)                              ; the process root ctx + its root fiber
+(srce/root)                              ; a root ctx — boot holds one, tests build their own
 (srce/extend ctx {:name :agent/7f3a})    ; a child ctx with metadata
 (srce/isolate ctx :tools :llm)           ; a child ctx that is a realm for those names
-(srce/inside? child ctx)                 ; is child in ctx's subtree?
+(srce/inside? child ctx)                 ; is child in ctx's subtree? (inclusive)
 (srce/get ctx :tools)                    ; the provider value, or nil
 (srce/provider ctx :tools)               ; {:name :fiber :value :check}, or nil
 (srce/services ctx)                      ; {name {:name :fiber :value :check}}, realm-aware
@@ -92,13 +97,17 @@ surface is one contract, not a set of modules whose callers each pick their own:
 (srce/on ctx :srce/status f)             ; → disposer
 (srce/once ctx :srce/status f)
 (srce/emit! ctx :my/event ev {:filter f}); sync, filtered, results ignored
+(srce/plugin-source src resolver)        ; a var as-is, or the resolver's value for a keyword
 (srce/plugin! ctx web-search {:max-results 5})   ; → fiber
 (srce/inject! ctx {:ui :optional} handler)       ; plugin! sugar
+(srce/normalize-inject deps)             ; required/optional deps, or ::bad-inject
 (srce/runtime ctx web-search)            ; the runtime, or nil
+(srce/runtime? ctx web-search)           ; is a runtime mounted for this source?
 (srce/runtimes ctx)                      ; [runtime …], mount order
 (srce/dispose! fiber)                    ; effects LIFO; sync → nil
 (srce/restart! fiber)                    ; dispose then mount again → a new fiber
 (srce/dispose-plugin! web-search)        ; every fiber of one source
+(srce/dispose-subtree! ctx)              ; every fiber under ctx, children first
 (srce/effect ctx f)                      ; → disposer (single-shot, sync)
 (srce/effects fiber)                     ; the effect labels, creation order
 (srce/log! ctx :info "…")                ; through the :logger service; silent when absent
@@ -108,6 +117,15 @@ surface is one contract, not a set of modules whose callers each pick their own:
 `defplugin` and `ctx?` round it out. There is no `defservice`, `accessor`,
 `mixin`, `set-service!`, `notify!`, `intercept`, `update!`, `fiber-await` or
 `drain-await` — see §10.
+
+`root` builds a root ctx; it is a value, not a process singleton. Boot holds one
+and passes it down, a test builds its own, and everything root-owned (runtimes,
+mounted fibers, the uid counter, the pass flag) lives on that value — so two
+roots never see each other and no kernel state is process-global.
+
+Three public names shadow `clojure.core` — `get`, `extend`, `once` — so the
+kernel's own namespaces carry `(:refer-clojure :exclude [get extend once])`
+rather than spelling `clojure.core/get` at every call site.
 
 ## 2. The ctx value
 
@@ -119,12 +137,12 @@ A ctx is a value: a map with fixed keys, no proxy, no service methods on it.
 | `:root` | the root ctx — every child shares it |
 | `:parent` `:children` | the tree (`:children` is an atom); a child comes from `extend`/`isolate` |
 | `:name` | this ctx's own name — a plugin mount names its ctx from the plugin's `:name`, and the unit listing derives a path from the chain |
-| `:fiber` | the fiber that owns this ctx (the root fiber has `:uid 0`) |
+| `:fiber` | the fiber that owns this ctx (the root fiber has `:uid 0`); `extend`/`isolate` inherit the parent's, a plugin mount installs its own |
 | `:isolate` | the set of names this ctx is a realm for |
 | `:store` | this ctx's own `{name → {:name :fiber :value :check}}` atom |
 | `:listeners` | this ctx's `{event-name → [listener …]}` atom |
-| `:base-url` | resolution base for loader and extension sources; nil until set |
-| `:runtimes` `:mounted` `:counter` | **root only**: plugin runtimes, mounted fibers in mount order, the uid allocator |
+| `:base-url` | resolution base for a source resolver; the kernel carries it and never reads it — what it means is the extension host's call; nil until set |
+| `:runtimes` `:mounted` `:counter` | **root only**: plugin runtimes, mounted fibers in mount order, the uid allocator — `extend` drops them and they are read through `:root` |
 
 Two accessors read the tree without touching the atoms: `(children ctx)` and
 `(services ctx)` — the latter is the realm-aware merge of what the ctx can see,
@@ -137,9 +155,12 @@ list, not a keyed multi-owner store with four views. `kmet.libs.scope` is a
 *cell* dependency — it stays until the last registry moves (§9). A guard test
 enforces the require ban.
 
-`extend` and `isolate` copy: a parent is never mutated, extra keys are merged
-(the kernel reads only `:name`), and `isolate` names become this ctx's `:realm`
-set.
+`extend` and `isolate` copy: a parent is never mutated (beyond the `:children`
+entry), extra keys are merged (the kernel reads only `:name`), the root-only
+keys are dropped, and `isolate` names become this ctx's `:isolate` set. A second
+`isolate` for the same name is a deeper boundary, not a redefinition: the inner
+subtree sees only its own provider for that name and the outer subtree is
+unaffected.
 
 **`get` resolves up the tree, stopping at a realm.** Walk from the reading ctx:
 
@@ -165,7 +186,7 @@ Cordis's reflect layer, minus everything the light kernel doesn't need.
 - **`check` is a predicate on the value.** `(provide! ctx :ui v {:check ready?})`
   — false or a throw reads as "unavailable" for `get` and for inject, and the
   check is re-evaluated whenever the provider fiber crosses into `:active`.
-- **`declared`/`provider`** are reads, not state: `provider` returns the
+- **`provider` is a read**, not state: it returns the
   `{:name :fiber :value :check}` record, including one whose fiber is not yet
   active.
 
@@ -278,10 +299,11 @@ depends on uid reuse).
   which is what `/reload` does in the app.
 
 The disposal axes stay distinct, as in the full port: the **fiber**
-(`dispose!`), the **effect** (its disposer), the **ctx subtree** (dispose every
-fiber under a ctx, children first — an agent's release), and the **plugin**
-(`dispose-plugin!`, every fiber of one source). The root fiber's disposal
-restarts the app tree; it never tears down the process.
+(`dispose!`), the **effect** (its disposer), the **ctx subtree**
+(`dispose-subtree!` — every fiber under a ctx, children first, an agent's
+release), and the **plugin** (`dispose-plugin!`, every fiber of one source).
+The root fiber's disposal restarts the app tree; it never tears down the
+process.
 
 ## 5. Events
 
@@ -303,9 +325,8 @@ which is how idea 4 survives the trim with its mechanism intact:
 | mode | where | why there |
 |---|---|---|
 | `emit` | `srce/emit!` | no return value, no await: ~15 lines |
-| `bail` | `kmet.agent.event-bus` | kmet1's `before-tool-call` chain and the loop's blocking point already are `bail`/`waterfall` |
-| `waterfall` | `kmet.agent.event-bus` | same; the around-middleware that a `:policy` listener short-circuits |
-| `parallel` / `serial` | `kmet.agent.event-bus` | awaited, so they need the app's awaitable — the kernel has none (§8) |
+| `bail` / `waterfall` | `kmet.agent.event-bus` | today's `emit-event!` (last non-nil result) and the loop's boundary already have both shapes; landing 2 names them |
+| `parallel` / `serial` | `kmet.agent.event-bus` | awaited, so they need the app's awaitable — the kernel has none (§8); landing 2 adds them over the lifted table |
 
 Landing 2 lifts `kmet.agent.event-bus` on top of this table: the `:events`
 service owns the five-mode wrappers and the node-scoped `:filter`, so the bus is
@@ -336,12 +357,20 @@ as a map, checked once at mount:
 | `Plugin.Base` (`name`/`Config`/`inject`/`provide`) | the map's keys |
 | `Plugin.Transform` (`{schema, Config}`) | `:config` is a validator fn, so `(m/compiled …)` is just a fn |
 | `IPlugin` type | `plugin-schema`, checked once (`{:type ::bad-plugin :problems …}`) |
-| `registry.resolve` | `srce/plugin-source` — a var, or a keyword the extension loader resolves |
+| `registry.resolve` | `srce/plugin-source` — a var as-is; a keyword looked up by the caller's resolver |
 | `registry.get`/`.has`/`.delete` | `srce/runtime` / `srce/runtime?` / `srce/dispose-plugin!` |
 | `registry.keys`/`.size` | `srce/runtimes` (the inspection surface `--dump-config` reads) |
 | `registry.counter` | the root's uid allocator, internal |
 | `Inject.resolve` | `srce/normalize-inject` (`:optional` sentinel) |
-| plugin *source* polymorphism | `kmet.loader.core/Loader`, reused as-is (SCI / Jolt native / classpath) |
+| plugin *source* polymorphism | the caller's resolver — `kmet.loader.core/Loader` (SCI / Jolt native / classpath) is the one kmet2 passes |
+
+**Source resolution is a seam, not a dependency.** `plugin-source` normalizes
+what the caller hands `plugin!`: a var passes through, a keyword is looked up by
+the resolver, a miss is `{:type ::bad-source}`. `srce.*` may require
+`kmet.loader.*` (rank 0, below the kernel) and `kmet.loader.core/Loader` is the
+resolver kmet2 passes, but the kernel never requires it and never decides what
+a keyword means — how an extension source is resolved is the extension host's
+implementation detail, not a kernel contract.
 
 `defplugin` is sugar over the map: it gives the source var, `:name` metadata, a
 compile-time shape check, and the card `--dump-config` prints. A profile row
@@ -359,11 +388,12 @@ The kernel writes nothing to stdout. `(srce/log! ctx level & args)` resolves
 `:logger` and calls it; absent means silent. kmet2 provides
 `(srce/provide! ctx :logger kmet.agent.debug/log)` at boot.
 
-`kmet.srce.*` may require only `kmet.libs.*` and third-party code (rank 1), so
-the kernel cannot call `kmet.agent.debug` directly — which is also why the full
-port's logger service (exporters, formatters, ANSI palette, ring buffer,
-`:logger` intercept config) is deferred in whole: kmet already has
-`kmet.agent.debug`, and a second logger is a copy.
+`kmet.srce.*` may require only rank-0 code — in practice `kmet.libs.*` and, for
+source resolution, `kmet.loader.*` — plus third-party code, so the kernel
+cannot call `kmet.agent.debug` directly — which is also why the full port's
+logger service (exporters, formatters, ANSI palette, ring buffer, `:logger`
+intercept config) is deferred in whole: kmet already has `kmet.agent.debug`,
+and a second logger is a copy.
 
 ## 8. Scheduling: one thread, no queue
 
@@ -432,13 +462,20 @@ the copy AGENTS.md forbids.
 **All of it in one change, at the end of landing 4:** delete
 `modules/libs/src/kmet/libs/{scope.clj,scope.md}`,
 `modules/libs/test/kmet/libs/test_scope{,_self_contained}.clj`, the
-`app_runtime.clj` `*error-reporter*` rebinding, the `scope` rows in
-`modules/agent/src/kmet/README.md` (148–153, 207, 215), `extension.md`'s
-`[:app :extensions <name>]` sentence, the `theme.clj` cross-reference docstring,
-the `test_changed.clj` path→ns fixture, and `test/kmet/test_utils.clj`'s store
-usage. Gate: `bb test` green, `kmet --app old` still loads, and no namespace
-outside `kmet.agent.*` ever required it (true today — `kmet.libs.*` and
-`kmet.tui.*` have no consumer).
+`app_runtime.clj` `*error-reporter*` rebinding (cleanup errors go to the
+`:logger` service instead — boot provides it before the first plugin, and §7's
+silence applies after a logger teardown), the `scope` rows in
+`modules/agent/src/kmet/README.md` (the `kmet.libs.scope` bullet under "Layer
+boundaries" and the store paragraph under "Architecture and portability"),
+`extension.md`'s two `[:app :extensions <name>]` sentences (the extension host
+and `resources_discover`), the `theme.clj` cross-reference docstring, the
+`test_changed.clj` path→ns fixture, `test/kmet/test_utils.clj`'s store usage,
+and the twelve test namespaces whose fixtures build store nodes
+(`modules/agent/test/kmet/agent/{test_{commands,event_bus,prompts,runtime,session_runtime,skills,tools,ui_port},extensions/test_{libs,lifecycle,resources,session}}.clj`)
+— they are re-pointed at the new factories in the same change, not after it.
+Gate: `bb test` green, `kmet --app old` still loads, and no namespace outside
+`kmet.agent.*` ever required it (true today — `kmet.libs.*` and `kmet.tui.*`
+have no consumer).
 
 What the app loses is `ordered-registrations` (each registry owns its load
 order) and the stale-deregister caveat (a fiber's `:active` check replaces the
@@ -460,7 +497,7 @@ grows a keyword or a key, not a new shape.
 | `accessor`, `mixin`, `set-service!` | `reflect.ts` | no proxy to feed; a service re-provides, which is one effect | new keys on `provide!` |
 | isolate **labels** | `ctx.isolate(name, label)` | siblings sharing one realm nest under a common isolating ctx | a label argument on `isolate` |
 | 9 `internal/*` events, `internal/listener` claiming | `events.ts` | 3 have a consumer (`:srce/status`, `:srce/service`, `:srce/failure`) | new names on the existing emit |
-| `parallel` / `serial` / `bail` / `waterfall` | `events.ts` | they are walks over the kernel's one listener table, and kmet1's `event-bus` already implements all four for app events | the `:events` service — no kernel change |
+| `parallel` / `serial` / `bail` / `waterfall` | `events.ts` | they are walks over the kernel's one listener table, and kmet1's `event-bus` already has the synchronous emit/collect/boundary shapes | the `:events` service — no kernel change |
 | Lazy config resolution, `{:schema :transform}` | `config.ts` | `apply` validates its own map; a validator fn composes | `:config` accepting a schema map |
 | Fiber lifecycle beyond 4 states (`:loading` `:unloading`, `inertia`, epoch drop-rule) | `fiber.ts` | one thread makes the race unrepresentable | states on `:state`; the epoch is the provider set |
 | `update!` (config waterfall, no-save hint) | `fiber.update` | `restart!` covers `/reload`; a vetoing waterfall is app policy | an `:update` hook on the plugin map |
@@ -502,7 +539,7 @@ conformance suite is written from §3–§7 and this table's `keep` rows.
 | `ctx.provide(name, value?, check?)` | `srce/provide!` | keep |
 | `ctx.accessor(name, {get, set})` | — | deferred |
 | `ctx.mixin(source, keys)` | — | deferred |
-| `reflect.notify(names, filter?)` | the refresh pass (§3) | keep (internal) |
+| `reflect.notify(names, filter?)` | the refresh pass (§3); no `filter` argument | keep (internal) |
 | `reflect.props` | — | deferred |
 | `reflect.store` | the ctx's `:store` atom | keep (shape differs) |
 | `Impl {name, fiber, value, check}` | `{:name :fiber :value :check}` | keep |
@@ -580,19 +617,20 @@ conformance suite is written from §3–§7 and this table's `keep` rows.
 
 ## 12. Gates
 
-- ~25 contract tests, one per bullet in §2–§8 that can fail: realm resolution
-  and the boundary; duplicate provider; `check`; inject required/optional and
-  the `::bad-inject` refusal; the refresh fixpoint (2-plugin chain, provider
-  swap, absent→present upgrade, churn budget); effect LIFO within and across
-  effects; a throwing disposer still runs the rest; `::inactive-effect`;
-  `restart!` replaces the uid; `dispose-plugin!` ends every fiber and drops the
-  runtime; `:failed` on a throwing `apply` with dependents `:pending`; listener
-  order, `once`, `:filter`, and a throwing listener; `inside?`; `log!` with no
-  `:logger`; two threads entering `provide!` at once run **one** pass and both
-  changes land (the pass flag + `settle!`). Plus one test per `keep` row of §11
-  that has no bullet.
-- srce self-containment: `kmet.srce.*` may require only `kmet.libs.*` and
-  third-party code — no `kmet.agent.*`, no `tui`/`tk`, nothing above rank 1.
+- ~45 contract tests — one per bullet in §2–§8 that can fail, one per `keep`
+  row of §11, table-driven where the rows are uniform. The behaviors: realm
+  resolution and the boundary; duplicate provider; `check`; inject
+  required/optional and the `::bad-inject` refusal; the refresh fixpoint
+  (2-plugin chain, provider swap, absent→present upgrade, churn budget); effect
+  LIFO within and across effects; a throwing disposer still runs the rest;
+  `::inactive-effect`; `restart!` replaces the uid; `dispose-plugin!` ends every
+  fiber and drops the runtime; `:failed` on a throwing `apply` with dependents
+  `:pending`; listener order, `once`, `:filter`, and a throwing listener;
+  `inside?`; `log!` with no `:logger`; two threads entering `provide!` at once
+  run **one** pass and both changes land (the pass flag + `settle!`).
+- srce self-containment: `kmet.srce.*` may require only rank-0 code
+  (`kmet.libs.*`, `kmet.loader.*`, `kmet.reakt.*`) and third-party code — no
+  `kmet.agent.*`, no `tui`/`tk`, nothing at its own rank or above.
 - **No `kmet.libs.scope` require in `kmet.srce.*`** (§9), and after landing 4 no
   `kmet.agent.*` require either — the deletion gate.
 - No leak: `scope`-free equivalent — a test disposes a 3-plugin tree and
