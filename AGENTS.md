@@ -10,6 +10,7 @@ change when behavior changes.
 | Area | Authoritative reference |
 |------|-------------------------|
 | Application layout and contributor workflow | [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md) |
+| Kernel: ctx tree, services, inject, fibers, effects, events | [`modules/srce/src/kmet/srce/srce.md`](modules/srce/src/kmet/srce/srce.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
 | Tk backend and its widget sample (`kmet.tk.*`, `kmet.gui-sample.*`, Jolt-only) | [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md) |
 | Extension contract (`kmet.extension` API, allowed namespaces, lifecycle) | [`modules/agent/src/kmet/extension.md`](modules/agent/src/kmet/extension.md) |
@@ -23,8 +24,8 @@ change when behavior changes.
 User-facing documentation belongs in `docs/`. Implementation notes belong next
 to their source package. The temporary notes `run_code.md`, `perf.md`,
 `jolt-bugs.md`, `windows.md`, `pi-tools.md`, `tcl.md`, `loop-plan.md`,
-`new-app.md` (kmet2's application side) and `srce.md` (kmet2's Cordis kernel)
-intentionally remain at the project root. (`engine.md` was folded/retired once the
+`new-app.md` (kmet2's application side) intentionally remains at the project
+root. (`engine.md` was folded/retired once the
 session-runtime split’s GUI-independent steps landed.)
 
 ## Basic development flow

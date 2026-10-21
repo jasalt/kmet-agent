@@ -1,0 +1,554 @@
+(ns kmet.srce.test-kernel
+  "The kernel's contract tests: one per §12 behavior of the module note."
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
+            [kmet.srce :as srce]))
+
+;; ── helpers ───────────────────────────────────────────────────────────────
+
+(defn- capture
+  "A :logger service value that records [level & args] in CALLS."
+  [calls]
+  (fn [level & args]
+    (swap! calls conj (into [level] args))))
+
+(defn- logged
+  "The recorded logger calls at LEVEL."
+  [calls level]
+  (filterv #(= level (first %)) @calls))
+
+(defn- logged?
+  "Did the logger see a call at LEVEL whose message includes TEXT?"
+  [calls level text]
+  (boolean (some (fn [[_ msg]] (and (string? msg) (str/includes? msg text)))
+                 (logged calls level))))
+
+(defn- kernel
+  "A root ctx with a capturing logger installed. [ctx calls]."
+  []
+  (let [calls (atom [])
+        ctx (srce/root)]
+    (srce/provide! ctx :logger (capture calls))
+    [ctx calls]))
+
+(defn- thrown
+  [f]
+  (try
+    (f)
+    nil
+    (catch Throwable t t)))
+
+(defn- thrown-type
+  [f]
+  (some-> (thrown f) ex-data :type))
+
+;; ── ctx tree ──────────────────────────────────────────────────────────────
+
+(deftest root-is-a-value
+  (testing "a root is a value with an active uid-0 fiber, and roots are independent"
+    (let [a (srce/root)
+          b (srce/root)]
+      (is (srce/ctx? a))
+      (is (not (srce/ctx? {:a 1})))
+      (is (= 0 (:uid @(:fiber a))))
+      (is (= :active (:state @(:fiber a))))
+      (srce/provide! a :x 1)
+      (is (= 1 (srce/get a :x)))
+      (is (nil? (srce/get b :x))))))
+
+(deftest extend-and-isolate-build-the-tree
+  (let [r (srce/root)
+        a (srce/extend r {:name :agent})
+        b (srce/extend r {:name :other})]
+    (is (= [a b] (srce/children r)))
+    (is (srce/inside? a r))
+    (is (srce/inside? r r))
+    (is (not (srce/inside? a b)))
+    (is (= :agent (:name a)))
+    (is (identical? (:fiber r) (:fiber a)))
+    (is (not (contains? a :runtimes)))))
+
+(deftest a-realm-blocks-the-outside
+  (let [r (srce/root)
+        outer (srce/extend r {:name :outer})
+        realm (srce/isolate r :tools)
+        inner (srce/extend realm {:name :inner})]
+    (srce/provide! outer :tools :outer-tools)
+    (is (= :outer-tools (srce/get outer :tools)))
+    (testing "the boundary hides the outside provider, even with none inside"
+      (is (nil? (srce/get realm :tools)))
+      (is (nil? (srce/get inner :tools))))
+    (srce/provide! realm :tools :realm-tools)
+    (is (= :realm-tools (srce/get inner :tools)))
+    (is (= :outer-tools (srce/get outer :tools)))
+    (is (nil? (srce/get r :tools)))))
+
+(deftest isolate-nests
+  (let [r (srce/root)
+        a (srce/isolate r :x)
+        b (srce/isolate a :x)]
+    (srce/provide! a :x :a)
+    (is (= :a (srce/get (srce/extend a {}) :x)))
+    (is (nil? (srce/get b :x)))
+    (srce/provide! b :x :b)
+    (is (= :b (srce/get b :x)))
+    (is (= :a (srce/get (srce/extend a {}) :x)))))
+
+(deftest services-is-a-realm-aware-merge
+  (let [r (srce/root)
+        realm (srce/isolate r :tools)
+        inner (srce/extend realm {:name :inner})]
+    (srce/provide! r :tools :root-tools)
+    (srce/provide! r :llm :root-llm)
+    (srce/provide! inner :sessions :inner-sessions)
+    (testing "from inside the realm: the realm's own names plus the outer ones"
+      (is (= #{:sessions :llm} (set (keys (srce/services inner)))))
+      (is (nil? (srce/get inner :tools))))
+    (testing "from outside: the child's provider is not visible"
+      (is (= #{:tools :llm} (set (keys (srce/services r))))))
+    (srce/provide! realm :tools :realm-tools)
+    (is (= :realm-tools (:value (get (srce/services inner) :tools))))))
+
+;; ── services ──────────────────────────────────────────────────────────────
+
+(deftest provider-records-are-inspection
+  (let [[r] (kernel)
+        d (srce/provide! r :tools :table)
+        p (srce/provider r :tools)]
+    (is (= :tools (:name p)))
+    (is (= :table (:value p)))
+    (is (identical? (:fiber r) (:fiber p)))
+    (is (fn? d))
+    (is (= :table (srce/get r :tools)))
+    (is (true? (d)))
+    (is (nil? (srce/get r :tools)))
+    (is (nil? (srce/provider r :tools)))
+    (is (nil? (d)))))
+
+(deftest duplicate-providers-throw
+  (let [[r] (kernel)
+        child (srce/extend r {})]
+    (srce/provide! r :x 1)
+    (testing "in the same ctx"
+      (is (= :srce/duplicate-service (thrown-type #(srce/provide! r :x 2)))))
+    (testing "in a nested extend (the outer provider is visible)"
+      (is (= :srce/duplicate-service (thrown-type #(srce/provide! child :x 2)))))))
+
+(deftest siblings-in-one-realm-may-each-provide
+  (let [[r] (kernel)
+        a (srce/extend r {:name :a})
+        b (srce/extend r {:name :b})]
+    (srce/provide! a :tools :a-tools)
+    (srce/provide! b :tools :b-tools)
+    (is (= :a-tools (srce/get a :tools)))
+    (is (= :b-tools (srce/get b :tools)))
+    (is (nil? (srce/get r :tools)))
+    (is (not (contains? (srce/services r) :tools)))
+    (is (= :a-tools (:value (get (srce/services a) :tools))))))
+
+(deftest check-gates-availability
+  (testing "false and a throw read as unavailable"
+    (let [[r] (kernel)
+          ready? (atom false)]
+      (srce/provide! r :svc :v {:check (fn [] @ready?)})
+      (is (nil? (srce/get r :svc)))
+      (is (some? (srce/provider r :svc)))
+      (reset! ready? true)
+      (is (= :v (srce/get r :svc))))
+    (let [[r] (kernel)]
+      (srce/provide! r :svc :v {:check (fn [] (throw (ex-info "no" {})))})
+      (is (nil? (srce/get r :svc))))))
+
+(deftest check-turns-true-at-the-boundary
+  (let [[r] (kernel)
+        ready? (atom false)
+        applied (atom 0)]
+    (srce/provide! r :svc :v {:check (fn [] @ready?)})
+    (let [f (srce/plugin! r {:name :needs
+                             :inject [:svc]
+                             :apply (fn [_ _] (swap! applied inc))})]
+      (is (= :pending (:state @f)))
+      (reset! ready? true)
+      (srce/settle! r)
+      (is (= :active (:state @f)))
+      (is (= 1 @applied)))))
+
+;; ── inject ────────────────────────────────────────────────────────────────
+
+(deftest inject-waits-for-a-required-service
+  (let [[r] (kernel)
+        applied (atom 0)
+        f (srce/plugin! r {:name :tools/mount
+                           :inject [:tools]
+                           :apply (fn [_ _] (swap! applied inc))})]
+    (is (= :pending (:state @f)))
+    (is (= #{:tools} (:waiting-for @f)))
+    (is (zero? @applied))
+    (srce/provide! r :tools :table)
+    (is (= :active (:state @f)))
+    (is (= 1 @applied))
+    (is (= #{} (:waiting-for @f)))))
+
+(deftest optional-inject-upgrades-and-downgrades
+  (let [[r] (kernel)
+        applied (atom 0)
+        f (srce/plugin! r {:name :ui/terminal
+                           :inject {:ui :optional}
+                           :apply (fn [_ _] (swap! applied inc))})
+        uid (:uid @f)]
+    (is (= :active (:state @f)))
+    (is (= 1 @applied))
+    (let [d (srce/provide! r :ui :tk)]
+      (is (= 2 @applied) "the richer UI attached: dispose + remount")
+      (is (= uid (:uid @f)) "a reload keeps the fiber")
+      (d)
+      (is (= 3 @applied) "the UI went away: still active as optional"))
+    (is (= :active (:state @f)))))
+
+(deftest normalize-inject-forms
+  (is (= {} (srce/normalize-inject nil)))
+  (is (= {:tools nil} (srce/normalize-inject [:tools])))
+  (is (= {:tools nil :llm nil} (srce/normalize-inject {:tools nil :llm nil})))
+  (is (= {:ui :optional} (srce/normalize-inject {:ui :optional})))
+  (is (= :srce/bad-inject (thrown-type #(srce/normalize-inject {:ui {:x 1}})))))
+
+(deftest bad-plugins-and-sources
+  (let [[r] (kernel)]
+    (testing "a bad map is a caller bug, not a failed fiber"
+      (let [e (thrown #(srce/plugin! r {:name :x}))]
+        (is (= :srce/bad-plugin (:type (ex-data e))))
+        (is (some #{:apply} (:problems (ex-data e))))))
+    (testing "a reserved :inject value surfaces as a plugin problem"
+      (is (= :srce/bad-plugin
+             (thrown-type #(srce/plugin! r {:name :x :apply (fn [_ _]) :inject {:a 1}})))))
+    (testing "an unresolved keyword source"
+      (is (= :srce/bad-source (thrown-type #(srce/plugin! r :nope)))))
+    (testing "the resolver is the caller's"
+      (let [r (srce/root {:resolver (fn [k]
+                                      (when (= :demo k)
+                                        {:name :demo :apply (fn [_ _] nil)}))})
+            f (srce/plugin! r :demo)]
+        (is (= :active (:state @f)))
+        (is (= :demo (:name @f)))))))
+
+(srce/defplugin demo-plugin
+  {:name :demo/plugin
+   :apply (fn [_ _] nil)})
+
+(deftest defplugin-defines-a-source
+  (let [[r] (kernel)
+        f (srce/plugin! r #'demo-plugin)]
+    (is (= :active (:state @f)))
+    (is (= :demo/plugin (:name @f)))
+    (is (= :demo/plugin (:srce/plugin (meta #'demo-plugin))))))
+
+;; ── fibers and effects ────────────────────────────────────────────────────
+
+(deftest one-runtime-many-fibers
+  (let [[r] (kernel)
+        f1 (srce/plugin! r #'demo-plugin)
+        f2 (srce/plugin! r #'demo-plugin)]
+    (is (srce/runtime? r #'demo-plugin))
+    (is (= 1 (count (srce/runtimes r))))
+    (is (= 2 (count @(:fibers (srce/runtime r #'demo-plugin)))))
+    (is (not= (:uid @f1) (:uid @f2)))
+    (srce/dispose! f1)
+    (is (srce/runtime? r #'demo-plugin))
+    (srce/dispose! f2)
+    (is (not (srce/runtime? r #'demo-plugin)))
+    (is (empty? (srce/runtimes r)))))
+
+(deftest restart-allocates-a-new-fiber
+  (let [[r] (kernel)
+        f (srce/plugin! r #'demo-plugin)
+        uid (:uid @f)
+        f2 (srce/restart! f)]
+    (is (not (identical? f f2)))
+    (is (> (:uid @f2) uid))
+    (is (= :disposed (:state @f)))
+    (is (= :active (:state @f2)))))
+
+(deftest apply-return-is-an-effect
+  (let [[r] (kernel)
+        cleaned (atom 0)
+        f (srce/plugin! r {:name :p
+                           :apply (fn [_ _] (fn [] (swap! cleaned inc)))})]
+    (is (zero? @cleaned))
+    (srce/dispose! f)
+    (is (= 1 @cleaned))))
+
+(deftest the-record-tracks-its-provides
+  (let [[r] (kernel)
+        f (srce/plugin! r {:name :p
+                           :inject {:tools :optional}
+                           :provide #{:a}
+                           :apply (fn [c _] (srce/provide! c :a 1) nil)})]
+    (is (= {:tools :optional} (:inject @f)))
+    (is (= #{:a} (:provides @f)))
+    (is (= 1 (srce/get (:ctx @f) :a)))
+    (srce/dispose! f)
+    (is (= #{} (:provides @f)))
+    (is (nil? (srce/provider (:ctx @f) :a)))
+    (is (nil? (srce/get r :a)))))
+
+(deftest effects-unwind-lifo
+  (let [[r] (kernel)
+        events (atom [])
+        f (srce/plugin! r {:name :p
+                           :apply (fn [c _]
+                                    (srce/effect c (fn []
+                                                     (swap! events conj :a)
+                                                     (fn [] (swap! events conj :a-undo)))
+                                                 :a)
+                                    (srce/effect c (fn []
+                                                     (swap! events conj :b)
+                                                     (fn [] (swap! events conj :b-undo)))
+                                                 :b)
+                                    nil)})]
+    (is (= [:a :b] @events))
+    (is (= [:a :b] (srce/effects f)))
+    (srce/dispose! f)
+    (is (= [:a :b :b-undo :a-undo] @events))))
+
+(deftest inactive-effect-throws
+  (let [[r] (kernel)
+        ctxs (atom nil)
+        f (srce/plugin! r {:name :p :apply (fn [c _] (reset! ctxs c) nil)})]
+    (srce/dispose! f)
+    (is (= :srce/inactive-effect (thrown-type #(srce/effect @ctxs (fn [] nil)))))))
+
+(deftest registering-from-a-disposer-throws-and-is-logged
+  (let [[r calls] (kernel)
+        ctxs (atom nil)
+        f (srce/plugin! r {:name :p
+                           :apply (fn [c _]
+                                    (reset! ctxs c)
+                                    (srce/effect c (fn []
+                                                     (fn [] (srce/effect c (fn [] nil))))
+                                                 :bad)
+                                    nil)})]
+    (srce/dispose! f)
+    (is (logged? calls :error "disposer threw"))))
+
+(deftest a-throwing-disposer-does-not-stop-the-rest
+  (let [[r calls] (kernel)
+        events (atom [])
+        f (srce/plugin! r {:name :p
+                           :apply (fn [c _]
+                                    (srce/effect c (fn []
+                                                     (fn [] (throw (ex-info "boom" {}))))
+                                                 :a)
+                                    (srce/effect c (fn []
+                                                     (fn [] (swap! events conj :b)))
+                                                 :b)
+                                    nil)})]
+    (srce/dispose! f)
+    (is (= [:b] @events))
+    (is (logged? calls :error "disposer threw"))))
+
+(deftest a-failed-apply-unwinds-and-frees-names
+  (let [[r calls] (kernel)
+        failures (atom [])
+        _ (srce/on r :srce/failure (fn [ev] (swap! failures conj ev)))
+        f (srce/plugin! r {:name :bad
+                           :apply (fn [c _]
+                                    (srce/provide! c :tools :table)
+                                    (throw (ex-info "boom" {})))})]
+    (is (= :failed (:state @f)))
+    (is (some? (:error @f)))
+    (is (nil? (srce/get r :tools)))
+    (is (= 1 (count @failures)))
+    (is (logged? calls :error "plugin failed"))
+    (testing "the name is free again"
+      (is (some? (srce/provide! r :tools :again)))
+      (is (= :again (srce/get r :tools))))))
+
+(deftest a-failed-provider-leaves-dependents-pending
+  (let [[r] (kernel)
+        applied (atom 0)
+        _ (srce/plugin! r {:name :bad :apply (fn [_ _] (throw (ex-info "boom" {})))})
+        f (srce/plugin! r {:name :needs
+                           :inject [:svc]
+                           :apply (fn [_ _] (swap! applied inc))})]
+    (is (= :pending (:state @f)))
+    (is (zero? @applied))))
+
+(deftest provide-inside-apply-does-not-reenter
+  (let [[r] (kernel)
+        applied (atom 0)]
+    (srce/provide! r :base :b)
+    (let [f (srce/plugin! r {:name :p
+                             :inject [:base]
+                             :apply (fn [c _]
+                                      (swap! applied inc)
+                                      (srce/provide! c :derived 1)
+                                      nil)})
+          uid (:uid @f)]
+      (is (= :active (:state @f)))
+      (is (= 1 @applied))
+      (is (= :p (:name @f)))
+      (is (= uid (:uid @f)))
+      (is (= 1 (srce/get (:ctx @f) :derived))))))
+
+(deftest dispose-plugin-ends-every-fiber
+  (let [[r] (kernel)
+        f1 (srce/plugin! r #'demo-plugin)
+        f2 (srce/plugin! r #'demo-plugin)]
+    (srce/dispose-plugin! r #'demo-plugin)
+    (is (= [:disposed :disposed] (mapv #(:state @%) [f1 f2])))
+    (is (empty? (srce/runtimes r)))))
+
+(deftest dispose-subtree-is-children-first
+  (let [[r] (kernel)
+        agent (srce/extend r {:name :agent})
+        seam (srce/extend agent {:name :seam})
+        order (atom [])
+        _ (srce/on r :srce/status
+                   (fn [ev]
+                     (when (= :disposed (:to ev))
+                       (swap! order conj (:name @(:fiber ev))))))
+        _a (srce/plugin! agent {:name :a :apply (fn [_ _] nil)})
+        _b (srce/plugin! seam {:name :b :apply (fn [_ _] nil)})
+        c (srce/plugin! r {:name :c :apply (fn [_ _] nil)})]
+    (srce/dispose-subtree! agent)
+    (is (= [:b :a] @order))
+    (is (= :active (:state @c)))
+    (is (= 1 (count (srce/runtimes r))) "only c's runtime is left")))
+
+(deftest a-disposed-tree-leaks-nothing
+  (let [r (srce/root)
+        f1 (srce/plugin! r {:name :p1 :apply (fn [c _] (srce/provide! c :a 1) nil)})
+        agent (srce/extend (:ctx @f1) {:name :agent})
+        f2 (srce/plugin! agent {:name :p2 :apply (fn [c _] (srce/provide! c :b 2) nil)})
+        f3 (srce/plugin! r {:name :p3 :apply (fn [_ _] nil)})]
+    (is (= #{:a} (set (keys (srce/services (:ctx @f1))))))
+    (is (= 2 (srce/get (:ctx @f2) :b)))
+    (doseq [f [f2 f3 f1]]
+      (srce/dispose! f))
+    (is (empty? (srce/runtimes r)))
+    (is (empty? (srce/children r)))
+    (is (empty? @(:store r)))
+    (is (empty? (srce/services r)))))
+
+;; ── events ────────────────────────────────────────────────────────────────
+
+(deftest listeners-run-in-order-up-the-chain
+  (let [r (srce/root)
+        child (srce/extend r {:name :child})
+        grand (srce/extend child {:name :grand})
+        sib (srce/extend r {:name :sib})
+        seen (atom [])]
+    (srce/on r :e (fn [_] (swap! seen conj :root)))
+    (srce/on child :e (fn [_] (swap! seen conj :child)))
+    (srce/on sib :e (fn [_] (swap! seen conj :sib)))
+    (srce/emit! grand :e {})
+    (is (= [:child :root] @seen) "a sibling does not hear the subtree")
+    (reset! seen [])
+    (srce/emit! r :e {})
+    (is (= [:root] @seen))
+    (reset! seen [])
+    (srce/emit! child :e {})
+    (is (= [:child :root] @seen))))
+
+(deftest listener-filter-sees-the-listener-ctx
+  (let [r (srce/root)
+        child (srce/extend r {:name :child})
+        seen (atom [])]
+    (srce/on r :e (fn [_] (swap! seen conj :root)))
+    (srce/on child :e (fn [_] (swap! seen conj :child)))
+    (srce/emit! child :e {} {:filter #(identical? % child)})
+    (is (= [:child] @seen))))
+
+(deftest once-fires-once-and-disposes-first
+  (let [r (srce/root)
+        seen (atom [])]
+    (srce/once r :e (fn [ev] (swap! seen conj [(srce/listeners r :e nil) ev])))
+    (srce/emit! r :e 1)
+    (srce/emit! r :e 2)
+    (is (= [[] 1] (first @seen)) "the registration is gone before the call")
+    (is (= 1 (count @seen)))))
+
+(deftest a-throwing-listener-is-logged
+  (let [[r calls] (kernel)
+        seen (atom [])]
+    (srce/on r :e (fn [_] (throw (ex-info "boom" {}))))
+    (srce/on r :e (fn [_] (swap! seen conj :ok)))
+    (srce/emit! r :e {})
+    (is (= [:ok] @seen))
+    (is (logged? calls :error "listener threw"))))
+
+(deftest a-listener-disposer-reports-removal
+  (let [[r] (kernel)
+        d (srce/on r :e (fn [_]))]
+    (is (true? (d)))
+    (is (nil? (d)))))
+
+(deftest listeners-resolves-the-chain
+  (let [r (srce/root)
+        child (srce/extend r {})
+        f (fn [_])
+        g (fn [_])]
+    (srce/on r :e f)
+    (srce/on child :e g)
+    (is (= [{:ctx child :f g} {:ctx r :f f}]
+           (srce/listeners child :e nil)))))
+
+(deftest kernel-events
+  (let [[r] (kernel)
+        statuses (atom [])
+        services (atom [])]
+    (srce/on r :srce/status (fn [ev] (swap! statuses conj (:to ev))))
+    (srce/on r :srce/service (fn [ev] (swap! services conj [(:name ev) (:value ev)])))
+    (let [f (srce/plugin! r #'demo-plugin)]
+      (is (= [:pending :active] @statuses))
+      (srce/dispose! f)
+      (is (= :disposed (last @statuses)))
+      (is (= :active (:state @(:fiber r)))))
+    (let [d (srce/provide! r :svc :v)]
+      (is (= [[:svc :v]] @services))
+      (d)
+      (is (= [[:svc :v] [:svc nil]] @services)))))
+
+;; ── logger, settlement, threads ───────────────────────────────────────────
+
+(deftest log-without-a-logger-is-silent
+  (let [r (srce/root)]
+    (is (nil? (srce/log! r :info "x")))
+    (is (nil? (srce/log! r :error (ex-info "x" {}))))))
+
+(deftest settle-is-idempotent
+  (let [[r] (kernel)]
+    (is (nil? (srce/settle! r)))
+    (is (nil? (srce/settle! r)))
+    (is (empty? @(:changes (:kernel r))))))
+
+(deftest two-threads-provide-at-once
+  (let [[r] (kernel)
+        a (future (srce/provide! r :a 1))
+        b (future (srce/provide! r :b 2))]
+    @a
+    @b
+    (srce/settle! r)
+    (is (= 1 (srce/get r :a)))
+    (is (= 2 (srce/get r :b)))
+    (is (empty? @(:changes (:kernel r))))))
+
+(deftest a-provider-cycle-is-bounded
+  (let [[r calls] (kernel)]
+    (srce/plugin! r {:name :cyclic
+                     :inject {:self :optional}
+                     :apply (fn [c _]
+                              (srce/provide! c :self :value)
+                              nil)})
+    (is (logged? calls :warn ":srce/churn"))
+    (is (empty? @(:changes (:kernel r))))
+    (is (fn? (srce/provide! r :other 1)) "settle! returned; the kernel is usable")))
+
+(deftest the-root-fiber-can-be-disposed
+  (let [[r] (kernel)]
+    (srce/provide! r :x 1)
+    (srce/dispose! (:fiber r))
+    (is (= :disposed (:state @(:fiber r))))
+    (is (nil? (srce/get r :x)))
+    (is (nil? (srce/log! r :info "silent")))
+    (is (= :srce/inactive-effect (thrown-type #(srce/provide! r :y 2))))))

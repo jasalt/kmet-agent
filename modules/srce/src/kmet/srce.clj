@@ -1,0 +1,161 @@
+(ns kmet.srce
+  "The kernel's public surface — the one namespace app code requires.
+
+   A ctx is a value (`ctx?`), a fiber is an atom holding its record, and every
+   registration is reversible: `provide!`, `on` and `effect` return disposers
+   that the owning fiber unwinds LIFO. Dependencies are declared with
+   `:inject`; a plugin waits for them, so mount order is requirements rather
+   than boot sequencing. See the module note (`srce.md`) for the contracts.
+
+   Two names shadow clojure.core — `get` and `extend`."
+  (:refer-clojure :exclude [get extend])
+  (:require [kmet.srce.ctx :as ctx]
+            [kmet.srce.event :as event]
+            [kmet.srce.fiber :as fiber]))
+
+;; ── ctx ───────────────────────────────────────────────────────────────────
+
+(def root
+  "A root ctx. A value, not a process singleton; META is merged as-is."
+  ctx/root)
+
+(def ctx?
+  "Is X a ctx?"
+  ctx/ctx?)
+
+(def extend
+  "A child ctx with META merged in; the parent is not mutated."
+  ctx/extend)
+
+(def isolate
+  "A child ctx that is a realm for NAMES."
+  ctx/isolate)
+
+(def inside?
+  "Is CTX in ROOT's subtree? Inclusive."
+  ctx/inside?)
+
+(def children
+  "This ctx's child ctxs, creation order."
+  ctx/children)
+
+;; ── services ──────────────────────────────────────────────────────────────
+
+(def get
+  "The provider value for NAME, or nil when absent, outside this realm, or not
+   currently available."
+  ctx/get)
+
+(def provider
+  "The provider record {:name :fiber :value :check} for NAME, or nil."
+  ctx/provider)
+
+(def services
+  "The realm-aware merge of what CTX can see: {name provider-record}."
+  ctx/services)
+
+(def provide!
+  "Register VALUE as NAME for the current ctx's realm; returns a disposer."
+  fiber/provide!)
+
+(def log!
+  "Log through the :logger service; silent when it is absent."
+  ctx/log!)
+
+;; ── effects and fibers ────────────────────────────────────────────────────
+
+(def effect
+  "Register a reversible effect on the current fiber; returns a single-shot
+   disposer."
+  ctx/effect)
+
+(def effects
+  "The effect labels in creation order."
+  fiber/effects)
+
+(def plugin-source
+  "Resolve a plugin source: a var as-is, a keyword through RESOLVER."
+  fiber/plugin-source)
+
+(def normalize-inject
+  "Normalize :inject to {name nil|:optional}; throws :srce/bad-inject."
+  fiber/normalize-inject)
+
+(def plugin!
+  "Mount SOURCE as a new fiber under CTX with CONFIG."
+  fiber/plugin!)
+
+(def inject!
+  "Mount {name :inject :apply} under CTX. The name is required."
+  fiber/inject!)
+
+(def runtime
+  "The runtime for SOURCE, or nil."
+  fiber/runtime)
+
+(def runtime?
+  "Is a runtime mounted for this source?"
+  fiber/runtime?)
+
+(def runtimes
+  "Every plugin runtime, mount order."
+  fiber/runtimes)
+
+(def settle!
+  "Run any pending provider change to a fixpoint."
+  fiber/settle!)
+
+(def dispose!
+  "Unwind FIBER's effects LIFO and detach it. Idempotent; returns nil."
+  fiber/dispose!)
+
+(def restart!
+  "Dispose FIBER and mount it again; returns the new fiber."
+  fiber/restart!)
+
+(def dispose-plugin!
+  "Dispose every fiber of SOURCE."
+  fiber/dispose-plugin!)
+
+(def dispose-subtree!
+  "Dispose every fiber under CTX, children first."
+  fiber/dispose-subtree!)
+
+;; ── events ────────────────────────────────────────────────────────────────
+
+(def on
+  "Register F as a listener for NAME; returns a disposer reporting removal."
+  event/on)
+
+(def once
+  "Register F for NAME's next emit; returns its disposer."
+  event/once)
+
+(def emit!
+  "Emit EVENT to the listeners of NAME visible from CTX, synchronously."
+  event/emit!)
+
+(def listeners
+  "The resolved listener list for NAME from CTX, in dispatch order."
+  event/listeners)
+
+;; ── plugins as data ───────────────────────────────────────────────────────
+
+(defmacro defplugin
+  "Define a plugin var from a map literal. The literal shape is checked now
+   (a map with a keyword :name and an :apply key); the full runtime check —
+   fns, :inject, :config, :provide — runs when the def loads and once at each
+   mount. The var carries the plugin name as `:srce/plugin` metadata, which is
+   what an inspection tool reads without booting."
+  [sym plugin]
+  (when-not (and (map? plugin)
+                 (keyword? (:name plugin))
+                 (contains? plugin :apply))
+    (throw (ex-info (str "invalid plugin " sym ": a map with a keyword :name and an :apply key")
+                    {:type :srce/bad-plugin
+                     :problems (cond-> []
+                                 (not (map? plugin)) (conj :map)
+                                 (not (keyword? (:name plugin))) (conj :name)
+                                 (not (contains? plugin :apply)) (conj :apply))})))
+  `(def ~(vary-meta sym assoc :srce/plugin (:name plugin))
+     (fiber/validate-plugin! ~plugin)))

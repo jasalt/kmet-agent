@@ -13,7 +13,8 @@
  :exclude-files "(test/fixtures/).*"
 
  :lint-as
- {;; jolt.ffi's macros define vars (defcfn) and bind locals (with-*); without
+ {kmet.srce/defplugin clojure.core/def
+  ;; jolt.ffi's macros define vars (defcfn) and bind locals (with-*); without
   ;; these clj-kondo cannot see what they introduce.
   jolt.ffi/defcfn clojure.core/def
   jolt.ffi/with-alloc clojure.core/let

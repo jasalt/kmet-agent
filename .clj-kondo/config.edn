@@ -20,7 +20,8 @@
  ;; test_http's deftest-transports/deftest-curl wrap clojure.test/deftest to
  ;; run each scenario under every HTTP transport mode — analyze them as
  ;; plain deftests so the defined test vars resolve.
- :lint-as {kmet.libs.test-http/deftest-transports clojure.test/deftest
+ :lint-as {kmet.srce/defplugin clojure.core/def
+           kmet.libs.test-http/deftest-transports clojure.test/deftest
            kmet.libs.test-http/deftest-curl clojure.test/deftest
            ;; the GUI tests' recording adapter binds like let ([rec nil]
            ;; body); the macro is defined in kmet.tk.test-support, away
