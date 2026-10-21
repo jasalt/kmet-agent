@@ -11,7 +11,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.ai.api.shared :as schema-shared]
             [kmet.agent.tools.bash :as bash-tool]
-            [kmet.agent.bash-executor :as bash-exec]
+            [kmet.agent.tools.bash-executor :as bash-exec]
             [kmet.agent.skills :as skills]
             [kmet.libs.scope :as scope]
             [kmet.libs.process :as process]

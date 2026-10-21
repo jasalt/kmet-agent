@@ -1,4 +1,4 @@
-(ns kmet.agent.bash-executor
+(ns kmet.agent.tools.bash-executor
   "Bash command execution with streaming, truncation, and temp file spill.
    Port of pi's bash-executor.ts + OutputAccumulator."
   (:require [clojure.string :as str]

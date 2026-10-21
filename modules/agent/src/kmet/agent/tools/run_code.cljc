@@ -13,7 +13,7 @@
    call, with a bounded capture tail)."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.agent.bash-executor :as bash-exec]
+            [kmet.agent.tools.bash-executor :as bash-exec]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.tools.tool :as tool]
             [kmet.agent.tools.invoke :as invoke]

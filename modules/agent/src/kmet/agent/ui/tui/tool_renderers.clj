@@ -15,7 +15,7 @@
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.ui.tui.skill-message :as skill-message]
             [kmet.tui.hikap :as h]
-            [kmet.agent.bash-executor :as bash-exec]))
+            [kmet.agent.tools.bash-executor :as bash-exec]))
 
 ;; ─── Shared render helpers (pi: render-utils.ts) ────────────────────────────
 

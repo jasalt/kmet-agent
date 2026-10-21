@@ -1,11 +1,11 @@
 (ns kmet.agent.tools.bash
-  "Bash tool implementation — delegates to kmet.agent.bash-executor for execution.
+  "Bash tool implementation — delegates to kmet.agent.tools.bash-executor for execution.
    Pi: bash tool wraps createLocalBashOperations, same engine as ! commands.
    create-tool is pi's createBashTool/createShellToolDefinition — the built-in
    registry entry and extension-built bash tools are the same record.
    Streams live output via an optional on-update callback (pi: onUpdate)."
   (:require [clojure.string :as str]
-            [kmet.agent.bash-executor :as bash-exec]
+            [kmet.agent.tools.bash-executor :as bash-exec]
             [kmet.agent.tools.tool :as tool]
             [kmet.agent.tools.util :as tool-util]
             [kmet.libs.concurrent :as concurrent]))

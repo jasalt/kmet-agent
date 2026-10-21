@@ -16,7 +16,7 @@
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.chat-history :as chat-history]
             [kmet.agent.ui.tui.bash-execution :as be]
-            [kmet.agent.bash-executor :as bash-exec]
+            [kmet.agent.tools.bash-executor :as bash-exec]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.tools.util :as tools-util]
             [kmet.agent.extensions.core :as extensions]

@@ -9,7 +9,7 @@
             [kmet.ai.auth :as auth]
             [kmet.agent.config-schema :as config-schema]
             [kmet.agent.debug :as debug]
-            [kmet.agent.bash-executor :as bash-exec]
+            [kmet.agent.tools.bash-executor :as bash-exec]
             [kmet.agent.tools.util :as tool-util]
             [kmet.libs.http :as http]
             [kmet.libs.edn-store :as eds]))

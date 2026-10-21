@@ -6,7 +6,7 @@
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.bash-executor :as bash-exec]
+            [kmet.agent.tools.bash-executor :as bash-exec]
             [kmet.agent.tools.util :as tool-util]
             [kmet.libs.path :as path])
   (:import [java.util Base64]

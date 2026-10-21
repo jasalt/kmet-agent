@@ -74,7 +74,6 @@ kmet/agent/
 ├── compaction.clj      — token estimation + summarization prompts
 ├── retry.clj           — retry decision stage
 ├── loop_guard.clj      — repeat-loop guard stage
-├── bash_executor.clj   — the bash tool's process engine
 ├── session/            — session subsystem
 │   ├── core.clj        — the session API façade over store/listing/
 │   │                     context/stats/tree (what dependents require)
@@ -98,6 +97,8 @@ kmet/agent/
 │   │                     registry (custom tools live in the app-root store)
 │   ├── invoke.clj      — the shared invocation pipeline (loop + run_code)
 │   ├── util.clj        — path/argument helpers
+│   ├── bash_executor.clj — the bash tool's process engine (streaming,
+│   │                     truncation, temp-file spill)
 │   └── config.clj      — the built-in tool rows for `kmet config`
 ├── modes/              — entry modes
 │   ├── interactive.clj — interactive TUI entry: run + session start-up
