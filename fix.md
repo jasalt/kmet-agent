@@ -1,6 +1,6 @@
 # Remaining findings — `modules/agent` architecture review
 
-Temporary note at the project root (the `loop-plan.md` convention). Work the
+Temporary note at the project root, beside its package documentation. Work the
 items in order; each is a self-contained, revertible change. Delete this file
 when the list is empty.
 

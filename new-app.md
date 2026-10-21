@@ -1,6 +1,6 @@
 # kmet2 — a Cordis-shaped kmet on shared modules
 
-Temporary note at the project root (the `loop-plan.md` convention). Kernel and
+Temporary note at the project root, beside its package documentation. Kernel and
 application are separate notes: [`srce.md`](modules/srce/src/kmet/srce/srce.md)
 is the kernel design, beside its code, and this file is the application side,
 which folds into
@@ -625,10 +625,11 @@ Renaming at lift time is the expensive option: `modules/agent/test` holds 354
 file anyone would lift. A rename owes a wrapper at the old name exposing
 *every* var kmet1 uses, and that wrapper still cannot intercept calls made
 *inside* the lifted code. Keeping the namespace keeps every interception point
-valid (`loop-plan.md`'s rule, read backwards), and it keeps the endgame
-mechanical: at retirement, `s/kmet\.agent\./kmet.app./` over a known list that
-excludes `kmet.agent.extension` (the ABI), the deleted `kmet.agent.runtime`,
-and the names re-hosted under `kmet.ui.*`/`kmet.mode.*`.
+valid (the move-by-name rule, read backwards: keep the name, never re-point
+it), and it keeps the endgame mechanical: at retirement,
+`s/kmet\.agent\./kmet.app./` over a known list that excludes
+`kmet.agent.extension` (the ABI), the deleted `kmet.agent.runtime`, and the
+names re-hosted under `kmet.ui.*`/`kmet.mode.*`.
 
 **Three exceptions.** `kmet.agent.extension` keeps its name forever — it is
 the extension ABI, and installed extensions write it in their `:require`; if
