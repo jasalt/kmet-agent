@@ -29,9 +29,9 @@ one thing every other part is wired through. The name also stays clear of
 | 5 | Second UI provider | **`ui-tk`**, web later | Proves the `:ui` capability contract against an existing backend (`kmet.tk`, Jolt-only) |
 | 6 | Tenancy | **Single principal in phase 1** | One bearer token per server, many clients; `:permissions` scoping is user-level control, not isolation. Multi-tenant later = token → principal → child ctx, one level above agents |
 | 7 | The kernel's name | **`srce`** — heart; Cordis is Latin for the same | One prefix, `srce/` alias. `kernel`, `kkernel`, `zrno`, `zrnce` rejected |
-| 8 | Plugin ABI | **A validated value**, no `IPlugin` protocol | Cordis's Base fields as a map (`:name :inject :config :provide :intercept :apply`; `:reusable?` only if the target Cordis has it) + malli; loading polymorphism stays on `kmet.loader.core/Loader`, and no host class identity crosses the SCI boundary |
+| 8 | Plugin ABI | **A validated value**, no `IPlugin` protocol | Cordis's Base fields as a map (`:name :inject :config :provide :intercept :apply`) + malli; loading polymorphism stays on `kmet.loader.core/Loader`, and no host class identity crosses the SCI boundary |
 | 9 | Shared layer rank | **`app` at 2** (`srce` 1, `ui`/`mode` 3, `agent` 4) | kmet1's rank-4 adapters can call the lifted registries and the new UI; the legacy-above-new inversion is explicit and ends with `agent` |
-| 10 | Namespaces on reuse | **Move the file, keep the namespace** | 170 `with-redefs` sites keep intercepting; the final rename is one `s/agent/app/` at retirement |
+| 10 | Namespaces on reuse | **Move the file, keep the namespace** | 354 `with-redefs` sites keep intercepting; the final rename is one `s/agent/app/` at retirement |
 | 11 | Service keys | **One key per seam**, one implementation per scope | `inject [:tools]`, never `[:registries]`; per-agent overrides stay per-seam |
 | 12 | Live agents vs the log | **`:agents`** (handles) + **`:sessions`** (append-only log) | No global "current session" key; an agent is a child context plus a handle |
 | 13 | Where the loop lives | **`:agents` registry + `:agentLoop` driver** (dsh's split) | `:agents` is the live registry; the driver provides `:agentLoop`; a preset swaps the loop without touching the registry |
@@ -125,7 +125,7 @@ requirements is blocked by a different one:
 
 | Mechanism | Where | Size | Blocks |
 |---|---|---|---|
-| the store node | `kmet.libs.scope`, resolved through `kmet.agent.runtime/node` | 26 `runtime/node` calls in 9 source files; ~217 `node` mentions across the 11 that require it | multi-session: every session resolves **the one** app node |
+| the store node | `kmet.libs.scope`, resolved through `kmet.agent.runtime/node` | 24 `runtime/node` calls in 9 source files; ~217 `node` mentions across the 11 that require it | multi-session: every session resolves **the one** app node |
 | process-global atoms | `modules/agent/src/kmet/agent/extensions/core.cljc` (`extension-binding`, `extensions`, `session-atom`, `context-sink-atom`, `entry-sink-atom`, `hook-seq`, `cli-flag-values`), `bash-executor` (`shell-options`), `tools/read` (`skill-content-resolver`), `keybindings` (`theme-fns-atom`), `run_code` (`bridge-queue`), `runtime` (`app-node`) | 18 `defonce` vars, 16 of them mutable cells | pluggable UI/modes: the UI port and the mode are process state, not per-context state |
 | the extension capability map | `kmet.agent.extension` (461 lines) + `modules/agent/src/kmet/agent/extensions/core.cljc` (1,585 lines) built once per `init` | 60 functions | every new service today is another key on that map |
 
@@ -160,7 +160,7 @@ and session log are below everything that consumes them. `agent` moves to
 **4**: it is the legacy app, above `app` (2) and the new `ui`/`mode` (3) only
 for the transition, and it is the one module deleted at retirement. That
 inversion is deliberate — it is exactly what lets landing 5 re-point kmet1's
-dispatch at `kmet.ui.tui` instead of forking 5,292 lines — and it ends with the
+dispatch at `kmet.ui.tui` instead of forking 5,052 lines — and it ends with the
 module. The cost of `app` at 2 is that rank 2 mixes "UI backends" with
 "shared services"; if the shared/version-specific cut turns out to be real once
 sessions land, split `app` into `services` (2) and `app` (3) — a subtree move
@@ -311,8 +311,7 @@ value**:
    [:config    {:optional true} [:maybe :any]]             ; a malli schema, or {:schema ... :transform fn}
    [:provide   {:optional true} [:maybe [:set keyword?]]]
    [:intercept {:optional true} [:maybe :map]]
-   [:apply     fn?]
-   [:reusable? {:optional true} boolean?]])                ; only if the target Cordis has it
+   [:apply     fn?]]
 ```
 
 | Cordis | kmet2 |
@@ -320,7 +319,7 @@ value**:
 | `Plugin.Function (ctx, config)` | `:apply (fn [ctx cfg] …)` |
 | `Plugin.Object { apply }` | the plugin map |
 | `Plugin.Constructor` (`Service` subclass) | `(defrecord S …)` built inside `:apply` — never the plugin |
-| `Plugin.Base` (`name`/`Config`/`inject`/`provide`/`intercept`; `reusable` only if the target version has it) | the map's keys; `:config` is a malli schema or transform |
+| `Plugin.Base` (`name`/`Config`/`inject`/`provide`/`intercept`) | the map's keys; `:config` is a malli schema or transform |
 | `IPlugin` type | `plugin-schema`, checked once at load (`{:type ::bad-plugin :problems …}`) |
 | plugin identity / registry | runtime keyed by the resolved plugin source; one runtime per source, one fiber per `plugin!`; `dispose-plugin!` ends every fiber of a runtime |
 | plugin *source* polymorphism | `kmet.loader.core/Loader` protocol — reused as-is (SCI / Jolt native / classpath) |
@@ -367,9 +366,7 @@ contexts: a root mount and an agent-child mount share the runtime but see
 different services, and a profile's `:per-agent true` extension is the concrete
 case. A plugin that *provides* a service cannot be mounted twice in the same
 isolation scope — the second `provide` fails, as in Cordis; use `isolate` for a
-second service instance. `:reusable?` exists only if the target Cordis version
-has it; the vendored DSH copy does not, so multiple mounts are allowed by
-default.
+second service instance. Multiple mounts are allowed by default.
 
 **Extensions become plugins additively.** `extension.edn` gains an optional
 `:inject` (the same schema); the extension host wraps the extension as
@@ -421,7 +418,7 @@ rewrite.
 | `:llm` `:models` | provider call, model registry, auth status | `kmet.ai.*` |
 | `:tools` `:commands` `:prompts` `:skills` `:modes` | registries: name → value, per-context | `agent.registry` + 4 namespaces |
 | `:agents` | live handles: `create!` / `resume!` / `get` / `list` / `roots`; a handle owns one agent, its session and its child context | `session/runtime.clj`'s `Engine` — already a handle |
-| `:agentLoop` | the driver: run a turn, abort, teardown ordering | the loop driver plugin (`loop*`) |
+| `:agentLoop` | the driver: run a turn, abort, teardown ordering | the loop driver plugin (`kmet.agent.loop`) |
 | `:sessions` | the append-only session log and its persistence; storage backends sit behind it | `session/core.clj` (1.7k) |
 | `:events` `:hooks` | three event domains (session/agent/capability) + 5 dispatch modes + hook chains | `event-bus.clj`, `apply-input-hooks` |
 | `:ui` | capability map: render, input, dialogs, notify, widget set | `extension-binding :ui`, lifted out |
@@ -482,8 +479,8 @@ waterfall (kmet1's `before-tool-call` chain, ported), whose result is already
 ## Pluggable UI
 
 `:ui` is a **capability service**, not an inherited widget set. Apps declare
-what they need; providers supply what they can. Required of every provider
-(headless included): `:kind`, `:render-tree`, `:request!`, `:capabilities`;
+what they need; providers supply what they can. Required of every provider:
+`:kind`, `:render-tree`, `:request!`, `:capabilities`;
 everything else is optional and declared in `:capabilities`:
 
 ```clojure
@@ -511,12 +508,10 @@ parts are extracted into shared code.
 
 Today's providers, and the one that proves the contract is worth having:
 
-1. `:ui/headless` — the capability map with headless defaults (already exists:
-   `kmet.agent.extensions.core/headless-ui-port`).
-2. `:ui/terminal` — components over `kmet.libs.hikap.core`, which already
+1. `:ui/terminal` — components over `kmet.libs.hikap.core`, which already
    takes its backend map as an argument.
-3. `:ui/tk` — the same contract, second backend (Jolt).
-4. `:ui/web` — later; a third backend, no app change.
+2. `:ui/tk` — the same contract, second backend (Jolt).
+3. `:ui/web` — later; a third backend, no app change.
 
 App plugins declare `:inject {:ui {:optional true}}` (or use
 `(srce/inject! ctx {:ui {:optional true}} …)`) and upgrade themselves when a
@@ -525,7 +520,7 @@ richer UI attaches — the optional form is a kmet2 extension of Cordis's
 each namespace: **`kmet.tui` renders components; `kmet.ui` decides which
 backend renders.**
 
-The cost is honest: `modes/interactive/*` is 5,292 lines (`layout.clj` 918,
+The cost is honest: `modes/interactive/*` is 5,052 lines (`layout.clj` 918,
 `ui_registry.clj` 708) written against `kmet.tui`. Landing 5 moves it wholesale
 into `kmet.ui.tui` and extracts capabilities incrementally; it does not rewrite
 it as view-model + renderer.
@@ -659,7 +654,7 @@ state; the other 84 are already pure functions of their arguments.
 The fourth row is the only real re-hosting: 6,243 of 39,802 lines (~16%), plus
 another ~14% in the one-argument and registry-wired rows. It is the part that
 owns state — precisely what the context replaces. The bus is the template:
-roughly two-thirds of `event-bus.clj` is the `event-types` vocabulary (pure
+roughly three-fifths of `event-bus.clj` is the `event-types` vocabulary (pure
 data, lifts as-is), and the mechanism is one atom plus the three emitters
 (`emit`, collect, boundary).
 
@@ -704,7 +699,7 @@ simply lives in the `app` module. Tests move the same way and keep their
 namespace (`kmet.tasks.modules/ns-symbol` derives it from the path).
 
 Renaming at lift time is the expensive option: `modules/agent/test` holds 354
-`with-redefs` sites, **170 of them on `kmet.agent.config`** — the first clean
+`with-redefs` sites, 14 of them referencing `kmet.agent.config` — the first clean
 file anyone would lift. A rename owes a wrapper at the old name exposing
 *every* var kmet1 uses, and that wrapper still cannot intercept calls made
 *inside* the lifted code. Keeping the namespace keeps every interception point
@@ -718,7 +713,7 @@ the extension ABI, and installed extensions write it in their `:require`; if
 kmet2 ever wants `kmet.extension`, add it as an alias and keep the old name
 for a release. The file moves into `app` with the extension host; the
 namespace does not change. Namespaces whose concept dies are deleted, not moved
-(`kmet.agent.runtime` has no successor). `loop*`, `session/runtime` and
+(`kmet.agent.runtime` has no successor). `kmet.agent.loop` (and `kmet.agent.loop.*`), `session/runtime` and
 `modes/interactive/*` are re-hosted under new names; with `agent` at 4 kmet1
 re-points at them instead of keeping a copy — `modes/interactive/*` becomes
 `kmet.ui.tui` at landing 5 behind the `--mode` shim. New kmet2-only code uses
@@ -729,7 +724,7 @@ the new prefixes from day one.
 | `kmet.agent.registry`, `.tools.registry`, `.event-bus`, `.config`, `.skills`, `.prompts`, `.commands` | `kmet.app.*` — one prefix substitution |
 | `kmet.agent.extension` | unchanged — the ABI (the file moves to `app`, the name stays) |
 | `kmet.agent.runtime` | deleted |
-| `kmet.agent.loop*`, `session/runtime`, `modes/interactive/*` | new `kmet.app.*` / `kmet.ui.tui` |
+| `kmet.agent.loop` (and subnamespaces), `session/runtime`, `modes/interactive/*` | new `kmet.app.*` / `kmet.ui.tui` |
 
 ### Per-lift checklist
 
