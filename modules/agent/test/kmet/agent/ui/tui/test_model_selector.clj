@@ -2,7 +2,6 @@
   "Model selector tests — visible search filter, arrow navigation (rows
    rebuild, pi updateList), current-model checkmark + initial selection,
    Enter select / Escape cancel, and the all/scoped Tab toggle."
-  (:refer-clojure :exclude [selector])
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [babashka.fs :as fs]

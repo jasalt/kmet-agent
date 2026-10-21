@@ -2,7 +2,6 @@
   "Scoped-models selector tests — enabled-ids helpers and handle-input
    behaviors (toggle on Enter, Ctrl+A/X/P, Alt+Up/Down reorder, Ctrl+S save,
    search filter, cancel)."
-  (:refer-clojure :exclude [selector])
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [babashka.fs :as fs]

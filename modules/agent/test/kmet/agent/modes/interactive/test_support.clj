@@ -11,7 +11,6 @@
             [kmet.agent.ui.tui.pending-messages :as pending-messages]
             [kmet.agent.ui.tui.status-indicator :as status-indicator]
             [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.dock :as dock]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
             [kmet.tui.keybindings :as tui-kb]))

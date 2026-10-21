@@ -18,7 +18,7 @@
             [kmet.agent.debug :as debug]
             [kmet.agent.ui.tui.chat-history :as ui]
             [kmet.tui.protocols :as protocols]
-            [kmet.test-utils :refer [slash] :as tu]
+            [kmet.test-utils :as tu]
             [kmet.agent.loop.test-support :as support]))
 
 ;; ─── Phase 3: compaction ─────────────────────────────────────────────────

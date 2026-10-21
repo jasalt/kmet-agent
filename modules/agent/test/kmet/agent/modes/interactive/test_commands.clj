@@ -2,7 +2,7 @@
   "Interactive slash commands: the builtin auth pair, /thinking, /continue, the
    status indicator's model swap, /scoped-models and /settings, and /followup."
   (:require [clojure.test :as t :refer [deftest testing]]
-            [kmet.test-utils :as tu :refer [slash]]
+            [kmet.test-utils :as tu]
             [kmet.agent.app-runtime :as app-runtime]
             [clojure.string :as str]
             [kmet.tui.components.editor :as editor]

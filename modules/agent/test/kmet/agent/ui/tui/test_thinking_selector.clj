@@ -2,7 +2,6 @@
   "Thinking-selector tests — row rendering (arrow selection, ✓ active level,
    · default note), arrow navigation, Enter selects / Ctrl+S persists / Esc
    cancels, and the search filter (pi ThinkingSelectorComponent)."
-  (:refer-clojure :exclude [selector])
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [babashka.fs :as fs]
