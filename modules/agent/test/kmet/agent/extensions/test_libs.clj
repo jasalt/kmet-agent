@@ -5,7 +5,6 @@
             [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.extension :as ext]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.extensions.context :as ext-context]
             [kmet.agent.app-runtime :as rt]

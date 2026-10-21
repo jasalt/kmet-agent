@@ -3,9 +3,7 @@
    per-extension ownership of registrations and resource paths, and rollback when
    loading or init fails."
   (:require [clojure.test :as t :refer [testing]]
-            [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.extension :as ext]
             [kmet.libs.host :as host]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.app-runtime :as rt]
