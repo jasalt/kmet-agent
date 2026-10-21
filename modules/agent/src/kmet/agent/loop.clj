@@ -588,6 +588,189 @@
   [agent t result]
   (complete-turn! agent t (state/add-assistant-message! agent result) []))
 
+(defn- attempt-call-provider!
+  "Issue one request and collect its normalized result (deref fallback
+   deadline included). Returns {:request-tools ts :result r}, plus :call —
+   the promise and its partials snapshot — only for the timeout sentinel,
+   the one outcome whose partials are not in the result map."
+  [{:keys [agent text-buf on-text on-thinking]}]
+  (let [;; one read per request: the wire list, the declared set and the
+        ;; dispatch below all resolve against it (scope.md §4)
+        request-tools (state/active-tools agent)
+        {:keys [promise] :as call}
+        (do (reset! text-buf "")
+            (completion/call-llm agent (completion/resolve-api-key agent) text-buf on-text on-thinking request-tools))]
+    (reset! (:active-call agent) call)
+    ;; A cancel that landed while call-llm was still executing saw no
+    ;; active call to deliver (the promise is installed only now, and a
+    ;; test's/send-message's very first callback can precede it). Deliver
+    ;; here too so the abort cannot be lost: deliver is a no-op once
+    ;; realized, so an already-arrived normal result is never overridden.
+    (when @(:signal agent)
+      (deliver promise (merge {:cancelled true} ((:partials call)))))
+    (let [result (let [deadline (retry/llm-total-timeout-ms @(:cfg agent))]
+                   (retry/normalize-llm-result
+                    (if (pos? deadline)
+                      (deref promise deadline :timeout)
+                      @promise)))]
+      (reset! (:active-call agent) nil)
+      (cond-> {:request-tools request-tools :result result}
+        (= :timeout result) (assoc :call call)))))
+
+(defn- attempt-retry-action
+  "The retry policy's verdict for a failed request (pi: shouldRetry) — the
+   policy, the current budget, and whether a persisted session can take the
+   recovery entry."
+  [{:keys [agent retry-decide retry-policy]} err]
+  (retry-decide
+   (merge retry-policy
+          {:err err
+           :retry-count @(:retry-count agent)
+           :overflow-recovered @(:overflow-recovered agent)
+           :has-session (some? (:session agent))})))
+
+(defn- attempt-cancelled!
+  "The run signal fired during the request: persist the abandoned attempt,
+   close its turn, and report the aborted outcome."
+  [{:keys [agent agent-end]} t result]
+  (finish-turn! agent t (state/record-abandoned-attempt!
+                         agent result :aborted) [])
+  (agent-end nil false)
+  {:status :aborted})
+
+(defn- attempt-timed-out!
+  "The deref fallback deadline fired (the transport's own total deadline
+   normally fires first and delivers a retryable :error). Treated as the same
+   retryable timeout error — never a silent hard abort."
+  [{:keys [agent agent-end on-error] :as ctx} t call]
+  (let [err (str "LLM call timed out after "
+                 (retry/llm-total-timeout-ms @(:cfg agent)) "ms")
+        ;; The deref sentinel (:timeout) carries no partials, but the
+        ;; in-flight call's partials snapshot does — keep whatever streamed
+        ;; before the deadline (pi: a failed stream's partial becomes the
+        ;; final message) so a stalled attempt never loses its
+        ;; text/thinking, while the retry classifier still sees a normal
+        ;; error map.
+        msg (state/record-abandoned-attempt!
+             agent (merge ((:partials call)) {:error err})
+             :error)]
+    (finish-turn! agent t msg [])
+    (let [{:keys [kind] :as action} (attempt-retry-action ctx err)]
+      (if (= :backoff kind)
+        (do (agent-end err true)
+            {:status :retry :error err :action action
+             :attempt-entry msg})
+        (terminal-error! agent err on-error agent-end)))))
+
+(defn- attempt-failed!
+  "The request returned an error: classify it. The thinking-loop guard
+   settles the attempt with its explanation, context overflow and backoff
+   return the retry verdict to the caller, and everything else is terminal."
+  [{:keys [agent agent-end text-buf on-error] :as ctx} t result]
+  (if (= loop-guard/thinking-loop-error (:error result))
+    ;; Thinking-loop guard tripped: not a transient error — settle the run
+    ;; with the explanation (no auto-retry, no red error line; the
+    ;; :loop-guard event shows a warning)
+    (do (finish-turn! agent t (state/record-abandoned-attempt!
+                               agent result :error) [])
+        (loop-guard-give-up!
+         agent text-buf :thinking
+         "Stopped: repeated reasoning detected (thinking-loop guard)")
+        {:status :settled :turn (inc t)})
+    (let [err (:error result)
+          ;; Persist the failed attempt before classifying — session history
+          ;; only, never the live context (pi: _prepareRetry drops the errored
+          ;; message from agent state while keeping it in the file). pi runs
+          ;; finishTurn/turn_end for an errored response too (the decision is
+          ;; dropped).
+          msg (state/record-abandoned-attempt! agent result :error)
+          _ (finish-turn! agent t msg [])
+          {:keys [kind] :as action} (attempt-retry-action ctx err)]
+      (case kind
+        ;; Context overflow → the caller compacts once, then retries (pi:
+        ;; overflow is compaction territory, not auto-retry)
+        :overflow-recover
+        (do (agent-end err false)
+            {:status :overflow :error err
+             :attempt-entry msg})
+
+        ;; Auto-retry with exponential backoff (pi: _prepareRetry); the
+        ;; caller sleeps and starts the next attempt
+        :backoff
+        (do (agent-end err true)
+            {:status :retry :error err :action action
+             :attempt-entry msg})
+
+        ;; Terminal error (non-retryable or retries exhausted)
+        :terminal
+        (terminal-error! agent err on-error agent-end)))))
+
+(defn- attempt-succeeded!
+  "The request succeeded: reset the retry/overflow-recovery bookkeeping, then
+   turn the response into the next turn step — a tool batch or a final
+   response. A step is {:step :continue :turn t :tool-calls ts :must-run b};
+   every other return is a terminal attempt outcome."
+  [{:keys [agent stages text-buf]} t result request-tools]
+  (let [retried @(:retry-count agent)]
+    ;; A retried LLM call succeeded — reset the budget
+    (when (pos? retried)
+      (reset! (:retry-count agent) 0)
+      (state/emit agent {:type :auto-retry-end
+                         :success true
+                         :attempt retried}))
+    (when @(:overflow-recovered agent)
+      ;; A non-error message ends overflow recovery (pi resets on success)
+      (reset! (:overflow-recovered agent) false))
+    (let [tool-calls (:tool-calls result)]
+      (if (seq tool-calls)
+        (let [phase (tools-phase! agent stages t result request-tools)]
+          (cond
+            (= :loop-guard phase)
+            ;; Repeat-loop guard tripped: settle the run with the
+            ;; explanation as the final text
+            (do (loop-guard-give-up!
+                 agent text-buf :tool-calls
+                 (str "Stopped: repeated identical tool calls "
+                      "(threshold " (:loop-guard-threshold @(:cfg agent)) ")"))
+                {:status :settled :turn (inc t)})
+            (= :settled phase)
+            {:status :settled :turn (inc t)}
+            (= :continue phase)
+            ;; A :finish-turn / :turn-end decision asked for one more request
+            {:step :continue :turn (inc t)
+             :tool-calls tool-calls :must-run true}
+            :else
+            {:step :continue :turn (inc t)
+             :tool-calls tool-calls :must-run false}))
+        (case (final-phase! agent t result)
+          :end {:status :settled :turn (inc t)}
+          :continue {:step :continue :turn (inc t)
+                     :tool-calls [] :must-run true}
+          {:step :continue :turn (inc t)
+           :tool-calls [] :must-run false})))))
+
+(defn- run-turn!
+  "One turn of an attempt: drain the steering queue, run the request, and
+   interpret the outcome. Returns {:step :continue :turn t :tool-calls ts
+   :must-run b} for the next turn of the attempt, or a terminal attempt
+   outcome map — {:status :settled | :aborted | :retry | :overflow | :error
+   …}, the step's absence of :step telling the two apart."
+  [{:keys [agent] :as ctx} t]
+  ;; The injection drains the steering queue and refreshes the pending
+  ;; display (pi: message_start → queue_update)
+  (state/inject-queued-messages! agent (:steering agent)
+                                 (:steering-mode @(:cfg agent)))
+  (state/emit agent {:type :turn-start :turn-index t})
+  ;; pi: config.prepareRequest — the per-request checkpoint, after the queued
+  ;; messages joined the context and before the request is built
+  (prepare-request! agent)
+  (let [{:keys [call request-tools result]} (attempt-call-provider! ctx)]
+    (cond
+      (:cancelled result) (attempt-cancelled! ctx t result)
+      (= :timeout result) (attempt-timed-out! ctx t call)
+      (:error result) (attempt-failed! ctx t result)
+      :else (attempt-succeeded! ctx t result request-tools))))
+
 (defn- run-attempt!
   "Run one low-level agent attempt — one :agent-start/:agent-end pair
    (pi: agent.prompt for the first attempt, agent.continue for retries).
@@ -611,9 +794,6 @@
    (RUN-TOKEN keys the accumulator) and :will-retry."
   [agent run-token {:keys [on-text on-thinking on-error]}]
   (let [stages (runtime/loop-stages (:node agent)) ; the node's stages, one read per attempt (scope.md §4)
-        retry-decide (get-in stages [:retry-policy :call])
-        retry-policy (compact/stage-retry-policy agent stages)
-        text-buf (atom "")
         agent-end (fn [error will-retry]
                     (when-let [s (:session agent)]
                       (when (pos? (get-in (session/tool-usage s)
@@ -627,7 +807,16 @@
                       ;; pi decorates the public agent_end with :will-retry but
                       ;; emits the extension runner's copy before the
                       ;; decoration (agent-session.ts) — send each its own map.
-                      (state/emit agent event (dissoc event :will-retry))))]
+                      (state/emit agent event (dissoc event :will-retry))))
+        ctx {:agent agent
+             :stages stages
+             :retry-decide (get-in stages [:retry-policy :call])
+             :retry-policy (compact/stage-retry-policy agent stages)
+             :text-buf (atom "")
+             :on-text on-text
+             :on-thinking on-thinking
+             :on-error on-error
+             :agent-end agent-end}]
     ;; Bind this attempt's token for its whole extent so every append it makes
     ;; records against it even if a newer prompt replaces the agent's
     ;; :run-token (see *run-token*).
@@ -647,168 +836,10 @@
                               (agent-end nil false)
                               {:status :aborted}) ;; cancelled — exit quietly
                           {:status :settled :turn t})
-                        ;; The injection drains the steering queue and
-                        ;; refreshes the pending display (pi: message_start →
-                        ;; queue_update)
-                        (do
-                          (state/inject-queued-messages! agent (:steering agent)
-                                                         (:steering-mode @(:cfg agent)))
-                          (state/emit agent {:type :turn-start :turn-index t})
-                          ;; pi: config.prepareRequest — the per-request
-                          ;; checkpoint, after the queued messages joined the
-                          ;; context and before the request is built
-                          (prepare-request! agent)
-                          (let [;; one read per request: the wire list, the
-                                ;; declared set and the dispatch below all
-                                ;; resolve against it (scope.md §4)
-                                request-tools (state/active-tools agent)
-                                {:keys [promise] :as call}
-                                (do (reset! text-buf "")
-                                    (completion/call-llm agent (completion/resolve-api-key agent) text-buf on-text on-thinking request-tools))]
-                            (reset! (:active-call agent) call)
-                          ;; A cancel that landed while call-llm was still executing saw no
-                          ;; active call to deliver (the promise is installed only now, and a
-                          ;; test's/send-message's very first callback can precede it). Deliver
-                          ;; here too so the abort cannot be lost: deliver is a no-op once
-                          ;; realized, so an already-arrived normal result is never overridden.
-                            (when @(:signal agent)
-                              (deliver promise (merge {:cancelled true} ((:partials call)))))
-                            (let [result (let [deadline (retry/llm-total-timeout-ms @(:cfg agent))]
-                                           (retry/normalize-llm-result
-                                            (if (pos? deadline)
-                                              (deref promise deadline :timeout)
-                                              @promise)))]
-                              (reset! (:active-call agent) nil)
-                              (cond
-                                (:cancelled result)
-                                (do (finish-turn! agent t (state/record-abandoned-attempt!
-                                                           agent result :aborted) [])
-                                    (agent-end nil false)
-                                    {:status :aborted})
-
-                                (= :timeout result)
-                              ;; The transport's own total deadline
-                              ;; (HttpRequest.timeout / curl --max-time)
-                              ;; normally fires first and delivers a
-                              ;; retryable :error; this is the deref
-                              ;; fallback if it didn't fire. Treat it as the
-                              ;; same retryable timeout error — never a
-                              ;; silent hard abort.
-                                (let [err (str "LLM call timed out after "
-                                               (retry/llm-total-timeout-ms @(:cfg agent)) "ms")
-                                      ;; The deref sentinel (:timeout) carries no
-                                      ;; partials, but the in-flight call's partials
-                                      ;; snapshot does — keep whatever streamed
-                                      ;; before the deadline (pi: a failed stream's
-                                      ;; partial becomes the final message) so a
-                                      ;; stalled attempt never loses its
-                                      ;; text/thinking, while the retry classifier
-                                      ;; still sees a normal error map.
-                                      msg (state/record-abandoned-attempt!
-                                           agent (merge ((:partials call)) {:error err})
-                                           :error)]
-                                  (finish-turn! agent t msg [])
-                                  (let [{:keys [kind] :as action}
-                                        (retry-decide
-                                         (merge retry-policy
-                                                {:err err
-                                                 :retry-count @(:retry-count agent)
-                                                 :overflow-recovered @(:overflow-recovered agent)
-                                                 :has-session (some? (:session agent))}))]
-                                    (if (= :backoff kind)
-                                      (do (agent-end err true)
-                                          {:status :retry :error err :action action
-                                           :attempt-entry msg})
-                                      (terminal-error! agent err on-error agent-end))))
-
-                                (:error result)
-                                (if (= loop-guard/thinking-loop-error (:error result))
-                                ;; Thinking-loop guard tripped: not a transient
-                                ;; error — settle the run with the explanation
-                                ;; (no auto-retry, no red error line; the
-                                ;; :loop-guard event shows a warning)
-                                  (do (finish-turn! agent t (state/record-abandoned-attempt!
-                                                             agent result :error) [])
-                                      (loop-guard-give-up!
-                                       agent text-buf :thinking
-                                       "Stopped: repeated reasoning detected (thinking-loop guard)")
-                                      {:status :settled :turn (inc t)})
-                                  (let [err (:error result)
-                                      ;; Persist the failed attempt before
-                                      ;; classifying — session history only,
-                                      ;; never the live context (pi:
-                                      ;; _prepareRetry drops the errored
-                                      ;; message from agent state while
-                                      ;; keeping it in the file). pi runs
-                                      ;; finishTurn/turn_end for an errored
-                                      ;; response too (the decision is dropped).
-                                        msg (state/record-abandoned-attempt! agent result :error)
-                                        _ (finish-turn! agent t msg [])
-                                        {:keys [kind] :as action}
-                                        (retry-decide
-                                         (merge retry-policy
-                                                {:err err
-                                                 :retry-count @(:retry-count agent)
-                                                 :overflow-recovered @(:overflow-recovered agent)
-                                                 :has-session (some? (:session agent))}))]
-                                    (case kind
-                                    ;; Context overflow → the caller compacts
-                                    ;; once, then retries (pi: overflow is
-                                    ;; compaction territory, not auto-retry)
-                                      :overflow-recover
-                                      (do (agent-end err false)
-                                          {:status :overflow :error err
-                                           :attempt-entry msg})
-
-                                    ;; Auto-retry with exponential backoff (pi:
-                                    ;; _prepareRetry); the caller sleeps and
-                                    ;; starts the next attempt
-                                      :backoff
-                                      (do (agent-end err true)
-                                          {:status :retry :error err :action action
-                                           :attempt-entry msg})
-
-                                    ;; Terminal error (non-retryable or
-                                    ;; retries exhausted)
-                                      :terminal
-                                      (terminal-error! agent err on-error agent-end))))
-
-                                :else
-                                (let [retried @(:retry-count agent)]
-                                ;; A retried LLM call succeeded — reset the budget
-                                  (when (pos? retried)
-                                    (reset! (:retry-count agent) 0)
-                                    (state/emit agent {:type :auto-retry-end
-                                                       :success true
-                                                       :attempt retried}))
-                                  (when @(:overflow-recovered agent)
-                                  ;; A non-error message ends overflow recovery
-                                  ;; (pi resets on success)
-                                    (reset! (:overflow-recovered agent) false))
-                                  (let [tool-calls (:tool-calls result)]
-                                    (if (seq tool-calls)
-                                      (let [phase (tools-phase! agent stages t result request-tools)]
-                                        (cond
-                                          (= :loop-guard phase)
-                                        ;; Repeat-loop guard tripped: settle the
-                                        ;; run with the explanation as the final text
-                                          (do (loop-guard-give-up!
-                                               agent text-buf :tool-calls
-                                               (str "Stopped: repeated identical tool calls "
-                                                    "(threshold " (:loop-guard-threshold @(:cfg agent)) ")"))
-                                              {:status :settled :turn (inc t)})
-                                          (= :settled phase)
-                                          {:status :settled :turn (inc t)}
-                                          (= :continue phase)
-                                        ;; A :finish-turn / :turn-end decision
-                                        ;; asked for one more request
-                                          (recur (inc t) tool-calls true)
-                                          :else
-                                          (recur (inc t) tool-calls false)))
-                                      (case (final-phase! agent t result)
-                                        :end {:status :settled :turn (inc t)}
-                                        :continue (recur (inc t) [] true)
-                                        (recur (inc t) [] false)))))))))))]
+                        (let [step (run-turn! ctx t)]
+                          (if (= :continue (:step step))
+                            (recur (:turn step) (:tool-calls step) (:must-run step))
+                            step))))]
           (if (contains? #{:retry :overflow :aborted :error} (:status inner))
             ;; RETRY/OVERFLOW/ABORTED/ERROR are already fully-tagged outcomes
             ;; (they emitted their :agent-end); only a settled attempt
@@ -822,7 +853,7 @@
                     (recur turn'))
                 (do (state/set-agent-status! agent :idle)
                     (agent-end nil false)
-                    {:status :settled :text @text-buf})))))))))
+                    {:status :settled :text @(:text-buf ctx)})))))))))
 
 (defn- before-settle!
   "Run the actionable :agent-before-settle boundary (pi:

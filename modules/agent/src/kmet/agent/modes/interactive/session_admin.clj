@@ -123,6 +123,156 @@
       (cond-> (chat-history/tool-call-message tc (get results (:id tc)))
         errored? (assoc :content error-text :is-error true)))))
 
+(defn- entry-text
+  "An entry's text content: its text blocks joined, tool_result content
+   included (pi: contentText). Non-text blocks contribute nothing."
+  [e]
+  (str/join
+   (keep (fn [b]
+           (case (:type b)
+             :text (:text b)
+             :tool_result (:content b)
+             nil))
+         (:content e))))
+
+(defn- index-tool-results
+  "Index ENTRIES for the replay: the tool-call ids that actually appear in
+   assistant messages, and the :tool entries by tool-call id. The id set
+   detects orphan results (legacy sessions, extension tools) with no
+   matching call."
+  [entries]
+  (reduce (fn [[ids results] e]
+            (case (:role e)
+              :assistant
+              [(into ids (keep :id) (:tool-calls e)) results]
+              :tool
+              (if-let [id (chat-history/tool-result-call-id e)]
+                [ids (assoc results id e)]
+                [ids results])
+              [ids results]))
+          [#{} {}]
+          entries))
+
+(defn- replay-custom-entry!
+  "Extension state entries render only with a registered renderer (pi:
+   registerEntryRenderer + CustomEntryComponent); a renderer failure renders
+   the pi error line instead of crashing the replay."
+  [cs e]
+  (when-let [rendered (run-entry-renderer
+                       (extensions/get-entry-renderer (:custom-type e)) e)]
+    (chat-history/chat-history-add-message! (:chat-history cs)
+                                            (renderer-result->message rendered))))
+
+(defn- replay-custom-message!
+  "Extension custom messages render only when display is set (pi: the display
+   flag controls TUI rendering); content may be a string or a block vector
+   (pi CustomMessageEntry). A registered message renderer overrides the
+   default labeled info box."
+  [cs e]
+  (when (:display e)
+    (chat-history/chat-history-add-message!
+     (:chat-history cs)
+     (if-let [rendered (run-message-renderer
+                        (extensions/get-message-renderer (:custom-type e)) e)]
+       (renderer-result->message rendered)
+       {:role :info
+        :content (custom-message-text e)
+        :images (image-block/content-images (:content e))
+        :label (:custom-type e)}))))
+
+(defn- replay-assistant!
+  "An assistant entry plus the tool results of its tool calls: each call
+   renders from the entry's :tool-calls (name + args) and the matching :tool
+   result fills the component (pi: renderedPendingTools)."
+  [cs e tool-results-by-id]
+  (chat-history/chat-history-add-message!
+   (:chat-history cs)
+   {:role :assistant
+    :content (entry-text e)
+    :thinking (:thinking e)
+    ;; replayed tool-call-only messages render no '(no response)' bubble
+    :tool-calls (:tool-calls e)})
+  (doseq [tm (replay-tool-results! (:tool-calls e) tool-results-by-id e)]
+    (when-let [comp (chat-history/chat-history-add-message! (:chat-history cs) tm)]
+      (reset! (:tool-call-id-atom comp) (:tool-call-id tm))
+      (tool-execution/tool-execution-set-args-complete! comp))))
+
+(defn- replay-orphan-tool!
+  "Tool entries whose call was in the same assistant batch are replayed with
+   it. Any remaining tool entry is an orphan result (legacy sessions,
+   extension tools) — render it standalone from its own :tool-name."
+  [cs e tool-call-ids]
+  (when-not (contains? tool-call-ids
+                       (chat-history/tool-result-call-id e))
+    (chat-history/chat-history-add-message!
+     (:chat-history cs)
+     (cond-> {:role :tool
+              :content (entry-text e)
+              :tool-name (or (:tool-name e) (:name e) "tool")
+              :is-error (:is-error e false)
+              :truncation (:truncation e)
+              :details (:details e)}
+       ;; image results carry their blocks on the entry (pi:
+       ;; toolResult content blocks) — the callback component
+       ;; renders them like a matched result's would
+       (seq (:images e)) (assoc :images (:images e))))))
+
+(defn- replay-bash!
+  "pi: addMessageToChat case \"bashExecution\" — !/!! replays as a COMPLETED
+   BashExecutionComponent (no spinner, no duration)."
+  [cs e]
+  (let [comp (be/make-bash-execution
+              :command (:command e)
+              :exclude-from-context? (:exclude-from-context? e)
+              :replayed? true
+              :tools-expanded-atom (:tools-expanded-atom (:chat-history cs)))]
+    (when (seq (:output e))
+      (be/bash-execution-append-output! comp (:output e)))
+    (be/bash-execution-set-complete! comp (:exit-code e) (:cancelled e false)
+                                     :truncation (when (:truncated e) {:truncated true})
+                                     :full-output-path (:full-output-path e))
+    (chat-history/chat-history-add-message! (:chat-history cs)
+                                            {:role :bash :command (:command e) :component comp})))
+
+(defn- replay-summary!
+  "pi: CompactionSummaryMessageComponent / BranchSummary — dedicated
+   collapsible summary boxes; a usage-carrying summary appends the billing
+   notice when :show-cache-miss-notices is on."
+  [cs e]
+  (let [role (:role e)]
+    (chat-history/chat-history-add-message!
+     (:chat-history cs)
+     (cond-> {:role role :summary (:summary e) :tokens-before (:tokens-before e)}
+       (:usage e) (assoc :usage (:usage e))))
+    (when-let [notice (compaction-cost-notice (runtime/config (:engine cs)) role (:usage e))]
+      (chat-history/chat-history-add-message! (:chat-history cs) notice))))
+
+(defn- replay-plain!
+  "Every other role (user / info / warning / notice …): the entry's text,
+   with a user message's attached images and an info entry's label."
+  [cs e]
+  (let [role (:role e)]
+    (chat-history/chat-history-add-message!
+     (:chat-history cs)
+     (cond-> {:role role :content (entry-text e)}
+       ;; user-attached images replay too — entry-text keeps only the
+       ;; text, so the image blocks must ride the message's :images
+       ;; (the live path carries them inside :content)
+       (= role :user) (assoc :images (image-block/content-images (:content e)))
+       (= role :info) (assoc :label (:label e))))))
+
+(defn- replay-entry!
+  "Replay one context entry into the chat history, by role."
+  [cs e tool-call-ids tool-results-by-id]
+  (case (:role e)
+    :custom (replay-custom-entry! cs e)
+    :custom-message (replay-custom-message! cs e)
+    :assistant (replay-assistant! cs e tool-results-by-id)
+    :tool (replay-orphan-tool! cs e tool-call-ids)
+    :bash (replay-bash! cs e)
+    (:compaction :branch-summary) (replay-summary! cs e)
+    (replay-plain! cs e)))
+
 (defn- replay-branch!
   "Replay a session's compaction-aware context into the chat history (pi:
    renderInitialMessages — buildContextEntries, so summarized history is
@@ -137,136 +287,18 @@
    by tool-call id (pi: renderedPendingTools); a result without a matching
    call renders standalone from its own :tool-name; !/!! bash entries replay
    as completed BashExecutionComponents (pi: addMessageToChat case
-   bashExecution)."
+   bashExecution).
+
+   The entry shapes themselves are replayed by the replay-*! fns above; this
+   fn owns the order: clear, index, then each entry once."
   [cs sess]
   (chat-history/chat-history-clear! (:chat-history cs))
-  (let [content-of
-        (fn [e]
-          (str/join
-           (keep (fn [b]
-                   (case (:type b)
-                     :text (:text b)
-                     :tool_result (:content b)
-                     nil))
-                 (:content e))))
-        ;; Index tool results by tool-call id once, and collect the tool-call
-        ;; ids that actually appear in assistant messages. The result map is
-        ;; used to pair calls with results; the call-id set is used to detect
-        ;; orphan results (legacy sessions, extension tools) that have no
-        ;; matching call.
-        [tool-call-ids tool-results-by-id]
-        (reduce (fn [[ids results] e]
-                  (case (:role e)
-                    :assistant
-                    [(into ids (keep :id) (:tool-calls e)) results]
-                    :tool
-                    (if-let [id (chat-history/tool-result-call-id e)]
-                      [ids (assoc results id e)]
-                      [ids results])
-                    [ids results]))
-                [#{} {}]
-                (session/build-context sess))]
-    (doseq [e (session/build-context sess)
+  (let [entries (session/build-context sess)
+        [tool-call-ids tool-results-by-id] (index-tool-results entries)]
+    (doseq [e entries
             :when (not (contains? #{:session_info :label :model-change
                                     :thinking-level-change :context-edit} (:role e)))]
-      (let [role (:role e)]
-        (cond
-          (= role :custom)
-          ;; extension state entries render only with a registered renderer
-          ;; (pi: registerEntryRenderer + CustomEntryComponent); a renderer
-          ;; failure renders the pi error line instead of crashing the replay
-          (when-let [rendered (run-entry-renderer
-                               (extensions/get-entry-renderer (:custom-type e)) e)]
-            (chat-history/chat-history-add-message! (:chat-history cs)
-                                                    (renderer-result->message rendered)))
-
-          (= role :custom-message)
-          ;; extension custom messages render only when display is set (pi:
-          ;; the display flag controls TUI rendering); content may be a string
-          ;; or a block vector (pi CustomMessageEntry). A registered message
-          ;; renderer overrides the default labeled info box.
-          (when (:display e)
-            (chat-history/chat-history-add-message!
-             (:chat-history cs)
-             (if-let [rendered (run-message-renderer
-                                (extensions/get-message-renderer (:custom-type e)) e)]
-               (renderer-result->message rendered)
-               {:role :info
-                :content (custom-message-text e)
-                :images (image-block/content-images (:content e))
-                :label (:custom-type e)})))
-
-          (= role :assistant)
-          (do
-            (chat-history/chat-history-add-message! (:chat-history cs)
-                                                    (cond-> {:role role :content (content-of e)}
-                                                      (= role :assistant) (assoc :thinking (:thinking e)
-                                                                                 ;; replayed tool-call-only
-                                                                                 ;; messages render no
-                                                                                 ;; '(no response)' bubble
-                                                                                 :tool-calls (:tool-calls e))))
-            (doseq [tm (replay-tool-results! (:tool-calls e) tool-results-by-id e)]
-              (when-let [comp (chat-history/chat-history-add-message! (:chat-history cs) tm)]
-                (reset! (:tool-call-id-atom comp) (:tool-call-id tm))
-                (tool-execution/tool-execution-set-args-complete! comp))))
-
-          (= role :tool)
-          ;; Tool entries whose call was in the same assistant batch are
-          ;; already replayed above. Any remaining tool entry is an orphan
-          ;; result (legacy sessions, extension tools) — render it
-          ;; standalone from its own :tool-name.
-          (when-not (contains? tool-call-ids
-                               (chat-history/tool-result-call-id e))
-            (chat-history/chat-history-add-message!
-             (:chat-history cs)
-             (cond-> {:role :tool
-                      :content (content-of e)
-                      :tool-name (or (:tool-name e) (:name e) "tool")
-                      :is-error (:is-error e false)
-                      :truncation (:truncation e)
-                      :details (:details e)}
-               ;; image results carry their blocks on the entry (pi:
-               ;; toolResult content blocks) — the callback component
-               ;; renders them like a matched result's would
-               (seq (:images e)) (assoc :images (:images e)))))
-
-          (= role :bash)
-          ;; pi: addMessageToChat case "bashExecution" — !/!! replays as a
-          ;; COMPLETED BashExecutionComponent (no spinner, no duration)
-          (let [comp (be/make-bash-execution
-                      :command (:command e)
-                      :exclude-from-context? (:exclude-from-context? e)
-                      :replayed? true
-                      :tools-expanded-atom (:tools-expanded-atom (:chat-history cs)))]
-            (when (seq (:output e))
-              (be/bash-execution-append-output! comp (:output e)))
-            (be/bash-execution-set-complete! comp (:exit-code e) (:cancelled e false)
-                                             :truncation (when (:truncated e) {:truncated true})
-                                             :full-output-path (:full-output-path e))
-            (chat-history/chat-history-add-message! (:chat-history cs)
-                                                    {:role :bash :command (:command e) :component comp}))
-
-          ;; pi: CompactionSummaryMessageComponent / BranchSummary — dedicated
-          ;; collapsible summary boxes; a usage-carrying summary appends the
-          ;; billing notice when :show-cache-miss-notices is on
-          (contains? #{:compaction :branch-summary} role)
-          (do
-            (chat-history/chat-history-add-message!
-             (:chat-history cs)
-             (cond-> {:role role :summary (:summary e) :tokens-before (:tokens-before e)}
-               (:usage e) (assoc :usage (:usage e))))
-            (when-let [notice (compaction-cost-notice (runtime/config (:engine cs)) role (:usage e))]
-              (chat-history/chat-history-add-message! (:chat-history cs) notice)))
-
-          :else
-          (chat-history/chat-history-add-message!
-           (:chat-history cs)
-           (cond-> {:role role :content (content-of e)}
-             ;; user-attached images replay too — content-of keeps only the
-             ;; text, so the image blocks must ride the message's :images
-             ;; (the live path carries them inside :content)
-             (= role :user) (assoc :images (image-block/content-images (:content e)))
-             (= role :info) (assoc :label (:label e)))))))))
+      (replay-entry! cs e tool-call-ids tool-results-by-id))))
 
 (defn replay-session!
   "Replay a session the runtime has already switched to into the UI: the

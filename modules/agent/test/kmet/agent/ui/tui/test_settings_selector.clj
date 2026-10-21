@@ -285,3 +285,39 @@
         (finally
           (th/set-theme-instance! orig-theme)
           (th/init-theme! orig-name))))))
+
+;; ─── The row table (row-handlers / apply-row-change!) ─────────────────────
+
+(deftest apply-row-change-dispatches-and-rejects-unknown-rows
+  (testing "a known row runs its handler with the chosen value"
+    (let [calls (atom [])
+          handlers {:auto-compact (fn [v] (swap! calls conj v) :saved)}]
+      (is (= :saved ((var ss/apply-row-change!) handlers :auto-compact true)))
+      (is (= [true] @calls))))
+  (testing "an unknown row id fails loudly, like the case it replaced"
+    (is (thrown? IllegalArgumentException
+                 ((var ss/apply-row-change!) {} :no-such-row "x")))))
+
+(deftest row-handlers-cover-every-panel-row
+  (testing "every row the panel renders has a handler — a missing one would
+            silently drop the change instead of failing"
+    (let [cs (settings-cs)
+          focused (atom nil)]
+      (with-redefs [core/tui-set-focus (fn [_ c] (reset! focused c))
+                    core/tui-request-render (fn [_] nil)]
+        (ss/show-settings cs)
+        (let [item-ids (set (map :id @(:items-atom @focused)))
+              handlers ((var ss/row-handlers)
+                        ;; closures only: nothing runs while the table is built
+                        {:cs cs
+                         :engine (:engine cs)
+                         :retry-atom (atom {})
+                         :save-retry! (fn [& _])
+                         :lg-atom (atom {})
+                         :save-lg! (fn [& _])})]
+          (is (seq item-ids))
+          (is (every? (set (keys handlers)) item-ids))
+          (testing "the rows this environment hides still have handlers"
+            (is (every? (set (keys handlers))
+                        [:theme :show-hardware-cursor :clear-on-shrink
+                         :show-images :image-width-cells]))))))))

@@ -77,6 +77,408 @@
 
 ;; ─── Layout setup ──────────────────────────────────────────────────────────
 
+(defn- on-tool-execution
+  "Tool-execution events: the transcript's tool components. Parallel tool
+   calls each own a component in PENDING-TOOL-COMPS keyed by tool-call id,
+   so updates and ends correlate by id."
+  [{:keys [chat-history tui pending-tool-comps]} evt]
+  (case (:type evt)
+    :tool-execution-start
+    ;; Pi: create pending component once, update in place.
+    ;; The streaming placeholder finalizes here (the tool box lands after
+    ;; it) — mark the message as tool-call-bearing FIRST so a tool-call-only
+    ;; assistant message stays invisible instead of bubbling '(no response)'
+    ;; (pi: hasToolCalls; loop-continue turns are usually tool-call-only).
+    (let [msg {:role :tool
+               :tool-name (:tool-name evt)
+               :arguments (:args evt {})
+               :content ""
+               :is-error false}]
+      (chat-history/chat-history-mark-streaming-tool-calls! chat-history)
+      (chat-history/chat-history-finalize-streaming! chat-history)
+      (let [comp (chat-history/chat-history-add-message! chat-history msg)]
+        ;; Store tool call ID for correlation
+        (reset! (:tool-call-id-atom comp) (:tool-call-id evt))
+        ;; Args are complete when received (kmet: no streaming args)
+        (tool-execution/tool-execution-set-args-complete! comp)
+        ;; Mark execution started so pending bg + timer activate now
+        (tool-execution/tool-execution-mark-execution-started! comp)
+        ;; Pi: pendingTools.set(toolCallId, component) — parallel tool
+        ;; calls each own a component; updates/ends correlate by id
+        (swap! pending-tool-comps assoc (:tool-call-id evt) comp))
+      ;; mount poke stays: the new message lands in the untracked
+      ;; messages-atom, so no watch exists for it yet
+      (tui/tui-request-render tui))
+
+    :tool-execution-update
+    ;; Pi: live partial content from streaming tools (bash). For a
+    ;; :status tool the elapsed counter ticks via the tool component's own
+    ;; 1s ticker (pi: setInterval → context.invalidate), so a silent
+    ;; long-running tool still updates Elapsed steadily — this event
+    ;; only pushes the new output chunks.
+    ;; No manual render request: set-content! swaps a track!-watched
+    ;; atom, which schedules the frame itself (§3.4).
+    (when-let [comp (get @pending-tool-comps (:tool-call-id evt))]
+      (when-let [content (:content evt)]
+        (reset! (:content-atom comp) content)
+        ;; A newly-created component has no watch until its first render.
+        ;; Keep the normal reactive path after that, but cover an update
+        ;; racing the mount frame as well.
+        (when (nil? @(:cache-atom comp))
+          (tui/tui-request-render tui))))
+
+    :tool-execution-end
+    ;; Pi: update the component by id and remove it from pendingTools.
+    ;; The explicit request covers a tool that finishes before its first
+    ;; frame, when no track! watch exists yet to schedule completion.
+    (when-let [comp (get @pending-tool-comps (:tool-call-id evt))]
+      (let [result (:result evt)]
+        (reset! (:content-atom comp) (:content result))
+        (tool-execution/tool-execution-set-error! comp (:is-error result false))
+        (when-let [truncation (:truncation result)]
+          (reset! (:truncation-atom comp) truncation))
+        (when-let [details (:details result)]
+          (reset! (:details-atom comp) details))
+        (when-let [images (:images result)]
+          (tool-execution/tool-execution-set-images! comp images))
+        (swap! pending-tool-comps dissoc (:tool-call-id evt))
+        (tui/tui-request-render tui)))))
+
+(defn- on-message
+  "Message lifecycle events: the transcript entry for each message role.
+   Streaming text/thinking itself arrives through the on-text/on-thinking
+   callbacks, so :message-update needs no UI action."
+  [{:keys [chat-history tui cs-ref]} evt]
+  (case (:type evt)
+    :message-start
+    ;; Pi: message_start → user messages (the initial
+    ;; prompt and consumed steering/follow-up messages)
+    ;; land in the chat here; assistant message starts
+    ;; finalize the previous turn's streaming placeholder
+    ;; and open a fresh one, so a follow-up continuation
+    ;; never merges into the prior response; before-
+    ;; agent-start injected messages (role :info) display
+    ;; as labeled info boxes above the response. Content
+    ;; is normalized from text blocks to a string for
+    ;; the info box.
+    (case (:role (:message evt))
+      :user (do (chat-history/chat-history-add-message! chat-history (:message evt))
+                (when-let [cs @cs-ref]
+                  (status/update-pending-messages! cs))
+                (tui/tui-request-render tui))
+      :assistant (do (chat-history/chat-history-finalize-streaming! chat-history)
+                     (chat-history/chat-history-finalize-thinking! chat-history)
+                     (chat-history/chat-history-start-streaming! chat-history)
+                     (tui/tui-request-render tui))
+      :info (let [m (:message evt)
+                  text (if (string? (:content m))
+                         (:content m)
+                         (str/join
+                          (for [b (:content m)
+                                :when (= :text (:type b))]
+                            (:text b))))]
+              (chat-history/chat-history-insert-before-streaming! chat-history
+                                                                  (assoc m
+                                                                         :content text
+                                                                         :images (image-block/content-images (:content m))))
+              (tui/tui-request-render tui))
+      ;; extension custom messages (pi: custom messages
+      ;; render when display=true — a registered message
+      ;; renderer overrides the labeled info box; same
+      ;; rule as the session-restore path)
+      :custom (do (when (:display (:message evt))
+                    (let [m (:message evt)]
+                      (chat-history/chat-history-insert-before-streaming!
+                       chat-history
+                       (if-let [rendered (session-admin/run-message-renderer
+                                          (extensions/get-message-renderer
+                                           (:custom-type m)) m)]
+                         (session-admin/renderer-result->message rendered)
+                         (assoc m :role :info
+                                :content (session-admin/custom-message-text m)
+                                :images (image-block/content-images (:content m))
+                                :label (:custom-type m))))))
+                  (tui/tui-request-render tui))
+      nil)
+
+    :message-update nil
+
+    :message-end
+    ;; A failed attempt finalizes empty when the stream delivered
+    ;; nothing before the deadline: drop that placeholder instead of
+    ;; letting it settle into a bare "(no response)" bubble. Any
+    ;; partial text/thinking stays (record-abandoned-attempt! kept
+    ;; it), and the reason surfaces once per attempt with the retry
+    ;; line — or, for a terminal failure, through on-agent-error.
+    (when (and (:error-message (:message evt))
+               (chat-history/chat-history-streaming-empty? chat-history))
+      (chat-history/chat-history-remove-streaming-placeholder! chat-history)
+      (tui/tui-request-render tui))))
+
+(defn- on-run-lifecycle
+  "Run-level events: the spinner/animation presentation, the footer, and the
+   transcript notices that belong to a whole run (the repeat-loop guard)."
+  [{:keys [chat-history tui cs-ref]} evt]
+  (case (:type evt)
+    :agent-start
+    ;; Pi: agent_start → setProgress(true) (showTerminalProgress gated).
+    ;; A run the runtime started on its own (a submit! or the compaction-
+    ;; queue flush) has no start-agent-run! presentation pass: bring the
+    ;; spinner and the animation up like any other start. The anim timer
+    ;; is nil exactly while no presentation is up, so this is idempotent
+    ;; across an explicit start's :agent-start and across retry attempts.
+    (when-let [cs @cs-ref]
+      (turn/set-terminal-progress! cs true)
+      (when (and (runtime/turn-running? (:engine cs))
+                 (nil? @(:anim-timer cs)))
+        (status/start-anim-timer! cs)
+        (when-not (= :working (:kind @(:status-current cs)))
+          (status/activate-working-indicator! cs))
+        (state/update-footer! cs)))
+
+    :agent-end
+    ;; Pi: maybeShowCacheMissNotice — a significant
+    ;; prompt-cache miss on the completed turn (only
+    ;; when the run actually produced an assistant
+    ;; message — a failed run must not re-show the
+    ;; previous turn's miss)
+    (do (when-let [cs @cs-ref]
+          (turn/set-terminal-progress! cs false)
+          (maybe-show-cache-miss-notice! cs (:messages evt)))
+        (tui/tui-request-render tui))
+
+    :turn-start
+    ;; A new LLM call is starting. After a retry backoff
+    ;; or compaction the status container holds a
+    ;; transient indicator (or the stopped working
+    ;; indicator); revive the working spinner so the
+    ;; call streams under "Working" (pi: the session
+    ;; emits a fresh agent_start after retry/compaction
+    ;; via agent.continue(), re-showing the
+    ;; WorkingStatusIndicator — kmet's loop recurs
+    ;; in-turn, so turn-start is the equivalent signal).
+    ;; The guarded nil-swap inside activate-working-indicator!
+    ;; schedules the frame when a real change happens.
+    (when-let [cs @cs-ref]
+      (when (and (runtime/turn-running? (:engine cs))
+                 (not= :working (:kind @(:status-current cs))))
+        (status/activate-working-indicator! cs)))
+
+    :turn-end nil
+
+    :agent-before-settle nil
+
+    :agent-settled nil
+
+    :status
+    ;; Pi: agent status changes keep the footer/status
+    ;; layer in sync via the :status event (update-footer!'s invalidate
+    ;; schedules the frame)
+    (when-let [cs @cs-ref]
+      (state/update-footer! cs))
+
+    :queue-update
+    ;; Queued steering/follow-up messages changed (pi:
+    ;; queue_update → updatePendingMessagesDisplay; the tracked-atom
+    ;; swap schedules the frame)
+    (when-let [cs @cs-ref]
+      (status/update-pending-messages! cs))
+
+    :loop-guard
+    ;; Repeat-loop guard tripped (kmet-specific): show a warning line in
+    ;; the transcript — the run has already settled (the final text
+    ;; carries the explanation)
+    (do
+      (chat-history/chat-history-add-message!
+       chat-history
+       {:role :warning
+        :content (or (:details evt) "Stopped: repeat-loop guard tripped")})
+      (tui/tui-request-render tui))))
+
+(defn- on-retry
+  "Auto-retry and summarization-retry events: the retry indicator's lifecycle
+   and the error line each failed attempt leaves in the transcript."
+  [{:keys [chat-history tui cs-ref]} evt]
+  (case (:type evt)
+    :auto-retry-start
+    ;; Show the retry countdown; the failed attempt's partial
+    ;; text stays visible (pi: auto_retry_start only swaps in a
+    ;; RetryStatusIndicator — the errored block remains in the
+    ;; chat and the retried stream opens a fresh message below it)
+    ;; (the :status-current swap schedules its own frame)
+    ;;
+    ;; The reason is recorded here, not at :message-end: this event
+    ;; fires only when a retry actually follows, so a terminal failure
+    ;; still reports exactly once through on-agent-error. Without it a
+    ;; stalled attempt leaves nothing behind — the retried stream opens
+    ;; a fresh message below it — and an unattended hang is
+    ;; indistinguishable from slow work.
+    (do
+      (when-let [err (:error-message evt)]
+        (chat-history/show-error! chat-history err))
+      (when-let [cs @cs-ref]
+        (status/show-status-indicator!
+         cs :retry
+         (status-indicator/make-retry-status-indicator
+          (:attempt evt) (:max-attempts evt) (:delay-ms evt)
+          :cancel-hint (status/fmt-key-display
+                        (app-kb/key-text "app.interrupt")))))
+      (tui/tui-request-render tui))
+
+    :auto-retry-end
+    ;; Retry finished (pi: auto_retry_end →
+    ;; clearStatusIndicator("retry")). Kind-gated: when
+    ;; the retried call already started (turn-start
+    ;; revived the working indicator) this no-ops and
+    ;; the working spinner keeps spinning.) The kind-gated nil-swap
+    ;; schedules its own frame.
+    (when-let [cs @cs-ref]
+      (status/clear-status-indicator! cs :retry))
+
+    :summarization-retry-scheduled
+    ;; A summarization call failed transiently (pi:
+    ;; summarization_retry_scheduled → showError + RetryStatusIndicator);
+    ;; the error is surfaced once, before the countdown
+    (do
+      (when-let [err (:error-message evt)]
+        (chat-history/show-error! chat-history err))
+      (when-let [cs @cs-ref]
+        (status/show-status-indicator!
+         cs :retry
+         (status-indicator/make-retry-status-indicator
+          (:attempt evt) (:max-attempts evt) (:delay-ms evt)
+          :cancel-hint
+          (status/fmt-key-display (app-kb/key-text "app.interrupt")))))
+      (tui/tui-request-render tui))
+
+    :summarization-retry-attempt-start
+    ;; The retried summarization starts (pi:
+    ;; clearStatusIndicator("retry") → the compaction or branch-summary
+    ;; indicator again, matching the call that is running)
+    (do (when-let [cs @cs-ref]
+          (status/clear-status-indicator! cs :retry)
+          (if (= :branch-summary (:source evt))
+            (status/show-status-indicator!
+             cs :branch-summary
+             (status-indicator/make-branch-summary-status-indicator))
+            (status/show-status-indicator!
+             cs :compaction
+             (status-indicator/make-compaction-status-indicator
+              :message (turn/compaction-status-message (:reason evt))))))
+        (tui/tui-request-render tui))
+
+    :summarization-retry-finished
+    ;; Retry loop over (pi: summarization_retry_finished →
+    ;; clearStatusIndicator("retry"))
+    (when-let [cs @cs-ref]
+      (status/clear-status-indicator! cs :retry))))
+
+(defn- rebuild-transcript!
+  "Rebuild the chat history to mirror a replaced context (pi:
+   context_replaced). Custom messages honor the display flag — hidden ones
+   stay in the LLM context only — and a registered message renderer
+   overrides the labeled info box; a compaction / branch-summary message is
+   followed by its billing notice (pi: addCompactionCostNotice)."
+  [chat-history cs-ref evt]
+  (chat-history/chat-history-rebuild!
+   chat-history
+   (mapcat (fn [m]
+             (let [m (if (and (= :custom (:role m)) (:display m))
+                       (if-let [rendered (session-admin/run-message-renderer
+                                          (extensions/get-message-renderer
+                                           (:custom-type m)) m)]
+                         (session-admin/renderer-result->message rendered)
+                         (assoc m :role :info
+                                :content (session-admin/custom-message-text m)
+                                :images (image-block/content-images (:content m))
+                                :label (:custom-type m)))
+                       m)]
+               (if-let [notice (session-admin/compaction-cost-notice (:config @cs-ref)
+                                                                     (:role m) (:usage m))]
+                 [m notice]
+                 [m])))
+           (remove #(and (= :custom (:role %))
+                         (not (:display %)))
+                   (:messages evt)))))
+
+(defn- on-compaction
+  "Compaction events: the terminal progress flag, the compaction indicator,
+   the rebuilt transcript after a context replacement, and the queued-message
+   flush a finished compaction unblocks."
+  [{:keys [chat-history tui cs-ref]} evt]
+  (case (:type evt)
+    :compaction-start
+    ;; Session compaction in progress (pi:
+    ;; compaction_start → CompactionStatusIndicator + terminal progress);
+    ;; the hint is truthful — escape aborts it
+    (do (when-let [cs @cs-ref]
+          (turn/set-terminal-progress! cs true)
+          (status/show-status-indicator!
+           cs :compaction
+           (status-indicator/make-compaction-status-indicator
+            :message (turn/compaction-status-message
+                      (:reason evt)))))
+        (tui/tui-request-render tui))
+
+    :compaction-end
+    ;; Compaction done — restore the idle status (pi:
+    ;; compaction_end → clearStatusIndicator). For the
+    ;; manual path the /compact future skips its reply
+    ;; on abort, so the status is the only feedback;
+    ;; an in-loop abort is already reported by the
+    ;; full turn cancel ("(cancelled)") — no double
+    ;; report.
+    (do (when-let [cs @cs-ref]
+          (turn/set-terminal-progress! cs false)
+          (status/clear-status-indicator! cs :compaction)
+          (when (:aborted evt)
+            ;; pi: compaction_end aborted — manual: error line; auto:
+            ;; dim status
+            (if (= :manual (:reason evt))
+              (chat-history/chat-history-show-status!
+               chat-history "Compaction cancelled")
+              (chat-history/chat-history-show-status!
+               chat-history "Auto-compaction cancelled")))
+          ;; pi: compaction_end errorMessage — a failed summarization is
+          ;; surfaced BEFORE the queue flush (manual: error line; auto:
+          ;; dim status), so the error precedes any run the flush starts.
+          (when-let [err (:error-message evt)]
+            (if (= :manual (:reason evt))
+              (chat-history/chat-history-add-message!
+               chat-history {:role :error :content err})
+              (chat-history/chat-history-show-status! chat-history err)))
+          ;; pi: compaction_end → flushCompactionQueue — messages queued
+          ;; during compaction are delivered now (queued into the retrying
+          ;; turn when will-retry, else the first prompts a fresh run).
+          (turn/flush-compaction-queue! cs (:will-retry evt)))
+        (tui/tui-request-render tui))
+
+    :context-replaced
+    ;; Rebuild the chat history to mirror the replaced context (see
+    ;; rebuild-transcript!)
+    (do (rebuild-transcript! chat-history cs-ref evt)
+        (tui/tui-request-render tui))
+
+    :session-compact nil
+
+    :session-compact-failed nil
+
+    :session-before-compact nil))
+
+(defn- on-model-change
+  "The runtime owns model and thinking switching (extension set-model,
+   cycling, compaction overrides); the footer and the editor border follow
+   the event — :thinking-level-select carries the new level, :model-select
+   reads the thinking the switch left in place. /model and the selector sync
+   on their own path too — sync-footer-model! is idempotent."
+  [{:keys [cs-ref]} evt]
+  (case (:type evt)
+    (:model-select :thinking-level-select)
+    (when-let [cs @cs-ref]
+      (state/update-editor-border-color!
+       cs (or (:level evt) (runtime/thinking-level (:engine cs))))
+      (sync-footer-model! cs))))
+
 (defn- make-agent-event-handler
   "Build the agent-loop :on-event callback for the interactive UI: routes
    lifecycle events to the chat history, pending-messages display, footer,
@@ -91,307 +493,39 @@
                             get their own component; end events correlate by
                             id and remove the entry, so every component's
                             elapsed ticker is cleared by its own end).
-   Extracted from build-layout so the contract that every vocabulary event
-   is consumed is testable (kmet.agent.modes.test-interactive)."
-  [{:keys [chat-history tui cs-ref pending-tool-comps]}]
+   The case is the routing table, one branch per event family (see the
+   on-* fns above); its trailing nil is the safe default for events outside
+   the loop vocabulary. A vocabulary event with no branch here throws — that
+   is the point: the exception is swallowed by the run future and would
+   leave the UI stuck on \"Working\" forever, so
+   kmet.agent.modes.test-interactive walks every loop event type through
+   this handler."
+  [deps]
   (fn [evt]
     (case (:type evt)
-      :tool-execution-start
-      ;; Pi: create pending component once, update in place.
-      ;; The streaming placeholder finalizes here (the tool box lands after
-      ;; it) — mark the message as tool-call-bearing FIRST so a tool-call-only
-      ;; assistant message stays invisible instead of bubbling '(no response)'
-      ;; (pi: hasToolCalls; loop-continue turns are usually tool-call-only).
-      (let [msg {:role :tool
-                 :tool-name (:tool-name evt)
-                 :arguments (:args evt {})
-                 :content ""
-                 :is-error false}]
-        (chat-history/chat-history-mark-streaming-tool-calls! chat-history)
-        (chat-history/chat-history-finalize-streaming! chat-history)
-        (let [comp (chat-history/chat-history-add-message! chat-history msg)]
-          ;; Store tool call ID for correlation
-          (reset! (:tool-call-id-atom comp) (:tool-call-id evt))
-          ;; Args are complete when received (kmet: no streaming args)
-          (tool-execution/tool-execution-set-args-complete! comp)
-          ;; Mark execution started so pending bg + timer activate now
-          (tool-execution/tool-execution-mark-execution-started! comp)
-          ;; Pi: pendingTools.set(toolCallId, component) — parallel tool
-          ;; calls each own a component; updates/ends correlate by id
-          (swap! pending-tool-comps assoc (:tool-call-id evt) comp))
-        ;; mount poke stays: the new message lands in the untracked
-        ;; messages-atom, so no watch exists for it yet
-        (tui/tui-request-render tui))
-      :tool-execution-update
-      ;; Pi: live partial content from streaming tools (bash). For a
-      ;; :status tool the elapsed counter ticks via the tool component's own
-      ;; 1s ticker (pi: setInterval → context.invalidate), so a silent
-      ;; long-running tool still updates Elapsed steadily — this event
-      ;; only pushes the new output chunks.
-      ;; No manual render request: set-content! swaps a track!-watched
-      ;; atom, which schedules the frame itself (§3.4).
-      (when-let [comp (get @pending-tool-comps (:tool-call-id evt))]
-        (when-let [content (:content evt)]
-          (reset! (:content-atom comp) content)
-          ;; A newly-created component has no watch until its first render.
-          ;; Keep the normal reactive path after that, but cover an update
-          ;; racing the mount frame as well.
-          (when (nil? @(:cache-atom comp))
-            (tui/tui-request-render tui))))
-      :tool-execution-end
-      ;; Pi: update the component by id and remove it from pendingTools.
-      ;; The explicit request covers a tool that finishes before its first
-      ;; frame, when no track! watch exists yet to schedule completion.
-      (when-let [comp (get @pending-tool-comps (:tool-call-id evt))]
-        (let [result (:result evt)]
-          (reset! (:content-atom comp) (:content result))
-          (tool-execution/tool-execution-set-error! comp (:is-error result false))
-          (when-let [truncation (:truncation result)]
-            (reset! (:truncation-atom comp) truncation))
-          (when-let [details (:details result)]
-            (reset! (:details-atom comp) details))
-          (when-let [images (:images result)]
-            (tool-execution/tool-execution-set-images! comp images))
-          (swap! pending-tool-comps dissoc (:tool-call-id evt))
-          (tui/tui-request-render tui)))
-      :status
-      ;; Pi: agent status changes keep the footer/status
-      ;; layer in sync via the :status event (update-footer!'s invalidate
-      ;; schedules the frame)
-      (when-let [cs @cs-ref]
-        (state/update-footer! cs))
-      :loop-guard
-      ;; Repeat-loop guard tripped (kmet-specific): show a warning line in
-      ;; the transcript — the run has already settled (the final text
-      ;; carries the explanation)
-      (do
-        (chat-history/chat-history-add-message!
-         chat-history
-         {:role :warning
-          :content (or (:details evt) "Stopped: repeat-loop guard tripped")})
-        (tui/tui-request-render tui))
-      :agent-end
-      ;; Pi: maybeShowCacheMissNotice — a significant
-      ;; prompt-cache miss on the completed turn (only
-      ;; when the run actually produced an assistant
-      ;; message — a failed run must not re-show the
-      ;; previous turn's miss)
-      (do (when-let [cs @cs-ref]
-            (turn/set-terminal-progress! cs false)
-            (maybe-show-cache-miss-notice! cs (:messages evt)))
-          (tui/tui-request-render tui))
-      :queue-update
-      ;; Queued steering/follow-up messages changed (pi:
-      ;; queue_update → updatePendingMessagesDisplay; the tracked-atom
-      ;; swap schedules the frame)
-      (when-let [cs @cs-ref]
-        (status/update-pending-messages! cs))
-      :turn-start
-      ;; A new LLM call is starting. After a retry backoff
-      ;; or compaction the status container holds a
-      ;; transient indicator (or the stopped working
-      ;; indicator); revive the working spinner so the
-      ;; call streams under "Working" (pi: the session
-      ;; emits a fresh agent_start after retry/compaction
-      ;; via agent.continue(), re-showing the
-      ;; WorkingStatusIndicator — kmet's loop recurs
-      ;; in-turn, so turn-start is the equivalent signal).
-      ;; The guarded nil-swap inside activate-working-indicator!
-      ;; schedules the frame when a real change happens.
-      (when-let [cs @cs-ref]
-        (when (and (runtime/turn-running? (:engine cs))
-                   (not= :working (:kind @(:status-current cs))))
-          (status/activate-working-indicator! cs)))
-      :auto-retry-start
-      ;; Show the retry countdown; the failed attempt's partial
-      ;; text stays visible (pi: auto_retry_start only swaps in a
-      ;; RetryStatusIndicator — the errored block remains in the
-      ;; chat and the retried stream opens a fresh message below it)
-      ;; (the :status-current swap schedules its own frame)
-      ;;
-      ;; The reason is recorded here, not at :message-end: this event
-      ;; fires only when a retry actually follows, so a terminal failure
-      ;; still reports exactly once through on-agent-error. Without it a
-      ;; stalled attempt leaves nothing behind — the retried stream opens
-      ;; a fresh message below it — and an unattended hang is
-      ;; indistinguishable from slow work.
-      (do
-        (when-let [err (:error-message evt)]
-          (chat-history/show-error! chat-history err))
-        (when-let [cs @cs-ref]
-          (status/show-status-indicator!
-           cs :retry
-           (status-indicator/make-retry-status-indicator
-            (:attempt evt) (:max-attempts evt) (:delay-ms evt)
-            :cancel-hint (status/fmt-key-display
-                          (app-kb/key-text "app.interrupt")))))
-        (tui/tui-request-render tui))
-      :auto-retry-end
-      ;; Retry finished (pi: auto_retry_end →
-      ;; clearStatusIndicator("retry")). Kind-gated: when
-      ;; the retried call already started (turn-start
-      ;; revived the working indicator) this no-ops and
-      ;; the working spinner keeps spinning.) The kind-gated nil-swap
-      ;; schedules its own frame.
-      (when-let [cs @cs-ref]
-        (status/clear-status-indicator! cs :retry))
-      :summarization-retry-scheduled
-      ;; A summarization call failed transiently (pi:
-      ;; summarization_retry_scheduled → showError + RetryStatusIndicator);
-      ;; the error is surfaced once, before the countdown
-      (do
-        (when-let [err (:error-message evt)]
-          (chat-history/show-error! chat-history err))
-        (when-let [cs @cs-ref]
-          (status/show-status-indicator!
-           cs :retry
-           (status-indicator/make-retry-status-indicator
-            (:attempt evt) (:max-attempts evt) (:delay-ms evt)
-            :cancel-hint
-            (status/fmt-key-display (app-kb/key-text "app.interrupt")))))
-        (tui/tui-request-render tui))
-      :summarization-retry-attempt-start
-      ;; The retried summarization starts (pi:
-      ;; clearStatusIndicator("retry") → the compaction or branch-summary
-      ;; indicator again, matching the call that is running)
-      (do (when-let [cs @cs-ref]
-            (status/clear-status-indicator! cs :retry)
-            (if (= :branch-summary (:source evt))
-              (status/show-status-indicator!
-               cs :branch-summary
-               (status-indicator/make-branch-summary-status-indicator))
-              (status/show-status-indicator!
-               cs :compaction
-               (status-indicator/make-compaction-status-indicator
-                :message (turn/compaction-status-message (:reason evt))))))
-          (tui/tui-request-render tui))
-      :summarization-retry-finished
-      ;; Retry loop over (pi: summarization_retry_finished →
-      ;; clearStatusIndicator("retry"))
-      (when-let [cs @cs-ref]
-        (status/clear-status-indicator! cs :retry))
-      :compaction-start
-      ;; Session compaction in progress (pi:
-      ;; compaction_start → CompactionStatusIndicator + terminal progress);
-      ;; the hint is truthful — escape aborts it
-      (do (when-let [cs @cs-ref]
-            (turn/set-terminal-progress! cs true)
-            (status/show-status-indicator!
-             cs :compaction
-             (status-indicator/make-compaction-status-indicator
-              :message (turn/compaction-status-message
-                        (:reason evt)))))
-          (tui/tui-request-render tui))
-      :compaction-end
-      ;; Compaction done — restore the idle status (pi:
-      ;; compaction_end → clearStatusIndicator). For the
-      ;; manual path the /compact future skips its reply
-      ;; on abort, so the status is the only feedback;
-      ;; an in-loop abort is already reported by the
-      ;; full turn cancel ("(cancelled)") — no double
-      ;; report.
-      (do (when-let [cs @cs-ref]
-            (turn/set-terminal-progress! cs false)
-            (status/clear-status-indicator! cs :compaction)
-            (when (:aborted evt)
-              ;; pi: compaction_end aborted — manual: error line; auto:
-              ;; dim status
-              (if (= :manual (:reason evt))
-                (chat-history/chat-history-show-status!
-                 chat-history "Compaction cancelled")
-                (chat-history/chat-history-show-status!
-                 chat-history "Auto-compaction cancelled")))
-            ;; pi: compaction_end errorMessage — a failed summarization is
-            ;; surfaced BEFORE the queue flush (manual: error line; auto:
-            ;; dim status), so the error precedes any run the flush starts.
-            (when-let [err (:error-message evt)]
-              (if (= :manual (:reason evt))
-                (chat-history/chat-history-add-message!
-                 chat-history {:role :error :content err})
-                (chat-history/chat-history-show-status! chat-history err)))
-            ;; pi: compaction_end → flushCompactionQueue — messages queued
-            ;; during compaction are delivered now (queued into the retrying
-            ;; turn when will-retry, else the first prompts a fresh run).
-            (turn/flush-compaction-queue! cs (:will-retry evt)))
-          (tui/tui-request-render tui))
-      :context-replaced
-      ;; Rebuild the chat history to mirror the replaced
-      ;; context; custom messages honor the display flag
-      ;; (pi: display controls TUI rendering — hidden
-      ;; ones stay in the LLM context only)
-      (do (chat-history/chat-history-rebuild!
-           chat-history
-           (mapcat (fn [m]
-                     (let [m (if (and (= :custom (:role m)) (:display m))
-                               (if-let [rendered (session-admin/run-message-renderer
-                                                  (extensions/get-message-renderer
-                                                   (:custom-type m)) m)]
-                                 (session-admin/renderer-result->message rendered)
-                                 (assoc m :role :info
-                                        :content (session-admin/custom-message-text m)
-                                        :images (image-block/content-images (:content m))
-                                        :label (:custom-type m)))
-                               m)]
-                       ;; pi: addCompactionCostNotice — the billing line
-                       ;; follows its summary message
-                       (if-let [notice (session-admin/compaction-cost-notice (:config @cs-ref)
-                                                                             (:role m) (:usage m))]
-                         [m notice]
-                         [m])))
-                   (remove #(and (= :custom (:role %))
-                                 (not (:display %)))
-                           (:messages evt))))
-          (tui/tui-request-render tui))
-      :message-start
-      ;; Pi: message_start → user messages (the initial
-      ;; prompt and consumed steering/follow-up messages)
-      ;; land in the chat here; assistant message starts
-      ;; finalize the previous turn's streaming placeholder
-      ;; and open a fresh one, so a follow-up continuation
-      ;; never merges into the prior response; before-
-      ;; agent-start injected messages (role :info) display
-      ;; as labeled info boxes above the response. Content
-      ;; is normalized from text blocks to a string for
-      ;; the info box.
-      (case (:role (:message evt))
-        :user (do (chat-history/chat-history-add-message! chat-history (:message evt))
-                  (when-let [cs @cs-ref]
-                    (status/update-pending-messages! cs))
-                  (tui/tui-request-render tui))
-        :assistant (do (chat-history/chat-history-finalize-streaming! chat-history)
-                       (chat-history/chat-history-finalize-thinking! chat-history)
-                       (chat-history/chat-history-start-streaming! chat-history)
-                       (tui/tui-request-render tui))
-        :info (let [m (:message evt)
-                    text (if (string? (:content m))
-                           (:content m)
-                           (str/join
-                            (for [b (:content m)
-                                  :when (= :text (:type b))]
-                              (:text b))))]
-                (chat-history/chat-history-insert-before-streaming! chat-history
-                                                                    (assoc m
-                                                                           :content text
-                                                                           :images (image-block/content-images (:content m))))
-                (tui/tui-request-render tui))
-                            ;; extension custom messages (pi: custom messages
-                            ;; render when display=true — a registered message
-                            ;; renderer overrides the labeled info box; same
-                            ;; rule as the session-restore path)
-        :custom (do (when (:display (:message evt))
-                      (let [m (:message evt)]
-                        (chat-history/chat-history-insert-before-streaming!
-                         chat-history
-                         (if-let [rendered (session-admin/run-message-renderer
-                                            (extensions/get-message-renderer
-                                             (:custom-type m)) m)]
-                           (session-admin/renderer-result->message rendered)
-                           (assoc m :role :info
-                                  :content (session-admin/custom-message-text m)
-                                  :images (image-block/content-images (:content m))
-                                  :label (:custom-type m))))))
-                    (tui/tui-request-render tui))
-        nil)
+      (:tool-execution-start :tool-execution-update :tool-execution-end)
+      (on-tool-execution deps evt)
+
+      (:message-start :message-update :message-end)
+      (on-message deps evt)
+
+      (:agent-start :agent-end :turn-start :turn-end :agent-before-settle
+                    :agent-settled :status :queue-update :loop-guard)
+      (on-run-lifecycle deps evt)
+
+      (:auto-retry-start :auto-retry-end :summarization-retry-scheduled
+                         :summarization-retry-attempt-start :summarization-retry-finished)
+      (on-retry deps evt)
+
+      (:compaction-start :compaction-end :context-replaced :session-compact
+                         :session-compact-failed :session-before-compact)
+      (on-compaction deps evt)
+
+      (:model-select :thinking-level-select)
+      (on-model-change deps evt)
+
+      :error nil
+
       ;; Remaining vocabulary events need no UI action in
       ;; kmet's architecture: streaming text/thinking
       ;; arrives via the on-text/on-thinking callbacks,
@@ -402,53 +536,6 @@
       ;; case with no matching clause throws, and the
       ;; exception is swallowed by the run future, leaving
       ;; the UI stuck on "Working" forever.
-
-      :agent-start
-      ;; Pi: agent_start → setProgress(true) (showTerminalProgress gated).
-      ;; A run the runtime started on its own (a submit! or the compaction-
-      ;; queue flush) has no start-agent-run! presentation pass: bring the
-      ;; spinner and the animation up like any other start. The anim timer
-      ;; is nil exactly while no presentation is up, so this is idempotent
-      ;; across an explicit start's :agent-start and across retry attempts.
-      (when-let [cs @cs-ref]
-        (turn/set-terminal-progress! cs true)
-        (when (and (runtime/turn-running? (:engine cs))
-                   (nil? @(:anim-timer cs)))
-          (status/start-anim-timer! cs)
-          (when-not (= :working (:kind @(:status-current cs)))
-            (status/activate-working-indicator! cs))
-          (state/update-footer! cs)))
-      :message-update nil
-      :message-end
-      ;; A failed attempt finalizes empty when the stream delivered
-      ;; nothing before the deadline: drop that placeholder instead of
-      ;; letting it settle into a bare "(no response)" bubble. Any
-      ;; partial text/thinking stays (record-abandoned-attempt! kept
-      ;; it), and the reason surfaces once per attempt with the retry
-      ;; line — or, for a terminal failure, through on-agent-error.
-      (when (and (:error-message (:message evt))
-                 (chat-history/chat-history-streaming-empty? chat-history))
-        (chat-history/chat-history-remove-streaming-placeholder! chat-history)
-        (tui/tui-request-render tui))
-      :turn-end nil
-      :agent-before-settle nil
-      :agent-settled nil
-      :session-compact-failed nil
-      :session-compact nil
-      :session-before-compact nil
-      :error nil
-      (:model-select :thinking-level-select)
-      ;; The runtime owns model and thinking switching (extension set-model,
-      ;; cycling, compaction overrides); the footer and the editor border
-      ;; follow the event — :thinking-level-select carries the new level,
-      ;; :model-select reads the thinking the switch left in place. /model
-      ;; and the selector sync on their own path too — sync-footer-model!
-      ;; is idempotent.
-      (when-let [cs @cs-ref]
-        (state/update-editor-border-color!
-         cs (or (:level evt) (runtime/thinking-level (:engine cs))))
-        (sync-footer-model! cs))
-      ;; Trailing default expression (SCI's case rejects the :default keyword)
       nil)))
 
 (defn- make-editor-submit-handler

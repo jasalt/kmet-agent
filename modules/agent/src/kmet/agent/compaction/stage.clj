@@ -385,6 +385,126 @@
     succeeded? true
     :else result))
 
+(defn- prepare-compaction
+  "Gather the compaction plan for REASON (pi: prepareCompaction): the branch
+   entries, the settings, and the prepared cut. Returns nil when there is
+   nothing to compact, {:problem msg} for pi's manual already-compacted case,
+   and {:entries es :prep p} when there is something to summarize."
+  [agent reason]
+  (let [sess (:session agent)
+        entries (session/get-branch sess)
+        settings (compaction-settings agent)
+        prep (some-> (core/prepare entries (:keep-recent-tokens settings))
+                     (assoc :settings settings))]
+    (if (or (nil? prep) (empty? (:messages prep)))
+      ;; pi: compact() separates an already-compacted session from one with
+      ;; nothing to summarize
+      (when (and (= :manual reason)
+                 (= :compaction (:role (last entries))))
+        {:problem "Already compacted"})
+      {:entries entries :prep prep})))
+
+(defn- ask-before-compact!
+  "Fire the :session-before-compact boundary (pi: session_before_compact):
+   extensions may cancel the compaction or supply its content.
+   Returns {:cancelled true}, else {:supplied <the handler's :compaction map,
+   or nil>}."
+  [agent reason custom-instructions entries prep]
+  (let [before (state/emit agent {:type :session-before-compact
+                                  :preparation prep
+                                  :branch-entries entries
+                                  :custom-instructions custom-instructions
+                                  :reason reason
+                                  :will-retry (= reason :overflow)
+                                  :signal (:compaction-signal agent)})]
+    (if (:cancel before)
+      {:cancelled true}
+      {:supplied (:compaction before)})))
+
+(defn- extension-summary
+  "The summary a :session-before-compact handler supplied, in summarize!'s
+   shape; nil when it carries neither a summary nor a cut point (pi: the
+   handler must supply both to replace the summarizer)."
+  [supplied]
+  (when (and supplied
+             (or (:summary supplied)
+                 (:first-kept-id supplied)))
+    {:summary (str (:summary supplied))
+     :first-kept-id (:first-kept-id supplied)
+     :tokens-before (:tokens-before supplied)
+     :usage (:usage supplied)
+     :details (:details supplied)}))
+
+(defn- apply-summary!
+  "Apply SUMMARY-RESULT to SESS: :aborted when a signal fired, :failed
+   (recording why in FAILURE) when the summarizer failed or the cut entry
+   vanished from the branch, else the compaction result map."
+  [agent sess prep summary-result failure from-extension]
+  (cond
+    (compaction-aborted? agent)
+    :aborted
+
+    (:error summary-result)
+    (do (debug/log "Warning: summarization failed; compaction skipped")
+        (vreset! failure (:error summary-result))
+        :failed)
+
+    :else
+    (if-let [compacted
+             (record-compaction!
+              agent sess summary-result
+              (or (:first-kept-id summary-result)
+                  (:first-kept-id prep))
+              (or (:tokens-before summary-result)
+                  (:tokens-before prep))
+              @from-extension)]
+      compacted
+      ;; the first-kept entry vanished from the branch — nothing was
+      ;; appended, so this is a failure, not a silent no-op
+      (do (debug/log
+           "Warning: compaction target entry not found; compaction skipped")
+          (vreset! failure
+                   "the first kept entry is no longer in the session")
+          :failed))))
+
+(defn- compact-with-session!
+  "The compaction body (pi: prepareCompaction → session_before_compact →
+   summarize → appendCompaction) for SESS. Returns the compaction result map,
+   false when there is nothing to compact, :failed, :aborted, or ::cancelled
+   when a handler cancelled. FAILURE and FROM-EXTENSION are the caller's
+   reporting volatiles — they outlive this body, since the caller's catch
+   reports into FAILURE too."
+  [agent sess reason custom-instructions failure from-extension]
+  (if (compaction-aborted? agent)
+    :aborted
+    (if-let [{:keys [entries prep problem]} (prepare-compaction agent reason)]
+      (if problem
+        (do (vreset! failure problem) :failed)
+        (let [{:keys [cancelled supplied]}
+              (ask-before-compact! agent reason custom-instructions entries prep)]
+          (if cancelled
+            ::cancelled
+            (let [supplied-summary (extension-summary supplied)
+                  summary-result
+                  (if supplied-summary
+                    (do (vreset! from-extension true)
+                        supplied-summary)
+                    (summarize! agent prep custom-instructions reason))]
+              (apply-summary! agent sess prep summary-result failure
+                              from-extension)))))
+      false)))
+
+(defn- compaction-outcome
+  "The reporting view of RESULT for finish-compaction!: what status to report
+   (:succeeded? / :aborted? / :failed?) and the failure message."
+  [reason result failure]
+  (let [failed? (= result :failed)]
+    {:succeeded? (map? result)
+     :aborted? (or (= result :aborted) (= result ::cancelled))
+     :failed? failed?
+     :error-message (when failed?
+                      (core/compaction-failure-message reason failure))}))
+
 (defn compact-context!
   "LLM-based compaction (pi: prepareCompaction → compact): summarize the
    pre-cut entries, append a compaction entry (append-only — summarized
@@ -446,7 +566,6 @@
         (state/emit agent {:type :compaction-start :reason reason})
         (let [failure (volatile! nil)
               from-extension (volatile! false)
-              result
               ;; pi: compact() / _runAutoCompaction's catch — an unexpected
               ;; error still ends the compaction (compaction_end +
               ;; session_compact_failed) instead of escaping: the caller's
@@ -455,78 +574,11 @@
               ;; an aborted compaction (pi: aborted = signal.aborted);
               ;; otherwise its message rides the reason-prefixed failure
               ;; report.
+              result
               (try
                 (if-let [sess (:session agent)]
-                  (if (compaction-aborted? agent)
-                    :aborted
-                    (let [entries (session/get-branch sess)
-                          settings (compaction-settings agent)
-                          prep (some-> (core/prepare entries (:keep-recent-tokens settings))
-                                       (assoc :settings settings))]
-                      (if (or (nil? prep) (empty? (:messages prep)))
-                        ;; pi: compact() separates an already-compacted session
-                        ;; from one with nothing to summarize
-                        (if (and (= :manual reason)
-                                 (= :compaction (:role (last entries))))
-                          (do (vreset! failure "Already compacted")
-                              :failed)
-                          false)
-                        ;; pi: session_before_compact — extensions may cancel
-                        ;; the compaction, or supply its content
-                        ;; ({:compaction {:summary .. :first-kept-id ..
-                        ;; :tokens-before .. :usage .. :details ..}}, used
-                        ;; instead of the summarizer); a cancel still fires
-                        ;; compaction_start/compaction_end, the end carrying
-                        ;; :aborted true (pi parity)
-                        (let [before (state/emit agent {:type :session-before-compact
-                                                        :preparation prep
-                                                        :branch-entries entries
-                                                        :custom-instructions custom-instructions
-                                                        :reason reason
-                                                        :will-retry (= reason :overflow)
-                                                        :signal (:compaction-signal agent)})]
-                          (if (:cancel before)
-                            ::cancelled
-                            (let [supplied (:compaction before)
-                                  supplied? (boolean (and supplied
-                                                          (or (:summary supplied)
-                                                              (:first-kept-id supplied))))
-                                  summary-result
-                                  (if supplied?
-                                    (do (vreset! from-extension true)
-                                        {:summary (str (:summary supplied))
-                                         :first-kept-id (:first-kept-id supplied)
-                                         :tokens-before (:tokens-before supplied)
-                                         :usage (:usage supplied)
-                                         :details (:details supplied)})
-                                    (summarize! agent prep custom-instructions reason))]
-                              (cond
-                                (compaction-aborted? agent)
-                                :aborted
-
-                                (:error summary-result)
-                                (do (debug/log "Warning: summarization failed; compaction skipped")
-                                    (vreset! failure (:error summary-result))
-                                    :failed)
-
-                                :else
-                                (if-let [compacted
-                                         (record-compaction!
-                                          agent sess summary-result
-                                          (or (:first-kept-id summary-result)
-                                              (:first-kept-id prep))
-                                          (or (:tokens-before summary-result)
-                                              (:tokens-before prep))
-                                          @from-extension)]
-                                  compacted
-                                  ;; the first-kept entry vanished from the
-                                  ;; branch — nothing was appended, so this is a
-                                  ;; failure, not a silent no-op
-                                  (do (debug/log
-                                       "Warning: compaction target entry not found; compaction skipped")
-                                      (vreset! failure
-                                               "the first kept entry is no longer in the session")
-                                      :failed)))))))))
+                  (compact-with-session! agent sess reason custom-instructions
+                                         failure from-extension)
                   false)
                 (catch Exception e
                   (debug/log-error "compaction failed unexpectedly: " e)
@@ -534,12 +586,10 @@
                     (when-not aborted?
                       (vreset! failure (or (ex-message e) (str e))))
                     (if aborted? :aborted :failed))))
-              succeeded? (map? result)
-              aborted? (or (= result :aborted) (= result ::cancelled))
-              failed? (= result :failed)
-              error-message (when failed?
-                              (core/compaction-failure-message reason @failure))]
-          (finish-compaction! agent reason result @from-extension aborted? failed? succeeded? error-message))
+              {:keys [succeeded? aborted? failed? error-message]}
+              (compaction-outcome reason result @failure)]
+          (finish-compaction! agent reason result @from-extension
+                              aborted? failed? succeeded? error-message))
         (finally
           (reset! (:compacting? agent) false))))))
 

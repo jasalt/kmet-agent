@@ -4,58 +4,21 @@ Temporary note at the project root (the `loop-plan.md` convention). Work the
 items in order; each is a self-contained, revertible change. Delete this file
 when the list is empty.
 
-**Landed so far:** 1 docs/cleanup, 2 session source split, 5 compaction +
-bash-executor ownership, 6 Tk sample/theme-controller relocation, 7 test
-splits (`test_session`, `test_loop`, `test_extensions`, `test_interactive_ui`,
-`test_llm`), 9 thinking-level policy moved to `kmet.ai.models`, plus the
-naming pass (`project_context`, `app_runtime`, `interactive/builtins`,
-`packages_cli`, `kmet.extension`).
+**Landed so far:** 1 docs/cleanup, 2 session source split, 4 god functions
+(`make-agent-event-handler` → one handler per event family +
+`run-attempt!`, `compact-context!`, the settings row table, and
+`replay-branch!` decomposed), 5 compaction + bash-executor ownership, 6 Tk
+sample/theme-controller relocation, 7 test splits (`test_session`,
+`test_loop`, `test_extensions`, `test_interactive_ui`, `test_llm`), 9
+thinking-level policy moved to `kmet.ai.models`, plus the naming pass
+(`project_context`, `app_runtime`, `interactive/builtins`, `packages_cli`,
+`kmet.extension`).
 
 **Baseline before each item:** `bb check` compiles, `bb lint` 0/0,
 `bb test` = 3,915 tests / 22,645 assertions, `bb test-ext` green except the
 pre-existing network-dependent `test-llm-copilot-responses-end-to-end`.
 
 ---
-
-## 4. God functions (recommended next)
-
-One function each owns a whole behaviour, so every change re-reads a screen of
-code. Split by extracting named private fns with one responsibility; the
-dispatch shape and all callers stay. No behaviour change, tests untouched.
-
-| function | where | size | shape |
-|---|---|---|---|
-| `make-agent-event-handler` | `modes/interactive/layout.clj:80` (case at :97) | 373 lines, one `case`, cc 74 | one branch per event type, each mutating chat history / dock / status |
-| `run-attempt!` | `loop.clj:591` (to :826) | 235 lines | provider call + retry/backoff, outcome classification, settle/cleanup |
-| `compact-context!` | `compaction/stage.clj:388` (to :546) | 158 lines | trigger/prepare, summarize-with-retry, record/finish, event emission |
-| `show-settings`'s `on-change` | `ui/tui/settings_selector.clj:286` | ~110 lines, one `case` | one branch per settings row id |
-| `replay-branch!` | `modes/interactive/session_admin.clj:126` | replay/restore | message replay plus renderer/cursor restoration |
-
-Suggested decomposition:
-
-- **event handler** — a `dispatch` map `{event-type (fn [state evt] …)}` built
-  from 3–5 private handler groups (`tool-execution-*`, `message-*`,
-  `turn-*`, UI/status), keeping the `case` as the entry point so unknown
-  events still fall through. The existing "every vocabulary event is
-  consumed" test stays the contract.
-- **`run-attempt!`** — `call-provider` (request + streaming collect),
-  `classify-outcome` (success / overflow / retryable / fatal), `settle!`
-  (tool results, queue flush, compaction gate). `before-settle!` at :827 is
-  already the seam.
-- **`compact-context!`** — `prepare-compaction` (settings, trigger, prepare),
-  `summarize` (already `summarize!`; fold the retry wiring into it),
-  `apply-summary` (`record-compaction!` + `finish-compaction!` are the
-  pieces). The events (`:compaction-start`, `:session-compact`,
-  `:compaction-end`) stay in the orchestrator.
-- **settings `on-change`** — `(def ^:private row-handlers {:auto-compact …})`
-  looked up by row id; each handler takes `(engine cs value)`.
-- **`replay-branch!`** — replay messages, then restore tool results, then
-  cursor/selection; three private fns.
-
-Verify with `bb test-changed` plus the namespaces that pin the behaviour:
-`kmet.agent.modes.test-interactive`, `kmet.agent.loop.test-*`,
-`kmet.agent.test-compaction`, `kmet.agent.ui.tui.test-settings-selector` (if
-present), `kmet.agent.modes.interactive.test-commands`.
 
 ## 8. Extension documentation (medium)
 

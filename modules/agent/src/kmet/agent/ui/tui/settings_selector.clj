@@ -97,6 +97,218 @@
       :value (str (:image-width-cells @subs/image-settings-atom))
       :values ["60" "80" "120"]}]))
 
+(defn- display-row-handlers
+  "Settings rows that touch only the display stack: images, transcript
+   rendering, padding, and the hardware cursor."
+  [{:keys [cs engine]}]
+  {:show-images
+   (fn [value]
+     (let [on? (= value "true")]
+       (swap! subs/image-settings-atom assoc :show-images on?)
+       (cfg/save-setting! [:terminal :show-images] on?)))
+
+   :image-width-cells
+   (fn [value]
+     (let [w (parse-long value)]
+       (swap! subs/image-settings-atom assoc :image-width-cells w)
+       (cfg/save-setting! [:terminal :image-width-cells] w)))
+
+   :block-images
+   (fn [value]
+     (let [blocked? (= value "true")]
+       (runtime/set-block-images! engine blocked?)
+       (cfg/save-setting! [:images :block-images] blocked?)))
+
+   :skill-commands
+   ;; the autocomplete provider reads the setting live when it opens
+   ;; (pi: setupAutocompleteProvider on change)
+   (fn [value]
+     (cfg/set-enable-skill-commands! (= value "true")))
+
+   :clear-on-shrink
+   (fn [value]
+     (let [on? (= value "true")]
+       (tui/tui-set-clear-on-shrink! (:tui cs) on?)
+       (cfg/set-clear-on-shrink! on?)))
+
+   :terminal-progress
+   (fn [value]
+     (cfg/set-show-terminal-progress! (= value "true")))
+
+   :hide-thinking
+   (fn [value]
+     (let [hidden? (= value "on")]
+       (chat-history/chat-history-set-thinking-hidden!
+        (:chat-history cs) hidden?)
+       (cfg/set-hide-thinking-block! hidden?)))
+
+   :tool-display-mode
+   (fn [value]
+     (let [mode (keyword value)]
+       (chat-history/chat-history-set-tool-display-mode!
+        (:chat-history cs) mode)
+       (cfg/set-tool-display-mode! mode)
+       (when-let [hdr (:header-comp cs)]
+         (expandable-text/expandable-text-set-expanded!
+          hdr (= :expanded mode)))
+       (when-let [lr (:loaded-resources-comp cs)]
+         (loaded-resources/loaded-resources-set-expanded!
+          lr (= :expanded mode)))
+       (when (:tui cs)
+         (tui/tui-request-render (:tui cs) true))))
+
+   :editor-padding
+   (fn [value]
+     (set-editor-setting! cs #(protocols/editor-set-padding-x! % value))
+     (cfg/save-setting! [:editor-padding-x] value))
+
+   :output-padding
+   (fn [value]
+     (chat-history/chat-history-set-output-pad! (:chat-history cs) value)
+     (cfg/save-setting! [:output-pad] value))
+
+   :autocomplete-max-visible
+   (fn [value]
+     (set-editor-setting!
+      cs #(protocols/editor-set-autocomplete-max-visible! % value))
+     (cfg/save-setting! [:autocomplete-max-visible] value))
+
+   :show-hardware-cursor
+   (fn [value]
+     (let [on? (= value "true")]
+       (tui/tui-set-show-hardware-cursor! (:tui cs) on?)
+       (cfg/set-show-hardware-cursor! on?)))
+
+   ;; read live at emit time — no runtime state needed
+   :cache-miss-notices
+   (fn [value]
+     (cfg/save-setting! [:show-cache-miss-notices] (= value "true")))})
+
+(defn- agent-row-handlers
+  "Settings rows that change the agent runtime's live options."
+  [{:keys [cs engine]}]
+  {:auto-compact
+   (fn [value]
+     (let [on? (= value "true")]
+       (runtime/set-auto-compact! engine on?)
+       (cfg/save-setting! [:auto-compact] on?)
+       (when-let [f (:footer-comp cs)]
+         (footer/footer-set-auto-compact! f on?))))
+
+   :steering-mode
+   (fn [value]
+     (let [mode (keyword value)]
+       (runtime/set-steering-mode! engine mode)
+       (cfg/save-setting! [:steering-mode] mode)))
+
+   :follow-up-mode
+   (fn [value]
+     (let [mode (keyword value)]
+       (runtime/set-follow-up-mode! engine mode)
+       (cfg/save-setting! [:follow-up-mode] mode)))
+
+   :tree-filter-mode
+   (fn [value]
+     (cfg/save-setting! [:tree-filter-mode] (keyword value)))
+
+   :thinking
+   (fn [value]
+     (let [level (keyword value)]
+       (runtime/set-thinking-level! engine level)
+       (cfg/save-setting! [:thinking] level)
+       (model-selector/sync-footer-model! cs)))
+
+   :thinking-loop-guard-enabled
+   (fn [value]
+     (runtime/set-run-options! engine {:thinking-loop-guard-enabled (boolean value)})
+     (cfg/save-setting! [:thinking-loop-guard-enabled] (boolean value)))})
+
+(defn- http-row-handlers
+  "The HTTP transport rows: the timeouts and the transport mode."
+  [{:keys [engine]}]
+  {:http-idle-timeout
+   (fn [value]
+     (let [ms (:ms (some #(when (= value (:label %)) %)
+                         http-idle-timeout-choices))]
+       (runtime/set-http-idle-timeout-ms! engine ms)
+       (cfg/save-setting! [:http-idle-timeout-ms] ms)))
+
+   :http-total-timeout
+   (fn [value]
+     (let [ms (:ms (some #(when (= value (:label %)) %)
+                         http-total-timeout-choices))]
+       (runtime/set-http-total-timeout-ms! engine ms)
+       (cfg/save-setting! [:http-total-timeout-ms] ms)))
+
+   :http-transport
+   (fn [value]
+     (let [mode (keyword value)]
+       (http/set-transport! mode)
+       (cfg/save-setting! [:http-transport] mode)))})
+
+(defn- retry-row-handlers
+  "The retry and repeat-loop-guard rows: the panel's volatiles hold the
+   edited block, its saver applies and persists it."
+  [{:keys [retry-atom save-retry! lg-atom save-lg!]}]
+  {:auto-retry
+   (fn [value]
+     (swap! retry-atom assoc :enabled (boolean value))
+     (save-retry! [:retry :enabled] (boolean value)))
+
+   :max-retries
+   (fn [value]
+     (swap! retry-atom assoc :max-retries value)
+     (save-retry! [:retry :max-retries] value))
+
+   :base-delay-ms
+   (fn [value]
+     (swap! retry-atom assoc :base-delay-ms value)
+     (save-retry! [:retry :base-delay-ms] value))
+
+   :loop-guard-enabled
+   (fn [value]
+     (swap! lg-atom assoc :enabled (boolean value))
+     (save-lg! [:loop-guard :enabled] (boolean value)))
+
+   :loop-guard-threshold
+   (fn [value]
+     (swap! lg-atom assoc :threshold value)
+     (save-lg! [:loop-guard :threshold] value))})
+
+(defn- theme-row-handlers
+  "pi: onThemeChange — persist the setting (a name or the automatic
+   \"light/dark\" string) and apply it; auto settings enable color-scheme
+   sync."
+  [{:keys [cs]}]
+  {:theme
+   (fn [value]
+     (theme-ctrl/set-theme-setting! (:theme-controller cs) value)
+     (cfg/save-setting! [:theme] value))})
+
+(defn- row-handlers
+  "The settings panel's per-row change handlers (pi: SettingsSelector's
+   onChange): one entry per row id, each applying the value live and
+   persisting it. CTX carries the panel's runtime pieces — :engine, :cs, and
+   the retry / repeat-guard volatiles with their savers — so a handler never
+   reads the surrounding let. Built per panel, since the volatiles are."
+  [ctx]
+  (merge (display-row-handlers ctx)
+         (agent-row-handlers ctx)
+         (http-row-handlers ctx)
+         (retry-row-handlers ctx)
+         (theme-row-handlers ctx)))
+
+(defn- apply-row-change!
+  "Dispatch one settings row change to its handler. An unknown row id is a
+   programming error — the panel's items and the handler table derive from
+   the same row set — so it fails loudly instead of silently dropping the
+   change (the same IllegalArgumentException a `case` raises)."
+  [handlers id value]
+  (if-let [handler (get handlers id)]
+    (handler value)
+    (throw (IllegalArgumentException.
+            (str "no settings handler for row " id)))))
+
 (defn show-settings
   "Settings selector (pi: showSettingsSelector) — rows for every setting
    with a kmet backend; each change applies live and persists to the global
@@ -280,127 +492,16 @@
                                    (sort (keys (th/get-all-themes)))
                                    done
                                    :on-preview #(theme-ctrl/preview (:theme-controller cs) %)))}))
-        ;; pi: SettingsSelector's onChange — one branch per row id, each
-        ;; applying live and persisting (hoisted so the [:settings-list]
-        ;; element below stays readable)
-        on-change (fn [id value]
-                    (case id
-                      :auto-compact
-                      (let [on? (= value "true")]
-                        (runtime/set-auto-compact! engine on?)
-                        (cfg/save-setting! [:auto-compact] on?)
-                        (when-let [f (:footer-comp cs)]
-                          (footer/footer-set-auto-compact! f on?)))
-                      :show-images
-                      (let [on? (= value "true")]
-                        (swap! subs/image-settings-atom assoc :show-images on?)
-                        (cfg/save-setting! [:terminal :show-images] on?))
-                      :image-width-cells
-                      (let [w (parse-long value)]
-                        (swap! subs/image-settings-atom assoc :image-width-cells w)
-                        (cfg/save-setting! [:terminal :image-width-cells] w))
-                      :block-images
-                      (let [blocked? (= value "true")]
-                        (runtime/set-block-images! (:engine cs) blocked?)
-                        (cfg/save-setting! [:images :block-images] blocked?))
-                      :skill-commands
-                      ;; the autocomplete provider reads the setting live when
-                      ;; it opens (pi: setupAutocompleteProvider on change)
-                      (cfg/set-enable-skill-commands! (= value "true"))
-                      :clear-on-shrink
-                      (let [on? (= value "true")]
-                        (tui/tui-set-clear-on-shrink! (:tui cs) on?)
-                        (cfg/set-clear-on-shrink! on?))
-                      :terminal-progress
-                      (cfg/set-show-terminal-progress! (= value "true"))
-                      :steering-mode
-                      (let [mode (keyword value)]
-                        (runtime/set-steering-mode! engine mode)
-                        (cfg/save-setting! [:steering-mode] mode))
-                      :follow-up-mode
-                      (let [mode (keyword value)]
-                        (runtime/set-follow-up-mode! engine mode)
-                        (cfg/save-setting! [:follow-up-mode] mode))
-                      :http-idle-timeout
-                      (let [ms (:ms (some #(when (= value (:label %)) %)
-                                          http-idle-timeout-choices))]
-                        (runtime/set-http-idle-timeout-ms! engine ms)
-                        (cfg/save-setting! [:http-idle-timeout-ms] ms))
-                      :http-total-timeout
-                      (let [ms (:ms (some #(when (= value (:label %)) %)
-                                          http-total-timeout-choices))]
-                        (runtime/set-http-total-timeout-ms! engine ms)
-                        (cfg/save-setting! [:http-total-timeout-ms] ms))
-                      :http-transport
-                      (let [mode (keyword value)]
-                        (http/set-transport! mode)
-                        (cfg/save-setting! [:http-transport] mode))
-                           ;; read live at emit time — no runtime state needed
-                      :cache-miss-notices
-                      (cfg/save-setting! [:show-cache-miss-notices] (= value "true"))
-                      :tree-filter-mode
-                      (cfg/save-setting! [:tree-filter-mode] (keyword value))
-                      :theme
-                      ;; pi: onThemeChange — persist the setting (a name or
-                      ;; the automatic "light/dark" string) and apply it;
-                      ;; auto settings enable color-scheme sync
-                      (do (theme-ctrl/set-theme-setting! (:theme-controller cs) value)
-                          (cfg/save-setting! [:theme] value))
-                      :thinking
-                      (let [level (keyword value)]
-                        (runtime/set-thinking-level! (:engine cs) level)
-                        (cfg/save-setting! [:thinking] level)
-                        (model-selector/sync-footer-model! cs))
-                      :hide-thinking
-                      (let [hidden? (= value "on")]
-                        (chat-history/chat-history-set-thinking-hidden!
-                         (:chat-history cs) hidden?)
-                        (cfg/set-hide-thinking-block! hidden?))
-                      :tool-display-mode
-                      (let [mode (keyword value)]
-                        (chat-history/chat-history-set-tool-display-mode!
-                         (:chat-history cs) mode)
-                        (cfg/set-tool-display-mode! mode)
-                        (when-let [hdr (:header-comp cs)]
-                          (expandable-text/expandable-text-set-expanded!
-                           hdr (= :expanded mode)))
-                        (when-let [lr (:loaded-resources-comp cs)]
-                          (loaded-resources/loaded-resources-set-expanded!
-                           lr (= :expanded mode)))
-                        (when (:tui cs)
-                          (tui/tui-request-render (:tui cs) true)))
-                      :editor-padding
-                      (do (set-editor-setting! cs #(protocols/editor-set-padding-x! % value))
-                          (cfg/save-setting! [:editor-padding-x] value))
-                      :output-padding
-                      (do (chat-history/chat-history-set-output-pad! (:chat-history cs) value)
-                          (cfg/save-setting! [:output-pad] value))
-                      :autocomplete-max-visible
-                      (do (set-editor-setting!
-                           cs #(protocols/editor-set-autocomplete-max-visible! % value))
-                          (cfg/save-setting! [:autocomplete-max-visible] value))
-                      :show-hardware-cursor
-                      (let [on? (= value "true")]
-                        (tui/tui-set-show-hardware-cursor! (:tui cs) on?)
-                        (cfg/set-show-hardware-cursor! on?))
-                      :auto-retry
-                      (do (swap! retry-atom assoc :enabled (boolean value))
-                          (save-retry! [:retry :enabled] (boolean value)))
-                      :max-retries
-                      (do (swap! retry-atom assoc :max-retries value)
-                          (save-retry! [:retry :max-retries] value))
-                      :base-delay-ms
-                      (do (swap! retry-atom assoc :base-delay-ms value)
-                          (save-retry! [:retry :base-delay-ms] value))
-                      :loop-guard-enabled
-                      (do (swap! lg-atom assoc :enabled (boolean value))
-                          (save-lg! [:loop-guard :enabled] (boolean value)))
-                      :loop-guard-threshold
-                      (do (swap! lg-atom assoc :threshold value)
-                          (save-lg! [:loop-guard :threshold] value))
-                      :thinking-loop-guard-enabled
-                      (do (runtime/set-run-options! engine {:thinking-loop-guard-enabled (boolean value)})
-                          (cfg/save-setting! [:thinking-loop-guard-enabled] (boolean value)))))
+        ;; pi: SettingsSelector's onChange — the row table (one handler per
+        ;; row id, each applying live and persisting) lives at module level;
+        ;; an unknown id is a programming error, not a silent no-op.
+        handlers (row-handlers {:engine engine
+                                :cs cs
+                                :retry-atom retry-atom
+                                :save-retry! save-retry!
+                                :lg-atom lg-atom
+                                :save-lg! save-lg!})
+        on-change (fn [id value] (apply-row-change! handlers id value))
         on-escape (fn []
                     ;; restore the editor and unwind the panel: the tree owns
                     ;; the chrome AND the settings list, so one dock/dispose!
