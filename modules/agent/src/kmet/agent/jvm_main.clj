@@ -8,13 +8,15 @@
    what `:gen-class` generates from `-main` — the packager compiles this
    namespace (kmet.tasks.build-jvm) and points the manifest here.
 
-   It only delegates, so the CLI stays defined once, in kmet.agent.core. The
-   bb and jolt hosts never load this namespace: their artifacts run
-   kmet.agent.core/-main directly."
+   It only delegates to the process bootstrap (kmet.agent.core), which selects
+   the app and hands the argv to kmet.agent.cli (--app old, the default) or
+   kmet.app.core (--app new), so the CLI stays defined once. The bb and jolt
+   hosts never load this namespace: their artifacts run kmet.agent.core/-main
+   directly."
   (:gen-class)
   (:require [kmet.agent.core :as core]))
 
 (defn -main
-  "Process entry: the packaged jar's Main-Class, i.e. kmet's CLI."
+  "Process entry: the packaged jar's Main-Class, i.e. kmet's entry point."
   [& args]
   (apply core/-main args))

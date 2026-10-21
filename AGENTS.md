@@ -11,6 +11,7 @@ change when behavior changes.
 |------|-------------------------|
 | Application layout and contributor workflow | [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md) |
 | Kernel: ctx tree, services, inject, fibers, effects, events | [`modules/srce/src/kmet/srce/srce.md`](modules/srce/src/kmet/srce/srce.md) |
+| kmet2 application: services, agents, sessions, profiles, landings | [`new-app.md`](new-app.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
 | Tk backend and its widget sample (`kmet.tk.*`, `kmet.gui-sample.*`, Jolt-only) | [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md) |
 | Extension contract (`kmet.extension` API, allowed namespaces, lifecycle) | [`modules/agent/src/kmet/extension.md`](modules/agent/src/kmet/extension.md) |
@@ -29,8 +30,10 @@ the session-runtime split’s GUI-independent steps landed.)
 
 ## Basic development flow
 
-- `bb start` starts `kmet.agent.core/-main`; `jolt start` is the native-host
-  equivalent.
+- `bb start` starts `kmet.agent.core/-main`, the `--app` bootstrap; `jolt
+  start` is the native-host equivalent. `--app old` (the default) runs kmet1
+  (`kmet.agent.cli`), `--app new` runs kmet2 (`kmet.app.core`); the flag is the
+  migration lever [`new-app.md`](new-app.md) describes.
 - `bb clean` removes build output and caches; `bb clean --dry-run` lists what
   it would remove. `jolt clean` is the native-host equivalent.
 - `bb nrepl` starts the development server on port 7801, blocks, and writes

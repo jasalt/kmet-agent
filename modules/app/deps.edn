@@ -1,0 +1,7 @@
+{:paths ["src" "test"]
+ ;; Rank 2: the application below every front end. Its sources require only
+ ;; kmet.srce (rank 1) once the bus lands, plus third-party code; a kmet.agent.*
+ ;; namespace may live here (the two-axes rule: the file moves, the namespace
+ ;; does not) but the module may never require a module at its own rank or
+ ;; above. babashka/process is the version rule's git describe.
+ :deps {babashka/process {:mvn/version "0.6.25"}}}

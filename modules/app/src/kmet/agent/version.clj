@@ -18,8 +18,13 @@
 
    One definition on purpose (jolt's version-smoke.sh enforces the same for
    its side): the packagers, `kmet --version`, and any future consumer call
-   here — none re-derives the rule inline."
+   here — none re-derives the rule inline.
+
+   The three assembly functions (`baked-version`, `source-run?`,
+   `kmet-version`) live here as well: both apps print the same version string
+   and the file sits in the `app` module, below both entries."
   (:require [babashka.process :as p]
+            [clojure.java.io :as io]
             [clojure.string :as str]))
 
 (defn- git-out
@@ -64,3 +69,39 @@
    names carry."
   ([] (artifact-version nil))
   ([dir] (artifact-version-of (checkout-version dir))))
+
+;; ── what this kmet is ─────────────────────────────────────────────────────
+
+(defn baked-version
+  "The version a packager baked in (kmet/version.txt in the uberjar/embedded
+   store), or nil — a source checkout has no such resource."
+  []
+  (some-> (io/resource "kmet/version.txt") slurp str/trim not-empty))
+
+(def ^:private source-marker
+  "Classpath key of a kmet namespace source — the file source-run? stats. It
+   exists in every mode (sources ship in the jars and embedded stores), so
+   only the URL scheme tells a checkout from a packaged image. It must name a
+   real namespace: a stale path answers nil and pins `kmet --version` to `dev`
+   in every source run. kmet.agent.core is the process bootstrap, so every
+   artifact carries it."
+  "kmet/agent/core.clj")
+
+(defn source-run?
+  "True when kmet's own source files resolve off disk — a `bb start` /
+   `jolt start` / `bb start-jvm` run from the checkout, as opposed to a
+   packaged jar or embedded image."
+  []
+  (some-> (io/resource source-marker) str (str/starts-with? "file:")))
+
+(defn kmet-version
+  "The version this kmet is: the baked kmet/version.txt when one is packaged
+   (bb dist writes it into the uberjar, jolt dist embeds it), else the
+   checkout's describe — a source run answers the same rule from git. A
+   packaged binary missing its bake (a bare `jolt build` without the packager)
+   says `dev` rather than describe whatever repository the process happens to
+   sit in. Both entries print this string."
+  []
+  (or (baked-version)
+      (when (source-run?) (checkout-version))
+      "dev"))

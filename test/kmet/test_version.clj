@@ -109,3 +109,19 @@
         (finally
           ;; .git/objects files are read-only on Windows — delete-tree needs :force
           (fs/delete-tree dir {:force true}))))))
+
+(deftest kmet-version-assembly
+  (testing "a packaged kmet reports the version it was built as"
+    (with-redefs [version/baked-version (constantly "v1.2.3-4-gabc1234")
+                  version/source-run? (constantly false)]
+      (is (= "v1.2.3-4-gabc1234" (version/kmet-version)))))
+  (testing "a source run (no baked resource) falls back to the checkout"
+    (with-redefs [version/baked-version (constantly nil)
+                  version/source-run? (constantly true)
+                  version/checkout-version (constantly "dev-g0a1b2c3")]
+      (is (= "dev-g0a1b2c3" (version/kmet-version)))))
+  (testing "a packaged kmet without a bake says dev, not the cwd's repo"
+    (with-redefs [version/baked-version (constantly nil)
+                  version/source-run? (constantly false)
+                  version/checkout-version (constantly "v9.9.9")]
+      (is (= "dev" (version/kmet-version))))))

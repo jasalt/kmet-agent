@@ -493,7 +493,12 @@ implementation detail, not a kernel contract.
 `defplugin` is sugar over the map: it gives the source var, `:name` metadata, a
 compile-time shape check, and the card `--dump-config` prints. A profile row
 names the **source**, not a keyword; the generated catalog is a committed
-manifest for validation and docs, not a mutable registry.
+manifest for validation and docs, not a mutable registry:
+`modules/app/src/kmet/app/plugin-catalog.edn`, written by `bb
+generate-plugins` (`kmet.tasks.plugins`) from the top-level `defplugin`
+declarations in the module sources, so `--dump-config` can render a built-in
+row's card without loading the plugin's namespace. A source missing from it
+composes anyway — the card is then read from the loaded var.
 
 **One runtime, many fibers.** `plugin!` creates a fresh fiber per call — its own
 config, ctx, effects and lifecycle — and records it on the source's runtime.

@@ -3,7 +3,7 @@
    standalone TuiMainScreen hosting the config selector). Command parsing
    and dispatch stay in kmet.agent.packages-cli (headless); this
    front-end namespace owns the terminal lifecycle and is injected there as
-   :run-config! by the CLI composition root (kmet.agent.core)."
+   :run-config! by the CLI composition root (kmet.agent.cli)."
   (:require [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
             [kmet.agent.packages :as pkgs]

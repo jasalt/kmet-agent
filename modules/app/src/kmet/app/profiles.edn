@@ -1,0 +1,36 @@
+;; kmet2's built-in composition data (new-app.md § Profiles and presets).
+;;
+;; A bundle is reusable rows plus patches; a profile stacks bundles in order
+;; (`[:bundle/name extra-layer?]`) and then adds its own rows and patches.
+;; A row names a plugin source var — never a keyword registry key — and its
+;; :id defaults to the plugin's :name (kmet.app.catalog).
+;;
+;; Landing 1 ships the composition machinery with no plugin rows yet: the
+;; registries, the session log, the loop and the modes arrive in landings
+;; 2–7, and each adds its rows here. `kmet --app new --dump-config` prints
+;; this composition without booting anything.
+{:bundles
+ {:bundle/minimal
+  {:rows []
+   :patch []}}
+
+ :profiles
+ {:tui
+  {:bundles [[:bundle/minimal {}]]
+   :rows []
+   :patch []}
+
+  :print
+  {:bundles [[:bundle/minimal {}]]
+   :rows []
+   :patch []}
+
+  :rpc
+  {:bundles [[:bundle/minimal {}]]
+   :rows []
+   :patch []}
+
+  :server
+  {:bundles [[:bundle/minimal {}]]
+   :rows []
+   :patch []}}}

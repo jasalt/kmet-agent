@@ -5,6 +5,7 @@
         kmet/ai   {:local/root "../ai"}
         kmet/loader {:local/root "../loader"}
         kmet/srce {:local/root "../srce"}
+        kmet/app  {:local/root "../app"}
         metosin/malli {:mvn/version "0.20.1"}
         babashka/fs {:mvn/version "0.5.34"}
         babashka/process {:mvn/version "0.6.25"}}}

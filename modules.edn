@@ -11,9 +11,16 @@
   {:name "libs" :src "modules/libs/src" :test "modules/libs/test" :rank 0}
   {:name "tui" :src "modules/tui/src" :test "modules/tui/test" :rank 2}
   {:name "ai" :src "modules/ai/src" :test "modules/ai/test" :rank 1}
-  {:name "agent" :src "modules/agent/src" :test "modules/agent/test" :rank 3}
+  ;; agent is kmet1, the legacy app: rank 4 so it may reach the lifted app (2)
+  ;; and, from landing 5, the new front ends (3). Its inversion ends with the
+  ;; module, when kmet2 passes the full gate set and kmet1 is retired.
+  {:name "agent" :src "modules/agent/src" :test "modules/agent/test" :rank 4}
   {:name "loader" :src "modules/loader/src" :test "modules/loader/test" :rank 0}
   {:name "srce" :src "modules/srce/src" :test "modules/srce/test" :rank 1}
+  ;; The kmet2 application: shared services, the session layer and the
+  ;; extension host (new-app.md). Its files may keep a kmet.agent.* namespace
+  ;; when a lift moves them here — the module changes, the name does not.
+  {:name "app" :src "modules/app/src" :test "modules/app/test" :rank 2}
   ;; tk is the Tk backend plus its kmet.gui-sample.* widget skeleton (one
   ;; `:ui/transcript` composite over the backend's extra-tag seam). No module
   ;; depends on it: the agent module deliberately carries no Tk dependency.

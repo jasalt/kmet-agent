@@ -712,10 +712,15 @@ where Node uses package names:
 - A **bundle** is a reusable row list + patches — the analog of dsh's
   `dsh.bundle`; a profile stacks bundles in order, then its own rows and
   patches. Presets (Standard / Minimal / PTC) are bundles.
-- Patches are per row: replace a row's config by `:id`, insert a row, or remove
-  one. Layers: bundled default < `--profile` < the agent dir's `patch.edn`
-  < `--patch <file>`; config *values* still deep-merge as `settings.edn` does,
-  composition does not.
+- Patches are per row: `{:id … :config {…}}` deep-merges the row's config,
+  `{:id … :remove true}` drops it, and a patch naming an unknown `:id` with a
+  `:plugin` inserts a row (positioned by `:after`/`:before`, else appended).
+  A patch that names an unknown row without a `:plugin` is an error; so is a
+  duplicate id across stacked bundles. Layers: bundled default < `--profile`
+  < the agent dir's `patch.edn` < `--patch <file>`; config *values* still
+  deep-merge as `settings.edn` does, composition does not. (Landing 1 ships the
+  composition and `--dump-config`; the file layers beyond `--patch` arrive with
+  the loader.)
 - Profiles and bundles are EDN staged beside the binary the way
   `target/kmet-bundled` is, so a project can ship its own; a profile under the
   agent dir can name out-of-tree plugins the way dsh's Harness home does.
@@ -745,7 +750,9 @@ kmet                            # kmet1, the default, unchanged
   `(requiring-resolve 'kmet.app.core/-main)`. Neither app pays the other's load
   time, and a missing `kmet.app.core` (a `--dev` build, an older artifact)
   answers "this artifact carries only the kmet app" instead of a null
-  dereference.
+  dereference — the check is the app's source resource, and `dispatch!` reports
+  it (`::missing-app`) while `-main` owns the exit code, so the message is a
+  test, not a fork.
 - `bb start` stays the only start task and keeps requiring `kmet.agent.core`
   (now the bootstrap); a `start2` would be a second entry point to keep in
   sync. If the typing grates, it is one line:
@@ -774,13 +781,61 @@ Each is independently shippable and gated.
 | # | Landing | Ships |
 |---|---|---|
 | 0 | **landed** (`9c0b70ed`) — `modules/srce`: the light kernel — `ctx`/`fiber`/`event` behind the public `srce` | the contract + guard tests ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §12, 41 + 3 tests); no `kmet.agent.*` require, no `kmet.libs.scope` require |
-| 1 | module wiring + guards (module-based require, no-global-node), `--app new` dispatch (bootstrap split: `kmet.agent.core` + `kmet.agent.cli`) + `check` requiring both entries, the generated plugin catalog, `--dump-config` over the composed rows | `kmet.test-module-deps` / `test-modules-manifest` green; each guard fails on a deliberate violation |
+| 1 | **landed** — module wiring + guards (module-based require, no-global-node), `--app new` dispatch (bootstrap split: `kmet.agent.core` + `kmet.agent.cli`) + `check` requiring both entries, the generated plugin catalog, `--dump-config` over the composed rows | `kmet.test-module-deps` / `test-modules-manifest` green; each guard fails on a deliberate violation |
 | 2 | the bus: listener table into the runtime; `emit-event!` keeps its signature; **the submission point** — `settle!` at the boundary and one submit fn for cross-thread mutations | contract test over both delivery paths; a hook registered from a tool thread lands at the boundary; kmet1 green |
 | 3 | `registry` parameterized then lifted; `:tools` service; commands/prompts/skills re-pointed | contract tests over both backends (installation is `provide!`, mutation is a handle method — no re-provide); kmet1 green |
 | 4 | `Engine` → `:agents` (+ `:permissions` policy/request!/remember!) and `:sessions` + `:sessionPersistence`; the extension host + ABI moved into `app` (key-set contract test); `extension.edn :inject` + `grep-tool` ported as a plugin; the remaining `runtime/node` reads; the globals re-hosted; `session/core.clj`'s lock moved onto a `kmet.libs.concurrent` primitive; **`/units` re-rendered from the tree** (`kmet.app.inspect`, store section deleted) | kmet2 runs `mode-print`; a shipped directory extension and `grep-tool` green; `/units` shows a `:pending` fiber with its `waiting-for`; kmet1 untouched |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` registry (create/resume/list) + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
 | 7 | loop re-hosted as a driver plugin; profiles as row+patch layers; presets = bundles | pi-alignment green; a tool swaps mid-session at the turn boundary (`:agent-settled`); a profile stacking a preset bundle boots |
+
+### Landing 1 settled
+
+- **`modules/app` is rank 2 and `agent` moves to rank 4** in the manifest, from
+  the first landing: the inversion is explicit before there is anything above
+  it. The module carries `kmet.app.profile`, `kmet.app.catalog`,
+  `kmet.app.core`, and `kmet.agent.version` — the version file moved so both
+  entries print one string, and its namespace did not (the two-axes rule). The
+  three `kmet.agent.version` assembly functions (`baked-version`,
+  `source-run?`, `kmet-version`) moved with it out of `core.clj`; the marker
+  names `kmet/agent/core.clj`, the bootstrap every artifact carries.
+- **The bootstrap is one namespace with no `kmet.*` require.** `parse-app`
+  strips `--app`/`--app=` before either app parses (kmet1 would read it as an
+  extension flag); `dispatch!` resolves the entry through `requiring-resolve`
+  only after `app-available?` finds the app's source resource, and returns
+  `::missing-app` instead of exiting — `-main` owns the exit code. The
+  two-direction load test runs real processes for the reason a test process
+  cannot answer it: `bb test` has already loaded namespaces.
+- **The catalog is generated from `srce/defplugin`, not from a registry.**
+  `bb generate-plugins` reads every module source with the `#{:clj}` reader
+  view (edamame, `:read-cond :allow`, the reader macros spelled out) and writes
+  `kmet/app/plugin-catalog.edn`; a declaration inside a host conditional is not
+  catalogued, and its row still composes because `--dump-config` falls back to
+  the loaded var. The file is empty until the plugin landings (2–7) define the
+  first ones, and `kmet.tasks.test-plugins` holds it to a fresh render,
+  comments included.
+- **Rows arrive described.** `kmet.app.catalog/describe` turns a row into a
+  card (`:id :name :inject :provide`) without mounting anything: a var source
+  comes from the catalog or the loaded var, an `:ext/…` keyword is external
+  (landing 4's host supplies its card at load), and `:id` defaults to the
+  plugin's `:name`. Composition is then pure data: bundle layers in order,
+  config deep-merged by row id, `:remove`, and an insert — a patch naming an
+  unknown id that carries a `:plugin` — positioned by `:after`/`:before`.
+  A patch entry's allowed keys are checked, so a typo is an error and a patch
+  that changes nothing is one too.
+- **`--dump-config` prints the rows the boot would mount**, one line each, with
+  the profile and the row/patch counts; `--profile` selects the profile and
+  `--patch FILE` stacks a layer (repeatable). The built-in table ships the four
+  profiles (`tui`, `print`, `rpc`, `server`) with an empty
+  `:bundle/minimal`; each plugin landing adds its rows.
+- **Guards**: `kmet.test-module-deps` gained the namespace-level require check
+  built on the ns-form reader (a require may name only a strictly lower-ranked
+  module's file — its own module is fine), `kmet.test-no-global-node` bans the
+  store namespaces (`kmet.agent.app-runtime`, `kmet.agent.runtime`,
+  `kmet.libs.scope`) and the `runtime/node` symbol from `srce`/`app`/`ui`/`mode`
+  sources, and `kmet.test-app-dispatch` holds the bootstrap's static shape and
+  the two load directions. Each was verified by injecting the violation it
+  guards.
 
 Landing 0 landed the kernel without touching kmet1, and landing 1 keeps that
 property: it splits `kmet.agent.core` into a bootstrap and `kmet.agent.cli`

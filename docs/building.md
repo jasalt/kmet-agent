@@ -16,7 +16,8 @@ a JVM runs the jar (see [JVM artifacts](#jvm-artifacts)).
 
 On babashka the artifact is an official babashka release binary with the kmet
 uberjar appended (babashka detects the appended zip at startup and runs
-`kmet.agent.core/-main` — see babashka's "Self-contained executable" wiki page).
+`kmet.agent.core/-main`, the `--app` bootstrap — see babashka's "Self-contained
+executable" wiki page).
 Cross-builds work from any host because packaging is download + concat only.
 
 ```sh

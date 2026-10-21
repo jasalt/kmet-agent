@@ -1,10 +1,18 @@
 (ns kmet.test-module-deps
-  "Guard (global organization): module dependencies must flow downward."
-  (:require [clojure.edn :as edn]
-            [clojure.test :refer [deftest is testing]]
-            [babashka.fs :as fs]
+  "Guard (global organization): module dependencies must flow downward.
+
+   Two views of the same rule: each module's deps.edn may name only
+   lower-ranked modules, and each *namespace* may require only a file in a
+   strictly lower-ranked module (its own module is fine). The second is the
+   one the compiler never checks: a `kmet.app.*` namespace requiring a
+   `kmet.agent.*` helper is one line away at all times."
+  (:require [babashka.fs :as fs]
+            [clojure.edn :as edn]
             [clojure.string :as str]
-            [kmet.tasks.modules :as modules]))
+            [clojure.test :refer [deftest is testing]]
+            [kmet.tasks.changed :as changed]
+            [kmet.tasks.modules :as modules]
+            [kmet.tasks.source-reader :as reader]))
 
 (def ^:private module-rank
   "Higher layers appear later; a module may depend only on lower-ranked ones.
@@ -48,3 +56,45 @@
             (is (< (module-rank dep) (module-rank module))
                 (str module " (" (module-rank module) ") must not depend on "
                      dep " (" (module-rank dep) ")"))))))))
+;; ─── the require view ─────────────────────────────────────────────────────
+
+(defn- ns-file
+  "The source file holding NS-SYM under classpath root SRC, or nil when no
+   module owns the namespace (third-party code, kmet.tasks.*, an extension)."
+  [src ns-sym]
+  (let [rel (-> (str ns-sym)
+                (str/replace "." "/")
+                (str/replace "-" "_"))
+        base (fs/path src rel)]
+    (some (fn [ext]
+            (let [path (str base ext)]
+              (when (fs/exists? path) path)))
+          [".clj" ".cljc"])))
+
+(defn- module-owner
+  "The manifest module whose src tree holds NS-SYM, or nil."
+  [ns-sym]
+  (some (fn [mod] (when (ns-file (:src mod) ns-sym) mod)) (modules/modules)))
+
+(defn- module-sources
+  "Every module source file as {:module mod :file path}."
+  []
+  (for [mod (modules/modules)
+        file (->> (fs/glob (:src mod) "**/*.{clj,cljc}") (map str) sort)]
+    {:module mod :file file}))
+
+(deftest module-requires-flow-downward
+  (testing "a namespace requires only a strictly lower-ranked module's file"
+    (doseq [{:keys [module file]} (module-sources)
+            :let [ns-form (reader/read-ns-form file "module-require guard")
+                  up (for [dep (if ns-form (changed/ns-requires ns-form) #{})
+                           :let [owner (module-owner dep)]
+                           :when (and owner
+                                      (not= (:name owner) (:name module))
+                                      (>= (:rank owner) (:rank module)))]
+                       [dep (:name owner) (:rank owner)])]]
+      (is (some? ns-form)
+          (str file " has no ns form — the require guard cannot read it"))
+      (is (empty? up)
+          (str file " (" (:name module) ", rank " (:rank module)
+               ") requires upward: " (vec up))))))

@@ -18,7 +18,10 @@ modules/
 ├── libs/   — generic, self-contained helpers        (kmet.libs.*)
 ├── tui/    — terminal backend over hikap            (kmet.tui.*; tui.md)
 ├── ai/     — provider/auth library                  (kmet.ai.*)
-├── agent/  — this module: the application           (kmet.agent.*)
+├── srce/   — the kmet2 kernel: ctx, services, fibers  (kmet.srce.*; srce.md)
+├── app/    — kmet2's application, below every front end (kmet.app.*;
+│             the file/namespace rule is new-app.md)   (kmet.agent.version)
+├── agent/  — this module: kmet1, the current app    (kmet.agent.*)
 ├── loader/ — extension loader                       (kmet.loader.*)
 └── tk/     — Tk backend + widget sample, Jolt-only  (kmet.tk.*, kmet.gui-sample.*)
 ```
@@ -29,6 +32,16 @@ extra source roots, and the tasks read it instead of repeating the paths
 (the framework may require only `kmet.libs.*`) but its sources live in
 `modules/hikap`.
 
+Ranks are the manifest's layering guard (`kmet.test-module-deps`): a module
+may depend only on strictly lower-ranked ones, and a *namespace* may require
+only a file in a strictly lower-ranked module (`srce` 1, `app` 2, `agent` 4 —
+the legacy app sits above the shared layers until it is retired). A file may
+change module without changing namespace: `kmet.agent.version` lives in
+`modules/app` so both apps can print one version string, and the module's
+`deps.edn` carries the edge (`agent` → `app`). `kmet.agent.core` in the agent
+module is still the only process entry — it is a bootstrap that selects the
+app (see below).
+
 The extension contract sits above the app tree, beside it:
 `modules/agent/src/kmet/extension.clj` (`kmet.extension`) is the one kmet
 namespace an extension may depend on; `kmet/agent/extensions/` is its
@@ -38,14 +51,17 @@ The app module (`modules/agent/src/kmet/agent`):
 
 ```
 kmet/agent/
-├── core.clj            — CLI entry: global flags (--version, --list-models,
+├── core.clj            — the process bootstrap: --app old|new dispatch, no
+│                         app require (kmet.agent.cli / kmet.app.core load
+│                         through requiring-resolve)
+├── cli.clj             — kmet1's CLI: global flags (--version, --list-models,
 │                         --generate-models), argument parsing, mode dispatch
-├── jvm_main.clj        — the JVM artifact's AOT entry point
+├── jvm_main.clj        — the JVM artifact's AOT entry point (delegates to
+│                         core.clj, i.e. the bootstrap)
 ├── config.clj          — configuration loading (settings.edn, env vars)
 │   config_schema.clj   — the malli schema for the config map
 ├── debug.clj           — debug/error logging
 ├── project_context.clj — project context files (AGENTS.md/CLAUDE.md)
-├── version.clj         — baked/source version reporting
 ├── app_runtime.clj     — the app root store node + the loop's stage map
 ├── registry.clj        — name-addressed registrations in the app root's
 │                         store (commands, prompts, skills, tools)
@@ -191,9 +207,12 @@ root `AGENTS.md` topic map.
   mode assembles components), never UI → modes;
   `kmet.agent.ui.tui.theme-controller` sits in the UI layer for exactly that
   reason and the modes call it from above.
-  `kmet.agent.core` is the composition root: it owns the CLI-only flags
+  `kmet.agent.cli` is the composition root: it owns the CLI-only flags
   (`--version`, `--list-models`, `--generate-models`), parses arguments and
-  dispatches to a mode.
+  dispatches to a mode. `kmet.agent.core` above it only selects an app:
+  `--app old` (the default) hands the argv to `kmet.agent.cli`, `--app new` to
+  `kmet.app.core` (new-app.md § One artifact, two apps); the flag is stripped
+  and neither app is a static require.
 - `kmet.tasks.*` lives under `tasks/kmet/tasks/`, is never required by shipped
   code, and is not packaged. Task tests live under `test/kmet/tasks/`.
 - Facilities are extended at the layer that owns them, never copied into the
@@ -293,7 +312,7 @@ pins its exact public surface. Two consequences for tests and REPL work:
   (token/JWT expiry, epoch ids, file mtimes, persisted cross-process TTLs).
 - Host reader features are `:bb` and `:jolt`, never `:clj`. For a portable
   host carve-out use `#?(:jolt X :default Y)`.
-- `kmet.agent.core/-main` ends with `shutdown-agents` + `System/exit 0`: Jolt waits
+- `kmet.agent.cli/-main` ends with `shutdown-agents` + `System/exit 0`: Jolt waits
   for non-daemon threads before exiting, as the JVM does, so the agent pool
   behind `future` would otherwise hold the process open after `/quit`; the
   explicit exit also covers any thread stuck outside that pool. bb exits on
