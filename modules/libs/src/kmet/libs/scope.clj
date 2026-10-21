@@ -16,7 +16,7 @@
 
 (def ^:dynamic *error-reporter*
   "Called with the throwable a failing cleanup threw. The host may rebind it
-   (`kmet.agent.runtime` binds it to `kmet.agent.debug/log-error`); the
+   (`kmet.agent.app-runtime` binds it to `kmet.agent.debug/log-error`); the
    default prints to stderr, because the namespace must not require `kmet.*`
    (scope.md §7)."
   (fn [t]

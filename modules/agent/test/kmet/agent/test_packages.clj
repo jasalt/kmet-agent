@@ -3,7 +3,7 @@
    source subset): source parsing, path identity, settings persistence,
    filter patterns, per-package resolution and the package resource
    loaders."
-  (:require [kmet.agent.runtime :as app-runtime]
+  (:require [kmet.agent.app-runtime :as app-runtime]
             [clojure.test :as t]
             [clojure.string :as str]
             [clojure.edn :as edn]

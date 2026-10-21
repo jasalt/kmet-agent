@@ -8,10 +8,10 @@
    first event of every run, the exception was swallowed by the run future
    (its catch re-emits :error through the same handler, which also threw),
    and the UI stayed on \"Working...\" forever while print mode kept working."
-  (:require [kmet.agent.runtime :as app-runtime]
+  (:require [kmet.agent.app-runtime :as app-runtime]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.agent.modes.interactive :as inter]
-            [kmet.agent.modes.interactive.commands :as builtins]
+            [kmet.agent.modes.interactive.builtins :as builtins]
             [kmet.agent.modes.interactive.layout :as layout]
             [kmet.agent.modes.interactive.ui-registry :as ui-registry]
             [kmet.agent.modes.interactive.state :as state]
@@ -34,7 +34,7 @@
             [kmet.agent.packages :as packages]
             [kmet.agent.skills :as skills]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.context :as context]
+            [kmet.agent.project-context :as context]
             [kmet.libs.host :as host]
             [kmet.libs.process :as process]
             [kmet.libs.reakt.core :as reakt]

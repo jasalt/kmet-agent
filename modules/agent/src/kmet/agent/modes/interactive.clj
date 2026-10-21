@@ -13,7 +13,7 @@
             [kmet.agent.debug :as debug]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.theme-controller :as theme-ctrl]

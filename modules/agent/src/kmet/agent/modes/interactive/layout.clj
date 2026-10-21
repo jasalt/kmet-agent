@@ -40,7 +40,7 @@
             [kmet.agent.ui.tui.subs :as subs]
             [kmet.agent.ui.tui.suspend :refer [handle-suspend]]
             [kmet.agent.ui.tui.tool-execution :as tool-execution]
-            [kmet.agent.modes.interactive.commands :as builtins]
+            [kmet.agent.modes.interactive.builtins :as builtins]
             [kmet.agent.modes.interactive.resources :as resources]
             [kmet.agent.modes.interactive.session-admin :as session-admin]
             [kmet.agent.modes.interactive.state :as state]

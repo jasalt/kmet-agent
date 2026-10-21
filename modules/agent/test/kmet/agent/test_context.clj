@@ -4,7 +4,7 @@
             [clojure.java.io :as io]
             [babashka.fs :as fs]
             [babashka.process :as proc]
-            [kmet.agent.context :as context]
+            [kmet.agent.project-context :as context]
             [kmet.test-utils :refer [slash]]))
 
 (defn- tmp-dir

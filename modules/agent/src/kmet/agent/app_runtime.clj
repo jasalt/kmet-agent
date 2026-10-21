@@ -1,4 +1,4 @@
-(ns kmet.agent.runtime
+(ns kmet.agent.app-runtime
   "The agent runtime: one store node and the loop's stage map.
 
    `node` is the app root — the store (`kmet.libs.scope`) every front end,

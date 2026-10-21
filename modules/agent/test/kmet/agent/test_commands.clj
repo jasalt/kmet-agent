@@ -5,7 +5,7 @@
             [clojure.test :as t]
             [kmet.agent.commands :as commands]
             [kmet.agent.commands.builtins :as builtins]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.tools.registry :as tools-reg]
             [kmet.libs.scope :as scope]
             [kmet.test-utils :as tu]))
@@ -111,7 +111,7 @@
 
 (t/deftest units-lists-the-store-owners
   ;; The /units surface renders every store owner: the registries' owner paths
-  ;; with their keys, one flat line each (kmet.agent.runtime; scope.md §2,
+  ;; with their keys, one flat line each (kmet.agent.app-runtime; scope.md §2,
   ;; §7).
   (builtins/register-runtime-commands!)
   (tools-reg/register-tool! (app-runtime/node) {:name "units-probe" :description "d"

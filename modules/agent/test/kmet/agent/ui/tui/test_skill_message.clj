@@ -3,7 +3,7 @@
    SkillInvocationMessageComponent): a `/skill:name` block renders as a
    collapsible invocation instead of dumping its body into the transcript,
    and the trailing args stay a normal user message."
-  (:require [kmet.agent.runtime :as app-runtime]
+  (:require [kmet.agent.app-runtime :as app-runtime]
             [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.agent.keybindings :as app-kb]

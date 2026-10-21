@@ -3,7 +3,7 @@
    render."
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is]]
-            [kmet.agent.runtime :as runtime]
+            [kmet.agent.app-runtime :as runtime]
             [kmet.libs.scope :as scope]))
 
 (deftest the-app-node-is-one-node-carrying-the-loop-stages

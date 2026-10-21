@@ -15,7 +15,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
-            [kmet.agent.runtime :as runtime]
+            [kmet.agent.app-runtime :as runtime]
             [kmet.agent.config :as cfg]
             [kmet.agent.loop.test-support :as support]
             [kmet.test-utils :refer [slash]]))

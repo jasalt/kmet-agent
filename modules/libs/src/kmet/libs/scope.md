@@ -74,7 +74,7 @@ The store has no clock: disposal never waits. Quiescence is the caller's
 decision — the agent disposes at the `:agent-settled` boundary.
 
 The default `*error-reporter*` prints to stderr (the namespace must not
-require `kmet.*`); `kmet.agent.runtime` rebinds it to
+require `kmet.*`); `kmet.agent.app-runtime` rebinds it to
 `kmet.agent.debug/log-error`.
 
 ## 4. Reading the store
@@ -101,7 +101,7 @@ the store and the children list are atoms.
 
 ## 6. The host's view
 
-The app root is created by `kmet.agent.runtime/node` before extensions load;
+The app root is created by `kmet.agent.app-runtime/node` before extensions load;
 every front end, engine and extension registers into it. Extensions register
 under `[:app :extensions <name>]`, so unloading one is a `dispose-owner!` plus
 the fns the extension recorded for what lives outside the tree.

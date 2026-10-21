@@ -7,7 +7,7 @@
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.agent.git-packages :as gitp]
-            [kmet.agent.package-manager :as pm]
+            [kmet.agent.packages-cli :as pm]
             [kmet.agent.modes.config-command :as config-command]
             [kmet.agent.config :as cfg]
             [kmet.agent.packages :as pkgs]

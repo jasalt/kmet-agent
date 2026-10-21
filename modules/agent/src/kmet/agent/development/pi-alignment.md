@@ -75,7 +75,7 @@ coding-agent as `--mode rpc` (JSONL), and the remote-link story now lives in
 chord. Do not chase those trees when re-checking this document.
 
 **Subagents (P7, deferred).** The durable row's subagent gap has a kmet
-sketch: a subagent tool runs on a child node (`kmet.agent.runtime/child-node`)
+sketch: a subagent tool runs on a child node (`kmet.agent.app-runtime/child-node`)
 carrying its own loop stage map, with its own model, tool subset and hooks in
 the child's state, and its registrations isolate by owner path under that
 node. Missing: the child-state builder (agent state from the child's model,
@@ -141,7 +141,7 @@ scope by the EDNL-only decision.
 
 pi `core/package-manager.ts` (the full resolve pipeline) +
 `package-manager-cli.ts` + `cli/config-selector.ts`
-→ `kmet.agent.packages` + `kmet.agent.package-manager` + `kmet.agent.ui.tui.resource-config`
+→ `kmet.agent.packages` + `kmet.agent.packages-cli` + `kmet.agent.ui.tui.resource-config`
 (+ the runner call sites in `core.clj`, `modes/interactive.clj`, `modes/print.clj`).
 
 `PackageManager.resolve()` is fully ported: top-level settings resource
@@ -222,7 +222,7 @@ Kmet adaptations (deliberate deviations):
 **Subcommands** — pi's package commands are ported for local and git
 sources (see “Ported: the resource resolution & package manager”):
 `kmet install/remove/uninstall/update/list/config` dispatch from `core.clj`
-to `kmet.agent.package-manager` (pi `package-manager-cli.ts`) before generic
+to `kmet.agent.packages-cli` (pi `package-manager-cli.ts`) before generic
 arg parsing. Still missing:
 
 | pi command | ref |

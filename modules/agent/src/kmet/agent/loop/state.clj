@@ -28,7 +28,7 @@
             [kmet.agent.config :as cfg]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.runtime :as runtime]
+            [kmet.agent.app-runtime :as runtime]
             [kmet.agent.retry :as retry]
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
@@ -103,7 +103,7 @@
                        loop-guard            ;; atom of per-run repeat-loop guard state:
                                              ;;   {:window [signature...] :suppressed n}
                        node                  ;; the node this run reads its loop stages from:
-                                             ;; the app root by default (kmet.agent.runtime),
+                                             ;; the app root by default (kmet.agent.app-runtime),
                                              ;; a child node for a subagent run (scope.md §5)
                        ])
 
@@ -136,7 +136,7 @@
          tools active at startup, pi: defaultTools; nil = every built-in
          active, see kmet.agent.tools.registry/resolve-default-tools),
          :node (the node this run reads its loop stages from; default the app
-         root, kmet.agent.runtime/node — a subagent run passes its own child
+         root, kmet.agent.app-runtime/node — a subagent run passes its own child
          node, which carries its own :loop-guard and :retry-policy stages,
          scope.md §5)"
   [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools node]

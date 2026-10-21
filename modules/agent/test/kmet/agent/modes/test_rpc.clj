@@ -3,7 +3,7 @@
    serves EDN commands and streams wire events: ids correlate without
    ordering, a malformed record answers a parse response without an id, and
    EOF disposes the engine."
-  (:require [kmet.agent.runtime :as app-runtime]
+  (:require [kmet.agent.app-runtime :as app-runtime]
             [clojure.test :as t :refer [deftest is testing]]
             [clojure.edn :as edn]
             [clojure.java.io :as io]

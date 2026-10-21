@@ -3,7 +3,7 @@
    discovery, auth-type selection, API-key and OAuth login (pi:
    getLoginProviderOptions / showLoginAuthTypeSelector / showLoginDialog /
    showApiKeyLoginDialog / OAuthSelectorComponent). The command handlers
-   are registered by kmet.agent.modes.interactive.commands."
+   are registered by kmet.agent.modes.interactive.builtins."
   (:require [clojure.string :as str]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]

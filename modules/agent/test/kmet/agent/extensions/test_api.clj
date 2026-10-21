@@ -10,7 +10,7 @@
             [kmet.agent.config :as cfg]
             [kmet.ai.models :as models]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.runtime :as rt]
+            [kmet.agent.app-runtime :as rt]
             [kmet.libs.hikap.alias :as alias]
             [kmet.tui.theme :as theme]))
 

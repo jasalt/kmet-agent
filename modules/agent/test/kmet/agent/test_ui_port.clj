@@ -6,7 +6,7 @@
   (:require [babashka.fs :as fs]
             [clojure.test :as t :refer [deftest testing]]
             [kmet.agent.extensions.core :as ex]
-            [kmet.agent.runtime :as app]
+            [kmet.agent.app-runtime :as app]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as rt]
             [kmet.libs.scope :as scope]

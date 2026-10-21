@@ -65,7 +65,7 @@
             [kmet.ai.llm :as llm]
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.retry :as retry]
-            [kmet.agent.runtime :as runtime]
+            [kmet.agent.app-runtime :as runtime]
             [kmet.agent.tools.util :as tools-util]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.tools.run-code :as run-code-tool]

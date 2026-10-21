@@ -3,7 +3,7 @@
    LoadedResources component (pi: showLoadedResources)."
   (:require [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
-            [kmet.agent.context :as context]
+            [kmet.agent.project-context :as context]
             [kmet.agent.skills :as skills]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.extensions.core :as extensions]

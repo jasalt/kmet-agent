@@ -3,7 +3,7 @@
             [clojure.string :as str]
             [clojure.test :as t]
             [babashka.fs :as fs]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.registry :as tools-registry]
             [kmet.agent.tools.invoke :as invoke]

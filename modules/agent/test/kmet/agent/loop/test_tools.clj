@@ -12,7 +12,7 @@
             [kmet.agent.loop.tool-exec :as tool-exec]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
-            [kmet.agent.runtime :as runtime]
+            [kmet.agent.app-runtime :as runtime]
             [kmet.agent.config :as cfg]
             [kmet.agent.ui.tui.chat-history :as ui]
             [kmet.tui.theme :as th]

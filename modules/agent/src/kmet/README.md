@@ -39,9 +39,9 @@ kmet/agent/
 ├── config.clj          — configuration loading (settings.edn, env vars)
 │   config_schema.clj   — the malli schema for the config map
 ├── debug.clj           — debug/error logging
-├── context.clj         — project context files (AGENTS.md/CLAUDE.md)
+├── project_context.clj — project context files (AGENTS.md/CLAUDE.md)
 ├── version.clj         — baked/source version reporting
-├── runtime.clj         — the app root store node + the loop's stage map
+├── app_runtime.clj     — the app root store node + the loop's stage map
 ├── registry.clj        — name-addressed registrations in the app root's
 │                         store (commands, prompts, skills, tools)
 ├── extension.clj       — the extension contract root (`kmet.agent.extension`)
@@ -60,7 +60,7 @@ kmet/agent/
 ├── skills.clj          — skill resources
 ├── model_resolver.clj  — model pattern/CLI resolution
 ├── packages.clj        — package/resource resolution (local + managed git)
-├── package_manager.clj — the install/remove/update/list/config CLI
+├── packages_cli.clj    — the install/remove/update/list/config CLI
 ├── git_packages.clj    — git source parsing + managed checkouts
 ├── event_bus.clj       — the event vocabulary + extension event bus
 ├── loop.clj            — the agent loop driver (public: make-agent-state,
@@ -109,7 +109,7 @@ kmet/agent/
 │   ├── interactive/    — the TUI application proper, split out of
 │   │                     interactive.clj: layout (agent event handler +
 │   │                     the widget tree), turn (submit/cancel/dequeue),
-│   │                     session admin (replay/resume/tree/fork), commands,
+│   │                     session admin (replay/resume/tree/fork), builtins,
 │   │                     state (CoreState), status, auth, resources,
 │   │                     ui registry (ExtensionUIContext)
 │   ├── print.clj       — non-interactive print mode (`--print`;
@@ -204,7 +204,7 @@ registration tables/maps over compile-time multimethod registries. Use
 
 The registries a front end or extension can reach — commands, tools, skills,
 prompt templates, hooks, renderers, markdown transformers, flags — live in the
-app root's store (`kmet.libs.scope`, reached through `kmet.agent.runtime`),
+app root's store (`kmet.libs.scope`, reached through `kmet.agent.app-runtime`),
 addressed by host-shaped keys under an owner path: a registry's address
 (`[:app :commands]`), or `[:app :extensions <name>]` for an extension's own
 registrations, including the skills, prompts and themes a

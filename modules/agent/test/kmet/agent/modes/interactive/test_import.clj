@@ -3,7 +3,7 @@
    re-render that follows (pi: handleImportCommand)."
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.test-utils :as tu :refer [slash strip-ansi]]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [clojure.string :as str]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.settings-list :as settings-list]
@@ -11,7 +11,7 @@
             [kmet.tui.terminal :as terminal]
             [kmet.tui.core :as tui]
             [kmet.agent.modes.interactive :as inter]
-            [kmet.agent.modes.interactive.commands :as builtins]
+            [kmet.agent.modes.interactive.builtins :as builtins]
             [kmet.agent.modes.interactive.layout :as layout]
             [kmet.agent.modes.interactive.turn :as turn]
             [kmet.agent.modes.interactive.session-admin :as session-admin]

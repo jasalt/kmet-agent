@@ -17,7 +17,7 @@
    The registries themselves stay in their namespaces: they own the tag, the
    domain validation and the owner default. Only the store mechanics live
    here."
-  (:require [kmet.agent.runtime :as app-runtime]
+  (:require [kmet.agent.app-runtime :as app-runtime]
             [kmet.libs.scope :as scope]))
 
 (defn store-key

@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.commands
+(ns kmet.agent.modes.interactive.builtins
   "Builtin slash commands for the interactive mode: the view-bound commands
    (thinking handling, help/tools text, /session, /share, /reload, and the
    session/selector flows) and their registration. The engine-portable
@@ -27,7 +27,7 @@
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.ui.tui.theme-controller :as theme-ctrl]
@@ -45,7 +45,7 @@
             [kmet.agent.ui.tui.subs :as subs]
             [kmet.agent.ui.tui.thinking-selector :as thinking-selector]
             [kmet.libs.clipboard :as clipboard]
-            [kmet.agent.context :as context]
+            [kmet.agent.project-context :as context]
             [kmet.libs.process :as process]
             [kmet.tui.terminal-escape :as lib-term]
             [kmet.agent.modes.interactive.auth :as auth]

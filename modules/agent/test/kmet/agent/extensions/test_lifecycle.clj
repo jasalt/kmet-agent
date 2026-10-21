@@ -8,7 +8,7 @@
             [kmet.agent.extension :as ext]
             [kmet.libs.host :as host]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.runtime :as rt]
+            [kmet.agent.app-runtime :as rt]
             [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.prompts :as prompts]

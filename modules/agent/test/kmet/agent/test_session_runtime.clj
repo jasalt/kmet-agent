@@ -11,7 +11,7 @@
             [kmet.agent.compaction.stage :as agent-compact]
             [kmet.agent.loop :as agent]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.runtime :as app]
+            [kmet.agent.app-runtime :as app]
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
             [kmet.agent.session.runtime :as rt]

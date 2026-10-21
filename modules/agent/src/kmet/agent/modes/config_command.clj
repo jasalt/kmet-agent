@@ -1,7 +1,7 @@
 (ns kmet.agent.modes.config-command
   "The `kmet config` command's terminal UI (pi: cli/config-selector.ts — a
    standalone TuiMainScreen hosting the config selector). Command parsing
-   and dispatch stay in kmet.agent.package-manager (headless); this
+   and dispatch stay in kmet.agent.packages-cli (headless); this
    front-end namespace owns the terminal lifecycle and is injected there as
    :run-config! by the CLI composition root (kmet.agent.core)."
   (:require [babashka.fs :as fs]

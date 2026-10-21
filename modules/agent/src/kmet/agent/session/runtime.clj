@@ -27,7 +27,7 @@
      widgets exist — `extensions/install-front-end!` is the install point.
    - Registrations are not engine state (P2): commands, tools, skills,
      prompt templates, hooks, renderers, markdown transformers and flags
-     live on the app root's store (`kmet.agent.runtime`), each under an
+     live on the app root's store (`kmet.agent.app-runtime`), each under an
      owner path, so every engine reads the same set and a registration
      outlives the engine that happened to be current when it was made.
    - `dispose!` cancels an in-flight run and waits (bounded) for it to
@@ -41,7 +41,7 @@
             [kmet.libs.concurrent :as concurrent]
             [kmet.ai.models :as models]
             [kmet.agent.commands :as commands]
-            [kmet.agent.context :as context]
+            [kmet.agent.project-context :as context]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.compaction.stage :as agent-compact]
@@ -50,7 +50,7 @@
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]

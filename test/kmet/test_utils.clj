@@ -5,7 +5,7 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.runtime :as app]
+            [kmet.agent.app-runtime :as app]
             [kmet.agent.session.runtime :as rt]
             [kmet.agent.skills :as skills]
             [kmet.libs.scope :as scope]

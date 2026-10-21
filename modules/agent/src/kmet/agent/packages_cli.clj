@@ -1,4 +1,4 @@
-(ns kmet.agent.package-manager
+(ns kmet.agent.packages-cli
   "CLI entry for the package subcommands (pi: package-manager-cli.ts —
    `pi install/remove/uninstall/list/update/config`): local directory/file
    sources and git repositories (managed checkouts; npm is not ported, and

@@ -7,7 +7,7 @@
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
             [kmet.agent.loop-guard :as guard]
-            [kmet.agent.runtime :as runtime]
+            [kmet.agent.app-runtime :as runtime]
             [kmet.agent.retry :as retry]
             [kmet.agent.config :as cfg]
             [kmet.agent.loop.test-support :as support]))
@@ -149,7 +149,7 @@
           "on-done carries the guard explanation")))
 
 (t/deftest test-loop-agent-runs-in-the-app-node
-  ;; The run's node defaults to the app's (kmet.agent.runtime), and a run can
+  ;; The run's node defaults to the app's (kmet.agent.app-runtime), and a run can
   ;; be pointed at its own tree for a child node (scope.md §5).
   (t/is (identical? (runtime/node) (:node (loop/make-agent-state))))
   (let [mine (runtime/child-node)]

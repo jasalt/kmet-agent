@@ -9,7 +9,7 @@
             [kmet.agent.extension :as ext]
             [kmet.libs.host :as host]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.runtime :as rt]
+            [kmet.agent.app-runtime :as rt]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.session.core :as session]

@@ -3,7 +3,7 @@
    fixtures, and cleanup of contributed widgets."
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.test-utils :as tu]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.debug :as debug]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.editor :as editor]
@@ -13,7 +13,7 @@
             [kmet.tui.theme :as theme]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.core :as tui]
-            [kmet.agent.modes.interactive.commands :as builtins]
+            [kmet.agent.modes.interactive.builtins :as builtins]
             [kmet.agent.modes.interactive.ui-registry :as ui-registry]
             [kmet.agent.modes.interactive.state :as state]
             [kmet.agent.commands :as commands]

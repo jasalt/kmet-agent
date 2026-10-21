@@ -10,7 +10,7 @@
             [kmet.ai.models :as models]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.extensions.context :as ext-context]
-            [kmet.agent.runtime :as rt]
+            [kmet.agent.app-runtime :as rt]
             [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.skills :as skills]

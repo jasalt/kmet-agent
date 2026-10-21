@@ -21,7 +21,7 @@
             [kmet.libs.concurrent :as concurrent]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop.completion :as completion]
-            [kmet.agent.runtime :as runtime]
+            [kmet.agent.app-runtime :as runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.extensions.core :as extensions]
             [kmet.ai.api.shared :as shared]

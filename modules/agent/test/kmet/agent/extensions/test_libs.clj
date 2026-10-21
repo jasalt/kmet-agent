@@ -8,7 +8,7 @@
             [kmet.agent.extension :as ext]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.extensions.context :as ext-context]
-            [kmet.agent.runtime :as rt]
+            [kmet.agent.app-runtime :as rt]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.libs.scope :as scope]))

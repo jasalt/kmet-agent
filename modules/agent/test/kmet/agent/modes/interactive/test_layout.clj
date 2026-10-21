@@ -3,7 +3,7 @@
    editor's submit ordering (submitValue clears before onSubmit)."
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.test-utils :as tu :refer [strip-ansi]]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.hikap :as hiccup]
             [kmet.libs.hikap.component :as component]

@@ -4,7 +4,7 @@
    credential refresh on expiry (5-min skew), serialized credential ops,
    copilot available-model-ids filtering + proxy-ep base-url, and the /login
    auth-type selection."
-  (:require [kmet.agent.runtime :as app-runtime]
+  (:require [kmet.agent.app-runtime :as app-runtime]
             [clojure.string :as str]
             [clojure.test :as t :refer [testing]]
             [clojure.edn :as edn]
@@ -19,7 +19,7 @@
             [kmet.agent.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.tui.protocols :as protocols]
-            [kmet.agent.modes.interactive.commands :as builtins]
+            [kmet.agent.modes.interactive.builtins :as builtins]
             [kmet.agent.modes.interactive.auth :as interactive-auth]
             [kmet.test-utils :as tu]
             [kmet.libs.concurrent :as concurrent]))

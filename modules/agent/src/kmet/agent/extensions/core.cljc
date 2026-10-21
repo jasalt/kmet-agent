@@ -63,7 +63,7 @@
             [kmet.agent.extensions.context :as context]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.registry :as registry]
-            [kmet.agent.runtime :as app-runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
