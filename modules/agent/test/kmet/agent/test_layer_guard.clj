@@ -64,18 +64,32 @@
   ;; (kmet.agent.extensions.context/load-themes-from-dir!).
   {})
 
-(defn- front-end-source-files
-  "Every mode and app-UI namespace file (the front-end layers)."
-  []
-  (letfn [(walk [dir]
+(defn- source-files-under
+  "Every Clojure source file under DIR, path-normalized and sorted."
+  [dir]
+  (letfn [(walk [d]
             (mapcat (fn [f]
                       (if (fs/directory? f) (walk f) [f]))
-                    (fs/list-dir dir)))]
-    (->> (concat (walk "modules/agent/src/kmet/agent/modes")
-                 (walk "modules/agent/src/kmet/agent/ui"))
+                    (fs/list-dir d)))]
+    (->> (walk dir)
          (map slash)
          (filter #(re-find #"\.clj[ca]?$" %))
          (sort))))
+
+(defn- mode-source-files
+  "Every entry-mode namespace file."
+  []
+  (source-files-under "modules/agent/src/kmet/agent/modes"))
+
+(defn- ui-source-files
+  "Every app-UI namespace file."
+  []
+  (source-files-under "modules/agent/src/kmet/agent/ui"))
+
+(defn- front-end-source-files
+  "Every mode and app-UI namespace file (the front-end layers)."
+  []
+  (sort (concat (mode-source-files) (ui-source-files))))
 
 (deftest app-layer-does-not-require-front-ends
   (testing "no new kmet.agent namespace reaches the TUI/Tk/interactive layers"
@@ -105,6 +119,30 @@
           (is (empty? forbidden)
               (str f " requires " (vec forbidden)
                    " — front ends drive kmet.agent.session.runtime instead")))))))
+
+(def ^:private ui-temporary-leaks
+  ;; Known app-UI namespaces and the entry-mode prefixes they may require.
+  ;; The UI layer sits below the modes (a mode assembles components, not the
+  ;; other way round), so an entry here is debt: move the dependency down
+  ;; instead of adding one. Empty since the theme controller moved into the
+  ;; UI layer.
+  {})
+
+(deftest app-ui-does-not-require-entry-modes
+  (testing "app UI components never reach up into kmet.agent.modes"
+    (let [files (ui-source-files)]
+      (is (seq files) "no app UI sources scanned — check the walk roots")
+      (doseq [f files
+              :let [ns-name (path->ns f)
+                    allowed (get ui-temporary-leaks ns-name #{})]]
+        (let [forbidden (remove (fn [d]
+                                  (some #(str/starts-with? d %) allowed))
+                                (filter #(str/starts-with? % "kmet.agent.modes.")
+                                        (required-kmet f)))]
+          (is (empty? forbidden)
+              (str ns-name " requires " (vec forbidden)
+                   " — UI takes its data from the caller or the runtime, "
+                   "never from an entry mode")))))))
 
 (def ^:private loop-module-edges
   "The only allowed kmet.agent.loop.* edges; a subset check, so the map can
@@ -144,6 +182,10 @@
 
 (deftest the-loop-entry-point-is-pinned
   (testing "kmet.agent.loop exposes only the driver entry points"
+    ;; ns-publics needs the namespace loaded: a filtered test run loads only
+    ;; the requested namespaces, so require it here instead of relying on
+    ;; another test namespace having pulled it in.
+    (require 'kmet.agent.loop)
     (is (= '#{make-agent-state run-agent-turn cancel-turn}
            (set (keys (ns-publics 'kmet.agent.loop)))))))
 

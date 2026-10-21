@@ -16,7 +16,7 @@
             [kmet.agent.runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.modes.interactive.theme-controller :as theme-ctrl]
+            [kmet.agent.ui.tui.theme-controller :as theme-ctrl]
             [kmet.agent.ui.tui.bash-execution :as bash-execution]
             [kmet.agent.ui.tui.chat-history :as chat-history]
             [kmet.agent.ui.tui.dock :as dock]

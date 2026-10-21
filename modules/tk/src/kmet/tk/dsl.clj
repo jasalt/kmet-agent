@@ -1176,9 +1176,8 @@
   "Grow W's -height to the display lines its content occupies when a line
    is longer than the widget's width and Tk therefore wraps it: a text
    widget sized to its logical line count would clip the wrapped tail.
-   Wrapping normally happens in the renderer (see kmet.agent.ui.gui.transcript)
-   and the round trip is skipped whenever every line fits — which is the
-   whole transcript in the common case."
+   Wrapping normally happens in the renderer and the round trip is skipped
+   whenever every line fits — which is the whole transcript in the common case."
   [w props lines]
   (let [width (or (:width props) 80)]
     (when (and (not= "none" (tcl-word (:wrap props)))

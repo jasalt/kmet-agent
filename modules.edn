@@ -13,6 +13,9 @@
   {:name "ai" :src "modules/ai/src" :test "modules/ai/test" :rank 1}
   {:name "agent" :src "modules/agent/src" :test "modules/agent/test" :rank 3}
   {:name "loader" :src "modules/loader/src" :test "modules/loader/test" :rank 0}
+  ;; tk is the Tk backend plus its kmet.gui-sample.* widget skeleton (one
+  ;; `:ui/transcript` composite over the backend's extra-tag seam). No module
+  ;; depends on it: the agent module deliberately carries no Tk dependency.
   {:name "tk" :src "modules/tk/src" :test "modules/tk/test" :rank 2}]
 
  :extension-root "extensions"

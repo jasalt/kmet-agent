@@ -2,7 +2,8 @@
 
 This file documents the application package and its contributor workflow.
 Implementation-specific references live beside their namespaces, not in the
-user-facing `docs/` directory: see [`tui/tui.md`](tui/tui.md),
+user-facing `docs/` directory: see
+[`tui.md`](../../../tui/src/kmet/tui/tui.md),
 [`../../../loader/src/kmet/loader/loader.md`](../../../loader/src/kmet/loader/loader.md), [`extension.md`](extension.md),
 [`agent/development/pi-alignment.md`](agent/development/pi-alignment.md). Temporary
 analysis notes (`run_code.md`, `perf.md`, and `jolt-bugs.md`) remain at the
@@ -11,122 +12,107 @@ repository root by convention.
 ## Project structure
 
 ```
-modules/agent/src/kmet/
-├── core.clj            — CLI entry, arg parsing, mode dispatch
-├── config.clj          — Configuration loading (settings.edn, env vars)
-├── debug.clj           — Debug/error logging
+modules/
+├── reakt/  — reactive primitives                    (kmet.libs.reakt.*)
+├── hikap/  — toolkit-agnostic hiccup UI framework   (kmet.libs.hikap.*)
+├── libs/   — generic, self-contained helpers        (kmet.libs.*)
+├── tui/    — terminal backend over hikap            (kmet.tui.*; tui.md)
+├── ai/     — provider/auth library                  (kmet.ai.*)
+├── agent/  — this module: the application           (kmet.agent.*)
+├── loader/ — extension loader                       (kmet.loader.*)
+└── tk/     — Tk backend + widget sample, Jolt-only  (kmet.tk.*, kmet.gui-sample.*)
+```
+
+`modules.edn` is the workspace manifest: it lists the module trees and the
+extra source roots, and the tasks read it instead of repeating the paths
+(`kmet.tasks.modules`). `kmet.libs.hikap.*` is namespaced under `kmet.libs`
+(the framework may require only `kmet.libs.*`) but its sources live in
+`modules/hikap`.
+
+The app module (`modules/agent/src/kmet/agent`):
+
+```
+kmet/agent/
+├── core.clj            — CLI entry: global flags (--version, --list-models,
+│                         --generate-models), argument parsing, mode dispatch
+├── jvm_main.clj        — the JVM artifact's AOT entry point
+├── config.clj          — configuration loading (settings.edn, env vars)
+│   config_schema.clj   — the malli schema for the config map
+├── debug.clj           — debug/error logging
+├── context.clj         — project context files (AGENTS.md/CLAUDE.md)
+├── version.clj         — baked/source version reporting
+├── runtime.clj         — the app root store node + the loop's stage map
+├── registry.clj        — name-addressed registrations in the app root's
+│                         store (commands, prompts, skills, tools)
 ├── extension.clj       — the extension contract root (`kmet.agent.extension`)
+├── extensions/         — the extension ABI implementation
+│   ├── core.cljc       — hook/renderer/shortcut/flag registries, bind and
+│   │                     install-front-end!, the extension UI ports
+│   ├── context.cljc    — per-extension SCI isolation
+│   ├── libs.clj        — the fixed bundled-extension library set
+│   └── bundled.clj     — bundled extension artifacts and discovery
+├── commands.clj        — slash-command registry (app-root store,
+│   │                     [:app :commands] owner; ctx-shaped handlers:
+│   │                     {:runtime :ui :frontend}, front-end tags)
+│   └── commands/builtins.clj — engine-portable builtin commands
+├── keybindings.clj     — the app keymap
+├── prompts.clj         — prompt-template resources
+├── skills.clj          — skill resources
+├── model_resolver.clj  — model pattern/CLI resolution
+├── packages.clj        — package/resource resolution (local + managed git)
 ├── package_manager.clj — the install/remove/update/list/config CLI
-│                         (git sources: kmet.agent.git-packages)
-├── git_packages.clj — git source parsing + managed checkouts
-│                      (pi: utils/git.ts + the git half of
-│                      core/package-manager.ts)
-├── libs/               — Generic, self-contained helpers (edit diffing,
-│                         process tree, SSE framing, the outbound-HTTP
-│                         boundary, terminal protocol + images, YAML
-│                         frontmatter, EDN store + file locks, durable file
-│                         writes (atomic publish + Windows AV retry),
-│                         highlighting,
-│                         markdown, crypto, AWS SigV4, ...)
-│                         hikap.clj / hikap/ is the toolkit-agnostic
-│                         hiccup framework (engine, component runtime,
-│                         alias registry) the TUI and GUI backends build on
-├── modes/              — Entry modes: interactive TUI + print + RPC
+├── git_packages.clj    — git source parsing + managed checkouts
+├── event_bus.clj       — the event vocabulary + extension event bus
+├── loop.clj            — the agent loop driver (public: make-agent-state,
+│   │                     run-agent-turn, cancel-turn)
+│   └── loop/           — loop submodules, a DAG pinned by test-layer-guard:
+│       ├── message.clj     message constructors + wire shapes
+│       ├── state.clj       agent state, event routing, queue writes
+│       ├── completion.clj  LLM request construction + provider call
+│       ├── tool_exec.clj   tool-call prep, hooks, batch execution
+│       └── compact.clj     compaction orchestration
+├── compaction.clj      — token estimation + summarization prompts
+├── retry.clj           — retry decision stage
+├── loop_guard.clj      — repeat-loop guard stage
+├── bash_executor.clj   — the bash tool's process engine
+├── session/            — session subsystem
+│   ├── core.clj        — EDNL sessions (storage, branch/tree, context
+│   │                     projection, labels, entries, statistics)
+│   ├── schema.clj      — malli schemas for session entries/header
+│   ├── export.clj      — standalone HTML session export
+│   └── runtime.clj     — the session runtime engine (bootstrap, lifecycle,
+│                         submission chain, compaction queue, subscribers,
+│                         UI requests, disposal)
+├── tools/              — built-in tools: read, write, edit, bash
+│   │                     (grep/find/ls and the Windows-only powershell ship
+│   │                     as opt-in extensions)
+│   ├── core.clj / tool.clj / registry.clj — the tool API, Tool record and
+│   │                     registry (custom tools live in the app-root store)
+│   ├── invoke.clj      — the shared invocation pipeline (loop + run_code)
+│   ├── util.clj        — path/argument helpers
+│   └── config.clj      — the built-in tool rows for `kmet config`
+├── modes/              — entry modes
 │   ├── interactive.clj — interactive TUI entry: run + session start-up
 │   │                     (pi: modes/interactive/interactive-mode.ts)
+│   ├── interactive/    — the TUI application proper, split out of
+│   │                     interactive.clj: layout (agent event handler +
+│   │                     the widget tree), turn (submit/cancel/dequeue),
+│   │                     session admin (replay/resume/tree/fork), commands,
+│   │                     state (CoreState), status, auth, resources,
+│   │                     ui registry (ExtensionUIContext)
 │   ├── print.clj       — non-interactive print mode (`--print`;
 │   │                     `--mode text|edn` output)
-│   ├── rpc.clj         — the long-lived EDN stdio protocol (docs/rpc.md):
-│   │                     command dispatch, wire events, and the extension
-│   │                     UI port's asynchronous answers
-│   ├── rpc_client.clj  — the thin client scripts and tests drive RPC mode
-│   │                     with: spawn, send/await by id, event
-│   │                     subscription, wait-idle
-│   └── interactive/    — sections split out of interactive.clj:
-│       ├── state.clj   — CoreState (view state + the runtime engine),
-│       │                 session-dir/format helpers,
-│       │                 footer/title/border updaters (config is now read
-│       │                 from the engine config atom, not a global ref)
-│       ├── auth.clj    — login/logout flows + provider options
-│       ├── status.clj  — anim timer, status indicator, pending messages
-│       ├── turn.clj    — agent event reactions, submit/cancel/dequeue,
-│       │                 compaction-queue display (the runtime owns the
-│       │                 submission chain and the queue)
-│       ├── session_admin.clj — renderers, session replay, resume/import,
-│       │                 tree, fork/clone UX (the runtime owns the swaps)
-│       ├── commands.clj — builtin commands, /session, /share, /reload
-│       ├── resources.clj — loaded-resources sections
-│       ├── layout.clj — agent event handler + build-layout widget tree
-│       └── ui_registry.clj — ExtensionUIContext (widgets, dialogs, editor);
-│                         installs the front end's extension surface through
-│                         extensions/install-front-end! (mode + port,
-│                         registered under [:app :ui])
-├── ai/                 — Provider/auth subsystem (pi: packages/ai — a standalone
-│   │                     library the agent depends on; self-contained)
-│   ├── models.clj      — Provider/model registry + committed EDN catalogs
-│   │                     (model_data/), cost, catalog loading
-│   ├── model_config.clj / provider_composer.clj — models.edn custom
-│   │                     providers + config/extension layer composition
-│   ├── model_gen.clj   — the catalog generator (bb generate-models)
-│   ├── auth.clj        — env-var table, auth.edn, credential resolution
-│   ├── oauth.clj       — OAuthAuth record, device-code + PKCE loopback flows
-│   ├── llm.clj + api/  — LLM dispatcher + per-wire API builders
-│   │                     (openai/anthropic/google/responses/codex/azure/
-│   │                     bedrock/vertex/mistral; api/sse.clj holds the
-│   │                     provider stream parsers over kmet.libs.sse;
-│   │                     wires.clj is the api-type → builder table — the
-│   │                     one place that names a wire)
-│   ├── image_models.clj — image-generation registry + :openrouter-images
-│   │                     wire (image_model_data/ catalog)
-│   ├── google_adc.clj  — vertex Application Default Credentials
-│   ├── usage.clj       — provider usage normalization (pi: normalizeUsage)
-│   ├── edn_writer.clj / hash.clj — deterministic catalog EDN, pi-parity hashes
-│   ├── attribution.clj / constrained_sampling.clj —
-│   │                     provider attribution headers, tool JSON-schema
-│   │                     constraints
-│   ├── slots.clj       — one-slot registration helpers (auth's config key
-│   │                     and OAuth sources)
-│   ├── http.clj        — provider streams over the kmet.libs.http boundary;
-│   │                     the request's :on-headers/:on-response hooks are
-│   │                     arguments (send-message opts)
-├── agent/              — App business logic (pi: dist/core/)
-│   ├── loop.clj        — the agent loop driver; loop/ — its submodules
-│   │                     (message, state, completion, tool_exec, compact)
-│   ├── retry.clj       — retry/error policy
-│   ├── loop_guard.clj  — repeat-loop guard
-│   ├── runtime.clj     — the app root node (the store) and the loop's
-│   │                     stage map a run reads once per attempt
-│   ├── session/         — session subsystem:
-│   │   ├── core.clj     — EDNL sessions (storage, branch/tree,
-│   │   │                 compaction, import/export planning)
-│   │   ├── schema.clj   — Malli schemas for session entries/header
-│   │   ├── export.clj   — standalone HTML session export
-│   │   └── runtime.clj  — the session runtime engine (bootstrap, lifecycle,
-│   │                     submission chain, compaction queue,
-│   │                     subscribers, UI requests, disposal)
-│   ├── commands.clj / keybindings.clj / packages.clj / extensions.cljc —
-│   │                     slash command registry (app-root store,
-│   │                     [:app :commands] owner; ctx-shaped handlers:
-│   │                     {:runtime :ui :frontend}, front-end tags; the
-│   │                     engine-portable builtins live in
-│   │                     kmet.agent.commands.builtins), keymap, package +
-│   │                     extension loading;
-│   │                     extensions/context.cljc — per-extension SCI isolation
-│   ├── model_resolver.clj — model pattern/CLI resolution
-│   ├── registry.clj    — name-addressed registrations in the app root's
-│   │                     store (key shape, owner precedence, display order,
-│   │                     whole-registry clear) that commands, prompts,
-│   │                     skills and tools register through
-│   ├── tools/          — built-in tools: read, write, edit, bash
-│   │                     (grep/find/ls and the Windows-only powershell
-│   │                     ship as opt-in extensions in
-│   │                     extensions/grep-tool.clj, find-tool.clj,
-│   │                     ls-tool.clj, powershell.clj)
-│   └── ui/             — app TUI components (chat history, footer, ...)
-├── tui/                — Generic TUI library (pi: @earendil-works/pi-tui;
-│   │                     usage docs in modules/tui/src/kmet/tui/tui.md)
-│   └── components/     — text, input, editor, markdown, select/settings
-│                         lists, spinner, image, stack layouts, ...
+│   ├── rpc.clj         — the long-lived EDN stdio protocol (docs/rpc.md)
+│   ├── rpc_client.clj  — the thin client scripts and tests drive RPC with
+│   └── config_command.clj — the `kmet config` terminal screen
+└── ui/                 — app UI over the front-end backends
+    ├── shared.clj      — backend-neutral view helpers (no kmet.tui/kmet.tk)
+    └── tui/            — TUI components: chat history, tool renderers,
+                          selectors, dock, footer, dialogs, the theme
+                          controller, ...
+                          (the Tk widget sample lives outside this module: it
+                          is kmet.gui-sample.* in modules/tk, so the agent has
+                          no Tk dependency)
 ```
 
 ```
@@ -139,8 +125,9 @@ test/kmet/tasks/        — their tests
 docs/examples/          — copyable, non-auto-loaded settings and complete theme EDN
 ```
 
-The tree above is a working map. Keep detailed behavior in the topic documents
-listed in the root `AGENTS.md` topic map.
+The tree is a working map: update it in the same change that moves a
+namespace, and keep detailed behavior in the topic documents listed in the
+root `AGENTS.md` topic map.
 
 ## Architecture and portability
 
@@ -152,21 +139,21 @@ listed in the root `AGENTS.md` topic map.
   is stricter than the rest of libs: no `kmet.*` require at all and no
   third-party library; `kmet.libs.test-scope-self-contained` enforces the
   require rule. Design: `modules/libs/src/kmet/libs/scope.md`.
-- `kmet.loader.*` is now an outer module (`modules/loader`); it may use third-party deps and
-  `kmet.loader.*`, but no other `kmet.*` namespace.
+- `kmet.loader.*` is an outer module (`modules/loader`); it may use
+  third-party deps and `kmet.loader.*`, but no other `kmet.*` namespace.
 - `kmet.libs.*` is generic and self-contained; it may not require non-libs
   `kmet.*` namespaces (app, TUI, mode, AI). Sibling-lib composition is fine
   and expected (`http → concurrent/json/process`,
   `oauth → concurrent/crypto/http/json`, `reakt → weak`);
-  `test/kmet/libs/test_self_contained.clj` enforces exactly this.
+  `modules/libs/test/kmet/libs/test_self_contained.clj` enforces exactly this.
   `kmet.libs.reakt.weak` is the one namespace allowed to touch `java.lang.ref` —
   a platform exception like the terminal backends.
-- `kmet.libs.hikap.core` is the toolkit-agnostic UI framework inside libs: the
-  hiccup engine (`kmet.libs.hikap.core`), the component runtime
-  (`kmet.libs.hikap.component`) and the alias registry
-  (`kmet.libs.hikap.alias`). Being a lib it may require only `kmet.libs.*`;
-  `kmet.tui.*` and `kmet.tk.*` are backends over it — they pass their
-  backend map in, the engine never requires them.
+- `kmet.libs.hikap.core` is the toolkit-agnostic UI framework owned by
+  `modules/hikap` (namespaced under `kmet.libs` because it may require only
+  `kmet.libs.*`): the hiccup engine (`kmet.libs.hikap.core`), the component
+  runtime (`kmet.libs.hikap.component`) and the alias registry
+  (`kmet.libs.hikap.alias`). `kmet.tui.*` and `kmet.tk.*` are backends over
+  it — they pass their backend map in, the engine never requires them.
 - `kmet.ai.*` is a standalone provider/auth library and depends only on
   `kmet.libs.*` plus standard/third-party code.
 - `kmet.tui.*` is the generic UI layer (the terminal backend for
@@ -175,12 +162,19 @@ listed in the root `AGENTS.md` topic map.
 - `kmet.tk.*` is the Tk GUI backend (Jolt-only; kmet.tk.core with the
   classic `:tk/…` widget set, kmet.tk.ttk the `:ttk/…` set, kmet.tk.dsl
   their shared machinery and kmet.tk.options the Tk option vocabulary —
-  plus kmet.tk.tcl, the host FFI adapter). Like `kmet.tui.*`, it builds on
-  `kmet.libs.*` and nothing above it. kmet's own `:ui/…` widgets are app
-  UI over the backend, in `kmet.agent.ui.gui.ui`.
-- `kmet.agent.modes.*` is the entry-mode layer; `kmet.agent.*` is business logic;
-  `kmet.agent.ui.tui.*` is app-specific UI; `kmet.agent.core` only parses arguments and
-  dispatches.
+  plus kmet.tk.tcl, the host FFI adapter). Like `kmet.tui.*`, `kmet.tk.*`
+  builds on `kmet.libs.*` and nothing above it. The module also carries the
+  `kmet.gui-sample.*` widget skeleton (the `:ui/…` widgets, today
+  `:ui/transcript`), which is dependency-free like the backend; no app module
+  requires the sample or Tk.
+- `kmet.agent.modes.*` is the entry-mode layer; `kmet.agent.*` is business
+  logic; `kmet.agent.ui.*` is app-specific UI. The direction is modes → UI (a
+  mode assembles components), never UI → modes;
+  `kmet.agent.ui.tui.theme-controller` sits in the UI layer for exactly that
+  reason and the modes call it from above.
+  `kmet.agent.core` is the composition root: it owns the CLI-only flags
+  (`--version`, `--list-models`, `--generate-models`), parses arguments and
+  dispatches to a mode.
 - `kmet.tasks.*` lives under `tasks/kmet/tasks/`, is never required by shipped
   code, and is not packaged. Task tests live under `test/kmet/tasks/`.
 - Facilities are extended at the layer that owns them, never copied into the
@@ -241,10 +235,10 @@ front end:
   `request-ui!`/`respond!`, so an asynchronous client can answer later; the
   degraded headless answers and the per-front-end capability table are in
   [`extension.md`](extension.md).
-- The RPC front end ([`docs/rpc.md`](../../docs/rpc.md)) is the headless
+- The RPC front end ([`docs/rpc.md`](../../../../docs/rpc.md)) is the headless
   consumer and `kmet.agent.modes.rpc-client` is the scripted client;
-  `test/kmet/modes/test_headless_guard.clj` asserts print and RPC reach no
-  interactive, TUI, or Tk namespace at all.
+  `modules/agent/test/kmet/agent/modes/test_headless_guard.clj` asserts print
+  and RPC reach no interactive, TUI, or Tk namespace at all.
 
 Tier 1 malli boundary schemas for session entries, config, and auth landed.
 The GUI live milestone remains the final GUI-dependent work.
@@ -280,7 +274,7 @@ The GUI live milestone remains the final GUI-dependent work.
 
 The task implementation lives in `tasks/kmet/tasks/`; packaging and
 cross-host build details are covered in the user-facing
-[`docs/building.md`](../../docs/building.md) guide.
+[`docs/building.md`](../../../../docs/building.md) guide.
 
 ```sh
 bb start           # Interactive TUI

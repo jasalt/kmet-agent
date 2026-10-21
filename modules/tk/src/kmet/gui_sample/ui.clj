@@ -1,22 +1,28 @@
-(ns kmet.agent.ui.gui.ui
+(ns kmet.gui-sample.ui
   "kmet's own Tk widgets: composites built out of the real widget classes of
    kmet.tk.core (classic `:tk/…`) and kmet.tk.ttk (themed `:ttk/…`). Those
-   namespaces hold only Tk widget classes; a kmet widget lives here, in the
-   app layer, under its own `:ui/…` tags, and kmet.agent.ui.gui.ui/backend
-   adds the whole set to the Tk backend's tag table — mount!/run! mount
-   through it.
+   namespaces hold only Tk widget classes; a kmet widget lives here, under its
+   own `:ui/…` tags, and kmet.gui-sample.ui/backend adds the whole set to the
+   Tk backend's tag table — mount!/run! mount through it.
 
    A UI tag's spec has the same shape as a backend tag's: a :ctor, its
    :options, and a :lens/:attach when it places children itself — a custom
-   :ctor where dsl/widget-spec is not enough."
+   :ctor where dsl/widget-spec is not enough.
+
+   This is a skeleton, kept in this module so `kmet.tk.*` stays a pure backend
+   and no app module depends on Tk: one widget (`:ui/transcript`, a scroll
+   container that embeds its children as text windows) and no app content,
+   theme or renderer. It demonstrates the extra-tag seam an app UI builds on;
+   `scripts/demos/gui_tk_demo.clj` shows the plain backend without it.
+   Staged groundwork for the `ui-tk` service (new-app.md)."
   (:require [kmet.tk.core :as tk]
             [kmet.tk.dsl :as dsl]
             [kmet.tk.options :as opt])
   (:refer-clojure :exclude [run!]))
 
 ;; ─── :ui/transcript ──────────────────────────────────────────────────────
-;; One text widget hosts every child as an embedded window (each message is
-;; its own widget, on its own stretched line), so the chat scrolls natively
+;; One text widget hosts every child as an embedded window (each child is its
+;; own widget, on its own stretched line), so a long stack scrolls natively
 ;; — no canvas, and no drawing lines. `:attach` in the widget's :styles is
 ;; how kmet.tk.dsl/make-widget learns to embed instead of pack.
 

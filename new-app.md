@@ -341,7 +341,7 @@ Today's providers, and the one that proves the contract is worth having:
    takes its backend map as an argument.
 2. `:ui/tk` — the same contract, second toolkit (Tk through
    `babashka.ffi`/`jolt.ffi`: bb and Jolt, not JVM), starting from the existing
-   `kmet.agent.ui/gui` transcript rather than a blank page.
+   `kmet.gui-sample` widget skeleton (in `modules/tk`) rather than a blank page.
 3. `:ui/web` — later; a third backend, no app change.
 
 App plugins declare `:inject {:ui :optional}` (or use
@@ -353,14 +353,15 @@ backend renders.**
 
 The cost is honest and larger than it looks: `modes/interactive/*` is 5,052
 lines (`layout.clj` 918, `ui_registry.clj` 708), but the component library it
-is written against — `kmet.agent.ui/` — is another 11,761 lines in 40 files (36
+is written against — `kmet.agent.ui/` — is another 11,126 lines in 37 files (36
 of them under `ui/tui/`), and that library is the part the rank guard actually
-constrains. A Tk transcript already exists (`kmet.agent.ui/gui/`, 646 lines:
-`transcript.clj` and `style.clj` over `kmet.tk.ttk.style`), so the second
-provider starts from a working backend. Landing 5a moves `kmet.agent.ui.*` and
+constrains. The Tk side starts from a working backend plus a widget skeleton
+(`modules/tk/src/kmet/gui_sample/`, `kmet.gui-sample.*`: the `:ui/transcript`
+scroll container over the extra-tag seam, no app content), so the second
+provider needs a transcript, not a backend. Landing 5a moves `kmet.agent.ui.*` and
 `modes/interactive/*` into `kmet.ui.tui` and extracts capabilities
 incrementally; it does not rewrite them as view-model + renderer. Landing 5b
-turns `ui/gui` into `kmet.ui.tk`.
+builds `kmet.ui.tk` on that skeleton.
 
 ## Pluggable modes
 
@@ -705,7 +706,7 @@ Each is independently shippable and gated.
 | 2 | the bus: listener table into the runtime; `emit-event!` keeps its signature | contract test over both delivery paths; kmet1 green |
 | 3 | `registry` parameterized then lifted; `:tools` service; commands/prompts/skills re-pointed | contract tests over both backends; kmet1 green |
 | 4 | `Engine` → `:agents` (+ `:permissions` policy/request!/remember!) and `:sessions` + `:sessionPersistence`; the extension host + ABI moved into `app` (key-set contract test); `extension.edn :inject` + `grep-tool` ported as a plugin; the remaining `runtime/node` reads; the globals re-hosted; `session/core.clj`'s lock moved onto a `kmet.libs.concurrent` primitive | kmet2 runs `mode-print`; a shipped directory extension and `grep-tool` green; kmet1 untouched |
-| 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `ui/gui` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
+| 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` registry (create/resume/list) + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end | two agents concurrently, one stalling client, an approval answered by a client |
 | 7 | loop re-hosted as a driver plugin; profiles as row+patch layers; presets = bundles | pi-alignment green; a tool swaps mid-session at the turn boundary (`:agent-settled`); a profile stacking a preset bundle boots |
 

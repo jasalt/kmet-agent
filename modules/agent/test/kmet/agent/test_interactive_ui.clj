@@ -31,7 +31,7 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.modes.interactive.theme-controller :as theme-ctrl]
+            [kmet.agent.ui.tui.theme-controller :as theme-ctrl]
             [kmet.agent.ui.tui.footer :as footer]
             [kmet.agent.ui.tui.pending-messages :as pending-messages]
             [kmet.agent.ui.tui.scoped-models-selector :as scoped-models-selector]

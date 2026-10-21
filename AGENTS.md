@@ -11,7 +11,7 @@ change when behavior changes.
 |------|-------------------------|
 | Application layout and contributor workflow | [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
-| Tk GUI backend (`kmet.tk.*`, Jolt-only) | [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md) |
+| Tk backend and its widget sample (`kmet.tk.*`, `kmet.gui-sample.*`, Jolt-only) | [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md) |
 | Extension contract and authoring | [`modules/agent/src/kmet/extension.md`](modules/agent/src/kmet/extension.md) |
 | pi alignment and feature-gap analysis | [`modules/agent/src/kmet/agent/development/pi-alignment.md`](modules/agent/src/kmet/agent/development/pi-alignment.md) |
 | Loader design and backends | [`modules/loader/src/kmet/loader/loader.md`](modules/loader/src/kmet/loader/loader.md) |
@@ -172,8 +172,10 @@ session-runtime split’s GUI-independent steps landed.)
   the topic map; temporary project notes stay at the repository root.
 - TUI rules (components, Hiccup, `track!`, lifecycle/input, theming, and
   full-redraw behavior) live in [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md).
-- Tk GUI backend rules (`kmet.tk.*`, the Tcl adapter, widget sets) live in
-  [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md).
+- Tk backend rules (`kmet.tk.*`, the Tcl adapter, widget sets) live in
+  [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md); the
+  module's widget sample (`kmet.gui-sample.*`, today `:ui/transcript`) is
+  documented there too. It is a dependency-free skeleton, not an app UI.
 - Jolt claims, guarded requires, loader capability floors, and native
   packaging live in [`jolt/src/jolt/kmet/README.md`](jolt/src/jolt/kmet/README.md)
   and [`docs/building.md`](docs/building.md).

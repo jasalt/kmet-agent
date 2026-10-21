@@ -1,4 +1,4 @@
-(ns kmet.agent.test-theme-controller
+(ns kmet.agent.ui.tui.test-theme-controller
   "ThemeController tests (pi: InteractiveThemeController) — theme switching,
    auto light/dark sync state, and the on-changed notification."
   (:require [babashka.fs :as fs]
@@ -8,7 +8,7 @@
             [kmet.tui.core :as core]
             [kmet.tui.terminal :as term]
             [kmet.tui.theme :as theme]
-            [kmet.agent.modes.interactive.theme-controller :as tc]))
+            [kmet.agent.ui.tui.theme-controller :as tc]))
 
 (defn- recording-terminal
   "ITerminal stub recording written output."

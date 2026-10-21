@@ -5,7 +5,7 @@
    the machinery both are written against is kmet.tk.dsl, and the Tk
    option vocabulary is kmet.tk.options. Every tag here is a Tk widget
    class; kmet's own widgets and composites are a separate UI namespace
-   over this backend (the app layer's kmet.agent.ui.gui.ui), which mounts
+   over this backend (the sample app's kmet.gui-sample.ui), which mounts
    through mount-backend!/run-backend!. Tag names follow Tcl's own
    namespace split, so a widget's
    toolkit is in its name: `:tk/frame` is the classic frame, `:ttk/frame`
@@ -225,7 +225,7 @@
 (def ^:private classic-specs
   "The classic widget set: Tk's classic widget classes as dsl/widget-specs,
    plus the root window (`:tk/toplevel`), whose ctor is its own. kmet's own
-   widgets and composites live in kmet.agent.ui.gui.ui, not here."
+   widgets and composites live in kmet.gui-sample.ui, not here."
   {:tk/toplevel
    {:ctor (fn [spec props]
             (let [path *window-path*]
@@ -567,7 +567,7 @@
 
 (defn mount-backend!
   "Mount TREE with BACKEND — kmet.tk.core/tk-backend, or one whose :tags add
-   kmet's own widgets on top of it (kmet.agent.ui.gui.ui/backend). Same contract as
+   kmet's own widgets on top of it (kmet.gui-sample.ui/backend). Same contract as
    mount!."
   [backend tree & [options]]
   (mount-tree! backend tree options))

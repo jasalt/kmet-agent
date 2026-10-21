@@ -39,7 +39,7 @@
             [kmet.libs.process :as process]
             [kmet.libs.reakt.core :as reakt]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.modes.interactive.theme-controller :as theme-ctrl]
+            [kmet.agent.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ai.models :as models]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.config :as cfg]

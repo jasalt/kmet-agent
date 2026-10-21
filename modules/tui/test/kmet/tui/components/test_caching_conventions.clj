@@ -61,7 +61,7 @@
    "BashExecutionComponent"     :transparent-parent})
 
 (def ^:private component-dirs
-  ["modules/tui/src/kmet/tui/components" "modules/agent/src/kmet/agent/ui/tui" "modules/agent/src/kmet/agent/ui/gui"])
+  ["modules/tui/src/kmet/tui/components" "modules/agent/src/kmet/agent/ui/tui" "modules/tk/src/kmet/gui_sample"])
 
 ;; ─── Top-level form splitting (paren-balanced, strings/comments skipped) ──
 

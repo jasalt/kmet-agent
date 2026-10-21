@@ -1,10 +1,10 @@
-(ns kmet.agent.ui.gui.test-ui
-  "Tests for kmet.agent.ui.gui.ui — kmet's own Tk widgets — against the
+(ns kmet.gui-sample.test-ui
+  "Tests for kmet.gui-sample.ui — kmet's own Tk widgets — against the
    recording adapter (headless), plus one live Tk mount of :ui/transcript
    under a display (skipped where there is none)."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.agent.ui.gui.ui :as ui]
+            [kmet.gui-sample.ui :as ui]
             [kmet.tk.test-support :refer [find-class-src live-tk scripts scripts-like with-fake]]
             [kmet.tk.core :as tk]
             [kmet.libs.hikap.core :as engine]))
@@ -13,7 +13,7 @@
 
 (t/deftest ui-tags-are-kept-out-of-the-tk-backend
   ;; kmet.tk.core and kmet.tk.ttk hold only Tk widget classes: the kmet
-  ;; composite is a :ui/… tag, added to the backend by kmet.agent.ui.gui.ui alone.
+  ;; composite is a :ui/… tag, added to the backend by kmet.gui-sample.ui alone.
   (t/is (contains? (:tags ui/backend) :ui/transcript))
   (t/is (contains? (:tags ui/backend) :tk/text) "the Tk widget classes are all there")
   (t/is (not (contains? (:tags tk/tk-backend) :ui/transcript))

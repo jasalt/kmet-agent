@@ -11,7 +11,7 @@
    repeat guard toggle), the HTTP transport row (:platform http-client vs
    :curl, applied live to kmet.libs.http), and a theme row."
   (:require [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.modes.interactive.theme-controller :as theme-ctrl]
+            [kmet.agent.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ai.api.shared :as shared]
             [kmet.agent.ui.tui.chat-history :as chat-history]
             [kmet.agent.ui.tui.footer :as footer]
