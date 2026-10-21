@@ -2,8 +2,7 @@
   "TUI layout construction for the interactive mode: the agent event
    handler and build-layout's widget tree, session wiring, and input
    listeners."
-  (:require [clojure.string :as str]
-            [babashka.fs :as fs]
+  (:require [babashka.fs :as fs]
             [kmet.agent.debug :as debug]
             [kmet.libs.concurrent :as concurrent]
             [kmet.agent.config :as cfg]
@@ -21,7 +20,6 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.commands :as commands]
-            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
@@ -170,34 +168,17 @@
                      (chat-history/chat-history-finalize-thinking! chat-history)
                      (chat-history/chat-history-start-streaming! chat-history)
                      (tui/tui-request-render tui))
-      :info (let [m (:message evt)
-                  text (if (string? (:content m))
-                         (:content m)
-                         (str/join
-                          (for [b (:content m)
-                                :when (= :text (:type b))]
-                            (:text b))))]
-              (chat-history/chat-history-insert-before-streaming! chat-history
-                                                                  (assoc m
-                                                                         :content text
-                                                                         :images (image-block/content-images (:content m))))
+      :info (let [m (:message evt)]
+              (chat-history/chat-history-insert-before-streaming!
+               chat-history
+               (assoc m
+                      :content (session-admin/message-text m)
+                      :images (image-block/content-images (:content m))))
               (tui/tui-request-render tui))
-      ;; extension custom messages (pi: custom messages
-      ;; render when display=true — a registered message
-      ;; renderer overrides the labeled info box; same
-      ;; rule as the session-restore path)
-      :custom (do (when (:display (:message evt))
-                    (let [m (:message evt)]
-                      (chat-history/chat-history-insert-before-streaming!
-                       chat-history
-                       (if-let [rendered (session-admin/run-message-renderer
-                                          (extensions/get-message-renderer
-                                           (:custom-type m)) m)]
-                         (session-admin/renderer-result->message rendered)
-                         (assoc m :role :info
-                                :content (session-admin/custom-message-text m)
-                                :images (image-block/content-images (:content m))
-                                :label (:custom-type m))))))
+      ;; extension custom messages (pi: custom messages render when
+      ;; display=true — same rule as the session-restore path)
+      :custom (do (when-let [msg (session-admin/custom-message-display (:message evt))]
+                    (chat-history/chat-history-insert-before-streaming! chat-history msg))
                   (tui/tui-request-render tui))
       nil)
 
@@ -384,14 +365,7 @@
    chat-history
    (mapcat (fn [m]
              (let [m (if (and (= :custom (:role m)) (:display m))
-                       (if-let [rendered (session-admin/run-message-renderer
-                                          (extensions/get-message-renderer
-                                           (:custom-type m)) m)]
-                         (session-admin/renderer-result->message rendered)
-                         (assoc m :role :info
-                                :content (session-admin/custom-message-text m)
-                                :images (image-block/content-images (:content m))
-                                :label (:custom-type m)))
+                       (session-admin/custom-message-display m)
                        m)]
                (if-let [notice (session-admin/compaction-cost-notice (:config @cs-ref)
                                                                      (:role m) (:usage m))]

@@ -33,10 +33,10 @@
 
 ;; ─── Resume session ────────────────────────────────────────────────────────
 
-(defn custom-message-text
-  "Plain text of a :custom message's content (string or text blocks) — the
-   display text for custom_message entries/messages in the TUI (pi renders
-   custom messages as labeled info boxes)."
+(defn message-text
+  "A message's content as plain text: a string passes through, a block vector
+   contributes its text blocks. The display text for custom messages and
+   injected info entries (pi renders both as plain text)."
   [m]
   (if (string? (:content m))
     (:content m)
@@ -80,6 +80,21 @@
   (if (and (map? rendered) (not (record? rendered)))
     rendered
     {:component rendered}))
+
+(defn custom-message-display
+  "A custom message's display form: its registered message renderer's
+   result, else pi's labeled info box. nil when the :display flag is off —
+   such an entry stays in the LLM context only (pi: display controls TUI
+   rendering), so callers render exactly the nil-checked result."
+  [e]
+  (when (:display e)
+    (if-let [rendered (run-message-renderer
+                       (extensions/get-message-renderer (:custom-type e)) e)]
+      (renderer-result->message rendered)
+      {:role :info
+       :content (message-text e)
+       :images (image-block/content-images (:content e))
+       :label (:custom-type e)})))
 
 (defn compaction-cost-notice
   "pi: addCompactionCostNotice — the warning line appended after a
@@ -165,20 +180,11 @@
 
 (defn- replay-custom-message!
   "Extension custom messages render only when display is set (pi: the display
-   flag controls TUI rendering); content may be a string or a block vector
-   (pi CustomMessageEntry). A registered message renderer overrides the
-   default labeled info box."
+   flag controls TUI rendering); a registered message renderer overrides the
+   default labeled info box (see custom-message-display)."
   [cs e]
-  (when (:display e)
-    (chat-history/chat-history-add-message!
-     (:chat-history cs)
-     (if-let [rendered (run-message-renderer
-                        (extensions/get-message-renderer (:custom-type e)) e)]
-       (renderer-result->message rendered)
-       {:role :info
-        :content (custom-message-text e)
-        :images (image-block/content-images (:content e))
-        :label (:custom-type e)}))))
+  (when-let [msg (custom-message-display e)]
+    (chat-history/chat-history-add-message! (:chat-history cs) msg)))
 
 (defn- replay-assistant!
   "An assistant entry plus the tool results of its tool calls: each call

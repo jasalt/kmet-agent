@@ -70,6 +70,12 @@
                (satisfies? protocols/IEditorComponent cur))
       (apply! cur))))
 
+(defn- enabled-value?
+  "A boolean row's chosen value — pi's boolean rows carry the \"true\" /
+   \"false\" strings."
+  [value]
+  (= value "true"))
+
 (defn- bool-row
   "A true/false toggle row (pi: values [\"true\" \"false\"]).
    DESCRIPTION is the muted line pi shows under the selected row."
@@ -103,7 +109,7 @@
   [{:keys [cs engine]}]
   {:show-images
    (fn [value]
-     (let [on? (= value "true")]
+     (let [on? (enabled-value? value)]
        (swap! subs/image-settings-atom assoc :show-images on?)
        (cfg/save-setting! [:terminal :show-images] on?)))
 
@@ -115,7 +121,7 @@
 
    :block-images
    (fn [value]
-     (let [blocked? (= value "true")]
+     (let [blocked? (enabled-value? value)]
        (runtime/set-block-images! engine blocked?)
        (cfg/save-setting! [:images :block-images] blocked?)))
 
@@ -123,17 +129,17 @@
    ;; the autocomplete provider reads the setting live when it opens
    ;; (pi: setupAutocompleteProvider on change)
    (fn [value]
-     (cfg/set-enable-skill-commands! (= value "true")))
+     (cfg/set-enable-skill-commands! (enabled-value? value)))
 
    :clear-on-shrink
    (fn [value]
-     (let [on? (= value "true")]
+     (let [on? (enabled-value? value)]
        (tui/tui-set-clear-on-shrink! (:tui cs) on?)
        (cfg/set-clear-on-shrink! on?)))
 
    :terminal-progress
    (fn [value]
-     (cfg/set-show-terminal-progress! (= value "true")))
+     (cfg/set-show-terminal-progress! (enabled-value? value)))
 
    :hide-thinking
    (fn [value]
@@ -175,21 +181,21 @@
 
    :show-hardware-cursor
    (fn [value]
-     (let [on? (= value "true")]
+     (let [on? (enabled-value? value)]
        (tui/tui-set-show-hardware-cursor! (:tui cs) on?)
        (cfg/set-show-hardware-cursor! on?)))
 
    ;; read live at emit time — no runtime state needed
    :cache-miss-notices
    (fn [value]
-     (cfg/save-setting! [:show-cache-miss-notices] (= value "true")))})
+     (cfg/save-setting! [:show-cache-miss-notices] (enabled-value? value)))})
 
 (defn- agent-row-handlers
   "Settings rows that change the agent runtime's live options."
   [{:keys [cs engine]}]
   {:auto-compact
    (fn [value]
-     (let [on? (= value "true")]
+     (let [on? (enabled-value? value)]
        (runtime/set-auto-compact! engine on?)
        (cfg/save-setting! [:auto-compact] on?)
        (when-let [f (:footer-comp cs)]

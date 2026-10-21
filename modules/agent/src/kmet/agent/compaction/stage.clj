@@ -477,9 +477,15 @@
   [agent sess reason custom-instructions failure from-extension]
   (if (compaction-aborted? agent)
     :aborted
-    (if-let [{:keys [entries prep problem]} (prepare-compaction agent reason)]
-      (if problem
+    (let [{:keys [entries prep problem] :as plan} (prepare-compaction agent reason)]
+      (cond
+        problem
         (do (vreset! failure problem) :failed)
+
+        (nil? plan)
+        false
+
+        :else
         (let [{:keys [cancelled supplied]}
               (ask-before-compact! agent reason custom-instructions entries prep)]
           (if cancelled
@@ -491,8 +497,7 @@
                         supplied-summary)
                     (summarize! agent prep custom-instructions reason))]
               (apply-summary! agent sess prep summary-result failure
-                              from-extension)))))
-      false)))
+                              from-extension))))))))
 
 (defn- compaction-outcome
   "The reporting view of RESULT for finish-compaction!: what status to report

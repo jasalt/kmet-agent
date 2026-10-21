@@ -721,33 +721,29 @@
     (when @(:overflow-recovered agent)
       ;; A non-error message ends overflow recovery (pi resets on success)
       (reset! (:overflow-recovered agent) false))
-    (let [tool-calls (:tool-calls result)]
+    (let [tool-calls (:tool-calls result)
+          turn' (inc t)
+          settled {:status :settled :turn turn'}
+          continue-step (fn [calls must-run]
+                          {:step :continue :turn turn'
+                           :tool-calls calls :must-run must-run})]
       (if (seq tool-calls)
-        (let [phase (tools-phase! agent stages t result request-tools)]
-          (cond
-            (= :loop-guard phase)
-            ;; Repeat-loop guard tripped: settle the run with the
-            ;; explanation as the final text
-            (do (loop-guard-give-up!
-                 agent text-buf :tool-calls
-                 (str "Stopped: repeated identical tool calls "
-                      "(threshold " (:loop-guard-threshold @(:cfg agent)) ")"))
-                {:status :settled :turn (inc t)})
-            (= :settled phase)
-            {:status :settled :turn (inc t)}
-            (= :continue phase)
-            ;; A :finish-turn / :turn-end decision asked for one more request
-            {:step :continue :turn (inc t)
-             :tool-calls tool-calls :must-run true}
-            :else
-            {:step :continue :turn (inc t)
-             :tool-calls tool-calls :must-run false}))
+        (case (tools-phase! agent stages t result request-tools)
+          ;; the guard settles the run with the explanation as the final text
+          :loop-guard
+          (do (loop-guard-give-up!
+               agent text-buf :tool-calls
+               (str "Stopped: repeated identical tool calls "
+                    "(threshold " (:loop-guard-threshold @(:cfg agent)) ")"))
+              settled)
+          :settled settled
+          ;; a :finish-turn / :turn-end decision asked for one more request
+          :continue (continue-step tool-calls true)
+          (continue-step tool-calls false))
         (case (final-phase! agent t result)
-          :end {:status :settled :turn (inc t)}
-          :continue {:step :continue :turn (inc t)
-                     :tool-calls [] :must-run true}
-          {:step :continue :turn (inc t)
-           :tool-calls [] :must-run false})))))
+          :end settled
+          :continue (continue-step [] true)
+          (continue-step [] false))))))
 
 (defn- run-turn!
   "One turn of an attempt: drain the steering queue, run the request, and

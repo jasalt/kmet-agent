@@ -32,35 +32,35 @@
                             "estimated token count exceeds the tiny recent tail.")}]})))
 
 (deftest prepare-compaction-plans-a-compactable-branch
-  (testing "a branch with history before the kept tail yields the entries and the prepared cut"
+  (testing "history before the kept tail yields the entries and the prepared cut"
     (with-session-agent
-      #(let [sess %1
-             agent %2]
-         (append-messages! sess 12)
-         (let [{:keys [entries prep]} ((var stage/prepare-compaction) agent :auto)]
-           (is (= 12 (count entries)) "the branch entries ride along for the boundary event")
-           (is (= 12 (count (session/get-branch sess))) "planning never mutates the session")
-           (is (map? prep))
-           (is (seq (:messages prep)) "there is something to summarize")
-           (is (string? (:first-kept-id prep)))
-           (is (pos? (:tokens-before prep))))))))
+      (fn [sess agent]
+        (append-messages! sess 12)
+        (let [{:keys [entries prep]} ((var stage/prepare-compaction) agent :auto)]
+          (is (= 12 (count entries))
+              "the branch entries ride along for the boundary event")
+          (is (= 12 (count (session/get-branch sess)))
+              "planning never mutates the session")
+          (is (map? prep))
+          (is (seq (:messages prep)) "there is something to summarize")
+          (is (string? (:first-kept-id prep)))
+          (is (pos? (:tokens-before prep))))))))
 
 (deftest prepare-compaction-reports-an-already-compacted-branch
   (testing "a manual compaction of an already-compacted session reports pi's reason"
     (with-session-agent
-      #(let [sess %1
-             agent %2]
-         (append-messages! sess 3)
-         (session/append-entry sess {:role :compaction :summary "old"})
-         (is (= {:problem "Already compacted"}
-                ((var stage/prepare-compaction) agent :manual)))
-         (testing "the automatic paths stay silent about it"
-           (is (nil? ((var stage/prepare-compaction) agent :auto)))
-           (is (nil? ((var stage/prepare-compaction) agent :threshold))))))))
+      (fn [sess agent]
+        (append-messages! sess 3)
+        (session/append-entry sess {:role :compaction :summary "old"})
+        (is (= {:problem "Already compacted"}
+               ((var stage/prepare-compaction) agent :manual)))
+        (testing "the automatic paths stay silent about it"
+          (is (nil? ((var stage/prepare-compaction) agent :auto)))
+          (is (nil? ((var stage/prepare-compaction) agent :threshold))))))))
 
 (deftest prepare-compaction-passes-over-an-empty-session
   (testing "nothing to summarize plans nothing (both paths)"
     (with-session-agent
-      #(let [agent %2]
-         (is (nil? ((var stage/prepare-compaction) agent :manual)))
-         (is (nil? ((var stage/prepare-compaction) agent :auto)))))))
+      (fn [_sess agent]
+        (is (nil? ((var stage/prepare-compaction) agent :manual)))
+        (is (nil? ((var stage/prepare-compaction) agent :auto)))))))
