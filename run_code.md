@@ -921,7 +921,7 @@ pipeline both callers use:
 - `modules/agent/src/kmet/agent/tools/invoke.clj` — the T4 shared invocation pipeline
   (`prepare-tool-call` / `execute-tool-call` / `finish-tool-call`);
   `modules/agent/test/kmet/agent/test_tools.clj` covers its hook/binding semantics, and
-  `modules/agent/test/kmet/agent/test_loop.clj` the loop side (block, arg rewrite in both
+  `modules/agent/test/kmet/agent/loop/test_tools.clj` the loop side (block, arg rewrite in both
   batch modes, after-hook overrides, and hook propagation into a scripted
   call).
 - `modules/libs/src/kmet/libs/concurrent.clj` — `or-signal` (the read-only OR-view of

@@ -15,7 +15,7 @@
   (let [paths (#'format/source-paths)]
     (t/is (contains? (set paths) (slash (str (fs/file "modules" "agent" "src" "kmet" "agent" "core.clj"))))
           "source files are included")
-    (t/is (contains? (set paths) (slash (str (fs/file "modules" "agent" "test" "kmet" "agent" "test_loop.clj"))))
+    (t/is (contains? (set paths) (slash (str (fs/file "modules" "agent" "test" "kmet" "agent" "loop" "test_turn.clj"))))
           "test files are included")
     (t/is (some #(str/ends-with? (str %) (str (fs/file "format.clj"))) paths)
           "task files are included")
