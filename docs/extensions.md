@@ -163,9 +163,12 @@ a declared service is absent, `init` runs the moment the last one appears
 (and again if kmet reloads the plugin), and unloading disposes what it
 registered. Without `:inject` it loads immediately, exactly as before —
 nothing in an existing extension needs to change. A name is a service
-keyword the app provides (`:tools`, `:commands`, `:prompts`, `:skills`,
-`:sessions`, `:ui`, an app-defined one); `:optional` entries do not hold the
-mount. Everything else is
+keyword the app provides — today `:tools`, `:commands`, `:prompts`,
+`:skills`, `:sessions` and `:sessionPersistence` — or one an app defines
+itself; `:optional` entries do not hold the mount, and a name nothing
+provides keeps the extension pending, so declare only what you need. (Each
+extension lists its state in `/extensions`: a pending one names what it
+waits for.) Everything else is
 required from there:
 internal namespaces resolve by strict ns-path lookup under the extension
 root, and declared library dependencies resolve to the jars in `deps.edn`

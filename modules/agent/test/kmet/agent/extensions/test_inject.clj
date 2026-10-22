@@ -51,6 +51,12 @@
             (t/is (some? fiber) "the extension is mounted as a plugin fiber")
             (t/is (= :pending (:state fiber)) "waiting for its declared dependency")
             (t/is (contains? (:waiting-for fiber) :kmet.inject-test/never)))
+          (let [loaded (some #(when (= name (:name %)) %)
+                             (extensions/get-loaded-extensions))]
+            (t/is (= :pending (:fiber-state loaded))
+                  "the listing says the mount is pending")
+            (t/is (= #{:kmet.inject-test/never} (:waiting-for loaded))
+                  "and names what it waits for — what the UI shows"))
           (t/is (= "hi" (:text (extensions/apply-input-hooks "hi" :interactive)))
                 "init has not run: the extension registered nothing yet"))
         (t/is (nil? (extensions/unload-extension!

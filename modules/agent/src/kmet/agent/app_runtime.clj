@@ -1,25 +1,25 @@
 (ns kmet.agent.app-runtime
-  "The agent runtime: one store node and the app's root ctx.
+  "The agent runtime: the app's root ctx, and the store node it replaced.
 
-   `node` is the app root store — the `kmet.libs.scope` store every front end,
-   engine and loaded extension registers into. `ctx` is the root context those
-   same registrations move onto as the migration lands: the store holds what
-   has no seam yet (the extension host's owner paths, `/units`), and the ctx
-   the registries, the event bus's scope and the loop's stage map.
+   `ctx` is the root context: kmet1 boots kmet2's composition behind it, so the
+   registries, the event bus's scope, the loop's stage map and the session log
+   all live on the ctx. The extension host registers there too since 4b-ii-a
+   (its hooks, themes, UI port, renderers and flags are registry entries), so
+   what is left of `node` is kmet1's own store — `registry_store`'s backend and
+   `/units`' owner listing, both retired by 4d/4e.
 
    The loop's two stages ride the root ctx under `:loop-stages` as plain data:
    the loop reads its stage map once per attempt (scope.md §4), and a run that
    needs its own gets a `child-ctx` carrying its overrides (P7).
 
-   Registrations are owned (scope.md §2): what `init(api)` installs lands on
-   `[:app :extensions <name>]`, so unloading an extension is one LIFO dispose
-   of that owner plus the fns it recorded for what lives outside the tree.
+   Registrations are owned (scope.md §2): what `init(api)` installs lands under
+   `[:app :extensions <name>]` in the app's registries, so unloading an
+   extension is one `deregister-owner!` per tag plus the fns it recorded for
+   what lives outside any registry (and its fiber, when it declared `:inject`).
 
-   Two sharp edges come with the node, and the host owns both: `node` is a
+   One sharp edge comes with the root ctx, and the host owns it: it is a
    process global every front end, engine and loaded extension shares — a run
-   that must not share registrations gets its own `child-ctx`; and disposal never
-   waits, so the host mutates the live store only where nothing is mid-run
-   (`/reload`, bootstrap, a session swap)."
+   that must not share registrations gets its own `child-ctx`."
   (:require [clojure.string :as str]
             [kmet.agent.debug :as debug]
             [kmet.agent.loop-guard :as loop-guard]
@@ -48,11 +48,15 @@
    :retry-policy {:call retry/retry-decision}})
 
 (defonce ^:private app-node
-  (delay (scope/node nil {:loop-stages (atom default-loop-stages)})))
+  ;; No host fields: the stage map moved to the root ctx at 4c-ii-b, and the
+  ;; extension host stopped registering here at 4b-ii-a. What remains is
+  ;; kmet1's store until 4e.
+  (delay (scope/node nil)))
 
 (defn node
-  "The app's root node. -main reaches this before extension loading, so every
-   `init(api)` has an owner to register under (scope.md §6)."
+  "The app's root store node — kmet1's remaining scope store: `registry_store`'s
+  backend and `/units`' owner listing, retired at 4d/4e. Nothing the extension
+  host installs lands here since 4b-ii-a."
   []
   @app-node)
 

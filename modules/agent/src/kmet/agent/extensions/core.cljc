@@ -1409,7 +1409,7 @@
   "Loaded extensions as {:name str :path str :kind :file/:dir/:jar
    :loader-kind :sci/:jolt :entry-ns symbol :extension-dir str-or-nil
    :bundled bool :fiber-state :pending/:active/:failed-or-nil
-   :error throwable-or-nil} maps (extension-dir = the extension's own
+   :waiting-for #{service …} :error throwable-or-nil} maps (extension-dir = the extension's own
    directory; nil for jar and bundled resource extensions). An `:inject`
    extension that has not activated is `:pending`; one whose init threw while
    activating later is `:failed` with the throwable — the host reported the
@@ -1424,6 +1424,7 @@
              :bundled (boolean (:bundled? ext))
              :extension-dir (extension-dir-of ext)
              :fiber-state (:state fiber)
+             :waiting-for (:waiting-for fiber)
              :error (:error fiber)}))
         @extensions))
 

@@ -2,6 +2,7 @@
   "The loaded-resources sections shown by the interactive mode's
    LoadedResources component (pi: showLoadedResources)."
   (:require [babashka.fs :as fs]
+            [clojure.string :as str]
             [kmet.agent.config :as cfg]
             [kmet.agent.project-context :as context]
             [kmet.agent.skills :as skills]
@@ -10,6 +11,28 @@
             [kmet.libs.path :as path]))
 
 ;; ─── Loaded resources (pi: showLoadedResources) ────────────────────────────
+
+(defn- extension-state
+  "The lifecycle suffix of a loaded extension, or nil when it is simply loaded:
+   a pending `:inject` mount names the services it waits for, a failed one
+   says its activation threw."
+  [ext]
+  (case (:fiber-state ext)
+    :pending (str "pending: " (str/join ", " (map str (sort (:waiting-for ext)))))
+    :failed "failed"
+    nil))
+
+(defn- extension-line
+  "One extension's line in the expanded list: its path, plus what a pending or
+   failed mount is doing."
+  [ext]
+  (str "  " (path/home-relative (:path ext))
+       (case (:fiber-state ext)
+         :pending "  [pending]"
+         :failed (str "  [failed: "
+                      (or (some-> (:error ext) ex-message) "activation threw")
+                      "]")
+         "")))
 
 (defn build-loaded-resource-sections
   "Pi: showLoadedResources — one section per loaded resource group (Context,
@@ -38,8 +61,10 @@
                           :expanded-items (mapv (fn [t] (str "  /" (:name t))) templates)})
                    (seq extensions)
                    (conj {:name "Extensions"
-                          :items (mapv :name extensions)
-                          :expanded-items (mapv (fn [e]
-                                                  (str "  " (path/home-relative (:path e))))
-                                                extensions)}))]
+                          :items (mapv (fn [e]
+                                         (if-let [state (extension-state e)]
+                                           (str (:name e) " (" state ")")
+                                           (:name e)))
+                                       extensions)
+                          :expanded-items (mapv extension-line extensions)}))]
     sections))
