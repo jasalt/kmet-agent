@@ -1,13 +1,19 @@
 {:paths ["src" "test"]
  ;; Rank 2: the application below every front end. Its sources require only
- ;; kmet.srce.* (rank 1) once the bus lands, plus third-party code; a kmet.agent.*
- ;; namespace may live here (the two-axes rule: the file moves, the namespace
- ;; does not) but the module may never require a module at its own rank or
- ;; above. babashka/process is the version rule's git describe.
+ ;; lower-ranked modules (kmet.srce.*, kmet.libs.*, kmet.ai.*, kmet.loader.*),
+ ;; plus third-party code; a kmet.agent.* namespace may live here (the
+ ;; two-axes rule: the file moves, the namespace does not) but the module may
+ ;; never require a module at its own rank or above. babashka/process is the
+ ;; version rule's git describe.
  ;;
- ;; The session layer (kmet.agent.session.*, a rank-4 namespace that moved here
- ;; with its files) brings the library edges it uses: libs for fs/edn-store, ai
- ;; for the usage tallies, and the two Maven siblings those need.
+ ;; The `kmet.agent.*` namespaces here are that rule in practice: the session
+ ;; layer (kmet.agent.session.*, moved at 4c-i), kmet.agent.registry (landing
+ ;; 3), and the host's leaf dependencies — kmet.agent.debug, .config-schema,
+ ;; .event-bus, .tools.util — lifted ahead of the extension host's own move so
+ ;; its requires stop pointing upward (new-app.md, 4b-ii).
+ ;;
+ ;; The session layer brings the library edges it uses: libs for fs/edn-store,
+ ;; ai for the usage tallies, and the two Maven siblings those need.
  :deps {kmet/libs {:local/root "../libs"}
         kmet/ai {:local/root "../ai"}
         babashka/fs {:mvn/version "0.5.34"}

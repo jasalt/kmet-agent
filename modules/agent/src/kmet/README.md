@@ -58,14 +58,11 @@ kmet/agent/
 │                         --generate-models), argument parsing, mode dispatch
 ├── jvm_main.clj        — the JVM artifact's AOT entry point (delegates to
 │                         core.clj, i.e. the bootstrap)
-├── config.clj          — configuration loading (settings.edn, env vars)
-│   config_schema.clj   — the malli schema for the config map
-├── debug.clj           — debug/error logging
+├── config.clj          — configuration loading (settings.edn, env vars);
+│                         its malli schema (config_schema.clj) lives in app
 ├── project_context.clj — project context files (AGENTS.md/CLAUDE.md)
 ├── app_runtime.clj     — the app root store node and ctx, and the loop's
 │                         stage map (on the ctx)
-├── registry.clj        — name-addressed registrations in the app root's
-│                         store (commands, prompts, skills, tools)
 ├── extensions/         — the extension runtime
 │   ├── core.cljc       — hook/renderer/shortcut/flag registries, bind and
 │   │                     install-front-end!, the extension UI ports
@@ -83,8 +80,8 @@ kmet/agent/
 ├── packages.clj        — package/resource resolution (local + managed git)
 ├── packages_cli.clj    — the install/remove/update/list/config CLI
 ├── git_packages.clj    — git source parsing + managed checkouts
-├── event_bus.clj       — kmet1's extension event bus (the vocabulary is
-│                         re-exported from kmet.app.events)
+├── (event_bus.clj lives in app — kmet1's extension event bus, vocabulary
+│   re-exported from kmet.app.events)
 ├── loop.clj            — the agent loop driver (public: make-agent-state,
 │   │                     run-agent-turn, cancel-turn)
 │   └── loop/           — loop submodules, a DAG pinned by test-layer-guard:
@@ -99,29 +96,20 @@ kmet/agent/
 │                         summarization call + retry, session replacement
 ├── retry.clj           — retry decision stage
 ├── loop_guard.clj      — repeat-loop guard stage
-├── session/            — session subsystem
-│   ├── core.clj        — the session API façade over store/listing/
-│   │                     context/stats/tree (what dependents require)
-│   ├── store.clj       — EDNL storage: Session record, ids, line parser
-│   │                     and torn-tail repair, atomic rewrite, appends
-│   ├── listing.clj     — on-disk discovery: header scan, session list,
-│   │                     delete and import
-│   ├── context.clj     — message context, append-only context edits,
-│   │                     cache-miss detection
-│   ├── stats.clj       — usage/tokens, counts, prompt history, activity
-│   ├── tree.clj        — branches, labels, tree projection, fork/clone
-│   ├── schema.clj      — malli schemas for session entries/header
-│   ├── export.clj      — standalone HTML session export
+├── session/            — the session subsystem; only the runtime lives here
 │   └── runtime.clj     — the session runtime engine (bootstrap, lifecycle,
 │                         submission chain, compaction queue, subscribers,
-│                         UI requests, disposal)
+│                         UI requests, disposal). The log itself — core,
+│                         store, listing, context, stats, tree, schema,
+│                         export, backend — lives in `modules/app`
+│                         (`kmet.agent.session.*`, moved at 4c-i)
 ├── tools/              — built-in tools: read, write, edit, bash
 │   │                     (grep/find/ls and the Windows-only powershell ship
 │   │                     as opt-in extensions)
 │   ├── core.clj / tool.clj / registry.clj — the tool API, Tool record and
 │   │                     registry (custom tools live in the app-root store)
 │   ├── invoke.clj      — the shared invocation pipeline (loop + run_code)
-│   ├── util.clj        — path/argument helpers
+│   ├── (util.clj lives in app: path/argument helpers, shared with config)
 │   ├── bash_executor.clj — the bash tool's process engine (streaming,
 │   │                     temp-file spill, shell resolution)
 │   ├── bash_output.clj — the engine's pure half: size formatting, UTF-8

@@ -820,13 +820,22 @@ the host move was mechanical, and it is mechanical for `kmet.extension` only.
 4c-i has since removed the `session.core` edge and `debug`, and 4c-ii-a turned
 four of the rest into services.
 
-The practical order is **4a → 4c-i → 4b-i → 4c-ii-a → 4c-ii-b → 4b-ii →
-4c-iii → 4d → 4e**, and the reasons are dependencies, not preferences: 4c-i
+The practical order is **4a → 4c-i → 4b-i → 4c-ii-a → 4c-ii-b → 4b-ii-a →
+4c-iii → 4b-ii-b → 4d → 4e**, and the reasons are dependencies, not preferences: 4c-i
 removed the host's session edge and gave the composition a real log, 4b-i moved
-the ABI and pinned the api contract, 4c-ii-b gives the host a ctx to take,
-4b-ii puts the host on it, 4c-iii gives the api the agent surface it exposes,
+the ABI and pinned the api contract, 4c-ii-b gives the host a ctx to take, 4b-ii
+puts the host on it, 4c-iii gives the api the agent surface it exposes,
 and 4e can only run once the last `(scope/…)` site is gone — which 4d's
 `owner-listing` walk is.
+
+**4b-ii split again, by measurement** (`new-app.md` § "Landing 4b-ii: what the
+require graph says"): moving the host files into `app` requires the ten
+`kmet.agent.*` namespaces they require to move first — the whole tool layer
+among them — so the landing's *behavior* (`:inject`, the ctx-shaped api,
+`shutdown` in the disposer) ships as **4b-ii-a** with the files still in
+`agent`, and the **move** becomes 4b-ii-b, after the tool layer and `config`
+lift. The leaf dependencies already moved: `debug`, `event-bus`,
+`config-schema`, `tools/util`.
 
 Two prerequisites have no row of their own and must not be forgotten inside
 4c-iii: `:projections` (the inbox and turn boundaries as derived state over the
@@ -857,6 +866,47 @@ moving into `app` needs the interop re-host but not the root ctx, the root ctx
 cutover needs neither the session move nor a driver, and `Engine` → `:agents`
 needs both. If i and ii turn out to move together, they merge then — with data
 rather than a guess.
+
+### Landing 4b-ii: what the require graph says
+
+4b-ii is written as one move — the host files into `app`, keeping their
+namespaces. The module guard reads *where the file lives*, so the move is legal
+only when every module above `app` has left the host's requires. Measured on
+`extensions/core.cljc` (the host's 1,586 lines), the upward edges were:
+
+| Required by the host | Uses | What it needs first |
+|---|---|---|
+| `kmet.agent.debug` | 1 | nothing — **lifted** |
+| `kmet.agent.event-bus` | 8 | nothing (debug + `kmet.app.events` + `srce`) — **lifted** |
+| `kmet.agent.config-schema`, `.tools.util` | — | nothing — **lifted** (they were blocking `config`) |
+| `kmet.agent.app-runtime` | 11 | the node and the registry façade must be reachable from a ctx, not from an `agent` namespace |
+| `kmet.agent.commands` | 3 | the same — its only upward edge is `app-runtime` |
+| `kmet.agent.prompts` | 2 | the same |
+| `kmet.agent.skills` | 3 | `app-runtime`, `tools.read`, `tools.registry` |
+| `kmet.agent.tools.core` | 5 | `tools.registry` + `tools.invoke` |
+| `kmet.agent.tools.bash` | 1 | the shell seam (landing 6): `bash-executor` is a `defonce` of process state |
+| `kmet.agent.config` | 1 | one call: `bash-exec/set-shell-options!` — the `:shell` seam in one line |
+| `kmet.agent.registry-store` | 1 | a decision: `app` must not require the store it outlives (landing 3's note), so the theme key it builds has to become a registry address |
+
+Two consequences, and they change the order rather than the goal:
+
+- **The move is behind the tool layer.** `tools.registry` requires every tool
+  body (read, write, edit, bash, run-code) plus `app-runtime`, so lifting it to
+  `app` means lifting the tool layer's shell/filesystem seams first — i.e.
+  most of landing 6. Waiting for that would hold `:inject` hostage to the
+  shell services for no reason.
+- **So the landing splits by axis, not by size.** 4b-ii-a ships the *behavior*
+  — the host takes a ctx, `extension.edn` gains `:inject` and an extension
+  mounts as the plugin `{:name :inject :apply}`, `shutdown` composes into the
+  disposer — with the files still in `modules/agent`. 4b-ii-b is the *move*,
+  after the tool layer and `config` lift. The landing rule still holds at each
+  half: kmet2 uses the new mechanism, kmet1 keeps working, one test holds both.
+
+The four leaf lifts are the ones with no upward edge at all — `debug` (required
+by the host, the bus, `config`, `skills`, `bash-executor`), `event-bus` (the bus
+is the host's biggest non-tool dependency), `config-schema` and `tools/util`
+(`config`'s two other clean edges). They keep their namespaces, so no call site
+changed; only the guard's answer did.
 
 ### Landing 4c-ii-b settled
 
