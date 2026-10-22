@@ -376,6 +376,19 @@
     (t/is (nil? ((:title (tools/get-tool "run_code")) {:code "\n  "}))
           "blank script → nil (no prompt-only title)")))
 
+(t/deftest test-bash-quiet-title-drops-the-session-cwd-cd
+  (t/testing "the quiet line omits a `cd <session cwd> &&` hop the shell already made"
+    (let [title (:title (tools/get-tool "bash"))
+          cwd (slash "/work/project")]
+      (t/is (= "$ ls -la"
+               (binding [tool-util/*cwd* cwd]
+                 (title {:command (str "cd " cwd " && ls -la")})))
+            "cd to the runtime cwd is noise")
+      (t/is (= "$ cd /other && ls -la"
+               (binding [tool-util/*cwd* cwd]
+                 (title {:command "cd /other && ls -la"})))
+            "a cd to another directory stays visible"))))
+
 ;; ─── Tool read ────────────────────────────────────────────────────────────
 
 (t/deftest test-tool-read-file

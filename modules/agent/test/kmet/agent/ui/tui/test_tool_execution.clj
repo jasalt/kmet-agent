@@ -1,6 +1,7 @@
 (ns kmet.agent.ui.tui.test-tool-execution
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
+            [babashka.fs :as fs]
             [kmet.tui.core :as core]
             [kmet.tui.utils :as utils]
             [kmet.libs.terminal-image :as timg]
@@ -10,6 +11,7 @@
             [kmet.agent.ui.tui.subs :as subs]
             [kmet.agent.ui.tui.tool-execution :as te]
             [kmet.agent.ui.tui.tool-renderers :as renderers]
+            [kmet.agent.tools.bash :as bash]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.components.text :as text]))
 
@@ -953,10 +955,11 @@
 
 ;; ─── Quiet mode (:quiet display) ────────────────────────────────────────────
 
-(defn- render-quiet [& {:keys [name args content is-error title-fn]}]
+(defn- render-quiet [& {:keys [name args content is-error title-fn cwd]}]
   (let [shared (atom :quiet)
         c (te/make-tool-execution :name name :args args :content (or content "")
                                   :is-error (boolean is-error)
+                                  :cwd (or cwd (str (fs/cwd)))
                                   :tools-expanded-atom shared
                                   :title-fn title-fn)]
     ;; settled (ended) by default — the pending ... state has its own test
@@ -994,6 +997,21 @@
     (let [lines (render-quiet :name "myext" :args {} :content "x"
                               :title-fn (fn [_] (throw (ex-info "boom" {}))))]
       (is (re-find #"myext" (first lines)) "bare tool name, no prefix"))))
+
+(deftest test-quiet-drops-the-session-cwd-cd-prefix
+  (testing "a bash title omits a `cd <component cwd> &&` hop only in the quiet line"
+    (let [cwd (str (fs/cwd) "/quiet-nested/cwd")
+          args {:command (str "cd " cwd " && ls -la")}]
+      (is (re-find #"\$ ls -la$"
+                   (first (render-quiet :name "bash" :args args
+                                        :cwd cwd
+                                        :title-fn bash/title)))
+          "the quiet line shows just the part the cd did not already do")
+      (is (not (str/includes? (first (render-quiet :name "bash" :args args
+                                                   :cwd cwd
+                                                   :title-fn bash/title))
+                              "cd "))
+          "the redundant hop is gone"))))
 
 (deftest test-quiet-ignores-content-and-renderers
   (testing "content swaps never touch the quiet line (scrollback-immutable)"

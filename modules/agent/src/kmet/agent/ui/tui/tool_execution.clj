@@ -19,6 +19,7 @@
             [kmet.tui.components.box :as box]
             [kmet.tui.components.container :as container]
             [kmet.tui.utils :as utils]
+            [kmet.agent.tools.util :as tool-util]
             [kmet.agent.ui.tui.tool-renderers :as renderers]
             [kmet.agent.ui.tui.custom-dialog-adapter :as cda]
             [kmet.agent.ui.tui.image-block :as image-block]
@@ -147,13 +148,18 @@
 
 (defn- quiet-title-for
   "Resolve the quiet title body for NAME/ARGS: the tool's :title fn (pure
-   plain-text data, nil-safe over partial streaming args), or the tool
-   name when the tool defines none or it returns blank. The result is
-   collapsed to one line (see quiet-one-line). Never throws — a
-   throwing title degrades to the name (a broken title must not take the
-   frame down)."
-  [title-fn name args]
-  (let [t (try (when (fn? title-fn) (title-fn args)) (catch Exception _ nil))]
+   plain-text data) run with the component's CWD bound as the runtime cwd —
+   so a title that resolves display paths (the bash tool's redundant
+   `cd <session cwd> &&`) sees the session's directory, exactly like the
+   render context's :cwd — or the tool name when the tool defines none or
+   it returns blank. The result is collapsed to one line (see
+   quiet-one-line). Never throws — a throwing title degrades to the name
+   (a broken title must not take the frame down)."
+  [title-fn name args cwd]
+  (let [t (try (when (fn? title-fn)
+                 (binding [tool-util/*cwd* cwd]
+                   (title-fn args)))
+               (catch Exception _ nil))]
     (if (and (string? t) (seq (str/trim t))) (quiet-one-line t) (quiet-one-line name))))
 
 (defcomponent ToolExecutionComponent :tool
@@ -198,10 +204,11 @@
             title-fn @title-fn-atom]
       ;; Quiet short-circuit — BEFORE any renderer runs (custom renderers
       ;; never execute in quiet: it cannot be overridden). Reads only
-      ;; name/args/is-error/ended-ness/output-pad/theme/mode — no content,
-      ;; details, truncation, images, timing, cwd or renderer state — so a
-      ;; quiet
-      ;; line never re-invalidates and stays immutable in scrollback.
+      ;; name/args/is-error/ended-ness/output-pad/theme/mode plus the
+      ;; set-once cwd (untracked, for a title that resolves display paths)
+      ;; — no content, details, truncation, images, timing or renderer
+      ;; state — so a quiet line never re-invalidates and stays immutable
+      ;; in scrollback.
         (if quiet?
           (do (let [prev-call (last-call-component this)
                     prev-result (last-result-component this)
@@ -228,7 +235,8 @@
                 (when-let [id (:timer-id state)]
                   (timers/cancel! id)))
               (let [content-width (max 1 (- width (* 2 output-pad)))
-                    raw (str (cond is-error "(!) " running? "... ") (quiet-title-for title-fn name args))
+                    raw (str (cond is-error "(!) " running? "... ")
+                             (quiet-title-for title-fn name args @cwd-atom))
                     line (str (apply str (repeat output-pad \space))
                               (theme/italic (theme/fg theme :thinking-text
                                                       ;; plain text first, then style once:

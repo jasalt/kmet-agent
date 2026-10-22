@@ -15,10 +15,13 @@
   "Quiet one-liner body for the bash tool: the shell prompt `$ <cmd>`
    (matching the collapsed bash call line) — pure data, or nil when the
    command is missing/empty (the quiet branch falls back to the tool name).
-   Nil-safe over partial streaming args."
+   A leading `cd <session cwd> &&` is dropped: the shell already starts
+   there, and the quiet line is the one place that hop is pure noise (the
+   collapsed/expanded call line keeps the command verbatim). Nil-safe over
+   partial streaming args."
   [args]
   (when-let [cmd (tool-util/title-str-arg args :command)]
-    (str "$ " cmd)))
+    (str "$ " (tool-util/strip-cwd-cd-prefix cmd (tool-util/cwd)))))
 
 (def ^:private update-throttle-ms 100)  ;; pi: BASH_UPDATE_THROTTLE_MS
 (def ^:private max-live-bytes (* 50 1024))  ;; pi: DEFAULT_MAX_BYTES

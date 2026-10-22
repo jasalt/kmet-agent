@@ -66,3 +66,38 @@
   (when (map? args)
     (let [v (or (get args k) (get args (name k)))]
       (when (and (string? v) (seq v)) v))))
+
+;; ─── Shell command display ────────────────────────────────────────────────
+
+(def ^:private cd-prefix
+  "A leading `cd DIR &&` — the working-directory hop a shell call often
+   opens with. DIR is double-quoted, single-quoted or bare."
+  #"\A\s*cd\s+(?:--\s+)?(?:\"([^\"]*)\"|'([^']*)'|(\S+))\s*&&\s*")
+
+(defn- display-dir
+  "DIR resolved against BASE and normalized for comparison: `~` expanded,
+   a relative DIR taken from BASE, and lower-cased on Windows (paths are
+   case-insensitive there)."
+  [dir base]
+  (let [p (fs/expand-home (str dir))
+        abs (if (fs/absolute? p) p (fs/path base p))
+        s (str (fs/normalize abs))]
+    (if (fs/windows?) (str/lower-case s) s)))
+
+(defn strip-cwd-cd-prefix
+  "COMMAND without its leading `cd DIR &&` when DIR points at CWD — the
+   shell already starts in the session's working directory, so the hop is
+   noise in a one-line display. Quoted, relative and `~`-rooted DIRs
+   resolve; a cd to any other directory, a command left blank, a missing
+   CWD, or a separator other than `&&` leaves COMMAND untouched. A
+   non-string COMMAND passes through."
+  [command cwd]
+  (if-not (and (string? command) (string? cwd) (seq cwd))
+    command
+    (let [[match double-quoted single-quoted bare] (re-find cd-prefix command)
+          dir (or double-quoted single-quoted bare)
+          rest-command (when match (str/triml (subs command (count match))))]
+      (if (and (seq rest-command)
+               (= (display-dir dir cwd) (display-dir cwd cwd)))
+        rest-command
+        command))))
