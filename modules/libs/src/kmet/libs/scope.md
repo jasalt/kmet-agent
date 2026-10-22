@@ -102,9 +102,14 @@ the store and the children list are atoms.
 ## 6. The host's view
 
 The app root is created by `kmet.agent.app-runtime/node` before extensions load;
-every front end, engine and extension registers into it. Extensions register
-under `[:app :extensions <name>]`, so unloading one is a `dispose-owner!` plus
-the fns the extension recorded for what lives outside the tree.
+kmet1's front ends, engines and `/units` read it. Since 4b-ii-a the extension
+host **no longer registers into it**: an extension's commands, tools, skills,
+prompts, hooks, renderers, flags, themes and the UI port are entries in the
+app's registries under `[:app :extensions <name>]` (or `[:app :themes]`,
+`[:app :ui]`), so unloading one is one `deregister-owner!` per tag plus the fns
+the extension recorded for what lives outside any registry (aliases,
+shortcuts, model providers, event subscriptions), and an `:inject`
+extension's mount is a fiber whose disposal is the kernel's.
 
 `/units` prints one flat `<owner> keys=[…]` line per owner that holds
 registrations (`runtime/owner-listing`), in first-registration order. It walks

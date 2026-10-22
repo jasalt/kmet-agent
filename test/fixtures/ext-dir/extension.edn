@@ -1,1 +1,6 @@
-{:name "multi-ext", :entry multi-ext.main, :loader [:sci :jolt]}
+{:name "multi-ext"
+ :entry multi-ext.main
+ :loader [:sci :jolt]
+ ;; what init waits for: it registers a tool, which the :tools service owns.
+ ;; Declaration is opt-in — an extension without :inject loads immediately.
+ :inject [:tools]}

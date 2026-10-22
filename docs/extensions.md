@@ -150,7 +150,22 @@ underscores, dots → slashes; `.clj` → `.cljc` → `.bb` fallback):
 The manifest lists the initial namespace — `:entry`, a namespace symbol
 whose namespace must define `init` — and the loader backends the extension
 supports — `:loader` (see
-[Loader compatibility](#loader-compatibility-loader)). Everything else is
+[Loader compatibility](#loader-compatibility-loader)). It may also declare
+`:inject`, the app services `init` waits for:
+
+```clojure
+{:name "my-ext" :entry my-ext.main :loader [:jolt :sci]
+ :inject [:tools :commands]}      ; or {:tools nil :ui :optional}
+```
+
+With `:inject`, the extension mounts as a plugin: it stays **pending** while
+a declared service is absent, `init` runs the moment the last one appears
+(and again if kmet reloads the plugin), and unloading disposes what it
+registered. Without `:inject` it loads immediately, exactly as before —
+nothing in an existing extension needs to change. A name is a service
+keyword the app provides (`:tools`, `:commands`, `:prompts`, `:skills`,
+`:sessions`, `:ui`, an app-defined one); `:optional` entries do not hold the
+mount. Everything else is
 required from there:
 internal namespaces resolve by strict ns-path lookup under the extension
 root, and declared library dependencies resolve to the jars in `deps.edn`

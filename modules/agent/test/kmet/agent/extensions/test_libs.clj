@@ -1,6 +1,6 @@
 (ns kmet.agent.extensions.test-libs
   "The shared-library lists against the source trees, the packed-jar roundtrip, and
-   extension hooks living on the app tree (registration order and disposal)."
+   extension hooks living in the host's registry (order and disposal)."
   (:require [clojure.test :as t :refer [testing]]
             [clojure.string :as str]
             [clojure.java.io :as io]
@@ -8,9 +8,9 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.extensions.context :as ext-context]
             [kmet.agent.app-runtime :as rt]
+            [kmet.agent.registry :as registry]
             [kmet.agent.skills :as skills]
-            [kmet.agent.tools.core :as tools]
-            [kmet.libs.scope :as scope]))
+            [kmet.agent.tools.core :as tools]))
 
 ;; ─── The shared-library lists vs the source trees ────────────────────────
 
@@ -101,59 +101,50 @@
         (skills/clear-skills!)
         (fs/delete-if-exists jar)))))
 
-;; ─── Extension hooks live on the app tree (P2) ────────────────────────────
+;; ─── Extension hooks live in the host's registry (P2) ─────────────────────
 
-(t/deftest extension-hooks-live-on-the-app-tree
-  ;; scope.md §2: whatever an extension's init(api) installs belongs to
-  ;; [:app :extensions <name>]. Hooks are read from the tree rather than
+(t/deftest extension-hooks-live-in-the-host-registry
+  ;; whatever an extension's init(api) installs belongs to
+  ;; [:app :extensions <name>]. Hooks are read from one registry rather than
   ;; copied into each engine, so one registered with no engine running
   ;; reaches every engine, and deregistering removes the only copy.
   (let [owner (extensions/extension-owner "test-hooks")
-        node (rt/node)
-        dereg (extensions/register-input-hook! (rt/node)
-                                               owner (fn [{:keys [text]}] {:action :transform :text (str text "!")}))
-        dereg-start (extensions/register-before-agent-start-hook! (rt/node)
-                                                                  owner (fn [_] {:system-prompt "SYS"}))]
+        dereg (extensions/register-input-hook! owner (fn [{:keys [text]}] {:action :transform :text (str text "!")}))
+        dereg-start (extensions/register-before-agent-start-hook! owner (fn [_] {:system-prompt "SYS"}))]
     (try
       (t/is (= "hi!" (:text (extensions/apply-input-hooks "hi" :interactive)))
-            "the registered hook is read back from the tree")
+            "the registered hook is read back from the registry")
       (t/is (= "SYS" (:system-prompt
                       (extensions/apply-before-agent-start-hooks "p" "orig")))
-            "before-agent-start hooks read the same tree")
-      (t/is (= 2 (count (scope/owner-registrations node owner)))
-            "both registered under the extension's own owner")
-      (t/is (= #{[:kmet/hook :input] [:kmet/hook :before-agent-start]}
-               (into #{} (map #(subvec % 0 2)) (scope/owner-keys node owner)))
-            "keyed per hook kind, so one owner can hold several")
+            "before-agent-start hooks read the same registry")
+      (t/is (= {:input 1 :before-agent-start 1}
+               (frequencies
+                (keep (fn [[n m]] (when (= owner (:owner m)) (first n)))
+                      (registry/entries (rt/registry) :kmet/hook))))
+            "both registered under the extension's own owner, tagged per kind")
       (finally (dereg) (dereg-start)))
     (t/is (= "hi" (:text (extensions/apply-input-hooks "hi" :interactive)))
-          "deregistering stops it")
-    (t/is (empty? (scope/owner-registrations node owner))
-          "and leaves no registration behind")))
+          "deregistering stops it")))
 
 (t/deftest hooks-run-owner-by-owner-in-registration-order
-  ;; The store's order is the module's (scope.md §2): owners in
-  ;; first-registration order, each owner's own registrations in its own
+  ;; Hook order is owner-major whatever the registry's listing order: owners
+  ;; in first-registration order, each owner's own registrations in its own
   ;; order — so one extension's hooks stay together and in its own sequence.
   (let [a (extensions/extension-owner "test-hook-order-a")
         b (extensions/extension-owner "test-hook-order-b")
         seen (atom [])
         hook (fn [tag] (fn [_] (swap! seen conj tag) nil))
-        dereg-a1 (extensions/register-input-hook! (rt/node) a (hook :a1))
-        dereg-b1 (extensions/register-input-hook! (rt/node) b (hook :b1))
-        dereg-a2 (extensions/register-input-hook! (rt/node) a (hook :a2))
-        ;; owners share the store with every other registry: a key of another
-        ;; shape under the same owner is neither read nor a reason to throw
-        dereg-foreign (scope/register! (rt/node) a :tools/hooks {:event :turn-end})]
+        dereg-a1 (extensions/register-input-hook! a (hook :a1))
+        dereg-b1 (extensions/register-input-hook! b (hook :b1))
+        dereg-a2 (extensions/register-input-hook! a (hook :a2))]
     (try
       (extensions/apply-input-hooks "hi" :interactive)
       (t/is (= [:a1 :a2 :b1] @seen)
             "one owner's hooks are adjacent, in its registration order")
       (reset! seen [])
       (extensions/apply-input-hooks "hi" :interactive)
-      (t/is (= [:a1 :a2 :b1] @seen)
-            "another registry's key on the same owner is ignored")
-      (finally (dereg-a1) (dereg-b1) (dereg-a2) (dereg-foreign)))))
+      (t/is (= [:a1 :a2 :b1] @seen) "and the order is stable")
+      (finally (dereg-a1) (dereg-b1) (dereg-a2)))))
 
 (t/deftest test-extension-hooks-are-disposed-on-unload
   ;; End to end: ext/on-input and ext/on-before-agent-start register under the
@@ -187,7 +178,8 @@
               "and its before-agent-start hook")
         (t/is (= (inc tool-hooks) (count (extensions/get-tool-call-hooks)))
               "and its tool-call hook reaches the transform chain")
-        (t/is (= 3 (count (scope/owner-registrations (rt/node) owner)))
+        (t/is (= 3 (count (filter (fn [[_ m]] (= owner (:owner m)))
+                                  (registry/entries (rt/registry) :kmet/hook))))
               "all three live under the extension's owner")
         (extensions/unload-all-extensions!)
         (t/is (= tool-hooks (count (extensions/get-tool-call-hooks)))
@@ -199,7 +191,8 @@
                                         (extensions/apply-before-agent-start-hooks "p" "orig")))
                                   "HOOK SYS"))
               "and the before-agent-start hook")
-        (t/is (empty? (scope/owner-registrations (rt/node) owner))
+        (t/is (empty? (filter (fn [[_ m]] (= owner (:owner m)))
+                              (registry/entries (rt/registry) :kmet/hook)))
               "with nothing left under the owner"))
       (finally
         (extensions/unload-all-extensions!)
@@ -212,9 +205,9 @@
   (let [owner (extensions/extension-owner "test-hook-neighbours")
         seen (atom [])
         shared (fn [_] (swap! seen conj :shared) nil)
-        dereg-shared-1 (extensions/register-input-hook! (rt/node) owner shared)
-        dereg-other (extensions/register-input-hook! (rt/node) owner (fn [_] (swap! seen conj :other) nil))
-        dereg-shared-2 (extensions/register-input-hook! (rt/node) owner shared)]
+        dereg-shared-1 (extensions/register-input-hook! owner shared)
+        dereg-other (extensions/register-input-hook! owner (fn [_] (swap! seen conj :other) nil))
+        dereg-shared-2 (extensions/register-input-hook! owner shared)]
     (try
       (extensions/apply-input-hooks "hi" :interactive)
       (t/is (= [:shared :other :shared] @seen) "all three registrations run")

@@ -722,9 +722,8 @@
             (try (event-bus/emit-event! {:type :session-start :reason :reload}
                                         (runtime/agent-ctx (:engine cs)))
                  ;; pi: resources_discover fires after session_start (reason
-                 ;; reload) — extensions contribute skill/prompt/theme paths;
-                 ;; still a store registration until the host takes a ctx (4b-ii)
-                 (extensions/discover-resources! (app-runtime/node) :reload)
+                 ;; reload) — extensions contribute skill/prompt/theme paths
+                 (extensions/discover-resources! :reload)
                  (catch Exception e (debug/log "session-start: " e))))
           (chat-history/chat-history-add-message! chat-history
                                                   {:role :info :label "Reload"

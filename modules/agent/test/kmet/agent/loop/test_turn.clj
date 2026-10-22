@@ -15,7 +15,6 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
-            [kmet.agent.app-runtime :as runtime]
             [kmet.agent.config :as cfg]
             [kmet.agent.loop.test-support :as support]
             [kmet.test-utils :refer [slash]]))
@@ -479,8 +478,7 @@
         agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))
         ;; one test-owned owner, so the hook cannot outlive the test (P2:
         ;; hooks live on the app tree under their owner, not in an engine)
-        dereg (extensions/register-before-agent-start-hook! (runtime/node)
-                                                            [:app :test-loop-hooks]
+        dereg (extensions/register-before-agent-start-hook! [:app :test-loop-hooks]
                                                             (fn [_]
                                                               {:system-prompt "EXTRA SYSTEM PROMPT"
                                                                :message {:role :info :label "ext" :content "injected note"}}))]

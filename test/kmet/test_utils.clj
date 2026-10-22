@@ -5,10 +5,10 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.prompts :as prompts]
+            [kmet.agent.registry :as registry]
             [kmet.agent.app-runtime :as app]
             [kmet.agent.session.runtime :as rt]
             [kmet.agent.skills :as skills]
-            [kmet.libs.scope :as scope]
             [kmet.tui.utils :as u]))
 
 (defn test-engine
@@ -50,20 +50,19 @@
                                   :compaction-queued (:compaction-queued cs)})))
 
 (defn clear-app-registries!
-  "Clear the process-global registrations a test leaves on the app tree:
-   commands, prompt templates, skills, and the themes loaded from contributed
-   paths (its owner's teardowns remove them from the TUI layer's store too).
-   A test that exercises a real bootstrap loads the developer's own skills and
-   prompts into the app tree, and one that registers the builtin commands
-   leaves the app's slash registry filled; P2 made those registrations
-   app-scoped rather than per-engine, so a later namespace in the same process
-   would see them. Hook, renderer and flag registrations are per-owner and
-   tests deregister what they register."
+  "Clear the process-global registrations a test leaves in the app's
+   registries: commands, prompt templates, skills, and the themes loaded from
+   contributed paths. A test that exercises a real bootstrap loads the
+   developer's own skills and prompts, and one that registers the builtin
+   commands leaves the app's slash registry filled; P2 made those
+   registrations app-scoped rather than per-engine, so a later namespace in
+   the same process would see them. Hook, renderer and flag registrations are
+   per-owner and tests deregister what they register."
   []
   (commands/clear-commands!)
   (prompts/clear-prompt-templates!)
   (skills/clear-skills!)
-  (scope/dispose-owner! (app/node) extensions/themes-owner))
+  (registry/deregister-owner! (app/registry) :kmet/theme extensions/themes-owner))
 
 (defn with-clean-app-registries
   "clojure.test :each fixture: clear the app tree's process-global

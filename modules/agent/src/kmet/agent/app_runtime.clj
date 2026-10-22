@@ -88,14 +88,19 @@
 
 (def ^:private registry-tags
   "Every registry tag kmet1 registers under, and the service that owns it — nil
-   for the tags with no seam yet (the extension host's UI-side registries:
-   entry renderers, message renderers, flags), which share the façade's
-   `remainder` handle until 4b-ii gives them services."
+   for the tags with no seam yet (the extension host's own registrations:
+   hooks, themes, the UI port, entry/message renderers, flags), which share the
+   façade's `remainder` handle until they get services. `deregister-owner!`
+   walks these tags, so a tag the host registers under and a tag it unloads
+   under are the same list."
   {:kmet/tool :tools
    :kmet/tool-source :tools
    :kmet/command :commands
    :kmet/prompt :prompts
    :kmet/skill :skills
+   :kmet/hook nil
+   :kmet/theme nil
+   :kmet/ui-port nil
    :kmet/entry-renderer nil
    :kmet/message-renderer nil
    :kmet/flag nil})
@@ -173,13 +178,6 @@
   ([target]
    (when-some [stages (or (own-stages target) (:loop-stages (ctx)))]
      (reset! stages default-loop-stages))))
-
-(defn dispose-owner!
-  "Dispose OWNER's registrations on the app root, LIFO and isolated — an
-   extension's own registrations when it unloads. Failures are reported, not
-   swallowed (scope.md §3)."
-  [owner]
-  (with-reported-cleanups #(scope/dispose-owner! (node) owner)))
 
 (defn dispose-deregisters!
   "Run FNS — the deregister fns an extension recorded for what lives outside

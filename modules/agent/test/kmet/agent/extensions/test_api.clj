@@ -10,7 +10,6 @@
             [kmet.agent.config :as cfg]
             [kmet.ai.models :as models]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.app-runtime :as rt]
             [kmet.libs.hikap.alias :as alias]
             [kmet.tui.theme :as theme]))
 
@@ -89,7 +88,6 @@
   ;; aliases this extension registered
   (let [dereg-fns (atom [])
         api ((var extensions/create-extension-api)
-             (rt/node)
              {:name "alias-test" :path "target/test-ext-alias.clj"
               :deregister-fns dereg-fns})
         f (fn [_attrs _children] [:text {:padding-x 0 :padding-y 0} "x"])]
@@ -160,7 +158,6 @@
   (testing "api :agent-dir is the host agent dir (KMET_CODING_AGENT_DIR-aware)"
     (with-redefs [cfg/get-agent-dir (fn [] "/sandbox/agent")]
       (let [api ((var extensions/create-extension-api)
-                 (rt/node)
                  {:name "agent-dir-test" :path "target/test-ext-agent-dir.clj"
                   :deregister-fns (atom [])})]
         (t/is (= "/sandbox/agent" (:agent-dir api)))
@@ -169,7 +166,6 @@
 (t/deftest test-extension-provider-registration
   (testing "api :models register-provider! / unregister-provider! (pi ctx.registerProvider)"
     (let [api ((var extensions/create-extension-api)
-               (rt/node)
                {:name "prov-test" :path "target/test-ext-prov.clj"
                 :deregister-fns (atom [])})]
       (models/load-catalogs!)

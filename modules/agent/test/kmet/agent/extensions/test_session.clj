@@ -78,10 +78,8 @@
   (let [owner (extensions/extension-owner "test-markdown-transformers")]
     (testing "applied in registration order, last wins per position"
       (extensions/clear-extensions!)
-      (let [d1 (extensions/register-markdown-transformer! (rt/node)
-                                                          owner (fn [md _ctx] (str "a[" md "]")))
-            d2 (extensions/register-markdown-transformer! (rt/node)
-                                                          owner (fn [md _ctx] (str "b[" md "]")))]
+      (let [d1 (extensions/register-markdown-transformer! owner (fn [md _ctx] (str "a[" md "]")))
+            d2 (extensions/register-markdown-transformer! owner (fn [md _ctx] (str "b[" md "]")))]
         (t/is (= "b[a[hi]]"
                  (extensions/apply-markdown-transformers
                   "hi" {:message-type :user :is-streaming false :available-width 80}))
@@ -93,28 +91,24 @@
         (t/is (= "hi" (extensions/apply-markdown-transformers "hi" {})))))
     (testing "a throwing transformer is skipped, the chain continues"
       (extensions/clear-extensions!)
-      (let [d1 (extensions/register-markdown-transformer! (rt/node)
-                                                          owner (fn [_md _ctx] (throw (ex-info "boom" {}))))
-            d2 (extensions/register-markdown-transformer! (rt/node)
-                                                          owner (fn [md _ctx] (str "ok[" md "]")))]
+      (let [d1 (extensions/register-markdown-transformer! owner (fn [_md _ctx] (throw (ex-info "boom" {}))))
+            d2 (extensions/register-markdown-transformer! owner (fn [md _ctx] (str "ok[" md "]")))]
         (t/is (= "ok[hi]" (extensions/apply-markdown-transformers "hi" {}))
               "pi: keep the current markdown and continue")
         (d1) (d2)))
     (testing "non-string results are ignored"
       (extensions/clear-extensions!)
-      (let [d1 (extensions/register-markdown-transformer! (rt/node)
-                                                          owner (fn [_md _ctx] {:not :a-string}))
-            d2 (extensions/register-markdown-transformer! (rt/node)
-                                                          owner (fn [md _ctx] (str md "!")))]
+      (let [d1 (extensions/register-markdown-transformer! owner (fn [_md _ctx] {:not :a-string}))
+            d2 (extensions/register-markdown-transformer! owner (fn [md _ctx] (str md "!")))]
         (t/is (= "hi!" (extensions/apply-markdown-transformers "hi" {})))
         (d1) (d2)))
-    (testing "the registration is the owner's key on the app tree"
-      (let [dereg (extensions/register-markdown-transformer! (rt/node) owner (fn [md _] md))]
-        (t/is (seq (scope/owner-keys (rt/node) owner))
-              "the transformer registered under its owner's path")
+    (testing "the registration is the owner's key in the host registry"
+      (let [own? (fn [] (some (fn [[_ m]] (= owner (:owner m)))
+                              (registry/entries (rt/registry) :kmet/hook)))
+            dereg (extensions/register-markdown-transformer! owner (fn [md _] md))]
+        (t/is (own?) "the transformer registered under its owner's path")
         (dereg)
-        (t/is (empty? (scope/owner-keys (rt/node) owner))
-              "and the deregister fn removes that key")))))
+        (t/is (not (own?)) "and the deregister fn removes that key")))))
 
 (t/deftest test-renderer-ownership
   (testing "a renderer is a registration owned by its owner"
@@ -341,7 +335,7 @@
                                      {:skill-paths [skill-dir]
                                       :prompt-paths [prompt-dir]
                                       :theme-paths [theme-dir]})))
-        (let [result (extensions/discover-resources! (rt/node) :startup)]
+        (let [result (extensions/discover-resources! :startup)]
           (t/is (some? (skills/get-skill "ext-skill"))
                 "contributed skill dir loads into the skills registry")
           (t/is (some? (prompts/get-prompt-template "ext-prompt"))
@@ -354,7 +348,7 @@
                    result)
                 "the collected path lists are returned")))
       (testing "re-discovery after session-start dedups (pi: mergePaths)"
-        (extensions/discover-resources! (rt/node) :startup)
+        (extensions/discover-resources! :startup)
         (t/is (= 1 (count (filter #(= "ext-prompt" (:name %))
                                   (prompts/get-prompt-templates))))
               "the prompt is not loaded twice"))
@@ -364,7 +358,7 @@
                                    (fn [_] (throw (ex-info "boom" {})))))
         ;; The throwing listener prints a warning to stderr — suppress it.
         (binding [*err* (java.io.StringWriter.)]
-          (extensions/discover-resources! (rt/node) :reload))
+          (extensions/discover-resources! :reload))
         (t/is (some? (skills/get-skill "ext-skill"))
               "the good handler's paths were already applied")
         (t/is (= [:startup :startup :reload] @seen-reasons)

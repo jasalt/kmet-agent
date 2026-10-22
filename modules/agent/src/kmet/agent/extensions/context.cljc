@@ -648,11 +648,29 @@
                            (pr-str loaders))
                       {:path path :manifest manifest})))))
 
+(defn- manifest-inject
+  "Validate MANIFEST's :inject — the kernel names the ctx provides the
+   extension waits for (a vector of required names, or a map of
+   name → nil/:optional). nil when absent: an extension without `:inject`
+   loads immediately, exactly as before."
+  [path manifest]
+  (let [inject (:inject manifest)]
+    (cond
+      (nil? inject) nil
+      (and (sequential? inject) (every? keyword? inject)) (vec inject)
+      (and (map? inject) (every? keyword? (keys inject)))
+      inject
+      :else
+      (throw (ex-info (str "extension.edn :inject must be a vector of keywords"
+                           " or a map of keyword → nil/:optional, got: "
+                           (pr-str inject))
+                      {:path path :inject inject})))))
+
 (defn- manifest-info
   "Validate the manifest map M of the artifact at PATH (FALLBACK-NAME names
    it when :name is absent): {:name :entry-ns :declared-loaders
-   :legacy-loader?}. Throws on a non-symbol :entry or a malformed :loader — all
-   before any extension code evaluates."
+   :legacy-loader? :inject}. Throws on a non-symbol :entry, a malformed
+   :loader or a malformed :inject — all before any extension code evaluates."
   [path m fallback-name]
   (let [{:keys [declared-loaders legacy?]} (manifest-loaders path m)
         entry-ns (:entry m)]
@@ -663,7 +681,8 @@
     {:name (or (:name m) fallback-name)
      :entry-ns entry-ns
      :declared-loaders declared-loaders
-     :legacy-loader? legacy?}))
+     :legacy-loader? legacy?
+     :inject (manifest-inject path m)}))
 
 (defn- canonical-path
   "The canonical display/identity path of a filesystem artifact root F
@@ -680,7 +699,7 @@
     (throw (ex-info (str "Extension archive " path " has no extension.edn")
                     {:path path})))
   (let [m (edn/read-string (jar-entry-source root "extension.edn"))
-        {:keys [name entry-ns declared-loaders legacy-loader?]}
+        {:keys [name entry-ns declared-loaders legacy-loader? inject]}
         (manifest-info path m (fs/file-name (io/file root)))]
     {:name name
      :kind :jar
@@ -688,6 +707,7 @@
      :entry-ns entry-ns
      :declared-loaders declared-loaders
      :legacy-loader? legacy-loader?
+     :inject inject
      :path (canonical-path (io/file root))}))
 
 (defn- dir-extension
@@ -698,7 +718,7 @@
       (throw (ex-info (str "Extension dir " path " has no extension.edn")
                       {:path path})))
     (let [m (edn/read-string (slurp manifest-file))
-          {:keys [name entry-ns declared-loaders legacy-loader?]}
+          {:keys [name entry-ns declared-loaders legacy-loader? inject]}
           (manifest-info path m (fs/file-name f))]
       {:name name
        :kind :dir
@@ -706,6 +726,7 @@
        :entry-ns entry-ns
        :declared-loaders declared-loaders
        :legacy-loader? legacy-loader?
+       :inject inject
        :path (canonical-path f)})))
 
 (defn- file-extension
@@ -763,7 +784,7 @@
     (let [manifest-key (str prefix "/extension.edn")]
       (if-let [r (io/resource manifest-key)]
         (let [m (edn/read-string (slurp r))
-              {:keys [name entry-ns declared-loaders legacy-loader?]}
+              {:keys [name entry-ns declared-loaders legacy-loader? inject]}
               (manifest-info manifest-key m name)]
           {:name name
            :kind :resource-dir
@@ -772,6 +793,7 @@
            :entry-ns entry-ns
            :declared-loaders declared-loaders
            :legacy-loader? legacy-loader?
+           :inject inject
            :path path
            :bundled? true})
         (throw (ex-info (str "Bundled extension resource missing: " manifest-key)

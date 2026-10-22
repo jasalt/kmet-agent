@@ -990,7 +990,7 @@
                       loaded-resources/loaded-resources-set-sections! (fn [_ _] nil)
                       extensions/ui-reset! (fn [] nil)
                       extensions/clear-extensions! (fn [] nil)
-                      extensions/discover-resources! (fn [_ _] nil)
+                      extensions/discover-resources! (fn [_] nil)
                       event-bus/emit-event! (fn [& _] nil)]
           ((var builtins/handle-reload) cs nil))
         (is (= {:show-images true :image-width-cells 120} @subs/image-settings-atom)
@@ -1032,7 +1032,7 @@
                                  context/load-project-context-files (fn [_ _] [])
                                  extensions/ui-reset! (fn [] nil)
                                  extensions/clear-extensions! (fn [] nil)
-                                 extensions/discover-resources! (fn [_ _] nil)
+                                 extensions/discover-resources! (fn [_] nil)
                                  event-bus/emit-event! (fn [& _] nil)]
                      ((var builtins/handle-reload) cs nil)))]
       (try
@@ -1083,7 +1083,7 @@
                     loaded-resources/loaded-resources-set-sections! (fn [_ _] nil)
                     extensions/ui-reset! (fn [] nil)
                     extensions/clear-extensions! (fn [] nil)
-                    extensions/discover-resources! (fn [_ _] nil)
+                    extensions/discover-resources! (fn [_] nil)
                     event-bus/emit-event! (fn [& _] nil)]
         ((var builtins/handle-reload) cs nil))
       (is (= (str (fs/cwd)) @loader-cwd)

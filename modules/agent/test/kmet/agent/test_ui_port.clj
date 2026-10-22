@@ -7,9 +7,9 @@
             [clojure.test :as t :refer [deftest testing]]
             [kmet.agent.extensions.core :as ex]
             [kmet.agent.app-runtime :as app]
+            [kmet.agent.registry :as registry]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as rt]
-            [kmet.libs.scope :as scope]
             [kmet.test-utils :as tu]))
 
 ;; The binding and the app tree's registrations are process-global state;
@@ -45,20 +45,19 @@
   (t/is (nil? (ex/ui-call :notify "hi" :info))))
 
 (deftest test-install-front-end-owns-the-port
-  (testing "install-front-end! registers the port on the tree; disposal restores headless"
-    (let [node (app/node)]
-      (try
-        (ex/install-front-end! node {:mode :interactive :has-ui true
-                                     :ui {:notify (fn [_ _] :notified)}})
-        (t/is (= :interactive (ex/extension-mode)))
-        (t/is (= :notified (ex/ui-call :notify "hi" :info)))
-        (t/is (contains? (scope/owner-keys node [:app :ui]) :kmet/ui-port)
-              "the port is the [:app :ui] owner's registration")
-        (finally
-          (scope/dispose-owner! node [:app :ui])))
-      (t/is (= :print (ex/extension-mode))
-            "disposal restores the headless binding")
-      (t/is (empty? (scope/owner-keys node [:app :ui]))))))
+  (testing "install-front-end! binds the surface and records the port"
+    (try
+      (ex/install-front-end! {:mode :interactive :has-ui true
+                              :ui {:notify (fn [_ _] :notified)}})
+      (t/is (= :interactive (ex/extension-mode)))
+      (t/is (= :notified (ex/ui-call :notify "hi" :info)))
+      (t/is (contains? (registry/entry (app/registry) :kmet/ui-port :port) :notify)
+            "the port is the [:app :ui] registration")
+      (finally
+        (ex/unbind-extensions!)
+        (registry/deregister! (app/registry) :kmet/ui-port :port [:app :ui])))
+    (t/is (= :print (ex/extension-mode))
+          "unbinding restores the headless binding")))
 
 (deftest test-port-only-swap-preserves-kind
   (testing "set-ui-registry!/clear-ui-registry! swap the port, not the kind"

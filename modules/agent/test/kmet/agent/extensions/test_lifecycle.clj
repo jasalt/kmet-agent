@@ -15,8 +15,7 @@
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.libs.hikap.alias :as alias]
-            [kmet.tui.theme :as theme]
-            [kmet.libs.scope :as scope]))
+            [kmet.tui.theme :as theme]))
 
 ;; ─── Load / unload / reload lifecycle (real runtime) ─────────────────────
 
@@ -187,29 +186,30 @@
         (t/is (nil? (:error result)) (str "loaded: " (:error result))))
       (t/is (= {:skill-paths [skill-dir] :prompt-paths [prompt-dir]
                 :theme-paths [theme-dir]}
-               (extensions/discover-resources! (rt/node) :startup))
+               (extensions/discover-resources! :startup))
             "the collected paths are reported")
       (doseq [[service tag name] [[:skills :kmet/skill "res-owned-skill"]
                                   [:prompts :kmet/prompt "res-owned-prompt"]]]
         (t/is (= [owner]
                  (vec (keys (registry/by-owner (srce/get (rt/ctx) service) tag name))))
               (str tag " " name " is owned by the contributor")))
-      (t/is (= [owner] (vec (keys (scope/for-key (rt/node) [:kmet/theme "res-owned-theme"]))))
-            "the theme stays in the TUI layer's store, which is not a registry")
+      (t/is (= #{owner}
+               (set (keys (registry/by-owner (rt/registry) :kmet/theme "res-owned-theme"))))
+            "the theme is the contributor's registry record")
       (t/is (some? (theme/get-theme-by-name "res-owned-theme")))
-      (extensions/discover-resources! (rt/node) :startup)
+      (extensions/discover-resources! :startup)
       (t/is (= 1 (count (filter #(= "res-owned-skill" (:name %)) (skills/get-skills)))))
       (t/is (= 1 (count (filter #(= "res-owned-prompt" (:name %))
                                 (prompts/get-prompt-templates)))))
-      (t/is (= 1 (count (filter (fn [[k _ _]] (= [:kmet/theme "res-owned-theme"] k))
-                                (scope/ordered-registrations (rt/node)))))
+      (t/is (= 1 (count (filter (fn [[k _]] (= "res-owned-theme" k))
+                                (registry/entries (rt/registry) :kmet/theme))))
             "a second discovery re-registers in place")
       (extensions/unload-all-extensions!)
       (t/is (nil? (skills/get-skill "res-owned-skill")))
       (t/is (nil? (prompts/get-prompt-template "res-owned-prompt")))
       (t/is (nil? (theme/get-theme-by-name "res-owned-theme"))
             "the owner's teardown removed the theme from the theme store")
-      (t/is (empty? (scope/for-key (rt/node) [:kmet/theme "res-owned-theme"])))
+      (t/is (empty? (registry/by-owner (rt/registry) :kmet/theme "res-owned-theme")))
       (finally
         (extensions/clear-extensions!)
         (event-bus/clear-event-listeners!)

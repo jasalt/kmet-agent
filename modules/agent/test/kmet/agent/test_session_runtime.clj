@@ -18,7 +18,7 @@
             [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.registry :as tools-reg]
             [kmet.ai.models :as models]
-            [kmet.libs.scope :as scope]
+            [kmet.agent.registry :as registry]
             [kmet.test-utils :as tu]))
 
 ;; Several tests bootstrap real engines onto the app tree (loading the
@@ -115,10 +115,10 @@
             "the engine resolves a ctx: the app root's by default")
         (is (identical? sess (extensions/get-session))
             "the extension session handle is installed")
-        (is (contains? (scope/owner-keys (app/node) [:app :session]) :kmet/session)
-            "the live session is registered under the app root's [:app :session]")
-        (is (contains? (scope/owner-keys (app/node) [:app :ui]) :kmet/ui-port)
-            "the front end's headless port is registered under [:app :ui]")))))
+        (is (= :print (extensions/extension-mode))
+            "the front end's headless kind is bound")
+        (is (contains? (registry/by-owner (app/registry) :kmet/ui-port :port) [:app :ui])
+            "the front end's headless port is the [:app :ui] registration")))))
 
 (deftest test-subscribe-receives-and-unsubscribes
   (with-engine
@@ -183,34 +183,27 @@
 (deftest test-dispose-clears-subscribers-and-wiring
   (with-engine
     (fn [engine _]
-      (let [events (atom [])
-            node (app/node)]
+      (let [events (atom [])]
         (rt/subscribe! engine #(swap! events conj %))
         (is (nil? (rt/dispose! engine)))
         (is (nil? (extensions/get-session)) "the extension session handle is cleared")
-        (is (empty? (scope/owner-keys node [:app :session]))
-            "dispose! drops the session surface's registrations with their owner")
-        (is (empty? (scope/owner-keys node [:app :ui]))
-            "dispose! drops the front-end surface's registrations")
+        (is (= :print (extensions/extension-mode))
+            "dispose! restores the headless front-end binding")
         (is (nil? (rt/dispose! engine)) "dispose! is idempotent")
         (rt/cancel! engine)
         (is (empty? @events))))))
 
-(deftest test-session-install-is-owner-scoped
-  ;; The process cache is last-wins (one live front end at a time), but a
-  ;; registration belongs to the store that installed it: an older owner's
-  ;; teardown cannot clear a newer tree's session (scope.md §2, §5).
-  (let [old (scope/node)
-        newer (scope/node)]
-    (try
-      (extensions/install-session! old :old-session)
-      (extensions/install-session! newer :newer-session)
-      (is (= :newer-session (extensions/get-session)))
-      (scope/dispose-owner! old [:app :session])
-      (is (= :newer-session (extensions/get-session))
-          "the older tree's teardown cannot clear the newer install")
-      (finally
-        (scope/dispose-owner! newer [:app :session])))))
+(deftest test-session-install-is-last-wins
+  ;; The extension-facing session is one process cache (one live front end at
+  ;; a time): installing a session replaces the previous one, and nothing
+  ;; owner-scoped shadows it since the host stopped registering into the tree
+  ;; (4b-ii-a).
+  (try
+    (extensions/install-session! :old-session)
+    (extensions/install-session! :newer-session)
+    (is (= :newer-session (extensions/get-session)))
+    (finally
+      (extensions/install-session! nil))))
 
 (deftest test-snapshot-is-plain-data
   (with-engine
@@ -537,8 +530,7 @@
       ;; The pending buffer could only fill the first engine, and its stale
       ;; copy outlived an unload.
       (let [fired (atom 0)
-            dereg (extensions/register-input-hook! (app/node)
-                                                   (extensions/extension-owner "test-hooks-app-wide")
+            dereg (extensions/register-input-hook! (extensions/extension-owner "test-hooks-app-wide")
                                                    (fn [_] (swap! fired inc) nil))]
         (try
           (commands/register-command!
@@ -581,8 +573,8 @@
             hook-result (fn [{:keys [result]}]
                           {:content (str "wrapped:" (:content result))
                            :is-error false})
-            dereg-call (extensions/register-tool-call-hook! (app/node) owner hook-call)
-            dereg-result (extensions/register-tool-result-hook! (app/node) owner hook-result)]
+            dereg-call (extensions/register-tool-call-hook! owner hook-call)
+            dereg-result (extensions/register-tool-result-hook! owner hook-result)]
         (try
           (is (= {:block true :reason "not that one" :terminate true}
                  (before {:tool-name "kmet-test-danger" :args {}}))

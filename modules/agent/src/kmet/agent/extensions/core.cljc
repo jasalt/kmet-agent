@@ -63,7 +63,6 @@
             [kmet.agent.extensions.context :as context]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.registry :as registry]
-            [kmet.agent.registry-store :as registry-store]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
@@ -81,7 +80,7 @@
             #?(:jolt [kmet.agent.extensions.libs])
             #?(:jolt [kmet.loader.jolt-loader :as loader-jolt])
             [kmet.extension]
-            [kmet.libs.scope :as scope]))
+            [kmet.srce.core :as srce]))
 
 ;; ─── Provider-event bridges (pi: context / context_with_system /
 ;; ─── before_provider_request / before_provider_headers /
@@ -193,52 +192,50 @@
 ;; ─── 'before_agent_start'; applied by modes.interactive + app.loop) ──────
 
 (defn extension-owner
-  "The owner path an extension's app-tree registrations belong to — what its
-   `init(api)` installs in the host's node (scope.md §2). A registration is
-   disposed with its owner, and unload deregisters what the extension added."
+  "The owner path an extension's registrations belong to — what its
+   `init(api)` installs. A registration is disposed with its owner, and unload
+   deregisters what the extension added."
   [extension-name]
   [:app :extensions extension-name])
 
 (def themes-owner
-  "The app's theme registry owner — the registry's address, read by `/units`
-   from the store. Themes live in the TUI layer's own store, so the
-   registration under this path is the host's record of one and the teardown
-   that removes it (scope.md §2)."
+  "The owner path every theme the host loads registers under. Themes live in
+   the TUI layer's own store, shared by reference, so the registration here is
+   the host's record of one and unload removes it (see
+   `load-contributed-themes!`)."
   [:app :themes])
-
-(defn- theme-key
-  "The store key addressing a loaded theme by NAME."
-  [name]
-  (registry-store/store-key :kmet/theme name))
 
 (defonce ^:private hook-seq (atom 0))
 
-(defn- hook-key
-  "A fresh key for one hook: a hook is not addressed by name and one owner may
-   hold several of a kind, so each registration gets its own key."
+(defn- hook-name
+  "A fresh registry name for one hook: a hook is not addressed by name and one
+   owner may hold several of a kind, so each registration gets its own."
   [kind]
-  [:kmet/hook kind (swap! hook-seq inc)])
-
-(defn- hook-key? [kind k]
-  (and (vector? k) (= :kmet/hook (first k)) (= kind (second k))))
+  [kind (swap! hook-seq inc)])
 
 (defn- register-app-hook!
-  "Register HOOK for OWNER (an `extension-owner` path) on NODE and
-   return the store's deregister fn. Hooks are read from the tree rather than
+  "Register HOOK for OWNER (an `extension-owner` path) and return the
+   registry's deregister fn. Hooks are read from one registry rather than
    copied into each engine, so one registered before an engine exists reaches
-   every engine and stays gone once deregistered. NODE is the node the
-   registration lands on: the app root for an app-wide registration, a child
-   node a run passes for its own tree (scope.md §6)."
-  [node owner kind hook]
-  (scope/register! node owner (hook-key kind) hook))
+   every engine and stays gone once deregistered. The owner rides in the
+   value: the registry's listing is registration order, and hook order is
+   owner-major (see `hooks-of`)."
+  [owner kind hook]
+  (registry/register! (app-runtime/registry) :kmet/hook
+                      (hook-name kind) {:owner owner :hook hook} owner))
 
 (defn- hooks-of
-  "Every KIND hook on the app tree, in the order the store reports it: owners
-   in first-registration order, each owner's in its own registration order."
+  "Every KIND hook, owner-major: owners in first-registration order, each
+   owner's in its own. The registry lists by registration, so the owners are
+   put back in order here — one extension's hooks stay adjacent, in its own
+   sequence, whatever else registers between them."
   [kind]
-  (into []
-        (keep (fn [[k _ v]] (when (hook-key? kind k) v)))
-        (scope/ordered-registrations (app-runtime/node))))
+  (let [hooks (->> (registry/entries (app-runtime/registry) :kmet/hook)
+                   (keep (fn [[n v]] (when (= kind (first n)) v)))
+                   vec)
+        owner-order (into {} (map-indexed (fn [i owner] [owner i])
+                                          (distinct (map :owner hooks))))]
+    (into [] (map :hook) (sort-by (comp owner-order :owner) hooks))))
 
 (defn register-input-hook!
   "Register OWNER's input hook (extension api: on-input). Fires for agent
@@ -246,16 +243,16 @@
    (fn [{:keys [text source streaming-behavior images]}]) returning
    {:action :handled} to consume, {:action :transform :text ... :images ...}
    to rewrite, or nil. Returns a deregister fn."
-  [node owner hook]
-  (register-app-hook! node owner :input hook))
+  [owner hook]
+  (register-app-hook! owner :input hook))
 
 (defn register-before-agent-start-hook!
   "Register OWNER's before-agent-start hook (extension api:
    on-before-agent-start). Hook: (fn [{:keys [prompt system-prompt]}]) returning
    a map with :system-prompt and/or :message, or nil. Returns a deregister
    fn."
-  [node owner hook]
-  (register-app-hook! node owner :before-agent-start hook))
+  [owner hook]
+  (register-app-hook! owner :before-agent-start hook))
 
 (defn apply-input-hooks
   "Run all input hooks in registration order over text and images
@@ -336,25 +333,25 @@
   "Register OWNER's tool-call hook (extension api: on-tool-call): (fn [ctx])
    → nil | {:block true :reason} | {:args transformed}. Returns a deregister
    fn."
-  [node owner hook]
-  (register-app-hook! node owner :tool-call hook))
+  [owner hook]
+  (register-app-hook! owner :tool-call hook))
 
 (defn register-tool-result-hook!
   "Register OWNER's tool-result hook (extension api: on-tool-result):
    (fn [ctx]) → nil | {:content ... :is-error ...} overrides. Returns a
    deregister fn."
-  [node owner hook]
-  (register-app-hook! node owner :tool-result hook))
+  [owner hook]
+  (register-app-hook! owner :tool-result hook))
 
 (defn get-tool-call-hooks
-  "Every tool-call hook on the app tree (extension api: on-tool-call), owners
-   in first-registration order, each owner's in its own."
+  "Every tool-call hook (extension api: on-tool-call), owners in
+   first-registration order, each owner's in its own."
   []
   (hooks-of :tool-call))
 
 (defn get-tool-result-hooks
-  "Every tool-result hook on the app tree (extension api: on-tool-result),
-   owners in first-registration order, each owner's in its own."
+  "Every tool-result hook (extension api: on-tool-result), owners in
+   first-registration order, each owner's in its own."
   []
   (hooks-of :tool-result))
 
@@ -385,8 +382,8 @@
    render — streaming chunks re-transform the accumulated text). A
    transformer that throws is skipped (pi: keep the current markdown and
    continue). Returns a deregister fn."
-  [node owner transformer]
-  (register-app-hook! node owner :markdown-transformer transformer))
+  [owner transformer]
+  (register-app-hook! owner :markdown-transformer transformer))
 
 (defn get-markdown-transformers
   "Registered markdown transformers in registration order (owners in
@@ -468,17 +465,15 @@
   nil)
 
 (defn install-front-end!
-  "Install the front-end extension surface for NODE (the tree's [:app :ui]
-   owner) — the same map bind-extensions! takes (:mode, :has-ui, :ui). The
-   capability map is the owner's registration, the tree's copy of the port
-   that /units reports; the process binding stays the no-node read cache, and
-   node disposal restores the headless defaults. A later port-only swap
-   (`set-ui-registry!`) updates the binding, not the registration. A front
-   end with its own widgets installs here once they exist. Returns nil."
-  [node {:keys [ui] :as surface}]
-  (when node
-    (scope/register! node [:app :ui] :kmet/ui-port (or ui {}))
-    (scope/add-teardown! node [:app :ui] unbind-extensions!))
+  "Install the front-end extension surface — the same map bind-extensions!
+  takes (:mode, :has-ui, :ui). The capability map is also registered under
+  [:app :ui] (`:kmet/ui-port`) so a listing can show who holds the port; the
+  process binding stays the read path. A later port-only swap
+  (`set-ui-registry!`) updates the binding, not the registration. Disposal is
+  the front end's own: the next surface to bind replaces it, and
+  `unbind-extensions!` restores the headless defaults. Returns nil."
+  [{:keys [ui] :as surface}]
+  (registry/register! (app-runtime/registry) :kmet/ui-port :port (or ui {}) [:app :ui])
   (bind-extensions! surface)
   nil)
 
@@ -770,18 +765,17 @@
     {:exit (:exit @p) :out (:out @p) :err (:err @p)}))
 
 (defn set-session!
-  "Point the no-node session cache at SESSION without registering it on a
-   tree: the node-less and testing primitive — engines install through
-   install-session!."
+  "Point the extension-facing live session at SESSION (`install-session!` is
+   the api-facing name). Returns nil."
   [session] (reset! session-atom session) nil)
 (defn get-session [] @session-atom)
 (defn set-context-sink!
-  "Point the no-node context-sink cache at F without registering it: the
-   node-less primitive — engines install through install-context-sink!."
+  "Point the context sink at F (`install-context-sink!` is the api-facing
+   name). Returns nil."
   [f] (reset! context-sink-atom f) nil)
 (defn set-entry-sink!
-  "Point the no-node entry-sink cache at F without registering it: the
-   node-less primitive — front ends install through install-entry-sink!."
+  "Point the entry sink at F (`install-entry-sink!` is the api-facing name).
+   Returns nil."
   [f] (reset! entry-sink-atom f) nil)
 
 (defn clear-runtime!
@@ -794,48 +788,24 @@
   (reset! entry-sink-atom nil)
   nil)
 
-(defn- cache-surface!
-  "Register VALUE under OWNER/KEY on NODE and install it in CACHE, the
-   no-node read cache. The registration is what the store reports and what
-   node disposal drops; the owner's teardown clears CACHE
-   only while it still holds VALUE, so an outgoing registration can never
-   clear a newer install (a session switch, a front end's rebind —
-   scope.md §2).
-
-   Two degenerate shapes install the cache alone: NODE nil (a node-less
-   engine, e.g. a test double) has no tree to own the value, and VALUE nil
-   (a context-less run) has no live surface to own. Returns nil."
-  [node owner k cache v]
-  (when node
-    (when-let [prev @cache]
-      (scope/deregister! node owner k prev))
-    (when (some? v)
-      (scope/register! node owner k v)
-      (scope/add-teardown! node owner
-                           (fn []
-                             (when (identical? v @cache) (reset! cache nil))))))
-  (reset! cache v)
-  nil)
-
 (defn install-session!
-  "Install SESSION as the extension-facing live session for NODE (the
-   tree's [:app :session] owner): the process cache `get-session` reads and
-   the registration /units reports. Re-install after a session switch.
-   Returns nil."
-  [node session]
-  (cache-surface! node [:app :session] :kmet/session session-atom session))
+  "Install SESSION as the extension-facing live session: what `get-session`
+   reads and what the session facades act on. Re-install after a session
+   switch. Returns nil."
+  [session]
+  (set-session! session))
 
 (defn install-context-sink!
-  "Install SINK, a fn receiving a custom message map, for NODE's
-   [:app :session] owner (`append-custom-message!` reads it). Returns nil."
-  [node sink]
-  (cache-surface! node [:app :session] :kmet/context-sink context-sink-atom sink))
+  "Install SINK, a fn receiving a custom message map
+   (`append-custom-message!` reads it). Returns nil."
+  [sink]
+  (set-context-sink! sink))
 
 (defn install-entry-sink!
-  "Install SINK, a fn receiving an appended custom entry, for NODE's
-   [:app :session] owner (`append-custom-entry!` reads it). Returns nil."
-  [node sink]
-  (cache-surface! node [:app :session] :kmet/entry-sink entry-sink-atom sink))
+  "Install SINK, a fn receiving an appended custom entry
+   (`append-custom-entry!` reads it). Returns nil."
+  [sink]
+  (set-entry-sink! sink))
 
 (defn append-custom-entry!
   "Append a custom entry (extension state, never in LLM context) to the live
@@ -983,16 +953,18 @@
 (declare loader-aware loader-aware-map)
 
 (defn- create-extension-api
-  "Build the api map for an extension, its app-tree capabilities bound to
-   NODE — the app root at load time (extensions load before any engine), so a
-   child node can build the same surface for its own run later. A
-   registration that lives in the app tree (commands, tools, tool sources,
-   skills, prompts, hooks, renderers, flags) lands under the extension's own
-   owner path, so unload disposes it with one LIFO dispose (scope.md §2);
-   the registrations that live outside the tree (event subscriptions, aliases,
-   shortcuts, model providers) record their deregister fn on the extension
-   instead."
-  [node ext]
+  "Build the api map for an extension. A registration the app owns (commands,
+   tools, tool sources, skills, prompts, hooks, renderers, flags) lands under
+   the extension's own owner path, so unload deregisters it owner by owner; the
+   registrations the host or a library owns (event subscriptions, aliases,
+   shortcuts, model providers, theme removal) record their deregister fn on the
+   extension instead.
+
+   The api is process-level: what an extension registers is visible to every
+   engine (hooks are read from one registry), so it needs no ctx. The ctx
+   reaches the host at the mount (`:inject`, `load-extension*`); a per-agent
+   api is 4b-ii-b's, when the host itself becomes a plugin."
+  [ext]
   (let [track (fn [f] (track-deregister! ext f) f)
         name (:name ext)]
     {:extension-name name
@@ -1053,15 +1025,15 @@
      ;; they are NOT tracked: the tracked list stays for what lives outside
      ;; the tree (subscriptions, aliases, shortcuts, model providers).
      :on-input (fn [hook]
-                 (register-input-hook! node (extension-owner name) (loader-aware ext hook)))
+                 (register-input-hook! (extension-owner name) (loader-aware ext hook)))
      :on-before-agent-start (fn [hook]
                               (register-before-agent-start-hook!
-                               node (extension-owner name) (loader-aware ext hook)))
+                               (extension-owner name) (loader-aware ext hook)))
      :on-tool-call (fn [hook]
-                     (register-tool-call-hook! node (extension-owner name)
+                     (register-tool-call-hook! (extension-owner name)
                                                (loader-aware ext hook)))
      :on-tool-result (fn [hook]
-                       (register-tool-result-hook! node (extension-owner name)
+                       (register-tool-result-hook! (extension-owner name)
                                                    (loader-aware ext hook)))
      :register-flag! (fn [flag-name & [opts]]
                        (register-flag! (extension-owner name) flag-name opts))
@@ -1075,7 +1047,6 @@
                              dereg))
      :register-markdown-transformer! (fn [transformer]
                                        (register-markdown-transformer!
-                                        node
                                         (extension-owner name)
                                         (loader-aware ext transformer)))
      :register-entry-renderer! (fn [custom-type renderer]
@@ -1181,7 +1152,7 @@
    built."
   [resolved path]
   (let [{:keys [name kind artifact entry-ns file declared-loaders legacy-loader?
-                bundled?]} resolved
+                bundled? inject]} resolved
         loader-kind (if (context/resource-kind? kind)
                       (context/forced-loader-kind resolved declared-loaders)
                       (context/select-loader-kind declared-loaders))]
@@ -1212,6 +1183,7 @@
                     :jars (atom [])
                     :api (atom nil)
                     :deregister-fns (atom [])
+                    :fiber (atom nil)
                     :initialized? (atom false)
                     :jar-files (atom {})})]
           (try
@@ -1289,10 +1261,24 @@
                   (throw (ex-info (str "Extension " (:name ext)
                                        " does not define an init fn")
                                   {:path path})))
-                (let [api (create-extension-api (app-runtime/node) ext)]
-                  (reset! (:api ext) api)
-                  ((loader-aware ext (deref init-var)) api)
-                  (reset! (:initialized? ext) true))))
+                (if inject
+                  ;; A declared dependency: mount the extension as a plugin,
+                  ;; so the kernel holds it pending until the ctx provides
+                  ;; what it waits for and runs init at activation. The
+                  ;; disposer is the fiber's, and unload still calls shutdown
+                  ;; first (unload-extension!).
+                  (reset! (:fiber ext)
+                          (srce/inject!
+                           (app-runtime/ctx) (keyword name) inject
+                           (fn [_fctx _config]
+                             (let [api (create-extension-api ext)]
+                               (reset! (:api ext) api)
+                               ((loader-aware ext (deref init-var)) api)
+                               (reset! (:initialized? ext) true)))))
+                  (let [api (create-extension-api ext)]
+                    (reset! (:api ext) api)
+                    ((loader-aware ext (deref init-var)) api)
+                    (reset! (:initialized? ext) true)))))
             (swap! extensions conj ext)
             (debug/log "extension loaded: " name " kind=" (clojure.core/name kind)
                        " loader=" (clojure.core/name loader-kind)
@@ -1373,7 +1359,10 @@
     ;; the registries are services in the app ctx now, not store entries, so
     ;; the owner path no longer disposes them (4c-ii)
     (app-runtime/deregister-owner! (extension-owner (:name ext)))
-    (app-runtime/dispose-owner! (extension-owner (:name ext)))
+    ;; an `:inject` extension's mount is a fiber: disposing it unwinds the
+    ;; effects the kernel holds and drops it from the tree, pending or active
+    (when-let [fiber @(:fiber ext)]
+      (srce/dispose! fiber))
     (when-let [l @(:loader ext)]
       (loader/unload! l))
     (reset! (:loader ext) nil)
@@ -1425,20 +1414,26 @@
   (some-> (first (filter #(= name (:name %)) @extensions))
           :jars deref))
 
+(defn- extension-by-owner
+  "The loaded extension whose owner path is OWNER, or nil (a host
+   contribution)."
+  [owner]
+  (some (fn [ext] (when (= owner (extension-owner (:name ext))) ext)) @extensions))
+
 (defn- load-contributed-themes!
   "Load DIR's theme files and register them under OWNER. The theme store is
-   the TUI layer's own (`kmet.tui.theme`, shared by reference), outside the
-   app tree, so the registration is the host's record of the theme and a
-   teardown that removes it from the store when the owner goes — guarded by
-   the value it registered, so a re-application's earlier teardown (holding
-   the replaced value) and another contributor's later registration both
-   survive it (scope.md §2)."
-  [node owner dir]
-  (let [owner (or owner themes-owner)]
+   the TUI layer's own (`kmet.tui.theme`, shared by reference), so the
+   registration is the host's record of the theme; the removal goes on the
+   contributing extension's deregister list, which unload runs — a
+   re-application's earlier removal (holding the replaced theme) and another
+   contributor's registration both survive it."
+  [owner dir]
+  (let [owner (or owner themes-owner)
+        ext (extension-by-owner owner)]
     (doseq [{:keys [name] :as theme} (context/load-themes-from-dir! dir)]
-      (scope/add-teardown! node owner
-                           (fn [] (context/unregister-theme! name theme)))
-      (scope/register! node owner (theme-key name) theme))))
+      (registry/register! (app-runtime/registry) :kmet/theme name theme owner)
+      (when ext
+        (track-deregister! ext (fn [] (context/unregister-theme! name theme)))))))
 
 (defn- apply-contributed-paths!
   "Apply the resource paths one contributor contributed: skill and prompt
@@ -1448,10 +1443,10 @@
    owner is what makes re-application idempotent (the registries replace per
    owner and key) and unload complete (disposing the owner takes the
    resources with it)."
-  [node owner {:keys [skill-paths prompt-paths theme-paths]}]
+  [owner {:keys [skill-paths prompt-paths theme-paths]}]
   (doseq [p skill-paths] (skills/load-skills-from-dir p owner))
   (doseq [p prompt-paths] (prompts/load-prompt-templates-from-dir p owner))
-  (doseq [p theme-paths] (load-contributed-themes! node owner p)))
+  (doseq [p theme-paths] (load-contributed-themes! owner p)))
 
 (defn discover-resources!
   "pi: extendResourcesFromExtensions — fire the :resources-discover event
@@ -1467,13 +1462,13 @@
    extension takes its resources with it. A throwing handler is skipped (its
    paths are lost). Returns the collected
    {:skill-paths [...] :prompt-paths [...] :theme-paths [...]}."
-  [node reason]
+  [reason]
   (let [contributions (event-bus/emit-event-collect!
                        {:type :resources-discover
                         :cwd (str (fs/cwd))
                         :reason reason})]
     (reduce (fn [acc [owner result]]
-              (apply-contributed-paths! node owner result)
+              (apply-contributed-paths! owner result)
               (cond-> acc
                 (seq (:skill-paths result))
                 (update :skill-paths into (:skill-paths result))

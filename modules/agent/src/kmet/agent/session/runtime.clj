@@ -27,9 +27,9 @@
      widgets exist — `extensions/install-front-end!` is the install point.
    - Registrations are not engine state (P2): commands, tools, skills,
      prompt templates, hooks, renderers, markdown transformers and flags
-     live on the app root's store (`kmet.agent.app-runtime`), each under an
-     owner path, so every engine reads the same set and a registration
-     outlives the engine that happened to be current when it was made.
+     live in the app's registries, each under an owner path, so every engine
+     reads the same set and a registration outlives the engine that happened
+     to be current when it was made.
    - `dispose!` cancels an in-flight run and waits (bounded) for it to
      settle before clearing the subscribers, so the terminal
      `:agent-settled` event reaches them; the settle path runs in the
@@ -50,12 +50,10 @@
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
-            [kmet.agent.tools.core :as tools]
-            [kmet.libs.scope :as scope]))
+            [kmet.agent.tools.core :as tools]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
                    cwd turn-running? compaction-queued pending-compaction
@@ -259,23 +257,19 @@
                              :run-callbacks (atom nil)})]
     ;; Runtime-scoped extension surface: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent, and the
-    ;; front-end binding carries the headless port and kind. Both are store
-    ;; registrations on the APP ROOT under [:app :session] / [:app :ui] (the
-    ;; engine has no tree of its own since 4c-ii-b), so dispose! drops them by
-    ;; owner while the process atoms stay the no-node read cache. A front end
-    ;; with its own port re-installs once its widgets exist.
-    (let [node (app-runtime/node)]
-      (extensions/install-session! node (:session agent-state))
-      (extensions/install-context-sink!
-       node (fn [msg] (loop-state/add-context-message! (agent-state engine) msg)))
-      (extensions/install-front-end!
-       node
-       {:mode mode
-        :has-ui has-ui
-        ;; a front end supplies only its own capabilities; the runtime's
-        ;; build-context callback always rides along
-        :ui (merge (default-ui-port engine) ui-context)})
-      (extensions/bind-runtime-capabilities! (runtime-capabilities engine)))
+    ;; front-end binding carries the port and kind. The session and sink are
+    ;; process caches (dispose! clears them), the binding is the front end's;
+    ;; a front end with its own port re-installs once its widgets exist.
+    (extensions/install-session! (:session agent-state))
+    (extensions/install-context-sink!
+     (fn [msg] (loop-state/add-context-message! (agent-state engine) msg)))
+    (extensions/install-front-end!
+     {:mode mode
+      :has-ui has-ui
+      ;; a front end supplies only its own capabilities; the runtime's
+      ;; build-context callback always rides along
+      :ui (merge (default-ui-port engine) ui-context)})
+    (extensions/bind-runtime-capabilities! (runtime-capabilities engine))
     ;; The internal subscriber is the only trigger for deferred manual
     ;; compactions (see request-compaction!): a /compact that arrived while a
     ;; prompt was running starts when that prompt settles — after the
@@ -385,14 +379,12 @@
   "Emit :session-start away from the input path — pi: AgentSession emits
    session_start on every runtime creation (startup, resume, new, fork) and
    extension handlers may block on dialog promises. The resources_discover
-   pass follows (pi: extendResourcesFromExtensions after session_start) and
-   is still a store registration on the app root until the host takes a ctx
-   (4b-ii)."
+   pass follows (pi: extendResourcesFromExtensions after session_start)."
   [engine payload]
   (future
     (try
       (event-bus/emit-event! payload (agent-ctx engine))
-      (extensions/discover-resources! (app-runtime/node) :startup)
+      (extensions/discover-resources! :startup)
       (catch Exception e (debug/log "session-start: " e)))))
 
 (defn switch-session!
@@ -407,7 +399,7 @@
   [engine sess {:keys [apply-settings?]}]
   (let [new-ag (assoc (agent-state engine) :session sess)]
     (reset! (:session engine) sess)
-    (extensions/install-session! (app-runtime/node) sess)
+    (extensions/install-session! sess)
     (reset! (:compaction-queued engine) [])
     (reset! (:pending-compaction engine) [])
     (reset! (:agent-state engine) new-ag)
@@ -1380,13 +1372,8 @@
     (doseq [{:keys [promise default]} (vals @(:pending-ui engine))]
       (deliver promise default))
     (reset! (:pending-ui engine) {})
-    ;; The extension surface is owner-scoped store registrations: dropping
-    ;; the owners runs their teardowns, which clear the process caches and
-    ;; restore the headless binding. The engine's ctx plays no part yet — the
-    ;; installs still land on the app root store (4b-ii puts them on fibers).
-    (when (agent-ctx engine)
-      (scope/dispose-owner! (app-runtime/node) [:app :session])
-      (scope/dispose-owner! (app-runtime/node) [:app :ui]))
+    ;; The extension surface is the host's process caches and the front-end
+    ;; binding: clearing them restores the headless defaults.
     (extensions/clear-runtime!)
     (extensions/unbind-extensions!))
   nil)

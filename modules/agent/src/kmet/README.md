@@ -77,7 +77,9 @@ kmet/agent/
 ├── project_context.clj — project context files (AGENTS.md/CLAUDE.md)
 ├── app_runtime.clj     — the app root store node and ctx, and the loop's
 │                         stage map (on the ctx)
-├── extensions/         — the extension runtime
+├── extensions/         — the extension runtime (hooks, themes, the UI port
+│                         and the ABI's renderers/flags are registry entries,
+│                         not store entries, since 4b-ii-a)
 │   ├── core.cljc       — hook/renderer/shortcut/flag registries, bind and
 │   │                     install-front-end!, the extension UI ports
 │   ├── context.cljc    — per-extension SCI isolation

@@ -13,7 +13,6 @@
             [kmet.agent.debug :as debug]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.theme-controller :as theme-ctrl]
@@ -175,9 +174,8 @@
                               :else :new)}
                (runtime/agent-ctx (:engine cs)))
               ;; pi: resources_discover fires after session_start (reason
-              ;; startup for non-reload session starts); still a store
-              ;; registration on the app root until the host takes a ctx (4b-ii)
-              (extensions/discover-resources! (app-runtime/node) :startup))
+              ;; startup for non-reload session starts)
+              (extensions/discover-resources! :startup))
             (catch Exception e
               (debug/log "session-start: " e))))
         ;; Theme detection + application (pi: startup applyFromSettings) —

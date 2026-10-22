@@ -23,7 +23,6 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.commands :as commands]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
@@ -689,21 +688,19 @@
     ;; Installed once with the registry; reload mutates the same CoreState
     ;; (agent, session atom), so the wiring stays valid across reloads —
     ;; only /new, /resume, fork and clone re-register the session.
-    (let [node (app-runtime/node)]
-      (extensions/install-front-end! node {:mode :interactive :has-ui true :ui registry})
-      (extensions/install-session! node (runtime/session (:engine cs)))
-      (extensions/install-context-sink!
-       node (fn [msg] (runtime/add-context-message! (:engine cs) msg)))
-      (extensions/install-entry-sink!
-       node
-       (fn [entry]
-         (when-let [rendered (session-admin/run-entry-renderer
-                              (extensions/get-entry-renderer (:custom-type entry)) entry)]
-           (chat-history/chat-history-add-message!
-            (:chat-history cs)
-            (session-admin/renderer-result->message rendered))
-           ;; The sink appends to the untracked chat message vector; request
-           ;; a frame after the append rather than relying on an older watch.
-           (when t
-             (tui/tui-request-render t))))))
+    (extensions/install-front-end! {:mode :interactive :has-ui true :ui registry})
+    (extensions/install-session! (runtime/session (:engine cs)))
+    (extensions/install-context-sink!
+     (fn [msg] (runtime/add-context-message! (:engine cs) msg)))
+    (extensions/install-entry-sink!
+     (fn [entry]
+       (when-let [rendered (session-admin/run-entry-renderer
+                            (extensions/get-entry-renderer (:custom-type entry)) entry)]
+         (chat-history/chat-history-add-message!
+          (:chat-history cs)
+          (session-admin/renderer-result->message rendered))
+         ;; The sink appends to the untracked chat message vector; request
+         ;; a frame after the append rather than relying on an older watch.
+         (when t
+           (tui/tui-request-render t)))))
     registry))

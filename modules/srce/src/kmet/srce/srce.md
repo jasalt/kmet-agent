@@ -701,18 +701,19 @@ Alternatives, and why not:
 invented owner paths and a keyed store to stand in for one. The light kernel
 supplies the lifecycle, so the store loses its reason to exist — but only after
 the registries that read it have moved. The kernel therefore **must not depend
-on it** (a guard test), and its remaining 25 source call sites in 4 files go
+on it** (a guard test), and its remaining 14 source call sites in 2 files go
 with their landings (counted from `(scope/…` call sites, not from the
 requires). Landing 3 already took commands, prompts, skills, tools and the
 registries off it — they read and write through a `kmet.agent.registry`
-handle, and the store is only that handle's kmet1 backend now:
+handle, and the store is only that handle's kmet1 backend now. Landing 4b-ii-a
+took the extension host off it (hooks, themes, the UI port and the session
+mirrors are registry entries or plain process caches), which also removed
+`app_runtime/dispose-owner!`, the host's owner disposal:
 
 | File | Sites | Go at |
 |---|---|---|
-| `agent/registry_store.clj` (the handle's store backend) | 9 | 4e — with the store itself; its only remaining caller after 4c-ii-a is the host's theme key (4b-ii) |
-| `agent/extensions/core.cljc` | 9 | 4b-ii — the extension host and ABI (hooks, the UI port, themes: the parts with no registry seam) |
-| `agent/app_runtime.clj` (app node, `*error-reporter*`, `/units` walk) | 5 | 4b-ii for `dispose-owner!`, its last caller once the host's registrations are fiber effects; 4d for the `owners`/`owner-registrations` pair, which is the store listing and goes with the tree rewrite; `*error-reporter*` at 4e with the store. The node itself is created here and dies with them |
-| `agent/session/runtime.clj` (`dispose-owner!` ×2) | 2 | 4b-ii — an engine's `[:app :session]`/`[:app :ui]` installs are store registrations today; they become effects on the host's fibers, and their disposal with them |
+| `agent/registry_store.clj` (the handle's store backend) | 9 | 4e — with the store itself; nothing outside the backend names it since 4b-ii-a |
+| `agent/app_runtime.clj` (app node, `*error-reporter*`, `/units` walk) | 5 | 4d for the `owners`/`owner-registrations` pair, which is the store listing and goes with the tree rewrite; `*error-reporter*` at 4e with the store. The node itself is created here and dies with them |
 
 4c-ii-b took the fifth file: `kmet.agent.event-bus`'s one `in-subtree?` is
 `srce/inside?` now, so a subscription's scope is a ctx. Its table still needs
@@ -733,11 +734,11 @@ extension is `dispose!` on its fiber and the entries come back LIFO. Deleting
 the store before that would rewrite the remaining 25 sites into private cleanup
 lists, which is the copy AGENTS.md forbids.
 
-**Not in one change, and not at the end of 4c:** the extension host's nine
-remaining sites only go when the host moves (4b-ii), which itself needs the root
-ctx 4c-ii creates; the Engine's two go with it, since they dispose the host's
-installs; and `owner-listing`'s two go at 4d, where `/units` stops rendering the
-store. The store therefore retires
+**Not in one change, and not at the end of 4c:** the host's nine sites went
+with 4b-ii-a, which needed only the root ctx 4c-ii created; the Engine's two
+went with it (its installs are process caches now, and `clear-runtime!` plus
+`unbind-extensions!` restore the headless defaults); and `owner-listing`'s two
+go at 4d, where `/units` stops rendering the store. The store therefore retires
 at **4e** (`new-app.md` § Landings), and its `*error-reporter*` with it — the
 `app_runtime` rebinding has no replacement short of the `:logger` service, which
 is deferred (§10), so cleanup-error reporting degrades to the reporter's default
