@@ -56,6 +56,37 @@
   (reify clojure.lang.IDeref
     (deref [_] (boolean (some (fn [s] (when s (boolean @s))) signals)))))
 
+(defn lock
+  "A reentrant mutual-exclusion lock — the handle `with-lock` takes.
+
+   The interop lives here because the layers above may not name a host class
+   (the portability rule), and a serialized read-modify-write is still needed
+   where two threads can touch one file: a session append landing on a tool
+   thread while a submitted message appends on the agent thread both read the
+   same leaf and would write sibling entries, orphaning one on the branch walk.
+   Reentrant, so a nested operation inside a locked region is safe."
+  []
+  (java.util.concurrent.locks.ReentrantLock.))
+
+(defn with-lock
+  "Run F holding LOCK (from `lock`) and return its value. A nil LOCK runs F
+   unguarded — a backend that needs no serialization passes nil rather than a
+   no-op lock, and a caller never branches on whether locking is available."
+  [lock f]
+  (if lock
+    (do (.lock lock)
+        (try (f) (finally (.unlock lock))))
+    (f)))
+
+(defn iso-now
+  "The wall clock as an ISO-8601 instant string — what kmet writes into a
+   session header or an entry's `:timestamp`, so written and loaded values
+   compare as strings and sort as time. The two-clock rule is `monotonic-ms`'s
+   (this is the inverse case: an absolute value, not a duration), and the
+   interop stays here so `kmet.app.*` names no host class."
+  []
+  (str (java.time.Instant/ofEpochMilli (System/currentTimeMillis))))
+
 (defn monotonic-ms
   "Elapsed-time milliseconds — the only clock for durations and deadlines:
    timeouts, sleep slices, backoff, idle reaping, elapsed counters.
