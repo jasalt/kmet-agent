@@ -890,6 +890,23 @@ rather than a guess.
   now, so "a scoped listener hears its own subtree" is asserted against
   `srce/inside?`, which is what ships. No listener in src registers a scope yet,
   which is why the switch is behavior-preserving for kmet1.
+- **`loop-stages` inherits; `refresh-stages!` names its target.** The two read
+  and write different things and the first pass had them both walking the chain:
+  a refresh aimed at a ctx with no stage atom of its own would have re-seated an
+  arbitrary ancestor's map from a child call. A refresh now re-seats the ctx's
+  own atom when it has one, the app root's otherwise, and a test says an
+  isolated tree survives it.
+- **A scope is checked, because nothing else would catch it.** A store node
+  walks `:parent` too, so `srce/inside?` would "work" on one and silently match
+  the wrong tree. `on-event` and the three emitters reject a non-ctx scope with
+  `:kmet.agent/bad-scope` — the check is where the mistake is made, not on the
+  read.
+- **`ctx` stopped meaning two things in the loop.** The attempt map the step
+  functions thread through (`:agent`, `:stages`, `:text-buf`, …) was also named
+  `ctx`, beside `(:ctx agent)` for the kernel ctx; it is `attempt` now, so the
+  next landing can move agent handles through this code without a misread. The
+  tool-call ctx the before/after hooks receive keeps its name — that one *is* a
+  ctx in the extension API's sense.
 - **`/units` lost its per-session variation.** `handle-units` walks the app root
   node by definition now; a session can no longer point it at its own tree. That
   is the cutover 4d was waiting for, and the test asserts the rendering, not the

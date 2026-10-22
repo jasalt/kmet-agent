@@ -115,6 +115,16 @@
                (assoc ls event-type (into [] (remove #(identical? % entry)) entries))
                ls)))))
 
+(defn- check-ctx!
+  "Throw unless X is a ctx or nil. A store node *looks* like a ctx to the
+   subtree test — both walk `:parent` — so nothing else would catch the mix-up,
+   and a listener scoped to the wrong tree silently matches the wrong subtree."
+  [what x]
+  (when (and (some? x) (not (srce/ctx? x)))
+    (throw (ex-info (str "event-bus: " what " must be a ctx (or nil for "
+                         "process-wide)")
+                    {:type :kmet.agent/bad-scope}))))
+
 (defn- visible
   "The entries an emission from CTX reaches: CTX nil (a process-wide
    emission) reaches every entry, a listener registered without a scope is
@@ -143,12 +153,13 @@
    scope      — optional: the ctx this listener listens to; it sees events
                 emitted from that ctx and its descendants. nil (the
                 default) is process-wide, which is what an extension wants;
-                a child ctx a run passes for its own subtree.
+                a run passes its own ctx to hear only its subtree.
    Returns a deregister function. A type outside the vocabulary is reported
    and registered anyway: the vocabulary is documented, not a gate."
   ([event-type callback] (on-event event-type nil callback nil))
   ([event-type owner callback] (on-event event-type owner callback nil))
   ([event-type owner callback scope]
+   (check-ctx! "a subscription's scope" scope)
    (when-not (known-event-type? event-type)
      (debug/log-error "event-bus: " (pr-str event-type)
                       " is not a documented event type — registered anyway "
@@ -182,6 +193,7 @@
    navigation reads :session-before-tree results: :cancel, :summary, ...)."
   ([event] (emit-event! event nil))
   ([event ctx]
+   (check-ctx! "an emission's ctx" ctx)
    (let [entries (visible (get @listeners (:type event)) ctx)]
      (when (seq entries)
        (reduce (fn [acc {:keys [callback]}]
@@ -201,6 +213,7 @@
    Throwing handlers are skipped and reported, same as emit-event!."
   ([event] (emit-event-collect! event nil))
   ([event ctx]
+   (check-ctx! "an emission's ctx" ctx)
    (let [entries (visible (get @listeners (:type event)) ctx)]
      (when (seq entries)
        (into []
@@ -221,6 +234,7 @@
    Throwing handlers are skipped and reported, same as emit-event!."
   ([event] (emit-boundary! event nil))
   ([event ctx]
+   (check-ctx! "an emission's ctx" ctx)
    (let [entries (visible (get @listeners (:type event)) ctx)]
      (when (seq entries)
        (reduce (fn [acc {:keys [callback]}]

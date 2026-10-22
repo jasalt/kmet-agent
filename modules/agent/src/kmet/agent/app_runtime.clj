@@ -157,13 +157,21 @@
     @stages
     default-loop-stages))
 
+(defn- own-stages
+  "The stage atom CTX itself carries, or nil — no inheritance here, so a
+   refresh names its target instead of reaching up the chain."
+  [ctx]
+  (when (and ctx (srce/ctx? ctx)) (:loop-stages ctx)))
+
 (defn refresh-stages!
-  "Re-seat CTX's loop stages with the builtin defaults (the app root when no
-   ctx is given), so a reloaded guard or retry stage reaches the next
-   attempt; an in-flight attempt keeps the map it read. `/reload` does this."
-  ([] (refresh-stages! (ctx)))
-  ([ctx]
-   (when-some [stages (and ctx (srce/attr ctx :loop-stages))]
+  "Re-seat the loop stages with the builtin defaults, so a reloaded guard or
+   retry stage reaches the next attempt; an in-flight attempt keeps the map it
+   read. It targets TARGET's own stage atom when it has one, and the app root's
+   otherwise — never an ancestor's by inheritance: `loop-stages` inherits, a
+   refresh names what it changes. `/reload` calls the no-arg form."
+  ([] (refresh-stages! nil))
+  ([target]
+   (when-some [stages (or (own-stages target) (:loop-stages (ctx)))]
      (reset! stages default-loop-stages))))
 
 (defn dispose-owner!

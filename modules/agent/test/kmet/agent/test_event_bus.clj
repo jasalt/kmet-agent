@@ -232,6 +232,19 @@
 
 ;; ─── Scoped subscriptions (F13) ───────────────────────────────────────────
 
+(t/deftest test-a-scope-must-be-a-ctx
+  ;; A store node walks :parent too, so the subtree test would "work" and match
+  ;; the wrong tree. Registration is where the mistake is made, so it is where
+  ;; it is reported.
+  (t/is (thrown-with-msg? clojure.lang.ExceptionInfo #"subscription's scope must be a ctx"
+                          (event-bus/on-event :turn-start nil (fn [_]) {:parent nil})))
+  (t/is (thrown-with-msg? clojure.lang.ExceptionInfo #"emission's ctx must be a ctx"
+                          (event-bus/emit-event! {:type :turn-start} {:parent nil})))
+  (t/is (thrown-with-msg? clojure.lang.ExceptionInfo #"emission's ctx must be a ctx"
+                          (event-bus/emit-boundary! {:type :turn-end} {:parent nil})))
+  (t/is (thrown-with-msg? clojure.lang.ExceptionInfo #"emission's ctx must be a ctx"
+                          (event-bus/emit-event-collect! {:type :resources-discover} {:parent nil}))))
+
 (t/deftest test-a-scoped-listener-hears-its-own-subtree
   ;; A run subscribes with its own ctx: child events reach it, a parent's or
   ;; sibling's do not, and an unscoped listener (an extension) keeps hearing

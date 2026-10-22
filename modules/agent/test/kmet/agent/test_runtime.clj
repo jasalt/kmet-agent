@@ -73,6 +73,20 @@
     (is (= :root-retry
            (get-in (runtime/loop-stages grandchild) [:retry-policy :call])))))
 
+(deftest refresh-stages-never-reaches-past-the-app-root
+  ;; `loop-stages` inherits; `refresh-stages!` does not. A refresh aimed at a
+  ;; ctx with no stage atom of its own re-seats the app root's, so an isolated
+  ;; tree's stages survive it.
+  (let [parent (srce/root {:loop-stages (atom {:loop-guard {:call :parent-guard}})})
+        child (srce/extend parent {})]
+    (try
+      (runtime/refresh-stages! child)
+      (is (= :parent-guard (get-in (runtime/loop-stages child) [:loop-guard :call]))
+          "an isolated tree's stages are untouched")
+      (is (= runtime/default-loop-stages (runtime/loop-stages (runtime/ctx)))
+          "and the app root's atom is what the refresh re-seated")
+      (finally (runtime/refresh-stages!)))))
+
 (deftest refresh-stages-defaults-to-the-app-root
   (let [changed (fn [& _] :changed)]
     (try

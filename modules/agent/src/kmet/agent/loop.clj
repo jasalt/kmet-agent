@@ -642,7 +642,7 @@
   "The deref fallback deadline fired (the transport's own total deadline
    normally fires first and delivers a retryable :error). Treated as the same
    retryable timeout error — never a silent hard abort."
-  [{:keys [agent agent-end on-error] :as ctx} t call]
+  [{:keys [agent agent-end on-error] :as attempt} t call]
   (let [err (str "LLM call timed out after "
                  (retry/llm-total-timeout-ms @(:cfg agent)) "ms")
         ;; The deref sentinel (:timeout) carries no partials, but the
@@ -655,7 +655,7 @@
              agent (merge ((:partials call)) {:error err})
              :error)]
     (finish-turn! agent t msg [])
-    (let [{:keys [kind] :as action} (attempt-retry-action ctx err)]
+    (let [{:keys [kind] :as action} (attempt-retry-action attempt err)]
       (if (= :backoff kind)
         (do (agent-end err true)
             {:status :retry :error err :action action
@@ -666,7 +666,7 @@
   "The request returned an error: classify it. The thinking-loop guard
    settles the attempt with its explanation, context overflow and backoff
    return the retry verdict to the caller, and everything else is terminal."
-  [{:keys [agent agent-end text-buf on-error] :as ctx} t result]
+  [{:keys [agent agent-end text-buf on-error] :as attempt} t result]
   (if (= loop-guard/thinking-loop-error (:error result))
     ;; Thinking-loop guard tripped: not a transient error — settle the run
     ;; with the explanation (no auto-retry, no red error line; the
@@ -685,7 +685,7 @@
           ;; dropped).
           msg (state/record-abandoned-attempt! agent result :error)
           _ (finish-turn! agent t msg [])
-          {:keys [kind] :as action} (attempt-retry-action ctx err)]
+          {:keys [kind] :as action} (attempt-retry-action attempt err)]
       (case kind
         ;; Context overflow → the caller compacts once, then retries (pi:
         ;; overflow is compaction territory, not auto-retry)
@@ -751,7 +751,7 @@
    :must-run b} for the next turn of the attempt, or a terminal attempt
    outcome map — {:status :settled | :aborted | :retry | :overflow | :error
    …}, the step's absence of :step telling the two apart."
-  [{:keys [agent] :as ctx} t]
+  [{:keys [agent] :as attempt} t]
   ;; The injection drains the steering queue and refreshes the pending
   ;; display (pi: message_start → queue_update)
   (state/inject-queued-messages! agent (:steering agent)
@@ -760,12 +760,12 @@
   ;; pi: config.prepareRequest — the per-request checkpoint, after the queued
   ;; messages joined the context and before the request is built
   (prepare-request! agent)
-  (let [{:keys [call request-tools result]} (attempt-call-provider! ctx)]
+  (let [{:keys [call request-tools result]} (attempt-call-provider! attempt)]
     (cond
-      (:cancelled result) (attempt-cancelled! ctx t result)
-      (= :timeout result) (attempt-timed-out! ctx t call)
-      (:error result) (attempt-failed! ctx t result)
-      :else (attempt-succeeded! ctx t result request-tools))))
+      (:cancelled result) (attempt-cancelled! attempt t result)
+      (= :timeout result) (attempt-timed-out! attempt t call)
+      (:error result) (attempt-failed! attempt t result)
+      :else (attempt-succeeded! attempt t result request-tools))))
 
 (defn- run-attempt!
   "Run one low-level agent attempt — one :agent-start/:agent-end pair
@@ -789,7 +789,7 @@
    :agent-end is emitted here with this attempt's accumulated messages
    (RUN-TOKEN keys the accumulator) and :will-retry."
   [agent run-token {:keys [on-text on-thinking on-error]}]
-  (let [stages (runtime/loop-stages (:ctx agent)) ; the ctx's stages, one read per attempt (scope.md §4)
+  (let [stages (runtime/loop-stages (:ctx agent)) ; the agent ctx's stages, one read per attempt (scope.md §4)
         agent-end (fn [error will-retry]
                     (when-let [s (:session agent)]
                       (when (pos? (get-in (session/tool-usage s)
@@ -804,15 +804,15 @@
                       ;; emits the extension runner's copy before the
                       ;; decoration (agent-session.ts) — send each its own map.
                       (state/emit agent event (dissoc event :will-retry))))
-        ctx {:agent agent
-             :stages stages
-             :retry-decide (get-in stages [:retry-policy :call])
-             :retry-policy (compact/stage-retry-policy agent stages)
-             :text-buf (atom "")
-             :on-text on-text
-             :on-thinking on-thinking
-             :on-error on-error
-             :agent-end agent-end}]
+        attempt {:agent agent
+                 :stages stages
+                 :retry-decide (get-in stages [:retry-policy :call])
+                 :retry-policy (compact/stage-retry-policy agent stages)
+                 :text-buf (atom "")
+                 :on-text on-text
+                 :on-thinking on-thinking
+                 :on-error on-error
+                 :agent-end agent-end}]
     ;; Bind this attempt's token for its whole extent so every append it makes
     ;; records against it even if a newer prompt replaces the agent's
     ;; :run-token (see *run-token*).
@@ -832,7 +832,7 @@
                               (agent-end nil false)
                               {:status :aborted}) ;; cancelled — exit quietly
                           {:status :settled :turn t})
-                        (let [step (run-turn! ctx t)]
+                        (let [step (run-turn! attempt t)]
                           (if (= :continue (:step step))
                             (recur (:turn step) (:tool-calls step) (:must-run step))
                             step))))]
@@ -849,7 +849,7 @@
                     (recur turn'))
                 (do (state/set-agent-status! agent :idle)
                     (agent-end nil false)
-                    {:status :settled :text @(:text-buf ctx)})))))))))
+                    {:status :settled :text @(:text-buf attempt)})))))))))
 
 (defn- before-settle!
   "Run the actionable :agent-before-settle boundary (pi:

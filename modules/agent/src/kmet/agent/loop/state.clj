@@ -139,7 +139,10 @@
          :ctx (the ctx this run reads its loop stages from and scopes its
          events to; default the app root, kmet.agent.app-runtime/ctx — a
          subagent run passes its own child ctx, which carries its own
-         :loop-guard and :retry-policy stages)"
+         :loop-guard and :retry-policy stages). Taking the default
+         materializes the app root ctx: it boots the composition once per
+         process, as every registry read already does, so a broken profile
+         fails here instead of half-way through the first turn)"
   [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools ctx]
       :or {provider :opencode-go
            thinking :off
