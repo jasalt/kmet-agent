@@ -468,7 +468,7 @@ comes first.
     contributed name goes through the same normalization/`:streams?`/
     `:contextual?` handling without joining `get-tool`/`get-all-tools`.
     The extension API (`:register-tool-source!`/`:unregister-tool-source!`,
-    tracked for unload) is documented in `modules/agent/src/kmet/extension.md`.
+    tracked for unload) is documented in `modules/app/src/kmet/extension.md`.
   - **Adapter: the catalog as a source.**
     `tool-proxy/script-tool-records` builds records from the metadata cache
     (prefixed name → `{:name :label :description :parameters :streams?
@@ -937,7 +937,7 @@ pipeline both callers use:
   `--debug` per-tool report at agent end.
 - `modules/agent/src/kmet/agent/extensions/core.cljc` — `shared-context` / `shared-var-map` /
   `build-context-namespaces` (SCI injection pattern), `build-extension-context`.
-- `modules/agent/src/kmet/extension.clj` — tool registration (`register-tool!`,
+- `modules/app/src/kmet/extension.clj` — tool registration (`register-tool!`,
   `create-bash-tool`, `on-tool-call` / `on-tool-result`).
 - `modules/app/src/kmet/agent/session/core.clj` — `:result-tokens`, `tool-usage`,
   `tool-usage-report`.

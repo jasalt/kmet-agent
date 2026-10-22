@@ -39,6 +39,13 @@ unregistered** afterwards.
 `shutdown` is optional. Every `ext/...` wrapper takes `api` as its first
 argument and dispatches to the runtime; extensions never require kmet internals.
 
+The table of wrappers and the host's api map are contract-tested as a pair: a
+key a wrapper reads (`(:notify (ui api))` reads `[:ui :notify]`) must exist in
+the api the host builds, or an extension fails inside `init`'s later calls with
+a nil-invoke. `kmet.agent.extensions.test-api-contract` reads every such path
+out of this file, loads a real extension and asserts the host carries them all
+— so adding a wrapper means adding the capability, in one change.
+
 ## Allowed namespaces and isolation
 
 Every extension runs in its own isolated context, forked from one shared base:

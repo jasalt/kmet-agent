@@ -10,7 +10,7 @@ This guide covers authoring, packaging and testing an extension. The
 authoritative reference for what each `kmet.extension` function takes and
 returns, the `api`/context map keys, the allowed namespaces and the lifecycle
 guarantees is
-[`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md);
+[`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md);
 keep that contract reference and this guide in sync when behavior changes.
 
 Related: [customization](customization.md) (user-facing setup and discovery),
@@ -38,7 +38,7 @@ The loader calls `(init api)` with the capability map; everything registered
 inside `init` belongs to the extension, and unload disposes it automatically
 — `shutdown` is optional. The full contract (ownership, name conflicts,
 lifecycle guarantees) is in the
-[contract reference](../modules/agent/src/kmet/extension.md#the-contract).
+[contract reference](../modules/app/src/kmet/extension.md#the-contract).
 
 ## Where extensions live
 

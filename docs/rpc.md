@@ -208,7 +208,7 @@ headless default.
 
 TUI-only capabilities without a wire form stay inert (or degrade to the
 headless default) and are listed in
-[`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md); the client can ignore
+[`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md); the client can ignore
 fire-and-forget records it does not render.
 
 ## Scripting with `kmet.agent.modes.rpc-client`

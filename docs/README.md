@@ -33,7 +33,7 @@ describe instead of being mixed into this user guide. The temporary root notes
 For extension authors, [Writing extensions](extensions.md) is the authoring
 guide, the shipped extension overview is in
 [`extensions/README.md`](../extensions/README.md), and the authoritative
-`kmet.extension` contract is in [`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md).
+`kmet.extension` contract is in [`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md).
 
 Contributor and implementation documentation is kept beside the source it
 describes; the root [`README.md`](../README.md) links to the developer guide.

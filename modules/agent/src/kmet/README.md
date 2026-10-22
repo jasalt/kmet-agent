@@ -43,7 +43,7 @@ module is still the only process entry — it is a bootstrap that selects the
 app (see below).
 
 The extension contract sits above the app tree, beside it:
-`modules/agent/src/kmet/extension.clj` (`kmet.extension`) is the one kmet
+`modules/app/src/kmet/extension.clj` (`kmet.extension`) is the one kmet
 namespace an extension may depend on; `kmet/agent/extensions/` is its
 runtime.
 

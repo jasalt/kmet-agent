@@ -45,4 +45,4 @@ color values, installation, and live reload; complete starting points are in
   Shipped opt-in extensions live in [`extensions/`](../extensions/)
   ([usage](../extensions/README.md)); writing your own:
   [the authoring guide](extensions.md) and the
-  [`kmet.extension` contract](../modules/agent/src/kmet/extension.md).
+  [`kmet.extension` contract](../modules/app/src/kmet/extension.md).

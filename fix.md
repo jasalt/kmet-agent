@@ -25,7 +25,7 @@ pre-existing network-dependent `test-llm-copilot-responses-end-to-end`.
 
 ## 8. Extension documentation (landed)
 
-`modules/agent/src/kmet/extension.md` is now the **contract reference**
+`modules/app/src/kmet/extension.md` is now the **contract reference**
 (1,083 lines): the `init`/`shutdown` contract, allowed namespaces and
 isolation guarantees, the bundled-library table, the runtime lifecycle, and
 the full `kmet.extension` API surface. The authoring walkthrough — discovery,

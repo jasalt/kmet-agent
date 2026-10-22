@@ -1405,6 +1405,17 @@
     (unload-extension! ext))
   nil)
 
+(defn extension-api
+  "The api map a loaded extension was handed, or nil when NAME is not loaded.
+   Per-extension by construction (its deregister fns and jars are closed over),
+   so it is a diagnostic and a contract-test hook, not a shared surface: what
+   an extension may rely on is `kmet.extension`."
+  [name]
+  (some->> @extensions
+           (some (fn [ext] (when (= name (:name ext)) ext)))
+           :api
+           deref))
+
 (defn get-loaded-extensions
   "Loaded extensions as {:name str :path str :kind :file/:dir/:jar
    :loader-kind :sci/:jolt :entry-ns symbol :extension-dir str-or-nil

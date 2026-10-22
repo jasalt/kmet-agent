@@ -33,7 +33,7 @@ Not implemented yet: Phase 3 (JVM native backend + hybrid — deliberately
 last: the JVM host already gets isolation through SCI) and Phase 4
 (promotion).
 
-Related docs (repo-root relative): `modules/agent/src/kmet/extension.md` (the extension
+Related docs (repo-root relative): `modules/app/src/kmet/extension.md` (the extension
 contract), `docs/extensions.md` (the authoring guide), `modules/tui/src/kmet/tui/tui.md`
 (house style for a package reference doc).
 
@@ -909,7 +909,7 @@ upgrades that must satisfy the same suite.
   SCI for extension isolation at all (see Phase 2 — the native backend is
   what runs there now; `kmet.loader.sci-loader` remains the bb/JVM backend, which is
   the only host left that needs an interpreter).
-- `modules/agent/src/kmet/extension.clj` — **no re-exports** (decided in Phase 1):
+- `modules/app/src/kmet/extension.clj` — **no re-exports** (decided in Phase 1):
   extensions never see the loader at all. `kmet.agent.extensions.core` uses
   `kmet.loader.*` directly, and a require of it from extension code fails
   with an actionable "host machinery" error; the extension-facing surface is

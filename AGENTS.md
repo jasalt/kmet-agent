@@ -14,7 +14,7 @@ change when behavior changes.
 | kmet2 application: services, agents, sessions, profiles, landings | [`new-app.md`](new-app.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
 | Tk backend and its widget sample (`kmet.tk.*`, `kmet.gui-sample.*`, Jolt-only) | [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md) |
-| Extension contract (`kmet.extension` API, allowed namespaces, lifecycle) | [`modules/agent/src/kmet/extension.md`](modules/agent/src/kmet/extension.md) |
+| Extension contract (`kmet.extension` API, allowed namespaces, lifecycle) | [`modules/app/src/kmet/extension.md`](modules/app/src/kmet/extension.md) |
 | Extension authoring guide (layouts, loaders, deps, UI, testing) | [`docs/extensions.md`](docs/extensions.md) |
 | pi alignment and feature-gap analysis | [`modules/agent/src/kmet/agent/development/pi-alignment.md`](modules/agent/src/kmet/agent/development/pi-alignment.md) |
 | Loader design and backends | [`modules/loader/src/kmet/loader/loader.md`](modules/loader/src/kmet/loader/loader.md) |
@@ -183,7 +183,7 @@ the session-runtime split’s GUI-independent steps landed.)
 - Jolt claims, guarded requires, loader capability floors, and native
   packaging live in [`jolt/src/jolt/kmet/README.md`](jolt/src/jolt/kmet/README.md)
   and [`docs/building.md`](docs/building.md).
-- Extension behavior lives in [`modules/agent/src/kmet/extension.md`](modules/agent/src/kmet/extension.md)
+- Extension behavior lives in [`modules/app/src/kmet/extension.md`](modules/app/src/kmet/extension.md)
   (the contract reference); the authoring guide is
   [`docs/extensions.md`](docs/extensions.md), and shipped-extension user setup
   remains in [`extensions/README.md`](extensions/README.md).

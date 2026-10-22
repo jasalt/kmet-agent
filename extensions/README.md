@@ -78,7 +78,7 @@ never ship.
   namespaces (`kmet.agent.ui.tui.tool-renderers`, `kmet.agent.keybindings`),
   `clojure.*` / `babashka.*` builtins and the fixed bundled set
   (rewrite-clj, edamame, clojure.tools.reader, clojure.spec.alpha, cljfmt,
-  parinferish — see `modules/agent/src/kmet/extension.md` § Bundled extension libraries). They
+  parinferish — see `modules/app/src/kmet/extension.md` § Bundled extension libraries). They
   have **no tests** — the code is expected to
   stay small and self-contained; validate changes by loading the file
   against `kmet.extension/create-nullable-api` or the real runtime.
@@ -146,7 +146,7 @@ The extension authoring guide — layouts, manifests, loaders, dependencies, UI
 patterns, and testing — lives in [`docs/extensions.md`](../docs/extensions.md).
 The authoritative `kmet.extension` contract (the fn table, api map keys,
 allowed namespaces, lifecycle guarantees) lives in
-[`modules/agent/src/kmet/extension.md`](../modules/agent/src/kmet/extension.md);
+[`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md);
 keep both up to date whenever the contract changes.
 
 | Extension | Description |
