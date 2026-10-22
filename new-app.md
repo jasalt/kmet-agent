@@ -794,9 +794,9 @@ Each is independently shippable and gated.
 | 1 | **landed** (`367efd49`) — module wiring + guards (module-based require, no-global-node), `--app new` dispatch (bootstrap split: `kmet.agent.core` + `kmet.agent.cli`) + `check` requiring both entries, `--dump-config` over the composed rows | `kmet.test-module-deps` / `test-modules-manifest` green; each guard fails on a deliberate violation |
 | 2 | **landed** (`14ca4f0d`) — the bus: the six non-awaiting dispatch modes (`emit!`, `bail!`, `waterfall!`, `collect-last!`, `collect-all!`, `boundary!`) over the kernel's listener table, with `:data` on a registration and `{:in scope}` on `provide!`; `kmet.app.events` keeps the vocabulary (declared in the `:events` plugin's `:events` map), the owner, and the `:events` service; **the submission point** — `kmet.app.runtime`: `submit!` from any thread, `boundary!` drains and settles, `boot` mounts the composed rows | one contract test over both delivery paths (kmet1's bus and the app's), the app's own mode/service/declaration suite, and kmet1 green; a hook registered from another thread lands at the boundary |
 | 3 | **landed** — `registry` parameterized then lifted (`kmet.agent.registry` over a `Registry` handle); the `:tools` service row; commands/prompts/skills/tools/entry-renderers re-pointed at the handle | the contract test runs one set of registry assertions against both backends (atom and store); the `:tools` service is installed by one `provide!` and mutated through its handle (no re-provide); kmet1 green |
-| 4a | **landed** (`c2861df0`) — the sessions seam: `:sessionPersistence` (seven ops: `create!` `load` `paths` `append!` `entries` `delete!` `header`), the `:sessions` log over it (`inject [:sessionPersistence]`: the same ops plus an id index), an in-process `memory-backend`, and kmet1's store as the first real backend (`kmet.agent.session.backend`, a 34-line projection — `app` at rank 2 cannot name it yet) | the contract test runs one set of assertions against both backends, then composes the two halves as a profile does (`(service (ednl))`: 8 tests, 60 assertions); the row is `:pending` with `waiting-for=#{:sessionPersistence}` and activates when its backend mounts; kmet1's sessions and their files are byte-for-byte untouched; no composition row yet — `:sessions` joins a profile with the layer move (4c-i) |
+| 4a | **landed** (`c2861df0`) — the sessions seam: `:sessionPersistence` (seven ops: `create!` `load` `paths` `append!` `entries` `delete!` `header`), the `:sessions` log over it (`inject [:sessionPersistence]`: the same ops plus an id index), an in-process `memory-backend`, and kmet1's store as the first real backend (`kmet.agent.session.backend`, a 34-line projection — `app` at rank 2 cannot name it yet) | the contract test runs one set of assertions against both backends, then composes the two halves as a profile does (`(service (ednl))`: 8 tests, 60 assertions); the row is `:pending` with `waiting-for=#{:sessionPersistence}` and activates when its backend mounts; kmet1's sessions and their files are byte-for-byte untouched; no composition row at 4a — `:sessions` joined the profile with the layer move (4c-i) |
 | 4b | **The extension host**, in two halves. **4b-i** (no ctx needed, lands after 4a): `extension.edn` gains an optional `:inject` and the host wraps an extension as the plugin `{:name :inject :apply}`, `grep-tool` gains one as the demonstration, and the key-set contract test (every `(:key api)` an ABI wrapper calls exists) lands; `kmet.extension` (461 lines, **zero requires**) moves into `app`. **4b-ii** (after 4c-ii): the host takes a ctx instead of `app_runtime/node`, builds the 42-key api for the root or an agent ctx, composes `shutdown` into the disposer, and `kmet.agent.extensions.core` + `.context` move into `app` keeping their namespaces | 4b-i: the key-set test is green on both hosts, a shipped directory extension and `grep-tool` load, kmet1's extension surface unchanged. 4b-ii: nothing in the host reads the store node, and the loader whitelist has no `kmet.libs.scope` entry |
-| 4c | **The root ctx, the session layer, then `:agents`** — three steps that gate separately, in this order. **4c-i**, the session layer moves into `app` — nine files, namespaces kept, nothing re-hosted: the one thing that must change is the `kmet.agent.debug` require behind the `load-session` schema warnings (a rank-4 require in a rank-2 module), which becomes a diagnostics flag the host sets; then `:sessions` + `:sessionPersistence` join the composition and `:result-tokens` stamping moves out of `store.clj` into `:sessions`. **4c-ii**, kmet1 boots the app root, `app_runtime/node` goes and its 19 readers take a ctx, the 16 mutable `defonce` cells are re-hosted, `registry_store.clj` and `kmet.libs.scope` are deleted, `event_bus`'s subtree test moves onto ctx ancestry. **4c-iii**, `Engine` → `:agents` with `:permissions`/`:approvals` and `:projections` + `:systemPrompt` behind it | i: every session test green from `modules/app`, `kmet --app new` boots a session over EDNL files. ii: no `(scope/…)` call site is left and kmet1's registrations are in the tree. iii: two agents in one process hold different tool tables, and an extension declaring `:inject {:sessions …}` goes pending then active |
+| 4c | **The root ctx, the session layer, then `:agents`** — three steps that gate separately, in this order. **4c-i landed** (`aa72deef`, `88513298`) — the session layer moved into `app`: nine files, namespaces kept, nothing re-hosted; the `kmet.agent.debug` require behind the schema warnings became a diagnostics flag the host's `--debug` sets; `:sessions` + `:sessionPersistence` joined `:bundle/minimal`, so a bare `kmet --app new` boots four rows. `:result-tokens` stamping stays in `store.clj` — see the 4c-i notes. **4c-ii**, kmet1 boots the app root, `app_runtime/node` goes and its 19 readers take a ctx, the 16 mutable `defonce` cells are re-hosted, `registry_store.clj` and `kmet.libs.scope` are deleted, `event_bus`'s subtree test moves onto ctx ancestry. **4c-iii**, `Engine` → `:agents` with `:permissions`/`:approvals` and `:projections` + `:systemPrompt` behind it | i: every session test green from `modules/app`, `kmet --app new` boots a session over EDNL files. ii: no `(scope/…)` call site is left and kmet1's registrations are in the tree. iii: two agents in one process hold different tool tables, and an extension declaring `:inject {:sessions …}` goes pending then active |
 | 4d | **Inspection from the tree** — `kmet.app.inspect/units` renders the invocation ctx's subtree, `--dump-state` the root's, `/units` re-points at it and the store section is deleted | `/units` and `--dump-state` show a `:pending` fiber with its `waiting-for` and a `:failed` one with its error; the five listing tests rewritten against the tree |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` registry (create/resume/list) + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
@@ -807,7 +807,7 @@ requires eleven rank-4 namespaces — `commands`, `event-bus`, `prompts`,
 `registry-store`, `app-runtime`, `session.core`, `skills`, `tools.core`,
 `tools.bash`, `config`, `debug`, plus `extensions/context`, `extensions/libs`
 and `kmet.libs.scope` — and it cannot sit at rank 2 until those names are ctx
-services. That is a measured correction: the doc claimed the host move was
+services. 4c-i has since removed the `session.core` edge and `debug`. That is a measured correction: the doc claimed the host move was
 mechanical, and it is mechanical for `kmet.extension` only. The practical order
 is **4a → 4c-i → 4b-i → 4c-ii → 4b-ii → 4c-iii → 4d**, and the reasons are
 dependencies, not preferences: 4c-i removes the host's session edge and gives
@@ -836,20 +836,33 @@ cutover needs neither the session move nor a driver, and `Engine` → `:agents`
 needs both. If i and ii turn out to move together, they merge then — with data
 rather than a guess.
 
-### Landing 4c-i in flight
+### Landing 4c-i settled
 
-- **The `--debug` gate is a strict pass, not just a report, and that is
-  preserved.** `store.clj`'s schema branch does validate → report → *skip*, so
-  with diagnostics on a wrong-shape entry is dropped and with them off the same
-  entry loads. The layering fix was only about *who owns the switch*: the layer
-  keeps an atom (`report-wrong-shapes!`), `kmet.agent.debug/enable!`/
-  `disable!` flip it, and the `kmet.agent.debug` require — the session layer's
-  single upward edge — is gone. Behavior, including the surprising part, is
-  byte-identical; the test asserts both directions.
-- **A wrong-shape header is reported as a wrong-shape entry**, because
-  `parse-physical-line` runs on every line before the header check. Left as it
-  was (that is kmet1's behavior) and not asserted as desirable; it is noted here
-  so the next reader does not think the header diagnostic is dead code.
+- **A lift, not a re-host, and the docs say so now.** The session layer's
+  `ReentrantLock`, `InputStreamReader` chunked reads and `Instant` calls run
+  unchanged on bb, Jolt and JVM (verified by running create/append/load under
+  Jolt before touching anything), so nine files and their tests moved with
+  their namespaces intact — 2,370 source lines and 2,432 test lines — and the
+  only code change the move required was the `debug` edge. `modules/app` gained
+  its library edges (`libs`, `ai`, `babashka/fs`, `malli`), the session tests
+  moved with the code, and the two host-side tests (`--debug` owns the strict
+  pass) stayed in `agent`, where they die with kmet1.
+- **The move exposed a real `--dump-config` bug.** The first row to declare the
+  documented *vector* `:inject` form (`:inject [:sessionPersistence]`) broke the
+  dump — `render` did `(into {} inject)` and a vector of keywords is not a map
+  entry. The card now normalizes through `srce/normalize-inject`, so a card
+  reads like a fiber record (`{name nil}`), a malformed declaration fails at
+  compose time rather than at mount, and a regression test pins it. Worth
+  remembering: every row so far had `:inject {}`, so nothing had exercised the
+  vector form since landing 1.
+- **`:result-tokens` stamping stays where it is.** Moving it into `:sessions`
+  was in the plan; the contract test does not assert on tool entries, so the
+  move buys nothing until `:projections` lands, and `:sessions` is where that
+  derived state belongs. Recorded rather than done.
+- **The ledger.** 9 source files and 10 test files moved (net +84 lines: the new
+  row, the `:inject` normalization and its test), and 4 commits: the `debug`
+  edge, the order correction, the move + rows + dump fix. Nothing was
+  re-hosted, which is the point of calling this a lift.
 
 ### Landing 4a settled
 
