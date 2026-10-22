@@ -4,4 +4,12 @@
  ;; namespace may live here (the two-axes rule: the file moves, the namespace
  ;; does not) but the module may never require a module at its own rank or
  ;; above. babashka/process is the version rule's git describe.
- :deps {babashka/process {:mvn/version "0.6.25"}}}
+ ;;
+ ;; The session layer (kmet.agent.session.*, a rank-4 namespace that moved here
+ ;; with its files) brings the library edges it uses: libs for fs/edn-store, ai
+ ;; for the usage tallies, and the two Maven siblings those need.
+ :deps {kmet/libs {:local/root "../libs"}
+        kmet/ai {:local/root "../ai"}
+        babashka/fs {:mvn/version "0.5.34"}
+        babashka/process {:mvn/version "0.6.25"}
+        metosin/malli {:mvn/version "0.20.1"}}}

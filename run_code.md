@@ -939,7 +939,7 @@ pipeline both callers use:
   `build-context-namespaces` (SCI injection pattern), `build-extension-context`.
 - `modules/agent/src/kmet/extension.clj` — tool registration (`register-tool!`,
   `create-bash-tool`, `on-tool-call` / `on-tool-result`).
-- `modules/agent/src/kmet/agent/session/core.clj` — `:result-tokens`, `tool-usage`,
+- `modules/app/src/kmet/agent/session/core.clj` — `:result-tokens`, `tool-usage`,
   `tool-usage-report`.
 - `modules/agent/src/kmet/modes/interactive.clj` — the `/session` **Tool Results** section.
 - `modules/agent/src/kmet/agent/event_bus.clj` — event vocabulary shared with the TUI (the

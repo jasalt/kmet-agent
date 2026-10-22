@@ -81,9 +81,12 @@
 (deftest dump-config-prints-the-built-in-composition
   (let [{:keys [code out]} (run-main ["--dump-config"])]
     (is (zero? code))
-    (is (str/starts-with? out "profile :tui rows=2 patches=0")
-        "the bundle's first row: the event bus")
+    (is (str/starts-with? out "profile :tui rows=4 patches=0")
+        "the bundle: the bus, the tool registry, the session log and its storage")
     (is (str/includes? out ":events"))
+    (is (str/includes? out ":sessions"))
+    (is (str/includes? out "inject={:sessionPersistence nil}")
+        "a vector :inject prints in the kernel's normalized form")
     (is (str/ends-with? out "\n")))
   (let [{:keys [out]} (run-main ["--dump-config" "--profile" "rpc"])]
     (is (str/starts-with? out "profile :rpc")
@@ -97,7 +100,7 @@
     (try
       (let [{:keys [code out]} (run-main ["--dump-config" "--patch" path])]
         (is (zero? code))
-        (is (str/starts-with? out "profile :tui rows=3 patches=1"))
+        (is (str/starts-with? out "profile :tui rows=5 patches=1"))
         (is (str/includes? out ":app/sample"))
         (is (str/includes? out "inject={:tools nil}"))
         (is (str/includes? out "config={:a 1, :b {:c 2}}")
@@ -122,7 +125,9 @@
 (deftest a-bare-run-boots-the-composition-and-says-what-is-missing
   (let [{:keys [code err]} (run-main ["hello"])]
     (is (= 1 code))
-    (is (str/includes? err "booted 2 plugin rows (2 fibers, services: events tools)")
+    (is (str/includes? err
+                       (str "booted 4 plugin rows (4 fibers, services: events"
+                            " sessionPersistence sessions tools)"))
         "the boot is the point: a bare run proves the profile's rows mount")
     (is (str/includes? err "no runnable mode"))
     (is (str/includes? err "--dump-config"))))

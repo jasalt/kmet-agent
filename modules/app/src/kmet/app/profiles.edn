@@ -13,7 +13,12 @@
 {:bundles
  {:bundle/minimal
   {:rows [{:id :events :plugin kmet.app.events/plugin}
-          {:id :tools :plugin kmet.app.tools/plugin}]
+          {:id :tools :plugin kmet.app.tools/plugin}
+          ;; The session log and its storage backend: EDNL files, one log per
+          ;; context. :sessions injects :sessionPersistence, so the pair is
+          ;; active whichever order the rows mount in.
+          {:id :session-persistence :plugin kmet.agent.session.backend/plugin}
+          {:id :sessions :plugin kmet.app.sessions/plugin}]
    :patch []}}
 
  :profiles

@@ -14,7 +14,8 @@
    that is not there is a typo, not a runtime condition. An `:ext/…` keyword is
    the exception — the extension host supplies its card when it loads, so the
    dump names it and stops there."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [kmet.srce.core :as srce]))
 
 (defn- plugin-map
   "The plugin map SOURCE names, or nil when it does not resolve (or is not a
@@ -44,23 +45,25 @@
    names it and stops there. Any other keyword is a bad row: a built-in source
    is a var, never a registry key."
   [row]
-  (let [source (:plugin row)]
-    (cond
-      (and (keyword? source) (str/starts-with? (str source) ":ext/"))
-      (merge {:name source :external true} row {:id (or (:id row) source)})
+  (let [source (:plugin row)
+        described
+        (cond
+          (and (keyword? source) (str/starts-with? (str source) ":ext/"))
+          (merge {:name source :external true} row {:id (or (:id row) source)})
 
-      (keyword? source)
-      (bad-row row (str "a keyword :plugin source is an :ext/… id the extension"
-                        " host resolves; a built-in source is a var symbol — got "
-                        (pr-str source)))
+          (keyword? source)
+          (bad-row row (str "a keyword :plugin source is an :ext/… id the extension"
+                            " host resolves; a built-in source is a var symbol — got "
+                            (pr-str source)))
 
-      (symbol? source)
-      (let [c (card source)]
-        (merge c row {:id (or (:id row) (:name c))}))
+          (symbol? source)
+          (let [c (card source)]
+            (merge c row {:id (or (:id row) (:name c))}))
 
-      :else
-      (bad-row row (str "a row needs a :plugin source (a var symbol or an :ext/…"
-                        " keyword), got " (pr-str row))))))
+          :else
+          (bad-row row (str "a row needs a :plugin source (a var symbol or an"
+                            " :ext/… keyword), got " (pr-str row))))]
+    (update described :inject srce/normalize-inject)))
 
 (defn- describe-patch [patch]
   (if (:plugin patch) (describe patch) patch))

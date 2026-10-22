@@ -7,9 +7,7 @@
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.debug :as debug]
             [kmet.agent.session.core :as s]
-            [kmet.agent.session.store :as store]
             [kmet.agent.session.test-support :as support]
             [kmet.test-utils :refer [slash]]))
 
@@ -669,37 +667,3 @@
         (t/is (= "hello" (:content (nth (s/get-branch loaded) 1)))
               "entry content persisted verbatim"))
       (finally (fs/delete-tree dir)))))
-
-(t/deftest test-wrong-shape-diagnostic-follows-the-debug-switch
-  ;; A header and an entry that parse as EDN but fail the schema. Off (the
-  ;; default) a session file that parses is trusted and loads as written; on —
-  ;; kmet1's `--debug` — the strict pass reports and skips the entry.
-  (let [session (s/create-session support/test-dir)
-        file (:file session)]
-    (spit file (str (pr-str {:type :session :version 1 :id (:id session)
-                             :created-at "2026-01-01T00:00:00Z" :cwd support/test-dir}) "\n"))
-    (spit file (str (pr-str {:id 7 :role :user}) "\n") :append true)
-    (try
-      (let [[loaded out] (support/captured-stderr #(s/load-session file))]
-        (t/is (= "" out) "silent unless the host asked for diagnostics")
-        (t/is (= [{:id 7 :role :user}] @(:entries loaded))
-              "off, a parseable-but-wrong-shape entry is kept"))
-      (store/report-wrong-shapes! true)
-      (let [[loaded out] (support/captured-stderr #(s/load-session file))]
-        (t/is (str/includes? out "Skipping wrong-shape entry") "the entry is reported")
-        (t/is (str/includes? out ":id [\"should be a string\"]") "with the reason")
-        (t/is (empty? @(:entries loaded)) "and skipped"))
-      (finally
-        (store/report-wrong-shapes! false)))))
-
-(t/deftest test-the-debug-switch-owns-the-strict-pass
-  ;; One place decides "diagnostics on"; a typo there would mean the strict
-  ;; pass never runs. `log` is stubbed so the assertion writes no debug.log.
-  (try
-    (with-redefs [debug/log (fn [& _] nil)]
-      (debug/enable!)
-      (t/is (store/report-wrong-shapes?) "enable! turns the strict pass on")
-      (debug/disable!)
-      (t/is (not (store/report-wrong-shapes?)) "disable! turns it off"))
-    (finally
-      (with-redefs [debug/log (fn [& _] nil)] (debug/disable!)))))

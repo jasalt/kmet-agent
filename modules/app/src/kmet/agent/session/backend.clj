@@ -9,12 +9,17 @@
    they are implemented. The handle is `kmet.agent.session.store/Session`; the
    app never looks inside it.
 
-   The file lives in `agent` because it names `kmet.agent.session.*` (rank 4).
-   It moves into `app` with the session layer — the module changes, the
-   namespace does not (`new-app.md` § Two axes) — and then nothing here needs
-   to change, because `kmet.app.sessions` sits at rank 2 below both."
+   The file moved into `app` with the session layer it names — the module
+   changed, the namespace did not (`new-app.md` § Two axes) — so the row that
+   mounts it and the service that reads it are now both here.
+
+   The row is `:sessionPersistence`: it provides a backend into the mount
+   site's scope, where the `:sessions` row next to it injects it. A second
+   backend is a second row providing the same key, never a change to `:sessions`
+   (`new-app.md` § Service catalog)."
   (:require [kmet.agent.session.listing :as listing]
-            [kmet.agent.session.store :as store]))
+            [kmet.agent.session.store :as store]
+            [kmet.srce.core :as srce]))
 
 (defn ednl
   "A fresh EDNL backend value. Stateless: the sessions it hands out carry the
@@ -32,3 +37,15 @@
    :entries (fn [session] @(:entries session))
    :delete! (fn [session] (listing/delete-session! session))
    :header (fn [session] (:header session))})
+
+(defn- serve
+  "The `:sessionPersistence` row: provide the EDNL backend into the mount site's
+   scope — the app scope — so a sibling `:sessions` row sees it while the entry
+   stays this fiber's effect (the `:tools`/`:events`/`:sessions` rule)."
+  [ctx _config]
+  (srce/provide! ctx :sessionPersistence (ednl) {:in (:parent ctx)}))
+
+(srce/defplugin plugin
+  {:name :sessionPersistence
+   :provide #{:sessionPersistence}
+   :apply serve})

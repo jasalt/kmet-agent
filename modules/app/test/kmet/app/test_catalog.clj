@@ -8,6 +8,12 @@
   "A var a row can name that is not a plugin map."
   {:name "not a keyword"})
 
+(def vector-plugin
+  "A plugin that declares its dependencies in the vector form — all required."
+  {:name :app/vector-plugin
+   :inject [:tools :events]
+   :apply (fn [_ctx _cfg] nil)})
+
 (def test-plugin
   "A plugin map a test row can name as a source — the shape a `defplugin` var
    holds (a qualified var symbol is all a row carries)."
@@ -37,6 +43,23 @@
   (testing "an explicit :id wins over the plugin name"
     (is (= :read (:id (catalog/describe {:plugin 'kmet.app.test-catalog/test-plugin
                                          :id :read}))))))
+
+(deftest inject-comes-back-normalized
+  ;; The card must read like the fiber record: a vector declaration is
+  ;; all-required, so it prints and compares as `{name nil}`. It is also what
+  ;; `--dump-config` renders, which is how a vector form used to break the dump.
+  (is (= {:tools nil :events nil}
+         (:inject (catalog/describe {:plugin 'kmet.app.test-catalog/vector-plugin}))))
+  (is (= {} (:inject (catalog/describe {:plugin :ext/grep-tool})))
+      "a row with no :inject says so")
+  (is (= {:tools nil}
+         (:inject (catalog/describe {:plugin 'kmet.app.test-catalog/test-plugin})))
+      "a map declaration passes through")
+  (is (= :srce/bad-inject
+         (error-type #(catalog/describe
+                       {:plugin 'kmet.app.test-catalog/vector-plugin
+                        :inject {:tools :sometimes}})))
+      "a malformed declaration fails at compose time, not at mount"))
 
 (deftest unknown-sources-throw
   (is (= :kmet.app/unknown-plugin

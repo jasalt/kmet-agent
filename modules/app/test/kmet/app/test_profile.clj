@@ -154,7 +154,9 @@
     (is (= #{:tui :print :rpc :server} (set (keys (:profiles table)))))
     (is (contains? (:bundles table) :bundle/minimal))
     (is (= [{:id :events :plugin 'kmet.app.events/plugin}
-            {:id :tools :plugin 'kmet.app.tools/plugin}]
+            {:id :tools :plugin 'kmet.app.tools/plugin}
+            {:id :session-persistence :plugin 'kmet.agent.session.backend/plugin}
+            {:id :sessions :plugin 'kmet.app.sessions/plugin}]
            (:rows (profile/compose (profile/layers table :rpc))))
         "the bundle carries the rows the landed plugins add, for every profile")))
 
