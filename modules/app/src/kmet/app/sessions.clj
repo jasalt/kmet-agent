@@ -32,11 +32,10 @@
    `:result-tokens` on tool entries (it is `kmet.agent.session.store`'s append
    policy today). The contract does not assert on tool entries, so the two
    backends agree on everything the contract covers; the stamping moves into
-   this namespace when the Engine lift (4c) makes the derived state
-   `:sessions`'s business. It is recorded here so the difference is a decision
+   this namespace with the layer itself (4c-i), where derived state over the log
+   belongs. It is recorded here so the difference is a decision
    rather than a discovery."
-  (:require [kmet.libs.concurrent :as concurrent]
-            [kmet.srce.core :as srce]))
+  (:require [kmet.srce.core :as srce]))
 
 ;; ── the persistence contract ──────────────────────────────────────────────
 
@@ -143,7 +142,7 @@
                     entry (assoc entry
                                  :id (str (:id session) "#" (count entries))
                                  :parent-id leaf
-                                 :timestamp (concurrent/iso-now))]
+                                 :timestamp (str (java.time.Instant/now)))]
                 (reset! (:entries session) (conj entries entry))
                 (reset! (:leaf session) (:id entry))
                 (when (= :assistant (:role entry)) (reset! (:stored? session) true))
@@ -158,7 +157,7 @@
                            :header (cond-> {:type :session
                                             :version 1
                                             :id id
-                                            :created-at (concurrent/iso-now)
+                                            :created-at (str (java.time.Instant/now))
                                             :cwd (or cwd dir)}
                                      parent-session (assoc :parent-session parent-session))
                            :entries (atom [])
