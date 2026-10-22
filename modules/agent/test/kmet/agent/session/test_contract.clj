@@ -97,6 +97,27 @@
         (is (nil? ((:delete! backend) s)) "delete reports nothing, it just deletes")
         (is (= [] ((:paths backend) dir)) "the session is gone from the listing")))))
 
+(deftest the-log-works-over-the-ednl-backend
+  ;; The contract test exercises the backend directly and `kmet.app.test-sessions`
+  ;; exercises the service over the memory backend; this composes the two halves
+  ;; the way a profile does — `(service (ednl))`, as the `:sessions` row builds it.
+  (let [dir (str (fs/create-temp-dir {:dir (System/getenv "TMPDIR")}))
+        log (sessions/service (session-backend/ednl))
+        s ((:create! log) {:dir dir :cwd dir})
+        id (:id ((:header log) s))]
+    (is (identical? s ((:get log) id)) "a created session is in the index")
+    ((:append! log) s assistant-entry)
+    (let [path (first ((:paths log) dir))
+          loaded ((:load log) path)]
+      (is (seq path) "the log lists the file the store wrote")
+      (is (= id (:id ((:header log) loaded))))
+      (is (= 1 (count ((:entries log) loaded))))
+      (is (identical? loaded ((:get log) id))
+          "resuming replaces the index's handle with the loaded one"))
+    ((:delete! log) s)
+    (is (= [] ((:paths log) dir)))
+    (is (nil? ((:get log) id)) "and the index forgot it")))
+
 (deftest an-incomplete-backend-is-refused-at-construction
   (is (thrown-with-msg? Exception #"missing.*:entries"
                         (sessions/service (dissoc (sessions/memory-backend) :entries)))
