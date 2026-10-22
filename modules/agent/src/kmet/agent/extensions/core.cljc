@@ -44,10 +44,12 @@
    loader, and the loader itself stays out of the shared set (host
    machinery, not contract). Optional
    (defn shutdown [api]) runs on unload, which also disposes everything
-   the extension registered: what lives in the app tree is owned by
-   `[:app :extensions <name>]` (one LIFO dispose), and what lives outside it
-   — event subscriptions, aliases, shortcuts, model providers — deregisters
-   through the fns the extension recorded.
+   the extension registered: what lives in a registry is owned by
+   `[:app :extensions <name>]` (one `deregister-owner!` per tag), what lives
+   outside any registry — event subscriptions, aliases, shortcuts, model
+   providers, a contributed theme's removal — deregisters through the fns the
+   extension recorded, and an `:inject` mount's fiber is disposed by the
+   kernel.
 
    Extensions load at startup (core.clj), are re-loaded by /reload, and can
    be unloaded/reloaded at runtime via unload-extension! /
@@ -165,12 +167,11 @@
 
 ;; ─── Registries (the storage; api capabilities wire into these) ──────────
 (defonce ^:private extensions (atom []))
-;; Renderers live in the app root's store under the registering extension's
-;; owner ([:app :extensions <name>], scope.md §2), addressed by
-;; [:kmet/entry-renderer <custom-type>] / [:kmet/message-renderer
-;; <custom-type>]: a type holds one renderer, so a re-registration replaces
-;; it, and the registration is disposed with its owner rather than reset by
-;; hand.
+;; Renderers are registry entries under the registering extension's owner
+;; ([:app :extensions <name>]), tagged :kmet/entry-renderer /
+;; :kmet/message-renderer and named by the custom type: a type holds one
+;; renderer, so a re-registration replaces it, and unloading the owner removes
+;; it rather than a reset by hand.
 ;; Flags register under the extension owner like the renderers, addressed by
 ;; [:kmet/flag <name>]; the --ext-* values themselves are process argv, so
 ;; they live in the global below rather than in an engine (see get-flag).
@@ -981,8 +982,7 @@
                           ;; the runner can pass it the extension context
                           ;; (pi: handler(args, ctx)) while builtin commands
                           ;; keep receiving CoreState. Registered under the
-                          ;; extension's own owner, so unload disposes it
-                          ;; (scope.md §2).
+                          ;; extension's own owner, so unload removes it.
                           (let [cmd (loader-aware-map
                                      ext (assoc cmd :extension-handler
                                                 (:handler cmd)))]
@@ -1020,10 +1020,10 @@
                    (track dereg)
                    dereg))
      :emit-event! event-bus/emit-event!
-     ;; The hooks, renderers and flags live in the app tree under the
-     ;; extension's own owner, so the store's disposal is their teardown and
-     ;; they are NOT tracked: the tracked list stays for what lives outside
-     ;; the tree (subscriptions, aliases, shortcuts, model providers).
+     ;; The hooks, renderers and flags live in the app's registries under the
+     ;; extension's own owner, so unload's owner sweep is their teardown and
+     ;; they are NOT tracked: the tracked list stays for what lives outside any
+     ;; registry (subscriptions, aliases, shortcuts, model providers).
      :on-input (fn [hook]
                  (register-input-hook! (extension-owner name) (loader-aware ext hook)))
      :on-before-agent-start (fn [hook]
@@ -1267,14 +1267,23 @@
                   ;; what it waits for and runs init at activation. The
                   ;; disposer is the fiber's, and unload still calls shutdown
                   ;; first (unload-extension!).
-                  (reset! (:fiber ext)
-                          (srce/inject!
-                           (app-runtime/ctx) (keyword name) inject
-                           (fn [_fctx _config]
-                             (let [api (create-extension-api ext)]
-                               (reset! (:api ext) api)
-                               ((loader-aware ext (deref init-var)) api)
-                               (reset! (:initialized? ext) true)))))
+                  ;; A throwing init is the kernel's business: it marks the
+                  ;; fiber :failed rather than rethrowing, so a mount that
+                  ;; failed *now* must be turned back into a load error —
+                  ;; otherwise a broken extension reports as loaded.
+                  (let [fiber (srce/inject!
+                               (app-runtime/ctx) (keyword name) inject
+                               (fn [_fctx _config]
+                                 (let [api (create-extension-api ext)]
+                                   (reset! (:api ext) api)
+                                   ((loader-aware ext (deref init-var)) api)
+                                   (reset! (:initialized? ext) true))))]
+                    (reset! (:fiber ext) fiber)
+                    (when (= :failed (:state @fiber))
+                      (throw (ex-info (str "Extension " name " failed: "
+                                           (or (ex-message (:error @fiber)) "init threw"))
+                                      {:path path
+                                       :cause (:error @fiber)}))))
                   (let [api (create-extension-api ext)]
                     (reset! (:api ext) api)
                     ((loader-aware ext (deref init-var)) api)
@@ -1285,7 +1294,8 @@
                        " bundled=" (boolean bundled?))
             {:extension (:name ext) :error nil
              :loader-kind loader-kind
-             :bundled (boolean bundled?)}
+             :bundled (boolean bundled?)
+             :pending (boolean (and inject (not @(:initialized? ext))))}
             (catch Exception e
               (unload-extension! ext)
               {:extension nil
@@ -1336,13 +1346,14 @@
                     (str "load failed: " (.getName (class e))))}))))
 
 (defn unload-extension!
-  "Unload an extension in two steps (scope.md §6): shutdown (if
-   initialized), then dispose what it registered — the deregister fns recorded
-   by the registrations that live outside the tree, in reverse registration
-   order, then one LIFO dispose of its `[:app :extensions <name>]` owner, both
-   reporting a failing cleanup through the scope's reporter — and drop its
-   isolated context: namespaces and jars become unreachable, nothing global is
-   touched. Expects the Extension record (from the registry /
+  "Unload an extension in two steps: shutdown (if it initialized), then
+   dispose what it registered — the deregister fns it recorded (aliases,
+   shortcuts, model providers, event subscriptions, theme removal) in reverse
+   registration order, the registry entries under its
+   `[:app :extensions <name>]` owner tag by tag, and its plugin fiber when
+   `:inject` mounted one; failures are reported, not swallowed. Then its
+   isolated context goes: namespaces and jars become unreachable, nothing
+   global is touched. Expects the Extension record (from the registry /
    reload-extensions!); nil is a no-op — the load result map carries only its
    :extension name, and (deref nil) would otherwise surface as a cryptic NPE."
   [ext]
@@ -1353,11 +1364,11 @@
              (catch Exception e
                (binding [*out* *err*]
                  (println "Warning: extension shutdown error:" (ex-message e)))))))
-    ;; outside the tree first: a handler still subscribed while the store's
-    ;; registrations go would see a half-unloaded extension
+    ;; the outside-registry fns first: a handler still subscribed while the
+    ;; registry entries go would see a half-unloaded extension
     (app-runtime/dispose-deregisters! @(:deregister-fns ext))
-    ;; the registries are services in the app ctx now, not store entries, so
-    ;; the owner path no longer disposes them (4c-ii)
+    ;; then one sweep per tag the extension registered under (4c-ii moved the
+    ;; registries into the app's services, so there is no tree to dispose)
     (app-runtime/deregister-owner! (extension-owner (:name ext)))
     ;; an `:inject` extension's mount is a fiber: disposing it unwinds the
     ;; effects the kernel holds and drops it from the tree, pending or active
@@ -1397,15 +1408,23 @@
 (defn get-loaded-extensions
   "Loaded extensions as {:name str :path str :kind :file/:dir/:jar
    :loader-kind :sci/:jolt :entry-ns symbol :extension-dir str-or-nil
-   :bundled bool} maps (extension-dir = the extension's own directory; nil
-   for jar and bundled resource extensions)."
+   :bundled bool :fiber-state :pending/:active/:failed-or-nil
+   :error throwable-or-nil} maps (extension-dir = the extension's own
+   directory; nil for jar and bundled resource extensions). An `:inject`
+   extension that has not activated is `:pending`; one whose init threw while
+   activating later is `:failed` with the throwable — the host reported the
+   load, the kernel owns the activation."
   []
-  (mapv (fn [ext] {:name (:name ext) :path (:path ext)
-                   :kind (:kind ext)
-                   :loader-kind (:loader-kind ext)
-                   :entry-ns @(:entry-ns ext)
-                   :bundled (boolean (:bundled? ext))
-                   :extension-dir (extension-dir-of ext)})
+  (mapv (fn [ext]
+          (let [fiber (when-some [f @(:fiber ext)] @f)]
+            {:name (:name ext) :path (:path ext)
+             :kind (:kind ext)
+             :loader-kind (:loader-kind ext)
+             :entry-ns @(:entry-ns ext)
+             :bundled (boolean (:bundled? ext))
+             :extension-dir (extension-dir-of ext)
+             :fiber-state (:state fiber)
+             :error (:error fiber)}))
         @extensions))
 
 (defn extension-jars
@@ -1458,8 +1477,8 @@
    each handler's contribution — see emit-event-collect!), each applied under
    the owner that contributed it, so re-discovery after the next session
    start replaces the same names instead of duplicating them (pi's mergePaths
-   dedup, done by the store rather than a path set) and unloading an
-   extension takes its resources with it. A throwing handler is skipped (its
+   dedup, done by the registry's per-owner addressing rather than a path set)
+   and unloading an extension takes its resources with it. A throwing handler is skipped (its
    paths are lost). Returns the collected
    {:skill-paths [...] :prompt-paths [...] :theme-paths [...]}."
   [reason]
@@ -1478,6 +1497,18 @@
                 (update :theme-paths into (:theme-paths result))))
             {:skill-paths [] :prompt-paths [] :theme-paths []}
             contributions)))
+
+(defn unregister-contributed-themes!
+  "Remove every theme loaded from contributed paths, from the host's
+   `:kmet/theme` registrations and the TUI layer's store alike. Unload removes
+   one contributor's themes through the deregister fns it recorded; this is the
+   wholesale reset a test fixture or `/reload` needs, and it is the only way a
+   host-(nil-owner) contribution comes back out."
+  []
+  (doseq [[theme-name theme] (registry/entries (app-runtime/registry) :kmet/theme)]
+    (context/unregister-theme! theme-name theme))
+  (registry/clear! (app-runtime/registry) :kmet/theme)
+  nil)
 
 (defn clear-extensions!
   "Unload all extensions (used by /reload and tests). The resources an
@@ -1519,12 +1550,18 @@
   "Print the warning/note for a load RESULT (the load functions write
    nothing themselves); returns RESULT. A :duplicate-name skip names the
    earlier copy; an :unsupported-loader skip names the declared and
-   available backends; an error is a warning."
+   available backends; a pending `:inject` mount says what it waits for; an
+   error is a warning."
   [label result]
   (when (and result (:error result))
     (binding [*out* *err*]
       (println "Warning: Failed to load extension" label ":"
                (:error result))))
+  (when (:pending result)
+    (binding [*out* *err*]
+      (println "Note: extension" (:extension result) "from" label
+               "is waiting for its :inject dependencies — init runs when they"
+               "are provided")))
   (when (:skipped result)
     (binding [*out* *err*]
       (if (= :duplicate-name (:reason result))

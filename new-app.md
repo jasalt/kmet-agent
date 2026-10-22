@@ -887,10 +887,17 @@ bundled-resource resolvers, so a malformed value fails before any extension
 code evaluates. `load-extension*` mounts a declaring extension with
 `srce/inject!` under the app root as `(keyword name)`; the plugin's `:apply`
 builds the api and runs `init`, so a pending mount has not initialized (unload
-skips `shutdown`, disposes the fiber, and drops the loader). `grep-tool` cannot
-demonstrate it — it is a single-file extension, and only a manifest can declare
-dependencies — so the fixture manifest (`test/fixtures/ext-dir`) does, and
-`test/inject` covers pending, active and a rejected declaration.
+skips `shutdown`, disposes the fiber, and drops the loader). The mount's
+failure is the kernel's, not the loader's — `activate!` marks the fiber
+`:failed` and does not rethrow — so the host reads the fiber back and turns an
+immediate failure into a load error; a mount that fails on activation *later*
+cannot be one, and `get-loaded-extensions` carries `:fiber-state`
+(`:pending`/`:active`/`:failed`) and the throwable instead, while the load
+result carries `:pending` for the console's note. `grep-tool` cannot
+demonstrate the key — it is a single-file extension, and only a manifest can
+declare dependencies — so the fixture manifest (`test/fixtures/ext-dir`) does,
+and `test/inject` covers pending, active, a rejected declaration, and the
+failed mount.
 
 **The host stopped being store-shaped.** Its nine `(scope/` sites are gone:
 
@@ -899,8 +906,10 @@ dependencies — so the fixture manifest (`test/fixtures/ext-dir`) does, and
   first-registration order, each owner's in its own) — the atom backend lists
   by registration, which would otherwise interleave two extensions' hooks;
 - themes register under `:kmet/theme`; the TUI-store removal is a tracked
-  deregister fn on the contributing extension, so it still runs on unload, and
-  a host contribution (no extension) needs none;
+  deregister fn on the contributing extension, so it still runs on unload (a
+  host contribution, which has no owner to unload, comes out through
+  `unregister-contributed-themes!` — the wholesale reset a fixture or
+  `/reload` uses);
 - the UI port registers under `:kmet/ui-port` at `[:app :ui]`;
 - `cache-surface!` and the three `install-*` mirrors are deleted: the session,
   context and entry sinks were always the process caches — the store copy only

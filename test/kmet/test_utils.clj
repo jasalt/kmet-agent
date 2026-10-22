@@ -5,8 +5,6 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.registry :as registry]
-            [kmet.agent.app-runtime :as app]
             [kmet.agent.session.runtime :as rt]
             [kmet.agent.skills :as skills]
             [kmet.tui.utils :as u]))
@@ -62,7 +60,7 @@
   (commands/clear-commands!)
   (prompts/clear-prompt-templates!)
   (skills/clear-skills!)
-  (registry/deregister-owner! (app/registry) :kmet/theme extensions/themes-owner))
+  (extensions/unregister-contributed-themes!))
 
 (defn with-clean-app-registries
   "clojure.test :each fixture: clear the app tree's process-global

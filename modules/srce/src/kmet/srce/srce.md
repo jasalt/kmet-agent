@@ -722,16 +722,23 @@ bus file itself has since moved to `modules/app`, keeping its namespace and
 every call site (4b-ii's prep); the paths in this table are where the store
 sites were measured.
 
-Two more places name it without calling it: `extensions/context.cljc`'s
-extension-API allowlist (drop the entry with the ABI at landing 4b) and
-`test/kmet/test_utils.clj`'s `dispose-owner!` in `clear-app-registries!` (one
-call; it moves with whichever registry's clear replaces it).
+One more place names it without calling it: `extensions/context.cljc`'s
+extension-API allowlist (the shared-namespace set an extension may require).
+It goes with the store at 4e — an extension has no reason to reach kmet1's
+hand-rolled fiber once the registries are services. `test_utils`'
+`clear-app-registries!` used to dispose the theme owner from the store; it
+calls `extensions/unregister-contributed-themes!` now, which clears the
+registry and the TUI layer's store in one place.
 
 Each registry becomes a service with its own table — `:tools` did at landing 3,
 installed by one `provide!` and mutated through an atom handle — and each
-contribution is an `srce/effect` on the contributing fiber — so unloading an
-extension is `dispose!` on its fiber and the entries come back LIFO. Deleting
-the store before that would rewrite the remaining 25 sites into private cleanup
+contribution is an `srce/effect` on the contributing fiber, so unloading an
+extension is `dispose!` on its fiber and the entries come back LIFO. 4b-ii-a
+did the host's half with the atom backend instead of a service: the host's
+hook/theme/ui-port/renderer/flag entries ride the façade's remainder handle,
+which is the same registry mechanism `:tools` uses, and unload is one
+`deregister-owner!` per tag (plus the fiber, for an `:inject` mount). Deleting
+the store before that would have rewritten those sites into private cleanup
 lists, which is the copy AGENTS.md forbids.
 
 **Not in one change, and not at the end of 4c:** the host's nine sites went

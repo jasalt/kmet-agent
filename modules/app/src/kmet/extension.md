@@ -126,23 +126,35 @@ runtime (e.g. from another extension or a REPL):
 
 | Operation | Function | Effect |
 |---|---|---|
-| Load | `kmet.agent.extensions.core/load-extension!` (path) | load one file or manifest dir; returns `{:extension name :error nil :loader-kind :sci\|:jolt}`, `{:extension nil :error msg}` on failure, or `{:extension name :skipped true :reason :unsupported-loader …}` when the host offers none of the declared backends |
+| Load | `kmet.agent.extensions.core/load-extension!` (path) | load one file or manifest dir; returns `{:extension name :error nil :loader-kind :sci\|:jolt :pending bool}`, `{:extension nil :error msg}` on failure, or `{:extension name :skipped true :reason :unsupported-loader …}` when the host offers none of the declared backends |
 | Unload | `kmet.agent.extensions.core/unload-extension!` (record) | run `shutdown`, dispose the extension's registrations, remove namespaces |
 | Reload | `kmet.agent.extensions.core/reload-extensions!` (dirs) | unload all, reload from the given container dirs |
-| List | `kmet.agent.extensions.core/get-loaded-extensions` | `[{:name .. :path .. :loader-kind ..}]` |
+| List | `kmet.agent.extensions.core/get-loaded-extensions` | `[{:name .. :path .. :loader-kind .. :fiber-state ..}]` |
 
 A failing `init` is rolled back: the loader unloads whatever was registered
 before the error and reports `{:extension nil :error msg}` — no partial state
-lingers.
+lingers. That holds whether `init` ran at load (no `:inject`) or inside the
+plugin mount it declares: a mount that fails immediately is turned back into a
+load error. A mount that activates *later* (its dependency appeared after the
+load returned) cannot be a load error any more — the kernel owns it, the fiber
+is `:failed` with the throwable, and `get-loaded-extensions` reports that as
+`:fiber-state :failed` plus `:error`.
+
+An extension may declare `:inject` in its `extension.edn` — the app services
+`init` waits for ([extensions.md](../../../docs/extensions.md)). With it the
+extension mounts as a kernel plugin: it stays pending until the ctx provides
+the names, `init` runs at activation, and unloading disposes the fiber after
+`shutdown`. Without it nothing changes: the load is immediate and
+`get-loaded-extensions` reports `:fiber-state nil`.
 
 What `init(api)` registers is **owned**: commands, tools and tool sources,
 skills, prompts, hooks, renderers, flags, and the resources a
-`:resources-discover` contribution loads land in the app tree under
-`[:app :extensions <name>]` (scope.md §2), so unload disposes them with one
-LIFO dispose — a failing cleanup is reported and never skips the rest. What
-lives outside the tree — event subscriptions, tag aliases, shortcuts,
-terminal-input listeners, model providers — records its deregister fn on the
-extension, and unload runs those in reverse registration order after
+`:resources-discover` contribution loads land in the app's registries under
+`[:app :extensions <name>]`, so unload deregisters them tag by tag — a failing
+cleanup is reported and never skips the rest. What lives outside any registry
+— event subscriptions, tag aliases, shortcuts, terminal-input listeners, model
+providers, the removal of a contributed theme — records its deregister fn on
+the extension, and unload runs those in reverse registration order after
 `shutdown`.
 
 A registration is addressed by name, and a contested name follows its
@@ -525,8 +537,8 @@ collects each contribution). The paths load under the owner that contributed
 them — the extension's `[:app :extensions <name>]` — so unloading the
 extension takes its skills, prompts and themes with it, and discovery firing
 again (it follows every session start) re-registers the same names in place
-instead of duplicating them: the store's one-value-per-owner-and-key rule is
-the dedup, so there is no applied-path set to reset (pi: mergePaths dedup).
+instead of duplicating them: the registry's one-value-per-owner-and-name rule
+is the dedup, so there is no applied-path set to reset (pi: mergePaths dedup).
 
 ### Cancellable session before-events
 

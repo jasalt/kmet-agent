@@ -12,7 +12,7 @@
             [kmet.agent.session.runtime :as rt]
             [kmet.test-utils :as tu]))
 
-;; The binding and the app tree's registrations are process-global state;
+;; The binding and the app's registrations are process-global state;
 ;; every test starts and ends headless with a cleared tree (the bootstrap test
 ;; loads the developer's own skills).
 (t/use-fixtures :each

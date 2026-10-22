@@ -895,7 +895,7 @@
           (try
             (let [results (pkgs/load-extensions!)]
               (t/is (= [{:extension "bundled-test" :error nil
-                         :loader-kind :sci :bundled true}]
+                         :loader-kind :sci :bundled true :pending false}]
                        results)))
             (let [loaded (ext/get-loaded-extensions)]
               (t/is (= 1 (count loaded)))

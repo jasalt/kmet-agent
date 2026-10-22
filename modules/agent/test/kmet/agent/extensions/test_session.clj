@@ -147,7 +147,7 @@
           (scope/dispose-owner! (rt/node) second-owner))))))
 
 (t/deftest test-flag-ownership
-  ;; A flag is the registering owner's key on the app tree; the --ext-* value
+  ;; A flag is the registering owner's entry in the registry; the --ext-* value
   ;; get-flag coerces is process argv (set-cli-flags!), not engine state.
   (let [owner (extensions/extension-owner "test-flag-owner")
         dereg (extensions/register-flag! owner "probe-flag"

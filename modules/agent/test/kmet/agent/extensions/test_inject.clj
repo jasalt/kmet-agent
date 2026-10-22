@@ -84,6 +84,27 @@
           (extensions/unload-all-extensions!)
           (fs/delete-tree dir))))))
 
+(t/deftest a-mount-that-fails-is-a-load-error
+  (testing "a throwing init inside the mount is reported, not swallowed"
+    (let [name "inject-broken"
+          entry (str (str/replace name "-" "_") ".main")
+          dir (extension-dir! "target/test-ext-inject-broken" name
+                              (str "{:name \"" name "\" :entry " entry
+                                   " :loader [:sci] :inject [:tools]}\n")
+                              "(defn init [_api] (throw (ex-info \"boom\" {})))\n")]
+      (try
+        (let [result (extensions/load-extension! dir)]
+          (t/is (some? (:error result)) "the load fails")
+          (t/is (str/includes? (str (:error result)) "boom")
+                "with the mount's own error"))
+        (t/is (not (some #(= name (:name %)) (extensions/get-loaded-extensions)))
+              "a failed mount is not a loaded extension")
+        (t/is (not (some #{[(keyword name)]} (srce/children (app/ctx))))
+              "and its mount is gone")
+        (finally
+          (extensions/clear-extensions!)
+          (fs/delete-tree dir))))))
+
 (t/deftest an-invalid-inject-declaration-is-refused-before-evaluation
   (testing "extension.edn :inject must be keywords"
     (let [name "inject-bad"

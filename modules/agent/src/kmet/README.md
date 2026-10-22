@@ -236,21 +236,23 @@ prompt templates — live in the app root **ctx**, one service per registry
 (`:tools`, `:commands`, `:prompts`, `:skills`), reached through
 `kmet.agent.app-runtime/registry`, a façade handle that routes each tag to its
 service. Adding a tool or a command is a registry write on that handle and a
-plugin that adds one never re-provides. What still has no seam — hooks,
-renderers, markdown transformers, flags, themes, the UI port — lives in the app
-root's store (`kmet.libs.scope`, `kmet.agent.app-runtime/node`), addressed by
-host-shaped keys under an owner path: `[:app :extensions <name>]` for an
-extension's own registrations, including the skills, prompts and themes a
-`:resources-discover` contribution loads (P5c). The registration is disposed
-with that owner (P2), so neither home is a process-global atom copied into each
-engine. `/units` prints both halves: every store owner flat (`<owner> keys=[…]`,
-from the store itself) and one line per registry service (`:commands keys=[…]`,
-read from the handles) — F5, F14, scope.md §6. The tree renderer replaces the
-pair with one per-unit line plus each unit's state at 4d. The runtime-owned
-surfaces follow the same rule: `bootstrap` registers the live session and its
-sinks under `[:app :session]` and the headless UI port under `[:app :ui]`, and
-`dispose-owner!` drops those owners; the `extensions` atoms stay the no-node
-read cache for extension code with no node in hand (P4).
+plugin that adds one never re-provides. What has no service of its own yet —
+hooks, markdown transformers, themes, the UI port, and the renderers and flags
+the ABI registers — is an entry in the same registry mechanism on the façade's
+remainder handle (tags `:kmet/hook`, `:kmet/theme`, `:kmet/ui-port`,
+`:kmet/entry-renderer`, `:kmet/message-renderer`, `:kmet/flag`), under an owner
+path: `[:app :extensions <name>]` for an extension's own registrations,
+including the skills, prompts and themes a `:resources-discover` contribution
+loads (P5c). Nothing the host registers is a store entry since 4b-ii-a (P2), so
+no home is a process-global atom copied into each engine: unload is one
+`deregister-owner!` per tag. `/units` prints the registry services
+(`:commands keys=[…]`, read from the handles) plus the store owners that remain
+kmet1's (`registry_store`, the app node) — F5, F14, scope.md §6 — and the tree
+renderer replaces the pair at 4d. The runtime-owned surfaces are process caches
+now: `bootstrap` installs the live session, its sinks and the headless UI port,
+`dispose!` clears them (`clear-runtime!` + `unbind-extensions!`), and the
+`extensions` atoms stay the read cache for extension code with no node in hand
+(P4).
 
 ### Session runtime and front ends
 
