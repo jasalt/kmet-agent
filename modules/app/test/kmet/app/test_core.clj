@@ -81,8 +81,8 @@
 (deftest dump-config-prints-the-built-in-composition
   (let [{:keys [code out]} (run-main ["--dump-config"])]
     (is (zero? code))
-    (is (str/starts-with? out "profile :tui rows=4 patches=0")
-        "the bundle: the bus, the tool registry, the session log and its storage")
+    (is (str/starts-with? out "profile :tui rows=7 patches=0")
+        "the bundle: the bus, the four registries, the session log and its storage")
     (is (str/includes? out ":events"))
     (is (str/includes? out ":sessions"))
     (is (str/includes? out "inject={:sessionPersistence nil}")
@@ -100,7 +100,7 @@
     (try
       (let [{:keys [code out]} (run-main ["--dump-config" "--patch" path])]
         (is (zero? code))
-        (is (str/starts-with? out "profile :tui rows=5 patches=1"))
+        (is (str/starts-with? out "profile :tui rows=8 patches=1"))
         (is (str/includes? out ":app/sample"))
         (is (str/includes? out "inject={:tools nil}"))
         (is (str/includes? out "config={:a 1, :b {:c 2}}")
@@ -126,8 +126,9 @@
   (let [{:keys [code err]} (run-main ["hello"])]
     (is (= 1 code))
     (is (str/includes? err
-                       (str "booted 4 plugin rows (4 fibers, services: events"
-                            " sessionPersistence sessions tools)"))
+                       (str "booted 7 plugin rows (7 fibers, services: commands"
+                            " events prompts sessionPersistence sessions skills"
+                            " tools)"))
         "the boot is the point: a bare run proves the profile's rows mount")
     (is (str/includes? err "no runnable mode"))
     (is (str/includes? err "--dump-config"))))

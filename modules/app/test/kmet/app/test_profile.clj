@@ -155,6 +155,9 @@
     (is (contains? (:bundles table) :bundle/minimal))
     (is (= [{:id :events :plugin 'kmet.app.events/plugin}
             {:id :tools :plugin 'kmet.app.tools/plugin}
+            {:id :commands :plugin 'kmet.app.registries/commands}
+            {:id :prompts :plugin 'kmet.app.registries/prompts}
+            {:id :skills :plugin 'kmet.app.registries/skills}
             {:id :session-persistence :plugin 'kmet.agent.session.backend/plugin}
             {:id :sessions :plugin 'kmet.app.sessions/plugin}]
            (:rows (profile/compose (profile/layers table :rpc))))

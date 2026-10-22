@@ -15,24 +15,15 @@
    module holds the service and nothing above it knows which tools exist.
    Until the loop runs on the app (landing 7) the only reader is the contract
    test and the tool layer's explicit-argument reads."
-  (:require [kmet.agent.registry :as registry]
-            [kmet.srce.core :as srce]))
+  (:require [kmet.app.registries :as registries]))
 
-(defn service
+(def service
   "A fresh `:tools` service value: an empty registry handle over an atom. Each
    row gets its own, so a disposed composition takes its tools with it."
-  []
-  (registry/atom-registry))
+  registries/service)
 
-(defn- serve
-  "The `:tools` row's apply: provide the handle into the app scope — the mount
-   site's ctx — so the app's other rows see it, while the entry stays this
-   fiber's effect."
-  [ctx _config]
-  (let [scope (:parent ctx)]
-    (srce/provide! ctx :tools (service) {:in scope})))
-
-(srce/defplugin plugin
-  {:name :tools
-   :provide #{:tools}
-   :apply serve})
+(def plugin
+  "The `:tools` row. The shape is `kmet.app.registries`' (a handle provided into
+   the app scope, one declaration per service); this var keeps the row's name
+   where its history and its tests point."
+  registries/tools)
