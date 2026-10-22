@@ -1,3 +1,2 @@
 {:paths ["src" "test"]
- :deps {kmet/libs {:local/root "../libs"}
-        kmet/hikap {:local/root "../hikap"}}}
+ :deps {kmet/hikap {:local/root "../hikap"}}}

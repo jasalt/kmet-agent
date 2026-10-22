@@ -1,13 +1,25 @@
 (ns kmet.test-module-deps
-  "Guard (global organization): module dependencies must flow downward.
+  "Guard (global organization): module dependencies must flow downward, and a
+   module must declare exactly the ones it requires.
 
-   Two views of the same rule: each module's deps.edn may name only
-   lower-ranked modules, and each *namespace* may require only a file in a
-   strictly lower-ranked module (its own module is fine). The second is the
-   one the compiler never checks: a `kmet.app.*` namespace requiring a
-   `kmet.agent.*` helper is one line away at all times."
+   Three views of the same rule. Each module's deps.edn may name only
+   lower-ranked modules; each *namespace* may require only a file in a
+   strictly lower-ranked module (its own module is fine); and each module's
+   `src` requires must appear in its deps.edn, with nothing there that neither
+   `src` nor `test` requires. The second is the one the compiler never checks:
+   a `kmet.app.*` namespace requiring a `kmet.agent.*` helper is one line away
+   at all times. The third is what let `app` require `kmet.srce` for two
+   landings without declaring it — the guard checked only the direction of the
+   edges that were written down.
+
+   `test` trees are cross-cutting (`libs`' tests require `tui`, `ai`'s require
+   `agent`), so they may use a module the manifest cannot declare — ranking
+   forbids most of those edges anyway. They still count as *use*: a dep the
+   tests exercise is not dead, and a test-only dep below the module's rank is
+   allowed to be declared."
   (:require [babashka.fs :as fs]
             [clojure.edn :as edn]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kmet.tasks.changed :as changed]
@@ -98,3 +110,53 @@
       (is (empty? up)
           (str file " (" (:name module) ", rank " (:rank module)
                ") requires upward: " (vec up))))))
+
+;; ─── the declaration view ────────────────────────────────────────────────
+
+(def ^:private reader-views
+  "The two hosts' reader branches, read separately: `#?` resolves to the first
+   matching branch per read, so a jolt-only require is invisible to the
+   bb view and vice versa. A dep declared for either host's branch is used."
+  [#{:bb :clj} #{:jolt :clj}])
+
+(defn- root-requires
+  "Every kmet.* namespace required by any source file under ROOT, in both
+   hosts' views. ROOT may be nil (a module without a test tree)."
+  [root]
+  (if (nil? root)
+    #{}
+    (->> (fs/glob root "**/*.{clj,cljc}")
+         (map str)
+         (mapcat (fn [file]
+                   (mapcat (fn [features]
+                             (when-let [ns-form
+                                        (reader/read-ns-form
+                                         file features "module declaration guard")]
+                               (changed/ns-requires ns-form)))
+                           reader-views)))
+         set)))
+
+(defn- required-modules
+  "The sibling module names the namespaces required under ROOT belong to."
+  [module root]
+  (->> (root-requires root)
+       (keep module-owner)
+       (map :name)
+       set
+       (#(disj % (:name module)))))
+
+(deftest module-declarations-match-requires
+  (testing "a module declares what its src requires, and nothing dead"
+    (doseq [{:keys [name src test] :as module} (modules/modules)
+            :let [deps-file (fs/file (fs/parent src) "deps.edn")
+                  declared (set (module-deps (fs/parent src)))
+                  from-src (required-modules module src)
+                  from-tests (required-modules module test)]]
+      (is (fs/exists? deps-file)
+          (str name " has no deps.edn at " deps-file))
+      (is (empty? (set/difference from-src declared))
+          (str name " requires modules it does not declare: "
+               (vec (sort (set/difference from-src declared)))))
+      (is (empty? (set/difference declared (set/union from-src from-tests)))
+          (str name " declares modules neither its src nor its test tree uses: "
+               (vec (sort (set/difference declared (set/union from-src from-tests)))))))))

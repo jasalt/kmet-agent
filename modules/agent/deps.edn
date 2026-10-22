@@ -1,5 +1,6 @@
 {:paths ["src" "test"]
  :deps {kmet/libs {:local/root "../libs"}
+        kmet/reakt {:local/root "../reakt"}
         kmet/hikap {:local/root "../hikap"}
         kmet/tui  {:local/root "../tui"}
         kmet/ai   {:local/root "../ai"}

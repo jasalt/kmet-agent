@@ -42,6 +42,15 @@ change module without changing namespace: `kmet.agent.version` lives in
 module is still the only process entry — it is a bootstrap that selects the
 app (see below).
 
+The guard holds the declaration in both directions: every module its `src`
+requires must be in the module's `deps.edn`, and nothing may be there that
+neither `src` nor `test` uses (a test-only edge below the module's rank is
+allowed, since test trees are cross-cutting and often point upward). It reads
+both hosts' reader branches, so a `#?(:jolt …)` require counts. The missing
+direction went unchecked until 4b-ii: `app` required `kmet.srce` from six
+namespaces across two landings without naming it, because the guard only
+checked the edges that were written down.
+
 The extension contract sits above the app tree, beside it:
 `modules/app/src/kmet/extension.clj` (`kmet.extension`) is the one kmet
 namespace an extension may depend on; `kmet/agent/extensions/` is its

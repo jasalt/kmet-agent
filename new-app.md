@@ -903,6 +903,15 @@ Two consequences, and they change the order rather than the goal:
   after the tool layer and `config` lift. The landing rule still holds at each
   half: kmet2 uses the new mechanism, kmet1 keeps working, one test holds both.
 
+The guard also grew its missing direction (`module-declarations-match-requires`):
+`kmet.test-module-deps` used to check only that *written* edges flow downward,
+so `modules/app/deps.edn` could omit `kmet/srce` for two landings while six
+app sources required it. It now holds `src`'s requires ⊆ declared ⊆
+`src`+`test`'s requires, reading both hosts' reader branches. That reported
+three real defects it fixed: `tui` and `agent` were missing `kmet/reakt` (their
+sources require `kmet.libs.reakt.core`, which the reakt module owns), and
+`tk` declared `kmet/libs` without a single use.
+
 The four leaf lifts are the ones with no upward edge at all — `debug` (required
 by the host, the bus, `config`, `skills`, `bash-executor`), `event-bus` (the bus
 is the host's biggest non-tool dependency), `config-schema` and `tools/util`

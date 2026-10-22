@@ -24,12 +24,19 @@
   "The ns form of the source file at PATH, or nil when the first form is not
    an ns form. Throws (::unreadable, carrying PATH) when the file cannot be
    read or parsed — a guard that cannot read its file must never silently
-   check nothing. CONTEXT labels the failure in its message."
-  ([path] (read-ns-form path "source reader"))
-  ([path context]
+   check nothing. CONTEXT labels the failure in its message.
+
+   FEATURES picks the reader branches to resolve. The default is the running
+   host's (reader-features); pass a set to read another host's view, and two
+   disjoint sets (e.g. #{:bb :clj} and #{:jolt :clj}) when a guard must see
+   every branch — `#?` picks the first matching branch per read, so one read
+   can never return both."
+  ([path] (read-ns-form path (reader-features) "source reader"))
+  ([path context] (read-ns-form path (reader-features) context))
+  ([path features context]
    (let [form (try
                 (read-string {:read-cond :allow
-                              :features (reader-features)}
+                              :features features}
                              (slurp path))
                 (catch Exception e
                   (throw (ex-info (str context " cannot read " path)

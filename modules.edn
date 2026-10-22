@@ -1,10 +1,12 @@
 ;; The workspace manifest — see tasks/kmet/tasks/modules.clj for the readers.
 ;;
 ;; Classpath and embed order is the listing order (it decides shadowing);
-;; :rank is the layering guard's ordering (kmet.test-module-deps). Extension
-;; projects are not workspace modules: each is an independently loadable
-;; extension with its own bb.edn test entry (and, when it needs library deps,
-;; a deps.edn).
+;; :rank is the layering guard's ordering (kmet.test-module-deps). Each
+;; module's modules/<name>/deps.edn declares every module its src requires and
+;; nothing neither src nor test uses — the same guard checks both directions.
+;; Extension projects are not workspace modules: each is an independently
+;; loadable extension with its own bb.edn test entry (and, when it needs
+;; library deps, a deps.edn).
 {:modules
  [{:name "reakt" :src "modules/reakt/src" :test "modules/reakt/test" :rank 0}
   {:name "hikap" :src "modules/hikap/src" :test "modules/hikap/test" :rank 1}
