@@ -333,7 +333,7 @@
   (scope/register! node owner (entry-renderer-key custom-type) renderer))
 
 (defn get-entry-renderer [custom-type]
-  (registry/entry :kmet/entry-renderer custom-type))
+  (registry/entry (app-runtime/registry) :kmet/entry-renderer custom-type))
 
 (defn register-message-renderer!
   "Register OWNER's renderer for a custom MESSAGE type (extension api:
@@ -342,7 +342,7 @@
   (scope/register! node owner (message-renderer-key custom-type) renderer))
 
 (defn get-message-renderer [custom-type]
-  (registry/entry :kmet/message-renderer custom-type))
+  (registry/entry (app-runtime/registry) :kmet/message-renderer custom-type))
 
 (defn register-tool-call-hook!
   "Register OWNER's tool-call hook (extension api: on-tool-call): (fn [ctx])
@@ -438,7 +438,7 @@
   "Value of a registered CLI flag: the argv value coerced by the registered
    :type, falling back to :default. nil for unregistered flags."
   [name]
-  (when-let [{:keys [type default]} (registry/entry :kmet/flag name)]
+  (when-let [{:keys [type default]} (registry/entry (app-runtime/registry) :kmet/flag name)]
     (let [raw (get @cli-flag-values name)]
       (case type
         :boolean (let [v (if (nil? raw) default raw)]

@@ -17,6 +17,7 @@
    mid-run (`/reload`, bootstrap, a session swap)."
   (:require [clojure.string :as str]
             [kmet.agent.debug :as debug]
+            [kmet.agent.registry-store :as registry-store]
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.retry :as retry]
             [kmet.libs.scope :as scope]))
@@ -65,6 +66,13 @@
    `init(api)` has an owner to register under (scope.md §6)."
   []
   @app-node)
+
+(defn registry
+  "The `Registry` handle over the app root's store: how a kmet1 registry reads
+   its registrations now that the mechanics are shared with kmet2
+   (`kmet.agent.registry`). Dies with the store at landing 4."
+  []
+  (registry-store/store-registry (node)))
 
 (defn loop-stages
   "NODE's loop stage map, read once per attempt. A node that carries none (a

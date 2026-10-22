@@ -23,10 +23,11 @@
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.agent.debug :as debug]
+            [kmet.agent.app-runtime :as app-runtime]
+            [kmet.agent.registry-store :as registry-store]
             [kmet.agent.registry :as registry]
             [kmet.agent.tools.read :as read]
             [kmet.agent.tools.registry :as tools-registry]
-            [kmet.libs.scope :as scope]
             [kmet.libs.yaml :as yaml]))
 
 ;; ─── Constants (pi: MAX_NAME_LENGTH / MAX_DESCRIPTION_LENGTH) ─────────────
@@ -41,21 +42,16 @@
    `/units` reads it from the store, so skills report under it."
   [:app :skills])
 
-(defn- skill-key
-  "The store key addressing a skill by NAME."
-  [name]
-  (registry/store-key :kmet/skill name))
-
 (defn- registered-skills
   "The tree's skills, in registration order."
   []
-  (mapv second (registry/entries :kmet/skill)))
+  (mapv second (registry/entries (app-runtime/registry) :kmet/skill)))
 
 (defn- skill-for
   "The skill named NAME, or nil (see `kmet.agent.registry/entry` for the
    owner rule)."
   [name]
-  (registry/entry :kmet/skill name))
+  (registry/entry (app-runtime/registry) :kmet/skill name))
 
 ;; ─── Validation (pi: validateName / validateDescription) ──────────────────
 
@@ -126,16 +122,18 @@
    its own tree).
    Returns the store's deregister fn."
   [node name description]
-  (scope/register! node skills-owner (skill-key name)
-                   {:name name
-                    :description description
-                    :body nil
-                    :raw nil
-                    :location nil
-                    :extension nil
-                    :file-path nil
-                    :base-dir nil
-                    :disable-model-invocation false}))
+  (registry/register! (registry-store/store-registry node)
+                      :kmet/skill name
+                      {:name name
+                       :description description
+                       :body nil
+                       :raw nil
+                       :location nil
+                       :extension nil
+                       :file-path nil
+                       :base-dir nil
+                       :disable-model-invocation false}
+                      skills-owner))
 
 (defn- load-skill-from-file
   "Load a skill from a SKILL.md (or flat .md) file. Returns {:skill
@@ -200,11 +198,11 @@
    registered — f removes exactly this registration — else {:collision
    diagnostic}."
   [node owner skill location]
-  (let [k (skill-key (:name skill))
-        by-owner (registry/by-owner :kmet/skill (:name skill))]
+  (let [by-owner (registry/by-owner (app-runtime/registry) :kmet/skill (:name skill))]
     (if (and (seq by-owner) (not (contains? by-owner owner)))
       {:collision (skill-collision skill location)}
-      {:deregister (scope/register! node owner k skill)})))
+      {:deregister (registry/register! (registry-store/store-registry node)
+                                       :kmet/skill (:name skill) skill owner)})))
 
 (defn- add-skill-results!
   "Register parsed skill results ({:skill ... :diagnostics ...}) under OWNER,
@@ -234,7 +232,7 @@
   "Remove every loaded skill from NODE (pi: resourceLoader.reload
    re-discovers from scratch). Used by /reload."
   [node]
-  (registry/clear! :kmet/skill node))
+  (registry/clear! (registry-store/store-registry node) :kmet/skill))
 
 (defn discover-skill-files
   "Discover skill files under DIR using pi's discovery rules (a dir

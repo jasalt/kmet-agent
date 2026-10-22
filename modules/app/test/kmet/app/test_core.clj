@@ -81,7 +81,7 @@
 (deftest dump-config-prints-the-built-in-composition
   (let [{:keys [code out]} (run-main ["--dump-config"])]
     (is (zero? code))
-    (is (str/starts-with? out "profile :tui rows=1 patches=0")
+    (is (str/starts-with? out "profile :tui rows=2 patches=0")
         "the bundle's first row: the event bus")
     (is (str/includes? out ":events"))
     (is (str/ends-with? out "\n")))
@@ -97,7 +97,7 @@
     (try
       (let [{:keys [code out]} (run-main ["--dump-config" "--patch" path])]
         (is (zero? code))
-        (is (str/starts-with? out "profile :tui rows=2 patches=1"))
+        (is (str/starts-with? out "profile :tui rows=3 patches=1"))
         (is (str/includes? out ":app/sample"))
         (is (str/includes? out "inject={:tools nil}"))
         (is (str/includes? out "config={:a 1, :b {:c 2}}")
@@ -122,7 +122,7 @@
 (deftest a-bare-run-boots-the-composition-and-says-what-is-missing
   (let [{:keys [code err]} (run-main ["hello"])]
     (is (= 1 code))
-    (is (str/includes? err "booted 1 plugin row (1 fiber, services: events)")
+    (is (str/includes? err "booted 2 plugin rows (2 fibers, services: events tools)")
         "the boot is the point: a bare run proves the profile's rows mount")
     (is (str/includes? err "no runnable mode"))
     (is (str/includes? err "--dump-config"))))

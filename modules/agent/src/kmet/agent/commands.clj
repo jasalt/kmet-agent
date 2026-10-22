@@ -22,8 +22,9 @@
    rather than reset by hand (scope.md §2). The extension ABI registers
    under its own owner path, so unload disposes what an extension added."
   (:require [clojure.string :as str]
-            [kmet.agent.registry :as registry]
-            [kmet.libs.scope :as scope]))
+            [kmet.agent.app-runtime :as app-runtime]
+            [kmet.agent.registry-store :as registry-store]
+            [kmet.agent.registry :as registry]))
 
 (def commands-owner
   "The app's command registry owner — the registry's address (scope.md §2).
@@ -31,23 +32,18 @@
    owner from the store, so they render under it."
   [:app :commands])
 
-(defn- command-key
-  "The store key addressing a command by NAME."
-  [name]
-  (registry/store-key :kmet/command name))
-
 (defn- command-for
   "The command named NAME, or nil (see `kmet.agent.registry/entry` for the
    owner rule)."
   [name]
-  (registry/entry :kmet/command name))
+  (registry/entry (app-runtime/registry) :kmet/command name))
 
 (defn- command-names
   "Every effective command name in display order: owners in
    first-registration order, each owner's commands in its own registration
    order, each name once."
   []
-  (mapv first (registry/effective-entries :kmet/command)))
+  (mapv first (registry/effective-entries (app-runtime/registry) :kmet/command)))
 
 (defn register-command!
   "Register (or replace by :name) a slash command on NODE, owned by OWNER —
@@ -60,7 +56,8 @@
    its own name. Returns nil."
   ([node cmd] (register-command! node cmd commands-owner))
   ([node cmd owner]
-   (scope/register! node owner (command-key (:name cmd)) cmd)
+   (registry/register! (registry-store/store-registry node)
+                       :kmet/command (:name cmd) cmd owner)
    nil))
 
 (defn unregister-command!
@@ -69,13 +66,13 @@
    one of its own; another owner's same-name command survives). Returns nil."
   ([node name] (unregister-command! node name nil))
   ([node name owner]
-   (scope/deregister-key! node (command-key name) owner)
+   (registry/deregister! (registry-store/store-registry node) :kmet/command name owner)
    nil))
 
 (defn clear-commands!
   "Remove every command registered on NODE (mainly for tests). Returns nil."
   [node]
-  (registry/clear! :kmet/command node))
+  (registry/clear! (registry-store/store-registry node) :kmet/command))
 
 (defn command-line?
   "True when TEXT is a single-line command line: slash commands and bash

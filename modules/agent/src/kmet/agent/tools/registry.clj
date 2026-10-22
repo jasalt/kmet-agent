@@ -10,15 +10,16 @@
    disposes what an extension added."
   (:require [clojure.string :as str]
             [kmet.libs.json :as json]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.registry :as registry]
+            [kmet.agent.registry-store :as registry-store]
             [kmet.agent.tools.tool :as tool]
             [kmet.agent.tools.util :as tool-util]
             [kmet.agent.tools.read :as read]
             [kmet.agent.tools.write :as write]
             [kmet.agent.tools.edit :as edit]
             [kmet.agent.tools.bash :as bash]
-            [kmet.agent.tools.run-code :as run-code]
-            [kmet.libs.scope :as scope]))
+            [kmet.agent.tools.run-code :as run-code]))
 
 (declare built-in-tools)
 
@@ -88,16 +89,11 @@
    report under it."
   [:app :tools])
 
-(defn- tool-key
-  "The store key addressing a custom tool by NAME."
-  [name]
-  (registry/store-key :kmet/tool name))
-
 (defn- registered-tools
-  "The tree's custom tools as {name tool}; the store holds one value per
-   (owner, key), so a re-registration of a name replaces the earlier one."
-  []
-  (into {} (registry/entries :kmet/tool)))
+  "REGISTRY's custom tools as {name tool}; one value per (owner, name), so a
+   re-registration of a name replaces the earlier one."
+  [reg]
+  (into {} (registry/entries reg :kmet/tool)))
 
 (defn register-tool!
   "Register a custom tool on NODE after normalizing its provider-facing
@@ -109,7 +105,8 @@
   ([node tool] (register-tool! node tool tools-owner))
   ([node tool owner]
    (let [tool (tool/normalize-tool-definition tool)]
-     (scope/register! node owner (tool-key (:name tool)) tool))))
+     (registry/register! (registry-store/store-registry node)
+                         :kmet/tool (:name tool) tool owner))))
 
 (defn unregister-tool!
   "Remove a custom tool by name, from whichever owner registered it, or —
@@ -117,37 +114,34 @@
    its own; another owner's same-name tool survives). Returns nil."
   ([node name] (unregister-tool! node name nil))
   ([node name owner]
-   (scope/deregister-key! node (tool-key name) owner)
+   (registry/deregister! (registry-store/store-registry node) :kmet/tool name owner)
    nil))
 
 (defn get-all-tools
-  "Get all available tools (built-in + custom). A custom tool that reuses a
-   built-in's name shadows it (pi: the extension registry is layered over the
-   base definitions, custom wins)."
-  []
-  (merge built-in-tools (registered-tools)))
+  "Get all available tools (built-in + custom) from REGISTRY — the `:tools`
+   service handle, or the app root's when none is given (kmet1). A custom tool
+   that reuses a built-in's name shadows it (pi: the extension registry is
+   layered over the base definitions, custom wins)."
+  ([] (get-all-tools (app-runtime/registry)))
+  ([reg] (merge built-in-tools (registered-tools reg))))
 
 (defn get-tool
-  "Get a tool by name — resolved through get-all-tools, so the map a caller
-   executes is exactly the map the registry lists (custom shadows built-in)."
-  [name]
-  (get (get-all-tools) name))
+  "Get a tool by NAME from REGISTRY's view — resolved through get-all-tools, so
+   the map a caller executes is exactly the map the registry lists (custom
+   shadows built-in). Without a REGISTRY, the app root's (kmet1)."
+  ([name] (get-tool (app-runtime/registry) name))
+  ([reg name] (get (get-all-tools reg) name)))
 
 ;; ─── Extension-contributed tool sources ────────────────────────────────────
 ;; Sandbox-only tools: a source contributes tool maps into the run_code tool's
 ;; surface without joining get-all-tools (the model's tool set). The
 ;; mcp-adapter contributes its cached MCP catalog this way (run_code.md T2).
 
-(defn- tool-source-key
-  "The store key addressing a contributed tool source by ID."
-  [id]
-  (registry/store-key :kmet/tool-source id))
-
 (defn- registered-tool-sources
-  "The tree's contributed tool sources in registration order: [[id fn] …].
+  "REGISTRY's contributed tool sources in registration order: [[id fn] …].
    A source re-registered under the same ID replaces the earlier one."
-  []
-  (mapv vec (registry/entries :kmet/tool-source)))
+  [reg]
+  (mapv vec (registry/entries reg :kmet/tool-source)))
 
 (defn register-tool-source!
   "Register (or replace) an extension-contributed tool source on NODE,
@@ -162,25 +156,28 @@
    deregister fn."
   ([node id tools-fn] (register-tool-source! node id tools-fn tools-owner))
   ([node id tools-fn owner]
-   (scope/register! node owner (tool-source-key id) tools-fn)))
+   (registry/register! (registry-store/store-registry node)
+                       :kmet/tool-source id tools-fn owner)))
 
 (defn unregister-tool-source!
   "Remove a contributed tool source by ID, from whichever owner registered
    it, or — with OWNER — only that owner's registration. Returns nil."
   ([node id] (unregister-tool-source! node id nil))
   ([node id owner]
-   (scope/deregister-key! node (tool-source-key id) owner)
+   (registry/deregister! (registry-store/store-registry node) :kmet/tool-source id owner)
    nil))
 
 (defn get-contributed-tools
-  "Merge every registered source's current tools. A source that throws or
-   returns a non-map contributes nothing — a broken extension must not take
-   the sandbox's surface down."
-  []
-  (reduce (fn [acc [_ tools-fn]]
-            (let [tools (try (tools-fn) (catch Exception _ nil))]
-              (if (map? tools) (merge acc tools) acc)))
-          {} (registered-tool-sources)))
+  "Merge every source registered in REGISTRY (the app root's when none is
+   given) into its current tools. A source that throws or returns a non-map
+   contributes nothing — a broken extension must not take the sandbox's
+   surface down."
+  ([] (get-contributed-tools (app-runtime/registry)))
+  ([reg]
+   (reduce (fn [acc [_ tools-fn]]
+             (let [tools (try (tools-fn) (catch Exception _ nil))]
+               (if (map? tools) (merge acc tools) acc)))
+           {} (registered-tool-sources reg))))
 
 ;; ─── Callable surfaces ─────────────────────────────────────────────────────
 

@@ -785,11 +785,48 @@ Each is independently shippable and gated.
 | 0 | **landed** (`9c0b70ed`) — `modules/srce`: the light kernel — `ctx`/`fiber`/`event` behind the public `srce` | the contract + guard tests ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §12, 44 + 3 tests); no `kmet.agent.*` require, no `kmet.libs.scope` require |
 | 1 | **landed** (`367efd49`) — module wiring + guards (module-based require, no-global-node), `--app new` dispatch (bootstrap split: `kmet.agent.core` + `kmet.agent.cli`) + `check` requiring both entries, `--dump-config` over the composed rows | `kmet.test-module-deps` / `test-modules-manifest` green; each guard fails on a deliberate violation |
 | 2 | **landed** (`14ca4f0d`) — the bus: the six non-awaiting dispatch modes (`emit!`, `bail!`, `waterfall!`, `collect-last!`, `collect-all!`, `boundary!`) over the kernel's listener table, with `:data` on a registration and `{:in scope}` on `provide!`; `kmet.app.events` keeps the vocabulary (declared in the `:events` plugin's `:events` map), the owner, and the `:events` service; **the submission point** — `kmet.app.runtime`: `submit!` from any thread, `boundary!` drains and settles, `boot` mounts the composed rows | one contract test over both delivery paths (kmet1's bus and the app's), the app's own mode/service/declaration suite, and kmet1 green; a hook registered from another thread lands at the boundary |
-| 3 | `registry` parameterized then lifted; `:tools` service; commands/prompts/skills re-pointed | contract tests over both backends (installation is `provide!`, mutation is a handle method — no re-provide); kmet1 green |
+| 3 | **landed** — `registry` parameterized then lifted (`kmet.agent.registry` over a `Registry` handle); the `:tools` service row; commands/prompts/skills/tools/entry-renderers re-pointed at the handle | the contract test runs one set of registry assertions against both backends (atom and store); the `:tools` service is installed by one `provide!` and mutated through its handle (no re-provide); kmet1 green |
 | 4 | `Engine` → `:agents` (+ `:permissions` policy/request!/remember!) and `:sessions` + `:sessionPersistence`; the extension host + ABI moved into `app` (key-set contract test); `extension.edn :inject` + `grep-tool` ported as a plugin; the remaining `runtime/node` reads; the globals re-hosted; `session/core.clj`'s lock moved onto a `kmet.libs.concurrent` primitive; **`/units` re-rendered from the tree** (`kmet.app.inspect`, store section deleted) | kmet2 runs `mode-print`; a shipped directory extension and `grep-tool` green; `/units` shows a `:pending` fiber with its `waiting-for`; kmet1 untouched |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` registry (create/resume/list) + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
 | 7 | loop re-hosted as a driver plugin; profiles as row+patch layers; presets = bundles | pi-alignment green; a tool swaps mid-session at the turn boundary (`:agent-settled`); a profile stacking a preset bundle boots |
+
+### Landing 3 settled
+
+- **The mechanics take a handle, the rules stay in one place.** `kmet.agent.registry`
+  declares a five-method `Registry` protocol (`register!`, `deregister!`,
+  `by-owner`, `ordered`, `clear!`) and the readings every backend must answer
+  identically — `entry` (first in display order wins, so the owner that took a
+  name keeps it), `entries`, `effective-entries` (one per name, so listing and
+  lookup agree), `store-key`/`key?`. A backend cannot drift from the rules
+  because there is nothing else to implement them with. `kmet.agent.registry`
+  did not exist as a per-backend copy: the file moved to `modules/app` and its
+  scope-store half became `kmet.agent.registry-store` in `modules/agent`, so
+  the app module never requires the store that landing 4 deletes.
+- **Two backends, one contract.** `atom-registry` (an atom of
+  `{:tag :name :owner :value}`, registration order is display order, a disposer
+  removes exactly the entry it installed) is kmet2's; `store-registry` wraps
+  kmet1's scope node. `kmet.agent.test-registry` runs the same assertions
+  against both — register/entry/dispose, replace within an owner, first owner
+  wins, deregister by owner and by tag, `clear!` across owners — so the store
+  and its replacement answer one contract until the store is gone.
+- **The `:tools` service is installation once, mutation by handle.** The row's
+  `apply` provides an empty `atom-registry` into the app scope (`{:in …}`, like
+  the events row); adding a tool is
+  `(registry/register! handle :kmet/tool name tool owner)`, so a plugin adding a
+  tool never re-provides, and the disposer it gets back is what a fiber effect
+  runs on dispose. The tool *semantics* — built-in map, schema normalization,
+  selection — stay in `kmet.agent.tools.registry` (rank 4), whose reads gained
+  an explicit-argument arity (`(get-all-tools reg)`, `(get-tool reg name)`,
+  `(get-contributed-tools reg)`); the zero-argument forms ask the app root, so
+  every kmet1 call site is unchanged until landing 4 threads the ctx.
+- **One mutation path.** `register-tool!`/`unregister-tool!`, their source
+  counterparts, `register-command!`/`unregister-command!`, the prompt-template
+  loaders and `register-skill!` all go through the handle now (`tool-key`,
+  `tool-source-key`, `command-key`, `prompt-key` and `skill-key` are gone), so
+  kmet1 and kmet2 write registrations the same way, the tag/name addressing
+  lives in the registry rather than in each caller, and those five namespaces
+  no longer require `kmet.libs.scope` at all.
 
 ### Landing 2 settled
 

@@ -12,7 +12,8 @@
 ;; anything; a plain run boots it (kmet.app.runtime).
 {:bundles
  {:bundle/minimal
-  {:rows [{:id :events :plugin kmet.app.events/plugin}]
+  {:rows [{:id :events :plugin kmet.app.events/plugin}
+          {:id :tools :plugin kmet.app.tools/plugin}]
    :patch []}}
 
  :profiles
