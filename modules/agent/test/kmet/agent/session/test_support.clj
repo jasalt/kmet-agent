@@ -22,6 +22,14 @@
   (binding [*err* (java.io.StringWriter.)]
     (f)))
 
+(defn captured-stderr
+  "Run F with stderr captured; returns `[result text]` — for the cases that
+   assert a diagnostic is *absent* unless the host asked for it."
+  [f]
+  (let [w (java.io.StringWriter.)
+        result (binding [*err* w] (f))]
+    [result (str w)]))
+
 (defn pad-string
   "A string of N copies of C. char-array + Arrays/fill is one native call,
    ~100× faster than (apply str (repeat n c)) in babashka — used to build the

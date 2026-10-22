@@ -1,7 +1,13 @@
 (ns kmet.agent.debug
   "Minimal debug logging to debug.log and error logging to kmet.error.log.
    Enable debug.log with --debug flag at startup.
-   kmet.error.log is always written on unhandled errors.")
+   kmet.error.log is always written on unhandled errors.
+
+   The switch means *all* diagnostics, not just the log file: it also turns on
+   the session loader's wrong-shape reporting (`kmet.agent.session.store`),
+   which is why this namespace names that layer. One switch owned in one place,
+   rather than every `--debug` consumer remembering to flip its own."
+  (:require [kmet.agent.session.store :as session-store]))
 
 (defonce ^:private log-path "debug.log")
 (defonce ^:private error-path "kmet.error.log")
@@ -50,16 +56,18 @@
       (write-line log-path line))))
 
 (defn enable!
-  "Enable debug logging."
+  "Enable debug logging and the diagnostics it implies."
   []
   (reset! debug-enabled true)
+  (session-store/report-wrong-shapes! true)
   (log "─── debug logging enabled ───"))
 
 (defn disable!
-  "Disable debug logging."
+  "Disable debug logging and the diagnostics it implies."
   []
   (log "─── debug logging disabled ───")
-  (reset! debug-enabled false))
+  (reset! debug-enabled false)
+  (session-store/report-wrong-shapes! false))
 
 (defn enabled?
   "Returns true if debug logging is currently enabled."

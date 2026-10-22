@@ -8,10 +8,33 @@
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [kmet.agent.debug :as debug]
             [kmet.agent.session.schema :as session-schema]
             [kmet.libs.fs :as kfs])
   (:import [java.io InputStreamReader]))
+
+;; ─── Diagnostics ───────────────────────────────────────────────────────────
+;; The load path reports what it *repairs* (a torn tail, a malformed line)
+;; unconditionally. The strict pass is separate: with this on, an entry that
+;; parses but fails the schema is reported and skipped, and a header that fails
+;; its schema is reported — kmet1's `--debug` behaviour, preserved exactly.
+;; Off, the same entry loads: a session file that parses is trusted, and
+;; dropping data is opt-in. An atom rather than a dynamic var: a session loads
+;; on whichever thread asked for it, and the switch is process-wide like debug
+;; logging itself. The host owns the switch (`kmet.agent.debug/enable!`), which
+;; is why this layer does not require the logger.
+
+(defonce ^:private report-wrong-shape (atom false))
+
+(defn report-wrong-shapes!
+  "Turn the wrong-shape entry/header diagnostic on or off. Returns nil."
+  [on?]
+  (reset! report-wrong-shape (boolean on?))
+  nil)
+
+(defn report-wrong-shapes?
+  "Is the strict load pass on? The host's debug switch asks nothing else."
+  []
+  @report-wrong-shape)
 
 ;; ─── Session record ─────────────────────────────────────────────────────────
 ;; :lock (a ReentrantLock) serializes all file mutations (pi:
@@ -182,7 +205,7 @@
   (let [trimmed (str/trim line)]
     (when (seq trimmed)
       (try (let [e (edn/read-string trimmed)]
-             (if (and (debug/enabled?) (map? e)
+             (if (and @report-wrong-shape (map? e)
                       (not (session-schema/validate-entry? e)))
                (do (binding [*out* *err*]
                      (println "Warning: Skipping wrong-shape entry in" path ":"
@@ -287,7 +310,7 @@
                           lines))
         header? (and (seq parsed) (= :session (:type (first parsed))))
         header (when header? (first parsed))
-        _ (when (and (debug/enabled?) header?
+        _ (when (and @report-wrong-shape header?
                      (not (session-schema/validate-header? header)))
             (binding [*out* *err*]
               (println "Warning: Wrong-shape session header in" path ":"

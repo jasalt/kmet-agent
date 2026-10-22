@@ -1,9 +1,11 @@
 (ns kmet.agent.session.schema
   "Malli schemas for session files: the header and the entry union.
 
-   Used at the session boundary: the header is
-   validated on every load, and entries are validated on skip or under
-   --debug (see kmet.agent.session.core)."
+   Used at the session boundary by the strict load pass: with it on
+   (`kmet.agent.session.store/report-wrong-shapes!`, which `--debug` sets) a
+   wrong-shape entry is reported and skipped and a wrong-shape header is
+   reported. Off — the default — a session file that parses is loaded as
+   written, because dropping data is opt-in."
   (:require [malli.core :as m]
             [malli.error :as me]))
 
