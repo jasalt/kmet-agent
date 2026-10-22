@@ -1,13 +1,13 @@
 (ns kmet.agent.tools.registry
   "Tool registry — built-in tool map, custom tool registration, schema
-   conversion, execution. Custom tools and contributed tool sources live in
-   the app root's store, under the `[:app :tools]` owner (the registry's
-   address: `/units` reads it from the store, so their keys report under it),
-   addressed by `[:kmet/tool <name>]` and `[:kmet/tool-source
-   <id>]`: visible to every engine, outliving one, and disposed with their
-   owner rather than copied into an engine and reset by hand (scope.md
-   §2). The extension ABI registers under its own owner path, so unload
-   disposes what an extension added."
+   conversion, execution. Custom tools and contributed tool sources live in a
+   `kmet.agent.registry/Registry` handle under TAG `:kmet/tool` (and
+   `:kmet/tool-source` for sandbox-only sources), owned by an owner path:
+   visible to every engine, outliving one, and disposed with their owner
+   rather than copied into an engine and reset by hand (scope.md §2). kmet1's
+   handle is the app root's store; kmet2's is the `:tools` service. The
+   extension ABI registers under its own owner path, so unload disposes what an
+   extension added."
   (:require [clojure.string :as str]
             [kmet.libs.json :as json]
             [kmet.agent.app-runtime :as app-runtime]

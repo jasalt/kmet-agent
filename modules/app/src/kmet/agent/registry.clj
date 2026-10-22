@@ -44,10 +44,12 @@
      raw owner view a collision check needs; lookup goes through `entry`.")
   (ordered
     [registry tag]
-    "TAG's registrations in display order: `[[name value] …]`, owners in
-     first-registration order, each owner's entries in its own registration
-     order. A name held by several owners appears once per owner — use
-     `effective-entries` for the registry a lookup sees.")
+    "TAG's registrations in display order: `[[name value] …]`, a name held by
+     several owners appearing once per owner — use `effective-entries` for the
+     registry a lookup sees. The backend chooses the layout (kmet1's store
+     lists owner-major, kmet2's atom interleaves owners in registration order),
+     but `ordered` must keep the winning registration first for a name: the
+     first occurrence is what `entry` returns.")
   (clear!
     [registry tag]
     "Remove every TAG registration, whichever owner holds it (mainly for

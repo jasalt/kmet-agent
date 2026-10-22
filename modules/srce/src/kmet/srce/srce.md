@@ -699,17 +699,16 @@ Alternatives, and why not:
 invented owner paths and a keyed store to stand in for one. The light kernel
 supplies the lifecycle, so the store loses its reason to exist — but only after
 the registries that read it have moved. The kernel therefore **must not depend
-on it** (a guard test), and its 35 source call sites in 9 files go with their
-landings (counted from `(scope/…` call sites, not from the requires):
+on it** (a guard test), and its remaining 27 source call sites in 5 files go
+with their landings (counted from `(scope/…` call sites, not from the
+requires). Landing 3 already took commands, prompts, skills, tools and the
+registries off it — they read and write through a `kmet.agent.registry`
+handle, and the store is only that handle's kmet1 backend now:
 
 | File | Sites | Go at |
 |---|---|---|
 | `agent/event_bus.clj` (`in-subtree?`) | 1 | landing 7 — kmet1's table goes when the loop re-points at `:events` (landing 2 lifted the vocabulary and gave kmet2 its own modes; see §5) |
-| `agent/registry.clj` | 5 | landing 3 — the registry is parameterized then lifted |
-| `agent/tools/registry.clj` | 4 | landing 3 |
-| `agent/commands.clj` | 2 | landing 3 |
-| `agent/prompts.clj` | 2 | landing 3 |
-| `agent/skills.clj` | 2 | landing 3 |
+| `agent/registry_store.clj` (the handle's store backend) | 7 | landing 4 — with the store itself |
 | `agent/extensions/core.cljc` | 12 | landing 4 — the extension host and ABI |
 | `agent/app_runtime.clj` (app node, `*error-reporter*`, `/units` walk) | 5 | landing 4 — the `*error-reporter*` rebinding goes with the logger service; the `owners`/`owner-registrations` pair (lines 115-117) is the store listing and goes with the tree rewrite |
 | `agent/session/runtime.clj` (`child-node`) | 2 | landing 4 |
@@ -719,11 +718,12 @@ extension-API allowlist (drop the entry with the ABI at landing 4) and
 `test/kmet/test_utils.clj`'s `dispose-owner!` in `clear-app-registries!` (one
 call; it moves with whichever registry's clear replaces it).
 
-Each registry becomes a service with its own table, and each contribution is an
-`srce/effect` on the contributing fiber — so unloading an extension is
-`dispose!` on its fiber and the entries come back LIFO. Deleting the store
-before that would rewrite those 35 sites into private cleanup lists, which is
-the copy AGENTS.md forbids.
+Each registry becomes a service with its own table — `:tools` did at landing 3,
+installed by one `provide!` and mutated through an atom handle — and each
+contribution is an `srce/effect` on the contributing fiber — so unloading an
+extension is `dispose!` on its fiber and the entries come back LIFO. Deleting
+the store before that would rewrite the remaining 27 sites into private cleanup
+lists, which is the copy AGENTS.md forbids.
 
 **All of it in one change, at the end of landing 4:** delete
 `modules/libs/src/kmet/libs/{scope.clj,scope.md}`,
@@ -737,7 +737,7 @@ boundaries" and the store paragraph under "Architecture and portability"),
 and `resources_discover`), the `theme.clj` cross-reference docstring, the
 `test_changed.clj` path→ns fixture, `test/kmet/test_utils.clj`'s store usage,
 and the twelve test namespaces whose fixtures build store nodes
-(`modules/agent/test/kmet/agent/{test_{commands,event_bus,prompts,runtime,session_runtime,skills,tools,ui_port},extensions/test_{libs,lifecycle,resources,session}}.clj`)
+(`modules/agent/test/kmet/agent/{test_{commands,event_bus,prompts,runtime,session_runtime,skills,tools,ui_port,registry},extensions/test_{libs,lifecycle,resources,session}}.clj`)
 — they are re-pointed at the new factories in the same change, not after it.
 Gate: `bb test` green, `kmet --app old` still loads, and no namespace outside
 `kmet.agent.*` ever required it (true today — `kmet.libs.*` and `kmet.tui.*`

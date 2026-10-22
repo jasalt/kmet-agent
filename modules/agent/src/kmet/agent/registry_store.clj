@@ -22,8 +22,10 @@
     (register! [_ tag name value owner]
       (let [k (registry/store-key tag name)
             dispose (scope/register! node owner k value)]
+        ;; the store's own deregister is value-guarded: a disposer whose
+        ;; registration was replaced must not report (or perform) a removal
         (fn []
-          (if (contains? (scope/for-key node k) owner)
+          (if (some? (get (scope/for-key node k) owner))
             (do (dispose) true)
             false))))
     (deregister! [_ tag name owner]
