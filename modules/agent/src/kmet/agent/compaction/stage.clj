@@ -190,13 +190,13 @@
 
 (defn stage-retry-policy
   "The flat policy {:max-retries :base-delay-ms :max-agent-delay-ms} every
-   retry path in this namespace spends: the run's options under the node's
+   retry path in this namespace spends: the run's options under the ctx's
    :retry-policy stage config, so the budget the loop reads is the budget
    spent. The 2-arity reuses the attempt's one stage read; the 1-arity takes
-   the compaction path's own, which tolerates a node-less state — the run's
+   the compaction path's own, which tolerates a ctx-less state — the run's
    options stand alone."
   ([agent]
-   (stage-retry-policy agent (runtime/loop-stages (:node agent))))
+   (stage-retry-policy agent (runtime/loop-stages (:ctx agent))))
   ([agent stages]
    (merge (select-keys @(:cfg agent) [:max-retries :base-delay-ms :max-agent-delay-ms])
           (:config (:retry-policy stages)))))

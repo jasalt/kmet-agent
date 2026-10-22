@@ -3,7 +3,7 @@
             [clojure.string :as str]
             [kmet.agent.debug :as debug]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.libs.scope :as scope]))
+            [kmet.srce.core :as srce]))
 
 ;; ─── Event vocabulary ─────────────────────────────────────────────────────
 
@@ -233,13 +233,13 @@
 ;; ─── Scoped subscriptions (F13) ───────────────────────────────────────────
 
 (t/deftest test-a-scoped-listener-hears-its-own-subtree
-  ;; A run subscribes with its own node: child events reach it, a parent's or
+  ;; A run subscribes with its own ctx: child events reach it, a parent's or
   ;; sibling's do not, and an unscoped listener (an extension) keeps hearing
-  ;; everything (scope.md §6).
-  (let [root (scope/node)
-        child (scope/node root)
-        grandchild (scope/node child)
-        sibling (scope/node root)
+  ;; everything (new-app.md, landing 4c-ii-b).
+  (let [root (srce/root)
+        child (srce/extend root {})
+        grandchild (srce/extend child {})
+        sibling (srce/extend root {})
         scoped (atom [])
         unscoped (atom [])]
     (event-bus/clear-event-listeners!)
@@ -248,7 +248,7 @@
     (event-bus/emit-event! {:type :turn-start :from :child} child)
     (event-bus/emit-event! {:type :turn-start :from :grandchild} grandchild)
     (t/is (= [:child :grandchild] @scoped)
-          "the listener hears its own node and its descendants")
+          "the listener hears its own ctx and its descendants")
     (event-bus/emit-event! {:type :turn-start :from :root} root)
     (event-bus/emit-event! {:type :turn-start :from :sibling} sibling)
     (t/is (= [:child :grandchild] @scoped) "the parent and a sibling stay out")
@@ -259,9 +259,9 @@
           "the unscoped listener keeps hearing every emission")))
 
 (t/deftest test-collect-and-boundary-respect-scope
-  (let [root (scope/node)
-        child (scope/node root)
-        sibling (scope/node root)]
+  (let [root (srce/root)
+        child (srce/extend root {})
+        sibling (srce/extend root {})]
     (event-bus/clear-event-listeners!)
     (event-bus/on-event :resources-discover [:app :extensions "wide"]
                         (fn [_] {:skill-paths ["/wide"]}))

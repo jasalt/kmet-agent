@@ -646,7 +646,7 @@
         ;; BEFORE the runner is torn down, so extensions can persist
         ;; state; then extension shutdown/start
               _ (event-bus/emit-event! {:type :session-shutdown :reason :reload}
-                                       (runtime/agent-node (:engine cs)))
+                                       (runtime/agent-ctx (:engine cs)))
               _ (extensions/ui-reset!)
               _ (extensions/clear-extensions!)
               ;; per-extension load results — the loaders only warn on
@@ -720,12 +720,11 @@
           ;; must never happen on the input thread.
           (future
             (try (event-bus/emit-event! {:type :session-start :reason :reload}
-                                        (runtime/agent-node (:engine cs)))
+                                        (runtime/agent-ctx (:engine cs)))
                  ;; pi: resources_discover fires after session_start (reason
-                 ;; reload) — extensions contribute skill/prompt/theme paths
-                 (extensions/discover-resources!
-                  (or (runtime/agent-node (:engine cs)) (app-runtime/node))
-                  :reload)
+                 ;; reload) — extensions contribute skill/prompt/theme paths;
+                 ;; still a store registration until the host takes a ctx (4b-ii)
+                 (extensions/discover-resources! (app-runtime/node) :reload)
                  (catch Exception e (debug/log "session-start: " e))))
           (chat-history/chat-history-add-message! chat-history
                                                   {:role :info :label "Reload"

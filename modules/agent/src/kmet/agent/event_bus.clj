@@ -12,9 +12,9 @@
    The extension bus itself is a process-level registry: a subscription lives
    from an extension's load to its unload, in registration order, and no
    engine owns, copies or clears it (scope.md §6). A subscription may
-   carry a scope — the node it listens to — so a listener in a child tree
-   hears its own subtree's events and a sibling's listeners do not (scope.md
-   §6).
+   carry a scope — the ctx it listens to — so a listener in a child ctx
+   hears its own subtree's events and a sibling's listeners do not
+   (new-app.md, landing 4c-ii-b).
 
    The **vocabulary is the app's**: kmet.app.events holds `event-types` (and
    the wire projections), so kmet1 and kmet2 declare one set of names while
@@ -26,7 +26,7 @@
    the mechanism kmet2's `:events` service replaces by the ctx tree."
   (:require [kmet.agent.debug :as debug]
             [kmet.app.events :as events]
-            [kmet.libs.scope :as scope]))
+            [kmet.srce.core :as srce]))
 
 ;; ── the vocabulary (kmet.app.events) ──────────────────────────────────────
 ;; Re-exports, not copies: the names, their documentation and the wire
@@ -98,7 +98,7 @@
 ;; adopts nor wipes it (scope.md §6).
 
 (defonce ^:private listeners
-  ;; {event-type [{:callback f :owner path :scope node} …]} — one vector per
+  ;; {event-type [{:callback f :owner path :scope ctx} …]} — one vector per
   ;; type, so iteration is registration order. A deregister removes its own
   ;; entry by identity; an entry already gone is a no-op (a reload deregisters
   ;; what a previous load installed).
@@ -116,13 +116,18 @@
                ls)))))
 
 (defn- visible
-  "The entries an emission from NODE reaches: NODE nil (a process-wide
-   emission) reaches every entry, and a scoped entry sees NODE when it is its
-   own node or a descendant (scope.md §5, §6)."
-  [entries node]
-  (if (nil? node)
+  "The entries an emission from CTX reaches: CTX nil (a process-wide
+   emission) reaches every entry, a listener registered without a scope is
+   process-wide and always sees the event, and a scoped listener sees CTX when
+   the emitting ctx is its own scope or a descendant of it (new-app.md,
+   landing 4c-ii-b)."
+  [entries ctx]
+  (if (nil? ctx)
     entries
-    (filterv #(scope/in-subtree? node (:scope %)) entries)))
+    (filterv (fn [entry]
+               (let [scope (:scope entry)]
+                 (or (nil? scope) (srce/inside? ctx scope))))
+             entries)))
 
 (defn on-event
   "Register a callback for an event type.
@@ -135,10 +140,10 @@
                 contribution can be applied under the owner that made it
                 (resource discovery, scope.md §2).
    callback   — (fn [event-map])
-   scope      — optional: the node this listener listens to; it sees events
-                emitted from that node and its descendants. nil (the
+   scope      — optional: the ctx this listener listens to; it sees events
+                emitted from that ctx and its descendants. nil (the
                 default) is process-wide, which is what an extension wants;
-                a child node a run passes for its own tree (scope.md §6).
+                a child ctx a run passes for its own subtree.
    Returns a deregister function. A type outside the vocabulary is reported
    and registered anyway: the vocabulary is documented, not a gate."
   ([event-type callback] (on-event event-type nil callback nil))
@@ -171,14 +176,13 @@
 (defn emit-event!
   "Emit an event to all registered listeners, in registration order.
    event — map with :type keyword and any additional data.
-   node  — the emitting node when the event belongs to one subtree (a child
-           loop passes its node); nil (or absent) is a process-wide
-           emission.
+   ctx   — the emitting ctx when the event belongs to one subtree (a child
+           loop passes its ctx); nil (or absent) is a process-wide emission.
    Returns the last non-nil handler result (pi: runner.emit — the tree
    navigation reads :session-before-tree results: :cancel, :summary, ...)."
   ([event] (emit-event! event nil))
-  ([event node]
-   (let [entries (visible (get @listeners (:type event)) node)]
+  ([event ctx]
+   (let [entries (visible (get @listeners (:type event)) ctx)]
      (when (seq entries)
        (reduce (fn [acc {:keys [callback]}]
                  (let [result (invoke-handler callback event)]
@@ -193,11 +197,11 @@
    the last non-nil). OWNER is
    what `on-event` was registered with, nil for a host registration, so a
    callers can apply a contribution under the owner that made it.
-   NODE scopes the emission like `emit-event!`.
+   CTX scopes the emission like `emit-event!`.
    Throwing handlers are skipped and reported, same as emit-event!."
   ([event] (emit-event-collect! event nil))
-  ([event node]
-   (let [entries (visible (get @listeners (:type event)) node)]
+  ([event ctx]
+   (let [entries (visible (get @listeners (:type event)) ctx)]
      (when (seq entries)
        (into []
              (keep (fn [{:keys [owner callback]}]
@@ -211,13 +215,13 @@
    (pi: runner.emitBoundary): a handler receives the event merged with the
    accumulated result so far and returns a map ({:entries [...] :continue
    bool}) whose keys replace the accumulated ones; nil (or a non-map) keeps
-   them. Handlers run in registration order. NODE scopes the emission like
+   them. Handlers run in registration order. CTX scopes the emission like
    `emit-event!`. Returns the accumulated map — nil when no handler returned
    one.
    Throwing handlers are skipped and reported, same as emit-event!."
   ([event] (emit-boundary! event nil))
-  ([event node]
-   (let [entries (visible (get @listeners (:type event)) node)]
+  ([event ctx]
+   (let [entries (visible (get @listeners (:type event)) ctx)]
      (when (seq entries)
        (reduce (fn [acc {:keys [callback]}]
                  (let [result (invoke-handler callback (if acc (merge event acc) event))]

@@ -113,13 +113,12 @@
       nil)))
 
 (defn- handle-units
-  "Show every store owner: its address and the keys registered under it, one
-   flat line each (registries, extension registrations; scope.md §2, §6).
-   The session engine's node when it has one — a session running in its own
-   tree shows that tree — and the app root otherwise."
-  [{:keys [ui] engine :runtime} _]
-  (let [node (or (runtime/agent-node engine) (app-runtime/node))
-        lines (remove str/blank? [(app-runtime/owner-listing node)
+  "Show the app root's store owners — address and keys, one flat line each
+   (extension registrations; scope.md §2, §6) — beside one line per registry
+   service (4c-ii). The tree renderer replaces both at 4d; until then the
+   store section is the app root's, since the engine's own node is gone."
+  [{:keys [ui]} _]
+  (let [lines (remove str/blank? [(app-runtime/owner-listing (app-runtime/node))
                                   (app-runtime/registry-listing (app-runtime/ctx))])]
     (out ui :info "Units" (str/join "\n" lines))))
 

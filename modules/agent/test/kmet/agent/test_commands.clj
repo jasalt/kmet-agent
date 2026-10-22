@@ -139,16 +139,21 @@
     (finally
       (tools-reg/unregister-tool!  "units-probe"))))
 
-(t/deftest units-follows-the-session-engine-node
-  ;; A session that runs in its own tree shows that tree, not the app root.
+(t/deftest units-renders-the-app-root-store-and-the-registries
+  ;; /units walks the app root's store and reads the registry services from
+  ;; the ctx; the engine's own node left the picture at 4c-ii-b, and 4d
+  ;; replaces both halves with the tree renderer.
   (builtins/register-runtime-commands!)
-  (let [mine (app-runtime/child-node)
+  (let [owner [:app :probe-units]
         got (atom nil)]
-    (scope/register! mine [:app :probe] :k/probe "v")
-    ((:handler (commands/find-command "units"))
-     {:runtime {:agent-state (atom {:node mine})}
-      :ui {:info (fn [label content] (reset! got [label content]))}} nil)
-    (t/is (str/includes? (second @got) "[:app :probe] keys=[:k/probe]"))))
+    (try
+      (scope/register! (app-runtime/node) owner :k/probe "v")
+      ((:handler (commands/find-command "units"))
+       {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
+      (t/is (str/includes? (second @got) "[:app :probe-units] keys=[:k/probe]"))
+      (t/is (= "Units" (first @got)))
+      (finally
+        (scope/dispose-owner! (app-runtime/node) owner)))))
 
 (t/deftest register-builtin-skips-a-taken-name
   (commands/register-command!

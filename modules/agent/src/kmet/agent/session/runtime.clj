@@ -72,12 +72,12 @@
   [engine]
   (some-> engine :agent-state deref))
 
-(defn agent-node
-  "The node the engine's agent runs on: the app root by default, a child
-   tree when the engine was bootstrapped onto one (scope.md §5); nil for a
-   bare test engine without agent state."
+(defn agent-ctx
+  "The ctx the engine's agent runs on: the app root by default, a child ctx
+   when the engine was bootstrapped onto one; nil for a bare test engine
+   without agent state."
   [engine]
-  (:node (agent-state engine)))
+  (:ctx (agent-state engine)))
 
 (defn- extension-before-tool-call
   "Chain extension tool-call hooks (pi: beforeToolCall) — the runtime wires
@@ -264,7 +264,7 @@
     ;; dispose! drops them with their owners while the process atoms stay the
     ;; no-node read cache. A front end with its own port re-installs once its
     ;; widgets exist.
-    (let [node (:node agent-state)]
+    (let [node (app-runtime/node)]
       (extensions/install-session! node (:session agent-state))
       (extensions/install-context-sink!
        node (fn [msg] (loop-state/add-context-message! (agent-state engine) msg)))
@@ -385,12 +385,14 @@
   "Emit :session-start away from the input path — pi: AgentSession emits
    session_start on every runtime creation (startup, resume, new, fork) and
    extension handlers may block on dialog promises. The resources_discover
-   pass follows (pi: extendResourcesFromExtensions after session_start)."
+   pass follows (pi: extendResourcesFromExtensions after session_start) and
+   is still a store registration on the app root until the host takes a ctx
+   (4b-ii)."
   [engine payload]
   (future
     (try
-      (event-bus/emit-event! payload (agent-node engine))
-      (extensions/discover-resources! (or (agent-node engine) (app-runtime/node)) :startup)
+      (event-bus/emit-event! payload (agent-ctx engine))
+      (extensions/discover-resources! (app-runtime/node) :startup)
       (catch Exception e (debug/log "session-start: " e)))))
 
 (defn switch-session!
@@ -405,7 +407,7 @@
   [engine sess {:keys [apply-settings?]}]
   (let [new-ag (assoc (agent-state engine) :session sess)]
     (reset! (:session engine) sess)
-    (extensions/install-session! (:node new-ag) sess)
+    (extensions/install-session! (app-runtime/node) sess)
     (reset! (:compaction-queued engine) [])
     (reset! (:pending-compaction engine) [])
     (reset! (:agent-state engine) new-ag)
@@ -422,10 +424,10 @@
 
 (defn- extension-cancelled?
   "Emit a before-event (session-before-switch / session-before-fork) from the
-   engine's node and report whether an extension cancelled the pending
+   engine's ctx and report whether an extension cancelled the pending
    operation (pi: emitBeforeSwitch/emitBeforeFork → cancel)."
-  [node event]
-  (boolean (:cancel (event-bus/emit-event! event node))))
+  [ctx event]
+  (boolean (:cancel (event-bus/emit-event! event ctx))))
 
 (defn- settle-for-switch!
   "Settle an in-flight turn and compaction before a session swap so the
@@ -466,7 +468,7 @@
   ([engine] (new-session! engine nil))
   ([engine {:keys [before-settle]}]
    (let [previous-file (:file (session engine))]
-     (if (extension-cancelled? (agent-node engine)
+     (if (extension-cancelled? (agent-ctx engine)
                                {:type :session-before-switch
                                 :reason :new
                                 :target-session-file previous-file})
@@ -483,7 +485,7 @@
            ;; so they can persist state before the swap.
            (event-bus/emit-event! {:type :session-shutdown :reason :new
                                    :target-session-file previous-file}
-                                  (agent-node engine))
+                                  (agent-ctx engine))
            (let [cwd (cwd engine)
                  sessions-dir (cfg/get-session-dir (config engine))
                  new-session (session/create-session (ensure-cwd-session-dir sessions-dir cwd)
@@ -515,7 +517,7 @@
    Returns {:session sess} | {:cancelled true}."
   [engine path]
   (let [previous-file (:file (session engine))]
-    (if (extension-cancelled? (agent-node engine)
+    (if (extension-cancelled? (agent-ctx engine)
                               {:type :session-before-switch
                                :reason :resume
                                :target-session-file path})
@@ -558,7 +560,7 @@
               :old-leaf-id old-leaf
               :from-extension? (boolean from-extension?)}
        summary-entry (assoc :summary-entry summary-entry))
-     (agent-node engine))
+     (agent-ctx engine))
     summary-entry))
 
 (defn fork!
@@ -573,7 +575,7 @@
         entry (session/get-entry sess entry-id)]
     (cond
       (nil? entry) {:error :unknown-entry}
-      (extension-cancelled? (agent-node engine)
+      (extension-cancelled? (agent-ctx engine)
                             {:type :session-before-fork
                              :entry-id entry-id
                              :position :at})
@@ -606,7 +608,7 @@
       (nil? sess) {:error :no-session}
       (nil? @(:leaf-id sess)) {:error :no-leaf}
       (not (fs/exists? (:file sess))) {:error :not-persisted}
-      (extension-cancelled? (agent-node engine)
+      (extension-cancelled? (agent-ctx engine)
                             {:type :session-before-fork
                              :entry-id @(:leaf-id sess)
                              :position :at})
@@ -643,7 +645,7 @@
      {:type :session-info-changed
       :session-file (:file sess)
       :name sanitized}
-     (agent-node engine))
+     (agent-ctx engine))
     sanitized))
 
 (defn export-html!
@@ -1378,13 +1380,13 @@
     (doseq [{:keys [promise default]} (vals @(:pending-ui engine))]
       (deliver promise default))
     (reset! (:pending-ui engine) {})
-    ;; The extension surface is owner-scoped registrations on the engine's
-    ;; tree: dropping the owners runs their teardowns, which clear the
-    ;; process caches and restore the headless binding. A node-less engine
-    ;; (a test double) has no registrations, but its caches still clear.
-    (when-let [node (agent-node engine)]
-      (scope/dispose-owner! node [:app :session])
-      (scope/dispose-owner! node [:app :ui]))
+    ;; The extension surface is owner-scoped store registrations: dropping
+    ;; the owners runs their teardowns, which clear the process caches and
+    ;; restore the headless binding. The engine's ctx plays no part yet — the
+    ;; installs still land on the app root store (4b-ii puts them on fibers).
+    (when (agent-ctx engine)
+      (scope/dispose-owner! (app-runtime/node) [:app :session])
+      (scope/dispose-owner! (app-runtime/node) [:app :ui]))
     (extensions/clear-runtime!)
     (extensions/unbind-extensions!))
   nil)

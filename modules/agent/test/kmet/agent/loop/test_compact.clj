@@ -682,19 +682,19 @@
               "the retried call's summary lands on the compaction entry")
         (finally (fs/delete-tree dir))))))
 
-(t/deftest test-loop-summarization-honors-the-node-retry-policy
-  ;; The summarization retries spend the node's retry policy too: the stage
+(t/deftest test-loop-summarization-honors-the-ctx-retry-policy
+  ;; The summarization retries spend the ctx's retry policy too: the stage
   ;; config's budget wins over the run's option — here the option would
-  ;; suppress every retry and the node allows one (scope.md §4).
+  ;; suppress every retry and the ctx allows one (scope.md §4).
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
         events (atom [])
         attempts (atom 0)
-        node (runtime/child-node nil {:retry-policy {:config {:max-retries 1
-                                                              :base-delay-ms 3
-                                                              :max-agent-delay-ms 5}}})
+        run-ctx (runtime/child-ctx nil {:retry-policy {:config {:max-retries 1
+                                                                :base-delay-ms 3
+                                                                :max-agent-delay-ms 5}}})
         agent (loop/make-agent-state
-               :node node
+               :ctx run-ctx
                :session sess
                :compact-token-threshold 10
                :keep-recent-tokens 40

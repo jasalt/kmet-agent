@@ -1,20 +1,25 @@
 (ns kmet.agent.app-runtime
-  "The agent runtime: one store node and the loop's stage map.
+  "The agent runtime: one store node and the app's root ctx.
 
-   `node` is the app root — the store (`kmet.libs.scope`) every front end,
-   engine and loaded extension registers into, plus the loop's two stages as
-   plain data. The loop reads its stage map once per attempt (scope.md §4),
-   and a child node carries its own (P7).
+   `node` is the app root store — the `kmet.libs.scope` store every front end,
+   engine and loaded extension registers into. `ctx` is the root context those
+   same registrations move onto as the migration lands: the store holds what
+   has no seam yet (the extension host's owner paths, `/units`), and the ctx
+   the registries, the event bus's scope and the loop's stage map.
+
+   The loop's two stages ride the root ctx under `:loop-stages` as plain data:
+   the loop reads its stage map once per attempt (scope.md §4), and a run that
+   needs its own gets a `child-ctx` carrying its overrides (P7).
 
    Registrations are owned (scope.md §2): what `init(api)` installs lands on
    `[:app :extensions <name>]`, so unloading an extension is one LIFO dispose
    of that owner plus the fns it recorded for what lives outside the tree.
 
    Two sharp edges come with the node, and the host owns both: `node` is a
-   process global every front end, engine and loaded extension shares — a tree
-   that must not share registrations makes its own `child-node`; and disposal
-   never waits, so the host mutates the live store only where nothing is
-   mid-run (`/reload`, bootstrap, a session swap)."
+   process global every front end, engine and loaded extension shares — a run
+   that must not share registrations gets its own `child-ctx`; and disposal never
+   waits, so the host mutates the live store only where nothing is mid-run
+   (`/reload`, bootstrap, a session swap)."
   (:require [clojure.string :as str]
             [kmet.agent.debug :as debug]
             [kmet.agent.loop-guard :as loop-guard]
@@ -37,32 +42,13 @@
 (def default-loop-stages
   "The loop's two stages, as the plain map the loop reads: each stage carries
    a `:call` function, and an optional `:config` (the loop-guard threshold, the
-   retry policy's budget and backoff shape). A node may carry an override; a
-   subagent's node will."
+   retry policy's budget and backoff shape). A ctx may carry an override; a
+   subagent's ctx will."
   {:loop-guard {:call loop-guard/loop-guard-filter}
    :retry-policy {:call retry/retry-decision}})
 
-(defn- new-node
-  "A store node whose stage map is the defaults merged with STAGES: a stage's
-   `:call`/`:config` keys override the builtin entry, and the entry's other
-   keys carry over. A non-nil PARENT also gets the node in its `:children`
-   (`scope/node`), so `scope/dispose-node!` on the parent ends it (scope.md
-   §5)."
-  [parent stages]
-  (scope/node parent
-              {:loop-stages (atom (merge-with merge default-loop-stages stages))}))
-
-(defn child-node
-  "A fresh node carrying the loop stages — STAGES merged over the builtin
-   defaults — linked to PARENT for subtree queries and tree disposal (scope.md
-   §5). A run can point at one to get its own stage map (P7); a nil parent
-   makes a root of its own."
-  ([] (child-node nil))
-  ([parent] (child-node parent nil))
-  ([parent stages] (new-node parent stages)))
-
 (defonce ^:private app-node
-  (delay (child-node nil)))
+  (delay (scope/node nil {:loop-stages (atom default-loop-stages)})))
 
 (defn node
   "The app's root node. -main reaches this before extension loading, so every
@@ -74,16 +60,30 @@
 ;; kmet1 runs on kmet2's composition: the root ctx is the same one `--app new`
 ;; boots, mounted once per process and never shut down (process exit is the
 ;; disposal). The store node above is what is left of kmet1's own tree — the
-;; extension host's owner paths, `/units` and the bus's scoping — and it retires
-;; after 4b-ii puts the host on fibers (new-app.md § Landings).
+;; extension host's owner paths and `/units` — and it retires after 4b-ii puts
+;; the host on fibers (new-app.md § Landings).
 
 (defonce ^:private app-root
-  (delay (app-runtime/boot (app-core/compose-config {:profile :tui}))))
+  ;; The stage map rides the root ctx under `:loop-stages`, so a child ctx
+  ;; reaches it by `srce/attr` and a run that passes its own carries its own.
+  (delay (app-runtime/boot (app-core/compose-config {:profile :tui})
+                           {:ctx-meta {:loop-stages (atom default-loop-stages)}})))
 
 (defn ctx
   "The app root ctx: the composed rows kmet1 registers into."
   []
   (:ctx @app-root))
+
+(defn child-ctx
+  "A child ctx carrying the loop stages — STAGES merged over the builtin
+   defaults — under PARENT (the app root when nil). A run points at one to get
+   its own stage map (P7), and what it registers belongs to that subtree rather
+   than to the app's."
+  ([] (child-ctx (ctx)))
+  ([parent] (child-ctx parent nil))
+  ([parent stages]
+   (srce/extend (or parent (ctx))
+     {:loop-stages (atom (merge-with merge default-loop-stages stages))})))
 
 (def ^:private registry-tags
   "Every registry tag kmet1 registers under, and the service that owns it — nil
@@ -147,19 +147,23 @@
   nil)
 
 (defn loop-stages
-  "NODE's loop stage map, read once per attempt. A node that carries none (a
-   bare store node) reads the builtin defaults."
-  [node]
-  (if-let [stages (:loop-stages node)]
+  "CTX's loop stage map, read once per attempt. The nearest `:loop-stages` on
+   the ctx chain wins — the root carries the builtin defaults, a child ctx its
+   overrides — and a ctx that carries none (a bare test ctx) reads the
+   defaults."
+  [ctx]
+  (if-some [stages (and ctx (srce/attr ctx :loop-stages))]
     @stages
     default-loop-stages))
 
 (defn refresh-stages!
-  "Re-seat NODE's loop stages with the builtin defaults (the app root when no
-   node is given), so a reloaded guard or retry stage reaches the next
+  "Re-seat CTX's loop stages with the builtin defaults (the app root when no
+   ctx is given), so a reloaded guard or retry stage reaches the next
    attempt; an in-flight attempt keeps the map it read. `/reload` does this."
-  ([] (refresh-stages! (node)))
-  ([node] (reset! (:loop-stages node) default-loop-stages)))
+  ([] (refresh-stages! (ctx)))
+  ([ctx]
+   (when-some [stages (and ctx (srce/attr ctx :loop-stages))]
+     (reset! stages default-loop-stages))))
 
 (defn dispose-owner!
   "Dispose OWNER's registrations on the app root, LIFO and isolated — an

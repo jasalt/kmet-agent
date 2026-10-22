@@ -107,15 +107,17 @@ under `[:app :extensions <name>]`, so unloading one is a `dispose-owner!` plus
 the fns the extension recorded for what lives outside the tree.
 
 `/units` prints one flat `<owner> keys=[…]` line per owner that holds
-registrations (`runtime/owner-listing`), in first-registration order.
+registrations (`runtime/owner-listing`), in first-registration order. It walks
+the app root node: a session's own tree is a child **ctx** now (4c-ii-b), and
+4d replaces this listing with the ctx tree renderer.
 
-The loop's stages are plain data on the node: `{:loop-guard {:call …}
-:retry-policy {:call …}}`, with an optional `:config` per stage. The loop
-reads the map once per attempt; `/reload` re-seats it with
-`refresh-stages!`; a child node (`runtime/child-node`) carries its own map and
-is the per-run isolation boundary for subagents. The event bus is host-owned
-state of its own, not a store registration; a subscription may carry a node
-scope and then hears events from that node's subtree.
+The loop's stages are plain data on the app root **ctx**, under `:loop-stages`:
+`{:loop-guard {:call …} :retry-policy {:call …}}`, with an optional `:config`
+per stage. The loop reads the map once per attempt; `/reload` re-seats it with
+`refresh-stages!`; a child ctx (`runtime/child-ctx`) carries its own map and is
+the per-run isolation boundary for subagents. The event bus is host-owned state
+of its own, not a store registration; a subscription may carry a **ctx** scope
+and then hears events from that ctx's subtree (`srce/inside?`).
 
 ## 7. Namespace rules
 

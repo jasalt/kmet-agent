@@ -173,12 +173,11 @@
                 :reason (cond (:resume opts) :resume
                               (:continue opts) :continue
                               :else :new)}
-               (runtime/agent-node (:engine cs)))
+               (runtime/agent-ctx (:engine cs)))
               ;; pi: resources_discover fires after session_start (reason
-              ;; startup for non-reload session starts)
-              (extensions/discover-resources!
-               (or (runtime/agent-node (:engine cs)) (app-runtime/node))
-               :startup))
+              ;; startup for non-reload session starts); still a store
+              ;; registration on the app root until the host takes a ctx (4b-ii)
+              (extensions/discover-resources! (app-runtime/node) :startup))
             (catch Exception e
               (debug/log "session-start: " e))))
         ;; Theme detection + application (pi: startup applyFromSettings) —

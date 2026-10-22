@@ -62,7 +62,8 @@ kmet/agent/
 │   config_schema.clj   — the malli schema for the config map
 ├── debug.clj           — debug/error logging
 ├── project_context.clj — project context files (AGENTS.md/CLAUDE.md)
-├── app_runtime.clj     — the app root store node + the loop's stage map
+├── app_runtime.clj     — the app root store node and ctx, and the loop's
+│                         stage map (on the ctx)
 ├── registry.clj        — name-addressed registrations in the app root's
 │                         store (commands, prompts, skills, tools)
 ├── extensions/         — the extension runtime
@@ -229,17 +230,22 @@ rather than one application-database atom. Prefer explicit runtime
 registration tables/maps over compile-time multimethod registries. Use
 `defn-` and `def-` for implementation details that are not public API.
 
-The registries a front end or extension can reach — commands, tools, skills,
-prompt templates, hooks, renderers, markdown transformers, flags — live in the
-app root's store (`kmet.libs.scope`, reached through `kmet.agent.app-runtime`),
-addressed by host-shaped keys under an owner path: a registry's address
-(`[:app :commands]`), or `[:app :extensions <name>]` for an extension's own
-registrations, including the skills, prompts and themes a
+The registries a front end or extension can reach — commands, tools, skills and
+prompt templates — live in the app root **ctx**, one service per registry
+(`:tools`, `:commands`, `:prompts`, `:skills`), reached through
+`kmet.agent.app-runtime/registry`, a façade handle that routes each tag to its
+service. Adding a tool or a command is a registry write on that handle and a
+plugin that adds one never re-provides. What still has no seam — hooks,
+renderers, markdown transformers, flags, themes, the UI port — lives in the app
+root's store (`kmet.libs.scope`, `kmet.agent.app-runtime/node`), addressed by
+host-shaped keys under an owner path: `[:app :extensions <name>]` for an
+extension's own registrations, including the skills, prompts and themes a
 `:resources-discover` contribution loads (P5c). The registration is disposed
-with that owner (P2), so a new extension point is a key on that store, not a
-process-global atom copied into each engine. `/units` prints every store
-owner — a registry's address, an extension's own registrations — one flat
-line each, from the store itself (F5, F14, scope.md §6). The runtime-owned
+with that owner (P2), so neither home is a process-global atom copied into each
+engine. `/units` prints both halves: every store owner flat (`<owner> keys=[…]`,
+from the store itself) and one line per registry service (`:commands keys=[…]`,
+read from the handles) — F5, F14, scope.md §6. The tree renderer replaces the
+pair with one per-unit line plus each unit's state at 4d. The runtime-owned
 surfaces follow the same rule: `bootstrap` registers the live session and its
 sinks under `[:app :session]` and the headless UI port under `[:app :ui]`, and
 `dispose-owner!` drops those owners; the `extensions` atoms stay the no-node

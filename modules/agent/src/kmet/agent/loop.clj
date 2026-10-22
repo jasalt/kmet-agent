@@ -354,7 +354,7 @@
   [agent event]
   (when-let [cb (:on-event agent)]
     (cb event))
-  (event-bus/emit-boundary! event (:node agent)))
+  (event-bus/emit-boundary! event (:ctx agent)))
 
 (defn- finish-turn!
   "Finish a turn (pi: the session's wrapped finishTurn, installed by
@@ -789,7 +789,7 @@
    :agent-end is emitted here with this attempt's accumulated messages
    (RUN-TOKEN keys the accumulator) and :will-retry."
   [agent run-token {:keys [on-text on-thinking on-error]}]
-  (let [stages (runtime/loop-stages (:node agent)) ; the node's stages, one read per attempt (scope.md §4)
+  (let [stages (runtime/loop-stages (:ctx agent)) ; the ctx's stages, one read per attempt (scope.md §4)
         agent-end (fn [error will-retry]
                     (when-let [s (:session agent)]
                       (when (pos? (get-in (session/tool-usage s)

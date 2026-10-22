@@ -23,6 +23,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.commands :as commands]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
@@ -688,7 +689,7 @@
     ;; Installed once with the registry; reload mutates the same CoreState
     ;; (agent, session atom), so the wiring stays valid across reloads —
     ;; only /new, /resume, fork and clone re-register the session.
-    (let [node (runtime/agent-node (:engine cs))]
+    (let [node (app-runtime/node)]
       (extensions/install-front-end! node {:mode :interactive :has-ui true :ui registry})
       (extensions/install-session! node (runtime/session (:engine cs)))
       (extensions/install-context-sink!

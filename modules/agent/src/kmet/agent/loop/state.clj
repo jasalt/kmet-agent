@@ -102,9 +102,10 @@
                        system-prompt-opts    ;; atom of the build-system-prompt options map (pi: _baseSystemPromptOptions)
                        loop-guard            ;; atom of per-run repeat-loop guard state:
                                              ;;   {:window [signature...] :suppressed n}
-                       node                  ;; the node this run reads its loop stages from:
-                                             ;; the app root by default (kmet.agent.app-runtime),
-                                             ;; a child node for a subagent run (scope.md §5)
+                       ctx                   ;; the ctx this run reads its loop stages from and
+                                             ;; scopes its events to: the app root by default
+                                             ;; (kmet.agent.app-runtime/ctx), a child ctx for a
+                                             ;; subagent run (new-app.md, landing 4c-ii-b)
                        ])
 
 (defn make-agent-state
@@ -135,11 +136,11 @@
          :default-tools (resolved :default-tools selection — the built-in
          tools active at startup, pi: defaultTools; nil = every built-in
          active, see kmet.agent.tools.registry/resolve-default-tools),
-         :node (the node this run reads its loop stages from; default the app
-         root, kmet.agent.app-runtime/node — a subagent run passes its own child
-         node, which carries its own :loop-guard and :retry-policy stages,
-         scope.md §5)"
-  [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools node]
+         :ctx (the ctx this run reads its loop stages from and scopes its
+         events to; default the app root, kmet.agent.app-runtime/ctx — a
+         subagent run passes its own child ctx, which carries its own
+         :loop-guard and :retry-policy stages)"
+  [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools ctx]
       :or {provider :opencode-go
            thinking :off
            steering-mode :all
@@ -158,7 +159,7 @@
            loop-guard-enabled true
            loop-guard-threshold 3
            thinking-loop-guard-enabled true
-           node (runtime/node)
+           ctx (runtime/ctx)
            system "You are kmet, a minimal coding agent. Help the user with their tasks.
 Use the available tools to read, write, edit files, and execute commands.
 Be precise and concise in your responses."}}]
@@ -219,7 +220,7 @@ Be precise and concise in your responses."}}]
                     :run-token (atom nil)
                     :system-prompt-opts (atom system-prompt-opts)
                     :loop-guard (atom {:window [] :suppressed 0})
-                    :node node}))
+                    :ctx ctx}))
 
 (defn emit
   "Route an event to the UI callback (:on-event) and the extension system
@@ -233,7 +234,7 @@ Be precise and concise in your responses."}}]
   ([agent ui-event ext-event]
    (when-let [cb (:on-event agent)]
      (cb ui-event))
-   (event-bus/emit-event! ext-event (:node agent))))
+   (event-bus/emit-event! ext-event (:ctx agent))))
 
 (defn set-agent-status!
   "Update the run's :status atom and emit the matching :status event. EXTRA, when

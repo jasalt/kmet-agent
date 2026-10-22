@@ -148,16 +148,16 @@
     (t/is (str/includes? (or @done-text "") "repeated identical tool calls")
           "on-done carries the guard explanation")))
 
-(t/deftest test-loop-agent-runs-in-the-app-node
-  ;; The run's node defaults to the app's (kmet.agent.app-runtime), and a run can
-  ;; be pointed at its own tree for a child node (scope.md §5).
-  (t/is (identical? (runtime/node) (:node (loop/make-agent-state))))
-  (let [mine (runtime/child-node)]
-    (t/is (identical? mine (:node (loop/make-agent-state :node mine))))))
+(t/deftest test-loop-agent-runs-in-the-app-ctx
+  ;; The run's ctx defaults to the app's (kmet.agent.app-runtime), and a run
+  ;; can be pointed at its own child ctx (new-app.md, landing 4c-ii-b).
+  (t/is (identical? (runtime/ctx) (:ctx (loop/make-agent-state))))
+  (let [mine (runtime/child-ctx)]
+    (t/is (identical? mine (:ctx (loop/make-agent-state :ctx mine))))))
 
-(t/deftest test-loop-runs-the-guard-in-its-node
-  ;; The guard is the node's stage, not a namespace read: a spy in the run's
-  ;; own node filters the batch (and trips it on the second, so the run
+(t/deftest test-loop-runs-the-guard-in-its-ctx
+  ;; The guard is the ctx's stage, not a namespace read: a spy in the run's
+  ;; own ctx filters the batch (and trips it on the second, so the run
   ;; settles), and the stage config supplies the threshold (scope.md §4,
   ;; §6).
   (let [calls (atom [])
@@ -166,10 +166,10 @@
               ;; Suppress the batch: the run trips the guard and settles, and
               ;; the stage config's threshold is what the batch was judged by.
               {:suppressed tool-calls :survivors [] :state state})
-        ;; the node carries the guard stage: the spy replaces the handle and
+        ;; the ctx carries the guard stage: the spy replaces the handle and
         ;; its config supplies the threshold
-        mine (runtime/child-node nil {:loop-guard {:call spy
-                                                   :config {:threshold 7}}})]
+        mine (runtime/child-ctx nil {:loop-guard {:call spy
+                                                  :config {:threshold 7}}})]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   tools/execute-tool
                   (fn [_ _ _] {:content "ok" :is-error false})
@@ -182,29 +182,29 @@
                       (when-let [on-done (:on-done opts)]
                         (on-done :tool-calls))
                       :done))]
-      (let [agent (loop/make-agent-state :node mine :on-event (fn [_]))]
+      (let [agent (loop/make-agent-state :ctx mine :on-event (fn [_]))]
         @(loop/run-agent-turn agent {:message "run"
                                      :on-done (fn [_])
                                      :on-error (fn [_])})
-        (t/is (seq @calls) "the node's handle filtered the batch")
+        (t/is (seq @calls) "the ctx's handle filtered the batch")
         (t/is (= [7] (distinct @calls))
-              "the stage config reached the node's handle")
+              "the stage config reached the ctx's handle")
         (t/is (= :idle @(:status agent)) "the run settled through the guard")))))
 
-(t/deftest test-loop-runs-the-retry-policy-in-its-node
-  ;; The retry policy is a node stage too: a spy replacing it decides the
+(t/deftest test-loop-runs-the-retry-policy-in-its-ctx
+  ;; The retry policy is a ctx stage too: a spy replacing it decides the
   ;; errored call's next move, and its config overrides the run's own option
   ;; (scope.md §4).
   (let [seen (atom [])
         spy (fn [state]
               (swap! seen conj state)
               (retry/retry-decision state))
-        mine (runtime/child-node nil {:retry-policy {:call spy
-                                                     :config {:max-retries 1}}})
+        mine (runtime/child-ctx nil {:retry-policy {:call spy
+                                                    :config {:max-retries 1}}})
         calls (atom 0)
         ;; the run's own budget would end the error immediately; the mount's
         ;; config is the one that counts
-        agent (loop/make-agent-state :node mine :max-retries 0
+        agent (loop/make-agent-state :ctx mine :max-retries 0
                                      :base-delay-ms 1 :on-event (fn [_]))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
@@ -217,7 +217,7 @@
                           (on-done :stop)))
                       :done))]
       @(loop/run-agent-turn agent {:message "go" :on-done (fn [_]) :on-error (fn [_])}))
-    (t/is (= 1 (count @seen)) "the errored call reached the node's handle")
+    (t/is (= 1 (count @seen)) "the errored call reached the ctx's handle")
     (t/is (= 1 (:max-retries (first @seen)))
           "the entry config's budget reached the policy")
     (t/is (= 1 (:base-delay-ms (first @seen)))
@@ -226,7 +226,7 @@
     (t/is (= :idle @(:status agent)) "the retried run settled")))
 
 (t/deftest test-loop-stages-survive-a-mid-attempt-change
-  ;; scope.md §4: an attempt reads its stages once. A change to the node's
+  ;; scope.md §4: an attempt reads its stages once. A change to the ctx's
   ;; stages during the attempt (here a refresh) is invisible to it, and the
   ;; next attempt reads the new map — the tool-unload race the rule closes.
   (let [used (atom [])
@@ -236,7 +236,7 @@
         guard-b (fn [state _threshold tool-calls]
                   (swap! used conj :b)
                   {:suppressed tool-calls :survivors [] :state state})
-        node (runtime/child-node nil {:loop-guard {:call guard-a}})
+        run-ctx (runtime/child-ctx nil {:loop-guard {:call guard-a}})
         run! (fn [on-first-call]
                (let [calls (atom 0)]
                  (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -255,17 +255,17 @@
                                      (on-done :tool-calls))
                                    :done))]
                    @(loop/run-agent-turn
-                     (loop/make-agent-state :node node :on-event (fn [_]))
+                     (loop/make-agent-state :ctx run-ctx :on-event (fn [_]))
                      {:message "run" :on-done (fn [_]) :on-error (fn [_])}))))]
-    ;; The node's stages change while the first attempt is in flight.
+    ;; The ctx's stages change while the first attempt is in flight.
     (run! (fn []
             (with-redefs [runtime/default-loop-stages
                           (assoc runtime/default-loop-stages
                                  :loop-guard {:call guard-b})]
-              (runtime/refresh-stages! node))))
+              (runtime/refresh-stages! run-ctx))))
     (t/is (= [:a] @used) "the attempt kept the handle it started with")
-    (t/is (= guard-b (get-in (runtime/loop-stages node) [:loop-guard :call]))
-          "and the node really did change under it")
+    (t/is (= guard-b (get-in (runtime/loop-stages run-ctx) [:loop-guard :call]))
+          "and the ctx really did change under it")
     ;; The next attempt reads the new tree: guard-b suppresses its only call,
     ;; which trips the guard and settles the run (one handle call).
     (run! (fn []))

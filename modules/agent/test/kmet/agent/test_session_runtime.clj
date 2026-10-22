@@ -111,11 +111,13 @@
         (is (fn? (:on-event ag)) "the agent's UI callback is the subscriber dispatcher")
         (is (= [] (rt/scoped-models engine)))
         (is (= :off @(:thinking ag)) "thinking defaults to off")
+        (is (identical? (app/ctx) (rt/agent-ctx engine))
+            "the engine resolves a ctx: the app root's by default")
         (is (identical? sess (extensions/get-session))
             "the extension session handle is installed")
-        (is (contains? (scope/owner-keys (:node ag) [:app :session]) :kmet/session)
-            "the live session is registered under the tree's [:app :session]")
-        (is (contains? (scope/owner-keys (:node ag) [:app :ui]) :kmet/ui-port)
+        (is (contains? (scope/owner-keys (app/node) [:app :session]) :kmet/session)
+            "the live session is registered under the app root's [:app :session]")
+        (is (contains? (scope/owner-keys (app/node) [:app :ui]) :kmet/ui-port)
             "the front end's headless port is registered under [:app :ui]")))))
 
 (deftest test-subscribe-receives-and-unsubscribes
@@ -182,7 +184,7 @@
   (with-engine
     (fn [engine _]
       (let [events (atom [])
-            node (:node (rt/agent-state engine))]
+            node (app/node)]
         (rt/subscribe! engine #(swap! events conj %))
         (is (nil? (rt/dispose! engine)))
         (is (nil? (extensions/get-session)) "the extension session handle is cleared")
@@ -196,10 +198,10 @@
 
 (deftest test-session-install-is-owner-scoped
   ;; The process cache is last-wins (one live front end at a time), but a
-  ;; registration belongs to the tree that installed it: an older tree's
+  ;; registration belongs to the store that installed it: an older owner's
   ;; teardown cannot clear a newer tree's session (scope.md §2, §5).
-  (let [old (app/node)
-        newer (app/child-node)]
+  (let [old (scope/node)
+        newer (scope/node)]
     (try
       (extensions/install-session! old :old-session)
       (extensions/install-session! newer :newer-session)
