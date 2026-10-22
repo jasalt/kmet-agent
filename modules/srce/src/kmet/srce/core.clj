@@ -1,4 +1,4 @@
-(ns kmet.srce
+(ns kmet.srce.core
   "The kernel's public surface — the one namespace app code requires.
 
    A ctx is a value (`ctx?`), a fiber is an atom holding its record, and every
@@ -38,6 +38,11 @@
 (def children
   "This ctx's child ctxs, creation order."
   ctx/children)
+
+(def attr
+  "The nearest non-nil K on the ctx chain, with no realm stop — the walk for
+   keys the app carries (:base-url, :resolver, an app-owned queue)."
+  ctx/attr)
 
 ;; ── services ──────────────────────────────────────────────────────────────
 
@@ -131,13 +136,47 @@
   "Register F for NAME's next emit; returns its disposer."
   event/once)
 
+(def dispatch-modes
+  "The dispatch modes the kernel implements (six non-awaiting folds)."
+  event/dispatch-modes)
+
 (def emit!
-  "Emit EVENT to the listeners of NAME visible from CTX, synchronously."
+  "Emit EVENT to the listeners of NAME visible from CTX; results are ignored."
   event/emit!)
+
+(def bail!
+  "Emit EVENT until a listener returns non-nil; that value is the answer."
+  event/bail!)
+
+(def waterfall!
+  "Emit EVENT as around-middleware: `(f event next)`, and not calling `next`
+   vetoes the rest."
+  event/waterfall!)
+
+(def collect-last!
+  "Run every listener; the last non-nil result is the answer."
+  event/collect-last!)
+
+(def collect-all!
+  "Run every listener; every non-nil result as `[[data result] …]`."
+  event/collect-all!)
+
+(def boundary!
+  "Dispatch as a boundary: each listener sees the accumulated map merged into its
+   event and returns the keys to accumulate."
+  event/boundary!)
+
+(def invoke!
+  "Call one listener; a throw is logged and reads as nil (the dispatch rule)."
+  event/invoke!)
 
 (def listeners
   "The resolved listener list for NAME from CTX, in dispatch order."
   event/listeners)
+
+(def event-names
+  "Every event name registered on CTX or an ancestor, sorted."
+  event/names)
 
 ;; ── plugins as data ───────────────────────────────────────────────────────
 

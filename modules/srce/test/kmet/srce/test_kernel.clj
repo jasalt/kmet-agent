@@ -2,7 +2,7 @@
   "The kernel's contract tests: one per §12 behavior of the module note."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [kmet.srce :as srce]))
+            [kmet.srce.core :as srce]))
 
 ;; ── helpers ───────────────────────────────────────────────────────────────
 
@@ -188,6 +188,22 @@
     (is (= :active (:state @f)))
     (is (= 1 @applied))
     (is (= #{} (:waiting-for @f)))))
+
+(deftest provide-in-an-ancestor-s-scope
+  ;; a plugin mounted at the root shares a service with its siblings, and the
+  ;; entry stays that plugin's effect
+  (let [[r] (kernel)
+        f (srce/plugin! r {:name :events
+                           :provide #{:events}
+                           :apply (fn [ctx _]
+                                    (srce/provide! ctx :events :bus
+                                                   {:in (:parent ctx)}))})
+        sibling (srce/extend r {})]
+    (is (= :bus (srce/get r :events)) "the mount site sees it")
+    (is (= :bus (srce/get sibling :events)) "a sibling does too")
+    (is (= #{:events} (:provides @f)))
+    (srce/dispose! f)
+    (is (nil? (srce/get r :events)) "the entry went with its fiber, not the root")))
 
 (deftest optional-inject-upgrades-and-downgrades
   (let [[r] (kernel)
@@ -450,6 +466,38 @@
     (srce/emit! child :e {})
     (is (= [:child :root] @seen))))
 
+(deftest emit-ignores-results-and-bail-stops-at-the-first-answer
+  (let [r (srce/root)
+        seen (atom [])]
+    (srce/on r :e (fn [_] (swap! seen conj :first) nil))
+    (srce/on r :e (fn [_] (swap! seen conj :second) :answer))
+    (srce/on r :e (fn [_] (swap! seen conj :third) :ignored))
+    (is (nil? (srce/emit! r :e {})) "emit returns nothing, whatever listeners return")
+    (is (= [:first :second :third] @seen))
+    (reset! seen [])
+    (is (= :answer (srce/bail! r :e {})) "bail returns the first non-nil answer")
+    (is (= [:first :second] @seen) "and the remaining listeners never see the event")
+    (is (nil? (srce/bail! r :nobody {})) "nothing listening answers nothing")))
+
+(deftest waterfall-wraps-the-rest-of-the-chain
+  (let [r (srce/root)]
+    (srce/on r :e (fn [_ next] (assoc (next) :outer true)))
+    (srce/on r :e (fn [_ next] (assoc (next) :inner true)))
+    (srce/on r :e (fn [_ _next] {:vetoed true}))
+    (is (= {:vetoed true :inner true :outer true}
+           (srce/waterfall! r :e {}))
+        "each listener wraps the rest; the innermost vetoes")
+    (is (nil? (srce/waterfall! r :nobody {})) "nothing listening is nil")))
+
+(deftest a-throwing-listener-does-not-stop-bail-or-waterfall
+  (let [[r _calls] (kernel)]
+    (srce/on r :b (fn [_] (throw (ex-info "boom" {}))))
+    (srce/on r :b (fn [_] :after-bail))
+    (is (= :after-bail (srce/bail! r :b {})))
+    (srce/on r :w (fn [_ _next] (throw (ex-info "boom" {}))))
+    (srce/on r :w (fn [_ next] (next)))
+    (is (nil? (srce/waterfall! r :w {})) "a rung that throws reads as nil")))
+
 (deftest listener-filter-sees-the-listener-ctx
   (let [r (srce/root)
         child (srce/extend r {:name :child})
@@ -477,6 +525,25 @@
     (is (= [:ok] @seen))
     (is (logged? calls :error "listener threw"))))
 
+(deftest registration-data-rides-the-listener
+  (let [r (srce/root)]
+    (srce/on r :e {:data :host} (fn [_] :a-result))
+    (srce/once r :e {:data :once-owner} (fn [_] :once-result))
+    (is (= [[:host :a-result] [:once-owner :once-result]]
+           (srce/collect-all! r :e {}))
+        "the data a registration attached is reported beside its result")
+    (is (= [[:host :a-result]] (srce/collect-all! r :e {}))
+        "a `once` registration delivers once, with its data")))
+
+(deftest event-names-enumerates-the-chain
+  (let [r (srce/root)
+        child (srce/extend r {})]
+    (srce/on r :a (fn [_]))
+    (srce/on r :b (fn [_]))
+    (srce/on child :c (fn [_]))
+    (is (= [:a :b :c] (srce/event-names child)))
+    (is (= [:a :b] (srce/event-names r)) "an ancestor's own names only")))
+
 (deftest a-listener-disposer-reports-removal
   (let [[r] (kernel)
         d (srce/on r :e (fn [_]))]
@@ -488,10 +555,23 @@
         child (srce/extend r {})
         f (fn [_])
         g (fn [_])]
-    (srce/on r :e f)
-    (srce/on child :e g)
-    (is (= [{:ctx child :f g} {:ctx r :f f}]
-           (srce/listeners child :e nil)))))
+    (srce/on r :e {:data :root} f)
+    (srce/on child :e {:data :child} g)
+    (let [resolved (srce/listeners child :e nil)]
+      (is (= [g f] (mapv :f resolved)) "the reading ctx first, then its ancestors")
+      (is (= [:child :root] (mapv :data resolved)))
+      (is (identical? child (:ctx (first resolved)))))))
+
+(deftest dispatch-modes-names-every-mode-the-kernel-has
+  (let [fns {:emit srce/emit!
+             :bail srce/bail!
+             :waterfall srce/waterfall!
+             :collect-last srce/collect-last!
+             :collect-all srce/collect-all!
+             :boundary srce/boundary!}]
+    (is (= (set (keys fns)) srce/dispatch-modes)
+        "the capability list is exactly the modes with a fn behind them — an app
+         declaring an event's mode reads this set, so it cannot promise more")))
 
 (deftest kernel-events
   (let [[r] (kernel)

@@ -1,11 +1,12 @@
 (ns kmet.app.core
   "kmet2's entry point: `kmet --app new` (kmet.agent.core does the dispatch).
 
-   Landing 1 wires the composition, not the services: the app resolves a
-   profile's rows, patches them by row id and prints the result
-   (`--dump-config`), reports the version, and refuses to pretend it can run
-   a turn. Landings 2–7 mount what the rows name; the flag surface here is
-   what they grow into, not a place-holder for it.
+   The app resolves a profile's rows, patches them by row id and prints the
+   result (`--dump-config`); a run without `--dump-config` composes the same
+   rows and **boots** them (`kmet.app.runtime`), which is what proves a profile
+   mounts. No mode is wired yet, so a booted run reports what it mounted,
+   disposes it, and exits — landings 3–7 grow the flag surface and the modes,
+   not this contract.
 
    Output and exit codes are separable on purpose: `main` returns the exit
    code and `-main` is the only form that calls `System/exit`, so tests read a
@@ -14,7 +15,8 @@
             [clojure.string :as str]
             [kmet.agent.version :as version]
             [kmet.app.catalog :as catalog]
-            [kmet.app.profile :as profile]))
+            [kmet.app.profile :as profile]
+            [kmet.app.runtime :as runtime]))
 
 ;; ── argument parsing ──────────────────────────────────────────────────────
 
@@ -135,13 +137,34 @@
 
 (defn- not-wired [args]
   (binding [*out* *err*]
-    (println "kmet2 has no runnable mode yet — landings 2–7 mount the services,")
+    (println "kmet2 has no runnable mode yet — landings 3–7 mount the registries,")
     (println "the session log, the loop and print mode.")
     (println "  kmet --app new --dump-config   print the composed rows")
     (println "  kmet --app new --version       print the version")
     (when (seq args) (println "Arguments:" (pr-str (vec args))))
     (flush))
   1)
+
+(defn- boot-summary
+  "One line naming what the boot mounted: the rows, their fibers, and the
+   service names they provide."
+  [{:keys [fibers rows]}]
+  (let [services (->> fibers (mapcat (comp :provides deref)) distinct sort (map name))]
+    (str "booted " rows " plugin row" (when (not= 1 rows) "s")
+         " (" (count fibers) " fiber" (when (not= 1 (count fibers)) "s")
+         ", services: " (if (seq services) (str/join " " services) "none") ")")))
+
+(defn- run-composed
+  "Boot the composition a run would mount, report what it mounted, dispose it,
+   and say that no mode is wired yet. The boot is the point: it is what proves
+   a profile's rows actually mount, without a turn to run."
+  [opts args]
+  (let [booted (runtime/boot (compose-config opts))]
+    (try
+      (binding [*out* *err*] (println (boot-summary booted)) (flush))
+      (finally
+        (runtime/shutdown! booted)))
+    (not-wired args)))
 
 (defn- configuration-error? [e]
   (str/starts-with? (str (:type (ex-data e))) ":kmet."))
@@ -156,7 +179,7 @@
         version? (do (println (str "kmet " (version/kmet-version))) (flush) 0)
         help? (do (print-usage) (flush) 0)
         dump-config? (do (print (dump-config opts)) (flush) 0)
-        :else (not-wired leftover)))
+        :else (run-composed opts leftover)))
     (catch Exception e
       (cond
         (= :kmet.app/bad-args (:type (ex-data e)))

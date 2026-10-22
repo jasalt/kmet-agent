@@ -12,6 +12,10 @@
   "A var-addressable plugin map — the shape a `defplugin` var holds."
   {:name :app/sample :inject {:tools nil} :provide [] :apply (fn [_ _] nil)})
 
+(def failing-plugin
+  "A plugin whose apply throws: a row that must not pass for a mount."
+  {:name :app/failing :apply (fn [_ _] (throw (ex-info "boom" {})))})
+
 (defn- run-main
   "The `{:code :out :err}` of kmet2's entry on ARGS — `main` returns the exit
    code and prints, so a command is read without forking a process."
@@ -77,7 +81,9 @@
 (deftest dump-config-prints-the-built-in-composition
   (let [{:keys [code out]} (run-main ["--dump-config"])]
     (is (zero? code))
-    (is (str/starts-with? out "profile :tui rows=0 patches=0"))
+    (is (str/starts-with? out "profile :tui rows=1 patches=0")
+        "the bundle's first row: the event bus")
+    (is (str/includes? out ":events"))
     (is (str/ends-with? out "\n")))
   (let [{:keys [out]} (run-main ["--dump-config" "--profile" "rpc"])]
     (is (str/starts-with? out "profile :rpc")
@@ -91,7 +97,7 @@
     (try
       (let [{:keys [code out]} (run-main ["--dump-config" "--patch" path])]
         (is (zero? code))
-        (is (str/starts-with? out "profile :tui rows=1 patches=1"))
+        (is (str/starts-with? out "profile :tui rows=2 patches=1"))
         (is (str/includes? out ":app/sample"))
         (is (str/includes? out "inject={:tools nil}"))
         (is (str/includes? out "config={:a 1, :b {:c 2}}")
@@ -113,8 +119,20 @@
     (is (= 1 code))
     (is (str/includes? err "cannot read patch file"))))
 
-(deftest a-bare-run-says-what-is-missing
+(deftest a-bare-run-boots-the-composition-and-says-what-is-missing
   (let [{:keys [code err]} (run-main ["hello"])]
     (is (= 1 code))
+    (is (str/includes? err "booted 1 plugin row (1 fiber, services: events)")
+        "the boot is the point: a bare run proves the profile's rows mount")
     (is (str/includes? err "no runnable mode"))
     (is (str/includes? err "--dump-config"))))
+
+(deftest a-boot-failure-is-reported-as-a-configuration-error
+  (let [path (scratch-patch!
+              (str "{:rows [{:plugin kmet.app.test-core/failing-plugin}]\n"
+                   " :patch []}\n"))]
+    (try
+      (let [{:keys [code err]} (run-main ["--patch" path])]
+        (is (= 1 code))
+        (is (str/includes? err "kmet2 boot failed")))
+      (finally (io/delete-file path true)))))

@@ -1,6 +1,6 @@
 (ns kmet.app.test-catalog
-  "kmet.app.catalog — row cards: the committed catalog, the ext/… external
-   form, and the var fallback that keeps an out-of-tree profile composable."
+  "kmet.app.catalog — row cards read from the plugin map itself, and the
+   `:ext/…` form whose card the extension host supplies."
   (:require [clojure.test :refer [deftest is testing]]
             [kmet.app.catalog :as catalog]))
 
@@ -9,9 +9,8 @@
   {:name "not a keyword"})
 
 (def test-plugin
-  "A plugin map a test row can name as a source. Not a `defplugin`: the
-   catalog's fallback reads a var's value, and a plain map is the shape a
-   plugin var holds after `defplugin`'s validation."
+  "A plugin map a test row can name as a source — the shape a `defplugin` var
+   holds (a qualified var symbol is all a row carries)."
   {:name :app/test-plugin
    :inject {:tools nil}
    :provide #{:x}
@@ -19,19 +18,6 @@
 
 (defn- error-type [f]
   (try (f) nil (catch Exception e (:type (ex-data e)))))
-
-(deftest committed-catalog-shape
-  (let [cat (catalog/catalog)]
-    (is (= 1 (:version cat)))
-    (is (vector? (:plugins cat)))
-    (is (= (:plugins cat) (catalog/entries)))
-    (doseq [entry (catalog/entries)]
-      (is (qualified-symbol? (:var entry)) (str "entry var: " (pr-str (:var entry))))
-      (is (keyword? (:name entry)) (str "entry name: " (pr-str (:name entry))))
-      (is (map? (:inject entry)) (str "entry inject: " (pr-str (:inject entry))))
-      (is (vector? (:provide entry)) (str "entry provide: " (pr-str (:provide entry))))
-      (is (boolean? (:config? entry))))
-    (is (nil? (catalog/entry-for 'no.such/plugin)))))
 
 (deftest external-sources-are-named-not-resolved
   (let [card (catalog/describe {:plugin :ext/grep-tool :config {}})]
@@ -42,7 +28,7 @@
   (testing "an explicit :id wins"
     (is (= :grep (:id (catalog/describe {:plugin :ext/grep-tool :id :grep}))))))
 
-(deftest a-var-source-falls-back-to-the-loaded-var
+(deftest a-var-source-is-read-from-the-plugin-map
   (let [card (catalog/describe {:plugin 'kmet.app.test-catalog/test-plugin})]
     (is (= :app/test-plugin (:id card)) "the id defaults to the plugin's :name")
     (is (= :app/test-plugin (:name card)))

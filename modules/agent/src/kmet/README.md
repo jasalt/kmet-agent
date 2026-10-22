@@ -82,7 +82,8 @@ kmet/agent/
 ├── packages.clj        — package/resource resolution (local + managed git)
 ├── packages_cli.clj    — the install/remove/update/list/config CLI
 ├── git_packages.clj    — git source parsing + managed checkouts
-├── event_bus.clj       — the event vocabulary + extension event bus
+├── event_bus.clj       — kmet1's extension event bus (the vocabulary is
+│                         re-exported from kmet.app.events)
 ├── loop.clj            — the agent loop driver (public: make-agent-state,
 │   │                     run-agent-turn, cancel-turn)
 │   └── loop/           — loop submodules, a DAG pinned by test-layer-guard:
@@ -261,9 +262,12 @@ front end:
   front-end surface only — they never require `kmet.agent.loop` — and
   `kmet.agent.test-layer-guard` enforces that boundary.
 - The event stream is the API. `subscribe!` delivers plain EDN events on the
-  emitting thread (fast, non-blocking) and the vocabulary in
-  `kmet.agent.event-bus` (`event-types` / `app-event-types` /
-  `loop-event-types`) is the shared contract; `:agent-settled` carries the
+  emitting thread (fast, non-blocking) and the vocabulary — `event-types` /
+  `app-event-types` / `loop-event-types`, declared as `:events` in
+  `kmet.app.events/plugin` and read from that declaration,
+  re-exported by `kmet.agent.event-bus`, which keeps kmet1's own table and
+  emitters until the loop re-points (`new-app.md`, landing 2) — is the shared
+  contract; `:agent-settled` carries the
   run's `:outcome` (`:completed` / `:error` / `:aborted`). A front end that
   needs data not on the stream extends the event, not the reader.
 - Extension UI splits into runtime capabilities (installed by `bootstrap`,

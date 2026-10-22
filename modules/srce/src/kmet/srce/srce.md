@@ -1,6 +1,6 @@
 # srce — a light Cordis kernel in Clojure
 
-Implementation note for the `kmet.srce` module, beside its code. kmet2's
+Implementation note for the `kmet.srce.*` module, beside its code. kmet2's
 application architecture — services, agents, sessions, profiles, landings — is
 in [`new-app.md`](../../../../../new-app.md); this file is the kernel only: its
 ctx model, the lifecycle, the plugin contract, the contracts the tests pin, and
@@ -31,7 +31,7 @@ mapping is the light kernel's whole justification:
 | 1 | a plugin is an object that implements `Service` — a function with optional `inject` and `apply(ctx)` | a **validated map** with `:inject`/`:apply`; the Service-subclass half is cut (§10) | §6 |
 | 2 | a context is a repository of services; a service claims a stable `ctx.x` key, others find it by key instead of importing an implementation | `provide!`/`get` by keyword over the ctx tree, realms via `isolate` | §2–§3 |
 | 3 | declare dependencies via `inject`; a plugin waits until those services exist, so load order is requirements, not boot sequencing | required + `:optional` inject, the refresh pass — **boot order stops mattering** | §3 |
-| 4 | typed events; dispatch as `emit`/`waterfall`/`parallel`/`serial`/`bail` | **one listener table** plus a resolved-list seam: `emit` in the kernel, the other four modes in kmet1's bus; the declaration half is `event-bus/event-types` + the generated catalog (which lives above the kernel, so the three `:srce/*` names are documented, not catalogued) | §5 |
+| 4 | typed events; dispatch as `emit`/`waterfall`/`parallel`/`serial`/`bail` | **one listener table** plus six modes over the resolved list (`emit`, `bail`, `waterfall`, `collect-last`, `collect-all`, `boundary`), all in the kernel; `serial`/`parallel` wait for an awaitable. The **declaration** half is the app's — a plugin declares its own events (`:events` on `defplugin`, checked by `plugin!` and carried on the fiber), because a kernel must not name an app event; the three `:srce/*` names are documented, not catalogued | §5 |
 | 5 | registrations are reversible **effects**, so reload and teardown unwind predictably | the fiber's effect list, LIFO, owning the `provide!` and the listener | §4 |
 
 Idea 3 is the load-bearing one for kmet2: extensions, profile rows and UI
@@ -67,15 +67,16 @@ modules/srce/
 │                        kmet.loader.* :local/root edges when a namespace needs one
 ├── test/kmet/srce/    — the contract tests (§12)
 └── src/kmet/
-    ├── srce.clj       — the public API (below); the one require app code needs
     └── srce/
+        ├── core.clj   — the public API (below); the one require app code needs
         ├── srce.md    — this file
         ├── ctx.clj    — the ctx value, the tree, the service store, isolate, the effect list
         ├── fiber.clj  — mount/unmount, states, the refresh pass, plugin runtimes
-        └── event.clj  — on/once/emit!, the listener table, the resolved list
+        └── event.clj  — on/once, the listener table, the resolved list, and
+                          the three non-awaiting dispatch strategies
 ```
 
-`kmet.srce` is rank 1 — it may require rank-0 code (`kmet.libs.*`, and
+`kmet.srce.*` is rank 1 — it may require rank-0 code (`kmet.libs.*`, and
 `kmet.loader.*` when it resolves sources), nothing at its own rank or above;
 the subnamespaces are internal and nothing above the kernel requires them.
 The module's `modules.edn` row — `:name "srce"`, the source/test paths,
@@ -87,7 +88,7 @@ not a set of modules whose callers each pick their own:
 
 ```clojure
 (ns kmet.app.session
-  (:require [kmet.srce :as srce]))
+  (:require [kmet.srce.core :as srce]))
 
 (srce/root)                              ; a root ctx — boot holds one, tests build their own
 (srce/root {:base-url "…"})              ; same, with ctx keys merged in (nothing is read by the kernel)
@@ -99,9 +100,12 @@ not a set of modules whose callers each pick their own:
 (srce/services ctx)                      ; {name {:name :fiber :value :check}}, realm-aware
 (srce/children ctx)                      ; this ctx's child ctxs, creation order
 (srce/provide! ctx :tools table)         ; → disposer; a second visible provider throws
+(srce/provide! ctx :events bus {:in app}) ; → the app's scope, this fiber's effect
 (srce/on ctx :srce/status f)             ; → disposer
 (srce/once ctx :srce/status f)
 (srce/emit! ctx :my/event ev {:filter f}); sync, filtered, results ignored
+(srce/bail! ctx :my/event ev)            ; the first non-nil answer, then stop
+(srce/waterfall! ctx :my/event ev)       ; (f ev next); not calling next vetoes
 (srce/listeners ctx :my/event {:filter f}) ; [{:ctx c :f f} …] resolved up the chain, dispatch order
 (srce/plugin-source src resolver)        ; a var as-is, or the resolver's value for a keyword
 (srce/plugin! ctx #'web-search {:max-results 5})   ; a var, a keyword, or a plugin map → fiber
@@ -155,13 +159,22 @@ A ctx is a value: a map with fixed keys, no proxy, no service methods on it.
 | `:resolver` | inherited key: resolves a keyword plugin source (§6). The kernel only calls it, and only when the source is a keyword |
 | `:runtimes` `:mounted` `:counter` `:pass` `:changes` | **inside `:kernel`**: plugin runtimes, mounted fibers in mount order, the uid allocator, the optimistic pass flag and its change set |
 
-**Three accessors answer the whole-tree questions**: `(children ctx)`,
+**Four accessors answer the whole-tree questions**: `(children ctx)`,
 `(services ctx)` — the realm-aware merge of what the ctx can see, which is what
-an inspection view needs — and `(listeners ctx name opts)` — the resolved
-listener list, which is what the app's other four dispatch modes walk (§5).
-`services` is the accessor a caller would otherwise re-derive per name with
-`provider`; `listeners` is the accessor that keeps the app's dispatchers from
-needing a second registry.
+an inspection view needs — `(listeners ctx name opts)` — the resolved listener
+list, which is what the app's dispatch modes walk (§5) — and `(event-names
+ctx)`, the registered names on the chain. `services` is the accessor a caller
+would otherwise re-derive per name with `provider`; `listeners` is the accessor
+that keeps the app's dispatchers from needing a second registry; `event-names`
+is what reporting a subscription list reads instead of reaching into the
+`:listeners` atoms.
+
+**A ctx is cyclic, so never print one.** `ctx → :kernel → :runtimes → fiber →
+:ctx` closes the loop, and no host's default printer detects it: `pr-str` of a
+ctx, or of any value holding one, is a stack overflow. Report names, counts and
+states (`(:state @fiber)`, `(children ctx)` counted, a service's *name*), never
+the value — which is also why a service value must not carry its ctx
+(`kmet.app.events/service` binds it in a closure).
 
 **The kernel owns its tree.** `kmet.srce.*` must not require
 `kmet.libs.scope`: the kernel needs a parent/child walk and a per-fiber effect
@@ -210,6 +223,14 @@ Cordis's reflect layer, minus everything the light kernel doesn't need.
   pushes a disposer onto the fiber's effect list; disposer order is the fiber's
   order. A provider's disposer deletes its entry and records the name as a
   change, so the outer `settle!` remounts the dependents.
+- **`:in` is the scope, when it is not this ctx.** `(provide! ctx name value
+  {:in ancestor})` puts the entry in ANCESTOR's store while the effect and the
+  provider record stay CTX's fiber — "share with my siblings". Without it a
+  plugin's service is visible only to its own subtree, which is right for a
+  per-agent capability and wrong for an app-wide one: the app's rows mount as
+  siblings under the root, so `kmet.app.events` provides its service
+  `{:in (:parent ctx)}`. The duplicate check reads from the target scope, and
+  the entry still dies with the providing fiber.
 - **`check` is a predicate on the value.** `(provide! ctx :ui v {:check ready?})`
   — false or a throw reads as "unavailable" for `get` and for inject. It is
   evaluated on every read and at every pass, and a pass always re-evaluates
@@ -398,46 +419,156 @@ down the process, and there is no implicit restart — `dispose!` returns nil.
 
 The kernel needs a notification path, not an event framework:
 
-- `(on ctx name f)`, `(once ctx name f)`, `(emit! ctx name ev {:filter f})`.
+- `(on ctx name f)`, `(once ctx name f)`, `(emit! ctx name ev {:filter f})`,
+  `(bail! …)`, `(waterfall! …)`.
   A listener is `(fn [event])`; its own ctx is visible to the `:filter` and in
-  the resolved list, never as a call argument — one shape for all five modes.
+  the resolved list, never as a call argument — one shape for every mode but
+  `waterfall`, whose whole point is the `next` continuation (`(f event next)`).
+- `(names ctx)` enumerates what is registered on the chain, sorted: the kernel
+  owns the table, so reporting a subscription list is the kernel's read, not a
+  second atom anything can drift from.
 - A ctx's listeners run for emits on that ctx **and its ancestors**, so a
   subtree scopes naturally; `:filter` receives each listener's own ctx (a
   listener cannot opt out), which is the shape the node-scoped bus needs.
 - Registration order, `once` disposes before invoking, and the disposer reports
   whether it removed something.
-- Listener results are ignored; a throwing listener is reported and does not
-  stop the rest.
+- A throwing listener is reported through `:logger` and reads as nil for its own
+  rung; the dispatch carries on. `invoke!` is that one rule, and every mode —
+  the kernel's three and the app's protocols — calls it instead of its own
+  try/catch.
 
-**One listener table, five dispatchers.** Registration is `on`/`once` on the
-ctx and nothing else; the *modes* are different walks over that one table —
-which is how idea 4 survives the trim with its mechanism intact. The seam
-between the two layers is the resolved list, not the table itself: Cordis does
-the same split in `events.ts` (`dispatch` returns the filtered, bound list and
-each mode walks it), and it is why the app needs no second registry.
+**One listener table, two layers.** Registration is `on`/`once` on the ctx and
+nothing else; the *modes* are different walks over one resolved list, and the
+seam between the layers is that list, not the table. Cordis splits it the same
+way in `events.ts` (`dispatch` returns the filtered, bound list; each mode walks
+it); the difference is only where the layer line falls — see "strategy vs.
+protocol" below.
 
-| mode | where | why there |
+**A mode is a fold over the resolved list, so the kernel owns all six.** Once
+a registration may carry `{:data x}` (below), no mode needs a name or an app
+concept: `emit` ignores results, `bail` takes the first non-nil, `waterfall`
+threads `next`, `collect-last` takes the last non-nil, `collect-all` pairs each
+non-nil result with its registration's data, and `boundary` merges returned maps
+into the event. That is Cordis's cut — the dispatch mechanism in the core — with
+one difference in where the line falls: Cordis's core *uses* `bail` and
+`waterfall` for its own interception seams (`internal/listener` claiming,
+`internal/config`), while kmet's light kernel has no such seam (§10), so the
+modes are there for the app rather than for the kernel.
+
+**Why `serial`/`parallel` are absent — and it is not "ordering".** Every mode
+already walks the list in dispatch order, so ordering is not a choice any
+dispatcher makes. What `serial` and `parallel` add over `bail` and `emit` in
+Cordis is *awaiting a Promise*: `serial` awaits each listener before deciding
+whether it answered (and short-circuits on the first answer), `parallel` starts
+them all and awaits the array of results. Strip the await out of a synchronous
+world and the two collapse exactly onto the modes we have: `serial` → `bail!`
+(stop at the first non-nil, in order) and `parallel` → `collect-all!` (call
+everyone, keep every answer). A declaration naming `:serial` would therefore be
+an *alias* promising something it cannot deliver, which is why the set is
+`srce/dispatch-modes` (`emit`, `bail`, `waterfall`, `collect-last`,
+`collect-all`, `boundary`) and not a superset.
+
+What the await itself would cost, concretely — and it is not availability:
+`future`, `promise` and `(deref x ms default)` are core Clojure on bb, the JVM
+and Jolt alike, and `core.async` is fully usable on all three (`go`, `thread`,
+`<!`, `alts!` verified on Jolt too), so the kernel *could* await today. The
+problem is that a deref
+**blocks the thread that dispatched**, and the kernel has one such thread — the
+owner (§8). A listener that needs the owner (the documented way to do async
+work is submit to the loop and let the boundary drain it) then waits for work
+the blocked owner will never run: a deadlock by construction, where a JS
+`await` merely yields the single thread. That is a scheduling decision, not a
+missing capability.
+
+Channels do not change that, and they change something worse: `<!`/`alts!` are
+only legal inside a `go` block, and the kernel's entry points are plain
+functions called from any thread (`emit!` from a tool thread, `bail!` from the
+loop, an `apply` body). Awaiting inside a go block colors every caller —
+dispatch, plugin bodies, `plugin!`, `dispose!`, `settle!`, the app — which is
+the full-port design §8 rejected; awaiting outside one is `<!!`, a thread block
+with the same owner-thread deadlock. Channels also do not compose with the fold
+shapes: `waterfall!`'s `next` is a synchronous continuation, `bail!`
+short-circuits on a value, `boundary!` merges maps — with a suspending listener
+each `next` becomes a take and the listener contract bifurcates. What channels
+*would* buy when the trigger arrives is cancellation (close), timeouts
+(`alts!` + `timeout`) and backpressure — scheduler policy, which is the app's
+queue, and the reason core.async is the better substrate than futures if a
+kernel mode ever lands. Today `core.async` is exactly where it belongs:
+`kmet.libs.mcp.transport`'s SSE pipelines, above the kernel.
+
+Half of `parallel` already exists, too: `collect-all!` calls every listener and
+keeps what each returned, so listeners that return futures or channels are *all
+started* before the caller awaits them — `(mapv (fn [[data f]] [data @f])
+(collect-all! …))`, or `(a/<!! f)` for a channel, at the call site. The kernel does not need a mode to call functions in order.
+Only `serial` has semantics the kernel lacks — invoke, deref, stop at the first
+answer — and that is precisely the one that institutionalizes blocking the
+owner between listeners. If it is ever needed, it is `bail!` with the deref
+inside the short-circuit test, and the one exception rule extends to "a deref
+that throws reads as nil, so the next listener runs" — a semantic choice, not a
+mechanical one.
+
+Unlocking them is therefore an app-side landing, not a kernel one: a scheduler
+that runs listener work off the owner thread and settles it at the boundary —
+which is `kmet.app.runtime/submit!` + `boundary!`, Cordis's `ctx.submit` — with
+the disposal-aware cancellation, deadline and interrupt policy that threads
+need. The trigger is the first event whose emitter needs results from
+*concurrent blocking* listeners — e.g. `:resources-discover` against several
+slow remote providers where the serial sum is user-visible. Until then async
+work goes through the app's queue (§8), not through an event mode.
+
+| mode | where | what it returns |
 |---|---|---|
-| `emit` | `srce/emit!` | no return value, no await: ~15 lines |
-| `bail` | kmet1's bus, over `srce/listeners` | a plain walk needing no awaitable (~8 lines) — deferred because it *is* additive (§10 criterion 3), not because the bus has it. It does not: `emit-event!` (event_bus.clj 479-495) runs **every** listener and keeps the last non-nil, which is neither `bail` (first bail value, short-circuit) nor `waterfall`. If a landing needs a policy veto, `bail!` is the kernel's cheapest addition and moves into this row. |
-| `waterfall` | kmet1's bus, over `srce/listeners` | around-middleware: a listener receives `next` and not calling it vetoes. Today's closest shape is `emit-boundary!` (lines 516-534), which threads an accumulated map into each handler — the right data protocol, wrong call protocol (no `next`), so landing 2 adds `next` in the service's wrapper and leaves the table alone. |
-| `parallel` / `serial` | kmet1's bus, over `srce/listeners` | awaited, so they need the app's awaitable — the kernel has none (§8); landing 2 adds them, and `emit-event-collect!` (lines 497-514) is the existing collect-all shape. |
+| `emit` | `srce/emit!` | nothing: every listener runs, results ignored |
+| `bail` | `srce/bail!` | the first non-nil answer, short-circuiting the rest (a veto) |
+| `waterfall` | `srce/waterfall!` | the outermost listener's value; `(f event next)`, and not calling `next` vetoes |
+| `collect-last` | `srce/collect-last!` | the last non-nil answer (kmet1's `emit-event!`: a later `:cancel`/`:summary` wins) |
+| `collect-all` | `srce/collect-all!` | every non-nil result as `[data result]` — the registration's `:data` beside what it returned |
+| `boundary` | `srce/boundary!` | the accumulated map: each listener sees the previous results merged into its event and returns the keys to replace (pi: emitBoundary — `waterfall`'s data-shaped sibling) |
+| `parallel` / `serial` | — | awaited: they need an awaitable the kernel does not have (§8); the app's submission queue is a drain, not an awaitable, so they stay deferred (§10) |
 
-Landing 2 lifts `kmet.agent.event-bus` on top of `(srce/listeners ctx name opts)`:
-the `:events` service owns the five-mode wrappers and the node-scoped
-`:filter`, so the bus is a dispatcher, not a second registry. Duplicating the
-modes in the kernel would be the copy AGENTS.md forbids; moving the awaited two
-in would drag an awaitable back in. Make the lift a *replacement*: landing 2
-renames the three existing shapes to the modes they are (`emit-event!` →
-collect-last, `emit-event-collect!` → collect-all, `emit-boundary!` → boundary)
-and adds `bail` — it must not claim `emit-event!` was already a bail.
+`(srce/dispatch-modes)` is that table as a set, and it is the authority an app
+reads when it declares which mode dispatch an event wants: a declaration naming
+something outside it is a lie, so the app's guard asserts it. The **wire
+projections** (`wire-event`, `wire-error` — the EDN a headless consumer reads)
+are *not* here: they are transport, and they live with the transport that
+serializes.
 
-**Declaration lives above the kernel.** The kernel's own event names are three —
+**A registration is a record, and `:data` is where a layer puts its own.**
+`(on ctx name {:data x} f)` stores `{:f f :data x}`, `listeners` returns
+`[{:ctx c :f f :data d} …]`, `collect-all!` pairs `d` with the result, and a
+`once` registration carries its data to its one delivery. The kernel never looks
+inside `:data` — the app puts an owner (an extension path, `:loop`) there, and
+Cordis's equivalent is the `Hook` record's `ctx`/options. *Scope* needs no field
+at all: a listener hears what is emitted from the ctx it registered on and that
+ctx's subtree — the same rule as kmet1's node scoping, expressed by the tree
+instead of a stored node.
+
+**kmet1 keeps its own table until the loop lands.** Landing 2 moved the
+*vocabulary* (three fifths of `event-bus.clj`, pure data) into
+`kmet.app.events`, declared as `:events` in the `:events` plugin map and read
+from that declaration (not from a generated projection — one was tried and
+deleted: a file in the load path for data that is already in code), and gave
+kmet2 the modes over the ctx table;
+`kmet.agent.event-bus` re-exports the names and keeps its process-level table,
+its owner/scope and its three emitters. That is the landing rule
+([`new-app.md`](../../../../../new-app.md): "kmet2 uses the new mechanism, kmet1 still uses the old
+one"), and one contract test asserts the same delivery behaviors against both
+backends so the pair cannot drift. Delegating instead would have taught the
+app's bus kmet1's store-node scoping — a value that dies with the store at
+landing 4 — and the re-point belongs with the loop that is the last caller
+(landing 7).
+
+**Declaration lives above the kernel.** `:events` on a plugin is the
+declaration form: `plugin!` checks the shape (`{event {:mode :doc …}}`), the
+fiber carries it (`:events`, inspection data), two mounted plugins may re-declare
+a name only identically (a boot-time check), and the vocabulary accessors read
+the declaring namespace's own map — so nothing may dispatch through a
+projection. The kernel's own event names are three —
 `:srce/status` (fiber state transition, `{:fiber f :from s :to s}`, emitted on
 the mounting ctx), `:srce/service` (a provider installed/removed,
 `{:name n :value v}`, emitted on the providing ctx), `:srce/failure` (`apply`
 threw, `{:fiber f :error e}`) — Cordis's nine `internal/*` events collapsed to
-the three with a consumer. `event-bus/event-types` is rank 3, so it can never
+the three with a consumer. `kmet.app.events/event-types` is rank 2, so it can never
 list `:srce/*`: the kernel's vocabulary is documented here and pinned by its
 emit sites, while the app's events get the catalog. That asymmetry is the price
 of the rank cut, and it is cheaper than a rank-3 require in the kernel.
@@ -492,13 +623,15 @@ implementation detail, not a kernel contract.
 
 `defplugin` is sugar over the map: it gives the source var, `:name` metadata, a
 compile-time shape check, and the card `--dump-config` prints. A profile row
-names the **source**, not a keyword; the generated catalog is a committed
-manifest for validation and docs, not a mutable registry:
-`modules/app/src/kmet/app/plugin-catalog.edn`, written by `bb
-generate-plugins` (`kmet.tasks.plugins`) from the top-level `defplugin`
-declarations in the module sources, so `--dump-config` can render a built-in
-row's card without loading the plugin's namespace. A source missing from it
-composes anyway — the card is then read from the loaded var.
+names the **source**, not a keyword, and the card is the plugin map's own keys —
+name, `:inject`, `:provide` — read by resolving that source. There is no
+manifest of declarations beside the code: a generated projection was tried and
+deleted, because dereferencing a plugin var mounts nothing, so the only thing it
+bought was describing a row whose namespace *cannot load on this host* — and no
+profile has such a row yet. When one does (a host-gated `:ui/tk` row), the
+decision is made where the information is: either the profile row carries its
+own label (profiles are data) or `describe` learns an "unresolvable here"
+marker.
 
 **One runtime, many fibers.** `plugin!` creates a fresh fiber per call — its own
 config, ctx, effects and lifecycle — and records it on the source's runtime.
@@ -571,7 +704,7 @@ landings (counted from `(scope/…` call sites, not from the requires):
 
 | File | Sites | Go at |
 |---|---|---|
-| `agent/event_bus.clj` (`in-subtree?`) | 1 | landing 2 — the bus is lifted |
+| `agent/event_bus.clj` (`in-subtree?`) | 1 | landing 7 — kmet1's table goes when the loop re-points at `:events` (landing 2 lifted the vocabulary and gave kmet2 its own modes; see §5) |
 | `agent/registry.clj` | 5 | landing 3 — the registry is parameterized then lifted |
 | `agent/tools/registry.clj` | 4 | landing 3 |
 | `agent/commands.clj` | 2 | landing 3 |
@@ -630,8 +763,7 @@ grows a keyword or a key, not a new shape.
 | `accessor`, `mixin`, `set-service!` | `reflect.ts` | no proxy to feed; a service re-provides, which is one effect | new keys on `provide!` |
 | isolate **labels** | `ctx.isolate(name, label)` | siblings sharing one realm nest under a common isolating ctx | a label argument on `isolate` |
 | 9 `internal/*` events, `internal/listener` claiming | `events.ts` | 3 have a consumer (§5); the rest are debug/inspection plumbing with none | new names on the existing emit |
-| `bail` and `waterfall` | `events.ts` | both are walks over the resolved listener list (`srce/listeners`), so neither needs a kernel change — and `bail` needs no awaitable either. Deferred by criterion 3, not by capability. | `bail`: ~8 lines (`bail!`) in the kernel; `waterfall`: the `:events` service, whose wrapper supplies `next` |
-| `parallel` / `serial` | `events.ts` | awaited, so they need the app's awaitable — the kernel has none (§8) | the `:events` service over `srce/listeners` |
+| `parallel` / `serial` | `events.ts` | awaited, so they need the app's awaitable — the kernel has none (§8), and the app's submission queue is a drain, not an awaitable | `kmet.app.events` over `srce/listeners` once something needs them (`bail` and `waterfall` landed there: §5) |
 | Lazy config resolution, `{:schema :transform}` | `config.ts` | `apply` validates its own map; a validator fn composes | `:config` accepting a schema map |
 | Fiber lifecycle beyond 4 states (`:loading` `:unloading`, `inertia`, epoch drop-rule) | `fiber.ts` | one thread makes the race unrepresentable | states on `:state`; the epoch is the provider set |
 | `update!` (config waterfall, no-save hint) | `fiber.update` | `restart!` covers `/reload`; a vetoing waterfall is app policy | an `:update` hook on the plugin map |
@@ -730,12 +862,14 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 |---|---|---|
 | `ctx.emit` | `srce/emit!` | keep |
 | `EventsService.dispatch` (resolve + filter) | `srce/listeners` | keep |
-| `ctx.parallel` / `.serial` / `.bail` / `.waterfall` | — (`bail` is the kernel's cheapest addition; all four are the `:events` service) | deferred |
-| `ctx.on` / `.once` | `srce/on` / `srce/once` | keep |
+| `ctx.parallel` / `.serial` | — (they need an awaitable) | deferred |
+| `ctx.bail` | `srce/bail!` | keep |
+| `ctx.waterfall` | `srce/waterfall!` (`(f event next)`) | keep |
+| `ctx.on` / `.once` | `srce/on` / `srce/once` (a `once` registration keeps the listener's metadata) | keep |
 | `{prepend, global}` | — | deferred |
 | dispatch `thisArg` filter | `{:filter (fn [listener-ctx] …)}` | keep |
 | disposer returning removal status | same | keep |
-| `isBailed` | — (bus) | deferred |
+| `isBailed` | `srce/bail!` walks `(some? result)` inline; `false` bails (a Clojure value is not an absence) | keep (reduced) |
 | `AggregateError` from `parallel` | — | deferred |
 | `internal/listener` claiming a registration | — | deferred |
 | nine `internal/*` events | three `:srce/*` names | keep (reduced) |
@@ -746,6 +880,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 |---|---|---|
 | `class Service` + constructor registration | — | deferred |
 | `[Service.check]` | `{:check fn}` on `provide!` | keep |
+| service registered in a realm's store, seen by siblings | `{:in ancestor}` on `provide!` (the entry lands in that store, the lifetime stays the provider's fiber) | keep |
 | `[Service.filter]` (realm comparison) | the realm walk in `get` / the refresh pass | keep (internal) |
 | `[Service.invoke]` (callable) | — | deferred |
 | `[Service.extend]` | — | deferred |
@@ -758,7 +893,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 
 ## 12. Gates
 
-- 41 contract tests (164 assertions) — one per bullet in §2–§8 that can fail,
+- 48 contract tests (178 assertions) — one per bullet in §2–§8 that can fail,
   one per `keep` row of §11, table-driven where the rows are uniform. The behaviors: realm
   resolution and the boundary, including two **siblings** under one realm
   providing the same name (nearest visible wins, no throw — §3); duplicate
@@ -772,9 +907,15 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
   disposer**; `restart!` replaces the uid and is the retry for a failed fiber;
   `dispose-plugin!` ends every fiber and drops the runtime; `:failed` on a
   throwing `apply` unwinds the effects it registered and frees the names it
-  provided, with dependents `:pending`; listener order, `once`, `:filter`, a
-  throwing listener, and `listeners` returning the resolved list the `:events`
-  service walks; `inside?`; `log!` with no `:logger`; the fiber record's
+  provided, with dependents `:pending`; `{:in ancestor}` providing into a
+  scope the fiber does not own, visible to a sibling and gone with the fiber;
+  listener order, `once`, `:filter`, a throwing listener, `{:data}` riding a
+  registration and reported by `collect-all!` (including through `once`),
+  `dispatch-modes` naming exactly the modes with a fn behind them, `bail!`
+  short-circuiting, `waterfall!` wrapping and vetoing, a throwing
+  listener reading as nil in every mode, `event-names` over the chain, and
+  `listeners` returning the resolved list every mode walks; `inside?`; `log!`
+  with no `:logger`; the fiber record's
   `:inject`/`:provides`/`:waiting-for` matching the store after a mount, a
   provide and a dispose; the pass flag — two threads entering `provide!` at
   once run one pass owner, both changes land, and `settle!` returning with no
@@ -796,7 +937,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 | `get` on a name provided by a non-active fiber | nil, one `get`, no `strict` flag |
 | `(:tools ctx)` through `ILookup` | not ported. `srce/get` is explicit; destructuring and `contains?` stay honest about nil |
 | One provider per name: realm-level or visibility-level | visibility (per ctx store + the walk). A realm-level store is Cordis's shape: it needs a realm-key symbol table (the labels §10 defers) and makes a sibling provider throw mid-tree. Two siblings may provide the same name — `isolate` is how a subtree gets its own |
-| `bail` in the kernel or in the `:events` service | the service, for now — it is additive (§10 criterion 3). If a landing needs an in-kernel veto, `bail!` is ~8 lines; nothing else moves |
+| `bail` in the kernel or in the app | settled at landing 2: **the kernel**, and `collect-last`/`collect-all`/`boundary` with it. With `{:data …}` on a registration no mode needs an app concept (the owner is opaque kernel data), so all six folds sit with the table they walk — Cordis's cut. The app keeps the vocabulary and the owner value |
 | Whether the thread rule needs an assertion in the kernel | no — a portable thread identity does not exist on all three hosts; the app's guard test asserts the submission instead. §8 distinguishes append-only mutations (late-safe) from ones that run plugin code |
 | `:config` validator: fn, or a schema map | fn. malli compiles to a fn; the profile layer composes. It runs per mount, raw config in, resolved config out |
 | `:name` on a plugin: keyword or symbol | keyword, with the var path as `:source`. Required — there is no fn name to fall back to |
@@ -830,12 +971,12 @@ the numbers the "light" claim rests on.
 | namespace | lines | what it owns |
 |---|---|---|
 | `ctx.clj` | 240 | ctx tree, store, isolate, `get`/`services`, the effect list, `log!` |
-| `event.clj` | 58 | listener table, `listeners`, `on`/`once`, `emit!` |
+| `event.clj` | 170 | listener table, `listeners`, `on`/`once`, `names`, `invoke!`, and the six modes `emit!`/`bail!`/`waterfall!`/`collect-last!`/`collect-all!`/`boundary!` |
 | `fiber.clj` | 474 | inject, the refresh pass, mount/unmount, dispose axes, runtimes |
-| `srce.clj` | 161 | the public aliases and `defplugin` |
+| `core.clj` | 161 | the public aliases and `defplugin` |
 
 `ctx.clj` requires no sibling; `event.clj` requires `ctx`, `fiber.clj` requires
-both, `kmet.srce` aliases the three. The effect primitive lives in `ctx.clj`,
+both, `kmet.srce.core` aliases the three. The effect primitive lives in `ctx.clj`,
 not `fiber.clj`, because a plugin mount registers listeners (`event` → `effect`)
 and a listener must be reversible: with `effect` in `fiber`, those three form a
 require cycle.
@@ -905,7 +1046,8 @@ require cycle.
 ```
 
 - A **listener** is `(fn [event])`; the listener's own ctx is visible only to
-  the `:filter`, which is what keeps the table one shape for all five modes.
+  the `:filter`, which is what keeps the table one shape for every mode but
+  `waterfall` (`(f event next)`, where the extra argument is the mechanism).
 - **`:srce/*` keywords are explicit** (`:srce/inactive-effect`,
   `:srce/duplicate-service`, `:srce/bad-plugin`, `:srce/bad-inject`,
   `:srce/bad-source`, `:srce/churn`) — a public error keyword should not move
@@ -923,4 +1065,4 @@ require cycle.
   single-shot flag, the change-set drain), no Java interop, no awaitable, no
   clock, no queue.
 - **Not built**: a `:root` pointer, a `:disposing` state, a realm-key table,
-  `bail!`, a schema library, a logger, HMR. Each is a §10 row, not an omission.
+  a schema library, a logger, HMR. Each is a §10 row, not an omission.

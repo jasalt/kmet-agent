@@ -153,8 +153,9 @@
   (let [table (profile/builtin)]
     (is (= #{:tui :print :rpc :server} (set (keys (:profiles table)))))
     (is (contains? (:bundles table) :bundle/minimal))
-    (is (= {:rows [] :patches 0} (profile/compose (profile/layers table :rpc)))
-        "landing 1's profiles compose to no rows yet")))
+    (is (= [{:id :events :plugin 'kmet.app.events/plugin}]
+           (:rows (profile/compose (profile/layers table :rpc))))
+        "the bundle carries the rows the landed plugins add, for every profile")))
 
 (deftest render-prints-the-composition
   (let [text (profile/render :tui

@@ -55,9 +55,24 @@
     :else (throw (ex-info (str "invalid plugin source: " (pr-str source))
                           {:type :srce/bad-source :source source}))))
 
+(defn- event-problems
+  "The shape problems of PLUGIN's `:events` declaration, or nil."
+  [plugin]
+  (let [events (:events plugin)]
+    (cond
+      (nil? events) nil
+      (not (map? events)) [:events]
+      :else (some (fn [[event spec]]
+                    (when-not (and (keyword? event)
+                                   (map? spec)
+                                   (keyword? (:mode spec))
+                                   (string? (:doc spec)))
+                      [:events event]))
+                  events))))
+
 (defn plugin-problems
   "The shape problems of PLUGIN as a vector (empty when valid). The bad :inject
-   problems are included, so `plugin!` reports one map-level error."
+   and :events problems are included, so `plugin!` reports one map-level error."
   [plugin]
   (if-not (map? plugin)
     [:map]
@@ -67,18 +82,19 @@
                             (catch Throwable t
                               (if (= :srce/bad-inject (:type (ex-data t)))
                                 (vec (:problems (ex-data t)))
-                                (throw t))))]
-      (cond-> []
-        (not (keyword? (:name plugin))) (conj :name)
-        (not (fn? (:apply plugin))) (conj :apply)
-        (not (or (nil? (:inject plugin))
-                 (map? (:inject plugin))
-                 (sequential? (:inject plugin)))) (conj :inject)
-        (seq inject-problems) (into inject-problems)
-        (not (or (nil? (:config plugin)) (fn? (:config plugin)))) (conj :config)
-        (not (or (nil? (:provide plugin))
-                 (set? (:provide plugin))
-                 (sequential? (:provide plugin)))) (conj :provide)))))
+                                (throw t))))
+          shape (cond-> []
+                  (not (keyword? (:name plugin))) (conj :name)
+                  (not (fn? (:apply plugin))) (conj :apply)
+                  (not (or (nil? (:inject plugin))
+                           (map? (:inject plugin))
+                           (sequential? (:inject plugin)))) (conj :inject)
+                  (not (or (nil? (:config plugin)) (fn? (:config plugin)))) (conj :config)
+                  (not (or (nil? (:provide plugin))
+                           (set? (:provide plugin))
+                           (sequential? (:provide plugin)))) (conj :provide))]
+      (into (into shape inject-problems)
+            (or (event-problems plugin) [])))))
 
 (defn validate-plugin!
   "Throw :srce/bad-plugin with :problems unless PLUGIN is a valid plugin map.
@@ -334,30 +350,34 @@
 ;; ── services ──────────────────────────────────────────────────────────────
 
 (defn provide!
-  "Register VALUE as NAME for the current ctx's realm. Throws
-   :srce/duplicate-service when the name is already held on the way up (an
-   entry held by a non-active fiber still occupies its name). Returns a
-   single-shot disposer."
+  "Register VALUE as NAME in CTX's scope: CTX's own store, or the store of
+   `(:in opts)` — an ancestor, which is how a plugin mounted at the root
+   shares a service with its siblings while the provider's lifetime stays the
+   plugin's fiber (the entry is an effect of CTX, and the record names CTX's
+   fiber). Throws :srce/duplicate-service when the name is already held on the
+   way up from the target scope (an entry held by a non-active fiber still
+   occupies its name). Returns a single-shot disposer."
   ([ctx name value]
    (provide! ctx name value nil))
   ([ctx name value opts]
-   (let [fiber (:fiber ctx)]
+   (let [fiber (:fiber ctx)
+         target (or (:in opts) ctx)]
      (ctx/assert-active! fiber)
-     (when (ctx/provider ctx name)
+     (when (ctx/provider target name)
        (throw (ex-info (str "service " name " is already provided in this realm path")
                        {:type :srce/duplicate-service :name name})))
      (ctx/effect ctx
                  (fn []
-                   (swap! (:store ctx) assoc name {:name name
-                                                   :fiber fiber
-                                                   :value value
-                                                   :check (:check opts)})
+                   (swap! (:store target) assoc name {:name name
+                                                      :fiber fiber
+                                                      :value value
+                                                      :check (:check opts)})
                    (swap! fiber update :provides conj name)
                    (ctx/record-change! ctx [name])
                    (event/emit! ctx :srce/service {:name name :value value})
                    (poke! ctx)
                    (fn []
-                     (swap! (:store ctx) dissoc name)
+                     (swap! (:store target) dissoc name)
                      (swap! fiber update :provides disj name)
                      (ctx/record-change! ctx [name])
                      (event/emit! ctx :srce/service {:name name :value nil})
@@ -387,6 +407,7 @@
                          :plugin plugin
                          :config config
                          :inject (normalize-inject (:inject plugin))
+                         :events (:events plugin)
                          :provides #{}
                          :epoch ::none
                          :waiting-for #{}

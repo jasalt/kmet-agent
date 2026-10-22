@@ -112,9 +112,6 @@
                                      (require 'kmet.app.core)
                                      (println "All source namespaces compile successfully.")))
            :override-builtin true}
-  generate-plugins {:doc "Regenerate the committed plugin catalog (modules/app/src/kmet/app/plugin-catalog.edn)\n\nScans the module sources for srce/defplugin declarations and rewrites the file kmet.app.catalog reads for --dump-config; offline, so no network."
-                    :requires ([kmet.tasks.plugins :as plugins])
-                    :task (help/with-help (plugins/-main))}
   generate-models {:doc "Regenerate the committed provider + image model catalogs (network)\n\nProvider catalogs come from models.dev + the live sources; the image catalog from OpenRouter. Either failure exits 1."
                    :requires ([kmet.tasks.generate-models :as gen-models])
                    :task (help/with-help (gen-models/-main))}

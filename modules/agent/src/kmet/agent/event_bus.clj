@@ -14,352 +14,49 @@
    engine owns, copies or clears it (scope.md §6). A subscription may
    carry a scope — the node it listens to — so a listener in a child tree
    hears its own subtree's events and a sibling's listeners do not (scope.md
-   §6)."
+   §6).
+
+   The **vocabulary is the app's**: kmet.app.events holds `event-types` (and
+   the wire projections), so kmet1 and kmet2 declare one set of names while
+   each keeps its own delivery mechanism for the length of the migration
+   (new-app.md, landings 2 and 7). This namespace re-exports the names and the
+   wire projections (`wire-event`, `wire-error` — transport, which belongs with
+   the transport that serializes, not with the bus), so every kmet1 call site is
+   unchanged, and holds kmet1's process-level table with its owner and scope —
+   the mechanism kmet2's `:events` service replaces by the ctx tree."
   (:require [kmet.agent.debug :as debug]
+            [kmet.app.events :as events]
             [kmet.libs.scope :as scope]))
 
+;; ── the vocabulary (kmet.app.events) ──────────────────────────────────────
+;; Re-exports, not copies: the names, their documentation and the wire
+;; projections have one home, and the contract test over both delivery paths
+;; (kmet.app.events and this file) asserts the same behaviors on each.
+
 (def event-types
-  "Map of event type keyword → description. The canonical vocabulary.
-   Every listed event is emitted by the loop, the interactive mode, or the
-   app — see each entry's description for the emitting path."
-  {:agent-start
-   "Fired at the start of each attempt: once per user submission, and once
-    more for every auto-retry, overflow-recovery, or agent-end-queued
-    attempt (pi: agent_start, emitted by agent.prompt and by every
-    agent.continue)."
-
-   :agent-end
-   "Fired when an attempt finishes (success or error) — one per attempt
-    (pi: agent_end). Payload: :messages (the messages added during this
-    attempt, accumulated as they are appended — pi: newMessages — so a
-    mid-run context replacement does not shrink the list, and an aborted or
-    errored attempt is included), :error (optional), :will-retry (true when
-    this attempt's transient error will be retried; pi: willRetry, added for
-    public listeners only — extensions never see the key). A handler that
-    queues a message here (steer! / follow-up!) starts a fresh attempt in
-    the same prompt, with the queued messages as its starting context (pi:
-    _handlePostAgentRun's hasQueuedMessages → agent.continue); messages
-    queued by :agent-settled handlers stay queued for the next submission."
-
-   :turn-start
-   "Fired before each LLM call.
-    Payload: :turn-index."
-
-   :turn-end
-   "Actionable: fired after a turn completes — the LLM call plus any tool
-    execution — including a response that errored or was aborted, where it
-    precedes :agent-end (pi: turn_end, emitted by the loop's finishTurn
-    call). Payload: :turn-index, :message, :tool-results, :outcome
-    (:completed | :error | :aborted), :message-entry-id (the persisted
-    session entry the turn's assistant message became; nil without a
-    session) and :tool-result-entry-ids (the turn's tool results' entry ids,
-    in call order — pi: _dispatchTurnEndBoundary's messageEntryId /
-    toolResultEntryIds), plus the boundary state: :context-entries /
-    :context-messages / :llm-messages (the session projection, so a handler
-    can read the transcript or pick an edit target without touching the
-    session — pi: BoundaryContextPreview; :llm-messages is the
-    provider-agnostic part of pi's convertToLlm), :pending-messages (the
-    queued batches the next attempt would start
-    from, plus custom messages deferred while streaming — pi:
-    _getPendingBoundaryMessages), :can-continue, :entries [] and :continue
-    false. Handlers may
-    return {:entries [entry ...] :continue bool} (pi: emitBoundary): entries
-    are session entry maps appended in order (pi: SessionBoundaryDraft — a
-    :custom-message entry also enters the context; a :context-edit entry
-    {:role :context-edit :target-id id :replacement nil | {:content ...}}
-    omits or rewrites that earlier message in the projection and rebuilds
-    the live context — pi: appendContextEdit + _refreshFinalizedContext).
-    :continue asks for one more request, honored once the entries are
-    committed when the context can back it, and reported then dropped
-    otherwise (:can-continue is that check as the boundary stood). Each
-    handler sees the previous handlers' :entries/:continue merged in, as pi
-    does."
-
-   :message-start
-   "Fired when a message is added to the context, or when assistant
-    streaming begins.
-    Payload: :message."
-
-   :message-update
-   "Fired for each streaming delta (assistant only).
-    Payload: :message (partial), :delta
-    {:type :text | :thinking | :tool-call ...}."
-
-   :message-end
-   "Fired when an assistant message is finalized — added to context on
-    success, or recorded in the session history only when the LLM call
-    failed or was aborted (:stop-reason :error with :error-message, or
-    :aborted; pi: message_end for a stopReason-error/aborted partial that
-    _prepareRetry then drops from state). Payload: :message."
-
-   :tool-execution-start
-   "Fired when a tool execution begins.
-    Payload: :tool-call-id, :tool-name, :args."
-
-   :tool-execution-update
-   "Fired when a streaming tool emits partial output (e.g. bash live output).
-    Payload: :tool-call-id, :content, :is-partial."
-
-   :tool-execution-end
-   "Fired when a tool execution completes.
-    Payload: :tool-call-id, :tool-name, :args, :result, :is-error."
-
-   :status
-   "UI status change.
-    Payload: :status (:idle :thinking :executing :error)."
-
-   :error
-   "Unhandled error inside the agent loop.
-    Payload: :message."
-
-   :loop-guard
-   "Repeat-loop circuit breaker tripped: the model kept issuing identical
-    tool calls (or repeating its reasoning), so the run was stopped early
-    to avoid burning tokens on a dead end (kmet-specific — no pi
-    counterpart). Payload: :reason (:tool-calls | :thinking),
-    :details (human-readable explanation)."
-
-   ;; ─── App-level events (emitted by the interactive mode, not the loop) ──
-   :session-start
-   "Fired once after the interactive TUI is built and the extension UI
-    registry is live, before the render loop starts (pi: session_start).
-    Payload: :reason (:startup | :reload | :new | :resume | :fork),
-    :previous-session-file (optional). Extensions use this to set up
-    widgets, statuses, footers, and custom editors."
-
-   :session-shutdown
-   "Fired before the extension runtime is torn down — quit, reload, or
-    session replacement (pi: session_shutdown, emitted by teardownCurrent /
-    session.reload BEFORE the extensions are unloaded, so handlers can
-    persist state while still alive). Payload: :reason (:reload | :new |
-    :resume | :fork | :quit), :target-session-file (optional; the
-    destination session on replacement). Extensions restore their state on
-    the following :session-start."
-
-   :user-bash
-   "Fired when the user runs a bash command (!/!!).
-    Payload: :command, :exclude-from-context?, :cwd."
-
-   :session-before-tree
-   "Fired before a session-tree navigation branches (pi: session_before_tree).
-    Payload: :preparation {:target-id :old-leaf-id :common-ancestor-id
-    :entries-to-summarize :user-wants-summary :custom-instructions
-    :replace-instructions :label}, :signal (abort atom). Handlers may return
-    a map: {:cancel true} aborts the navigation, {:summary str :details …}
-    (when :user-wants-summary) supplies the branch summary, and
-    :custom-instructions/:label override the inputs."
-
-   :session-before-switch
-   "Actionable: fired before /new or /resume replaces the active session
-    (pi: emitBeforeSwitch). Payload: :reason (:new | :resume),
-    :target-session-file (optional; the destination path, or the outgoing
-    file for :new). Handlers may return {:cancel true} to abort the switch
-    — the session stays untouched."
-
-   :session-before-fork
-   "Actionable: fired before forking or cloning at a message (pi:
-    session_before_fork). Payload: :entry-id, :position (:at). Handlers may
-    return {:cancel true} to abort the fork."
-
-   :session-tree
-   "Fired after a session-tree navigation branched (pi: session_tree).
-    Payload: :new-leaf-id, :old-leaf-id, :summary-entry (optional),
-    :from-extension? (when the summary came from an extension)."
-
-   ;; ─── Queue events (emitted by loop.clj) ──────────────────────────────
-   :queue-update
-   "Fired when steering/follow-up queues change: a message queued (steer! /
-    follow-up!), drained into a turn, or dropped. Payload: :steering,
-    :follow-up — the complete current queues; :reason :aborted when
-    cancel-turn dropped pending messages, so a headless consumer can tell a
-    drop from a drain that delivered the same (empty) queues."
-
-   :model-select
-   "Model was changed (pi: model_select).
-    Payload: :model, :previous-model (resolved Model records; :previous-model
-    nil when the previous model is not registered), :source (:set | :cycle)."
-
-   :thinking-level-select
-   "Thinking level changed (pi: thinking_level_select, emitted by
-    kmet.agent.loop.state/set-thinking-level! on an actual change).
-    Payload: :level, :previous-level."
-
-   :session-info-changed
-   "Session display name changed (pi: session_info_changed, emitted by the
-    /name command).
-    Payload: :session-file, :name."
-
-   :context-replaced
-   "Fired when the conversation context is replaced: prepareNextTurn's
-    :context update, or a compaction (auto or manual) rebuilding the context
-    from the compacted session (pi: compaction_end re-renders the chat).
-    Payload: :messages — the new conversation messages."
-
-   :auto-retry-start
-   "Fired before a retry attempt's backoff sleep when a transient LLM error
-    is detected (pi: auto_retry_start).
-    Payload: :attempt, :max-attempts, :delay-ms, :error-message."
-
-   :auto-retry-end
-   "Fired when retries finish — success, exhausted, or cancelled.
-    Payload: :success, :attempt, :final-error (on failure)."
-
-   :summarization-retry-scheduled
-   "Fired before a summarization retry's backoff sleep — a compaction or
-    branch-summary call failed with a transient error (pi:
-    summarization_retry_scheduled; drives the UI's retry countdown).
-    Payload: :attempt, :max-attempts, :delay-ms, :error-message."
-
-   :summarization-retry-attempt-start
-   "Fired after a summarization retry's backoff, before the retried call
-    (pi: summarization_retry_attempt_start). Payload: :source
-    (:compaction | :branch-summary) and, for a compaction, :reason."
-
-   :summarization-retry-finished
-   "Fired once when a summarization retry loop ends — the retried call
-    succeeded, failed terminally, or the backoff was aborted (pi:
-    summarization_retry_finished). No payload."
-
-   :session-before-compact
-   "Actionable: fired before context compaction — manual, threshold, or
-    overflow (pi: session_before_compact). Payload: :preparation (the
-    projection-aware CompactionPreparation: :messages, :tokens-before,
-    :settings), :branch-entries, :custom-instructions, :reason
-    (:manual | :threshold | :overflow), :will-retry (true for overflow
-    recovery), :signal (the run's abort atom). Handlers may return
-    {:cancel true} to skip the compaction, or {:compaction {:summary ..
-    :first-kept-id .. :tokens-before .. :usage .. :details ..}} to supply
-    the content instead of the summarizer (pi:
-    SessionBeforeCompactResult) — the entry then records :from-hook and the
-    compaction events carry :from-extension."
-
-   :compaction-start
-   "Fired before session compaction begins (pi: compaction_start).
-    Payload: :reason (:manual | :threshold | :overflow | :auto)."
-
-   :compaction-end
-   "Fired when compaction finishes (pi: compaction_end).
-    Payload: :reason, :result (the compaction result map — pi:
-    CompactionResult, kmet keys: :summary, :first-kept-id, :tokens-before,
-    :estimated-tokens-after, :usage, :details — or nil when the compaction
-    failed or was cancelled), :aborted
-    (true when the user cancelled mid-compaction — session untouched),
-    :from-extension (true when the summary came from a
-    :session-before-compact handler's :compaction result), :error-message
-    (set when the summarization call failed — pi:
-    `Compaction failed: …` manual, `Auto-compaction failed: …` threshold,
-    `Context overflow recovery failed: …` overflow, each carrying the
-    summarization failure's cause), :will-retry
-    (true for a successful overflow compaction — the interrupted turn
-    retries; pi: compaction_end willRetry)."
-
-   :session-compact
-   "Fired after a successful compaction, carrying the appended entry (pi:
-    session_compact). Payload: :compaction-entry (the :role :compaction
-    session entry), :from-extension (true when a :session-before-compact
-    handler supplied the summary — pi: fromExtension), :reason,
-    :will-retry (true for overflow recovery)."
-
-   :session-compact-failed
-   "Fired after context compaction fails or is aborted (pi:
-    session_compact_failed). Payload: :reason (:manual | :threshold |
-    :overflow), :error-message (when a non-abort failure — same text as
-    :compaction-end), :aborted, :from-extension, :will-retry (false — a
-    failed compaction never retries the turn; pi:
-    _emitSessionCompactFailed)."
-
-   :agent-before-settle
-   "Actionable: fired once before the prompt settles, after the queued-message
-    continuation check, and before :agent-settled (pi: agent_before_settle,
-    emitted by _runBeforeSettleBoundary). Payload: :outcome — the last turn's
-    outcome (:completed | :error | :aborted) — plus the boundary state:
-    :context-entries / :context-messages / :llm-messages (the session
-    projection — pi: BoundaryContextPreview), :pending-messages (see
-    :turn-end), :can-continue, :entries [] and :continue false.
-    Handlers return {:entries [...] :continue bool} as for :turn-end; one
-    that merely queues a message also runs one more attempt before the
-    prompt settles (pi: shouldContinue includes hasQueuedMessages). A
-    cancelled prompt never reaches this event."
-
-   :agent-settled
-   "Fired when the prompt is fully settled — after the last attempt's
-    :agent-end, once per prompt, after any retries, overflow recovery,
-    post-run compaction, error, timeout, or cancel. The agent is idle and no
-    further events for this prompt will be emitted (pi: agent_settled,
-    emitted from a finally block after the whole prompt loop). Payload:
-    :outcome (:completed | :error | :aborted — :aborted when the run's
-    cancel signal fired; a prompt that cannot start, e.g. no configured
-    auth, also settles, with :error)."
-
-   ;; ─── Provider events (pi: context / context_with_system /
-   ;; ─── before_provider_request / before_provider_headers /
-   ;; ─── after_provider_response) ──────────────────────────────────────────
-   :context
-   "Fired before each LLM call with the conversation the request would send,
-    without the system prompt (pi: context — emitContext). Payload: :messages.
-    Handlers may return {:messages [...]} to replace the conversation; the
-    leading system message is re-attached, so a handler cannot drop the prompt
-    (pi: restoreSystemMessages). The last non-nil result wins (pi chains
-    handler results; kmet's bus keeps the last)."
-
-   :context-with-system
-   "Fired after :context with the full transcript — system prompt included — and
-    the result is sent verbatim (pi: context_with_system). Payload: :messages.
-    Handlers may return {:messages [...]}; a result that drops the leading
-    system message is reported as an extension error and honored, as pi does.
-    The last non-nil result wins."
-
-   :before-provider-request
-   "Fired with the assembled request payload before the provider HTTP call
-    (pi: before_provider_request). Payload: :payload. The last non-nil
-    handler result replaces the payload."
-
-   :before-provider-headers
-   "Fired with the final request headers before the provider HTTP call (pi:
-    before_provider_headers — handlers mutate the map in place there; kmet's
-    maps are immutable, so handlers RETURN the replacement map and a nil
-    header value deletes that header). Payload: :headers. The last non-nil
-    map result replaces the headers."
-
-   :after-provider-response
-   "Fired after the provider response is received, before its body is
-    consumed (pi: after_provider_response). Payload: :status, :headers."
-
-   :resources-discover
-   "Fired after :session-start to collect extension-contributed resource
-    paths (pi: resources_discover — fired after session_start). Payload:
-    :cwd, :reason (:startup | :reload). Handlers return
-    {:skill-paths [...] :prompt-paths [...] :theme-paths [...]} (paths are
-    directories); ALL handler results are collected, not reduced
-    (emit-event-collect!)."})
+  "Map of event type keyword → description. The canonical vocabulary (see
+   kmet.app.events/event-types)."
+  events/event-types)
 
 (def app-event-types
-  "Event types emitted outside the agent loop's emit/:on-event path — the
-   interactive mode, extensions, and the provider-event bridges — routed
-   straight to the event bus (emit-event!), never through the loop's
-   :on-event UI callback. The UI handler only needs to consume
-   loop-event-types."
-  #{:session-start
-    :session-shutdown
-    :user-bash
-    :session-before-tree
-    :session-before-switch
-    :session-before-fork
-    :session-tree
-    :session-info-changed
-    :resources-discover
-    ;; provider events (fired by the ai layer's hook bridges, not the loop)
-    :context
-    :context-with-system
-    :before-provider-request
-    :before-provider-headers
-    :after-provider-response})
+  "Event types emitted outside the agent loop's emit path (see
+   kmet.app.events/app-event-types)."
+  events/app-event-types)
 
 (def loop-event-types
-  "The subset of event-types emitted by the agent loop (kmet.agent.loop.state/emit —
-   routed to the UI :on-event callback and the extension bus). The UI event
-   handler must consume every one of these."
-  (apply dissoc event-types app-event-types))
+  "The subset of event-types the agent loop emits (see
+   kmet.app.events/loop-event-types)."
+  events/loop-event-types)
+
+(def known-event-type?
+  "True if the keyword is part of the documented vocabulary."
+  events/known-event-type?)
+
+;; ── the wire projections ──────────────────────────────────────────────────
+;; Transport, not the bus: they belong with the consumer that serializes
+;; (kmet1's print and RPC modes here; kmet.mode.print/kmet.mode.rpc once the
+;; app's transports land — new-app.md, landing 5). Landing 2 lifted the vocabulary
+;; and the modes, not these.
 
 (defn wire-error
   "An event's error payload as plain data: a Throwable becomes its message
@@ -392,11 +89,6 @@
     :error (update-error-slot event :message)
     :auto-retry-end (update-error-slot event :final-error)
     event))
-
-(defn known-event-type?
-  "True if the keyword is part of the documented vocabulary."
-  [type]
-  (contains? event-types type))
 
 ;; ─── Extension event bus ──────────────────────────────────────────────────
 ;; The process listener registry. Extensions register callbacks with

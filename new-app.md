@@ -137,7 +137,7 @@ mounts) are in [`srce.md`](modules/srce/src/kmet/srce/srce.md).
 | Approvals | `:permissions` policy + `tools/pre-execute` waterfall + one `:approvals` delivery seam. |
 | Execution seams | `:workspace`/`:fs`/`:shell`/`:subprocess`/`:sandbox`/`:permissions`, not one `:bash` bundle. |
 | Profiles / HMR | Profiles stack bundles and patch by row id; HMR is a loader/profile feature, not the kernel. |
-| Plugin sources | Explicit sources in rows; the generated catalog is for validation and docs only. |
+| Plugin sources | Explicit sources in rows; a row's card is read from the plugin map, never from a manifest beside it. |
 
 Adopted from the start, because landings 4–6 cannot compose agents without
 them: `:systemPrompt` (per-agent sections are what `setup` registers, and a
@@ -585,10 +585,12 @@ data, lifts as-is), and the mechanism is one atom plus the three emitters
 **bus → registry → tools → commands/prompts/skills → session → extension
 host → loop → modes/UI.** Each step produces what the next consumes:
 
-- the bus is one atom whose subscriptions carry an owner and a scope but no
-  disposal ownership, and `emit-event!` keeps its signature, so kmet1 cannot
-  notice; it also unblocks the rest, because `srce/on` is how a plugin
-  registers anything;
+- the bus is one listener table plus the strategies and protocols over it; it
+  unblocks the rest, because `srce/on` is how a plugin registers anything and
+  `:events` is the first service the composition provides (landing 2: the
+  vocabulary and the result protocols are `kmet.app.events`, the table and the
+  three dispatch strategies are the kernel's, and kmet1's copy re-exports the
+  names until the loop re-points);
 - `registry` (78 lines) decides the ctx-addressed lookup shape for all four
   registries at once;
 - `tools` is the first real service, and its shape is copied by the next three
@@ -780,14 +782,97 @@ Each is independently shippable and gated.
 
 | # | Landing | Ships |
 |---|---|---|
-| 0 | **landed** (`9c0b70ed`) — `modules/srce`: the light kernel — `ctx`/`fiber`/`event` behind the public `srce` | the contract + guard tests ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §12, 41 + 3 tests); no `kmet.agent.*` require, no `kmet.libs.scope` require |
-| 1 | **landed** (`367efd49`) — module wiring + guards (module-based require, no-global-node), `--app new` dispatch (bootstrap split: `kmet.agent.core` + `kmet.agent.cli`) + `check` requiring both entries, the generated plugin catalog, `--dump-config` over the composed rows | `kmet.test-module-deps` / `test-modules-manifest` green; each guard fails on a deliberate violation |
-| 2 | the bus: listener table into the runtime; `emit-event!` keeps its signature; **the submission point** — `settle!` at the boundary and one submit fn for cross-thread mutations | contract test over both delivery paths; a hook registered from a tool thread lands at the boundary; kmet1 green |
+| 0 | **landed** (`9c0b70ed`) — `modules/srce`: the light kernel — `ctx`/`fiber`/`event` behind the public `srce` | the contract + guard tests ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §12, 44 + 3 tests); no `kmet.agent.*` require, no `kmet.libs.scope` require |
+| 1 | **landed** (`367efd49`) — module wiring + guards (module-based require, no-global-node), `--app new` dispatch (bootstrap split: `kmet.agent.core` + `kmet.agent.cli`) + `check` requiring both entries, `--dump-config` over the composed rows | `kmet.test-module-deps` / `test-modules-manifest` green; each guard fails on a deliberate violation |
+| 2 | **landed** — the bus: the six non-awaiting dispatch modes (`emit!`, `bail!`, `waterfall!`, `collect-last!`, `collect-all!`, `boundary!`) over the kernel's listener table, with `:data` on a registration and `{:in scope}` on `provide!`; `kmet.app.events` keeps the vocabulary (declared in the `:events` plugin's `:events` map), the owner, and the `:events` service; **the submission point** — `kmet.app.runtime`: `submit!` from any thread, `boundary!` drains and settles, `boot` mounts the composed rows | one contract test over both delivery paths (kmet1's bus and the app's) and 62 assertions; a hook registered from another thread lands at the boundary; kmet1 green |
 | 3 | `registry` parameterized then lifted; `:tools` service; commands/prompts/skills re-pointed | contract tests over both backends (installation is `provide!`, mutation is a handle method — no re-provide); kmet1 green |
 | 4 | `Engine` → `:agents` (+ `:permissions` policy/request!/remember!) and `:sessions` + `:sessionPersistence`; the extension host + ABI moved into `app` (key-set contract test); `extension.edn :inject` + `grep-tool` ported as a plugin; the remaining `runtime/node` reads; the globals re-hosted; `session/core.clj`'s lock moved onto a `kmet.libs.concurrent` primitive; **`/units` re-rendered from the tree** (`kmet.app.inspect`, store section deleted) | kmet2 runs `mode-print`; a shipped directory extension and `grep-tool` green; `/units` shows a `:pending` fiber with its `waiting-for`; kmet1 untouched |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` registry (create/resume/list) + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
 | 7 | loop re-hosted as a driver plugin; profiles as row+patch layers; presets = bundles | pi-alignment green; a tool swaps mid-session at the turn boundary (`:agent-settled`); a profile stacking a preset bundle boots |
+
+### Landing 2 settled
+
+- **The vocabulary moved, the mechanism did not (yet).** `event-types`,
+  `app-event-types`, `loop-event-types` and the two wire projections
+  (`wire-event`, `wire-error`) are now `kmet.app.events`' — three fifths of
+  `event-bus.clj`, pure data — and `kmet.agent.event-bus` re-exports them, so
+  every kmet1 call site and test is unchanged. kmet1 keeps its process-level
+  table, its owner/scope and its three emitters until the loop re-points
+  (landing 7): that is the landing rule ("kmet2 uses the new mechanism, kmet1
+  still uses the old one"), and delegating now would have taught the app's bus
+  kmet1's store-node scoping — a value that dies with the store at landing 4.
+  A contract test runs one set of delivery assertions against both backends, so
+  the pair cannot drift while both exist.
+- **All six non-awaiting modes are the kernel's, and they are the same shape.**
+  `emit!` (nobody's answer), `bail!` (the first non-nil, short-circuiting),
+  `waterfall!` (`(f event next)`; not calling `next` vetoes), `collect-last!`
+  (the last non-nil), `collect-all!` (every non-nil result as `[data result]`)
+  and `boundary!` (each listener sees the accumulated map merged into its event
+  and returns the keys to replace). They live in `srce` because after
+  `{:data …}` on a registration none of them needs an app concept: the owner a
+  caller attaches is *opaque kernel data*, and the merge protocol is data
+  handling. What stays above is the vocabulary and the owner *value* — a kernel
+  may not name an app event — plus the one exception rule's home
+  (`srce/invoke!`, which every mode calls) and `names`.
+  `parallel`/`serial` stay deferred: they need an awaitable the kernel does not
+  have, and the submission queue is a drain, not an awaitable.
+- **The registration is the record; there is no side table.** `on` takes
+  `{:data …}`, the table stores `{:f :data}`, and `listeners` hands back
+  `{:ctx :f :data}` — so `collect-all!` reports a contribution beside the data
+  its registration attached, `once` carries it to its one delivery, and kmet1's
+  `[owner result]` shape is that pair with the owner as the data. Scope needs no
+  field at all: a listener hears emits from the ctx it registered on and that
+  ctx's subtree — kmet1's node rule expressed by the tree instead of a stored
+  node.
+- **A plugin declares its own events, and the declaration is what is read.**
+  `defplugin` grew `:events` (`{event {:mode :doc :domain}}`); `plugin!` checks
+  the shape and puts it on the fiber record, so a mounted plugin's declarations
+  are inspection data, a name re-declared by two mounted plugins must agree, and
+  `kmet.app.events` derives `event-types`/`app-event-types`/`loop-event-types`/
+  `event-modes` from the **declaration in code** — no projection in the path, and
+  nothing to go stale. That is the harness's per-package declaration
+  (`declare module … interface Events`) with kmet's declaration form.
+  No projected catalog is in the path (landing 1's generated file was deleted;
+  a row's card comes from its plugin map, and `--dump-config` resolves the
+  sources it prints). The **wire projections** (`wire-event`,
+  `wire-error`) stayed with kmet1's transport rather than moving with the bus:
+  they are serialization, and `kmet.mode.print`/`kmet.mode.rpc` take them when
+  the app's transports land (5). `srce/dispatch-modes` is the authority on which
+  modes a declaration may name. Today the `:events` row declares all 43
+  — it owns the vocabulary until the loop, session and mode plugins claim
+  theirs — and the guards are: a declared mode must be one the kernel can
+  dispatch (`:serial`/`:parallel` may not be declared while there is no
+  awaitable), and every event carries a docstring.
+- **`{:in ancestor}` is the one kernel addition the composition needed.**
+  `provide!` registers into the *current* ctx's store, so a plugin's service is
+  visible to its own subtree and to nothing else — right for a per-agent
+  capability, wrong for the app's flat row model, where every row mounts as a
+  sibling under the root. `(provide! ctx name value {:in scope})` puts the entry
+  in the mount site's store while the effect and the provider record stay the
+  providing fiber's: the `:events` row shares its service with the app and dies
+  with its own fiber. The duplicate check reads from the target scope.
+- **`kmet.app.runtime` is the boot and the submission point.** `boot` mounts a
+  composed row list under one root ctx (a var symbol resolved off the
+  classpath, a var, or a plugin map; an `:ext/…` id is refused until the
+  extension host lands) and throws `:kmet.app/boot-failed` naming every row
+  whose fiber is not `:active` — its state, its error, and what it waits for.
+  `submit!` appends a thunk to the root's queue from any thread; `boundary!`
+  drains it (to a fixpoint, eight rounds) and settles the kernel, so a mount or
+  a registration made on a tool thread lands at the boundary and never
+  mid-pass. The queue is a ctx key, not a service: it has no plugin, no
+  lifetime and nothing to inject.
+- **The first row is in the composition.** `:bundle/minimal` carries
+  `:events`; `--dump-config` prints it, and a bare `kmet --app new` boots it,
+  reports what mounted, disposes it and still exits 1 ("no runnable mode yet").
+  The boot is the point: it is what proves a profile's rows mount without a
+  turn to run, and it is where every later landing's rows get their first
+  end-to-end check.
+- **A ctx is cyclic, so nothing prints one.** `ctx → :kernel → :runtimes →
+  fiber → :ctx` closes the loop and no host's printer detects it — `pr-str` of a
+  ctx, or of a value holding one, is a stack overflow. Nothing may carry a ctx
+  in a service value (`kmet.app.events/service` binds it in a closure), and a
+  report names states, counts and service names, never the value.
 
 ### Landing 1 settled
 
@@ -806,17 +891,20 @@ Each is independently shippable and gated.
   `::missing-app` instead of exiting — `-main` owns the exit code. The
   two-direction load test runs real processes for the reason a test process
   cannot answer it: `bb test` has already loaded namespaces.
-- **The catalog is generated from `srce/defplugin`, not from a registry.**
-  `bb generate-plugins` reads every module source with the `#{:clj}` reader
-  view (edamame, `:read-cond :allow`, the reader macros spelled out) and writes
-  `kmet/app/plugin-catalog.edn`; a declaration inside a host conditional is not
-  catalogued, and its row still composes because `--dump-config` falls back to
-  the loaded var. The file is empty until the plugin landings (2–7) define the
-  first ones, and `kmet.tasks.test-plugins` holds it to a fresh render,
-  comments included.
+- **A row's card is the plugin map, and there is no manifest beside it.** A
+  generated `kmet/app/plugin-catalog.edn` was landed here (and a
+  `bb generate-plugins` scanner behind it) so `--dump-config` could print a
+  built-in row's card without loading its namespace. It was deleted in landing
+  2: dereferencing a `defplugin` var mounts nothing, so the card is read from
+  the declaration itself, and the only thing the manifest bought — describing a
+  row whose namespace *cannot load on this host* — has no row yet. When it does
+  (a host-gated `:ui/tk` row), the decision belongs where the information is:
+  the profile row carries its own label (profiles are data), or `describe`
+  learns an "unresolvable here" marker. Until then a source that does not
+  resolve is `:kmet.app/unknown-plugin` in `--dump-config` as well as in boot.
 - **Rows arrive described.** `kmet.app.catalog/describe` turns a row into a
   card (`:id :name :inject :provide`) without mounting anything: a var source
-  comes from the catalog or the loaded var, an `:ext/…` keyword is external
+  is resolved and read from its plugin map, an `:ext/…` keyword is external
   (landing 4's host supplies its card at load), and `:id` defaults to the
   plugin's `:name`. Composition is then pure data: bundle layers in order,
   config deep-merged by row id, `:remove`, and an insert — a patch naming an
@@ -867,11 +955,15 @@ own, not a tweak.
   ns-form reader and `kmet.test-module-deps`'s ranks), the no-global-node guard
   (`runtime/node` banned in `kmet.srce.*`, `kmet.app.*`, `kmet.ui.*`,
   `kmet.mode.*`), and the headless-mode plugin-graph assertion.
-- New: the **submit guard** — `kmet.app.*` reaches a kernel mutation
-  (`provide!`, `plugin!`, `dispose!`, `restart!`) only through the loop's submit
-  fn, asserted with a wrapper that records the calling thread — plus a
-  concurrent-mount test: two threads mount and provide at once, exactly one pass
-  runs, and `settle!` applies the loser's change.
+- New: the **submission point** (landing 2) — a change made on another thread
+  reaches the kernel only through `kmet.app.runtime/submit!` and is applied by
+  `boundary!`, asserted end to end (a listener registered and a plugin mounted
+  from a `future`, invisible before the boundary, live after it), with the
+  drain's order and its throw isolation. The **submit guard** proper — the
+  static assertion that `kmet.app.*` mutates only through that fn, plus a
+  concurrent-mount test that one pass runs and `settle!` applies the loser's
+  change — lands with the loop (landing 7), which is when the app first has a
+  thread other than its own to guard against.
 - The kernel's own gates — the contract tests, srce self-containment, and the
   no-`scope` require ban — are in [`srce.md`](modules/srce/src/kmet/srce/srce.md).
 - New: a profile test — layers patch by row id, `--dump-config` resolves to
