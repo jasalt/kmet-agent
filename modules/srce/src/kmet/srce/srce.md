@@ -555,7 +555,7 @@ its owner/scope and its three emitters. That is the landing rule
 one"), and one contract test asserts the same delivery behaviors against both
 backends so the pair cannot drift. Delegating instead would have taught the
 app's bus kmet1's store-node scoping — a value that dies with the store at
-landing 4c — and the re-point belongs with the loop that is the last caller
+4e — and the re-point belongs with the loop that is the last caller
 (landing 7).
 
 **Declaration lives above the kernel.** `:events` on a plugin is the
@@ -699,7 +699,7 @@ Alternatives, and why not:
 invented owner paths and a keyed store to stand in for one. The light kernel
 supplies the lifecycle, so the store loses its reason to exist — but only after
 the registries that read it have moved. The kernel therefore **must not depend
-on it** (a guard test), and its remaining 27 source call sites in 5 files go
+on it** (a guard test), and its remaining 26 source call sites in 5 files go
 with their landings (counted from `(scope/…` call sites, not from the
 requires). Landing 3 already took commands, prompts, skills, tools and the
 registries off it — they read and write through a `kmet.agent.registry`
@@ -707,11 +707,11 @@ handle, and the store is only that handle's kmet1 backend now:
 
 | File | Sites | Go at |
 |---|---|---|
-| `agent/event_bus.clj` (`in-subtree?`) | 1 | landing 4c — the subtree test is ctx ancestry once kmet1 has a root ctx (`srce/within?`); the table itself, which then needs nothing from the store, still dies at landing 7 with the loop re-point |
-| `agent/registry_store.clj` (the handle's store backend) | 7 | landing 4c — with the store itself |
-| `agent/extensions/core.cljc` | 12 | landing 4b — the extension host and ABI |
-| `agent/app_runtime.clj` (app node, `*error-reporter*`, `/units` walk) | 5 | landing 4c for the node and `*error-reporter*` (the logger subsumes it); 4d for the `owners`/`owner-registrations` pair (lines 115-117), which is the store listing and goes with the tree rewrite |
-| `agent/session/runtime.clj` (`child-node`) | 2 | landing 4c |
+| `agent/event_bus.clj` (`in-subtree?`) | 1 | 4c-ii-b — the subtree test is ctx ancestry (`srce/inside?`) once the emitter has a ctx; the table itself, which then needs nothing from the store, still dies at landing 7 with the loop re-point |
+| `agent/registry_store.clj` (the handle's store backend) | 9 | 4e — with the store itself; its only remaining caller after 4c-ii-a is the host's theme key (4b-ii) |
+| `agent/extensions/core.cljc` | 9 | 4b-ii — the extension host and ABI (hooks, the UI port, themes: the parts with no registry seam) |
+| `agent/app_runtime.clj` (app node, `*error-reporter*`, `/units` walk) | 5 | 4c-ii-b for the node and 4b-ii's helpers; 4d for the `owners`/`owner-registrations` pair (lines 194-198), which is the store listing and goes with the tree rewrite; `*error-reporter*` at 4e with the store |
+| `agent/session/runtime.clj` (`child-node`) | 2 | 4c-ii-b — the session's tree becomes a child ctx |
 
 Two more places name it without calling it: `extensions/context.cljc`'s
 extension-API allowlist (drop the entry with the ABI at landing 4b) and
@@ -725,10 +725,14 @@ extension is `dispose!` on its fiber and the entries come back LIFO. Deleting
 the store before that would rewrite the remaining 27 sites into private cleanup
 lists, which is the copy AGENTS.md forbids.
 
-**Not in one change, and not at the end of 4c:** the extension host's twelve
-sites only go when the host moves (4b-ii), which itself needs the root ctx
-4c-ii creates — so the store retires after 4b-ii, not before it. The rest go
-with 4c-ii (see the table above). When the last site is gone, delete
+**Not in one change, and not at the end of 4c:** the extension host's nine
+remaining sites only go when the host moves (4b-ii), which itself needs the root
+ctx 4c-ii creates; the Engine's two go with 4c-ii-b; and `owner-listing`'s two
+go at 4d, where `/units` stops rendering the store. The store therefore retires
+at **4e** (`new-app.md` § Landings), and its `*error-reporter*` with it — the
+`app_runtime` rebinding has no replacement short of the `:logger` service, which
+is deferred (§10), so cleanup-error reporting degrades to the reporter's default
+in the meantime. When the last site is gone, delete
 `modules/libs/src/kmet/libs/{scope.clj,scope.md}`,
 `modules/libs/test/kmet/libs/test_scope{,_self_contained}.clj`, the
 `app_runtime.clj` `*error-reporter*` rebinding (cleanup errors go to the
@@ -926,7 +930,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 - srce self-containment: `kmet.srce.*` may require only rank-0 code
   (`kmet.libs.*`, `kmet.loader.*`, `kmet.reakt.*`) and third-party code — no
   `kmet.agent.*`, no `tui`/`tk`, nothing at its own rank or above.
-- **No `kmet.libs.scope` require in `kmet.srce.*`** (§9), and after landing 4c no
+- **No `kmet.libs.scope` require in `kmet.srce.*`** (§9), and after 4e no
   `kmet.agent.*` require either — the deletion gate.
 - No leak: `scope`-free equivalent — a test disposes a 3-plugin tree and
   asserts `(srce/runtimes ctx)` empty, every `:children` empty, and the service

@@ -38,7 +38,7 @@ one thing every other part is wired through. The name also stays clear of
 | 13 | Where the loop lives | **`:agents` registry + `:agentLoop` driver** (dsh's split) | `:agents` is the live registry; the driver provides `:agentLoop`; a preset swaps the loop without touching the registry |
 | 14 | Order of reuse | **bus → registry → tools → resources → session → loop → modes** | Each step produces what the next consumes; the first two landings leave kmet1 untouched |
 | 15 | Shipping and the entry point | **One artifact, two apps; `--app new` selects kmet2** | `dist` needs no parameterization; the flag is the migration lever, and kmet1 stays the default until it is deleted |
-| 16 | Kernel scope | **Light Cordis core** — ctx tree, services + inject + refresh, fiber, effects, events, plugin registry | Only the concepts this file needs; the deferred list and the parity appendix are in [`srce.md`](modules/srce/src/kmet/srce/srce.md), and `kmet.libs.scope` is deleted at the end of landing 4c |
+| 16 | Kernel scope | **Light Cordis core** — ctx tree, services + inject + refresh, fiber, effects, events, plugin registry | Only the concepts this file needs; the deferred list and the parity appendix are in [`srce.md`](modules/srce/src/kmet/srce/srce.md), and `kmet.libs.scope` is deleted at 4e, once the last `(scope/…)` site is gone |
 | 17 | Kernel concurrency | **One owner thread + an optimistic pass flag** | `srce/settle!` at the boundary applies whatever crossed threads; a foreign-thread `provide!` is late, never corrupting ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §3) |
 
 "Remote" in phase 1 means **transport and concurrency, not tenancy**: one
@@ -116,8 +116,11 @@ order).
   flag, not a kernel change. No listing code below rank 3.
 
 Landings: this is **4d**. 1–2 leave `/units` alone. 3 was to add the
-fiber/service section **beside** the store section and did not, so nothing here
-has shipped yet. The store section cannot be deleted before kmet1 registers in
+fiber/service section **beside** the store section and did not. 4c-ii-a made
+`/units` **half store, half ctx** — a per-registry-service line beside the owner
+walk — so the command stays useful while the registries live in the tree and the
+store still holds what has no seam yet. That is transitional on purpose: 4d
+deletes both halves for one tree renderer. The store section cannot be deleted before kmet1 registers in
 the tree instead of the store and resolves a root ctx — 4c — and the handler
 re-points at the invocation ctx only once `runtime/agent-node` is gone, so the
 renderer ships after the cutover even though it builds on nothing 4a–4c added:
@@ -796,23 +799,36 @@ Each is independently shippable and gated.
 | 3 | **landed** — `registry` parameterized then lifted (`kmet.agent.registry` over a `Registry` handle); the `:tools` service row; commands/prompts/skills/tools/entry-renderers re-pointed at the handle | the contract test runs one set of registry assertions against both backends (atom and store); the `:tools` service is installed by one `provide!` and mutated through its handle (no re-provide); kmet1 green |
 | 4a | **landed** (`c2861df0`) — the sessions seam: `:sessionPersistence` (seven ops: `create!` `load` `paths` `append!` `entries` `delete!` `header`), the `:sessions` log over it (`inject [:sessionPersistence]`: the same ops plus an id index), an in-process `memory-backend`, and kmet1's store as the first real backend (`kmet.agent.session.backend`, a 34-line projection — `app` at rank 2 cannot name it yet) | the contract test runs one set of assertions against both backends, then composes the two halves as a profile does (`(service (ednl))`: 8 tests, 60 assertions); the row is `:pending` with `waiting-for=#{:sessionPersistence}` and activates when its backend mounts; kmet1's sessions and their files are byte-for-byte untouched; no composition row at 4a — `:sessions` joined the profile with the layer move (4c-i) |
 | 4b | **The extension host**, in two halves. **4b-i landed** (`d01a0f44`) — `kmet.extension` (461 lines, zero requires) moved into `app` with its contract doc, and the **key-set contract test** landed: every api path an ABI wrapper reads (`(:notify (ui api))` reads `[:ui :notify]`) is asserted against the api the host actually builds for a loaded extension, 62 of them, and the test fails when one is renamed away. **4b-ii** (after 4c-ii): `extension.edn` gains an optional `:inject` and the host wraps an extension as the plugin `{:name :inject :apply}` (with `grep-tool` demonstrating it), the host takes a ctx instead of `app_runtime/node`, builds the api for the root or an agent ctx, composes `shutdown` into the disposer, and the host files move into `app` keeping their namespaces | 4b-i: the key-set test is green, its own violation check fails by design, and kmet1's extension surface is unchanged (376 assertions across the extension suites). 4b-ii: an extension declaring `:inject` goes pending then active, nothing in the host reads the store node, and the loader whitelist has no `kmet.libs.scope` entry |
-| 4c | **The root ctx, the session layer, then `:agents`** — three steps that gate separately, in this order. **4c-i landed** (`aa72deef`, `88513298`) — the session layer moved into `app`: nine files, namespaces kept, nothing re-hosted; the `kmet.agent.debug` require behind the schema warnings became a diagnostics flag the host's `--debug` sets; `:sessions` + `:sessionPersistence` joined `:bundle/minimal`, so a bare `kmet --app new` boots four rows. `:result-tokens` stamping stays in `store.clj` — see the 4c-i notes. **4c-ii in progress, two halves.** **4c-ii-a landed** (`f1a446af`, `e38c5e05`) — kmet1 boots the app root ctx and its registrations live in the services: `app-runtime/registry` is one façade handle routing each tag to its service, the writers *and* readers moved together, the `node` parameter left their public fns (~200 call sites), and unload is one `deregister-owner!` per tag. **4c-ii-b** is what is left: `app_runtime/node` goes and its 19 readers take a ctx, the 16 mutable `defonce` cells are re-hosted, and `event_bus`'s subtree test moves onto ctx ancestry. `registry_store.clj` and `kmet.libs.scope` do **not** die here either: the extension host still holds twelve `scope/…` sites of its own (hooks, themes, the UI port — the parts with no registry seam), so the store retires one landing later, after 4b-ii. **4c-iii**, `Engine` → `:agents` with `:permissions`/`:approvals` and `:projections` + `:systemPrompt` behind it | i: every session test green from `modules/app`, `kmet --app new` boots a session over EDNL files. ii: no `(scope/…)` call site is left and kmet1's registrations are in the tree. iii: two agents in one process hold different tool tables, and an extension declaring `:inject {:sessions …}` goes pending then active |
+| 4c | **The root ctx, the session layer, then `:agents`** — four steps that gate separately, in this order. **4c-i landed** (`aa72deef`, `88513298`) — the session layer moved into `app`: nine files, namespaces kept, nothing re-hosted; the `kmet.agent.debug` require behind the schema warnings became a diagnostics flag the host's `--debug` sets; `:sessions` + `:sessionPersistence` joined `:bundle/minimal`, so a bare `kmet --app new` boots four rows. `:result-tokens` stamping stays in `store.clj` — see the 4c-i notes. **4c-ii in progress, two halves.** **4c-ii-a landed** (`f1a446af`, `e38c5e05`) — kmet1 boots the app root ctx and its registrations live in the services: `app-runtime/registry` is one façade handle routing each tag to its service, the writers *and* readers moved together, the `node` parameter left their public fns (~200 call sites), and unload is one `deregister-owner!` per tag. **4c-ii-b**, next, is the store node's remaining readers: the Engine and the modes take a ctx (`app_runtime/node` has **7 src sites** — `commands/builtins`, `extensions/core` ×2, `interactive/builtins`, `modes/interactive`, `session/runtime` — plus ~43 in tests), `child-node` becomes `srce/extend` so a session's tree is a child ctx and the loop's stage map rides ctx meta, and `event_bus`'s one `(scope/in-subtree? node …)` becomes `srce/inside?`. Two of those seven sites are not 4c-ii-b's: the host's two go with 4b-ii and `/units`' store walk is 4d's, so the sweep has to name its targets rather than take the file list. The 15 remaining mutable `defonce` cells split the same way: nine are the host's (4b-ii), three are the `:shell`/`:fs`/`:sandbox` seams the catalog names (landing 6), and `event_bus`'s table stays until the loop re-points (7). `registry_store.clj` and `kmet.libs.scope` do **not** die here: the host holds nine `scope/…` sites (hooks, themes, the UI port) and 4d holds the last two (`owner-listing`), so the store retires at **4e**. **4c-iii**, `Engine` → `:agents` with `:permissions`/`:approvals` and — unlanded prerequisites — `:projections` and `:systemPrompt` | i: every session test green from `modules/app`, `kmet --app new` boots a session over EDNL files. ii: the Engine and the modes resolve a ctx, a session's tree is a child ctx, and the bus scopes by ancestry. iii: two agents in one process hold different tool tables, and an extension declaring `:inject {:sessions …}` goes pending then active |
 | 4d | **Inspection from the tree** — `kmet.app.inspect/units` renders the invocation ctx's subtree, `--dump-state` the root's, `/units` re-points at it and the store section is deleted | `/units` and `--dump-state` show a `:pending` fiber with its `waiting-for` and a `:failed` one with its error; the five listing tests rewritten against the tree |
+| 4e | **Retire the store** — delete `kmet.libs.scope` (with its own tests), `kmet.agent.registry-store` and the landing-3 store backend test, and the `app_runtime/…` disposal/error plumbing that goes with them. Nothing may still read it: 4b-ii took the host's nine sites, 4c-ii-b the Engine's, 4d the `owner-listing` walk. The docs that describe it go in the same change (`modules/agent/src/kmet/README.md`'s two store rows, `extension.md`'s two owner-path sentences, `srce.md` §9) | `grep` finds no `(scope/` under `kmet.agent.*`, no `kmet.libs.scope` require outside the deleted files, and no `registry-store` require; the full suite is green and kmet1 boots with no store at all |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` registry (create/resume/list) + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
 | 7 | loop re-hosted as a driver plugin; profiles as row+patch layers; presets = bundles | pi-alignment green; a tool swaps mid-session at the turn boundary (`:agent-settled`); a profile stacking a preset bundle boots |
 
 **The order is not the table's order.** 4b-ii cannot precede 4c-ii: the host
-requires eleven rank-4 namespaces — `commands`, `event-bus`, `prompts`,
+required eleven rank-4 namespaces — `commands`, `event-bus`, `prompts`,
 `registry-store`, `app-runtime`, `session.core`, `skills`, `tools.core`,
 `tools.bash`, `config`, `debug`, plus `extensions/context`, `extensions/libs`
 and `kmet.libs.scope` — and it cannot sit at rank 2 until those names are ctx
-services. 4c-i has since removed the `session.core` edge and `debug`. That is a measured correction: the doc claimed the host move was
-mechanical, and it is mechanical for `kmet.extension` only. The practical order
-is **4a → 4c-i → 4b-i → 4c-ii → 4b-ii → 4c-iii → 4d**, and the reasons are
-dependencies, not preferences: 4c-i removed the host's session edge and gave the
-composition a real log, 4b-i moved the ABI and pinned the api contract, 4c-ii
-gives the host its ctx, and 4c-iii gives the api the agent surface it exposes.
+services. That is the measured correction behind the split: the doc had claimed
+the host move was mechanical, and it is mechanical for `kmet.extension` only.
+4c-i has since removed the `session.core` edge and `debug`, and 4c-ii-a turned
+four of the rest into services.
+
+The practical order is **4a → 4c-i → 4b-i → 4c-ii-a → 4c-ii-b → 4b-ii →
+4c-iii → 4d → 4e**, and the reasons are dependencies, not preferences: 4c-i
+removed the host's session edge and gave the composition a real log, 4b-i moved
+the ABI and pinned the api contract, 4c-ii-b gives the host a ctx to take,
+4b-ii puts the host on it, 4c-iii gives the api the agent surface it exposes,
+and 4e can only run once the last `(scope/…)` site is gone — which 4d's
+`owner-listing` walk is.
+
+Two prerequisites have no row of their own and must not be forgotten inside
+4c-iii: `:projections` (the inbox and turn boundaries as derived state over the
+log, so `send!`'s `:next-turn`/`:next-step` lists exist) and `:systemPrompt`
+(per-agent sections, which is what an agent's `setup` registers). Neither exists
+in `modules/app` yet.
 `:inject` moved from 4b-i to 4b-ii for the same reason it was split: a
 declared dependency nothing honors is a lie in a manifest.
 
@@ -925,12 +941,12 @@ rather than a guess.
   re-hosted, which is the point of calling this a lift.
 - **4c-ii cannot delete the store, and that is a finding rather than a slip.**
   The cutover was to end with `kmet.libs.scope` gone — but the extension host
-  holds twelve `(scope/…)` sites (owner paths for hooks, renderers, flags, the
-  UI port, themes) that only become fiber effects when the host itself moves at
-  4b-ii, and 4b-ii needs the root ctx this landing creates. So the deletion is
-  the landing *after* 4b-ii: 4c-ii builds the tree, 4b-ii puts the host on it,
-  and the store retires behind both. [`srce.md`](modules/srce/src/kmet/srce/srce.md) §9's
-  "all of it at the end of 4c" is wrong for the same reason.
+  holds nine `(scope/…)` sites (owner paths for hooks, the UI port, themes) that only become fiber effects when the host itself moves at
+  4b-ii, and 4b-ii needs the root ctx this landing creates. So the store retires
+  at **4e**, after 4b-ii puts the host on fibers, 4c-ii-b moves the Engine, and
+  4d replaces the last two sites (`owner-listing`'s walk).
+  [`srce.md`](modules/srce/src/kmet/srce/srce.md) §9's "all of it at the end of 4c" was
+  wrong for the same reason.
 - **The foundation landed first, and it is not speculative.** `:commands`,
   `:prompts` and `:skills` joined `:tools` as rows (`kmet.app.registries`: one
   shape, four declarations, `kmet.app.tools` delegating to it), so kmet2's
@@ -958,7 +974,7 @@ rather than a guess.
   because there is nothing else to implement them with. `kmet.agent.registry`
   did not exist as a per-backend copy: the file moved to `modules/app` and its
   scope-store half became `kmet.agent.registry-store` in `modules/agent`, so
-  the app module never requires the store that landing 4c deletes.
+  the app module never requires the store that 4e deletes.
 - **Two backends, one contract.** `atom-registry` (an atom of
   `{:tag :name :owner :value}`, registration order is display order, a disposer
   removes exactly the entry it installed) is kmet2's; `store-registry` wraps
@@ -975,7 +991,7 @@ rather than a guess.
   selection — stay in `kmet.agent.tools.registry` (rank 4), whose reads gained
   an explicit-argument arity (`(get-all-tools reg)`, `(get-tool reg name)`,
   `(get-contributed-tools reg)`); the zero-argument forms ask the app root, so
-  every kmet1 call site is unchanged until landing 4c threads the ctx.
+  every kmet1 call site was unchanged until 4c-ii-a threaded the ctx.
 - **One mutation path.** `register-tool!`/`unregister-tool!`, their source
   counterparts, `register-command!`/`unregister-command!`, the prompt-template
   loaders and `register-skill!` all go through the handle now (`tool-key`,
@@ -994,7 +1010,7 @@ rather than a guess.
   table, its owner/scope and its three emitters until the loop re-points
   (landing 7): that is the landing rule ("kmet2 uses the new mechanism, kmet1
   still uses the old one"), and delegating now would have taught the app's bus
-  kmet1's store-node scoping — a value that dies with the store at landing 4c.
+  kmet1's store-node scoping — a value that dies with the store at 4e.
   A contract test runs one set of delivery assertions against both backends, so
   the pair cannot drift while both exist. The wire projections stayed with
   kmet1's transport: they are serialization, not the bus.
