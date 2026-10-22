@@ -259,11 +259,11 @@
                              :run-callbacks (atom nil)})]
     ;; Runtime-scoped extension surface: the session facades and the ctx
     ;; :model/:scoped-models/:thinking-level read the live agent, and the
-    ;; front-end binding carries the headless port and kind. Both are
-    ;; registered on the engine's tree under [:app :session] / [:app :ui], so
-    ;; dispose! drops them with their owners while the process atoms stay the
-    ;; no-node read cache. A front end with its own port re-installs once its
-    ;; widgets exist.
+    ;; front-end binding carries the headless port and kind. Both are store
+    ;; registrations on the APP ROOT under [:app :session] / [:app :ui] (the
+    ;; engine has no tree of its own since 4c-ii-b), so dispose! drops them by
+    ;; owner while the process atoms stay the no-node read cache. A front end
+    ;; with its own port re-installs once its widgets exist.
     (let [node (app-runtime/node)]
       (extensions/install-session! node (:session agent-state))
       (extensions/install-context-sink!

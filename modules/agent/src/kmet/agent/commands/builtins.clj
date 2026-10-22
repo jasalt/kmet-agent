@@ -115,7 +115,7 @@
 (defn- handle-units
   "Show the app root's store owners — address and keys, one flat line each
    (extension registrations; scope.md §2, §6) — beside one line per registry
-   service (4c-ii). The tree renderer replaces both at 4d; until then the
+   service (4c-ii-a). The tree renderer replaces both at 4d; until then the
    store section is the app root's, since the engine's own node is gone."
   [{:keys [ui]} _]
   (let [lines (remove str/blank? [(app-runtime/owner-listing (app-runtime/node))

@@ -75,15 +75,16 @@
   (:ctx @app-root))
 
 (defn child-ctx
-  "A child ctx carrying the loop stages — STAGES merged over the builtin
-   defaults — under PARENT (the app root when nil). A run points at one to get
-   its own stage map (P7), and what it registers belongs to that subtree rather
-   than to the app's."
-  ([] (child-ctx (ctx)))
+  "A ctx carrying the loop stages — STAGES merged over the builtin defaults —
+   under PARENT, or as a root of its own when there is no parent. A run points
+   at one to get its own stage map (P7): with a parent, what it registers lives
+   in that ctx's subtree; without one it is its own isolation boundary, which is
+   what `child-node` did before 4c-ii-b."
+  ([] (child-ctx nil))
   ([parent] (child-ctx parent nil))
   ([parent stages]
-   (srce/extend (or parent (ctx))
-     {:loop-stages (atom (merge-with merge default-loop-stages stages))})))
+   (let [meta {:loop-stages (atom (merge-with merge default-loop-stages stages))}]
+     (if parent (srce/extend parent meta) (srce/root meta)))))
 
 (def ^:private registry-tags
   "Every registry tag kmet1 registers under, and the service that owns it — nil
