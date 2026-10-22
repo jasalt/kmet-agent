@@ -555,7 +555,7 @@ its owner/scope and its three emitters. That is the landing rule
 one"), and one contract test asserts the same delivery behaviors against both
 backends so the pair cannot drift. Delegating instead would have taught the
 app's bus kmet1's store-node scoping — a value that dies with the store at
-landing 4 — and the re-point belongs with the loop that is the last caller
+landing 4c — and the re-point belongs with the loop that is the last caller
 (landing 7).
 
 **Declaration lives above the kernel.** `:events` on a plugin is the
@@ -707,14 +707,14 @@ handle, and the store is only that handle's kmet1 backend now:
 
 | File | Sites | Go at |
 |---|---|---|
-| `agent/event_bus.clj` (`in-subtree?`) | 1 | landing 7 — kmet1's table goes when the loop re-points at `:events` (landing 2 lifted the vocabulary and gave kmet2 its own modes; see §5) |
-| `agent/registry_store.clj` (the handle's store backend) | 7 | landing 4 — with the store itself |
-| `agent/extensions/core.cljc` | 12 | landing 4 — the extension host and ABI |
-| `agent/app_runtime.clj` (app node, `*error-reporter*`, `/units` walk) | 5 | landing 4 — the `*error-reporter*` rebinding goes with the logger service; the `owners`/`owner-registrations` pair (lines 115-117) is the store listing and goes with the tree rewrite |
-| `agent/session/runtime.clj` (`child-node`) | 2 | landing 4 |
+| `agent/event_bus.clj` (`in-subtree?`) | 1 | landing 4c — the subtree test is ctx ancestry once kmet1 has a root ctx (`srce/within?`); the table itself, which then needs nothing from the store, still dies at landing 7 with the loop re-point |
+| `agent/registry_store.clj` (the handle's store backend) | 7 | landing 4c — with the store itself |
+| `agent/extensions/core.cljc` | 12 | landing 4b — the extension host and ABI |
+| `agent/app_runtime.clj` (app node, `*error-reporter*`, `/units` walk) | 5 | landing 4c for the node and `*error-reporter*` (the logger subsumes it); 4d for the `owners`/`owner-registrations` pair (lines 115-117), which is the store listing and goes with the tree rewrite |
+| `agent/session/runtime.clj` (`child-node`) | 2 | landing 4c |
 
 Two more places name it without calling it: `extensions/context.cljc`'s
-extension-API allowlist (drop the entry with the ABI at landing 4) and
+extension-API allowlist (drop the entry with the ABI at landing 4b) and
 `test/kmet/test_utils.clj`'s `dispose-owner!` in `clear-app-registries!` (one
 call; it moves with whichever registry's clear replaces it).
 
@@ -725,7 +725,7 @@ extension is `dispose!` on its fiber and the entries come back LIFO. Deleting
 the store before that would rewrite the remaining 27 sites into private cleanup
 lists, which is the copy AGENTS.md forbids.
 
-**All of it in one change, at the end of landing 4:** delete
+**All of it in one change, at the end of landing 4c:** delete
 `modules/libs/src/kmet/libs/{scope.clj,scope.md}`,
 `modules/libs/test/kmet/libs/test_scope{,_self_contained}.clj`, the
 `app_runtime.clj` `*error-reporter*` rebinding (cleanup errors go to the
@@ -923,7 +923,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 - srce self-containment: `kmet.srce.*` may require only rank-0 code
   (`kmet.libs.*`, `kmet.loader.*`, `kmet.reakt.*`) and third-party code — no
   `kmet.agent.*`, no `tui`/`tk`, nothing at its own rank or above.
-- **No `kmet.libs.scope` require in `kmet.srce.*`** (§9), and after landing 4 no
+- **No `kmet.libs.scope` require in `kmet.srce.*`** (§9), and after landing 4c no
   `kmet.agent.*` require either — the deletion gate.
 - No leak: `scope`-free equivalent — a test disposes a 3-plugin tree and
   asserts `(srce/runtimes ctx)` empty, every `:children` empty, and the service

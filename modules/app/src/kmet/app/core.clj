@@ -5,8 +5,8 @@
    result (`--dump-config`); a run without `--dump-config` composes the same
    rows and **boots** them (`kmet.app.runtime`), which is what proves a profile
    mounts. No mode is wired yet, so a booted run reports what it mounted,
-   disposes it, and exits — landings 3–7 grow the flag surface and the modes,
-   not this contract.
+   disposes it, and exits — landings 4a–4d mount the services a mode drives and
+   landing 5 adds the modes, not this contract.
 
    Output and exit codes are separable on purpose: `main` returns the exit
    code and `-main` is the only form that calls `System/exit`, so tests read a
@@ -137,8 +137,8 @@
 
 (defn- not-wired [args]
   (binding [*out* *err*]
-    (println "kmet2 has no runnable mode yet — landings 3–7 mount the registries,")
-    (println "the session log, the loop and print mode.")
+    (println "kmet2 has no runnable mode yet — landings 4a–4d mount the session")
+    (println "log, the extension host and the agents; landing 5 adds the modes.")
     (println "  kmet --app new --dump-config   print the composed rows")
     (println "  kmet --app new --version       print the version")
     (when (seq args) (println "Arguments:" (pr-str (vec args))))

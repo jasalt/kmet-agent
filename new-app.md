@@ -38,7 +38,7 @@ one thing every other part is wired through. The name also stays clear of
 | 13 | Where the loop lives | **`:agents` registry + `:agentLoop` driver** (dsh's split) | `:agents` is the live registry; the driver provides `:agentLoop`; a preset swaps the loop without touching the registry |
 | 14 | Order of reuse | **bus → registry → tools → resources → session → loop → modes** | Each step produces what the next consumes; the first two landings leave kmet1 untouched |
 | 15 | Shipping and the entry point | **One artifact, two apps; `--app new` selects kmet2** | `dist` needs no parameterization; the flag is the migration lever, and kmet1 stays the default until it is deleted |
-| 16 | Kernel scope | **Light Cordis core** — ctx tree, services + inject + refresh, fiber, effects, events, plugin registry | Only the concepts this file needs; the deferred list and the parity appendix are in [`srce.md`](modules/srce/src/kmet/srce/srce.md), and `kmet.libs.scope` is deleted at the end of landing 4 |
+| 16 | Kernel scope | **Light Cordis core** — ctx tree, services + inject + refresh, fiber, effects, events, plugin registry | Only the concepts this file needs; the deferred list and the parity appendix are in [`srce.md`](modules/srce/src/kmet/srce/srce.md), and `kmet.libs.scope` is deleted at the end of landing 4c |
 | 17 | Kernel concurrency | **One owner thread + an optimistic pass flag** | `srce/settle!` at the boundary applies whatever crossed threads; a foreign-thread `provide!` is late, never corrupting ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §3) |
 
 "Remote" in phase 1 means **transport and concurrency, not tenancy**: one
@@ -109,18 +109,20 @@ order).
 - **Effect labels are the inspection contract** ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §4).
   `(srce/effects fiber)` is what the listing renders, so `:tool/read` and
   `:command/units` are load-bearing; a catch-all label makes the line useless.
-- The kernel grows the ctx accessors for this — `srce/children` and
-  `srce/services` (the realm-aware merge) — and the fiber record carries the
+- The accessors are already the kernel's — `srce/children`, `srce/services`
+  (the realm-aware merge) and `srce/effects` — and the fiber record carries the
   rest: `:state`, `:error`, the normalized `:inject`, the names it `:provides`
-  and what it is `:waiting-for` ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §4). No listing code below
-  rank 3.
+  and what it is `:waiting-for` ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §4), so the renderer is a
+  flag, not a kernel change. No listing code below rank 3.
 
-Landings: 2 leaves `/units` alone (the store is still the only source). 3 adds
-the fiber/service section **beside** the store section, because the tools
-registry leaves the store there while its test still asserts `[:app :tools]
-keys=` — one landing of shim, and the store section is deleted at 4. 4 rewrites
-the five tests against the tree and re-points the handler at the invocation ctx
-(`runtime/agent-node` disappears with the app root).
+Landings: this is **4d**. 1–2 leave `/units` alone. 3 was to add the
+fiber/service section **beside** the store section and did not, so nothing here
+has shipped yet. The store section cannot be deleted before kmet1 registers in
+the tree instead of the store and resolves a root ctx — 4c — and the handler
+re-points at the invocation ctx only once `runtime/agent-node` is gone, so the
+renderer ships after the cutover even though it builds on nothing 4a–4c added:
+if the sub-landing in flight needs the observation sooner, `--dump-state` moves
+up and the store section stays beside it for that landing.
 
 ## What the seams settle
 
@@ -189,9 +191,9 @@ requirements is blocked by a different one:
 
 | Mechanism | Where | Size | Blocks |
 |---|---|---|---|
-| the store node | `kmet.libs.scope`, resolved through `kmet.agent.runtime/node` | 24 `runtime/node` calls in 8 source files; ~186 `node` mentions across the 13 that require it | multi-session: every session resolves **the one** app node |
+| the store node | `kmet.libs.scope`, resolved through `kmet.agent.app_runtime/node` | 19 `app-runtime/node` calls in 13 source files; 43 files require the namespace | multi-session: every session resolves **the one** app node |
 | process-global atoms | `modules/agent/src/kmet/agent/extensions/core.cljc` (`extension-binding`, `extensions`, `session-atom`, `context-sink-atom`, `entry-sink-atom`, `hook-seq`, `cli-flag-values`), `bash-executor` (`shell-options`), `tools/read` (`skill-content-resolver`), `keybindings` (`theme-fns-atom`), `run_code` (`bridge-queue`), `runtime` (`app-node`) | 18 `defonce` vars, 16 of them mutable cells | pluggable UI/modes: the UI port and the mode are process state, not per-context state |
-| the extension capability map | `kmet.agent.extension` (461 lines) + `modules/agent/src/kmet/agent/extensions/core.cljc` (1,585 lines) built once per `init` | 60 functions | every new service today is another key on that map |
+| the extension capability map | `kmet.extension` (461 lines) + `modules/agent/src/kmet/agent/extensions/core.cljc` (1,586 lines) built once per `init` | 42 api keys | every new service today is another key on that map |
 
 The kernel does not add a fourth mechanism; it replaces all three with one
 context, and `kmet.libs.scope` — 288 lines of owner paths, LIFO disposal,
@@ -270,17 +272,17 @@ because `api` was always a map. With it, the extension gets pending/activate/
 reload semantics for free, and its owner path still disposes on unload.
 
 **The host moves with the ABI.** The plugin host is not just
-`kmet.agent.extension`; it is `kmet.agent.extensions.core` (1,585) +
+`kmet.extension`; it is `kmet.agent.extensions.core` (1,586) +
 `kmet.agent.extensions.context` (1,568), and `create-extension-api` closes over
-the app node and ~40 registrations. Both host files and the zero-dependency ABI
-move into module `app` at rank 2 **keeping their namespaces** (the "Two axes"
-rule):
+the app node and 42 api keys. All three files move into module `app` at rank 2
+(landing 4b): the ABI keeps its `kmet.extension` name, and both host files keep
+their `kmet.agent.*` names (the "Two axes" rule):
 
-- `kmet.agent.extension` has no `kmet.*` requires, so the file move is
-  mechanical; installed extensions keep `(require [kmet.agent.extension …])`.
-  The loader's name whitelist is **not** just `kmet.agent.extension` +
-  `kmet.libs.*` + `kmet.tui.*`: it also admits exactly two `kmet.agent.*`
-  namespaces, `kmet.agent.ui.tui.tool-renderers` and `kmet.agent.keybindings`
+- `kmet.extension` has no `kmet.*` requires, so its file move is mechanical;
+  installed extensions keep `(require [kmet.extension …])`. The loader's name
+  whitelist is **not** just `kmet.extension` + `kmet.libs.*` + `kmet.tui.*`: it
+  also admits exactly two `kmet.agent.*` namespaces,
+  `kmet.agent.ui.tui.tool-renderers` and `kmet.agent.keybindings`
   (`extensions/context.cljc`). Both are ABI, both are required by shipped
   directory extensions, and both therefore constrain the UI move: a namespace
   that extensions may require cannot be renamed with a `sed`.
@@ -566,14 +568,17 @@ state; the other 84 are already pure functions of their arguments.
 
 | Bucket | Pattern | Files | Lines | Members |
 |---|---|---|---|---|
-| needs nothing | lift as-is | 84 | 28,178 | tool bodies (`write`/`edit`), the `event-types` vocabulary — with one caveat: `session/core.clj` (1,686 of those lines) needs no `ctx` but is not host-portable as written (`ReentrantLock`, `java.io.InputStreamReader`), so it belongs to the re-host, not to a mechanical lift |
+| needs nothing | lift as-is | 84 | 28,178 | tool bodies (`write`/`edit`), the `event-types` vocabulary — with one caveat: the session layer (2,500 of those lines across `store`/`listing`/`tree`/`stats`/`context`) needs no `ctx` but writes its file handling with host interop (`ReentrantLock`, `java.io.InputStreamReader`), so it belongs to the re-host — 4a — not to a mechanical lift |
 | one argument | parameterize | 7 | 4,076 | `registry` (3 `runtime/node` reads), `commands/builtins` (6), `modes/interactive/commands` (6), `session/runtime` (3), `loop/state` (2), `core` (1), `modes/interactive` (1) |
 | registry-wired | re-point | 4 | 1,305 | `tools/registry`, `skills`, `prompts`, `commands` |
 | owns state | re-host | 9 | 6,243 | `kmet.agent.extensions.core` (7 `defonce`s), `debug` (3), `kmet.agent.extensions.context` (2), `bash_executor`, `event_bus`, `keybindings`, `runtime`, `tools/read`, `tools/run_code` (1 each) |
 
 The fourth row is the only real re-hosting: 6,243 of 39,765 lines (~16%), plus
-`session/core.clj`'s lock (1,686 lines whose `ReentrantLock` must become a
-`kmet.libs.concurrent` primitive to satisfy decision 4), plus another ~14% in
+the session layer's file handling (2,500 lines whose `ReentrantLock` and
+`InputStreamReader` move behind `kmet.libs.concurrent` and `babashka.fs` —
+neither is a host limitation: bb and Jolt both construct a `ReentrantLock`
+(tested), so the move is the no-interop rule, not a capability floor), plus
+another ~14% in
 the one-argument and registry-wired rows. It is the part that
 owns state — precisely what the context replaces. The bus is the template:
 roughly three-fifths of `event-bus.clj` is the `event-types` vocabulary (pure
@@ -597,10 +602,12 @@ host → loop → modes/UI.** Each step produces what the next consumes:
   — their handlers already take a ctx-shaped map `{:runtime :ui :frontend}`, so
   that step is mostly renaming keys;
 - `Engine` is already a record with operations, so `session` is a lift rather
-  than a fork; only its singletons are re-hosted;
-- the extension host moves with the session lift: it consumes the registries,
-  the tool table, the session log and the config/debug services, so it lands
-  with `Engine` (landing 4), not before;
+  than a fork; only its singletons are re-hosted, and the log is a service
+  before anything reads it (4a);
+- the extension host moves after the session lift and before `Engine` (4a → 4b
+  → 4c): it consumes the registries, the tool table, the session log and the
+  config/debug services, and it is the landing's one *move*, so it separates
+  cleanly from the re-host that follows it;
 - loop and modes last, once the kernel has absorbed everything else.
 
 A landing is done when kmet2 uses the new mechanism, kmet1 still uses the old
@@ -630,15 +637,17 @@ file anyone would lift. A rename owes a wrapper at the old name exposing
 valid (the move-by-name rule, read backwards: keep the name, never re-point
 it), and it keeps the endgame mechanical: at retirement,
 `s/kmet\.agent\./kmet.app./` over a known list that excludes
-`kmet.agent.extension` (the ABI), the deleted `kmet.agent.runtime`, and the
+`kmet.extension` (the ABI), the deleted `kmet.agent.runtime`, and the
 names re-hosted under `kmet.ui.*`/`kmet.mode.*`.
 
-**Three exceptions.** `kmet.agent.extension` keeps its name forever — it is
-the extension ABI, and installed extensions write it in their `:require`; if
-kmet2 ever wants `kmet.extension`, add it as an alias and keep the old name
-for a release. The file moves into `app` with the extension host; the
-namespace does not change. Namespaces whose concept dies are deleted, not moved
-(`kmet.agent.runtime` has no successor). `kmet.agent.loop` (and `kmet.agent.loop.*`), `session/runtime` and
+**Three exceptions.** The extension ABI keeps its name forever — installed
+extensions write it in their `:require`, and it already reads `kmet.extension`
+(it was renamed off `kmet.agent.extension` before kmet2 existed; nothing in the
+repo names the old one now). So the host move is a file move with no ABI
+change at all: the file lands in `app` and the namespace does not move with it.
+Namespaces whose concept dies are deleted, not moved (`kmet.agent.runtime` has
+no successor; its `node`/`*error-reporter*`/`/units` walk live on in
+`kmet.agent.app_runtime` until 4c–4d). `kmet.agent.loop` (and `kmet.agent.loop.*`), `session/runtime` and
 `modes/interactive/*` are re-hosted under new names; with `agent` at 4 kmet1
 re-points at them instead of keeping a copy — `modes/interactive/*` becomes
 `kmet.ui.tui` at landing 5 behind the `--mode` shim. New kmet2-only code uses
@@ -647,8 +656,8 @@ the new prefixes from day one.
 | Now | At retirement |
 |---|---|
 | `kmet.agent.registry`, `.tools.registry`, `.event-bus`, `.config`, `.skills`, `.prompts`, `.commands` | `kmet.app.*` — one prefix substitution |
-| `kmet.agent.extension` | unchanged — the ABI (the file moves to `app`, the name stays) |
-| `kmet.agent.runtime` | deleted |
+| `kmet.extension` | unchanged — the ABI (the file moves to `app`, the name is already the final one) |
+| `kmet.agent.runtime` | deleted (folded into `kmet.agent.app_runtime`) |
 | `kmet.agent.loop` (and subnamespaces), `session/runtime`, `modes/interactive/*` | new `kmet.app.*` / `kmet.ui.tui` |
 
 ### Per-lift checklist
@@ -786,10 +795,41 @@ Each is independently shippable and gated.
 | 1 | **landed** (`367efd49`) — module wiring + guards (module-based require, no-global-node), `--app new` dispatch (bootstrap split: `kmet.agent.core` + `kmet.agent.cli`) + `check` requiring both entries, `--dump-config` over the composed rows | `kmet.test-module-deps` / `test-modules-manifest` green; each guard fails on a deliberate violation |
 | 2 | **landed** (`14ca4f0d`) — the bus: the six non-awaiting dispatch modes (`emit!`, `bail!`, `waterfall!`, `collect-last!`, `collect-all!`, `boundary!`) over the kernel's listener table, with `:data` on a registration and `{:in scope}` on `provide!`; `kmet.app.events` keeps the vocabulary (declared in the `:events` plugin's `:events` map), the owner, and the `:events` service; **the submission point** — `kmet.app.runtime`: `submit!` from any thread, `boundary!` drains and settles, `boot` mounts the composed rows | one contract test over both delivery paths (kmet1's bus and the app's), the app's own mode/service/declaration suite, and kmet1 green; a hook registered from another thread lands at the boundary |
 | 3 | **landed** — `registry` parameterized then lifted (`kmet.agent.registry` over a `Registry` handle); the `:tools` service row; commands/prompts/skills/tools/entry-renderers re-pointed at the handle | the contract test runs one set of registry assertions against both backends (atom and store); the `:tools` service is installed by one `provide!` and mutated through its handle (no re-provide); kmet1 green |
-| 4 | `Engine` → `:agents` (+ `:permissions` policy/request!/remember!) and `:sessions` + `:sessionPersistence`; the extension host + ABI moved into `app` (key-set contract test); `extension.edn :inject` + `grep-tool` ported as a plugin; the remaining `runtime/node` reads; the globals re-hosted; `session/core.clj`'s lock moved onto a `kmet.libs.concurrent` primitive; **`/units` re-rendered from the tree** (`kmet.app.inspect`, store section deleted) | kmet2 runs `mode-print`; a shipped directory extension and `grep-tool` green; `/units` shows a `:pending` fiber with its `waiting-for`; kmet1 untouched |
+| 4a | **`:sessions` + `:sessionPersistence`** — the narrow seam first: `:sessionPersistence` is the storage backend (seven ops: `create!` `load` `paths` `append!` `entries` `delete!` `header`), `:sessions` is the log over it (`inject [:sessionPersistence]`: the same ops plus an id index), and kmet1's `session/store.clj` ships as the first backend **from `agent`** (`kmet.agent.session.backend`, a projection — `app` at rank 2 cannot name it, so the row that mounts the EDNL backend stays in kmet1 until the lift, and that is the seam working, not a gap). `kmet.libs.concurrent` gains `lock`/`with-lock` and `iso-now` first, so neither module writes host interop for its file mutations or its timestamps. Ships with an in-process `memory-backend` and **no composition row**: `:sessions` joins a profile when the EDNL backend moves into `app` (4c) | one contract test over two backends (the EDNL store and the in-memory one, 53 assertions); kmet1's sessions and their files unchanged; the row reports `:pending` with `waiting-for=#{:sessionPersistence}` when its backend is absent and activates when it mounts; `:projections` and `:systemPrompt` wait for the consumers that read them (4c) |
+| 4b | **The extension host and the ABI move into `app`**, keeping their namespaces: `kmet.agent.extensions.core` (1,586), `.context` (1,568) and `kmet.extension` (461); the 42-key api builds from a ctx instead of `app_runtime/node`; `shutdown` composes into the disposer; `extension.edn :inject`; `grep-tool` ported as a plugin; the `kmet.libs.scope` allowlist entry dies with the api | the key-set contract test (every `(:key api)` an ABI wrapper calls exists), a shipped directory extension and `grep-tool` green on both hosts; kmet1's extension surface unchanged |
+| 4c | **The root ctx, then `:agents`** — kmet1 boots the app root, `app_runtime/node` goes and its 19 readers take a ctx, the 16 mutable `defonce` cells are re-hosted, `registry_store.clj` and `kmet.libs.scope` are deleted, and `event_bus`'s subtree test moves onto ctx ancestry; then `Engine` → `:agents` with `:permissions`/`:approvals` and `:projections` + `:systemPrompt` behind it | after the cutover half: no `(scope/…)` call site is left and kmet1's registrations are in the tree; after the agent half: two agents in one process hold different tool tables, and an extension declaring `:inject {:sessions …}` goes pending then active |
+| 4d | **Inspection from the tree** — `kmet.app.inspect/units` renders the invocation ctx's subtree, `--dump-state` the root's, `/units` re-points at it and the store section is deleted | `/units` and `--dump-state` show a `:pending` fiber with its `waiting-for` and a `:failed` one with its error; the five listing tests rewritten against the tree |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` registry (create/resume/list) + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
 | 7 | loop re-hosted as a driver plugin; profiles as row+patch layers; presets = bundles | pi-alignment green; a tool swaps mid-session at the turn boundary (`:agent-settled`); a profile stacking a preset bundle boots |
+
+**Landing 4 is four landings** (4a–4d), split for two reasons. Size and reach:
+as one it moved 3,615 lines of extension host with a 42-key api rewired, and
+carried a 1,390-line `Engine` lift, 18 `defonce` cells (16 mutable) and 19
+`app-runtime/node` readers in 13 files — against 474 net lines at landing 3,
+and as the first landing that changes how *kmet1* resolves its world rather than
+adding beside it. Composition: it was a lift (`:sessions`), a move (the host), a
+re-host (`:agents`) and a renderer in one row, so the reuse ledger — the doc's
+own stop rule — could not tell a ported mechanism from a ported state model, and
+one extension-ABI failure would have blocked the session log and `/units` for no
+reason. Separated, each keeps the one-mechanism-plus-one-contract-test shape and
+retires its own `kmet.libs.scope` readers ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §9).
+
+Two consequences worth stating, because both were wrong in the single-landing
+version: **no mode ships in 4** — `kmet --app new` still reports `not-wired`
+until landing 5 mounts the modes, so 4c's observable is two differently-scoped
+agents, not a prompt; and **4c may still split**, because the root-ctx cutover
+(kmet1 boots the app root, `app_runtime/node` and `kmet.libs.scope` die) and the
+`Engine` → `:agents` lift gate separately — if they do not gate independently,
+4c becomes 4c/4d and inspection becomes 4e.
+
+### Landing 4a in flight
+
+- **The seam is seven ops, not five.** `:sessions` needs a handle and a way to get one, so `create!`/`load` are part of the storage contract and `paths` replaces `list` (it lists paths, and the app never learns a filename convention). The doc's five names (`append!` `read` `list` `delete` `header`) were a sketch of the *log's* surface; `entries` reads better than `read` in Clojure and the id index adds `get`.
+- **The backend is values, not a protocol.** A backend is a map of fns, checked once by `service` — a missing op throws `:kmet.app/incomplete-backend` naming it at mount, instead of `nil is not a function` halfway through a turn. The ops take no ctx: a backend is stateless (the handle carries the state) and per-context concerns arrive through the row's config.
+- **Two rules are the contract.** An append is the write (it stamps `:id`/`:parent-id`/`:timestamp`, chains onto the leaf, and never renumbers), and nothing is stored before the first assistant entry (a session that never got an answer leaves no file). Both are observable through `paths`, so both backends have to answer them and the contract test says so.
+- **One delta, recorded not discovered.** The EDNL backend stamps `:result-tokens` on tool entries (`session/store.clj`'s append policy). The contract does not assert on tool entries, so the backends agree where the contract speaks; the stamping moves into `:sessions` with the Engine lift (4c), where derived state over the log belongs.
+- **`kmet.libs.concurrent/lock` is a placement rule, not a portability floor.** bb and Jolt both construct a `ReentrantLock` (verified), so the primitive is about keeping host interop in the libs layer rather than a capability any host lacks — which is also why `store.clj` can keep its own until 4c instead of being rewritten now. `iso-now` lands beside it for the same reason: a session header's `:created-at` and an entry's `:timestamp` are wall-clock ISO strings, and no `kmet.app.*` namespace may name a host class to get one.
 
 ### Landing 3 settled
 
@@ -802,7 +842,7 @@ Each is independently shippable and gated.
   because there is nothing else to implement them with. `kmet.agent.registry`
   did not exist as a per-backend copy: the file moved to `modules/app` and its
   scope-store half became `kmet.agent.registry-store` in `modules/agent`, so
-  the app module never requires the store that landing 4 deletes.
+  the app module never requires the store that landing 4c deletes.
 - **Two backends, one contract.** `atom-registry` (an atom of
   `{:tag :name :owner :value}`, registration order is display order, a disposer
   removes exactly the entry it installed) is kmet2's; `store-registry` wraps
@@ -819,7 +859,7 @@ Each is independently shippable and gated.
   selection — stay in `kmet.agent.tools.registry` (rank 4), whose reads gained
   an explicit-argument arity (`(get-all-tools reg)`, `(get-tool reg name)`,
   `(get-contributed-tools reg)`); the zero-argument forms ask the app root, so
-  every kmet1 call site is unchanged until landing 4 threads the ctx.
+  every kmet1 call site is unchanged until landing 4c threads the ctx.
 - **One mutation path.** `register-tool!`/`unregister-tool!`, their source
   counterparts, `register-command!`/`unregister-command!`, the prompt-template
   loaders and `register-skill!` all go through the handle now (`tool-key`,
@@ -838,7 +878,7 @@ Each is independently shippable and gated.
   table, its owner/scope and its three emitters until the loop re-points
   (landing 7): that is the landing rule ("kmet2 uses the new mechanism, kmet1
   still uses the old one"), and delegating now would have taught the app's bus
-  kmet1's store-node scoping — a value that dies with the store at landing 4.
+  kmet1's store-node scoping — a value that dies with the store at landing 4c.
   A contract test runs one set of delivery assertions against both backends, so
   the pair cannot drift while both exist. The wire projections stayed with
   kmet1's transport: they are serialization, not the bus.
@@ -949,7 +989,7 @@ Each is independently shippable and gated.
 - **Rows arrive described.** `kmet.app.catalog/describe` turns a row into a
   card (`:id :name :inject :provide`) without mounting anything: a var source
   is resolved and read from its plugin map, an `:ext/…` keyword is external
-  (landing 4's host supplies its card at load), and `:id` defaults to the
+  (landing 4b's host supplies its card at load), and `:id` defaults to the
   plugin's `:name`. Composition is then pure data: bundle layers in order,
   config deep-merged by row id, `:remove`, and an insert — a patch naming an
   unknown id that carries a `:plugin` — positioned by `:after`/`:before`.
