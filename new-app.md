@@ -784,7 +784,7 @@ Each is independently shippable and gated.
 |---|---|---|
 | 0 | **landed** (`9c0b70ed`) — `modules/srce`: the light kernel — `ctx`/`fiber`/`event` behind the public `srce` | the contract + guard tests ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §12, 44 + 3 tests); no `kmet.agent.*` require, no `kmet.libs.scope` require |
 | 1 | **landed** (`367efd49`) — module wiring + guards (module-based require, no-global-node), `--app new` dispatch (bootstrap split: `kmet.agent.core` + `kmet.agent.cli`) + `check` requiring both entries, `--dump-config` over the composed rows | `kmet.test-module-deps` / `test-modules-manifest` green; each guard fails on a deliberate violation |
-| 2 | **landed** — the bus: the six non-awaiting dispatch modes (`emit!`, `bail!`, `waterfall!`, `collect-last!`, `collect-all!`, `boundary!`) over the kernel's listener table, with `:data` on a registration and `{:in scope}` on `provide!`; `kmet.app.events` keeps the vocabulary (declared in the `:events` plugin's `:events` map), the owner, and the `:events` service; **the submission point** — `kmet.app.runtime`: `submit!` from any thread, `boundary!` drains and settles, `boot` mounts the composed rows | one contract test over both delivery paths (kmet1's bus and the app's) and 62 assertions; a hook registered from another thread lands at the boundary; kmet1 green |
+| 2 | **landed** (`14ca4f0d`) — the bus: the six non-awaiting dispatch modes (`emit!`, `bail!`, `waterfall!`, `collect-last!`, `collect-all!`, `boundary!`) over the kernel's listener table, with `:data` on a registration and `{:in scope}` on `provide!`; `kmet.app.events` keeps the vocabulary (declared in the `:events` plugin's `:events` map), the owner, and the `:events` service; **the submission point** — `kmet.app.runtime`: `submit!` from any thread, `boundary!` drains and settles, `boot` mounts the composed rows | one contract test over both delivery paths (kmet1's bus and the app's), the app's own mode/service/declaration suite, and kmet1 green; a hook registered from another thread lands at the boundary |
 | 3 | `registry` parameterized then lifted; `:tools` service; commands/prompts/skills re-pointed | contract tests over both backends (installation is `provide!`, mutation is a handle method — no re-provide); kmet1 green |
 | 4 | `Engine` → `:agents` (+ `:permissions` policy/request!/remember!) and `:sessions` + `:sessionPersistence`; the extension host + ABI moved into `app` (key-set contract test); `extension.edn :inject` + `grep-tool` ported as a plugin; the remaining `runtime/node` reads; the globals re-hosted; `session/core.clj`'s lock moved onto a `kmet.libs.concurrent` primitive; **`/units` re-rendered from the tree** (`kmet.app.inspect`, store section deleted) | kmet2 runs `mode-print`; a shipped directory extension and `grep-tool` green; `/units` shows a `:pending` fiber with its `waiting-for`; kmet1 untouched |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
@@ -794,16 +794,17 @@ Each is independently shippable and gated.
 ### Landing 2 settled
 
 - **The vocabulary moved, the mechanism did not (yet).** `event-types`,
-  `app-event-types`, `loop-event-types` and the two wire projections
-  (`wire-event`, `wire-error`) are now `kmet.app.events`' — three fifths of
-  `event-bus.clj`, pure data — and `kmet.agent.event-bus` re-exports them, so
+  `app-event-types`, `loop-event-types` are now `kmet.app.events`' — three
+  fifths of `event-bus.clj`, pure data — and `kmet.agent.event-bus` re-exports
+  them, so
   every kmet1 call site and test is unchanged. kmet1 keeps its process-level
   table, its owner/scope and its three emitters until the loop re-points
   (landing 7): that is the landing rule ("kmet2 uses the new mechanism, kmet1
   still uses the old one"), and delegating now would have taught the app's bus
   kmet1's store-node scoping — a value that dies with the store at landing 4.
   A contract test runs one set of delivery assertions against both backends, so
-  the pair cannot drift while both exist.
+  the pair cannot drift while both exist. The wire projections stayed with
+  kmet1's transport: they are serialization, not the bus.
 - **All six non-awaiting modes are the kernel's, and they are the same shape.**
   `emit!` (nobody's answer), `bail!` (the first non-nil, short-circuiting),
   `waterfall!` (`(f event next)`; not calling `next` vetoes), `collect-last!`
@@ -815,8 +816,14 @@ Each is independently shippable and gated.
   handling. What stays above is the vocabulary and the owner *value* — a kernel
   may not name an app event — plus the one exception rule's home
   (`srce/invoke!`, which every mode calls) and `names`.
-  `parallel`/`serial` stay deferred: they need an awaitable the kernel does not
-  have, and the submission queue is a drain, not an awaitable.
+  `parallel`/`serial` stay absent, and not for lack of availability: `future`,
+  `promise`, `deref` timeouts and `core.async` (including `go`) run on all three
+  hosts. Their content *is* the await, so a sync kernel collapses them onto
+  `collect-all!` and `bail!`; and awaiting by deref blocks the owner thread,
+  while awaiting in a `go` block colors every caller. Async fan-out is the app's
+  queue (`submit!`/`boundary!`), which is Cordis's `ctx.submit`; the kernel
+  grows a mode only when an emitter needs *concurrent blocking* listeners
+  (`srce.md` §5).
 - **The registration is the record; there is no side table.** `on` takes
   `{:data …}`, the table stores `{:f :data}`, and `listeners` hands back
   `{:ctx :f :data}` — so `collect-all!` reports a contribution beside the data
