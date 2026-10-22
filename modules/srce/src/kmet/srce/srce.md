@@ -725,7 +725,10 @@ extension is `dispose!` on its fiber and the entries come back LIFO. Deleting
 the store before that would rewrite the remaining 27 sites into private cleanup
 lists, which is the copy AGENTS.md forbids.
 
-**All of it in one change, at the end of landing 4c:** delete
+**Not in one change, and not at the end of 4c:** the extension host's twelve
+sites only go when the host moves (4b-ii), which itself needs the root ctx
+4c-ii creates — so the store retires after 4b-ii, not before it. The rest go
+with 4c-ii (see the table above). When the last site is gone, delete
 `modules/libs/src/kmet/libs/{scope.clj,scope.md}`,
 `modules/libs/test/kmet/libs/test_scope{,_self_contained}.clj`, the
 `app_runtime.clj` `*error-reporter*` rebinding (cleanup errors go to the
