@@ -63,6 +63,7 @@
             [kmet.agent.extensions.context :as context]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.registry :as registry]
+            [kmet.agent.registry-store :as registry-store]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
@@ -174,12 +175,12 @@
 (defn- entry-renderer-key
   "The store key addressing an entry renderer by CUSTOM-TYPE."
   [custom-type]
-  (registry/store-key :kmet/entry-renderer custom-type))
+  (registry-store/store-key :kmet/entry-renderer custom-type))
 
 (defn- message-renderer-key
   "The store key addressing a message renderer by CUSTOM-TYPE."
   [custom-type]
-  (registry/store-key :kmet/message-renderer custom-type))
+  (registry-store/store-key :kmet/message-renderer custom-type))
 
 ;; Flags register under the extension owner like the renderers, addressed by
 ;; [:kmet/flag <name>]; the --ext-* values themselves are process argv, so
@@ -187,7 +188,7 @@
 (defn- flag-key
   "The store key addressing a CLI flag by NAME."
   [name]
-  (registry/store-key :kmet/flag name))
+  (registry-store/store-key :kmet/flag name))
 
 ;; The parsed --ext-* argv values by flag name, as set once at startup
 ;; (kmet.agent.core). Process state: the values are the process's command
@@ -223,7 +224,7 @@
 (defn- theme-key
   "The store key addressing a loaded theme by NAME."
   [name]
-  (registry/store-key :kmet/theme name))
+  (registry-store/store-key :kmet/theme name))
 
 (defonce ^:private hook-seq (atom 0))
 

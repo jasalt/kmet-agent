@@ -12,15 +12,28 @@
   (:require [kmet.agent.registry :as registry]
             [kmet.libs.scope :as scope]))
 
+(defn store-key
+  "The address NAME occupies in a TAG registry: a `[TAG name]` key in the
+   store. Store-specific — the handle's contract names tags and names, not
+   keys."
+  [tag name]
+  [tag name])
+
+(defn key?
+  "True for a store key a TAG registry holds. Other registries share the store,
+   so the shape is checked before the head."
+  [tag k]
+  (and (vector? k) (= tag (first k))))
+
 (defn store-registry
   "The `Registry` handle over NODE's store: every registration addressed by
-   `(registry/store-key tag name)` and held by an owner path. Owners are
+   `(store-key tag name)` and held by an owner path. Owners are
    searched in first-registration order, which is the display order the store
    already keeps."
   [node]
   (reify registry/Registry
     (register! [_ tag name value owner]
-      (let [k (registry/store-key tag name)
+      (let [k (store-key tag name)
             dispose (scope/register! node owner k value)]
         ;; the store's own deregister is value-guarded: a disposer whose
         ;; registration was replaced must not report (or perform) a removal
@@ -29,17 +42,17 @@
             (do (dispose) true)
             false))))
     (deregister! [_ tag name owner]
-      (scope/deregister-key! node (registry/store-key tag name) owner)
+      (scope/deregister-key! node (store-key tag name) owner)
       nil)
     (by-owner [_ tag name]
-      (scope/for-key node (registry/store-key tag name)))
-    (ordered [_ tag]
+      (scope/for-key node (store-key tag name)))
+    (entries [_ tag]
       (into []
-            (keep (fn [[k _ v]] (when (registry/key? tag k) [(second k) v])))
+            (keep (fn [[k _ v]] (when (key? tag k) [(second k) v])))
             (scope/ordered-registrations node)))
     (clear! [_ tag]
       ;; by key, not by owner: an owner holds several registries (scope.md §2)
       (doseq [[k owner v] (scope/ordered-registrations node)
-              :when (registry/key? tag k)]
+              :when (key? tag k)]
         (scope/deregister! node owner k v))
       nil)))

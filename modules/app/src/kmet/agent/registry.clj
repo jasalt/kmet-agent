@@ -16,11 +16,11 @@
      until landing 4 deletes it (`new-app.md`).
 
    The rules are the same for both: an entry is addressed by its own name;
-   owners are searched in first-registration order, so the owner that took a
-   name keeps it; listing is display order (owner-major, registration order
-   within an owner); `effective-entries` collapses that to one entry per name,
-   so listing and lookup agree; a whole-registry clear removes by tag across
-   every owner, because one owner holds several registries.
+   owners are searched in display order, so the owner that took a name keeps
+   it; `effective-entries` collapses the listing to one entry per name, so
+   listing and lookup agree; a whole-registry clear removes by tag across every
+   owner, because one owner holds several registries. The listing layout is the
+   backend's (see `entries`).
 
    The registries themselves stay in their namespaces: they own the tag, the
    domain validation and the owner default. Only the mechanics live here.")
@@ -42,14 +42,14 @@
     [registry tag name]
     "Every value registered under NAME in TAG's registry: {owner value}. The
      raw owner view a collision check needs; lookup goes through `entry`.")
-  (ordered
+  (entries
     [registry tag]
     "TAG's registrations in display order: `[[name value] …]`, a name held by
      several owners appearing once per owner — use `effective-entries` for the
      registry a lookup sees. The backend chooses the layout (kmet1's store
      lists owner-major, kmet2's atom interleaves owners in registration order),
-     but `ordered` must keep the winning registration first for a name: the
-     first occurrence is what `entry` returns.")
+     but the winning registration must come first for a name: the first
+     occurrence is what `entry` returns.")
   (clear!
     [registry tag]
     "Remove every TAG registration, whichever owner holds it (mainly for
@@ -57,28 +57,11 @@
 
 ;; ─── Shared readings ────────────────────────────────────────────────────────
 
-(defn store-key
-  "The address NAME occupies in a registry with TAG — the shape a store-backed
-   backend keys on."
-  [tag name]
-  [tag name])
-
-(defn key?
-  "True for a key a TAG registry holds. Other registries share a store, so the
-   shape is checked before the head."
-  [tag k]
-  (and (vector? k) (= tag (first k))))
-
 (defn entry
   "The value registered under NAME in TAG's registry, or nil. Owners are
    searched in display order, so the owner that took the name keeps it."
   [registry tag name]
-  (second (first (filter #(= name (first %)) (ordered registry tag)))))
-
-(defn entries
-  "TAG's registrations in display order: `[[name value] …]`."
-  [registry tag]
-  (ordered registry tag))
+  (second (first (filter #(= name (first %)) (entries registry tag)))))
 
 (defn effective-entries
   "TAG's effective registrations in display order: one per name, from the
@@ -90,7 +73,7 @@
                [seen acc]
                [(conj seen name) (conj acc [name value])]))
            [#{} []]
-           (ordered registry tag))))
+           (entries registry tag))))
 
 ;; ─── The atom backend (kmet2) ──────────────────────────────────────────────
 
@@ -131,7 +114,7 @@
               (keep (fn [e] (when (and (= tag (:tag e)) (= name (:name e)))
                               [(:owner e) (:value e)])))
               @state))
-      (ordered [_ tag]
+      (entries [_ tag]
         (into [] (keep (fn [e] (when (= tag (:tag e)) [(:name e) (:value e)]))) @state))
       (clear! [_ tag]
         (swap! state (fn [v] (into [] (remove #(= tag (:tag %))) v)))

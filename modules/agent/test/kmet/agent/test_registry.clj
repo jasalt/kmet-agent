@@ -15,9 +15,6 @@
   [["atom" #(registry/atom-registry)]
    ["store" #(registry-store/store-registry (scope/node))]])
 
-(def not-here
-  ::not-here)
-
 (deftest register-entry-and-dispose
   (doseq [[kind make] (backends)]
     (testing kind
@@ -47,7 +44,8 @@
         (registry/register! r :kmet/skill "review" {:from :second} [:ext/b])
         (is (= {:from :first} (registry/entry r :kmet/skill "review"))
             "lookup reads display order, so the first owner wins")
-        (is (= {:from :first} (first (vals (registry/by-owner r :kmet/skill "review"))))
+        (is (= {[:ext/a] {:from :first} [:ext/b] {:from :second}}
+               (registry/by-owner r :kmet/skill "review"))
             "by-owner reports each owner's own value")
         (is (= 2 (count (registry/entries r :kmet/skill))))
         (is (= [["review" {:from :first}]]
@@ -70,9 +68,3 @@
             "another tag's registrations survive")
         (registry/clear! r :kmet/command)
         (is (empty? (registry/entries r :kmet/command)))))))
-
-(deftest addresses-are-tag-and-name
-  (is (= [:kmet/tool "read"] (registry/store-key :kmet/tool "read")))
-  (is (registry/key? :kmet/tool [:kmet/tool "read"]))
-  (is (not (registry/key? :kmet/tool [:kmet/command "read"])))
-  (is (not (registry/key? :kmet/tool "read"))))
