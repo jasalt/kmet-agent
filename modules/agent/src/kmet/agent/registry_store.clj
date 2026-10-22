@@ -46,6 +46,11 @@
       nil)
     (by-owner [_ tag name]
       (scope/for-key node (store-key tag name)))
+    (deregister-owner! [_ tag owner]
+      (doseq [[k k-owner v] (scope/ordered-registrations node)
+              :when (and (= owner k-owner) (key? tag k))]
+        (scope/deregister! node k-owner k v))
+      nil)
     (entries [_ tag]
       (into []
             (keep (fn [[k _ v]] (when (key? tag k) [(second k) v])))

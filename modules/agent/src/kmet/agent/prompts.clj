@@ -18,7 +18,6 @@
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.registry-store :as registry-store]
             [kmet.agent.registry :as registry]
             [kmet.libs.yaml :as yaml]))
 
@@ -197,11 +196,11 @@
    registry by default).
    Returns a deregister fn removing exactly this template — a no-op when the
    content failed to parse."
-  [node {:keys [name content location extension owner]}]
+  [{:keys [name content location extension owner]}]
   (if-let [t (make-template-from-content content name
                                          (or location (str (or extension "prompt")))
                                          extension)]
-    (registry/register! (registry-store/store-registry node)
+    (registry/register! (app-runtime/registry)
                         :kmet/prompt (:name t) t (or owner prompts-owner))
     (fn [] nil)))
 
@@ -225,8 +224,8 @@
    templates go with it — scope.md §2). Adds them to the registry, reports
    load failures as warnings on stderr (pi: prompt resource diagnostics), and
    returns the loaded templates."
-  ([node file-paths] (load-prompt-template-files! node file-paths prompts-owner))
-  ([node file-paths owner]
+  ([file-paths] (load-prompt-template-files! file-paths prompts-owner))
+  ([file-paths owner]
    (let [loaded (volatile! [])
          warnings (volatile! [])]
      (doseq [f file-paths]
@@ -241,7 +240,7 @@
      (let [ts @loaded
            owner (or owner prompts-owner)]
        (doseq [t ts]
-         (registry/register! (registry-store/store-registry node)
+         (registry/register! (app-runtime/registry)
                              :kmet/prompt (:name t) t owner))
        ts))))
 
@@ -249,19 +248,19 @@
   "Load .md prompt templates from a directory (non-recursive, pi:
    loadTemplatesFromDir) under OWNER (the app's registry by default). Adds
    them to the registry; returns the loaded templates."
-  ([node dir] (load-prompt-templates-from-dir node dir prompts-owner))
-  ([node dir owner]
-   (load-prompt-template-files! node (prompt-template-files-in-dir dir) owner)))
+  ([dir] (load-prompt-templates-from-dir dir prompts-owner))
+  ([dir owner]
+   (load-prompt-template-files! (prompt-template-files-in-dir dir) owner)))
 
 (defn get-prompt-templates
   []
   (registered-prompt-templates))
 
 (defn clear-prompt-templates!
-  "Remove every loaded prompt template from NODE (pi: resourceLoader.reload
-   re-discovers from scratch). Used by /reload."
-  [node]
-  (registry/clear! (registry-store/store-registry node) :kmet/prompt))
+  "Remove every loaded prompt template (pi: resourceLoader.reload re-discovers
+   from scratch). Used by /reload."
+  []
+  (registry/clear! (app-runtime/registry) :kmet/prompt))
 
 (defn get-prompt-template
   [name]

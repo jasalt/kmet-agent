@@ -172,24 +172,9 @@
 ;; <custom-type>]: a type holds one renderer, so a re-registration replaces
 ;; it, and the registration is disposed with its owner rather than reset by
 ;; hand.
-(defn- entry-renderer-key
-  "The store key addressing an entry renderer by CUSTOM-TYPE."
-  [custom-type]
-  (registry-store/store-key :kmet/entry-renderer custom-type))
-
-(defn- message-renderer-key
-  "The store key addressing a message renderer by CUSTOM-TYPE."
-  [custom-type]
-  (registry-store/store-key :kmet/message-renderer custom-type))
-
 ;; Flags register under the extension owner like the renderers, addressed by
 ;; [:kmet/flag <name>]; the --ext-* values themselves are process argv, so
 ;; they live in the global below rather than in an engine (see get-flag).
-(defn- flag-key
-  "The store key addressing a CLI flag by NAME."
-  [name]
-  (registry-store/store-key :kmet/flag name))
-
 ;; The parsed --ext-* argv values by flag name, as set once at startup
 ;; (kmet.agent.core). Process state: the values are the process's command
 ;; line, not a per-engine registration.
@@ -330,8 +315,9 @@
   "Register OWNER's renderer for a custom entry type (extension api:
    register-entry-renderer!). RENDERER — (fn [entry]) returning a chat
    message map (or bare component) or nil. Returns a deregister fn."
-  [node owner custom-type renderer]
-  (scope/register! node owner (entry-renderer-key custom-type) renderer))
+  [owner custom-type renderer]
+  (registry/register! (app-runtime/registry) :kmet/entry-renderer custom-type
+                      renderer owner))
 
 (defn get-entry-renderer [custom-type]
   (registry/entry (app-runtime/registry) :kmet/entry-renderer custom-type))
@@ -339,8 +325,9 @@
 (defn register-message-renderer!
   "Register OWNER's renderer for a custom MESSAGE type (extension api:
    register-message-renderer!). Returns a deregister fn."
-  [node owner custom-type renderer]
-  (scope/register! node owner (message-renderer-key custom-type) renderer))
+  [owner custom-type renderer]
+  (registry/register! (app-runtime/registry) :kmet/message-renderer custom-type
+                      renderer owner))
 
 (defn get-message-renderer [custom-type]
   (registry/entry (app-runtime/registry) :kmet/message-renderer custom-type))
@@ -427,9 +414,9 @@
   "Register OWNER's CLI flag (extension api: register-flag!). NAME — without
    the leading --; opts: :type (:boolean|:string) :default. Returns a
    deregister fn."
-  [node owner name & [{:keys [type default]}]]
-  (scope/register! node owner (flag-key name)
-                   {:type (or type :string) :default default}))
+  [owner name & [{:keys [type default]}]]
+  (registry/register! (app-runtime/registry) :kmet/flag name
+                      {:type (or type :string) :default default} owner))
 
 (defn set-cli-flags! [flag-map]
   (reset! cli-flag-values (or flag-map {}))
@@ -1027,25 +1014,25 @@
                           (let [cmd (loader-aware-map
                                      ext (assoc cmd :extension-handler
                                                 (:handler cmd)))]
-                            (commands/register-command! node cmd (extension-owner name))))
+                            (commands/register-command! cmd (extension-owner name))))
      :unregister-command! (fn [cmd-name]
-                            (commands/unregister-command! node cmd-name (extension-owner name)))
+                            (commands/unregister-command! cmd-name (extension-owner name)))
      ;; sanitized — other extensions must not see :handler/:extension-handler
      :get-commands #(mapv (fn [c] (select-keys c [:name :description]))
                           (commands/get-commands))
      :register-tool! (fn [tool]
-                       (tools/register-tool! node (loader-aware-map ext tool)
+                       (tools/register-tool! (loader-aware-map ext tool)
                                              (extension-owner name)))
      :unregister-tool! (fn [tool-name]
-                         (tools/unregister-tool! node tool-name (extension-owner name)))
+                         (tools/unregister-tool! tool-name (extension-owner name)))
      ;; sandbox-only tools: contributed into the run_code tool's surface, never
      ;; the model's tool set (mcp-adapter's MCP catalog — run_code.md T2)
      :register-tool-source! (fn [id tools-fn]
                               (tools/register-tool-source!
-                               node id tools-fn (extension-owner name)))
+                               id tools-fn (extension-owner name)))
      :unregister-tool-source! (fn [id]
                                 (tools/unregister-tool-source!
-                                 node id (extension-owner name)))
+                                 id (extension-owner name)))
      ;; pi: createBashTool — the bash tool constructor with its options
      ;; (spawnHook / exposeSessionEnvironment / commandPrefix / shellPath /
      ;; operations). The built-in bash tool is the same constructor with
@@ -1077,7 +1064,7 @@
                        (register-tool-result-hook! node (extension-owner name)
                                                    (loader-aware ext hook)))
      :register-flag! (fn [flag-name & [opts]]
-                       (register-flag! node (extension-owner name) flag-name opts))
+                       (register-flag! (extension-owner name) flag-name opts))
      :get-flag get-flag
      :register-shortcut! (fn [key-id & [opts]]
                            (let [dereg (register-shortcut!
@@ -1093,10 +1080,10 @@
                                         (loader-aware ext transformer)))
      :register-entry-renderer! (fn [custom-type renderer]
                                  (register-entry-renderer!
-                                  node (extension-owner name) custom-type renderer))
+                                  (extension-owner name) custom-type renderer))
      :register-message-renderer! (fn [custom-type renderer]
                                    (register-message-renderer!
-                                    node (extension-owner name) custom-type renderer))
+                                    (extension-owner name) custom-type renderer))
      ;; tag aliases (kmet.libs.hikap.alias): the registry is process-global, so the
      ;; registration MUST be tracked — unload removes exactly this fn's
      ;; registration (a later re-registration by another owner survives)
@@ -1110,13 +1097,12 @@
                         ;; skills need no filesystem path. Registered under the
                         ;; extension's owner, so unload disposes it.
                         (skills/register-extension-skill!
-                         node raw-content
+                         raw-content
                          (assoc opts
                                 :extension name
                                 :owner (extension-owner name))))
      :register-prompt! (fn [prompt & [opts]]
                          (prompts/register-prompt-template!
-                          node
                           (assoc (merge opts prompt)
                                  :extension name
                                  :owner (extension-owner name))))
@@ -1384,6 +1370,9 @@
     ;; outside the tree first: a handler still subscribed while the store's
     ;; registrations go would see a half-unloaded extension
     (app-runtime/dispose-deregisters! @(:deregister-fns ext))
+    ;; the registries are services in the app ctx now, not store entries, so
+    ;; the owner path no longer disposes them (4c-ii)
+    (app-runtime/deregister-owner! (extension-owner (:name ext)))
     (app-runtime/dispose-owner! (extension-owner (:name ext)))
     (when-let [l @(:loader ext)]
       (loader/unload! l))
@@ -1460,8 +1449,8 @@
    owner and key) and unload complete (disposing the owner takes the
    resources with it)."
   [node owner {:keys [skill-paths prompt-paths theme-paths]}]
-  (doseq [p skill-paths] (skills/load-skills-from-dir node p owner))
-  (doseq [p prompt-paths] (prompts/load-prompt-templates-from-dir node p owner))
+  (doseq [p skill-paths] (skills/load-skills-from-dir p owner))
+  (doseq [p prompt-paths] (prompts/load-prompt-templates-from-dir p owner))
   (doseq [p theme-paths] (load-contributed-themes! node owner p)))
 
 (defn discover-resources!

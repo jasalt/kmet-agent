@@ -12,7 +12,6 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
-            [kmet.agent.app-runtime :as runtime]
             [kmet.agent.retry :as retry]
             [kmet.agent.loop.test-support :as support]))
 
@@ -68,15 +67,15 @@
     ;; a dedicated search tool in the active set suppresses the shell rule
     ;; (pi: buildRules — grep/find/ls); the stand-in mirrors the grep extension
     (try
-      (tools-registry/register-tool! (runtime/node) {:name "grep"
-                                                     :description "stand-in for the grep extension"
-                                                     :prompt-snippet "stand-in for the grep extension"
-                                                     :execute (fn [_] {:content ""})})
+      (tools-registry/register-tool!  {:name "grep"
+                                       :description "stand-in for the grep extension"
+                                       :prompt-snippet "stand-in for the grep extension"
+                                       :execute (fn [_] {:content ""})})
       (state/set-active-tools! agent ["bash" "read" "grep"])
       (t/is (str/includes? @(:system agent) "- grep:"))
       (t/is (not (str/includes? @(:system agent) "Use bash for file operations")))
       (finally
-        (tools-registry/unregister-tool! (runtime/node) "grep")))
+        (tools-registry/unregister-tool!  "grep")))
     ;; restore all
     (state/set-active-tools! agent nil)
     (t/is (nil? @(:enabled-tools agent)))

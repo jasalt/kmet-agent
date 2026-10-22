@@ -8,8 +8,7 @@
    first event of every run, the exception was swallowed by the run future
    (its catch re-emits :error through the same handler, which also threw),
    and the UI stayed on \"Working...\" forever while print mode kept working."
-  (:require [kmet.agent.app-runtime :as app-runtime]
-            [clojure.test :as t :refer [deftest is testing]]
+  (:require [clojure.test :as t :refer [deftest is testing]]
             [kmet.agent.modes.interactive :as inter]
             [kmet.agent.modes.interactive.builtins :as builtins]
             [kmet.agent.modes.interactive.layout :as layout]
@@ -396,7 +395,7 @@
 (deftest share-command-dispatches-auth-status
   (let [registered (atom {})]
     (with-redefs [commands/find-command (constantly nil)
-                  commands/register-command! (fn [_node cmd & _]
+                  commands/register-command! (fn [cmd & _]
                                                (swap! registered assoc (:name cmd) cmd))]
       (builtins/register-builtin-commands! {}))
     (doseq [[auth-status sess expected-content expected-shares]
@@ -422,7 +421,7 @@
 (deftest share-command-refuses-a-second-share
   (let [registered (atom {})]
     (with-redefs [commands/find-command (constantly nil)
-                  commands/register-command! (fn [_node cmd & _]
+                  commands/register-command! (fn [cmd & _]
                                                (swap! registered assoc (:name cmd) cmd))]
       (builtins/register-builtin-commands! {}))
     (testing "a share already in progress is refused — the background status is
@@ -489,8 +488,7 @@
                                    :chat-history chat-history
                                    :session-atom (atom sess)
                                    :agent-state (atom (agent/make-agent-state))})
-          dereg (extensions/register-entry-renderer! (app-runtime/node)
-                                                     (extensions/extension-owner "test-entry-render")
+          dereg (extensions/register-entry-renderer! (extensions/extension-owner "test-entry-render")
                                                      "test-entry-render"
                                                      (fn [_]
                                                        {:role :info :label "Entry" :content "rendered entry"}))]
@@ -848,11 +846,9 @@
   (testing "a throwing entry renderer renders the pi failure line instead of
             crashing the replay; a bare-component result is wrapped"
     (let [component (container/make-container)
-          dereg-boom (extensions/register-entry-renderer! (app-runtime/node)
-                                                          (extensions/extension-owner "test-entry-boom")
+          dereg-boom (extensions/register-entry-renderer! (extensions/extension-owner "test-entry-boom")
                                                           "boom-entry" (fn [_] (throw (ex-info "kaput" {}))))
-          dereg-comp (extensions/register-entry-renderer! (app-runtime/node)
-                                                          (extensions/extension-owner "test-entry-comp")
+          dereg-comp (extensions/register-entry-renderer! (extensions/extension-owner "test-entry-comp")
                                                           "comp-entry" (fn [_] component))]
       (try
         (let [sess-dir (str "target/test-interactive-entry-rdr-" (System/currentTimeMillis))
@@ -985,10 +981,10 @@
                       packages/load-extensions! (fn [] [])
                       packages/resolve-theme-paths (fn [] nil)
                       models/load-models-config! (fn [] nil)
-                      skills/clear-skills! (fn [_node] nil)
-                      prompts/clear-prompt-templates! (fn [_node] nil)
-                      packages/load-skills! (fn [_node] nil)
-                      packages/load-prompts! (fn [_node] nil)
+                      skills/clear-skills! (fn [] nil)
+                      prompts/clear-prompt-templates! (fn [] nil)
+                      packages/load-skills! (fn [] nil)
+                      packages/load-prompts! (fn [] nil)
                       context/load-project-context-files (fn [_ _] [])
                       chat-history/chat-history-set-thinking-hidden! (fn [_ _] nil)
                       loaded-resources/loaded-resources-set-sections! (fn [_ _] nil)
@@ -1029,10 +1025,10 @@
                                  packages/load-extensions! (fn [] [])
                                  packages/resolve-theme-paths (fn [] nil)
                                  models/load-models-config! (fn [] nil)
-                                 skills/clear-skills! (fn [_node] nil)
-                                 prompts/clear-prompt-templates! (fn [_node] nil)
-                                 packages/load-skills! (fn [_node] nil)
-                                 packages/load-prompts! (fn [_node] nil)
+                                 skills/clear-skills! (fn [] nil)
+                                 prompts/clear-prompt-templates! (fn [] nil)
+                                 packages/load-skills! (fn [] nil)
+                                 packages/load-prompts! (fn [] nil)
                                  context/load-project-context-files (fn [_ _] [])
                                  extensions/ui-reset! (fn [] nil)
                                  extensions/clear-extensions! (fn [] nil)
@@ -1075,10 +1071,10 @@
                     packages/load-extensions! (fn [] [])
                     packages/resolve-theme-paths (fn [] nil)
                     models/load-models-config! (fn [] nil)
-                    skills/clear-skills! (fn [_node] nil)
-                    prompts/clear-prompt-templates! (fn [_node] nil)
-                    packages/load-skills! (fn [_node] nil)
-                    packages/load-prompts! (fn [_node] nil)
+                    skills/clear-skills! (fn [] nil)
+                    prompts/clear-prompt-templates! (fn [] nil)
+                    packages/load-skills! (fn [] nil)
+                    packages/load-prompts! (fn [] nil)
                     context/load-project-context-files
                     (fn [_ cwd]
                       (reset! loader-cwd cwd)

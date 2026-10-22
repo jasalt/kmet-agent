@@ -118,8 +118,10 @@
    The session engine's node when it has one — a session running in its own
    tree shows that tree — and the app root otherwise."
   [{:keys [ui] engine :runtime} _]
-  (let [node (or (runtime/agent-node engine) (app-runtime/node))]
-    (out ui :info "Units" (app-runtime/owner-listing node))))
+  (let [node (or (runtime/agent-node engine) (app-runtime/node))
+        lines (remove str/blank? [(app-runtime/owner-listing node)
+                                  (app-runtime/registry-listing (app-runtime/ctx))])]
+    (out ui :info "Units" (str/join "\n" lines))))
 
 (defn register-runtime-commands!
   "Register the engine-portable builtins (untagged: every front end
@@ -127,29 +129,29 @@
    builtin registration."
   []
   (commands/register-builtin!
-   (app-runtime/node)
+
    {:name "units"
     :description "List store owners and their registered keys"
     :handler handle-units})
   (commands/register-builtin!
-   (app-runtime/node)
+
    {:name "continue"
     :description "Continue where the agent left off (e.g. after a network error)"
     :handler handle-continue})
   (commands/register-builtin!
-   (app-runtime/node)
+
    {:name "name"
     :description "Set session display name"
     :argument-hint "<name>"
     :handler handle-name})
   (commands/register-builtin!
-   (app-runtime/node)
+
    {:name "export"
     :description "Export session to HTML (JSONL is not supported by design)"
     :argument-hint "<path>"
     :handler handle-export})
   (commands/register-builtin!
-   (app-runtime/node)
+
    {:name "compact"
     :description "Manually compact the session context"
     :argument-hint "<instructions>"

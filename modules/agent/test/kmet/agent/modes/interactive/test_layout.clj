@@ -3,7 +3,6 @@
    editor's submit ordering (submitValue clears before onSubmit)."
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.test-utils :as tu :refer [strip-ansi]]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.hikap :as hiccup]
             [kmet.libs.hikap.component :as component]
@@ -234,7 +233,7 @@
             the /tools dialog cannot put the submitted '/tools' line back
             into the editor — while a dialog opened outside a submit still
             restores the draft it covered"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (let [ui (tui/create-tui nil)
           ed (editor/make-editor)
           ch (chat-history/make-chat-history)
@@ -266,12 +265,12 @@
           :widgets-above-atom (atom {})
           :widgets-below-atom (atom {})}
          nil)
-        (commands/register-command! (app-runtime/node)
-                                    {:name "tools"
-                                     :description "test"
-                                     :extension-handler (fn [_ctx _args]
-                                                          (reset! seen (extensions/ui-get-editor-text))
-                                                          (extensions/ui-custom factory {}))})
+        (commands/register-command!
+         {:name "tools"
+          :description "test"
+          :extension-handler (fn [_ctx _args]
+                               (reset! seen (extensions/ui-get-editor-text))
+                               (extensions/ui-custom factory {}))})
         (editor/editor-set-text! ed "/tools")
         (submit "/tools")
         (t/is (= "" @seen)
@@ -288,6 +287,6 @@
           (@close-ref nil)
           (t/is (= "draft" (editor/editor-get-text ed))))
         (finally
-          (commands/clear-commands! (app-runtime/node))
+          (commands/clear-commands!)
           (tu/clear-extension-wiring!))))))
 

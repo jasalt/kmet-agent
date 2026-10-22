@@ -17,10 +17,13 @@
    mid-run (`/reload`, bootstrap, a session swap)."
   (:require [clojure.string :as str]
             [kmet.agent.debug :as debug]
-            [kmet.agent.registry-store :as registry-store]
             [kmet.agent.loop-guard :as loop-guard]
+            [kmet.agent.registry :as reg]
             [kmet.agent.retry :as retry]
-            [kmet.libs.scope :as scope]))
+            [kmet.app.core :as app-core]
+            [kmet.app.runtime :as app-runtime]
+            [kmet.libs.scope :as scope]
+            [kmet.srce.core :as srce]))
 
 (defn- with-reported-cleanups
   "Run F with the store's cleanup reporter bound to
@@ -67,12 +70,81 @@
   []
   @app-node)
 
-(defn registry
-  "The `Registry` handle over the app root's store: how a kmet1 registry reads
-   its registrations now that the mechanics are shared with kmet2
-   (`kmet.agent.registry`). Dies with the store at landing 4."
+;; ─── The app root context ──────────────────────────────────────────────────
+;; kmet1 runs on kmet2's composition: the root ctx is the same one `--app new`
+;; boots, mounted once per process and never shut down (process exit is the
+;; disposal). The store node above is what is left of kmet1's own tree — the
+;; extension host's owner paths, `/units` and the bus's scoping — and it retires
+;; after 4b-ii puts the host on fibers (new-app.md § Landings).
+
+(defonce ^:private app-root
+  (delay (app-runtime/boot (app-core/compose-config {:profile :tui}))))
+
+(defn ctx
+  "The app root ctx: the composed rows kmet1 registers into."
   []
-  (registry-store/store-registry (node)))
+  (:ctx @app-root))
+
+(def ^:private registry-tags
+  "Every registry tag kmet1 registers under, and the service that owns it — nil
+   for the tags with no seam yet (the extension host's UI-side registries:
+   entry renderers, message renderers, flags), which share the façade's
+   `remainder` handle until 4b-ii gives them services."
+  {:kmet/tool :tools
+   :kmet/tool-source :tools
+   :kmet/command :commands
+   :kmet/prompt :prompts
+   :kmet/skill :skills
+   :kmet/entry-renderer nil
+   :kmet/message-renderer nil
+   :kmet/flag nil})
+
+(defonce ^:private registry-handle
+  (delay
+    (let [remainder (reg/atom-registry)]
+      (reg/router (fn [tag]
+                    (if-let [service (registry-tags tag)]
+                      (srce/get (ctx) service)
+                      remainder))))))
+
+(defn registry
+  "The `Registry` handle kmet1 registers through: one façade that routes each
+   tag to the service that owns it in the app ctx (`kmet.agent.registry/router`),
+   so a command registered here is the `:commands` service kmet2 reads, and one
+   that has no seam yet still has somewhere to go."
+  []
+  @registry-handle)
+
+(def ^:private listed-registries
+  "The service and tag each `/units` registry line shows, in display order."
+  [[:commands :kmet/command]
+   [:prompts :kmet/prompt]
+   [:skills :kmet/skill]
+   [:tools :kmet/tool]])
+
+(defn registry-listing
+  "One line per registry service that holds anything: `:commands keys=[…]`, read
+   from the app ctx's handles. The registries left the store at 4c-ii, so the
+   owner walk cannot see them any more; this is the same surface from the other
+   side, and it is replaced by `kmet.app.inspect`'s tree at 4d."
+  [ctx]
+  (->> listed-registries
+       (keep (fn [[service tag]]
+               (when-let [handle (srce/get ctx service)]
+                 (let [names (mapv first (reg/entries handle tag))]
+                   (when (seq names)
+                     (str (pr-str service) " keys=" (pr-str names)))))))
+       (str/join "\n")))
+
+(defn deregister-owner!
+  "Remove every registry registration OWNER holds, across every tag — what
+   unloading an extension or a resource contributor needs now that the
+   registries are services rather than store entries (4c-ii): one call per tag
+   instead of tracking a disposer per registration."
+  [owner]
+  (doseq [tag (keys registry-tags)]
+    (reg/deregister-owner! (registry) tag owner))
+  nil)
 
 (defn loop-stages
   "NODE's loop stage map, read once per attempt. A node that carries none (a

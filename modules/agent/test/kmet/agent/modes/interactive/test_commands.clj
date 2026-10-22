@@ -3,7 +3,6 @@
    status indicator's model swap, /scoped-models and /settings, and /followup."
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.test-utils :as tu]
-            [kmet.agent.app-runtime :as app-runtime]
             [clojure.string :as str]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.spinner :as spinner]
@@ -39,7 +38,7 @@
 (deftest test-builtin-login-logout-registered
   (testing "login/logout are real builtins inside register-builtin-commands!
             (not dropped or left as top-level forms)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [login (commands/find-command "login")
           logout (commands/find-command "logout")]
@@ -53,7 +52,7 @@
 (deftest test-view-builtin-through-the-command-ctx
   (testing "the registry adapter unwraps :state for a view-bound builtin:
             /help dispatched through the real command ctx reaches the chat"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           msgs (atom [])
@@ -68,7 +67,7 @@
 (deftest test-name-command-portable
   (testing "/name runs from the command ctx: it renames the session and
             reports through the shared UI capabilities (no CoreState)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str "target/test-name-command-" (System/currentTimeMillis))
           sess (session/create-session dir)
@@ -90,9 +89,9 @@
   (testing "builtin registration skips names an extension already took
             (extensions load before the layout is built; the shipped /tools
             extension replaces the builtin tools listing)"
-    (commands/clear-commands! (app-runtime/node))
-    (commands/register-command! (app-runtime/node)
-                                {:name "tools" :description "extension version" :handler (fn [_ _] nil)})
+    (commands/clear-commands!)
+    (commands/register-command!
+     {:name "tools" :description "extension version" :handler (fn [_ _] nil)})
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (t/is (= "extension version" (:description (commands/find-command "tools")))
           "extension command survives builtin registration")
@@ -101,7 +100,7 @@
 (deftest test-login-logout-unmatched-reference
   (testing "an unmatched /login reference opens the provider selector pre-filled;
            /logout always opens the stored-credential selector (pi)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [sel-ref (atom nil)]
       (with-redefs [dock/mount! (fn [_ component & _] (reset! sel-ref component))
@@ -123,7 +122,7 @@
 
 (deftest test-model-command-switches-model
   (testing "/model resolves provider/model patterns and switches the agent"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
@@ -156,7 +155,7 @@
 
 (deftest test-thinking-command-registered
   (testing "/thinking is a real builtin inside register-builtin-commands!"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [c (commands/find-command "thinking")]
       (t/is (some? c) "thinking registered")
@@ -170,7 +169,7 @@
   (testing "/thinking <level> applies the level to the session AND saves it
             as the settings default — the choice survives a restart (kmet
             deviation: pi's direct command stays session-scoped)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :deepseek :model "deepseek-v4-pro")
@@ -212,7 +211,7 @@
 (deftest test-thinking-command-bare-opens-selector
   (testing "bare /thinking mounts the level selector for a reasoning model;
             a model without supported levels gets the cycle status"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [status (atom nil)
@@ -252,7 +251,7 @@
   (testing "the mounted selector's Ctrl+S path runs the mode's persist logic:
             agent level set + [:thinking] saved to settings (pi Ctrl+S →
             selectThinkingLevel(level, true))"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :deepseek :model "deepseek-v4-pro")
@@ -286,7 +285,7 @@
 
 (deftest test-continue-registered
   (testing "/continue is a real builtin inside register-builtin-commands!"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [c (commands/find-command "continue")]
       (t/is (some? c) "continue registered")
@@ -296,7 +295,7 @@
 
 (deftest test-continue-refuses-while-running
   (testing "/continue refuses while the agent is running"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           msg (atom nil)
@@ -314,7 +313,7 @@
 
 (deftest test-continue-refuses-empty-context
   (testing "/continue refuses when there is no conversation to continue"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           msg (atom nil)
@@ -331,7 +330,7 @@
             already reads idle — the settle window (a post-run compaction or
             a pre-settle continuation) keeps the run flag true, and the run
             flag is what counts (pi: isStreaming)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           msg (atom nil)
@@ -353,7 +352,7 @@
   (testing "/continue starts an agent run on the existing context with no new
             user message — the model picks up the interrupted turn (e.g. after
             a network error the last entry is an unanswered user message)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state)
           _ (swap! (:messages ag) conj
@@ -582,7 +581,7 @@
 
 (deftest test-scoped-models-settings-registered
   (testing "scoped-models and settings are real builtins"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [scoped (commands/find-command "scoped-models")
           settings (commands/find-command "settings")]
@@ -595,7 +594,7 @@
 (deftest test-hotkeys-registered-with-real-handler
   (testing "/hotkeys is a real builtin: its handler mounts the hiccup view,
             which shows wired actions only"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (support/install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [hotkeys (commands/find-command "hotkeys")]
@@ -639,7 +638,7 @@
 
 (deftest test-followup-command-registered
   (testing "/followup is a real builtin inside register-builtin-commands!"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [c (commands/find-command "followup")]
       (t/is (some? c) "followup registered")
@@ -651,7 +650,7 @@
   (testing "/followup <text> while the agent runs queues the args as a
             follow-up (pi: handleFollowUp semantics) — nothing reaches the
             chat or context until the loop consumes it"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cs (support/compaction-cs)]
       (reset! (:turn-running? (:engine cs)) true)
@@ -667,7 +666,7 @@
 (deftest test-followup-command-submits-when-idle
   (testing "/followup <text> while idle starts a run with the args as the
             message — Alt+Enter's idle path (pi: handleFollowUp → submit)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cs (support/compaction-cs)
           started (atom [])]
@@ -689,7 +688,7 @@
 (deftest test-followup-command-queues-during-compaction
   (testing "/followup <text> during compaction queues as follow-up (pi:
             handleFollowUp → queueCompactionMessage(text, followUp))"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cs (support/compaction-cs)]
       (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
@@ -702,7 +701,7 @@
 
 (deftest test-followup-command-blank-args-usage
   (testing "/followup with no args shows usage instead of queueing anything"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cs (support/compaction-cs)
           msg (atom nil)]

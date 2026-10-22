@@ -414,12 +414,12 @@
 
 (defn- with-empty-registries
   [f]
-  (skills/clear-skills! (app-runtime/node))
-  (prompts/clear-prompt-templates! (app-runtime/node))
+  (skills/clear-skills!)
+  (prompts/clear-prompt-templates!)
   (try (f)
        (finally
-         (skills/clear-skills! (app-runtime/node))
-         (prompts/clear-prompt-templates! (app-runtime/node)))))
+         (skills/clear-skills!)
+         (prompts/clear-prompt-templates!))))
 
 (defn- with-settings
   "Run F with user settings pointing at PACKAGES (absolute temp paths, so
@@ -441,8 +441,8 @@
     (fn []
       (let [dir (make-package (tmp-dir))]
         (with-settings (fn []
-                         (pkgs/load-skills! (app-runtime/node))
-                         (pkgs/load-prompts! (app-runtime/node))
+                         (pkgs/load-skills!)
+                         (pkgs/load-prompts!)
                          (t/is (= #{"skill-a" "flat-skill"}
                                   (set (map :name (skills/get-skills)))))
                          (t/is (= #{"x" "y"}
@@ -454,7 +454,7 @@
     (fn []
       (let [dir (make-package (tmp-dir))]
         (with-settings (fn []
-                         (pkgs/load-skills! (app-runtime/node))
+                         (pkgs/load-skills!)
                          (t/is (= #{"skill-a"}
                                   (set (map :name (skills/get-skills))))))
           {:source dir :skills ["-skills/flat.md"]})))))

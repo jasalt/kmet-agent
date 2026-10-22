@@ -3,7 +3,6 @@
    next prompt, and the status the footer shows meanwhile."
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.test-utils :as tu]
-            [kmet.agent.app-runtime :as app-runtime]
             [clojure.string :as str]
             [kmet.agent.debug :as debug]
             [kmet.tui.components.editor :as editor]
@@ -138,20 +137,20 @@
 (deftest test-extension-command-during-compaction-executes
   (testing "extension commands execute immediately during compaction
             (pi: isExtensionCommand → prompt() executes)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (let [cs (support/compaction-cs)
           ran (atom nil)]
-      (commands/register-command! (app-runtime/node)
-                                  {:name "my-ext-cmd"
-                                   :description "test"
-                                   :extension-handler (fn [_ctx args] (reset! ran args))})
+      (commands/register-command!
+       {:name "my-ext-cmd"
+        :description "test"
+        :extension-handler (fn [_ctx args] (reset! ran args))})
       (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
       (with-redefs [tui/tui-request-render (fn [_] nil)
                     state/update-footer! (fn [_] nil)]
         ((var turn/handle-submit) cs "/my-ext-cmd arg1"))
       (t/is (= "arg1" @ran) "extension command executed immediately")
       (t/is (empty? (runtime/compaction-queued (:engine cs))) "not queued")
-      (commands/clear-commands! (app-runtime/node)))))
+      (commands/clear-commands!))))
 
 (deftest test-restore-queued-includes-compaction-queue
   (testing "Alt+Up / cancel restores the compaction queue alongside the
@@ -253,7 +252,7 @@
   (testing "the /compact future logs an exception escaping compact-context!
             (pi: handleCompactCommand catches and ignores — the events carry
             the failure; kmet logs it so a future never swallows a bug)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (let [cs (support/compaction-cs)
           logged (promise)]
       ((var builtins/register-builtin-commands!) cfg/default-config)
@@ -266,7 +265,7 @@
 (deftest test-compact-command-defers-mid-turn
   (testing "/compact while a turn is running schedules the compaction instead
             of refusing it — the request starts when the prompt settles"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (let [cs (support/compaction-cs)
           ran (promise)]
       (try
@@ -287,7 +286,7 @@
           ((var runtime/start-pending-compactions!) (:engine cs))
           (t/is (= ["focus" :manual] (deref ran 2000 nil))
                 "the deferred compaction ran after the turn settled"))
-        (finally (commands/clear-commands! (app-runtime/node)))))))
+        (finally (commands/clear-commands!))))))
 
 (deftest test-cancel-during-compaction-keeps-turn
   (testing "escape during compaction aborts ONLY the compaction — a running
@@ -335,19 +334,19 @@
 (deftest test-follow-up-extension-command-executes-during-compaction
   (testing "Alt+Enter with an extension command during compaction executes
             immediately (pi: handleFollowUp → isExtensionCommand → prompt)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (let [cs (support/compaction-cs)
           ed @(:current-editor-atom cs)
           ran (atom nil)]
-      (commands/register-command! (app-runtime/node)
-                                  {:name "my-fu-cmd"
-                                   :description "test"
-                                   :extension-handler (fn [_ctx args] (reset! ran args))})
+      (commands/register-command!
+       {:name "my-fu-cmd"
+        :description "test"
+        :extension-handler (fn [_ctx args] (reset! ran args))})
       (editor/editor-set-text! ed "/my-fu-cmd arg")
       (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
       (with-redefs [tui/tui-request-render (fn [_] nil)]
         ((var turn/handle-follow-up) cs))
       (t/is (= "arg" @ran) "extension command executed immediately")
       (t/is (empty? (runtime/compaction-queued (:engine cs))) "not queued")
-      (commands/clear-commands! (app-runtime/node)))))
+      (commands/clear-commands!))))
 

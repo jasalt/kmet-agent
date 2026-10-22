@@ -12,7 +12,6 @@
             [kmet.libs.json :as json]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.registry :as registry]
-            [kmet.agent.registry-store :as registry-store]
             [kmet.agent.tools.tool :as tool]
             [kmet.agent.tools.util :as tool-util]
             [kmet.agent.tools.read :as read]
@@ -96,25 +95,23 @@
   (into {} (registry/entries reg :kmet/tool)))
 
 (defn register-tool!
-  "Register a custom tool on NODE after normalizing its provider-facing
-   schema, owned by OWNER — the app's registry by default; an extension
-   passes its own owner path so unloading it disposes the tool (scope.md
-   §2). NODE is the node the registration lands on: the app root for an
-   app-wide registration, a child node a run passes for its own tree
-   (scope.md §6). Returns the store's deregister fn."
-  ([node tool] (register-tool! node tool tools-owner))
-  ([node tool owner]
+  "Register a custom tool after normalizing its provider-facing schema, owned
+   by OWNER — the app's registry by default; an extension passes its own owner
+   path so unloading it takes the tool with the owner (scope.md §2). Returns
+   the registry's deregister fn."
+  ([tool] (register-tool! tool tools-owner))
+  ([tool owner]
    (let [tool (tool/normalize-tool-definition tool)]
-     (registry/register! (registry-store/store-registry node)
+     (registry/register! (app-runtime/registry)
                          :kmet/tool (:name tool) tool owner))))
 
 (defn unregister-tool!
   "Remove a custom tool by name, from whichever owner registered it, or —
    with OWNER — only that owner's registration (an extension dropping one of
    its own; another owner's same-name tool survives). Returns nil."
-  ([node name] (unregister-tool! node name nil))
-  ([node name owner]
-   (registry/deregister! (registry-store/store-registry node) :kmet/tool name owner)
+  ([name] (unregister-tool! name nil))
+  ([name owner]
+   (registry/deregister! (app-runtime/registry) :kmet/tool name owner)
    nil))
 
 (defn get-all-tools
@@ -154,17 +151,17 @@
    shadows a colliding name. Re-registering under the same ID replaces the
    source; the next run_code call resolves the new catalog. Returns cells'
    deregister fn."
-  ([node id tools-fn] (register-tool-source! node id tools-fn tools-owner))
-  ([node id tools-fn owner]
-   (registry/register! (registry-store/store-registry node)
+  ([id tools-fn] (register-tool-source! id tools-fn tools-owner))
+  ([id tools-fn owner]
+   (registry/register! (app-runtime/registry)
                        :kmet/tool-source id tools-fn owner)))
 
 (defn unregister-tool-source!
   "Remove a contributed tool source by ID, from whichever owner registered
    it, or — with OWNER — only that owner's registration. Returns nil."
-  ([node id] (unregister-tool-source! node id nil))
-  ([node id owner]
-   (registry/deregister! (registry-store/store-registry node) :kmet/tool-source id owner)
+  ([id] (unregister-tool-source! id nil))
+  ([id owner]
+   (registry/deregister! (app-runtime/registry) :kmet/tool-source id owner)
    nil))
 
 (defn get-contributed-tools

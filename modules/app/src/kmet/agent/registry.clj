@@ -50,6 +50,12 @@
      lists owner-major, kmet2's atom interleaves owners in registration order),
      but the winning registration must come first for a name: the first
      occurrence is what `entry` returns.")
+  (deregister-owner!
+    [registry tag owner]
+    "Remove every registration OWNER holds in TAG; other owners' entries in the
+     tag survive. Unloading a contributor is this call per tag — an extension
+     registers several names under one owner path, and disposing one name at a
+     time would leave the rest behind. Returns nil.")
   (clear!
     [registry tag]
     "Remove every TAG registration, whichever owner holds it (mainly for
@@ -74,6 +80,23 @@
                [(conj seen name) (conj acc [name value])]))
            [#{} []]
            (entries registry tag))))
+
+(defn router
+  "A Registry that dispatches every call by its tag: HANDLE-FOR maps a tag to
+   the handle that owns it. kmet1 keeps one façade handle while kmet2 provides
+   one service per seam, so the translation belongs in one place — and the
+   shared readings above (`entry`, `effective-entries`) work through it
+   unchanged, because they only ever call the protocol."
+  [handle-for]
+  (reify Registry
+    (register! [_ tag name value owner]
+      (register! (handle-for tag) tag name value owner))
+    (deregister! [_ tag name owner]
+      (deregister! (handle-for tag) tag name owner))
+    (by-owner [_ tag name] (by-owner (handle-for tag) tag name))
+    (deregister-owner! [_ tag owner] (deregister-owner! (handle-for tag) tag owner))
+    (entries [_ tag] (entries (handle-for tag) tag))
+    (clear! [_ tag] (clear! (handle-for tag) tag))))
 
 ;; ─── The atom backend (kmet2) ──────────────────────────────────────────────
 
@@ -116,6 +139,11 @@
               @state))
       (entries [_ tag]
         (into [] (keep (fn [e] (when (= tag (:tag e)) [(:name e) (:value e)]))) @state))
+      (deregister-owner! [_ tag owner]
+        (swap! state
+               (fn [v]
+                 (into [] (remove #(and (= tag (:tag %)) (= owner (:owner %)))) v)))
+        nil)
       (clear! [_ tag]
         (swap! state (fn [v] (into [] (remove #(= tag (:tag %))) v)))
         nil))))

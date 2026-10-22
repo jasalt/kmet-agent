@@ -1020,23 +1020,22 @@
             (mapv #(get-in % [:metadata :artifact]) descriptors))))))
 
 (defn load-skills!
-  "Load every enabled skill in the unified resolution onto NODE (the app's
-   registry) (first-wins by name in the registry). AGENT-DIR pins the user
-   scope root."
-  ([node] (load-skills! node nil))
-  ([node agent-dir]
+  "Load every enabled skill in the unified resolution into the app's registry
+   (first-wins by name). AGENT-DIR pins the user scope root."
+  ([] (load-skills! nil))
+  ([agent-dir]
    (let [loaded (into #{} (keep :file-path) (skills/get-skills))
          paths (remove #(contains? loaded %) (enabled-item-paths (resolve-configured-packages agent-dir) :skills))]
-     (skills/load-skills-from-files! node (vec paths)))))
+     (skills/load-skills-from-files! (vec paths)))))
 
 (defn load-prompts!
-  "Load every enabled prompt template in the unified resolution onto NODE
-   (the app's registry). AGENT-DIR pins the user scope root."
-  ([node] (load-prompts! node nil))
-  ([node agent-dir]
+  "Load every enabled prompt template in the unified resolution into the app's
+   registry. AGENT-DIR pins the user scope root."
+  ([] (load-prompts! nil))
+  ([agent-dir]
    (let [loaded (into #{} (keep :file-path) (prompts/get-prompt-templates))
          paths (remove #(contains? loaded %) (enabled-item-paths (resolve-configured-packages agent-dir) :prompts))]
-     (prompts/load-prompt-template-files! node (vec paths)))))
+     (prompts/load-prompt-template-files! (vec paths)))))
 
 (defn resolve-theme-paths
   "Return every enabled theme path in the unified resolution. AGENT-DIR pins

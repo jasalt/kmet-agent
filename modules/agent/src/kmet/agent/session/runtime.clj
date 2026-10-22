@@ -167,8 +167,8 @@
         ;; the resolved session (the layout/print-mode policy output); any
         ;; :agent-opts override is folded back in below via the agent state
         sess (:session opts)
-        _ (packages/load-skills! (app-runtime/node))
-        _ (packages/load-prompts! (app-runtime/node))
+        _ (packages/load-skills!)
+        _ (packages/load-prompts!)
         provider (or provider (cfg/get-provider config))
         model (or model (models/resolve-config-model config))
         model-rec (models/get-model provider model)

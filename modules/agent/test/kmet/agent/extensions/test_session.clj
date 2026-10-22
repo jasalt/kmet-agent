@@ -10,6 +10,7 @@
             [kmet.libs.host :as host]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.app-runtime :as rt]
+            [kmet.agent.registry :as registry]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.session.core :as session]
@@ -116,23 +117,24 @@
               "and the deregister fn removes that key")))))
 
 (t/deftest test-renderer-ownership
-  (testing "a renderer is its owner's key on the app tree"
+  (testing "a renderer is a registration owned by its owner"
+    ;; The renderers have no seam of their own yet, so they live in the registry
+    ;; façade's remainder handle; ownership is the registry's, not a store path.
     (let [owner (extensions/extension-owner "test-renderer-owner")
-          dereg (extensions/register-entry-renderer! (rt/node)
-                                                     owner "probe-entry" (fn [_] {:role :info}))]
-      (t/is (contains? (scope/owner-keys (rt/node) owner)
-                       [:kmet/entry-renderer "probe-entry"])
-            "the renderer registers under its owner's path")
+          dereg (extensions/register-entry-renderer! owner "probe-entry" (fn [_] {:role :info}))]
+      (t/is (= [owner] (vec (keys (registry/by-owner (rt/registry)
+                                                     :kmet/entry-renderer "probe-entry"))))
+            "the renderer registers under its owner")
       (t/is (some? (extensions/get-entry-renderer "probe-entry")))
       (dereg)
       (t/is (nil? (extensions/get-entry-renderer "probe-entry"))
             "and the deregister fn removes that key")))
   (testing "message renderers share the shape"
     (let [owner (extensions/extension-owner "test-message-renderer-owner")
-          dereg (extensions/register-message-renderer! (rt/node)
-                                                       owner "probe-message" (fn [_] {:role :info}))]
-      (t/is (contains? (scope/owner-keys (rt/node) owner)
-                       [:kmet/message-renderer "probe-message"]))
+          dereg (extensions/register-message-renderer! owner "probe-message" (fn [_] {:role :info}))]
+      (t/is (= [owner] (vec (keys (registry/by-owner (rt/registry)
+                                                     :kmet/message-renderer
+                                                     "probe-message")))))
       (t/is (some? (extensions/get-message-renderer "probe-message")))
       (dereg)
       (t/is (nil? (extensions/get-message-renderer "probe-message")))))
@@ -142,10 +144,9 @@
     (let [first-owner (extensions/extension-owner "test-renderer-first")
           second-owner (extensions/extension-owner "test-renderer-second")
           renderer (fn [_] {:role :info :content "first"})
-          dereg (extensions/register-entry-renderer! (rt/node) first-owner "taken-type" renderer)]
+          dereg (extensions/register-entry-renderer! first-owner "taken-type" renderer)]
       (try
-        (extensions/register-entry-renderer! (rt/node)
-                                             second-owner "taken-type" (fn [_] {:role :info :content "second"}))
+        (extensions/register-entry-renderer! second-owner "taken-type" (fn [_] {:role :info :content "second"}))
         (t/is (identical? renderer (extensions/get-entry-renderer "taken-type")))
         (finally
           (dereg)
@@ -155,11 +156,12 @@
   ;; A flag is the registering owner's key on the app tree; the --ext-* value
   ;; get-flag coerces is process argv (set-cli-flags!), not engine state.
   (let [owner (extensions/extension-owner "test-flag-owner")
-        dereg (extensions/register-flag! (rt/node) owner "probe-flag"
+        dereg (extensions/register-flag! owner "probe-flag"
                                          {:type :boolean :default false})]
     (try
-      (t/is (contains? (scope/owner-keys (rt/node) owner) [:kmet/flag "probe-flag"])
-            "the flag registers under its owner's path")
+      (t/is (= [owner] (vec (keys (registry/by-owner (rt/registry)
+                                                     :kmet/flag "probe-flag"))))
+            "the flag registers under its owner")
       (t/is (false? (extensions/get-flag "probe-flag"))
             "the registered default applies without argv")
       (extensions/set-cli-flags! {"probe-flag" "true"})
@@ -371,8 +373,8 @@
         (doseq [u @unsubs] (u))
         (event-bus/clear-event-listeners!)
         (extensions/clear-extensions!)
-        (skills/clear-skills! (rt/node))
-        (prompts/clear-prompt-templates! (rt/node))
+        (skills/clear-skills!)
+        (prompts/clear-prompt-templates!)
         (fs/delete-tree dir)))))
 
 (t/deftest test-jar-extension-load-resource-unload
@@ -514,8 +516,8 @@
   ;; ext/register-skill! / ext/register-prompt! (no host enumeration);
   ;; unload deregisters exactly what the extension added.
   (extensions/clear-extensions!)
-  (skills/clear-skills! (rt/node))
-  (prompts/clear-prompt-templates! (rt/node))
+  (skills/clear-skills!)
+  (prompts/clear-prompt-templates!)
   (let [dir "target/test-ext-selfreg"]
     (fs/delete-tree dir)
     (fs/create-dirs (str dir "/selfreg"))
@@ -545,8 +547,8 @@
         (t/is (= "Template body hi" (prompts/expand-prompt-template "/selfreg-tpl hi"
                                                                     (prompts/get-prompt-templates)))))
       (finally
-        (skills/clear-skills! (rt/node))
-        (prompts/clear-prompt-templates! (rt/node))
+        (skills/clear-skills!)
+        (prompts/clear-prompt-templates!)
         (extensions/unload-all-extensions!)
         (t/is (nil? (skills/get-skill "selfreg-skill")) "unload removes the skill")
         (t/is (nil? (prompts/get-prompt-template "selfreg-tpl")) "unload removes the template")
@@ -586,8 +588,8 @@
     (t/is (str/includes? (skills/expand-skill-command "/skill:clojure-edit")
                          "clojure_edit")))
   (extensions/unload-all-extensions!)
-  (skills/clear-skills! (rt/node))
-  (prompts/clear-prompt-templates! (rt/node)))
+  (skills/clear-skills!)
+  (prompts/clear-prompt-templates!))
 
 (t/deftest test-manifest-loader-declaration
   ;; the manifest :loader declaration + host selection: :sci on babashka,

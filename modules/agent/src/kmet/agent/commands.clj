@@ -23,7 +23,6 @@
    under its own owner path, so unload disposes what an extension added."
   (:require [clojure.string :as str]
             [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.registry-store :as registry-store]
             [kmet.agent.registry :as registry]))
 
 (def commands-owner
@@ -46,33 +45,30 @@
   (mapv first (registry/effective-entries (app-runtime/registry) :kmet/command)))
 
 (defn register-command!
-  "Register (or replace by :name) a slash command on NODE, owned by OWNER —
-   the app's registry by default; an extension passes its own owner path
-   (`kmet.agent.extensions.core/extension-owner`) so unloading it disposes
-   the command with the owner (scope.md §2). NODE is the node the registration
-   lands on: the app root for an app-wide registration, a child node a run
-   passes for its own tree (scope.md §6).
-   The store key is derived from :name, so a command is always addressed by
-   its own name. Returns nil."
-  ([node cmd] (register-command! node cmd commands-owner))
-  ([node cmd owner]
-   (registry/register! (registry-store/store-registry node)
-                       :kmet/command (:name cmd) cmd owner)
-   nil))
+  "Register (or replace by :name) a slash command, owned by OWNER — the app's
+   registry by default; an extension passes its own owner path
+   (`kmet.agent.extensions.core/extension-owner`) so unloading it takes the
+   command with the owner (scope.md §2). The registration is addressed by
+   :name, so a command is always its own key. Returns the registry's
+   deregister fn."
+  ([cmd] (register-command! cmd commands-owner))
+  ([cmd owner]
+   (registry/register! (app-runtime/registry)
+                       :kmet/command (:name cmd) cmd owner)))
 
 (defn unregister-command!
-  "Remove a slash command by :name from NODE, whichever owner registered it,
+  "Remove a slash command by :name, whichever owner registered it,
    or — with OWNER — only that owner's registration (an extension dropping
    one of its own; another owner's same-name command survives). Returns nil."
-  ([node name] (unregister-command! node name nil))
-  ([node name owner]
-   (registry/deregister! (registry-store/store-registry node) :kmet/command name owner)
+  ([name] (unregister-command! name nil))
+  ([name owner]
+   (registry/deregister! (app-runtime/registry) :kmet/command name owner)
    nil))
 
 (defn clear-commands!
-  "Remove every command registered on NODE (mainly for tests). Returns nil."
-  [node]
-  (registry/clear! (registry-store/store-registry node) :kmet/command))
+  "Remove every command registration (mainly for tests). Returns nil."
+  []
+  (registry/clear! (app-runtime/registry) :kmet/command))
 
 (defn command-line?
   "True when TEXT is a single-line command line: slash commands and bash
@@ -125,10 +121,10 @@
      (when (available-to? frontend cmd) cmd))))
 
 (defn register-builtin!
-  "Register CMD on NODE unless a command already took the name (extensions
-   load before builtins; an extension command owns the name when taken). Used
-   for the engine-portable builtins: no front-end tag, so every front end
-   dispatches them. Returns nil."
-  [node cmd]
+  "Register CMD unless a command already took the name (extensions load before
+   builtins; an extension command owns the name when taken). Used for the
+   engine-portable builtins: no front-end tag, so every front end dispatches
+   them. Returns nil."
+  [cmd]
   (when-not (find-command (:name cmd))
-    (register-command! node cmd)))
+    (register-command! cmd commands-owner)))

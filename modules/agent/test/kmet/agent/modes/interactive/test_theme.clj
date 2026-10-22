@@ -3,7 +3,6 @@
    fixtures, and cleanup of contributed widgets."
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.test-utils :as tu]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.debug :as debug]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.editor :as editor]
@@ -41,7 +40,7 @@
   (testing "/theme takes the whole argument string (a string is a seq of
             chars — (first args) would yield the first character)"
     (support/install-app-keybindings!)
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [saved (atom nil)

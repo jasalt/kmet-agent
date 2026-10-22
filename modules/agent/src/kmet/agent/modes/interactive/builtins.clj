@@ -316,7 +316,7 @@
    autocomplete and dispatch filter them out."
   [cmd]
   (commands/register-builtin!
-   (app-runtime/node)
+
    (assoc cmd
           :frontend :interactive
           :handler (fn [ctx args]
@@ -657,10 +657,10 @@
               ;; pi: model-runtime.refresh — recompose providers from models.edn
               _ (models/load-models-config!)
               ;; pi: resourceLoader.reload (skills, prompts)
-              _ (skills/clear-skills! (app-runtime/node))
-              _ (prompts/clear-prompt-templates! (app-runtime/node))
-              _ (packages/load-skills! (app-runtime/node))
-              _ (packages/load-prompts! (app-runtime/node))
+              _ (skills/clear-skills!)
+              _ (prompts/clear-prompt-templates!)
+              _ (packages/load-skills!)
+              _ (packages/load-prompts!)
               ;; pi: _rebuildSystemPrompt with new sources — the prompt is
               ;; built over the CURRENTLY active tool set (pi:
               ;; getActiveToolNames), so a pre-reload set-active-tools

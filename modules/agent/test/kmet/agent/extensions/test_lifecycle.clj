@@ -8,7 +8,9 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.app-runtime :as rt]
             [kmet.agent.commands :as commands]
+            [kmet.agent.registry :as registry]
             [kmet.agent.event-bus :as event-bus]
+            [kmet.srce.core :as srce]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
@@ -89,14 +91,21 @@
       (let [result (extensions/load-extension! dir)
             owner [:app :extensions "owned-ext"]]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
-        (doseq [k [[:kmet/command "owned-cmd"]
-                   [:kmet/tool "owned-tool"]
-                   [:kmet/tool-source :owned-source]
-                   [:kmet/skill "owned-skill"]
-                   [:kmet/prompt "owned-prompt"]
-                   [:kmet/flag "owned-flag"]]]
-          (t/is (= [owner] (vec (keys (scope/for-key (rt/node) k))))
-                (str k " is owned by the extension")))
+        ;; the registries are services in the app ctx since 4c-ii, so ownership
+        ;; is read through the handle; the flag has no seam yet and lives in the
+        ;; façade's remainder handle
+        (doseq [[service tag name] [[:commands :kmet/command "owned-cmd"]
+                                    [:tools :kmet/tool "owned-tool"]
+                                    [:tools :kmet/tool-source :owned-source]
+                                    [:skills :kmet/skill "owned-skill"]
+                                    [:prompts :kmet/prompt "owned-prompt"]]]
+          (t/is (= [owner]
+                   (vec (keys (registry/by-owner (srce/get (rt/ctx) service)
+                                                 tag name))))
+                (str tag " " name " is owned by the extension")))
+        (t/is (= [owner]
+                 (vec (keys (registry/by-owner (rt/registry) :kmet/flag "owned-flag"))))
+              "the extension's flag is owned by it too")
         (t/is (= 1 (count @(:deregister-fns (first (extensions/registered-extensions)))))
               "only the event subscription stays on the tracked list")
         (extensions/unload-all-extensions!)
@@ -104,7 +113,7 @@
         (t/is (nil? (tools/get-tool "owned-tool")))
         (t/is (nil? (skills/get-skill "owned-skill")))
         (t/is (nil? (prompts/get-prompt-template "owned-prompt")))
-        (t/is (empty? (scope/for-key (rt/node) [:kmet/flag "owned-flag"]))
+        (t/is (empty? (registry/entries (rt/registry) :kmet/flag))
               "one dispose took everything the extension registered"))
       (finally
         (extensions/clear-extensions!)
@@ -180,11 +189,13 @@
                 :theme-paths [theme-dir]}
                (extensions/discover-resources! (rt/node) :startup))
             "the collected paths are reported")
-      (doseq [k [[:kmet/skill "res-owned-skill"]
-                 [:kmet/prompt "res-owned-prompt"]
-                 [:kmet/theme "res-owned-theme"]]]
-        (t/is (= [owner] (vec (keys (scope/for-key (rt/node) k))))
-              (str k " is owned by the contributor")))
+      (doseq [[service tag name] [[:skills :kmet/skill "res-owned-skill"]
+                                  [:prompts :kmet/prompt "res-owned-prompt"]]]
+        (t/is (= [owner]
+                 (vec (keys (registry/by-owner (srce/get (rt/ctx) service) tag name))))
+              (str tag " " name " is owned by the contributor")))
+      (t/is (= [owner] (vec (keys (scope/for-key (rt/node) [:kmet/theme "res-owned-theme"]))))
+            "the theme stays in the TUI layer's store, which is not a registry")
       (t/is (some? (theme/get-theme-by-name "res-owned-theme")))
       (extensions/discover-resources! (rt/node) :startup)
       (t/is (= 1 (count (filter #(= "res-owned-skill" (:name %)) (skills/get-skills)))))

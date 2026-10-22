@@ -3,7 +3,6 @@
    re-render that follows (pi: handleImportCommand)."
   (:require [clojure.test :as t :refer [deftest testing]]
             [kmet.test-utils :as tu :refer [slash strip-ansi]]
-            [kmet.agent.app-runtime :as app-runtime]
             [clojure.string :as str]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.settings-list :as settings-list]
@@ -108,7 +107,7 @@
 (deftest test-import-registered-and-path-errors
   (testing "/import is a real builtin; pi's usage and file errors surface as
             Error: lines before any confirmation is mounted"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (support/install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [cmd (commands/find-command "import")
@@ -152,7 +151,7 @@
 (deftest test-import-confirm-flow
   (testing "/import copies the file into the active session's directory and
             resumes it when the Yes/No confirm is accepted"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (support/install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str (fs/absolutize (str "target/test-import-flow-" (System/currentTimeMillis))))
@@ -252,7 +251,7 @@
 (deftest test-import-cancellation-paths
   (testing "/import leaves the session and the filesystem alone when the
             confirmation is declined, escaped, or cancelled by an extension"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (support/install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str (fs/absolutize (str "target/test-import-cancel-" (System/currentTimeMillis))))]
@@ -307,7 +306,7 @@
   (testing "a recorded cwd that no longer exists keeps the current runtime
             cwd — kmet says so and continues (pi: MissingSessionCwdError asks
             for a fallback cwd)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (support/install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str (fs/absolutize (str "target/test-import-gone-cwd-" (System/currentTimeMillis))))
@@ -339,7 +338,7 @@
   (testing "/export without a path writes into the session's runtime cwd —
             where its tools work (pi resolves its default against the process
             cwd; kmet's runtime cwd follows the session)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (support/install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str (fs/absolutize (str "target/test-export-cwd-" (System/currentTimeMillis))))
@@ -383,7 +382,7 @@
   (testing "/resume and /tree refuse while a response is streaming, like
             /import, /fork and /clone (pi: teardownCurrent aborts the run and
             switches; kmet waits instead)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (support/install-app-keybindings!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [dir (str (fs/absolutize (str "target/test-mid-turn-guards-"
@@ -520,7 +519,7 @@
 (deftest test-scoped-models-selector-initial-state
   (testing "/scoped-models opens the selector with session scoped models, then
             settings :enabled-models patterns, else nil (all enabled)"
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
@@ -565,7 +564,7 @@
 (deftest test-scoped-models-edit-updates-session
   (testing "selector edits write the session scoped list and clear on all-enabled"
     (support/install-app-keybindings!)
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
@@ -595,7 +594,7 @@
 (deftest test-scoped-models-save-drops-models-no-longer-available
   (testing "Ctrl+S excludes models that became unavailable after opening the selector"
     (support/install-app-keybindings!)
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (let [kept (m/map->Model {:provider :test-provider :id "kept"})
           disappeared (m/map->Model {:provider :test-provider :id "disappeared"})
           disabled (m/map->Model {:provider :test-provider :id "disabled"})
@@ -635,7 +634,7 @@
   (testing "/settings opens a settings list whose thinking row changes the
             session level and persists to settings"
     (support/install-app-keybindings!)
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4.1-flash"
@@ -671,7 +670,7 @@
   (testing "/settings Block images row flips the agent knob and persists
             (pi: block-images, ungated — unlike the terminal image rows)"
     (support/install-app-keybindings!)
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
@@ -706,7 +705,7 @@
 (deftest test-settings-retry-rows
   (testing "/settings retry rows apply live to the agent and persist"
     (support/install-app-keybindings!)
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
@@ -775,7 +774,7 @@
   (testing "/settings HTTP transport row switches the runtime transport
             (platform → curl → platform) and persists"
     (support/install-app-keybindings!)
-    (commands/clear-commands! (app-runtime/node))
+    (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")

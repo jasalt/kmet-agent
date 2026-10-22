@@ -80,7 +80,7 @@
   ;; tool, expand its skill, unload. Needs the cljfmt/parinferish closure
   ;; from the network cache (slow).
   (extensions/clear-extensions!)
-  (skills/clear-skills! (rt/node))
+  (skills/clear-skills!)
   (let [jar "target/test-packed-clojure.jar"]
     (fs/delete-if-exists jar)
     (try
@@ -98,7 +98,7 @@
                              "clojure_edit")))
       (finally
         (extensions/unload-all-extensions!)
-        (skills/clear-skills! (rt/node))
+        (skills/clear-skills!)
         (fs/delete-if-exists jar)))))
 
 ;; ─── Extension hooks live on the app tree (P2) ────────────────────────────
