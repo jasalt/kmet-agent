@@ -5,7 +5,6 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.registry :as registry]
