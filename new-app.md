@@ -795,7 +795,7 @@ Each is independently shippable and gated.
 | 2 | **landed** (`14ca4f0d`) — the bus: the six non-awaiting dispatch modes (`emit!`, `bail!`, `waterfall!`, `collect-last!`, `collect-all!`, `boundary!`) over the kernel's listener table, with `:data` on a registration and `{:in scope}` on `provide!`; `kmet.app.events` keeps the vocabulary (declared in the `:events` plugin's `:events` map), the owner, and the `:events` service; **the submission point** — `kmet.app.runtime`: `submit!` from any thread, `boundary!` drains and settles, `boot` mounts the composed rows | one contract test over both delivery paths (kmet1's bus and the app's), the app's own mode/service/declaration suite, and kmet1 green; a hook registered from another thread lands at the boundary |
 | 3 | **landed** — `registry` parameterized then lifted (`kmet.agent.registry` over a `Registry` handle); the `:tools` service row; commands/prompts/skills/tools/entry-renderers re-pointed at the handle | the contract test runs one set of registry assertions against both backends (atom and store); the `:tools` service is installed by one `provide!` and mutated through its handle (no re-provide); kmet1 green |
 | 4a | **landed** (`c2861df0`) — the sessions seam: `:sessionPersistence` (seven ops: `create!` `load` `paths` `append!` `entries` `delete!` `header`), the `:sessions` log over it (`inject [:sessionPersistence]`: the same ops plus an id index), an in-process `memory-backend`, and kmet1's store as the first real backend (`kmet.agent.session.backend`, a 34-line projection — `app` at rank 2 cannot name it yet) | the contract test runs one set of assertions against both backends, then composes the two halves as a profile does (`(service (ednl))`: 8 tests, 60 assertions); the row is `:pending` with `waiting-for=#{:sessionPersistence}` and activates when its backend mounts; kmet1's sessions and their files are byte-for-byte untouched; no composition row at 4a — `:sessions` joined the profile with the layer move (4c-i) |
-| 4b | **The extension host**, in two halves. **4b-i** (no ctx needed, lands after 4a): `extension.edn` gains an optional `:inject` and the host wraps an extension as the plugin `{:name :inject :apply}`, `grep-tool` gains one as the demonstration, and the key-set contract test (every `(:key api)` an ABI wrapper calls exists) lands; `kmet.extension` (461 lines, **zero requires**) moves into `app`. **4b-ii** (after 4c-ii): the host takes a ctx instead of `app_runtime/node`, builds the 42-key api for the root or an agent ctx, composes `shutdown` into the disposer, and `kmet.agent.extensions.core` + `.context` move into `app` keeping their namespaces | 4b-i: the key-set test is green on both hosts, a shipped directory extension and `grep-tool` load, kmet1's extension surface unchanged. 4b-ii: nothing in the host reads the store node, and the loader whitelist has no `kmet.libs.scope` entry |
+| 4b | **The extension host**, in two halves. **4b-i landed** (`d01a0f44`) — `kmet.extension` (461 lines, zero requires) moved into `app` with its contract doc, and the **key-set contract test** landed: every api path an ABI wrapper reads (`(:notify (ui api))` reads `[:ui :notify]`) is asserted against the api the host actually builds for a loaded extension, 62 of them, and the test fails when one is renamed away. **4b-ii** (after 4c-ii): `extension.edn` gains an optional `:inject` and the host wraps an extension as the plugin `{:name :inject :apply}` (with `grep-tool` demonstrating it), the host takes a ctx instead of `app_runtime/node`, builds the api for the root or an agent ctx, composes `shutdown` into the disposer, and the host files move into `app` keeping their namespaces | 4b-i: the key-set test is green, its own violation check fails by design, and kmet1's extension surface is unchanged (376 assertions across the extension suites). 4b-ii: an extension declaring `:inject` goes pending then active, nothing in the host reads the store node, and the loader whitelist has no `kmet.libs.scope` entry |
 | 4c | **The root ctx, the session layer, then `:agents`** — three steps that gate separately, in this order. **4c-i landed** (`aa72deef`, `88513298`) — the session layer moved into `app`: nine files, namespaces kept, nothing re-hosted; the `kmet.agent.debug` require behind the schema warnings became a diagnostics flag the host's `--debug` sets; `:sessions` + `:sessionPersistence` joined `:bundle/minimal`, so a bare `kmet --app new` boots four rows. `:result-tokens` stamping stays in `store.clj` — see the 4c-i notes. **4c-ii**, kmet1 boots the app root, `app_runtime/node` goes and its 19 readers take a ctx, the 16 mutable `defonce` cells are re-hosted, `registry_store.clj` and `kmet.libs.scope` are deleted, `event_bus`'s subtree test moves onto ctx ancestry. **4c-iii**, `Engine` → `:agents` with `:permissions`/`:approvals` and `:projections` + `:systemPrompt` behind it | i: every session test green from `modules/app`, `kmet --app new` boots a session over EDNL files. ii: no `(scope/…)` call site is left and kmet1's registrations are in the tree. iii: two agents in one process hold different tool tables, and an extension declaring `:inject {:sessions …}` goes pending then active |
 | 4d | **Inspection from the tree** — `kmet.app.inspect/units` renders the invocation ctx's subtree, `--dump-state` the root's, `/units` re-points at it and the store section is deleted | `/units` and `--dump-state` show a `:pending` fiber with its `waiting-for` and a `:failed` one with its error; the five listing tests rewritten against the tree |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
@@ -810,9 +810,11 @@ and `kmet.libs.scope` — and it cannot sit at rank 2 until those names are ctx
 services. 4c-i has since removed the `session.core` edge and `debug`. That is a measured correction: the doc claimed the host move was
 mechanical, and it is mechanical for `kmet.extension` only. The practical order
 is **4a → 4c-i → 4b-i → 4c-ii → 4b-ii → 4c-iii → 4d**, and the reasons are
-dependencies, not preferences: 4c-i removes the host's session edge and gives
-the composition a real log, 4c-ii gives the host its ctx, and 4c-iii gives the
-api the agent surface it exposes.
+dependencies, not preferences: 4c-i removed the host's session edge and gave the
+composition a real log, 4b-i moved the ABI and pinned the api contract, 4c-ii
+gives the host its ctx, and 4c-iii gives the api the agent surface it exposes.
+`:inject` moved from 4b-i to 4b-ii for the same reason it was split: a
+declared dependency nothing honors is a lie in a manifest.
 
 **Landing 4 is four landings** (4a–4d), split for two reasons. Size and reach:
 as one it moved 3,615 lines of extension host with a 42-key api rewired, and
@@ -835,6 +837,33 @@ moving into `app` needs the interop re-host but not the root ctx, the root ctx
 cutover needs neither the session move nor a driver, and `Engine` → `:agents`
 needs both. If i and ii turn out to move together, they merge then — with data
 rather than a guess.
+
+### Landing 4b-i settled
+
+- **The ABI moved, and it cost nothing.** `kmet.extension` had no `:require`,
+  so the file and its 461-line contract doc moved into `app` unchanged; the
+  twelve documents that named the old path were updated with it. Nothing else
+  in the layer needed to move, because agent (4) may require app (2), and the
+  loader serves the namespace by name from the classpath — verified by loading
+  a real extension under bb and resolving the ABI under Jolt.
+- **The api contract is now a test, not a hope.** The ABI is a function table
+  over a map, so a wrapper reading a key the host stopped providing fails
+  inside somebody's extension at the moment they use it — the one failure mode
+  no unit test on either side catches. The test reads all 62 paths out of
+  `kmet/extension.clj` (top-level reads and `(:key (accessor api))` reads,
+  whose parent is the accessor's own name), loads the single-file fixture, and
+  compares against the api the host built. Its own violation check was run: a
+  renamed capability and a renamed top-level key both fail it, and the file
+  restored green.
+- **`:inject` waits for 4b-ii.** It was scoped to 4b-i on the grounds that it
+  needs no ctx, but *honoring* it does: without a ctx there is no service to be
+  pending on, so the manifest key would be a declaration nothing reads. It
+  lands with the wrapper and grep-tool's demonstration, where pending →
+  active means something.
+- **A host accessor came out of it.** `extensions/extension-api` returns the
+  api a loaded extension was handed. It exists because the api is the only
+  thing that can be checked against the ABI, and because "why is my `:notify`
+  nil" is a real question; it is documented as a diagnostic, not a surface.
 
 ### Landing 4c-i settled
 
