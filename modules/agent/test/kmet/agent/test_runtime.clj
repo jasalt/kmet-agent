@@ -60,6 +60,19 @@
       (finally (runtime/refresh-stages! ctx)))
     (is (not (identical? changed (guard))) "the real unit is back")))
 
+(deftest a-child-ctx-without-stages-reads-its-parents
+  ;; The chain walk is what makes `:loop-stages` inherited rather than
+  ;; copied: a ctx that carries none reads the nearest one up the tree, which
+  ;; is how the app root's map reaches an agent's ctx.
+  (let [mine {:loop-guard {:call :root-guard} :retry-policy {:call :root-retry}}
+        parent (srce/root {:loop-stages (atom mine)})
+        child (srce/extend parent {})
+        grandchild (srce/extend child {})]
+    (is (= :root-guard
+           (get-in (runtime/loop-stages child) [:loop-guard :call])))
+    (is (= :root-retry
+           (get-in (runtime/loop-stages grandchild) [:retry-policy :call])))))
+
 (deftest refresh-stages-defaults-to-the-app-root
   (let [changed (fn [& _] :changed)]
     (try
