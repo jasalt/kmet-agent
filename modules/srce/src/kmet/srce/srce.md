@@ -714,9 +714,12 @@ handle, and the store is only that handle's kmet1 backend now:
 | `agent/app_runtime.clj` (app node, `*error-reporter*`, `/units` walk) | 5 | 4b-ii for `dispose-owner!`, its last caller once the host's registrations are fiber effects; 4d for the `owners`/`owner-registrations` pair, which is the store listing and goes with the tree rewrite; `*error-reporter*` at 4e with the store. The node itself is created here and dies with them |
 | `agent/session/runtime.clj` (`dispose-owner!` ×2) | 2 | 4b-ii — an engine's `[:app :session]`/`[:app :ui]` installs are store registrations today; they become effects on the host's fibers, and their disposal with them |
 
-4c-ii-b took the fifth file: `agent/event_bus.clj`'s one `in-subtree?` is
+4c-ii-b took the fifth file: `kmet.agent.event-bus`'s one `in-subtree?` is
 `srce/inside?` now, so a subscription's scope is a ctx. Its table still needs
-nothing from the store and still dies at landing 7 with the loop re-point.
+nothing from the store and still dies at landing 7 with the loop re-point. The
+bus file itself has since moved to `modules/app`, keeping its namespace and
+every call site (4b-ii's prep); the paths in this table are where the store
+sites were measured.
 
 Two more places name it without calling it: `extensions/context.cljc`'s
 extension-API allowlist (drop the entry with the ABI at landing 4b) and

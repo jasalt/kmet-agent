@@ -47,7 +47,13 @@ The extension contract sits above the app tree, beside it:
 namespace an extension may depend on; `kmet/agent/extensions/` is its
 runtime.
 
-The app module (`modules/agent/src/kmet/agent`):
+The app module (`modules/agent/src/kmet/agent`). Several `kmet.agent.*`
+namespaces live in `modules/app` instead — the two-axes rule: the file moves,
+its namespace does not — so this tree is what remains. `kmet.agent.version`
+(landing 1), `kmet.agent.registry` (landing 3), the session log
+(`kmet.agent.session.*`, 4c-i), and the extension host's leaf dependencies
+(`kmet.agent.debug`, `.config-schema`, `.event-bus`, `.tools.util`, 4b-ii's
+prep).
 
 ```
 kmet/agent/
@@ -58,8 +64,7 @@ kmet/agent/
 │                         --generate-models), argument parsing, mode dispatch
 ├── jvm_main.clj        — the JVM artifact's AOT entry point (delegates to
 │                         core.clj, i.e. the bootstrap)
-├── config.clj          — configuration loading (settings.edn, env vars);
-│                         its malli schema (config_schema.clj) lives in app
+├── config.clj          — configuration loading (settings.edn, env vars)
 ├── project_context.clj — project context files (AGENTS.md/CLAUDE.md)
 ├── app_runtime.clj     — the app root store node and ctx, and the loop's
 │                         stage map (on the ctx)
@@ -80,8 +85,6 @@ kmet/agent/
 ├── packages.clj        — package/resource resolution (local + managed git)
 ├── packages_cli.clj    — the install/remove/update/list/config CLI
 ├── git_packages.clj    — git source parsing + managed checkouts
-├── (event_bus.clj lives in app — kmet1's extension event bus, vocabulary
-│   re-exported from kmet.app.events)
 ├── loop.clj            — the agent loop driver (public: make-agent-state,
 │   │                     run-agent-turn, cancel-turn)
 │   └── loop/           — loop submodules, a DAG pinned by test-layer-guard:
@@ -109,7 +112,6 @@ kmet/agent/
 │   ├── core.clj / tool.clj / registry.clj — the tool API, Tool record and
 │   │                     registry (custom tools live in the app-root store)
 │   ├── invoke.clj      — the shared invocation pipeline (loop + run_code)
-│   ├── (util.clj lives in app: path/argument helpers, shared with config)
 │   ├── bash_executor.clj — the bash tool's process engine (streaming,
 │   │                     temp-file spill, shell resolution)
 │   ├── bash_output.clj — the engine's pure half: size formatting, UTF-8
