@@ -92,7 +92,8 @@
                         (let [v (orig sym)]
                           (println "dispatched" sym
                                    "app-ns" (some? (find-ns 'kmet.app.core))
-                                   "cli-ns" (some? (find-ns 'kmet.agent.cli)))
+                                   "cli-ns" (some? (find-ns 'kmet.agent.cli))
+                                   "runtime-ns" (some? (find-ns 'kmet.agent.session.runtime)))
                           v))]
                     (list 'apply 'core/-main (vec args))))))
 
@@ -104,16 +105,22 @@
   (first (filter #(str/starts-with? % "kmet ") (str/split-lines out))))
 
 (deftest ^:slow each-app-loads-alone
+  ;; The surviving asymmetry: kmet1 RUNS on kmet2's `app` module (4c-ii-a), so
+  ;; `--app old` loading `kmet.app.*` is by design; what must never happen is
+  ;; kmet2 loading kmet1's runtime.
   (let [{old-out :out old-err :err old-code :exit} (run-child ["--app" "old" "--version"])
         {new-out :out new-err :err new-code :exit} (run-child ["--app" "new" "--version"])]
     (is (= 0 old-code) (str "kmet --app old --version failed:\n" old-err))
     (is (= 0 new-code) (str "kmet --app new --version failed:\n" new-err))
-    (testing "--app old loads kmet1 and leaves kmet2 unloaded"
-      (is (str/includes? old-out "dispatched kmet.agent.cli/-main app-ns false cli-ns true")
-          old-out))
+    (testing "--app old loads kmet1's runtime"
+      (is (str/includes? old-out "dispatched kmet.agent.cli/-main")
+          old-out)
+      (is (str/includes? old-out "cli-ns true") old-out))
     (testing "--app new loads kmet2 and leaves kmet1's runtime unloaded"
       (is (str/includes? new-out "dispatched kmet.app.core/-main app-ns true cli-ns false")
-          new-out))
+          new-out)
+      (is (str/includes? new-out "runtime-ns false")
+          (str "kmet.agent.session.runtime loaded for --app new:\n" new-out)))
     (testing "one version string"
       (is (some? (version-line old-out)))
       (is (= (version-line old-out) (version-line new-out))))))

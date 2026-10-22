@@ -763,8 +763,9 @@ kmet                            # kmet1, the default, unchanged
   bootstrap parses `--app` (`new` | `old`, `old` the default), strips the flag
   from the argv, and hands off dynamically — never a static require — to
   `(requiring-resolve 'kmet.agent.cli/-main)` or
-  `(requiring-resolve 'kmet.app.core/-main)`. Neither app pays the other's load
-  time, and a missing `kmet.app.core` (a `--dev` build, an older artifact)
+  `(requiring-resolve 'kmet.app.core/-main)`. Neither app pays the other
+  *entry's* load time — kmet1 does require the shared `app` module it has run on
+  since 4c-ii-a, but not kmet2's boot or its modes — and a missing `kmet.app.core` (a `--dev` build, an older artifact)
   answers "this artifact carries only the kmet app" instead of a null
   dereference — the check is the app's source resource, and `dispatch!` reports
   it (`::missing-app`) while `-main` owns the exit code, so the message is a
@@ -1231,12 +1232,14 @@ own, not a tweak.
   no-`scope` require ban — are in [`srce.md`](modules/srce/src/kmet/srce/srce.md).
 - New: a profile test — layers patch by row id, `--dump-config` resolves to
   the same rows the boot uses, and an unknown plugin source fails at load.
-- New: the two-direction load test — `kmet --app old --version` leaves
-  `kmet.app.core` unloaded, `kmet --app new --version` loads kmet2 without any
-  kmet1 *runtime* namespace (`kmet.agent.cli`, `kmet.agent.session.runtime`,
-  `kmet.agent.loop`) appearing, and `kmet.agent.core`'s ns form requires
-  neither app. It is what keeps someone from turning the dispatch into a
-  static `:require`.
+- New: the two-direction load test — `kmet --app new --version` loads kmet2
+  without any kmet1 *runtime* namespace (`kmet.agent.cli`,
+  `kmet.agent.session.runtime`, `kmet.agent.loop`) appearing, `kmet --app old
+  --version` loads kmet1's runtime (and `kmet.app.*`, which kmet1 runs on since
+  4c-ii-a — the old direction asserted that module stayed unloaded, which
+  stopped being true then and the slow guard went red un-noticed), and
+  `kmet.agent.core`'s ns form requires neither app. It is what keeps someone
+  from turning the dispatch into a static `:require`.
 
 ## Not doing
 
