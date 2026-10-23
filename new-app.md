@@ -1233,6 +1233,17 @@ composition, creates an agent through `create!`, sends it a message, and the run
 reaches the model and settles `:completed` with `[:user :assistant]` in its
 context.
 
+Two review notes, both about things that cannot fail today and would later.
+Removing the row from the bundle makes `test-composition-run` fail exactly as
+the unbound host did (`:error`, `[:user]`), so the gate is the row and not the
+stub. And kmet1's hook tests (`extensions.test-inject`,
+`agent.test-session-runtime`) call `apply-input-hooks`/`get-tool-call-hooks`
+without binding, relying on kmet1's load-time binding: a composition test that
+leaves its own binding behind hands them an app root's handle. Harmless while
+the leaks are hook-free and the namespaces sort agent-first, but it is the kind
+of order-dependence retirement should end — those tests should bind their own
+services, as `extensions.test-api` already does.
+
 The row also retired a fixture: the driver's tests had stood the binding up by
 hand, with a comment saying that is what the row would do — they mount the row
 now, so the composition they exercise is the one that ships. And because the

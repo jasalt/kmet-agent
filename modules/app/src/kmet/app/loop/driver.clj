@@ -206,14 +206,22 @@
         ;; true when this call claimed the run: the CAS is what decides, so a
         ;; message arriving as another thread starts a run is queued by the
         ;; caller rather than dropped
+        ;; a start that throws before it has a run to settle must not leave
+        ;; the handle claiming one: every later message would queue behind a
+        ;; run that does not exist
         start! (fn [text]
                  (boolean
                   (when (compare-and-set! running? false true)
-                    (reset! last-run
-                            (loop/run-agent-turn @live
-                                                 {:message text
-                                                  :on-done (fn [_] (settle!))
-                                                  :on-error (fn [_] (settle!))})))))]
+                    (try
+                      (reset! last-run
+                              (loop/run-agent-turn
+                               @live
+                               {:message text
+                                :on-done (fn [_] (settle!))
+                                :on-error (fn [_] (settle!))}))
+                      (catch Throwable t
+                        (settle!)
+                        (throw t))))))]
     {:id id
      :ctx child
      :agent state
