@@ -496,7 +496,7 @@
   [& {:keys [custom-prompt append-prompt cwd context-files tools
              prompt-guidelines skills]
       :or {cwd (str (fs/cwd))}}]
-  (let [tools (or tools (vals (tools-registry/get-all-tools)))
+  (let [tools (or tools (vals (tools-registry/get-all-tools (app-runtime/registry))))
         selected-tools (mapv :name tools)
         tool-set (set selected-tools)
         has-read (contains? tool-set "read")

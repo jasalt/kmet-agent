@@ -12,11 +12,12 @@
 
    The tool *semantics* — the built-in map, schema normalization, selection for
    a caller's surface — live beside it in `kmet.agent.tools.registry`, which
-   took every reader a handle as its first argument at landing 4f; the arity-less
-   forms resolve through a default cell kmet1 installs, so a kmet2 reader that
-   forgets the handle fails instead of reading another agent's tools. Until the
-   loop runs on the app (landing 7) the only readers are the contract test and
-   the tool layer's explicit-argument reads."
+   took every reader a handle as its first argument at landing 4f: the built-in
+   table is built per handle, so two agents' tool tables share no state. kmet1's
+   arity-less forms are a rank-4 façade over this service
+   (`kmet.agent.tools.core`), never a default the registry resolves itself.
+   Until the loop runs on the app (landing 7) the only readers are the contract
+   test and the tool layer's explicit-argument reads."
   (:require [kmet.app.registries :as registries]))
 
 (def service

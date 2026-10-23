@@ -25,7 +25,6 @@
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.registry :as reg]
             [kmet.agent.retry :as retry]
-            [kmet.agent.tools.registry :as tools-registry]
             [kmet.app.core :as app-core]
             [kmet.app.runtime :as app-runtime]
             [kmet.srce.core :as srce]))
@@ -99,14 +98,6 @@
    that has no seam yet still has somewhere to go."
   []
   @registry-handle)
-
-;; kmet1's tool call sites pass no handle — they predate the ctx-sourced
-;; `:tools` service — so the tool layer resolves them through this cell, which
-;; is the same façade every explicit call here uses: one handle, two ways in.
-;; kmet2 installs nothing, and a reader there that forgets to pass the ctx's
-;; handle gets a named error instead of kmet1's tools (new-app.md, 4c-iii-c
-;; takes the arity-less forms out).
-(tools-registry/set-default-registry! registry)
 
 (defn deregister-owner!
   "Remove every registry registration OWNER holds, across every tag — what

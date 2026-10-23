@@ -7,7 +7,6 @@
             [clojure.test :as t]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.tools.core :as tools]
-            [kmet.agent.tools.registry :as registry]
             [kmet.agent.tools.run-code :as run-code]
             [kmet.agent.tools.util :as tool-util]
             [kmet.libs.host :as host]
@@ -19,14 +18,14 @@
   (tools/execute-tool "run_code" (merge {:code code} opts) {:on-update on-update}))
 
 (defn- with-custom-tool [tool f]
-  (registry/register-tool! tool)
+  (tools/register-tool! tool)
   (try (f)
-       (finally (registry/unregister-tool! (:name tool)))))
+       (finally (tools/unregister-tool! (:name tool)))))
 
 (defn- with-tool-source [id tools-fn f]
-  (registry/register-tool-source! id tools-fn)
+  (tools/register-tool-source! id tools-fn)
   (try (f)
-       (finally (registry/unregister-tool-source! id))))
+       (finally (tools/unregister-tool-source! id))))
 
 (defn- temp-dir []
   (let [dir (str (fs/absolutize (str "target/test-run-code-" (System/nanoTime))))]
@@ -497,26 +496,26 @@
         (t/is (str/includes? (:content (run "(emit @(tools/call \"bash\" {}))")) "not active"))))))
 
 (t/deftest test-run-code-contributed-tools-unregister
-  (registry/register-tool-source! ::extension
-                                  (fn [] {"run-code-test-gone" {:name "run-code-test-gone"
-                                                                :execute (fn [_] {:content "x"})}}))
+  (tools/register-tool-source! ::extension
+                               (fn [] {"run-code-test-gone" {:name "run-code-test-gone"
+                                                             :execute (fn [_] {:content "x"})}}))
   (try
     (t/is (str/includes? (:content (run "(emit (tools/list))")) "run-code-test-gone"))
-    (finally (registry/unregister-tool-source! ::extension)))
+    (finally (tools/unregister-tool-source! ::extension)))
   (t/is (not (str/includes? (:content (run "(emit (tools/list))")) "run-code-test-gone"))))
 
 (t/deftest test-run-code-broken-tool-source
   ;; a source that throws (or returns a non-map) contributes nothing and
   ;; cannot take the sandbox down
-  (registry/register-tool-source! ::broken (fn [] (throw (ex-info "boom" {}))))
-  (registry/register-tool-source! ::bad-shape (fn [] [1 2 3]))
+  (tools/register-tool-source! ::broken (fn [] (throw (ex-info "boom" {}))))
+  (tools/register-tool-source! ::bad-shape (fn [] [1 2 3]))
   (try
     (let [r (run "(emit (+ 1 2))")]
       (t/is (not (:is-error r)) (:content r))
       (t/is (= "3" (:content r))))
     (finally
-      (registry/unregister-tool-source! ::broken)
-      (registry/unregister-tool-source! ::bad-shape))))
+      (tools/unregister-tool-source! ::broken)
+      (tools/unregister-tool-source! ::bad-shape))))
 
 (t/deftest test-run-code-inner-call-streams-updates
   ;; the bridge hands inner :streams? calls the script's on-update, so

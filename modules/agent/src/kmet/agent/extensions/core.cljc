@@ -68,7 +68,7 @@
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
-            [kmet.agent.tools.core :as tools]
+            [kmet.agent.tools.registry :as tools]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.config :as cfg]
             [kmet.agent.debug :as debug]
@@ -993,24 +993,29 @@
      :get-commands #(mapv (fn [c] (select-keys c [:name :description]))
                           (commands/get-commands))
      :register-tool! (fn [tool]
-                       (tools/register-tool! (loader-aware-map ext tool)
+                       (tools/register-tool! (app-runtime/registry)
+                                             (loader-aware-map ext tool)
                                              (extension-owner name)))
      :unregister-tool! (fn [tool-name]
-                         (tools/unregister-tool! tool-name (extension-owner name)))
+                         (tools/unregister-tool! (app-runtime/registry)
+                                                 tool-name
+                                                 (extension-owner name)))
      ;; sandbox-only tools: contributed into the run_code tool's surface, never
      ;; the model's tool set (mcp-adapter's MCP catalog — run_code.md T2)
      :register-tool-source! (fn [id tools-fn]
                               (tools/register-tool-source!
-                               id tools-fn (extension-owner name)))
+                               (app-runtime/registry) id tools-fn
+                               (extension-owner name)))
      :unregister-tool-source! (fn [id]
                                 (tools/unregister-tool-source!
-                                 id (extension-owner name)))
+                                 (app-runtime/registry) id
+                                 (extension-owner name)))
      ;; pi: createBashTool — the bash tool constructor with its options
      ;; (spawnHook / exposeSessionEnvironment / commandPrefix / shellPath /
      ;; operations). The built-in bash tool is the same constructor with
      ;; default options; registering the result under a name replaces it.
      :create-bash-tool bash-tool/create-tool
-     :get-all-tools #(vals (tools/get-all-tools))
+     :get-all-tools #(vals (tools/get-all-tools (app-runtime/registry)))
      :get-active-tools get-active-tools
      :set-active-tools set-active-tools
      :on-event (fn [event-type handler]

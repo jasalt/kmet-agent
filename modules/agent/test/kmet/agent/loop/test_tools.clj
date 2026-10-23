@@ -6,6 +6,7 @@
             [babashka.fs :as fs]
             [kmet.ai.llm :as llm]
             [kmet.libs.json :as json]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.registry :as tools-registry]
             [kmet.agent.session.core :as session]
@@ -295,12 +296,12 @@
   (let [events (atom [])
         offered (atom nil)
         calls (atom 0)]
-    (tools-registry/register-tool!
-     (tools/make-tool :name "capture-probe" :label "Probe"
-                      :description "captured-dispatch probe"
-                      :parameters {:x (tools/param :x :string "x")}
-                      :execute (fn [_] {:content "captured-ran" :is-error false}))
-     [:probe :test])
+    (tools-registry/register-tool! (app-runtime/registry)
+                                   (tools/make-tool :name "capture-probe" :label "Probe"
+                                                    :description "captured-dispatch probe"
+                                                    :parameters {:x (tools/param :x :string "x")}
+                                                    :execute (fn [_] {:content "captured-ran" :is-error false}))
+                                   [:probe :test])
     (try
       (let [agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -309,7 +310,7 @@
                         (when (nil? @offered)
                           (reset! offered (:tools opts)))
                         ;; gone by the time the model's call comes back
-                        (tools-registry/unregister-tool! "capture-probe" [:probe :test])
+                        (tools-registry/unregister-tool! (app-runtime/registry) "capture-probe" [:probe :test])
                         (future
                           (if (= 1 (swap! calls inc))
                             (do (when-let [on-tc (:on-tool-call opts)]
@@ -332,7 +333,7 @@
               "dispatch resolves against the request's capture, not the live registry")
         (t/is (false? (:is-error end))))
       (finally
-        (tools-registry/unregister-tool! "capture-probe" [:probe :test])))))
+        (tools-registry/unregister-tool! (app-runtime/registry) "capture-probe" [:probe :test])))))
 
 (t/deftest test-loop-scripted-calls-fire-tool-hooks
   ;; the run's agent-level hooks reach calls made inside a script: the loop
@@ -686,11 +687,11 @@
       (t/is (= #{"read"} (builtin-names ag)))
       (t/testing "extension tools registered later stay active"
         (try
-          (tools-registry/register-tool!  {:name "default-tools-ext"
-                                           :description "d"
-                                           :execute (fn [_] {:content ""})})
+          (tools-registry/register-tool! (app-runtime/registry) {:name "default-tools-ext"
+                                                                 :description "d"
+                                                                 :execute (fn [_] {:content ""})})
           (t/is (contains? (all-names ag) "default-tools-ext"))
-          (finally (tools-registry/unregister-tool!  "default-tools-ext"))))
+          (finally (tools-registry/unregister-tool! (app-runtime/registry) "default-tools-ext"))))
       (t/testing "an explicit set-active-tools! selection replaces the default"
         (state/set-active-tools! ag ["bash"])
         (t/is (= #{"bash"} (all-names ag))))

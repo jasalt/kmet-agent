@@ -9,13 +9,18 @@
    added.
 
    **The handle is a parameter.** Every reader and writer takes the registry it
-   works on, so two agents can hold different tool tables with nothing shared
-   between them (new-app.md, landing 4c-iii-c). The
-   arity-less forms are kmet1's compatibility path: it predates the ctx-sourced
-   `:tools` service, so it installs its façade once (`set-default-registry!`,
-   from `kmet.agent.app-runtime`) and its call sites pass no handle. A process
-   that installs none — every kmet2 one — gets a named error rather than some
-   other agent's tools."
+   works on, first, so two agents can hold different tool tables with nothing
+   shared between them (new-app.md, landing 4c-iii-c) and nothing below the app
+   can name a process-wide one.
+
+   There is deliberately no default. An earlier draft resolved an installed
+   cell when the handle was left out, and kmet1's own tests broke it: the
+   extension sandbox loads `kmet.agent.app-runtime` a second time, so that load
+   ran the install with an SCI closure and the shared cell ended up holding a
+   handle from the sandbox's copy of the process. A parameter cannot be written
+   from a sandbox. kmet1's process handle is supplied where it already lives,
+   in a rank-4 namespace: `kmet.agent.tools.core` keeps the arity-less forms
+   and passes `(kmet.agent.app-runtime/registry)`."
   (:require [clojure.string :as str]
             [kmet.libs.json :as json]
             [kmet.agent.registry :as registry]
@@ -28,32 +33,6 @@
             [kmet.agent.tools.run-code :as run-code]))
 
 (declare built-in-tools)
-
-;; ─── The default handle ────────────────────────────────────────────────────
-
-(defonce ^:private default-registry-fn
-  ;; A 0-arg fn, not a handle: kmet1's handle is a façade over the app's
-  ;; services, and forcing it here would boot the ctx at namespace load.
-  (atom nil))
-
-(defn set-default-registry!
-  "Install the fn the arity-less reads and writes resolve their handle through.
-
-   kmet1 calls this once, from `kmet.agent.app-runtime`, with the façade it
-   already exposes. kmet2 never installs one: every reader there passes the
-   context's handle, which is the whole point of the parameter."
-  [f]
-  (reset! default-registry-fn f))
-
-(defn- default-registry
-  "The installed default handle, or a named error for a caller that has none."
-  []
-  (if-let [f @default-registry-fn]
-    (f)
-    (throw (ex-info (str "tools/registry: no default registry installed — "
-                         "pass a handle, or install kmet1's with "
-                         "set-default-registry!")
-                    {:cause ::no-default-registry}))))
 
 ;; ─── Built-in tools ─────────────────────────────────────────────────────────
 
@@ -127,40 +106,38 @@
   (into {} (registry/entries reg :kmet/tool)))
 
 (defn register-tool!
-  "Register a custom tool after normalizing its provider-facing schema, owned
-   by OWNER — the app's registry by default; an extension passes its own owner
-   path so unloading it takes the tool with the owner. Returns
-   the registry's deregister fn."
-  ([tool] (register-tool! tool tools-owner))
-  ([tool owner]
+  "Register a custom tool in REGISTRY after normalizing its provider-facing
+   schema, owned by OWNER — `[:app :tools]` by default; an extension passes its
+   own owner path so unloading it takes the tool with the owner. Returns the
+   registration's deregister fn."
+  ([reg tool] (register-tool! reg tool tools-owner))
+  ([reg tool owner]
    (let [tool (tool/normalize-tool-definition tool)]
-     (registry/register! (default-registry)
-                         :kmet/tool (:name tool) tool owner))))
+     (registry/register! reg :kmet/tool (:name tool) tool owner))))
 
 (defn unregister-tool!
-  "Remove a custom tool by name, from whichever owner registered it, or —
-   with OWNER — only that owner's registration (an extension dropping one of
-   its own; another owner's same-name tool survives). Returns nil."
-  ([name] (unregister-tool! name nil))
-  ([name owner]
-   (registry/deregister! (default-registry) :kmet/tool name owner)
+  "Remove REGISTRY's custom tool by name, from whichever owner registered it,
+   or — with OWNER — only that owner's registration (an extension dropping one
+   of its own; another owner's same-name tool survives). Returns nil."
+  ([reg name] (unregister-tool! reg name nil))
+  ([reg name owner]
+   (registry/deregister! reg :kmet/tool name owner)
    nil))
 
 (defn get-all-tools
   "Get all available tools (built-in + custom) from REGISTRY — the `:tools`
-   service handle, or the installed default when none is given (kmet1; see
-   `set-default-registry!`). A custom tool that reuses a built-in's name
-   shadows it (pi: the extension registry is layered over the base
-   definitions, custom wins)."
-  ([] (get-all-tools (default-registry)))
-  ([reg] (merge built-in-tools (registered-tools reg))))
+   service handle. A custom tool that reuses a built-in's name shadows it
+   (pi: the extension registry is layered over the base definitions, custom
+   wins)."
+  [reg]
+  (merge (built-in-tools reg) (registered-tools reg)))
 
 (defn get-tool
   "Get a tool by NAME from REGISTRY's view — resolved through get-all-tools, so
    the map a caller executes is exactly the map the registry lists (custom
-   shadows built-in). Without a REGISTRY, the installed default (kmet1)."
-  ([name] (get-tool (default-registry) name))
-  ([reg name] (get (get-all-tools reg) name)))
+   shadows built-in)."
+  [reg name]
+  (get (get-all-tools reg) name))
 
 ;; ─── Extension-contributed tool sources ────────────────────────────────────
 ;; Sandbox-only tools: a source contributes tool maps into the run_code tool's
@@ -184,30 +161,28 @@
    shadows a colliding name. Re-registering under the same ID replaces the
    source; the next run_code call resolves the new catalog. Returns cells'
    deregister fn."
-  ([id tools-fn] (register-tool-source! id tools-fn tools-owner))
-  ([id tools-fn owner]
-   (registry/register! (default-registry)
-                       :kmet/tool-source id tools-fn owner)))
+  ([reg id tools-fn] (register-tool-source! reg id tools-fn tools-owner))
+  ([reg id tools-fn owner]
+   (registry/register! reg :kmet/tool-source id tools-fn owner)))
 
 (defn unregister-tool-source!
-  "Remove a contributed tool source by ID, from whichever owner registered
-   it, or — with OWNER — only that owner's registration. Returns nil."
-  ([id] (unregister-tool-source! id nil))
-  ([id owner]
-   (registry/deregister! (default-registry) :kmet/tool-source id owner)
+  "Remove REGISTRY's contributed tool source by ID, from whichever owner
+   registered it, or — with OWNER — only that owner's registration. Returns
+   nil."
+  ([reg id] (unregister-tool-source! reg id nil))
+  ([reg id owner]
+   (registry/deregister! reg :kmet/tool-source id owner)
    nil))
 
 (defn get-contributed-tools
-  "Merge every source registered in REGISTRY (the installed default when none
-   is given) into its current tools. A source that throws or returns a non-map
+  "Merge every source registered in REGISTRY into its current tools. A source that throws or returns a non-map
    contributes nothing — a broken extension must not take the sandbox's
    surface down."
-  ([] (get-contributed-tools (default-registry)))
-  ([reg]
-   (reduce (fn [acc [_ tools-fn]]
-             (let [tools (try (tools-fn) (catch Exception _ nil))]
-               (if (map? tools) (merge acc tools) acc)))
-           {} (registered-tool-sources reg))))
+  [reg]
+  (reduce (fn [acc [_ tools-fn]]
+            (let [tools (try (tools-fn) (catch Exception _ nil))]
+              (if (map? tools) (merge acc tools) acc)))
+          {} (registered-tool-sources reg)))
 
 ;; ─── Callable surfaces ─────────────────────────────────────────────────────
 
@@ -247,7 +222,7 @@
       (catch Exception _ {}))))
 
 (defn execute-tool
-  "Execute a tool by name with given arguments.
+  "Execute REGISTRY's tool by name with given arguments.
    opts — {:on-update (fn [partial]) streaming callback (passed to the
    tool's execute when it declares :streams?); :signal — cancel atom; :ctx
    — extension context map for :contextual? tools (pi: execute(toolCallId,
@@ -258,9 +233,9 @@
    (fn [args on-update signal ctx]) — pi passes the signal and ctx
    unconditionally; other tools keep (fn [args]) / (fn [args on-update]).
    Returns {:content str :is-error bool}."
-  [tool-name args & [opts]]
+  [reg tool-name args & [opts]]
   (let [{:keys [on-update signal ctx tools]} (or opts {})
-        tool (if tools (get tools tool-name) (get-tool tool-name))]
+        tool (if tools (get tools tool-name) (get-tool reg tool-name))]
     (if tool
       (try
         ;; pi prepareToolCallArguments: a tool's :prepare-arguments shim
@@ -285,17 +260,21 @@
 
 ;; ─── The full built-in map ─────────────────────────────────────────────────
 
-(def built-in-tools
-  "Map of tool name → Tool record for all built-in tools. The run_code tool
-   carries this namespace's seams: it lists through get-all-tools (plus
-   extension-contributed sources) and dispatches inner calls through
-   execute-tool, so run_code resolution is the same as the model's."
+(defn built-in-tools
+  "Map of tool name → Tool record for all built-in tools, built for REGISTRY.
+
+   A function, not a constant, because the run_code tool closes over the
+   registry: it lists through get-all-tools (plus extension-contributed
+   sources) and dispatches inner calls through execute-tool, so run_code
+   resolution is the same as the model's — and two agents' tables resolve to
+   their own handle, not the one that happened to load first."
+  [reg]
   (assoc base-tools
          "run_code"
-         (run-code/create-tool {:get-all-tools get-all-tools
-                                :get-contributed-tools get-contributed-tools
+         (run-code/create-tool {:get-all-tools #(get-all-tools reg)
+                                :get-contributed-tools #(get-contributed-tools reg)
                                 :select-tools select-tools
-                                :execute-tool execute-tool})))
+                                :execute-tool #(execute-tool reg %1 %2 %3)})))
 
 ;; ─── Default tool selection (pi: defaultTools) ─────────────────────────────
 
@@ -303,8 +282,9 @@
   "Names of the built-in tools in registry order — the base a modifier-only
    :default-tools list modifies, and the set the setting can exclude.
    Pi: DEFAULT_TOOL_NAMES; kmet ships every built-in active by default, so the
-   base is the full built-in set (docs/configuration.md)."
-  (vec (keys built-in-tools)))
+   base is the full built-in set (docs/configuration.md). Derived from the
+   static half: `built-in-tools` needs a registry, a name list does not."
+  (conj (vec (keys base-tools)) "run_code"))
 
 (defn tool-selection-modifier?
   "True when a :default-tools entry is a +name/-name modifier (pi:

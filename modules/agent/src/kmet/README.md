@@ -133,11 +133,15 @@ kmet/agent/
 │                         store, listing, context, stats, tree, schema,
 │                         export, backend — lives in `modules/app`
 │                         (`kmet.agent.session.*`, moved at 4c-i)
-├── (tools/)            — the whole tool layer (tool, util, the API, registry,
-│                         invoke, bash + its two halves, read/write/edit,
-│                         run_code, the `kmet config` rows) moved to
-│                         `modules/app/src/kmet/agent/tools` at 4f, namespaces
-│                         kept
+├── tools/              — only the façade is left: core.clj keeps kmet1's
+│   │                     arity-less tool API over
+│   └── core.clj        — `(app-runtime/registry)`, adding no state and no
+│                         arity to the registry's explicit-handle fns. The
+│                         layer itself (tool, util, invoke, bash + its two
+│                         halves, read/write/edit, run_code, the `kmet config`
+│                         rows) lives in `modules/app/src/kmet/agent/tools`
+│                         since 4f, namespaces kept; `kmet.agent.config` went
+│                         with it.
 ├── modes/              — entry modes
 │   ├── interactive.clj — interactive TUI entry: run + session start-up
 │   │                     (pi: modes/interactive/interactive-mode.ts)

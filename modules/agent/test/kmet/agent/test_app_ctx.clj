@@ -45,6 +45,7 @@
   (let [owner [:app :extensions "probe-ext"]
         handle (app-runtime/registry)]
     (tools/register-tool!
+     handle
      {:name "owned-tool" :description "d"
       :parameters {:type "object" :properties {}}
       :execute (fn [_] {:content "ok"})} owner)

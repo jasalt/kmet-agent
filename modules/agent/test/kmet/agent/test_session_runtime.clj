@@ -61,19 +61,21 @@
   ;; pending buffer could only have filled the engine that was copied from.
   (with-engine
     (fn [_engine _sess]
-      (tools-reg/register-tool!
-
-       {:name "outlives-tool" :label "Outlives" :description "d"
-        :parameters {:type "object" :properties {}}
-        :execute (fn [_] {:content "ok"})})
-      (tools-reg/register-tool-source!  ::outlives
-                                        (fn [] {"sandbox-outlives" {}}))))
+      (tools-reg/register-tool! (app/registry)
+                                {:name "outlives-tool" :label "Outlives"
+                                 :description "d"
+                                 :parameters {:type "object" :properties {}}
+                                 :execute (fn [_] {:content "ok"})})
+      (tools-reg/register-tool-source! (app/registry) ::outlives
+                                       (fn [] {"sandbox-outlives" {}}))))
   (try
-    (is (contains? (tools-reg/get-all-tools) "outlives-tool"))
-    (is (contains? (tools-reg/get-contributed-tools) "sandbox-outlives"))
+    (is (contains? (tools-reg/get-all-tools (app/registry))
+                   "outlives-tool"))
+    (is (contains? (tools-reg/get-contributed-tools (app/registry))
+                   "sandbox-outlives"))
     (finally
-      (tools-reg/unregister-tool!  "outlives-tool")
-      (tools-reg/unregister-tool-source!  ::outlives))))
+      (tools-reg/unregister-tool! (app/registry) "outlives-tool")
+      (tools-reg/unregister-tool-source! (app/registry) ::outlives))))
 
 (deftest test-prompt-templates-outlive-an-engine
   ;; Prompt templates are the app's too (P2): one registered while an engine

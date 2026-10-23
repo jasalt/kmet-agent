@@ -9,7 +9,8 @@
  ;; The `kmet.agent.*` namespaces here are that rule in practice: the session
  ;; layer (kmet.agent.session.*, moved at 4c-i), kmet.agent.registry (landing
  ;; 3), the tool layer — kmet.agent.tools.* and kmet.agent.config, moved at 4f
- ;; in five steps and keeping their namespaces — and the host's leaf
+ ;; in five steps and keeping their namespaces, with kmet1's arity-less façade
+ ;; (kmet.agent.tools.core) left behind at rank 4 — and the host's leaf
  ;; dependencies (kmet.agent.debug, .config-schema, .event-bus, .tools.util),
  ;; lifted ahead of the extension host's own move so its requires stop pointing
  ;; upward (new-app.md, 4b-ii).
