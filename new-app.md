@@ -1027,6 +1027,20 @@ Gate, met: full `bb test` 4,142 / 24,281 green; `bb lint` 0/0; `bb format-check`
 clean; `bb check` compiles; `loop/state.clj`'s requires now reach only `app`,
 `ai`, `libs` and `srce`.
 
+**Step 2c landed: the first half of the cluster, as a move.** `kmet.agent.loop.message`
+(177), `kmet.agent.loop.state` (1,064) and `kmet.agent.compaction.core` (577)
+are files in `app` now, namespaces kept — the two-axes rule again, so the move
+is a `git mv` and the retirement pass renames them once. Their **tests stay
+where they are** for one step: they need `loop.test-support`, which itself
+calls `kmet.agent.loop`, so the tests follow at step 2d rather than drag the
+support upward. What is left on the other side is now only what still requires
+the loop itself — `completion` (247), `tool-exec` (265), `compaction/stage`
+(656), the loop (1,177) and the Engine (1,406) — and each of those requires
+files already on this side of the line.
+
+Gate, met: `kmet.test-module-deps` 606 assertions hold the three new file
+boundaries, 1,323 changed-namespace tests green, `bb check` compiles.
+
 ### Landing 4c-iii-b settled
 
 **The registry cannot own what an agent is.** `kmet.app.agents` is generic by

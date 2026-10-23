@@ -20,6 +20,10 @@
  ;; handed and `kmet.agent.app-runtime` is left holding only the process's own
  ;; entry points. It reaches `kmet.agent.loop-guard`/`.retry`, which live here.
  ;;
+ ;; 7a's third step moved the first half of the loop cluster as-is (namespaces
+ ;; kept, tests to follow): kmet.agent.loop.message, .loop.state and
+ ;; .compaction.core. They reach only what is already here or below.
+ ;;
  ;; 7a's second step brought three leaves the loop cluster reaches for, moved
  ;; with no call-site edits because nothing in them reaches upward:
  ;; kmet.agent.model-resolver (ai only), .project-context (no deps) and
