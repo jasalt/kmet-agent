@@ -194,24 +194,29 @@
   [rows]
   (some #(when (:mode %) %) rows))
 
+(defn- with-mode-input
+  "COMPOSED with INPUT merged into MODE's config — that row only, so a profile
+   that stacks two mode rows cannot start two runs. Matching by id is what
+   `mode-row` found the row by."
+  [composed mode input]
+  (update composed :rows
+          (fn [rows]
+            (mapv (fn [row]
+                    (if (= (:id row) (:id mode))
+                      (update row :config merge input)
+                      row))
+                  rows))))
+
 (defn- run-mode
-  "Boot COMPOSED and drive MODE, the row `mode-row` found: merge the
-   invocation's input into that row's config — and only that row's, so a
-   profile that stacks two mode rows cannot start two runs — then wait for the
-   mode to report and return its exit code. The mode owns what it prints; the
-   entry point owns the process, the boot and the teardown."
+  "Boot COMPOSED and drive MODE, the row `mode-row` found: give it the
+   invocation's input, wait for it to report, and return its exit code. The
+   mode owns what it prints; the entry point owns the process, the boot and the
+   teardown."
   [composed mode prompt]
   (let [result (promise)
-        booted (runtime/boot
-                (update composed :rows
-                        (fn [rows]
-                          (mapv (fn [row]
-                                  (if (= (:id row) (:id mode))
-                                    (update row :config merge
-                                            {:prompt prompt
-                                             :on-result #(deliver result %)})
-                                    row))
-                                rows))))]
+        booted (runtime/boot (with-mode-input composed mode
+                               {:prompt prompt
+                                :on-result #(deliver result %)}))]
     (try
       (:exit (deref result) 1)
       (finally

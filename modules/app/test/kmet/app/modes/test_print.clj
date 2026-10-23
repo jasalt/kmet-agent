@@ -10,19 +10,9 @@
             [clojure.test :refer [deftest is]]
             [kmet.agent.config :as cfg]
             [kmet.ai.llm :as llm]
-            [kmet.app.core :as core]))
+            [kmet.app.test-support :as support]))
 
 (def ^:private sessions-dir "target/test-print-mode")
-
-(defn- run-main
-  "The `{:code :out :err}` of kmet2's entry on ARGS (the same capture
-   `kmet.app.test-core` uses: `main` returns the code and prints)."
-  [args]
-  (let [code (atom nil)
-        err (java.io.StringWriter.)
-        out (binding [*err* err]
-              (with-out-str (reset! code (core/main args))))]
-    {:code @code :out out :err (str err)}))
 
 (defn- settings
   "What the driver loads for a run: a provider and model that resolve, and the
@@ -58,7 +48,7 @@
   (with-mode-run
     (answering "hello from the model")
     (fn []
-      (let [{:keys [code out]} (run-main ["--profile" "print" "hello"])]
+      (let [{:keys [code out]} (support/run-main ["--profile" "print" "hello"])]
         (is (= 0 code) "a completed prompt exits 0")
         (is (= "hello from the model" out)
             "the run's text is printed from the app's event layer")
@@ -67,7 +57,7 @@
              durable session the rest of the app reads")))))
 
 (deftest print-mode-without-a-prompt-says-what-it-needs
-  (let [{:keys [code err]} (run-main ["--profile" "print"])]
+  (let [{:keys [code err]} (support/run-main ["--profile" "print"])]
     (is (= 1 code))
     (is (str/includes? err "No message provided")
         "the usage names the flag and the message, before anything boots")))
@@ -76,7 +66,7 @@
   ;; `--dump-state` mounts every row of the profile, this one included — a
   ;; diagnostic mount hands the mode no `:on-result`, so it stays inert and the
   ;; dump proves the row composes without printing anything or blocking.
-  (let [{:keys [code out]} (run-main ["--profile" "print" "--dump-state"])]
+  (let [{:keys [code out]} (support/run-main ["--profile" "print" "--dump-state"])]
     (is (= 0 code))
     (is (some #(and (str/includes? % ":mode-print") (str/includes? % ":active"))
               (str/split-lines out))
@@ -92,7 +82,7 @@
         (when-let [on-error (:on-error opts)] (on-error "boom"))
         :done))
     (fn []
-      (let [{:keys [code out err]} (run-main ["--profile" "print" "hello"])]
+      (let [{:keys [code out err]} (support/run-main ["--profile" "print" "hello"])]
         (is (= 1 code) "a failed run exits 1")
         (is (= "" out) "and prints no text")
         (is (str/includes? err "Error: boom")

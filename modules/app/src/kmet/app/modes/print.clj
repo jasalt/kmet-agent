@@ -48,9 +48,27 @@
                          "Request ended without an outcome"))))
         1)))
 
+(defn- run-prompt!
+  "One prompt: create, send, wait for the settle, report. Returns the exit
+   code. The mode owns the agent it made, so the handle is disposed whatever
+   the run did — and a failure to create or send is one line on stderr and
+   exit 1, never a thrown thread."
+  [scope agents prompt settled error]
+  (try
+    (let [handle ((:create! agents) scope {})]
+      (try
+        ((:send! agents) handle prompt {:target :next-turn})
+        (exit-code (:outcome (deref settled)) @error)
+        (finally
+          ((:dispose! agents) handle))))
+    (catch Throwable t
+      (report! (or (ex-message t) (str t)))
+      1)))
+
 (defn- serve
-  "The `:mode-print` row's apply: listen, then run on a thread of its own — the
-   mount must finish so the composition can settle before the run starts.
+  "The `:mode-print` row's apply: wire the stream, then run on a thread of its
+   own — the mount must finish so the composition can settle before the run
+   starts.
 
    A mode runs only when the entry point hands it somewhere to report
    (`:on-result`): `--dump-state` mounts this row without one, and a diagnostic
@@ -81,20 +99,7 @@
               dispose-settle (events/on! scope :agent-settled
                                          (fn [event] (deliver settled event)))]
           (future
-            (let [exit (try
-                         (let [handle ((:create! agents) scope {})]
-                           (try
-                             ((:send! agents) handle prompt {:target :next-turn})
-                             (exit-code (:outcome (deref settled)) @error)
-                             (finally
-                               ;; the mode owns the agent it made: the run is
-                               ;; over, so the handle's teardown is a no-op and
-                               ;; the ctx is released for the tree
-                               ((:dispose! agents) handle))))
-                         (catch Throwable t
-                           (report! (or (ex-message t) (str t)))
-                           1))]
-              (on-result {:exit exit})))
+            (on-result {:exit (run-prompt! scope agents prompt settled error)}))
           (fn []
             ;; a shutdown before the run ends must wake it: the settle promise
             ;; is the only thing it blocks on, and an event that never comes

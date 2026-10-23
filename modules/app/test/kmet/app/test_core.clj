@@ -7,7 +7,8 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [kmet.agent.version :as version]
-            [kmet.app.core :as core]))
+            [kmet.app.core :as core]
+            [kmet.app.test-support :as support]))
 
 (def sample-plugin
   "A var-addressable plugin map — the shape a `defplugin` var holds."
@@ -16,16 +17,6 @@
 (def failing-plugin
   "A plugin whose apply throws: a row that must not pass for a mount."
   {:name :app/failing :apply (fn [_ _] (throw (ex-info "boom" {})))})
-
-(defn- run-main
-  "The `{:code :out :err}` of kmet2's entry on ARGS — `main` returns the exit
-   code and prints, so a command is read without forking a process."
-  [args]
-  (let [code (atom nil)
-        err (java.io.StringWriter.)
-        out (binding [*err* err]
-              (with-out-str (reset! code (core/main args))))]
-    {:code @code :out out :err (str err)}))
 
 (def pending-plugin
   "A plugin whose dependency nothing provides: a row that renders as `:pending`."
@@ -76,12 +67,12 @@
 
 (deftest version-prints-the-shared-string
   (with-redefs [version/kmet-version (constantly "v9.9.9")]
-    (let [{:keys [code out]} (run-main ["--version"])]
+    (let [{:keys [code out]} (support/run-main ["--version"])]
       (is (zero? code))
       (is (= "kmet v9.9.9\n" out)))))
 
 (deftest help-prints-kmet2-flags
-  (let [{:keys [code out]} (run-main ["--help"])]
+  (let [{:keys [code out]} (support/run-main ["--help"])]
     (is (zero? code))
     (is (str/includes? out "kmet --app new"))
     (is (str/includes? out "--dump-config"))
@@ -89,7 +80,7 @@
     (is (str/includes? out "--profile"))))
 
 (deftest dump-config-prints-the-built-in-composition
-  (let [{:keys [code out]} (run-main ["--dump-config"])]
+  (let [{:keys [code out]} (support/run-main ["--dump-config"])]
     (is (zero? code))
     (is (str/starts-with? out "profile :tui rows=13 patches=0")
         (str "the bundle: the extension host, the bus, the four registries, the"
@@ -100,7 +91,7 @@
     (is (str/includes? out "inject={:sessionPersistence nil}")
         "a vector :inject prints in the kernel's normalized form")
     (is (str/ends-with? out "\n")))
-  (let [{:keys [out]} (run-main ["--dump-config" "--profile" "rpc"])]
+  (let [{:keys [out]} (support/run-main ["--dump-config" "--profile" "rpc"])]
     (is (str/starts-with? out "profile :rpc")
         "--profile selects the composition")))
 
@@ -110,7 +101,7 @@
                    " :config {:a 1}}]\n"
                    " :patch [{:id :app/sample :config {:b {:c 2}}}]}\n"))]
     (try
-      (let [{:keys [code out]} (run-main ["--dump-config" "--patch" path])]
+      (let [{:keys [code out]} (support/run-main ["--dump-config" "--patch" path])]
         (is (zero? code))
         (is (str/starts-with? out "profile :tui rows=14 patches=1"))
         (is (str/includes? out ":app/sample"))
@@ -122,20 +113,20 @@
 (deftest dump-config-reports-a-bad-layer
   (let [path (scratch-patch! "{:rows [] :nope 1}\n")]
     (try
-      (let [{:keys [code err]} (run-main ["--dump-config" "--patch" path])]
+      (let [{:keys [code err]} (support/run-main ["--dump-config" "--patch" path])]
         (is (= 1 code))
         (is (str/includes? err "a patch file holds")))
       (finally (io/delete-file path true))))
-  (let [{:keys [code err]} (run-main ["--dump-config" "--profile" "nope"])]
+  (let [{:keys [code err]} (support/run-main ["--dump-config" "--profile" "nope"])]
     (is (= 1 code))
     (is (str/includes? err "unknown profile")))
-  (let [{:keys [code err]} (run-main ["--dump-config" "--patch"
-                                      "target/definitely-missing-patch.edn"])]
+  (let [{:keys [code err]} (support/run-main ["--dump-config" "--patch"
+                                              "target/definitely-missing-patch.edn"])]
     (is (= 1 code))
     (is (str/includes? err "cannot read patch file"))))
 
 (deftest dump-state-prints-the-booted-tree
-  (let [{:keys [code out err]} (run-main ["--dump-state"])]
+  (let [{:keys [code out err]} (support/run-main ["--dump-state"])]
     (is (zero? code))
     (is (str/starts-with? out "[:app]")
         "the root frame, at the origin of every unit path")
@@ -150,7 +141,7 @@
               (str "{:rows [{:plugin kmet.app.test-core/sample-plugin}]"
                    " :patch []}\n"))]
     (try
-      (let [{:keys [code out]} (run-main ["--dump-state" "--patch" path])]
+      (let [{:keys [code out]} (support/run-main ["--dump-state" "--patch" path])]
         (is (zero? code))
         (is (str/includes? out "[:app :app/sample]")
             "the patched row mounts, so the tree shows it"))
@@ -165,7 +156,7 @@
                    "         {:plugin kmet.app.test-core/pending-plugin}]"
                    " :patch []}\n"))]
     (try
-      (let [{:keys [code out]} (run-main ["--dump-state" "--patch" path])]
+      (let [{:keys [code out]} (support/run-main ["--dump-state" "--patch" path])]
         (is (zero? code))
         (is (str/includes? out "[:app :app/failing]"))
         (is (str/includes? out ":failed"))
@@ -184,13 +175,13 @@
               (str "{:rows [{:plugin kmet.app.test-core/pending-plugin}]"
                    " :patch []}\n"))]
     (try
-      (let [{:keys [code err]} (run-main ["--patch" path])]
+      (let [{:keys [code err]} (support/run-main ["--patch" path])]
         (is (= 1 code))
         (is (str/includes? err "kmet2 boot failed")))
       (finally (io/delete-file path true)))))
 
 (deftest a-bare-run-boots-the-composition-and-says-what-is-missing
-  (let [{:keys [code err]} (run-main ["hello"])]
+  (let [{:keys [code err]} (support/run-main ["hello"])]
     (is (= 1 code))
     (is (str/includes? err
                        (str "booted 13 plugin rows (13 fibers, services: agents"
@@ -207,7 +198,7 @@
               (str "{:rows [{:plugin kmet.app.test-core/failing-plugin}]\n"
                    " :patch []}\n"))]
     (try
-      (let [{:keys [code err]} (run-main ["--patch" path])]
+      (let [{:keys [code err]} (support/run-main ["--patch" path])]
         (is (= 1 code))
         (is (str/includes? err "kmet2 boot failed")))
       (finally (io/delete-file path true)))))
