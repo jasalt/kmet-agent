@@ -39,7 +39,20 @@
 
 (def ^:private value-flags
   {"--profile" :profile
-   "--patch" :patch})
+   "--mode" :mode
+   "--patch" :patch
+   "--model" :model
+   "--provider" :provider})
+
+(def ^:private print-flags
+  "kmet1's one-shot spelling: `-p`/`--print` run the print profile, as `kmet -p
+   \"hi\"` does."
+  #{"-p" "--print"})
+
+(def ^:private print-formats
+  "kmet1's print-mode output values: text (the default) streams the answer, edn
+   prints the session header and every event as EDN for a machine to read."
+  #{"text" "edn"})
 
 (defn- bad-args [message]
   (ex-info message {:type :kmet.app/bad-args}))
@@ -67,15 +80,34 @@
       (throw (bad-args (str flag " needs a value"))))
     [value in]))
 
+(defn- resolve-mode
+  "OPTS with kmet1's `--mode` applied: `text` and `edn` are print mode's output
+   formats, so they select the print profile with that `:format`; every other
+   value names a profile (`--mode rpc` is `--profile rpc`). `--mode` and
+   `--profile` choose the same thing, so asking for both is a usage error rather
+   than a silent pick."
+  [opts]
+  (if-let [mode (:mode opts)]
+    (let [opts (dissoc opts :mode)]
+      (when (:profile opts)
+        (throw (bad-args "--mode (or -p) and --profile choose the same thing; pass one")))
+      (if (contains? print-formats mode)
+        (assoc opts :profile :print :format (keyword mode))
+        (assoc opts :profile (keyword mode))))
+    opts))
+
 (defn parse-args
   "Parse kmet2's argv → `{:profile kw :patch [path …] :args [rest …] :version?
-   :help? :dump-config? :dump-state?}`. `:profile` defaults to
-   `profile/default-profile`; the two dumps are different views of one
+   :help? :dump-config? :dump-state? :format kw :model str :provider kw}`.
+   `:profile` defaults to `profile/default-profile`; `--mode` is kmet1's spelling
+   of it (`resolve-mode`), `--model`/`--provider` are the run overrides a mode
+   hands the agent it creates; the two dumps are different views of one
    composition, so asking for both is a usage error rather than a silent pick."
   [args]
   (loop [in (seq args) opts {:patch [] :args []}]
     (if-not in
-      (let [opts (update opts :profile #(or % profile/default-profile))]
+      (let [opts (-> (resolve-mode opts)
+                     (update :profile #(or % profile/default-profile)))]
         (when (and (:dump-config? opts) (:dump-state? opts))
           (throw (bad-args "--dump-config and --dump-state are separate dumps; pass one")))
         opts)
@@ -90,9 +122,13 @@
           (contains? value-flags flag)
           (let [k (value-flags flag)
                 [v in] (flag-value flag value in)]
-            (recur in (if (= :patch k)
-                        (update opts :patch conj v)
-                        (assoc opts k (keyword v)))))
+            (recur in (case k
+                        :patch (update opts :patch conj v)
+                        (:profile :provider) (assoc opts k (keyword v))
+                        (assoc opts k v))))
+
+          (contains? print-flags arg)
+          (recur (next in) (assoc opts :mode "text"))
 
           (str/starts-with? arg "-")
           (throw (bad-args (str "unknown option " arg)))
@@ -157,7 +193,12 @@
   (println)
   (println "Options:")
   (println "  --profile <name>   Composition profile: tui (default), print, rpc, server")
+  (println "  -p, --print        Run one prompt and exit (kmet1's spelling of --mode text)")
+  (println "  --mode <name>      kmet1's spelling of --profile; text|edn run the print")
+  (println "                     profile and choose its output")
   (println "  --patch <file>     Apply a composition layer from a file (repeatable)")
+  (println "  --model <id>       Model the run's agent uses, over its settings")
+  (println "  --provider <name>  Provider the run's agent uses, over its settings")
   (println "  --dump-config      Print the composed plugin rows and exit")
   (println "  --dump-state       Boot the composition, print the ctx tree, and exit")
   (println "  --version          Print the version and exit")
@@ -207,16 +248,28 @@
                       row))
                   rows))))
 
+(defn- mode-input
+  "What the command line asks a mode for: the prompt and where to report, plus
+   what the mode passes on to its run — the output `:format` and the agent's
+   `:model`/`:provider` overrides. A value the invocation did not give stays
+   absent, so a mode sees what was asked for rather than a map of every option
+   it could have been told."
+  [opts prompt on-result]
+  (cond-> {:prompt prompt :on-result on-result}
+    (:format opts) (assoc :format (:format opts))
+    (:model opts) (assoc :model (:model opts))
+    (:provider opts) (assoc :provider (:provider opts))))
+
 (defn- run-mode
   "Boot COMPOSED and drive MODE, the row `mode-row` found: give it the
    invocation's input, wait for it to report, and return its exit code. The
    mode owns what it prints; the entry point owns the process, the boot and the
    teardown."
-  [composed mode prompt]
+  [composed mode opts prompt]
   (let [result (promise)
         booted (runtime/boot (with-mode-input composed mode
-                               {:prompt prompt
-                                :on-result #(deliver result %)}))]
+                               (mode-input opts prompt
+                                           #(deliver result %))))]
     (try
       (:exit (deref result) 1)
       (finally
@@ -250,7 +303,7 @@
       (let [prompt (str/join " " args)]
         (if (str/blank? prompt)
           (no-prompt)
-          (run-mode composed mode prompt)))
+          (run-mode composed mode opts prompt)))
       (boot-and-report composed args))))
 
 (defn- configuration-error? [e]

@@ -6,6 +6,7 @@
    The model is stubbed and the session log is redirected under target/: an
    entry-point test must not write to the agent dir a developer's kmet reads."
   (:require [babashka.fs :as fs]
+            [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [kmet.agent.config :as cfg]
@@ -87,3 +88,47 @@
         (is (= "" out) "and prints no text")
         (is (str/includes? err "Error: boom")
             "the failure reaches stderr, named as the model reported it")))))
+
+(deftest print-mode-can-carry-the-event-stream
+  ;; `--mode edn` is kmet1's machine-readable variant: the session header, then
+  ;; every event as EDN, so a consumer reads a run from the wire instead of
+  ;; watching text.
+  (with-mode-run
+    (answering "hello from the model")
+    (fn []
+      (let [{:keys [code out]} (support/run-main ["--mode" "edn" "hello"])
+            events (mapv edn/read-string (str/split-lines out))]
+        (is (= 0 code) "a completed prompt exits 0")
+        (is (= :session (:type (first events)))
+            "the header comes first: the id the events belong to")
+        (is (some #(and (= :message-update (:type %))
+                        (= "hello from the model" (get-in % [:delta :content])))
+                  events)
+            "the answer arrives as deltas")
+        (is (not-any? #(contains? % :message)
+                      (filter (comp #{:message-update} :type) events))
+            "and a delta carries the delta, not the cumulative snapshot")
+        (is (some #{:agent-settled} (drop-while #(not= :message-end %)
+                                                (map :type events)))
+            "the settle follows the message that ended, so a consumer can stop")
+        (is (not (str/includes? out "hello from the model\nhello from the model"))
+            "the text is not printed twice: edn mode prints events, not the answer")))))
+
+(deftest a-model-override-reaches-the-run
+  ;; `--model`/`--provider` are the agent's options, not the process's: the
+  ;; driver applies them to the settings it loads, so a run can name its model
+  ;; without editing any file.
+  (let [seen (atom nil)]
+    (with-mode-run
+      (fn [opts]
+        (reset! seen (select-keys opts [:model :provider]))
+        (future
+          (when-let [on-text (:on-text opts)] (on-text "ok"))
+          (when-let [on-done (:on-done opts)] (on-done :stop))
+          :done))
+      (fn []
+        (let [{:keys [code]} (support/run-main ["-p" "--model" "override-model"
+                                                "--provider" "deepseek" "hello"])]
+          (is (= 0 code))
+          (is (= {:model "override-model" :provider :deepseek} @seen)
+              "the run asked for the model the command line named, not the settings'"))))))

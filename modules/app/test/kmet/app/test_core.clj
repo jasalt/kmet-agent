@@ -53,14 +53,34 @@
   (is (true? (:version? (core/parse-args ["--version"]))))
   (is (true? (:help? (core/parse-args ["-h"])))))
 
+(deftest parse-args-takes-kmet1s-one-shot-spellings
+  (is (= :print (:profile (core/parse-args ["-p" "hi"])))
+      "-p is print mode, as in kmet1")
+  (is (= :print (:profile (core/parse-args ["--print" "hi"]))))
+  (is (= :text (:format (core/parse-args ["-p" "hi"])))
+      "and text is what print mode prints by default")
+  (is (= {:profile :print :format :text :args ["hi"]}
+         (dissoc (core/parse-args ["-p" "hi"]) :patch))
+      "nothing else is set")
+  (is (= :edn (:format (core/parse-args ["--mode" "edn" "hi"])))
+      "--mode names print mode's output format")
+  (is (= :rpc (:profile (core/parse-args ["--mode" "rpc"])))
+      "--mode with any other value names a profile")
+  (is (= "deepseek-v4-flash" (:model (core/parse-args ["-p" "--model"
+                                                       "deepseek-v4-flash" "hi"]))))
+  (is (= :deepseek (:provider (core/parse-args ["-p" "--provider" "deepseek" "hi"])))
+      "a provider is a keyword, as settings spell it"))
+
 (deftest parse-args-rejects-bad-flags
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--nope"]))))
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--profile"]))))
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--version=1"]))))
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--profile="])))
       "an empty value is no value")
-  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-p" "hi"])))
-      "kmet1's flags are not kmet2's")
+  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-c"])))
+      "kmet1's flags are not kmet2's, but for the one-shot spellings")
+  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-p" "--profile" "print"])))
+      "choosing print mode twice, two ways, is a usage error")
   (is (= :kmet.app/bad-args
          (error-type #(core/parse-args ["--dump-config" "--dump-state"])))
       "the two dumps are different views; asking for both is a usage error"))

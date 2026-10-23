@@ -253,6 +253,10 @@
    The run config is loaded per creation (a settings change reaches the next
    agent) unless the caller names one (`:config` in the create options).
 
+   A create option that is kmet1's CLI override (`:model`, `:provider`) is
+   applied the way `kmet --model` applies it — an agent's model is an option of
+   the agent, not of the process, so two agents of one server can differ.
+
    `:resume` is refused rather than approximated: the registry's resume passes
    the *handle* id it once published, and a handle id is not a session — an
    agent brought back as a fresh session would answer with a different
@@ -276,7 +280,8 @@
                                              {:type :kmet.app/unsupported-op
                                               :op :resume
                                               :id id})))
-                                   (let [config (or (:config opts) (cfg/load-config))]
+                                   (let [config (-> (or (:config opts) (cfg/load-config))
+                                                    (cfg/apply-cli-overrides opts))]
                                      (agent-handle child {:id (:id opts)
                                                           :config config
                                                           :session (or (:session opts) (session-for log config cwd))
