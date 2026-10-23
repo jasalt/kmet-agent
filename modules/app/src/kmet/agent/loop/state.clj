@@ -244,15 +244,21 @@ Be precise and concise in your responses."}}]
 
    Both catches are their own: `emit-event!` reports a broken extension, the
    kernel's `invoke!` reports a broken listener, and neither can kill the loop.
-   The 2-arity routes a different map to each sink; it exists for pi's
-   agent_end split, where the public event is decorated (e.g. :will-retry)
-   but the extension runner's copy is emitted before the decoration
-   (agent-session.ts, _emitExtensionEvent vs _emit)."
+
+   The 2-arity routes a different map to the public sinks and the extension
+   table; it exists for pi's agent_end split, where the public event is
+   decorated (e.g. :will-retry) but the extension runner's copy is emitted
+   before the decoration (agent-session.ts, _emitExtensionEvent vs _emit). The
+   app's layer counts as public — it is where a kmet2 front end listens — so
+   the callback and the kernel get the decorated copy and only the table gets
+   the bare one. When the extension ABI moves onto the kernel, that layer
+   becomes mixed and the split has to happen per listener; pi's answer is two
+   emissions, which is what this arity already does."
   ([agent event] (emit agent event event))
   ([agent ui-event ext-event]
    (when-let [cb (:on-event agent)]
      (cb ui-event))
-   (srce/emit! (:ctx agent) (:type ext-event) ext-event)
+   (srce/emit! (:ctx agent) (:type ui-event) ui-event)
    (event-bus/emit-event! ext-event (:ctx agent))))
 
 (defn set-agent-status!

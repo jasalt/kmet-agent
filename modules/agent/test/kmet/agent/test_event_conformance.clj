@@ -11,6 +11,7 @@
             [clojure.string :as str]
             [kmet.ai.llm :as llm]
             [kmet.agent.event-bus :as event-bus]
+            [kmet.app.events :as app-events]
             [kmet.agent.loop :as loop]
             [kmet.agent.loop.test-support :as support]
             [kmet.agent.config :as cfg]))
@@ -168,6 +169,21 @@
     (let [wire (event-bus/wire-event event)]
       (t/is (= wire (edn/read-string (pr-str wire)))
             (str "round-trips through EDN: " (:type event))))))
+
+(t/deftest test-the-two-dispatch-paths-agree-with-the-vocabulary
+  ;; The loop dispatches plain events as :emit on both event layers and the two
+  ;; actionable ones as boundaries (new-app.md, 7b-i). The vocabulary declares
+  ;; each name's mode, so a name sent down the wrong path would be dispatched by
+  ;; a different fold on one layer than on the other. A live turn produces both
+  ;; paths' events, and each one is checked against its declaration.
+  (let [modes (into {} (map (juxt :name :mode)) (app-events/declared-events))
+        emitted (set (map :type (run-scenario (stub-tool-then-text (atom 0)))))]
+    (t/is (contains? emitted :turn-end) "the scenario reaches the boundary path")
+    (t/is (contains? emitted :agent-before-settle) "and the settle boundary")
+    (doseq [type emitted]
+      (t/is (= (if (#{:turn-end :agent-before-settle} type) :boundary :emit)
+               (get modes type))
+            (str "declared mode matches the path it was dispatched on: " type)))))
 
 (t/deftest test-headless-renderer-consumes-a-live-stream
   (let [events (run-scenario (stub-tool-then-text (atom 0)))

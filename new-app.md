@@ -1318,6 +1318,24 @@ tests do the same. Dropping the loop's kernel dispatch makes that test fail
 (`:completed` never arrives), so the subscription is testing the dispatch and
 not a promise someone else kept.
 
+**Which copy a front end gets.** `:agent-end` is emitted twice on purpose (pi:
+`_emit` vs `_emitExtensionEvent`): the public copy carries `:will-retry`, the
+extension runner's does not. The app's layer is a *public* sink — it is where a
+kmet2 front end listens — so the kernel gets the decorated copy and only the
+extension table gets the bare one; `test-loop-emit-reaches-three-sinks-with-two-
+copies` holds all three (mutation-checked by handing the kernel the extension
+copy, which fails only the front end's assertion). When the ABI moves onto the
+kernel that layer becomes mixed and the split has to happen per listener — pi's
+answer is the two emissions this arity already does.
+
+**The paths and the vocabulary agree.** A plain event goes down one path and an
+actionable one down the other, but the *declaration* is what says which mode a
+name is dispatched with, and the two could drift silently: a name declared
+`:collect-last` and emitted as an event would be folded differently on each
+layer. `test-the-two-dispatch-paths-agree-with-the-vocabulary` runs a live turn,
+asserts it reached both paths, and checks every emitted name against its
+declared mode (mutation-checked by emitting `:context` where `:status` is).
+
 **What this does not do.** kmet1's own emitters keep their table: the Engine's
 `:session-before-switch`/`:user-bash` and the interactive mode's
 `:session-start`/`:session-before-tree` are kmet1 code, and their kmet2

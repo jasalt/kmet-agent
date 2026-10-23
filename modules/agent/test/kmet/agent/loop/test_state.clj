@@ -15,6 +15,8 @@
             [kmet.agent.system-prompt :as system-prompt]
             [kmet.agent.loop :as loop]
             [kmet.agent.retry :as retry]
+            [kmet.agent.event-bus :as event-bus]
+            [kmet.app.events :as events]
             [kmet.agent.loop.test-support :as support]))
 
 (t/use-fixtures
@@ -386,6 +388,28 @@
     (loop/cancel-turn agent)
     (t/is (pos? (count @events)))
     (t/is (= :idle (:status (last @events))))))
+
+(t/deftest test-loop-emit-reaches-three-sinks-with-two-copies
+  ;; 7b-i: an event reaches the front end twice — the `:on-event` callback and
+  ;; the app's event layer, which is where a kmet2 front end listens — and the
+  ;; extension table once. The 2-arity's split is pi's (`_emit` vs
+  ;; `_emitExtensionEvent`), and the app's layer is a *public* sink: it gets
+  ;; the decorated copy, so a front end can still render :will-retry.
+  (let [{ctx :ctx} (support/test-ctx)
+        ui (atom [])
+        kernel (atom [])
+        table (atom [])
+        dispose-kernel (events/on! ctx :agent-end (fn [ev] (swap! kernel conj ev)))
+        dispose-table (event-bus/on-event :agent-end (fn [ev] (swap! table conj ev)))]
+    (try
+      (binding [support/*ctx* ctx]
+        (state/emit (support/make-agent-state :on-event (fn [e] (swap! ui conj e)))
+                    {:type :agent-end :will-retry true}
+                    {:type :agent-end}))
+      (t/is (= [true] (mapv :will-retry @ui)) "the callback gets the decorated copy")
+      (t/is (= [true] (mapv :will-retry @kernel)) "and so does the app's layer")
+      (t/is (= [nil] (mapv :will-retry @table)) "the extension table gets the bare one")
+      (finally (dispose-kernel) (dispose-table)))))
 
 (t/deftest test-loop-on-event-no-listener
   (let [agent (support/make-agent-state)]
