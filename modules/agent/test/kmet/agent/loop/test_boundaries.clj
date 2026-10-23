@@ -14,7 +14,8 @@
             [kmet.agent.loop :as loop]
             [kmet.agent.retry :as retry]
             [kmet.agent.config :as cfg]
-            [kmet.agent.loop.test-support :as support]))
+            [kmet.agent.loop.test-support :as support]
+            [kmet.srce.core :as srce]))
 
 ;; ─── Phase 3: transform-context ──────────────────────────────────────────
 
@@ -849,3 +850,32 @@
       (t/is (= [true] @table-saw)
             "and the handler after it sees the front end's decision, not a blank slate")
       (finally (dispose-fe) (dispose-table)))))
+
+(t/deftest test-a-runs-events-belong-to-its-subtree
+  ;; The loop dispatches from the run's own ctx, not from the app's scope: a
+  ;; listener at that ctx hears its run and a sibling does not. This is why
+  ;; `state/emit` calls the kernel with the agent's ctx rather than the
+  ;; app-wide `:events` service, whose emissions belong to the app's scope —
+  ;; switching to the service would keep the app's listeners working and
+  ;; silently move every run's own out of reach.
+  (let [{root :ctx} (support/test-ctx)
+        run-ctx (srce/extend root {})
+        sibling (srce/extend root {})
+        own (atom [])
+        sib (atom [])
+        dispose-own (events/on! run-ctx :turn-end (fn [_] (swap! own conj true)))
+        dispose-sib (events/on! sibling :turn-end (fn [_] (swap! sib conj true)))]
+    (try
+      (binding [support/*ctx* run-ctx]
+        (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                      llm/send-message
+                      (fn [opts]
+                        (future
+                          (when-let [on-text (:on-text opts)] (on-text "ok"))
+                          (when-let [on-done (:on-done opts)] (on-done :stop))
+                          :done))]
+          @(loop/run-agent-turn (support/make-agent-state)
+                                {:message "hi" :on-error (fn [_])})))
+      (t/is (= [true] @own) "the run's own ctx hears its boundary")
+      (t/is (= [] @sib) "a sibling under the same app scope does not")
+      (finally (dispose-own) (dispose-sib)))))

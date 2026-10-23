@@ -92,6 +92,10 @@
    modes bound to that scope, so a holder of the app ctx emits without knowing a
    narrower one. A caller with a narrower ctx calls the kernel's fns with it
    instead — the ctx is the scope, and the service is only the app-wide default.
+   The loop is the first such caller and the reason to keep the distinction: a
+   run emits from the agent's own ctx (`loop.state/emit`), so its listeners hear
+   its subtree; emitting through this service would put every run's events at
+   the app's scope and out of reach of the ctx they belong to.
 
    The binding is a closure, not a `:ctx` entry: a service value must not carry
    the ctx, or printing it prints the kernel (and every fiber in it)."

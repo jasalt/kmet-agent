@@ -1291,6 +1291,14 @@ two tables hold different listeners, so nothing hears an event twice; the kernel
 dispatch resolves from the run's own ctx upward, which is what makes a listener
 at the app's scope hear what any agent under it did.
 
+**Emitted from the run's own ctx, not from the app's scope.** The `:events`
+row's service binds its dispatch to the app's scope, and the loop does *not*
+use it: a run emits from the agent's ctx, so its listeners hear its subtree and
+a sibling's do not — `test-a-runs-events-belong-to-its-subtree` holds both
+halves (mutation-checked by walking to the root first, which leaves the app's
+listener working and the run's own silent). The service stays what its
+docstring says it is: the app-wide default for a caller with no narrower ctx.
+
 **One boundary, one decision.** `:turn-end` and `:agent-before-settle` are the
 two events whose handlers *return* something, and two tables that each thread
 their own accumulation would hold two opinions that silently disagree — the
