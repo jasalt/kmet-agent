@@ -45,6 +45,11 @@
    ctxs remain."
   ctx/detach!)
 
+(def mount-fiber
+  "The fiber whose mount created this ctx, or nil for a plain child and the
+   root."
+  ctx/mount-fiber)
+
 (def attr
   "The nearest non-nil K on the ctx chain, with no realm stop — the walk for
    keys the app carries (:base-url, :resolver, an app-owned queue)."

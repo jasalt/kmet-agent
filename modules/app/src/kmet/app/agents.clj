@@ -102,7 +102,16 @@
                        :optional handle-ops})))
     handle))
 
-(defn- session-of [handle] ((:session handle)))
+(defn- session!
+  "HANDLE's live session, or a throw: the inbox is the log, so an agent without
+   one has nowhere to queue and nothing to read — naming it here beats a nil
+   deref from inside the backend."
+  [handle]
+  (or ((:session handle))
+      (throw (ex-info (str "agent " (pr-str (:id handle))
+                           " has no session to queue into")
+                      {:type :kmet.app/agent-has-no-session
+                       :id (:id handle)}))))
 
 ;; ── emission ──────────────────────────────────────────────────────────────
 
@@ -116,12 +125,12 @@
 ;; ── ids ───────────────────────────────────────────────────────────────────
 
 (defn- mint
-  "A short id no live handle holds: `5f3a2b1c`-style, so the tree's
+  "A short id not among HANDLES: `5f3a2b1c`-style, so the tree's
    `[:agent/5f3a2b1c]` line stays readable and two agents cannot share a path."
-  [taken]
+  [handles]
   (loop []
     (let [id (subs (str (random-uuid)) 0 8)]
-      (if (contains? taken id) (recur) id))))
+      (if (contains? handles id) (recur) id))))
 
 ;; ── creation ──────────────────────────────────────────────────────────────
 
@@ -140,10 +149,17 @@
 (defn- release-subtree!
   "Release CTX's mounts, then the ctx itself — the rollback a failed creation
    and a disposal share. `detach!` refuses while a mount remains, so the order
-   is the kernel's rule, not a preference."
-  [ctx]
-  (srce/dispose-subtree! ctx)
-  (srce/detach! ctx))
+   is the kernel's rule, not a preference.
+
+   A release that fails is reported and swallowed: its callers are rolling back
+   a failed creation (whose error is the one to raise) or withdrawing a
+   capability (which a ctx the kernel will not detach must not block)."
+  [scope ctx]
+  (try
+    (srce/dispose-subtree! ctx)
+    (srce/detach! ctx)
+    (catch Throwable t
+      (srce/log! scope :error "agent ctx release failed" t))))
 
 (defn- subtree-ctxs
   "CTX's descendant ctxs, parents before children and eagerly: a disposal
@@ -154,15 +170,12 @@
           []
           (srce/children ctx)))
 
-(defn- mount-ctx?
-  "Is CTX a plugin mount's own ctx, rather than a plain child (`extend`)? A
-   mount installs its own atom and its fiber holds the ctx back, so the identity
-   check separates the two without a marker key."
-  [ctx]
-  (let [fiber (:fiber ctx)]
-    ;; a plain child inherits its parent's fiber (the identity fails), and the
-    ;; root has a fiber of its own but no parent — so both are not mounts
-    (boolean (and fiber (:parent ctx) (identical? (:ctx @fiber) ctx)))))
+(defn- agents-under
+  "The live handles whose ctx is a descendant of CTX, deepest first — the
+   agents a disposal takes with it."
+  [{:keys [handles]} ctx]
+  (let [by-ctx (into {} (map (juxt :ctx identity)) (vals handles))]
+    (into [] (keep by-ctx) (reverse (subtree-ctxs ctx)))))
 
 (defn- parent-ctx!
   "CTX checked as an agent's parent. A plugin's mount ctx is refused: disposing
@@ -171,22 +184,19 @@
    would leak invisibly. The registry's scope (the app root) or another agent's
    ctx outlives what is created under it."
   [ctx]
-  (when (mount-ctx? ctx)
+  (when (srce/mount-fiber ctx)
     (throw (ex-info (str "an agent cannot be parented to a plugin's mount ctx ("
                          (pr-str (:name ctx)) "): name the app ctx or an agent ctx")
                     {:type :kmet.app/agent-parent-is-a-mount
                      :ctx (:name ctx)})))
   ctx)
 
-(defn- no-factory [ctx]
-  (throw (ex-info "no agent factory is registered: mount a loop driver (`:agentLoop`) that registers one"
-                  {:type :kmet.app/no-agent-factory :ctx (:name ctx)})))
-
 (defn- factory-for
   "The registered factory, or a throw naming the seam that fills it."
   [state ctx]
   (or (:factory @state)
-      (no-factory ctx)))
+      (throw (ex-info "no agent factory is registered: mount a loop driver (`:agentLoop`) that registers one"
+                      {:type :kmet.app/no-agent-factory :ctx (:name ctx)}))))
 
 ;; ── the service ───────────────────────────────────────────────────────────
 
@@ -230,7 +240,7 @@
     (letfn [(create! [ctx opts]
               (parent-ctx! (inside! ctx))
               (let [factory (factory-for state ctx)
-                    id (mint (set (keys (:handles @state))))]
+                    id (mint (:handles @state))]
                 (claim-busy! state id)
                 (try
                   (let [child (srce/extend ctx {:name (keyword "agent" id)})
@@ -241,7 +251,7 @@
                                  (validate-handle! id child
                                                    ((:f factory) child (assoc opts :id id)))
                                  (catch Throwable t
-                                   (release-subtree! child)
+                                   (release-subtree! scope child)
                                    (if (= :kmet.app/bad-agent-handle (:type (ex-data t)))
                                      (throw t)
                                      (throw (ex-info (str "agent creation failed: "
@@ -262,31 +272,19 @@
 
             (send! [handle msg opts]
               (let [handle (live handle)
-                    session (session-of handle)
-                    ;; the inbox is the log: an agent without one has nowhere
-                    ;; to queue, and the backend would fail deeper in instead
-                    _ (when-not session
-                        (throw (ex-info (str "agent " (pr-str (:id handle))
-                                             " has no session to queue into")
-                                        {:type :kmet.app/agent-has-no-session
-                                         :id (:id handle)})))
-                    entry ((:enqueue! projections) session msg opts)]
+                    entry ((:enqueue! projections) (session! handle) msg opts)]
                 (when-let [f (:send! handle)]
                   (f msg opts))
                 entry))
 
             (dispose! [handle]
               (let [handle (live handle)
-                    id (:id handle)
-                    ;; the agents under this one go first: a subagent's ctx is
-                    ;; a child of its parent's, and detach! refuses while a
-                    ;; child ctx hangs there. Deepest first, so each release
-                    ;; leaves its parent's ctx free.
-                    under (into []
-                                (keep (into {} (map (juxt :ctx identity))
-                                            (vals (:handles @state))))
-                                (reverse (subtree-ctxs (:ctx handle))))]
-                (doseq [child under] (dispose! child))
+                    id (:id handle)]
+                ;; the agents under this one go first: a subagent's ctx is a
+                ;; child of its parent's, and detach! refuses while a child ctx
+                ;; hangs there. Deepest first, so each release leaves its
+                ;; parent's ctx free.
+                (doseq [child (agents-under @state (:ctx handle))] (dispose! child))
                 (try
                   ((:dispose! handle))
                   (catch Throwable t
@@ -294,10 +292,7 @@
                     ;; released and the capability withdrawn either way, so
                     ;; nothing is left half-owned
                     (srce/log! scope :error "agent teardown failed" t)))
-                (try
-                  (release-subtree! (:ctx handle))
-                  (catch Throwable t
-                    (srce/log! scope :error "agent ctx release failed" t)))
+                (release-subtree! scope (:ctx handle))
                 (swap! state (fn [s]
                                (-> s
                                    (update :handles dissoc id)
@@ -364,7 +359,7 @@
 
        :inbox (fn [ctx handle]
                 (inside! ctx)
-                ((:inbox projections) (session-of (live handle))))
+                ((:inbox projections) (session! (live handle))))
 
        :inject! (fn [handle msg] (dispatch handle :inject! [msg]))
 
@@ -376,7 +371,7 @@
 
 (defn- serve
   "The `:agents` row: the registry over the injected projections, provided into
-   the mount site's scope, plus the emission scope it serves."
+   the mount site's scope so sibling rows see it."
   [ctx _config]
   (let [scope (:parent ctx)]
     (srce/provide! ctx :agents (service scope (srce/get ctx :projections))
@@ -389,8 +384,9 @@
    :events
    {:agent/created {:mode :emit :domain :app
                     :doc "Fired after an agent's handle is published, carrying the
-                          id, the bare agent and its child context. The registry
-                          is the only emitter: a handle exists before this fires."}
+                          id and the bare agent — never the child context, which
+                          is cyclic. The registry is the only emitter: a handle
+                          exists before this fires."}
     :agent/disposed {:mode :emit :domain :app
                      :doc "Fired after an agent's child context is released and
                            its handle withdrawn, carrying the id and the bare

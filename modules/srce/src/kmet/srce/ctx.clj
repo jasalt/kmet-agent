@@ -99,6 +99,16 @@
   [ctx]
   @(:children ctx))
 
+(defn mount-fiber
+  "The fiber whose mount created CTX, or nil when CTX is a plain child
+   (`extend`/`isolate`, which inherits its parent's) or a root. A mount installs
+   its own atom and the fiber holds the ctx back, so the identity check
+   separates the two without a marker key."
+  [ctx]
+  (let [fiber (:fiber ctx)]
+    (when (and fiber (:parent ctx) (identical? (:ctx @fiber) ctx))
+      fiber)))
+
 (defn detach!
   "Remove CTX from its parent's children — the lifetime a plain child ctx
    (`extend`, `isolate`) has and a fiber mount already has. Refuses

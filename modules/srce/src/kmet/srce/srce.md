@@ -99,6 +99,7 @@ not a set of modules whose callers each pick their own:
 (srce/provider ctx :tools)               ; {:name :fiber :value :check}, or nil
 (srce/services ctx)                      ; {name {:name :fiber :value :check}}, realm-aware
 (srce/children ctx)                      ; this ctx's child ctxs, creation order
+(srce/mount-fiber ctx)                   ; the fiber whose mount created ctx, or nil (a plain child, the root)
 (srce/detach! child)                     ; drop a plain child ctx from the tree (refuses while mounts remain)
 (srce/provide! ctx :tools table)         ; → disposer; a second visible provider throws
 (srce/provide! ctx :events bus {:in app}) ; → the app's scope, this fiber's effect
@@ -212,6 +213,14 @@ still mounted under it: a listing that hides a live unit is worse than one that
 lingers. The detach keeps `:parent`, so a value that still holds the ctx
 resolves services exactly as before; what changes is the tree, which is what
 the unit listing renders (`new-app.md`, "Inspection").
+
+**Which kind of ctx this one is has one answer.** `(mount-fiber ctx)` is the
+fiber a mount's own ctx names, and `nil` for a plain child (which inherits its
+parent's `:fiber`, so the identity check fails) and for a root (which has a
+fiber of its own but no parent). Both the listing and the app's agent registry
+ask this question — the listing to render a fiber line instead of a ctx line,
+the registry to refuse a parent whose disposal would drop an agent out of the
+tree invisibly — so the predicate is the kernel's rather than each caller's.
 
 A detach releases the **tree line**, not the registrations: `:fiber` is
 inherited, so what a plain child ctx provides or listens for is the nearest

@@ -13,11 +13,12 @@
   "A root ctx, a log over the in-process backend, and the registry over it."
   []
   (let [log (sessions/service (sessions/memory-backend))
+        projections (projections/service log)
         root (srce/root {:name :app})]
     {:root root
      :log log
-     :projections (projections/service log)
-     :agents (agents/service root (projections/service log))}))
+     :projections projections
+     :agents (agents/service root projections)}))
 
 (defn- create-session! [{:keys [log]}]
   ((:create! log) {:dir "mem" :cwd "/work"}))
@@ -41,6 +42,12 @@
 
 (defn- error-type [f]
   (try (f) nil (catch Exception e (:type (ex-data e)))))
+
+(defn- child-names
+  "ROOT's child ctxs by name: comparing names keeps a failed assertion from
+   printing a ctx, which is cyclic."
+  [ctx]
+  (mapv :name (srce/children ctx)))
 
 (defn- persistence-row []
   {:name :sessionPersistence
@@ -132,7 +139,7 @@
         e (try ((:create! agents) root {}) nil (catch Exception e e))]
     (is (= :kmet.app/agent-create-failed (:type (ex-data e))))
     (is (= "boom" (ex-message (ex-cause e))) "the factory's error is kept")
-    (is (= [] (mapv :name (srce/children root))) "the child ctx was released")
+    (is (= [] (child-names root)) "the child ctx was released")
     (is (= [] ((:list agents) root)))
     (testing "and the create slot is free again"
       (is (= :kmet.app/agent-create-failed
@@ -145,7 +152,7 @@
         e (try ((:create! agents) root {}) nil (catch Exception e e))]
     (is (= :kmet.app/bad-agent-handle (:type (ex-data e))))
     (is (= [:id :ctx :agent :session :dispose!] (:problems (ex-data e))))
-    (is (= [] (mapv :name (srce/children root)))
+    (is (= [] (child-names root))
         "the ctx is rolled back like any failed create")))
 
 (deftest a-handle-with-a-non-fn-op-is-refused
@@ -155,7 +162,7 @@
     (is (= :kmet.app/bad-agent-handle (:type (ex-data e))))
     (is (= [:status] (:problems (ex-data e)))
         "an optional op that is present but not callable is a shape problem")
-    (is (= [] (mapv :name (srce/children root))))))
+    (is (= [] (child-names root)))))
 
 (deftest a-plugins-mount-ctx-is-not-a-parent
   (let [{:keys [root agents]} (fixture)
@@ -164,7 +171,7 @@
            (error-type #((:create! agents) (:ctx @row) {})))
         "a mount ctx is dropped from the tree with its children, so an agent
          parented there would leak invisibly")
-    (is (= [] (mapv :name (srce/children (:ctx @row)))))
+    (is (= [] (child-names (:ctx @row))))
     (srce/dispose! row)))
 
 (deftest only-this-tree-registers-a-factory
@@ -174,14 +181,17 @@
            (error-type #((:register-factory! agents) other (stand-in))))
         "a registry is not something another tree can hand a driver to")))
 
-(deftest an-agent-without-a-session-cannot-queue
+(deftest an-agent-without-a-session-cannot-queue-or-read
   (let [{:keys [root agents]} (fixture)
         _ ((:register-factory! agents) root (stand-in))
         handle ((:create! agents) root {:session nil})]
     (is (= :kmet.app/agent-has-no-session
            (error-type #((:send! agents) handle "hi" {:target :next-turn})))
-        "the inbox is the log: no session, nowhere to queue — named here rather
-         than as a nil deref from inside the backend")))
+        "the inbox is the log: no session, nowhere to queue")
+    (is (= :kmet.app/agent-has-no-session
+           (error-type #((:inbox agents) root handle)))
+        "and nothing to read — the same answer from both halves, not a nil
+         deref from inside the backend")))
 
 (deftest roots-are-the-agents-that-do-not-hang-off-an-agent
   (let [{:keys [root log agents]} (fixture)
@@ -211,7 +221,7 @@
         "and neither can an id a consumer assembled")
     ((:dispose! agents) handle)
     (is (= [id] @disposed) "the factory's teardown ran")
-    (is (= [] (mapv :name (srce/children root))) "the child ctx is released")
+    (is (= [] (child-names root)) "the child ctx is released")
     (is (nil? ((:get agents) root id)))
     (is (= [] ((:list agents) root)))
     (is (= :kmet.app/unknown-agent (error-type #((:dispose! agents) handle)))
@@ -231,7 +241,7 @@
     ((:dispose! agents) parent)
     (is (= #{(:id parent) (:id child)} (set @disposed))
         "both teardowns ran, the child's before the parent's ctx was released")
-    (is (= [] (mapv :name (srce/children root))) "no ctx is left behind")
+    (is (= [] (child-names root)) "no ctx is left behind")
     (is (= [] ((:list agents) root)) "and neither handle survives")
     (is (= :kmet.app/unknown-agent
            (error-type #((:dispose! agents) child)))
@@ -252,7 +262,7 @@
     (is (= :kmet.app/agent-create-failed (:type (ex-data e))))
     (is (= :kmet.app/create-busy (:type (ex-data (ex-cause e))))
         "the inner create is refused rather than interleaved")
-    (is (= [] (mapv :name (srce/children root)))
+    (is (= [] (child-names root))
         "the outer create rolled back, and the inner one never attached")))
 
 (deftest resume-goes-through-the-factory
@@ -272,7 +282,7 @@
                                        (stand-in {} {:dispose! (fn [] (throw (ex-info "teardown broke" {})))}))
         handle ((:create! agents) root {:session session})]
     ((:dispose! agents) handle)
-    (is (= [] (mapv :name (srce/children root)))
+    (is (= [] (child-names root))
         "a driver bug must not leak the agent's ctx")
     (is (= [] ((:list agents) root)))))
 
@@ -288,7 +298,7 @@
     (is (= :active (:state @mounted)))
     ((:dispose! agents) handle)
     (is (= :disposed (:state @mounted)) "the agent's own rows are disposed")
-    (is (= [] (mapv :name (srce/children (:ctx handle)))))))
+    (is (= [] (child-names (:ctx handle))))))
 
 ;; ── the send surface ──────────────────────────────────────────────────────
 

@@ -171,13 +171,6 @@
                      (update-in [:pending :next-step] remove-ids ids)))
       state)))
 
-(defn- leaf-id
-  "The active leaf a session folded to (`nil` for an empty branch). The store
-   and the in-process backend both carry it as an atom; a moved leaf is what
-   invalidates the cache."
-  [session]
-  (some-> (:leaf-id session) deref))
-
 (defn- materialize
   "The projection a caller sees: the inbox nested under its target, the
    boundaries, the meter, and how many entries this call folded."
@@ -201,21 +194,25 @@
 (defn project
   "PROJECTION of SESSION, folded through CACHE (an atom keyed by session id).
 
-   The cache holds the leaf it stopped at and how many entries it consumed: a
-   branch that still begins with that fold continues from there, anything else
-   starts over. Returns the projection, whose `:extended` is the count folded
-   by *this* call."
+   The cache holds the entry the fold stopped at and how many entries it
+   consumed: a branch that still begins with that fold continues from there,
+   anything else starts over. Returns the projection, whose `:extended` is the
+   count folded by *this* call."
   [cache session]
   (let [branch (store/get-branch session)
-        leaf (leaf-id session)
         sid (:id session)
         cached (get @cache sid)
         resume (when (and cached (prefix? branch cached)) cached)
         from (long (or (:n resume) 0))
         state (or (:state resume) empty-projection)
-        state (reduce fold-entry state (subvec (vec branch) from))
+        state (reduce fold-entry state (subvec branch from))
         projection (materialize state (- (count branch) from))]
-    (swap! cache assoc sid {:leaf leaf :n (count branch) :state state})
+    ;; the branch's own last entry, not the session's leaf atom: `prefix?`
+    ;; compares against a position in the branch, so the cache's key has to be
+    ;; the entry that position holds
+    (swap! cache assoc sid {:leaf (some-> branch last :id)
+                            :n (count branch)
+                            :state state})
     projection))
 
 ;; ── the service ───────────────────────────────────────────────────────────

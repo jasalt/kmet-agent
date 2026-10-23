@@ -1056,6 +1056,19 @@ same branch — append order and the parent chain guarantee it — so filtering 
 pending set is the whole of it, and the invariant is written down instead of
 stored.
 
+**A simplification pass moved three things to where they belong.** The mount
+predicate was written twice — `kmet.app.inspect`'s private `mount-fiber` and the
+registry's `mount-ctx?` — so it is the kernel's now (`srce/mount-fiber`, with
+the root and plain-child cases stated once) and both callers read it. A failed
+release had two policies: the creation rollback rethrew (masking the factory's
+own error when the release was what failed) and the disposal logged; one
+`release-subtree!` reports and swallows for both, which is the rule the disposal
+already followed. And `send!`/`inbox` gave different answers to "this agent has
+no session" — one named it, the other dereferenced nil — so one `session!`
+accessor names it for both: a defect the pass found rather than a rename. The
+projection's cache key is the branch's own last entry now instead of the
+session's leaf atom, so `prefix?` cannot disagree with the key it reads.
+
 Gate, met. Two agents created through one registry hold their own sessions and
 their own inboxes (a send to one appends to one log); a throwing factory and a
 malformed handle both leave no handle and no child ctx; a disposed handle leaves
@@ -1074,14 +1087,15 @@ red once it was. The three TUI selector tests' `(:refer-clojure :exclude
 finding, because the linter does not know the var; the helper is `pick` and the
 exclusion is gone, which is also what the 1.12 clash needed.
 
-Ledger: **653 source lines in two new namespaces** (`kmet.app.agents` 396,
-`kmet.app.projections` 257) and **650 test lines** (26 + 15 tests, 139
+Ledger: **649 source lines in two new namespaces** (`kmet.app.agents` 395,
+`kmet.app.projections` 254) and **663 test lines** (26 + 15 tests, 140
 assertions); two rows in `:bundle/minimal` (8 → 10), `memory-backend`'s
-`leaf-id` rename, and the loop's one-line delegate. Nothing was lifted except
-the three-line outcome rule; everything else is new bookkeeping. Every review
-fix has a test that fails without it: the cascade (commented out), `:forget!`
-(turned into a no-op), the mount-ctx refusal, the factory's scope check, and the
-session check (each dropped in turn).
+`leaf-id` rename, the loop's one-line delegate, and ten kernel lines
+(`srce/mount-fiber`) replacing two copies of the same identity check. Nothing
+was lifted except the three-line outcome rule; everything else is new
+bookkeeping. Every review fix has a test that fails without it: the cascade
+(commented out), `:forget!` (turned into a no-op), the mount-ctx refusal, the
+factory's scope check, and the session check (each dropped in turn).
 
 ### Landing 4d settled
 

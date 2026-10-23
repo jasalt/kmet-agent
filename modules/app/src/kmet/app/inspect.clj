@@ -31,16 +31,6 @@
 
 ;; ── paths ─────────────────────────────────────────────────────────────────
 
-(defn- mount-fiber
-  "The fiber whose mount created CTX, or nil when CTX is a plain child
-   (`extend`/`isolate`) that inherits its parent's. A mount installs its own
-   atom and the fiber holds the ctx back, so the identity check separates the
-   two without a marker key."
-  [ctx]
-  (let [fiber (:fiber ctx)]
-    (when (and fiber (identical? (:ctx @fiber) ctx))
-      fiber)))
-
 (defn- unnamed-segment
   "The path segment for a ctx the app built without a name (a run's own ctx):
    its position among its parent's children, so two siblings cannot collide."
@@ -136,7 +126,7 @@
   "CTX's own line — a fiber line when CTX is a mount, a ctx line otherwise —
    followed by its children's, depth first."
   [ctx]
-  (let [line (if-let [fiber (mount-fiber ctx)]
+  (let [line (if-let [fiber (srce/mount-fiber ctx)]
                (fiber-line ctx fiber)
                (ctx-line ctx))]
     (into [line] (mapcat unit-lines (srce/children ctx)))))

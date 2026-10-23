@@ -66,6 +66,8 @@
     (is (not (srce/inside? a b)))
     (is (= :agent (:name a)))
     (is (identical? (:fiber r) (:fiber a)))
+    (is (nil? (srce/mount-fiber r)) "a root is not a mount")
+    (is (nil? (srce/mount-fiber a)) "a plain child inherits its parent's fiber")
     (is (not (contains? a :runtimes)))))
 
 (deftest a-plain-child-ctx-can-be-detached
@@ -73,6 +75,8 @@
         a (srce/extend r {:name :agent})
         b (srce/extend r {:name :other})
         mount (srce/plugin! a {:name :p :apply (fn [_ _] nil)})]
+    (is (identical? mount (srce/mount-fiber (:ctx @mount)))
+        "a mount's own ctx names the fiber that created it")
     (testing "a ctx with something mounted under it refuses, rather than losing a live unit"
       (is (= :srce/ctx-busy
              (try (srce/detach! a) nil
