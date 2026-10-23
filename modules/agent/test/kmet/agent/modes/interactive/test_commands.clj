@@ -21,6 +21,8 @@
             [kmet.ai.models :as m]
             [kmet.ai.auth :as auth]
             [kmet.agent.loop.state :as loop-state]
+            [kmet.agent.loop.test-support :as loop-support]
+            [kmet.agent.tools.registry :as tools-registry]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
@@ -742,3 +744,28 @@
         (reset! (:compacting? (runtime/agent-state (:engine cs))) false)
         ((var turn/handle-cancel) cs)
         (t/is (= 1 @cancelled) "second escape cancels the turn")))))
+
+(deftest test-tools-command-lists-the-engines-table
+  (testing "/tools lists the table the engine runs on (4c-iii-c)"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [{:keys [ctx tools]} (loop-support/test-ctx)
+          _ (tools-registry/register-tool! tools
+                                           {:name "probe" :label "Probe"
+                                            :description "Says what it is"
+                                            :params {:x {:type :string
+                                                         :description "an x"
+                                                         :required? true}}
+                                            :execute (fn [_] {:content "ok"})})
+          ag (agent/make-agent-state :ctx ctx)
+          msg (atom nil)
+          cs (tu/with-test-engine {:agent-state (atom ag)})]
+      (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
+        ((:handler (commands/find-command "tools")) (support/command-ctx cs) ""))
+      (let [content (:content @msg)]
+        (t/is (str/starts-with? content "Available tools (")
+              "the listing is the tools section")
+        (t/is (str/includes? content "  probe — Says what it is")
+              "a tool only this agent's ctx holds is listed")
+        (t/is (str/includes? content "    x (string) (required) — an x")
+              "with its parameters and which are required")))))

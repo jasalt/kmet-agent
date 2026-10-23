@@ -266,11 +266,11 @@
   "Run F with the loop's tool table replaced by a fresh handle.
 
    The loop reads the table from the `:tools` service on the agent's ctx
-   (`loop.state/tool-table`), so a test needs a ctx of its own: headlessly
-   pointing `app-runtime/ctx` at a bare ctx whose `:tools` is the fresh handle
-   hands every `make-agent-state` in F that table. `app-runtime/registry` —
-   kmet1's process façade — is pointed at the same handle, so a test may
-   register stand-ins either way and both land where the loop looks.
+   (`loop.state/tool-table`), so a test needs a ctx of its own: pointing
+   `app-runtime/ctx` at a bare ctx whose `:tools` is a fresh handle hands every
+   `make-agent-state` in F that table. `app-runtime/registry` — kmet1's process
+   façade — is pointed at the same handle, so a test may register a stand-in
+   either way and both land where the loop looks.
 
    A test that needs a tool table should not boot an application: booting the
    root here used to be observable, because `kmet.agent.modes.test-rpc`'s
