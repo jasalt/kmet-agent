@@ -7,7 +7,6 @@
             [kmet.agent.commands.builtins :as builtins]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.registry :as registry]
-            [kmet.agent.tools.registry :as tools-reg]
             [kmet.libs.scope :as scope]
             [kmet.srce.core :as srce]
             [kmet.test-utils :as tu]))
@@ -110,50 +109,45 @@
       ((:handler (commands/find-command "echo")) ctx "hello"))
     (t/is (= [{:runtime :engine :ui :ui :frontend :interactive} "hello"] @received))))
 
-(t/deftest units-lists-the-store-owners-and-the-registries
-  ;; The /units surface renders the store owners (one flat line each, scope.md
-  ;; §2, §7) and — since the registries left the store at 4c-ii — one line per
-  ;; registry service from the app ctx.
+(t/deftest units-renders-the-unit-tree
+  ;; `/units` renders the ctx tree (`kmet.app.inspect`): every mounted row is a
+  ;; fiber line with its state, what it provides and its effect labels — the
+  ;; store's owner walk and the per-registry `keys=[…]` lines are gone (4d).
   (builtins/register-runtime-commands!)
-  (tools-reg/register-tool!  {:name "units-probe" :description "d"
-                              :parameters {:type "object" :properties {}}
-                              :execute (fn [_] {:content "ok"})})
-  (try
-    (let [got (atom nil)]
-      ((:handler (commands/find-command "units"))
-       {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
-      (t/is (= "Units" (first @got)))
-      (t/is (every? #(not (str/starts-with? % " "))
-                    (str/split-lines (second @got)))
-            "one flat line per owner, no indentation")
-      (t/is (not (str/includes? (second @got) "[:app :commands] keys="))
-            "the registry addresses are no longer store owners")
-      (t/is (str/includes? (second @got) ":commands keys=[")
-            "the commands registry renders from the app ctx's service")
-      (t/is (str/includes? (second @got) "\"units\"")
-            "a registered command is one of its keys")
-      (t/is (str/includes? (second @got) ":tools keys=[")
-            "the tools registry renders from its service")
-      (t/is (str/includes? (second @got) "\"units-probe\"")
-            "a registered tool is one of its keys"))
-    (finally
-      (tools-reg/unregister-tool!  "units-probe"))))
+  (let [got (atom nil)]
+    ((:handler (commands/find-command "units"))
+     {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
+    (t/is (= "Units" (first @got)))
+    (t/is (every? #(not (str/starts-with? % " "))
+                  (str/split-lines (second @got)))
+          "one flat line per unit, no indentation")
+    (t/is (str/starts-with? (second @got) "[:app]")
+          "the app root is the first line")
+    (t/is (str/includes? (second @got) ":active") "a mounted row is active")
+    (t/is (str/includes? (second @got) ":commands")
+          "the registry rows are mounted units")
+    (t/is (str/includes? (second @got) ":sessionPersistence")
+          "a service name prints bare in inject=")))
 
-(t/deftest units-renders-the-app-root-store-and-the-registries
-  ;; /units walks the app root's store and reads the registry services from
-  ;; the ctx; the engine's own node left the picture at 4c-ii-b, and 4d
-  ;; replaces both halves with the tree renderer.
+(t/deftest units-shows-a-pending-fiber-and-what-it-waits-for
+  ;; The question the store could only answer as absence: a row that is not
+  ;; active says so, and says what it is waiting for.
   (builtins/register-runtime-commands!)
-  (let [owner [:app :probe-units]
+  (let [ctx (app-runtime/ctx)
+        probe (srce/plugin! ctx {:name :probe/unit
+                                 :inject [:nothing-provides-this]
+                                 :apply (fn [_ _] nil)})
         got (atom nil)]
     (try
-      (scope/register! (app-runtime/node) owner :k/probe "v")
       ((:handler (commands/find-command "units"))
-       {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
-      (t/is (str/includes? (second @got) "[:app :probe-units] keys=[:k/probe]"))
-      (t/is (= "Units" (first @got)))
+       {:ui {:info (fn [_ content] (reset! got content))}} nil)
+      (t/is (str/includes? @got "[:app :probe/unit]")
+            "the invocation ctx's subtree, at its full path")
+      (t/is (str/includes? @got ":pending"))
+      (t/is (str/includes? @got "waiting-for=[nothing-provides-this]"))
+      (t/is (str/includes? @got "inject=[nothing-provides-this]"))
       (finally
-        (scope/dispose-owner! (app-runtime/node) owner)))))
+        (srce/dispose! probe)))))
 
 (t/deftest register-builtin-skips-a-taken-name
   (commands/register-command!

@@ -39,6 +39,12 @@
   "This ctx's child ctxs, creation order."
   ctx/children)
 
+(def detach!
+  "Remove CTX from its parent's children — the lifetime a plain child ctx
+   (`extend`, `isolate`) has. Keeps the `:parent` chain; refuses while child
+   ctxs remain."
+  ctx/detach!)
+
 (def attr
   "The nearest non-nil K on the ctx chain, with no realm stop — the walk for
    keys the app carries (:base-url, :resolver, an app-owned queue)."

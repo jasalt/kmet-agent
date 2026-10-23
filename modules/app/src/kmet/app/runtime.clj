@@ -164,10 +164,14 @@
    :rows n}`. Rows mount in composition order and settle once; every fiber must
    be `:active` afterwards, and no two fibers may declare one event differently,
    or boot throws `:kmet.app/boot-failed` naming the rows and their waiting-for,
-   or the events they disagree about."
+   or the events they disagree about.
+
+   The root is named `:app`, which is the first segment of every unit path the
+   inspection renderer (`kmet.app.inspect`) prints; CTX-META may name it
+   differently (a root a test builds, a profile with a second tree)."
   ([composed] (boot composed nil))
   ([{:keys [rows]} {:keys [ctx-meta]}]
-   (let [ctx (srce/root (merge {queue-key (atom [])} ctx-meta))
+   (let [ctx (srce/root (merge {queue-key (atom []) :name :app} ctx-meta))
          fibers (mapv (fn [row] (srce/plugin! ctx (row-source row) (:config row))) rows)]
      (srce/settle! ctx)
      (let [failed (boot-failure rows fibers)]

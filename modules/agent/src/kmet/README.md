@@ -246,10 +246,11 @@ path: `[:app :extensions <name>]` for an extension's own registrations,
 including the skills, prompts and themes a `:resources-discover` contribution
 loads (P5c). Nothing the host registers is a store entry since 4b-ii-a (P2), so
 no home is a process-global atom copied into each engine: unload is one
-`deregister-owner!` per tag. `/units` prints the registry services
-(`:commands keys=[…]`, read from the handles) plus the store owners that remain
-kmet1's (`registry_store`, the app node) — F5, F14, scope.md §6 — and the tree
-renderer replaces the pair at 4d. The runtime-owned surfaces are process caches
+`deregister-owner!` per tag. `/units` prints the unit tree instead: one flat
+line per ctx and per mounted fiber, with its state, `inject`, `provides` and
+effect labels — plus the two facts the store's owner walk could never show, a
+pending fiber's `waiting-for` and a failed one's error (`kmet.app.inspect`, 4d).
+The store has no listing any more; it retires at 4e. The runtime-owned surfaces are process caches
 now: `bootstrap` installs the live session, its sinks and the headless UI port,
 `dispose!` clears them (`clear-runtime!` + `unbind-extensions!`), and the
 `extensions` atoms stay the read cache for extension code with no node in hand

@@ -99,6 +99,26 @@
   [ctx]
   @(:children ctx))
 
+(defn detach!
+  "Remove CTX from its parent's children — the lifetime a plain child ctx
+   (`extend`, `isolate`) has and a fiber mount already has. Refuses
+   (`:srce/ctx-busy`) while child ctxs remain, mounts included: a fiber's
+   disposal removes its own mount ctx, so the caller disposes what hangs under
+   CTX first.
+
+   The ctx keeps its `:parent` chain, so a value still holding it resolves
+   services exactly as before; what changes is the tree, and the tree is what
+   the unit listing renders. Idempotent; a root has no parent and needs none.
+   Returns nil."
+  [ctx]
+  (when-let [parent (:parent ctx)]
+    (let [n (count (children ctx))]
+      (when (pos? n)
+        (throw (ex-info (str "cannot detach a ctx with " n " child ctx(s)")
+                        {:type :srce/ctx-busy :children n :name (:name ctx)}))))
+    (swap! (:children parent) (fn [v] (filterv #(not (identical? % ctx)) v))))
+  nil)
+
 (defn inside?
   "Is CTX in ROOT's subtree? Inclusive."
   [ctx root]

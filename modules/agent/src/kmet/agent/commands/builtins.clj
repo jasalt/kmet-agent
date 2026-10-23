@@ -11,7 +11,8 @@
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
-            [kmet.agent.session.runtime :as runtime]))
+            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.inspect :as inspect]))
 
 (defn- out
   "Call a shared command-UI capability; an absent capability is inert (a
@@ -113,14 +114,14 @@
       nil)))
 
 (defn- handle-units
-  "Show the app root's store owners — address and keys, one flat line each
-   (extension registrations; scope.md §2, §6) — beside one line per registry
-   service (4c-ii-a). The tree renderer replaces both at 4d; until then the
-   store section is the app root's, since the engine's own node is gone."
-  [{:keys [ui]} _]
-  (let [lines (remove str/blank? [(app-runtime/owner-listing (app-runtime/node))
-                                  (app-runtime/registry-listing (app-runtime/ctx))])]
-    (out ui :info "Units" (str/join "\n" lines))))
+  "Show the unit tree under the ctx the command runs in: one flat line per ctx
+   and per mounted fiber, with a pending fiber's `waiting-for` and a failed
+   one's error, and each fiber's state, `inject`, `provides` and effect labels
+   (`kmet.app.inspect`). A command run inside an agent renders that agent's
+   subtree; a bare engine has none, so the app root's."
+  [{:keys [ui] engine :runtime} _]
+  (out ui :info "Units"
+       (inspect/units (or (runtime/agent-ctx engine) (app-runtime/ctx)))))
 
 (defn register-runtime-commands!
   "Register the engine-portable builtins (untagged: every front end
@@ -130,7 +131,7 @@
   (commands/register-builtin!
 
    {:name "units"
-    :description "List store owners and their registered keys"
+    :description "List the ctx tree: mounted units, their state and what they wait for"
     :handler handle-units})
   (commands/register-builtin!
 

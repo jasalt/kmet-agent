@@ -4,9 +4,13 @@
    The app resolves a profile's rows, patches them by row id and prints the
    result (`--dump-config`); a run without `--dump-config` composes the same
    rows and **boots** them (`kmet.app.runtime`), which is what proves a profile
-   mounts. No mode is wired yet, so a booted run reports what it mounted,
-   disposes it, and exits — landings 4a–4d mount the services a mode drives and
-   landing 5 adds the modes, not this contract.
+   mounts. `--dump-state` is the other half of an inspection: it boots the same
+   rows and prints the ctx tree the boot produced (`kmet.app.inspect`), which is
+   the one question a composition listing cannot answer — what is `:pending` and
+   on what, what failed and with which error. No mode is wired yet, so a run
+   neither dumps nor boots reports what it mounted, disposes it, and exits —
+   landings 4a–4d mount the services a mode drives and landing 5 adds the modes,
+   not this contract.
 
    Output and exit codes are separable on purpose: `main` returns the exit
    code and `-main` is the only form that calls `System/exit`, so tests read a
@@ -15,6 +19,7 @@
             [clojure.string :as str]
             [kmet.agent.version :as version]
             [kmet.app.catalog :as catalog]
+            [kmet.app.inspect :as inspect]
             [kmet.app.profile :as profile]
             [kmet.app.runtime :as runtime]))
 
@@ -24,7 +29,8 @@
   {"--version" :version?
    "--help" :help?
    "-h" :help?
-   "--dump-config" :dump-config?})
+   "--dump-config" :dump-config?
+   "--dump-state" :dump-state?})
 
 (def ^:private value-flags
   {"--profile" :profile
@@ -58,7 +64,8 @@
 
 (defn parse-args
   "Parse kmet2's argv → `{:profile kw :patch [path …] :args [rest …] :version?
-   :help? :dump-config?}`. `:profile` defaults to `profile/default-profile`."
+   :help? :dump-config? :dump-state?}`. `:profile` defaults to
+   `profile/default-profile`."
   [args]
   (loop [in (seq args) opts {:patch [] :args []}]
     (if-not in
@@ -83,7 +90,7 @@
 
           :else (recur (next in) (update opts :args conj arg)))))))
 
-;; ── --dump-config ─────────────────────────────────────────────────────────
+;; ── --dump-config and --dump-state ───────────────────────────────────────
 
 (defn- read-layer
   "Read a `--patch FILE` composition layer."
@@ -117,6 +124,17 @@
   (let [{:keys [rows patches profile]} (compose-config opts)]
     (profile/render profile {:rows rows :patches patches})))
 
+(defn- dump-state
+  "The `--dump-state` text: the booted root's unit tree. The booted view needs a
+   boot, so this is the one flag that mounts the composition — and disposes it
+   again, so a dump leaves nothing behind."
+  [opts]
+  (let [booted (runtime/boot (compose-config opts))]
+    (try
+      (str (inspect/units (:ctx booted)) "\n")
+      (finally
+        (runtime/shutdown! booted)))))
+
 ;; ── entry ─────────────────────────────────────────────────────────────────
 
 (defn- report [message]
@@ -129,6 +147,7 @@
   (println "  --profile <name>   Composition profile: tui (default), print, rpc, server")
   (println "  --patch <file>     Apply a composition layer from a file (repeatable)")
   (println "  --dump-config      Print the composed plugin rows and exit")
+  (println "  --dump-state       Boot the composition, print the ctx tree, and exit")
   (println "  --version          Print the version and exit")
   (println "  -h, --help         Show this help")
   (println)
@@ -140,6 +159,7 @@
     (println "kmet2 has no runnable mode yet — landings 4a–4d mount the session")
     (println "log, the extension host and the agents; landing 5 adds the modes.")
     (println "  kmet --app new --dump-config   print the composed rows")
+    (println "  kmet --app new --dump-state    print the booted ctx tree")
     (println "  kmet --app new --version       print the version")
     (when (seq args) (println "Arguments:" (pr-str (vec args))))
     (flush))
@@ -174,11 +194,12 @@
   [args]
   (try
     (let [{version? :version? help? :help? dump-config? :dump-config?
-           leftover :args :as opts} (parse-args args)]
+           dump-state? :dump-state? leftover :args :as opts} (parse-args args)]
       (cond
         version? (do (println (str "kmet " (version/kmet-version))) (flush) 0)
         help? (do (print-usage) (flush) 0)
         dump-config? (do (print (dump-config opts)) (flush) 0)
+        dump-state? (do (print (dump-state opts)) (flush) 0)
         :else (run-composed opts leftover)))
     (catch Exception e
       (cond

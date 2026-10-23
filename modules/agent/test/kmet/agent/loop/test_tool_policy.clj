@@ -3,7 +3,7 @@
   an `:ask` goes to the approvals seam, a scripted inner call is gated too, and
   two agents in one process decide independently because the policy is read
   from each agent's own ctx."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.test :refer [deftest is use-fixtures]]
             [kmet.ai.llm :as llm]
             [kmet.app.permissions :as permissions]
             [kmet.agent.app-runtime :as app-runtime]
@@ -14,16 +14,39 @@
             [kmet.libs.json :as json]
             [kmet.srce.core :as srce]))
 
+(def ^:private agent-ctxs
+  "Every agent ctx this namespace built, so the fixture can detach them."
+  (atom []))
+
 (defn- agent-ctx
   "A child of the app root — so the loop's own services resolve — named NAME and
    carrying POLICY as this agent's `:permissions`, if given. The app root mounts
-   no policy, so a child may provide one (one provider per name per chain)."
+   no policy, so a child may provide one (one provider per name per chain).
+
+   The app root is process-wide, so a ctx left attached outlives the test:
+   `detach-agent-ctxs!` releases them, or `/units` would list a line per test."
   ([name]
-   (srce/extend (app-runtime/ctx) {:name name}))
+   (let [ctx (srce/extend (app-runtime/ctx) {:name name})]
+     (swap! agent-ctxs conj ctx)
+     ctx))
   ([name policy]
    (let [ctx (agent-ctx name)]
      (srce/provide! ctx :permissions (permissions/policy policy))
      ctx)))
+
+(defn- detach-agent-ctxs!
+  "Release the agent ctxs a test attached to the process-wide app root. A mount
+   left under one makes the detach throw `:srce/ctx-busy` — the refusal is the
+   point, so the test fails rather than leaking."
+  [f]
+  (reset! agent-ctxs [])
+  (try
+    (f)
+    (finally
+      (doseq [ctx @agent-ctxs] (srce/detach! ctx))
+      (reset! agent-ctxs []))))
+
+(use-fixtures :each detach-agent-ctxs!)
 
 (defn- run-bash-turn
   "Run one turn on CTX whose model asks for a `bash` tool call, then text.

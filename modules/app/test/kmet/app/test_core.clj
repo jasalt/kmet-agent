@@ -1,7 +1,8 @@
 (ns kmet.app.test-core
-  "kmet.app.core — kmet2's entry: argument parsing, the version/help paths, and
+  "kmet.app.core — kmet2's entry: argument parsing, the version/help paths,
    --dump-config over the composition (the same composition a boot would
-   mount), including the errors an unreadable or malformed layer raises."
+   mount), and --dump-state over the tree that boot produces, including the
+   errors an unreadable or malformed layer raises."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
@@ -53,6 +54,7 @@
                                                      "--patch=b.edn"])))
       "patches stack")
   (is (true? (:dump-config? (core/parse-args ["--dump-config"]))))
+  (is (true? (:dump-state? (core/parse-args ["--dump-state"]))))
   (is (true? (:version? (core/parse-args ["--version"]))))
   (is (true? (:help? (core/parse-args ["-h"])))))
 
@@ -76,6 +78,7 @@
     (is (zero? code))
     (is (str/includes? out "kmet --app new"))
     (is (str/includes? out "--dump-config"))
+    (is (str/includes? out "--dump-state"))
     (is (str/includes? out "--profile"))))
 
 (deftest dump-config-prints-the-built-in-composition
@@ -123,6 +126,28 @@
     (is (= 1 code))
     (is (str/includes? err "cannot read patch file"))))
 
+(deftest dump-state-prints-the-booted-tree
+  (let [{:keys [code out err]} (run-main ["--dump-state"])]
+    (is (zero? code))
+    (is (str/starts-with? out "[:app]")
+        "the root frame, at the origin of every unit path")
+    (is (str/includes? out "children=8") "the eight composition rows")
+    (is (str/includes? out ":active"))
+    (is (str/includes? out "provides=[commands]"))
+    (is (str/ends-with? out "\n"))
+    (is (= "" err) "a dump boots and disposes; it reports nothing else")))
+
+(deftest dump-state-composes-a-patch-layer
+  (let [path (scratch-patch!
+              (str "{:rows [{:plugin kmet.app.test-core/sample-plugin}]"
+                   " :patch []}\n"))]
+    (try
+      (let [{:keys [code out]} (run-main ["--dump-state" "--patch" path])]
+        (is (zero? code))
+        (is (str/includes? out "[:app :app/sample]")
+            "the patched row mounts, so the tree shows it"))
+      (finally (io/delete-file path true)))))
+
 (deftest a-bare-run-boots-the-composition-and-says-what-is-missing
   (let [{:keys [code err]} (run-main ["hello"])]
     (is (= 1 code))
@@ -132,7 +157,8 @@
                             " sessions skills tools)"))
         "the boot is the point: a bare run proves the profile's rows mount")
     (is (str/includes? err "no runnable mode"))
-    (is (str/includes? err "--dump-config"))))
+    (is (str/includes? err "--dump-config"))
+    (is (str/includes? err "--dump-state"))))
 
 (deftest a-boot-failure-is-reported-as-a-configuration-error
   (let [path (scratch-patch!

@@ -5,8 +5,9 @@
    registries, the event bus's scope, the loop's stage map and the session log
    all live on the ctx. The extension host registers there too since 4b-ii-a
    (its hooks, themes, UI port, renderers and flags are registry entries), so
-   what is left of `node` is kmet1's own store — `registry_store`'s backend and
-   `/units`' owner listing, both retired by 4d/4e.
+   what is left of `node` is kmet1's own store — `registry_store`'s backend —
+   and the store retires at 4e. `/units` renders the ctx tree the root carries
+   (`kmet.app.inspect`), not the store.
 
    The loop's two stages ride the root ctx under `:loop-stages` as plain data:
    the loop reads its stage map once per attempt (scope.md §4), and a run that
@@ -20,8 +21,7 @@
    One sharp edge comes with the root ctx, and the host owns it: it is a
    process global every front end, engine and loaded extension shares — a run
    that must not share registrations gets its own `child-ctx`."
-  (:require [clojure.string :as str]
-            [kmet.agent.debug :as debug]
+  (:require [kmet.agent.debug :as debug]
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.registry :as reg]
             [kmet.agent.retry :as retry]
@@ -48,24 +48,23 @@
    :retry-policy {:call retry/retry-decision}})
 
 (defonce ^:private app-node
-  ;; No host fields: the stage map moved to the root ctx at 4c-ii-b, and the
-  ;; extension host stopped registering here at 4b-ii-a. What remains is
-  ;; kmet1's store until 4e.
+  ;; No host fields: the stage map moved to the root ctx at 4c-ii-b, the
+  ;; extension host stopped registering here at 4b-ii-a, and `/units` stopped
+  ;; reading it at 4d. What remains is kmet1's store until 4e.
   (delay (scope/node nil)))
 
 (defn node
-  "The app's root store node — kmet1's remaining scope store: `registry_store`'s
-  backend and `/units`' owner listing, retired at 4d/4e. Nothing the extension
-  host installs lands here since 4b-ii-a."
+  "The app's root store node — kmet1's remaining scope store, `registry_store`'s
+  backend. Nothing the extension host installs lands here since 4b-ii-a, and
+  nothing lists it since 4d; it retires at 4e."
   []
   @app-node)
 
 ;; ─── The app root context ──────────────────────────────────────────────────
 ;; kmet1 runs on kmet2's composition: the root ctx is the same one `--app new`
 ;; boots, mounted once per process and never shut down (process exit is the
-;; disposal). The store node above is what is left of kmet1's own tree — the
-;; extension host's owner paths and `/units` — and it retires after 4b-ii puts
-;; the host on fibers (new-app.md § Landings).
+;; disposal). The store node above is what is left of kmet1's own tree and it
+;; retires at 4e.
 
 (defonce ^:private app-root
   ;; The stage map rides the root ctx under `:loop-stages`, so a child ctx
@@ -83,7 +82,11 @@
    under PARENT, or as a root of its own when there is no parent. A run points
    at one to get its own stage map (P7): with a parent, what it registers lives
    in that ctx's subtree; without one it is its own isolation boundary, which is
-   what `child-node` did before 4c-ii-b."
+   what `child-node` did before 4c-ii-b.
+
+   This ctx has no fiber of its own, so nothing disposes it: the caller releases
+   a ctx it built under a parent with `srce/detach!` when the run is done, or the
+   tree keeps a line per run (`/units`)."
   ([] (child-ctx nil))
   ([parent] (child-ctx parent nil))
   ([parent stages]
@@ -124,27 +127,6 @@
    that has no seam yet still has somewhere to go."
   []
   @registry-handle)
-
-(def ^:private listed-registries
-  "The service and tag each `/units` registry line shows, in display order."
-  [[:commands :kmet/command]
-   [:prompts :kmet/prompt]
-   [:skills :kmet/skill]
-   [:tools :kmet/tool]])
-
-(defn registry-listing
-  "One line per registry service that holds anything: `:commands keys=[…]`, read
-   from the app ctx's handles. The registries left the store at 4c-ii, so the
-   owner walk cannot see them any more; this is the same surface from the other
-   side, and it is replaced by `kmet.app.inspect`'s tree at 4d."
-  [ctx]
-  (->> listed-registries
-       (keep (fn [[service tag]]
-               (when-let [handle (srce/get ctx service)]
-                 (let [names (mapv first (reg/entries handle tag))]
-                   (when (seq names)
-                     (str (pr-str service) " keys=" (pr-str names)))))))
-       (str/join "\n")))
 
 (defn deregister-owner!
   "Remove every registry registration OWNER holds, across every tag — what
@@ -193,23 +175,3 @@
     #(doseq [f (reverse fns)]
        (try (f) (catch Throwable t (scope/*error-reporter* t)))))
   nil)
-
-(defn- owner-line
-  "One store owner as `/units` prints it: `<owner> keys=[…]`, the owner's
-   registrations in registration order (scope.md §2, §6)."
-  [owner registrations]
-  (str (pr-str owner)
-       " keys=" (pr-str (mapv first registrations))))
-
-(defn owner-listing
-  "Render the store owners that hold registrations for `/units`: one
-   `<owner> keys=[…]` line each, in first-registration order, flat (scope.md
-   §2, §6). An owner with only teardowns has nothing to show and is
-   skipped."
-  [node]
-  (->> (scope/owners node)
-       (keep (fn [owner]
-               (let [registrations (scope/owner-registrations node owner)]
-                 (when (seq registrations)
-                   (owner-line owner registrations)))))
-       (str/join "\n")))

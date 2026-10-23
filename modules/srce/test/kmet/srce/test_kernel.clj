@@ -68,6 +68,25 @@
     (is (identical? (:fiber r) (:fiber a)))
     (is (not (contains? a :runtimes)))))
 
+(deftest a-plain-child-ctx-can-be-detached
+  (let [r (srce/root)
+        a (srce/extend r {:name :agent})
+        b (srce/extend r {:name :other})
+        mount (srce/plugin! a {:name :p :apply (fn [_ _] nil)})]
+    (testing "a ctx with something mounted under it refuses, rather than losing a live unit"
+      (is (= :srce/ctx-busy
+             (try (srce/detach! a) nil
+                  (catch Exception e (:type (ex-data e)))))))
+    (testing "a fiber's disposal removes its own mount ctx, so its parent can go"
+      (srce/dispose! mount)
+      (srce/detach! a)
+      (is (= [b] (srce/children r))
+          "the listing drops it; the chain it keeps is not the listing's tree"))
+    (testing "idempotent, and a root has no parent to leave"
+      (srce/detach! a)
+      (srce/detach! r)
+      (is (= [b] (srce/children r))))))
+
 (deftest a-realm-blocks-the-outside
   (let [r (srce/root)
         outer (srce/extend r {:name :outer})

@@ -1,10 +1,7 @@
 (ns kmet.agent.test-runtime
-  "The agent runtime: the app root ctx, its loop stages, and the flat /units
-   render."
-  (:require [clojure.string :as str]
-            [clojure.test :as t :refer [deftest is]]
+  "The agent runtime: the app root ctx and its loop stages."
+  (:require [clojure.test :as t :refer [deftest is]]
             [kmet.agent.app-runtime :as runtime]
-            [kmet.libs.scope :as scope]
             [kmet.srce.core :as srce]))
 
 (deftest the-app-root-ctx-is-one-ctx-carrying-the-loop-stages
@@ -98,28 +95,3 @@
                         (get-in (runtime/loop-stages (runtime/ctx))
                                 [:loop-guard :call]))))
       (finally (runtime/refresh-stages!)))))
-
-(deftest owner-listing-is-flat-and-in-registration-order
-  (let [node (scope/node)]
-    (scope/register! node [:app] :k/root "r")
-    (scope/register! node [:app :extensions "probe-ext"]
-                     [:commands :probe-cmd] {:name "probe-cmd"})
-    (scope/register! node [:app :extensions "probe-ext" :deep] :k/deep "d")
-    (scope/register! node [:app :commands]
-                     [:kmet/command "probe"] {:name "probe"})
-    (is (= ["[:app] keys=[:k/root]"
-            "[:app :extensions \"probe-ext\"] keys=[[:commands :probe-cmd]]"
-            "[:app :extensions \"probe-ext\" :deep] keys=[:k/deep]"
-            "[:app :commands] keys=[[:kmet/command \"probe\"]]"]
-           (str/split-lines (runtime/owner-listing node)))
-        "one line per owner, first-registration order, no indentation")))
-
-(deftest owner-listing-of-an-empty-node-is-empty
-  (is (= "" (runtime/owner-listing (scope/node)))))
-
-(deftest owner-listing-skips-teardown-only-owners
-  ;; An owner with teardowns but no registrations has nothing to show; the
-  ;; listing renders what a registration made, not the owner's existence.
-  (let [node (scope/node)]
-    (scope/add-teardown! node [:app :empty] (fn [] nil))
-    (is (= "" (runtime/owner-listing node)))))
