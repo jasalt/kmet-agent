@@ -32,6 +32,12 @@
    KMET_TCL_LIB and KMET_TK_LIB override the pair — both together, or a
    Tcl library whose Tk sibling is derived from its spelling.
 
+   A failed Tcl resolution is memoized for the process, keyed on the
+   search inputs (`search-key`): a machine without Tcl pays one sweep of
+   the install directories, not one per probe. That matters because the
+   sweep is not cheap — every candidate pair stats every PATH directory —
+   and the test scaffolding probes once per live-Tk block.
+
    The trampoline is one C-callable fn held for the process; each
    registered command answers as `(handler argv)` with the returned string
    as the Tcl result. Tcl invokes it from inside the vwait call, so on Jolt
@@ -224,6 +230,11 @@
 (defonce ^:private interp (atom nil))
 (defonce ^:private handlers (atom {}))
 
+;; {:key (search-key) :tried [names]} from the last failed resolution — a
+;; miss is an installation fact, not interpreter state, so `stop!` leaves it
+;; in place. Cleared when a search succeeds under a new key.
+(defonce ^:private tcl-missing (atom nil))
+
 ;; The loaded pair: {:tcl name :tk-candidates [names]} at load time, plus
 ;; :tk once the Tk library loads.
 (defonce ^:private libraries (atom nil))
@@ -276,22 +287,49 @@
         (reset! trampoline-arena arena)
         (reset! trampoline-callable callable))))
 
+(defn- search-key
+  "The inputs a library search reads, as one comparable value: a memoized
+   miss is reused only while they are unchanged, so a caller that changes
+   the working directory or the override variables searches again."
+  []
+  [(System/getenv "PATH")
+   (System/getenv "PREFIX")
+   (System/getProperty "user.dir")
+   (System/getenv "KMET_TCL_LIB")
+   (System/getenv "KMET_TK_LIB")])
+
+(defn- missing-library
+  "The no-Tcl error, naming the candidate library NAMES that were tried."
+  [tried]
+  (ex-info (str "kmet.tk.tcl: no Tcl 9.1/9.0/8.6 shared library "
+                "could be loaded — install Tcl/Tk, or set "
+                "KMET_TCL_LIB and KMET_TK_LIB")
+           {:type :kmet.tk.tcl/missing-library
+            :tried tried}))
+
 (defn- load-tcl!
   "Load the newest candidate Tcl pair that loads and record it, the
    overrides first. Returns the pair. The choice is a unit: once a Tcl is
-   loaded, its matching Tk is the only Tk that may be."
+   loaded, its matching Tk is the only Tk that may be.
+
+   A miss is memoized (see `tcl-missing`): the sweep stats every install
+   directory for every candidate pair, and a caller that probes repeatedly
+   would pay it every time."
   []
-  (let [pairs (or (override-pair) library-pairs)]
-    (or (some (fn [[tcl tk :as pair]]
-                (when (try-load [tcl])
-                  (reset! libraries {:tcl tcl :tk-candidates tk})
-                  pair))
-              pairs)
-        (throw (ex-info (str "kmet.tk.tcl: no Tcl 9.1/9.0/8.6 shared library "
-                             "could be loaded — install Tcl/Tk, or set "
-                             "KMET_TCL_LIB and KMET_TK_LIB")
-                        {:type :kmet.tk.tcl/missing-library
-                         :tried (mapv first pairs)})))))
+  (let [key (search-key)]
+    (when-let [{cached :key tried :tried} @tcl-missing]
+      (when (= key cached)
+        (throw (missing-library tried))))
+    (let [pairs (or (override-pair) library-pairs)]
+      (or (some (fn [[tcl tk :as pair]]
+                  (when (try-load [tcl])
+                    (reset! libraries {:tcl tcl :tk-candidates tk})
+                    (reset! tcl-missing nil)
+                    pair))
+                pairs)
+          (let [tried (mapv first pairs)]
+            (reset! tcl-missing {:key key :tried tried})
+            (throw (missing-library tried)))))))
 
 (defn- load-tk!
   "Load the Tk library paired with the recorded Tcl and record its name.
@@ -433,13 +471,15 @@
   (tk/run! tree options))
 
 (defn stop!
-  "Delete the interpreter (tests, orderly shutdown)."
+  "Delete the interpreter (tests, orderly shutdown). A memoized failed
+   library search survives: it records an installation fact, not
+   interpreter state (`stop!` runs in every live-Tk test's teardown)."
   []
   (when-some [i @interp]
-    (tcl-delete-interp i)
-    (reset! interp nil)
-    (reset! tk-ready? false)
-    (reset! handlers {})
-    (reset! trampoline-callable nil)
-    (reset! trampoline-arena nil)
-    (reset! libraries nil)))
+    (tcl-delete-interp i))
+  (reset! interp nil)
+  (reset! tk-ready? false)
+  (reset! handlers {})
+  (reset! trampoline-callable nil)
+  (reset! trampoline-arena nil)
+  (reset! libraries nil))

@@ -77,6 +77,42 @@
       (t/is (= ["tk91.dll" "tcl9tk91.dll"] (dtk "tcl91.dll"))))
     (t/is true "skipped: the FFI adapter is unavailable")))
 
+(t/deftest a-failed-library-search-is-run-once
+  ;; A miss stats every install directory for all 18 candidate pairs, so it
+  ;; is memoized per process (`tcl-missing`): the live-Tk scaffolding probes
+  ;; once per test, and re-sweeping cost ~1.1 s per probe on a long PATH.
+  ;; The memo is process state a Tcl-less machine keeps — restore it, or a
+  ;; host that has Tcl would inherit this test's miss and skip the live tests.
+  (if-let [tcl-ns (try (require 'kmet.tk.tcl)
+                       (find-ns 'kmet.tk.tcl)
+                       (catch Throwable _ nil))]
+    (let [adapter (deref (ns-resolve tcl-ns 'adapter))
+          stop! (deref (ns-resolve tcl-ns 'stop!))
+          memo (deref (ns-resolve tcl-ns 'tcl-missing))
+          saved @memo
+          sweeps (atom 0)
+          probe! (fn []
+                   (try ((:prepare! (adapter))) nil
+                        (catch Exception e e)))]
+      (try
+        (stop!)
+        ;; a miss an earlier test memoized must not stand in for this probe
+        (reset! memo nil)
+        (with-redefs-fn {(ns-resolve tcl-ns 'try-load)
+                         (fn [_names] (swap! sweeps inc) nil)}
+          (fn []
+            (t/is (= :kmet.tk.tcl/missing-library (:type (ex-data (probe!))))
+                  "the stubbed sweep finds nothing, so prepare! reports no Tcl")
+            (let [after-first @sweeps]
+              (t/is (pos? after-first) "the first probe searched")
+              (dotimes [_ 2] (probe!))
+              (t/is (= after-first @sweeps)
+                    "later probes reuse the memoized miss instead of searching"))))
+        (finally
+          (stop!)
+          (reset! memo saved))))
+    (t/is true "skipped: the FFI adapter is unavailable")))
+
 (t/deftest vwait-pump-and-nested-eval
   ;; The parked-eval path: Tcl_Eval (vwait) blocks while Tcl's timer calls
   ;; back into the trampoline, and the handler re-enters Tcl — exactly the

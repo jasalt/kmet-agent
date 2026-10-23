@@ -93,6 +93,12 @@ the zipfs library a Tcl 9 build appended to the DLL is mounted before the
 load, so the Windows DLLs are standalone — `tcl91.dll`, `tcl9tk91.dll`
 and their two dependencies can be dropped next to the executable or
 anywhere on PATH, with no installed Tcl/Tk and no compiled-in prefix.
+A failed Tcl resolution is remembered for the process: the sweep stats
+every install directory for all 18 candidate pairs, so a machine without
+Tcl pays it once, not on every `prepare!`. The memo is keyed on PATH,
+`$PREFIX`, the working directory and the two override variables, so a
+changed environment searches again (`stop!` leaves it alone — it records
+an installation fact, not interpreter state).
 Tcl 8.6 has no zipfs, so a dropped-in 8.6 DLL needs an installed Tcl/Tk
 (or `TCL_LIBRARY`) to supply tk.tcl. There is no display support on Termux
 without Termux:X11; on Termux, jolt (bionic) can use the system Tcl/Tk
@@ -706,7 +712,8 @@ the sample UI backend, and `kmet.tk.test-ttk-style` records the `ttk::style`
 scripts headlessly and round-trips them — `use-theme!`/`define-style!`/
 `map-style!`/`apply!` — through a real Tk when a display is there (on Termux,
 under jolt + Xvfb).
-`kmet.tk.test-tcl` (bb or Jolt, skipping where libtcl is absent)
+`kmet.tk.test-tcl` (bb or Jolt, skipping where libtcl is absent — the
+miss is memoized, so the skip is one probe per process, not one per test)
 smoke-tests the real interpreter: eval, the command trampoline,
 `tcl-quote` round-tripping through the Tcl parser, the recorded Tcl/Tk
 pair with the interpreter's own patchlevel, the image layer — real
