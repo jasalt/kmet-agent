@@ -18,6 +18,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as loop]
             [kmet.agent.loop.state :as loop-state]
+            [kmet.agent.model-resolver :as resolver]
             [kmet.agent.project-context :as context]
             [kmet.agent.session.core :as session]
             [kmet.agent.tools.registry :as tools]
@@ -176,6 +177,26 @@
 
 ;; ── the handle ────────────────────────────────────────────────────────────
 
+(defn- resolve-create-opts
+  "CREATE-OPTS with kmet1's `--model` pattern resolved against the catalog:
+   `provider/model[:thinking]`, the provider inferred when it is absent, as
+   `kmet --model` has always meant it. A pattern the catalog does not have fails
+   here by name — kmet1 prints the same error and exits 1 — instead of becoming a
+   run that dies inside its first request."
+  [opts]
+  (if-let [pattern (:model opts)]
+    (let [{:keys [provider model-id thinking-level warning error]}
+          (resolver/resolve-cli-model (:provider opts) pattern (models/get-models))]
+      (when error
+        (throw (ex-info error {:type :kmet.app/unknown-model :model pattern})))
+      (when warning
+        (binding [*out* *err*] (println "Warning:" warning)))
+      (cond-> opts
+        provider (assoc :provider provider)
+        model-id (assoc :model model-id)
+        (and thinking-level (nil? (:thinking opts))) (assoc :thinking thinking-level)))
+    opts))
+
 (defn- session-for
   "A fresh session for a new agent over LOG (the `:sessions` service), placed
    the way kmet1's engine places one: the cwd-encoded directory under the
@@ -254,8 +275,9 @@
    agent) unless the caller names one (`:config` in the create options).
 
    A create option that is kmet1's CLI override (`:model`, `:provider`) is
-   applied the way `kmet --model` applies it — an agent's model is an option of
-   the agent, not of the process, so two agents of one server can differ.
+   applied the way `kmet --model` applies it, pattern and all
+   (`resolve-create-opts`) — an agent's model is an option of the agent, not of
+   the process, so two agents of one server can differ.
 
    `:resume` is refused rather than approximated: the registry's resume passes
    the *handle* id it once published, and a handle id is not a session — an
@@ -281,7 +303,8 @@
                                               :op :resume
                                               :id id})))
                                    (let [config (-> (or (:config opts) (cfg/load-config))
-                                                    (cfg/apply-cli-overrides opts))]
+                                                    (cfg/apply-cli-overrides
+                                                     (resolve-create-opts opts)))]
                                      (agent-handle child {:id (:id opts)
                                                           :config config
                                                           :session (or (:session opts) (session-for log config cwd))

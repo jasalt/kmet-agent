@@ -11,6 +11,7 @@
             [clojure.test :refer [deftest is]]
             [kmet.agent.config :as cfg]
             [kmet.ai.llm :as llm]
+            [kmet.ai.models :as models]
             [kmet.app.test-support :as support]))
 
 (def ^:private sessions-dir "target/test-print-mode")
@@ -114,21 +115,73 @@
         (is (not (str/includes? out "hello from the model\nhello from the model"))
             "the text is not printed twice: edn mode prints events, not the answer")))))
 
+(defn- with-model-catalog
+  "The catalog a `--model` pattern resolves against: one reasoning model."
+  [f]
+  (with-redefs [models/get-provider (fn [p] {:id p})
+                models/get-models (fn [& _] [{:provider :opencode-go
+                                              :id "deepseek-v4-flash"
+                                              :reasoning true}])]
+    (f)))
+
 (deftest a-model-override-reaches-the-run
-  ;; `--model`/`--provider` are the agent's options, not the process's: the
-  ;; driver applies them to the settings it loads, so a run can name its model
-  ;; without editing any file.
+  ;; `--model` is kmet1's pattern — provider/model[:thinking], the provider
+  ;; inferred when absent — resolved against the catalog before the run. The
+  ;; agent's model is an option of the agent, not the process's, so a script can
+  ;; name one without editing settings.
   (let [seen (atom nil)]
-    (with-mode-run
-      (fn [opts]
-        (reset! seen (select-keys opts [:model :provider]))
-        (future
-          (when-let [on-text (:on-text opts)] (on-text "ok"))
-          (when-let [on-done (:on-done opts)] (on-done :stop))
-          :done))
+    (with-model-catalog
       (fn []
-        (let [{:keys [code]} (support/run-main ["-p" "--model" "override-model"
-                                                "--provider" "deepseek" "hello"])]
-          (is (= 0 code))
-          (is (= {:model "override-model" :provider :deepseek} @seen)
-              "the run asked for the model the command line named, not the settings'"))))))
+        (with-mode-run
+          (fn [opts]
+            (reset! seen (select-keys opts [:model :provider :thinking]))
+            (future
+              (when-let [on-text (:on-text opts)] (on-text "ok"))
+              (when-let [on-done (:on-done opts)] (on-done :stop))
+              :done))
+          (fn []
+            (let [{:keys [code]} (support/run-main ["-p" "--model"
+                                                    "opencode-go/deepseek-v4-flash:high"
+                                                    "hello"])]
+              (is (= 0 code))
+              (is (= {:model "deepseek-v4-flash" :provider :opencode-go
+                      :thinking :high}
+                     @seen)
+                  "the run asked for the pattern's model, provider and thinking
+                   level, not the settings'"))))))))
+
+(deftest a-model-the-catalog-does-not-have-is-named
+  ;; A pattern nothing matches is a named failure before the run, as in kmet1
+  ;; (which prints the same error and exits 1) — not a request that dies later
+  ;; with nothing to say.
+  (let [stub (fn [opts]
+               (future (when-let [on-error (:on-error opts)] (on-error "boom")) :done))]
+    (with-redefs [models/get-provider (fn [p] {:id p})
+                  models/get-models (fn [& _] [])]
+      (with-mode-run stub
+        (fn []
+          (let [{:keys [code out err]} (support/run-main ["-p" "--provider" "deepseek"
+                                                          "--model" "no-such-model" "hi"])]
+            (is (= 1 code))
+            (is (= "" out) "nothing runs, so nothing is printed")
+            (is (str/includes? err "Model \"no-such-model\" not found")
+                "and the failure names the model that was asked for")))))))
+
+(deftest edn-mode-carries-the-failure-on-the-wire
+  ;; In edn mode the failure is an event, so it is printed like every other and
+  ;; the mode adds no error line of its own: the exit code is the verdict, and a
+  ;; consumer that wanted the reason already has it.
+  (with-mode-run
+    (fn [opts]
+      (future
+        (when-let [on-error (:on-error opts)] (on-error "boom"))
+        :done))
+    (fn []
+      (let [{:keys [code out err]} (support/run-main ["--mode" "edn" "hello"])
+            events (mapv edn/read-string (str/split-lines out))]
+        (is (= 1 code) "a failed run exits 1")
+        (is (= [{:type :error :message "boom"}]
+               (filter (comp #{:error} :type) events))
+            "the error is on the wire, once")
+        (is (not (str/includes? err "Error:"))
+            "and not repeated on stderr, where edn consumers do not look")))))

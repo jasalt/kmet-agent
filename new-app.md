@@ -1411,7 +1411,13 @@ same rule the two dumps already followed.
 **The overrides ride the agent, not the process.** `--model`/`--provider` go
 into the mode's input, become `create!` options, and the driver's factory applies
 them to the settings it loads (`cfg/apply-cli-overrides`, the function kmet1 uses
-for the same flags). That is the seam landing 6 wants anyway: an agent's model is
+for the same flags). `--model` is kmet1's **pattern**
+(`provider/model[:thinking]`, provider inferred when absent), so the factory
+resolves it against the catalog first (`model-resolver/resolve-cli-model`) and
+takes the resulting provider, model id and thinking level: a pattern nothing
+matches is `:kmet.app/unknown-model` *before* the run, with kmet1's own wording,
+rather than a request that dies later with nothing to say. The `:model` in
+settings stays a plain id — a flag is a pattern, a file says what it means. That is the seam landing 6 wants anyway: an agent's model is
 an option *of the agent*, so two agents of one server can answer with different
 models, and no run edits a process-global config. The test asserts what the
 provider call received, not that a map was threaded: dropping the override leaves
@@ -1424,7 +1430,9 @@ cumulative snapshot). A failure is an event, so `:edn` prints no error line on
 stderr and the exit code is the verdict, while `:text` keeps its line. Two events
 trail the settle in the stream (`:queue-update`, `:status`) because the mode
 disposes its listeners when the settle arrives: the wire is what the loop said,
-not what a mode wanted to hear. The projections stay in `kmet.agent.event-bus`
+not what a mode wanted to hear. A failure is on the wire too, exactly once — the
+`{:type :error :message …}` event — so edn mode adds no line of its own and the
+exit code is the verdict; text mode keeps its stderr line. The projections stay in `kmet.agent.event-bus`
 (`app`) until the modes' move claims them — transport with the transport.
 
 Not in this increment: kmet1's other run flags (`--thinking`, `--system-prompt`,
