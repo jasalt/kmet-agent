@@ -216,7 +216,12 @@ Cordis's reflect layer, minus everything the light kernel doesn't need.
   realm, which is `isolate`, which is why `isolate` is in the light set and
   labels are not. Two *siblings* under one realm may each provide the name: the
   nearest visible provider wins per subtree, the listing (which walks the ctxs)
-  shows both, and `services` from above shows neither. A root-level `{realm-key name → impl}` store is Cordis's shape and would
+  shows both, and `services` from above shows neither. **A per-agent value
+  therefore mounts where nothing above it provides one** — the agent's own ctx,
+  never as a shadow of an app-wide row; the app follows this for
+  `:permissions` (new-app.md § *Permissions and approvals*), and a service that
+  really needs a second instance over a provider it cannot remove wants
+  `isolate`, not a child. A root-level `{realm-key name → impl}` store is Cordis's shape and would
   make that a throw instead; the per-ctx atom is chosen because the realm then
   *is* the ctx — no symbol table, no labels (§10).
 - **`provide!` is an effect.** It registers into the current ctx's store and

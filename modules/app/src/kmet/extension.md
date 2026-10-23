@@ -640,10 +640,14 @@ caveats: an inner call carries a synthetic `:tool-call-id` (but the batch's
 assistant message), and a blocked call's `:terminate` hint rides through to
 the script's result (there is no batch to stop). Inner calls still produce no
 tool-execution events and
-no transcript/session entries. A per-tool hook is policy, not a sandbox —
-the run_code sandbox can also shell out through `babashka.process`
-(`p/sh`/`p/shell`/`p/process`) which no per-tool hook covers — so blocking
-the `run_code` tool itself is the only real gate.
+no transcript/session entries.
+
+Hooks run **before** the app's permission policy (`:permissions`, an
+app-level service no extension can mount), so a hook can rewrite a call but
+not allow one the policy denies — and a hook is an interception, not a
+sandbox: the run_code sandbox can also shell out through `babashka.process`
+(`p/sh`/`p/shell`/`p/process`), which no per-tool hook covers, so blocking
+the `run_code` tool itself is what a hook can do.
 
 ### Shortcuts and markdown transformers
 

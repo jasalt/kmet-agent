@@ -951,7 +951,8 @@ Two defects the landing's own tests caught, both from Clojure's shadowing: the
 destructured `:reason` and then called the private `reason` helper. Both were
 renamed; the rows are covered by `the-policy-row-carries-a-config`.
 
-Ledger: **215 source + 281 test lines added, 6 files touched, nothing lifted**
+Ledger: **215 source + 281 test lines added, three files added and five
+changed, nothing lifted**
 — the extension-hook waterfall gained one stage and the app gained two rows'
 worth of one namespace. Gate: `:permissions`/`:approvals` provided where they
 belong; two agents under one root decide differently; a denied call never
