@@ -148,6 +148,15 @@
     (is (= [] (mapv :name (srce/children root)))
         "the ctx is rolled back like any failed create")))
 
+(deftest a-handle-with-a-non-fn-op-is-refused
+  (let [{:keys [root agents]} (fixture)
+        _ ((:register-factory! agents) root (stand-in {} {:status :running}))
+        e (try ((:create! agents) root {}) nil (catch Exception e e))]
+    (is (= :kmet.app/bad-agent-handle (:type (ex-data e))))
+    (is (= [:status] (:problems (ex-data e)))
+        "an optional op that is present but not callable is a shape problem")
+    (is (= [] (mapv :name (srce/children root))))))
+
 (deftest roots-are-the-agents-that-do-not-hang-off-an-agent
   (let [{:keys [root log agents]} (fixture)
         session (create-session! {:log log})
@@ -181,6 +190,54 @@
     (is (= [] ((:list agents) root)))
     (is (= :kmet.app/unknown-agent (error-type #((:dispose! agents) handle)))
         "the capability is spent once its agent is gone")))
+
+(deftest a-disposal-takes-the-agents-under-it
+  (let [{:keys [root log agents]} (fixture)
+        session (create-session! {:log log})
+        disposed (atom [])
+        _ ((:register-factory! agents) root (stand-in {:disposed disposed}))
+        parent ((:create! agents) root {:session session})
+        child ((:create! agents) (:ctx parent) {:session session})]
+    (testing "a subagent's ctx is a plain child of its parent's, so the parent
+              cannot be detached around while it lives"
+      (is (= [(keyword "agent" (:id child))]
+             (map :name (srce/children (:ctx parent))))))
+    ((:dispose! agents) parent)
+    (is (= #{(:id parent) (:id child)} (set @disposed))
+        "both teardowns ran, the child's before the parent's ctx was released")
+    (is (= [] (mapv :name (srce/children root))) "no ctx is left behind")
+    (is (= [] ((:list agents) root)) "and neither handle survives")
+    (is (= :kmet.app/unknown-agent
+           (error-type #((:dispose! agents) child)))
+        "the child's capability was spent by the cascade")))
+
+(deftest a-create-inside-a-create-is-refused
+  (let [{:keys [root agents]} (fixture)
+        _ ((:register-factory! agents)
+           root
+           (fn [child opts]
+             ;; a factory that decides to create another agent on the spot: the
+             ;; kernel is single-owner-threaded, so this is the interleaving the
+             ;; busy claim exists to refuse
+             ((:create! agents) child {})
+             {:id (:id opts) :ctx child :agent {} :session (constantly nil)
+              :dispose! (fn [] nil)}))
+        e (try ((:create! agents) root {}) nil (catch Exception e e))]
+    (is (= :kmet.app/agent-create-failed (:type (ex-data e))))
+    (is (= :kmet.app/create-busy (:type (ex-data (ex-cause e))))
+        "the inner create is refused rather than interleaved")
+    (is (= [] (mapv :name (srce/children root)))
+        "the outer create rolled back, and the inner one never attached")))
+
+(deftest resume-goes-through-the-factory
+  (let [{:keys [root agents]} (fixture)
+        calls (atom [])
+        _ ((:register-factory! agents) root (stand-in {:calls calls}))
+        handle ((:resume! agents) root "stored-session-id")]
+    (is (= {:resume "stored-session-id"} (dissoc (get-in @calls [0 :opts]) :id))
+        "the factory rebuilds the agent; the registry only passes the id on")
+    (is (= [(:id handle)] (map :id ((:list agents) root)))
+        "and the resumed handle is published like a created one")))
 
 (deftest a-failed-teardown-still-releases-the-ctx
   (let [{:keys [root log agents]} (fixture)

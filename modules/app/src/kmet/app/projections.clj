@@ -223,7 +223,11 @@
   "A `:projections` value over LOG (the `:sessions` service): `:enqueue!` and
    `:deliver!` append the queue facts, `:project` answers the derived state and
    `:inbox` just its inbox. Each service value owns its own cache, so composing
-   twice yields two caches and a disposed composition takes its cache with it."
+   twice yields two caches and a disposed composition takes its cache with it.
+
+   `:forget!` drops a session's cache entry: a deleted session is one this
+   service no longer sees, so nothing would ever fold it again, and the entry
+   would outlive the log it was built from."
   [log]
   (let [cache (atom {})
         append! (:append! log)]
@@ -232,7 +236,10 @@
      :deliver! (fn [session ids]
                  (append! session (deliver-entry ids)))
      :project (fn [session] (project cache session))
-     :inbox (fn [session] (:inbox (project cache session)))}))
+     :inbox (fn [session] (:inbox (project cache session)))
+     :forget! (fn [session]
+                (swap! cache dissoc (:id session))
+                nil)}))
 
 (defn- serve
   "The `:projections` row: the service over the injected log, provided into the

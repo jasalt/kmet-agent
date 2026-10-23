@@ -1000,13 +1000,48 @@ still in the inbox when the session resumes. `steer!` and `follow-up!` are the
 two targets; a refused target appends nothing and wakes nobody, and a dead
 handle neither sends nor appends.
 
+**Review found three holes, all in a lifetime.** `dispose!` ran the driver's
+teardown and then the release, so an agent with a subagent under it — a plain
+child ctx, which `detach!` refuses to release *around* — ended half-disposed:
+the teardown had run, the handle was still registered, and the exception left no
+caller able to finish the job. A disposal now cascades: the agents registered
+under the ctx go first (deepest first), so each child's release leaves its
+parent's ctx free; a release that still fails is reported and the capability is
+withdrawn anyway, because a handle outliving its ctx is a handle nobody can use.
+
+The same review caught a ctx riding an event: `:agent/created` carried the
+child ctx, and a ctx is cyclic, so a listener that logged its event would never
+return. The payload is `{:id :agent}` now — the id is the registry's key and the
+bare agent is what a consumer needs, which is the rule service values already
+follow ("nothing may carry a ctx").
+
+The third was the cache outliving its log: a deleted session's projection would
+never be folded again and would never be dropped, so `:forget!` names the drop
+(and only that — the cache still grows with live sessions, which is the id
+index's rule too).
+
+Two claims the docstrings made and nothing pinned are tests now: a create
+started from inside a create is refused (`:kmet.app/create-busy`) rather than
+interleaved — the factory that tries it *is* the test — and `resume!` hands the
+factory `{:resume id}` and publishes what comes back. A handle op that is
+present but not callable is a contract problem too, not a "not a function" from
+inside it.
+
+One boundary is recorded rather than fixed: a remount of `:agents` (a
+`:projections` provider swap restarts it) forgets its handles while their ctxs
+stay under the root — exactly as a remounted `:sessions` loses its id index. The
+driver is re-hosted with them at landing 7, and resume-by-id (landing 6) is what
+re-registers an agent that is still live: the registry is not the agent's
+durable record, the log is.
+
 Gate, met. Two agents created through one registry hold their own sessions and
 their own inboxes (a send to one appends to one log); a throwing factory and a
 malformed handle both leave no handle and no child ctx; a disposed handle leaves
-no tree line, takes its agent's own mounts with it, and cannot be disposed or
-sent to again; the inbox drops exactly the delivered ids and follows the active
-branch; an incrementally projected log equals a full fold of the same branch;
-and `kmet --app new --dump-state` shows both rows `:active`.
+no tree line, takes its agent's own mounts *and the agents created under it*
+with it, and cannot be disposed or sent to again; the inbox drops exactly the
+delivered ids and follows the active branch; an incrementally projected log
+equals a full fold of the same branch; and `kmet --app new --dump-state` shows
+both rows `:active`.
 
 Two drive-bys the changed-file gates surfaced, both left behind by `7d739cdb`
 (4c-iii-c part 2): ten loop test namespaces still required
@@ -1017,11 +1052,14 @@ red once it was. The three TUI selector tests' `(:refer-clojure :exclude
 finding, because the linter does not know the var; the helper is `pick` and the
 exclusion is gone, which is also what the 1.12 clash needed.
 
-Ledger: **566 source lines in two new namespaces** (`kmet.app.agents` 318,
-`kmet.app.projections` 248) and **560 test lines** (19 + 14 tests, 119
+Ledger: **620 source lines in two new namespaces** (`kmet.app.agents` 364,
+`kmet.app.projections` 256) and **628 test lines** (23 + 15 tests, 135
 assertions); two rows in `:bundle/minimal` (8 → 10), `memory-backend`'s
 `leaf-id` rename, and the loop's one-line delegate. Nothing was lifted except
-the three-line outcome rule; everything else is new bookkeeping.
+the three-line outcome rule; everything else is new bookkeeping. The cascade
+and `:forget!` are the review's dozen source lines and two tests, and both tests
+fail without their fix (checked by commenting the cascade out and by making
+`:forget!` a no-op).
 
 ### Landing 4d settled
 

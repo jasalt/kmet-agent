@@ -23,6 +23,15 @@
    agent, which is what a listing or a wire client needs and cannot dispose
    with.
 
+   **A disposal takes the subtree with it.** The ctx tree under an agent's ctx
+   is this registry's too, and a subagent created under it is a child ctx that
+   the kernel's `detach!` would refuse to release around — so `dispose!`
+   disposes the agents registered under it (deepest first) before its own. A
+   release that fails is reported and the capability withdrawn anyway: a handle
+   outliving its ctx is a handle nobody can use. Disposing a handle twice is
+   `:kmet.app/unknown-agent`, not a no-op — the capability was spent by the
+   first call.
+
    **Creation is serialized and rolls back.** A failed factory leaves no handle
    and no child context: the ctx is disposed and detached in the same breath, so
    nothing observes a half-built agent. The kernel is single-owner-threaded
@@ -126,12 +135,21 @@
           (recur))))))
 
 (defn- release-subtree!
-  "Release CHILD's mounts, then the ctx itself — the rollback a failed creation
+  "Release CTX's mounts, then the ctx itself — the rollback a failed creation
    and a disposal share. `detach!` refuses while a mount remains, so the order
    is the kernel's rule, not a preference."
   [ctx]
   (srce/dispose-subtree! ctx)
   (srce/detach! ctx))
+
+(defn- subtree-ctxs
+  "CTX's descendant ctxs, parents before children and eagerly: a disposal
+   mutates the tree it is walking, so the walk cannot be a lazy seq."
+  [ctx]
+  (reduce (fn [acc child]
+            (into (conj acc child) (subtree-ctxs child)))
+          []
+          (srce/children ctx)))
 
 (defn- no-factory [ctx]
   (throw (ex-info "no agent factory is registered: mount a loop driver (`:agentLoop`) that registers one"
@@ -208,7 +226,9 @@
                                    (-> s
                                        (assoc-in [:handles id] handle)
                                        (update :order conj id))))
-                    (emit! scope :agent/created {:id id :agent (:agent handle) :ctx child})
+                    ;; the id and the agent, never the ctx: a ctx is cyclic,
+                    ;; so a listener that logs its event would never return
+                    (emit! scope :agent/created {:id id :agent (:agent handle)})
                     handle)
                   (finally
                     (swap! state assoc :busy nil)))))
@@ -218,7 +238,38 @@
                     entry ((:enqueue! projections) (session-of handle) msg opts)]
                 (when-let [f (:send! handle)]
                   (f msg opts))
-                entry))]
+                entry))
+
+            (dispose! [handle]
+              (let [handle (live handle)
+                    id (:id handle)
+                    ;; the agents under this one go first: a subagent's ctx is
+                    ;; a child of its parent's, and detach! refuses while a
+                    ;; child ctx hangs there. Deepest first, so each release
+                    ;; leaves its parent's ctx free.
+                    under (into []
+                                (keep (into {} (map (juxt :ctx identity))
+                                            (vals (:handles @state))))
+                                (reverse (subtree-ctxs (:ctx handle))))]
+                (doseq [child under] (dispose! child))
+                (try
+                  ((:dispose! handle))
+                  (catch Throwable t
+                    ;; a failed teardown is reported, not thrown: the ctx is
+                    ;; released and the capability withdrawn either way, so
+                    ;; nothing is left half-owned
+                    (srce/log! scope :error "agent teardown failed" t)))
+                (try
+                  (release-subtree! (:ctx handle))
+                  (catch Throwable t
+                    (srce/log! scope :error "agent ctx release failed" t)))
+                (swap! state (fn [s]
+                               (-> s
+                                   (update :handles dissoc id)
+                                   (update :order (fn [order]
+                                                    (into [] (remove #{id}) order))))))
+                (emit! scope :agent/disposed {:id id :agent (:agent handle)})
+                nil))]
       {:register-factory!
        (fn [ctx factory]
          (when-not (fn? factory)
@@ -267,24 +318,7 @@
                                     (summary handle)))))
                         order)))
 
-       :dispose! (fn [handle]
-                   (let [handle (live handle)
-                         id (:id handle)]
-                     (try
-                       ((:dispose! handle))
-                       (catch Throwable t
-                         ;; a failed teardown must not leak the ctx: the agent
-                         ;; is released either way and the driver's error is
-                         ;; reported, not swallowed
-                         (srce/log! scope :error "agent teardown failed" t)))
-                     (release-subtree! (:ctx handle))
-                     (swap! state (fn [s]
-                                    (-> s
-                                        (update :handles dissoc id)
-                                        (update :order (fn [order]
-                                                         (into [] (remove #{id}) order))))))
-                     (emit! scope :agent/disposed {:id id :agent (:agent handle)})
-                     nil))
+       :dispose! dispose!
 
        :send! send!
 

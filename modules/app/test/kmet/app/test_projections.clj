@@ -165,6 +165,16 @@
     (is (= 1 (:extended ((:project other) session)))
         "a second service folds the same session itself, from its own cache")))
 
+(deftest forgetting-a-session-drops-its-fold
+  (let [{:keys [log projections session]} (fixture)]
+    (append! {:log log :session session} {:role :user :content "one"})
+    (append! {:log log :session session} (assistant))
+    (is (= 2 (:extended ((:project projections) session))))
+    ((:forget! projections) session)
+    (is (= 2 (:extended ((:project projections) session)))
+        "a deleted session has nothing left to fold, so its cache goes with it")
+    (is (nil? ((:forget! projections) session)) "and forgetting twice is harmless")))
+
 (deftest an-enqueue-needs-a-known-target-and-a-message
   (let [{:keys [log projections session]} (fixture)]
     (is (= :kmet.app/bad-queue-target
