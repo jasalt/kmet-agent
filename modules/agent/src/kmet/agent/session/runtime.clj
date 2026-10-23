@@ -160,7 +160,12 @@
                      port + build-context (session-runtime/default-ui-port)
      :agent-opts   — extra/overriding make-agent-state options (escape hatch
                      for tests and front-end-specific run options; the
-                     engine's session follows an overridden :session)
+                     engine's session follows an overridden :session).
+                     `:system-prompt-fn` rides here too: the builder the state
+                     calls on an active-tools change, defaulting to
+                     `kmet.agent.skills/build-system-prompt`, whose `:skills`
+                     default reads the process registry (kmet2's caller passes
+                     its own)
      :ctx          — the ctx the engine runs on: the caller names the ctx whose
                      `:tools` service is the table this engine lists and
                      dispatches through, and whose `:loop-stages` the run reads
@@ -193,6 +198,10 @@
         ;; but everything project-scoped — context files included — stays
         ;; with the launch dir
         runtime-cwd (or cwd (session/session-cwd sess) (str (fs/cwd)))
+        ;; the one builder this engine builds (and rebuilds) its prompt with:
+        ;; the state calls it when an active-tools change must re-render the
+        ;; prompt, so the two build sites below cannot disagree with it
+        system-prompt-fn (or (:system-prompt-fn agent-opts) skills/build-system-prompt)
         system-prompt-opts {:custom-prompt (cfg/get-custom-prompt config)
                             :append-prompt (cfg/get-append-system-prompt config)
                             :cwd runtime-cwd
@@ -201,8 +210,7 @@
                             :tools (loop-state/active-tools-for
                                     (loop-state/ctx-tool-table ctx)
                                     {:default-tools default-tools})}
-        system-prompt (apply skills/build-system-prompt
-                             (mapcat identity system-prompt-opts))
+        system-prompt (apply system-prompt-fn (mapcat identity system-prompt-opts))
         thinking (let [raw (:thinking config :off)]
                    (if (:reasoning model-rec)
                      (models/clamp-thinking-level model-rec raw)
@@ -220,10 +228,7 @@
                                      :provider provider
                                      :system system-prompt
                                      :system-prompt-opts system-prompt-opts
-                                    ;; the state rebuilds the prompt on an
-                                    ;; active-tools change; kmet1's builder is
-                                    ;; the process-bound wrapper
-                                     :system-prompt-fn skills/build-system-prompt
+                                     :system-prompt-fn system-prompt-fn
                                      :session sess
                                      :default-tools default-tools
                                      :context-window (or (:context-window model-rec)
@@ -381,7 +386,8 @@
   (let [ag (agent-state engine)
         opts (assoc @(:system-prompt-opts ag) :cwd cwd)]
     (reset! (:system-prompt-opts ag) opts)
-    (reset! (:system ag) (apply skills/build-system-prompt (mapcat identity opts)))))
+    (reset! (:system ag) (apply (or (:system-prompt-fn ag) skills/build-system-prompt)
+                                (mapcat identity opts)))))
 
 (defn apply-session-cwd!
   "Point the runtime at SESS's working directory (pi: createRuntime's cwd +

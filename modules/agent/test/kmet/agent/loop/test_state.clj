@@ -12,6 +12,7 @@
             [kmet.agent.tools.registry :as tools-registry]
             [kmet.agent.session.core :as session]
             [kmet.agent.loop.state :as state]
+            [kmet.agent.system-prompt :as system-prompt]
             [kmet.agent.loop :as loop]
             [kmet.agent.retry :as retry]
             [kmet.agent.loop.test-support :as support]))
@@ -454,3 +455,24 @@
              (#'retry/retry-decision
               {:err "prompt is too long" :retry-count 0 :max-retries 3
                :base-delay-ms 2000 :overflow-recovered false :has-session false})))))
+
+(t/deftest a-custom-system-prompt-fn-rebuilds-the-prompt
+  ;; An active-tools change must re-render the prompt through the builder the
+  ;; state was given — the seam the :systemPrompt row fills — not through a
+  ;; namespace.
+  (let [calls (atom [])
+        agent (support/make-agent-state
+               :system "base"
+               :system-prompt-opts {:tools []}
+               :system-prompt-fn (fn [& {:as opts}]
+                                   (swap! calls conj opts)
+                                   "rebuilt"))]
+    (state/set-active-tools! agent nil)
+    (t/is (= "rebuilt" @(:system agent)))
+    (t/is (= 1 (count @calls)) "the builder ran once")
+    (t/is (contains? (first @calls) :tools)
+          "with the state's options map, its tool selection included"))
+  (t/is (identical? system-prompt/build-system-prompt
+                    (:system-prompt-fn (support/make-agent-state)))
+        "and the default is the app's own builder, which a process-bound caller
+       replaces (kmet1's Engine passes skills/build-system-prompt)"))

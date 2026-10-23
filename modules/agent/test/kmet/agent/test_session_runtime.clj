@@ -511,6 +511,29 @@
       (is (= 2 @fired) "and it survives the first engine's disposal")
       (finally (dereg)))))
 
+(deftest test-an-engine-builds-every-prompt-with-one-builder
+  ;; The Engine resolves the builder once — the caller's (kmet2's :systemPrompt
+  ;; row) or the process wrapper — and the initial build, a cwd move and the
+  ;; state's active-tools rebuild all go through it, so one engine cannot hold a
+  ;; prompt built by one rule and rebuilt by another.
+  (let [dir (str "target/test-prompt-fn-" (System/currentTimeMillis))
+        sess (session/create-session dir {:cwd (str (fs/cwd))})
+        calls (atom 0)
+        engine (rt/bootstrap (test-config)
+                             {:session sess
+                              :ctx (app/ctx)
+                              :agent-opts {:system-prompt-fn
+                                           (fn [& _] (swap! calls inc) "custom-prompt")}})]
+    (try
+      (is (= "custom-prompt" @(:system (rt/agent-state engine)))
+          "the initial build uses the caller's builder")
+      (is (= 1 @calls))
+      (rt/apply-session-cwd! engine (session/create-session dir {:cwd "/"}))
+      (is (= "custom-prompt" @(:system (rt/agent-state engine)))
+          "and so does a cwd move")
+      (is (= 2 @calls))
+      (finally (rt/dispose! engine)))))
+
 (deftest test-two-engines-do-not-cross-contaminate
   (let [dir1 (str "target/test-multi-engine-a-" (System/currentTimeMillis))
         dir2 (str "target/test-multi-engine-b-" (System/currentTimeMillis))

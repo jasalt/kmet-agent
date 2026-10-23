@@ -77,7 +77,11 @@ its namespace does not — so this tree is what remains. `kmet.agent.version`
 (`kmet.agent.debug`, `.config-schema`, `.event-bus`, `.tools.util`, 4b-ii's
 prep), and since 4f the whole tool layer — `kmet.agent.tools.*` and
 `kmet.agent.config` — which is app's now, handle-parameterized, with kmet1's
-default installed from `app-runtime`.
+default installed from `app-runtime`. 7a has since moved the loop the same way
+(namespaces kept): `kmet.agent.loop` and its submodules, `kmet.agent.compaction.*`,
+and the three leaves the loop reaches for — `.model-resolver`,
+`.project-context`, `.git-packages` — so this tree is now kmet1's front ends,
+its resource registries and the Engine.
 
 ```
 kmet/agent/
@@ -89,9 +93,11 @@ kmet/agent/
 ├── jvm_main.clj        — the JVM artifact's AOT entry point (delegates to
 │                         core.clj, i.e. the bootstrap)
 ├── (config.clj)        — settings loading; moved to `modules/app` at 4f
-├── project_context.clj — project context files (AGENTS.md/CLAUDE.md)
-├── app_runtime.clj     — the app root ctx, and the loop's stage map (on the
-│                         ctx)
+├── (project_context.clj) — project context files; moved to `modules/app` at 7a
+├── app_runtime.clj     — kmet1's process shim: the app root ctx it boots, the
+│                         registry façade over the services, `child-ctx`, and
+│                         `refresh-stages!` (`/reload`). The loop's stage map
+│                         itself is app's (`kmet.app.loop.stages`)
 ├── extensions/         — what the extension runtime still needs from kmet1:
 │   └── services.clj    — kmet1's binding of the host's services: the app
 │                         root's handle and ctx, plus the commands/prompts/
@@ -112,23 +118,18 @@ kmet/agent/
 ├── prompts.clj         — prompt-template resources
 ├── skills.clj          — skill resources, discovery and registration (the
 │                         prompt builder itself is app's `system_prompt.clj`)
-├── model_resolver.clj  — model pattern/CLI resolution
+├── (model_resolver.clj) — model pattern/CLI resolution; moved at 7a
 ├── packages.clj        — package/resource resolution (local + managed git)
 ├── packages_cli.clj    — the install/remove/update/list/config CLI
-├── git_packages.clj    — git source parsing + managed checkouts
-├── loop.clj            — the agent loop driver (public: make-agent-state,
-│   │                     run-agent-turn, cancel-turn)
-│   └── loop/           — loop submodules, a DAG pinned by test-layer-guard:
-│       ├── message.clj     message constructors + wire shapes
-│       ├── state.clj       agent state, event routing, queue writes
-│       ├── completion.clj  LLM request construction + provider call
-│       └── tool_exec.clj   tool-call prep, hooks + the permission gate,
-│                           batch execution
-├── compaction/         — the compaction subsystem
-│   ├── core.clj        — what compaction is: token estimation, cut point,
-│   │                     serialization, summarization/branch prompts
-│   └── stage.clj       — when the loop runs it: proactive/reactive triggers,
-│                         summarization call + retry, session replacement
+├── (git_packages.clj)  — git source parsing + managed checkouts; moved at 7a
+├── (loop.clj)          — the agent loop driver (`kmet.agent.loop`, public:
+│                         make-agent-state, run-agent-turn, cancel-turn);
+│                         moved at 7a
+├── (loop/)             — loop submodules — `message`, `state`, `completion`,
+│                         `tool_exec` — moved at 7a; the DAG is still pinned by
+│                         test-layer-guard, which scans both trees
+├── (compaction/)       — the compaction subsystem (`core`, `stage`); moved at
+│                         7a
 ├── (retry.clj)         — retry decision stage; moved to `modules/app` at
 │                         4b-ii-b
 ├── (loop_guard.clj)    — repeat-loop guard stage; moved to `modules/app` at

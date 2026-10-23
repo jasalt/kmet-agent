@@ -935,7 +935,7 @@ pipeline both callers use:
   surface is its handle's), `get-all-tools`, `get-tool`; and
   `modules/agent/src/kmet/agent/tools/core.clj` — kmet1's arity-less façade
   over that same handle, resolved per call.
-- `modules/agent/src/kmet/agent/loop.clj` — run-level bindings (incl.
+- `modules/app/src/kmet/agent/loop.clj` — run-level bindings (incl.
   `run-code/*enabled-tools-fn*`, `run-code/*tool-hooks*` and the per-batch
   `run-code/*assistant-message*`) + `active-tools` / `set-active-tools!`;
   `execute-tool-calls-*` (what the bridge must not route through); the

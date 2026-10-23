@@ -119,7 +119,8 @@
   "Re-seat the app root's loop stages with the builtin defaults
    (`kmet.app.loop.stages/refresh!`), so a reloaded guard or retry stage reaches
    the next attempt; an in-flight attempt keeps the map it read. `/reload` calls
-   it; a ctx that names its own stage atom re-seats that one."
+   it: the process names the ctx a refresh targets, and a run that must be
+   re-seated calls `kmet.app.loop.stages/refresh!` on its own."
   []
   (loop-stages/refresh! (ctx)))
 
