@@ -61,7 +61,12 @@
      :agent    the bare agent (non-nil), what `get` and `list` answer with
      :session  a thunk returning the live session (a session switch moves it)
      :dispose! the factory's teardown: abort the turn, drain the queue. The
-               registry releases the child context after it returns."
+               registry releases the child context after it returns.
+
+   `:send!` is the one op called with more than the message: the registry
+   hands it the queued entry too (`:entry` in the opts), because the driver is
+   what knows when the message reached its run and must append the delivery
+   fact the inbox folds."
   {:id (fn [id _ handle] (= id (:id handle)))
    :ctx (fn [_ child handle] (identical? child (:ctx handle)))
    :agent (fn [_ _ handle] (some? (:agent handle)))
@@ -273,8 +278,11 @@
             (send! [handle msg opts]
               (let [handle (live handle)
                     entry ((:enqueue! projections) (session! handle) msg opts)]
+                ;; the entry rides along: the driver is what knows when the
+                ;; message reached its run, so it appends the delivery the
+                ;; inbox folds
                 (when-let [f (:send! handle)]
-                  (f msg opts))
+                  (f msg (assoc opts :entry entry)))
                 entry))
 
             (dispose! [handle]

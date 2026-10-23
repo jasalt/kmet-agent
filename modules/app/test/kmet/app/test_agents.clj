@@ -312,8 +312,9 @@
         entry ((:send! agents) handle "hello" {:target :next-turn})]
     (is (= :enqueue (get-in entry [:data :op])) "the send is a log fact")
     (is (= 1 (count ((:entries log) session))))
-    (is (= [["hello" {:target :next-turn}]] @sent)
-        "and only then the live handle is woken")
+    (is (= [["hello" {:target :next-turn :entry entry}]] @sent)
+        "and only then the live handle is woken, with the entry the driver
+         deliveries")
     (is (= [(:id entry)]
            (map :id (get-in ((:inbox agents) root handle) [:next-turn])))
         "the agent's inbox reads its own session")

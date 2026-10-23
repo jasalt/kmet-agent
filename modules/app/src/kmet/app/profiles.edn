@@ -33,6 +33,10 @@
           ;; at landing 7), so `create!` has no factory until one mounts.
           {:id :projections :plugin kmet.app.projections/plugin}
           {:id :agents :plugin kmet.app.agents/plugin}
+          ;; The loop as the driver (7a): it registers the :agents factory, so
+          ;; create! publishes a runnable agent — a state over the agent's ctx,
+          ;; its own session, and the :systemPrompt row's builder.
+          {:id :agent-loop :plugin kmet.app.loop.driver/plugin}
           ;; The delivery seam for a permission `:ask`. The policy itself is
           ;; NOT here: a policy decides per agent, so it mounts on the agent's
           ;; ctx (the kernel forbids a child shadowing a service its ancestor

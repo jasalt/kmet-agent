@@ -91,7 +91,7 @@
 (deftest dump-config-prints-the-built-in-composition
   (let [{:keys [code out]} (run-main ["--dump-config"])]
     (is (zero? code))
-    (is (str/starts-with? out "profile :tui rows=11 patches=0")
+    (is (str/starts-with? out "profile :tui rows=12 patches=0")
         (str "the bundle: the bus, the four registries, the prompt builder, the"
              " session log and its storage, the projections, the agent registry"
              " and the approval seam"))
@@ -112,7 +112,7 @@
     (try
       (let [{:keys [code out]} (run-main ["--dump-config" "--patch" path])]
         (is (zero? code))
-        (is (str/starts-with? out "profile :tui rows=12 patches=1"))
+        (is (str/starts-with? out "profile :tui rows=13 patches=1"))
         (is (str/includes? out ":app/sample"))
         (is (str/includes? out "inject={:tools nil}"))
         (is (str/includes? out "config={:a 1, :b {:c 2}}")
@@ -139,7 +139,7 @@
     (is (zero? code))
     (is (str/starts-with? out "[:app]")
         "the root frame, at the origin of every unit path")
-    (is (str/includes? out "children=11") "the eleven composition rows")
+    (is (str/includes? out "children=12") "the twelve composition rows")
     (is (str/includes? out ":active"))
     (is (str/includes? out "provides=[commands]"))
     (is (str/ends-with? out "\n"))
@@ -193,7 +193,7 @@
   (let [{:keys [code err]} (run-main ["hello"])]
     (is (= 1 code))
     (is (str/includes? err
-                       (str "booted 11 plugin rows (11 fibers, services: agents"
+                       (str "booted 12 plugin rows (12 fibers, services: agents"
                             " approvals commands events projections prompts"
                             " sessionPersistence sessions skills system-prompt"
                             " tools)"))

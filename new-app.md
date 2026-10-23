@@ -866,7 +866,7 @@ Each is independently shippable and gated.
 | 4f | **landed** — **The tool layer into `app`**, in five shippable steps: `tools/bash-output`, `tools/bash-executor`, the seven tool bodies (`tool`, `bash`, `edit`, `write`, `read`, `invoke`, `run-code`), `kmet.agent.config`, then `tools/registry` + `tools/config` + `tools/core`. The tool layer now lives in `app` with its namespaces kept — the one exception is kmet1's arity-less façade, which the review moved back to `agent`; `app` declares the SCI backend the sandbox mints contexts with. The one behavioral change: the registry took its handle as a first parameter, so no app namespace requires a rank-4 one, and kmet1's convenience arities moved to a rank-4 façade (`kmet.agent.tools.core`) that supplies `(app-runtime/registry)`. The run_code record is built per registry, so its sandbox seams close over the caller's handle | `kmet.test-module-deps` green after every step (both directions, plus the library view); `bb test` green; `kmet --app old --version`/`--list-models` load; `kmet.agent.tools.registry` has no arity that resolves a handle it was not given |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` **landed as a registry at 4c-iii-b** — landing 6 gives it agents a driver created — + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
-| 7a | loop re-hosted as a driver plugin (`:agentLoop`), registering the `:agents` factory; the `:systemPrompt` row with its first reader | two agents created through `create!` each run a turn and settle once; `--dump-state` shows the driver active | **steps 1–2d landed** (the stage map, the three leaves and the whole cluster are `app`'s, names kept) and **7a-ii is two options in** (the resource load and input expansion are the caller's); what is left is the driver itself, with the Engine's `commands` dispatch and default builder as its two named residuals; see § "Landing 7a" |
+| 7a | loop re-hosted as a driver plugin (`:agentLoop`), registering the `:agents` factory; the `:systemPrompt` row with its first reader | two agents created through `create!` each run a turn and settle once; `--dump-state` shows the driver active | **landed**: the stage map, the leaves and the whole cluster are `app`'s (names kept), 7a-ii made the resource load and input expansion the caller's, the `:systemPrompt` row reads over `:skills`, and `:agent-loop` registers the `:agents` factory with a runnable handle; the composition-level run waits on the extension-host row (4b-ii-b's tail); the Engine's `commands` dispatch and its wrapper fallback are the two named residuals; see § "Landing 7a" |
 | 7b | `:events` re-pointed at the app's bus; `:agent-settled` as the awaited boundary; profiles as row+patch layers; presets = bundles | pi-alignment green; a tool swaps mid-session at the turn boundary; a profile stacking a preset bundle boots | |
 
 **The order is not the table's order.** 4b-ii cannot precede 4c-ii: the host
@@ -1159,6 +1159,51 @@ resolves — where the wrapper's raw read could list a duplicate.
 
 Gate, met: full `bb test` 4,152 / 24,382 green; lint 0/0; format clean; `bb
 check` compiles; `--dump-state` prints eleven rows.
+
+**The driver landed: `:agent-loop`, and the run derivation moved down with
+it.** `kmet.app.loop.driver` is the loop's driver in two halves.
+
+`agent-state` is the whole option derivation a run starts from — provider and
+model, the tool table from the ctx's `:tools`, the prompt (from the
+`:systemPrompt` row), the compaction/retry/loop-guard settings, the extension
+hook chains, the event sink — lifted out of kmet1's `bootstrap` and called by
+it. That lift is the point: a run option wired in the Engine and forgotten in
+the driver is the drift the app layer exists to prevent, and the alternative
+(a second copy for the driver that outlives the Engine) would have built the
+duplication exactly where it is hardest to see. The Engine's require list lost
+`project-context` and `tools.registry` with it, and gained nothing.
+
+The row registers the `:agents` factory, and the handle it publishes is a
+runnable agent: the state over the registry's child ctx, its own session (over
+the `:sessions` log, in the cwd-encoded directory the config names), the
+row's builder, and a run that starts on the first message and settles on its
+own thread. `send!` is the wake-up, never a block: while a run is live the
+message goes into the loop's own queue (`:next-step` mid-turn, `:next-turn`
+at the boundary). `--dump-state` shows twelve rows and `[:app :agent-loop]
+fiber#11 :active`.
+
+**Sending grew one thing, and the inbox stays a queue.** The registry's
+`send!` appends the enqueue fact and then wakes the handle — but the delivery
+fact is the *driver's* to append, because only it knows the message reached
+its run. So the handle's `:send!` now receives the entry too (`:entry` in the
+opts, additive), and the driver appends `:deliver!` when it hands the text to
+the run or its queue. Without that, a server's inbox would grow forever: the
+log is the record, but a record that never says "delivered" is a leak.
+
+**What the composition still needs, and why the gate is the driver's.** In a
+pure kmet2 boot the extension host's services are unbound — kmet1's shim binds
+them (`extensions/bind-services!`), and the host-as-a-row is 4b-ii-b's tail.
+The driver's tests stand the binding up the way that row will, and the
+composition-level run waits for it; that is the one item between this and a
+`kmet --app new` server that serves a turn. Also found on the way: the loop
+cannot run over `kmet.app.sessions/memory-backend`'s session (a nil-message NPE
+from the append path) — it is a registry-shaped fixture, not a store session,
+so the driver's test uses the real EDNL backend under `target/`.
+
+Gate, met at the driver: two agents created through `create!` each run a turn
+and settle exactly once, with their own contexts; `--dump-state` shows the
+driver active. Full `bb test` 4,157 / 24,406 green; lint 0/0; format clean;
+`bb check` compiles.
 
   What the Engine still reaches for in `kmet.agent.*` is now two things, and
   neither is a lift: `commands` ×3 for **extension-command dispatch** (the

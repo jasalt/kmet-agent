@@ -37,11 +37,11 @@
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
+            [kmet.app.loop.driver :as driver]
             [kmet.agent.debug :as debug]
             [kmet.libs.concurrent :as concurrent]
             [kmet.ai.models :as models]
             [kmet.agent.commands :as commands]
-            [kmet.agent.project-context :as context]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.compaction.stage :as agent-compact]
@@ -51,8 +51,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
-            [kmet.srce.core :as srce]
-            [kmet.agent.tools.registry :as tools]))
+            [kmet.srce.core :as srce]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
                    cwd expand-input turn-running? compaction-queued
@@ -82,47 +81,6 @@
    loop's own state stays the loop's."
   [engine]
   (some-> (agent-state engine) loop-state/tool-table))
-
-(defn- extension-before-tool-call
-  "Chain extension tool-call hooks (pi: beforeToolCall) — the runtime wires
-   them for every front end, so write-reject / edit-warn hooks fire in
-   headless runs too. Every hook runs; the value is nil | {:args ...} | the
-   first blocking hook's result verbatim, so its :terminate reaches the call's
-   block result (a later block or rewrite is ignored once blocked)."
-  [ctx]
-  (loop [hooks (extensions/get-tool-call-hooks)
-         blocked nil
-         args (:args ctx)]
-    (if-let [hook (first hooks)]
-      (let [r (try (hook (assoc ctx :args args))
-                   (catch Exception e
-                     {:block true
-                      :reason (str "tool-call hook error: " (ex-message e))}))]
-        (cond
-          (:block r)
-          (recur (next hooks) (or blocked r) args)
-          (contains? r :args)
-          (recur (next hooks) blocked (:args r))
-          :else
-          (recur (next hooks) blocked args)))
-      (or blocked (when (not= args (:args ctx)) {:args args})))))
-
-(defn- extension-after-tool-call
-  "Chain extension tool-result hooks (pi: afterToolCall). Returns the
-   (possibly rewritten) result."
-  [ctx]
-  (reduce (fn [result hook]
-            (if-let [r (try (hook (assoc ctx :result result
-                                         :is-error (:is-error result false)))
-                            (catch Exception e
-                              {:content (str "tool-result hook error: " (ex-message e))
-                               :is-error true}))]
-              (cond-> result
-                (:content r) (assoc :content (:content r))
-                (contains? r :is-error) (assoc :is-error (:is-error r)))
-              result))
-          (:result ctx)
-          (extensions/get-tool-result-hooks)))
 
 (defn- default-ui-port
   "The capability map a front end without its own port gets: the headless
@@ -194,7 +152,7 @@
    print mode used to wire by hand, seeds the scoped-model list, and installs
    the extension runtime handle (session, context sink, UI registry)."
   [config opts]
-  (let [{:keys [model provider cwd ui-context mode has-ui agent-opts ctx
+  (let [{:keys [model provider ui-context mode has-ui agent-opts ctx
                 load-resources! expand-input]} opts
         ;; the resolved session (the layout/print-mode policy output); any
         ;; :agent-opts override is folded back in below via the agent state
@@ -207,14 +165,6 @@
         ;; the caller's resources land once the ctx is named, before the prompt
         ;; is built from them
         _ (when load-resources! (load-resources!))
-        provider (or provider (cfg/get-provider config))
-        model (or model (models/resolve-config-model config))
-        model-rec (models/get-model provider model)
-        default-tools (tools/resolve-default-tools (cfg/get-default-tools config))
-        ;; the prompt's cwd line is the runtime cwd (the resumed session's),
-        ;; but everything project-scoped — context files included — stays
-        ;; with the launch dir
-        runtime-cwd (or cwd (session/session-cwd sess) (str (fs/cwd)))
         ;; the one builder this engine builds (and rebuilds) its prompt with:
         ;; the state calls it when an active-tools change must re-render the
         ;; prompt, so the two build sites below cannot disagree with it. The
@@ -224,78 +174,26 @@
         system-prompt-fn (or (:system-prompt-fn agent-opts)
                              (srce/get ctx :system-prompt)
                              skills/build-system-prompt)
-        system-prompt-opts {:custom-prompt (cfg/get-custom-prompt config)
-                            :append-prompt (cfg/get-append-system-prompt config)
-                            :cwd runtime-cwd
-                            :context-files (context/load-project-context-files
-                                            (cfg/get-agent-dir) (str (fs/cwd)))
-                            :tools (loop-state/active-tools-for
-                                    (loop-state/ctx-tool-table ctx)
-                                    {:default-tools default-tools})}
-        system-prompt (apply system-prompt-fn (mapcat identity system-prompt-opts))
-        thinking (let [raw (:thinking config :off)]
-                   (if (:reasoning model-rec)
-                     (models/clamp-thinking-level model-rec raw)
-                     raw))
-        retry-settings (cfg/get-retry-settings config)
-        loop-guard-settings (cfg/get-loop-guard-settings config)
         subscribers (atom [])
-        ;; select-keys omits an absent setting but keeps an explicit nil, so
-        ;; make-agent-state's own defaults survive an absent one
-        timeout-opts (select-keys config [:http-idle-timeout-ms :http-total-timeout-ms])
-        agent-state (apply agent/make-agent-state
-                           (mapcat identity
-                                   (merge
-                                    {:model model
-                                     :provider provider
-                                     :system system-prompt
-                                     :system-prompt-opts system-prompt-opts
-                                     :system-prompt-fn system-prompt-fn
-                                     :session sess
-                                     :default-tools default-tools
-                                     :context-window (or (:context-window model-rec)
-                                                         (:context-window config))
-                                     :compact-reserve-tokens (or (:compact-reserve-tokens config)
-                                                                 16384)
-                                     :compact-model-overrides (:compact-model-overrides config)
-                                     :branch-summary-reserve-tokens
-                                     (or (:reserve-tokens (cfg/get-branch-summary-settings config))
-                                         16384)
-                                     :compact-token-threshold (:compact-token-threshold config)
-                                     :auto-compact (get config :auto-compact true)
-                                     :steering-mode (or (:steering-mode config) :all)
-                                     :follow-up-mode (or (:follow-up-mode config) :one-at-a-time)
-                                     :keep-recent-tokens (or (:keep-recent-tokens config) 20000)
-                                     :block-images (cfg/get-block-images config)
-                                     :thinking thinking
-                                     ;; pi: retry settings (settings.edn :retry
-                                     ;; block — enabled gates max-retries to 0)
-                                     :max-retries (if (:enabled retry-settings)
-                                                    (:max-retries retry-settings)
-                                                    0)
-                                     :base-delay-ms (:base-delay-ms retry-settings)
-                                     :max-agent-delay-ms (:max-agent-delay-ms retry-settings)
-                                     ;; Repeat-loop guard (kmet-specific):
-                                     ;; settings.edn :loop-guard block — enabled
-                                     ;; gates threshold to 0 (off)
-                                     :loop-guard-enabled (:enabled loop-guard-settings)
-                                     :loop-guard-threshold (:threshold loop-guard-settings)
-                                     :thinking-loop-guard-enabled
-                                     (get config :thinking-loop-guard-enabled true)
-                                     :before-tool-call extension-before-tool-call
-                                     :after-tool-call extension-after-tool-call
-                                     :on-event (fn [ev]
-                                                 (doseq [f @subscribers]
-                                                   (try (f ev)
-                                                        (catch Throwable t
-                                                          (debug/log "session subscriber failed: "
-                                                                     t)))))}
-                                    timeout-opts
-                                    agent-opts
-                                    ;; the state reads the ctx resolved
-                                    ;; above, so its tool table and the
-                                    ;; prompt's are the same table
-                                    {:ctx ctx})))
+        ;; the run's pieces, derived once in the app layer: provider and model
+        ;; (the config's, or the caller's override), the runtime cwd, the tool
+        ;; table from the ctx's `:tools`, and the prompt from the builder this
+        ;; engine resolved above. kmet2's driver derives its state the same
+        ;; way, so a run option cannot be wired here and forgotten there.
+        {:keys [state] runtime-cwd :cwd}
+        (driver/agent-state config ctx
+                            {:session sess
+                             :model model
+                             :provider provider
+                             :system-prompt-fn system-prompt-fn
+                             :on-event (fn [ev]
+                                         (doseq [f @subscribers]
+                                           (try (f ev)
+                                                (catch Throwable t
+                                                  (debug/log "session subscriber failed: "
+                                                             t)))))
+                             :agent-opts agent-opts})
+        agent-state state
         _ (loop-state/init-scoped-models! agent-state config)
         engine (map->Engine {:agent-state (atom agent-state)
                              :session (atom (:session agent-state))
