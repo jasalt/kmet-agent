@@ -9,27 +9,37 @@
    It provides no service: the binding *is* the effect, and the handle becomes a
    service when something reads it (the modes' UI at landing 5), not before.
 
-   The host's *resource* registries (`:commands`, `:prompts`, `:skills`) stay
-   unbound: installing an extension is still kmet1's, and those registries'
-   loaders are policy the modes take with them (landing 5). A contribution with
-   nowhere to go is refused by name (`kmet/no-resource-registries`) instead of
-   dropped.
+   The binding **overlays** what it replaces: this row's `:registry` and `:ctx`
+   win, and every other key the previous owner bound carries over. That is what
+   keeps a process host working — kmet1 binds the host at load with the resource
+   registries its extension installers write to, and it boots this same
+   composition as its root, so a row that replaced the whole binding would take
+   commands, prompts and skills away from every extension loaded afterwards
+   (`:kmet/no-resource-registries`, reported as a failed extension).
 
-   The binding is process-wide and one owner at a time, so mounting this row
-   replaces whatever was bound and disposing it puts that back — a second
-   composition (or a test) cannot leave the host pointing at a dead root."
+   A composition that inherits no resource registries has none: in a kmet2
+   process installing an extension is still kmet1's, and those registries'
+   loaders are policy the modes take with them (landing 5). A contribution with
+   nowhere to go is refused by name instead of dropped.
+
+   The binding is process-wide and one owner at a time, so disposing this row
+   puts back what it replaced — a second composition (or a test) cannot leave
+   the host pointing at a dead root."
   (:require [kmet.agent.extensions.core :as extensions]
             [kmet.app.registries :as registries]
             [kmet.srce.core :as srce]))
 
 (defn- serve
-  "Bind the host's services for this composition. Returns the disposer that
-   restores the binding it replaced."
+  "Bind the host's services for this composition, over whatever was bound: this
+   row owns the host's own handle and mount site, the previous owner keeps the
+   rest (see the ns docstring). Returns the disposer that restores it."
   [ctx _config]
-  (let [host-registry (registries/service)
-        previous (extensions/bind-services! (fn [] {:registry host-registry
-                                                    :ctx (:parent ctx)}))]
-    (fn [] (extensions/bind-services! previous))))
+  (let [base (extensions/host-binding)
+        host-registry (registries/service)]
+    (extensions/bind-services!
+     (fn [] (merge (when base (base))
+                   {:registry host-registry :ctx (:parent ctx)})))
+    (fn [] (extensions/bind-services! base))))
 
 (srce/defplugin plugin
   {:name :extensions

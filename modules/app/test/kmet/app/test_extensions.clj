@@ -56,3 +56,24 @@
                   nil
                   (catch Exception e (:type (ex-data e)))))
           "disposing the last one unbinds: a host with no owner is a named error"))))
+
+(deftest a-process-hosts-resource-registries-survive-the-row
+  ;; kmet1 binds the host at load with the registries its extension installers
+  ;; write to, and boots this same composition as its root. The row may not take
+  ;; them away: every extension that contributes a command, prompt or skill
+  ;; would fail to load with "this owner bound no <kind> registry".
+  (with-restored-host
+    (fn []
+      (let [skills {:register! (fn [_ _] nil) :load-dir! (fn [_ _] nil)}
+            host (fn [] {:registry nil :ctx nil
+                         :skills skills
+                         :deregister-owner! (fn [_] nil)})
+            _ (extensions/bind-services! host)
+            fiber (:fiber (mounted))]
+        (is (= skills (extensions/resources :skills))
+            "the host the process bound still answers for its resources")
+        (is (= [] (extensions/get-tool-call-hooks))
+            "while the host's own handle is this composition's")
+        (srce/dispose! fiber)
+        (is (identical? host (extensions/host-binding))
+            "and disposing it puts back the binding it overlaid")))))

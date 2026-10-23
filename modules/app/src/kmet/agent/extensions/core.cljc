@@ -225,6 +225,13 @@
     (reset! services* f)
     previous))
 
+(defn host-binding
+  "The binding fn as bound, unresolved — what an owner that inherits a process
+   host merges under its own keys (`kmet.app.extensions`), and what it restores
+   when it goes away."
+  []
+  @services*)
+
 (defn- services
   "The bound services; a host used before its owner bound it is an error, not
    a silent process default."

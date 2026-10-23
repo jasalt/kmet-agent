@@ -1380,6 +1380,24 @@ not with this row; recorded here because print mode is the first kmet2 path that
 walks into it. The mode's own test stubs a resolvable model, the way the
 composition test does.
 
+**Found by running it: the `:extensions` row was taking kmet1's host away.**
+`bb start` printed five `Failed to load extension … this owner bound no
+<kind> registry` warnings. kmet1 boots this same composition as its root, so the
+composition's `:extensions` row mounted *inside* kmet1 and replaced the binding
+kmet1 had made at load — the one carrying the `:commands`/`:prompts`/`:skills`
+registries its installers write to, and the registry router that routes a host
+tag to the service that owns it. Everything loaded before the row was fine;
+everything after it had nowhere to put a command. The row now **overlays**:
+its `:registry` and `:ctx` win, and every other key the previous binding
+supplied carries over (`extensions/host-binding` reads the binding unresolved —
+resolving it during a boot would re-enter the ctx delay that is booting). A
+composition with nothing bound still gets exactly its own two keys, so a
+contribution with nowhere to go is still refused by name. Pinned by
+`a-process-hosts-resource-registries-survive-the-row`; deleting the merge
+reproduces the warning verbatim. The alternative — kmet1 rebinding after the
+composition boots — would have been a process workaround for a row contract,
+and it only works because kmet1's root is a delay it can append to.
+
 Two review notes. The mode's listeners are scoped to the **app**, not to its
 agent, because print mode holds exactly one: a second concurrent agent in the
 same process would settle this mode's promise. That is exact today (`--profile
