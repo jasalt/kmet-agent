@@ -11,10 +11,12 @@
    the registering fiber is disposed (the disposer is the tool's removal).
 
    The tool *semantics* — the built-in map, schema normalization, selection for
-   a caller's surface — stay in `kmet.agent.tools.registry` (rank 4): the app
-   module holds the service and nothing above it knows which tools exist.
-   Until the loop runs on the app (landing 7) the only reader is the contract
-   test and the tool layer's explicit-argument reads."
+   a caller's surface — live beside it in `kmet.agent.tools.registry`, which
+   took every reader a handle as its first argument at landing 4f; the arity-less
+   forms resolve through a default cell kmet1 installs, so a kmet2 reader that
+   forgets the handle fails instead of reading another agent's tools. Until the
+   loop runs on the app (landing 7) the only readers are the contract test and
+   the tool layer's explicit-argument reads."
   (:require [kmet.app.registries :as registries]))
 
 (def service
