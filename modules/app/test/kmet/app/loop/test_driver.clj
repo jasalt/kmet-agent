@@ -7,9 +7,9 @@
             [clojure.test :refer [deftest is]]
             [kmet.agent.config :as cfg]
             [kmet.agent.session.backend :as backend]
-            [kmet.agent.event-bus :as event-bus]
             [kmet.ai.llm :as llm]
             [kmet.app.agents :as agents]
+            [kmet.app.events :as events]
             [kmet.app.extensions :as host]
             [kmet.app.loop.driver :as driver]
             [kmet.app.projections :as projections]
@@ -89,7 +89,7 @@
 (deftest an-agent-runs-a-turn-and-settles-once
   (let [{:keys [root agents]} (mounted)
         settles (atom [])
-        unsubscribe (event-bus/on-event :agent-settled (fn [ev] (swap! settles conj ev)))]
+        unsubscribe (events/on! root :agent-settled (fn [ev] (swap! settles conj ev)))]
     (try
       (with-stubbed-llm
         (fn [calls]
@@ -137,7 +137,7 @@
   ;; and settle once — one registry, two ctxs, two states.
   (let [{:keys [root agents]} (mounted)
         settles (atom [])
-        unsubscribe (event-bus/on-event :agent-settled (fn [ev] (swap! settles conj ev)))]
+        unsubscribe (events/on! root :agent-settled (fn [ev] (swap! settles conj ev)))]
     (try
       (with-stubbed-llm
         (fn [_calls]

@@ -868,7 +868,7 @@ Each is independently shippable and gated.
 | 5 | **The first increment is print mode, and print mode cannot be written before 7b-i**: it is the first client of the `:agents` factory rather than the Engine, but its stream *and* its exit result are `:agent-settled` — kmet1's print mode is a `runtime/subscribe!` consumer, and kmet2 has no Engine to subscribe to. Then `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; the rest of the modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` **landed as a registry at 4c-iii-b** — landing 6 gives it agents a driver created — + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
 | 7a | loop re-hosted as a driver plugin (`:agentLoop`), registering the `:agents` factory; the `:systemPrompt` row with its first reader | two agents created through `create!` each run a turn and settle once; `--dump-state` shows the driver active | **landed**: the stage map, the leaves and the whole cluster are `app`'s (names kept), 7a-ii made the resource load and input expansion the caller's, the `:systemPrompt` row reads over `:skills`, and `:agent-loop` registers the `:agents` factory with a runnable handle; the composition-level gate is met too — `:extensions` binds the host, and a composed agent runs a turn (`kmet.app.test-composition-run`); the Engine's `commands` dispatch and its wrapper fallback are the two named residuals; see § "Landing 7a" |
-| 7b-i | **The events contract — the head of landing 5, not its tail**: the loop's boundary events go to the ctx's `:events` service instead of kmet1's process bus, and `:agent-settled` is the awaited boundary a front end subscribes to. The coupling points this way because a mode is a *listener*: today the loop reports to `:on-event`, which the driver passes nil, and to `kmet.agent.event-bus`, which is why the composition test has to listen there. One call site to re-point (`emit-boundary!`); the subscription comes from the composition's scope instead of an Engine handle | a composed turn settles on the app's bus, and `kmet.app.test-composition-run` subscribes without kmet1's table |
+| 7b-i | **landed** — **The events contract — the head of landing 5, not its tail**: the loop dispatches on the kernel from the run's own ctx, so `:agent-settled` is an event a front end subscribes to at the app's scope, while kmet1's process table keeps hearing the same events (the extension ABI registers there; kmet1 boots the composition, so a run cannot tell the two apps apart — only the listeners differ). A boundary threads **one** decision through both: the kernel's accumulated map seeds the table's chain. The composition test no longer listens on kmet1's table | a composed turn settles on the app's bus, and `kmet.app.test-composition-run` subscribes without kmet1's table — **met**; see § "Landing 7b-i settled" |
 | 7b-ii | Profiles as row+patch layers; presets = bundles. No listener coupling, so it lands whenever it is next in line | pi-alignment green; a tool swaps mid-session at the turn boundary; a profile stacking a preset bundle boots |
 
 **The order is not the table's order.** 7b's events half precedes landing 5:
@@ -1277,6 +1277,46 @@ driver active. Full `bb test` 4,157 / 24,406 green; lint 0/0; format clean;
   extension ABI; a re-point at retirement, not a policy cut) and `skills` for
   the **default prompt builder** — the stand-in the `:systemPrompt` row
   replaces, which is why it waits for the driver rather than moving now.
+
+### Landing 7b-i settled — the loop emits on the app's layer
+
+**Why the loop feeds both tables.** kmet1 boots the composition:
+`kmet.agent.app-runtime/ctx` is `kmet.app.runtime/boot` with `:profile :tui`, so
+a kmet1 process and a kmet2 process share the *same* root ctx. "Which app is
+this" is therefore not a question a run can ask — what differs is who listens:
+kmet1's modes subscribe through the Engine's `:on-event`, its extensions through
+`kmet.agent.event-bus`'s process table, and kmet2's front ends will subscribe on
+the kernel. So the loop dispatches on both and does not pretend to choose. The
+two tables hold different listeners, so nothing hears an event twice; the kernel
+dispatch resolves from the run's own ctx upward, which is what makes a listener
+at the app's scope hear what any agent under it did.
+
+**One boundary, one decision.** `:turn-end` and `:agent-before-settle` are the
+two events whose handlers *return* something, and two tables that each thread
+their own accumulation would hold two opinions that silently disagree — the
+class of bug this migration keeps finding. `emit-boundary!` gained a third
+arity: the loop runs the kernel's dispatch first and hands its accumulated map
+to the extension table as the seed, so a front end's `:continue` is visible to
+every extension handler that follows it, and the chain continues instead of
+starting over. (The pure fold is pinned in `kmet.agent.test-event-bus`; the loop
+case in `kmet.agent.loop.test-boundaries/test-a-boundary-decision-crosses-both-event-layers`,
+mutation-checked by passing a nil seed — the front end is still heard, the
+extension handler sees a blank slate, and only the second assertion fails.)
+
+Gate, met: `kmet.app.test-composition-run` now subscribes through
+`kmet.app.events/on!` at the booted root and receives `:agent-settled
+:completed` — the app's layer, not kmet1's process table — and the driver's
+tests do the same. Dropping the loop's kernel dispatch makes that test fail
+(`:completed` never arrives), so the subscription is testing the dispatch and
+not a promise someone else kept.
+
+**What this does not do.** kmet1's own emitters keep their table: the Engine's
+`:session-before-switch`/`:user-bash` and the interactive mode's
+`:session-start`/`:session-before-tree` are kmet1 code, and their kmet2
+equivalents arrive with the modes at landing 5. The extension ABI's
+*registration* (`kmet.agent.extensions.core`'s `:on-event`) still points at the
+process table, which is why extensions keep working in both apps; moving the ABI
+to the kernel is retirement's, not this landing's. Presets are 7b-ii.
 
 ### Landing 4c-iii-b settled
 

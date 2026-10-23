@@ -8,6 +8,7 @@
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.agent.event-bus :as event-bus]
+            [kmet.app.events :as events]
             [kmet.agent.session.core :as session]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
@@ -817,3 +818,34 @@
             "thinking streamed before the deadline survives the timeout"))
     (t/is (= :idle @(:status agent)) "run settles idle after retries exhausted")
     (t/is (some #(= :error (:type %)) @events) "terminal :error event emitted")))
+
+;; ─── Phase 7b-i: one boundary, one decision ───────────────────────────────
+
+(t/deftest test-a-boundary-decision-crosses-both-event-layers
+  ;; The loop dispatches an actionable boundary on the kernel first and hands
+  ;; that decision to the extension table as its seed (new-app.md, 7b-i), so a
+  ;; front end's contribution reaches an extension handler: one chain, not two
+  ;; opinions that silently disagree.
+  (let [{ctx :ctx} (support/test-ctx)
+        front-end-saw (atom [])
+        table-saw (atom [])
+        dispose-fe (events/on! ctx :turn-end
+                               (fn [ev] (swap! front-end-saw conj (:type ev))
+                                 {:kmet.test/marker true}))
+        dispose-table (event-bus/on-event :turn-end
+                                          (fn [ev] (swap! table-saw conj (:kmet.test/marker ev))))]
+    (try
+      (binding [support/*ctx* ctx]
+        (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                      llm/send-message
+                      (fn [opts]
+                        (future
+                          (when-let [on-text (:on-text opts)] (on-text "ok"))
+                          (when-let [on-done (:on-done opts)] (on-done :stop))
+                          :done))]
+          @(loop/run-agent-turn (support/make-agent-state)
+                                {:message "hi" :on-error (fn [_])})))
+      (t/is (= [:turn-end] @front-end-saw) "the app's layer hears the boundary")
+      (t/is (= [true] @table-saw)
+            "and the handler after it sees the front end's decision, not a blank slate")
+      (finally (dispose-fe) (dispose-table)))))

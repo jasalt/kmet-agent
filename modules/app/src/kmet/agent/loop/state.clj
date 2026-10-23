@@ -235,9 +235,15 @@ Be precise and concise in your responses."}}]
                     :ctx ctx}))
 
 (defn emit
-  "Route an event to the UI callback (:on-event) and the extension system
-   (event-bus/emit-event!). Extension listeners run inside emit-event!, which
-   catches per-listener exceptions so a broken extension can't kill the loop.
+  "Route an event to the UI callback (:on-event) and to the listeners of both
+   event layers a kmet process can have: the kernel's, resolved from the run's
+   own ctx upward (kmet2's `:events` row, so a listener registered at the app's
+   scope hears what any agent under it did), and kmet1's process-level table
+   (`event-bus/emit-event!`), which is where the extension ABI still registers.
+   The two hold different listeners, so one event reaches each listener once.
+
+   Both catches are their own: `emit-event!` reports a broken extension, the
+   kernel's `invoke!` reports a broken listener, and neither can kill the loop.
    The 2-arity routes a different map to each sink; it exists for pi's
    agent_end split, where the public event is decorated (e.g. :will-retry)
    but the extension runner's copy is emitted before the decoration
@@ -246,6 +252,7 @@ Be precise and concise in your responses."}}]
   ([agent ui-event ext-event]
    (when-let [cb (:on-event agent)]
      (cb ui-event))
+   (srce/emit! (:ctx agent) (:type ext-event) ext-event)
    (event-bus/emit-event! ext-event (:ctx agent))))
 
 (defn set-agent-status!

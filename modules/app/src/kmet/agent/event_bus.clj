@@ -23,7 +23,13 @@
    wire projections (`wire-event`, `wire-error` — transport, which belongs with
    the transport that serializes, not with the bus), so every kmet1 call site is
    unchanged, and holds kmet1's process-level table with its owner and scope —
-   the mechanism kmet2's `:events` service replaces by the ctx tree."
+   the mechanism kmet2's `:events` service replaces by the ctx tree.
+
+   Both tables are live for the length of the migration, and the loop feeds
+   both (new-app.md, 7b-i): its events go to the kernel from the run's own ctx
+   and to this table, which is where the extension ABI registers until it is
+   re-pointed. They hold different listeners, so nothing hears an event twice;
+   a boundary threads one decision through both (`emit-boundary!`'s seed)."
   (:require [kmet.agent.debug :as debug]
             [kmet.app.events :as events]
             [kmet.srce.core :as srce]))
@@ -231,17 +237,23 @@
    them. Handlers run in registration order. CTX scopes the emission like
    `emit-event!`. Returns the accumulated map — nil when no handler returned
    one.
+
+   ACC, the third arity, is a decision another layer already reached; it seeds
+   the accumulation, so a boundary this table hears second continues one chain
+   rather than starting a second (the loop hands over the kernel's, so a front
+   end's :continue is visible to every extension handler that follows it —
+   new-app.md, 7b-i).
    Throwing handlers are skipped and reported, same as emit-event!."
   ([event] (emit-boundary! event nil))
-  ([event ctx]
+  ([event ctx] (emit-boundary! event ctx nil))
+  ([event ctx acc]
    (check-ctx! "an emission's ctx" ctx)
    (let [entries (visible (get @listeners (:type event)) ctx)]
-     (when (seq entries)
-       (reduce (fn [acc {:keys [callback]}]
-                 (let [result (invoke-handler callback (if acc (merge event acc) event))]
-                   (if (map? result) (merge acc result) acc)))
-               nil
-               entries)))))
+     (reduce (fn [acc {:keys [callback]}]
+               (let [result (invoke-handler callback (if acc (merge event acc) event))]
+                 (if (map? result) (merge acc result) acc)))
+             acc
+             entries))))
 
 (defn get-event-types
   "List all registered event types."

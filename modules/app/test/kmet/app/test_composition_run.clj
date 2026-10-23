@@ -8,9 +8,9 @@
   (:require [babashka.fs :as fs]
             [clojure.test :refer [deftest is]]
             [kmet.agent.config :as cfg]
-            [kmet.agent.event-bus :as event-bus]
             [kmet.ai.llm :as llm]
             [kmet.app.core :as core]
+            [kmet.app.events :as events]
             [kmet.app.runtime :as runtime]
             [kmet.srce.core :as srce]))
 
@@ -22,8 +22,10 @@
     (try
       (let [agents (srce/get (:ctx boot) :agents)
             settled (promise)
-            unsubscribe (event-bus/on-event :agent-settled
-                                            (fn [ev] (deliver settled ev)))
+            ;; the app's layer, not kmet1's process table: this test is what
+            ;; 7b-i re-pointed, and subscribing here is the gate it leaves
+            unsubscribe (events/on! (:ctx boot) :agent-settled
+                                    (fn [ev] (deliver settled ev)))
             config {:provider :opencode-go
                     :model "deepseek-v4-flash"
                     :session-dir sessions-dir}]

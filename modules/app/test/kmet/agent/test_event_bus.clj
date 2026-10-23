@@ -168,7 +168,20 @@
     (event-bus/on-event :turn-end (fn [_] (swap! order conj :second) {:entries [:b]}))
     (t/is (= {:entries [:b]} (event-bus/emit-boundary! {:type :turn-end :entries []}))
           "the later handler's keys win, as documented")
-    (t/is (= [:first :second] @order) "handlers run in registration order")))
+    (t/is (= [:first :second] @order) "handlers run in registration order")
+    ;; the third arity seeds the accumulation with a decision another layer
+    ;; already reached (the loop hands over the kernel's): every handler sees
+    ;; it, and the chain continues rather than starting a second one
+    (let [seen (atom [])]
+      (event-bus/clear-event-listeners!)
+      (event-bus/on-event :turn-end (fn [ev] (swap! seen conj (:continue ev)) {:entries [:t]}))
+      (t/is (= {:entries [:t] :continue true}
+               (event-bus/emit-boundary! {:type :turn-end} nil {:continue true}))
+            "the seeded decision survives the chain")
+      (t/is (= [true] @seen) "and the handler sees it merged into its event")
+      (t/is (= {:continue true :entries [:t]}
+               (event-bus/emit-boundary! {:type :turn-end} nil {:continue true}))
+            "and a key a handler does not return survives the merge"))))
 
 (t/deftest test-an-unknown-event-type-is-reported
   ;; A typo'd :turn-ended used to register silently; the vocabulary is

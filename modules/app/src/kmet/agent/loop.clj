@@ -7,7 +7,9 @@
    injection of drained messages into the context).
 
    Emits lifecycle events (see kmet.agent.event-bus) to the :on-event callback
-   (UI) and to kmet.agent.event-bus/emit-event! (extension system).
+   (UI) and to both event layers a process can have: the kernel's, from the
+   run's own ctx, and kmet1's process-level table that the extension ABI still
+   registers in (new-app.md, 7b-i).
 
    Auto-retry (pi: agent-session auto-retry): transient LLM errors are retried
    with exponential backoff (base-delay-ms * 2^(attempt-1)), up to max-retries.
@@ -76,6 +78,7 @@
             [kmet.ai.models :as models]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.event-bus :as event-bus]
+            [kmet.srce.core :as srce]
             [kmet.agent.debug :as debug]))
 ;; ─── Agent state ───────────────────────────────────────────────────────────
 
@@ -341,13 +344,17 @@
 
 (defn- emit-boundary
   "Route an actionable boundary event: the UI callback gets it as a plain
-   notification and the extension bus dispatches it as a boundary, where each
-   handler sees the accumulated {:entries [] :continue false} state merged in
-   (pi: emitBoundary). Returns the accumulated handler result, or nil."
+   notification, the kernel's listeners hear it first (a front end awaits
+   :agent-settled this way), and the extension bus dispatches it as a boundary,
+   where each handler sees the accumulated {:entries [] :continue false} state
+   merged in (pi: emitBoundary) and the kernel's decision as its starting
+   state — so one event threads one decision across both layers instead of two
+   that silently disagree. Returns the accumulated handler result, or nil."
   [agent event]
   (when-let [cb (:on-event agent)]
     (cb event))
-  (event-bus/emit-boundary! event (:ctx agent)))
+  (event-bus/emit-boundary! event (:ctx agent)
+                            (srce/boundary! (:ctx agent) (:type event) event)))
 
 (defn- finish-turn!
   "Finish a turn (pi: the session's wrapped finishTurn, installed by
