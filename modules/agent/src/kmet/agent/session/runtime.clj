@@ -51,6 +51,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
+            [kmet.srce.core :as srce]
             [kmet.agent.tools.registry :as tools]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
@@ -161,10 +162,9 @@
                      engine's session follows an overridden :session).
                      Anything the state takes rides here, which is why
                      `:system-prompt-fn` (the builder the state calls on an
-                     active-tools change, defaulting to
-                     `kmet.agent.skills/build-system-prompt`, whose `:skills`
-                     default reads the process registry) and an overridden
-                     `:ctx` are read from here.
+                     active-tools change; the default is the ctx's
+                     `:systemPrompt` row, and kmet1's wrapper is the last
+                     stand-in) and an overridden `:ctx` are read from here.
 
      The rest is the front end's policy, not the state's, and none of the three
      has a default — an engine bootstrapped without one behaves as if the
@@ -217,8 +217,13 @@
         runtime-cwd (or cwd (session/session-cwd sess) (str (fs/cwd)))
         ;; the one builder this engine builds (and rebuilds) its prompt with:
         ;; the state calls it when an active-tools change must re-render the
-        ;; prompt, so the two build sites below cannot disagree with it
-        system-prompt-fn (or (:system-prompt-fn agent-opts) skills/build-system-prompt)
+        ;; prompt, so the two build sites below cannot disagree with it. The
+        ;; caller's own comes first, then the composition's `:systemPrompt`
+        ;; row (kmet1 boots kmet2 behind its app root, so the row is the
+        ;; prompt policy they share), and the process-bound wrapper last.
+        system-prompt-fn (or (:system-prompt-fn agent-opts)
+                             (srce/get ctx :system-prompt)
+                             skills/build-system-prompt)
         system-prompt-opts {:custom-prompt (cfg/get-custom-prompt config)
                             :append-prompt (cfg/get-append-system-prompt config)
                             :cwd runtime-cwd

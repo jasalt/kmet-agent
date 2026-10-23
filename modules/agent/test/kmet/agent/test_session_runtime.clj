@@ -20,6 +20,8 @@
             [kmet.agent.tools.registry :as tools-reg]
             [kmet.ai.models :as models]
             [kmet.agent.registry :as registry]
+            [kmet.app.registries :as registries]
+            [kmet.srce.core :as srce]
             [kmet.test-utils :as tu]))
 
 ;; Several tests bootstrap real engines into the app's registries (loading the
@@ -119,6 +121,28 @@
       (with-engine
         (fn [_engine _sess]
           (is (empty? @loads) "no option, no load"))))))
+
+(deftest test-the-prompt-row-is-the-default-builder
+  ;; The Engine's prompt policy is the composition's `:systemPrompt` row when
+  ;; the ctx has one (kmet1 boots kmet2 behind its app root), and an
+  ;; `:agent-opts` builder still wins over it.
+  (let [ctx (srce/root {:name :app})]
+    (srce/plugin! ctx {:name :fake-app
+                       :provide #{:system-prompt :tools}
+                       :apply (fn [mount _]
+                                (srce/provide! mount :system-prompt
+                                               (fn [& _] "FROM-THE-ROW")
+                                               {:in (:parent mount)})
+                                (srce/provide! mount :tools
+                                               (registries/service)
+                                               {:in (:parent mount)}))})
+    (with-engine {:ctx ctx}
+      (fn [engine _sess]
+        (is (= "FROM-THE-ROW" @(:system (rt/agent-state engine))))))
+    (with-engine {:ctx ctx
+                  :agent-opts {:system-prompt-fn (fn [& _] "FROM-THE-OPTS")}}
+      (fn [engine _sess]
+        (is (= "FROM-THE-OPTS" @(:system (rt/agent-state engine))))))))
 
 (deftest test-expansion-is-the-callers
   ;; The Engine knows when text expands, not what a command stands for: kmet1's

@@ -17,6 +17,10 @@
           {:id :commands :plugin kmet.app.registries/commands}
           {:id :prompts :plugin kmet.app.registries/prompts}
           {:id :skills :plugin kmet.app.registries/skills}
+          ;; The prompt builder a driver hands its state (7a): the app's pure
+          ;; builder over the skills registry above. What a prompt is *about*
+          ;; stays the caller's — only it knows which agent it is building for.
+          {:id :system-prompt :plugin kmet.app.system-prompt/plugin}
           ;; The session log and its storage backend: EDNL files, one log per
           ;; context. :sessions injects :sessionPersistence, so the pair is
           ;; active whichever order the rows mount in.

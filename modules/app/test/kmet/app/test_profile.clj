@@ -158,6 +158,7 @@
             {:id :commands :plugin 'kmet.app.registries/commands}
             {:id :prompts :plugin 'kmet.app.registries/prompts}
             {:id :skills :plugin 'kmet.app.registries/skills}
+            {:id :system-prompt :plugin 'kmet.app.system-prompt/plugin}
             {:id :session-persistence :plugin 'kmet.agent.session.backend/plugin}
             {:id :sessions :plugin 'kmet.app.sessions/plugin}
             {:id :projections :plugin 'kmet.app.projections/plugin}

@@ -1141,6 +1141,25 @@ load). So the cut is two options, not a lift:
   into that ctx can read it. `extension.md`'s `:expand-prompt-templates?` entry
   says the host owns the chain, which is what the ABI actually promises.
 
+**The `:systemPrompt` row landed, with a reader that already exists.**
+`kmet.app.system-prompt` provides `:system-prompt` over the `:skills` registry:
+the app's pure builder with the one input a service owns filled in, and every
+other input left to the caller (a tool table read here would be a process
+default, the thing the driver exists to replace). It mounts in
+`bundle/minimal`, so the composition is eleven rows.
+
+Then the reader: kmet1's Engine resolves `:system-prompt-fn` as **the caller's
+own, then the ctx's `:systemPrompt` row, then the process wrapper** — kmet1
+boots kmet2 behind its app root, so the row is the prompt policy the two
+share, and the wrapper is now only the last stand-in for a bare test engine.
+Two consequences: the row is exercised today by every engine test that passes
+`(app/ctx)` (not by a synthetic test alone), and the row's `effective-entries`
+read makes the prompt list one skill per name — the same skill a lookup
+resolves — where the wrapper's raw read could list a duplicate.
+
+Gate, met: full `bb test` 4,152 / 24,382 green; lint 0/0; format clean; `bb
+check` compiles; `--dump-state` prints eleven rows.
+
   What the Engine still reaches for in `kmet.agent.*` is now two things, and
   neither is a lift: `commands` ×3 for **extension-command dispatch** (the
   extension ABI; a re-point at retirement, not a policy cut) and `skills` for
