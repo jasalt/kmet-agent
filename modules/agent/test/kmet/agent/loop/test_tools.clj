@@ -9,7 +9,6 @@
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.registry :as tools-registry]
-            [kmet.agent.tools.registry :as tools-registry]
             [kmet.agent.session.core :as session]
             [kmet.agent.loop.tool-exec :as tool-exec]
             [kmet.agent.loop.state :as state]

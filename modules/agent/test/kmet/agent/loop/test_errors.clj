@@ -4,7 +4,6 @@
   (:require [clojure.test :as t]
             [kmet.ai.llm :as llm]
             [kmet.agent.loop.state :as state]
-            [kmet.agent.tools.core :as tools]
             [kmet.agent.loop :as loop]
             [kmet.agent.retry :as retry]
             [kmet.agent.config :as cfg]))

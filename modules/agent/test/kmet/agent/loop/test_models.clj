@@ -5,7 +5,6 @@
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.ai.auth :as auth]
-            [kmet.agent.tools.core :as tools]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
             [kmet.agent.config :as cfg]

@@ -2,7 +2,6 @@
   "Scoped-models selector tests — enabled-ids helpers and handle-input
    behaviors (toggle on Enter, Ctrl+A/X/P, Alt+Up/Down reorder, Ctrl+S save,
    search filter, cancel)."
-  (:refer-clojure :exclude [selector])
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [babashka.fs :as fs]
@@ -22,7 +21,7 @@
                       :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
                       :context-window 1000 :max-tokens 100}))
 
-(defn- selector
+(defn- pick
   "Build a selector over p1/a p1/b p2/x with global keybindings installed."
   [enabled-ids & {:keys [on-change on-persist on-cancel]}]
   (let [dir (str (fs/create-dirs (fs/path "target" "test-sms-keybindings")))]
@@ -103,7 +102,7 @@
 (t/deftest test-arrow-keys-move-selection
   ;; navigation must re-derive the rows (pi updateList), not just move the
   ;; state — the rendered selection arrow follows the selection
-  (let [sel (selector nil)]
+  (let [sel (pick nil)]
     (t/is (str/includes? (arrow-line sel) "a [p1]") "initially the first row is selected")
     (press sel "down")
     (t/is (str/includes? (arrow-line sel) "b [p1]") "down moves the arrow to the next row")
@@ -117,7 +116,7 @@
 (t/deftest test-navigation-does-not-leak-watches
   ;; re-derived rows must be disposed — a dropped Text keeps its track!
   ;; watch registered, which would grow the registry per keypress
-  (let [sel (selector nil)
+  (let [sel (pick nil)
         watchers component/live-watch-count]
     (protocols/render sel 120)
     (let [baseline (watchers)]
@@ -128,7 +127,7 @@
 (t/deftest test-root-body-memoizes-idle-frames
   ;; The state atom is read through tracked-deref: an idle re-render hands
   ;; back the cached tree (0 bodies run) and a state change re-derives once.
-  (let [sel (selector nil)]
+  (let [sel (pick nil)]
     (protocols/render sel 120)
     (engine/reset-counters!)
     (protocols/render sel 120)
@@ -141,7 +140,7 @@
 
 (t/deftest test-enter-toggles-selected
   (let [changed (atom ::none)
-        sel (selector nil :on-change (fn [ids] (reset! changed ids)))]
+        sel (pick nil :on-change (fn [ids] (reset! changed ids)))]
     (press sel "enter")
     (t/is (= ["p1/a"] @changed) "first toggle enables only the selected")
     (press sel "enter")
@@ -149,22 +148,22 @@
 
 (t/deftest test-ctrl-a-enables-all
   (let [changed (atom ::none)
-        sel (selector ["p1/a"] :on-change (fn [ids] (reset! changed ids)))]
+        sel (pick ["p1/a"] :on-change (fn [ids] (reset! changed ids)))]
     (press sel "ctrl+a")
     (t/is (nil? @changed) "all enabled collapses to null")))
 
 (t/deftest test-ctrl-x-clears-all
   (let [changed (atom ::none)]
-    (let [sel (selector ["p1/a" "p1/b"] :on-change (fn [ids] (reset! changed ids)))]
+    (let [sel (pick ["p1/a" "p1/b"] :on-change (fn [ids] (reset! changed ids)))]
       (press sel "ctrl+x")
       (t/is (= [] @changed) "clear all"))
-    (let [sel (selector nil :on-change (fn [ids] (reset! changed ids)))]
+    (let [sel (pick nil :on-change (fn [ids] (reset! changed ids)))]
       (press sel "ctrl+x")
       (t/is (= [] @changed) "clear all from all-enabled"))))
 
 (t/deftest test-ctrl-p-toggles-provider
   (let [changed (atom ::none)
-        sel (selector ["p2/x"] :on-change (fn [ids] (reset! changed ids)))]
+        sel (pick ["p2/x"] :on-change (fn [ids] (reset! changed ids)))]
     ;; selection is at 0 = p2/x; toggle its provider (p2 has only x)
     (press sel "ctrl+p")
     (t/is (= [] @changed) "p2 models were enabled → cleared")
@@ -176,7 +175,7 @@
 
 (t/deftest test-alt-up-down-reorder
   (let [changed (atom ::none)
-        sel (selector ["p1/a" "p2/x"] :on-change (fn [ids] (reset! changed ids)))]
+        sel (pick ["p1/a" "p2/x"] :on-change (fn [ids] (reset! changed ids)))]
     ;; move selection down to p2/x, then up
     (press sel "down")
     (press sel "alt+up")
@@ -186,7 +185,7 @@
   ;; pi: reorder only moves within bounds — an out-of-bounds alt+up must not
   ;; dirty the list or move the selection (the entry is already first)
   (let [changed (atom ::none)
-        sel (selector ["p1/a" "p2/x"] :on-change (fn [ids] (reset! changed ids)))]
+        sel (pick ["p1/a" "p2/x"] :on-change (fn [ids] (reset! changed ids)))]
     (press sel "alt+up")
     (t/is (= ::none @changed) "no change callback")
     (t/is (false? (:dirty @(:state-atom sel))) "not marked unsaved")
@@ -199,19 +198,19 @@
 
 (t/deftest test-ctrl-s-persists
   (let [persisted (atom ::none)
-        sel (selector ["p1/a"] :on-persist (fn [ids] (reset! persisted ids)))]
+        sel (pick ["p1/a"] :on-persist (fn [ids] (reset! persisted ids)))]
     (press sel "ctrl+s")
     (t/is (= ["p1/a"] @persisted) "Ctrl+S hands the enabled list to on-persist")))
 
 (t/deftest test-escape-cancels
   (let [cancelled (atom false)
-        sel (selector nil :on-cancel (fn [] (reset! cancelled true)))]
+        sel (pick nil :on-cancel (fn [] (reset! cancelled true)))]
     (press sel "escape")
     (t/is (true? @cancelled))))
 
 (t/deftest test-ctrl-c-clears-search-then-cancels
   (let [cancelled (atom false)
-        sel (selector nil :on-cancel (fn [] (reset! cancelled true)))]
+        sel (pick nil :on-cancel (fn [] (reset! cancelled true)))]
     (press sel "a")
     (press sel "ctrl+c")
     (t/is (false? @cancelled) "Ctrl+C with a search clears it, not cancel")
@@ -220,7 +219,7 @@
 
 (t/deftest test-search-filters-then-toggles
   (let [changed (atom ::none)
-        sel (selector nil :on-change (fn [ids] (reset! changed ids)))]
+        sel (pick nil :on-change (fn [ids] (reset! changed ids)))]
     (press sel "p")
     (press sel "2")
     ;; only p2/x is visible now; enter toggles it
@@ -230,7 +229,7 @@
 (t/deftest test-unavailable-rows-survive
   ;; enabled ids not in the catalog render as unavailable but stay enabled
   (let [changed (atom ::none)
-        sel (selector ["ghost/id" "p1/a"] :on-change (fn [ids] (reset! changed ids)))]
+        sel (pick ["ghost/id" "p1/a"] :on-change (fn [ids] (reset! changed ids)))]
     ;; list order: ghost/id first (enabled), then p1/a — move to p1/a and
     ;; toggle it off; the unavailable entry survives untouched
     (press sel "down")

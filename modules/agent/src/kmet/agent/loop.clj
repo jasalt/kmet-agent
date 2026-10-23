@@ -58,6 +58,7 @@
    image_url / Anthropic image blocks. The wire filter that honors
    :block-images lives in kmet.agent.loop.message."
   (:require [kmet.app.permissions :as permissions]
+            [kmet.app.projections :as projections]
             [kmet.agent.compaction.stage :as compact]
             [kmet.agent.loop.completion :as completion]
             [kmet.agent.loop.tool-exec :as tool-exec]
@@ -179,15 +180,6 @@
   (when-let [f @(:prepare-next-turn agent)]
     (apply-next-turn-update! agent (f (turn-context agent turn-index
                                                     assistant-msg tool-results)))))
-
-(defn- turn-outcome
-  "A turn's outcome, from its assistant message's stop reason (pi:
-   _dispatchTurnEndBoundary's _lastActivityOutcome)."
-  [msg]
-  (case (:stop-reason msg)
-    :aborted :aborted
-    :error :error
-    :completed))
 
 (defn- can-continue?
   "True when the live context can back one more provider request: at least
@@ -366,7 +358,10 @@
    errored and aborted turns too, whose decision the caller ignores. Returns
    the merged decision :end | :continue | nil."
   [agent turn-index assistant-msg tool-results]
-  (let [outcome (turn-outcome assistant-msg)
+  (let [;; the turn's outcome (pi: _dispatchTurnEndBoundary's lastActivityOutcome)
+        ;; is `kmet.app.projections/outcome` — the same rule a projected turn
+        ;; boundary reports, so the loop and the log cannot disagree about one turn
+        outcome (projections/outcome assistant-msg)
         _ (reset! (:last-outcome agent) outcome)
         boundary (emit-boundary agent (assoc (boundary-state agent)
                                              :type :turn-end

@@ -2,7 +2,6 @@
   "Model selector tests — visible search filter, arrow navigation (rows
    rebuild, pi updateList), current-model checkmark + initial selection,
    Enter select / Escape cancel, and the all/scoped Tab toggle."
-  (:refer-clojure :exclude [selector])
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [babashka.fs :as fs]
@@ -24,7 +23,7 @@
                       :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
                       :context-window 1000 :max-tokens 100}))
 
-(defn- selector
+(defn- pick
   "Build a selector over p1/a p1/b p2/x; CURRENT is the in-use model (sorted
    first, marked ✓) and may be omitted (defaults to p2/x)."
   [& {:keys [models scoped current search on-select on-cancel]}]
@@ -82,7 +81,7 @@
 
 (t/deftest test-current-model-selected-and-marked
   ;; p2/x is current; sorted current-first → first row, marked with ✓
-  (let [sel (selector)]
+  (let [sel (pick)]
     (t/is (str/includes? (row-text sel 0) "→") "the current model is selected")
     (t/is (str/includes? (row-text sel 0) "✓") "and marked with the checkmark")))
 
@@ -90,8 +89,8 @@
   ;; scoped scope: the initial selection lands on the current model within
   ;; the scoped list (pi loadModelsFromSnapshot uses the active list) — the
   ;; all-models index must not be reused for the scoped list
-  (let [sel (selector :scoped [(model :p1 "b") (model :p2 "x")]
-                      :current (model :p2 "x"))]
+  (let [sel (pick :scoped [(model :p1 "b") (model :p2 "x")]
+                  :current (model :p2 "x"))]
     (t/is (str/includes? (row-text sel 1) "→") "the current model is selected")
     (t/is (str/includes? (row-text sel 1) "✓") "and marked")
     (t/is (not (str/includes? (row-text sel 0) "→"))
@@ -100,7 +99,7 @@
 (t/deftest test-arrow-keys-move-selection
   ;; navigation must rebuild the rows (pi updateList), not just move the
   ;; state — the rendered selection arrow follows the selection
-  (let [sel (selector)]
+  (let [sel (pick)]
     (press sel "down")
     (t/is (str/includes? (row-text sel 1) "→") "down moves the arrow to the next row")
     (t/is (not (str/includes? (row-text sel 0) "→")) "and off the previous row")
@@ -112,14 +111,14 @@
 (t/deftest test-search-input-filters-visibly
   ;; typing goes to the visible search input; the list narrows and the
   ;; selection jumps to the best match (pi filterModels)
-  (let [sel (selector)]
+  (let [sel (pick)]
     (press sel "x")
     (t/is (= "x" (search-value sel)) "the filter text is visible in the search input")
     (t/is (str/includes? (row-text sel 0) "x [p2]") "the list narrows to the match")
     (t/is (str/includes? (row-text sel 0) "→") "selection moves to the top match")))
 
 (t/deftest test-pre-filled-search
-  (let [sel (selector :search "qwen")]
+  (let [sel (pick :search "qwen")]
     (t/is (= "qwen" (search-value sel)) "search-term pre-fills the input")
     (t/is (str/includes? (row-text sel 0) "No matching models")
           "no match shows the empty state")))
@@ -127,7 +126,7 @@
 (t/deftest test-enter-selects
   ;; sorted current-first: p2/x, p1/a, p1/b — down highlights p1/a
   (let [selected (atom ::none)
-        sel (selector :on-select (fn [m] (reset! selected m)))]
+        sel (pick :on-select (fn [m] (reset! selected m)))]
     (press sel "down")
     (press sel "enter")
     (t/is (= "a" (:id @selected)) "Enter hands the highlighted model to on-select")))
@@ -136,7 +135,7 @@
   ;; filtering to nothing must not fire on-select with nil (pi guards on
   ;; selectedModel — a nil model would wipe the agent's provider)
   (let [selected (atom ::none)
-        sel (selector :on-select (fn [m] (reset! selected m)))]
+        sel (pick :on-select (fn [m] (reset! selected m)))]
     (press sel "z")
     (t/is (str/includes? (row-text sel 0) "No matching models"))
     (press sel "enter")
@@ -144,20 +143,20 @@
 
 (t/deftest test-escape-cancels
   (let [cancelled (atom false)
-        sel (selector :on-cancel (fn [] (reset! cancelled true)))]
+        sel (pick :on-cancel (fn [] (reset! cancelled true)))]
     (press sel "escape")
     (t/is (true? @cancelled))))
 
 (t/deftest test-ctrl-c-cancels
   (let [cancelled (atom false)
-        sel (selector :on-cancel (fn [] (reset! cancelled true)))]
+        sel (pick :on-cancel (fn [] (reset! cancelled true)))]
     (press sel "ctrl+c")
     (t/is (true? @cancelled) "Ctrl+C cancels (pi tui.select.cancel)")))
 
 (t/deftest test-scope-defaults-scoped-and-toggles
   ;; scoped models set → opens scoped; Tab toggles all/scoped. Current model
   ;; p1/a is not in the scoped list (so the scope change is visible).
-  (let [sel (selector :scoped [(model :p2 "x")] :current (model :p1 "a"))]
+  (let [sel (pick :scoped [(model :p2 "x")] :current (model :p1 "a"))]
     (t/is (str/includes? (row-text sel 0) "x [p2]") "scoped scope by default")
     (press sel "tab")
     (t/is (str/includes? (row-text sel 0) "a [p1] ✓") "Tab toggles to all (current first)")
@@ -166,7 +165,7 @@
 
 (t/deftest test-no-scope-without-scoped-models
   ;; no scoped models → scope text is absent; Tab is a no-op
-  (let [sel (selector)]
+  (let [sel (pick)]
     (t/is (not-any? #(str/includes? % "Scope:") (render-lines sel))
           "no scope line without scoped models")
     (press sel "tab")
@@ -179,8 +178,8 @@
   ;; "Cost: free" instead of nothing
   (let [priced (assoc (model :p1 "a")
                       :cost {:input 0.44 :output 1.5 :cache-read 0.11 :cache-write 3.3})
-        sel (selector :models [priced (model :p1 "b") (model :p2 "x")]
-                      :current priced)]
+        sel (pick :models [priced (model :p1 "b") (model :p2 "x")]
+                  :current priced)]
     (t/is (str/includes? (row-text sel 4) "Model Name: Model a")
           "the name line under the rows")
     (t/is (str/includes? (row-text sel 5) "↑$0.44") "input rate marked ↑")
@@ -195,7 +194,7 @@
   ;; Rows re-derive per navigation (pi updateList). The retired rows must be
   ;; disposed — a dropped Text keeps its track! watch registered, which
   ;; would grow the registry per keypress and pin the components.
-  (let [sel (selector)
+  (let [sel (pick)
         watchers component/live-watch-count]
     (core/render sel 80)
     (let [baseline (watchers)]
@@ -206,7 +205,7 @@
 (t/deftest test-root-body-memoizes-idle-frames
   ;; The state atom is read through tracked-deref: an idle re-render hands
   ;; back the cached tree (0 bodies run) and a state change re-derives once.
-  (let [sel (selector)]
+  (let [sel (pick)]
     (protocols/render sel 120)
     (engine/reset-counters!)
     (protocols/render sel 120)
@@ -225,7 +224,7 @@
         orig-theme (th/get-current-theme)]
     (try
       (th/init-theme! "dark")
-      (let [sel (selector)
+      (let [sel (pick)
             dark (str/join "\n" (core/render sel 120))]
         (engine/reset-counters!)
         (th/init-theme! "light")

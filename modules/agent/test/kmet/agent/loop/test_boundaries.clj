@@ -7,7 +7,6 @@
             [babashka.fs :as fs]
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
-            [kmet.agent.tools.core :as tools]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.session.core :as session]
             [kmet.agent.loop.state :as state]

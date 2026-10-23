@@ -8,7 +8,6 @@
             [kmet.ai.auth :as auth]
             [kmet.libs.aws-sigv4 :as aws-sigv4]
             [kmet.ai.google-adc :as google-adc]
-            [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.util :as tool-util]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.event-bus :as event-bus]

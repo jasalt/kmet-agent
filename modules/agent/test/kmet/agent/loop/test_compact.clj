@@ -7,7 +7,6 @@
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.ai.usage :as usage]
-            [kmet.agent.tools.core :as tools]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.session.core :as session]
             [kmet.agent.compaction.stage :as compact]

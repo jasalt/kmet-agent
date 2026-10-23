@@ -11,7 +11,6 @@
             [kmet.agent.config :as cfg]
             [kmet.agent.loop :as loop]
             [kmet.agent.loop.test-support :as support]
-            [kmet.agent.tools.core :as tools]
             [kmet.libs.json :as json]
             [kmet.srce.core :as srce]))
 

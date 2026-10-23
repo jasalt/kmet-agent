@@ -12,7 +12,6 @@
             [kmet.ai.llm :as llm]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.loop :as loop]
-            [kmet.agent.tools.core :as tools]
             [kmet.agent.config :as cfg]))
 
 ;; ─── The headless renderer ────────────────────────────────────────────────

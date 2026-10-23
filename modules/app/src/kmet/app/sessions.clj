@@ -129,8 +129,11 @@
   "A session backend that keeps everything in an atom: the second backend the
    contract test needs, and the fixture for anything that wants a log without
    files. It answers the two rules the EDNL backend answers — appends stamp and
-   chain, and nothing is listed before the first assistant entry — so a test
-   written against it is a test against the contract, not against a mock."
+   chain, and nothing is listed before the first assistant entry — and it
+   carries the store's own shape (`:entries` and `:leaf-id` atoms), so a
+   reading written against a stored session (the branch walk, the
+   `:projections` fold) reads an in-process one too. A test written against it
+   is a test against the contract, not against a mock."
   []
   (let [state (atom {:sessions {}})
         counter (atom 0)
@@ -138,13 +141,13 @@
         path-for (fn [dir id] (str dir "/" id ".ednl"))]
     (letfn [(stamped [session entry]
               (let [entries @(:entries session)
-                    leaf @(:leaf session)
+                    leaf @(:leaf-id session)
                     entry (assoc entry
                                  :id (str (:id session) "#" (count entries))
                                  :parent-id leaf
                                  :timestamp (str (java.time.Instant/now)))]
                 (reset! (:entries session) (conj entries entry))
-                (reset! (:leaf session) (:id entry))
+                (reset! (:leaf-id session) (:id entry))
                 (when (= :assistant (:role entry)) (reset! (:stored? session) true))
                 entry))]
       {:create!
@@ -161,7 +164,7 @@
                                             :cwd (or cwd dir)}
                                      parent-session (assoc :parent-session parent-session))
                            :entries (atom [])
-                           :leaf (atom nil)
+                           :leaf-id (atom nil)
                            :stored? (atom false)}))
            (get-in @state [:sessions id])))
 
