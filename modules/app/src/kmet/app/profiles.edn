@@ -21,7 +21,13 @@
           ;; context. :sessions injects :sessionPersistence, so the pair is
           ;; active whichever order the rows mount in.
           {:id :session-persistence :plugin kmet.agent.session.backend/plugin}
-          {:id :sessions :plugin kmet.app.sessions/plugin}]
+          {:id :sessions :plugin kmet.app.sessions/plugin}
+          ;; The delivery seam for a permission `:ask`. The policy itself is
+          ;; NOT here: a policy decides per agent, so it mounts on the agent's
+          ;; ctx (the kernel forbids a child shadowing a service its ancestor
+          ;; provides — a per-agent value has to be the only provider on its
+          ;; chain). The default approver denies: nobody can ask yet.
+          {:id :approvals :plugin kmet.app.permissions/approvals}]
    :patch []}}
 
  :profiles

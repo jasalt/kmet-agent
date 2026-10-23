@@ -57,7 +57,8 @@
    attached to the initial user message; they flow to the provider as OpenAI
    image_url / Anthropic image blocks. The wire filter that honors
    :block-images lives in kmet.agent.loop.message."
-  (:require [kmet.agent.compaction.stage :as compact]
+  (:require [kmet.app.permissions :as permissions]
+            [kmet.agent.compaction.stage :as compact]
             [kmet.agent.loop.completion :as completion]
             [kmet.agent.loop.tool-exec :as tool-exec]
             [kmet.agent.loop.state :as state]
@@ -1081,7 +1082,9 @@
                 ;; mid-run is picked up, and scripted inner calls go through
                 ;; the same before/after semantics as the loop's own batches
                 run-code-tool/*tool-hooks*
-                {:before (fn [ctx] (when-let [h @(:before-tool-call agent)] (h ctx)))
+                {:before (permissions/gate
+                          (fn [ctx] (when-let [h @(:before-tool-call agent)] (h ctx)))
+                          (:ctx agent) (:signal agent))
                  :after (fn [ctx] (when-let [h @(:after-tool-call agent)] (h ctx)))}]
         (future
           (let [attempt-token (atom nil)

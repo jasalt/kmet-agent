@@ -332,8 +332,8 @@ rewrite.
 | `:systemPrompt` | ordered sections, dynamic contexts, prompt variables and tool schemas, assembled by a waterfall before each request; per-agent composition lands here | `skills.clj/build-system-prompt` (one fn) + `context.clj` + each tool's `:prompt-snippet` |
 | `:events` `:hooks` | three event domains (session/agent/capability) + 5 dispatch modes + hook chains | `event-bus.clj`, `apply-input-hooks` |
 | `:ui` | capability map: render, input, dialogs, notify, widget set | `extension-binding :ui`, lifted out |
-| `:approvals` | the one delivery seam for `:permissions :ask`: dialog, wire request/response, or headless default | new |
-| `:workspace` `:fs` `:shell` `:subprocess` `:sandbox` `:permissions` | cwd/project identity, filesystem, shell, process groups, sandbox policy, approval policy | `tools/bash`, `bash-executor`, `libs/path`, `tools/read/write/edit` |
+| `:approvals` | the one delivery seam for `:permissions :ask`: dialog, wire request/response, or headless default | **landed** (`kmet.app.permissions`, 4c-iii-a): the loop's pre-tool waterfall consults it through `permissions/check`; the row mounts the deny-by-default seam, because there is no dialog yet |
+| `:workspace` `:fs` `:shell` `:subprocess` `:sandbox` `:permissions` | cwd/project identity, filesystem, shell, process groups, sandbox policy, approval policy | `:permissions` **landed** (4c-iii-a, `kmet.app.permissions`: a policy value the gate reads per agent; no default policy is mounted — see below); the rest is `tools/bash`, `bash-executor`, `libs/path`, `tools/read/write/edit` |
 | `:config` `:auth` | layered settings, credentials | `config.clj`, `ai/auth.clj` |
 
 **One key per seam, one implementation per scope.** Plugins write
@@ -387,6 +387,30 @@ waterfall (kmet1's `before-tool-call` chain, ported), whose result is already
   remote work without a prompt per call.
 - A `:deny` becomes the waterfall result the loop already understands, so **no
   tool signature changes** anywhere.
+
+**Landed at 4c-iii-a** (`kmet.app.permissions`). Two placement rules came out of
+the kernel, and they are not obvious:
+
+- **`:permissions` is not in `:bundle/minimal`.** One provider per name per
+  realm path is the kernel rule ([`srce.md`](modules/srce/src/kmet/srce/srce.md)
+  §3): a child ctx **cannot** shadow a service its ancestor provides, so a
+  policy mounted at the app root would be every agent's policy, forever. A
+  per-agent decision therefore mounts where nothing above provides one — the
+  agent's own ctx, by the preset or `setup` that composes it. An agent ctx
+  under a root with no policy allows, which is kmet1's status quo.
+- **`:approvals` *is* in the bundle**, at the root: asking is the front end's
+  job and it is one process-wide seam. A policy below can ask the seam above;
+  the request carries the agent's ctx, so the approver knows who is asking.
+  Until the TUI's dialog lands (5), the seam's default denies — "nobody can
+  ask" is not "yes".
+
+The gate is the loop's pre-tool waterfall and it runs **after** the extension
+hooks, so a hook's argument rewrite is judged by the policy instead of sneaking
+past it; the run_code bridge composes the same gate into `*tool-hooks*`, so a
+script's `tools/call` is gated too. A policy that throws, or answers something
+that is not a verdict, is a deny: the failure mode of an approval gate must
+never be *allow*. `:remember!` is called with the scope an approver returned,
+but nothing stores the decision yet — scopes are recorded, not enforced.
 
 ## Pluggable UI
 
@@ -811,7 +835,7 @@ Each is independently shippable and gated.
 | 3 | **landed** — `registry` parameterized then lifted (`kmet.agent.registry` over a `Registry` handle); the `:tools` service row; commands/prompts/skills/tools/entry-renderers re-pointed at the handle | the contract test runs one set of registry assertions against both backends (atom and store); the `:tools` service is installed by one `provide!` and mutated through its handle (no re-provide); kmet1 green |
 | 4a | **landed** (`c2861df0`) — the sessions seam: `:sessionPersistence` (seven ops: `create!` `load` `paths` `append!` `entries` `delete!` `header`), the `:sessions` log over it (`inject [:sessionPersistence]`: the same ops plus an id index), an in-process `memory-backend`, and kmet1's store as the first real backend (`kmet.agent.session.backend`, a 34-line projection — `app` at rank 2 cannot name it yet) | the contract test runs one set of assertions against both backends, then composes the two halves as a profile does (`(service (ednl))`: 8 tests, 60 assertions); the row is `:pending` with `waiting-for=#{:sessionPersistence}` and activates when its backend mounts; kmet1's sessions and their files are byte-for-byte untouched; no composition row at 4a — `:sessions` joined the profile with the layer move (4c-i) |
 | 4b | **The extension host**, in two halves. **4b-i landed** (`d01a0f44`) — `kmet.extension` (461 lines, zero requires) moved into `app` with its contract doc, and the **key-set contract test** landed: every api path an ABI wrapper reads (`(:notify (ui api))` reads `[:ui :notify]`) is asserted against the api the host actually builds for a loaded extension, 62 of them, and the test fails when one is renamed away. **4b-ii** splits by axis (§ "Landing 4b-ii: what the require graph says"): **4b-ii-a landed** (§ "Landing 4b-ii-a settled") — with the files still in `agent`: `extension.edn` gained the optional `:inject` and an extension declaring it mounts as the plugin `{:name :inject :apply}`, pending until the ctx provides what it waits for; unload disposes the fiber after `shutdown`. The host stopped being store-shaped: hooks, themes, the UI port and the renderers/flags are registry entries, the session/sink mirrors are the process caches they always were, and `install-*`/`discover-resources!` lost their node parameter. **4b-ii-b** is the move of the host files into `app` keeping their namespaces, after the tool layer and `config` lift. The four leaf lifts landed (`debug`, `event-bus`, `config-schema`, `tools/util`) | 4b-i: the key-set test is green, its own violation check fails by design, and kmet1's extension surface is unchanged (376 assertions across the extension suites). 4b-ii: an extension declaring `:inject` goes pending then active (test), nothing in the host reads the store node (the host's nine `(scope/` sites are gone), and the loader whitelist loses its `kmet.libs.scope` entry at 4b-ii-b |
-| 4c | **The root ctx, the session layer, then `:agents`** — four steps that gate separately, in this order. **4c-i landed** (`aa72deef`, `88513298`) — the session layer moved into `app`: nine files, namespaces kept, nothing re-hosted; the `kmet.agent.debug` require behind the schema warnings became a diagnostics flag the host's `--debug` sets; `:sessions` + `:sessionPersistence` joined `:bundle/minimal`, so a bare `kmet --app new` boots four rows. `:result-tokens` stamping stays in `store.clj` — see the 4c-i notes. **4c-ii landed in two halves.** **4c-ii-a** (`f1a446af`, `e38c5e05`) — kmet1 boots the app root ctx and its registrations live in the services: `app-runtime/registry` is one façade handle routing each tag to its service, the writers *and* readers moved together, the `node` parameter left their public fns (~200 call sites), and unload is one `deregister-owner!` per tag. **4c-ii-b landed** — the Engine, the modes and the bus take a ctx: `AgentState`'s `:node` is `:ctx` (the app root by default), `agent-node` is `agent-ctx`, `event_bus/visible` is `srce/inside?` over ctx scopes, and `child-node` is `child-ctx` — the loop's stages ride the root ctx's `:loop-stages` atom (boot's `:ctx-meta`), so `loop-stages`/`refresh-stages!` walk the chain and a child ctx carries its own. The store sites that stayed then (`discover-resources!` ×3, the `install-*`/`dispose-owner!` set, `/units`' walk) were on the app root node; 4b-ii-a has since taken the host's share of them (§ "Landing 4b-ii-a settled") and the listing is 4d's. The mutable `defonce` cells split the same way: the host's are its process bindings (`extension-binding`, the three sinks, the extension registry), which stay until the host itself is a plugin (4b-ii-b); three are the `:shell`/`:fs`/`:sandbox` seams the catalog names (landing 6); and `event_bus`'s table stays until the loop re-points (7). `registry_store.clj` and `kmet.libs.scope` do **not** die here: the host held nine `scope/…` sites (hooks, themes, the UI port) and the Engine two — both gone at 4b-ii-a — the app node has five, and 4d takes the listing's two, so the store retires at **4e**. **4c-iii**, `Engine` → `:agents` with `:permissions`/`:approvals` and — unlanded prerequisites — `:projections` and `:systemPrompt` | i: every session test green from `modules/app`, `kmet --app new` boots a session over EDNL files. ii: the Engine and the modes resolve a ctx, a session's tree is a child ctx, and the bus scopes by ancestry. iii: two agents in one process hold different tool tables, and an extension declaring `:inject {:sessions …}` goes pending then active |
+| 4c | **The root ctx, the session layer, then `:agents`** — six steps that gate separately, in this order. **4c-i landed** (`aa72deef`, `88513298`) — the session layer moved into `app`: nine files, namespaces kept, nothing re-hosted; the `kmet.agent.debug` require behind the schema warnings became a diagnostics flag the host's `--debug` sets; `:sessions` + `:sessionPersistence` joined `:bundle/minimal`, so a bare `kmet --app new` boots four rows. `:result-tokens` stamping stays in `store.clj` — see the 4c-i notes. **4c-ii landed in two halves.** **4c-ii-a** (`f1a446af`, `e38c5e05`) — kmet1 boots the app root ctx and its registrations live in the services: `app-runtime/registry` is one façade handle routing each tag to its service, the writers *and* readers moved together, the `node` parameter left their public fns (~200 call sites), and unload is one `deregister-owner!` per tag. **4c-ii-b landed** — the Engine, the modes and the bus take a ctx: `AgentState`'s `:node` is `:ctx` (the app root by default), `agent-node` is `agent-ctx`, `event_bus/visible` is `srce/inside?` over ctx scopes, and `child-node` is `child-ctx` — the loop's stages ride the root ctx's `:loop-stages` atom (boot's `:ctx-meta`), so `loop-stages`/`refresh-stages!` walk the chain and a child ctx carries its own. The store sites that stayed then (`discover-resources!` ×3, the `install-*`/`dispose-owner!` set, `/units`' walk) were on the app root node; 4b-ii-a has since taken the host's share of them (§ "Landing 4b-ii-a settled") and the listing is 4d's. The mutable `defonce` cells split the same way: the host's are its process bindings (`extension-binding`, the three sinks, the extension registry), which stay until the host itself is a plugin (4b-ii-b); three are the `:shell`/`:fs`/`:sandbox` seams the catalog names (landing 6); and `event_bus`'s table stays until the loop re-points (7). `registry_store.clj` and `kmet.libs.scope` do **not** die here: the host held nine `scope/…` sites (hooks, themes, the UI port) and the Engine two — both gone at 4b-ii-a — the app node has five, and 4d takes the listing's two, so the store retires at **4e**. **4c-iii is three steps**, split on the dependency the row's gate needs. **4c-iii-a landed** — `:permissions`/`:approvals` (the policy pair) and the loop's pre-tool gate, no files moved. **4c-iii-b**: `:agents` (the registry, the factory the loop driver registers at 7) + `:projections` (the inbox as derived state over the log — a durability change for queued messages, so it needs its own gate). **4c-iii-c**: `:systemPrompt` + per-agent tool tables, which is the row's own gate: two agents holding different tool tables needs `select-tools`/`active-tools` to read a ctx-sourced registry — the tool-registry lift that is also 4b-ii-b's prerequisite | i: every session test green from `modules/app`, `kmet --app new` boots a session over EDNL files. ii: the Engine and the modes resolve a ctx, a session's tree is a child ctx, and the bus scopes by ancestry. iii: two agents in one process hold different tool tables, and an extension declaring `:inject {:sessions …}` goes pending then active — **iii-a closes the policy half**: two agents decide differently because each reads its own ctx's policy; the tool-table half is iii-c |
 | 4d | **Inspection from the tree** — `kmet.app.inspect/units` renders the invocation ctx's subtree, `--dump-state` the root's, `/units` re-points at it and the store section is deleted | `/units` and `--dump-state` show a `:pending` fiber with its `waiting-for` and a `:failed` one with its error; the five listing tests rewritten against the tree |
 | 4e | **Retire the store** — delete `kmet.libs.scope` (with its own tests), `kmet.agent.registry-store` and the landing-3 store backend test, and the `app_runtime/…` disposal/error plumbing that goes with them. Nothing may still read it: 4b-ii-a took the host's nine sites and the Engine's two, 4d the `owner-listing` walk. The docs that describe it go in the same change (`modules/agent/src/kmet/README.md`'s two store rows, `extension.md`'s two owner-path sentences, `srce.md` §9) | `grep` finds no `(scope/` under `kmet.agent.*`, no `kmet.libs.scope` require outside the deleted files, and no `registry-store` require; the full suite is green and kmet1 boots with no store at all |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
@@ -875,6 +899,62 @@ moving into `app` needs the interop re-host but not the root ctx, the root ctx
 cutover needs neither the session move nor a driver, and `Engine` → `:agents`
 needs both. If i and ii turn out to move together, they merge then — with data
 rather than a guess.
+
+### Landing 4c-iii-a settled
+
+4c-iii's row is `Engine` → `:agents` with `:permissions`/`:approvals` and the
+two prerequisites `:projections` and `:systemPrompt`. Measured before writing
+code, it is three landings, not one:
+
+| Piece | Size | What it needs first |
+|---|---|---|
+| the policy pair + the loop's gate | 195 src, 252 test, **no files moved** | nothing — the pre-tool waterfall already exists |
+| `:agents` + `:projections` | the Engine is 1,379 lines and 55 operations, bootstrapped on `kmet.agent.loop` | a creation factory (`:agentLoop` registers it at landing 7) and the log; the inbox as *log-derived* state changes what a queued message is (durable instead of memory-only), so kmet1's behaviour would move with it — its own gate |
+| `:systemPrompt` + per-agent tool tables | `select-tools`/`active-tools` read a process-global registry; each tool carries a `:prompt-snippet` | the tool-registry lift (the same one 4b-ii-b waits on) and the prompt waterfall, because the snippets are sections |
+
+So **4c-iii-a landed first**, and it closes the row's *policy* half: two agents
+in one process decide differently because each reads its own ctx's policy. The
+row's other gate — two agents holding different tool tables — is iii-c's.
+
+**The kernel shaped the placement, and not the way the design section assumes.**
+One provider per name per realm path ([`srce.md`](modules/srce/src/kmet/srce/srce.md)
+§3) means a child ctx **cannot** shadow a service its ancestor provides. A
+`:permissions` row in `:bundle/minimal` would therefore be *every* agent's
+policy with no way to vary it — the opposite of "per-agent by construction". So
+the policy is not in the bundle: a policy mounts on the agent ctx that needs it
+(by a preset or `setup`), and an agent ctx under a root with no policy allows,
+which is exactly kmet1 today. `:approvals` *is* in the bundle, at the root:
+asking is the front end's job and one process-wide seam; a policy below asks the
+seam above, and the request carries the agent's ctx, so the approver knows who
+is asking. Read "per-agent permission profile" in § *Service catalog* through
+this rule from now on.
+
+**Fail-closed, in four places.** A policy that throws, a policy that answers
+something that is not a verdict, an approver that throws, and an `:ask` with no
+seam all deny; none of them allows. The gate runs **after** the extension hooks
+(so an argument rewrite is judged, not a way around the policy) and is composed
+into run-code's `*tool-hooks*`, so a script's `tools/call` is gated like a loop
+batch. `:remember!` is called with the scope an approver returned, but nothing
+stores a decision yet — scopes are recorded, not enforced.
+
+What the gate does **not** cover, named so it is a decision: a `!`/`!!` bash
+line typed at the prompt is a mode action, not a tool call, so it never reaches
+the waterfall; the TUI's real approver dialog is landing 5's, and until then an
+`:ask` in kmet1's composition denies.
+
+Two defects the landing's own tests caught, both from Clojure's shadowing: the
+`:permissions` row destructured its config key `policy` and then called the
+`policy` constructor (nil — a boot failure, not a silent one), and `check`
+destructured `:reason` and then called the private `reason` helper. Both were
+renamed; the rows are covered by `the-policy-row-carries-a-config`.
+
+Ledger: **195 source + 252 test lines added, 6 files touched, nothing lifted**
+— the extension-hook waterfall gained one stage and the app gained two rows'
+worth of one namespace. Gate: `:permissions`/`:approvals` provided where they
+belong; two agents under one root decide differently; a denied call never
+reaches the executor; the scripted path is gated; the default approver denies.
+Tests: `kmet.app.test-permissions` (13/30), `kmet.agent.loop.test-tool-policy`
+(5/13), plus the bundle goldens (rows 7 → 8, services gain `approvals`).
 
 ### Landing 4b-ii-a settled
 

@@ -9,7 +9,8 @@
    Tool execution mode (pi: toolExecution): tools default to :parallel; if
    any tool call targets a :sequential tool the whole batch runs
    sequentially (see :execution-mode on the Tool record)."
-  (:require [kmet.agent.loop.state :as state]
+  (:require [kmet.app.permissions :as permissions]
+            [kmet.agent.loop.state :as state]
             [kmet.agent.loop.message :as message]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.invoke :as invoke]
@@ -74,12 +75,17 @@
       (assoc tc :kmet/blocked
              {:content (str "Tool " tc-name " not found")
               :is-error true})
+      ;; the hook chain is the extension hooks followed by the permission
+      ;; gate: a rewrite is judged by the policy, and a deny settles the call
+      ;; with the reason the loop already reports
       (let [prep (invoke/prepare-tool-call
                   {:tool-name tc-name
                    :args tc-args
                    :tool-call-id tc-id
                    :assistant-message assistant-msg
-                   :before-hook @(:before-tool-call agent)})]
+                   :before-hook (permissions/gate @(:before-tool-call agent)
+                                                  (:ctx agent)
+                                                  (:signal agent))})]
         (cond
           (:block prep)
           (assoc tc :kmet/blocked (:block prep))
