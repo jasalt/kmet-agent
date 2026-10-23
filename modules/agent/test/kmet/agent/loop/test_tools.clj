@@ -18,6 +18,14 @@
             [kmet.tui.theme :as th]
             [kmet.agent.loop.test-support :as support]))
 
+(t/use-fixtures
+  :each
+  ;; A test that needs a tool table should not boot the app root: the loop
+  ;; resolves tools through `kmet.agent.tools.core`, so a redef of
+  ;; `app-runtime/registry` gives this namespace its own (see
+  ;; `test-support/with-registry`).
+  (fn [f] (support/with-registry f)))
+
 ;; ─── Tool hooks (before/after tool-call) ─────────────────────────────────
 
 (t/deftest test-loop-before-tool-call-blocks

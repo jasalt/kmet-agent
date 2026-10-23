@@ -9,6 +9,8 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.session.core :as session]
             [kmet.agent.loop :as loop]
+            [kmet.agent.app-runtime :as app-runtime]
+            [kmet.agent.registry :as registry]
             [kmet.agent.config :as cfg]))
 
 (declare make-test-provider)
@@ -232,3 +234,22 @@
       (seed-context! sess 6)
       (f {:sess sess :events events :agent agent})
       (finally (fs/delete-tree dir)))))
+
+(defn with-registry
+  "Run F with kmet1's process registry pointed at a fresh handle.
+
+   The loop resolves tools through `kmet.agent.tools.core`, which asks
+   `kmet.agent.app-runtime/registry` per call, so a redef is enough to give a
+   test its own tool table — and registering a stand-in tool stops booting
+   kmet2's whole composition as a side effect of a loop test.
+
+   That side effect was observable: with the root booted earlier in the run,
+   `kmet.agent.modes.test-rpc`'s terminal-event test (a known timing race
+   between a stubbed run's `:agent-settled` and the `:status` the mode writes
+   on dispose) failed in most full runs; without it, it passes as it always
+   had. A test that needs a tool table should not boot an application, and
+   does not have to."
+  [f]
+  (with-redefs [app-runtime/registry (let [handle (registry/atom-registry)]
+                                       (constantly handle))]
+    (f)))

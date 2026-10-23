@@ -1122,12 +1122,31 @@ guard's coordinate test holds the three to one sha). Everything else the tool
 layer needs — `babashka/process`, `babashka/fs`, malli — `app` already
 declared for the session layer.
 
-**The seam test went with the seam.** It pinned the three claims a process
-default needed (a cleared cell raises `::no-default-registry` from a read and a
-write, an installed fn is the handle writes land in, `app-runtime`'s load points
-it at the façade) and all three are gone with the cell. What replaced it is the
-arity: the registry's callers get a compile-time error, not a runtime
-fallback, and the sandbox cannot reach the parameter at all.
+**Review also found what booting the app root does to kmet1's rpc mode.** Four
+runs in five, a full suite failed `kmet.agent.modes.test-rpc`'s terminal-event
+test — `:agent-settled` reached the stream, then a `:status` the mode writes on
+dispose — and the trigger was not the diff: `bb test
+kmet.agent.loop.test-tools kmet.agent.modes.test-rpc` reproduced it, because
+the loop tests registered stand-in tools through the app root and so booted
+kmet2's composition *before* the rpc namespace ran. The root is not the loop
+tests' subject, so they now take a fresh handle
+(`kmet.agent.loop.test-support/with-registry`) and the flake returned to its
+historical rate. The race itself is real and stays: a booted root shifts the
+timing between the stubbed run's settle and dispose's status write, and
+landing 5 re-hosts this mode on the app's bus, where that ordering must be
+decided rather than timed.
+
+**The seam test went with the seam; the property it was standing in for is
+pinned instead.** The three claims a process default needed (a cleared cell
+raises `::no-default-registry` from a read and a write, an installed fn is the
+handle writes land in, `app-runtime`'s load points it at the façade) are gone
+with the cell — the arity replaced them, since the registry's callers now get a
+compile-time error rather than a runtime fallback. In their place,
+`kmet.agent.tools.test-tool-tables` holds the property the refactor bought and
+4c-iii-c needs: a registration belongs to the handle it was registered in, the
+same name dispatches to each handle's own tool, and the built-in table is built
+per handle. Mutation-checked — pointing dispatch at a fresh registry fails two
+of its three assertions.
 
 Ledger: **twelve source files moved into `app`** (3,891 lines), four test
 namespaces with them (1,968 lines), one `deps.edn` line added; the registry

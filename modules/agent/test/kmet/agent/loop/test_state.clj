@@ -16,6 +16,13 @@
             [kmet.agent.retry :as retry]
             [kmet.agent.loop.test-support :as support]))
 
+(t/use-fixtures
+  :each
+  ;; The app root is not this namespace's subject: `test-support/with-registry`
+  ;; gives each test its own tool table, so registering a stand-in tool here
+  ;; cannot boot kmet2's composition for the rest of the suite.
+  (fn [f] (support/with-registry f)))
+
 ;; ─── State construction ───────────────────────────────────────────────────
 
 (t/deftest test-loop-make-agent-state-defaults

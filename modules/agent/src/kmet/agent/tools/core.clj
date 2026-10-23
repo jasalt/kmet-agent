@@ -23,10 +23,11 @@
             [kmet.agent.tools.registry :as registry]
             [kmet.agent.tools.invoke :as invoke]))
 
-(def ^:private app-registry
+(defn- app-registry
   "kmet1's handle, resolved per call rather than captured: the first call boots
    the app root, and a capture would freeze whatever existed at load time."
-  #(app-runtime/registry))
+  []
+  (app-runtime/registry))
 
 ;; ─── From tool.clj (Tool record + helpers) ──────────────────────────────────
 
