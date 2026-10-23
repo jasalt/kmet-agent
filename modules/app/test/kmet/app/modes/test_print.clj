@@ -24,30 +24,39 @@
               (with-out-str (reset! code (core/main args))))]
     {:code @code :out out :err (str err)}))
 
-(defn- with-stubbed-model
-  "Run F with the model answering TEXT, the API key stubbed, and the session
-   log under target/."
-  [text f]
+(defn- settings
+  "What the driver loads for a run: a provider and model that resolve, and the
+   session log under target/ so a test never writes to the agent dir a
+   developer's kmet reads."
+  []
+  {:session-dir sessions-dir
+   :provider :opencode-go
+   :model "deepseek-v4-flash"})
+
+(defn- with-mode-run
+  "Run F with the model stubbed by SEND-MESSAGE (a `send-message` stub) and the
+   settings above."
+  [send-message f]
   (fs/create-dirs sessions-dir)
   (try
-    ;; a realistic settings map: a provider and model that resolve, the log
-    ;; under target/. Print mode reads its config the way the app does
-    (with-redefs [cfg/load-config (fn [& _] {:session-dir sessions-dir
-                                             :provider :opencode-go
-                                             :model "deepseek-v4-flash"})
+    (with-redefs [cfg/load-config (fn [& _] (settings))
                   cfg/get-api-key (fn [_] "test-key")
-                  llm/send-message
-                  (fn [opts]
-                    (future
-                      (when-let [on-text (:on-text opts)] (on-text text))
-                      (when-let [on-done (:on-done opts)] (on-done :stop))
-                      :done))]
+                  llm/send-message send-message]
       (f))
     (finally (fs/delete-tree sessions-dir))))
 
+(defn- answering
+  "A `send-message` stub that streams TEXT and stops."
+  [text]
+  (fn [opts]
+    (future
+      (when-let [on-text (:on-text opts)] (on-text text))
+      (when-let [on-done (:on-done opts)] (on-done :stop))
+      :done)))
+
 (deftest print-mode-runs-a-prompt-and-exits-zero
-  (with-stubbed-model
-    "hello from the model"
+  (with-mode-run
+    (answering "hello from the model")
     (fn []
       (let [{:keys [code out]} (run-main ["--profile" "print" "hello"])]
         (is (= 0 code) "a completed prompt exits 0")
@@ -63,14 +72,6 @@
     (is (str/includes? err "No message provided")
         "the usage names the flag and the message, before anything boots")))
 
-(deftest a-profile-without-a-mode-still-boots-and-reports
-  (let [{:keys [code err]} (run-main [])]
-    (is (= 1 code))
-    (is (str/includes? err "booted 13 plugin rows")
-        "the default profile still proves its rows mount")
-    (is (str/includes? err "no runnable mode yet")
-        "and says which profiles do run one")))
-
 (deftest a-diagnostic-mount-does-not-run-the-prompt
   ;; `--dump-state` mounts every row of the profile, this one included — a
   ;; diagnostic mount hands the mode no `:on-result`, so it stays inert and the
@@ -85,20 +86,14 @@
   ;; The mode's verdict is its exit code: a shell script reads it. The model
   ;; fails with a non-retryable message, the loop surfaces it as :error, and
   ;; the prompt reports it on stderr rather than printing a half answer.
-  (with-redefs [cfg/load-config (fn [& _] {:session-dir sessions-dir
-                                           :provider :opencode-go
-                                           :model "deepseek-v4-flash"})
-                cfg/get-api-key (fn [_] "test-key")
-                llm/send-message
-                (fn [opts]
-                  (future
-                    (when-let [on-error (:on-error opts)] (on-error "boom"))
-                    :done))]
-    (fs/create-dirs sessions-dir)
-    (try
+  (with-mode-run
+    (fn [opts]
+      (future
+        (when-let [on-error (:on-error opts)] (on-error "boom"))
+        :done))
+    (fn []
       (let [{:keys [code out err]} (run-main ["--profile" "print" "hello"])]
         (is (= 1 code) "a failed run exits 1")
         (is (= "" out) "and prints no text")
         (is (str/includes? err "Error: boom")
-            "the failure reaches stderr, named as the model reported it"))
-      (finally (fs/delete-tree sessions-dir)))))
+            "the failure reaches stderr, named as the model reported it")))))

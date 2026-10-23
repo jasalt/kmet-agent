@@ -15,6 +15,12 @@
      {:id :permissions :remove true}                   ; drop the row
      {:id :tool/ls :plugin … :after :tool/read}         ; insert (unknown id)
 
+   One row key is not composition data: `:mode true` marks the row
+   `kmet.app.core` runs as the profile's mode, handing it the command line
+   (`new-app.md` § Landing 5a). It travels with the row rather than with the
+   profile so a patch that *replaces* the mode's plugin — an extension's own
+   print mode — replaces what runs and not that it runs.
+
    Config *values* deep-merge; composition does not — a bundle's rows are
    appended as they are, and later layers patch by id. A patch that names an
    unknown id without a `:plugin` is an error, not a silent no-op.
