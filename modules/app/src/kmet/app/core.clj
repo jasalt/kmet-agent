@@ -7,10 +7,15 @@
    mounts. `--dump-state` is the other half of an inspection: it boots the same
    rows and prints the ctx tree the boot produced (`kmet.app.inspect`), which is
    the one question a composition listing cannot answer — what is `:pending` and
-   on what, what failed and with which error. No mode is wired yet, so a run
-   neither dumps nor boots reports what it mounted, disposes it, and exits —
-   landings 4a–4d mount the services a mode drives and landing 5 adds the modes,
-   not this contract.
+   on what, what failed and with which error.
+
+   A profile with a **mode row** runs it: the row is marked `:mode true`, and
+   the entry point merges the invocation's input into that row's config before
+   booting (the prompt, and where the mode reports its exit). The mode owns its
+   output and runs on its own thread; `main` waits for the exit and disposes the
+   composition it booted. Print mode is the first (`kmet.app.modes.print`);
+   a profile without a mode row still boots, reports what it mounted, and
+   exits, which is what proves the rest of the rows mount.
 
    Output and exit codes are separable on purpose: `main` returns the exit
    code and `-main` is the only form that calls `System/exit`, so tests read a
@@ -158,13 +163,16 @@
   (println "  --version          Print the version and exit")
   (println "  -h, --help         Show this help")
   (println)
+  (println)
+  (println "  kmet --app new --profile print \"list the files\"   run one prompt and exit")
+  (println)
   (println "kmet2 is the migration target: --app old runs the current app, whose")
   (println "options kmet --app old --help prints."))
 
 (defn- not-wired [args]
   (binding [*out* *err*]
-    (println "kmet2 has no runnable mode yet — landings 4a–4d mount the session")
-    (println "log, the extension host and the agents; landing 5 adds the modes.")
+    (println "this profile has no runnable mode yet — landing 5 adds the")
+    (println "interactive, rpc and server modes. --profile print runs one:")
     (println "  kmet --app new --dump-config   print the composed rows")
     (println "  kmet --app new --dump-state    print the booted ctx tree")
     (println "  kmet --app new --version       print the version")
@@ -181,17 +189,63 @@
          " (" (count fibers) " fiber" (when (not= 1 (count fibers)) "s")
          ", services: " (if (seq services) (str/join " " services) "none") ")")))
 
-(defn- run-composed
-  "Boot the composition a run would mount, report what it mounted, dispose it,
-   and say that no mode is wired yet. The boot is the point: it is what proves
-   a profile's rows actually mount, without a turn to run."
-  [opts args]
-  (let [booted (runtime/boot (compose-config opts))]
+(defn- mode-row
+  "The composed row a profile marked as its mode, or nil."
+  [rows]
+  (some #(when (:mode %) %) rows))
+
+(defn- run-mode
+  "Boot COMPOSED and drive its mode row: merge the invocation's input into the
+   row's config, wait for the mode to report, and return its exit code. The
+   mode owns what it prints; the entry point owns the process, the boot and the
+   teardown."
+  [composed prompt]
+  (let [result (promise)
+        booted (runtime/boot
+                (update composed :rows
+                        (fn [rows]
+                          (mapv (fn [row]
+                                  (if (:mode row)
+                                    (update row :config merge
+                                            {:prompt prompt
+                                             :on-result #(deliver result %)})
+                                    row))
+                                rows))))]
+    (try
+      (:exit (deref result) 1)
+      (finally
+        (runtime/shutdown! booted)))))
+
+(defn- no-prompt []
+  (binding [*out* *err*]
+    (println "No message provided. Usage: kmet --app new --profile print \"your message\"")
+    (flush))
+  1)
+
+(defn- boot-and-report
+  "The path a profile without a mode row takes: boot the composition a run would
+   mount, report what it mounted, dispose it, and say that this profile has no
+   runnable mode yet. The boot is the point — it is what proves a profile's rows
+   actually mount, without a turn to run."
+  [composed args]
+  (let [booted (runtime/boot composed)]
     (try
       (binding [*out* *err*] (println (boot-summary booted)) (flush))
       (finally
         (runtime/shutdown! booted)))
     (not-wired args)))
+
+(defn- run-composed
+  "A run with neither `--dump-…` flag: the profile's mode, when it has one, else
+   the boot report."
+  [opts args]
+  (let [composed (compose-config opts)]
+    (if (mode-row (:rows composed))
+      (let [prompt (str/join " " args)]
+        (if (str/blank? prompt)
+          (no-prompt)
+          (run-mode composed prompt)))
+      (boot-and-report composed args))))
 
 (defn- configuration-error? [e]
   (str/starts-with? (str (:type (ex-data e))) ":kmet."))
