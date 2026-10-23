@@ -746,8 +746,9 @@ at the next turn boundary, or as a fresh attempt in the same prompt when the
 prompt is already settling.
 With `:expand-prompt-templates?`, the message runs through the submit
 chain first — extension commands execute immediately (consuming the
-message), then skill commands and prompt templates expand (pi:
-expandPromptTemplates; kmet defaults to no expansion).
+message), then the host's expansion runs (pi: expandPromptTemplates; kmet1
+expands skill commands and prompt templates, and a host that names no chain
+expands nothing — the option is the host's policy, not the ABI's).
 
 Agent control is **runtime-bound** (pi: `bindCore` actions): the session
 runtime installs it at bootstrap, so it works in every front end —

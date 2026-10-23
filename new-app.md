@@ -1128,6 +1128,19 @@ load). So the cut is two options, not a lift:
   stop loading skills or expanding commands, and the suite would stay green.
   Mutation-checked both ways (layout losing the chain, print gaining one).
 
+  A simplify pass on the same pair tightened four things: the guard's
+  `ns-requires` assertion went (lint already fails an unresolved
+  `packages/load-resources!`, so it was the same check twice) along with its
+  one-use key set; the options docstring now groups the front end's three
+  (`:ctx`, `:expand-input`, `:load-resources!`) after the state options instead
+  of scattering them, with the "none has a default" rule stated once; the
+  expansion test gained the real chain (a registered prompt template expands on
+  an engine that names `packages/expand-input` and passes through on one that
+  names none — a fake chain proved the seam but not the wiring); and the loader
+  now runs once the ctx is named rather than first, so a loader that registers
+  into that ctx can read it. `extension.md`'s `:expand-prompt-templates?` entry
+  says the host owns the chain, which is what the ABI actually promises.
+
   What the Engine still reaches for in `kmet.agent.*` is now two things, and
   neither is a lift: `commands` ×3 for **extension-command dispatch** (the
   extension ABI; a re-point at retirement, not a policy cut) and `skills` for

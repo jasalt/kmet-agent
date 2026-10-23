@@ -150,23 +150,12 @@
      :provider     — provider override; defaults to the config provider
      :cwd          — runtime cwd override for the prompt; defaults to the
                      session's recorded cwd, else the process cwd
-     :expand-input — the fn the engine applies to queued and submitted text
-                     before it reaches the run, replacing skill commands and
-                     prompt templates with what they stand for; kmet1's front
-                     ends pass `kmet.agent.packages/expand-input`, and an engine
-                     bootstrapped without one queues text as written
      :mode         — front-end kind bound to extensions (pi: mode);
                      defaults to :print
      :has-ui       — whether the front end has a UI port (ctx.has-ui);
                      defaults to false
      :ui-context   — front-end capability map; defaults to the headless
                      port + build-context (session-runtime/default-ui-port)
-     :load-resources! — a thunk `bootstrap` calls once, before the prompt is
-                     built, to put the caller's skills and prompt templates
-                     into the app's registries; kmet1's front ends pass
-                     `kmet.agent.packages/load-resources!` (the unified
-                     package resolution), and no default means an engine that
-                     was handed none loads none
      :agent-opts   — extra/overriding make-agent-state options (escape hatch
                      for tests and front-end-specific run options; the
                      engine's session follows an overridden :session).
@@ -175,35 +164,49 @@
                      active-tools change, defaulting to
                      `kmet.agent.skills/build-system-prompt`, whose `:skills`
                      default reads the process registry) and an overridden
-                     `:ctx` are read from here. Policy that is the front
-                     end's rather than the state's — `:load-resources!`,
-                     `:expand-input`, and the `:ctx` the engine lists and
-                     dispatches with — is top-level
+                     `:ctx` are read from here.
+
+     The rest is the front end's policy, not the state's, and none of the three
+     has a default — an engine bootstrapped without one behaves as if the
+     process had none, because the Engine does not know how this process keeps
+     its resources:
+
      :ctx          — the ctx the engine runs on: the caller names the ctx whose
                      `:tools` service is the table this engine lists and
                      dispatches through, and whose `:loop-stages` the run reads
-                     (4c-iii-c); kmet1's modes name the app root. There is no
-                     default, because a state with no ctx has no tool table —
-                     `bootstrap` fails at the prompt rather than mid-turn
+                     (4c-iii-c); kmet1's modes name the app root. A state with
+                     no ctx has no tool table — `bootstrap` fails at the
+                     prompt rather than mid-turn
+     :expand-input — the fn the engine applies to queued and submitted text
+                     before it reaches the run, replacing skill commands and
+                     prompt templates with what they stand for; kmet1's front
+                     ends pass `kmet.agent.packages/expand-input`, and an
+                     engine given none queues text as written
+     :load-resources! — a thunk `bootstrap` calls once, before the prompt is
+                     built, to put the caller's skills and prompt templates
+                     into the app's registries; kmet1's front ends pass
+                     `kmet.agent.packages/load-resources!` (the unified
+                     package resolution), and an engine given none loads none
 
    Loads the caller's resources (`:load-resources!`), builds the system prompt
-   (custom prompt,
-   appended prompt, project context files, active tools), derives every
-   run option from CONFIG with the same defaults the TUI and print mode
-   used to wire by hand, seeds the scoped-model list, and installs the
-   extension runtime handle (session, context sink, UI registry)."
+   (custom prompt, appended prompt, project context files, active tools),
+   derives every run option from CONFIG with the same defaults the TUI and
+   print mode used to wire by hand, seeds the scoped-model list, and installs
+   the extension runtime handle (session, context sink, UI registry)."
   [config opts]
   (let [{:keys [model provider cwd ui-context mode has-ui agent-opts ctx
-                expand-input]} opts
+                load-resources! expand-input]} opts
         ;; the resolved session (the layout/print-mode policy output); any
         ;; :agent-opts override is folded back in below via the agent state
         sess (:session opts)
-        _ (when-let [load! (:load-resources! opts)] (load!))
         ;; the ctx the engine runs on: the caller's (a subagent's child ctx),
         ;; or the app root kmet1's modes pass — the prompt's tool table and the
         ;; agent state both read this one value, so the two can never name
         ;; different tables
         ctx (or (:ctx agent-opts) ctx)
+        ;; the caller's resources land once the ctx is named, before the prompt
+        ;; is built from them
+        _ (when load-resources! (load-resources!))
         provider (or provider (cfg/get-provider config))
         model (or model (models/resolve-config-model config))
         model-rec (models/get-model provider model)
