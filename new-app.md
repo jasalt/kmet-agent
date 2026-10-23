@@ -1231,7 +1231,15 @@ pointing at a dead root.
 Gate, met end to end: `kmet.app.test-composition-run` boots the real thirteen-row
 composition, creates an agent through `create!`, sends it a message, and the run
 reaches the model and settles `:completed` with `[:user :assistant]` in its
-context. Also found on the way: the loop
+context.
+
+The row also retired a fixture: the driver's tests had stood the binding up by
+hand, with a comment saying that is what the row would do — they mount the row
+now, so the composition they exercise is the one that ships. And because the
+binding is process-wide, the tests put back what they found
+(`bind-services!` returns it) rather than leaving the host pointing at a dead
+root or unbound; the second test's real subject is that discipline: mount,
+mount again, dispose — the first owner's handle answers again. Also found on the way: the loop
 cannot run over `kmet.app.sessions/memory-backend`'s session (a nil-message NPE
 from the append path) — it is a registry-shaped fixture, not a store session,
 so the driver's test uses the real EDNL backend under `target/`.

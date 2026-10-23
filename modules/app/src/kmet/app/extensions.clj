@@ -21,7 +21,7 @@
             [kmet.app.registries :as registries]
             [kmet.srce.core :as srce]))
 
-(defn serve
+(defn- serve
   "Bind the host's services for this composition. Returns the disposer that
    restores the binding it replaced."
   [ctx _config]

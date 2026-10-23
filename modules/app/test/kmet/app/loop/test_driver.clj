@@ -6,11 +6,11 @@
   (:require [babashka.fs :as fs]
             [clojure.test :refer [deftest is]]
             [kmet.agent.config :as cfg]
-            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.session.backend :as backend]
             [kmet.agent.event-bus :as event-bus]
             [kmet.ai.llm :as llm]
             [kmet.app.agents :as agents]
+            [kmet.app.extensions :as host]
             [kmet.app.loop.driver :as driver]
             [kmet.app.projections :as projections]
             [kmet.app.registries :as registries]
@@ -31,25 +31,17 @@
             (srce/provide! mount :sessionPersistence (backend/ednl)
                            {:in (:parent mount)}))})
 
-(defn- bind-host!
-  "Hand the extension host its services for this root — the handle its own
-   tags live in and the ctx an `:inject` mounts under. The composition does
-   not have this row yet (the host is still kmet1's process binding), so the
-   test stands it up the way that row will."
-  [root]
-  (extensions/bind-services! (fn [] {:registry (registries/service)
-                                     :ctx root})))
-
 (defn- mounted
   "A booted root with the rows the driver injects — the log, the registries,
-   the prompt row, the agent registry — and the driver over them."
+   the prompt row, the agent registry — and the driver over them. The host's
+   row comes too: a run's first extension hook resolves through the binding it
+   makes, which is why a composition has it."
   []
   (fs/create-dirs sessions-dir)
   (let [ctx (srce/root {:name :app})]
-    (bind-host! ctx)
-    (doseq [row [(persistence-row) sessions/plugin projections/plugin
-                 registries/tools registries/skills system-prompt/plugin
-                 agents/plugin driver/plugin]]
+    (doseq [row [host/plugin (persistence-row) sessions/plugin
+                 projections/plugin registries/tools registries/skills
+                 system-prompt/plugin agents/plugin driver/plugin]]
       (srce/plugin! ctx row))
     {:root ctx :agents (srce/get ctx :agents)}))
 
