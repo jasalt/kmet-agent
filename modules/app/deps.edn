@@ -16,9 +16,10 @@
  ;; upward (new-app.md, 4b-ii).
  ;;
  ;; kmet.app.loop.stages is 7a's first step: the loop's stage map (`defaults`,
- ;; `for-ctx`, `refresh!`), so the loop reads its stages from the ctx it was
- ;; handed and `kmet.agent.app-runtime` is left holding only the process's own
- ;; entry points. It reaches `kmet.agent.loop-guard`/`.retry`, which live here.
+ ;; `for-ctx`, `refresh!`, and `with-defaults` for the ctx builders), so the
+ ;; loop reads its stages from the ctx it was handed and
+ ;; `kmet.agent.app-runtime` is left holding only the process's own entry
+ ;; points. It reaches `kmet.agent.loop-guard`/`.retry`, which live here.
  ;;
  ;; 7a's third and fourth steps moved the loop cluster as-is (namespaces kept,
  ;; tests to follow): kmet.agent.loop.message, .loop.state, .loop.completion,

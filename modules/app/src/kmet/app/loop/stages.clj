@@ -19,6 +19,14 @@
   {:loop-guard {:call loop-guard/loop-guard-filter}
    :retry-policy {:call retry/retry-decision}})
 
+(defn with-defaults
+  "OVERRIDES merged over the builtin defaults, stage by stage — what a ctx
+   builder seats under `:loop-stages` when a run wants some of its own. A
+   stage map a ctx carries is read whole (`for-ctx`), so this is where the
+   defaults and the overrides meet."
+  [overrides]
+  (merge-with merge defaults overrides))
+
 (defn for-ctx
   "CTX's loop stage map, read once per attempt. The nearest `:loop-stages` on
    the ctx chain wins — a root carries the builtin defaults, a child ctx its

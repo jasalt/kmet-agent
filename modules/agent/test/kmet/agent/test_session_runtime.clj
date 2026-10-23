@@ -532,7 +532,9 @@
       (is (= "custom-prompt" @(:system (rt/agent-state engine)))
           "and so does a cwd move")
       (is (= 2 @calls))
-      (finally (rt/dispose! engine)))))
+      (finally
+        (rt/dispose! engine)
+        (fs/delete-tree dir)))))
 
 (deftest test-two-engines-do-not-cross-contaminate
   (let [dir1 (str "target/test-multi-engine-a-" (System/currentTimeMillis))

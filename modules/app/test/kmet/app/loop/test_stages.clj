@@ -18,7 +18,7 @@
           sibling (srce/extend parent {})]
       (is (= {:retry-policy {:call :child}} (stages/for-ctx child))
           "a ctx that carries a map with its own is the map; merging over the
-           defaults is the builder's job (app-runtime/child-ctx)")
+           defaults is `with-defaults`, which the ctx builders call")
       (is (= {:loop-guard {:call :parent}} (stages/for-ctx sibling))
           "a child with no atom of its own reads the parent's")))
   (testing "a ctx with no stage atom anywhere, or none at all, reads the defaults"
@@ -44,3 +44,17 @@
       (finally (stages/refresh! child)))
     (is (not (identical? changed (get-in (stages/for-ctx child) [:loop-guard :call])))
         "the real stage is back")))
+
+(deftest with-defaults-merges-stage-by-stage
+  ;; The two ctx builders (kmet1's process shim and the loop test support) both
+  ;; seat a run's stages over the builtin map; this is that one operation.
+  (let [merged (stages/with-defaults {:retry-policy {:config {:max-retries 1}}})]
+    (is (= {:max-retries 1} (get-in merged [:retry-policy :config]))
+        "the override lands on its stage")
+    (is (fn? (get-in merged [:retry-policy :call])) "and the default handle survives")
+    (is (= (get-in stages/defaults [:loop-guard :call])
+           (get-in merged [:loop-guard :call]))
+        "a stage the override does not name keeps its default")
+    (is (= (get-in stages/defaults [:loop-guard :call])
+           (get-in (stages/with-defaults nil) [:loop-guard :call]))
+        "and no override is the defaults")))

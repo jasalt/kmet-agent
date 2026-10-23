@@ -54,7 +54,7 @@
   ([] (child-ctx nil))
   ([parent] (child-ctx parent nil))
   ([parent stages]
-   (let [meta {:loop-stages (atom (merge-with merge loop-stages/defaults stages))}]
+   (let [meta {:loop-stages (atom (loop-stages/with-defaults stages))}]
      (if parent (srce/extend parent meta) (srce/root meta)))))
 
 (def registry-tags

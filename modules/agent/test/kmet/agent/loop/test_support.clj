@@ -278,9 +278,7 @@
          ;; the stage map rides the ctx meta as an atom, the way
          ;; app-runtime/child-ctx builds one, so a refresh can swap it
          ctx (srce/root {:name :test-loop
-                         :loop-stages (atom (merge-with merge
-                                                        loop-stages/defaults
-                                                        stages))})]
+                         :loop-stages (atom (loop-stages/with-defaults stages))})]
      (srce/plugin! ctx {:name :tools
                         :provide #{:tools}
                         :apply (fn [c _]
