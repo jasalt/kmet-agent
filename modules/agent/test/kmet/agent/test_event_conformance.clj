@@ -12,6 +12,7 @@
             [kmet.ai.llm :as llm]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.loop :as loop]
+            [kmet.agent.loop.test-support :as support]
             [kmet.agent.config :as cfg]))
 
 ;; ─── The headless renderer ────────────────────────────────────────────────
@@ -133,7 +134,7 @@
    events."
   [stub]
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [event] (swap! events conj event)))]
+        agent (support/make-agent-state :on-event (fn [event] (swap! events conj event)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message stub
                   state/execute-tool-for (fn [_ _ _ _] {:content "file body" :is-error false})]

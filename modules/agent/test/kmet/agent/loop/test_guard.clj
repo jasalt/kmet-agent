@@ -76,7 +76,7 @@
   (let [events (atom [])
         executed (atom [])
         calls (atom 0)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :loop-guard-threshold 3
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -123,7 +123,7 @@
   (let [events (atom [])
         calls (atom 0)
         done-text (atom nil)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
@@ -148,12 +148,17 @@
     (t/is (str/includes? (or @done-text "") "repeated identical tool calls")
           "on-done carries the guard explanation")))
 
-(t/deftest test-loop-agent-runs-in-the-app-ctx
-  ;; The run's ctx defaults to the app's (kmet.agent.app-runtime), and a run
-  ;; can be pointed at its own child ctx (new-app.md, landing 4c-ii-b).
-  (t/is (identical? (runtime/ctx) (:ctx (loop/make-agent-state))))
+(t/deftest test-loop-state-names-its-ctx
+  ;; A state names the ctx it reads its stages and tool table from — there is no
+  ;; process default left (new-app.md, 7a) — and a run can be pointed at its own
+  ;; child ctx (landing 4c-ii-b).
   (let [mine (runtime/child-ctx)]
-    (t/is (identical? mine (:ctx (loop/make-agent-state :ctx mine))))))
+    (t/is (identical? mine (:ctx (support/make-agent-state :ctx mine))))
+    (t/is (identical? (support/process-ctx) (:ctx (support/make-agent-state))))
+    (t/is (= :kmet/no-tool-service
+             (try (state/tool-table (support/make-agent-state :ctx nil)) nil
+                  (catch Exception e (:type (ex-data e)))))
+          "a state with no ctx has no tool table — the throw names it")))
 
 (t/deftest test-loop-runs-the-guard-in-its-ctx
   ;; The guard is the ctx's stage, not a namespace read: a spy in the run's
@@ -182,7 +187,7 @@
                       (when-let [on-done (:on-done opts)]
                         (on-done :tool-calls))
                       :done))]
-      (let [agent (loop/make-agent-state :ctx mine :on-event (fn [_]))]
+      (let [agent (support/make-agent-state :ctx mine :on-event (fn [_]))]
         @(loop/run-agent-turn agent {:message "run"
                                      :on-done (fn [_])
                                      :on-error (fn [_])})
@@ -204,8 +209,8 @@
         calls (atom 0)
         ;; the run's own budget would end the error immediately; the mount's
         ;; config is the one that counts
-        agent (loop/make-agent-state :ctx mine :max-retries 0
-                                     :base-delay-ms 1 :on-event (fn [_]))]
+        agent (support/make-agent-state :ctx mine :max-retries 0
+                                        :base-delay-ms 1 :on-event (fn [_]))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -255,7 +260,7 @@
                                      (on-done :tool-calls))
                                    :done))]
                    @(loop/run-agent-turn
-                     (loop/make-agent-state :ctx run-ctx :on-event (fn [_]))
+                     (support/make-agent-state :ctx run-ctx :on-event (fn [_]))
                      {:message "run" :on-done (fn [_]) :on-error (fn [_])}))))]
     ;; The ctx's stages change while the first attempt is in flight.
     (run! (fn []
@@ -278,7 +283,7 @@
   (let [events (atom [])
         done-text (atom nil)
         llm-signal (atom nil)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
@@ -317,7 +322,7 @@
   ;; is a new directive, not a continuation of the loop).
   (let [events (atom [])
         calls (atom 0)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :loop-guard-threshold 3
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -347,7 +352,7 @@
   ;; normally once the stub produces a plain reply.
   (let [events (atom [])
         calls (atom 0)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :loop-guard-enabled false
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -379,7 +384,7 @@
   (let [events (atom [])
         calls (atom 0)
         done-text (atom nil)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :loop-guard-threshold 3
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -421,7 +426,7 @@
   (let [events (atom [])
         calls (atom 0)
         done-text (atom nil)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :loop-guard-threshold 3
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -462,7 +467,7 @@
   ;; on the 3rd identical bash.
   (let [events (atom [])
         calls (atom 0)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :loop-guard-threshold 3
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -496,7 +501,7 @@
   (let [events (atom [])
         calls (atom 0)
         executed (atom 0)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :loop-guard-threshold 3
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")

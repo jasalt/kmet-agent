@@ -220,6 +220,10 @@
                                      :provider provider
                                      :system system-prompt
                                      :system-prompt-opts system-prompt-opts
+                                    ;; the state rebuilds the prompt on an
+                                    ;; active-tools change; kmet1's builder is
+                                    ;; the process-bound wrapper
+                                     :system-prompt-fn skills/build-system-prompt
                                      :session sess
                                      :default-tools default-tools
                                      :context-window (or (:context-window model-rec)

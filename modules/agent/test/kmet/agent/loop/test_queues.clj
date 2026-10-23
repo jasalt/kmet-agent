@@ -7,13 +7,14 @@
             [kmet.agent.compaction.stage :as compact]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
+            [kmet.agent.loop.test-support :as support]
             [kmet.agent.config :as cfg]))
 
 ;; ─── Queues (steering / follow-up) ────────────────────────────────────────
 
 (t/deftest test-loop-steer-queues-message
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (state/steer! agent "first")
     (state/steer! agent "second")
     (t/is (= ["first" "second"] @(:steering agent)))
@@ -33,7 +34,7 @@
 
 (t/deftest test-loop-followup-queues-message
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (state/follow-up! agent "later")
     (t/is (= ["later"] @(:follow-up agent)))
     (t/is (state/has-queued-messages? agent))
@@ -44,7 +45,7 @@
   ;; pi: Agent.peekQueuedMessages — a non-destructive preview of the batch
   ;; the loop consumes next: steering while it has messages (the inner loop
   ;; polls it first), otherwise the follow-up queue; each per its queue mode.
-  (let [agent (loop/make-agent-state)
+  (let [agent (support/make-agent-state)
         next-drain (fn []
                      (if (seq @(:steering agent))
                        (state/drain-queue! (:steering agent)
@@ -82,7 +83,7 @@
 
 (t/deftest test-loop-cancel-clears-queues
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (state/steer! agent "x")
     (state/follow-up! agent "y")
     (loop/cancel-turn agent)
@@ -96,7 +97,7 @@
 (t/deftest test-loop-steer-injects-mid-run
   (let [calls (atom 0)
         events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -144,7 +145,7 @@
   (let [calls (atom 0)
         done-count (atom 0)
         events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -199,7 +200,7 @@
         seen (atom [])
         events (atom [])
         queue-once (atom true)
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))
         dereg-end (event-bus/on-event
                    :agent-end
                    (fn [_]
@@ -256,7 +257,7 @@
 
 (t/deftest test-loop-steer-one-at-a-time
   (let [calls (atom 0)
-        agent (loop/make-agent-state :steering-mode :one-at-a-time)]
+        agent (support/make-agent-state :steering-mode :one-at-a-time)]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -292,7 +293,7 @@
   ;; the user role and the queued text when a message is drained.
   (let [calls (atom 0)
         events (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
@@ -331,7 +332,7 @@
   ;; still be displayed (pi emits message_start for prompt messages before
   ;; running the loop) — the UI adds it to the chat on :message-start.
   (let [events (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] nil)]
       @(loop/run-agent-turn agent
@@ -348,14 +349,14 @@
 ;; ─── Queue modes (per-queue) ───────────────────────────────────────────────
 
 (t/deftest test-loop-queue-modes-default
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (t/is (= :all (:steering-mode @(:cfg agent))))
     (t/is (= :one-at-a-time (:follow-up-mode @(:cfg agent))))))
 
 (t/deftest test-loop-queue-mode-setters
   ;; /settings applies queue modes + idle timeout live (pi: setSteeringMode /
   ;; setFollowUpMode / setHttpIdleTimeoutMs)
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (swap! (:cfg agent) assoc :steering-mode :one-at-a-time)
     (swap! (:cfg agent) assoc :follow-up-mode :one-at-a-time)
     (t/is (= :one-at-a-time (:steering-mode @(:cfg agent))))
@@ -366,18 +367,18 @@
 (t/deftest test-loop-auto-compact-flag
   ;; pi: autoCompact — the flag gates proactive compaction, defaults on,
   ;; and is settable live (/settings row)
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (t/is (true? (:auto-compact @(:cfg agent))))
     (state/set-auto-compact! agent false)
     (t/is (false? (:auto-compact @(:cfg agent))))
     (t/is (false? (compact/maybe-compact! agent))
           "no session → no proactive compaction regardless"))
-  (let [agent (loop/make-agent-state :auto-compact false)]
+  (let [agent (support/make-agent-state :auto-compact false)]
     (t/is (false? (:auto-compact @(:cfg agent))))))
 
 (t/deftest test-loop-followup-one-at-a-time
   (let [calls (atom 0)
-        agent (loop/make-agent-state :follow-up-mode :one-at-a-time)]
+        agent (support/make-agent-state :follow-up-mode :one-at-a-time)]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]

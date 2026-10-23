@@ -24,7 +24,7 @@
                                                          (System/currentTimeMillis))))
                   fs/absolutize str)
           sess (session/create-session dir)
-          agent (loop/make-agent-state :session sess)
+          agent (support/make-agent-state :session sess)
           calls (atom 0)
           opts (atom [])]
       (try
@@ -52,7 +52,7 @@
   (t/testing "a custom message deferred while streaming waits for the end of
               the turn, then lands after the tool result (pi:
               _pendingCustomMessages flushed at turn_end)"
-    (let [agent (loop/make-agent-state)
+    (let [agent (support/make-agent-state)
           requests (atom [])
           calls (atom 0)
           deferred? (fn [m] (= "deferred" (get-in m [:content 0 :text])))]
@@ -94,7 +94,7 @@
                                                          (System/currentTimeMillis))))
                   fs/absolutize str)
           sess (session/create-session dir)
-          agent (loop/make-agent-state :session sess)
+          agent (support/make-agent-state :session sess)
           calls (atom 0)]
       (try
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -137,7 +137,7 @@
                                                          (System/currentTimeMillis))))
                   fs/absolutize str)
           sess (session/create-session dir)
-          agent (loop/make-agent-state :session sess)
+          agent (support/make-agent-state :session sess)
           requests (atom [])
           hook-calls (atom 0)
           hook-contexts (atom [])
@@ -191,7 +191,7 @@
         requests (atom [])
         calls (atom 0)
         sess (session/create-session dir)
-        agent (loop/make-agent-state :session sess)]
+        agent (support/make-agent-state :session sess)]
     (try
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (support/stub-llm-text-turns calls ["first"] requests)]
@@ -227,7 +227,7 @@
         requests (atom [])
         calls (atom 0)
         sess (session/create-session dir)
-        agent (loop/make-agent-state :session sess)]
+        agent (support/make-agent-state :session sess)]
     (try
       (extensions/set-session! sess)
       (extensions/set-context-sink! (fn [msg] (state/add-context-message! agent msg)))
@@ -251,7 +251,7 @@
               pendingCustomContext): the handler sees a runnable boundary and
               its {:continue true} is honored, with the flush landing the
               message before the continuation request"
-    (let [agent (loop/make-agent-state)
+    (let [agent (support/make-agent-state)
           calls (atom 0)
           opts (atom [])
           boundaries (atom [])
@@ -297,7 +297,7 @@
               {:continue true} is honored even though the live context still
               ends with the assistant message — the flush follows the
               boundary"
-    (let [agent (loop/make-agent-state)
+    (let [agent (support/make-agent-state)
           opts (atom [])
           turns (atom 0)
           calls (atom 0)
@@ -332,7 +332,7 @@
   (t/testing "every event the loop emits is documented and round-trips through EDN"
     (let [events (atom [])
           calls (atom 0)
-          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+          agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (support/stub-llm-tool-then-text calls)
                     state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})]
@@ -349,7 +349,7 @@
 (t/deftest test-loop-agent-settled-outcome
   (t/testing "a completed run settles :completed"
     (let [events (atom [])
-          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+          agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message
                     (fn [o]
@@ -362,7 +362,7 @@
 
   (t/testing "a terminal error settles :error"
     (let [events (atom [])
-          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+          agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message
                     (fn [opts]
@@ -374,7 +374,7 @@
 
   (t/testing "an unhandled exception settles :error"
     (let [events (atom [])
-          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+          agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (fn [_] (throw (ex-info "kaboom" {})))]
         (binding [*err* (java.io.StringWriter.)]
@@ -384,7 +384,7 @@
   (t/testing "a cancelled run settles :aborted"
     (let [events (atom [])
           started (promise)
-          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+          agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (fn [_] (deliver started true) (promise))]
         (let [fut (loop/run-agent-turn agent {:message "hi" :on-error (fn [_])})]
@@ -395,7 +395,7 @@
 
   (t/testing "a prompt that cannot start still settles :error"
     (let [events (atom [])
-          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+          agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
       (with-redefs [cfg/get-api-key (fn [_] nil)
                     auth/configured? (fn [_] false)]
         @(loop/run-agent-turn agent {:message "hi" :on-error (fn [_])}))

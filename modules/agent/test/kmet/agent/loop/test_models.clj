@@ -13,7 +13,7 @@
 ;; ─── Phase 3: model management ───────────────────────────────────────────
 
 (t/deftest test-loop-make-agent-state-phase3-opts
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (t/is (instance? clojure.lang.Atom (:system-prompt-override agent)))
     (t/is (instance? clojure.lang.Atom (:transform-context agent)))
     (t/is (instance? clojure.lang.Atom (:prepare-next-turn agent)))
@@ -30,7 +30,7 @@
   (support/with-test-provider
     (fn []
       (let [events (atom [])
-            agent (loop/make-agent-state
+            agent (support/make-agent-state
                    :provider :test-prov :model "a"
                    :scoped-models ["test-prov/a" "test-prov/b" "test-prov/c"]
                    :on-event (fn [e] (swap! events conj e)))]
@@ -51,20 +51,20 @@
   (t/testing "duplicate scoped entries are dropped so cycling never stalls"
     (support/with-test-provider
       (fn []
-        (let [agent (loop/make-agent-state :provider :test-prov :model "a")]
+        (let [agent (support/make-agent-state :provider :test-prov :model "a")]
           (state/set-scoped-models! agent ["test-prov/a" "test-prov/a" "test-prov/b"])
           (t/is (= ["test-prov/a" "test-prov/b"] @(:scoped-models agent)))
           (t/is (= "b" (state/cycle-model! agent 1))
                 "the duplicate would otherwise consume the next cycle slot")))))
   (t/testing "the initial scoped list is deduplicated too"
-    (let [agent (loop/make-agent-state :scoped-models ["test-prov/a" "test-prov/a"])]
+    (let [agent (support/make-agent-state :scoped-models ["test-prov/a" "test-prov/a"])]
       (t/is (= ["test-prov/a"] @(:scoped-models agent))))))
 
 (t/deftest test-loop-cycle-model-falls-back-to-available
   ;; pi: no session scoped models → cycle over all available models
   (support/with-test-provider
     (fn []
-      (let [agent (loop/make-agent-state :provider :test-prov :model "b")]
+      (let [agent (support/make-agent-state :provider :test-prov :model "b")]
         (t/is (= "c" (state/cycle-model! agent 1)))
         (t/is (= "a" (state/cycle-model! agent 1)))))))
 
@@ -86,7 +86,7 @@
     (try
       (with-redefs [auth/auth-atom (atom {:test-prov {:key "sk"}
                                           :test-prov2 {:key "sk2"}})]
-        (let [agent (loop/make-agent-state
+        (let [agent (support/make-agent-state
                      :provider :test-prov :model "a"
                      :scoped-models ["test-prov/a" "test-prov2/x"])]
           (t/is (= "x" (state/cycle-model! agent 1)))
@@ -98,7 +98,7 @@
         (doseq [p saved] (models/register-provider! p))))))
 
 (t/deftest test-loop-cycle-model-no-models
-  (let [agent (loop/make-agent-state :model "a")]
+  (let [agent (support/make-agent-state :model "a")]
     (t/is (nil? (state/cycle-model! agent 1)) "no scoped models and no available models → nil")))
 
 (t/deftest test-loop-init-scoped-models
@@ -110,24 +110,24 @@
     (fn []
       ;; config :models wins over :enabled-models (pi: parsed.models ?? …)
       (let [agent (state/init-scoped-models!
-                   (loop/make-agent-state)
+                   (support/make-agent-state)
                    {:models ["test-prov/b"] :enabled-models ["test-prov/a"]})]
         (t/is (= ["test-prov/b"] @(:scoped-models agent))))
       ;; :enabled-models falls back when :models is unset
       (let [agent (state/init-scoped-models!
-                   (loop/make-agent-state)
+                   (support/make-agent-state)
                    {:enabled-models ["test-prov/a" "test-prov/c"]})]
         (t/is (= ["test-prov/a" "test-prov/c"] @(:scoped-models agent))))
       ;; no patterns → list stays empty (no scoping)
       (let [agent (state/init-scoped-models!
-                   (loop/make-agent-state)
+                   (support/make-agent-state)
                    {:enabled-models nil})]
         (t/is (= [] @(:scoped-models agent))))
       ;; unresolved patterns are skipped with a stderr warning — suppress it
       ;; (hosts without per-var output capture, e.g. jolt, would leak it)
       (let [agent (binding [*err* (java.io.StringWriter.)]
                     (state/init-scoped-models!
-                     (loop/make-agent-state)
+                     (support/make-agent-state)
                      {:enabled-models ["test-prov/a" "ghost/model"]}))]
         (t/is (= ["test-prov/a"] @(:scoped-models agent)))))))
 
@@ -173,7 +173,7 @@
           "explicit :off wins when given")))
 
 (t/deftest test-loop-retry-setters
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (t/is (= 3 (:max-retries @(:cfg agent))))
     (t/is (= 2000 (:base-delay-ms @(:cfg agent))))
     (swap! (:cfg agent) assoc :max-retries 0)
@@ -185,8 +185,8 @@
   (let [events (atom [])
         a (models/map->Model {:provider :p :id "a"})
         b (models/map->Model {:provider :p :id "b"})
-        agent (loop/make-agent-state :provider :p :model "a"
-                                     :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :provider :p :model "a"
+                                        :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [models/providers-atom (atom {:p {:models [a b]}})]
       (state/set-model! agent b)
       (let [ev (last @events)]
@@ -205,7 +205,7 @@
 ;; ─── Phase 3: dynamic API key ────────────────────────────────────────────
 
 (t/deftest test-loop-get-api-key-hook
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (reset! (:get-api-key agent) (fn [_] "hook-key"))
     (with-redefs [cfg/get-api-key (fn [_] "cfg-key")
                   llm/send-message
@@ -233,17 +233,17 @@
                       (when-let [on-text (:on-text opts)] (on-text "hi"))
                       (when-let [on-done (:on-done opts)] (on-done :stop))))]
       (t/testing "loop forwards provider + model; llm resolves the wire api"
-        @(loop/run-agent-turn (loop/make-agent-state :provider :opencode-go
-                                                     :model "deepseek-v4-flash")
+        @(loop/run-agent-turn (support/make-agent-state :provider :opencode-go
+                                                        :model "deepseek-v4-flash")
                               {:message "hi" :on-error (fn [_])})
         (t/is (= {:provider :opencode-go :model "deepseek-v4-flash"
                   :api-type nil :base-url nil}
                  @sent)))
       (t/testing "agent-level overrides flow through to llm"
-        @(loop/run-agent-turn (loop/make-agent-state :provider :opencode-go
-                                                     :model "deepseek-v4-flash"
-                                                     :api-type :anthropic-messages
-                                                     :base-url "https://custom.example/v1/messages")
+        @(loop/run-agent-turn (support/make-agent-state :provider :opencode-go
+                                                        :model "deepseek-v4-flash"
+                                                        :api-type :anthropic-messages
+                                                        :base-url "https://custom.example/v1/messages")
                               {:message "hi" :on-error (fn [_])})
         (t/is (= {:provider :opencode-go :model "deepseek-v4-flash"
                   :api-type :anthropic-messages
@@ -254,7 +254,7 @@
   (let [keys-seen (atom [])
         llm-keys (atom [])
         calls (atom 0)
-        agent (loop/make-agent-state)]
+        agent (support/make-agent-state)]
     (reset! (:get-api-key agent)
             (fn [_] (swap! keys-seen conj (str "key-" (count @keys-seen)))))
     (with-redefs [cfg/get-api-key (fn [_] "cfg-key")

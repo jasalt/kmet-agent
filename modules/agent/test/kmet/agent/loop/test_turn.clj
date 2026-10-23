@@ -29,7 +29,7 @@
           sess (session/create-session sessions {:cwd dir})
           seen (atom nil)
           call-count (atom 0)
-          agent (loop/make-agent-state :session sess)]
+          agent (support/make-agent-state :session sess)]
       (try
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
                       llm/send-message
@@ -62,7 +62,7 @@
 (t/deftest test-loop-run-agent-turn-no-api-key
   (let [errors (atom [])
         events (atom [])
-        agent (loop/make-agent-state {:on-event #(swap! events conj %)})
+        agent (support/make-agent-state {:on-event #(swap! events conj %)})
         done (promise)]
     (loop/run-agent-turn agent
                          {:message "hello"
@@ -82,7 +82,7 @@
   ;; path resolves ambient auth itself), i.e. send-message is called
   ;; instead of the "No API key" refusal.
   (t/testing "amazon-bedrock with ambient AWS credentials"
-    (let [agent (loop/make-agent-state)
+    (let [agent (support/make-agent-state)
           sent (atom nil)
           errors (atom [])]
       (with-redefs [aws-sigv4/getenv (fn [k] (case k "AWS_ACCESS_KEY_ID" "AKID"
@@ -105,7 +105,7 @@
                (set (keys (:hooks @sent))))
             "the attempt hands send-message the provider-event bridges (pi: StreamOptions)")))
   (t/testing "google-vertex with ADC configured"
-    (let [agent (loop/make-agent-state)
+    (let [agent (support/make-agent-state)
           sent (atom nil)
           errors (atom [])]
       (with-redefs [google-adc/configured? (constantly true)
@@ -125,7 +125,7 @@
       (t/is (= [] @errors))
       (t/is (some? @sent) "send-message ran — the ambient guard passed")))
   (t/testing "unconfigured provider still refuses with No API key"
-    (let [agent (loop/make-agent-state)
+    (let [agent (support/make-agent-state)
           errors (atom [])
           done (promise)]
       (with-redefs [auth/getenv (fn [_] nil)
@@ -140,7 +140,7 @@
 ;; ─── run-agent-turn with valid state ─────────────────────────────────────
 
 (t/deftest test-loop-run-agent-turn-structure
-  (let [agent (loop/make-agent-state)
+  (let [agent (support/make-agent-state)
         called (atom false)
         fut (loop/run-agent-turn agent
                                  {:message "hello"
@@ -159,7 +159,7 @@
   ;; user message (or a dangling tool result), and the model picks up where
   ;; the interrupted turn left off.
   (let [sent (atom nil)
-        agent (loop/make-agent-state)
+        agent (support/make-agent-state)
         ;; Simulate an interrupted turn: user message with no response yet
         _ (swap! (:messages agent) conj
                  {:role :user :content [{:type :text :text "fix the bug"}]})]
@@ -198,7 +198,7 @@
         sent (atom nil)
         ;; :max-retries 0 — the network failure is terminal immediately,
         ;; exactly the state /continue is for (retries exhausted)
-        agent (loop/make-agent-state :max-retries 0)]
+        agent (support/make-agent-state :max-retries 0)]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -235,7 +235,7 @@
 ;; ─── Multiple turns ──────────────────────────────────────────────────────
 
 (t/deftest test-loop-messages-accumulate
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (t/is (empty? @(:messages agent)))
     (swap! (:messages agent) conj {:role :user :content [{:type :text :text "hi"}]})
     (t/is (= 1 (count @(:messages agent))))))
@@ -243,7 +243,7 @@
 ;; ─── Regression: run-agent-turn signals cleanup ─────────────────────────
 
 (t/deftest test-loop-run-agent-turn-resets-signal
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (reset! (:signal agent) true)
     (reset! (:status agent) :thinking)
     ;; run with no API key — should exercise the error path
@@ -260,7 +260,7 @@
       (t/is (.contains (first @errors) "No API key") "Error message is about API key"))))
 
 (t/deftest test-loop-signal-clean-after-turn
-  (let [agent (loop/make-agent-state)
+  (let [agent (support/make-agent-state)
         done (promise)]
     (loop/run-agent-turn agent
                          {:message "hi"
@@ -271,7 +271,7 @@
     (t/is (false? @(:signal agent)) "Signal should be false after turn ends")))
 
 (t/deftest test-loop-status-after-error
-  (let [agent (loop/make-agent-state)
+  (let [agent (support/make-agent-state)
         done (promise)]
     (reset! (:status agent) :idle)
     (loop/run-agent-turn agent
@@ -282,7 +282,7 @@
     (t/is (false? @(:signal agent)) "Signal should be false after error turn")))
 
 (t/deftest test-loop-multiple-cancel
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (loop/cancel-turn agent)
     (t/is (true? @(:signal agent)) "cancel-turn sets signal to true")
     ;; calling cancel-turn again is idempotent
@@ -294,7 +294,7 @@
 (t/deftest test-loop-events-routed-to-extension-system
   (let [received (atom [])
         dereg (event-bus/on-event :status (fn [e] (swap! received conj e)))
-        agent (loop/make-agent-state :on-event (fn [_]))]
+        agent (support/make-agent-state :on-event (fn [_]))]
     (loop/cancel-turn agent)
     (dereg)
     ;; Events reach extension listeners even though the UI callback ignores them
@@ -303,7 +303,7 @@
 
 (t/deftest test-loop-lifecycle-events
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -341,7 +341,7 @@
 (t/deftest test-loop-tool-execution-events
   (let [events (atom [])
         call-count (atom 0)
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   ;; First call streams a tool call, second call a plain response
@@ -398,11 +398,11 @@
           call-count (atom 0)
           dir (str (fs/create-temp-dir {:dir "target" :prefix "loop-bash-env-"}))
           sess (session/create-session dir)
-          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e))
-                                       :session sess
-                                       :provider :deepseek
-                                       :model "m-9"
-                                       :thinking :off)]
+          agent (support/make-agent-state :on-event (fn [e] (swap! events conj e))
+                                          :session sess
+                                          :provider :deepseek
+                                          :model "m-9"
+                                          :thinking :off)]
       (try
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
                       llm/send-message
@@ -441,7 +441,7 @@
   ;; clojure.lang.Associative".
   (let [captured (atom nil)
         call-count (atom 0)
-        agent (loop/make-agent-state)]
+        agent (support/make-agent-state)]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -474,7 +474,7 @@
 (t/deftest test-loop-before-agent-start-hooks
   (let [events (atom [])
         sent (atom nil)
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))
         ;; one test-owned owner, so the hook cannot outlive the test (P2:
         ;; hooks live on the app tree under their owner, not in an engine)
         dereg (extensions/register-before-agent-start-hook! [:app :test-loop-hooks]
@@ -515,7 +515,7 @@
 
 (t/deftest test-loop-user-message-images
   (let [sent (atom nil)
-        agent (loop/make-agent-state)]
+        agent (support/make-agent-state)]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -543,7 +543,7 @@
 ;; ─── Block images (pi: images.blockImages / convertToLlmWithBlockImages) ──
 
 (t/deftest test-loop-block-images-strips-wire-images
-  (let [agent (loop/make-agent-state :block-images true)
+  (let [agent (support/make-agent-state :block-images true)
         ;; a valid tool batch (assistant call + matching result) — an orphaned
         ;; result would be dropped by drop-incomplete-tool-calls before the
         ;; block-images filter runs
@@ -590,7 +590,7 @@
           "session/transcript user content is untouched")))
 
 (t/deftest test-loop-block-images-consecutive-dedupe
-  (let [agent (loop/make-agent-state :block-images true)
+  (let [agent (support/make-agent-state :block-images true)
         sent (support/run-turn-capturing-llm agent
                                              {:message "two"
                                               :images [{:type :image :data "AA" :mime-type "image/png"}
@@ -601,7 +601,7 @@
           "consecutive placeholders collapse to one (pi dedupe)")))
 
 (t/deftest test-loop-block-images-off-passes-images-through
-  (let [agent (loop/make-agent-state)  ;; block-images defaults false
+  (let [agent (support/make-agent-state)  ;; block-images defaults false
         sent (support/run-turn-capturing-llm agent
                                              {:message "look"
                                               :images [{:type :image :data "AA" :mime-type "image/png"}]})]
@@ -611,7 +611,7 @@
           "images pass through when the setting is off")))
 
 (t/deftest test-loop-set-block-images-live
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (t/is (false? (:block-images @(:cfg agent))))
     (state/set-block-images! agent true)
     (t/is (true? (:block-images @(:cfg agent))))

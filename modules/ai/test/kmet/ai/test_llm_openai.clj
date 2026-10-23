@@ -17,6 +17,7 @@
             [kmet.ai.api.google-generative-ai :as google]
             [kmet.ai.google-adc :as adc]
             [kmet.agent.loop :as loop]
+            [kmet.agent.loop.test-support :as loop-support]
             [kmet.agent.session.core :as session]
             [kmet.agent.config :as cfg]
             [kmet.ai.models :as m]
@@ -428,6 +429,7 @@
             (.setDaemon true)
             (.start))
         ag (loop/make-agent-state :session sess :provider :opencode-go :model "mimo-v2.5"
+                                  :ctx (:ctx (loop-support/test-ctx))
                                   :base-url (str "http://localhost:" port "/v1/chat/completions"))]
     (try
       (with-redefs [cfg/get-api-key (fn [_] "sk-test")]

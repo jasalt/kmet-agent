@@ -25,6 +25,7 @@
             [kmet.ai.auth :as auth]
             [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
+            [kmet.agent.app-runtime :as app]
             [kmet.agent.tools.core :as tools]
             [kmet.libs.http :as http]
             [kmet.libs.terminal-image :as timg]
@@ -67,10 +68,10 @@
         ed (editor/make-editor)
         opts {:cwd (deref cwd-atom)
               :context-files [{:path "AGENTS.md" :content "LAUNCH-PROJECT CONTEXT"}]}
-        ag (agent/make-agent-state
-            :session active-sess
-            :system-prompt-opts opts
-            :system (apply skills/build-system-prompt (mapcat identity opts)))
+        ag (agent/make-agent-state :ctx (app/ctx)
+                                   :session active-sess
+                                   :system-prompt-opts opts
+                                   :system (apply skills/build-system-prompt (mapcat identity opts)))
         ag-atom (atom ag)
         sess-atom (atom active-sess)
         engine (tu/test-engine {:agent-state ag-atom :session sess-atom :cwd cwd-atom})]
@@ -393,7 +394,7 @@
                   (tu/with-test-engine {:running-turn? (atom true)
                                         :chat-history ch
                                         :session-atom (atom (session/create-session dir))
-                                        :agent-state (atom (agent/make-agent-state))}))]
+                                        :agent-state (atom (agent/make-agent-state :ctx (app/ctx)))}))]
           ((:handler (commands/find-command "resume")) cs "")
           (t/is (= "Wait for the current response to finish before resuming."
                    (:content (last-message ch))))
@@ -508,7 +509,7 @@
       (try
         (fs/create-dirs project)
         (let [sess (session/create-session (str dir "/sessions") {:cwd project})
-              engine (tu/test-engine {:agent-state (atom (agent/make-agent-state))
+              engine (tu/test-engine {:agent-state (atom (agent/make-agent-state :ctx (app/ctx)))
                                       :session (atom sess)
                                       :cwd spelled})]
           (t/is (= spelled ((var runtime/apply-session-cwd!) engine sess))
@@ -522,7 +523,7 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
+    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4-flash")
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :chat-history nil
                                    :footer-comp nil
@@ -567,7 +568,7 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
+    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4-flash")
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :chat-history nil
                                    :footer-comp nil
@@ -601,7 +602,7 @@
           initially-available [kept disappeared disabled]
           available-at-save [kept disabled]
           available-calls (atom 0)
-          ag (agent/make-agent-state)
+          ag (agent/make-agent-state :ctx (app/ctx))
           _ (loop-state/set-scoped-models! ag ["test-provider/kept"
                                                "test-provider/disappeared"])
           cs (tu/with-test-engine {:agent-state (atom ag)
@@ -637,7 +638,7 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4.1-flash"
+    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4.1-flash"
                                      :thinking :off)
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :chat-history nil
@@ -673,7 +674,7 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
+    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4-flash")
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :chat-history nil
                                    :footer-comp nil
@@ -708,7 +709,7 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
+    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4-flash")
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :chat-history nil
                                    :footer-comp nil
@@ -777,7 +778,7 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
+    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4-flash")
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :chat-history nil
                                    :footer-comp nil

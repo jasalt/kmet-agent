@@ -21,6 +21,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
+            [kmet.agent.app-runtime :as app]
             [kmet.agent.session.core :as session]
             [kmet.agent.ui.tui.bash-execution :as bash-execution]
             [kmet.agent.ui.tui.chat-history :as chat-history]
@@ -113,7 +114,7 @@
             — the old conversation must never reach the next LLM call"
     (let [sess-dir (str "target/test-interactive-new-session-" (System/currentTimeMillis))
           old-sess (session/create-session sess-dir)
-          ag (agent/make-agent-state :session old-sess)
+          ag (agent/make-agent-state :ctx (app/ctx) :session old-sess)
           _ (swap! (:messages ag) conj {:role :user :content "old message"})
           _ (swap! (:messages ag) conj {:role :assistant :content "old reply"})
           ag-atom (atom ag)
@@ -188,7 +189,7 @@
     (let [sess-dir (str "target/test-interactive-new-session-cancel-"
                         (System/currentTimeMillis))
           old-sess (session/create-session sess-dir)
-          ag (agent/make-agent-state :session old-sess)
+          ag (agent/make-agent-state :ctx (app/ctx) :session old-sess)
           _ (swap! (:messages ag) conj {:role :user :content "old message"})
           _ (swap! (:messages ag) conj {:role :assistant :content "old reply"})
           ag-atom (atom ag)
@@ -244,7 +245,7 @@
   (testing "a run the runtime starts without start-agent-run! (a submit! or
             the compaction-queue flush) brings the anim timer and the working
             indicator up on :agent-start — once per run, not per attempt"
-    (let [ag (agent/make-agent-state)
+    (let [ag (agent/make-agent-state :ctx (app/ctx))
           cs (tu/with-test-engine
                {:tui {:render-requested? (atom false) :running? (atom false)}
                 :agent-state (atom ag)
@@ -487,7 +488,7 @@
           cs (tu/with-test-engine {:tui tui*
                                    :chat-history chat-history
                                    :session-atom (atom sess)
-                                   :agent-state (atom (agent/make-agent-state))})
+                                   :agent-state (atom (agent/make-agent-state :ctx (app/ctx)))})
           dereg (extensions/register-entry-renderer! (extensions/extension-owner "test-entry-render")
                                                      "test-entry-render"
                                                      (fn [_]
@@ -956,7 +957,7 @@
 (deftest reload-reseeds-image-settings-and-block-images
   (testing "/reload re-reads the image settings and the provider image-blocking
             knob from the reloaded config (pi: settingsManager.reload)"
-    (let [ag (agent/make-agent-state)
+    (let [ag (agent/make-agent-state :ctx (app/ctx))
           ch (chat-history/make-chat-history)
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :chat-history ch
@@ -1007,7 +1008,7 @@
           hdr (expandable-text/make-expandable-text (constantly "compact")
                                                     (constantly "full"))
           lr (loaded-resources/make-loaded-resources)
-          cs (tu/with-test-engine {:agent-state (atom (agent/make-agent-state))
+          cs (tu/with-test-engine {:agent-state (atom (agent/make-agent-state :ctx (app/ctx)))
                                    :chat-history ch
                                    :header-comp hdr
                                    :loaded-resources-comp lr
@@ -1052,7 +1053,7 @@
             line keeps the session's runtime cwd (a foreign session's — it
             must not revert to the launch dir) and context files keep loading
             from the launch dir, whatever session is active"
-    (let [ag (agent/make-agent-state)
+    (let [ag (agent/make-agent-state :ctx (app/ctx))
           runtime-cwd "/fake/runtime-project"
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :chat-history (chat-history/make-chat-history)
@@ -1099,7 +1100,7 @@
   (testing "/reload refuses while a run is active even when the status atom
             already reads idle — the settle window keeps the run flag true,
             and the run flag is what counts (pi: isStreaming)"
-    (let [ag (agent/make-agent-state)
+    (let [ag (agent/make-agent-state :ctx (app/ctx))
           msg (atom nil)
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :chat-history nil

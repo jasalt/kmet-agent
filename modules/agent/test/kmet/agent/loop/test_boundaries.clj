@@ -19,7 +19,7 @@
 
 (t/deftest test-loop-transform-context
   (let [seen (atom nil)
-        agent (loop/make-agent-state)]
+        agent (support/make-agent-state)]
     (reset! (:transform-context agent)
             (fn [messages]
               (reset! seen messages)
@@ -47,7 +47,7 @@
   (let [override-msgs (atom [])
         holder (atom nil)
         ;; The extension sets the override on :agent-start (pi: before_agent_start)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :system "base prompt"
                :on-event (fn [evt]
                            (when (= :agent-start (:type evt))
@@ -74,7 +74,7 @@
 ;; ─── Phase 3: prepareNextTurn / finishTurn ───────────────────────────────
 
 (t/deftest test-loop-prepare-next-turn-updates-state
-  (let [agent (loop/make-agent-state :model "model-a" :thinking :off)]
+  (let [agent (support/make-agent-state :model "model-a" :thinking :off)]
     (reset! (:prepare-next-turn agent)
             (fn [_] {:model (models/map->Model {:provider :anthropic :id "model-b"})
                      :thinking :high
@@ -92,7 +92,7 @@
 
 (t/deftest test-loop-finish-turn-end-after-tool-calls
   (let [calls (atom 0)
-        agent (loop/make-agent-state)]
+        agent (support/make-agent-state)]
     (reset! (:finish-turn agent) (fn [_] :end))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
@@ -115,7 +115,7 @@
   (let [calls (atom 0)
         errors (atom [])
         events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (reset! (:finish-turn agent) (fn [_] :end))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text calls)
@@ -141,7 +141,7 @@
   (let [calls (atom 0)
         errors (atom [])
         events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (reset! (:finish-turn agent) (fn [_] :end))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
@@ -179,8 +179,8 @@
         boundaries (atom [])
         calls (atom 0)
         opts (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e))
-                                     :session (session/create-session dir))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e))
+                                        :session (session/create-session dir))]
     (try
       (event-bus/on-event
        :turn-end
@@ -234,7 +234,7 @@
   (let [dir (str (fs/create-dirs (fs/path "target" "test-loop-turn-end-ids")))
         boundaries (atom [])
         calls (atom 0)
-        agent (loop/make-agent-state :session (session/create-session dir))]
+        agent (support/make-agent-state :session (session/create-session dir))]
     (try
       (event-bus/on-event :turn-end (fn [e] (swap! boundaries conj e) nil))
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -277,7 +277,7 @@
   (let [calls (atom 0)
         events (atom [])
         opts (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (try
       (event-bus/on-event :turn-end
                           (fn [e]
@@ -322,7 +322,7 @@
   (let [dir (str (fs/create-dirs (fs/path "target" "test-loop-context-edit")))
         calls (atom 0)
         opts (atom [])
-        agent (loop/make-agent-state :session (session/create-session dir))]
+        agent (support/make-agent-state :session (session/create-session dir))]
     (try
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (support/stub-llm-text-turns calls ["first"] opts)]
@@ -357,7 +357,7 @@
         calls (atom 0)
         opts (atom [])
         boundaries (atom 0)
-        agent (loop/make-agent-state :session (session/create-session dir))]
+        agent (support/make-agent-state :session (session/create-session dir))]
     (try
       ;; first prompt: seed the session with the message we later omit
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -408,7 +408,7 @@
         calls (atom 0)
         opts (atom [])
         warn (java.io.StringWriter.)
-        agent (loop/make-agent-state :session (session/create-session dir))]
+        agent (support/make-agent-state :session (session/create-session dir))]
     (try
       (event-bus/on-event
        :turn-end
@@ -434,7 +434,7 @@
   (t/testing ":end settles the attempt"
     (let [calls (atom 0)
           opts (atom [])
-          agent (loop/make-agent-state)]
+          agent (support/make-agent-state)]
       (reset! (:finish-turn agent) (fn [_] :end))
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (support/stub-llm-text-turns calls ["done"] opts)]
@@ -446,7 +446,7 @@
     (let [calls (atom 0)
           events (atom [])
           opts (atom [])
-          agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+          agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
       (reset! (:finish-turn agent)
               (fn [e] (when (zero? (:turn-index e)) :continue)))
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -462,7 +462,7 @@
   (t/testing ":continue runs one more turn after a terminated tool batch"
     (let [calls (atom 0)
           opts (atom [])
-          agent (loop/make-agent-state)]
+          agent (support/make-agent-state)]
       (reset! (:before-tool-call agent)
               (fn [_] {:block true :reason "Policy" :terminate true}))
       (reset! (:finish-turn agent)
@@ -489,7 +489,7 @@
   (t/testing ":end wins over a boundary :continue"
     (let [calls (atom 0)
           opts (atom [])
-          agent (loop/make-agent-state)]
+          agent (support/make-agent-state)]
       (reset! (:finish-turn agent) (fn [_] :end))
       (event-bus/on-event :turn-end
                           (fn [_] {:entries [{:role :user
@@ -512,9 +512,9 @@
   ;; errored turn ends before its :agent-end (and its :auto-retry-start).
   (let [calls (atom 0)
         events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e))
-                                     :max-retries 1
-                                     :base-delay-ms 1)]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e))
+                                        :max-retries 1
+                                        :base-delay-ms 1)]
     (try
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message
@@ -540,7 +540,7 @@
 
 (t/deftest test-loop-turn-end-fires-for-an-aborted-turn
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (try
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (fn [o]
@@ -566,7 +566,7 @@
         boundaries (atom [])
         calls (atom 0)
         opts (atom [])
-        agent (loop/make-agent-state :session (session/create-session dir))]
+        agent (support/make-agent-state :session (session/create-session dir))]
     (try
       (event-bus/on-event :agent-before-settle (fn [e] (swap! boundaries conj e) nil))
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -593,7 +593,7 @@
         events (atom [])
         boundaries (atom [])
         opts (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (try
       (event-bus/on-event
        :agent-before-settle
@@ -636,7 +636,7 @@
   (let [calls (atom 0)
         opts (atom [])
         queued (atom 0)
-        agent (loop/make-agent-state)]
+        agent (support/make-agent-state)]
     (try
       (event-bus/on-event :agent-before-settle
                           (fn [_]
@@ -659,7 +659,7 @@
   (let [calls (atom 0)
         errors (atom 0)
         boundaries (atom [])
-        agent (loop/make-agent-state :max-retries 0 :base-delay-ms 1)]
+        agent (support/make-agent-state :max-retries 0 :base-delay-ms 1)]
     (try
       (event-bus/on-event
        :agent-before-settle
@@ -686,7 +686,7 @@
 
 (t/deftest test-loop-agent-before-settle-not-run-for-a-cancelled-prompt
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (try
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (fn [o]
@@ -709,28 +709,28 @@
 
 (t/deftest test-loop-total-timeout-ms
   (t/testing "agent defaults use a 120-second idle timeout and no total deadline"
-    (let [agent (loop/make-agent-state)]
+    (let [agent (support/make-agent-state)]
       (t/is (= 120000 (:http-idle-timeout-ms @(:cfg agent))))
       (t/is (= 0 (#'retry/llm-total-timeout-ms @(:cfg agent)))))
     (t/testing "explicit nil total follows the idle timeout"
-      (let [agent (loop/make-agent-state :http-idle-timeout-ms 300000
-                                         :http-total-timeout-ms nil)]
+      (let [agent (support/make-agent-state :http-idle-timeout-ms 300000
+                                            :http-total-timeout-ms nil)]
         (t/is (= 300000 (#'retry/llm-total-timeout-ms @(:cfg agent))))))
     (t/testing "explicit total wins over the idle-derived default"
-      (let [agent (loop/make-agent-state :http-idle-timeout-ms 300000
-                                         :http-total-timeout-ms 120000)]
+      (let [agent (support/make-agent-state :http-idle-timeout-ms 300000
+                                            :http-total-timeout-ms 120000)]
         (t/is (= 120000 (#'retry/llm-total-timeout-ms @(:cfg agent))))))
     (t/testing "zero total disables the total deadline despite an idle timeout"
-      (let [agent (loop/make-agent-state :http-idle-timeout-ms 300000
-                                         :http-total-timeout-ms 0)]
+      (let [agent (support/make-agent-state :http-idle-timeout-ms 300000
+                                            :http-total-timeout-ms 0)]
         (t/is (= 0 (#'retry/llm-total-timeout-ms @(:cfg agent))))))
     (t/testing "no idle and nil total means no total deadline"
-      (let [agent (loop/make-agent-state :http-idle-timeout-ms 0
-                                         :http-total-timeout-ms nil)]
+      (let [agent (support/make-agent-state :http-idle-timeout-ms 0
+                                            :http-total-timeout-ms nil)]
         (t/is (= 0 (#'retry/llm-total-timeout-ms @(:cfg agent))))))))
 
 (t/deftest test-loop-set-http-total-timeout-ms!
-  (let [agent (loop/make-agent-state :http-idle-timeout-ms 120000)]
+  (let [agent (support/make-agent-state :http-idle-timeout-ms 120000)]
     (state/set-http-total-timeout-ms! agent 60000)
     (t/is (= 60000 (:http-total-timeout-ms @(:cfg agent))))
     (state/set-http-total-timeout-ms! agent nil)
@@ -746,8 +746,8 @@
   ;; transport (HttpRequest.timeout / curl --max-time) enforces it as the
   ;; whole-request wall-clock.
   (let [sent (atom nil)
-        agent (loop/make-agent-state :http-idle-timeout-ms 120000
-                                     :http-total-timeout-ms 120000)]
+        agent (support/make-agent-state :http-idle-timeout-ms 120000
+                                        :http-total-timeout-ms 120000)]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -764,8 +764,8 @@
 
 (t/deftest test-loop-call-llm-threads-disabled-total-timeout
   (let [sent (atom nil)
-        agent (loop/make-agent-state :http-idle-timeout-ms 120000
-                                     :http-total-timeout-ms 0)]
+        agent (support/make-agent-state :http-idle-timeout-ms 120000
+                                        :http-total-timeout-ms 0)]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -784,7 +784,7 @@
   ;; with backoff and surfaces via on-error when exhausted.
   (let [events (atom [])
         errors (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :max-retries 1
                :base-delay-ms 1

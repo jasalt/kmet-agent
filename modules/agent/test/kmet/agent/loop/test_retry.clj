@@ -7,6 +7,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
+            [kmet.agent.loop.test-support :as support]
             [kmet.agent.config :as cfg]))
 
 ;; ─── Auto-retry ───────────────────────────────────────────────────────────
@@ -14,7 +15,7 @@
 (t/deftest test-loop-auto-retry-succeeds
   (let [events (atom [])
         call-count (atom 0)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :max-retries 2
                :base-delay-ms 1)]
@@ -66,7 +67,7 @@
 (t/deftest test-loop-auto-retry-exhausted
   (let [events (atom [])
         errors (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :max-retries 1
                :base-delay-ms 1)]
@@ -116,7 +117,7 @@
         ext (atom [])
         dereg (event-bus/on-event :agent-end #(swap! ext conj %))
         call-count (atom 0)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! ui conj e))
                :max-retries 1
                :base-delay-ms 1)]
@@ -149,7 +150,7 @@
   ;; accumulator via the *run-token* binding, never in the newer token's list.
   (let [events (atom [])
         clobbered (atom nil)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
@@ -175,7 +176,7 @@
   ;; run throws an unhandled exception (agent-session.js). A throwing UI
   ;; callback on :turn-start stands in for any unexpected failure.
   (let [events (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e]
                            (swap! events conj e)
                            (when (= :turn-start (:type e))
@@ -195,7 +196,7 @@
         events (atom [])
         call-count (atom 0)
         sess (session/create-session dir)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :session sess
                :max-retries 2
@@ -256,7 +257,7 @@
         requests (atom [])
         call-count (atom 0)
         sess (session/create-session dir)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :session sess
                :max-retries 2
                :base-delay-ms 1)]
@@ -305,7 +306,7 @@
         starts (atom [])
         agent-ref (atom nil)
         sess (session/create-session dir)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :session sess
                :max-retries 2
                :base-delay-ms 1
@@ -363,7 +364,7 @@
         events (atom [])
         started (promise)
         sess (session/create-session dir)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :session sess)]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -406,7 +407,7 @@
   ;; the opaque reasoning signature (anthropic signature_delta / gemini
   ;; thoughtSignature) — converters replay it only for same-provider-same-model
   ;; messages and degrade everything else to plain text.
-  (let [agent (loop/make-agent-state :provider :anthropic :model "claude-test")]
+  (let [agent (support/make-agent-state :provider :anthropic :model "claude-test")]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -434,7 +435,7 @@
   ;; pi does not have and we do not want.
   (let [calls (atom 0)
         errors (atom [])
-        agent (loop/make-agent-state)]
+        agent (support/make-agent-state)]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -461,7 +462,7 @@
   ;; on-error); the same fold applies.
   (let [calls (atom 0)
         errors (atom [])
-        agent (loop/make-agent-state :max-retries 0)]
+        agent (support/make-agent-state :max-retries 0)]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -494,7 +495,7 @@
                       (when-let [on-error (:on-error opts)]
                         (on-error "network error: ConnectException"))
                       :done))]
-      (let [agent (loop/make-agent-state
+      (let [agent (support/make-agent-state
                    :on-event (fn [e] (swap! events conj e))
                    :max-retries 2
                    :base-delay-ms 1)]
@@ -509,7 +510,7 @@
 (t/deftest test-loop-no-retry-on-quota-error
   (let [events (atom [])
         errors (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :max-retries 3
                :base-delay-ms 1)]
@@ -526,7 +527,7 @@
 
 (t/deftest test-loop-no-retry-on-context-overflow
   (let [events (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :max-retries 3
                :base-delay-ms 1)]
@@ -544,7 +545,7 @@
 (t/deftest test-loop-retry-cancel-during-backoff
   (let [events (atom [])
         retry-started (promise)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e]
                            (swap! events conj e)
                            (when (= :auto-retry-start (:type e))
@@ -572,7 +573,7 @@
 (t/deftest ^:slow test-loop-retry-resets-count-on-success-then-error
   (let [events (atom [])
         call-count (atom 0)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :max-retries 1
                :base-delay-ms 500)]

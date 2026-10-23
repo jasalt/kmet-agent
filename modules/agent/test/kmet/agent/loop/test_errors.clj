@@ -5,6 +5,7 @@
             [kmet.ai.llm :as llm]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
+            [kmet.agent.loop.test-support :as support]
             [kmet.agent.retry :as retry]
             [kmet.agent.config :as cfg]))
 
@@ -15,7 +16,7 @@
         dones (atom 0)
         events (atom [])
         started (promise)
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   ;; Signal entry, then leave the call unresolved. Only the
@@ -50,7 +51,7 @@
 
 (t/deftest test-loop-error-event-emitted
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]
@@ -74,7 +75,7 @@
         dones (atom 0)
         started (promise)
         release (promise)
-        agent (loop/make-agent-state)]
+        agent (support/make-agent-state)]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message
                   (fn [opts]

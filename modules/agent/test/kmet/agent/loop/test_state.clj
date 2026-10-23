@@ -26,7 +26,7 @@
 ;; ─── State construction ───────────────────────────────────────────────────
 
 (t/deftest test-loop-make-agent-state-defaults
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (t/is (= :idle @(:status agent)))
     (t/is (instance? clojure.lang.Atom (:messages agent)))
     (t/is (empty? @(:messages agent)))
@@ -42,7 +42,7 @@
 (t/deftest test-loop-make-agent-state-with-opts
   (let [session {:dummy :session}
         events (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :model "gpt-4o"
                :provider :anthropic
                :system "custom prompt"
@@ -58,7 +58,7 @@
   (let [all-tools (vals (tools-registry/get-all-tools (app-runtime/registry)))
         opts {:tools all-tools}
         prompt (skills/build-system-prompt :tools all-tools)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :model "m"
                :system prompt
                :system-prompt-opts opts)]
@@ -106,7 +106,7 @@
   ;; set-active-tools! always validates against the live registry).
   (let [all-tools (vals (tools-registry/get-all-tools (app-runtime/registry)))
         opts {:tools all-tools}
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :model "m"
                :system (skills/build-system-prompt :tools all-tools)
                :system-prompt-opts opts)]
@@ -127,7 +127,7 @@
 ;; ─── State helpers ───────────────────────────────────────────────────────
 
 (t/deftest test-loop-get-context
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (t/is (empty? (state/get-context agent)))
     (swap! (:messages agent) conj {:role :user :content "hi"})
     (t/is (= 1 (count (state/get-context agent))))))
@@ -144,7 +144,7 @@
         (session/append-entry sess {:role :assistant :content [{:type :text :text "done"}]})
         (session/append-entry sess {:role :session_info :name "t"})
         (let [loaded (session/load-session (:file sess))
-              agent (loop/make-agent-state :session loaded)]
+              agent (support/make-agent-state :session loaded)]
           (state/restore-session-context! agent)
           (t/is (= [:user :assistant :user :assistant]
                    (mapv :role (state/get-context agent)))
@@ -155,19 +155,19 @@
         (fs/delete-tree dir)))))
 
 (t/deftest test-loop-set-system-prompt
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (reset! (:system agent) "new prompt")
     (t/is (= "new prompt" @(:system agent)))))
 
 (t/deftest test-loop-set-model
-  (let [agent (loop/make-agent-state)
+  (let [agent (support/make-agent-state)
         model (models/map->Model {:provider :anthropic :id "gpt-4"})]
     (state/set-model! agent model)
     (t/is (= "gpt-4" @(:model agent)))
     (t/is (= :anthropic @(:provider agent)) "the provider follows the record")))
 
 (t/deftest test-loop-set-provider
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (reset! (:provider agent) :anthropic)
     (t/is (= :anthropic @(:provider agent)))))
 
@@ -177,9 +177,9 @@
   (let [dir (str (fs/create-dirs (fs/path "target" "test-loop-model-change")))]
     (try
       (let [sess (session/create-session dir)
-            agent (loop/make-agent-state :session sess
-                                         :provider :anthropic
-                                         :model "claude-sonnet")
+            agent (support/make-agent-state :session sess
+                                            :provider :anthropic
+                                            :model "claude-sonnet")
             model (models/map->Model {:provider :openai :id "gpt-4o"})]
         (state/set-model! agent model)
         (let [branch (session/get-branch sess)]
@@ -202,10 +202,10 @@
     (try
       (with-redefs [auth/auth-atom (atom {:test-prov {:key "sk"}})]
         (let [sess (session/create-session dir)
-              agent (loop/make-agent-state :session sess
-                                           :provider :test-prov
-                                           :model "a"
-                                           :scoped-models ["test-prov/a" "test-prov/b"])]
+              agent (support/make-agent-state :session sess
+                                              :provider :test-prov
+                                              :model "a"
+                                              :scoped-models ["test-prov/a" "test-prov/b"])]
           ;; lazy creation: file exists only after an assistant message
           (session/append-entry sess {:role :user :content "q"})
           (session/append-entry sess {:role :assistant :content "a"})
@@ -224,7 +224,7 @@
   (let [dir (str (fs/create-dirs (fs/path "target" "test-loop-thinking-change")))]
     (try
       (let [sess (session/create-session dir)
-            agent (loop/make-agent-state :session sess :thinking :off)]
+            agent (support/make-agent-state :session sess :thinking :off)]
         (state/set-thinking-level! agent :high)
         (t/is (= :high @(:thinking agent)))
         (t/is (= [:thinking-level-change] (mapv :role (session/get-branch sess))))
@@ -252,10 +252,10 @@
         (session/append-thinking-level-change! sess :medium)
         (session/append-entry sess {:role :assistant :content [{:type :text :text "yo"}]})
         (let [loaded (session/load-session (:file sess))
-              agent (loop/make-agent-state :session loaded
-                                           :provider :opencode-go
-                                           :model "gpt-4o"
-                                           :thinking :off)]
+              agent (support/make-agent-state :session loaded
+                                              :provider :opencode-go
+                                              :model "gpt-4o"
+                                              :thinking :off)]
           (state/restore-session-context! agent)
           (t/is (= "gpt-4o" @(:model agent)))
           (t/is (= :opencode-go @(:provider agent)))
@@ -281,7 +281,7 @@
         (session/append-entry sess {:role :tool
                                     :content [{:type :tool_result :tool_use_id "a" :content "out"}]})
         (let [loaded (session/load-session (:file sess))
-              agent (loop/make-agent-state :session loaded)]
+              agent (support/make-agent-state :session loaded)]
           (state/restore-session-context! agent)
           (let [ctx (state/get-context agent)
                 assistant (second ctx)]
@@ -322,8 +322,8 @@
           ;; authenticated derived model + recorded thinking → both restored
           (let [s (make-session)
                 _ (session/append-thinking-level-change! s :medium)
-                agent (loop/make-agent-state :session (session/load-session (:file s))
-                                             :provider :test-prov :model "m1" :thinking :off)]
+                agent (support/make-agent-state :session (session/load-session (:file s))
+                                                :provider :test-prov :model "m1" :thinking :off)]
             (t/is (state/apply-session-settings! agent))
             (t/is (= "m2" @(:model agent)) "authenticated derived model restored")
             (t/is (= :medium @(:thinking agent)) "recorded thinking restored"))))
@@ -332,16 +332,16 @@
         (fn []
           (let [s (make-session)
                 _ (session/append-thinking-level-change! s :high)
-                agent (loop/make-agent-state :session (session/load-session (:file s))
-                                             :provider :test-prov :model "m1" :thinking :off)]
+                agent (support/make-agent-state :session (session/load-session (:file s))
+                                                :provider :test-prov :model "m1" :thinking :off)]
             (t/is (state/apply-session-settings! agent))
             (t/is (= "m1" @(:model agent)) "unauth'd model not restored (pi: hasConfiguredAuth)")
             (t/is (= :high @(:thinking agent)) "thinking has no auth guard"))))
       ;; unrecorded thinking → current level kept (pi: hasThinkingEntry guard)
       (with-auth {:test-prov {:key "sk-test"}}
         (fn []
-          (let [agent (loop/make-agent-state :session (session/load-session (:file (make-session)))
-                                             :provider :test-prov :model "m1" :thinking :high)]
+          (let [agent (support/make-agent-state :session (session/load-session (:file (make-session)))
+                                                :provider :test-prov :model "m1" :thinking :high)]
             (t/is (state/apply-session-settings! agent))
             (t/is (= "m2" @(:model agent)))
             (t/is (= :high @(:thinking agent)) "unrecorded thinking keeps the current level"))))
@@ -353,7 +353,7 @@
 ;; ─── Cancellation ────────────────────────────────────────────────────────
 
 (t/deftest test-loop-cancel-turn
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (reset! (:status agent) :thinking)
     (reset! (:signal agent) false)
     (loop/cancel-turn agent)
@@ -361,14 +361,14 @@
     (t/is (true? @(:signal agent)))))
 
 (t/deftest test-loop-cancel-turn-when-idle
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (loop/cancel-turn agent)
     (t/is (= :idle @(:status agent)))))
 
 ;; ─── Status transitions ──────────────────────────────────────────────────
 
 (t/deftest test-loop-status-transitions
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (t/is (= :idle @(:status agent)))
     (reset! (:status agent) :thinking)
     (t/is (= :thinking @(:status agent)))
@@ -381,23 +381,23 @@
 
 (t/deftest test-loop-on-event-fires-on-cancel
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (loop/cancel-turn agent)
     (t/is (pos? (count @events)))
     (t/is (= :idle (:status (last @events))))))
 
 (t/deftest test-loop-on-event-no-listener
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (t/is (nil? (:on-event agent)))
     (loop/cancel-turn agent)
     (t/is (= :idle @(:status agent)))))
 
 (t/deftest test-loop-make-agent-state-with-thinking
-  (let [agent (loop/make-agent-state :thinking :high)]
+  (let [agent (support/make-agent-state :thinking :high)]
     (t/is (= :high @(:thinking agent)))))
 
 (t/deftest test-loop-thinking-default
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (t/is (= :off @(:thinking agent)))))
 
 ;; ─── Pure phase helpers of run-agent-turn ─────────────────────────────────

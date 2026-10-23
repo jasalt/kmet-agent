@@ -27,7 +27,7 @@
         main-call-count (atom 0)
         dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :session sess
                :keep-recent-tokens 5)]
@@ -100,7 +100,7 @@
   (let [dir (str (fs/create-dirs (fs/path "target" "test-loop-compaction-projection")))
         prompts (atom [])
         sess (session/create-session dir)
-        agent (loop/make-agent-state :session sess :keep-recent-tokens 30)]
+        agent (support/make-agent-state :session sess :keep-recent-tokens 30)]
     (try
       (let [user! (fn [c]
                     (session/append-entry
@@ -148,7 +148,7 @@
         main-call-count (atom 0)
         dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :session sess
                :keep-recent-tokens 5)]
@@ -186,7 +186,7 @@
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         events (atom [])
         sess (session/create-session (str dir))
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :session sess
                :on-event (fn [e] (swap! events conj e))
                :compact-token-threshold 10
@@ -237,7 +237,7 @@
         compact-calls (atom 0)
         real-compact compact/maybe-compact!
         sess (session/create-session (str dir))
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :session sess
                :on-event (fn [e] (swap! events conj e))
                :compact-token-threshold 10
@@ -331,7 +331,7 @@
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
         events (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :session sess
                :compact-token-threshold 100
                :keep-recent-tokens 40
@@ -395,7 +395,7 @@
                       (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
                             sess (session/create-session (str dir))
                             events (atom [])
-                            agent (loop/make-agent-state
+                            agent (support/make-agent-state
                                    :session sess
                                    :compact-token-threshold 100
                                    :on-event (fn [e] (swap! events conj e)))]
@@ -427,7 +427,7 @@
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
         events (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :session sess
                :compact-token-threshold 10
                :keep-recent-tokens 40
@@ -472,7 +472,7 @@
     (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
           sess (session/create-session (str dir))
           events (atom [])
-          agent (loop/make-agent-state
+          agent (support/make-agent-state
                  :session sess
                  :compact-token-threshold 10
                  :keep-recent-tokens 40
@@ -509,7 +509,7 @@
     (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
           sess (session/create-session (str dir))
           events (atom [])
-          agent (loop/make-agent-state
+          agent (support/make-agent-state
                  :session sess
                  :compact-token-threshold 10
                  :keep-recent-tokens 40
@@ -544,7 +544,7 @@
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
         events (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :session sess
                :compact-token-threshold 10
                :keep-recent-tokens 40
@@ -574,7 +574,7 @@
     (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
           sess (session/create-session (str dir))
           events (atom [])
-          agent (loop/make-agent-state
+          agent (support/make-agent-state
                  :session sess
                  :compact-token-threshold 10
                  :keep-recent-tokens 40
@@ -605,7 +605,7 @@
         sess (session/create-session (str dir))
         events (atom [])
         err-logged (atom nil)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :session sess
                :compact-token-threshold 10
                :keep-recent-tokens 40
@@ -636,7 +636,7 @@
           sess (session/create-session (str dir))
           events (atom [])
           attempts (atom 0)
-          agent (loop/make-agent-state
+          agent (support/make-agent-state
                  :session sess
                  :compact-token-threshold 10
                  :keep-recent-tokens 40
@@ -693,7 +693,7 @@
         run-ctx (runtime/child-ctx nil {:retry-policy {:config {:max-retries 1
                                                                 :base-delay-ms 3
                                                                 :max-agent-delay-ms 5}}})
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :ctx run-ctx
                :session sess
                :compact-token-threshold 10
@@ -742,7 +742,7 @@
     (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
           sess (session/create-session (str dir))
           seen (atom [])
-          agent (loop/make-agent-state
+          agent (support/make-agent-state
                  :session sess
                  :provider :opencode-go
                  :model "deepseek-v4.1-flash"
@@ -802,7 +802,7 @@
         (let [events (atom [])
               seen (atom [])
               sess (session/create-session (str dir))
-              agent (loop/make-agent-state
+              agent (support/make-agent-state
                      :session sess
                      :provider :opencode-go
                      :model "deepseek-v4.1-flash"
@@ -832,7 +832,7 @@
                 "the summary cap uses the override reserve (0.8 * 8000)")))
       (t/testing "a matching entry drives the window threshold"
         (let [sess (session/create-session (str dir))
-              agent (loop/make-agent-state
+              agent (support/make-agent-state
                      :session sess
                      :provider :opencode-go
                      :model "deepseek-v4.1-flash"
@@ -851,7 +851,7 @@
                 "measured 2050 >= window-reserve 2000 — the override triggers earlier")))
       (t/testing "a non-matching entry leaves the ordinary settings"
         (let [sess (session/create-session (str dir))
-              agent (loop/make-agent-state
+              agent (support/make-agent-state
                      :session sess
                      :provider :opencode-go
                      :model "deepseek-v4.1-flash"
@@ -1024,9 +1024,9 @@
                    {:id "2" :role :user
                     :content [{:type :text :text (apply str (repeat 100 "b"))}]}]
           seen (atom [])
-          agent (loop/make-agent-state :provider :opencode-go
-                                       :model "m"
-                                       :branch-summary-reserve-tokens 100)
+          agent (support/make-agent-state :provider :opencode-go
+                                          :model "m"
+                                          :branch-summary-reserve-tokens 100)
           stub (fn [opts]
                  (swap! seen conj opts)
                  (future
@@ -1058,8 +1058,8 @@
   (t/testing "a failed branch summarization returns pi's error shape (pi:
               BranchSummaryResult.error — `Branch summarization failed: …`)"
     (models/load-catalogs!)
-    (let [agent (loop/make-agent-state :provider :opencode-go
-                                       :model "deepseek-v4-flash")]
+    (let [agent (support/make-agent-state :provider :opencode-go
+                                          :model "deepseek-v4-flash")]
       (swap! (:cfg agent) assoc :max-retries 0)
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message
@@ -1087,8 +1087,8 @@
   (t/testing "an empty response yields the preamble alone (pi prepends it to
               contentText)"
     (models/load-catalogs!)
-    (let [agent (loop/make-agent-state :provider :opencode-go
-                                       :model "deepseek-v4-flash")]
+    (let [agent (support/make-agent-state :provider :opencode-go
+                                          :model "deepseek-v4-flash")]
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message
                     (fn [opts]
@@ -1108,7 +1108,7 @@
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
         events (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :session sess
                :on-event (fn [e] (swap! events conj e))
                :compact-token-threshold 10
@@ -1174,7 +1174,7 @@
     (try
       (t/testing "small measured usage vs window → no compaction, no count trigger"
         (let [sess (session/create-session (str dir))
-              agent (loop/make-agent-state
+              agent (support/make-agent-state
                      :session sess
                      :context-window 10000
                      :compact-reserve-tokens 1000
@@ -1188,7 +1188,7 @@
                 "measured 2050 tokens (1500 input + 50 output + 500 cached) vs window-reserve 9000 — no compaction")))
       (t/testing "measured usage within reserve of the window → compaction"
         (let [sess (session/create-session (str dir))
-              agent (loop/make-agent-state
+              agent (support/make-agent-state
                      :session sess
                      :context-window 10000
                      :compact-reserve-tokens 1000
@@ -1203,7 +1203,7 @@
                 "measured 20050 tokens >= window-reserve 9000 → compaction")))
       (t/testing "no window and no explicit thresholds → never compacts"
         (let [sess (session/create-session (str dir))
-              agent (loop/make-agent-state
+              agent (support/make-agent-state
                      :session sess
                      :keep-recent-tokens 40)]
           (dotimes [i 50]
@@ -1212,7 +1212,7 @@
                 "no count trigger by default (pi: no entry-count compaction)")))
       (t/testing "degenerate windows never trigger the window check"
         (let [sess (session/create-session (str dir))
-              agent (loop/make-agent-state
+              agent (support/make-agent-state
                      :session sess
                      :context-window 0
                      :keep-recent-tokens 40)]
@@ -1224,7 +1224,7 @@
                 "window 0 → no window check (pi: contextWindow <= 0 → undefined)")))
       (t/testing "stale kept-tail usage does not re-trigger right after a compaction"
         (let [sess (session/create-session (str dir))
-              agent (loop/make-agent-state
+              agent (support/make-agent-state
                      :session sess
                      :context-window 10000
                      :compact-reserve-tokens 1000
@@ -1249,7 +1249,7 @@
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})]
     (try
       (let [sess (session/create-session (str dir))
-            agent (loop/make-agent-state
+            agent (support/make-agent-state
                    :session sess
                    :compact-token-threshold 100
                    :keep-recent-tokens 40)]
@@ -1270,7 +1270,7 @@
 (t/deftest test-loop-compact-no-op-reports-false
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
-        agent (loop/make-agent-state :session sess)]
+        agent (support/make-agent-state :session sess)]
     (try
       (doseq [i (range 3)]
         (let [m {:role :user :content [{:type :text :text (str "msg " i)}]}]
@@ -1292,7 +1292,7 @@
           sess (session/create-session (str dir))
           events (atom [])
           llm-called? (atom false)
-          agent (loop/make-agent-state
+          agent (support/make-agent-state
                  :session sess
                  :keep-recent-tokens 40
                  :on-event (fn [e] (swap! events conj e)))
@@ -1334,7 +1334,7 @@
 (t/deftest test-loop-prepare-next-turn-context-replaces-session
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
-        agent (loop/make-agent-state :session sess)]
+        agent (support/make-agent-state :session sess)]
     (try
       (reset! (:prepare-next-turn agent)
               (fn [_] {:context [{:role :user :content [{:type :text :text "replacement"}]}]}))
@@ -1354,7 +1354,7 @@
 
 (t/deftest test-loop-context-replaced-event
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (reset! (:prepare-next-turn agent)
             (fn [_] {:context [{:role :user :content [{:type :text :text "replacement"}]}]}))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -1371,7 +1371,7 @@
         sess (session/create-session (str dir))
         events (atom [])
         started (promise)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :session sess
                :keep-recent-tokens 40
                :on-event (fn [e]
@@ -1414,7 +1414,7 @@
         events (atom [])
         started (promise)
         calls (atom 0)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :session sess
                :compact-token-threshold 10
                :keep-recent-tokens 40
@@ -1496,7 +1496,7 @@
   ;; paths keep it, an Escape at run start must still abort them.
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
-        agent (loop/make-agent-state :session sess :keep-recent-tokens 40)]
+        agent (support/make-agent-state :session sess :keep-recent-tokens 40)]
     (try
       (doseq [i (range 6)]
         (let [m {:role :user :content [{:type :text :text
@@ -1527,8 +1527,8 @@
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
         started (promise)
-        agent (loop/make-agent-state :session sess
-                                     :keep-recent-tokens 40)]
+        agent (support/make-agent-state :session sess
+                                        :keep-recent-tokens 40)]
     (try
       (doseq [i (range 6)]
         (let [m {:role :user :content [{:type :text :text

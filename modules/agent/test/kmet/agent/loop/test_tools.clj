@@ -31,7 +31,7 @@
 (t/deftest test-loop-before-tool-call-blocks
   (let [events (atom [])
         executed (atom false)
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (reset! (:before-tool-call agent)
             (fn [_] {:block true :reason "Permission denied"}))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -49,7 +49,7 @@
   (let [events (atom [])
         executed (atom false)
         llm-calls (atom 0)
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (reset! (:before-tool-call agent)
             (fn [_] {:block true :reason "Policy" :terminate true}))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -76,7 +76,7 @@
   (let [events (atom [])
         executed (atom 0)
         llm-calls (atom 0)
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     ;; pi: terminate only when EVERY finalized call in the batch carries
     ;; the hint — a single non-terminated call keeps the run going
     (reset! (:before-tool-call agent)
@@ -111,7 +111,7 @@
 
 (t/deftest test-loop-before-tool-call-hook-throws
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (reset! (:before-tool-call agent)
             (fn [_] (throw (ex-info "hook boom" {}))))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -128,7 +128,7 @@
   ;; hallucinated name) settles as an error and never executes
   (let [events (atom [])
         executed (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                ;; bash is left out of the built-in selection
                :default-tools ["read" "write" "edit" "run_code"])]
@@ -151,7 +151,7 @@
   (let [events (atom [])
         executed (atom [])
         calls (atom 0)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :default-tools ["read"])]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -190,7 +190,7 @@
   ;; inside the selection executes as before
   (let [events (atom [])
         executed (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e))
                :default-tools ["bash"])]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -205,7 +205,7 @@
 
 (t/deftest test-loop-after-tool-call-rewrites
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (reset! (:after-tool-call agent)
             (fn [{:keys [result]}]
               {:content (str (:content result) " [sanitized]")}))
@@ -219,7 +219,7 @@
 
 (t/deftest test-loop-after-tool-call-sets-error
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (reset! (:after-tool-call agent)
             (fn [{:keys [result]}]
               {:content (:content result) :is-error true}))
@@ -232,7 +232,7 @@
 
 (t/deftest test-loop-after-tool-call-hook-throws
   (let [events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (reset! (:after-tool-call agent)
             (fn [_] (throw (ex-info "hook boom" {}))))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -245,7 +245,7 @@
 
 (t/deftest test-loop-before-tool-call-rewrites-args
   (let [seen (atom [])
-        agent (loop/make-agent-state)]
+        agent (support/make-agent-state)]
     (reset! (:before-tool-call agent)
             (fn [_] {:args {:command "rewritten"}}))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -269,7 +269,7 @@
                       :execute (fn [_] {:content "seq" :is-error false})
                       :execution-mode :sequential))
     (try
-      (let [agent (loop/make-agent-state)]
+      (let [agent (support/make-agent-state)]
         (reset! (:before-tool-call agent)
                 (fn [_] {:args {:x "rewritten"}}))
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -311,7 +311,7 @@
                                                     :execute (fn [_] {:content "captured-ran" :is-error false}))
                                    [:probe :test])
     (try
-      (let [agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+      (let [agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
                       llm/send-message
                       (fn [opts]
@@ -350,7 +350,7 @@
   ;; workers (raw threads convey no bindings)
   (let [hook-calls (atom [])
         calls (atom 0)
-        agent (loop/make-agent-state)]
+        agent (support/make-agent-state)]
     (reset! (:before-tool-call agent)
             (fn [ctx] (swap! hook-calls conj ctx) nil))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -389,7 +389,7 @@
         active-tools (atom 0)
         both-started (promise)
         release-tools (promise)
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-two-tool-calls-then-text (atom 0))
                   state/execute-tool-for
@@ -430,7 +430,7 @@
         slow-running (promise)
         release-slow (promise)
         fast-ended (promise)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [e]
                            (swap! events conj e)
                            (when (and (= :tool-execution-end (:type e))
@@ -474,7 +474,7 @@
   ;; thread).
   (let [hook-calls (atom 0)
         events (atom [])
-        agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (reset! (:after-tool-call agent)
             (fn [_]
               (swap! hook-calls inc)
@@ -498,7 +498,7 @@
         second-started (promise)
         release-first (promise)
         release-second (promise)
-        agent (loop/make-agent-state)]
+        agent (support/make-agent-state)]
     (tools/register-tool!
      (tools/make-tool :name "seq-tool" :label "Seq"
                       :description "sequential test tool"
@@ -552,7 +552,7 @@
 (t/deftest test-loop-add-bash-result-when-idle
   (let [dir (str (fs/create-temp-dir {:dir (System/getProperty "user.home")}))
         sess (session/create-session (str (fs/path dir "s")))
-        agent (loop/make-agent-state :session sess)]
+        agent (support/make-agent-state :session sess)]
     (try
       (state/add-bash-result! agent "git st" {:output "clean\n" :exit-code 0} false)
       (t/is (= 1 (count (state/get-context agent))))
@@ -569,7 +569,7 @@
 (t/deftest test-loop-add-bash-result-queued-while-streaming
   (let [dir (str (fs/create-temp-dir {:dir (System/getProperty "user.home")}))
         sess (session/create-session (str (fs/path dir "s")))
-        agent (loop/make-agent-state :session sess)]
+        agent (support/make-agent-state :session sess)]
     (try
       (reset! (:status agent) :thinking)
       (state/add-bash-result! agent "git st" {:output "clean\n" :exit-code 0} false)
@@ -588,14 +588,14 @@
         (fs/delete-tree dir)))))
 
 (t/deftest test-loop-add-bash-result-excluded
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (state/add-bash-result! agent "ls" {:output "x" :exit-code 0} true)
     (t/is (= true (:exclude-from-context? (first (state/get-context agent)))))))
 
 (t/deftest test-loop-add-bash-result-after-error
   ;; pi: isStreaming is false once a run has errored — the result lands
   ;; immediately instead of queueing for a flush that never comes
-  (let [agent (loop/make-agent-state)]
+  (let [agent (support/make-agent-state)]
     (reset! (:status agent) :error)
     (state/add-bash-result! agent "git st" {:output "clean\n" :exit-code 0} false)
     (t/is (= 1 (count (state/get-context agent))))
@@ -612,7 +612,7 @@
             :theme th/dark-theme)
         calls (atom 0)
         events (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :on-event (fn [evt]
                            (swap! events conj evt)
                            (case (:type evt)
@@ -677,7 +677,7 @@
 
 (t/deftest test-active-tools
   (t/testing "nil = all tools; set restricts; nil restores"
-    (let [ag (loop/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")]
+    (let [ag (support/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")]
       (t/is (nil? @(:enabled-tools ag)))
       (state/set-active-tools! ag ["read" "write"])
       (t/is (= #{"read" "write"} @(:enabled-tools ag)))
@@ -690,8 +690,8 @@
     (let [builtins (set tools/builtin-tool-names)
           builtin-names (fn [ag] (into #{} (filter builtins) (map :name (state/active-tools ag))))
           all-names (fn [ag] (set (map :name (state/active-tools ag))))
-          ag (loop/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
-                                    :default-tools ["read"])]
+          ag (support/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
+                                       :default-tools ["read"])]
       (t/is (= #{"read"} (builtin-names ag)))
       (t/testing "extension tools registered later stay active"
         (try
@@ -707,7 +707,7 @@
         (state/set-active-tools! ag nil)
         (t/is (= #{"read"} (builtin-names ag))))
       (t/testing "no setting → every tool active"
-        (let [fal (loop/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")]
+        (let [fal (support/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")]
           (t/is (= (set (keys (tools/get-all-tools))) (all-names fal))))))))
 
 (t/deftest test-apply-default-tools-reload
@@ -717,8 +717,8 @@
               surface)"
     (let [builtins (set tools/builtin-tool-names)
           builtin-names (fn [ag] (into #{} (filter builtins) (map :name (state/active-tools ag))))
-          ag (loop/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
-                                    :default-tools ["read"])]
+          ag (support/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
+                                       :default-tools ["read"])]
       (t/is (= #{"read"} (builtin-names ag)))
       (state/apply-default-tools! ag ["read" "bash"])
       (t/is (= #{"read" "bash"} (builtin-names ag)))
@@ -731,9 +731,9 @@
 
 (t/deftest test-thinking-level-select-event
   (let [events (atom [])
-        ag (loop/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
-                                  :thinking :off
-                                  :on-event (fn [evt] (swap! events conj evt)))]
+        ag (support/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
+                                     :thinking :off
+                                     :on-event (fn [evt] (swap! events conj evt)))]
     (state/set-thinking-level! ag :high)
     (state/set-thinking-level! ag :high) ;; no change → no event
     (t/is (= 1 (count @events)))
@@ -753,8 +753,8 @@
                  :execute (fn [_] {:content tag :is-error false})})
         run (fn [ctx]
               (let [events (atom [])
-                    agent (loop/make-agent-state :ctx ctx
-                                                 :on-event (fn [e] (swap! events conj e)))]
+                    agent (support/make-agent-state :ctx ctx
+                                                    :on-event (fn [e] (swap! events conj e)))]
                 (with-redefs [cfg/get-api-key (fn [_] "test-key")
                               llm/send-message
                               (fn [opts]

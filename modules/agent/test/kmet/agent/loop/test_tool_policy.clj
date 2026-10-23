@@ -53,8 +53,8 @@
    Returns the run's `:tool-execution-end` event."
   [ctx]
   (let [events (atom [])
-        agent (loop/make-agent-state :ctx ctx
-                                     :on-event (fn [e] (swap! events conj e)))]
+        agent (support/make-agent-state :ctx ctx
+                                        :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
                   state/execute-tool-for (fn [_ _ _ _] {:content "ran" :is-error false})]
@@ -64,7 +64,7 @@
 (deftest a-denied-call-is-settled-without-executing
   (let [executed (atom false)
         events (atom [])
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :ctx (agent-ctx :agent/deny (fn [_ _] {:decision :deny
                                                       :reason "read-only workspace"}))
                :on-event (fn [e] (swap! events conj e)))]
@@ -106,7 +106,7 @@
   ;; gate into run-code's tool hooks, which the bridge hands to its workers
   (let [seen (atom [])
         calls (atom 0)
-        agent (loop/make-agent-state
+        agent (support/make-agent-state
                :ctx (agent-ctx :agent/script (fn [_ request]
                                                (swap! seen conj (:tool-name request))
                                                :allow)))]

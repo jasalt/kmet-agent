@@ -1002,6 +1002,31 @@ Gate, met: `bb test` green (1,243 changed-namespace tests, 5,789 assertions),
 `kmet.test-module-deps` 606 assertions hold the new module boundaries, `bb
 check` compiles.
 
+**Step 2b landed: a state names its ctx, and the prompt builder is an option.**
+`loop/state.clj`'s last two upward edges are gone, and both cuts are semantic:
+
+- **`:ctx` has no process default.** A state names the ctx whose `:tools` table
+  and `:loop-stages` it reads; a state with none has no tool table, and
+  `ctx-tool-table` says so rather than booting an application to find one. The
+  Engine names the ctx it was handed; the loop test support installs a *test*
+  process ctx (`*ctx*` / `process-ctx`, one `test-ctx` per suite) and
+  `with-registry` binds its own for a block, so ~270 hand-built states name a
+  ctx once — in the harness — instead of at every call site. The cut also
+  surfaced a test that had been leaning on the process root: the ai module's
+  trailing-usage wire regression drives the loop and now gives it a ctx.
+- **The prompt rebuild is a `:system-prompt-fn`.** An active-tools change used
+  to call `kmet.agent.skills/build-system-prompt` directly — the process-bound
+  wrapper whose `:skills` default reads the registry. The state calls the fn it
+  was given instead: the app's `kmet.agent.system-prompt/build-system-prompt` by
+  default, and kmet1's Engine passes the wrapper. That is the **`:systemPrompt`
+  row's shape** (a builder the state calls) standing in front of the row, which
+  is the order the row was waiting for; the wrapper's `:skills` default is the
+  last process-bound piece and moves with the row.
+
+Gate, met: full `bb test` 4,142 / 24,281 green; `bb lint` 0/0; `bb format-check`
+clean; `bb check` compiles; `loop/state.clj`'s requires now reach only `app`,
+`ai`, `libs` and `srce`.
+
 ### Landing 4c-iii-b settled
 
 **The registry cannot own what an agent is.** `kmet.app.agents` is generic by

@@ -28,10 +28,9 @@
             [kmet.agent.config :as cfg]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.app-runtime :as runtime]
+            [kmet.agent.system-prompt :as system-prompt]
             [kmet.agent.retry :as retry]
             [kmet.agent.session.core :as session]
-            [kmet.agent.skills :as skills]
             [kmet.agent.tools.registry :as tools]
             [kmet.ai.models :as models]
             [kmet.srce.core :as srce]))
@@ -101,12 +100,18 @@
                        run-token             ;; atom of the current run's token, or nil outside a
                                              ;; run — nil makes appends context-only
                        system-prompt-opts    ;; atom of the build-system-prompt options map (pi: _baseSystemPromptOptions)
+                       system-prompt-fn      ;; the builder that map is applied to when the prompt must be
+                                             ;; rebuilt (an active-tools change): the app's
+                                             ;; kmet.agent.system-prompt/build-system-prompt by default;
+                                             ;; kmet1's Engine passes kmet.agent.skills' wrapper, whose
+                                             ;; :skills default reads the process registry
                        loop-guard            ;; atom of per-run repeat-loop guard state:
                                              ;;   {:window [signature...] :suppressed n}
-                       ctx                   ;; the ctx this run reads its loop stages from and
-                                             ;; scopes its events to: the app root by default
-                                             ;; (kmet.agent.app-runtime/ctx), a child ctx for a
-                                             ;; subagent run (new-app.md, landing 4c-ii-b)
+                       ctx                   ;; the ctx this run reads its loop stages and tool
+                                             ;; table from and scopes its events to: a child ctx
+                                             ;; for an agent's run, and the app root when a process
+                                             ;; runs one (new-app.md, landing 4c-ii-b). There is no
+                                             ;; default: a state with no ctx has no tool table
                        ])
 
 (defn make-agent-state
@@ -122,6 +127,10 @@
          :get-api-key, :scoped-models (default []),
          :steering-mode (default :all), :follow-up-mode (default
          :one-at-a-time),
+         :system-prompt-fn (fn the state calls to rebuild the prompt when it must —
+         an active-tools change — with :system-prompt-opts as its keyword
+         arguments; default kmet.agent.system-prompt/build-system-prompt, and a
+         process-bound caller passes its own wrapper),
          :system-prompt-opts (build-system-prompt options map, pi:
          _baseSystemPromptOptions),
          :compact-token-threshold, :auto-compact (default true, pi:
@@ -137,14 +146,12 @@
          :default-tools (resolved :default-tools selection — the built-in
          tools active at startup, pi: defaultTools; nil = every built-in
          active, see kmet.agent.tools.registry/resolve-default-tools),
-         :ctx (the ctx this run reads its loop stages from and scopes its
-         events to; default the app root, kmet.agent.app-runtime/ctx — a
-         subagent run passes its own child ctx, which carries its own
-         :loop-guard and :retry-policy stages). Taking the default
-         materializes the app root ctx: it boots the composition once per
-         process, as every registry read already does, so a broken profile
-         fails here instead of half-way through the first turn)"
-  [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools ctx]
+         :ctx (the ctx this run reads its loop stages and tool table from and
+         scopes its events to — a run names one, because a state without a ctx
+         has no tool table; an agent's run passes its own child ctx, which
+         carries its own :loop-guard and :retry-policy stages, and a process
+         run passes the app root)"
+  [& {:keys [model provider system session on-event thinking base-url api-type steering-mode follow-up-mode max-retries base-delay-ms max-agent-delay-ms branch-summary-reserve-tokens before-tool-call after-tool-call system-prompt-override transform-context prepare-next-turn prepare-request finish-turn get-api-key scoped-models system-prompt-opts system-prompt-fn compact-token-threshold context-window compact-reserve-tokens keep-recent-tokens compact-model-overrides http-idle-timeout-ms http-total-timeout-ms auto-compact loop-guard-enabled loop-guard-threshold thinking-loop-guard-enabled block-images default-tools ctx]
       :or {provider :opencode-go
            thinking :off
            steering-mode :all
@@ -163,7 +170,7 @@
            loop-guard-enabled true
            loop-guard-threshold 3
            thinking-loop-guard-enabled true
-           ctx (runtime/ctx)
+           system-prompt-fn system-prompt/build-system-prompt
            system "You are kmet, a minimal coding agent. Help the user with their tasks.
 Use the available tools to read, write, edit files, and execute commands.
 Be precise and concise in your responses."}}]
@@ -222,6 +229,7 @@ Be precise and concise in your responses."}}]
                     :pending-bash (atom [])
                     :run-messages (atom {})
                     :run-token (atom nil)
+                    :system-prompt-fn system-prompt-fn
                     :system-prompt-opts (atom system-prompt-opts)
                     :loop-guard (atom {:window [] :suppressed 0})
                     :ctx ctx}))
@@ -521,7 +529,7 @@ Be precise and concise in your responses."}}]
     (when (seq @(:system-prompt-opts agent))
       (reset! (:system-prompt-opts agent) opts)
       (reset! (:system agent)
-              (apply skills/build-system-prompt (mapcat identity opts))))
+              (apply (:system-prompt-fn agent) (mapcat identity opts))))
     nil))
 
 (defn apply-default-tools!

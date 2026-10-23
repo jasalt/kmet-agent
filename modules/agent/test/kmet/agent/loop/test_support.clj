@@ -15,7 +15,34 @@
             [kmet.agent.config :as cfg]
             [kmet.srce.core :as srce]))
 
-(declare make-test-provider)
+(declare make-test-provider test-ctx)
+
+(def ^:dynamic *ctx*
+  "The ctx a hand-built loop state runs on. `nil` means the suite's own
+   (`process-ctx`); a test that needs its own tool table binds this
+   (`with-registry`) or names `:ctx` at the constructor."
+  nil)
+
+(defonce ^:private suite-ctx
+  ;; One test ctx per process, built on first use. The loop reads a state's tool
+  ;; table from the state's ctx, so a hand-built state has to name one — and a
+  ;; test process's is `test-ctx`, not an application's, which is what the
+  ;; process default this replaces (`kmet.agent.app-runtime/ctx`) used to boot.
+  (delay (:ctx (test-ctx))))
+
+(defn process-ctx
+  "The ctx a test's hand-built state runs on: `*ctx*` when a test bound one, the
+   suite's own ctx otherwise."
+  []
+  (or *ctx* @suite-ctx))
+
+(defn make-agent-state
+  "`kmet.agent.loop/make-agent-state` on the test process's ctx (`process-ctx`):
+   a state names the ctx whose `:tools` table and `:loop-stages` it reads, and
+   the loop's constructor has no process default of its own. An explicit `:ctx`
+   in OPTS still wins."
+  [& opts]
+  (apply loop/make-agent-state :ctx (process-ctx) opts))
 
 (defn run-turn-capturing-llm
   "Run one turn on AGENT with a stubbed LLM call; returns the captured
@@ -146,7 +173,7 @@
   (let [calls (atom 0)
         opts (atom [])
         warn (java.io.StringWriter.)
-        agent (loop/make-agent-state)]
+        agent (make-agent-state)]
     (event-bus/on-event event (fn [_] (assoc extra :continue true)))
     (try
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
@@ -227,7 +254,7 @@
   (let [dir (fs/create-temp-dir {:dir (System/getProperty "user.home")})
         sess (session/create-session (str dir))
         events (atom [])
-        agent (loop/make-agent-state
+        agent (make-agent-state
                :session sess
                :compact-token-threshold 10
                :keep-recent-tokens 40
@@ -266,8 +293,8 @@
   "Run F with the loop's tool table replaced by a fresh handle.
 
    The loop reads the table from the `:tools` service on the agent's ctx
-   (`loop.state/tool-table`), so a test needs a ctx of its own: pointing
-   `app-runtime/ctx` at a bare ctx whose `:tools` is a fresh handle hands every
+   (`loop.state/tool-table`), so a test needs a ctx of its own: binding `*ctx*`
+   to a bare ctx whose `:tools` is a fresh handle hands every
    `make-agent-state` in F that table. `app-runtime/registry` — kmet1's process
    façade — is pointed at the same handle, so a test may register a stand-in
    either way and both land where the loop looks.
@@ -279,6 +306,7 @@
    most full runs."
   [f]
   (let [{:keys [ctx tools]} (test-ctx)]
-    (with-redefs [app-runtime/registry (constantly tools)
-                  app-runtime/ctx (constantly ctx)]
-      (f))))
+    (with-redefs [app-runtime/registry (constantly tools)]
+      (binding [*ctx* ctx]
+        (f)))))
+
