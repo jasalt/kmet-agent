@@ -17,6 +17,7 @@
             [kmet.agent.prompts :as prompts]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.skills :as skills]
             [kmet.test-utils :as tu]))
 
@@ -358,7 +359,8 @@
             :scheduled true and queues the request for the settle"
     (let [dir (str "target/test-rpc-compact-" (System/currentTimeMillis))
           sess (session/create-session dir {:cwd (str (fs/cwd))})
-          engine (runtime/bootstrap (:config (opts)) {:session sess})]
+          engine (runtime/bootstrap (:config (opts)) {:session sess
+                                                      :ctx (app-runtime/ctx)})]
       (try
         (reset! (:turn-running? engine) true)
         (is (= {:type :response :command :compact :success true

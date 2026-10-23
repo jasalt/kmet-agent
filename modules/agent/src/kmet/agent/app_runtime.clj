@@ -9,9 +9,10 @@
    not a key in a per-process node. `/units` renders the ctx tree the root
    carries (`kmet.app.inspect`).
 
-   The loop's two stages ride the root ctx under `:loop-stages` as plain data:
-   the loop reads its stage map once per attempt, and a run that needs its own
-   gets a `child-ctx` carrying its overrides (P7).
+   The loop's stage map lives in `kmet.app.loop.stages`: the loop reads it from
+   its ctx, so the loop needs nothing of this shim. The root carries the builtin
+   map under `:loop-stages`, and a run that needs its own gets a `child-ctx`
+   carrying its overrides (P7).
 
    Registrations are owned: what `init(api)` installs lands under
    `[:app :extensions <name>]` in the app's registries, so unloading an
@@ -21,28 +22,19 @@
    One sharp edge comes with the root ctx, and the host owns it: it is a
    process global every front end, engine and loaded extension shares — a run
    that must not share registrations gets its own `child-ctx`."
-  (:require [kmet.agent.extensions.core :as extensions]
+  (:require [kmet.app.loop.stages :as loop-stages]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.extensions.services :as extensions-services]
-            [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.registry :as reg]
-            [kmet.agent.retry :as retry]
             [kmet.app.core :as app-core]
             [kmet.app.runtime :as app-runtime]
             [kmet.srce.core :as srce]))
-
-(def default-loop-stages
-  "The loop's two stages, as the plain map the loop reads: each stage carries
-   a `:call` function, and an optional `:config` (the loop-guard threshold, the
-   retry policy's budget and backoff shape). A ctx may carry an override; a
-   subagent's ctx will."
-  {:loop-guard {:call loop-guard/loop-guard-filter}
-   :retry-policy {:call retry/retry-decision}})
 
 (defonce ^:private app-root
   ;; The stage map rides the root ctx under `:loop-stages`, so a child ctx
   ;; reaches it by `srce/attr` and a run that passes its own carries its own.
   (delay (app-runtime/boot (app-core/compose-config {:profile :tui})
-                           {:ctx-meta {:loop-stages (atom default-loop-stages)}})))
+                           {:ctx-meta {:loop-stages (atom loop-stages/defaults)}})))
 
 (defn ctx
   "The app root ctx: the composed rows kmet1 registers into."
@@ -62,7 +54,7 @@
   ([] (child-ctx nil))
   ([parent] (child-ctx parent nil))
   ([parent stages]
-   (let [meta {:loop-stages (atom (merge-with merge default-loop-stages stages))}]
+   (let [meta {:loop-stages (atom (merge-with merge loop-stages/defaults stages))}]
      (if parent (srce/extend parent meta) (srce/root meta)))))
 
 (def registry-tags
@@ -123,32 +115,13 @@
     (reg/deregister-owner! (registry) tag owner))
   nil)
 
-(defn loop-stages
-  "CTX's loop stage map, read once per attempt. The nearest `:loop-stages` on
-   the ctx chain wins — the root carries the builtin defaults, a child ctx its
-   overrides — and a ctx that carries none (a bare test ctx) reads the
-   defaults."
-  [ctx]
-  (if-some [stages (and ctx (srce/attr ctx :loop-stages))]
-    @stages
-    default-loop-stages))
-
-(defn- own-stages
-  "The stage atom CTX itself carries, or nil — no inheritance here, so a
-   refresh names its target instead of reaching up the chain."
-  [ctx]
-  (when (and ctx (srce/ctx? ctx)) (:loop-stages ctx)))
-
 (defn refresh-stages!
-  "Re-seat the loop stages with the builtin defaults, so a reloaded guard or
-   retry stage reaches the next attempt; an in-flight attempt keeps the map it
-   read. It targets TARGET's own stage atom when it has one, and the app root's
-   otherwise — never an ancestor's by inheritance: `loop-stages` inherits, a
-   refresh names what it changes. `/reload` calls the no-arg form."
-  ([] (refresh-stages! nil))
-  ([target]
-   (when-some [stages (or (own-stages target) (:loop-stages (ctx)))]
-     (reset! stages default-loop-stages))))
+  "Re-seat the app root's loop stages with the builtin defaults
+   (`kmet.app.loop.stages/refresh!`), so a reloaded guard or retry stage reaches
+   the next attempt; an in-flight attempt keeps the map it read. `/reload` calls
+   it; a ctx that names its own stage atom re-seats that one."
+  []
+  (loop-stages/refresh! (ctx)))
 
 (defn dispose-deregisters!
   "Kmet1's name for `kmet.agent.registry/dispose-deregisters!`: run FNS — the

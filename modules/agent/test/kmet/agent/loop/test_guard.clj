@@ -6,6 +6,7 @@
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
             [kmet.agent.loop-guard :as guard]
+            [kmet.app.loop.stages :as loop-stages]
             [kmet.agent.app-runtime :as runtime]
             [kmet.agent.retry :as retry]
             [kmet.agent.config :as cfg]
@@ -258,12 +259,12 @@
                      {:message "run" :on-done (fn [_]) :on-error (fn [_])}))))]
     ;; The ctx's stages change while the first attempt is in flight.
     (run! (fn []
-            (with-redefs [runtime/default-loop-stages
-                          (assoc runtime/default-loop-stages
+            (with-redefs [loop-stages/defaults
+                          (assoc loop-stages/defaults
                                  :loop-guard {:call guard-b})]
-              (runtime/refresh-stages! run-ctx))))
+              (loop-stages/refresh! run-ctx))))
     (t/is (= [:a] @used) "the attempt kept the handle it started with")
-    (t/is (= guard-b (get-in (runtime/loop-stages run-ctx) [:loop-guard :call]))
+    (t/is (= guard-b (get-in (loop-stages/for-ctx run-ctx) [:loop-guard :call]))
           "and the ctx really did change under it")
     ;; The next attempt reads the new tree: guard-b suppresses its only call,
     ;; which trips the guard and settles the run (one handle call).

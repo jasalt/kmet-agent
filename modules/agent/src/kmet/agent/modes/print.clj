@@ -7,6 +7,7 @@
   (:require [clojure.string :as str]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.session.runtime :as runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
             [kmet.agent.config :as cfg]))
@@ -101,6 +102,7 @@
             engine (runtime/bootstrap config {:session session
                                               :model model
                                               :provider provider
+                                              :ctx (app-runtime/ctx)
                                               :mode (if (= :edn mode) :json :print)})
             result-promise (promise)
             unsubscribe (runtime/subscribe! engine (event-consumer mode result-promise))

@@ -15,6 +15,11 @@
  ;; lifted ahead of the extension host's own move so its requires stop pointing
  ;; upward (new-app.md, 4b-ii).
  ;;
+ ;; kmet.app.loop.stages is 7a's first step: the loop's stage map (`defaults`,
+ ;; `for-ctx`, `refresh!`), so the loop reads its stages from the ctx it was
+ ;; handed and `kmet.agent.app-runtime` is left holding only the process's own
+ ;; entry points. It reaches `kmet.agent.loop-guard`/`.retry`, which live here.
+ ;;
  ;; kmet.agent.system-prompt is the first piece of 4c-iii-c: the prompt builder
  ;; with no registry of its own, so an engine composes its prompt from the ctx
  ;; it holds (kmet.agent.skills/build-system-prompt is kmet1's wrapper).

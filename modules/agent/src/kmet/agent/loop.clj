@@ -67,7 +67,7 @@
             [kmet.ai.llm :as llm]
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.retry :as retry]
-            [kmet.agent.app-runtime :as runtime]
+            [kmet.app.loop.stages :as loop-stages]
             [kmet.agent.tools.util :as tools-util]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.tools.run-code :as run-code-tool]
@@ -785,7 +785,7 @@
    :agent-end is emitted here with this attempt's accumulated messages
    (RUN-TOKEN keys the accumulator) and :will-retry."
   [agent run-token {:keys [on-text on-thinking on-error]}]
-  (let [stages (runtime/loop-stages (:ctx agent)) ; the agent ctx's stages, one read per attempt
+  (let [stage-map (loop-stages/for-ctx (:ctx agent)) ; the agent ctx's stages, one read per attempt
         agent-end (fn [error will-retry]
                     (when-let [s (:session agent)]
                       (when (pos? (get-in (session/tool-usage s)
@@ -801,9 +801,9 @@
                       ;; decoration (agent-session.ts) — send each its own map.
                       (state/emit agent event (dissoc event :will-retry))))
         attempt {:agent agent
-                 :stages stages
-                 :retry-decide (get-in stages [:retry-policy :call])
-                 :retry-policy (compact/stage-retry-policy agent stages)
+                 :stages stage-map
+                 :retry-decide (get-in stage-map [:retry-policy :call])
+                 :retry-policy (compact/stage-retry-policy agent stage-map)
                  :text-buf (atom "")
                  :on-text on-text
                  :on-thinking on-thinking

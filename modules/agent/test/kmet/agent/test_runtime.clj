@@ -1,37 +1,33 @@
 (ns kmet.agent.test-runtime
-  "The agent runtime: the app root ctx and its loop stages."
+  "The agent runtime: the app root ctx and the process's stage entry points."
   (:require [clojure.test :as t :refer [deftest is]]
             [kmet.agent.app-runtime :as runtime]
+            [kmet.app.loop.stages :as stages]
             [kmet.srce.core :as srce]))
 
 (deftest the-app-root-ctx-is-one-ctx-carrying-the-loop-stages
   (let [ctx (runtime/ctx)
-        stages (runtime/loop-stages ctx)]
+        stage-map (stages/for-ctx ctx)]
     (is (identical? ctx (runtime/ctx)) "one app root per process")
     (is (srce/ctx? ctx) "the app root is a ctx, not a store node")
-    (is (= #{:loop-guard :retry-policy} (set (keys stages))))
-    (is (fn? (get-in stages [:loop-guard :call])))
-    (is (fn? (get-in stages [:retry-policy :call])))
-    (is (nil? (get-in stages [:loop-guard :config])))
-    (is (nil? (get-in stages [:retry-policy :config]))
+    (is (= #{:loop-guard :retry-policy} (set (keys stage-map))))
+    (is (fn? (get-in stage-map [:loop-guard :call])))
+    (is (fn? (get-in stage-map [:retry-policy :call])))
+    (is (nil? (get-in stage-map [:loop-guard :config])))
+    (is (nil? (get-in stage-map [:retry-policy :config]))
         "the builtin stages carry no config")))
 
 (deftest a-child-ctx-carries-its-own-stages
   (let [child (runtime/child-ctx (runtime/ctx)
                                  {:retry-policy {:config {:max-retries 1}}})
-        stages (runtime/loop-stages child)]
+        stage-map (stages/for-ctx child)]
     (is (srce/inside? child (runtime/ctx)))
-    (is (= {:max-retries 1} (get-in stages [:retry-policy :config])))
-    (is (fn? (get-in stages [:retry-policy :call]))
+    (is (= {:max-retries 1} (get-in stage-map [:retry-policy :config])))
+    (is (fn? (get-in stage-map [:retry-policy :call]))
         "the default handle survives the merge")
-    (is (nil? (get-in stages [:loop-guard :config])))
-    (is (= runtime/default-loop-stages (runtime/loop-stages (runtime/ctx)))
+    (is (nil? (get-in stage-map [:loop-guard :config])))
+    (is (= stages/defaults (stages/for-ctx (runtime/ctx)))
         "a child ctx's override does not leak into the root")))
-
-(deftest a-ctx-without-stages-reads-the-defaults
-  (is (= runtime/default-loop-stages (runtime/loop-stages (srce/root))))
-  (is (= runtime/default-loop-stages (runtime/loop-stages nil))
-      "a node-less state reads the builtin stages"))
 
 (deftest a-child-ctx-joins-its-parents-children
   ;; The parent link is half the nesting contract: a child the parent's list
@@ -42,56 +38,15 @@
     (is (srce/inside? child parent))
     (is (not (srce/inside? parent child)))))
 
-(deftest refresh-stages-reseats-a-ctx
-  ;; A reloaded unit needs the stages re-seated: the ctx holds the map it was
-  ;; created with.
-  (let [changed (fn [& _] :changed)
-        ctx (runtime/child-ctx)
-        guard #(get-in (runtime/loop-stages ctx) [:loop-guard :call])]
-    (try
-      (with-redefs [runtime/default-loop-stages
-                    (assoc runtime/default-loop-stages
-                           :loop-guard {:call changed})]
-        (runtime/refresh-stages! ctx)
-        (is (identical? changed (guard))))
-      (finally (runtime/refresh-stages! ctx)))
-    (is (not (identical? changed (guard))) "the real unit is back")))
-
-(deftest a-child-ctx-without-stages-reads-its-parents
-  ;; The chain walk is what makes `:loop-stages` inherited rather than
-  ;; copied: a ctx that carries none reads the nearest one up the tree, which
-  ;; is how the app root's map reaches an agent's ctx.
-  (let [mine {:loop-guard {:call :root-guard} :retry-policy {:call :root-retry}}
-        parent (srce/root {:loop-stages (atom mine)})
-        child (srce/extend parent {})
-        grandchild (srce/extend child {})]
-    (is (= :root-guard
-           (get-in (runtime/loop-stages child) [:loop-guard :call])))
-    (is (= :root-retry
-           (get-in (runtime/loop-stages grandchild) [:retry-policy :call])))))
-
-(deftest refresh-stages-never-reaches-past-the-app-root
-  ;; `loop-stages` inherits; `refresh-stages!` does not. A refresh aimed at a
-  ;; ctx with no stage atom of its own re-seats the app root's, so an isolated
-  ;; tree's stages survive it.
-  (let [parent (srce/root {:loop-stages (atom {:loop-guard {:call :parent-guard}})})
-        child (srce/extend parent {})]
-    (try
-      (runtime/refresh-stages! child)
-      (is (= :parent-guard (get-in (runtime/loop-stages child) [:loop-guard :call]))
-          "an isolated tree's stages are untouched")
-      (is (= runtime/default-loop-stages (runtime/loop-stages (runtime/ctx)))
-          "and the app root's atom is what the refresh re-seated")
-      (finally (runtime/refresh-stages!)))))
-
 (deftest refresh-stages-defaults-to-the-app-root
+  ;; `/reload` calls the no-arg form: the process shim names the app root,
+  ;; because a ctx cannot be found from inside a function that has none.
   (let [changed (fn [& _] :changed)]
     (try
-      (with-redefs [runtime/default-loop-stages
-                    (assoc runtime/default-loop-stages
-                           :loop-guard {:call changed})]
+      (with-redefs [stages/defaults
+                    (assoc stages/defaults :loop-guard {:call changed})]
         (runtime/refresh-stages!)
         (is (identical? changed
-                        (get-in (runtime/loop-stages (runtime/ctx))
+                        (get-in (stages/for-ctx (runtime/ctx))
                                 [:loop-guard :call]))))
       (finally (runtime/refresh-stages!)))))

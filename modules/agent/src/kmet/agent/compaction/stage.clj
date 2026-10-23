@@ -21,7 +21,7 @@
             [kmet.libs.concurrent :as concurrent]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop.completion :as completion]
-            [kmet.agent.app-runtime :as runtime]
+            [kmet.app.loop.stages :as loop-stages]
             [kmet.agent.session.core :as session]
             [kmet.agent.extensions.core :as extensions]
             [kmet.ai.api.shared :as shared]
@@ -196,7 +196,7 @@
    the compaction path's own, which tolerates a ctx-less state — the run's
    options stand alone."
   ([agent]
-   (stage-retry-policy agent (runtime/loop-stages (:ctx agent))))
+   (stage-retry-policy agent (loop-stages/for-ctx (:ctx agent))))
   ([agent stages]
    (merge (select-keys @(:cfg agent) [:max-retries :base-delay-ms :max-agent-delay-ms])
           (:config (:retry-policy stages)))))

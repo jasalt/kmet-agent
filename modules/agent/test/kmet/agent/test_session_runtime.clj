@@ -38,7 +38,7 @@
   (let [dir (str "target/test-session-runtime-" (System/currentTimeMillis))
         sess (session/create-session dir {:cwd (str (fs/cwd))})]
     (try
-      (let [engine (rt/bootstrap (test-config) {:session sess})]
+      (let [engine (rt/bootstrap (test-config) {:session sess :ctx (app/ctx)})]
         (try (f engine sess)
              (finally (rt/dispose! engine))))
       (finally (fs/delete-tree dir)))))
@@ -382,7 +382,8 @@
     (let [dir (str "target/test-session-runtime-new-" (System/currentTimeMillis))
           sess (session/create-session dir {:cwd (str (fs/cwd))})]
       (try
-        (let [engine (rt/bootstrap (assoc (test-config) :session-dir dir) {:session sess})]
+        (let [engine (rt/bootstrap (assoc (test-config) :session-dir dir)
+                                   {:session sess :ctx (app/ctx)})]
           (try
             (reset! (:turn-running? engine) true)
             (is (= :scheduled (rt/request-compaction! engine nil nil)))
@@ -516,11 +517,11 @@
         sess1 (session/create-session
                (rt/ensure-cwd-session-dir dir1 (str (fs/cwd)))
                {:cwd (str (fs/cwd))})
-        e1 (rt/bootstrap (test-config) {:session sess1})
+        e1 (rt/bootstrap (test-config) {:session sess1 :ctx (app/ctx)})
         sess2 (session/create-session
                (rt/ensure-cwd-session-dir dir2 (str (fs/cwd)))
                {:cwd (str (fs/cwd))})
-        e2 (rt/bootstrap (test-config) {:session sess2})]
+        e2 (rt/bootstrap (test-config) {:session sess2 :ctx (app/ctx)})]
     (try
       ;; The bus is not an engine's (F10): its registry is process-level, so
       ;; there is no per-engine listener storage to compare (see

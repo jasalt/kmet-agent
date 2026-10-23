@@ -197,7 +197,7 @@
       (try
         (let [engine (rt/bootstrap {:provider :opencode-go
                                     :model "deepseek-v4-flash"}
-                                   {:session sess})]
+                                   {:session sess :ctx (app/ctx)})]
           (try
             (t/is (= :print (ex/extension-mode)))
             (t/is (false? (ex/extension-has-ui?)))

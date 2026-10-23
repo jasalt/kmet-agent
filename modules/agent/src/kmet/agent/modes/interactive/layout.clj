@@ -19,6 +19,7 @@
             [kmet.ai.models :as models]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.commands :as commands]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.prompts :as prompts]
@@ -570,7 +571,9 @@
         ;; extension handle (kmet.agent.session.runtime/bootstrap); the layout
         ;; owns view state and subscribes its event handler once the widgets
         ;; exist.
-        engine (runtime/bootstrap config {:session session :cwd cwd})
+        engine (runtime/bootstrap config {:session session
+                                          :cwd cwd
+                                          :ctx (app-runtime/ctx)})
         cwd-atom (:cwd engine)
 
         ;; Migrate legacy keybinding ids in keybindings.edn (pi: migrations

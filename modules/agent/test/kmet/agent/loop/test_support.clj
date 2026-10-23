@@ -9,6 +9,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.session.core :as session]
             [kmet.agent.loop :as loop]
+            [kmet.app.loop.stages :as loop-stages]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.registry :as registry]
             [kmet.agent.config :as cfg]
@@ -238,8 +239,7 @@
 
 (defn test-ctx
   "A bare ctx for a loop test's agent: STAGES merged over the builtin defaults
-   (`kmet.agent.app-runtime/default-loop-stages`) and a tool service of its
-   own. Returns {:ctx ctx :tools handle} — the handle is fresh and empty but
+   (`kmet.app.loop.stages/defaults`) and a tool service of its own. Returns {:ctx ctx :tools handle} — the handle is fresh and empty but
    for the built-ins, so a test can register stand-ins into it.
 
    Bare means no parent: the loop reads the stage map from the ctx (the
@@ -249,10 +249,10 @@
   ([stages]
    (let [handle (registry/atom-registry)
          ;; the stage map rides the ctx meta as an atom, the way
-         ;; app-runtime/child-ctx builds one, so refresh-stages! can swap it
+         ;; app-runtime/child-ctx builds one, so a refresh can swap it
          ctx (srce/root {:name :test-loop
                          :loop-stages (atom (merge-with merge
-                                                        app-runtime/default-loop-stages
+                                                        loop-stages/defaults
                                                         stages))})]
      (srce/plugin! ctx {:name :tools
                         :provide #{:tools}

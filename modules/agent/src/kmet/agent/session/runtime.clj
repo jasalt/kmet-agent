@@ -53,8 +53,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
-            [kmet.agent.tools.registry :as tools]
-            [kmet.agent.app-runtime :as app-runtime]))
+            [kmet.agent.tools.registry :as tools]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
                    cwd turn-running? compaction-queued pending-compaction
@@ -162,11 +161,12 @@
      :agent-opts   — extra/overriding make-agent-state options (escape hatch
                      for tests and front-end-specific run options; the
                      engine's session follows an overridden :session)
-     :ctx          — the ctx the engine runs on (a subagent's child ctx);
-                     defaults to the app root. The prompt's tool table and the
-                     agent state both read it, so a child ctx's own `:tools`
-                     service is the table this engine lists and dispatches
-                     through (4c-iii-c)
+     :ctx          — the ctx the engine runs on: the caller names the ctx whose
+                     `:tools` service is the table this engine lists and
+                     dispatches through, and whose `:loop-stages` the run reads
+                     (4c-iii-c); kmet1's modes name the app root. There is no
+                     default, because a state with no ctx has no tool table —
+                     `bootstrap` fails at the prompt rather than mid-turn
 
    Loads skills + prompt templates, builds the system prompt (custom prompt,
    appended prompt, project context files, active tools), derives every
@@ -181,9 +181,10 @@
         _ (packages/load-skills!)
         _ (packages/load-prompts!)
         ;; the ctx the engine runs on: the caller's (a subagent's child ctx),
-        ;; else the app root — the prompt's tool table and the agent state both
-        ;; read this one value, so the two can never name different tables
-        ctx (or (:ctx agent-opts) ctx (app-runtime/ctx))
+        ;; or the app root kmet1's modes pass — the prompt's tool table and the
+        ;; agent state both read this one value, so the two can never name
+        ;; different tables
+        ctx (or (:ctx agent-opts) ctx)
         provider (or provider (cfg/get-provider config))
         model (or model (models/resolve-config-model config))
         model-rec (models/get-model provider model)
