@@ -65,13 +65,18 @@
    (let [meta {:loop-stages (atom (merge-with merge default-loop-stages stages))}]
      (if parent (srce/extend parent meta) (srce/root meta)))))
 
-(def ^:private registry-tags
+(def registry-tags
   "Every registry tag kmet1 registers under, and the service that owns it — nil
    for the tags with no seam yet (the extension host's own registrations:
    hooks, themes, the UI port, entry/message renderers, flags), which share the
-   façade's `remainder` handle until they get services. `deregister-owner!`
-   walks these tags, so a tag the host registers under and a tag it unloads
-   under are the same list."
+   façade's `remainder` handle until they get services.
+
+   This is the routing table `registry` builds its handle from; unloading an
+   extension sweeps the same tags through two other lists (the host's own
+   `host-tags` and the resources' `resource-tags`, since the host may not
+   require this shim). They are separate files, so they can drift — keep them
+   equal: `test-lifecycle` does (`test-unload-sweeps-every-tag-kmet1-routes`),
+   because a forgotten tag leaks (`:kmet/tool-source` did)."
   {:kmet/tool :tools
    :kmet/tool-source :tools
    :kmet/command :commands

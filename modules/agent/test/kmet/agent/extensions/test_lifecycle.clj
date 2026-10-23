@@ -8,6 +8,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.app-runtime :as rt]
             [kmet.agent.commands :as commands]
+            [kmet.agent.extensions.services :as services]
             [kmet.agent.registry :as registry]
             [kmet.agent.event-bus :as event-bus]
             [kmet.srce.core :as srce]
@@ -234,3 +235,14 @@
                ((:get-argument-completions cmd) ""))
             "the later callback resolves the extension's own resource"))
     (extensions/unload-all-extensions!)))
+
+(t/deftest test-unload-sweeps-every-tag-kmet1-routes
+  ;; kmet1 routes each tag to the service that owns it
+  ;; (kmet.agent.app-runtime/registry-tags); unloading an extension sweeps the
+  ;; same tags, but through two lists in namespaces that may not require that
+  ;; shim. A tag in neither list is never swept, and nothing fails loudly:
+  ;; :kmet/tool-source leaked that way, and an unloaded extension's
+  ;; sandbox-only tools survived into the next namespace's run_code surface.
+  (t/is (= (set (keys rt/registry-tags))
+           (into (set extensions/host-tags) services/resource-tags))
+        "host-tags + resource-tags must cover exactly the tags kmet1 routes"))
