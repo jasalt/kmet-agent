@@ -67,7 +67,9 @@ consumers watch `:message-update` deltas and stop at `:agent-settled`, whose
 - **stdin EOF requests shutdown.** The engine cancels an in-flight run,
   streams its terminal `:agent-settled` (`:aborted`), then disposes and
   exits 0. The session file is appended as entries stream, so an abrupt exit
-  loses nothing.
+  loses nothing. A `:status` or `:queue-update` the cancel path writes can
+  land after the settle (they are emitted on the cancelling thread while the
+  run settles on its own): the settle, not stream closure, is the run's end.
 - No SIGTERM/SIGHUP handlers are installed yet; signal an orderly shutdown
   with stdin EOF.
 

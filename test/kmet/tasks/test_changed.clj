@@ -86,7 +86,7 @@
           "the changed file is linted")
       (is (contains? files "modules/agent/src/kmet/agent/extensions/core.cljc")
           "a dependent is linted (its call sites see a changed signature)")
-      (is (contains? files "modules/agent/src/kmet/agent/extensions/context.cljc")
+      (is (contains? files "modules/app/src/kmet/agent/extensions/context.cljc")
           "a dependency of the dependent is linted (its vars must resolve)")))
   (testing "unrelated namespaces stay out"
     (let [files (set (changed/affected-lint-files-by ["modules/libs/src/kmet/libs/process.clj"]))]

@@ -17,14 +17,32 @@
  ;;
  ;; The session layer brings the library edges it uses: libs for fs/edn-store,
  ;; ai for the usage tallies, and the two Maven siblings those need. The tool
- ;; layer adds sci (its sandbox mints contexts) and none other: every other
- ;; edge it needs was already here.
+ ;; layer added sci (its sandbox mints contexts); every other edge it needed was
+ ;; already here.
+ ;;
+ ;; 4b-ii-b brought the extension host's leaves with it: the isolated
+ ;; evaluation context (extensions/context.cljc) requires kmet.loader.*, the
+ ;; bundled library set (extensions/libs.clj) is what makes those six
+ ;; coordinates app's, and the loop's two stages (kmet.agent.retry,
+ ;; .loop-guard) came with them because they reach nothing above app. The pins
+ ;; match the root deps.edn / bb.edn ones; kmet.test-module-deps holds every
+ ;; manifest to one coordinate.
  :deps {kmet/libs {:local/root "../libs"}
         kmet/srce {:local/root "../srce"}
         kmet/ai {:local/root "../ai"}
+        kmet/loader {:local/root "../loader"}
         babashka/fs {:mvn/version "0.5.34"}
         babashka/process {:mvn/version "0.6.25"}
         metosin/malli {:mvn/version "0.20.1"}
+        ;; The bundled extension set (kmet.agent.extensions.libs) requires these
+        ;; so the host loads them once and extension contexts share the
+        ;; namespaces by reference.
+        dev.weavejester/cljfmt {:mvn/version "0.16.6"}
+        rewrite-clj/rewrite-clj {:mvn/version "1.3.58"}
+        parinferish/parinferish {:mvn/version "0.8.0"}
+        borkdude/edamame {:mvn/version "1.6.44"}
+        org.clojure/spec.alpha {:mvn/version "0.5.238"}
+        org.clojure/tools.reader {:mvn/version "1.6.0"}
         ;; SCI: the tool layer's sandbox (tools/run-code) mints its own
         ;; contexts, and the loader's design puts the backend artifact on the
         ;; caller (loader.md §6.5). Same pin as agent's and jolt's.

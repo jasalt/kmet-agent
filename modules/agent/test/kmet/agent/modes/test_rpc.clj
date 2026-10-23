@@ -203,13 +203,24 @@
                       (while (not @(:signal ag))
                         (Thread/sleep 5))
                       (emit! ag {:type :agent-settled :outcome :aborted})))]
-      (let [[result records] (run-lines [{:type :prompt :id 1 :message "go"}])]
+      (let [[result records] (run-lines [{:type :prompt :id 1 :message "go"}])
+            settle (first (filter #(= :agent-settled (:type %)) records))
+            ;; :status and :queue-update are written by cancel-turn on dispose's
+            ;; own thread after it signals the run; the run settles on its own
+            ;; thread, so those two race and either can land after the settle
+            ;; (wider with machine load and with the app root booted — measured,
+            ;; 10c3f9ac included). The terminal event is what this test owns;
+            ;; landing 5 decides the status ordering when the mode moves onto
+            ;; the app's bus.
+            trailing (rest (drop-while #(not= :agent-settled (:type %)) records))]
         (is (= :ok result))
         (is (= [:prompt] (mapv :command (responses records))))
-        (is (= :agent-settled (:type (last records)))
+        (is (some? settle)
             "the cancelled run's settle was written before dispose dropped the
              subscriber")
-        (is (= :aborted (:outcome (last records))))))))
+        (is (= :aborted (:outcome settle)))
+        (is (every? #(contains? #{:status :queue-update} (:type %)) trailing)
+            "nothing but UI noise follows the terminal event")))))
 
 (deftest test-prompt-during-a-run-requires-streaming-behavior
   (testing "pi parity: a prompt while a run is active needs an explicit

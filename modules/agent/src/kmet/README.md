@@ -97,9 +97,12 @@ kmet/agent/
 │                         not store entries, since 4b-ii-a)
 │   ├── core.cljc       — hook/renderer/shortcut/flag registries, bind and
 │   │                     install-front-end!, the extension UI ports
-│   ├── context.cljc    — per-extension SCI isolation
-│   ├── libs.clj        — the fixed bundled-extension library set
-│   └── bundled.clj     — bundled extension artifacts and discovery
+│   ├── bundled.clj     — bundled extension artifacts and discovery
+│   ├── (context.cljc)  — per-extension SCI isolation; moved to `modules/app`
+│   │                     at 4b-ii-b (its tests went with it)
+│   └── (libs.clj)      — the fixed bundled-extension library set; moved to
+│                         `modules/app` at 4b-ii-b, and the six coordinates
+│                         it names moved to `modules/app/deps.edn` with it
 ├── commands.clj        — slash-command registry (the `:commands` service,
 │                         [:app :commands] owner; ctx-shaped handlers:
 │                         {:runtime :ui :frontend}, front-end tags)
@@ -124,8 +127,10 @@ kmet/agent/
 │   │                     serialization, summarization/branch prompts
 │   └── stage.clj       — when the loop runs it: proactive/reactive triggers,
 │                         summarization call + retry, session replacement
-├── retry.clj           — retry decision stage
-├── loop_guard.clj      — repeat-loop guard stage
+├── (retry.clj)         — retry decision stage; moved to `modules/app` at
+│                         4b-ii-b
+├── (loop_guard.clj)    — repeat-loop guard stage; moved to `modules/app` at
+│                         4b-ii-b
 ├── session/            — the session subsystem; only the runtime lives here
 │   └── runtime.clj     — the session runtime engine (bootstrap, lifecycle,
 │                         submission chain, compaction queue, subscribers,

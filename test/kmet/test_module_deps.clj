@@ -202,7 +202,8 @@
      can say which host a module's FFI call runs on).
    - `org.babashka/sci`: the loader's design puts the backend artifact on the
      caller (loader.md §6.5) — babashka and Jolt bundle sci, and the host that
-     mints contexts declares it (agent; jolt/deps.edn for Jolt)."
+     mints contexts declares it (app since 4b-ii-b moved the host's leaves;
+     jolt/deps.edn for Jolt)."
   #{'org.babashka/ffi 'org.babashka/sci})
 
 (defn- ns-use
