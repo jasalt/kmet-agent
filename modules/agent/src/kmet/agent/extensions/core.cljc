@@ -60,14 +60,10 @@
             [babashka.fs :as fs]
             [babashka.process :as proc]
             [kmet.ai.models :as models]
-            [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.context :as context]
-            [kmet.agent.prompts :as prompts]
             [kmet.agent.registry :as registry]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.session.core :as session]
-            [kmet.agent.skills :as skills]
             [kmet.agent.tools.registry :as tools]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.config :as cfg]
@@ -189,6 +185,61 @@
 (defonce ^:private context-sink-atom (atom nil))
 (defonce ^:private entry-sink-atom (atom nil))
 
+;; ─── Services (what this file may not require, bound by its owner) ───────
+;; The host lives in `app` and cannot require the process above it: its
+;; registry handle, the ctx an `:inject` mount lands under, and the
+;; commands/prompts/skills registries are all kmet1's. It takes them as a
+;; value instead — kmet1 (kmet.agent.extensions.services) binds this process's
+;; app root; an agent binds its own when the host is mounted per agent.
+;; A thunk, not a value: binding happens while the root is still being booted,
+;; and a captured value would freeze whatever registry handle existed then.
+;; Unbound is an error — the host has no process default of its own, which is
+;; precisely what lets it live below the process.
+(defonce ^:private services* (atom nil))
+
+(defn bind-services!
+  "Bind what the host may not require. F is called on every use and returns
+
+     {:registry <Registry handle>     ; the handle the host's own tags live in
+      :ctx      <ctx>                 ; where an extension's :inject mounts
+      :commands {:register!    (fn [cmd owner])
+                 :unregister!  (fn [cmd-name owner])
+                 :all          (fn [])}
+      :prompts  {:register!    (fn [template owner])
+                 :load-dir!    (fn [dir owner])}
+      :skills   {:register!    (fn [raw-content opts])
+                 :load-dir!    (fn [dir owner])}
+      :deregister-owner! (fn [owner])} ; the commands/prompts/skills OWNER
+                                        ; registered, for unload
+
+   Deferred because the owner binds before its root exists (see `services`).
+   Re-binding is how another owner takes the host over."
+  [f]
+  (reset! services* f)
+  nil)
+
+(defn- services
+  "The bound services; a host used before its owner bound it is an error, not
+   a silent process default."
+  []
+  (if-let [f @services*]
+    (f)
+    (throw (ex-info "the extension host was used before its services were bound"
+                    {:type :kmet/no-host-services}))))
+
+(defn- handle
+  "The registry handle the host's own tags live in."
+  []
+  (:registry (services)))
+
+(def ^:private host-tags
+  "Every registry tag this file registers under — what unloading an extension
+   sweeps. The resources an extension contributes (commands, prompts, skills)
+   live in its owner's registries, not here: those go through the bound
+   :deregister-owner! (see `unload-extension!`)."
+  [:kmet/hook :kmet/entry-renderer :kmet/message-renderer :kmet/flag
+   :kmet/ui-port :kmet/theme :kmet/tool :kmet/tool-source])
+
 ;; ─── Input / before-agent-start hooks (pi: pi.on('input') / ──────────────
 ;; ─── 'before_agent_start'; applied by modes.interactive + app.loop) ──────
 
@@ -222,7 +273,7 @@
    value: the registry's listing is registration order, and hook order is
    owner-major (see `hooks-of`)."
   [owner kind hook]
-  (registry/register! (app-runtime/registry) :kmet/hook
+  (registry/register! (handle) :kmet/hook
                       (hook-name kind) {:owner owner :hook hook} owner))
 
 (defn- hooks-of
@@ -231,7 +282,7 @@
    put back in order here — one extension's hooks stay adjacent, in its own
    sequence, whatever else registers between them."
   [kind]
-  (let [hooks (->> (registry/entries (app-runtime/registry) :kmet/hook)
+  (let [hooks (->> (registry/entries (handle) :kmet/hook)
                    (keep (fn [[n v]] (when (= kind (first n)) v)))
                    vec)
         owner-order (into {} (map-indexed (fn [i owner] [owner i])
@@ -314,21 +365,21 @@
    register-entry-renderer!). RENDERER — (fn [entry]) returning a chat
    message map (or bare component) or nil. Returns a deregister fn."
   [owner custom-type renderer]
-  (registry/register! (app-runtime/registry) :kmet/entry-renderer custom-type
+  (registry/register! (handle) :kmet/entry-renderer custom-type
                       renderer owner))
 
 (defn get-entry-renderer [custom-type]
-  (registry/entry (app-runtime/registry) :kmet/entry-renderer custom-type))
+  (registry/entry (handle) :kmet/entry-renderer custom-type))
 
 (defn register-message-renderer!
   "Register OWNER's renderer for a custom MESSAGE type (extension api:
    register-message-renderer!). Returns a deregister fn."
   [owner custom-type renderer]
-  (registry/register! (app-runtime/registry) :kmet/message-renderer custom-type
+  (registry/register! (handle) :kmet/message-renderer custom-type
                       renderer owner))
 
 (defn get-message-renderer [custom-type]
-  (registry/entry (app-runtime/registry) :kmet/message-renderer custom-type))
+  (registry/entry (handle) :kmet/message-renderer custom-type))
 
 (defn register-tool-call-hook!
   "Register OWNER's tool-call hook (extension api: on-tool-call): (fn [ctx])
@@ -413,7 +464,7 @@
    the leading --; opts: :type (:boolean|:string) :default. Returns a
    deregister fn."
   [owner name & [{:keys [type default]}]]
-  (registry/register! (app-runtime/registry) :kmet/flag name
+  (registry/register! (handle) :kmet/flag name
                       {:type (or type :string) :default default} owner))
 
 (defn set-cli-flags! [flag-map]
@@ -424,7 +475,7 @@
   "Value of a registered CLI flag: the argv value coerced by the registered
    :type, falling back to :default. nil for unregistered flags."
   [name]
-  (when-let [{:keys [type default]} (registry/entry (app-runtime/registry) :kmet/flag name)]
+  (when-let [{:keys [type default]} (registry/entry (handle) :kmet/flag name)]
     (let [raw (get @cli-flag-values name)]
       (case type
         :boolean (let [v (if (nil? raw) default raw)]
@@ -474,7 +525,7 @@
   the front end's own: the next surface to bind replaces it, and
   `unbind-extensions!` restores the headless defaults. Returns nil."
   [{:keys [ui] :as surface}]
-  (registry/register! (app-runtime/registry) :kmet/ui-port :port (or ui {}) [:app :ui])
+  (registry/register! (handle) :kmet/ui-port :port (or ui {}) [:app :ui])
   (bind-extensions! surface)
   nil)
 
@@ -961,10 +1012,11 @@
    shortcuts, model providers, theme removal) record their deregister fn on the
    extension instead.
 
-   The api is process-level: what an extension registers is visible to every
-   engine (hooks are read from one registry), so it needs no ctx. The ctx
-   reaches the host at the mount (`:inject`, `load-extension*`); a per-agent
-   api is 4b-ii-b's, when the host itself becomes a plugin."
+   The api resolves through the bound services (see `bind-services!`), so
+   what an extension registers is visible to whoever bound them: kmet1's
+   process registry reaches every engine, and an owner that binds an agent's
+   handle and its own ctx gets a per-agent api. The host holds no handle of
+   its own."
   [ext]
   (let [track (fn [f] (track-deregister! ext f) f)
         name (:name ext)]
@@ -986,36 +1038,38 @@
                           (let [cmd (loader-aware-map
                                      ext (assoc cmd :extension-handler
                                                 (:handler cmd)))]
-                            (commands/register-command! cmd (extension-owner name))))
+                            ((get-in (services) [:commands :register!])
+                             cmd (extension-owner name))))
      :unregister-command! (fn [cmd-name]
-                            (commands/unregister-command! cmd-name (extension-owner name)))
+                            ((get-in (services) [:commands :unregister!])
+                             cmd-name (extension-owner name)))
      ;; sanitized — other extensions must not see :handler/:extension-handler
      :get-commands #(mapv (fn [c] (select-keys c [:name :description]))
-                          (commands/get-commands))
+                          ((get-in (services) [:commands :all])))
      :register-tool! (fn [tool]
-                       (tools/register-tool! (app-runtime/registry)
+                       (tools/register-tool! (handle)
                                              (loader-aware-map ext tool)
                                              (extension-owner name)))
      :unregister-tool! (fn [tool-name]
-                         (tools/unregister-tool! (app-runtime/registry)
+                         (tools/unregister-tool! (handle)
                                                  tool-name
                                                  (extension-owner name)))
      ;; sandbox-only tools: contributed into the run_code tool's surface, never
      ;; the model's tool set (mcp-adapter's MCP catalog — run_code.md T2)
      :register-tool-source! (fn [id tools-fn]
                               (tools/register-tool-source!
-                               (app-runtime/registry) id tools-fn
+                               (handle) id tools-fn
                                (extension-owner name)))
      :unregister-tool-source! (fn [id]
                                 (tools/unregister-tool-source!
-                                 (app-runtime/registry) id
+                                 (handle) id
                                  (extension-owner name)))
      ;; pi: createBashTool — the bash tool constructor with its options
      ;; (spawnHook / exposeSessionEnvironment / commandPrefix / shellPath /
      ;; operations). The built-in bash tool is the same constructor with
      ;; default options; registering the result under a name replaces it.
      :create-bash-tool bash-tool/create-tool
-     :get-all-tools #(vals (tools/get-all-tools (app-runtime/registry)))
+     :get-all-tools #(vals (tools/get-all-tools (handle)))
      :get-active-tools get-active-tools
      :set-active-tools set-active-tools
      :on-event (fn [event-type handler]
@@ -1072,13 +1126,13 @@
                         ;; io/resource and hands the content over, so jarred
                         ;; skills need no filesystem path. Registered under the
                         ;; extension's owner, so unload disposes it.
-                        (skills/register-extension-skill!
+                        ((get-in (services) [:skills :register!])
                          raw-content
                          (assoc opts
                                 :extension name
                                 :owner (extension-owner name))))
      :register-prompt! (fn [prompt & [opts]]
-                         (prompts/register-prompt-template!
+                         ((get-in (services) [:prompts :register!])
                           (assoc (merge opts prompt)
                                  :extension name
                                  :owner (extension-owner name))))
@@ -1277,7 +1331,7 @@
                   ;; failed *now* must be turned back into a load error —
                   ;; otherwise a broken extension reports as loaded.
                   (let [fiber (srce/inject!
-                               (app-runtime/ctx) (keyword name) inject
+                               (:ctx (services)) (keyword name) inject
                                (fn [_fctx _config]
                                  (let [api (create-extension-api ext)]
                                    (reset! (:api ext) api)
@@ -1371,10 +1425,14 @@
                  (println "Warning: extension shutdown error:" (ex-message e)))))))
     ;; the outside-registry fns first: a handler still subscribed while the
     ;; registry entries go would see a half-unloaded extension
-    (app-runtime/dispose-deregisters! @(:deregister-fns ext))
+    (registry/dispose-deregisters! @(:deregister-fns ext))
     ;; then one sweep per tag the extension registered under (4c-ii moved the
-    ;; registries into the app's services, so there is no tree to dispose)
-    (app-runtime/deregister-owner! (extension-owner (:name ext)))
+    ;; registries into the app's services, so there is no tree to dispose):
+    ;; the host's own tags here, the resource registries through the binding
+    (let [owner (extension-owner (:name ext))]
+      (doseq [tag host-tags]
+        (registry/deregister-owner! (handle) tag owner))
+      ((:deregister-owner! (services)) owner))
     ;; an `:inject` extension's mount is a fiber: disposing it unwinds the
     ;; effects the kernel holds and drops it from the tree, pending or active
     (when-let [fiber @(:fiber ext)]
@@ -1456,7 +1514,7 @@
   (let [owner (or owner themes-owner)
         ext (extension-by-owner owner)]
     (doseq [{:keys [name] :as theme} (context/load-themes-from-dir! dir)]
-      (registry/register! (app-runtime/registry) :kmet/theme name theme owner)
+      (registry/register! (handle) :kmet/theme name theme owner)
       (when ext
         (track-deregister! ext (fn [] (context/unregister-theme! name theme)))))))
 
@@ -1469,8 +1527,8 @@
    owner and key) and unload complete (disposing the owner takes the
    resources with it)."
   [owner {:keys [skill-paths prompt-paths theme-paths]}]
-  (doseq [p skill-paths] (skills/load-skills-from-dir p owner))
-  (doseq [p prompt-paths] (prompts/load-prompt-templates-from-dir p owner))
+  (doseq [p skill-paths] ((get-in (services) [:skills :load-dir!]) p owner))
+  (doseq [p prompt-paths] ((get-in (services) [:prompts :load-dir!]) p owner))
   (doseq [p theme-paths] (load-contributed-themes! owner p)))
 
 (defn discover-resources!
@@ -1511,9 +1569,9 @@
    wholesale reset a test fixture or `/reload` needs, and it is the only way a
    host-(nil-owner) contribution comes back out."
   []
-  (doseq [[theme-name theme] (registry/entries (app-runtime/registry) :kmet/theme)]
+  (doseq [[theme-name theme] (registry/entries (handle) :kmet/theme)]
     (context/unregister-theme! theme-name theme))
-  (registry/clear! (app-runtime/registry) :kmet/theme)
+  (registry/clear! (handle) :kmet/theme)
   nil)
 
 (defn clear-extensions!

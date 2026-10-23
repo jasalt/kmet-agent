@@ -21,7 +21,8 @@
    One sharp edge comes with the root ctx, and the host owns it: it is a
    process global every front end, engine and loaded extension shares — a run
    that must not share registrations gets its own `child-ctx`."
-  (:require [kmet.agent.debug :as debug]
+  (:require [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.extensions.services :as extensions-services]
             [kmet.agent.loop-guard :as loop-guard]
             [kmet.agent.registry :as reg]
             [kmet.agent.retry :as retry]
@@ -99,6 +100,14 @@
   []
   @registry-handle)
 
+;; The extension host lives in `app` and may not require this shim, so this is
+;; where the process hands it its handles: the registry above, the ctx below,
+;; and the resource registries it would otherwise have to name. The thunk is
+;; only stored here — nothing resolves, let alone boots, until the host reads
+;; it — and re-binding is how a different owner (an agent's ctx) takes over.
+(extensions/bind-services!
+ (fn [] (extensions-services/host-services (registry) (ctx))))
+
 (defn deregister-owner!
   "Remove every registry registration OWNER holds, across every tag — what
    unloading an extension or a resource contributor needs now that the
@@ -137,10 +146,8 @@
      (reset! stages default-loop-stages))))
 
 (defn dispose-deregisters!
-  "Run FNS — the deregister fns an extension recorded for what lives outside
-   the app tree — in reverse registration order, each isolated and a failure
-   logged instead of skipping the rest. Returns nil."
+  "Kmet1's name for `kmet.agent.registry/dispose-deregisters!`: run FNS — the
+   deregisters an extension recorded for what lives outside the app's
+   registries — in reverse registration order. Returns nil."
   [fns]
-  (doseq [f (reverse fns)]
-    (try (f) (catch Throwable t (debug/log-error "extension cleanup failed: " t))))
-  nil)
+  (reg/dispose-deregisters! fns))

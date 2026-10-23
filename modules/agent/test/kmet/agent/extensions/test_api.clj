@@ -9,7 +9,11 @@
             [kmet.extension :as ext]
             [kmet.agent.config :as cfg]
             [kmet.ai.models :as models]
+            [kmet.agent.app-runtime :as rt]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.extensions.services :as services]
+            [kmet.agent.registry :as registry]
+            [kmet.srce.core :as srce]
             [kmet.libs.hikap.alias :as alias]
             [kmet.tui.theme :as theme]))
 
@@ -218,3 +222,25 @@
                                                                         :oauth {:name "broken"}}))))
         (finally
           (models/clear-extension-providers!))))))
+
+(t/deftest test-the-host-registers-where-its-owner-points-it
+  ;; The host holds no process handle of its own: it registers into whatever
+  ;; services its owner bound. That is what lets it live in `app` below the
+  ;; process it serves, and what gives a second owner (an agent's ctx) a
+  ;; per-agent api. kmet1 binds the app root (kmet.agent.app-runtime);
+  ;; kmet.agent.extensions.services/host-services builds either map.
+  (let [handle (registry/atom-registry)
+        ctx (srce/root {:name :host-test})
+        bind! #(extensions/bind-services!
+                (fn [] (services/host-services %1 %2)))]
+    (try
+      (bind! handle ctx)
+      (extensions/register-flag! [:app :test] "host-test-flag" {:type :boolean})
+      (t/is (= {:type :boolean :default nil}
+               (registry/entry handle :kmet/flag "host-test-flag"))
+            "the registration landed in the handle its owner bound")
+      (t/is (nil? (registry/entry (rt/registry) :kmet/flag "host-test-flag"))
+            "and not in the process's")
+      (finally
+        ;; back to kmet1's binding for every test after this one
+        (bind! (rt/registry) (rt/ctx))))))

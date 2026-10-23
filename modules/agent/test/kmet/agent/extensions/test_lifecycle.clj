@@ -112,6 +112,10 @@
         (t/is (nil? (tools/get-tool "owned-tool")))
         (t/is (nil? (skills/get-skill "owned-skill")))
         (t/is (nil? (prompts/get-prompt-template "owned-prompt")))
+        (t/is (empty? (registry/entries (srce/get (rt/ctx) :tools)
+                                        :kmet/tool-source))
+              "the sandbox-only tool source went with the owner too — it is
+               invisible in the tool table, so only this registry shows it")
         (t/is (empty? (registry/entries (rt/registry) :kmet/flag))
               "one dispose took everything the extension registered"))
       (finally

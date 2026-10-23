@@ -28,7 +28,8 @@
    took is the name it keeps until it unloads.
 
    The registries themselves stay in their namespaces: they own the tag, the
-   domain validation and the owner default. Only the mechanics live here.")
+   domain validation and the owner default. Only the mechanics live here."
+  (:require [kmet.agent.debug :as debug]))
 
 (defprotocol Registry
   "A tag/name/owner-addressed registration store. The five methods are the
@@ -151,3 +152,16 @@
       (clear! [_ tag]
         (swap! state (fn [v] (into [] (remove #(= tag (:tag %))) v)))
         nil))))
+
+(defn dispose-deregisters!
+  "Run FNS — the deregisters an extension recorded for what lives outside the
+   app's registries — in reverse registration order, each isolated so a
+   failure is logged instead of skipping the rest. The complement of
+   `deregister-owner!`: that sweeps what a registry holds, this releases what
+   none does (event subscriptions, aliases, a theme's removal). Returns nil."
+  [fns]
+  (doseq [f (reverse fns)]
+    (try (f)
+         (catch Throwable t
+           (debug/log-error "extension cleanup failed: " t))))
+  nil)
