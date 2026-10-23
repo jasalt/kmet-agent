@@ -73,9 +73,11 @@ The app module (`modules/agent/src/kmet/agent`). Several `kmet.agent.*`
 namespaces live in `modules/app` instead — the two-axes rule: the file moves,
 its namespace does not — so this tree is what remains. `kmet.agent.version`
 (landing 1), `kmet.agent.registry` (landing 3), the session log
-(`kmet.agent.session.*`, 4c-i), and the extension host's leaf dependencies
+(`kmet.agent.session.*`, 4c-i), the extension host's leaf dependencies
 (`kmet.agent.debug`, `.config-schema`, `.event-bus`, `.tools.util`, 4b-ii's
-prep).
+prep), and since 4f the whole tool layer — `kmet.agent.tools.*` and
+`kmet.agent.config` — which is app's now, handle-parameterized, with kmet1's
+default installed from `app-runtime`.
 
 ```
 kmet/agent/
@@ -86,7 +88,7 @@ kmet/agent/
 │                         --generate-models), argument parsing, mode dispatch
 ├── jvm_main.clj        — the JVM artifact's AOT entry point (delegates to
 │                         core.clj, i.e. the bootstrap)
-├── config.clj          — configuration loading (settings.edn, env vars)
+├── (config.clj)        — settings loading; moved to `modules/app` at 4f
 ├── project_context.clj — project context files (AGENTS.md/CLAUDE.md)
 ├── app_runtime.clj     — the app root ctx, and the loop's stage map (on the
 │                         ctx)
@@ -131,19 +133,11 @@ kmet/agent/
 │                         store, listing, context, stats, tree, schema,
 │                         export, backend — lives in `modules/app`
 │                         (`kmet.agent.session.*`, moved at 4c-i)
-├── tools/              — built-in tools: read, write, edit, bash
-│   │                     (grep/find/ls and the Windows-only powershell ship
-│   │                     as opt-in extensions)
-│   ├── core.clj / tool.clj / registry.clj — the tool API, Tool record and
-│   │                     registry (custom tools are entries in the `:tools`
-│   │                     service, owner-addressed)
-│   ├── invoke.clj      — the shared invocation pipeline (loop + run_code)
-│   ├── bash_executor.clj — the bash tool's process engine (streaming,
-│   │                     temp-file spill, shell resolution)
-│   ├── bash_output.clj — the engine's pure half: size formatting, UTF-8
-│   │                     truncation and output sanitizing (read, run_code
-│   │                     and the renderers use it without the engine)
-│   └── config.clj      — the built-in tool rows for `kmet config`
+├── (tools/)            — the whole tool layer (tool, util, the API, registry,
+│                         invoke, bash + its two halves, read/write/edit,
+│                         run_code, the `kmet config` rows) moved to
+│                         `modules/app/src/kmet/agent/tools` at 4f, namespaces
+│                         kept
 ├── modes/              — entry modes
 │   ├── interactive.clj — interactive TUI entry: run + session start-up
 │   │                     (pi: modes/interactive/interactive-mode.ts)
