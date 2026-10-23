@@ -1144,9 +1144,12 @@ with the cell — the arity replaced them, since the registry's callers now get 
 compile-time error rather than a runtime fallback. In their place,
 `kmet.agent.tools.test-tool-tables` holds the property the refactor bought and
 4c-iii-c needs: a registration belongs to the handle it was registered in, the
-same name dispatches to each handle's own tool, and the built-in table is built
-per handle. Mutation-checked — pointing dispatch at a fresh registry fails two
-of its three assertions.
+same name dispatches to each handle's own tool, the built-in table is built per
+handle, and — the assertion that makes the other three mean something — the
+run_code record's sandbox *surface* is built from its own handle, so a probe
+registered in one handle is callable from that handle's script and refused as
+inactive by another's. Mutation-checked: pointing the record's `get-all-tools`
+seam at a static table fails it.
 
 Ledger: **twelve source files moved into `app`** (3,891 lines), four test
 namespaces with them (1,968 lines), one `deps.edn` line added; the registry

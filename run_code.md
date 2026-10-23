@@ -578,9 +578,11 @@ must emit it.
 
 ### Dispatch and result contract
 
-- One bridge over `kmet.agent.tools.core/execute-tool` — the loop's own seam.
-  It already provides arg normalization, `:prepare-arguments`,
-  `:contextual?`/`:streams?` dispatch, and exception → `{:is-error true}`.
+- One bridge over the record's `:execute-tool` seam (`kmet.agent.tools.invoke`'s
+  contract, which the registry wires to its handle-bound `execute-tool` and
+  kmet1 reaches through the `kmet.agent.tools.core` façade). It already
+  provides arg normalization, `:prepare-arguments`, `:contextual?`/`:streams?`
+  dispatch, and exception → `{:is-error true}`.
 - **Never through `loop/execute-tool-calls-*`**: that path emits
   `:tool-execution-*` events, runs hooks, and appends `:role :tool` entries to
   context and session — exactly the cost the run_code tool exists to avoid.
@@ -927,9 +929,12 @@ pipeline both callers use:
 - `modules/libs/src/kmet/libs/concurrent.clj` — `or-signal` (the read-only OR-view of
   cancel signals used by the run_code bridge and the loop's provider guard)
   next to the extension `spawn` helper.
-- `modules/app/src/kmet/agent/tools/core.clj`, `modules/app/src/kmet/agent/tools/registry.clj` —
-  `execute-tool` (the bridge seam), `select-tools` (the shared surface
-  filter), `built-in-tools`, `get-all-tools`, `get-tool`.
+- `modules/app/src/kmet/agent/tools/registry.clj` — `execute-tool` (the bridge
+  seam, handle-first), `select-tools` (the shared surface filter),
+  `built-in-tools` (a function of the registry, so the run_code record's
+  surface is its handle's), `get-all-tools`, `get-tool`; and
+  `modules/agent/src/kmet/agent/tools/core.clj` — kmet1's arity-less façade
+  over that same handle, resolved per call.
 - `modules/agent/src/kmet/agent/loop.clj` — run-level bindings (incl.
   `run-code/*enabled-tools-fn*`, `run-code/*tool-hooks*` and the per-batch
   `run-code/*assistant-message*`) + `active-tools` / `set-active-tools!`;

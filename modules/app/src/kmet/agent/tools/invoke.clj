@@ -21,8 +21,10 @@
             [kmet.agent.tools.util :as tool-util]))
 
 (def execute-tool-contract
-  "The injected per-tool dispatcher — `kmet.agent.tools.core/execute-tool`
-   satisfies it and the registry passes that same fn in:
+  "The injected per-tool dispatcher. `kmet.agent.tools.registry/execute-tool`
+   satisfies it (the registry builds the run_code record's seam from it), and
+   kmet1's arity-less facade `kmet.agent.tools.core/execute-tool` presents the
+   same shape to the loop:
 
      (fn [tool-name args {:keys [signal ctx on-update tools]}]
        {:content … :is-error …})
