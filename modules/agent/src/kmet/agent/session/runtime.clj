@@ -164,17 +164,21 @@
      :load-resources! — a thunk `bootstrap` calls once, before the prompt is
                      built, to put the caller's skills and prompt templates
                      into the app's registries; kmet1's front ends pass
-                     `kmet.agent.app-runtime/load-resources!` (the unified
+                     `kmet.agent.packages/load-resources!` (the unified
                      package resolution), and no default means an engine that
                      was handed none loads none
      :agent-opts   — extra/overriding make-agent-state options (escape hatch
                      for tests and front-end-specific run options; the
                      engine's session follows an overridden :session).
-                     `:system-prompt-fn` rides here too: the builder the state
-                     calls on an active-tools change, defaulting to
+                     Anything the state takes rides here, which is why
+                     `:system-prompt-fn` (the builder the state calls on an
+                     active-tools change, defaulting to
                      `kmet.agent.skills/build-system-prompt`, whose `:skills`
-                     default reads the process registry (kmet2's caller passes
-                     its own)
+                     default reads the process registry) and an overridden
+                     `:ctx` are read from here. Policy that is the front
+                     end's rather than the state's — `:load-resources!`,
+                     `:expand-input`, and the `:ctx` the engine lists and
+                     dispatches with — is top-level
      :ctx          — the ctx the engine runs on: the caller names the ctx whose
                      `:tools` service is the table this engine lists and
                      dispatches through, and whose `:loop-stages` the run reads

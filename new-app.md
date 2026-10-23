@@ -1117,6 +1117,17 @@ load). So the cut is two options, not a lift:
   `test-expansion-is-the-callers`: the caller's chain runs, and none means
   none.
 
+  A review pass on the pair fixed two things and added one guard: the
+  `:load-resources!` docstring still named the shim (`app-runtime`) as the
+  loader's home, which the cycle had already moved to `packages`; the option
+  surface got the rule it was missing (state options ride `:agent-opts`, the
+  front end's policy is top-level — `:ctx` is the one that reads both, because
+  it is both); and `kmet.test-front-end-policy` now holds the wiring statically
+  — each front end's `bootstrap` map literal must name the loader, and the
+  chain except print's — because a dropped key is silent: kmet1 would just
+  stop loading skills or expanding commands, and the suite would stay green.
+  Mutation-checked both ways (layout losing the chain, print gaining one).
+
   What the Engine still reaches for in `kmet.agent.*` is now two things, and
   neither is a lift: `commands` ×3 for **extension-command dispatch** (the
   extension ABI; a re-point at retirement, not a policy cut) and `skills` for
