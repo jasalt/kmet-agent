@@ -113,6 +113,17 @@
             (is (= ["hello"] (user-texts (:agent handle))) "the sent text, once"))))
       (finally (unsubscribe)))))
 
+(deftest a-state-needs-a-prompt-builder
+  ;; The builder has no default on purpose; a state without one fails here,
+  ;; naming the option, rather than where the prompt would be built. The map is
+  ;; built rather than written because lint refuses a literal nil for an
+  ;; argument it knows is a function — and the guard is exactly what a caller
+  ;; that got there another way hits.
+  (is (= :kmet.app/no-system-prompt
+         (try (driver/agent-state {} (srce/root) (hash-map :system-prompt-fn nil))
+              nil
+              (catch Exception e (:type (ex-data e)))))))
+
 (deftest resume-is-refused-not-approximated
   ;; The registry's resume names a handle id it once published; a handle id is
   ;; not a session. Answering with a fresh conversation would be a wrong answer

@@ -347,7 +347,7 @@ rewrite.
 | `:sessions` | the append-only session log and its in-memory index, one log per agent | `session/core.clj` (1.7k) |
 | `:sessionPersistence` | the storage backend under `:sessions` (EDNL files first; a second backend shadows this key, not the log) | the file half of `session/core.clj` |
 | `:projections` | incremental derived state over the log — the inbox, the turn boundaries, the token meter — with a cache behind it | **landed** (`kmet.app.projections`, 4c-iii-b): the inbox is the log (an enqueue and a delivery are two `:custom` facts), and the fold extends from the cached prefix |
-| `:systemPrompt` | ordered sections, dynamic contexts, prompt variables and tool schemas, assembled by a waterfall before each request; per-agent composition lands here | `skills.clj/build-system-prompt` (one fn) + `context.clj` + each tool's `:prompt-snippet`; since 7a the loop state names the builder (`:system-prompt-fn`) and an engine resolves one per run, so the row replaces a value instead of a namespace read |
+| `:systemPrompt` | ordered sections, dynamic contexts, prompt variables and tool schemas, assembled by a waterfall before each request; per-agent composition lands here | **landed at 7a** as `kmet.app.system-prompt` (the app's pure builder over the `:skills` registry), provided as the builder itself; the loop state calls the one it names (`:system-prompt-fn`), an engine resolves caller → ctx row → suite, and `kmet.agent.skills/build-system-prompt` is the last stand-in for a context-free engine |
 | `:events` `:hooks` | three event domains (session/agent/capability) + 5 dispatch modes + hook chains | `event-bus.clj`, `apply-input-hooks` |
 | `:ui` | capability map: render, input, dialogs, notify, widget set | `extension-binding :ui`, lifted out |
 | `:approvals` | the one delivery seam for `:permissions :ask`: dialog, wire request/response, or headless default | **landed** (`kmet.app.permissions`, 4c-iii-a): the loop's pre-tool waterfall consults it through `permissions/check`; the row mounts the deny-by-default seam, because there is no dialog yet |
@@ -1203,6 +1203,15 @@ inbox drains, the follow-up queue holds the text the run will drain). A
 pointless `:or {on-event nil}` went, and the prompt-row test's comment about
 the ctx's `:tools` service — the state throws `kmet/no-tool-service` without
 one, as the test's first attempt found — is in the fixture where it bites.
+
+The simplify pass after it found one race and closed the "no default" rule's
+last silent edge: `send!` read `running?` and *then* asked to start a run, so a
+message arriving in that window was neither run nor queued — `start!` is the
+CAS that decides, it now answers whether it claimed the run, and the caller
+queues on a lost claim. `agent-state` also refuses a nil builder with
+`:kmet.app/no-system-prompt` instead of an NPE at the build site, which is what
+a no-default option owes its caller. And the handle's `:cancel!`/`:dispose!`
+shared their body as one `stop!`.
 
 **What the composition still needs, and why the gate is the driver's.** In a
 pure kmet2 boot the extension host's services are unbound — kmet1's shim binds

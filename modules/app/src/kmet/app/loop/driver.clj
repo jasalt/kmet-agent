@@ -101,6 +101,11 @@
    to keep for the next prompt rebuild, and the state carries the rest."
   [config ctx {:keys [session model provider cwd system-prompt-fn on-event
                       agent-opts]}]
+  ;; no default is the rule, so a missing builder is a named failure here
+  ;; rather than an NPE where the prompt is built
+  (when-not (fn? system-prompt-fn)
+    (throw (ex-info "a run's state needs a prompt builder: name one (the ctx's :systemPrompt row, or a caller's own)"
+                    {:type :kmet.app/no-system-prompt})))
   (let [provider (or provider (cfg/get-provider config))
         model (or model (models/resolve-config-model config))
         model-rec (models/get-model provider model)
@@ -195,13 +200,20 @@
         running? (atom false)
         last-run (atom nil)
         settle! (fn [] (reset! running? false))
+        stop! (fn []
+                (loop/cancel-turn @live)
+                (settle!))
+        ;; true when this call claimed the run: the CAS is what decides, so a
+        ;; message arriving as another thread starts a run is queued by the
+        ;; caller rather than dropped
         start! (fn [text]
-                 (when (compare-and-set! running? false true)
-                   (reset! last-run
-                           (loop/run-agent-turn @live
-                                                {:message text
-                                                 :on-done (fn [_] (settle!))
-                                                 :on-error (fn [_] (settle!))}))))]
+                 (boolean
+                  (when (compare-and-set! running? false true)
+                    (reset! last-run
+                            (loop/run-agent-turn @live
+                                                 {:message text
+                                                  :on-done (fn [_] (settle!))
+                                                  :on-error (fn [_] (settle!))})))))]
     {:id id
      :ctx child
      :agent state
@@ -209,24 +221,19 @@
      :send! (fn [msg opts]
               (let [text (if (map? msg) (:text msg) msg)
                     target (:target opts :next-turn)]
-                (if @running?
+                (when-not (and (not @running?) (start! text))
                   (if (= :next-step target)
                     (loop-state/steer! @live text)
-                    (loop-state/follow-up! @live text))
-                  (start! text))
+                    (loop-state/follow-up! @live text)))
                 ;; the run has the message now: the inbox's pending entry
                 ;; folds away with the delivery fact, so a long-lived server's
                 ;; inbox stays a queue rather than a log of everything sent
                 (when-let [entry (:entry opts)]
                   ((:deliver! projections) (:session @live) [(:id entry)]))))
-     :cancel! (fn [_opts]
-                (loop/cancel-turn @live)
-                (settle!))
+     :cancel! (fn [_opts] (stop!))
      :when-idle (fn [] (when @running? (deref @last-run)))
      :status (fn [] (if @running? :running :idle))
-     :dispose! (fn []
-                 (loop/cancel-turn @live)
-                 (settle!))}))
+     :dispose! stop!}))
 
 ;; ── the row ───────────────────────────────────────────────────────────────
 
