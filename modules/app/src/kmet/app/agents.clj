@@ -5,9 +5,12 @@
    **An agent is a child context plus a handle** (`new-app.md` § Multi-session
    server mode). The child context is the registry's: it extends the ctx
    `create!` was called with, inherits the services the root provides, and is
-   the tree line `--dump-state` prints (`[:app :agent/5f3a2b1c]`). The handle is
-   the factory's: what an agent *is* belongs to the driver that runs it, so this
-   namespace never learns what a turn, a session or a model is.
+   the tree line `--dump-state` prints (`[:app :agent/5f3a2b1c]`). That ctx is
+   the app ctx, or another agent's ctx for a subagent — never a plugin's mount
+   ctx, which a fiber's disposal drops out of the tree with its children still
+   hanging on it. The handle is the factory's: what an agent *is* belongs to the
+   driver that runs it, so this namespace never learns what a turn, a session or
+   a model is.
 
    **The factory is the seam, and there is none until a loop mounts.** `:agents`
    exists as soon as the row mounts, but `create!` throws
@@ -55,13 +58,13 @@
 
      :id       the id the registry minted (passed to the factory in its opts)
      :ctx      the agent's child context — the registry's own
-     :agent    the bare agent, what `get` and `list` answer with
+     :agent    the bare agent (non-nil), what `get` and `list` answer with
      :session  a thunk returning the live session (a session switch moves it)
      :dispose! the factory's teardown: abort the turn, drain the queue. The
                registry releases the child context after it returns."
   {:id (fn [id _ handle] (= id (:id handle)))
    :ctx (fn [_ child handle] (identical? child (:ctx handle)))
-   :agent (fn [_ _ handle] (contains? handle :agent))
+   :agent (fn [_ _ handle] (some? (:agent handle)))
    :session (fn [_ _ handle] (fn? (:session handle)))
    :dispose! (fn [_ _ handle] (fn? (:dispose! handle)))})
 
@@ -151,6 +154,30 @@
           []
           (srce/children ctx)))
 
+(defn- mount-ctx?
+  "Is CTX a plugin mount's own ctx, rather than a plain child (`extend`)? A
+   mount installs its own atom and its fiber holds the ctx back, so the identity
+   check separates the two without a marker key."
+  [ctx]
+  (let [fiber (:fiber ctx)]
+    ;; a plain child inherits its parent's fiber (the identity fails), and the
+    ;; root has a fiber of its own but no parent — so both are not mounts
+    (boolean (and fiber (:parent ctx) (identical? (:ctx @fiber) ctx)))))
+
+(defn- parent-ctx!
+  "CTX checked as an agent's parent. A plugin's mount ctx is refused: disposing
+   a fiber drops its mount ctx out of the tree with whatever child ctxs it
+   still holds, and nothing can see them afterwards — an agent parented there
+   would leak invisibly. The registry's scope (the app root) or another agent's
+   ctx outlives what is created under it."
+  [ctx]
+  (when (mount-ctx? ctx)
+    (throw (ex-info (str "an agent cannot be parented to a plugin's mount ctx ("
+                         (pr-str (:name ctx)) "): name the app ctx or an agent ctx")
+                    {:type :kmet.app/agent-parent-is-a-mount
+                     :ctx (:name ctx)})))
+  ctx)
+
 (defn- no-factory [ctx]
   (throw (ex-info "no agent factory is registered: mount a loop driver (`:agentLoop`) that registers one"
                   {:type :kmet.app/no-agent-factory :ctx (:name ctx)})))
@@ -201,7 +228,7 @@
                        (apply f args)
                        (unsupported k (:id handle)))))]
     (letfn [(create! [ctx opts]
-              (inside! ctx)
+              (parent-ctx! (inside! ctx))
               (let [factory (factory-for state ctx)
                     id (mint (set (keys (:handles @state))))]
                 (claim-busy! state id)
@@ -235,7 +262,15 @@
 
             (send! [handle msg opts]
               (let [handle (live handle)
-                    entry ((:enqueue! projections) (session-of handle) msg opts)]
+                    session (session-of handle)
+                    ;; the inbox is the log: an agent without one has nowhere
+                    ;; to queue, and the backend would fail deeper in instead
+                    _ (when-not session
+                        (throw (ex-info (str "agent " (pr-str (:id handle))
+                                             " has no session to queue into")
+                                        {:type :kmet.app/agent-has-no-session
+                                         :id (:id handle)})))
+                    entry ((:enqueue! projections) session msg opts)]
                 (when-let [f (:send! handle)]
                   (f msg opts))
                 entry))
@@ -272,6 +307,7 @@
                 nil))]
       {:register-factory!
        (fn [ctx factory]
+         (inside! ctx)
          (when-not (fn? factory)
            (throw (ex-info "an agent factory is a fn of (ctx opts)"
                            {:type :kmet.app/bad-agent-factory})))

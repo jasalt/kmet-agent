@@ -157,6 +157,32 @@
         "an optional op that is present but not callable is a shape problem")
     (is (= [] (mapv :name (srce/children root))))))
 
+(deftest a-plugins-mount-ctx-is-not-a-parent
+  (let [{:keys [root agents]} (fixture)
+        row (srce/plugin! root {:name :mode/tui :apply (fn [_ _] nil)})]
+    (is (= :kmet.app/agent-parent-is-a-mount
+           (error-type #((:create! agents) (:ctx @row) {})))
+        "a mount ctx is dropped from the tree with its children, so an agent
+         parented there would leak invisibly")
+    (is (= [] (mapv :name (srce/children (:ctx @row)))))
+    (srce/dispose! row)))
+
+(deftest only-this-tree-registers-a-factory
+  (let [{:keys [agents]} (fixture)
+        other (srce/root {:name :other})]
+    (is (= :kmet.app/outside-scope
+           (error-type #((:register-factory! agents) other (stand-in))))
+        "a registry is not something another tree can hand a driver to")))
+
+(deftest an-agent-without-a-session-cannot-queue
+  (let [{:keys [root agents]} (fixture)
+        _ ((:register-factory! agents) root (stand-in))
+        handle ((:create! agents) root {:session nil})]
+    (is (= :kmet.app/agent-has-no-session
+           (error-type #((:send! agents) handle "hi" {:target :next-turn})))
+        "the inbox is the log: no session, nowhere to queue — named here rather
+         than as a nil deref from inside the backend")))
+
 (deftest roots-are-the-agents-that-do-not-hang-off-an-agent
   (let [{:keys [root log agents]} (fixture)
         session (create-session! {:log log})

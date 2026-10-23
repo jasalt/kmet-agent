@@ -342,7 +342,7 @@ rewrite.
 |---|---|---|
 | `:llm` `:models` | provider call, model registry, auth status | `kmet.ai.*` |
 | `:tools` `:commands` `:prompts` `:skills` `:modes` | registries: name → value, per-context | `agent.registry` + 4 namespaces |
-| `:agents` | live handles: `create!` / `resume!` / `dispose!` / `get` / `list` / `roots`, plus the control surface a front end drives — `send!` / `followup!` / `steer!` / `inject!` / `cancel!` / `when-idle` / `status`. A handle owns one agent, its session and its child context, and it is the **capability** that may tear it down; `get` returns the bare agent | **landed** (`kmet.app.agents`, 4c-iii-b): the registry, the child ctx lifetime and the factory seam — what an agent *is* stays the factory's, and no factory mounts until landing 7 (`kmet.agent.loop`'s `Engine` becomes the handle) |
+| `:agents` | live handles: `create!` / `resume!` / `dispose!` / `get` / `list` / `roots`, plus the control surface a front end drives — `send!` / `followup!` / `steer!` / `inject!` / `cancel!` / `when-idle` / `status` / `inbox` (the handle's queued messages, read through `:projections`). A handle owns one agent, its session and its child context, and it is the **capability** that may tear it down; `get` returns the bare agent | **landed** (`kmet.app.agents`, 4c-iii-b): the registry, the child ctx lifetime and the factory seam — what an agent *is* stays the factory's, and no factory mounts until landing 7 (`kmet.agent.loop`'s `Engine` becomes the handle) |
 | `:agentLoop` | the driver: run a turn, abort, teardown ordering; it also registers the creation factory on `:agents` (dsh's `setFactory`), so `:agents` has no `create!` until a loop is mounted | the loop driver plugin (`kmet.agent.loop`) |
 | `:sessions` | the append-only session log and its in-memory index, one log per agent | `session/core.clj` (1.7k) |
 | `:sessionPersistence` | the storage backend under `:sessions` (EDNL files first; a second backend shadows this key, not the log) | the file half of `session/core.clj` |
@@ -1034,6 +1034,28 @@ driver is re-hosted with them at landing 7, and resume-by-id (landing 6) is what
 re-registers an agent that is still live: the registry is not the agent's
 durable record, the log is.
 
+A second pass found the one thing the first pass had taken on trust: **a parent
+ctx must outlive the agent**, and a plugin's mount ctx does not. Disposing a
+fiber drops its mount ctx out of the tree with whatever child ctxs it still
+holds — nothing in the tree can see them afterwards — so an agent parented to a
+mode's ctx would leak invisibly on the mode's first teardown, and that is the
+*normal* path (`kmet.mode.*` is a plugin). `create!` refuses a mount ctx now
+(`:kmet.app/agent-parent-is-a-mount`, the same identity check the listing's
+`mount-fiber` makes): the parent is the registry's scope or another agent's ctx,
+never a mount. That constrains landing 6 in the right direction — a mode names
+the app ctx.
+
+Three smaller ones, all "name the problem where it is made": `register-factory!`
+takes a ctx and now checks it is inside the registry's tree (a factory is not
+something another tree can hand a driver); `send!` on a handle with no session
+throws `:kmet.app/agent-has-no-session` instead of letting the backend deref
+nil; and the handle contract requires a *non-nil* `:agent`, so `get`'s nil
+cannot mean two things. The review also deleted state nothing read: the
+projection's `:delivered` set. A delivery can only name entries earlier on the
+same branch — append order and the parent chain guarantee it — so filtering the
+pending set is the whole of it, and the invariant is written down instead of
+stored.
+
 Gate, met. Two agents created through one registry hold their own sessions and
 their own inboxes (a send to one appends to one log); a throwing factory and a
 malformed handle both leave no handle and no child ctx; a disposed handle leaves
@@ -1052,14 +1074,14 @@ red once it was. The three TUI selector tests' `(:refer-clojure :exclude
 finding, because the linter does not know the var; the helper is `pick` and the
 exclusion is gone, which is also what the 1.12 clash needed.
 
-Ledger: **620 source lines in two new namespaces** (`kmet.app.agents` 364,
-`kmet.app.projections` 256) and **628 test lines** (23 + 15 tests, 135
+Ledger: **653 source lines in two new namespaces** (`kmet.app.agents` 396,
+`kmet.app.projections` 257) and **650 test lines** (26 + 15 tests, 139
 assertions); two rows in `:bundle/minimal` (8 → 10), `memory-backend`'s
 `leaf-id` rename, and the loop's one-line delegate. Nothing was lifted except
-the three-line outcome rule; everything else is new bookkeeping. The cascade
-and `:forget!` are the review's dozen source lines and two tests, and both tests
-fail without their fix (checked by commenting the cascade out and by making
-`:forget!` a no-op).
+the three-line outcome rule; everything else is new bookkeeping. Every review
+fix has a test that fails without it: the cascade (commented out), `:forget!`
+(turned into a no-op), the mount-ctx refusal, the factory's scope check, and the
+session check (each dropped in turn).
 
 ### Landing 4d settled
 

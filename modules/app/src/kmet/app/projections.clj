@@ -131,16 +131,15 @@
 
 (def empty-projection
   "The projection of an empty branch. `:entries` counts the branch entries
-   folded so far; `:pending` is what the inbox is materialized from, and
-   `:delivered` keeps the ids a delivery consumed so a replayed enqueue cannot
-   come back."
+   folded so far; `:pending` is what the inbox is materialized from."
   {:pending {:next-turn [] :next-step []}
-   :delivered #{}
    :boundaries []
    :tokens empty-totals
    :entries 0})
 
-(defn- drop-delivered [items ids]
+(defn- remove-ids
+  "ITEMS without the queued entries IDS names."
+  [items ids]
   (into [] (remove (fn [item] (contains? ids (:id item)))) items))
 
 (defn- fold-entry
@@ -163,11 +162,13 @@
                  (if (contains? targets target)
                    (update-in state [:pending target] conj (inbox-item entry))
                    state))
+      ;; a delivery can only name entries earlier on the same branch (the
+      ;; append order and the parent chain guarantee it), so filtering the
+      ;; pending set is the whole of it — there is no delivered set to keep
       :deliver (let [ids (set (get-in entry [:data :ids]))]
                  (-> state
-                     (update :delivered into ids)
-                     (update-in [:pending :next-turn] drop-delivered ids)
-                     (update-in [:pending :next-step] drop-delivered ids)))
+                     (update-in [:pending :next-turn] remove-ids ids)
+                     (update-in [:pending :next-step] remove-ids ids)))
       state)))
 
 (defn- leaf-id
