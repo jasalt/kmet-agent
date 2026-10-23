@@ -69,6 +69,37 @@
     (is (nil? (permissions/check root bash-call)) "the answer still allows")
     (is (empty? @remembered) "but :forever is not a scope")))
 
+(deftest the-run-signal-rides-the-request
+  ;; both providers get the same request, and the run's signal is on it, so a
+  ;; dialog can abandon a question whose run was cancelled
+  (let [signal (atom false)
+        seen (atom [])
+        root (srce/root)]
+    (srce/provide! root :permissions
+                   (permissions/policy (fn [_ request] (swap! seen conj request) :ask)))
+    (srce/provide! root :approvals
+                   (permissions/approver (fn [_ request]
+                                           (swap! seen conj request)
+                                           {:decision :deny})))
+    (permissions/check root (assoc bash-call :signal signal))
+    (is (= 2 (count @seen)))
+    (is (every? #(identical? signal (:signal %)) @seen)
+        "the policy and the approver both see the run's signal")))
+
+(deftest the-approver-sees-the-policys-reason
+  ;; the dialog can say *why* it is asking, not just what is being asked
+  (let [asked (atom nil)
+        root (srce/root)]
+    (srce/provide! root :permissions
+                   (permissions/policy (fn [_ _] {:decision :ask
+                                                  :reason "writes outside the workspace"})))
+    (srce/provide! root :approvals
+                   (permissions/approver (fn [_ request]
+                                           (reset! asked request)
+                                           {:decision :deny})))
+    (permissions/check root bash-call)
+    (is (= "writes outside the workspace" (:reason @asked)))))
+
 (deftest a-denied-approval-blocks
   (let [root (srce/root)]
     (srce/provide! root :permissions (permissions/policy (fn [_ _] :ask)))

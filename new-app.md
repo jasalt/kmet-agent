@@ -400,7 +400,8 @@ the kernel, and they are not obvious:
   under a root with no policy allows, which is kmet1's status quo.
 - **`:approvals` *is* in the bundle**, at the root: asking is the front end's
   job and it is one process-wide seam. A policy below can ask the seam above;
-  the request carries the agent's ctx, so the approver knows who is asking.
+  the request carries the agent's ctx, so an approver can tell one agent from
+  another (naming those ctxs is the `:agents` registry's job, iii-b).
   Until the TUI's dialog lands (5), the seam's default denies — "nobody can
   ask" is not "yes".
 
@@ -955,7 +956,7 @@ Ledger: **215 source + 281 test lines added, 6 files touched, nothing lifted**
 worth of one namespace. Gate: `:permissions`/`:approvals` provided where they
 belong; two agents under one root decide differently; a denied call never
 reaches the executor; the scripted path is gated; the default approver denies.
-Tests: `kmet.app.test-permissions` (15/35), `kmet.agent.loop.test-tool-policy`
+Tests: `kmet.app.test-permissions` (17/38), `kmet.agent.loop.test-tool-policy`
 (5/13), plus the bundle goldens (rows 7 → 8, services gain `approvals`).
 
 ### Landing 4b-ii-a settled

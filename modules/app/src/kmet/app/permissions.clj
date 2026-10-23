@@ -15,16 +15,19 @@
 
      {:ask! (fn [ctx request] :allow | :deny | {:decision … :scope …})}
 
-   `ask!` owns its own timeout and abort: the request carries the run's
-   `:signal`, so a dialog can give up, but the gate does not impose one — a
-   provider that never returns blocks the call it was asked about, which is
-   what an unanswered question means.
+   The request an `:ask` delivers is the tool call plus the run's `:signal` and,
+   when the policy gave one, its `:reason` — the dialog can say why it is
+   asking. `ask!` owns its own timeout and abort: the signal lets a dialog give
+   up, but the gate does not impose a deadline — a provider that never returns
+   blocks the call it was asked about, which is what an unanswered question
+   means.
 
-   The split is the point: deciding is synchronous and per-agent (an agent's
-   `setup`, or a preset's child ctx, shadows the service), while asking a human
-   is I/O that blocks and belongs to whichever front end can answer. `:deny`
-   becomes the hook result the loop already understands, so no tool signature
-   changes.
+   The split is the point: deciding is synchronous and per-agent — the policy
+   is provided on the agent's own ctx by whatever composes that agent, a preset
+   or `setup`, because the kernel forbids a child shadowing a service its
+   ancestor provides — while asking a human is I/O that blocks and belongs to
+   whichever front end can answer. `:deny` becomes the hook result the loop
+   already understands, so no tool signature changes.
 
    **The gate is the loop's pre-tool waterfall, and it runs last.** Extension
    tool-call hooks run first (they may rewrite the arguments), then the policy
@@ -142,8 +145,10 @@
       (case decision
         :allow nil
         :deny (block (or reason "denied by the permission policy"))
-        :ask (let [answer (try ((:ask! (or (srce/get ctx :approvals) {:ask! no-approver}))
-                                ctx request)
+        :ask (let [ask (cond-> request
+                         reason (assoc :reason reason))
+                   answer (try ((:ask! (or (srce/get ctx :approvals) {:ask! no-approver}))
+                                ctx ask)
                                (catch Throwable t
                                  {:decision :deny
                                   :reason (str "approval request failed: "
