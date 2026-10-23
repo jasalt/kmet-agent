@@ -68,9 +68,9 @@
    the driver applies them to the settings it loads. In edn mode the session
    header goes out first, before the run produces any event: a consumer reads
    the header to learn the id the events belong to."
-  [scope agents {:keys [prompt format create-opts]} settled error]
+  [scope agents {:keys [prompt format] :as config} settled error]
   (try
-    (let [handle ((:create! agents) scope create-opts)]
+    (let [handle ((:create! agents) scope (select-keys config [:model :provider]))]
       (try
         (when (= :edn format)
           (prn (:header ((:session handle))))
@@ -83,37 +83,36 @@
       (report! (or (ex-message t) (str t)))
       1)))
 
-(defn- on-every-event
-  "Subscribe F to every event the app's vocabulary declares — the edn stream is
-   the whole of it, not one kind — and return one disposer for the lot."
-  [scope f]
-  (let [disposers (mapv (fn [event] (events/on! scope (:name event) f))
-                        (events/declared-events))]
-    (fn [] (doseq [dispose disposers] (dispose)))))
+(defn- dispose-all
+  "One disposer for several: a run's listeners go together."
+  [disposers]
+  (fn [] (doseq [dispose disposers] (dispose))))
 
 (defn- subscriptions
-  "The listeners a run of FORMAT needs on SCOPE, as `[f disposer]` — text mode
-   takes three kinds (deltas, the error, the settle), edn mode takes every event
-   and prints it. Both deliver SETTLED once: a settle that never arrives would
-   leave the run's thread parked, so the disposer delivers `:disposed`."
+  "SCOPE's listeners for a run of FORMAT, as one disposer — text mode takes three
+   kinds (deltas, the error, the settle), edn mode takes every event the
+   vocabulary declares and prints it. Both deliver SETTLED once: a settle that
+   never arrives would leave the run's thread parked, so the disposer delivers
+   `:disposed`."
   [scope format settled error]
   (if (= :edn format)
-    (let [dispose (on-every-event scope (fn [event]
-                                          (prn (event-bus/wire-event event))
-                                          (flush)
-                                          (when (= :agent-settled (:type event))
-                                            (deliver settled event))))]
-      [dispose])
-    (let [dispose-deltas (events/on! scope :message-update
-                                     (fn [event]
-                                       (when-let [text (text-delta event)]
-                                         (print text)
-                                         (flush))))
-          dispose-errors (events/on! scope :error
-                                     (fn [event] (reset! error (:message event))))
-          dispose-settle (events/on! scope :agent-settled
-                                     (fn [event] (deliver settled event)))]
-      [dispose-deltas dispose-errors dispose-settle])))
+    (dispose-all
+     (mapv (fn [event]
+             (events/on! scope (:name event)
+                         (fn [e]
+                           (prn (event-bus/wire-event e))
+                           (flush)
+                           (when (= :agent-settled (:type e))
+                             (deliver settled e)))))
+           (events/declared-events)))
+    (dispose-all
+     [(events/on! scope :message-update
+                  (fn [event]
+                    (when-let [text (text-delta event)]
+                      (print text)
+                      (flush))))
+      (events/on! scope :error (fn [event] (reset! error (:message event))))
+      (events/on! scope :agent-settled (fn [event] (deliver settled event)))])))
 
 (defn- serve
   "The `:mode-print` row's apply: wire the stream, then run on a thread of its
@@ -140,18 +139,16 @@
         (let [format (:format config :text)
               error (atom nil)
               settled (promise)
-              input (cond-> {:prompt prompt :format format}
-                      (or (:model config) (:provider config))
-                      (assoc :create-opts (select-keys config [:model :provider])))
-              disposers (subscriptions scope format settled error)]
+              dispose (subscriptions scope format settled error)]
           (future
-            (on-result {:exit (run-prompt! scope agents input settled error)}))
+            (on-result {:exit (run-prompt! scope agents (assoc config :format format)
+                                           settled error)}))
           (fn []
             ;; a shutdown before the run ends must wake it: the settle promise
             ;; is the only thing it blocks on, and an event that never comes
             ;; would leave the thread parked
             (deliver settled {:outcome :disposed})
-            (doseq [dispose disposers] (dispose))))))))
+            (dispose)))))))
 
 (srce/defplugin plugin
   {:name :mode-print

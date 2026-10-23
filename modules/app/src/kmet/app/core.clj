@@ -127,8 +127,10 @@
                         (:profile :provider) (assoc opts k (keyword v))
                         (assoc opts k v))))
 
-          (contains? print-flags arg)
-          (recur (next in) (assoc opts :mode "text"))
+          (contains? print-flags flag)
+          (if (= ::missing value)
+            (recur (next in) (assoc opts :mode "text"))
+            (throw (bad-args (str flag " takes no value"))))
 
           (str/starts-with? arg "@")
           ;; kmet1 reads a file into the message here. Expansion is the modes'
@@ -260,15 +262,14 @@
 
 (defn- mode-input
   "What the command line asks a mode for: the prompt and where to report, plus
-   what the mode passes on to its run — the output `:format` and the agent's
+   what the mode hands its run — the output `:format` and the agent's
    `:model`/`:provider` overrides. A value the invocation did not give stays
-   absent, so a mode sees what was asked for rather than a map of every option
-   it could have been told."
+   absent (`select-keys`), so a mode sees what was asked for rather than a map of
+   every option it could have been told."
   [opts prompt on-result]
-  (cond-> {:prompt prompt :on-result on-result}
-    (:format opts) (assoc :format (:format opts))
-    (:model opts) (assoc :model (:model opts))
-    (:provider opts) (assoc :provider (:provider opts))))
+  (assoc (select-keys opts [:format :model :provider])
+         :prompt prompt
+         :on-result on-result))
 
 (defn- run-mode
   "Boot COMPOSED and drive MODE, the row `mode-row` found: give it the

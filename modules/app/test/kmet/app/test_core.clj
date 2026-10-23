@@ -89,6 +89,8 @@
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--nope"]))))
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--profile"]))))
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--version=1"]))))
+  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--print=1"])))
+      "a one-shot flag takes no value either")
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--profile="])))
       "an empty value is no value")
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-c"])))
