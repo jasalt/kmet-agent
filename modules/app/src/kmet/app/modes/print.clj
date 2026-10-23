@@ -140,12 +140,12 @@
         (let [format (:format config :text)
               error (atom nil)
               settled (promise)
-              llm (cond-> {:prompt prompt :format format}
-                    (or (:model config) (:provider config))
-                    (assoc :create-opts (select-keys config [:model :provider])))
+              input (cond-> {:prompt prompt :format format}
+                      (or (:model config) (:provider config))
+                      (assoc :create-opts (select-keys config [:model :provider])))
               disposers (subscriptions scope format settled error)]
           (future
-            (on-result {:exit (run-prompt! scope agents llm settled error)}))
+            (on-result {:exit (run-prompt! scope agents input settled error)}))
           (fn []
             ;; a shutdown before the run ends must wake it: the settle promise
             ;; is the only thing it blocks on, and an event that never comes

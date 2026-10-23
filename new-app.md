@@ -1440,7 +1440,12 @@ Not in this increment: kmet1's other run flags (`--thinking`, `--system-prompt`,
 `--session`, `@files`). They are run options rather than mode selection, and the
 session ones need a session that can be resumed — which the driver refuses by
 name today (`:kmet.app/unsupported-op`), so a `--session` would have nothing
-honest to do with its argument yet.
+honest to do with its argument yet. `@path` is refused the same way, and for the
+same kind of reason: reading a file into the message is one branch of a mode's
+input expansion (skill commands, prompt templates, `@files`), which kmet1 runs in
+its print mode before prompting and kmet2's modes have not taken over. Sending
+`@tasks.md` as the prompt would be a wrong answer; the refusal names
+`--app old -p @tasks.md`, where it still reads files.
 
 Two review notes. The mode's listeners are scoped to the **app**, not to its
 agent, because print mode holds exactly one: a second concurrent agent in the

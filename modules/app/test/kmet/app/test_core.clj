@@ -59,9 +59,9 @@
   (is (= :print (:profile (core/parse-args ["--print" "hi"]))))
   (is (= :text (:format (core/parse-args ["-p" "hi"])))
       "and text is what print mode prints by default")
-  (is (= {:profile :print :format :text :args ["hi"]}
-         (dissoc (core/parse-args ["-p" "hi"]) :patch))
-      "nothing else is set")
+  (is (= {:profile :print :format :text :args ["hi"] :patch []}
+         (core/parse-args ["-p" "hi"]))
+      "and nothing else is set")
   (is (= :edn (:format (core/parse-args ["--mode" "edn" "hi"])))
       "--mode names print mode's output format")
   (is (= :rpc (:profile (core/parse-args ["--mode" "rpc"])))
@@ -70,6 +70,20 @@
                                                        "deepseek-v4-flash" "hi"]))))
   (is (= :deepseek (:provider (core/parse-args ["-p" "--provider" "deepseek" "hi"])))
       "a provider is a keyword, as settings spell it"))
+
+(deftest parse-args-refuses-what-the-modes-cannot-do-yet
+  ;; kmet1 reads a file into the message at parse time. Expansion is a mode's
+  ;; (skills, prompt templates, @files) and has not moved, so the arg is refused
+  ;; by name — sending "@tasks.md" as the prompt would answer a question nobody
+  ;; asked.
+  (is (= :kmet.app/unsupported-op
+         (error-type #(core/parse-args ["-p" "@tasks.md"]))))
+  (let [{:keys [code err]} (support/run-main ["-p" "@tasks.md"])]
+    (is (= 1 code))
+    (is (str/includes? err "@tasks.md reads the message from a file")
+        "the refusal names the argument")
+    (is (str/includes? err "--app old -p @tasks.md")
+        "and where the behaviour still lives")))
 
 (deftest parse-args-rejects-bad-flags
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--nope"]))))

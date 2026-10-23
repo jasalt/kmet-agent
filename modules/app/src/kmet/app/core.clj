@@ -130,6 +130,16 @@
           (contains? print-flags arg)
           (recur (next in) (assoc opts :mode "text"))
 
+          (str/starts-with? arg "@")
+          ;; kmet1 reads a file into the message here. Expansion is the modes'
+          ;; (skills, prompt templates, @files) and has not moved yet, so the
+          ;; arg is refused by name: sending "@tasks.md" as the prompt would be
+          ;; an answer to a question nobody asked
+          (throw (ex-info (str arg " reads the message from a file, which the modes "
+                               "do not expand yet — pass the text (--app old -p "
+                               arg " still reads files)")
+                          {:type :kmet.app/unsupported-op :op :at-file :path arg}))
+
           (str/starts-with? arg "-")
           (throw (bad-args (str "unknown option " arg)))
 
