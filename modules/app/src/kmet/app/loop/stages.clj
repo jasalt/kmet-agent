@@ -33,7 +33,7 @@
    overrides — and a ctx that carries none (nil, a bare test ctx) reads the
    defaults."
   [ctx]
-  (if-some [stage-atom (and ctx (srce/attr ctx :loop-stages))]
+  (if-some [stage-atom (srce/attr ctx :loop-stages)]
     @stage-atom
     defaults))
 
@@ -41,7 +41,7 @@
   "The stage atom CTX itself carries, or nil — no inheritance here, so a
    refresh names its target instead of reaching up the chain."
   [ctx]
-  (when (and ctx (srce/ctx? ctx)) (:loop-stages ctx)))
+  (when (srce/ctx? ctx) (:loop-stages ctx)))
 
 (defn refresh!
   "Re-seat CTX's own stage atom with the builtin defaults, so a reloaded guard

@@ -24,10 +24,10 @@
   nil)
 
 (defonce ^:private suite-ctx
-  ;; One test ctx per process, built on first use. The loop reads a state's tool
-  ;; table from the state's ctx, so a hand-built state has to name one — and a
-  ;; test process's is `test-ctx`, not an application's, which is what the
-  ;; process default this replaces (`kmet.agent.app-runtime/ctx`) used to boot.
+  ;; One test ctx per process, built on first use: a hand-built state names the
+  ;; ctx it reads, and a test process's is `test-ctx`, not the application root
+  ;; the process default this replaces (`kmet.agent.app-runtime/ctx`) used to
+  ;; boot.
   (delay (:ctx (test-ctx))))
 
 (defn process-ctx

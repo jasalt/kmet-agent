@@ -6,28 +6,25 @@
             [kmet.srce.core :as srce]))
 
 (deftest the-app-root-ctx-is-one-ctx-carrying-the-loop-stages
-  (let [ctx (runtime/ctx)
-        stage-map (stages/for-ctx ctx)]
+  ;; The seam this file owns: kmet1's process root boots carrying the stage
+  ;; map (the map's own shape is kmet.app.loop.test-stages' subject).
+  (let [ctx (runtime/ctx)]
     (is (identical? ctx (runtime/ctx)) "one app root per process")
     (is (srce/ctx? ctx) "the app root is a ctx, not a store node")
-    (is (= #{:loop-guard :retry-policy} (set (keys stage-map))))
-    (is (fn? (get-in stage-map [:loop-guard :call])))
-    (is (fn? (get-in stage-map [:retry-policy :call])))
-    (is (nil? (get-in stage-map [:loop-guard :config])))
-    (is (nil? (get-in stage-map [:retry-policy :config]))
-        "the builtin stages carry no config")))
+    (is (= stages/defaults (stages/for-ctx ctx))
+        "and it carries the builtin map, so a run with no override reads one")))
 
 (deftest a-child-ctx-carries-its-own-stages
   (let [child (runtime/child-ctx (runtime/ctx)
                                  {:retry-policy {:config {:max-retries 1}}})
         stage-map (stages/for-ctx child)]
     (is (srce/inside? child (runtime/ctx)))
-    (is (= {:max-retries 1} (get-in stage-map [:retry-policy :config])))
+    (is (= {:max-retries 1} (get-in stage-map [:retry-policy :config]))
+        "the override rides the child's ctx")
     (is (fn? (get-in stage-map [:retry-policy :call]))
-        "the default handle survives the merge")
-    (is (nil? (get-in stage-map [:loop-guard :config])))
+        "over the defaults, not instead of them")
     (is (= stages/defaults (stages/for-ctx (runtime/ctx)))
-        "a child ctx's override does not leak into the root")))
+        "and does not leak into the root")))
 
 (deftest a-child-ctx-joins-its-parents-children
   ;; The parent link is half the nesting contract: a child the parent's list
@@ -40,13 +37,17 @@
 
 (deftest refresh-stages-defaults-to-the-app-root
   ;; `/reload` calls the no-arg form: the process shim names the app root,
-  ;; because a ctx cannot be found from inside a function that has none.
-  (let [changed (fn [& _] :changed)]
+  ;; because a ctx cannot be found from inside a function that has none. The
+  ;; root has to *seat* its own atom for that to mean anything — a ctx that
+  ;; carries none reads the builtin map by inheritance and a refresh of it is a
+  ;; no-op, which is why the test poisons the atom instead of the defaults var.
+  (let [stage-atom (:loop-stages (runtime/ctx))
+        poisoned {:loop-guard {:call (fn [& _] :poisoned)}}]
+    (is (some? stage-atom) "the root seats the atom a refresh re-seats")
     (try
-      (with-redefs [stages/defaults
-                    (assoc stages/defaults :loop-guard {:call changed})]
-        (runtime/refresh-stages!)
-        (is (identical? changed
-                        (get-in (stages/for-ctx (runtime/ctx))
-                                [:loop-guard :call]))))
+      (reset! stage-atom poisoned)
+      (is (= poisoned (stages/for-ctx (runtime/ctx))))
+      (runtime/refresh-stages!)
+      (is (= stages/defaults (stages/for-ctx (runtime/ctx)))
+          "the no-arg form re-seated the root's own atom")
       (finally (runtime/refresh-stages!)))))

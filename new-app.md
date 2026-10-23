@@ -1064,6 +1064,26 @@ at its new home: 109 assertions became 167.
 Gate, met: full `bb test` 4,142 / 24,339 green; lint 0/0; format clean; `bb
 check` compiles.
 
+**A simplify-and-review pass closed 7a's first half.** Four things, one of them
+a real hole in a test this landing wrote:
+
+- **The refresh test was vacuous under a plausible mutation.** It redefined
+  `stages/defaults`, refreshed, and read the root's map back — which also
+  passes when the root seats *no* atom at all (a ctx with none reads the
+  builtin map by inheritance, and the redefined map *is* the builtin one). The
+  test now poisons the root's atom and refreshes it: nothing to re-seat is a
+  failure, so the assertion does what a weak one only claimed.
+- `test-runtime` and `kmet.app.loop.test-stages` were both asserting the map's
+  shape; the split is now the seam's (the shim's root identity, the seated
+  atom, the child merge and its non-leak) versus the map's (defaults, read,
+  refresh, merge).
+- Two guards in `kmet.app.loop.stages` re-checked what the kernel already
+  treats as absent (`srce/attr` and `srce/ctx?` on nil), so they went; and the
+  state's `:system-prompt-fn` field comment and its option docstring said the
+  same five lines twice — the field now points at the option.
+- One test assertion restated its own helper (`process-ctx` is
+  `make-agent-state`'s default by construction); the two meaningful ones stayed.
+
 ### Landing 4c-iii-b settled
 
 **The registry cannot own what an agent is.** `kmet.app.agents` is generic by

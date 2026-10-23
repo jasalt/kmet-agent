@@ -153,8 +153,8 @@
   ;; process default left (new-app.md, 7a) — and a run can be pointed at its own
   ;; child ctx (landing 4c-ii-b).
   (let [mine (runtime/child-ctx)]
-    (t/is (identical? mine (:ctx (support/make-agent-state :ctx mine))))
-    (t/is (identical? (support/process-ctx) (:ctx (support/make-agent-state))))
+    (t/is (identical? mine (:ctx (support/make-agent-state :ctx mine)))
+          "a run names the ctx it reads")
     (t/is (= :kmet/no-tool-service
              (try (state/tool-table (support/make-agent-state :ctx nil)) nil
                   (catch Exception e (:type (ex-data e)))))

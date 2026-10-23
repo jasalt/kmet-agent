@@ -100,11 +100,9 @@
                        run-token             ;; atom of the current run's token, or nil outside a
                                              ;; run — nil makes appends context-only
                        system-prompt-opts    ;; atom of the build-system-prompt options map (pi: _baseSystemPromptOptions)
-                       system-prompt-fn      ;; the builder that map is applied to when the prompt must be
-                                             ;; rebuilt (an active-tools change): the app's
-                                             ;; kmet.agent.system-prompt/build-system-prompt by default;
-                                             ;; kmet1's Engine passes kmet.agent.skills' wrapper, whose
-                                             ;; :skills default reads the process registry
+                       system-prompt-fn      ;; the builder the opts map is applied to (see the
+                                             ;; :system-prompt-fn option); a plain value, because a
+                                             ;; state's builder never changes mid-run
                        loop-guard            ;; atom of per-run repeat-loop guard state:
                                              ;;   {:window [signature...] :suppressed n}
                        ctx                   ;; the ctx this run reads its loop stages and tool
@@ -127,10 +125,12 @@
          :get-api-key, :scoped-models (default []),
          :steering-mode (default :all), :follow-up-mode (default
          :one-at-a-time),
-         :system-prompt-fn (fn the state calls to rebuild the prompt when it must —
-         an active-tools change — with :system-prompt-opts as its keyword
+         :system-prompt-fn (fn the state calls to rebuild the prompt when it must
+         — an active-tools change — with :system-prompt-opts as its keyword
          arguments; default kmet.agent.system-prompt/build-system-prompt, and a
-         process-bound caller passes its own wrapper),
+         process-bound caller passes its own — kmet1's Engine passes
+         kmet.agent.skills/build-system-prompt, whose :skills default reads the
+         process registry),
          :system-prompt-opts (build-system-prompt options map, pi:
          _baseSystemPromptOptions),
          :compact-token-threshold, :auto-compact (default true, pi:
