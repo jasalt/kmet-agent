@@ -15,6 +15,11 @@
 
      {:ask! (fn [ctx request] :allow | :deny | {:decision … :scope …})}
 
+   `ask!` owns its own timeout and abort: the request carries the run's
+   `:signal`, so a dialog can give up, but the gate does not impose one — a
+   provider that never returns blocks the call it was asked about, which is
+   what an unanswered question means.
+
    The split is the point: deciding is synchronous and per-agent (an agent's
    `setup`, or a preset's child ctx, shadows the service), while asking a human
    is I/O that blocks and belongs to whichever front end can answer. `:deny`
@@ -30,7 +35,8 @@
    A ctx with no `:permissions` allows: the gate exists only where an app
    mounted it. A ctx with a policy but no `:approvals` denies an `:ask` —
    \"nobody can ask\" is not \"yes\"."
-  (:require [kmet.srce.core :as srce]))
+  (:require [kmet.agent.debug :as debug]
+            [kmet.srce.core :as srce]))
 
 ;; ── the values ────────────────────────────────────────────────────────────
 
@@ -145,10 +151,16 @@
                (if (= :allow (verdict answer))
                  (do (when-let [remember! (:remember! permission-service)]
                        ;; only a defined scope is remembered: an approver that
-                       ;; invents one gets its answer honored, not persisted
+                       ;; invents one gets its answer honored, not persisted.
+                       ;; A provider that cannot record the decision does not
+                       ;; lose it — the human already said yes.
                        (when-some [scope (:scope answer)]
                          (when (contains? scopes scope)
-                           (remember! ctx request scope))))
+                           (try (remember! ctx request scope)
+                                (catch Throwable t
+                                  (debug/log "permissions: remember! failed for "
+                                             (:tool-name request) " at scope "
+                                             scope ": " t))))))
                      nil)
                  (block (or (reason-of answer) "the approval request was denied"))))))))
 
@@ -162,7 +174,11 @@
   [hook ctx signal]
   (fn [payload]
     (let [rewritten (when hook (hook payload))
-          request (cond-> (assoc payload :args (or (:args rewritten) (:args payload)))
+          ;; `contains?`, not truthiness: a hook may rewrite the arguments to
+          ;; nil (a tool that takes none), and the policy must judge that call
+          request (cond-> (assoc payload :args (if (contains? rewritten :args)
+                                                 (:args rewritten)
+                                                 (:args payload)))
                     signal (assoc :signal signal))]
       (or (when-not (:block rewritten) (check ctx request))
           rewritten))))

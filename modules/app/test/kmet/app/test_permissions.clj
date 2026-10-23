@@ -76,6 +76,16 @@
                    (permissions/approver (fn [_ _] {:decision :deny :reason "not now"})))
     (is (= {:block true :reason "not now"} (permissions/check root bash-call)))))
 
+(deftest a-remember-that-throws-does-not-lose-the-approval
+  (let [root (srce/root)]
+    (srce/provide! root :permissions
+                   (permissions/policy (fn [_ _] :ask)
+                                       (fn [_ _ _] (throw (ex-info "no store" {})))))
+    (srce/provide! root :approvals
+                   (permissions/approver (fn [_ _] {:decision :allow :scope :once})))
+    (is (nil? (permissions/check root bash-call))
+        "the human said yes; bookkeeping is not the decision")))
+
 (deftest a-broken-approver-fails-closed
   (let [root (srce/root)]
     (srce/provide! root :permissions (permissions/policy (fn [_ _] :ask)))
@@ -126,6 +136,14 @@
       (let [hook (permissions/gate (fn [_] {:block true :reason "hook"}) root nil)]
         (is (= {:block true :reason "hook"} (hook bash-call)))
         (is (false? @consulted)))))
+  (testing "a hook may clear the arguments, and the policy sees that call"
+    (let [seen (atom :unread)
+          root (srce/root)]
+      (srce/provide! root :permissions
+                     (permissions/policy (fn [_ request] (reset! seen (:args request)) :allow)))
+      (is (= {:args nil} ((permissions/gate (fn [_] {:args nil}) root nil) bash-call))
+          "the rewrite is not lost")
+      (is (nil? @seen) "and the policy judged the call with no arguments")))
   (testing "no hook and an allowing policy is nil — the loop executes"
     (is (nil? ((permissions/gate nil (srce/root) nil) bash-call)))))
 

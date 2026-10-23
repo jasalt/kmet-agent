@@ -102,7 +102,8 @@ kmet/agent/
 │       ├── message.clj     message constructors + wire shapes
 │       ├── state.clj       agent state, event routing, queue writes
 │       ├── completion.clj  LLM request construction + provider call
-│       └── tool_exec.clj   tool-call prep, hooks, batch execution
+│       └── tool_exec.clj   tool-call prep, hooks + the permission gate,
+│                           batch execution
 ├── compaction/         — the compaction subsystem
 │   ├── core.clj        — what compaction is: token estimation, cut point,
 │   │                     serialization, summarization/branch prompts

@@ -908,7 +908,7 @@ code, it is three landings, not one:
 
 | Piece | Size | What it needs first |
 |---|---|---|
-| the policy pair + the loop's gate | 195 src, 252 test, **no files moved** | nothing — the pre-tool waterfall already exists |
+| the policy pair + the loop's gate | 215 src, 281 test, **no files moved** | nothing — the pre-tool waterfall already exists |
 | `:agents` + `:projections` | the Engine is 1,379 lines and 55 operations, bootstrapped on `kmet.agent.loop` | a creation factory (`:agentLoop` registers it at landing 7) and the log; the inbox as *log-derived* state changes what a queued message is (durable instead of memory-only), so kmet1's behaviour would move with it — its own gate |
 | `:systemPrompt` + per-agent tool tables | `select-tools`/`active-tools` read a process-global registry; each tool carries a `:prompt-snippet` | the tool-registry lift (the same one 4b-ii-b waits on) and the prompt waterfall, because the snippets are sections |
 
@@ -939,8 +939,10 @@ stores a decision yet — scopes are recorded, not enforced.
 
 What the gate does **not** cover, named so it is a decision: a `!`/`!!` bash
 line typed at the prompt is a mode action, not a tool call, so it never reaches
-the waterfall; the TUI's real approver dialog is landing 5's, and until then an
-`:ask` in kmet1's composition denies.
+the waterfall; an extension that calls `tools/execute-tool` itself bypasses it
+(extension code is inside the trust boundary the policy guards); the TUI's real
+approver dialog is landing 5's, and until then an `:ask` in kmet1's composition
+denies.
 
 Two defects the landing's own tests caught, both from Clojure's shadowing: the
 `:permissions` row destructured its config key `policy` and then called the
@@ -948,12 +950,12 @@ Two defects the landing's own tests caught, both from Clojure's shadowing: the
 destructured `:reason` and then called the private `reason` helper. Both were
 renamed; the rows are covered by `the-policy-row-carries-a-config`.
 
-Ledger: **195 source + 252 test lines added, 6 files touched, nothing lifted**
+Ledger: **215 source + 281 test lines added, 6 files touched, nothing lifted**
 — the extension-hook waterfall gained one stage and the app gained two rows'
 worth of one namespace. Gate: `:permissions`/`:approvals` provided where they
 belong; two agents under one root decide differently; a denied call never
 reaches the executor; the scripted path is gated; the default approver denies.
-Tests: `kmet.app.test-permissions` (13/30), `kmet.agent.loop.test-tool-policy`
+Tests: `kmet.app.test-permissions` (15/35), `kmet.agent.loop.test-tool-policy`
 (5/13), plus the bundle goldens (rows 7 → 8, services gain `approvals`).
 
 ### Landing 4b-ii-a settled
