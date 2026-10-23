@@ -109,7 +109,8 @@ kmet/agent/
 │   └── commands/builtins.clj — engine-portable builtin commands
 ├── keybindings.clj     — the app keymap
 ├── prompts.clj         — prompt-template resources
-├── skills.clj          — skill resources
+├── skills.clj          — skill resources, discovery and registration (the
+│                         prompt builder itself is app's `system_prompt.clj`)
 ├── model_resolver.clj  — model pattern/CLI resolution
 ├── packages.clj        — package/resource resolution (local + managed git)
 ├── packages_cli.clj    — the install/remove/update/list/config CLI
