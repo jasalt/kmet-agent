@@ -99,6 +99,7 @@ not a set of modules whose callers each pick their own:
 (srce/provider ctx :tools)               ; {:name :fiber :value :check}, or nil
 (srce/services ctx)                      ; {name {:name :fiber :value :check}}, realm-aware
 (srce/children ctx)                      ; this ctx's child ctxs, creation order
+(srce/detach! child)                     ; drop a plain child ctx from the tree (refuses while mounts remain)
 (srce/provide! ctx :tools table)         ; → disposer; a second visible provider throws
 (srce/provide! ctx :events bus {:in app}) ; → the app's scope, this fiber's effect
 (srce/on ctx :srce/status f)             ; → disposer
@@ -201,6 +202,16 @@ unaffected.
 A provider whose fiber is not `:active` reads as `nil` — the light kernel has
 one `get`, no `strict` flag. There is no `fiber.store` snapshot: inspection is
 `(srce/provider ctx :name)`, which says who provides it now.
+
+**A child ctx has a lifetime, and only a mount gets one for free.** A fiber's
+`dispose!` removes its own mount ctx from the parent's `:children`. A plain
+child — `extend`, `isolate`, a run's own ctx — has no fiber, so nothing ended
+it, and the tree grew a line per `extend` for the life of the process. So
+`(detach! child)` removes it, refusing with `:srce/ctx-busy` while anything is
+still mounted under it: a listing that hides a live unit is worse than one that
+lingers. The detach keeps `:parent`, so a value that still holds the ctx
+resolves services exactly as before; what changes is the tree, which is what
+the unit listing renders (`new-app.md`, "Inspection").
 
 ## 3. Services and refresh
 
@@ -718,7 +729,7 @@ mirrors are registry entries or plain process caches), which also removed
 | File | Sites | Go at |
 |---|---|---|
 | `agent/registry_store.clj` (the handle's store backend) | 9 | 4e — with the store itself; nothing outside the backend names it since 4b-ii-a |
-| `agent/app_runtime.clj` (app node, `*error-reporter*`, `/units` walk) | 5 | 4d for the `owners`/`owner-registrations` pair, which is the store listing and goes with the tree rewrite; `*error-reporter*` at 4e with the store. The node itself is created here and dies with them |
+| `agent/app_runtime.clj` (app node, `*error-reporter*`, `/units` walk) | 5 | 4d took the `owners`/`owner-registrations` pair with the tree rewrite; `*error-reporter*` and the node itself go at 4e with the store |
 
 4c-ii-b took the fifth file: `kmet.agent.event-bus`'s one `in-subtree?` is
 `srce/inside?` now, so a subscription's scope is a ctx. Its table still needs
@@ -750,8 +761,8 @@ lists, which is the copy AGENTS.md forbids.
 with 4b-ii-a, which needed only the root ctx 4c-ii created; the Engine's two
 went with it (its installs are process caches now, and `clear-runtime!` plus
 `unbind-extensions!` restore the headless defaults); and `owner-listing`'s two
-go at 4d, where `/units` stops rendering the store. The store therefore retires
-at **4e** (`new-app.md` § Landings), and its `*error-reporter*` with it — the
+went at 4d, where `/units` stopped rendering the store. The store therefore
+retires at **4e** (`new-app.md` § Landings), and its `*error-reporter*` with it — the
 `app_runtime` rebinding has no replacement short of the `:logger` service, which
 is deferred (§10), so cleanup-error reporting degrades to the reporter's default
 in the meantime. When the last site is gone, delete
@@ -774,10 +785,10 @@ have no consumer; `theme.clj` names it only in a docstring).
 
 What the app loses is `ordered-registrations` (each registry owns its load
 order) and the stale-deregister caveat (a fiber's `:active` check replaces the
-value guard). `/units` is not lost: it is re-rendered from the ctx tree and the
-runtimes — one flat line per unit, plus the two facts the store could never
-show, a fiber's `state` and what it is `waiting-for` — by `kmet.app.inspect`, so
-no listing code lives in the kernel ([`new-app.md`](../../../../../new-app.md), "Inspection").
+value guard). `/units` was not lost: 4d re-rendered it from the ctx tree — one
+flat line per unit, plus the two facts the store could never show, a fiber's
+`state` and what it is `waiting-for` — by `kmet.app.inspect`, so no listing code
+lives in the kernel ([`new-app.md`](../../../../../new-app.md), "Inspection").
 
 ## 10. Deferred
 
@@ -922,7 +933,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 
 ## 12. Gates
 
-- 48 contract tests (178 assertions) — one per bullet in §2–§8 that can fail,
+- 49 contract tests (181 assertions) — one per bullet in §2–§8 that can fail,
   one per `keep` row of §11, table-driven where the rows are uniform. The behaviors: realm
   resolution and the boundary, including two **siblings** under one realm
   providing the same name (nearest visible wins, no throw — §3); duplicate
@@ -944,7 +955,9 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
   short-circuiting, `waterfall!` wrapping and vetoing, a throwing
   listener reading as nil in every mode, `event-names` over the chain, and
   `listeners` returning the resolved list every mode walks; `inside?`; `log!`
-  with no `:logger`; the fiber record's
+  with no `:logger`; a plain child ctx detaching (and `:srce/ctx-busy` while
+  anything is still mounted under it, with a fiber's disposal making it
+  detachable); the fiber record's
   `:inject`/`:provides`/`:waiting-for` matching the store after a mount, a
   provide and a dispose; the pass flag — two threads entering `provide!` at
   once run one pass owner, both changes land, and `settle!` returning with no
