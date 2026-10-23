@@ -1041,6 +1041,24 @@ files already on this side of the line.
 Gate, met: `kmet.test-module-deps` 606 assertions hold the three new file
 boundaries, 1,323 changed-namespace tests green, `bb check` compiles.
 
+**Step 2d landed: the rest of the loop cluster.** `kmet.agent.loop.completion`
+(247), `.loop.tool-exec` (265), `.compaction.stage` (656) and `kmet.agent.loop`
+itself (1,177) moved the same way — `git mv`, names kept — once 2c had put their
+requires on the other side. The whole cluster (2,345 more lines) is now
+`app`'s, and the only source left in `agent` that the loop *can't* take is the
+Engine, whose edges are the policy cut that overlaps landing 5.
+
+The move needed one guard update, and the guard is the interesting part:
+`kmet.agent.test-layer-guard` walked only `modules/agent/src/kmet/agent`, so
+after the move it scanned no loop files and said so ("no loop sources
+scanned") — a guard that silently stops covering what it was written for is
+worse than no guard. It now walks both trees (the app module's `kmet.agent.*`
+namespaces are the app's business logic too), and its DAG test covers the loop
+at its new home: 109 assertions became 167.
+
+Gate, met: full `bb test` 4,142 / 24,339 green; lint 0/0; format clean; `bb
+check` compiles.
+
 ### Landing 4c-iii-b settled
 
 **The registry cannot own what an agent is.** `kmet.app.agents` is generic by

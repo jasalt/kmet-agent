@@ -20,7 +20,11 @@
             (mapcat (fn [f]
                       (if (fs/directory? f) (walk f) [f]))
                     (fs/list-dir dir)))]
-    (->> (walk "modules/agent/src/kmet/agent")
+    (->> (mapcat walk ["modules/agent/src/kmet/agent"
+                       ;; the app module's kmet.agent.* namespaces are the app's
+                       ;; business logic too (the loop cluster and the session
+                       ;; layer moved there; the two-axes rule keeps the names)
+                       "modules/app/src/kmet/agent"])
          (remove #(str/includes? (slash %) "/ui/"))
          (remove #(str/includes? (slash %) "/modes/"))
          ;; cli.clj is the composition root: it wires the modes and the TUI
@@ -49,10 +53,10 @@
            distinct))))
 
 (defn- path->ns
-  "The namespace named by a source file path under modules/agent/src."
+  "The namespace named by a source file path under a module's src tree."
   [path]
   (-> path
-      (str/replace #"^modules/agent/src/" "")
+      (str/replace #"^modules/(agent|app)/src/" "")
       (str/replace #"\.clj[ca]?$" "")
       (str/replace #"/" ".")
       (str/replace #"_" "-")))
