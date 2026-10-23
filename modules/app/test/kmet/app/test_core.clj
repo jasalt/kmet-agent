@@ -194,7 +194,7 @@
     (is (= 1 code))
     (is (str/includes? err
                        (str "booted 13 plugin rows (13 fibers, services: agents"
-                            " approvals commands events extensions projections"
+                            " approvals commands events projections"
                             " prompts sessionPersistence sessions skills"
                             " system-prompt tools)"))
         "the boot is the point: a bare run proves the profile's rows mount")

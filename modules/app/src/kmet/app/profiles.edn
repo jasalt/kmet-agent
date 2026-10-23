@@ -14,8 +14,8 @@
  {:bundle/minimal
   {:rows [;; The extension host: it binds the process-wide services it may not
           ;; require (its own tag registry, the ctx an :inject mounts under) so
-          ;; a run's hooks resolve, and provides that handle as :extensions.
-          ;; No resource registries — installing an extension is still kmet1's,
+          ;; a run's hooks resolve. No service key: the binding is the effect.
+          ;; No resource registries either — installing an extension is still kmet1's,
           ;; and those registries' loaders move with the modes (landing 5).
           {:id :extensions :plugin kmet.app.extensions/plugin}
           {:id :events :plugin kmet.app.events/plugin}

@@ -348,7 +348,7 @@ rewrite.
 | `:sessionPersistence` | the storage backend under `:sessions` (EDNL files first; a second backend shadows this key, not the log) | the file half of `session/core.clj` |
 | `:projections` | incremental derived state over the log — the inbox, the turn boundaries, the token meter — with a cache behind it | **landed** (`kmet.app.projections`, 4c-iii-b): the inbox is the log (an enqueue and a delivery are two `:custom` facts), and the fold extends from the cached prefix |
 | `:systemPrompt` | ordered sections, dynamic contexts, prompt variables and tool schemas, assembled by a waterfall before each request; per-agent composition lands here | **landed at 7a** as `kmet.app.system-prompt` (the app's pure builder over the `:skills` registry), provided as the builder itself; the loop state calls the one it names (`:system-prompt-fn`), an engine resolves caller → ctx row → suite, and `kmet.agent.skills/build-system-prompt` is the last stand-in for a context-free engine |
-| `:extensions` | the extension host's own bindings: the registry its tags live in (hooks, renderers, flags, the UI port) and the ctx an extension's `:inject` mounts under; a contribution with no bound resource registry is refused by name | **landed** as `kmet.app.extensions` (the host's services row); `kmet.agent.extensions.services` is kmet1's binding of the same seam |
+| `:extensions` | the extension host's own bindings: the registry its tags live in (hooks, renderers, flags, the UI port) and the ctx an extension's `:inject` mounts under; a contribution with no bound resource registry is refused by name. No service key: the binding is the effect, and the handle becomes a key when a consumer reads it | **landed** as `kmet.app.extensions`; `kmet.agent.extensions.services` is kmet1's binding of the same seam |
 | `:events` `:hooks` | three event domains (session/agent/capability) + 5 dispatch modes + hook chains | `event-bus.clj`, `apply-input-hooks` |
 | `:ui` | capability map: render, input, dialogs, notify, widget set | `extension-binding :ui`, lifted out |
 | `:approvals` | the one delivery seam for `:permissions :ask`: dialog, wire request/response, or headless default | **landed** (`kmet.app.permissions`, 4c-iii-a): the loop's pre-tool waterfall consults it through `permissions/check`; the row mounts the deny-by-default seam, because there is no dialog yet |
@@ -1218,7 +1218,9 @@ shared their body as one `stop!`.
 the extension host's services were unbound — kmet1's shim bound them — so the
 loop's first hook lookup threw. `kmet.app.extensions` is that row: it builds the
 registry its own tags live in, binds `{:registry … :ctx …}` for the composition
-it runs in, and provides the handle as `:extensions`. The resource registries
+it runs in. It provides no service key: the binding is the effect, and the
+handle becomes one when a consumer reads it (the modes' UI at landing 5) —
+`:agent-loop` landed on the same rule. The resource registries
 (`:commands`, `:prompts`, `:skills`) stay unbound on purpose: installing an
 extension is still kmet1's, and those registries' loaders are policy the modes
 take with them (landing 5) — so the host's binding made them **optional**, and a

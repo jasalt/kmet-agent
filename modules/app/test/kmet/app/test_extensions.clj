@@ -20,22 +20,21 @@
         fiber (srce/plugin! root row/plugin)]
     {:root root :fiber fiber}))
 
-(deftest the-row-binds-the-host-and-provides-its-handle
+(deftest the-row-binds-the-host
   (with-restored-host
     (fn []
-      (let [{:keys [root]} (mounted)]
-        (is (some? (srce/get root :extensions)) "the handle is a service")
-        (is (= [] (extensions/get-tool-call-hooks)) "and the host answers: no hooks yet")
-        ;; the host's own tags land in the handle this row provides — the thing
-        ;; that makes the binding worth a row, since a run's hooks resolve here
-        (extensions/register-tool-call-hook! :owner/fn (fn [_] nil))
-        (is (= 1 (count (extensions/get-tool-call-hooks)))
-            "a registration the host accepted is one its bound handle holds")
-        (is (= :kmet/no-resource-registries
-               (try (extensions/resources :skills)
-                    nil
-                    (catch Exception e (:type (ex-data e)))))
-            "and a contribution this owner bound no registries for says so")))))
+      (mounted)
+      (is (= [] (extensions/get-tool-call-hooks)) "the host answers: no hooks yet")
+      ;; the host's own tags land in the handle this row made — the thing that
+      ;; makes the binding worth a row, since a run's hooks resolve here
+      (extensions/register-tool-call-hook! :owner/fn (fn [_] nil))
+      (is (= 1 (count (extensions/get-tool-call-hooks)))
+          "a registration the host accepted is one its bound handle holds")
+      (is (= :kmet/no-resource-registries
+             (try (extensions/resources :skills)
+                  nil
+                  (catch Exception e (:type (ex-data e)))))
+          "and a contribution this owner bound no registries for says so"))))
 
 (deftest a-second-composition-puts-the-first-binding-back
   ;; The binding is process-wide and one owner at a time: mounting replaces it,

@@ -5,8 +5,9 @@
    require what owns its registries, so it takes them as a value
    (`kmet.agent.extensions.core/bind-services!`): a registry handle for its own
    tags — hooks, renderers, flags, the UI port — and the ctx an extension's
-   `:inject` mounts under. This row binds both from the composition it runs in,
-   and provides the handle as `:extensions` so a consumer reads the same one.
+   `:inject` mounts under. This row binds both from the composition it runs in.
+   It provides no service: the binding *is* the effect, and the handle becomes a
+   service when something reads it (the modes' UI at landing 5), not before.
 
    The host's *resource* registries (`:commands`, `:prompts`, `:skills`) stay
    unbound: installing an extension is still kmet1's, and those registries'
@@ -25,14 +26,11 @@
   "Bind the host's services for this composition. Returns the disposer that
    restores the binding it replaced."
   [ctx _config]
-  (let [scope (:parent ctx)
-        host-registry (registries/service)
+  (let [host-registry (registries/service)
         previous (extensions/bind-services! (fn [] {:registry host-registry
-                                                    :ctx scope}))]
-    (srce/provide! ctx :extensions host-registry {:in scope})
+                                                    :ctx (:parent ctx)}))]
     (fn [] (extensions/bind-services! previous))))
 
 (srce/defplugin plugin
   {:name :extensions
-   :provide #{:extensions}
    :apply serve})
