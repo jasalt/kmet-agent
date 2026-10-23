@@ -2,8 +2,12 @@
 ;;
 ;; Classpath and embed order is the listing order (it decides shadowing);
 ;; :rank is the layering guard's ordering (kmet.test-module-deps). Each
-;; module's modules/<name>/deps.edn declares every module its src requires and
-;; nothing neither src nor test uses — the same guard checks both directions.
+;; module's modules/<name>/deps.edn declares every module and third-party
+;; library its src requires and nothing else: its :deps is the src edge list,
+;; because a :local/root dependency's aliases never reach the consumer.
+;; Test-only libraries belong to the test project (deps.edn's :dev alias); the
+;; same guard checks both directions, for module edges and for library
+;; coordinates (the host's own artifacts excepted).
 ;; Extension projects are not workspace modules: each is an independently
 ;; loadable extension with its own bb.edn test entry (and, when it needs
 ;; library deps, a deps.edn).

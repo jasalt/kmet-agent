@@ -2,4 +2,5 @@
  :deps {kmet/libs {:local/root "../libs"}
         kmet/reakt {:local/root "../reakt"}
         kmet/hikap {:local/root "../hikap"}
+        babashka/fs {:mvn/version "0.5.34"}
         org.jline/jline-terminal {:mvn/version "4.4.0"}}}

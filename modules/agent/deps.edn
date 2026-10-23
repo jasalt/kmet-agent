@@ -7,6 +7,20 @@
         kmet/loader {:local/root "../loader"}
         kmet/srce {:local/root "../srce"}
         kmet/app  {:local/root "../app"}
-        metosin/malli {:mvn/version "0.20.1"}
         babashka/fs {:mvn/version "0.5.34"}
-        babashka/process {:mvn/version "0.6.25"}}}
+        babashka/process {:mvn/version "0.6.25"}
+        ;; The bundled extension set (kmet.agent.extensions.libs) requires
+        ;; these so the host loads them once and extension contexts share the
+        ;; namespaces by reference. The pins match the root deps.edn / bb.edn
+        ;; ones; kmet.test-module-deps holds every manifest to one coordinate.
+        dev.weavejester/cljfmt {:mvn/version "0.16.6"}
+        rewrite-clj/rewrite-clj {:mvn/version "1.3.58"}
+        parinferish/parinferish {:mvn/version "0.8.0"}
+        borkdude/edamame {:mvn/version "1.6.44"}
+        org.clojure/spec.alpha {:mvn/version "0.5.238"}
+        org.clojure/tools.reader {:mvn/version "1.6.0"}
+        ;; SCI: the extension host is the loader's caller, so it declares the
+        ;; backend artifact (loader.md §6.5). The pin and its reason live in
+        ;; jolt/deps.edn (the provider lib); it is identical here.
+        org.babashka/sci {:git/url "https://github.com/yogthos/sci.git"
+                          :git/sha "1295142fc29f206dd2747963548ba038077d9205"}}}

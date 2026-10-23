@@ -44,8 +44,21 @@ app (see below).
 
 The guard holds the declaration in both directions: every module its `src`
 requires must be in the module's `deps.edn`, and nothing may be there that
-neither `src` nor `test` uses (a test-only edge below the module's rank is
-allowed, since test trees are cross-cutting and often point upward). It reads
+`src` does not use — a module's `:deps` is its src edge list, module edges and
+third-party libraries alike. A table (`lib-namespaces`) maps each library to
+the namespaces it provides, so a library required without a declaration and a
+declaration nothing requires both fail; two are host-provided and exempt from
+the floor — `org.babashka/ffi` (the JVM's standalone FFI, added by the `:jvm`
+alias; babashka and Jolt supply their own) and `org.babashka/sci` (the
+loader's caller-supplied backend artifact, loader.md §6.5). A library pinned
+in more than one manifest must carry the same coordinate everywhere, which
+keeps the repeated pins from drifting. Test-only libraries belong to the test
+project (`deps.edn`'s `:dev` alias; babashka bundles the ones the suites use
+and Jolt vendors them): a module `deps.edn` is a `:local/root` dependency, and
+tools.deps never applies a dependency's aliases, so a test alias there could
+not reach a test classpath. Test trees are still cross-cutting (`libs`' tests
+require `tui`, `ai`'s require `agent`) and often point upward; the classpath
+is their union, so they use modules no module `deps.edn` declares. It reads
 both hosts' reader branches, so a `#?(:jolt …)` require counts. The missing
 direction went unchecked until 4b-ii: `app` required `kmet.srce` from six
 namespaces across two landings without naming it, because the guard only
@@ -332,9 +345,10 @@ pins its exact public surface. Two consequences for tests and REPL work:
   behind `future` would otherwise hold the process open after `/quit`; the
   explicit exit also covers any thread stuck outside that pool. bb exits on
   its own and both calls are harmless there.
-- Do not add Maven entries for `babashka.fs` or `babashka.process`; both hosts
-  provide their built-in equivalents. Tooling-only dependencies belong in
-  `bb.edn`/`deps.edn`.
+- `babashka.fs` and `babashka.process` are built into babashka and vendored by
+  Jolt, so only the JVM resolves the Maven copies. Test-only libraries go in
+  the root `deps.edn`'s `:dev` alias (a module's `:deps` is its `src` edge
+  list); tooling-only dependencies belong in `bb.edn`/`deps.edn`.
 - On Termux use `$TMPDIR` or another explicit writable directory rather than
   `/tmp`; `java.io.tmpdir` is unreliable there. Normalize zip entry separators
   before containment checks and normalize `fs/relativize` results with

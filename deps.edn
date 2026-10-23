@@ -179,7 +179,18 @@
         ;; the flag). The packaged jar carries the same grant as the
         ;; Enable-Native-Access manifest attribute.
         :jvm-opts ["--enable-native-access=ALL-UNNAMED"]}
-  :dev {:extra-paths ["test"]}
+  ;; The workspace's test project: the extra test root and the libraries a
+  ;; module's tests need but its src does not (they cannot live in the module's
+  ;; deps.edn — that file is a :local/root dependency, and tools.deps never
+  ;; applies a dependency's aliases, so a :test alias there could not reach
+  ;; this classpath). kmet.srce's self-containment guard walks the kernel's
+  ;; sources with babashka.fs; tui's terminal tests spawn processes with
+  ;; babashka.process. The JVM is the only host that resolves the Maven copies
+  ;; (babashka bundles both and Jolt vendors them), and the uberjar basis adds
+  ;; :jvm :clj-pin only, so nothing here reaches an artifact.
+  :dev {:extra-paths ["test"]
+        :extra-deps {babashka/fs {:mvn/version "0.5.34"}
+                     babashka/process {:mvn/version "0.6.25"}}}
   ;; The JVM nREPL server (`bb nrepl-jvm`). Dev-only like :build — the app
   ;; never loads nrepl — and dependency-free beyond the Clojure runtime, so it
   ;; adds nothing to the app classpath.
