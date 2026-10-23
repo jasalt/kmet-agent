@@ -100,8 +100,7 @@
    Returns {:state <AgentState> :cwd <runtime cwd>} — the cwd is the engine's
    to keep for the next prompt rebuild, and the state carries the rest."
   [config ctx {:keys [session model provider cwd system-prompt-fn on-event
-                      agent-opts]
-               :or {on-event nil}}]
+                      agent-opts]}]
   (let [provider (or provider (cfg/get-provider config))
         model (or model (models/resolve-config-model config))
         model-rec (models/get-model provider model)
@@ -237,7 +236,13 @@
    registration's, so the factory goes with the fiber.
 
    The run config is loaded per creation (a settings change reaches the next
-   agent) unless the caller names one (`:config` in the create options)."
+   agent) unless the caller names one (`:config` in the create options).
+
+   `:resume` is refused rather than approximated: the registry's resume passes
+   the *handle* id it once published, and a handle id is not a session — an
+   agent brought back as a fresh session would answer with a different
+   conversation and say nothing. It waits for an agent record that outlives
+   the handle."
   [ctx _config]
   (let [scope (:parent ctx)
         agents (srce/get ctx :agents)
@@ -247,6 +252,15 @@
         cwd (str (fs/cwd))]
     ((:register-factory! agents) scope
                                  (fn [child opts]
+                                   (when-let [id (:resume opts)]
+                                     (throw (ex-info
+                                             (str "the loop driver cannot resume agent "
+                                                  (pr-str id) ": a handle id is not a session, "
+                                                  "and a fresh one would answer with a different "
+                                                  "conversation")
+                                             {:type :kmet.app/unsupported-op
+                                              :op :resume
+                                              :id id})))
                                    (let [config (or (:config opts) (cfg/load-config))]
                                      (agent-handle child {:id (:id opts)
                                                           :config config

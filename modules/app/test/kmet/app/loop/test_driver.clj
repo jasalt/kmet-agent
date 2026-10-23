@@ -109,8 +109,25 @@
             (is (= :completed (:outcome (first @settles))))
             (is (= :completed @(:last-outcome (:agent handle))))
             (is (= [:user :assistant] (mapv :role @(:messages (:agent handle))))
-                "the turn's messages are the agent's context"))))
+                "the turn's messages are the agent's context")
+            (is (= ["hello"] (user-texts (:agent handle))) "the sent text, once"))))
       (finally (unsubscribe)))))
+
+(deftest resume-is-refused-not-approximated
+  ;; The registry's resume names a handle id it once published; a handle id is
+  ;; not a session. Answering with a fresh conversation would be a wrong answer
+  ;; rather than an unimplemented one.
+  (let [{:keys [root agents]} (mounted)]
+    (is (= :kmet.app/agent-create-failed
+           (try ((:create! agents) root {:config test-config :resume "abc12345"})
+                nil
+                (catch Exception e (:type (ex-data e)))))
+        "create! fails")
+    (is (= :kmet.app/unsupported-op
+           (try ((:create! agents) root {:config test-config :resume "abc12345"})
+                nil
+                (catch Exception e (:type (ex-data (ex-cause e))))))
+        "and says what it cannot do")))
 
 (deftest two-agents-run-their-own-turns
   ;; The landing's gate: two agents created through `create!` each run a turn
@@ -147,6 +164,8 @@
           ((:send! agents) handle "second" {:target :next-turn})
           (is (empty? (get-in ((:inbox agents) root handle) [:next-turn]))
               "a handed-off message is delivered, not left pending")
+          (is (= ["second"] @(:follow-up (:agent handle)))
+              "and waits in the loop's next-turn queue, which the run drains")
           (deliver gate :go)
           ((:when-idle agents) handle)
           (is (= :idle ((:status agents) handle))

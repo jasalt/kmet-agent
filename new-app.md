@@ -1190,6 +1190,20 @@ opts, additive), and the driver appends `:deliver!` when it hands the text to
 the run or its queue. Without that, a server's inbox would grow forever: the
 log is the record, but a record that never says "delivered" is a leak.
 
+**Review of the pair.** One wrong-answer path and three test/doc tightenings:
+`resume!` reached the driver as `{:resume <handle-id>}`, and the factory created
+a **fresh session** — an agent brought back with a different conversation and
+no warning. A handle id is not a session, so the factory now refuses
+(`:kmet.app/unsupported-op` under the registry's `:agent-create-failed`) until
+an agent record outlives the handle; pinned by
+`resume-is-refused-not-approximated`, which also keeps the two error levels
+honest. The queue test had lost its queue: it asserted the delivered inbox and
+then carried a name promising the loop's queue, so it now asserts both (the
+inbox drains, the follow-up queue holds the text the run will drain). A
+pointless `:or {on-event nil}` went, and the prompt-row test's comment about
+the ctx's `:tools` service — the state throws `kmet/no-tool-service` without
+one, as the test's first attempt found — is in the fixture where it bites.
+
 **What the composition still needs, and why the gate is the driver's.** In a
 pure kmet2 boot the extension host's services are unbound — kmet1's shim binds
 them (`extensions/bind-services!`), and the host-as-a-row is 4b-ii-b's tail.
