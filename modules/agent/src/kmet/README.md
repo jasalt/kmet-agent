@@ -93,13 +93,12 @@ kmet/agent/
 ├── app_runtime.clj     — the app root ctx, and the loop's stage map (on the
 │                         ctx)
 ├── extensions/         — what the extension runtime still needs from kmet1:
-│   ├── (core.cljc)     — the extension host; moved to `modules/app` at
-│   │                     4b-ii-b, which is why it takes its registry handle,
-│   │                     mount ctx and resource registries as one bound value
-│   │                     (`bind-services!`) rather than requiring them
-│   ├── services.clj    — kmet1's binding of that value: the app root's handle
-│   │                     and ctx, plus the commands/prompts/skills delegates
-│   ├── bundled.clj     — bundled extension artifacts and discovery
+│   └── services.clj    — kmet1's binding of the host's services: the app
+│                         root's handle and ctx, plus the commands/prompts/
+│                         skills delegates. The host itself (core.cljc, which
+│                         takes those as one bound value rather than requiring
+│                         them) and its artifact discovery (bundled.clj) moved
+│                         to `modules/app` at 4b-ii-b
 │   ├── (context.cljc)  — per-extension SCI isolation; moved to `modules/app`
 │   │                     at 4b-ii-b (its tests went with it)
 │   └── (libs.clj)      — the fixed bundled-extension library set; moved to
