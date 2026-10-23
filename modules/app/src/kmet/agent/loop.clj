@@ -353,8 +353,8 @@
   [agent event]
   (when-let [cb (:on-event agent)]
     (cb event))
-  (event-bus/emit-boundary! event (:ctx agent)
-                            (srce/boundary! (:ctx agent) (:type event) event)))
+  (let [ctx (:ctx agent)]
+    (event-bus/emit-boundary! event ctx (srce/boundary! ctx (:type event) event))))
 
 (defn- finish-turn!
   "Finish a turn (pi: the session's wrapped finishTurn, installed by

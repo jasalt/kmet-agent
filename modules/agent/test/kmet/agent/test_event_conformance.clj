@@ -170,6 +170,13 @@
       (t/is (= wire (edn/read-string (pr-str wire)))
             (str "round-trips through EDN: " (:type event))))))
 
+(def ^:private loop-boundary-names
+  "The loop's actionable names: the events `kmet.agent.loop/emit-boundary`
+   dispatches. Its two call sites are the source, so this set is what the test
+   pins — derived from the vocabulary, the test would only compare the
+   declaration with itself."
+  #{:turn-end :agent-before-settle})
+
 (t/deftest test-the-two-dispatch-paths-agree-with-the-vocabulary
   ;; The loop dispatches plain events as :emit on both event layers and the two
   ;; actionable ones as boundaries (new-app.md, 7b-i). The vocabulary declares
@@ -181,7 +188,7 @@
     (t/is (contains? emitted :turn-end) "the scenario reaches the boundary path")
     (t/is (contains? emitted :agent-before-settle) "and the settle boundary")
     (doseq [type emitted]
-      (t/is (= (if (#{:turn-end :agent-before-settle} type) :boundary :emit)
+      (t/is (= (if (loop-boundary-names type) :boundary :emit)
                (get modes type))
             (str "declared mode matches the path it was dispatched on: " type)))))
 

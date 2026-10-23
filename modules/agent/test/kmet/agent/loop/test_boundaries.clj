@@ -837,15 +837,7 @@
                                           (fn [ev] (swap! table-saw conj (:kmet.test/marker ev))))]
     (try
       (binding [support/*ctx* ctx]
-        (with-redefs [cfg/get-api-key (fn [_] "test-key")
-                      llm/send-message
-                      (fn [opts]
-                        (future
-                          (when-let [on-text (:on-text opts)] (on-text "ok"))
-                          (when-let [on-done (:on-done opts)] (on-done :stop))
-                          :done))]
-          @(loop/run-agent-turn (support/make-agent-state)
-                                {:message "hi" :on-error (fn [_])})))
+        (support/run-turn-capturing-llm (support/make-agent-state) {:message "hi"}))
       (t/is (= [:turn-end] @front-end-saw) "the app's layer hears the boundary")
       (t/is (= [true] @table-saw)
             "and the handler after it sees the front end's decision, not a blank slate")
@@ -867,15 +859,7 @@
         dispose-sib (events/on! sibling :turn-end (fn [_] (swap! sib conj true)))]
     (try
       (binding [support/*ctx* run-ctx]
-        (with-redefs [cfg/get-api-key (fn [_] "test-key")
-                      llm/send-message
-                      (fn [opts]
-                        (future
-                          (when-let [on-text (:on-text opts)] (on-text "ok"))
-                          (when-let [on-done (:on-done opts)] (on-done :stop))
-                          :done))]
-          @(loop/run-agent-turn (support/make-agent-state)
-                                {:message "hi" :on-error (fn [_])})))
+        (support/run-turn-capturing-llm (support/make-agent-state) {:message "hi"}))
       (t/is (= [true] @own) "the run's own ctx hears its boundary")
       (t/is (= [] @sib) "a sibling under the same app scope does not")
       (finally (dispose-own) (dispose-sib)))))
