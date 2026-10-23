@@ -119,8 +119,8 @@
    source order.
    DECLARED-TOOLS — the request's captured tool map (name → tool): the
    declared set and the dispatch of every call resolve against that one
-   capture, so a tool unloaded after the request was built still runs
-   (scope.md §4)."
+   capture, so a tool unloaded after the request was built still runs for the
+   request that was offered it."
   [agent tool-calls assistant-msg declared-tools & [append?]]
   (let [finalized (atom {})
         ;; the names declared for this request — a call outside the map is
@@ -257,7 +257,7 @@
    REQUEST-TOOLS is the tool list captured when the request was built, in
    registry order; the declared set and the dispatch of every call in the
    batch resolve against it, so a tool unloaded between the model's tool_use
-   and its execution still runs (scope.md §4)."
+   and its execution still runs."
   [agent tool-calls assistant-msg request-tools & [append?]]
   (let [declared-tools (into {} (map (juxt :name identity)) request-tools)]
     (binding [run-code-tool/*assistant-message* assistant-msg]

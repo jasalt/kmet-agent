@@ -188,10 +188,10 @@ root `AGENTS.md` topic map.
 
 - `kmet.libs.scope` **was** the store and node lifetimes (in `modules/libs`,
   rank 0): registrations keyed by owner path, with LIFO, isolated disposal. It
-  and its backend `kmet.agent.registry-store` were deleted at landing 4e; the
-  owner-path/LIFO/ordering conventions it established live on in the ctx tree
-  (`srce` effects, `kmet.agent.registry` handles), recorded in
-  `modules/libs/src/kmet/libs/scope.md`.
+  and its backend `kmet.agent.registry-store` were deleted at landing 4e, and so
+  was `scope.md`; the owner-path/LIFO/ordering conventions it established live
+  on in the ctx tree (`srce` effects, `kmet.agent.registry` handles) and are
+  documented with them.
 - `kmet.loader.*` is an outer module (`modules/loader`); it may use
   third-party deps and `kmet.loader.*`, but no other `kmet.*` namespace.
 - `kmet.libs.*` is generic and self-contained; it may not require non-libs

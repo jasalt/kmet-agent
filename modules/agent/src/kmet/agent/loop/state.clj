@@ -431,8 +431,8 @@ Be precise and concise in your responses."}}]
    declared set): the registry filtered by the state's :enabled-tools and
    :default-tools (see active-tools-for). Read once per request and threaded
    through it — the wire list, the declared set and dispatch all resolve
-   against that one capture, so a tool unloaded mid-request still executes
-   (scope.md §4)."
+   against that one capture, so a tool unloaded mid-request still executes for
+   the request that was offered it."
   [agent]
   (active-tools-for {:enabled @(:enabled-tools agent)
                      :default-tools @(:default-tools agent)}))

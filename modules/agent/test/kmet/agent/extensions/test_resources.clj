@@ -456,7 +456,7 @@
 
 (t/deftest test-a-failed-init-rolls-back-what-it-registered
   ;; The rollback runs the same unload path, so what init(api) registered
-  ;; before throwing is disposed with the extension's owner (scope.md §2) —
+  ;; before throwing is disposed with the extension's owner —
   ;; no command, tool or skill outlives a failed load.
   (extensions/clear-extensions!)
   (let [dir "target/test-ext-init-rollback"]

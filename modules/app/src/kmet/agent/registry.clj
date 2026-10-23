@@ -10,15 +10,22 @@
    - `atom-registry` — an atom of entries. What the app's `:tools` service
      installs: `register!` returns a disposer the caller ties to its fiber
      (`srce/effect`), so an extension's registrations unwind with it. It is the
-     only backend: kmet1's scope-node store (`registry_store`) went with the
+     only handle: kmet1's scope-node store (`registry_store`) went with the
      store at landing 4e.
 
-   The rules: an entry is addressed by its own name;
-   owners are searched in display order, so the owner that took a name keeps
-   it; `effective-entries` collapses the listing to one entry per name, so
-   listing and lookup agree; a whole-registry clear removes by tag across every
-   owner, because one owner holds several registries. The listing layout is the
-   backend's (see `entries`).
+   The rules: an entry is addressed by its own name; owners are searched in
+   display order, so the owner that took a name keeps it; `effective-entries`
+   collapses the listing to one entry per name, so listing and lookup agree; a
+   whole-registry clear removes by tag across every owner, because one owner
+   holds several registries. The listing layout is the handle's (see
+   `entries`).
+
+   **Ownership is the address.** A registration's OWNER is a path —
+   `[:app :tools]`, `[:app :commands]`, `[:app :extensions <name>]` — and
+   nothing else has to exist for it to be addressable. An owner holds as many
+   tags as it registers under, so unloading an extension is one
+   `deregister-owner!` per tag rather than a disposer per name, and a name it
+   took is the name it keeps until it unloads.
 
    The registries themselves stay in their namespaces: they own the tag, the
    domain validation and the owner default. Only the mechanics live here.")

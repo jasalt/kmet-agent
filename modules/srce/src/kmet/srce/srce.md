@@ -761,9 +761,11 @@ in one place: each registry now owns its own (the atom handle's registration
 order), and `deregister-owner!` walks tags instead of matching key heads. The
 value-guarded stale deregister is the handle's entry-identity disposer. `/units`
 was not lost: 4d re-rendered it from the ctx tree ([`new-app.md`](../../../../../new-app.md),
-"Inspection"). The doc keeps its name — `modules/libs/src/kmet/libs/scope.md` —
-because kmet1's remaining modules cite its sections for the conventions that
-survived; it now says so in its first paragraph.
+"Inspection"). `scope.md` went with the code in the same change: its surviving
+rules moved to the homes that implement them (ownership and display order into
+`kmet.agent.registry`'s docstring, the snapshot and tool-capture rules into
+`new-app.md`'s "Reload and the turn boundary", disposal order into §4 above),
+and the citations either dropped the pointer or repointed at one of those.
 
 Gate, met: no `(scope/` under `kmet.agent.*`, no `kmet.libs.scope` or
 `kmet.agent.registry-store` require anywhere, `bb test` green, and `kmet --app

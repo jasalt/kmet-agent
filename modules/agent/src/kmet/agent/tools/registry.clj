@@ -4,7 +4,7 @@
    `kmet.agent.registry/Registry` handle under TAG `:kmet/tool` (and
    `:kmet/tool-source` for sandbox-only sources), owned by an owner path:
    visible to every engine, outliving one, and disposed with their owner
-   rather than copied into an engine and reset by hand (scope.md §2). kmet1's
+   rather than copied into an engine and reset by hand. kmet1's
    handle is the app root's store; kmet2's is the `:tools` service. The
    extension ABI registers under its own owner path, so unload disposes what an
    extension added."
@@ -83,9 +83,8 @@
 ;; ─── Extended tool registry ────────────────────────────────────────────────
 
 (def tools-owner
-  "The app's tool registry owner — the registry's address (scope.md §2).
-   `/units` reads it from the store, so custom tools and contributed sources
-   report under it."
+  "The app's tool registry owner — the registry's address; unloading it takes
+   every custom tool and contributed source it added."
   [:app :tools])
 
 (defn- registered-tools
@@ -97,7 +96,7 @@
 (defn register-tool!
   "Register a custom tool after normalizing its provider-facing schema, owned
    by OWNER — the app's registry by default; an extension passes its own owner
-   path so unloading it takes the tool with the owner (scope.md §2). Returns
+   path so unloading it takes the tool with the owner. Returns
    the registry's deregister fn."
   ([tool] (register-tool! tool tools-owner))
   ([tool owner]
@@ -143,7 +142,7 @@
 (defn register-tool-source!
   "Register (or replace) an extension-contributed tool source on NODE,
    owned by OWNER — the app's registry by default; an extension passes its
-   own owner path so unloading it disposes the source (scope.md §2). ID
+   own owner path so unloading it disposes the source. ID
    identifies the source; TOOLS-FN is a 0-arg fn returning {name → tool map}
    — the same shape a registered tool map has (:name :label :description
    :parameters :execute, optional :streams?/:contextual?/:prepare-arguments).

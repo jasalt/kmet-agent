@@ -11,14 +11,13 @@
    its own skills dirs); frontmatter parses via kmet.libs.yaml (a minimal YAML
    subset parser — babashka has no YAML lib).
 
-   Skills live in the app root's store, under the `[:app :skills]` owner
-   (the registry's address: `/units` reads it from the store, so their keys
-   report under it), addressed by `[:kmet/skill <name>]`: visible to every
+   Skills live in the app root's `:skills` registry, under the `[:app
+   :skills]` owner address, keyed by `[:kmet/skill <name>]`: visible to every
    engine, outliving one, and disposed with their owner rather than copied into
-   an engine and reset by hand (scope.md §2). A name holds one skill — the
+   an engine and reset by hand. A name holds one skill — the
    key is the name — so the existing first-wins collision rule is enforced
    before registering. Extension registrations carry the extension's own
-   owner path, so unloading it disposes the skill (scope.md §2)."
+   owner path, so unloading it disposes the skill."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
@@ -37,8 +36,8 @@
 ;; ─── Skill registry ───────────────────────────────────────────────────────
 
 (def skills-owner
-  "The app's skill registry owner — the registry's address (scope.md §2).
-   `/units` reads it from the store, so skills report under it."
+  "The app's skill registry owner — the registry's address; unloading it
+   takes every skill it contributed."
   [:app :skills])
 
 (defn- registered-skills
@@ -119,7 +118,7 @@
    on demand — pi has no equivalent; kept for kmet's API and tests) on NODE
    (the app root for an app-wide registration, a child node a run passes for
    its own tree).
-   Returns the store's deregister fn."
+   Returns the registration's deregister fn."
   [name description]
   (registry/register! (app-runtime/registry)
                       :kmet/skill name
@@ -246,8 +245,8 @@
 (defn load-skills-from-dir
   "Load skills from a directory using pi's discovery rules. Skills are added
    to the registry under OWNER (the app's registry by default; an extension or
-   a resource contribution passes its own owner path so the skills go with it
-   — scope.md §2); on name collision another owner's skill wins (pi: keep
+   a resource contribution passes its own owner path so the skills go with
+   it); on name collision another owner's skill wins (pi: keep
    the first, emit a collision diagnostic) while the same owner's is
    replaced. Returns the diagnostics for this dir (warning/collision maps),
    printed to stderr."

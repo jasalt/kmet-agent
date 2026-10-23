@@ -288,10 +288,10 @@
 
 (t/deftest test-a-tool-dropped-after-the-request-still-runs
   ;; the request's tool map is captured once and threaded through the turn
-  ;; (scope.md §4): the wire list, the declared set and the dispatch all
-  ;; resolve against that capture, so a tool unloaded between the model's
-  ;; tool_use and its execution still runs — the race the one-read discipline
-  ;; claims closed
+  ;; (new-app.md, "Reload and the turn boundary"): the wire list, the declared
+  ;; set and the dispatch all resolve against that capture, so a tool unloaded
+  ;; between the model's tool_use and its execution still runs — the race the
+  ;; one-read discipline claims closed
   (let [events (atom [])
         offered (atom nil)
         calls (atom 0)]

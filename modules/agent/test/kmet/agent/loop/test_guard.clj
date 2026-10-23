@@ -158,8 +158,8 @@
 (t/deftest test-loop-runs-the-guard-in-its-ctx
   ;; The guard is the ctx's stage, not a namespace read: a spy in the run's
   ;; own ctx filters the batch (and trips it on the second, so the run
-  ;; settles), and the stage config supplies the threshold (scope.md §4,
-  ;; §6).
+  ;; settles), and the stage config supplies the threshold (new-app.md,
+  ;; "Reload and the turn boundary").
   (let [calls (atom [])
         spy (fn [state threshold tool-calls]
               (swap! calls conj threshold)
@@ -194,7 +194,7 @@
 (t/deftest test-loop-runs-the-retry-policy-in-its-ctx
   ;; The retry policy is a ctx stage too: a spy replacing it decides the
   ;; errored call's next move, and its config overrides the run's own option
-  ;; (scope.md §4).
+  ;; (new-app.md, "Reload and the turn boundary").
   (let [seen (atom [])
         spy (fn [state]
               (swap! seen conj state)
@@ -226,8 +226,8 @@
     (t/is (= :idle @(:status agent)) "the retried run settled")))
 
 (t/deftest test-loop-stages-survive-a-mid-attempt-change
-  ;; scope.md §4: an attempt reads its stages once. A change to the ctx's
-  ;; stages during the attempt (here a refresh) is invisible to it, and the
+  ;; The attempt reads its stages once. A change to the ctx's stages during
+  ;; the attempt (here a refresh) is invisible to it, and the
   ;; next attempt reads the new map — the tool-unload race the rule closes.
   (let [used (atom [])
         guard-a (fn [state _threshold tool-calls]

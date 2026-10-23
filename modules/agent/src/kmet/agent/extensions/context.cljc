@@ -1229,7 +1229,7 @@
 (defn unregister-theme!
   "Remove THEME from the shared theme store while NAME still holds it — the
    door for the teardown a contributed theme's owner records, so one owner's
-   teardown cannot drop a later contributor's registration (scope.md §2).
+   teardown cannot drop a later contributor's registration.
    Returns nil."
   [name theme]
   ((requiring-resolve 'kmet.tui.theme/unregister-theme!) name theme)

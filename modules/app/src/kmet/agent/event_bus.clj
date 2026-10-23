@@ -11,7 +11,7 @@
 
    The extension bus itself is a process-level registry: a subscription lives
    from an extension's load to its unload, in registration order, and no
-   engine owns, copies or clears it (scope.md §6). A subscription may
+   engine owns, copies or clears it. A subscription may
    carry a scope — the ctx it listens to — so a listener in a child ctx
    hears its own subtree's events and a sibling's listeners do not
    (new-app.md, landing 4c-ii-b).
@@ -95,7 +95,7 @@
 ;; on-event; the loop and the front ends route events through emit-event!.
 ;; One structure, process-level: extensions subscribe at load, before any
 ;; engine exists, and their lifetime is load → unload, so an engine neither
-;; adopts nor wipes it (scope.md §6).
+;; adopts nor wipes it.
 
 (defonce ^:private listeners
   ;; {event-type [{:callback f :owner path :scope ctx} …]} — one vector per
@@ -116,9 +116,9 @@
                ls)))))
 
 (defn- check-ctx!
-  "Throw unless X is a ctx or nil. A store node *looks* like a ctx to the
-   subtree test — both walk `:parent` — so nothing else would catch the mix-up,
-   and a listener scoped to the wrong tree silently matches the wrong subtree."
+  "Throw unless X is a ctx or nil. A map that carries `:parent` *looks* like a
+   ctx to the subtree test, so nothing else would catch the mix-up, and a
+   listener scoped to the wrong tree silently matches the wrong subtree."
   [what x]
   (when (and (some? x) (not (srce/ctx? x)))
     (throw (ex-info (str "event-bus: " what " must be a ctx (or nil for "
@@ -148,7 +148,7 @@
                 extension's `[:app :extensions <name>]`). The collect
                 emitter reports it beside the handler's result, so a
                 contribution can be applied under the owner that made it
-                (resource discovery, scope.md §2).
+                (resource discovery; the owner is the registry address).
    callback   — (fn [event-map])
    scope      — optional: the ctx this listener listens to; it sees events
                 emitted from that ctx and its descendants. nil (the

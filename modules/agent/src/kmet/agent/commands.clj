@@ -19,16 +19,15 @@
    The registry lives in the app root's store, under the `[:app :commands]`
    owner and the `[:kmet/command <name>]` key: a registration is visible to
    every front end and outlives an engine, and it is disposed with its owner
-   rather than reset by hand (scope.md §2). The extension ABI registers
+   rather than reset by hand. The extension ABI registers
    under its own owner path, so unload disposes what an extension added."
   (:require [clojure.string :as str]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.registry :as registry]))
 
 (def commands-owner
-  "The app's command registry owner — the registry's address (scope.md §2).
-   Registrations are addressed by key under this path, and `/units` reads the
-   owner from the store, so they render under it."
+  "The app's command registry owner — the registry's address; unloading it
+   takes every command it contributed."
   [:app :commands])
 
 (defn- command-for
@@ -48,7 +47,7 @@
   "Register (or replace by :name) a slash command, owned by OWNER — the app's
    registry by default; an extension passes its own owner path
    (`kmet.agent.extensions.core/extension-owner`) so unloading it takes the
-   command with the owner (scope.md §2). The registration is addressed by
+   command with the owner. The registration is addressed by
    :name, so a command is always its own key. Returns the registry's
    deregister fn."
   ([cmd] (register-command! cmd commands-owner))
@@ -96,8 +95,9 @@
 
 (defn- all-registered-commands
   "The effective registry, in display order: each name once, from the owner
-   that took it (`command-for`). Owners share the store with other registries,
-   so key shape is what keeps this to commands."
+   that took it (`command-for`). The tag is what keeps this to commands: the
+   handle is per tag, so one owner holds commands and other registries without
+   either seeing the other's names."
   []
   (mapv command-for (command-names)))
 

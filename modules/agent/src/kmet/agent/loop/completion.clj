@@ -88,7 +88,7 @@
    system-prompt-override over the base system prompt.
    REQUEST-TOOLS is the request's captured tool list (see
    execute-tool-calls!): the wire list and the dispatch that follows resolve
-   against the same capture (scope.md §4)."
+   against the same capture."
   [agent api-key text-buf on-text on-thinking request-tools]
   (let [done-promise (promise)
         thinking-buf (atom "")

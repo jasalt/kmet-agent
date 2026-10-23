@@ -472,8 +472,8 @@
      :loop-guard — repeat-loop guard tripped (caller settles the run)
 
    Repeat-loop guard (kmet-specific): the batch is filtered through the
-   `:loop-guard` stage's handle, read from the attempt's stage map — the node
-   carries the stage (scope.md §4, §6). Its config supplies
+   `:loop-guard` stage's handle, read from the attempt's stage map — the
+   agent's ctx carries the stage. Its config supplies
    the threshold when the node carries one; cfg's value is the default.
    Suppressed calls get a synthetic
    guard result (transcript stays coherent — no dangling tool ids, and the
@@ -486,7 +486,7 @@
 
    REQUEST-TOOLS is the request's captured tool list, in registry order: the
    guard's survivors execute against it, so a tool unloaded after the request
-   was built still runs (scope.md §4)."
+   was built still runs."
   [agent stages t result request-tools]
   (let [assistant-msg (state/add-assistant-message! agent result)
         tool-calls (:tool-calls result)]
@@ -596,7 +596,7 @@
    the one outcome whose partials are not in the result map."
   [{:keys [agent text-buf on-text on-thinking]}]
   (let [;; one read per request: the wire list, the declared set and the
-        ;; dispatch below all resolve against it (scope.md §4)
+        ;; dispatch below all resolve against it
         request-tools (state/active-tools agent)
         {:keys [promise] :as call}
         (do (reset! text-buf "")
@@ -790,7 +790,7 @@
    :agent-end is emitted here with this attempt's accumulated messages
    (RUN-TOKEN keys the accumulator) and :will-retry."
   [agent run-token {:keys [on-text on-thinking on-error]}]
-  (let [stages (runtime/loop-stages (:ctx agent)) ; the agent ctx's stages, one read per attempt (scope.md §4)
+  (let [stages (runtime/loop-stages (:ctx agent)) ; the agent ctx's stages, one read per attempt
         agent-end (fn [error will-retry]
                     (when-let [s (:session agent)]
                       (when (pos? (get-in (session/tool-usage s)

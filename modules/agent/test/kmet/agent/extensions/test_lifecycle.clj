@@ -65,7 +65,7 @@
 (t/deftest test-extension-registrations-are-owned-by-the-extension
   ;; P5c: what init(api) registers lands on [:app :extensions <name>], so
   ;; unload is one LIFO dispose of that owner instead of a tracked deregister
-  ;; per registration (scope.md §2). Only what lives outside the store —
+  ;; per registration. Only what lives outside the tree —
   ;; here an event subscription — stays on the extension's own list.
   (extensions/clear-extensions!)
   (let [dir "target/test-ext-owned-registrations"]
@@ -121,7 +121,7 @@
 (t/deftest test-a-terminal-input-listener-is-tracked
   ;; The front end's listener registry lives outside the app tree, so its
   ;; unsubscriber is what records on the extension and unload runs it
-  ;; (scope.md §2 — tracked is the outside-the-tree half).
+  ;; (tracked is the outside-the-tree half).
   (extensions/clear-extensions!)
   (let [dir "target/test-ext-terminal-input"
         handlers (atom [])
