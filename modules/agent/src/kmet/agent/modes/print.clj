@@ -9,8 +9,6 @@
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.packages :as packages]
-            [kmet.agent.prompts :as prompts]
-            [kmet.agent.skills :as skills]
             [kmet.agent.config :as cfg]))
 
 (defn- message-text
@@ -105,13 +103,14 @@
                                               :provider provider
                                               :ctx (app-runtime/ctx)
                                               :load-resources! packages/load-resources!
+                                              ;; print expands its message before it
+                                              ;; prompts, so it never uses the engine's
+                                              ;; own chain
                                               :mode (if (= :edn mode) :json :print)})
             result-promise (promise)
             unsubscribe (runtime/subscribe! engine (event-consumer mode result-promise))
             ;; pi: session.prompt expands skill commands + prompt templates
-            message (-> (str/join " " messages)
-                        (skills/expand-skill-command)
-                        (prompts/expand-prompt-template (prompts/get-prompt-templates)))]
+            message (packages/expand-input (str/join " " messages))]
         (try
           (when (= :edn mode)
             (when-let [header (:header session)]

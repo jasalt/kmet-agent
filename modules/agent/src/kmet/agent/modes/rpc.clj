@@ -94,7 +94,7 @@
     (throw (ex-info (str (name type) " does not support :images yet")
                     {:type :unsupported})))
   (if-let [text (message-of command)]
-    (do (enqueue! engine (runtime/expand-queued-text text))
+    (do (enqueue! engine (runtime/expand-queued-text engine text))
         (ok type {:disposition :queued}))
     (failed type (str (name type) " requires a non-empty :message string"))))
 
@@ -229,7 +229,7 @@
 
             (and running? behavior)
             (do ((if (= :steer behavior) runtime/steer! runtime/follow-up!)
-                 engine (runtime/expand-queued-text text))
+                 engine (runtime/expand-queued-text engine text))
                 (ok :prompt {:disposition :queued}))
 
             :else
@@ -656,6 +656,7 @@
                                               :provider (:provider opts)
                                               :ctx (app-runtime/ctx)
                                               :load-resources! packages/load-resources!
+                                              :expand-input packages/expand-input
                                               :mode :rpc
                                               :has-ui true
                                               :ui-context port})

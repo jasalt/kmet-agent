@@ -48,15 +48,14 @@
             [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.prompts :as prompts]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.registry :as tools]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
-                   cwd turn-running? compaction-queued pending-compaction
-                   pending-ui run-callbacks])
+                   cwd expand-input turn-running? compaction-queued
+                   pending-compaction pending-ui run-callbacks])
 
 (declare cancel! turn-running? runtime-capabilities subscribe!
          start-pending-compactions!)
@@ -151,6 +150,11 @@
      :provider     — provider override; defaults to the config provider
      :cwd          — runtime cwd override for the prompt; defaults to the
                      session's recorded cwd, else the process cwd
+     :expand-input — the fn the engine applies to queued and submitted text
+                     before it reaches the run, replacing skill commands and
+                     prompt templates with what they stand for; kmet1's front
+                     ends pass `kmet.agent.packages/expand-input`, and an engine
+                     bootstrapped without one queues text as written
      :mode         — front-end kind bound to extensions (pi: mode);
                      defaults to :print
      :has-ui       — whether the front end has a UI port (ctx.has-ui);
@@ -185,7 +189,8 @@
    used to wire by hand, seeds the scoped-model list, and installs the
    extension runtime handle (session, context sink, UI registry)."
   [config opts]
-  (let [{:keys [model provider cwd ui-context mode has-ui agent-opts ctx]} opts
+  (let [{:keys [model provider cwd ui-context mode has-ui agent-opts ctx
+                expand-input]} opts
         ;; the resolved session (the layout/print-mode policy output); any
         ;; :agent-opts override is folded back in below via the agent state
         sess (:session opts)
@@ -287,6 +292,7 @@
                              :last-run (atom nil)
                              :disposed? (atom false)
                              :cwd (atom runtime-cwd)
+                             :expand-input expand-input
                              :turn-running? (atom false)
                              :compaction-queued (atom [])
                              :pending-compaction (atom [])
@@ -912,16 +918,18 @@
     ((:extension-handler c) (extensions/build-extension-context) (or args ""))))
 
 (defn expand-queued-text
-  "Expand skill commands and prompt templates for a steered, follow-up or
+  "Expand TEXT the way this engine's front end expands input — kmet1's skill
+   commands and prompt templates — for a steered, follow-up or
    compaction-queued message (pi: steer/followUp expand skill+template before
    queueing; prompt applies the full chain). Queued text is raw (pre-hook);
    the flush applies input hooks first (idle path) and expansion here matches
    pi's steer/followUp for the running-turn path. Extension commands are not
-   expanded here — they are not allowed on the queue paths."
-  [text]
-  (-> text
-      (skills/expand-skill-command)
-      (prompts/expand-prompt-template (prompts/get-prompt-templates))))
+   expanded here — they are not allowed on the queue paths. An engine
+   bootstrapped without `:expand-input` queues its text as written."
+  [engine text]
+  (if-some [expand! (:expand-input engine)]
+    (expand! text)
+    text))
 
 (defn expand-user-message-text
   "pi: prompt() expansion chain (sendUserMessage with
@@ -930,7 +938,7 @@
    Builtin commands are NOT dispatched (pi: _tryExecuteExtensionCommand
    only). Returns the expanded text, or nil when an extension command
    consumed the message."
-  [text]
+  [engine text]
   (let [trimmed (str/trim text)]
     (if (and (str/starts-with? trimmed "/")
              (not (str/includes? trimmed "\n")))
@@ -943,7 +951,7 @@
                 nil ;; consumed — nothing to send
                 )
             text) ;; builtin command — not dispatched here (pi parity)
-          (expand-queued-text text)))
+          (expand-queued-text engine text)))
       text)))
 
 (defn- apply-input-hooks
@@ -963,8 +971,8 @@
    compaction runs the raw text queues as a steer message; otherwise the
    extension input hooks run (a :handled input is consumed), and the text
    either steers the running turn or starts a new one. With the :expand?
-   opt the skill-command/prompt-template expansion chain runs first (pi:
-   the unknown-slash-command path); :run-opts are the front end's prompt
+   opt the engine's `:expand-input` chain runs first (pi: the
+   unknown-slash-command path); :run-opts are the front end's prompt
    callbacks for a run this starts. Returns {:action :compaction-queued |
    :handled | :started | :steered :text <hook-transformed text>} — the
    front end records :text in its editor history."
@@ -975,7 +983,7 @@
          {:action :compaction-queued :text text})
      (if-let [hooked (apply-input-hooks engine text)]
        (let [out (if expand?
-                   (expand-queued-text hooked)
+                   (expand-queued-text engine hooked)
                    hooked)]
          (if (turn-running? engine)
            (do (steer! engine out) {:action :steered :text hooked})
@@ -994,8 +1002,8 @@
     (execute-extension-command! (:text m))
     (if (and allow-prompt? (not (turn-running? engine)))
       (when-let [text (apply-input-hooks engine (:text m))]
-        (prompt! engine (merge run-opts {:text (expand-queued-text text)})))
-      (let [text (expand-queued-text (:text m))]
+        (prompt! engine (merge run-opts {:text (expand-queued-text engine text)})))
+      (let [text (expand-queued-text engine (:text m))]
         (if (= :follow-up (:mode m))
           (follow-up! engine text)
           (steer! engine text))))))
@@ -1325,7 +1333,7 @@
    one, after the optional expansion chain."
   [engine text {:keys [deliver-as expand-prompt-templates?]}]
   (reject-compacting! (agent-state engine))
-  (let [text (if expand-prompt-templates? (expand-user-message-text text) text)]
+  (let [text (if expand-prompt-templates? (expand-user-message-text engine text) text)]
     (when text
       (cond
         (not (turn-running? engine)) (prompt! engine {:text text})

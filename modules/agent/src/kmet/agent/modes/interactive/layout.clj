@@ -575,7 +575,8 @@
         engine (runtime/bootstrap config {:session session
                                           :cwd cwd
                                           :ctx (app-runtime/ctx)
-                                          :load-resources! packages/load-resources!})
+                                          :load-resources! packages/load-resources!
+                                          :expand-input packages/expand-input})
         cwd-atom (:cwd engine)
 
         ;; Migrate legacy keybinding ids in keybindings.edn (pi: migrations

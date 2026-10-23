@@ -390,7 +390,7 @@
    only). Returns the expanded text, or nil when an extension command
    consumed the message."
   [cs text]
-  (let [result (runtime/expand-user-message-text text)]
+  (let [result (runtime/expand-user-message-text (:engine cs) text)]
     (when (nil? result)
       ;; an extension command consumed the message
       (state/update-footer! cs))

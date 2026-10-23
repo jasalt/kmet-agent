@@ -866,7 +866,7 @@ Each is independently shippable and gated.
 | 4f | **landed** — **The tool layer into `app`**, in five shippable steps: `tools/bash-output`, `tools/bash-executor`, the seven tool bodies (`tool`, `bash`, `edit`, `write`, `read`, `invoke`, `run-code`), `kmet.agent.config`, then `tools/registry` + `tools/config` + `tools/core`. The tool layer now lives in `app` with its namespaces kept — the one exception is kmet1's arity-less façade, which the review moved back to `agent`; `app` declares the SCI backend the sandbox mints contexts with. The one behavioral change: the registry took its handle as a first parameter, so no app namespace requires a rank-4 one, and kmet1's convenience arities moved to a rank-4 façade (`kmet.agent.tools.core`) that supplies `(app-runtime/registry)`. The run_code record is built per registry, so its sandbox seams close over the caller's handle | `kmet.test-module-deps` green after every step (both directions, plus the library view); `bb test` green; `kmet --app old --version`/`--list-models` load; `kmet.agent.tools.registry` has no arity that resolves a handle it was not given |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` **landed as a registry at 4c-iii-b** — landing 6 gives it agents a driver created — + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
-| 7a | loop re-hosted as a driver plugin (`:agentLoop`), registering the `:agents` factory; the `:systemPrompt` row with its first reader | two agents created through `create!` each run a turn and settle once; `--dump-state` shows the driver active | **steps 1–2d landed**: the stage map, the three leaves and the whole cluster are `app`'s (names kept); the Engine's policy cut is what is left; see § "Landing 7a" |
+| 7a | loop re-hosted as a driver plugin (`:agentLoop`), registering the `:agents` factory; the `:systemPrompt` row with its first reader | two agents created through `create!` each run a turn and settle once; `--dump-state` shows the driver active | **steps 1–2d landed** (the stage map, the three leaves and the whole cluster are `app`'s, names kept) and **7a-ii is two options in** (the resource load and input expansion are the caller's); what is left is the driver itself, with the Engine's `commands` dispatch and default builder as its two named residuals; see § "Landing 7a" |
 | 7b | `:events` re-pointed at the app's bus; `:agent-settled` as the awaited boundary; profiles as row+patch layers; presets = bundles | pi-alignment green; a tool swaps mid-session at the turn boundary; a profile stacking a preset bundle boots | |
 
 **The order is not the table's order.** 4b-ii cannot precede 4c-ii: the host
@@ -1105,11 +1105,23 @@ load). So the cut is two options, not a lift:
   `test-session-runtime/test-bootstrap-loads-only-what-the-caller-names` (the
   caller's thunk runs once; an engine given none loads none), mutation-checked
   by restoring the unconditional pair.
-- **`:expand-input` (next).** Skill-command and prompt-template expansion
-  (`expand-queued-text`, and `expand-user-message-text`'s fallback) is the
-  same kind of policy: kmet2 expands through its own rows or not at all. Its
-  open question is shape — one fn over the queue and prompt paths, or a chain
-  the caller composes — and it is the last `skills`/`prompts` edge.
+- **`:expand-input` (landed).** The queue and submit paths expand through the
+  chain the caller names — one fn, so the Engine keeps pi's *when* (queued
+  text, the prompt's unknown-slash path, the extension `sendUserMessage`'s
+  optional chain) and the caller owns the *what*. An engine given none queues
+  text as written. kmet1's interactive and rpc front ends pass
+  `packages/expand-input` (skill commands, then prompt templates). Print mode
+  expands before it prompts and never uses the engine's chain, so it passes
+  the loader and not the chain — and its inline copy of the chain became the
+  same `packages/expand-input` call, which was the third copy of it. Pinned by
+  `test-expansion-is-the-callers`: the caller's chain runs, and none means
+  none.
+
+  What the Engine still reaches for in `kmet.agent.*` is now two things, and
+  neither is a lift: `commands` ×3 for **extension-command dispatch** (the
+  extension ABI; a re-point at retirement, not a policy cut) and `skills` for
+  the **default prompt builder** — the stand-in the `:systemPrompt` row
+  replaces, which is why it waits for the driver rather than moving now.
 
 ### Landing 4c-iii-b settled
 

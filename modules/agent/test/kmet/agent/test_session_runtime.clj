@@ -120,6 +120,19 @@
         (fn [_engine _sess]
           (is (empty? @loads) "no option, no load"))))))
 
+(deftest test-expansion-is-the-callers
+  ;; The Engine knows when text expands, not what a skill command stands for:
+  ;; a caller names the chain (kmet1's front ends pass packages/expand-input)
+  ;; and an engine given none queues its text as written.
+  (with-engine {:expand-input (fn [text] (str "expanded:" text))}
+    (fn [engine _sess]
+      (is (= "expanded:/skill:foo" (rt/expand-queued-text engine "/skill:foo")))
+      (is (= "expanded:plain" (rt/expand-queued-text engine "plain")))))
+  (with-engine
+    (fn [engine _sess]
+      (is (= "/skill:foo" (rt/expand-queued-text engine "/skill:foo"))
+          "no chain, no substitution"))))
+
 (deftest test-bootstrap-builds-the-engine
   (with-engine
     (fn [engine sess]
