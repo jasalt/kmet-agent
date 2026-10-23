@@ -5,7 +5,8 @@
    loop-event-type — a new event type fails the coverage test until the
    renderer (and by extension every front end) decides what the transcript
    does with it."
-  (:require [clojure.test :as t]
+  (:require [kmet.agent.loop.state :as state]
+            [clojure.test :as t]
             [clojure.edn :as edn]
             [clojure.string :as str]
             [kmet.ai.llm :as llm]
@@ -136,7 +137,7 @@
         agent (loop/make-agent-state :on-event (fn [event] (swap! events conj event)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message stub
-                  tools/execute-tool (fn [_ _ _] {:content "file body" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] {:content "file body" :is-error false})]
       @(loop/run-agent-turn agent {:message "hi" :on-error (fn [_])}))
     @events))
 

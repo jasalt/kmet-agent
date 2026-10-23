@@ -58,7 +58,7 @@
           calls (atom 0)
           deferred? (fn [m] (= "deferred" (get-in m [:content 0 :text])))]
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
-                    tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})
+                    state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})
                     llm/send-message
                     (fn [opts]
                       (future
@@ -99,7 +99,7 @@
           calls (atom 0)]
       (try
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
-                      tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})
+                      state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})
                       llm/send-message
                       (fn [opts]
                         (future
@@ -157,7 +157,7 @@
                                           {:role :user
                                            :content [{:type :text :text "checkpoint"}]})))))
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
-                      tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})
+                      state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})
                       llm/send-message
                       (fn [opts]
                         (swap! requests conj opts)
@@ -336,7 +336,7 @@
           agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (support/stub-llm-tool-then-text calls)
-                    tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
+                    state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})]
         @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
       (t/is (seq @events) "the scenario emitted events")
       (doseq [ev @events]

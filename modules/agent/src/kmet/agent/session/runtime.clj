@@ -53,7 +53,8 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.skills :as skills]
-            [kmet.agent.tools.core :as tools]))
+            [kmet.agent.tools.registry :as tools]
+            [kmet.agent.app-runtime :as app-runtime]))
 
 (defrecord Engine [agent-state session config subscribers last-run disposed?
                    cwd turn-running? compaction-queued pending-compaction
@@ -76,6 +77,13 @@
    without agent state."
   [engine]
   (:ctx (agent-state engine)))
+
+(defn tool-table
+  "The engine's tool table (name → Tool record) — the one its agent resolves
+   through, from the ctx's `:tools` service. Front ends read tools here; the
+   loop's own state stays the loop's."
+  [engine]
+  (some-> (agent-state engine) loop-state/tool-table))
 
 (defn- extension-before-tool-call
   "Chain extension tool-call hooks (pi: beforeToolCall) — the runtime wires
@@ -154,6 +162,11 @@
      :agent-opts   — extra/overriding make-agent-state options (escape hatch
                      for tests and front-end-specific run options; the
                      engine's session follows an overridden :session)
+     :ctx          — the ctx the engine runs on (a subagent's child ctx);
+                     defaults to the app root. The prompt's tool table and the
+                     agent state both read it, so a child ctx's own `:tools`
+                     service is the table this engine lists and dispatches
+                     through (4c-iii-c)
 
    Loads skills + prompt templates, builds the system prompt (custom prompt,
    appended prompt, project context files, active tools), derives every
@@ -161,12 +174,16 @@
    used to wire by hand, seeds the scoped-model list, and installs the
    extension runtime handle (session, context sink, UI registry)."
   [config opts]
-  (let [{:keys [model provider cwd ui-context mode has-ui agent-opts]} opts
+  (let [{:keys [model provider cwd ui-context mode has-ui agent-opts ctx]} opts
         ;; the resolved session (the layout/print-mode policy output); any
         ;; :agent-opts override is folded back in below via the agent state
         sess (:session opts)
         _ (packages/load-skills!)
         _ (packages/load-prompts!)
+        ;; the ctx the engine runs on: the caller's (a subagent's child ctx),
+        ;; else the app root — the prompt's tool table and the agent state both
+        ;; read this one value, so the two can never name different tables
+        ctx (or (:ctx agent-opts) ctx (app-runtime/ctx))
         provider (or provider (cfg/get-provider config))
         model (or model (models/resolve-config-model config))
         model-rec (models/get-model provider model)
@@ -181,6 +198,7 @@
                             :context-files (context/load-project-context-files
                                             (cfg/get-agent-dir) (str (fs/cwd)))
                             :tools (loop-state/active-tools-for
+                                    (loop-state/ctx-tool-table ctx)
                                     {:default-tools default-tools})}
         system-prompt (apply skills/build-system-prompt
                              (mapcat identity system-prompt-opts))
@@ -241,7 +259,11 @@
                                                           (debug/log "session subscriber failed: "
                                                                      t)))))}
                                     timeout-opts
-                                    agent-opts)))
+                                    agent-opts
+                                    ;; the state reads the ctx resolved
+                                    ;; above, so its tool table and the
+                                    ;; prompt's are the same table
+                                    {:ctx ctx})))
         _ (loop-state/init-scoped-models! agent-state config)
         engine (map->Engine {:agent-state (atom agent-state)
                              :session (atom (:session agent-state))
@@ -649,7 +671,7 @@
   [engine {:keys [path]}]
   (let [ag (agent-state engine)
         system-prompt (or @(:system-prompt-override ag) @(:system ag))
-        tool-defs (vals (tools/get-all-tools))]
+        tool-defs (vals (loop-state/tool-table ag))]
     (session-export/export-to-html!
      (session engine)
      (cond-> (when path {:path path})

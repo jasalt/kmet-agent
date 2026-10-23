@@ -115,8 +115,8 @@
                             (when-let [on-done (:on-done opts)]
                               (on-done :stop))))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _]
+                  state/execute-tool-for
+                  (fn [_ _ _ _]
                     (state/steer! agent "steered")
                     {:content "ok" :is-error false})]
       ;; deref inside with-redefs keeps the rebinding until the run completes
@@ -160,8 +160,8 @@
                             (when-let [on-done (:on-done opts)]
                               (on-done :stop))))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _]
+                  state/execute-tool-for
+                  (fn [_ _ _ _]
                     (state/follow-up! agent "followup")
                     {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent
@@ -272,8 +272,8 @@
                             (when-let [on-done (:on-done opts)]
                               (on-done :stop))))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _]
+                  state/execute-tool-for
+                  (fn [_ _ _ _]
                     (state/steer! agent "s1")
                     (state/steer! agent "s2")
                     {:content "ok" :is-error false})]
@@ -309,8 +309,8 @@
                             (when-let [on-done (:on-done opts)]
                               (on-done :stop))))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _]
+                  state/execute-tool-for
+                  (fn [_ _ _ _]
                     (state/steer! agent "steered")
                     (state/follow-up! agent "followup")
                     {:content "ok" :is-error false})]
@@ -393,8 +393,8 @@
                             (when-let [on-done (:on-done opts)]
                               (on-done :stop))))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _]
+                  state/execute-tool-for
+                  (fn [_ _ _ _]
                     (state/follow-up! agent "f1")
                     (state/follow-up! agent "f2")
                     {:content "ok" :is-error false})]

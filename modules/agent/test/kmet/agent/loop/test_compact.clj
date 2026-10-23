@@ -289,9 +289,9 @@
                                 (when-let [on-done (:on-done opts)]
                                   (on-done :stop)))))
                         :done))
-                    tools/execute-tool (fn [_ _ _]
-                                         {:content (apply str (repeat 10 "tool output "))
-                                          :is-error false})]
+                    state/execute-tool-for (fn [_ _ _ _]
+                                             {:content (apply str (repeat 10 "tool output "))
+                                              :is-error false})]
         ;; deref inside with-redefs keeps the rebinding until the turn completes
         @(loop/run-agent-turn agent {:message "final question"
                                      :on-error (fn [e] (swap! errors conj e))}))
@@ -1341,7 +1341,7 @@
               (fn [_] {:context [{:role :user :content [{:type :text :text "replacement"}]}]}))
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                    tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
+                    state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})]
         @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
       (t/is (= [{:role :user :content [{:type :text :text "replacement"}]}]
                (state/get-context agent))
@@ -1360,7 +1360,7 @@
             (fn [_] {:context [{:role :user :content [{:type :text :text "replacement"}]}]}))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (let [evs (filter #(= :context-replaced (:type %)) @events)]
       (t/is (seq evs) ":context-replaced emitted on context replacement")

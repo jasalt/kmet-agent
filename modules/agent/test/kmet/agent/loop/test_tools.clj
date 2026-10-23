@@ -9,6 +9,7 @@
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.registry :as tools-registry]
+            [kmet.agent.tools.registry :as tools-registry]
             [kmet.agent.session.core :as session]
             [kmet.agent.loop.tool-exec :as tool-exec]
             [kmet.agent.loop.state :as state]
@@ -36,8 +37,8 @@
             (fn [_] {:block true :reason "Permission denied"}))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [_ _ _] (reset! executed true)
-                                       {:content "should not run" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] (reset! executed true)
+                                           {:content "should not run" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (false? @executed) "blocked tool must not execute")
     (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]
@@ -61,8 +62,8 @@
                                        (when-let [on-done (:on-done opts)]
                                          (on-done :tool-calls))
                                        :done))
-                  tools/execute-tool (fn [_ _ _] (reset! executed true)
-                                       {:content "should not run" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] (reset! executed true)
+                                           {:content "should not run" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (false? @executed) "blocked tool must not execute")
     (t/is (= 1 @llm-calls) "terminate stops the run — no follow-up LLM call")
@@ -97,8 +98,8 @@
                                              (when-let [on-done (:on-done opts)]
                                                (on-done :stop))))
                                        :done))
-                  tools/execute-tool (fn [_ _ _] (swap! executed inc)
-                                       {:content "ran" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] (swap! executed inc)
+                                           {:content "ran" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= 1 @executed) "non-blocked call in the batch executed")
     (t/is (= 2 @llm-calls) "mixed batch does not terminate — follow-up LLM call happened")
@@ -116,7 +117,7 @@
             (fn [_] (throw (ex-info "hook boom" {}))))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]
       (t/is (true? (:is-error end)))
@@ -134,8 +135,8 @@
                :default-tools ["read" "write" "edit" "run_code"])]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [name _ _] (swap! executed conj name)
-                                       {:content "should not run" :is-error false})]
+                  state/execute-tool-for (fn [_ name _ _] (swap! executed conj name)
+                                           {:content "should not run" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (empty? @executed) "an undeclared call must not execute")
     (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]
@@ -168,8 +169,8 @@
                         (do (when-let [on-text (:on-text opts)] (on-text "ok"))
                             (when-let [on-done (:on-done opts)] (on-done :stop))))
                       :done))
-                  tools/execute-tool (fn [name _ _] (swap! executed conj name)
-                                       {:content "should not run" :is-error false})]
+                  state/execute-tool-for (fn [_ name _ _] (swap! executed conj name)
+                                           {:content "should not run" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= ["read"] @executed)
           "the declared call executed; the undeclared one never did")
@@ -195,8 +196,8 @@
                :default-tools ["bash"])]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [name _ _] (swap! executed conj name)
-                                       {:content "ran" :is-error false})]
+                  state/execute-tool-for (fn [_ name _ _] (swap! executed conj name)
+                                           {:content "ran" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= ["bash"] @executed))
     (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]
@@ -211,7 +212,7 @@
               {:content (str (:content result) " [sanitized]")}))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [_ _ _] {:content "secret-key=abc" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] {:content "secret-key=abc" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]
       (t/is (= "secret-key=abc [sanitized]" (:content (:result end))))
@@ -225,7 +226,7 @@
               {:content (:content result) :is-error true}))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]
       (t/is (true? (:is-error end)) "after hook can mark a result as error"))))
@@ -237,7 +238,7 @@
             (fn [_] (throw (ex-info "hook boom" {}))))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]
       (t/is (true? (:is-error end)))
@@ -250,9 +251,9 @@
             (fn [_] {:args {:command "rewritten"}}))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [_ args _]
-                                       (swap! seen conj args)
-                                       {:content "ok" :is-error false})]
+                  state/execute-tool-for (fn [_ _ args _]
+                                           (swap! seen conj args)
+                                           {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= [{:command "rewritten"}] @seen)
           "the parallel path executes with the rewritten args")))
@@ -287,9 +288,9 @@
                                 (when-let [on-done (:on-done opts)]
                                   (on-done :stop))))
                           :done))
-                      tools/execute-tool (fn [_ args _]
-                                           (reset! seen args)
-                                           {:content "seq" :is-error false})]
+                      state/execute-tool-for (fn [_ _ args _]
+                                               (reset! seen args)
+                                               {:content "seq" :is-error false})]
           @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])})))
       (t/is (= {:x "rewritten"} @seen))
       (finally
@@ -392,8 +393,8 @@
         agent (loop/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-two-tool-calls-then-text (atom 0))
-                  tools/execute-tool
-                  (fn [_ _ _]
+                  state/execute-tool-for
+                  (fn [_ _ _ _]
                     (swap! started-count inc)
                     (swap! active-tools inc)
                     (when (= 2 @started-count)
@@ -442,8 +443,8 @@
                    (atom 0)
                    "{\"command\":\"fast\"}"
                    "{\"command\":\"slow\"}")
-                  tools/execute-tool
-                  (fn [_ args _]
+                  state/execute-tool-for
+                  (fn [_ _ args _]
                     (if (= "fast" (:command args))
                       {:content "fast done" :is-error false}
                       (do (deliver slow-running true)
@@ -481,7 +482,7 @@
               (throw (AssertionError. "after hook boom"))))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= 1 @hook-calls) "the failed after hook runs exactly once")
     (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]
@@ -521,8 +522,8 @@
                               (when-let [on-done (:on-done opts)]
                                 (on-done :stop))))
                         :done))
-                    tools/execute-tool
-                    (fn [_ _ _]
+                    state/execute-tool-for
+                    (fn [_ _ _ _]
                       (let [n (swap! tool-count inc)]
                         (deliver (if (= 1 n) first-started second-started) true)
                         (deref (if (= 1 n) release-first release-second)
@@ -643,8 +644,8 @@
                             (when-let [on-done (:on-done opts)]
                               (on-done :stop))))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _]
+                  state/execute-tool-for
+                  (fn [_ _ _ _]
                     (state/steer! agent "steered")
                     (state/follow-up! agent "followup")
                     {:content "ok" :is-error false})]
@@ -740,3 +741,45 @@
     (t/is (= :thinking-level-select (:type (first @events))))
     (t/is (= :high (:level (first @events))))
     (t/is (= :off (:previous-level (first @events))))))
+
+(t/deftest test-two-agents-hold-two-tool-tables
+  ;; 4c-iii-c's gate, from the loop's side: the table is the agent ctx's
+  ;; `:tools` service, so one name resolves to each agent's own record — and a
+  ;; name only one agent's table holds is unknown to the other, instead of
+  ;; falling back to whatever the process registered.
+  (let [probe (fn [tag]
+                {:name "probe" :label "Probe"
+                 :description "Says where it came from"
+                 :params {}
+                 :execute (fn [_] {:content tag :is-error false})})
+        run (fn [ctx]
+              (let [events (atom [])
+                    agent (loop/make-agent-state :ctx ctx
+                                                 :on-event (fn [e] (swap! events conj e)))]
+                (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                              llm/send-message
+                              (fn [opts]
+                                (future
+                                  (when-let [on-tc (:on-tool-call opts)]
+                                    (on-tc {:id "tc1" :name "probe"
+                                            :arguments "{}" :index 0}))
+                                  (when-let [on-done (:on-done opts)]
+                                    (on-done :tool-calls))
+                                  :done))]
+                  @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
+                (->> @events
+                     (filter #(= :tool-execution-end (:type %)))
+                     first
+                     :result)))
+        a (support/test-ctx)
+        b (support/test-ctx)
+        c (support/test-ctx)]
+    (tools-registry/register-tool! (:tools a) (probe "from-a"))
+    (tools-registry/register-tool! (:tools b) (probe "from-b"))
+    (t/is (= "from-a" (:content (run (:ctx a)))) "A's run reaches A's record")
+    (t/is (= "from-b" (:content (run (:ctx b)))) "B's run reaches B's record")
+    (let [result (run (:ctx c))]
+      (t/is (true? (:is-error result))
+            "a ctx with no probe settles the call as an error")
+      (t/is (= "Tool probe not found" (:content result))
+            "rather than dispatching to another agent's table"))))

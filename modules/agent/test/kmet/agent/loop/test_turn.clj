@@ -46,8 +46,8 @@
                                 (when-let [on-done (:on-done opts)]
                                   (on-done :stop))))
                           :done))
-                      tools/execute-tool
-                      (fn [_ _ _]
+                      state/execute-tool-for
+                      (fn [_ _ _ _]
                         (reset! seen (tool-util/cwd))
                         {:content "ok" :is-error false})]
           @(loop/run-agent-turn agent {:message "run"
@@ -358,10 +358,10 @@
                             (when-let [on-done (:on-done opts)]
                               (on-done :stop))))
                       :done))
-                  tools/execute-tool
+                  state/execute-tool-for
                   ;; P4 contract: opts map {:on-update .. :signal .. :ctx ..}
                   ;; (pi: executeTool passes signal/onUpdate/ctx unconditionally).
-                  (fn [_ _ opts]
+                  (fn [_ _ _ opts]
                     (when-let [on-update (:on-update opts)]
                       (on-update {:content "partial output"}))
                     {:content "ok" :is-error false})]
@@ -457,8 +457,8 @@
                             (when-let [on-done (:on-done opts)]
                               (on-done :stop))))
                       :done))
-                  tools/execute-tool
-                  (fn [name args _]
+                  state/execute-tool-for
+                  (fn [_ name args _]
                     (reset! captured {:name name :args args})
                     {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent

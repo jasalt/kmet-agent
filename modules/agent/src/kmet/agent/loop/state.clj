@@ -32,8 +32,9 @@
             [kmet.agent.retry :as retry]
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
-            [kmet.agent.tools.core :as tools]
-            [kmet.ai.models :as models]))
+            [kmet.agent.tools.registry :as tools]
+            [kmet.ai.models :as models]
+            [kmet.srce.core :as srce]))
 
 (defrecord AgentState [status        ;; :idle :thinking :executing :done :error
                        messages      ;; atom of conversation message vectors
@@ -412,16 +413,55 @@ Be precise and concise in your responses."}}]
     (session/append-entry (:session agent) msg))
   msg)
 
+;; ─── The agent's tool table ──────────────────────────────────────────────────
+;; The table is read from the `:tools` handle the agent's ctx provides, never
+;; from a process default: a child ctx may provide its own, which is what makes
+;; two agents two tables (new-app.md, 4c-iii-c). `kmet.agent.tools.core` — the
+;; arity-less façade — is left to the TUI's display reads.
+
+(defn ctx-tool-table
+  "The tool table a ctx provides: name → Tool record from its `:tools` handle.
+   A ctx that provides none is a programming error, not an empty table — the
+   app root always provides one and a child inherits it, so the only ctxs
+   without one are hand-built (a test's), and those must be given one too
+   rather than silently reading a process default."
+  [ctx]
+  (let [handle (srce/get ctx :tools)]
+    (when-not handle
+      (throw (ex-info "the agent's ctx provides no :tools service"
+                      {:type :kmet/no-tool-service
+                       :ctx-name (srce/attr ctx :name)})))
+    (tools/get-all-tools handle)))
+
+(defn tool-table
+  "The tool table the agent runs on (see `ctx-tool-table`)."
+  [agent]
+  (ctx-tool-table (:ctx agent)))
+
+(defn execute-tool-for
+  "Dispatch one call through HANDLE — the loop's single hand-down to the tool
+   layer, and the seam a test redefs to stub execution without a registry."
+  [handle tool-name args opts]
+  (tools/execute-tool handle tool-name args opts))
+
+(defn tool-executor
+  "The agent's dispatcher in `invoke/execute-tool-call`'s shape — the handle
+   bound once, so a call resolves in the agent's own table."
+  [agent]
+  (let [handle (srce/get (:ctx agent) :tools)]
+    (fn [tool-name args opts]
+      (execute-tool-for handle tool-name args opts))))
+
 (defn active-tools-for
-  "The tool set a selection resolves to, in registry order (see
-   registry/select-tools): ENABLED (the runtime allowlist, nil = all) wins;
-   otherwise DEFAULT-TOOLS (a resolved :default-tools selection, nil = every
-   built-in) excludes the built-ins it leaves out — extension tools stay
-   enabled (pi: defaultTools selects the built-in tools; extension/custom
-   tools remain enabled). The wire :tools and the run_code sandbox surface
-   both resolve through this."
-  [{:keys [enabled default-tools]}]
-  (vals (tools/select-tools (tools/get-all-tools)
+  "The tool set a selection resolves to, in TABLE order (name → Tool, see
+   `tool-table`; `registry/select-tools` does the filtering): ENABLED (the
+   runtime allowlist, nil = all) wins; otherwise DEFAULT-TOOLS (a resolved
+   :default-tools selection, nil = every built-in) excludes the built-ins it
+   leaves out — extension tools stay enabled (pi: defaultTools selects the
+   built-in tools; extension/custom tools remain enabled). The wire :tools and
+   the run_code sandbox surface both resolve through this."
+  [table {:keys [enabled default-tools]}]
+  (vals (tools/select-tools table
                             {:enabled enabled
                              :exclude (when (nil? enabled)
                                         (tools/default-tool-exclusions default-tools))})))
@@ -434,7 +474,8 @@ Be precise and concise in your responses."}}]
    against that one capture, so a tool unloaded mid-request still executes for
    the request that was offered it."
   [agent]
-  (active-tools-for {:enabled @(:enabled-tools agent)
+  (active-tools-for (tool-table agent)
+                    {:enabled @(:enabled-tools agent)
                      :default-tools @(:default-tools agent)}))
 
 (defn set-active-tools!
@@ -464,12 +505,13 @@ Be precise and concise in your responses."}}]
         ;; validation source: the LIVE registry (pi: setActiveToolsByName
         ;; validates against the tool registry) — captures extension tools
         ;; registered after the system prompt was built
+        table (tool-table agent)
         valid (if enabled
                 (filterv #(contains? enabled (:name %))
-                         (vals (tools/get-all-tools)))
+                         (vals table))
                 ;; nil restores the configured default surface — a
                 ;; :default-tools selection stays in force
-                (active-tools-for {:default-tools @(:default-tools agent)}))
+                (active-tools-for table {:default-tools @(:default-tools agent)}))
         ;; pi filters unknown names out of the enabled set itself (only
         ;; registry tools are stored); the prompt is built from VALID, so
         ;; the two can never diverge

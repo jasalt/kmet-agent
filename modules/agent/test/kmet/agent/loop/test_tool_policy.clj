@@ -3,7 +3,8 @@
   an `:ask` goes to the approvals seam, a scripted inner call is gated too, and
   two agents in one process decide independently because the policy is read
   from each agent's own ctx."
-  (:require [clojure.test :refer [deftest is use-fixtures]]
+  (:require [kmet.agent.loop.state :as state]
+            [clojure.test :refer [deftest is use-fixtures]]
             [kmet.ai.llm :as llm]
             [kmet.app.permissions :as permissions]
             [kmet.agent.app-runtime :as app-runtime]
@@ -57,7 +58,7 @@
                                      :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [_ _ _] {:content "ran" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] {:content "ran" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (first (filter #(= :tool-execution-end (:type %)) @events))))
 
@@ -70,9 +71,9 @@
                :on-event (fn [e] (swap! events conj e)))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [_ _ _]
-                                       (reset! executed true)
-                                       {:content "ran" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _]
+                                           (reset! executed true)
+                                           {:content "ran" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (is (false? @executed) "a denied tool call must not reach the executor")
     (let [end (first (filter #(= :tool-execution-end (:type %)) @events))]

@@ -3,6 +3,7 @@
    which ones the loop retries."
   (:require [clojure.test :as t]
             [kmet.ai.llm :as llm]
+            [kmet.agent.loop.state :as state]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.loop :as loop]
             [kmet.agent.retry :as retry]
@@ -84,8 +85,8 @@
                       (when-let [on-done (:on-done opts)]
                         (on-done :tool-calls))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _]
+                  state/execute-tool-for
+                  (fn [_ _ _ _]
                     (deliver started true)
                     (deref release 2000 :timeout)
                     {:content "ok" :is-error false})]

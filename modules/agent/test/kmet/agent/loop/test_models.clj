@@ -273,7 +273,7 @@
                             (when-let [on-done (:on-done opts)]
                               (on-done :stop))))
                       :done))
-                  tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= 2 (count @llm-keys)) "two LLM calls in the run")
     (t/is (apply not= @llm-keys)

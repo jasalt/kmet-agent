@@ -12,7 +12,6 @@
   (:require [kmet.app.permissions :as permissions]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop.message :as message]
-            [kmet.agent.tools.core :as tools]
             [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.run-code :as run-code-tool]
             [kmet.agent.extensions.core :as extensions]))
@@ -161,7 +160,7 @@
                                          result (finish-call
                                                  tc
                                                  (invoke/execute-tool-call
-                                                  tools/execute-tool
+                                                  (state/tool-executor agent)
                                                   {:tool-name (:name tc)
                                                    :args (:arguments tc)
                                                    :tool-call-id tc-id
@@ -211,7 +210,7 @@
             raw (if (contains? prepared :kmet/blocked)
                   (:kmet/blocked prepared)
                   (invoke/execute-tool-call
-                   tools/execute-tool
+                   (state/tool-executor agent)
                    {:tool-name tc-name
                     :args args
                     :tool-call-id tc-id

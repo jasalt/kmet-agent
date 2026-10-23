@@ -11,7 +11,8 @@
             [kmet.agent.loop :as loop]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.registry :as registry]
-            [kmet.agent.config :as cfg]))
+            [kmet.agent.config :as cfg]
+            [kmet.srce.core :as srce]))
 
 (declare make-test-provider)
 
@@ -235,21 +236,49 @@
       (f {:sess sess :events events :agent agent})
       (finally (fs/delete-tree dir)))))
 
+(defn test-ctx
+  "A bare ctx for a loop test's agent: STAGES merged over the builtin defaults
+   (`kmet.agent.app-runtime/default-loop-stages`) and a tool service of its
+   own. Returns {:ctx ctx :tools handle} — the handle is fresh and empty but
+   for the built-ins, so a test can register stand-ins into it.
+
+   Bare means no parent: the loop reads the stage map from the ctx (the
+   defaults when STAGES is nil) and the tool table from its `:tools` service,
+   so a loop test never boots kmet2's composition to get either."
+  ([] (test-ctx nil))
+  ([stages]
+   (let [handle (registry/atom-registry)
+         ;; the stage map rides the ctx meta as an atom, the way
+         ;; app-runtime/child-ctx builds one, so refresh-stages! can swap it
+         ctx (srce/root {:name :test-loop
+                         :loop-stages (atom (merge-with merge
+                                                        app-runtime/default-loop-stages
+                                                        stages))})]
+     (srce/plugin! ctx {:name :tools
+                        :provide #{:tools}
+                        :apply (fn [c _]
+                                 (srce/provide! c :tools handle
+                                                {:in (:parent c)}))})
+     (srce/settle! ctx)
+     {:ctx ctx :tools handle})))
+
 (defn with-registry
-  "Run F with kmet1's process registry pointed at a fresh handle.
+  "Run F with the loop's tool table replaced by a fresh handle.
 
-   The loop resolves tools through `kmet.agent.tools.core`, which asks
-   `kmet.agent.app-runtime/registry` per call, so a redef is enough to give a
-   test its own tool table — and registering a stand-in tool stops booting
-   kmet2's whole composition as a side effect of a loop test.
+   The loop reads the table from the `:tools` service on the agent's ctx
+   (`loop.state/tool-table`), so a test needs a ctx of its own: headlessly
+   pointing `app-runtime/ctx` at a bare ctx whose `:tools` is the fresh handle
+   hands every `make-agent-state` in F that table. `app-runtime/registry` —
+   kmet1's process façade — is pointed at the same handle, so a test may
+   register stand-ins either way and both land where the loop looks.
 
-   That side effect was observable: with the root booted earlier in the run,
-   `kmet.agent.modes.test-rpc`'s terminal-event test (a known timing race
-   between a stubbed run's `:agent-settled` and the `:status` the mode writes
-   on dispose) failed in most full runs; without it, it passes as it always
-   had. A test that needs a tool table should not boot an application, and
-   does not have to."
+   A test that needs a tool table should not boot an application: booting the
+   root here used to be observable, because `kmet.agent.modes.test-rpc`'s
+   terminal-event test races a stubbed run's `:agent-settled` against the
+   `:status` the mode writes on dispose, and an earlier boot made it fail in
+   most full runs."
   [f]
-  (with-redefs [app-runtime/registry (let [handle (registry/atom-registry)]
-                                       (constantly handle))]
-    (f)))
+  (let [{:keys [ctx tools]} (test-ctx)]
+    (with-redefs [app-runtime/registry (constantly tools)
+                  app-runtime/ctx (constantly ctx)]
+      (f))))

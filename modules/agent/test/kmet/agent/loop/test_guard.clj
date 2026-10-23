@@ -100,8 +100,8 @@
                                 (on-text "done"))
                               (when-let [on-done (:on-done opts)] (on-done :stop)))))
                       :done))
-                  tools/execute-tool
-                  (fn [_ args _] (swap! executed conj (:command args))
+                  state/execute-tool-for
+                  (fn [_ _ args _] (swap! executed conj (:command args))
                     {:content "ran" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     ;; turn 2: s2 (2nd identical) runs, s3 (3rd identical) suppressed, w1 runs
@@ -135,8 +135,8 @@
                       (when-let [on-done (:on-done opts)]
                         (on-done :tool-calls))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for
+                  (fn [_ _ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent
                             {:message "run"
                              :on-done (fn [t] (reset! done-text t))
@@ -168,11 +168,11 @@
               {:suppressed tool-calls :survivors [] :state state})
         ;; the ctx carries the guard stage: the spy replaces the handle and
         ;; its config supplies the threshold
-        mine (runtime/child-ctx nil {:loop-guard {:call spy
-                                                  :config {:threshold 7}}})]
+        mine (:ctx (support/test-ctx {:loop-guard {:call spy
+                                                   :config {:threshold 7}}}))]
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
-                  tools/execute-tool
-                  (fn [_ _ _] {:content "ok" :is-error false})
+                  state/execute-tool-for
+                  (fn [_ _ _ _] {:content "ok" :is-error false})
                   llm/send-message
                   (fn [opts]
                     (future
@@ -199,8 +199,8 @@
         spy (fn [state]
               (swap! seen conj state)
               (retry/retry-decision state))
-        mine (runtime/child-ctx nil {:retry-policy {:call spy
-                                                    :config {:max-retries 1}}})
+        mine (:ctx (support/test-ctx {:retry-policy {:call spy
+                                                     :config {:max-retries 1}}}))
         calls (atom 0)
         ;; the run's own budget would end the error immediately; the mount's
         ;; config is the one that counts
@@ -236,12 +236,12 @@
         guard-b (fn [state _threshold tool-calls]
                   (swap! used conj :b)
                   {:suppressed tool-calls :survivors [] :state state})
-        run-ctx (runtime/child-ctx nil {:loop-guard {:call guard-a}})
+        run-ctx (:ctx (support/test-ctx {:loop-guard {:call guard-a}}))
         run! (fn [on-first-call]
                (let [calls (atom 0)]
                  (with-redefs [cfg/get-api-key (fn [_] "test-key")
-                               tools/execute-tool
-                               (fn [_ _ _] {:content "ok" :is-error false})
+                               state/execute-tool-for
+                               (fn [_ _ _ _] {:content "ok" :is-error false})
                                llm/send-message
                                (fn [opts]
                                  (future
@@ -331,8 +331,8 @@
                         (when-let [on-done (:on-done opts)]
                           (on-done :tool-calls))
                         :done)))
-                  tools/execute-tool
-                  (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for
+                  (fn [_ _ _ _] {:content "ok" :is-error false})]
       (state/follow-up! agent "continue please")
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= 2 (count (filter #(= :loop-guard (:type %)) @events)))
@@ -363,8 +363,8 @@
                         (when (and (> n 3) (:on-text opts))
                           ((:on-text opts) "done")))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for
+                  (fn [_ _ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (nil? (some #(= :loop-guard (:type %)) @events))
           "no :loop-guard event when disabled")
@@ -404,8 +404,8 @@
                               (when-let [on-done (:on-done opts)]
                                 (on-done :tool-calls)))))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for
+                  (fn [_ _ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent
                             {:message "run"
                              :on-done (fn [t] (reset! done-text t))
@@ -446,8 +446,8 @@
                               (when-let [on-done (:on-done opts)]
                                 (on-done :tool-calls)))))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for
+                  (fn [_ _ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent
                             {:message "run"
                              :on-done (fn [t] (reset! done-text t))
@@ -480,8 +480,8 @@
                         (when-let [on-done (:on-done opts)]
                           (on-done :tool-calls)))
                       :done))
-                  tools/execute-tool
-                  (fn [tool-name _ _]
+                  state/execute-tool-for
+                  (fn [_ tool-name _ _]
                     (if (= "edit" tool-name)
                       {:content "edit failed" :is-error true}
                       {:content "ok" :is-error false}))]
@@ -511,8 +511,8 @@
                       (when-let [on-done (:on-done opts)]
                         (on-done :tool-calls))
                       :done))
-                  tools/execute-tool
-                  (fn [_ _ _] (swap! executed inc) {:content "ok" :is-error false})]
+                  state/execute-tool-for
+                  (fn [_ _ _ _] (swap! executed inc) {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= 3 @calls) "the guard gave up on the 3rd identical edit")
     (t/is (= 2 @executed) "only the first two edits executed")

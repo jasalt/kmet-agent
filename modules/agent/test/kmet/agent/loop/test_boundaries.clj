@@ -82,7 +82,7 @@
                      :system-prompt-override "custom"}))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text (atom 0))
-                  tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})]
+                  state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
     (t/is (= "model-b" @(:model agent)) "prepare-next-turn swaps the model")
     (t/is (= :anthropic @(:provider agent))
@@ -120,8 +120,8 @@
     (reset! (:finish-turn agent) (fn [_] :end))
     (with-redefs [cfg/get-api-key (fn [_] "test-key")
                   llm/send-message (support/stub-llm-tool-then-text calls)
-                  tools/execute-tool
-                  (fn [_ _ _]
+                  state/execute-tool-for
+                  (fn [_ _ _ _]
                     (state/follow-up! agent "queued follow-up")
                     {:content "ok" :is-error false})]
       @(loop/run-agent-turn agent
@@ -239,7 +239,7 @@
     (try
       (event-bus/on-event :turn-end (fn [e] (swap! boundaries conj e) nil))
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
-                    tools/execute-tool (fn [_ _ _] {:content "ok" :is-error false})
+                    state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})
                     llm/send-message (support/stub-llm-tool-then-text calls)]
         @(loop/run-agent-turn agent {:message "run"
                                      :on-done (fn [_])

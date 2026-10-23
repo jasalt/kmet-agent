@@ -16,8 +16,15 @@
 
    The split is what keeps the tool layer below `app`: the registry needs no
    process state, and the one process handle kmet1 has lives in a rank-4
-   namespace, where needing it is allowed. Landing 4c-iii-c threads the ctx's
-   handle through the loop and these arities go away."
+   namespace, where needing it is allowed.
+
+   The loop no longer comes here: it resolves its table and its dispatcher
+   from the agent ctx's `:tools` service (`kmet.agent.loop.state/tool-table`,
+   `tool-executor`), which is 4c-iii-c's property — two agents, two tables. What
+   keeps these arities alive is the TUI's display read
+   (`kmet.agent.ui.tui.chat-history` resolves a tool's render fn while building
+   a message component, where no engine is in hand); that read moves with the
+   TUI at landing 5, and the arities go with it."
   (:require [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.tools.tool :as tool]
             [kmet.agent.tools.registry :as registry]

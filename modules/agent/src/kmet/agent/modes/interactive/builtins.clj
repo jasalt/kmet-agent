@@ -29,7 +29,7 @@
             [kmet.agent.prompts :as prompts]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.skills :as skills]
-            [kmet.agent.tools.core :as tools]
+            [kmet.agent.tools.registry :as tools]
             [kmet.agent.ui.tui.theme-controller :as theme-ctrl]
             [kmet.agent.ui.tui.chat-history :as chat-history]
             [kmet.agent.ui.tui.footer :as footer]
@@ -141,9 +141,9 @@
          "  Up/Down    — Scroll chat history")))
 
 (defn- tools-text
-  "Text listing all available tools with their parameters."
-  []
-  (let [tool-list (sort-by :name (vals (tools/get-all-tools)))
+  "Text listing the tools this session runs on, with their parameters."
+  [cs]
+  (let [tool-list (sort-by :name (vals (runtime/tool-table (:engine cs))))
         tool-lines
         (mapv (fn [t]
                 (let [required (set (:required (:parameters t)))
@@ -371,7 +371,7 @@
     :description "List available tools with parameters"
     :handler (fn [cs _]
                (chat-history/chat-history-add-message! (:chat-history cs)
-                                                       {:role :assistant :content (tools-text)}))})
+                                                       {:role :assistant :content (tools-text cs)}))})
   (register-builtin-command!
    {:name "model"
     :description "Switch model"
