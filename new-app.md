@@ -976,6 +976,32 @@ Gate, met: `bb test` 4,142 / 24,274 green; `bb lint` 0/0; `bb format-check`
 clean; `bb check` compiles; the new `kmet.app.loop.test-stages` pins the read,
 the inheritance and the refresh.
 
+**Step 2a landed: three leaves the cluster was reaching for.** `kmet.agent.model-resolver`
+(259), `kmet.agent.project-context` (125) and `kmet.agent.git-packages` (546)
+moved into `app` — files and tests, namespaces kept — with **no call-site
+edits at all**, because nothing in them reaches upward and every caller is a
+namespace in `agent` (which already depends on `app`). That is the whole test
+of a lift: if the move needs edits, the edits are the part to think about.
+
+**The other three are not lift candidates, and the measurement says so.**
+`kmet.agent.commands`, `.prompts` and `.skills` each reach
+`(app-runtime/registry)` — the *process* handle — because they are kmet1's
+façade over the app's `:commands`/`:prompts`/`:skills` services. Threading a
+handle through their ~97 call sites would be a lift, but the Engine uses them
+for **policy**: expanding slash commands and prompt templates inside `prompt!`,
+loading resource directories in `bootstrap`, and building the system prompt
+from the process registries. That policy is landing 5's — the modes own input
+expansion and resource loading once they are plugins — so the lift would build
+the coupling once in order to delete it. The Engine's cut is therefore the step
+that overlaps 5, not a prerequisite of the loop's: `:systemPrompt` becomes an
+option (the row's first reader), the loader calls leave `bootstrap`, and
+command expansion moves to the callers — after which the Engine needs only the
+cluster behind it.
+
+Gate, met: `bb test` green (1,243 changed-namespace tests, 5,789 assertions),
+`kmet.test-module-deps` 606 assertions hold the new module boundaries, `bb
+check` compiles.
+
 ### Landing 4c-iii-b settled
 
 **The registry cannot own what an agent is.** `kmet.app.agents` is generic by

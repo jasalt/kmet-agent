@@ -20,6 +20,12 @@
  ;; handed and `kmet.agent.app-runtime` is left holding only the process's own
  ;; entry points. It reaches `kmet.agent.loop-guard`/`.retry`, which live here.
  ;;
+ ;; 7a's second step brought three leaves the loop cluster reaches for, moved
+ ;; with no call-site edits because nothing in them reaches upward:
+ ;; kmet.agent.model-resolver (ai only), .project-context (no deps) and
+ ;; .git-packages (fs/process, which this module already declares). They join
+ ;; the session layer and the tool layer as `kmet.agent.*` namespaces here.
+ ;;
  ;; kmet.agent.system-prompt is the first piece of 4c-iii-c: the prompt builder
  ;; with no registry of its own, so an engine composes its prompt from the ctx
  ;; it holds (kmet.agent.skills/build-system-prompt is kmet1's wrapper).
