@@ -91,10 +91,10 @@
 (deftest dump-config-prints-the-built-in-composition
   (let [{:keys [code out]} (run-main ["--dump-config"])]
     (is (zero? code))
-    (is (str/starts-with? out "profile :tui rows=12 patches=0")
-        (str "the bundle: the bus, the four registries, the prompt builder, the"
-             " session log and its storage, the projections, the agent registry"
-             " and the approval seam"))
+    (is (str/starts-with? out "profile :tui rows=13 patches=0")
+        (str "the bundle: the extension host, the bus, the four registries, the"
+             " prompt builder, the session log and its storage, the projections,"
+             " the agent registry, the loop driver and the approval seam"))
     (is (str/includes? out ":events"))
     (is (str/includes? out ":sessions"))
     (is (str/includes? out "inject={:sessionPersistence nil}")
@@ -112,7 +112,7 @@
     (try
       (let [{:keys [code out]} (run-main ["--dump-config" "--patch" path])]
         (is (zero? code))
-        (is (str/starts-with? out "profile :tui rows=13 patches=1"))
+        (is (str/starts-with? out "profile :tui rows=14 patches=1"))
         (is (str/includes? out ":app/sample"))
         (is (str/includes? out "inject={:tools nil}"))
         (is (str/includes? out "config={:a 1, :b {:c 2}}")
@@ -139,7 +139,7 @@
     (is (zero? code))
     (is (str/starts-with? out "[:app]")
         "the root frame, at the origin of every unit path")
-    (is (str/includes? out "children=12") "the twelve composition rows")
+    (is (str/includes? out "children=13") "the thirteen composition rows")
     (is (str/includes? out ":active"))
     (is (str/includes? out "provides=[commands]"))
     (is (str/ends-with? out "\n"))
@@ -193,10 +193,10 @@
   (let [{:keys [code err]} (run-main ["hello"])]
     (is (= 1 code))
     (is (str/includes? err
-                       (str "booted 12 plugin rows (12 fibers, services: agents"
-                            " approvals commands events projections prompts"
-                            " sessionPersistence sessions skills system-prompt"
-                            " tools)"))
+                       (str "booted 13 plugin rows (13 fibers, services: agents"
+                            " approvals commands events extensions projections"
+                            " prompts sessionPersistence sessions skills"
+                            " system-prompt tools)"))
         "the boot is the point: a bare run proves the profile's rows mount")
     (is (str/includes? err "no runnable mode"))
     (is (str/includes? err "--dump-config"))

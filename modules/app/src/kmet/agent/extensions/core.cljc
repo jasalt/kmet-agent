@@ -212,11 +212,18 @@
       :deregister-owner! (fn [owner])} ; the commands/prompts/skills OWNER
                                         ; registered, for unload
 
+   The three resource registries are optional: an owner that installs no
+   extensions has nothing to register into, and a call that needs one gets
+   `kmet/no-resource-registries` instead of calling nil.
+
    Deferred because the owner binds before its root exists (see `services`).
-   Re-binding is how another owner takes the host over."
+   Re-binding is how another owner takes the host over; the previous binding is
+   returned so a temporary owner can restore it (a disposer or a test), and
+   rebinding to nil unbinds."
   [f]
-  (reset! services* f)
-  nil)
+  (let [previous @services*]
+    (reset! services* f)
+    previous))
 
 (defn- services
   "The bound services; a host used before its owner bound it is an error, not
@@ -231,6 +238,18 @@
   "The registry handle the host's own tags live in."
   []
   (:registry (services)))
+
+(defn resources
+  "The bound registry for KIND (:commands, :prompts, :skills) — an extension's
+   contributed resources. An owner that installs no extensions binds none, and
+   names that here rather than calling nil; public because that refusal is part
+   of the binding contract, and so is assertable."
+  [kind]
+  (or (get (services) kind)
+      (throw (ex-info (str "this owner bound no " (name kind)
+                           " registry, so an extension's " (name kind)
+                           " have nowhere to go")
+                      {:type :kmet/no-resource-registries :kind kind}))))
 
 (def host-tags
   "Every registry tag this file registers under — what unloading an extension
@@ -1043,14 +1062,14 @@
                           (let [cmd (loader-aware-map
                                      ext (assoc cmd :extension-handler
                                                 (:handler cmd)))]
-                            ((get-in (services) [:commands :register!])
+                            ((:register! (resources :commands))
                              cmd (extension-owner name))))
      :unregister-command! (fn [cmd-name]
-                            ((get-in (services) [:commands :unregister!])
+                            ((:unregister! (resources :commands))
                              cmd-name (extension-owner name)))
      ;; sanitized — other extensions must not see :handler/:extension-handler
      :get-commands #(mapv (fn [c] (select-keys c [:name :description]))
-                          ((get-in (services) [:commands :all])))
+                          ((:all (resources :commands))))
      :register-tool! (fn [tool]
                        (tools/register-tool! (handle)
                                              (loader-aware-map ext tool)
@@ -1131,13 +1150,13 @@
                         ;; io/resource and hands the content over, so jarred
                         ;; skills need no filesystem path. Registered under the
                         ;; extension's owner, so unload disposes it.
-                        ((get-in (services) [:skills :register!])
+                        ((:register! (resources :skills))
                          raw-content
                          (assoc opts
                                 :extension name
                                 :owner (extension-owner name))))
      :register-prompt! (fn [prompt & [opts]]
-                         ((get-in (services) [:prompts :register!])
+                         ((:register! (resources :prompts))
                           (assoc (merge opts prompt)
                                  :extension name
                                  :owner (extension-owner name))))
@@ -1437,7 +1456,8 @@
     (let [owner (extension-owner (:name ext))]
       (doseq [tag host-tags]
         (registry/deregister-owner! (handle) tag owner))
-      ((:deregister-owner! (services)) owner))
+      (when-let [sweep (:deregister-owner! (services))]
+        (sweep owner)))
     ;; an `:inject` extension's mount is a fiber: disposing it unwinds the
     ;; effects the kernel holds and drops it from the tree, pending or active
     (when-let [fiber @(:fiber ext)]
@@ -1532,8 +1552,8 @@
    owner and key) and unload complete (disposing the owner takes the
    resources with it)."
   [owner {:keys [skill-paths prompt-paths theme-paths]}]
-  (doseq [p skill-paths] ((get-in (services) [:skills :load-dir!]) p owner))
-  (doseq [p prompt-paths] ((get-in (services) [:prompts :load-dir!]) p owner))
+  (doseq [p skill-paths] ((:load-dir! (resources :skills)) p owner))
+  (doseq [p prompt-paths] ((:load-dir! (resources :prompts)) p owner))
   (doseq [p theme-paths] (load-contributed-themes! owner p)))
 
 (defn discover-resources!
