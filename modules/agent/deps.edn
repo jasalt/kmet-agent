@@ -1,7 +1,8 @@
 ;; The bundled extension libraries (cljfmt, rewrite-clj, parinferish, edamame,
 ;; spec.alpha, tools.reader) and the SCI pin are `app`'s since 4b-ii-b moved the
 ;; host's leaves (the evaluation contexts and the bundled library set) and the
-;; loop's two stages there. They stay on this module's classpath transitively;
+;; loop's two stages there; `kmet/loader` left with the host itself, whose only
+;; src user it was. They stay on this module's classpath transitively;
 ;; kmet.test-module-deps holds each module's declarations to its src's requires.
 {:paths ["src" "test"]
  :deps {kmet/libs {:local/root "../libs"}
@@ -9,7 +10,6 @@
         kmet/hikap {:local/root "../hikap"}
         kmet/tui  {:local/root "../tui"}
         kmet/ai   {:local/root "../ai"}
-        kmet/loader {:local/root "../loader"}
         kmet/srce {:local/root "../srce"}
         kmet/app  {:local/root "../app"}
         babashka/fs {:mvn/version "0.5.34"}

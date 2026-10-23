@@ -940,7 +940,7 @@ pipeline both callers use:
   `run-code/*assistant-message*`) + `active-tools` / `set-active-tools!`;
   `execute-tool-calls-*` (what the bridge must not route through); the
   `--debug` per-tool report at agent end.
-- `modules/agent/src/kmet/agent/extensions/core.cljc` — `shared-context` / `shared-var-map` /
+- `modules/app/src/kmet/agent/extensions/core.cljc` — `shared-context` / `shared-var-map` /
   `build-context-namespaces` (SCI injection pattern), `build-extension-context`.
 - `modules/app/src/kmet/extension.clj` — tool registration (`register-tool!`,
   `create-bash-tool`, `on-tool-call` / `on-tool-result`).

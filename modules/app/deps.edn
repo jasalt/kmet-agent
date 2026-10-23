@@ -22,16 +22,20 @@
  ;; The session layer brings the library edges it uses: libs for fs/edn-store,
  ;; ai for the usage tallies, and the two Maven siblings those need. The tool
  ;; layer added sci (its sandbox mints contexts); every other edge it needed was
- ;; already here.
+ ;; already here. The host added kmet/hikap: its ABI registers tag aliases.
  ;;
- ;; 4b-ii-b brought the extension host's leaves with it: the isolated
- ;; evaluation context (extensions/context.cljc) requires kmet.loader.*, the
+ ;; 4b-ii-b brought the extension host's leaves, and then the host: the
+ ;; isolated
+ ;; evaluation context (extensions/context.cljc) and the host itself
+ ;; (extensions/core.cljc, whose services arrive as a bound value so it needs
+ ;; nothing from `agent`) require kmet.loader.*, the
  ;; bundled library set (extensions/libs.clj) is what makes those six
  ;; coordinates app's, and the loop's two stages (kmet.agent.retry,
  ;; .loop-guard) came with them because they reach nothing above app. The pins
  ;; match the root deps.edn / bb.edn ones; kmet.test-module-deps holds every
  ;; manifest to one coordinate.
  :deps {kmet/libs {:local/root "../libs"}
+        kmet/hikap {:local/root "../hikap"}
         kmet/srce {:local/root "../srce"}
         kmet/ai {:local/root "../ai"}
         kmet/loader {:local/root "../loader"}

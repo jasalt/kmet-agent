@@ -92,11 +92,13 @@ kmet/agent/
 ├── project_context.clj — project context files (AGENTS.md/CLAUDE.md)
 ├── app_runtime.clj     — the app root ctx, and the loop's stage map (on the
 │                         ctx)
-├── extensions/         — the extension runtime (hooks, themes, the UI port
-│                         and the ABI's renderers/flags are registry entries,
-│                         not store entries, since 4b-ii-a)
-│   ├── core.cljc       — hook/renderer/shortcut/flag registries, bind and
-│   │                     install-front-end!, the extension UI ports
+├── extensions/         — what the extension runtime still needs from kmet1:
+│   ├── (core.cljc)     — the extension host; moved to `modules/app` at
+│   │                     4b-ii-b, which is why it takes its registry handle,
+│   │                     mount ctx and resource registries as one bound value
+│   │                     (`bind-services!`) rather than requiring them
+│   ├── services.clj    — kmet1's binding of that value: the app root's handle
+│   │                     and ctx, plus the commands/prompts/skills delegates
 │   ├── bundled.clj     — bundled extension artifacts and discovery
 │   ├── (context.cljc)  — per-extension SCI isolation; moved to `modules/app`
 │   │                     at 4b-ii-b (its tests went with it)
