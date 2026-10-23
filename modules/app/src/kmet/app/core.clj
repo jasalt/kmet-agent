@@ -195,17 +195,18 @@
   (some #(when (:mode %) %) rows))
 
 (defn- run-mode
-  "Boot COMPOSED and drive its mode row: merge the invocation's input into the
-   row's config, wait for the mode to report, and return its exit code. The
-   mode owns what it prints; the entry point owns the process, the boot and the
-   teardown."
-  [composed prompt]
+  "Boot COMPOSED and drive MODE, the row `mode-row` found: merge the
+   invocation's input into that row's config — and only that row's, so a
+   profile that stacks two mode rows cannot start two runs — then wait for the
+   mode to report and return its exit code. The mode owns what it prints; the
+   entry point owns the process, the boot and the teardown."
+  [composed mode prompt]
   (let [result (promise)
         booted (runtime/boot
                 (update composed :rows
                         (fn [rows]
                           (mapv (fn [row]
-                                  (if (:mode row)
+                                  (if (= (:id row) (:id mode))
                                     (update row :config merge
                                             {:prompt prompt
                                              :on-result #(deliver result %)})
@@ -240,11 +241,11 @@
    the boot report."
   [opts args]
   (let [composed (compose-config opts)]
-    (if (mode-row (:rows composed))
+    (if-let [mode (mode-row (:rows composed))]
       (let [prompt (str/join " " args)]
         (if (str/blank? prompt)
           (no-prompt)
-          (run-mode composed prompt)))
+          (run-mode composed mode prompt)))
       (boot-and-report composed args))))
 
 (defn- configuration-error? [e]

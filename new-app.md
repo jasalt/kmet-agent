@@ -1380,6 +1380,16 @@ not with this row; recorded here because print mode is the first kmet2 path that
 walks into it. The mode's own test stubs a resolvable model, the way the
 composition test does.
 
+Two review notes. The mode's listeners are scoped to the **app**, not to its
+agent, because print mode holds exactly one: a second concurrent agent in the
+same process would settle this mode's promise. That is exact today (`--profile
+print` is the only thing in a print process that creates an agent) and it is the
+line landing 6's server moves — per-agent scoping, which the kernel already
+supports by registering at the agent's ctx. And the exit code is tested in both
+directions: `:completed` → 0, and a non-retryable model failure → 1 with the
+failure named on stderr and nothing on stdout, mutation-checked by making
+`exit-code` always answer 0.
+
 Still to come in 5: `--mode` as kmet1's compatibility alias for `--profile`,
 the `edn`/`json` print variant (it prints the wire events, not the text), and
 `--model`/`--provider` overrides — kmet1's flags, none of which this increment

@@ -40,7 +40,7 @@
   [outcome error]
   (if (= :completed outcome)
     0
-    (do (when-not (#{:disposed} outcome)
+    (do (when (not= :disposed outcome)
           (report! (or error
                        (case outcome
                          :aborted "Request aborted"
@@ -60,7 +60,8 @@
         agents (srce/get ctx :agents)
         {:keys [prompt on-result]} config]
     (if-not on-result
-      (fn [] nil)
+      ;; nothing to dispose: the diagnostic mount started nothing
+      nil
       (do
         ;; the guard comes before any listener: a mount that throws leaves its
         ;; fiber failed and nothing disposes what it registered

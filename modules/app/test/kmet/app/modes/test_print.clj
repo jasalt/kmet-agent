@@ -80,3 +80,25 @@
     (is (some #(and (str/includes? % ":mode-print") (str/includes? % ":active"))
               (str/split-lines out))
         "the mode row mounts and activates in a diagnostic boot")))
+
+(deftest a-failed-run-exits-one-and-says-why
+  ;; The mode's verdict is its exit code: a shell script reads it. The model
+  ;; fails with a non-retryable message, the loop surfaces it as :error, and
+  ;; the prompt reports it on stderr rather than printing a half answer.
+  (with-redefs [cfg/load-config (fn [& _] {:session-dir sessions-dir
+                                           :provider :opencode-go
+                                           :model "deepseek-v4-flash"})
+                cfg/get-api-key (fn [_] "test-key")
+                llm/send-message
+                (fn [opts]
+                  (future
+                    (when-let [on-error (:on-error opts)] (on-error "boom"))
+                    :done))]
+    (fs/create-dirs sessions-dir)
+    (try
+      (let [{:keys [code out err]} (run-main ["--profile" "print" "hello"])]
+        (is (= 1 code) "a failed run exits 1")
+        (is (= "" out) "and prints no text")
+        (is (str/includes? err "Error: boom")
+            "the failure reaches stderr, named as the model reported it"))
+      (finally (fs/delete-tree sessions-dir)))))
