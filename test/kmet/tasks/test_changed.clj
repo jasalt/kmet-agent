@@ -10,10 +10,10 @@
     (is (= 'kmet.agent.core (changed/path->ns "modules/agent/src/kmet/agent/core.clj")))
     (is (= 'kmet.agent.ui.tui.model-selector (changed/path->ns "modules/agent/src/kmet/agent/ui/tui/model_selector.clj")))
     (is (= 'kmet.ai.api.openai-completions (changed/path->ns "modules/ai/src/kmet/ai/api/openai_completions.clj")))
-    (is (= 'kmet.libs.scope (changed/path->ns "modules/libs/src/kmet/libs/scope.clj"))))
+    (is (= 'kmet.libs.text (changed/path->ns "modules/libs/src/kmet/libs/text.clj"))))
   (testing "test files map to test namespaces"
     (is (= 'kmet.agent.loop.test-turn (changed/path->ns "modules/agent/test/kmet/agent/loop/test_turn.clj")))
-    (is (= 'kmet.libs.test-scope (changed/path->ns "modules/libs/test/kmet/libs/test_scope.clj"))))
+    (is (= 'kmet.libs.test-text (changed/path->ns "modules/libs/test/kmet/libs/test_text.clj"))))
   (testing "task files map through their own root (tasks/, not src/)"
     (is (= 'kmet.tasks.build (changed/path->ns "tasks/kmet/tasks/build.cljc")))
     (is (= 'kmet.tasks.generate-models

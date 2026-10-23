@@ -2,15 +2,15 @@
   "Guard (kmet2 organization): the new modules never reach kmet1's process
    state.
 
-   kmet2 replaces `kmet.libs.scope`'s one app-root store with a ctx tree
+   kmet2 replaced `kmet.libs.scope`'s one app-root store with a ctx tree
    (`new-app.md`): a session, a UI provider or a mode is a child context, not
-   a registration on the process's single node. Two things would silently
-   undo that — a require of `kmet.agent.app-runtime` (whose `node` resolves
-   *the* root) and a require of the retired store — so both are banned here
-   by name, in the modules that must be kmet1-free: the kernel, the app, and
-   (from landing 5) the front ends. `kmet.agent.version` is a `kmet.agent.*`
-   namespace that lives in the app module (the file moved, the namespace did
-   not), so only the store edges are listed, not the prefix."
+   a registration on the process's single node. The store is deleted (landing
+   4e), so this bans its name and `kmet.agent.app-runtime`'s — whose `ctx`
+   resolves *the* root — as tripwires against reintroducing either, in the
+   modules that must be kmet1-free: the kernel, the app, and (from landing 5)
+   the front ends. `kmet.agent.version` is a `kmet.agent.*` namespace that
+   lives in the app module (the file moved, the namespace did not), so only
+   the process-state edges are listed, not the prefix."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
@@ -23,7 +23,7 @@
   ["modules/srce/src" "modules/app/src" "modules/ui/src" "modules/mode/src"])
 
 (def ^:private store-namespaces
-  "kmet1's process-global store: the node resolver and the node itself."
+  "kmet1's process-global state: the root-ctx resolver and the retired store."
   '#{kmet.agent.app-runtime kmet.agent.runtime kmet.libs.scope})
 
 (defn- sources

@@ -7,7 +7,6 @@
             [kmet.agent.commands.builtins :as builtins]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.registry :as registry]
-            [kmet.libs.scope :as scope]
             [kmet.srce.core :as srce]
             [kmet.test-utils :as tu]))
 
@@ -35,22 +34,21 @@
   (commands/unregister-command!  "gone")
   (t/is (nil? (commands/find-command "gone"))))
 
-(t/deftest other-registries-share-the-store-without-interference
-  ;; An owner can hold several registries (scope.md §2): a non-command key in
-  ;; the same store must not break listing or clearing, and its bare keyword
-  ;; key has no head to match on.
-  (let [node (app-runtime/node)
-        hook (fn [] nil)
-        dereg (scope/register! node [:app :test] :tools/hooks hook)]
+(t/deftest a-registration-lands-in-one-tag-only
+  ;; Each tag routes to the service that owns it (4c-ii), so a command cannot
+  ;; sit in the tool registry the way a `:tools/hooks` key once sat in the
+  ;; shared store: the interference the store guarded against by key shape is
+  ;; unrepresentable now, and clearing one tag leaves the others alone.
+  (let [name "only-command"]
     (try
       (commands/register-command!
-       {:name "only-command" :description "x" :handler (fn [_ _] nil)})
-      (t/is (= ["only-command"] (mapv :name (commands/get-commands))))
+       {:name name :description "x" :handler (fn [_ _] nil)})
+      (t/is (= [name] (mapv :name (commands/get-commands))))
+      (t/is (nil? (registry/entry (app-runtime/registry) :kmet/tool name))
+            "the command is not a tool")
       (commands/clear-commands!)
       (t/is (empty? (commands/get-commands)))
-      (t/is (identical? hook (get (scope/for-key node :tools/hooks) [:app :test]))
-            "the other registry kept its value")
-      (finally (dereg)))))
+      (finally (commands/unregister-command! name)))))
 
 (t/deftest an-earlier-owners-command-owns-the-name
   ;; Owners are searched in first-registration order, so an extension loaded

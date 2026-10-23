@@ -266,7 +266,6 @@
     kmet.libs.process
     kmet.libs.reakt.core
     kmet.libs.reakt.weak
-    kmet.libs.scope
     kmet.libs.sse
     kmet.libs.terminal
     kmet.libs.terminal-image

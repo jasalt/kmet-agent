@@ -16,8 +16,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
-            [kmet.tui.theme :as theme]
-            [kmet.libs.scope :as scope]))
+            [kmet.tui.theme :as theme]))
 
 ;; ─── Session facades through the api ──────────────────────────────────────
 
@@ -144,7 +143,7 @@
         (t/is (identical? renderer (extensions/get-entry-renderer "taken-type")))
         (finally
           (dereg)
-          (scope/dispose-owner! (rt/node) second-owner))))))
+          (rt/deregister-owner! second-owner))))))
 
 (t/deftest test-flag-ownership
   ;; A flag is the registering owner's entry in the registry; the --ext-* value

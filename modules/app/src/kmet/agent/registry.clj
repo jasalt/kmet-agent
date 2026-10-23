@@ -5,17 +5,15 @@
    `[TAG name]` address, held by an owner, and answer the same questions: which
    value is `entry`'s for a name, what does the registry list (`entries`,
    `effective-entries`), what did one owner register (`by-owner`). Those rules
-   live here once, over a **handle** — a value implementing `Registry` — so a
-   backend cannot drift from them:
+   live here once, over a **handle** — a value implementing `Registry`:
 
    - `atom-registry` — an atom of entries. What the app's `:tools` service
      installs: `register!` returns a disposer the caller ties to its fiber
-     (`srce/effect`), so an extension's registrations unwind with it. This is
-     the backend kmet2 uses.
-   - `kmet.agent.registry-store/store-registry` — kmet1's scope-node store,
-     until landing 4 deletes it (`new-app.md`).
+     (`srce/effect`), so an extension's registrations unwind with it. It is the
+     only backend: kmet1's scope-node store (`registry_store`) went with the
+     store at landing 4e.
 
-   The rules are the same for both: an entry is addressed by its own name;
+   The rules: an entry is addressed by its own name;
    owners are searched in display order, so the owner that took a name keeps
    it; `effective-entries` collapses the listing to one entry per name, so
    listing and lookup agree; a whole-registry clear removes by tag across every
@@ -28,7 +26,7 @@
 (defprotocol Registry
   "A tag/name/owner-addressed registration store. The five methods are the
    whole contract; `entry`, `entries` and `effective-entries` below are the
-   shared readings over it, so every backend answers them identically."
+   shared readings over it, so every handle answers them identically."
   (register!
     [registry tag name value owner]
     "Install VALUE under NAME in TAG's registry for OWNER; re-registering the
@@ -46,10 +44,9 @@
     [registry tag]
     "TAG's registrations in display order: `[[name value] …]`, a name held by
      several owners appearing once per owner — use `effective-entries` for the
-     registry a lookup sees. The backend chooses the layout (kmet1's store
-     lists owner-major, kmet2's atom interleaves owners in registration order),
-     but the winning registration must come first for a name: the first
-     occurrence is what `entry` returns.")
+     registry a lookup sees. The handle chooses the layout (`atom-registry`
+     interleaves owners in registration order), but the winning registration
+     must come first for a name: the first occurrence is what `entry` returns.")
   (deregister-owner!
     [registry tag owner]
     "Remove every registration OWNER holds in TAG; other owners' entries in the
@@ -98,10 +95,10 @@
     (entries [_ tag] (entries (handle-for tag) tag))
     (clear! [_ tag] (clear! (handle-for tag) tag))))
 
-;; ─── The atom backend (kmet2) ──────────────────────────────────────────────
+;; ─── The atom backend ───────────────────────────────────────────────────────
 
 (defn atom-registry
-  "A registry handle over an atom: the app's `:tools` service backend.
+  "A registry handle over an atom: the app's `:tools` service registry.
 
    An entry is plain data — `{:tag :name :owner :value}` — and registration
    order is display order, so `entries` lists what was installed in the order

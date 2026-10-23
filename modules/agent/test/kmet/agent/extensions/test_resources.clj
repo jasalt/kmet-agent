@@ -12,9 +12,9 @@
             [kmet.agent.app-runtime :as rt]
             [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
+            [kmet.agent.registry :as registry]
             [kmet.agent.skills :as skills]
-            [kmet.agent.tools.core :as tools]
-            [kmet.libs.scope :as scope]))
+            [kmet.agent.tools.core :as tools]))
 
 ;; ─── Bundled resource descriptors ───────────────────
 
@@ -481,7 +481,7 @@
         (t/is (nil? (commands/find-command "rb-cmd")) "the command was rolled back")
         (t/is (nil? (tools/get-tool "rb-tool")) "the tool was rolled back")
         (t/is (nil? (skills/get-skill "rb-skill")) "the skill was rolled back")
-        (t/is (empty? (scope/for-key (rt/node) [:kmet/command "rb-cmd"]))
+        (t/is (empty? (registry/by-owner (rt/registry) :kmet/command "rb-cmd"))
               "and the owner holds nothing"))
       (finally
         (extensions/clear-extensions!)

@@ -88,8 +88,8 @@ kmet/agent/
 │                         core.clj, i.e. the bootstrap)
 ├── config.clj          — configuration loading (settings.edn, env vars)
 ├── project_context.clj — project context files (AGENTS.md/CLAUDE.md)
-├── app_runtime.clj     — the app root store node and ctx, and the loop's
-│                         stage map (on the ctx)
+├── app_runtime.clj     — the app root ctx, and the loop's stage map (on the
+│                         ctx)
 ├── extensions/         — the extension runtime (hooks, themes, the UI port
 │                         and the ABI's renderers/flags are registry entries,
 │                         not store entries, since 4b-ii-a)
@@ -98,9 +98,9 @@ kmet/agent/
 │   ├── context.cljc    — per-extension SCI isolation
 │   ├── libs.clj        — the fixed bundled-extension library set
 │   └── bundled.clj     — bundled extension artifacts and discovery
-├── commands.clj        — slash-command registry (app-root store,
-│   │                     [:app :commands] owner; ctx-shaped handlers:
-│   │                     {:runtime :ui :frontend}, front-end tags)
+├── commands.clj        — slash-command registry (the `:commands` service,
+│                         [:app :commands] owner; ctx-shaped handlers:
+│                         {:runtime :ui :frontend}, front-end tags)
 │   └── commands/builtins.clj — engine-portable builtin commands
 ├── keybindings.clj     — the app keymap
 ├── prompts.clj         — prompt-template resources
@@ -135,7 +135,8 @@ kmet/agent/
 │   │                     (grep/find/ls and the Windows-only powershell ship
 │   │                     as opt-in extensions)
 │   ├── core.clj / tool.clj / registry.clj — the tool API, Tool record and
-│   │                     registry (custom tools live in the app-root store)
+│   │                     registry (custom tools are entries in the `:tools`
+│   │                     service, owner-addressed)
 │   ├── invoke.clj      — the shared invocation pipeline (loop + run_code)
 │   ├── bash_executor.clj — the bash tool's process engine (streaming,
 │   │                     temp-file spill, shell resolution)
@@ -185,12 +186,12 @@ root `AGENTS.md` topic map.
 
 ### Layer boundaries
 
-- `kmet.libs.scope` is the store and node lifetimes (in `modules/libs`, rank
-  0): registrations keyed by owner path, with LIFO, isolated disposal; a node
-  links its parent and children, and disposing one ends its children first. It
-  is stricter than the rest of libs: no `kmet.*` require at all and no
-  third-party library; `kmet.libs.test-scope-self-contained` enforces the
-  require rule. Design: `modules/libs/src/kmet/libs/scope.md`.
+- `kmet.libs.scope` **was** the store and node lifetimes (in `modules/libs`,
+  rank 0): registrations keyed by owner path, with LIFO, isolated disposal. It
+  and its backend `kmet.agent.registry-store` were deleted at landing 4e; the
+  owner-path/LIFO/ordering conventions it established live on in the ctx tree
+  (`srce` effects, `kmet.agent.registry` handles), recorded in
+  `modules/libs/src/kmet/libs/scope.md`.
 - `kmet.loader.*` is an outer module (`modules/loader`); it may use
   third-party deps and `kmet.loader.*`, but no other `kmet.*` namespace.
 - `kmet.libs.*` is generic and self-contained; it may not require non-libs
@@ -257,13 +258,14 @@ remainder handle (tags `:kmet/hook`, `:kmet/theme`, `:kmet/ui-port`,
 `:kmet/entry-renderer`, `:kmet/message-renderer`, `:kmet/flag`), under an owner
 path: `[:app :extensions <name>]` for an extension's own registrations,
 including the skills, prompts and themes a `:resources-discover` contribution
-loads (P5c). Nothing the host registers is a store entry since 4b-ii-a (P2), so
+loads (P5c). Nothing the host registers is a store entry since 4b-ii-a (P2),
+and the store itself is gone since 4e (P2), so
 no home is a process-global atom copied into each engine: unload is one
 `deregister-owner!` per tag. `/units` prints the unit tree instead: one flat
 line per ctx and per mounted fiber, with its state, `inject`, `provides` and
 effect labels — plus the two facts the store's owner walk could never show, a
 pending fiber's `waiting-for` and a failed one's error (`kmet.app.inspect`, 4d).
-The store has no listing any more; it retires at 4e. The runtime-owned surfaces are process caches
+The runtime-owned surfaces are process caches
 now: `bootstrap` installs the live session, its sinks and the headless UI port,
 `dispose!` clears them (`clear-runtime!` + `unbind-extensions!`), and the
 `extensions` atoms stay the read cache for extension code with no node in hand

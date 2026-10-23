@@ -353,10 +353,9 @@
     ;; model resolves) — so --model/--provider and settings.edn can select
     ;; extension-registered providers, and print mode gets extension hooks.
     (let [config (cfg/init!)]
-      ;; The runtime root first: extension loading below registers into the
-      ;; root's owners (scope.md §6), so it has to exist before any
-      ;; init(api) runs.
-      (runtime/node)
+      ;; Extension loading below registers into the root ctx's registries, so
+      ;; the root has to exist before any init(api) runs.
+      (runtime/ctx)
       ;; One unified load per type (pi: resourceLoader — top-level entries,
       ;; auto dirs, then packages in precedence order)
       (packages/load-extensions!)

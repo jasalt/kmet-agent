@@ -4,6 +4,7 @@
    empty states (pi OAuthSelectorComponent), plus the auth-method selector
    (pi ExtensionSelectorComponent) rows and hint. Render-driven: assertions
    read the ANSI-stripped rendered lines, not component internals."
+  (:refer-clojure :exclude [selector])
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [babashka.fs :as fs]

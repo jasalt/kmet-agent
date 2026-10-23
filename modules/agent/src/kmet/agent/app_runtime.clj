@@ -1,19 +1,19 @@
 (ns kmet.agent.app-runtime
-  "The agent runtime: the app's root ctx, and the store node it replaced.
+  "The agent runtime: the app's root ctx.
 
    `ctx` is the root context: kmet1 boots kmet2's composition behind it, so the
    registries, the event bus's scope, the loop's stage map and the session log
    all live on the ctx. The extension host registers there too since 4b-ii-a
-   (its hooks, themes, UI port, renderers and flags are registry entries), so
-   what is left of `node` is kmet1's own store — `registry_store`'s backend —
-   and the store retires at 4e. `/units` renders the ctx tree the root carries
-   (`kmet.app.inspect`), not the store.
+   (its hooks, themes, UI port, renderers and flags are registry entries), and
+   kmet1's own store node is gone since 4e — a registration is a service entry,
+   not a key in a per-process node. `/units` renders the ctx tree the root
+   carries (`kmet.app.inspect`).
 
    The loop's two stages ride the root ctx under `:loop-stages` as plain data:
-   the loop reads its stage map once per attempt (scope.md §4), and a run that
-   needs its own gets a `child-ctx` carrying its overrides (P7).
+   the loop reads its stage map once per attempt, and a run that needs its own
+   gets a `child-ctx` carrying its overrides (P7).
 
-   Registrations are owned (scope.md §2): what `init(api)` installs lands under
+   Registrations are owned: what `init(api)` installs lands under
    `[:app :extensions <name>]` in the app's registries, so unloading an
    extension is one `deregister-owner!` per tag plus the fns it recorded for
    what lives outside any registry (and its fiber, when it declared `:inject`).
@@ -27,17 +27,7 @@
             [kmet.agent.retry :as retry]
             [kmet.app.core :as app-core]
             [kmet.app.runtime :as app-runtime]
-            [kmet.libs.scope :as scope]
             [kmet.srce.core :as srce]))
-
-(defn- with-reported-cleanups
-  "Run F with the store's cleanup reporter bound to
-   `kmet.agent.debug/log-error` (scope.md §3): a failing cleanup is reported
-   and never skips the rest, and the report reaches the agent's error log."
-  [f]
-  (binding [scope/*error-reporter*
-            (fn [t] (debug/log-error "store cleanup failed: " t))]
-    (f)))
 
 (def default-loop-stages
   "The loop's two stages, as the plain map the loop reads: each stage carries
@@ -46,25 +36,6 @@
    subagent's ctx will."
   {:loop-guard {:call loop-guard/loop-guard-filter}
    :retry-policy {:call retry/retry-decision}})
-
-(defonce ^:private app-node
-  ;; No host fields: the stage map moved to the root ctx at 4c-ii-b, the
-  ;; extension host stopped registering here at 4b-ii-a, and `/units` stopped
-  ;; reading it at 4d. What remains is kmet1's store until 4e.
-  (delay (scope/node nil)))
-
-(defn node
-  "The app's root store node — kmet1's remaining scope store, `registry_store`'s
-  backend. Nothing the extension host installs lands here since 4b-ii-a, and
-  nothing lists it since 4d; it retires at 4e."
-  []
-  @app-node)
-
-;; ─── The app root context ──────────────────────────────────────────────────
-;; kmet1 runs on kmet2's composition: the root ctx is the same one `--app new`
-;; boots, mounted once per process and never shut down (process exit is the
-;; disposal). The store node above is what is left of kmet1's own tree and it
-;; retires at 4e.
 
 (defonce ^:private app-root
   ;; The stage map rides the root ctx under `:loop-stages`, so a child ctx
@@ -168,10 +139,8 @@
 (defn dispose-deregisters!
   "Run FNS — the deregister fns an extension recorded for what lives outside
    the app tree — in reverse registration order, each isolated and a failure
-   reported through the same reporter the store uses instead of skipping the
-   rest (scope.md §3). Returns nil."
+   logged instead of skipping the rest. Returns nil."
   [fns]
-  (with-reported-cleanups
-    #(doseq [f (reverse fns)]
-       (try (f) (catch Throwable t (scope/*error-reporter* t)))))
+  (doseq [f (reverse fns)]
+    (try (f) (catch Throwable t (debug/log-error "extension cleanup failed: " t))))
   nil)

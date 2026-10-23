@@ -179,9 +179,9 @@ the value — which is also why a service value must not carry its ctx
 
 **The kernel owns its tree.** `kmet.srce.*` must not require
 `kmet.libs.scope`: the kernel needs a parent/child walk and a per-fiber effect
-list, not a keyed multi-owner store with four views. `kmet.libs.scope` is a
-*cell* dependency — it stays until the last registry moves (§9). A guard test
-enforces the require ban.
+list, not a keyed multi-owner store with four views. The store is deleted as of
+landing 4e, so the ban is a tripwire now, not a live dependency; a guard test
+enforces it.
 
 `extend` and `isolate` copy: a parent is never mutated (beyond the `:children`
 entry), extra keys are merged (the kernel reads `:name` directly and
@@ -319,7 +319,7 @@ provider, and never a half-provided one.
 
 **The pass owns the pass.** §8 says mutations run on the owner thread, but
 kmet1 does not hold that rule today: the TUI input handler and tool threads
-call `scope/register!` while the loop runs, and the store's atom makes each call
+call the registries while the loop runs, and the registry's atom makes each call
 safe per operation. A fixpoint pass is not per-operation safe — two threads
 entering one would remount a fiber twice. So the kernel's single concurrency
 primitive is an optimistic pass flag:
@@ -393,7 +393,8 @@ are the accessor:
   renders, so a vague label is a line that says nothing.
 - **Disposal order is part of the contract.** `dispose!` is: flip the state to
   `:disposed` (so `get` already reads `nil`), record its `:provides` names as a
-  change, unwind the effects LIFO (where the store entries are deleted), then
+  change, unwind the effects LIFO (where a service entry is removed and its
+  dependents are re-evaluated), then
   `settle!` once at the end. Flipping **before** unwinding is what makes the
   closed-store guard real without a sixth state: a registration from inside a
   disposer (an effect, a `provide!`, an `on`) throws `:srce/inactive-effect` instead
@@ -717,84 +718,56 @@ Alternatives, and why not:
 | one global lock around inline passes | deadlocks when a transition waits on another thread's `provide!`; cannot express "this fiber is mid-unload" |
 | one thread per fiber | `apply` may block, so fiber-per-thread makes every plugin author a concurrency author |
 
-## 9. Deleting `kmet.libs.scope`
+## 9. Deleting `kmet.libs.scope` — done at 4e
 
-`kmet.libs.scope` is kmet1's hand-rolled fiber: with no lifecycle object, it
+`kmet.libs.scope` was kmet1's hand-rolled fiber: with no lifecycle object, it
 invented owner paths and a keyed store to stand in for one. The light kernel
-supplies the lifecycle, so the store loses its reason to exist — but only after
-the registries that read it have moved. The kernel therefore **must not depend
-on it** (a guard test), and its remaining 14 source call sites in 2 files go
-with their landings (counted from `(scope/…` call sites, not from the
-requires). Landing 3 already took commands, prompts, skills, tools and the
-registries off it — they read and write through a `kmet.agent.registry`
-handle, and the store is only that handle's kmet1 backend now. Landing 4b-ii-a
-took the extension host off it (hooks, themes, the UI port and the session
-mirrors are registry entries or plain process caches), which also removed
-`app_runtime/dispose-owner!`, the host's owner disposal:
+supplies the lifecycle, so the store lost its reason to exist — but only once
+the registries that read it had moved. The kernel never depended on it (a guard
+test bans the require), and the sites went with their landings, counted from
+`(scope/…` call sites: landing 3 took commands, prompts, skills and tools off it
+(a `kmet.agent.registry` handle, with the store as kmet1's backend), 4b-ii-a
+took the extension host's nine, 4c-ii-b took the event bus's `in-subtree?`, and
+4d took `owner-listing`'s walk.
 
-| File | Sites | Go at |
-|---|---|---|
-| `agent/registry_store.clj` (the handle's store backend) | 9 | 4e — with the store itself; nothing outside the backend names it since 4b-ii-a |
-| `agent/app_runtime.clj` (app node, `*error-reporter*`, `/units` walk) | 5 | 4d took the `owners`/`owner-registrations` pair with the tree rewrite; `*error-reporter*` and the node itself go at 4e with the store |
+Landing **4e** deleted what was left:
 
-4c-ii-b took the fifth file: `kmet.agent.event-bus`'s one `in-subtree?` is
-`srce/inside?` now, so a subscription's scope is a ctx. Its table still needs
-nothing from the store and still dies at landing 7 with the loop re-point. The
-bus file itself has since moved to `modules/app`, keeping its namespace and
-every call site (4b-ii's prep); the paths in this table are where the store
-sites were measured.
+| Deleted | Size |
+|---|---|
+| `kmet.libs.scope` (+ `test-scope`, `test-scope-self-contained`) | 288 lines + 2 test namespaces |
+| `kmet.agent.registry-store` (the handle's store backend) | 63 lines |
+| `app_runtime`'s `node`/`app-node`/`with-reported-cleanups`, and the `*error-reporter*` rebinding | ~25 lines |
+| `cli.clj`'s `(runtime/node)` force (the comment claimed extension loading needed the store; it stopped doing so at 4b-ii-a) | 1 call |
+| `extensions/context.cljc`'s `kmet.libs.scope` allowlist entry | 1 line |
 
-One more place names it without calling it: `extensions/context.cljc`'s
-extension-API allowlist (the shared-namespace set an extension may require).
-It goes with the store at 4e — an extension has no reason to reach kmet1's
-hand-rolled fiber once the registries are services. `test_utils`'
-`clear-app-registries!` used to dispose the theme owner from the store; it
-calls `extensions/unregister-contributed-themes!` now, which clears the
-registry and the TUI layer's store in one place.
+Two things went differently than the plan above recorded, both measured:
 
-Each registry becomes a service with its own table — `:tools` did at landing 3,
-installed by one `provide!` and mutated through an atom handle — and each
-contribution is an `srce/effect` on the contributing fiber, so unloading an
-extension is `dispose!` on its fiber and the entries come back LIFO. 4b-ii-a
-did the host's half with the atom backend instead of a service: the host's
-hook/theme/ui-port/renderer/flag entries ride the façade's remainder handle,
-which is the same registry mechanism `:tools` uses, and unload is one
-`deregister-owner!` per tag (plus the fiber, for an `:inject` mount). Deleting
-the store before that would have rewritten those sites into private cleanup
-lists, which is the copy AGENTS.md forbids.
+- **Cleanup-error reporting did not degrade.** The plan expected the
+  `*error-reporter*` rebinding to leave a gap until the `:logger` service
+  (§10). It does not: `dispose-deregisters!` caught through the reporter only to
+  call `kmet.agent.debug/log-error`, so it now calls that directly — same
+  destination, one indirection fewer.
+- **Four test namespaces, not twelve.** `test_commands`' "other registries share
+  the store" case was about the store's key shape and became unrepresentable
+  once each tag owns a service; it is now "a registration lands in one tag
+  only". `test_skills` (×2), `extensions/test_session` and
+  `extensions/test_resources` read through the registry handle
+  (`registry/by-owner` / `app-runtime/deregister-owner!`), and `test_registry`
+  lost its second backend and its `doseq`. `test_utils` was already off the
+  store.
 
-**Not in one change, and not at the end of 4c:** the host's nine sites went
-with 4b-ii-a, which needed only the root ctx 4c-ii created; the Engine's two
-went with it (its installs are process caches now, and `clear-runtime!` plus
-`unbind-extensions!` restore the headless defaults); and `owner-listing`'s two
-went at 4d, where `/units` stopped rendering the store. The store therefore
-retires at **4e** (`new-app.md` § Landings), and its `*error-reporter*` with it — the
-`app_runtime` rebinding has no replacement short of the `:logger` service, which
-is deferred (§10), so cleanup-error reporting degrades to the reporter's default
-in the meantime. When the last site is gone, delete
-`modules/libs/src/kmet/libs/{scope.clj,scope.md}`,
-`modules/libs/test/kmet/libs/test_scope{,_self_contained}.clj`, the
-`app_runtime.clj` `*error-reporter*` rebinding (cleanup errors go to the
-`:logger` service instead — boot provides it before the first plugin, and §7's
-silence applies after a logger teardown), the `scope` rows in
-`modules/agent/src/kmet/README.md` (the `kmet.libs.scope` bullet under "Layer
-boundaries" and the store paragraph under "Architecture and portability"),
-`extension.md`'s two `[:app :extensions <name>]` sentences (the extension host
-and `resources_discover`), the `theme.clj` cross-reference docstring, the
-`test_changed.clj` path→ns fixture, `test/kmet/test_utils.clj`'s store usage,
-and the twelve test namespaces whose fixtures build store nodes
-(`modules/agent/test/kmet/agent/{test_{commands,prompts,runtime,session_runtime,skills,tools,ui_port,registry},extensions/test_{libs,lifecycle,resources,session}}.clj`)
-— they are re-pointed at the new factories in the same change, not after it.
-Gate: `bb test` green, `kmet --app old` still loads, and no namespace outside
-`kmet.agent.*` ever required it (true today — `kmet.libs.*` and `kmet.tui.*`
-have no consumer; `theme.clj` names it only in a docstring).
+What the app loses with `ordered-registrations` is per-tag display order written
+in one place: each registry now owns its own (the atom handle's registration
+order), and `deregister-owner!` walks tags instead of matching key heads. The
+value-guarded stale deregister is the handle's entry-identity disposer. `/units`
+was not lost: 4d re-rendered it from the ctx tree ([`new-app.md`](../../../../../new-app.md),
+"Inspection"). The doc keeps its name — `modules/libs/src/kmet/libs/scope.md` —
+because kmet1's remaining modules cite its sections for the conventions that
+survived; it now says so in its first paragraph.
 
-What the app loses is `ordered-registrations` (each registry owns its load
-order) and the stale-deregister caveat (a fiber's `:active` check replaces the
-value guard). `/units` was not lost: 4d re-rendered it from the ctx tree — one
-flat line per unit, plus the two facts the store could never show, a fiber's
-`state` and what it is `waiting-for` — by `kmet.app.inspect`, so no listing code
-lives in the kernel ([`new-app.md`](../../../../../new-app.md), "Inspection").
+Gate, met: no `(scope/` under `kmet.agent.*`, no `kmet.libs.scope` or
+`kmet.agent.registry-store` require anywhere, `bb test` green, and `kmet --app
+old` loads with no store at all.
 
 ## 10. Deferred
 

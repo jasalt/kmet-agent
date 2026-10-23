@@ -7,7 +7,6 @@
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.registry :as registry]
-            [kmet.libs.scope :as scope]
             [kmet.srce.core :as srce]
             [kmet.test-utils :as tu]))
 
@@ -331,7 +330,7 @@
                                              {:location "e:dup/SKILL.md" :extension "e"
                                               :owner [:app :extensions "e"]}))
         (t/is (= "File version." (:description (skills/get-skill "dup"))))
-        (t/is (not (contains? (scope/for-key (app-runtime/node) [:kmet/skill "dup"])
+        (t/is (not (contains? (registry/by-owner (app-runtime/registry) :kmet/skill "dup")
                               [:app :extensions "e"]))
               "the colliding extension registration was refused, not shadowed")
         (finally (fs/delete-tree tmp-dir)
@@ -364,8 +363,7 @@
             "the loser's no-op left the winner in place")
       (dereg-winner)
       (t/is (nil? (skills/get-skill "dereg-winner")) "the winner's fn removes it")
-      (t/is (empty? (scope/for-key (app-runtime/node)
-                                   [:kmet/skill "dereg-winner"]))))
+      (t/is (empty? (registry/by-owner (app-runtime/registry) :kmet/skill "dereg-winner"))))
     (finally (skills/clear-skills!))))
 
 (t/deftest test-extension-skill-readable-via-read-tool

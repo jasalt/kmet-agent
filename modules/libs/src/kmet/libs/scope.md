@@ -1,136 +1,103 @@
-# kmet.libs.scope — the store and its node
+# kmet.libs.scope — retired; the store's conventions
 
-`kmet.libs.scope` is the store: a per-node registry of registrations with
-owner-scoped, LIFO disposal, and the node's parent/child lifetime. It lives in
-`kmet.libs` (rank 0) but is stricter than the rest of the library: no `kmet.*`
-require at all and no third-party library; `kmet.libs.test-scope-self-contained`
-enforces the first. The composition layer the old cells module carried —
-units, entries, resolution backends — was retired; the store and the node are
-the surviving contract.
+`kmet.libs.scope` was the store: a per-node registry of registrations with
+owner-scoped, LIFO disposal, and the node's parent/child lifetime. Landing 4e
+deleted it, its backend (`kmet.agent.registry-store`) and its tests; the app
+runs on the ctx tree instead (`modules/srce/src/kmet/srce/srce.md`,
+`new-app.md`).
 
-## 1. The store
+This file stays because a few dozen docstrings and comments in kmet1's remaining
+modules cite its sections for the **conventions** that outlived the code. Each
+section below states the rule that survived and what implements it now; what
+died with the module is marked as such.
 
-A node is a map:
+## 1. The store — gone, but its two guarantees are the registry's
 
-```clojure
-{:store    (atom {:by-key {} :by-owner {} :teardowns {}
-                  :owner-order [] :disposing nil})
- :parent   parent-node-or-nil
- :children (atom [child …])}
-```
-
-plus whatever a host hangs on it (the app's node carries `:loop-stages`, an
-atom holding the loop's stage map). `register!` is the only writer of a
-registration; the store is an atom so writes are imperative while the node
-stays the value callers pass around.
-
-A registration is one `(owner, key) → value`. Re-registering replaces it and
-moves it to the end of the owner's registrations. `nil` is not a value
-(`::nil-registration`). `register!` returns a deregister fn collected onto the
-owner; the caller need not keep it — disposing the owner is the cleanup.
-
-A key holds one value per owner. A registry that addresses its entries by name
-keys them by that name (`[:kmet/command "deploy"]`); a registry without names
-gives each registration its own key (`[:kmet/hook :turn-end 0]`) rather than
-sharing one key and rewriting a collection.
+The store held one registration per `(owner, key)`; re-registering replaced it,
+and `deregister!` was value-guarded, so a stale call removed nothing. That is
+the `Registry` contract (`modules/app/src/kmet/agent/registry.clj`): an entry is
+addressed by tag and name, `register!` returns a disposer that removes exactly
+the entry it installed, and re-registering the same `(tag, name, owner)`
+replaces. The atom in the middle is an implementation detail; the contract is
+the protocol.
 
 ## 2. Owner paths and keys
 
-Keys are the host's vocabulary; owners are paths (`[:app :commands]`,
-`[:app :extensions "name"]`, `[:app :session]`). Ownership is the address:
-nothing else has to exist for a registration to be addressable, and an owner
-is disposed as a whole — everything it registered, in LIFO order.
+Owner paths are still the address: `[:app :extensions "name"]`, `[:app :tools]`,
+`[:app :session]`. Ownership is what makes unload one call, and an owner holds
+whatever several tags it registered under.
 
-- `register! node owner k v` → deregister fn
-- `deregister! node owner k v` — value-guarded, so a stale call is a no-op
-- `deregister-key! node k` / `(deregister-key! node k owner)` — remove by key
-- `add-teardown! node owner f` — cleanup for what lives outside the store
-- `owner-keys`, `owner-registrations`, `ordered-registrations`, `owners`,
-  `registrations`, `for-key` — reads
-
-`owners` is first-registration order; `owner-registrations` is that owner's
-registration order; `ordered-registrations` is `[key owner value]` across
-owners in that order. A deregister fn's value guard has one caveat: two
-registrations of an *equal* value are indistinguishable, so an earlier one's
-fn can remove the newer one.
+Keys are not. A store key (`[:kmet/command "deploy"]`, `[:kmet/hook :turn-end
+0]`) was the store's vocabulary for "which registry, which entry"; a registry
+now owns its tag and its names, and `deregister-owner!` walks tags instead of
+matching key heads.
 
 ## 3. Disposal
 
-`dispose-owner! node owner` runs the owner's registrations in reverse
-registration order, then its teardowns in reverse order. The owner is
-**closed** for the pass: `register!`/`add-teardown!` under it — or under any
-owner during a store-wide pass — throws `::closed-store`; when a cleanup
-trips it, the cleanup runner reports it like any other failure. A throwing
-cleanup is reported through `*error-reporter*` and never skips the rest. The
-refusal is scoped to the pass; the store accepts the next registration
-afterwards.
+The rules survived with the code: an owner's registrations unwind in reverse
+registration order, a throwing cleanup is reported and never skips the rest, and
+disposal never waits — quiescence is the caller's decision, at the
+`:agent-settled` boundary.
 
-`dispose-store! node` disposes every owner in reverse owner order with the
-whole store closed, then resets it. `dispose-node! node` ends children first
-(reverse creation order), unlinks the node from its parent's `:children`, then
-runs `dispose-store!`. Both are idempotent.
+What implements them is the kernel's effects (`srce/fiber`: a registration's
+disposer tied with `srce/effect` unwinds with its fiber, `dispose!` in reverse)
+and `kmet.agent.app-runtime/dispose-deregisters!` for what an extension recorded
+outside any registry. The `*error-reporter*` binding is gone with the store: the
+failure goes to `kmet.agent.debug/log-error` directly, and there is no
+"store closed for the pass" refusal — a fiber's disposal is its own boundary.
 
-The store has no clock: disposal never waits. Quiescence is the caller's
-decision — the agent disposes at the `:agent-settled` boundary.
+## 4. Reading order
 
-The default `*error-reporter*` prints to stderr (the namespace must not
-require `kmet.*`); `kmet.agent.app-runtime` rebinds it to
-`kmet.agent.debug/log-error`.
+Both halves survive, unchanged in intent:
 
-## 4. Reading the store
+- **Display order is first-registration order.** Owners are searched in that
+  order, so the owner that took a name keeps it; `entries` lists winners first
+  and `effective-entries` collapses to one entry per name, so listing and lookup
+  agree.
+- **A read is one capture.** The loop reads its stage map once per attempt
+  (`:loop-stages` on the ctx chain), so a mid-run change reaches the next
+  attempt, never the one in flight. The request's tool list is captured the same
+  way: the wire list, the declared set and the dispatch resolve against one
+  snapshot, so a tool unloaded mid-request still runs for the request that was
+  offered it, and a tool added mid-request is not dispatched.
 
-Reads are one store snapshot: a registration made while a read runs cannot
-split the answer. `ordered-registrations` is the order a host registry lists
-in — owners by first registration, each owner's by its own. The host reads
-its loop stages **once per attempt** from the node's `:loop-stages`, not per
-tool call, so a mid-run change reaches the next attempt, never the one in
-flight.
+## 5. Nodes — gone; the ctx tree took their place
 
-The same discipline covers the request's tool list: the wire list, the
-declared set and the dispatch all resolve against the one capture made when
-the request was built, so a tool unloaded mid-request still runs for the
-request that was offered it — and a tool added mid-request is not dispatched.
-
-## 5. Nodes
-
-`node` builds a node; a non-nil parent gets it in `:children` and sets
-`:parent`. `EXTRA` carries host fields; the node's `:store`, `:parent` and
-`:children` always win. `in-subtree?` walks parents; a nil root is the
-process-wide scope, so every node (nil included) is in it. A node is a value;
-the store and the children list are atoms.
+A node was a value with a store atom, a `:parent` and `:children`, and host
+fields hung on it. A **ctx** is that and the service namespace too: `srce/root`,
+`srce/extend` (visible reads, inherited `:fiber`), `srce/isolate` (a private
+realm), `srce/mount`, and `srce/detach!` for the lifetime a plain child had no
+way to end. A nil root was the process-wide scope; a ctx has no such shortcut —
+`srce/inside?` answers subtree membership for an event scope, and the nearest
+value wins on the chain.
 
 ## 6. The host's view
 
-The app root is created by `kmet.agent.app-runtime/node` before extensions load;
-kmet1's front ends, engines and `/units` read it. Since 4b-ii-a the extension
-host **no longer registers into it**: an extension's commands, tools, skills,
-prompts, hooks, renderers, flags, themes and the UI port are entries in the
-app's registries under `[:app :extensions <name>]` (or `[:app :themes]`,
-`[:app :ui]`), so unloading one is one `deregister-owner!` per tag plus the fns
-the extension recorded for what lives outside any registry (aliases,
-shortcuts, model providers, event subscriptions), and an `:inject`
-extension's mount is a fiber whose disposal is the kernel's.
+The app root is `kmet.agent.app-runtime/ctx`, created (composed) before
+extensions load. The extension host has been off the store since 4b-ii-a: an
+extension's commands, tools, skills, prompts, hooks, renderers, flags, themes and
+the UI port are entries in the app's registries under `[:app :extensions
+<name>]` (or `[:app :themes]`, `[:app :ui]`), so unloading one is one
+`deregister-owner!` per tag plus the fns it recorded for what lives outside any
+registry (aliases, shortcuts, model providers, event subscriptions), and an
+`:inject` extension's mount is a fiber whose disposal is the kernel's.
 
-`/units` used to print one flat `<owner> keys=[…]` line per owner that holds
-registrations, by walking the app root node; 4d replaced that listing with the
-ctx tree renderer (`kmet.app.inspect`), so the store has no listing now — what
-is left of it is `registry_store`'s backend, the node the reporter binding hangs
-off, and the tests until 4e.
+`/units` used to walk the root node; it renders the ctx tree now
+(`kmet.app.inspect`), and `--dump-state` does the same for a composition it
+boots.
 
-The loop's stages are plain data on the app root **ctx**, under `:loop-stages`:
-`{:loop-guard {:call …} :retry-policy {:call …}}`, with an optional `:config`
-per stage. The loop reads the map once per attempt; `/reload` re-seats it with
-`refresh-stages!`; a child ctx (`runtime/child-ctx`) carries its own map and is
-the per-run isolation boundary for subagents. The event bus is host-owned state
-of its own, not a store registration; a subscription may carry a **ctx** scope
-and then hears events from that ctx's subtree (`srce/inside?`).
+The loop's stages are plain data on the root ctx under `:loop-stages`:
+`{:loop-guard {:call …} :retry-policy {:call …}}`, with an optional `:config` per
+stage. `/reload` re-seats it with `refresh-stages!`; a child ctx
+(`app-runtime/child-ctx`) carries its own map and is the per-run isolation
+boundary for subagents. The event bus is host-owned state of its own, never a
+registration; a subscription may carry a **ctx** scope and then hears events
+from that ctx's subtree (`srce/inside?`).
 
-## 7. Namespace rules
+## 7. Namespace rules — gone with the module
 
-- Rank 0: no `kmet.*` require at all, no third-party library.
-  `kmet.libs.test-scope-self-contained` enforces the require rule.
-- The store is an atom, the node a value: callers hold nodes, writes go
-  through the functions.
-- Failures are reported through `*error-reporter*`, never swallowed, and a
-  failing cleanup never skips the rest.
-- No clocks, timers or threads in the store; disposal never waits.
+The store was rank-0 with no `kmet.*` require and no third-party library,
+enforced by `kmet.libs.test-scope-self-contained`; both the require and its
+guard died with the file. The kernel's equivalent rules — rank-0
+self-containment and no `kmet.agent.*` edge — are `kmet.srce.test-guards` and
+`kmet.test-module-deps`.

@@ -38,7 +38,7 @@ one thing every other part is wired through. The name also stays clear of
 | 13 | Where the loop lives | **`:agents` registry + `:agentLoop` driver** (dsh's split) | `:agents` is the live registry; the driver provides `:agentLoop`; a preset swaps the loop without touching the registry |
 | 14 | Order of reuse | **bus → registry → tools → resources → session → loop → modes** | Each step produces what the next consumes; the first two landings leave kmet1 untouched |
 | 15 | Shipping and the entry point | **One artifact, two apps; `--app new` selects kmet2** | `dist` needs no parameterization; the flag is the migration lever, and kmet1 stays the default until it is deleted |
-| 16 | Kernel scope | **Light Cordis core** — ctx tree, services + inject + refresh, fiber, effects, events, plugin registry | Only the concepts this file needs; the deferred list and the parity appendix are in [`srce.md`](modules/srce/src/kmet/srce/srce.md), and `kmet.libs.scope` is deleted at 4e, once the last `(scope/…)` site is gone |
+| 16 | Kernel scope | **Light Cordis core** — ctx tree, services + inject + refresh, fiber, effects, events, plugin registry | Only the concepts this file needs; the deferred list and the parity appendix are in [`srce.md`](modules/srce/src/kmet/srce/srce.md), and `kmet.libs.scope`, the store this file's tree replaced, was deleted at 4e |
 | 17 | Kernel concurrency | **One owner thread + an optimistic pass flag** | `srce/settle!` at the boundary applies whatever crossed threads; a foreign-thread `provide!` is late, never corrupting ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §3) |
 
 "Remote" in phase 1 means **transport and concurrency, not tenancy**: one
@@ -845,7 +845,7 @@ Each is independently shippable and gated.
 | 4b | **The extension host**, in two halves. **4b-i landed** (`d01a0f44`) — `kmet.extension` (461 lines, zero requires) moved into `app` with its contract doc, and the **key-set contract test** landed: every api path an ABI wrapper reads (`(:notify (ui api))` reads `[:ui :notify]`) is asserted against the api the host actually builds for a loaded extension, 62 of them, and the test fails when one is renamed away. **4b-ii** splits by axis (§ "Landing 4b-ii: what the require graph says"): **4b-ii-a landed** (§ "Landing 4b-ii-a settled") — with the files still in `agent`: `extension.edn` gained the optional `:inject` and an extension declaring it mounts as the plugin `{:name :inject :apply}`, pending until the ctx provides what it waits for; unload disposes the fiber after `shutdown`. The host stopped being store-shaped: hooks, themes, the UI port and the renderers/flags are registry entries, the session/sink mirrors are the process caches they always were, and `install-*`/`discover-resources!` lost their node parameter. **4b-ii-b** is the move of the host files into `app` keeping their namespaces, after the tool layer and `config` lift. The four leaf lifts landed (`debug`, `event-bus`, `config-schema`, `tools/util`) | 4b-i: the key-set test is green, its own violation check fails by design, and kmet1's extension surface is unchanged (376 assertions across the extension suites). 4b-ii: an extension declaring `:inject` goes pending then active (test), nothing in the host reads the store node (the host's nine `(scope/` sites are gone), and the loader whitelist loses its `kmet.libs.scope` entry at 4b-ii-b |
 | 4c | **The root ctx, the session layer, then `:agents`** — six steps that gate separately, in this order. **4c-i landed** (`aa72deef`, `88513298`) — the session layer moved into `app`: nine files, namespaces kept, nothing re-hosted; the `kmet.agent.debug` require behind the schema warnings became a diagnostics flag the host's `--debug` sets; `:sessions` + `:sessionPersistence` joined `:bundle/minimal`, so a bare `kmet --app new` boots four rows. `:result-tokens` stamping stays in `store.clj` — see the 4c-i notes. **4c-ii landed in two halves.** **4c-ii-a** (`f1a446af`, `e38c5e05`) — kmet1 boots the app root ctx and its registrations live in the services: `app-runtime/registry` is one façade handle routing each tag to its service, the writers *and* readers moved together, the `node` parameter left their public fns (~200 call sites), and unload is one `deregister-owner!` per tag. **4c-ii-b landed** — the Engine, the modes and the bus take a ctx: `AgentState`'s `:node` is `:ctx` (the app root by default), `agent-node` is `agent-ctx`, `event_bus/visible` is `srce/inside?` over ctx scopes, and `child-node` is `child-ctx` — the loop's stages ride the root ctx's `:loop-stages` atom (boot's `:ctx-meta`), so `loop-stages`/`refresh-stages!` walk the chain and a child ctx carries its own. The store sites that stayed then (`discover-resources!` ×3, the `install-*`/`dispose-owner!` set, `/units`' walk) were on the app root node; 4b-ii-a has since taken the host's share of them (§ "Landing 4b-ii-a settled") and the listing is 4d's. The mutable `defonce` cells split the same way: the host's are its process bindings (`extension-binding`, the three sinks, the extension registry), which stay until the host itself is a plugin (4b-ii-b); three are the `:shell`/`:fs`/`:sandbox` seams the catalog names (landing 6); and `event_bus`'s table stays until the loop re-points (7). `registry_store.clj` and `kmet.libs.scope` do **not** die here: the host held nine `scope/…` sites (hooks, themes, the UI port) and the Engine two — both gone at 4b-ii-a — the app node has five, and 4d takes the listing's two, so the store retires at **4e**. **4c-iii is three steps**, split on the dependency the row's gate needs. **4c-iii-a landed** — `:permissions`/`:approvals` (the policy pair) and the loop's pre-tool gate, no files moved. **4c-iii-b**: `:agents` (the registry, the factory the loop driver registers at 7) + `:projections` (the inbox as derived state over the log — a durability change for queued messages, so it needs its own gate). **4c-iii-c**: `:systemPrompt` + per-agent tool tables, which is the row's own gate: two agents holding different tool tables needs `select-tools`/`active-tools` to read a ctx-sourced registry — the tool-registry lift that is also 4b-ii-b's prerequisite | i: every session test green from `modules/app`, `kmet --app new` boots a session over EDNL files. ii: the Engine and the modes resolve a ctx, a session's tree is a child ctx, and the bus scopes by ancestry. iii: two agents in one process hold different tool tables, and an extension declaring `:inject {:sessions …}` goes pending then active — **iii-a closes the policy half**: two agents decide differently because each reads its own ctx's policy; the tool-table half is iii-c |
 | 4d | **landed** — **Inspection from the tree**: `kmet.app.inspect/units` renders a ctx's subtree, `--dump-state` boots the composition and renders the root's, `/units` re-points at the invocation ctx's subtree, and both halves of the old listing (the store's owner walk and the per-registry `keys=[…]` lines) are deleted. One kernel addition came with it: `srce/detach!`, the lifetime a plain child ctx (`extend`/`isolate`) had no way to end — the tree listed a line per ctx ever extended, so `test_tool_policy` released its agent ctxs and 4c-iii-b gets the release an agent ctx needs | `--dump-state` and `/units` show a `:pending` fiber with its `waiting-for` and a `:failed` one with its error, and a disposed or detached ctx leaves no line; `kmet.app.test-inspect` (10 tests) plus two rewritten `/units` tests replace the five listing tests |
-| 4e | **Retire the store** — delete `kmet.libs.scope` (with its own tests), `kmet.agent.registry-store` and the landing-3 store backend test, and the `app_runtime/…` disposal/error plumbing that goes with them (`node`, `dispose-deregisters!`'s reporter rebinding, the `cli.clj` force). Nothing may still read it: 4b-ii-a took the host's nine sites, the Engine's two, and 4d the `owner-listing` walk. The docs that describe it go in the same change (`modules/agent/src/kmet/README.md`'s two store rows, `extension.md`'s two owner-path sentences, `srce.md` §9, the loader whitelist entry in `extensions/context.cljc`) | `grep` finds no `(scope/` under `kmet.agent.*`, no `kmet.libs.scope` require outside the deleted files, and no `registry-store` require; the full suite is green and kmet1 boots with no store at all |
+| 4e | **landed** — **Retire the store**: `kmet.libs.scope` (288 lines, with its two test namespaces), `kmet.agent.registry-store`, `app_runtime`'s `node`/`app-node`/`*error-reporter*` plumbing, the `cli.clj` force that only existed for it, and the loader whitelist entry are gone. Nothing still read it: 4b-ii-a took the host's nine sites, the Engine's two, 4d the `owner-listing` walk, and `registry_store` was its own last reader. `scope.md` survives as the record of the conventions that outlived the code, because forty citations point at its sections | `grep` finds no `(scope/` under `kmet.agent.*`, no `kmet.libs.scope` or `registry-store` require; `bb test` green; `kmet --app old` loads with no store in the process. 613 lines deleted, no source added |
 | 5 | `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print/rpc/tui parity via `scripts/capture/`; tk provider green on bb and Jolt |
 | 6 | `:agents` registry (create/resume/list) + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
 | 7 | loop re-hosted as a driver plugin; profiles as row+patch layers; presets = bundles | pi-alignment green; a tool swaps mid-session at the turn boundary (`:agent-settled`); a profile stacking a preset bundle boots |
@@ -861,15 +861,16 @@ the host move was mechanical, and it is mechanical for `kmet.extension` only.
 four of the rest into services.
 
 The practical order was **4a → 4c-i → 4b-i → 4c-ii-a → 4c-ii-b → 4b-ii-a →
-4c-iii → 4b-ii-b → 4d → 4e**, and the reasons are dependencies, not preferences: 4c-i
-removed the host's session edge and gave the composition a real log, 4b-i moved
-the ABI and pinned the api contract, 4c-ii-b gives the host a ctx to take,
-4b-ii-a puts the host on it, 4c-iii gives the api the agent surface it exposes,
-4b-ii-b is the file move once the tool layer is below `app`, and 4e can only run
-once the last `(scope/…)` site is gone — which 4d's `owner-listing` walk was.
-4d therefore landed **before** 4c-iii-b and 4b-ii-b, both of which wait on the
-tool-registry lift: a row whose gate names only work it does not need moves up
-(4d needed `agent-node` gone, which 4c-ii-b did, and nothing else).
+4c-iii → 4d → 4e → 4b-ii-b**, and the reasons are dependencies, not
+preferences: 4c-i removed the host's session edge and gave the composition a
+real log, 4b-i moved the ABI and pinned the api contract, 4c-ii-b gives the host
+a ctx to take, 4b-ii-a puts the host on it, 4c-iii gives the api the agent
+surface it exposes, 4d replaces the last listing that walked the store, 4e
+deletes it, and 4b-ii-b is the file move once the tool layer is below `app`.
+4d ran **before** 4c-iii-b and 4b-ii-b, both of which wait on the tool-registry
+lift: a row whose gate names only work it does not need moves up (4d needed
+`agent-node` gone, which 4c-ii-b did, and nothing else). 4e ran before them for
+the same reason — nothing it needed was still coming.
 
 **4b-ii split again, by measurement** (§ "Landing 4b-ii: what the require
 graph says"): the host files can only move into `app` once the ten
@@ -989,6 +990,56 @@ or detached ctx leaves no line, and no line is indented. Tests:
 `kmet.app.test-runtime`'s diagnostic boot, two rewritten `/units` tests,
 `--dump-state` in `kmet.app.test-core` (a mounted tree, a patch layer, and a
 composition whose rows do not mount).
+
+### Landing 4e settled
+
+**The last live src edge was a comment.** `cli.clj` forced `(runtime/node)` with
+the note that extension loading registers into the root's owners — true before
+4b-ii-a, false after it, so the only thing keeping the store alive in src was a
+stale rationale. It forces `(runtime/ctx)` now: the root the registries actually
+resolve, at the point where the ordering matters (before any `init(api)`). With
+that, nothing outside `registry_store.clj` reached the store; `app_runtime/node`
+had zero src callers and the four test readers are on the registry handle.
+
+**The reporter binding had no gap to fill.** §9 above expected cleanup-error
+reporting to degrade until the `:logger` service landed, because the store's
+`*error-reporter*` looked like a facility. It was a wrapper: the app bound it to
+`kmet.agent.debug/log-error`, and its one non-store use
+(`dispose-deregisters!`) caught straight through it. The catch calls
+`debug/log-error` directly now — same destination, one indirection fewer, and
+no dependency on the deferred logger.
+
+**One test was about the shape of a thing that no longer has a shape.**
+`test_commands`' "other registries share the store" asserted that a
+`:tools/hooks` key sitting in the same store could not disturb the command
+listing — the hazard existed because a store key is `[TAG name]` in one
+namespace. With a service per tag, a command cannot be in the tool registry at
+all. The case is "a registration lands in one tag only" now: the reading it
+pinned survives, its machinery does not.
+
+**`test_registry` lost its harness, not its assertions.** The two-backend
+`doseq` + `testing` existed to hold one set of rules against both handles; with
+one handle left, the file tests it directly — four tests, the same sixteen
+assertions, no vestigial loop over a one-element vector.
+
+**`scope.md` keeps its name.** Around forty docstrings and comments in kmet1's
+remaining modules cite its sections for conventions that outlived the code
+(owner paths, LIFO disposal, read-once-per-attempt). Deleting the file would
+dangle every one of them, so it survives as the record of those conventions:
+same section numbers, each stating the rule, what implements it now, and what
+died with the module. A citation that resolves to "this rule moved to `srce`
+effects" is worth more than a 404.
+
+Ledger: **613 lines deleted, no source added** — `kmet.libs.scope` 288, its two
+test namespaces 262, `registry_store` 63 — plus `app_runtime` −42 net, `cli.clj`
+−4, and the one loader allowlist entry; the rest is the four re-pointed test
+spots, two guards' tripwire text, and the docs. Gate, met: `grep` finds no
+`(scope/` under `kmet.agent.*`, no
+`kmet.libs.scope` require and no `kmet.agent.registry-store` require anywhere;
+`bb test` green; and `kmet --app old` loads (config, model catalog) with no
+store in the process. The kernel's "never require the store" guard and the
+kmet2 modules' banned-name list keep the names as tripwires, so a reintroduction
+fails a test rather than a code review.
 
 ### Landing 4c-iii-a settled
 

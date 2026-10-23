@@ -1,10 +1,11 @@
 (ns kmet.srce.test-guards
-  "Guard: the kernel is rank-0 self-contained and the retired store is gone.
+  "Guard: the kernel is rank-0 self-contained and the retired store stays gone.
 
    kmet.test-module-deps owns the rank ordering between modules; this owns what
    a rank-1 module may name at all — the kernel may require kmet.libs.*,
    kmet.loader.*, kmet.reakt.* and its own subnamespaces, nothing above it, and
-   never kmet.libs.scope."
+   never `kmet.libs.scope` (deleted at landing 4e, so the name is a tripwire
+   now rather than a dependency)."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]))
@@ -44,4 +45,4 @@
 (deftest kernel-does-not-require-the-retired-store
   (doseq [f kernel-sources]
     (is (not (str/includes? (slurp f) "libs.scope"))
-        (str f " must not require the retired store"))))
+        (str f " must not name the retired store"))))
