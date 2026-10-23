@@ -65,11 +65,15 @@
 (defn parse-args
   "Parse kmet2's argv → `{:profile kw :patch [path …] :args [rest …] :version?
    :help? :dump-config? :dump-state?}`. `:profile` defaults to
-   `profile/default-profile`."
+   `profile/default-profile`; the two dumps are different views of one
+   composition, so asking for both is a usage error rather than a silent pick."
   [args]
   (loop [in (seq args) opts {:patch [] :args []}]
     (if-not in
-      (update opts :profile #(or % profile/default-profile))
+      (let [opts (update opts :profile #(or % profile/default-profile))]
+        (when (and (:dump-config? opts) (:dump-state? opts))
+          (throw (bad-args "--dump-config and --dump-state are separate dumps; pass one")))
+        opts)
       (let [arg (first in)
             [flag value] (split-flag arg)]
         (cond
@@ -127,9 +131,12 @@
 (defn- dump-state
   "The `--dump-state` text: the booted root's unit tree. The booted view needs a
    boot, so this is the one flag that mounts the composition — and disposes it
-   again, so a dump leaves nothing behind."
+   again, so a dump leaves nothing behind. The boot is a diagnostic one: a row
+   that stays `:pending` or ends `:failed` is a line in the tree (with what it
+   waits for, or why it failed) instead of a boot error, because that tree is
+   the answer to the question the flag asks."
   [opts]
-  (let [booted (runtime/boot (compose-config opts))]
+  (let [booted (runtime/boot (compose-config opts) {:diagnose? true})]
     (try
       (str (inspect/units (:ctx booted)) "\n")
       (finally

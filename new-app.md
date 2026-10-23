@@ -73,10 +73,10 @@ and they already exist
 ## Inspection: `/units` and `--dump-state`
 
 `--dump-config` answers "what is composed" without booting. The other half is
-the booted view — kmet1's `/units`, which prints one flat `<owner> keys=[…]`
-line per store owner, read from a session's own tree when it has one and from
-the app root otherwise (`app_runtime/owner-listing`; two command tests, three
-listing tests).
+the booted view. kmet1's `/units` printed one flat `<owner> keys=[…]` line per
+store owner, read from a session's own tree when it had one and from the app
+root otherwise — the store was the only thing it could ask, so absence was all
+it could report.
 
 kmet2 renders the **tree** instead of the store, keeping the two properties
 that made `/units` usable: one unit per line with no indentation (the path is
@@ -95,12 +95,17 @@ order).
 ```
 
 - A **ctx** line is a path and its child count; a **fiber** line is its state,
-  its `inject`, what it `provides`, and its effect labels.
+  its `inject` (an optional dependency marked `?`, since an absent optional does
+  not hold a fiber pending), what it `provides`, and its effect labels.
 - **`:pending` and `:failed` are why the command exists at all.** The store
   could only report absence ("nothing registered under that key"); a fiber says
-  *waiting for `[:ui]`* or *failed with this error* — which is the question
-  someone typing `/units` actually has, and the one `--dump-state` answers for
-  the booted process.
+  *waiting for `[:ui]`* or *failed with this error*. `--dump-state` answers it
+  for a booted tree too: its boot is a **diagnostic** one
+  (`{:diagnose? true}`, `kmet.app.runtime/boot`), so a row that stays `:pending`
+  or ends `:failed` is a line in the tree instead of a boot error — a dump that
+  fails on the very state it exists to explain would be useless exactly when it
+  is wanted. A boot that is meant to run keeps the hard failure; the option is
+  the difference, not the mounting.
 - **One renderer, two entry points:** `kmet.app.inspect/units` renders the
   subtree of the ctx the command was invoked in (the agent's, when run inside
   one) and `--dump-state` renders the root's. Same argument as
@@ -109,11 +114,13 @@ order).
 - **Effect labels are the inspection contract** ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §4).
   `(srce/effects fiber)` is what the listing renders, so `:tool/read` and
   `:command/units` are load-bearing; a catch-all label makes the line useless.
-- The accessors are already the kernel's — `srce/children`, `srce/services`
-  (the realm-aware merge) and `srce/effects` — and the fiber record carries the
-  rest: `:state`, `:error`, the normalized `:inject`, the names it `:provides`
-  and what it is `:waiting-for` ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §4), so the renderer is a
-  flag, not a kernel change. No listing code below rank 3.
+- The accessors are already the kernel's — `srce/children` and `srce/effects` —
+  and the fiber record carries the rest: `:state`, `:error`, the normalized
+  `:inject`, the names it `:provides` and what it is `:waiting-for`
+  ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §4), so the renderer is a
+  flag, not a kernel change. No listing code below rank 3. (`srce/services`
+  stays the accessor for "what can this ctx see"; a fiber's own `provides` is the
+  answer from the other side and does not need it.)
 - **The path is the tree's own.** `boot` names the root `:app`, a plugin mount
   names its ctx from the plugin's `:name`, and a ctx the app built without one
   renders as `:ctx/N` (its position among its siblings), so no two units share
@@ -943,6 +950,17 @@ and disposes them, exits 0, and writes nothing to stderr. It uses
 the boot — the flag is a different renderer over the same composition, not a
 second boot path.
 
+**The flag could not answer its own question, so the boot grew a diagnostic
+option.** `boot` throws when a row is not `:active` — right for a boot that is
+meant to run, wrong for a dump of a boot that is not: the tree is exactly where
+a `:pending` row's `waiting-for` and a `:failed` row's error are, so a dump that
+fails on them hides the answer. `{:diagnose? true}` returns the same map with
+`:failed` filled in instead of throwing; the mounting is identical and only the
+failure *response* differs, so there is still one boot path. `--dump-config` and
+`--dump-state` are also mutually exclusive now (`parse-args` refuses both): two
+views of one composition, and picking one silently is the kind of flag that
+changes nothing.
+
 **What `/units` loses is named.** The registry `keys=[…]` lines are gone with
 the store walk: the tree answers "what is mounted, in what state, waiting for
 what", not "which commands are registered". That is the documented trade (one
@@ -961,13 +979,16 @@ define a helper named `selector`, which Clojure 1.12 added to `core` — they
 exclude it explicitly now, so `bb lint-changed` is clean. (They go with kmet1 at
 retirement either way.)
 
-Ledger: **301 source + test lines added (156 + 145), 6 files added**, and the two
-listing halves deleted from `app_runtime` (−30 net) with their three tests.
-Nothing was lifted. Gate: `/units` and `--dump-state` render one tree from two
-entry points; a `:pending` fiber shows `waiting-for`, a `:failed` one its error,
-a disposed fiber or detached ctx leaves no line, and no line is indented. Tests:
-`kmet.app.test-inspect` (10/33), `kmet.srce.test-kernel`'s detach contract, two
-rewritten `/units` tests, `--dump-state` in `kmet.app.test-core`.
+Ledger: **314 source + test lines in the two new files (164 + 150)**, and the
+two listing halves deleted from `app_runtime` (−30 net) with their three tests.
+Nothing was lifted; everything else is edits to files that already existed.
+Gate: `/units` and `--dump-state` render one tree from two entry points; a
+`:pending` fiber shows `waiting-for`, a `:failed` one its error, a disposed fiber
+or detached ctx leaves no line, and no line is indented. Tests:
+`kmet.app.test-inspect` (10/33), `kmet.srce.test-kernel`'s detach contract,
+`kmet.app.test-runtime`'s diagnostic boot, two rewritten `/units` tests,
+`--dump-state` in `kmet.app.test-core` (a mounted tree, a patch layer, and a
+composition whose rows do not mount).
 
 ### Landing 4c-iii-a settled
 

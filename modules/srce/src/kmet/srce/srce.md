@@ -213,6 +213,12 @@ lingers. The detach keeps `:parent`, so a value that still holds the ctx
 resolves services exactly as before; what changes is the tree, which is what
 the unit listing renders (`new-app.md`, "Inspection").
 
+A detach releases the **tree line**, not the registrations: `:fiber` is
+inherited, so what a plain child ctx provides or listens for is the nearest
+fiber's effect and unwinds with it. That is one more reason a plain child is a
+scope rather than a unit, and why the app composes an agent on a fiber (the
+mount) and keeps the `extend` for the seams it must override.
+
 ## 3. Services and refresh
 
 Cordis's reflect layer, minus everything the light kernel doesn't need.

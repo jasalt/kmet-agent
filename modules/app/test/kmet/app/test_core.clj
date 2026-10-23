@@ -27,6 +27,10 @@
               (with-out-str (reset! code (core/main args))))]
     {:code @code :out out :err (str err)}))
 
+(def pending-plugin
+  "A plugin whose dependency nothing provides: a row that renders as `:pending`."
+  {:name :app/pending :inject {:nothing nil} :apply (fn [_ _] nil)})
+
 (defn- scratch-patch!
   "Write CONTENT to a patch file under target/ (which /tmp-less hosts have)
    and return the path."
@@ -65,7 +69,10 @@
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--profile="])))
       "an empty value is no value")
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-p" "hi"])))
-      "kmet1's flags are not kmet2's"))
+      "kmet1's flags are not kmet2's")
+  (is (= :kmet.app/bad-args
+         (error-type #(core/parse-args ["--dump-config" "--dump-state"])))
+      "the two dumps are different views; asking for both is a usage error"))
 
 (deftest version-prints-the-shared-string
   (with-redefs [version/kmet-version (constantly "v9.9.9")]
@@ -146,6 +153,39 @@
         (is (zero? code))
         (is (str/includes? out "[:app :app/sample]")
             "the patched row mounts, so the tree shows it"))
+      (finally (io/delete-file path true)))))
+
+(deftest dump-state-renders-a-row-that-could-not-mount
+  ;; The booted view is worth most exactly when a row does not mount, so the
+  ;; dump is a diagnostic boot: the failure is a line in the tree, not an exit
+  ;; code that hides which row and why.
+  (let [path (scratch-patch!
+              (str "{:rows [{:plugin kmet.app.test-core/failing-plugin}"
+                   "         {:plugin kmet.app.test-core/pending-plugin}]"
+                   " :patch []}\n"))]
+    (try
+      (let [{:keys [code out]} (run-main ["--dump-state" "--patch" path])]
+        (is (zero? code))
+        (is (str/includes? out "[:app :app/failing]"))
+        (is (str/includes? out ":failed"))
+        (is (str/includes? out "error=\"boom\""))
+        (is (str/includes? out "[:app :app/pending]"))
+        (is (str/includes? out ":pending"))
+        (is (str/includes? out "waiting-for=[nothing]"))
+        (is (str/includes? out "[:app :tools]")
+            "the rows that did mount are still in the tree"))
+      (finally (io/delete-file path true)))))
+
+(deftest a-bare-run-still-fails-hard-on-a-row-that-could-not-mount
+  ;; The diagnostic option belongs to the dump: a boot that is meant to run
+  ;; reports the same composition as an error.
+  (let [path (scratch-patch!
+              (str "{:rows [{:plugin kmet.app.test-core/pending-plugin}]"
+                   " :patch []}\n"))]
+    (try
+      (let [{:keys [code err]} (run-main ["--patch" path])]
+        (is (= 1 code))
+        (is (str/includes? err "kmet2 boot failed")))
       (finally (io/delete-file path true)))))
 
 (deftest a-bare-run-boots-the-composition-and-says-what-is-missing

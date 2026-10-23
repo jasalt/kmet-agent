@@ -69,18 +69,26 @@
 
 ;; ── the facts ─────────────────────────────────────────────────────────────
 
+(defn- bare
+  "A name as the listing prints it: a keyword without its colon, because that is
+   what a service name is; anything else `pr-str`s, so a malformed declaration
+   renders instead of breaking the listing that exists to show it."
+  [n]
+  (if (keyword? n) (name n) (pr-str n)))
+
 (defn- bracket
-  "NAMES in the listing's bracket form: sorted, space-separated, bare — a
-   service name prints without its colon (`provides=[sessions]`)."
+  "NAMES — already printed by `bare` — in the listing's bracket form: sorted,
+   space-separated, paired with the opening and closing bracket
+   (`provides=[sessions]`)."
   [names]
-  (str "[" (str/join " " (sort (map str names))) "]"))
+  (str "[" (str/join " " (sort names)) "]"))
 
 (defn- inject-entries
   "What a fiber injects: a required name as itself, an optional one with a `?`.
    An optional dependency that is absent does not hold the fiber pending, so
    the two must not read alike."
   [inject]
-  (map (fn [[k v]] (str (name k) (when (= :optional v) "?"))) inject))
+  (map (fn [[k v]] (str (bare k) (when (= :optional v) "?"))) inject))
 
 (defn- fiber-details
   "A fiber line's facts in render order: what it injects, what it provides, its
@@ -95,13 +103,13 @@
       (conj (str "inject=" (bracket (inject-entries inject))))
 
       (seq provides)
-      (conj (str "provides=" (bracket (map name provides))))
+      (conj (str "provides=" (bracket (map bare provides))))
 
       (seq labels)
       (conj (str "effects=[" (str/join ", " (map str labels)) "]"))
 
       (seq waiting-for)
-      (conj (str "waiting-for=" (bracket (map name waiting-for))))
+      (conj (str "waiting-for=" (bracket (map bare waiting-for))))
 
       error
       (conj (str "error=" (pr-str (or (ex-message error) (str error))))))))

@@ -99,6 +99,32 @@
            (error-type #(runtime/boot {:rows [{:id :ext :plugin :ext/unknown}]})))
         "an :ext/… id belongs to the extension host, which has not landed")))
 
+(deftest a-diagnostic-boot-returns-the-failed-rows-instead-of-throwing
+  ;; `--dump-state` must render the tree that explains a failure, so the
+  ;; failure is data there and an error everywhere else.
+  (let [booted (runtime/boot {:rows [{:id :ok
+                                      :plugin {:name :ok
+                                               :provide [:x]
+                                               :apply (fn [c _]
+                                                        (srce/provide! c :x 1 {:in (:parent c)}))}}
+                                     {:id :waits :plugin {:name :waits
+                                                          :inject [:nothing-provides-this]
+                                                          :apply (fn [_ _] nil)}}]}
+                             {:diagnose? true})]
+    (try
+      (is (= [{:id :waits :state :pending :error nil
+               :waiting-for [:nothing-provides-this]}]
+             (:failed booted)))
+      (is (= 1 (srce/get (:ctx booted) :x))
+          "the rows that could mount did mount")
+      (finally (runtime/shutdown! booted))))
+  (is (= :kmet.app/boot-failed
+         (error-type #(runtime/boot {:rows [{:id :waits
+                                             :plugin {:name :waits
+                                                      :inject [:nothing-provides-this]
+                                                      :apply (fn [_ _] nil)}}]})))
+      "a boot that is meant to run still fails hard"))
+
 ;; ── the submission point ──────────────────────────────────────────────────
 
 (deftest a-submission-from-another-thread-waits-for-the-boundary

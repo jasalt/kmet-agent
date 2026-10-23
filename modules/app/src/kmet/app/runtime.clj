@@ -161,26 +161,33 @@
 
 (defn boot
   "Mount COMPOSED's rows under a fresh root ctx and return `{:ctx :fibers
-   :rows n}`. Rows mount in composition order and settle once; every fiber must
-   be `:active` afterwards, and no two fibers may declare one event differently,
-   or boot throws `:kmet.app/boot-failed` naming the rows and their waiting-for,
-   or the events they disagree about.
+   :rows n :failed […]}`. Rows mount in composition order and settle once;
+   every fiber must be `:active` afterwards, and no two fibers may declare one
+   event differently, or boot throws `:kmet.app/boot-failed` naming the rows and
+   their waiting-for, or the events they disagree about.
+
+   `{:diagnose? true}` returns the same map with the mounted-but-inactive rows
+   in `:failed` instead of throwing: a diagnostic that cannot show the tree
+   explaining the failure is useless exactly when it is needed, and the tree
+   (`kmet.app.inspect`) is where a `:pending` row's `waiting-for` and a
+   `:failed` row's error are. A boot that is meant to run keeps the hard
+   failure — the two answers differ in the option, not in the mounting.
 
    The root is named `:app`, which is the first segment of every unit path the
-   inspection renderer (`kmet.app.inspect`) prints; CTX-META may name it
-   differently (a root a test builds, a profile with a second tree)."
+   inspection renderer prints; CTX-META may name it differently (a root a test
+   builds, a profile with a second tree)."
   ([composed] (boot composed nil))
-  ([{:keys [rows]} {:keys [ctx-meta]}]
+  ([{:keys [rows]} {:keys [ctx-meta diagnose?]}]
    (let [ctx (srce/root (merge {queue-key (atom []) :name :app} ctx-meta))
-         fibers (mapv (fn [row] (srce/plugin! ctx (row-source row) (:config row))) rows)]
-     (srce/settle! ctx)
-     (let [failed (boot-failure rows fibers)]
-       (when (seq failed)
-         (doseq [f failed]
-           (srce/log! ctx :error "plugin did not mount" f))
-         (throw (ex-info (str "kmet2 boot failed: " (str/join ", " (map (comp pr-str :id) failed))
-                              " not active")
-                         {:type :kmet.app/boot-failed :fibers failed}))))
+         fibers (mapv (fn [row] (srce/plugin! ctx (row-source row) (:config row))) rows)
+         _ (srce/settle! ctx)
+         failed (boot-failure rows fibers)]
+     (when (and (seq failed) (not diagnose?))
+       (doseq [f failed]
+         (srce/log! ctx :error "plugin did not mount" f))
+       (throw (ex-info (str "kmet2 boot failed: " (str/join ", " (map (comp pr-str :id) failed))
+                            " not active")
+                       {:type :kmet.app/boot-failed :fibers failed})))
      (let [conflicts (declaration-conflicts fibers)]
        (when (seq conflicts)
          (doseq [c conflicts]
@@ -188,7 +195,7 @@
          (throw (ex-info (str "kmet2 boot failed: conflicting event declarations "
                               (str/join ", " (map (comp pr-str :event) conflicts)))
                          {:type :kmet.app/event-conflict :conflicts conflicts}))))
-     {:ctx ctx :fibers fibers :rows (count rows)})))
+     {:ctx ctx :fibers fibers :rows (count rows) :failed failed})))
 
 (defn shutdown!
   "Dispose everything `boot` mounted, children first; the ctx is finished."

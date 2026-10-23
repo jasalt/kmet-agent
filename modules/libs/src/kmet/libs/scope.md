@@ -111,10 +111,11 @@ the extension recorded for what lives outside any registry (aliases,
 shortcuts, model providers, event subscriptions), and an `:inject`
 extension's mount is a fiber whose disposal is the kernel's.
 
-`/units` prints one flat `<owner> keys=[…]` line per owner that holds
-registrations (`runtime/owner-listing`), in first-registration order. It walks
-the app root node: a session's own tree is a child **ctx** now (4c-ii-b), and
-4d replaces this listing with the ctx tree renderer.
+`/units` used to print one flat `<owner> keys=[…]` line per owner that holds
+registrations, by walking the app root node; 4d replaced that listing with the
+ctx tree renderer (`kmet.app.inspect`), so the store has no listing now — what
+is left of it is `registry_store`'s backend, the node the reporter binding hangs
+off, and the tests until 4e.
 
 The loop's stages are plain data on the app root **ctx**, under `:loop-stages`:
 `{:loop-guard {:call …} :retry-policy {:call …}}`, with an optional `:config`

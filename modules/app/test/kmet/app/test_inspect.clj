@@ -90,9 +90,14 @@
         _ (srce/plugin! ctx {:name :ui/terminal
                              :inject {:ui :optional}
                              :apply (fn [_ _] nil)})
-        line (line-for ctx "[:app :ui/terminal]")]
+        line (line-for ctx "[:app :ui/terminal]")
+        _ (srce/plugin! ctx {:name :odd
+                             :inject {42 nil}
+                             :apply (fn [_ _] nil)})
+        odd (line-for ctx "[:app :odd]")]
     (is (str/includes? line "inject=[ui?]"))
-    (is (str/includes? line ":active"))))
+    (is (str/includes? line ":active"))
+    (is (str/includes? odd "inject=[42]") "a malformed name renders instead of throwing")))
 
 ;; ── paths ────────────────────────────────────────────────────────────────
 
