@@ -19,4 +19,9 @@
         kmet/ai {:local/root "../ai"}
         babashka/fs {:mvn/version "0.5.34"}
         babashka/process {:mvn/version "0.6.25"}
-        metosin/malli {:mvn/version "0.20.1"}}}
+        metosin/malli {:mvn/version "0.20.1"}
+        ;; SCI: the tool layer's sandbox (tools/run-code) mints its own
+        ;; contexts, and the loader's design puts the backend artifact on the
+        ;; caller (loader.md §6.5). Same pin as agent's and jolt's.
+        org.babashka/sci {:git/url "https://github.com/yogthos/sci.git"
+                          :git/sha "1295142fc29f206dd2747963548ba038077d9205"}}}
