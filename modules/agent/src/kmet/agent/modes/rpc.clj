@@ -16,6 +16,7 @@
             [kmet.agent.commands.builtins :as builtins]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
@@ -654,6 +655,7 @@
                                               :model (:model opts)
                                               :provider (:provider opts)
                                               :ctx (app-runtime/ctx)
+                                              :load-resources! packages/load-resources!
                                               :mode :rpc
                                               :has-ui true
                                               :ui-context port})

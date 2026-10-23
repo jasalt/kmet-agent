@@ -1037,6 +1037,15 @@
          paths (remove #(contains? loaded %) (enabled-item-paths (resolve-configured-packages agent-dir) :prompts))]
      (prompts/load-prompt-template-files! (vec paths)))))
 
+(defn load-resources!
+  "Every enabled skill and prompt template of the unified resolution into the
+   app's registries — what a front end loads once per process, before the first
+   prompt is built. A front end passes this as the Engine's `:load-resources!`,
+   so the Engine knows nothing about where a process keeps its packages."
+  []
+  (load-skills!)
+  (load-prompts!))
+
 (defn resolve-theme-paths
   "Return every enabled theme path in the unified resolution. AGENT-DIR pins
    the user scope root. Side-effect-free; the caller registers the paths with

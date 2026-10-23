@@ -48,7 +48,6 @@
             [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
@@ -158,6 +157,12 @@
                      defaults to false
      :ui-context   — front-end capability map; defaults to the headless
                      port + build-context (session-runtime/default-ui-port)
+     :load-resources! — a thunk `bootstrap` calls once, before the prompt is
+                     built, to put the caller's skills and prompt templates
+                     into the app's registries; kmet1's front ends pass
+                     `kmet.agent.app-runtime/load-resources!` (the unified
+                     package resolution), and no default means an engine that
+                     was handed none loads none
      :agent-opts   — extra/overriding make-agent-state options (escape hatch
                      for tests and front-end-specific run options; the
                      engine's session follows an overridden :session).
@@ -173,7 +178,8 @@
                      default, because a state with no ctx has no tool table —
                      `bootstrap` fails at the prompt rather than mid-turn
 
-   Loads skills + prompt templates, builds the system prompt (custom prompt,
+   Loads the caller's resources (`:load-resources!`), builds the system prompt
+   (custom prompt,
    appended prompt, project context files, active tools), derives every
    run option from CONFIG with the same defaults the TUI and print mode
    used to wire by hand, seeds the scoped-model list, and installs the
@@ -183,8 +189,7 @@
         ;; the resolved session (the layout/print-mode policy output); any
         ;; :agent-opts override is folded back in below via the agent state
         sess (:session opts)
-        _ (packages/load-skills!)
-        _ (packages/load-prompts!)
+        _ (when-let [load! (:load-resources! opts)] (load!))
         ;; the ctx the engine runs on: the caller's (a subagent's child ctx),
         ;; or the app root kmet1's modes pass — the prompt's tool table and the
         ;; agent state both read this one value, so the two can never name

@@ -22,6 +22,7 @@
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.commands :as commands]
             [kmet.agent.keybindings :as app-kb]
+            [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
             [kmet.agent.ui.tui.theme-controller :as theme-ctrl]
@@ -573,7 +574,8 @@
         ;; exist.
         engine (runtime/bootstrap config {:session session
                                           :cwd cwd
-                                          :ctx (app-runtime/ctx)})
+                                          :ctx (app-runtime/ctx)
+                                          :load-resources! packages/load-resources!})
         cwd-atom (:cwd engine)
 
         ;; Migrate legacy keybinding ids in keybindings.edn (pi: migrations

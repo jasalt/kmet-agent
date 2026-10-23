@@ -659,8 +659,7 @@
               ;; pi: resourceLoader.reload (skills, prompts)
               _ (skills/clear-skills!)
               _ (prompts/clear-prompt-templates!)
-              _ (packages/load-skills!)
-              _ (packages/load-prompts!)
+              _ (packages/load-resources!)
               ;; pi: _rebuildSystemPrompt with new sources — the prompt is
               ;; built over the CURRENTLY active tool set (pi:
               ;; getActiveToolNames), so a pre-reload set-active-tools

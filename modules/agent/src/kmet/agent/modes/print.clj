@@ -8,6 +8,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.app-runtime :as app-runtime]
+            [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
             [kmet.agent.config :as cfg]))
@@ -103,6 +104,7 @@
                                               :model model
                                               :provider provider
                                               :ctx (app-runtime/ctx)
+                                              :load-resources! packages/load-resources!
                                               :mode (if (= :edn mode) :json :print)})
             result-promise (promise)
             unsubscribe (runtime/subscribe! engine (event-consumer mode result-promise))

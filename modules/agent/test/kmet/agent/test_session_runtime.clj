@@ -10,6 +10,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.compaction.stage :as agent-compact]
             [kmet.agent.loop :as agent]
+            [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.app-runtime :as app]
             [kmet.agent.session.core :as session]
@@ -33,15 +34,18 @@
 
 (defn- with-engine
   "Bootstrap an engine over a fresh temp session and call F with it,
-   disposing it and removing the temp dir afterwards."
-  [f]
-  (let [dir (str "target/test-session-runtime-" (System/currentTimeMillis))
-        sess (session/create-session dir {:cwd (str (fs/cwd))})]
-    (try
-      (let [engine (rt/bootstrap (test-config) {:session sess :ctx (app/ctx)})]
-        (try (f engine sess)
-             (finally (rt/dispose! engine))))
-      (finally (fs/delete-tree dir)))))
+   disposing it and removing the temp dir afterwards. OPTS are added to the
+   bootstrap options (an empty map for the default engine)."
+  ([f] (with-engine {} f))
+  ([opts f]
+   (let [dir (str "target/test-session-runtime-" (System/currentTimeMillis))
+         sess (session/create-session dir {:cwd (str (fs/cwd))})]
+     (try
+       (let [engine (rt/bootstrap (test-config)
+                                  (merge {:session sess :ctx (app/ctx)} opts))]
+         (try (f engine sess)
+              (finally (rt/dispose! engine))))
+       (finally (fs/delete-tree dir))))))
 
 (deftest test-commands-outlive-an-engine
   ;; The app root's store owns commands, so disposing an engine does not drop
@@ -100,6 +104,21 @@
     (is (= "outlives-skill" (:name (skills/get-skill "outlives-skill"))))
     (finally
       (skills/clear-skills!))))
+
+(deftest test-bootstrap-loads-only-what-the-caller-names
+  ;; Resource loading is the process's policy, not the engine's: a front end
+  ;; passes the unified package resolution, and an engine handed none loads
+  ;; none (kmet2's driver loads per its own rows).
+  (let [loads (atom [])]
+    (with-engine {:load-resources! #(swap! loads conj :caller)}
+      (fn [_engine _sess]
+        (is (= [:caller] @loads) "the caller's thunk ran, once"))))
+  (let [loads (atom [])]
+    (with-redefs [packages/load-skills! (fn [& _] (swap! loads conj :skills))
+                  packages/load-prompts! (fn [& _] (swap! loads conj :prompts))]
+      (with-engine
+        (fn [_engine _sess]
+          (is (empty? @loads) "no option, no load"))))))
 
 (deftest test-bootstrap-builds-the-engine
   (with-engine

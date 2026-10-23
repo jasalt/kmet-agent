@@ -1084,6 +1084,33 @@ a real hole in a test this landing wrote:
 - One test assertion restated its own helper (`process-ctx` is
   `make-agent-state`'s default by construction); the two meaningful ones stayed.
 
+**7a-ii starts: the Engine stops loading the process's resources.** 7a-ii is
+the Engine's policy cut — the last edges it has into kmet1's process, and the
+reason it cannot be the `:agents` factory yet. Inventory first: the Engine's
+`kmet.agent.*` requires are `commands` ×3 (extension-command *dispatch*, which
+is the extension ABI and stays), `prompts` ×2 and `skills` ×1 (input
+expansion and the prompt wrapper), and `packages` ×2 (the bootstrap resource
+load). So the cut is two options, not a lift:
+
+- **`:load-resources!` (landed).** `bootstrap` no longer calls
+  `packages/load-skills!`/`load-prompts!`; it calls the thunk the caller
+  names, once, before the prompt is built, and an engine handed none loads
+  none. kmet1's three front ends pass `packages/load-resources!` — the
+  composition of the unified resolution's two loads, which the `/reload`
+  builtin now calls too instead of the pair. The two-axes test bites here: the
+  obvious home for that thunk was `app-runtime` (the process shim), and it is
+  a require cycle — `packages` reaches `prompts`/`skills`, which reach
+  `app-runtime` — so the composition lives with the resolution it composes and
+  the *front ends* are what changed. Pinned by
+  `test-session-runtime/test-bootstrap-loads-only-what-the-caller-names` (the
+  caller's thunk runs once; an engine given none loads none), mutation-checked
+  by restoring the unconditional pair.
+- **`:expand-input` (next).** Skill-command and prompt-template expansion
+  (`expand-queued-text`, and `expand-user-message-text`'s fallback) is the
+  same kind of policy: kmet2 expands through its own rows or not at all. Its
+  open question is shape — one fn over the queue and prompt paths, or a chain
+  the caller composes — and it is the last `skills`/`prompts` edge.
+
 ### Landing 4c-iii-b settled
 
 **The registry cannot own what an agent is.** `kmet.app.agents` is generic by
