@@ -91,3 +91,57 @@ values now works. The kmet workaround — `(sort-by str ...)` on path
 collections — stays in place because the `v0.8.22` floor still lacks the fix;
 it is also harmless and keeps ordering deterministic. The entry stays live
 until a tag carries the fix.
+
+### Not yet filed — `valueOf`/`values` missing from Jolt's shim-provided enums
+
+Static *fields* on enum classes resolve, but the JVM-synthesized static
+methods `valueOf`/`values` do not, for the enums Jolt's dependency shims
+provide (`java.util.concurrent`, `java.nio.file`, `java.text`). Enums from
+the fuller `java.time` implementation work, and static methods generally
+work, so this is the shim layer rather than interop as a whole.
+
+```clojure
+;; works: static fields, static methods, java.time enums
+java.util.concurrent.TimeUnit/MILLISECONDS          ; => MILLISECONDS
+java.nio.file.StandardOpenOption/WRITE              ; => #object[:object]
+java.text.Normalizer$Form/NFKC                      ; => NFKC
+(java.time.ZoneOffset/ofTotalSeconds 0)             ; => Z
+(java.time.DayOfWeek/valueOf "MONDAY")              ; => MONDAY
+(java.time.DayOfWeek/values)                        ; => [MONDAY ... SUNDAY]
+(java.lang.Math/abs -1)                             ; => 1
+
+;; fails: the same shape on shim-provided enums
+(java.util.concurrent.TimeUnit/valueOf "MILLISECONDS")
+;; IllegalArgumentException: No matching field or method: java.util.concurrent.TimeUnit/valueOf
+(java.util.concurrent.TimeUnit/values)
+(java.nio.file.StandardOpenOption/valueOf "WRITE")
+(java.nio.file.StandardOpenOption/values)
+(java.text.Normalizer$Form/valueOf "NFKC")
+(java.text.Normalizer$Form/values)
+
+;; and the interface itself is not provided at all:
+(java.lang.Enum/valueOf java.time.DayOfWeek "MONDAY")
+;; No dependency provides java.lang.Enum — a concrete implementation of the JDK
+;; classes must be provided ... (RFC 0014)
+```
+
+Expected: either resolve them the way the JVM does, or fail with a message
+that names the class as shim-provided (the RFC 0014 text above is a good
+model) instead of reporting a missing member.
+
+Impact: `kmet.libs.sse` polls a queue with a `TimeUnit` and
+`kmet.libs.edit-diff` normalizes with a `Normalizer$Form`; writing those as
+the portable static-method form (`(TimeUnit/valueOf "MILLISECONDS")`) loaded
+fine on babashka and inside an extension's SCI but threw at *load* on Jolt —
+`jolt start` died in `kmet.libs.edit_diff`. The reverse spelling is no better:
+extension SCI resolves static methods but has no static-field access, so a
+field read inside a function body throws there.
+
+Workaround (kmet): read the field once into a top-level `def` initializer —
+that code runs on the host and the sandbox receives the value by reference, so
+one spelling serves both hosts — and `kmet.libs.test-self-contained` /
+`libs-name-no-static-fields-in-sandbox-code` fails a static field anywhere a
+sandbox would execute it (mutations checked: `defn` body, a lambda and a
+`fn` nested in a `def` initializer all fail by name; a field as the initializer
+itself passes). "jolt-bugs.md" says a ticket is dropped once a tag carries
+the fix; add the number here when this is filed.

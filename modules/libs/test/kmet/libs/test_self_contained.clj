@@ -4,17 +4,20 @@
 
    - self-contained: no requires outside kmet.libs.* (app, tui, modes, ai are
      forbidden; sibling libs like kmet.libs.yaml are allowed)
-   - sandbox-safe: no static-field references (SCI has no static-field access,
-     so a `Class/FIELD` in a lib is a crash in every extension), checked both at
-     the source and by running the queue inside a bare SCI context."
+   - sandbox-safe: no static-field reference in any code a sandbox runs. SCI
+     has static-method access but no static-field access, so a `Class/FIELD`
+     inside a function body is a crash in every extension. A top-level `def`
+     initializer is exempt: it runs on the host, once, and the sandbox receives
+     the resulting value by reference — which is how Jolt (static fields, no
+     enum static methods) and SCI (static methods, no fields) are both served."
   (:require [clojure.test :as t :refer [deftest is]]
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.libs.concurrent]
             [kmet.tasks.source-reader :as sr]
-            [sci.core :as sci]
             [rewrite-clj.node :as node]
-            [rewrite-clj.parser :as parser]))
+            [rewrite-clj.parser :as parser]
+            [sci.core :as sci]))
 
 (defn- lib-files []
   ;; recurse: src/kmet/libs/mcp/transport/*.clj is two levels down and the
@@ -52,37 +55,66 @@
    `clojure.lang.PersistentQueue/EMPTY`, `Normalizer$Form/NFKC`."
   #"[a-z][\w$]*(\.[\w$]+)*/[A-Z][A-Z0-9_]*")
 
-(defn- static-fields
-  "The static-field references in the source at PATH. The file is read with
-   rewrite-clj rather than text-scanned, so a mention in a docstring, a string or
-   a comment is prose and does not count — the guard is about code that runs."
-  [path]
-  (let [found (atom #{})]
-    (letfn [(walk [n]
-              (when (= :token (node/tag n))
-                (let [v (node/sexpr n)]
-                  (when (and (symbol? v)
-                             (re-matches static-field-re (str v)))
-                    (swap! found conj v))))
-              (when (node/inner? n)
-                (run! walk (node/children n))))]
-      (walk (parser/parse-string-all (slurp path))))
-    (sort-by str @found)))
+(defn- head-symbol
+  "The symbol a list node starts with, or nil."
+  [n]
+  (let [head (first (node/children n))]
+    (when (and head (= :token (node/tag head)))
+      (let [v (node/sexpr head)]
+        (when (symbol? v) v)))))
 
-(deftest libs-name-no-static-fields
-  ;; every kmet.libs.* namespace is whitelisted into the extension SCI context
-  ;; (kmet.agent.extensions.context), and SCI resolves static *methods* but offers
-  ;; no static-field access: `clojure.lang.PersistentQueue/EMPTY`,
-  ;; `TimeUnit/MILLISECONDS`, `ZoneOffset/UTC` and `Normalizer$Form/NFKC` all fail
-  ;; there with "Unable to resolve symbol", at the call rather than at load — so
-  ;; the host runs fine and the extension breaks. Checked at the source, because
-  ;; nothing in the test suite calls a library from inside a sandbox.
+(defn- field-refs
+  "The static-field symbols in NODE. ENFORCE? is false inside a top-level `def`
+   initializer — that code runs on the host, once, at load, and the sandbox
+   receives the resulting value by reference — and true again inside a function
+   body there, because a function body is the code a sandbox executes."
+  [n enforce?]
+  (let [tag (node/tag n)
+        children (when (node/inner? n) (node/children n))]
+    (cond
+      (= :token tag)
+      (let [v (node/sexpr n)]
+        (if (and enforce? (symbol? v) (re-matches static-field-re (str v))) [v] []))
+
+      ;; a `#(...)` lambda: its body is sandbox code wherever it appears
+      (= :fn tag)
+      (mapcat #(field-refs % true) children)
+
+      (= :list tag)
+      (let [head (head-symbol n)]
+        (cond
+          (= 'def head) (concat (mapcat #(field-refs % enforce?) (butlast children))
+                              ;; the initializer runs on the host
+                                (field-refs (last children) false))
+          (contains? '#{fn fn*} head) (mapcat #(field-refs % true) children)
+          :else (mapcat #(field-refs % enforce?) children)))
+
+      (some? children)
+      (mapcat #(field-refs % enforce?) children)
+
+      :else [])))
+
+(defn- static-fields
+  "The static-field references in PATH that a sandbox would have to resolve."
+  [path]
+  (distinct (mapcat #(field-refs % true)
+                    (node/children (parser/parse-string-all (slurp path))))))
+
+(deftest libs-name-no-static-fields-in-sandbox-code
+  ;; SCI has static-method access but no static-field access, and every
+  ;; kmet.libs.* namespace is whitelisted into extension contexts — so a
+  ;; `Class/FIELD` inside a function body is a crash at the call, in the sandbox
+  ;; only (the host runs it fine). A `def` initializer is exempt because it runs
+  ;; on the host; that exemption is also what keeps Jolt working, since Jolt has
+  ;; static fields but no enum static methods — the two hosts need opposite
+  ;; spellings, and a host-resolved constant serves both.
   (doseq [f (lib-files)
           :let [fields (static-fields f)]]
     (is (empty? fields)
         (str f " names static fields " (vec fields)
-             " — SCI has no static-field access; use a static method"
-             " (TimeUnit/valueOf \"MILLISECONDS\") or a plain expression"))))
+             " in code a sandbox runs — SCI has no static-field access; either read"
+             " it in a top-level def initializer (host-side) or use a non-enum"
+             " static method"))))
 
 (deftest libs-are-self-contained
   (doseq [f (lib-files)]

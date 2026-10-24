@@ -10,9 +10,9 @@
             [babashka.fs :as fs]))
 
 (def ^:private utc
-  "UTC as a zone offset, resolved once: SCI has no static-field access
-   (`ZoneOffset/UTC` is `Unable to resolve symbol` there)."
-  (java.time.ZoneOffset/ofTotalSeconds 0))
+  "UTC as a zone offset, resolved once at load (see `time-unit-millis` in
+   kmet.libs.sse for why a field in a `def` beats a static method here)."
+  java.time.ZoneOffset/UTC)
 
 (def ^:private getenv
   (fn [k] (System/getenv k)))
