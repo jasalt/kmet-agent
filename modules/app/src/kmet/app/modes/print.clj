@@ -16,6 +16,13 @@
    become the created agent's options, so an override is the run's, not the
    process's.
 
+   **The run tells the extension host what kind of front end is running**
+   (`bind-front-end!`): kmet1's print mode goes through its session runtime,
+   which binds `:mode :print`, `has-ui` false and the headless capability port,
+   so an extension that branches on `ctx.mode` or asks a question gets the same
+   answer under either app. A process that binds nothing keeps the host's own
+   headless defaults, which are more inert than kmet1's per-session port.
+
    Two formats, kmet1's two: `:text` (the default) streams the answer and
    reports a failure on stderr; `:edn` prints the session header and every event
    as EDN for a machine to read, so the event stream carries the failure and the
@@ -23,6 +30,7 @@
    entry point owns the process and prints its own errors."
   (:require [clojure.string :as str]
             [kmet.agent.event-bus :as event-bus]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.app.events :as events]
             [kmet.srce.core :as srce]))
 
@@ -140,6 +148,12 @@
               error (atom nil)
               settled (promise)
               dispose (subscriptions scope format settled error)]
+          ;; the front end's surface goes down with the run: the host's default
+          ;; is what a process with no front end reports, and kmet1's print mode
+          ;; binds exactly this
+          (extensions/bind-extensions! {:mode :print
+                                        :has-ui false
+                                        :ui (extensions/headless-ui-port)})
           (future
             (on-result {:exit (run-prompt! scope agents (assoc config :format format)
                                            settled error)}))
@@ -148,7 +162,8 @@
             ;; is the only thing it blocks on, and an event that never comes
             ;; would leave the thread parked
             (deliver settled {:outcome :disposed})
-            (dispose)))))))
+            (dispose)
+            (extensions/unbind-extensions!)))))))
 
 (srce/defplugin plugin
   {:name :mode-print

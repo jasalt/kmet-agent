@@ -11,6 +11,7 @@
             [clojure.test :refer [deftest is]]
             [kmet.agent.config :as cfg]
             [kmet.ai.llm :as llm]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.ai.models :as models]
             [kmet.app.test-support :as support]))
 
@@ -185,3 +186,35 @@
             "the error is on the wire, once")
         (is (not (str/includes? err "Error:"))
             "and not repeated on stderr, where edn consumers do not look")))))
+
+(deftest the-run-tells-the-extension-host-it-is-print-mode
+  ;; kmet1's print mode goes through its session runtime, which binds the
+  ;; front-end surface: kind :print, no UI, and the headless port — so an
+  ;; extension that branches on ctx.mode, or asks a question, gets kmet1's answer
+  ;; under either app. The binding is the run's: the dispatcher's default comes
+  ;; back when it ends.
+  (let [seen (atom nil)]
+    (with-mode-run
+      (fn [opts]
+        ;; read from inside the run, where the binding is live
+        (reset! seen {:mode (extensions/extension-mode)
+                      :has-ui (extensions/extension-has-ui?)
+                      :set-theme (some? (extensions/ui-capability :set-theme))
+                      :notify (some? (extensions/ui-capability :notify))
+                      :confirm (extensions/ui-call :request {:kind :confirm})})
+        (future
+          (when-let [on-text (:on-text opts)] (on-text "ok"))
+          (when-let [on-done (:on-done opts)] (on-done :stop))
+          :done))
+      (fn []
+        (is (= 0 (:code (support/run-main ["-p" "hello"]))))
+        (is (= :print (:mode @seen)) "an extension sees the front end it runs under")
+        (is (false? (:has-ui @seen)) "and that there is no UI to draw on")
+        (is (true? (:set-theme @seen))
+            "the headless port answers where it must rather than staying inert")
+        (is (false? (:notify @seen))
+            "and stays inert where a no-op is right")
+        (is (= (extensions/ui-request-default :confirm) (:confirm @seen))
+            "a question gets its kind's default answer, never a prompt"))))
+  (is (nil? (extensions/ui-capability :set-theme))
+      "the dispatcher's own default is back once the run is over"))

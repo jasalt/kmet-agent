@@ -1447,6 +1447,27 @@ its print mode before prompting and kmet2's modes have not taken over. Sending
 `@tasks.md` as the prompt would be a wrong answer; the refusal names
 `--app old -p @tasks.md`, where it still reads files.
 
+### Landing 5c — the run says what kind of front end it is
+
+Print mode now binds the extension **front-end surface** while it runs —
+`:mode :print`, `has-ui` false, the headless capability port — and puts the
+dispatcher's default back when the run ends. kmet1 does the same a layer down,
+from its session runtime, and the difference was observable: an extension
+branching on `ctx.mode` saw nil under `--app new`, `(ui :set-theme "x")` got nil
+instead of `{:success false}`, and `(ui :request {:kind :confirm})` got nil where
+kmet1 answers with the kind's default ("ask is not yes"). A process's default
+stays maximally inert — that is what a process with *no* front end is — and a
+run that has one says so.
+
+**The `:ui` service waits for its first provider.** § "Pluggable UI" has it as a
+capability *service* (`:kind`, `:render-tree`, `:request!`, `:widget-set`,
+`:capabilities`), and its consumers are app plugins declaring
+`{:ui :optional}`. Nothing in kmet2 renders yet: print and rpc modes draw
+nothing, and the first real provider is the TUI at the end of this landing. A row
+written now would be a contract designed against a stub, which is the rule the
+`:systemPrompt` row already followed — the row lands with `ui-terminal`, and the
+surface a run binds today is the seam that row will plug into.
+
 **Found by running it: kmet2's process entry never loaded the model catalog.**
 `kmet --app new -p "who are you"` answered `Error: Unknown provider:
 commandcode` — for a settings file that works under `--app old`. `kmet.ai.models`'
