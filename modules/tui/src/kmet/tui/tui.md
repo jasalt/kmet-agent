@@ -2,11 +2,12 @@
 
 `kmet.tui.*` is a generic terminal-UI library (a Clojure/Babashka port of
 `@earendil-works/pi-tui`, extended with a Reagent-style component layer).
-It knows nothing about chat, LLMs or sessions — the app layer (`kmet.agent.ui.tui.*`)
+It knows nothing about chat, LLMs or sessions — the app layer (`kmet.ui.tui.*`,
+plus the `kmet.agent.ui.tui.*` half that still reaches kmet1's runtime)
 builds on it, and extensions consume the same namespaces.
 
 This document is the authoritative usage and development reference for the
-package: how `kmet.tui.*` works, and how `kmet.agent.ui.tui.*` builds on it. Keep
+package: how `kmet.tui.*` works, and how `kmet.ui.tui.*` builds on it. Keep
 it up to date whenever the described behavior changes.
 
 ## Contents
@@ -586,7 +587,7 @@ Rules:
   back to the default set; the table would not be a table without its box.
 - Components with a border prop: `:dynamic-border` (a rule),
   `:markdown` (table glyphs), `:editor` (the rule above and below the
-  text), `kmet.agent.ui.tui.bash-execution` (its top/bottom rules, `:border` option). All
+  text), `kmet.ui.tui.bash-execution` (its top/bottom rules, `:border` option). All
   default to `:normal`, so existing output is unchanged.
 - A component that *draws* a frame uses `border/top-line`,
   `border/bottom-line`, `border/mid-line` (with an optional edge-styling fn
@@ -611,7 +612,7 @@ Rules:
   `{:width :hidden-line-count :rule :border-fn}` and returns the full line,
   or nil to fall back to the default rule. kmet's app uses it to embed the
   session status in the editor's first line
-  (`kmet.agent.ui.tui.status-indicator/editor-top-border`), which is why no
+  (`kmet.ui.tui.status-indicator/editor-top-border`), which is why no
   separate status row sits above the editor for the default editor.
 
 ### 2.9 Aliases — named tag-level components
@@ -806,7 +807,7 @@ A shared sub whose body would be a pure alias of one atom —
 `(kmet.libs.hikap.core/compute [a] identity)` — should be the atom itself: a reaction
 buys nothing there (no derivation), and its cache-hit verification costs
 roughly twice a plain atom deref, paid by every subscriber every frame.
-`kmet.agent.ui.tui.subs/theme-sub` and `image-settings-sub` are such atoms.
+`kmet.ui.tui.subs/theme-sub` and `image-settings-sub` are such atoms.
 
 There is deliberately no `reg-sub`/`subscribe`. Create computes ONCE per
 instance — one built bare inside a render body leaks a reaction per pass
@@ -965,7 +966,7 @@ only extension `ui-custom` overlays float in practice.
 component argument it removes that component's entries wherever they sit
 (identity, not topmost) and returns true when one was removed. Hiding
 never disposes — the owner does (§5.1) — and the app's ordered close
-(`kmet.agent.ui.tui.dock/close!`, or `close-atom!` for a panel held in an atom)
+(`kmet.ui.tui.dock/close!`, or `close-atom!` for a panel held in an atom)
 leaves the stack before disposing on both surfaces, so the frame can never
 composite a disposed component.
 
@@ -988,7 +989,7 @@ style (pi: `SEGMENT_RESET` in `compositeTuiLine`).
 Several surfaces can share one slot as a stack: the top entry renders,
 entries below stay mounted but hidden, so removing the top reveals the
 surface that was covered (pi: `showSelector` / `showAuthSelect` over the
-editor). The app's editor dock (`kmet.agent.ui.tui.dock`) is the canonical
+editor). The app's editor dock (`kmet.ui.tui.dock`) is the canonical
 instance — `DOCK-STACK` holds `{:component c :focus-target f :borrowed? b}`
 entries, and the editor itself is the fallback when the stack is empty,
 not an entry. The overlay stack (§5.3) follows the same rules, and
@@ -1035,7 +1036,7 @@ Call-site rules: a CS without its stack atom is treated as an empty stack
 (removal paths no-op, so minimal test states keep working); tests assert
 through the public accessors (`dock/top-component`,
 `dock/top-focus-target`), never by destructuring entry maps. The dock's
-full contract lives in the `kmet.agent.ui.tui.dock` namespace docstring; the
+full contract lives in the `kmet.ui.tui.dock` namespace docstring; the
 regression test for the round trip this shape was built from is
 `test-oauth-login-dialog-covers-and-releases` in
 `modules/agent/test/kmet/agent/modes/interactive/test_layout.clj`.
@@ -1402,7 +1403,7 @@ Attribute-specific resets (not catch-all `\u001b[0m`) make nested styles
 compose correctly.
 
 The active theme is a reactive input: `theme/theme-atom` (a plain atom).
-Components subscribe to it — `kmet.agent.ui.tui.subs/theme-sub` is that atom, not
+Components subscribe to it — `kmet.ui.tui.subs/theme-sub` is that atom, not
 a wrapper — instead of receiving theme as a constructor argument; a palette
 switch invalidates exactly the subscribed subtrees. The sub is a plain
 alias because there is no derivation to do: `track!` watches the atom and
@@ -1416,11 +1417,11 @@ strings, and a `track!` body's cache is only reached by an invalidation, so
 neither sees the new palette. The two safe shapes are a `root` body that
 `tracked-deref`s `theme-sub` — it re-derives on a switch and patches its
 element props in place, so a nested interactive component keeps its state
-(`kmet.agent.ui.tui.settings-submenu`, `kmet.agent.ui.tui.theme-submenu`, the fork
+(`kmet.ui.tui.settings-submenu`, `kmet.ui.tui.theme-submenu`, the fork
 panel) — and an uncached leaf's `:color-fn` that reads
 `get-current-theme` when it is called (`DynamicBorder` calls it per frame;
 see the settings, tree and config frames). A caller-supplied theme prop
-(`kmet.agent.ui.tui.dialogs`' `TH`) is a deliberate exception: that dialog stays
+(`kmet.ui.tui.dialogs`' `TH`) is a deliberate exception: that dialog stays
 on the theme its caller chose.
 
 Theme definitions are EDN files; `docs/examples/themes/` contains complete
@@ -1467,7 +1468,9 @@ Frame glyphs come from `kmet.tui.border` (§2.8), not from the components:
 `dynamic_border` and `editor` draw a rule, `markdown` its table, and the
 app-layer `bash_execution` its top/bottom rules — each with a `:border` style.
 
-Message-like app components live in `kmet.agent.ui.tui.*`, not here — this layer
+Message-like app components live in `kmet.ui.tui.*` (the moved ones) or
+`kmet.agent.ui.tui.*` (the rest, until landing 6 parameterizes their runtime
+edge), not here — this layer
 stays generic: chat history, tool executions, the skill invocation
 message (`skill_message`, which renders a `/skill:name` block as a
 collapsible `[skill] name (ctrl+o to expand)` entry — pi:
@@ -1654,7 +1657,7 @@ kmet.libs.*     self-contained helpers bottom layer (terminal protocol,
 `kmet.libs.hikap.core` may require `kmet.libs.*` only; `kmet.tui.*` and
 `kmet.tk.*` build on `kmet.libs.hikap.core` + `kmet.libs.*`. `kmet.tui.*` must never require
 `kmet.agent.*`, `kmet.agent.modes.*` or `kmet.ai.*`; app-specific components belong
-in `kmet.agent.ui.tui.*`.
+in `kmet.ui.tui.*`.
 
 ## 13.1 Foreign component cleanup — `defcomponent` + spliced records
 
@@ -1684,7 +1687,7 @@ hiccup reconciler:
      foreign children of its own),
   3. then dispose its own tree root.
 
-Example (`kmet.agent.ui.tui.bash-execution` — a long-lived spinner, spliced
+Example (`kmet.ui.tui.bash-execution` — a long-lived spinner, spliced
 foreign so its identity and animation start survive body re-derives). It
 needs none of 1–2: pi's spinner holds only atoms and derives its frame
 from `start-atom` at render time, so the only thing to stop is the
@@ -1720,7 +1723,7 @@ child is a real bug and should stay loud.
 
 ## 14. Building app UI — DSL first
 
-`kmet.agent.ui.tui.*` is the reference consumer of the DSL. These are the
+`kmet.ui.tui.*` is the reference consumer of the DSL. These are the
 composition rules for new UI — how a screen is built so it behaves like the
 rest of the app. The migration has landed: dialogs, selectors, settings and
 the tool renderers are trees; the imperative sites that remain are the

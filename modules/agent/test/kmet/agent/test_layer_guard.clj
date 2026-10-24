@@ -87,9 +87,14 @@
   (source-files-under "modules/agent/src/kmet/agent/modes"))
 
 (defn- ui-source-files
-  "Every app-UI namespace file."
+  "Every app-UI namespace file: the half that moved to the `ui` module at
+   landing 5 (`kmet.ui.*`) and the half still in `agent` because it is written
+   against kmet1's runtime (`kmet.agent.ui.*`). Both halves are one layer, so
+   both are scanned — the rank guard catches a `ui` file reaching `agent`, but
+   not a `ui` file reaching `kmet.agent.loop` (rank 2, below it)."
   []
-  (source-files-under "modules/agent/src/kmet/agent/ui"))
+  (sort (concat (source-files-under "modules/agent/src/kmet/agent/ui")
+                (source-files-under "modules/ui/src/kmet/ui"))))
 
 (defn- front-end-source-files
   "Every mode and app-UI namespace file (the front-end layers)."
@@ -107,6 +112,7 @@
                               (filter (fn [d]
                                         (or (str/starts-with? d "kmet.tui.")
                                             (str/starts-with? d "kmet.tk.")
+                                            (str/starts-with? d "kmet.ui.")
                                             (str/starts-with? d "kmet.agent.modes.")))
                                       deps))]
         (is (empty? forbidden)
@@ -124,6 +130,8 @@
       (is (seq files) "no front-end sources scanned — check the walk roots")
       (is (some #(str/includes? % "/modes/") files) "modes tree not scanned")
       (is (some #(str/includes? % "/ui/") files) "app UI tree not scanned")
+      (is (some #(str/includes? % "modules/ui/src/kmet/ui/") files)
+          "the ui module's half not scanned")
       (doseq [f files]
         (let [forbidden (filter (fn [d]
                                   (some #(str/starts-with? d %)

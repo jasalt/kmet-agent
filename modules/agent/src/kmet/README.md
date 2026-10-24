@@ -21,6 +21,9 @@ modules/
 ├── srce/   — the kmet2 kernel: ctx, services, fibers  (kmet.srce.*; srce.md)
 ├── app/    — kmet2's application, below every front end (kmet.app.*;
 │             the file/namespace rule is new-app.md)   (kmet.agent.version)
+├── ui/     — the front ends: the TUI components kmet2 owns (kmet.ui.*;
+│             landing 5e — the half written against kmet1's runtime is still
+│             in agent/, under kmet.agent.ui.*)
 ├── agent/  — this module: kmet1, the current app    (kmet.agent.*)
 ├── loader/ — extension loader                       (kmet.loader.*)
 └── tk/     — Tk backend + widget sample, Jolt-only  (kmet.tk.*, kmet.gui-sample.*)
@@ -34,8 +37,9 @@ extra source roots, and the tasks read it instead of repeating the paths
 
 Ranks are the manifest's layering guard (`kmet.test-module-deps`): a module
 may depend only on strictly lower-ranked ones, and a *namespace* may require
-only a file in a strictly lower-ranked module (`srce` 1, `app` 2, `agent` 4 —
-the legacy app sits above the shared layers until it is retired). A file may
+only a file in a strictly lower-ranked module (`srce` 1, `app` 2, `ui` 3,
+`agent` 4 — the legacy app sits above the shared layers and the new front ends
+until it is retired). A file may
 change module without changing namespace: `kmet.agent.version` lives in
 `modules/app` so both apps can print one version string, and the module's
 `deps.edn` carries the edge (`agent` → `app`). `kmet.agent.core` in the agent
@@ -229,7 +233,7 @@ root `AGENTS.md` topic map.
 - `kmet.agent.modes.*` is the entry-mode layer; `kmet.agent.*` is business
   logic; `kmet.agent.ui.*` is app-specific UI. The direction is modes → UI (a
   mode assembles components), never UI → modes;
-  `kmet.agent.ui.tui.theme-controller` sits in the UI layer for exactly that
+  `kmet.ui.tui.theme-controller` sits in the UI layer for exactly that
   reason and the modes call it from above.
   `kmet.agent.cli` is the composition root: it owns the CLI-only flags
   (`--version`, `--list-models`, `--generate-models`), parses arguments and

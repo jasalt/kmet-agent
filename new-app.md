@@ -1653,6 +1653,22 @@ been touched since the rule started applying. Removing the dead exclusion is the
 fix. It is also the reminder that `lint-changed` is the frequent gate and
 `lint` is the one that finds what a long-untouched file is carrying.
 
+**Review: the guards that watched the tree have to watch both halves.** kmet1's
+`test_layer_guard` scanned `modules/agent/src/kmet/agent/ui` for two rules — a
+front end must not reach `kmet.agent.loop`, and the app layer must not reach a
+front end — and after the move it silently scanned 11 files instead of 38. The
+rank guard takes over the second rule (rank 3 → 4 is upward), but **not the
+first**: `kmet.agent.loop` sits at rank 2, below `ui`, so a moved component could
+require the loop driver and every guard would pass. Both rules now scan the
+union of the two trees, and `kmet.ui.` joined the forbidden front-end prefixes.
+Mutation-checked: a `kmet.agent.loop` require added to `kmet.ui.tui.footer` fails
+`front-ends-drive-the-runtime-not-the-loop` by name.
+
+The docs that name namespaces were updated too — `modules/tui/src/kmet/tui/tui.md`
+(the TUI's rules doc) and the layer README say `kmet.ui.tui.*` where the component
+moved, and name both halves where they describe the layer as a whole. The ledger
+is history and keeps its wording.
+
 **Evidence.** `--app old` boots and the TUI renders (tmux capture:
 header, footer hints, the context/skills/prompts/extensions panels); `--app new`
 runs rpc mode; `bb test` 4,193 / 24,613; `bb lint` (full tree, both views) 0
