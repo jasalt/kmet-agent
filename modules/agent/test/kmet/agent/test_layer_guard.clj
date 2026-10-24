@@ -61,14 +61,6 @@
       (str/replace #"/" ".")
       (str/replace #"_" "-")))
 
-(def ^:private temporary-leaks
-  ;; Known pre-existing violations of the app layer boundary. Remove an
-  ;; entry when the corresponding leak is fixed; new violations fail this
-  ;; test. Empty since the extension resource loader moved its theme call
-  ;; behind the extensions-context call-time door
-  ;; (kmet.agent.extensions.context/load-themes-from-dir!).
-  {})
-
 (defn- source-files-under
   "Every Clojure source file under DIR, path-normalized and sorted. A missing
    DIR yields nothing instead of throwing: the callers assert which roots they
@@ -117,15 +109,12 @@
     (doseq [f (app-source-files)]
       (let [ns-name (path->ns f)
             deps (required-kmet f)
-            forbidden (remove (fn [d]
-                                (and (contains? temporary-leaks ns-name)
-                                     (some #(str/starts-with? d %) (get temporary-leaks ns-name))))
-                              (filter (fn [d]
-                                        (or (str/starts-with? d "kmet.tui.")
-                                            (str/starts-with? d "kmet.tk.")
-                                            (str/starts-with? d "kmet.ui.")
-                                            (str/starts-with? d "kmet.agent.modes.")))
-                                      deps))]
+            forbidden (filter (fn [d]
+                                (or (str/starts-with? d "kmet.tui.")
+                                    (str/starts-with? d "kmet.tk.")
+                                    (str/starts-with? d "kmet.ui.")
+                                    (str/starts-with? d "kmet.agent.modes.")))
+                              deps)]
         (is (empty? forbidden)
             (str ns-name " requires forbidden namespaces: " (vec (sort forbidden))))))))
 
@@ -170,29 +159,18 @@
                    " — the UI layer reads kmet.agent.session.runtime; the driver
                       starts work and belongs to the modes")))))))
 
-(def ^:private ui-temporary-leaks
-  ;; Known app-UI namespaces and the entry-mode prefixes they may require.
-  ;; The UI layer sits below the modes (a mode assembles components, not the
-  ;; other way round), so an entry here is debt: move the dependency down
-  ;; instead of adding one. Empty since the theme controller moved into the
-  ;; UI layer.
-  {})
-
 (deftest app-ui-does-not-require-entry-modes
-  (testing "app UI components never reach up into kmet.agent.modes"
+  (testing "app UI components never reach up into kmet.agent.modes — the UI layer
+            sits below the modes, so it takes its data from the caller or the
+            runtime, never from an entry mode"
     (let [files (ui-source-files)]
       (is (seq files) "no app UI sources scanned — check the walk roots")
       (doseq [f files
               :let [ns-name (path->ns f)
-                    allowed (get ui-temporary-leaks ns-name #{})]]
-        (let [forbidden (remove (fn [d]
-                                  (some #(str/starts-with? d %) allowed))
-                                (filter #(str/starts-with? % "kmet.agent.modes.")
-                                        (required-kmet f)))]
-          (is (empty? forbidden)
-              (str ns-name " requires " (vec forbidden)
-                   " — UI takes its data from the caller or the runtime, "
-                   "never from an entry mode")))))))
+                    forbidden (filter #(str/starts-with? % "kmet.agent.modes.")
+                                      (required-kmet f))]]
+        (is (empty? forbidden)
+            (str ns-name " requires " (vec forbidden)))))))
 
 (def ^:private loop-module-edges
   "The only allowed kmet.agent.loop.* edges; a subset check, so the map can

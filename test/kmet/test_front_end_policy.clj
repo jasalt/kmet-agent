@@ -45,8 +45,7 @@
   [form]
   (and (seq? form)
        (symbol? (first form))
-       (= "bootstrap" (name (first form)))
-       (nil? (namespace (symbol (name (first form)))))))
+       (= "bootstrap" (name (first form)))))
 
 (defn- bootstrap-opts
   "The map literal PATH passes to its `bootstrap` call, or nil."

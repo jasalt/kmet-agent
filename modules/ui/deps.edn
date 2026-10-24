@@ -2,10 +2,13 @@
  ;; Rank 3: the front ends (new-app.md, landing 5). A module here may require
  ;; `app` (2) and the component backends (`tui`, `tk`, `hikap`) but never
  ;; `agent` (4) — that is why the TUI moves here in pieces rather than all at
- ;; once: what is written against kmet1's runtime (`kmet.agent.session.runtime`,
- ;; `app-runtime`, the lifted registries) stays behind until its edge is
- ;; parameterized, and only the components that already reach nothing above
- ;; `app` move.
+ ;; once: what is written against kmet1's *process* stays behind until its edge
+ ;; is parameterized (`kmet.agent.session.driver`, `kmet.agent.app-runtime`,
+ ;; `commands`, `skills`, `prompts`, `packages`, `tools.core`, the modes
+ ;; themselves), and only the components that already reach nothing above `app`
+ ;; move. `kmet.agent.session.runtime` is not on that list: it is the engine
+ ;; value at rank 2, so a UI file may read it and a widget must not reach the
+ ;; driver that starts its runs.
  ;;
  ;; `kmet.agent.ui.tui.tool-renderers` keeps its namespace: shipped extensions
  ;; require it and the loader whitelist admits it by name, so the file moves and

@@ -1734,6 +1734,28 @@ provider tags, `✓` on the current model and the detail panel (`kmet.ui.tui.mod
 (`kmet.ui.tui.settings-selector` → `model-selector`). The status line's `• max`
 is `thinking-selector`'s.
 
+**Two allow-lists were empty and still had their plumbing.** `test_layer_guard`
+carried `ui-temporary-leaks` and `temporary-leaks` — both `{}`, each wrapped in a
+`remove`/`contains?` that is an identity function over an empty map. A reader has
+to prove an empty table is inert before trusting the rule beside it; the rule now
+says what it means, and the next violation fails with its name
+(mutation-checked: a `kmet.ui.tui.` require in `kmet.agent.config` reports
+`["kmet.ui.tui.chat-history"]`, and a `kmet.agent.modes.` require in a selector
+reports by file).
+
+**`ui/deps.edn` named the wrong namespace as the thing that stays behind.** Its
+comment listed "`kmet.agent.session.runtime`" among what keeps a component in
+`agent` — but since 5g that namespace is the engine value at rank 2, which a UI
+file is *allowed* to read; the thing that stays behind is the driver. The comment
+names the driver and the six other rank-4 edges, so the next component move reads
+the true list.
+
+**A guard clause was tautological.** `bootstrap-call?` in
+`test_front_end_policy` compared `(namespace (symbol (name s)))` to nil on a
+symbol built from its own name — always true, so it filtered nothing while
+looking like it did. It matches the call name now, and renaming `bootstrap` in
+`print.clj` still fails the policy (checked).
+
 **The docs moved later than the code.** Two files named the selectors by their
 old namespace after the move: `tui.md` pointed at
 `kmet.agent.ui.tui.tree-selector` (and still described "the half that reaches
