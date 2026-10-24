@@ -169,9 +169,11 @@
             {:id :projections :plugin 'kmet.app.projections/plugin}
             {:id :agents :plugin 'kmet.app.agents/plugin}
             {:id :agent-loop :plugin 'kmet.app.loop.driver/plugin}
-            {:id :approvals :plugin 'kmet.app.permissions/approvals}]
+            {:id :approvals :plugin 'kmet.app.permissions/approvals}
+            {:id :mode-tui :plugin 'kmet.agent.modes.tui/plugin :mode true}]
            (:rows (profile/compose (profile/layers table :tui))))
-        "the bundle carries the rows the landed plugins add, for every profile")
+        "the bundle carries the rows the landed plugins add, and the TUI is the
+         default profile's mode row")
     (is (= {:id :mode-rpc :plugin 'kmet.app.modes.rpc/plugin :mode true}
            (last (:rows (profile/compose (profile/layers table :rpc)))))
         "and a profile with a mode row carries it last, marked :mode")))

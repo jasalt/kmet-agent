@@ -570,14 +570,21 @@
    :output-pad (cfg/get-output-pad config)))
 
 (defn build-layout
-  "Create TUI layout and return CoreState."
-  [config session]
-  (let [tui-term (term/create-terminal)
-        t (tui/create-tui tui-term)
+  "Create TUI layout and return CoreState.
+
+   CTX is the ctx the engine runs on — the one whose `:tools`, `:sessions` and
+   `:systemPrompt` the run reads (`session-driver/bootstrap`'s `:ctx`). It
+   defaults to the process root, which is what kmet1's entry has always passed;
+   an entry that boots a composition (`kmet --app new --profile tui`) names the
+   composition's own ctx instead."
+  ([config session] (build-layout config session (app-runtime/ctx)))
+  ([config session ctx]
+   (let [tui-term (term/create-terminal)
+         t (tui/create-tui tui-term)
 
         ;; Resolve model and provider from config
-        provider (cfg/get-provider config)
-        model (models/resolve-config-model config)
+         provider (cfg/get-provider config)
+         model (models/resolve-config-model config)
 
         ;; The runtime working directory (pi: AgentSession._cwd — the cwd
         ;; the resumed/continued session was recorded in, else the process
@@ -585,170 +592,170 @@
         ;; switch moves it); the footer data provider (the footer pwd, the
         ;; extension ctx.cwd) and the chat history (tool-component path
         ;; displays) share it.
-        cwd (or (session/session-cwd session) (str (fs/cwd)))
+         cwd (or (session/session-cwd session) (str (fs/cwd)))
 
         ;; The runtime owns the agent state, system prompt, run options and
         ;; extension handle (kmet.agent.session.session-driver/bootstrap); the layout
         ;; owns view state and subscribes its event handler once the widgets
         ;; exist.
-        engine (session-driver/bootstrap config {:session session
-                                                 :cwd cwd
-                                                 :ctx (app-runtime/ctx)
-                                                 :load-resources! packages/load-resources!
-                                                 :expand-input packages/expand-input})
-        cwd-atom (:cwd engine)
+         engine (session-driver/bootstrap config {:session session
+                                                  :cwd cwd
+                                                  :ctx ctx
+                                                  :load-resources! packages/load-resources!
+                                                  :expand-input packages/expand-input})
+         cwd-atom (:cwd engine)
 
         ;; Migrate legacy keybinding ids in keybindings.edn (pi: migrations
         ;; runner calls migrateKeybindingsConfigFile at startup)
-        _ (app-kb/migrate-keybindings-config-file!)
+         _ (app-kb/migrate-keybindings-config-file!)
 
         ;; Initialize keybindings (global singleton for key-hint + input
         ;; handling); persisted overrides load from keybindings.edn
         ;; (pi: KeybindingsManager.create)
-        _ (let [kmgr (app-kb/create-agent-keybindings-manager)]
-            (tui-kb/set-global-keybindings! kmgr)
-            (app-kb/set-key-hint-theme-fns!
-             #(th/dim %)
-             #(th/fg (config-theme config) :muted %)))
+         _ (let [kmgr (app-kb/create-agent-keybindings-manager)]
+             (tui-kb/set-global-keybindings! kmgr)
+             (app-kb/set-key-hint-theme-fns!
+              #(th/dim %)
+              #(th/fg (config-theme config) :muted %)))
 
         ;; Components (define before agent state so on-event can reference them)
-        sp1 (spacer/make-spacer 1)
+         sp1 (spacer/make-spacer 1)
         ;; Inline image display settings (pi: terminal.showImages /
         ;; terminal.imageWidthCells) — seeded here, then read live by every
         ;; image (tool results, message attachments) through the shared sub
-        _ (reset! subs/image-settings-atom
-                  {:show-images (cfg/get-show-images config)
-                   :image-width-cells (cfg/get-image-width-cells config)})
+         _ (reset! subs/image-settings-atom
+                   {:show-images (cfg/get-show-images config)
+                    :image-width-cells (cfg/get-image-width-cells config)})
         ;; no :theme — message components subscribe to ui.subs/theme-sub
         ;; themselves (Stage 5)
-        ch (make-app-chat-history config cwd-atom)
-        pending-tool-comps (atom {})  ;; Pi: pendingTools Map (tool-call-id → comp)
-        cs-ref (atom nil)             ;; CoreState, filled after layout (for :status events)
+         ch (make-app-chat-history config cwd-atom)
+         pending-tool-comps (atom {})  ;; Pi: pendingTools Map (tool-call-id → comp)
+         cs-ref (atom nil)             ;; CoreState, filled after layout (for :status events)
 
         ;; Context window of the active model — drives the footer % and the
         ;; proactive auto-compaction check (pi: state.model.contextWindow)
-        ctx-window (or (:context-window (models/get-model provider model))
-                       (:context-window config))
+         ctx-window (or (:context-window (models/get-model provider model))
+                        (:context-window config))
         ;; B.1: welcome header — ExpandableText with compact/full variants
         ;; (pi: builtInHeader), toggled by app.tools.expand
-        hdr (let [mode (cfg/get-tool-display-mode config)]
-              (expandable-text/make-expandable-text
-               state/fmt-header-compact state/fmt-header-full
-               :expanded? (= :expanded mode) :padding-x 1 :padding-y 0))
+         hdr (let [mode (cfg/get-tool-display-mode config)]
+               (expandable-text/make-expandable-text
+                state/fmt-header-compact state/fmt-header-full
+                :expanded? (= :expanded mode) :padding-x 1 :padding-y 0))
         ;; B.2: loaded resources between header and chat (pi: showLoadedResources)
-        lr (loaded-resources/make-loaded-resources :theme (config-theme config)
-                                                   :expanded? (= :expanded (cfg/get-tool-display-mode config)))
+         lr (loaded-resources/make-loaded-resources :theme (config-theme config)
+                                                    :expanded? (= :expanded (cfg/get-tool-display-mode config)))
         ;; B.3: queued steering/follow-up display (pi: updatePendingMessagesDisplay)
-        pm (pending-messages/make-pending-messages
-            :hint (status/fmt-key-display (app-kb/key-text "app.message.dequeue")))
+         pm (pending-messages/make-pending-messages
+             :hint (status/fmt-key-display (app-kb/key-text "app.message.dequeue")))
         ;; B.5: editor dynamic height — max(5, rows*0.3) via :terminal-rows;
         ;; the fixed :height fallback stays at the default 12;
         ;; border color reflects the current thinking level (pi: updateEditorBorderColor)
-        ed (editor/make-editor :padding-x (cfg/get-editor-padding-x config)
-                               :autocomplete-max-visible (cfg/get-autocomplete-max-visible config)
-                               :terminal-rows (fn [] (term/rows @(:terminal t)))
-                               :border-fn (th/get-thinking-border-color
-                                           (config-theme config)
-                                           (or (runtime/thinking-level engine) :off)))
+         ed (editor/make-editor :padding-x (cfg/get-editor-padding-x config)
+                                :autocomplete-max-visible (cfg/get-autocomplete-max-visible config)
+                                :terminal-rows (fn [] (term/rows @(:terminal t)))
+                                :border-fn (th/get-thinking-border-color
+                                            (config-theme config)
+                                            (or (runtime/thinking-level engine) :off)))
         ;; B.6: footer data provider + footer (pi: FooterComponent; the
         ;; model line wraps to its own line when the stats line is too narrow)
-        fdp (fdp/make-footer-data-provider
-             :cwd-atom cwd-atom
-             :session session
-             :provider-count (count (distinct (map :provider (model-catalog/scoped-or-available-models engine))))
+         fdp (fdp/make-footer-data-provider
+              :cwd-atom cwd-atom
+              :session session
+              :provider-count (count (distinct (map :provider (model-catalog/scoped-or-available-models engine))))
              ;; Phase 2: context window from the resolved Model record, falling
              ;; back to the settings value when the model is unknown (pi footer
              ;; contextPercentDisplay)
-             :context-window ctx-window
-             :model (runtime/model engine) :provider (runtime/provider engine) :thinking (runtime/thinking-level engine)
+              :context-window ctx-window
+              :model (runtime/model engine) :provider (runtime/provider engine) :thinking (runtime/thinking-level engine)
              ;; pi: the thinking suffix renders only for reasoning models
-             :reasoning (boolean (:reasoning (models/get-model provider model))))
-        ftr (footer/make-footer :theme (config-theme config)
-                                :provider fdp
+              :reasoning (boolean (:reasoning (models/get-model provider model))))
+         ftr (footer/make-footer :theme (config-theme config)
+                                 :provider fdp
                             ;; pi: the "(auto)" badge reflects the autoCompact
                             ;; setting; overflow-only recovery doesn't count
-                                :auto-compact (get config :auto-compact true))
+                                 :auto-compact (get config :auto-compact true))
 
         ;; Core state (status-indicator/status-root filled in after layout)
         ;; the active editor lives behind an atom so custom editors can swap
         ;; in; the focus home reads both atoms at restore time so a mounted
         ;; dock selector outranks the editor (tui-set-focus-home!)
-        current-editor-atom (atom ed)
-        dock-stack (atom [])
-        cs (state/map->CoreState {:tui t
-                                  :engine engine
-                                  :chat-history ch
-                                  :editor ed
-                                  :current-editor-atom current-editor-atom
-                                  :header-comp hdr
-                                  :loaded-resources-comp lr
-                                  :anim-timer (atom nil)
-                                  :footer-comp ftr
-                                  :footer-provider fdp
-                                  :status-indicator nil
-                                  :status-current (atom nil)
-                                  :status-root nil
-                                  :pending-messages-comp pm
-                                  :pending-tool-comps pending-tool-comps
-                                  :bash-running? (atom false)
-                                  :bash-signal (atom false)
-                                  :pending-bash-components (atom [])
-                                  :pending-messages-container (container/make-container [pm])
-                                  :dock-stack dock-stack})]
+         current-editor-atom (atom ed)
+         dock-stack (atom [])
+         cs (state/map->CoreState {:tui t
+                                   :engine engine
+                                   :chat-history ch
+                                   :editor ed
+                                   :current-editor-atom current-editor-atom
+                                   :header-comp hdr
+                                   :loaded-resources-comp lr
+                                   :anim-timer (atom nil)
+                                   :footer-comp ftr
+                                   :footer-provider fdp
+                                   :status-indicator nil
+                                   :status-current (atom nil)
+                                   :status-root nil
+                                   :pending-messages-comp pm
+                                   :pending-tool-comps pending-tool-comps
+                                   :bash-running? (atom false)
+                                   :bash-signal (atom false)
+                                   :pending-bash-components (atom [])
+                                   :pending-messages-container (container/make-container [pm])
+                                   :dock-stack dock-stack})]
 
     ;; Initial loaded-resources sections (rebuilt on /reload)
-    (loaded-resources/loaded-resources-set-sections! lr (resources/build-loaded-resource-sections))
+     (loaded-resources/loaded-resources-set-sections! lr (resources/build-loaded-resource-sections))
 
     ;; Focus editor
-    (tui/tui-set-focus t ed)
+     (tui/tui-set-focus t ed)
     ;; Terminal focus fallback: when nothing capturing holds input, keys
     ;; return to the dock's top focus target if one is mounted, else the
     ;; ACTIVE editor - resolved through atoms so swaps stay live
     ;; (tui-set-focus-home!)
-    (tui/tui-set-focus-home! t #(or (dock/top-focus-target (deref dock-stack))
-                                    (deref current-editor-atom)))
+     (tui/tui-set-focus-home! t #(or (dock/top-focus-target (deref dock-stack))
+                                     (deref current-editor-atom)))
 
     ;; Hardware cursor: the setting wins over the KMET_HARDWARE_CURSOR env
     ;; default (pi: showHardwareCursor)
-    (tui/tui-set-show-hardware-cursor! t (cfg/get-show-hardware-cursor config))
+     (tui/tui-set-show-hardware-cursor! t (cfg/get-show-hardware-cursor config))
 
     ;; clear-on-shrink: the setting wins over the KMET_CLEAR_ON_SHRINK env
     ;; default (pi: terminal.clearOnShrink)
-    (tui/tui-set-clear-on-shrink! t (cfg/get-clear-on-shrink config))
+     (tui/tui-set-clear-on-shrink! t (cfg/get-clear-on-shrink config))
 
     ;; Register builtin slash commands (autocomplete dropdown + dispatch)
-    (builtins/register-builtin-commands! config)
+     (builtins/register-builtin-commands! config)
 
     ;; Autocomplete provider: slash commands + prompt templates + skill
     ;; commands + file paths
-    (editor/editor-set-autocomplete-provider! ed
-                                              (ac/make-combined-provider
-                                               :commands-fn #(vec (concat (commands/get-commands :interactive)
-                                                                          (prompts/as-command-maps (prompts/get-prompt-templates))
+     (editor/editor-set-autocomplete-provider! ed
+                                               (ac/make-combined-provider
+                                                :commands-fn #(vec (concat (commands/get-commands :interactive)
+                                                                           (prompts/as-command-maps (prompts/get-prompt-templates))
                                                                           ;; pi: enableSkillCommands — read live,
                                                                           ;; so a /settings toggle takes effect on
                                                                           ;; the next autocomplete open
-                                                                          (when (cfg/get-enable-skill-commands config)
-                                                                            (skills/as-command-maps (skills/get-skills)))))
+                                                                           (when (cfg/get-enable-skill-commands config)
+                                                                             (skills/as-command-maps (skills/get-skills)))))
                                                ;; a fn: path completion follows a session switch's cwd
-                                               :base-path #(fdp/fdp-get-cwd fdp)))
-    (editor/editor-set-autocomplete-theme! ed (th/get-select-list-theme (config-theme config)))
+                                                :base-path #(fdp/fdp-get-cwd fdp)))
+     (editor/editor-set-autocomplete-theme! ed (th/get-select-list-theme (config-theme config)))
 
     ;; Status indicator: the default editor embeds the active status in its
     ;; own top border (pi: embedWorkingStatus); the standalone layer above
     ;; the editor only appears for a custom editor without a top-border fn.
-    (let [si (status-indicator/make-status-indicator
-              :theme (config-theme config)
+     (let [si (status-indicator/make-status-indicator
+               :theme (config-theme config)
               ;; Embedded color (pi: showWorkingStatusIndicator's colorFn):
               ;; while the ACTIVE editor carries the status, the spinner and
               ;; message take the editor border color — the thinking level —
               ;; resolved per call, so a level change recolors without
               ;; reinstalling; standalone keeps the accent/muted pair.
-              :border-color-fn
-              (fn []
-                (let [active @current-editor-atom]
-                  (when (status-indicator/editor-embeds-status? active)
-                    (when-some [bf (:border-fn active)] @bf)))))
+               :border-color-fn
+               (fn []
+                 (let [active @current-editor-atom]
+                   (when (status-indicator/editor-embeds-status? active)
+                     (when-some [bf (:border-fn active)] @bf)))))
           ;; Theme controller (pi: InteractiveThemeController) — created in
           ;; the layout so CoreState carries it for all handlers (slash
           ;; commands, /reload, extension registry); applies the configured
@@ -756,45 +763,45 @@
           ;; notifications, and re-themes the app components live on change
           ;; (the on-changed callback — pi: notifyChanged → onChanged). The
           ;; callback runs only after the layout is fully bound.
-          tc (theme-ctrl/make-theme-controller
-              t config
-              (fn [msg] (tui/tui-flash! t msg :duration-ms 3000))
-              (fn []
-                (let [current-theme (th/get-current-theme)]
+           tc (theme-ctrl/make-theme-controller
+               t config
+               (fn [msg] (tui/tui-flash! t msg :duration-ms 3000))
+               (fn []
+                 (let [current-theme (th/get-current-theme)]
                   ;; key-hint theme fns first — the header rebuild re-runs
                   ;; the content fns that use them
-                  (app-kb/set-key-hint-theme-fns!
-                   #(th/dim %) #(th/fg current-theme :muted %))
+                   (app-kb/set-key-hint-theme-fns!
+                    #(th/dim %) #(th/fg current-theme :muted %))
                   ;; transcript components subscribe to ui.subs/theme-sub —
                   ;; no walk needed (Stage 5); footer/indicator/resources
                   ;; keep their setter paths
-                  (footer/footer-set-theme! ftr current-theme)
-                  (status-indicator/status-indicator-set-theme! si current-theme)
-                  (loaded-resources/loaded-resources-set-theme! lr current-theme)
-                  (expandable-text/expandable-text-rebuild! hdr)
-                  (editor/editor-set-autocomplete-theme!
-                   ed (th/get-select-list-theme current-theme))
+                   (footer/footer-set-theme! ftr current-theme)
+                   (status-indicator/status-indicator-set-theme! si current-theme)
+                   (loaded-resources/loaded-resources-set-theme! lr current-theme)
+                   (expandable-text/expandable-text-rebuild! hdr)
+                   (editor/editor-set-autocomplete-theme!
+                    ed (th/get-select-list-theme current-theme))
                   ;; the editor's dynamic border is a border-fn baked at
                   ;; construction — re-style it from the active theme so the
                   ;; most prominent themed element changes with the palette
-                  (reset! (:border-fn ed)
-                          (th/get-thinking-border-color
-                           current-theme (or (runtime/thinking-level engine) :off)))
-                  (tui/tui-request-render t))))
-          cs (assoc cs :status-indicator si :theme-controller tc)
+                   (reset! (:border-fn ed)
+                           (th/get-thinking-border-color
+                            current-theme (or (runtime/thinking-level engine) :off)))
+                   (tui/tui-request-render t))))
+           cs (assoc cs :status-indicator si :theme-controller tc)
           ;; The default editor renders the session status in its first
           ;; line — its top border (pi: CustomEditor renderTopBorder). The
           ;; hook reads the live status per render, so swaps and spinner
           ;; ticks repaint with the normal frame.
-          _ (editor/editor-set-top-border-fn!
-             ed
-             (fn [{:keys [width hidden-line-count rule border-fn]}]
-               (status-indicator/editor-top-border
-                {:indicator (status/current-status-indicator cs)
-                 :width width
-                 :hidden-line-count hidden-line-count
-                 :rule rule
-                 :border-fn border-fn})))
+           _ (editor/editor-set-top-border-fn!
+              ed
+              (fn [{:keys [width hidden-line-count rule border-fn]}]
+                (status-indicator/editor-top-border
+                 {:indicator (status/current-status-indicator cs)
+                  :width width
+                  :hidden-line-count hidden-line-count
+                  :rule rule
+                  :border-fn border-fn})))
           ;; Pi layout (interactive-mode.ts setupUiLayout): the TUI root is a
           ;; single flat document — the transcript (header, loaded resources,
           ;; chat) followed top-to-bottom by pending messages, status, widgets
@@ -803,198 +810,198 @@
           ;; grows past the screen height it scrolls natively into the
           ;; terminal scrollback, so the whole interface scrolls together and
           ;; the editor (document end) stays visible at the bottom.
-          header-container (container/make-container [sp1 hdr sp1])
-          loaded-resources-container (container/make-container [lr])
-          chat-container (container/make-container [ch])
-          document-container (container/make-container [header-container
-                                                        loaded-resources-container
-                                                        chat-container])
-          pending-messages-container (:pending-messages-container cs)
+           header-container (container/make-container [sp1 hdr sp1])
+           loaded-resources-container (container/make-container [lr])
+           chat-container (container/make-container [ch])
+           document-container (container/make-container [header-container
+                                                         loaded-resources-container
+                                                         chat-container])
+           pending-messages-container (:pending-messages-container cs)
           ;; extension widget registries (pi: renderWidgets' maps) — read
           ;; tracked by the widget-area roots below, mutated by :set-widget
-          widgets-above-atom (atom {})
-          widgets-below-atom (atom {})
+           widgets-above-atom (atom {})
+           widgets-below-atom (atom {})
           ;; The status layer as a mounted DSL tree (dsl.md stage 4): the
           ;; root's reaction re-derives when :status-current swaps, and
           ;; reconcile swaps the child record — no clear/add dance. It
           ;; renders nothing while the active editor embeds the status in
           ;; its top border (the default editor), and the standalone
           ;; indicator otherwise (custom editors).
-          status-root (hiccup/root (status-indicator/make-status-area (:status-current cs)
-                                                                      si
-                                                                      (:current-editor-atom cs)))
+           status-root (hiccup/root (status-indicator/make-status-area (:status-current cs)
+                                                                       si
+                                                                       (:current-editor-atom cs)))
           ;; Widget areas as mounted DSL trees (dsl.md stage 4, pi:
           ;; renderWidgets): the widget maps are read tracked, so a
           ;; :set-widget swap re-derives exactly once; the leading spacer is
           ;; a tree element reused across passes via the equal-props
           ;; fast-path (the hand-built default Spacer retires).
-          widgets-above-root (hiccup/root
-                              (ui-registry/make-widget-area-above widgets-above-atom))
-          widgets-below-root (hiccup/root
-                              (ui-registry/make-widget-area-below widgets-below-atom))
+           widgets-above-root (hiccup/root
+                               (ui-registry/make-widget-area-above widgets-above-atom))
+           widgets-below-root (hiccup/root
+                               (ui-registry/make-widget-area-below widgets-below-atom))
           ;; The editor dock as a mounted DSL tree (dsl.md stage 4): the
           ;; root re-derives when :dock-stack or the active editor swaps —
           ;; selectors mount/unmount through pure atom writes.
-          dock-root (hiccup/root (dock/make-dock-area (:dock-stack cs)
-                                                      (:current-editor-atom cs)))
-          cs (assoc cs :status-root status-root
-                    :dock-root dock-root)]
+           dock-root (hiccup/root (dock/make-dock-area (:dock-stack cs)
+                                                       (:current-editor-atom cs)))
+           cs (assoc cs :status-root status-root
+                     :dock-root dock-root)]
 
       ;; Add components in pi's layout-root order: the transcript document
       ;; first, then the dock children top-to-bottom (pending messages,
       ;; status, widgets above, editor, widgets below, footer)
-      (tui/tui-add-child t document-container)
-      (tui/tui-add-child t pending-messages-container)
-      (tui/tui-add-child t status-root)
-      (tui/tui-add-child t widgets-above-root)
-      (tui/tui-add-child t dock-root)
-      (tui/tui-add-child t widgets-below-root)
-      (tui/tui-add-child t ftr)
+       (tui/tui-add-child t document-container)
+       (tui/tui-add-child t pending-messages-container)
+       (tui/tui-add-child t status-root)
+       (tui/tui-add-child t widgets-above-root)
+       (tui/tui-add-child t dock-root)
+       (tui/tui-add-child t widgets-below-root)
+       (tui/tui-add-child t ftr)
 
       ;; Global quit (app.quit, ctrl+q by default): the input-listener chain
       ;; runs before the overlay modality guard and focus dispatch, so the
       ;; shortcut quits from anywhere — editor, selector, dialog included.
       ;; Registered before the heal listener so a quit key skips it.
-      (tui/tui-add-input-listener t (turn/global-quit-listener t))
+       (tui/tui-add-input-listener t (turn/global-quit-listener t))
 
       ;; Heal a stale scrollback on the next keystroke when idle (see
       ;; heal-stale-scrollback-when-idle!): short of a scroll event, input is
       ;; the only signal that the user is back at the bottom, and any render
       ;; already pulls the inline viewport there anyway.
-      (tui/tui-add-input-listener
-       t
-       (fn [_data] (turn/heal-stale-scrollback-when-idle! cs) nil))
+       (tui/tui-add-input-listener
+        t
+        (fn [_data] (turn/heal-stale-scrollback-when-idle! cs) nil))
 
       ;; Wire editor submit (pi: setupEditorSubmitHandler — the clear
       ;; order is part of the contract, see make-editor-submit-handler)
-      (editor/editor-set-on-submit! ed (make-editor-submit-handler cs))
+       (editor/editor-set-on-submit! ed (make-editor-submit-handler cs))
 
       ;; Editor actions (pi: CustomEditor.onAction) — app keybindings dispatched
       ;; through the editor's action system, which also checks the autocomplete
       ;; dropdown state (e.g. escape closes the dropdown instead of cancelling)
-      (editor/editor-set-on-action! ed "app.interrupt"
+       (editor/editor-set-on-action! ed "app.interrupt"
         ;; pi: onEscape — abort the running agent turn or bash command
-                                    (fn [] (turn/handle-cancel cs)))
-      (editor/editor-set-on-action! ed "app.exit"
-                                    (fn [] (tui/tui-stop t)))
+                                     (fn [] (turn/handle-cancel cs)))
+       (editor/editor-set-on-action! ed "app.exit"
+                                     (fn [] (tui/tui-stop t)))
       ;; pi: handleCtrlZ — hand the terminal back, stop the process group
       ;; (SIGTSTP), and restart the TUI when the shell resumes us (SIGCONT)
-      (editor/editor-set-on-action! ed "app.suspend"
-                                    (fn [] (handle-suspend cs)))
+       (editor/editor-set-on-action! ed "app.suspend"
+                                     (fn [] (handle-suspend cs)))
       ;; Force a clearing full redraw on demand — the escape hatch for a
       ;; corrupted or stale screen/scrollback, and the same heuristic rebuild
       ;; the suspend/resume path uses (tui-request-render with force).
-      (editor/editor-set-on-action! ed "app.view.forceRedraw"
-                                    (fn [] (tui/tui-request-render t true)))
+       (editor/editor-set-on-action! ed "app.view.forceRedraw"
+                                     (fn [] (tui/tui-request-render t true)))
       ;; pi: handleCtrlC — single ctrl+c clears the editor, double within
       ;; 500ms quits
-      (let [last-ctrl-c (atom 0)]
-        (editor/editor-set-on-action! ed "app.clear"
-                                      (fn []
-                                        (let [now (concurrent/monotonic-ms)]
-                                          (if (< (- now @last-ctrl-c) 500)
-                                            (tui/tui-stop t)
-                                            (do (reset! last-ctrl-c now)
-                                                (editor/editor-set-text! ed "")
-                                                (tui/tui-request-render t)))))))
-      (editor/editor-set-on-action! ed "app.tools.expand"
-                                    (fn []
+       (let [last-ctrl-c (atom 0)]
+         (editor/editor-set-on-action! ed "app.clear"
+                                       (fn []
+                                         (let [now (concurrent/monotonic-ms)]
+                                           (if (< (- now @last-ctrl-c) 500)
+                                             (tui/tui-stop t)
+                                             (do (reset! last-ctrl-c now)
+                                                 (editor/editor-set-text! ed "")
+                                                 (tui/tui-request-render t)))))))
+       (editor/editor-set-on-action! ed "app.tools.expand"
+                                     (fn []
           ;; pi: the same toggle drives tool expansion, the builtInHeader, and
           ;; the loaded-resources sections (getStartupExpansionState) —
           ;; extended: ctrl+o cycles collapsed → expanded → quiet. Header,
           ;; resources and the info banner treat quiet as collapsed.
-                                      (let [mode (chat-history/chat-history-cycle-tool-display! ch)
-                                            expanded? (= :expanded mode)]
-                                        (try (cfg/set-tool-display-mode! mode)
-                                             (catch Exception e
-                                               (debug/log "Failed to persist tool-display-mode: " e)))
-                                        (expandable-text/expandable-text-set-expanded! hdr expanded?)
-                                        (loaded-resources/loaded-resources-set-expanded! lr expanded?)
-                                        (chat-history/chat-history-show-status! ch
-                                                                                (str "Tool display: " (name mode)))
-                                        (turn/request-global-reflow-render! cs))))
-      (editor/editor-set-on-action! ed "app.thinking.toggle"
-                                    (fn []
+                                       (let [mode (chat-history/chat-history-cycle-tool-display! ch)
+                                             expanded? (= :expanded mode)]
+                                         (try (cfg/set-tool-display-mode! mode)
+                                              (catch Exception e
+                                                (debug/log "Failed to persist tool-display-mode: " e)))
+                                         (expandable-text/expandable-text-set-expanded! hdr expanded?)
+                                         (loaded-resources/loaded-resources-set-expanded! lr expanded?)
+                                         (chat-history/chat-history-show-status! ch
+                                                                                 (str "Tool display: " (name mode)))
+                                         (turn/request-global-reflow-render! cs))))
+       (editor/editor-set-on-action! ed "app.thinking.toggle"
+                                     (fn []
           ;; pi: showStatus feedback on toggle + persist hideThinkingBlock to
           ;; settings so the state survives restarts (SettingsManager.save;
           ;; write errors are recorded — the toggle still applies)
-                                      (let [hidden? (chat-history/chat-history-toggle-thinking-hidden! ch)]
-                                        (try (cfg/set-hide-thinking-block! hidden?)
-                                             (catch Exception e
-                                               (debug/log "Failed to persist hide-thinking-block: " e)))
-                                        (chat-history/chat-history-show-status! ch
-                                                                                (str "Thinking blocks: " (if hidden? "hidden" "visible")))
-                                        (turn/request-global-reflow-render! cs))))
+                                       (let [hidden? (chat-history/chat-history-toggle-thinking-hidden! ch)]
+                                         (try (cfg/set-hide-thinking-block! hidden?)
+                                              (catch Exception e
+                                                (debug/log "Failed to persist hide-thinking-block: " e)))
+                                         (chat-history/chat-history-show-status! ch
+                                                                                 (str "Thinking blocks: " (if hidden? "hidden" "visible")))
+                                         (turn/request-global-reflow-render! cs))))
       ;; pi: cycleThinkingLevel — Shift+Tab cycles through available levels
-      (editor/editor-set-on-action! ed "app.thinking.cycle"
-                                    (fn []
-                                      (if-let [next-level (runtime/cycle-thinking-level! (:engine cs))]
-                                        (do (cfg/save-setting! [:thinking] next-level)
-                                            (sync-footer-model! cs)
-                                            (state/update-editor-border-color! cs next-level)
-                                            (chat-history/chat-history-show-status! ch (str "Thinking level: " (name next-level)))
-                                            (tui/tui-request-render t))
-                                        (chat-history/chat-history-show-status! ch "Current model does not support thinking"))))
-      (editor/editor-set-on-action! ed "app.editor.external"
-                                    (fn [] (handle-external-editor cs)))
+       (editor/editor-set-on-action! ed "app.thinking.cycle"
+                                     (fn []
+                                       (if-let [next-level (runtime/cycle-thinking-level! (:engine cs))]
+                                         (do (cfg/save-setting! [:thinking] next-level)
+                                             (sync-footer-model! cs)
+                                             (state/update-editor-border-color! cs next-level)
+                                             (chat-history/chat-history-show-status! ch (str "Thinking level: " (name next-level)))
+                                             (tui/tui-request-render t))
+                                         (chat-history/chat-history-show-status! ch "Current model does not support thinking"))))
+       (editor/editor-set-on-action! ed "app.editor.external"
+                                     (fn [] (handle-external-editor cs)))
       ;; B.3: Alt+Enter queues a follow-up (pi: handleFollowUp); Alt+Up
       ;; restores queued messages to the editor (pi: handleDequeue)
-      (editor/editor-set-on-action! ed "app.message.followUp"
-                                    (fn [] (turn/handle-follow-up cs)))
-      (editor/editor-set-on-action! ed "app.message.dequeue"
-                                    (fn [] (turn/handle-dequeue cs)))
+       (editor/editor-set-on-action! ed "app.message.followUp"
+                                     (fn [] (turn/handle-follow-up cs)))
+       (editor/editor-set-on-action! ed "app.message.dequeue"
+                                     (fn [] (turn/handle-dequeue cs)))
       ;; Model selection/cycling (pi: onAction selectModel/cycleModelForward/
       ;; cycleModelBackward — the session scoped list feeds cycling (set via
       ;; /scoped-models, seeded from --models / settings :models); without
       ;; scoped models all available models cycle; a scoped entry may switch
       ;; the provider)
-      (editor/editor-set-on-action! ed "app.model.select"
-                                    (fn [] (show-model-selector cs)))
-      (editor/editor-set-on-action! ed "app.model.cycleForward"
-                                    #(cycle-model-action! cs 1))
-      (editor/editor-set-on-action! ed "app.model.cycleBackward"
-                                    #(cycle-model-action! cs -1))
+       (editor/editor-set-on-action! ed "app.model.select"
+                                     (fn [] (show-model-selector cs)))
+       (editor/editor-set-on-action! ed "app.model.cycleForward"
+                                     #(cycle-model-action! cs 1))
+       (editor/editor-set-on-action! ed "app.model.cycleBackward"
+                                     #(cycle-model-action! cs -1))
 
       ;; Initialize footer (header content is produced lazily by the
       ;; ExpandableText fns on first render)
-      (state/update-footer! cs)
+       (state/update-footer! cs)
 
       ;; Extension UI registry (pi: ExtensionUIContext) — installed after the
       ;; layout is live so extensions can drive the UI from event handlers
-      (ui-registry/build-extension-ui-registry {:tui t :cs cs}
-                                               {:ed ed :ftr ftr :hdr hdr :ch ch
-                                                :sp1 sp1 :fdp fdp
-                                                :header-container header-container
-                                                :widgets-above-atom widgets-above-atom
-                                                :widgets-below-atom widgets-below-atom}
-                                               tc)
+       (ui-registry/build-extension-ui-registry {:tui t :cs cs}
+                                                {:ed ed :ftr ftr :hdr hdr :ch ch
+                                                 :sp1 sp1 :fdp fdp
+                                                 :header-container header-container
+                                                 :widgets-above-atom widgets-above-atom
+                                                 :widgets-below-atom widgets-below-atom}
+                                                tc)
 
       ;; Expose the fully-built CoreState to the agent on-event handler (for
       ;; :status events) — after the layout assocs so the status
       ;; indicator/container and theme controller are present
-      (reset! cs-ref cs)
+       (reset! cs-ref cs)
 
       ;; The interactive event handler is one subscriber on the runtime's
       ;; stream (pi: the TUI session's event handlers), subscribed after
       ;; cs-ref so :status events resolve the built CoreState.
-      (session-driver/subscribe! engine
-                                 (make-agent-event-handler
-                                  {:chat-history ch :tui t :cs-ref cs-ref
-                                   :pending-tool-comps pending-tool-comps}))
+       (session-driver/subscribe! engine
+                                  (make-agent-event-handler
+                                   {:chat-history ch :tui t :cs-ref cs-ref
+                                    :pending-tool-comps pending-tool-comps}))
 
       ;; The front end's default run presentation (streaming text/thinking,
       ;; the done/error teardown) for any run the runtime starts on its own
       ;; — an extension send-user-message/send-message!, the compaction
       ;; flush — so those runs present like the editor's start-agent-run!
       ;; path instead of streaming invisibly.
-      (session-driver/set-run-callbacks! engine (turn/run-callbacks cs))
+       (session-driver/set-run-callbacks! engine (turn/run-callbacks cs))
 
       ;; Restore a --continue session into the chat history AND the agent
       ;; context (pi: renderInitialMessages from buildContextEntries) — the
       ;; agent's in-memory messages must mirror the session branch or the
       ;; next LLM call loses the whole restored conversation (steered and
       ;; follow-up messages included)
-      (when (and session (seq @(:entries session)))
-        (session-admin/restore-session! cs session true))
+       (when (and session (seq @(:entries session)))
+         (session-admin/restore-session! cs session true))
 
-      cs)))
+       cs))))

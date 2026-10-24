@@ -1240,8 +1240,8 @@
         (with-redefs [session/resolve-session-path (fn [_ _] "target/fake-session.jsonl")
                       state/format-resume-command (fn [_ _] nil)
                       session/load-session (fn [_] sess)
-                      layout/build-layout (fn [_ _] {:tui tui-stub
-                                                     :session-atom (atom sess)})
+                      layout/build-layout (fn [_ _ _ctx] {:tui tui-stub
+                                                          :session-atom (atom sess)})
                       tui/tui-start noop
                       process/kill-tracked-children! noop]
           (inter/run {} {:session "fake"}))

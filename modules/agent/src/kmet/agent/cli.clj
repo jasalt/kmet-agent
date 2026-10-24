@@ -290,6 +290,43 @@
             (println "--mode requires text, edn, or rpc"))
           (System/exit 1)))))
 
+(defn load-world!
+  "Load the process world a front end runs on: the provider catalogs and the
+   models.edn layer over them, the config, the extension packages, the themes,
+   and the extension CLI flags. Returns the config.
+
+   `-main` runs this after its own flags and before dispatch. A mode mounted by
+   another entry point runs it itself: `kmet --app new --profile tui` boots a
+   *composition*, not a process world, and the TUI still needs the catalogs, the
+   loaded extensions and the themes a process world has — so the list lives here
+   once rather than in each entry."
+  [opts]
+  ;; Provider/model registry — loads the committed catalogs (pi registers its
+  ;; generated providers at startup), then the models.edn user config layer
+  ;; (custom providers + overrides; errors surface as warnings)
+  (models/load-catalogs!)
+  (image-models/load-image-catalogs!)
+  (models/load-models-config!)
+  (when-let [err (models/get-model-config-error)]
+    (binding [*out* *err*]
+      (println "Warning: models.edn:" err)))
+  ;; Configuration + extensions load before model resolution (pi:
+  ;; createAgentSessionRuntime registers extension providers, then the CLI model
+  ;; resolves) — so --model/--provider and settings.edn can select
+  ;; extension-registered providers, and print mode gets extension hooks.
+  (let [config (cfg/init!)]
+    ;; Extension loading below registers into the root ctx's registries, so the
+    ;; root has to exist before any init(api) runs.
+    (runtime/ctx)
+    ;; One unified load per type (pi: resourceLoader — top-level entries, auto
+    ;; dirs, then packages in precedence order)
+    (packages/load-extensions!)
+    (theme/load-theme-paths! (packages/resolve-theme-paths))
+    ;; Extension CLI flags: the collected --flags become readable via
+    ;; extensions/get-flag (pi: registerFlag + getFlag).
+    (extensions/set-cli-flags! (:ext-flags opts))
+    config))
+
 (defn -main
   "Entry point. Parses CLI args and dispatches to the requested mode."
   [& args]
@@ -338,32 +375,7 @@
       (debug/enable!)
       (debug/log "kmet started with --debug"))
 
-    ;; Provider/model registry — loads the committed catalogs (pi registers
-    ;; its generated providers at startup), then the models.edn user config
-    ;; layer (custom providers + overrides; errors surface as warnings)
-    (models/load-catalogs!)
-    (image-models/load-image-catalogs!)
-    (models/load-models-config!)
-    (when-let [err (models/get-model-config-error)]
-      (binding [*out* *err*]
-        (println "Warning: models.edn:" err)))
-
-    ;; Configuration + extensions load before model resolution (pi:
-    ;; createAgentSessionRuntime registers extension providers, then the CLI
-    ;; model resolves) — so --model/--provider and settings.edn can select
-    ;; extension-registered providers, and print mode gets extension hooks.
-    (let [config (cfg/init!)]
-      ;; Extension loading below registers into the root ctx's registries, so
-      ;; the root has to exist before any init(api) runs.
-      (runtime/ctx)
-      ;; One unified load per type (pi: resourceLoader — top-level entries,
-      ;; auto dirs, then packages in precedence order)
-      (packages/load-extensions!)
-      (theme/load-theme-paths! (packages/resolve-theme-paths))
-
-      ;; Extension CLI flags: the collected --flags become readable via
-      ;; extensions/get-flag (pi: registerFlag + getFlag).
-      (extensions/set-cli-flags! (:ext-flags opts))
+    (let [config (load-world! opts)]
 
       ;; --list-models prints the available table and exits (pi: main.ts
       ;; listModels — after catalogs, models.edn, and extensions load so

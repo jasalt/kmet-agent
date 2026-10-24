@@ -230,15 +230,16 @@
   (println "options kmet --app old --help prints."))
 
 (defn- not-wired
-  "What a profile without a mode row says: which profile it was, and which ones do
-   run. Named per profile because the set grows a landing at a time — `print` and
-   `rpc` run now, the TUI arrives with the fork and the server after it, so a
-   message promising all three would be wrong between landings."
+  "What a profile without a mode row says: which profile it was, and which ones
+   do run. Every built-in profile has a mode row now (the TUI — kmet1's
+   interactive mode as a row — print, rpc and the server), so this is the answer
+   for a composition that patched one out: a profile is a set of rows, and a set
+   with no mode mounts, reports, and runs nothing."
   [profile args]
   (binding [*out* *err*]
-    (println (str "profile " (name profile) " has no runnable mode yet — the TUI"
-                  " arrives with the fork."))
+    (println (str "profile " (name profile) " has no runnable mode — no row is marked :mode"))
     (println "Profiles that run today:")
+    (println "  kmet --app new                                    the TUI")
     (println "  kmet --app new --profile print \"list the files\"   one prompt, then exit")
     (println "  kmet --app new --profile rpc                       a command stream on stdin/stdout")
     (println "  kmet --app new --profile server [--port n]         the same protocol on a socket, per connection")

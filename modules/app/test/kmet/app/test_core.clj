@@ -151,7 +151,7 @@
 (deftest dump-config-prints-the-built-in-composition
   (let [{:keys [code out]} (support/run-main ["--dump-config"])]
     (is (zero? code))
-    (is (str/starts-with? out "profile :tui rows=13 patches=0")
+    (is (str/starts-with? out "profile :tui rows=14 patches=0")
         (str "the bundle: the extension host, the bus, the four registries, the"
              " prompt builder, the session log and its storage, the projections,"
              " the agent registry, the loop driver and the approval seam"))
@@ -172,7 +172,7 @@
     (try
       (let [{:keys [code out]} (support/run-main ["--dump-config" "--patch" path])]
         (is (zero? code))
-        (is (str/starts-with? out "profile :tui rows=14 patches=1"))
+        (is (str/starts-with? out "profile :tui rows=15 patches=1"))
         (is (str/includes? out ":app/sample"))
         (is (str/includes? out "inject={:tools nil}"))
         (is (str/includes? out "config={:a 1, :b {:c 2}}")
@@ -199,7 +199,8 @@
     (is (zero? code))
     (is (str/starts-with? out "[:app]")
         "the root frame, at the origin of every unit path")
-    (is (str/includes? out "children=13") "the thirteen composition rows")
+    (is (str/includes? out "children=14")
+        "the thirteen bundle rows, then the TUI's mode row — mounted, not run")
     (is (str/includes? out ":active"))
     (is (str/includes? out "provides=[commands]"))
     (is (str/ends-with? out "\n"))
@@ -250,19 +251,38 @@
       (finally (io/delete-file path true)))))
 
 (deftest a-bare-run-boots-the-composition-and-says-what-is-missing
-  (let [{:keys [code err]} (support/run-main ["hello"])]
-    (is (= 1 code))
-    (is (str/includes? err
-                       (str "booted 13 plugin rows (13 fibers, services: agents"
-                            " approvals commands events projections"
-                            " prompts sessionPersistence sessions skills"
-                            " system-prompt tools)"))
-        "the boot is the point: a bare run proves the profile's rows mount")
-    (is (str/includes? err "profile tui has no runnable mode") "the profile is named")
-    (is (str/includes? err "--profile print") "and so is a profile that runs")
-    (is (str/includes? err "--profile rpc"))
-    (is (str/includes? err "--dump-config"))
-    (is (str/includes? err "--dump-state"))))
+  ;; Every built-in profile has a mode row now, so the report path is what a
+  ;; composition that patched its mode out gets: the profile still boots (that
+  ;; is the point — the rows mount) and then says what it could not run.
+  (let [path (scratch-patch! "{:rows [] :patch [{:id :mode-tui :remove true}]}\n")]
+    (try
+      (let [{:keys [code err]} (support/run-main ["--patch" path "hello"])]
+        (is (= 1 code))
+        (is (str/includes? err
+                           (str "booted 13 plugin rows (13 fibers, services: agents"
+                                " approvals commands events projections"
+                                " prompts sessionPersistence sessions skills"
+                                " system-prompt tools)"))
+            "the boot is the point: a run with no mode still proves the rows mount")
+        (is (str/includes? err "profile tui has no runnable mode")
+            "the profile is named, and the row that would have run it")
+        (is (str/includes? err "--profile print") "and so is a profile that runs")
+        (is (str/includes? err "--profile rpc"))
+        (is (str/includes? err "--dump-config"))
+        (is (str/includes? err "--dump-state")))
+      (finally (io/delete-file path true)))))
+
+(deftest a-bare-run-selects-the-tui
+  ;; The default profile's mode row is the TUI: the entry point finds it and
+  ;; hands it the invocation, so a bare `kmet --app new` is a TUI session rather
+  ;; than a boot report. The row itself is not started here — a test has no
+  ;; terminal.
+  (let [opts (core/parse-args ["hello"])
+        mode (last (:rows (core/compose-config opts)))]
+    (is (= :tui (:profile opts)))
+    (is (= :mode-tui (:id mode)) "the last row is the mode")
+    (is (= 'kmet.agent.modes.tui/plugin (:plugin mode)) "and it is the TUI")
+    (is (true? (:mode mode)) "marked as the row the entry point hands the run to")))
 
 (deftest a-boot-failure-is-reported-as-a-configuration-error
   (let [path (scratch-patch!

@@ -16,6 +16,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
+            [kmet.agent.app-runtime :as app-runtime]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.bash-execution :as bash-execution]
             [kmet.ui.tui.chat-history :as chat-history]
@@ -108,132 +109,138 @@
    callback/watcher, reakt queue — then the extension UI registry, which
    closes over the whole mode.
    Error paths rethrow for the top-level handler.
+
+   CTX is the ctx the engine runs on (see `build-layout`); it defaults to the
+   process root, which is kmet1's entry. An entry that boots a composition
+   (`kmet --app new --profile tui`) names the composition's ctx, so the run's
+   tool table and system prompt come from the tree it booted.
    pi: cli.js dispatch to interactive mode."
-  [config opts]
-  (let [tui-ref (atom nil)
-        cs-ref (atom nil)]
-    (try
+  ([config opts] (run config opts (app-runtime/ctx)))
+  ([config opts ctx]
+   (let [tui-ref (atom nil)
+         cs-ref (atom nil)]
+     (try
       ;; Extensions were loaded before dispatch (core/-main, pi: extension
       ;; discovery before model resolution); /reload re-loads them.
 
       ;; Apply command-line overrides
-      (let [config (cfg/apply-cli-overrides config opts)
-            session (cond
-                      (:session opts)
-                      (let [base-dir (cfg/get-session-dir config)
-                            path (session/resolve-session-path (:session opts) base-dir)]
-                        (if path
-                          (session/load-session path)
-                          (do (binding [*out* *err*]
-                                (println (str "No session found matching '" (:session opts) "'")))
-                              (System/exit 1))))
-                      (:resume opts) nil
-                      (:continue opts) (if-let [path (state/find-session config)]
+       (let [config (cfg/apply-cli-overrides config opts)
+             session (cond
+                       (:session opts)
+                       (let [base-dir (cfg/get-session-dir config)
+                             path (session/resolve-session-path (:session opts) base-dir)]
+                         (if path
+                           (session/load-session path)
+                           (do (binding [*out* *err*]
+                                 (println (str "No session found matching '" (:session opts) "'")))
+                               (System/exit 1))))
+                       (:resume opts) nil
+                       (:continue opts) (if-let [path (state/find-session config)]
                                          ;; find-session returns the session
                                          ;; file path — load it into a Session
                                          ;; record so the context and chat can
                                          ;; be restored below
-                                         (session/load-session path)
+                                          (session/load-session path)
                                          ;; pi: continueRecent — no session to
                                          ;; continue → start a fresh one
-                                         (session/create-session (state/ensure-cwd-session-dir config (str (fs/cwd)))))
-                      :else (session/create-session (state/ensure-cwd-session-dir config (str (fs/cwd)))))
-            cs (layout/build-layout config session)]
-        (reset! cs-ref cs)
-        (reset! tui-ref (:tui cs))
-        (when (:resume opts)
-          (show-session-selector cs (fn [] (state/ensure-session-dir (runtime/config (:engine cs))))
-                                 (fn [path]
+                                          (session/create-session (state/ensure-cwd-session-dir config (str (fs/cwd)))))
+                       :else (session/create-session (state/ensure-cwd-session-dir config (str (fs/cwd)))))
+             cs (layout/build-layout config session ctx)]
+         (reset! cs-ref cs)
+         (reset! tui-ref (:tui cs))
+         (when (:resume opts)
+           (show-session-selector cs (fn [] (state/ensure-session-dir (runtime/config (:engine cs))))
+                                  (fn [path]
                                    ;; pi: emitBeforeSwitch (reason :resume) —
                                    ;; extensions may cancel the switch
-                                   (let [result (session-driver/resume! (:engine cs) path)]
-                                     (when-not (:cancelled result)
-                                       (let [sess (:session result)
-                                             short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
-                                         (session-admin/replay-session! cs sess true)
-                                         (chat-history/chat-history-add-message! (:chat-history cs)
-                                                                                 {:role :assistant
-                                                                                  :content (str "Resumed session " short-id ".")})
-                                         (tui/tui-request-render (:tui cs))))))))
+                                    (let [result (session-driver/resume! (:engine cs) path)]
+                                      (when-not (:cancelled result)
+                                        (let [sess (:session result)
+                                              short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
+                                          (session-admin/replay-session! cs sess true)
+                                          (chat-history/chat-history-add-message! (:chat-history cs)
+                                                                                  {:role :assistant
+                                                                                   :content (str "Resumed session " short-id ".")})
+                                          (tui/tui-request-render (:tui cs))))))))
         ;; start the UI before initializing extensions so session_start
         ;; handlers can use interactive dialogs — kmet loads extensions
         ;; earlier, so the event fires once the layout + UI registry are
         ;; live and the render loop is running (the future waits for it).
-        (future
-          (try
-            (loop []
-              (when-not (or @(:running? (:tui cs))
-                            @(:stopped? (:tui cs)))
-                (Thread/sleep 20)
-                (recur)))
+         (future
+           (try
+             (loop []
+               (when-not (or @(:running? (:tui cs))
+                             @(:stopped? (:tui cs)))
+                 (Thread/sleep 20)
+                 (recur)))
             ;; skipped entirely when the TUI already stopped (immediate quit)
-            (when @(:running? (:tui cs))
-              (event-bus/emit-event!
-               {:type :session-start
-                :reason (cond (:resume opts) :resume
-                              (:continue opts) :continue
-                              :else :new)}
-               (runtime/agent-ctx (:engine cs)))
+             (when @(:running? (:tui cs))
+               (event-bus/emit-event!
+                {:type :session-start
+                 :reason (cond (:resume opts) :resume
+                               (:continue opts) :continue
+                               :else :new)}
+                (runtime/agent-ctx (:engine cs)))
               ;; pi: resources_discover fires after session_start (reason
               ;; startup for non-reload session starts)
-              (extensions/discover-resources! :startup))
-            (catch Exception e
-              (debug/log "session-start: " e))))
+               (extensions/discover-resources! :startup))
+             (catch Exception e
+               (debug/log "session-start: " e))))
         ;; Theme detection + application (pi: startup applyFromSettings) —
         ;; waits for the render loop so OSC 11 / color-scheme responses are
         ;; consumed by the input path.
-        (future
-          (try
-            (loop []
-              (when-not (or @(:running? (:tui cs))
-                            @(:stopped? (:tui cs)))
-                (Thread/sleep 20)
-                (recur)))
-            (when @(:running? (:tui cs))
-              (theme-ctrl/apply-from-settings! (:theme-controller cs)))
-            (catch Exception e
-              (debug/log "theme detection: " e))))
+         (future
+           (try
+             (loop []
+               (when-not (or @(:running? (:tui cs))
+                             @(:stopped? (:tui cs)))
+                 (Thread/sleep 20)
+                 (recur)))
+             (when @(:running? (:tui cs))
+               (theme-ctrl/apply-from-settings! (:theme-controller cs)))
+             (catch Exception e
+               (debug/log "theme detection: " e))))
         ;; Set the initial terminal title (pi: updateTerminalTitle in init —
         ;; after ui.start). Waits until the backend reports started? (raw mode
         ;; entered; a write before that could interleave with the pre-TUI
         ;; terminal state); --continue/--resume sessions restored in
         ;; build-layout get their display name reflected here.
-        (future
-          (try
-            (loop []
-              (when-not (or @(:running? (:tui cs))
-                            @(:stopped? (:tui cs)))
-                (Thread/sleep 20)
-                (recur)))
-            (when @(:running? (:tui cs))
-              (loop []
-                (when (and @(:running? (:tui cs))
-                           (not (term/started? @(:terminal (:tui cs)))))
-                  (Thread/sleep 20)
-                  (recur)))
-              (when @(:running? (:tui cs))
-                (state/update-terminal-title! cs)))
-            (catch Exception e
-              (debug/log "terminal title: " e))))
-        (tui/tui-start (:tui cs))
-        (process/kill-tracked-children!)
-        (when-let [resume (state/format-resume-command (runtime/session (:engine cs)) config)]
-          (println (str (th/dim "To resume this session:") " " resume)))
-        (:tui cs))
-      (catch Exception e
+         (future
+           (try
+             (loop []
+               (when-not (or @(:running? (:tui cs))
+                             @(:stopped? (:tui cs)))
+                 (Thread/sleep 20)
+                 (recur)))
+             (when @(:running? (:tui cs))
+               (loop []
+                 (when (and @(:running? (:tui cs))
+                            (not (term/started? @(:terminal (:tui cs)))))
+                   (Thread/sleep 20)
+                   (recur)))
+               (when @(:running? (:tui cs))
+                 (state/update-terminal-title! cs)))
+             (catch Exception e
+               (debug/log "terminal title: " e))))
+         (tui/tui-start (:tui cs))
+         (process/kill-tracked-children!)
+         (when-let [resume (state/format-resume-command (runtime/session (:engine cs)) config)]
+           (println (str (th/dim "To resume this session:") " " resume)))
+         (:tui cs))
+       (catch Exception e
         ;; Restore terminal if TUI was started, then rethrow for -main
-        (process/kill-tracked-children!)
-        (when-let [t @tui-ref]
-          (try (tui/tui-stop t) (catch Exception _)))
-        (throw e))
-      (finally
+         (process/kill-tracked-children!)
+         (when-let [t @tui-ref]
+           (try (tui/tui-stop t) (catch Exception _)))
+         (throw e))
+       (finally
         ;; A stopped mode must be fully released: the tree, the runtime
         ;; sinks, the theme callback/watcher and the reakt queue
         ;; (teardown-mode! — findings 2 and 10), then the extension UI
         ;; binding, which closes over the whole mode. The CLI exits right
         ;; after this, but embedded hosts and tests keep going.
-        (when-let [cs @cs-ref]
-          (teardown-mode! cs)
-          (when (:debug opts)
-            (log-survivors!)))
-        (extensions/unbind-extensions!)))))
+         (when-let [cs @cs-ref]
+           (teardown-mode! cs)
+           (when (:debug opts)
+             (log-survivors!)))
+         (extensions/unbind-extensions!))))))
