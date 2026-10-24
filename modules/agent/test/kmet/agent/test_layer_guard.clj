@@ -117,18 +117,24 @@
         (is (empty? forbidden)
             (str ns-name " requires forbidden namespaces: " (vec (sort forbidden))))))))
 
-(def ^:private front-end-forbidden-prefixes
-  "Namespaces a front end must reach through kmet.agent.session.runtime: the
-   loop driver and its stages, and the compaction stage (the pure
-   kmet.agent.compaction.core helpers are fine — the footer reads tokens)."
-  ["kmet.agent.loop" "kmet.agent.compaction.stage"])
+(def ^:private front-end-forbidden
+  "Prefixes a front end must not require, and the files the rule binds — the
+   scope is the point:
 
-(def ^:private ui-forbidden-prefixes
-  "Namespaces only a mode may reach. The session driver starts work — prompts,
-   turns, session switching, disposal — and the UI layer reads the engine
-   instead (kmet.agent.session.runtime, one rank below it). A mode owns a run
-   and may drive it; a widget may not, whichever module it lives in."
-  ["kmet.agent.session.driver"])
+   - `:front-ends` (every mode and UI file): the loop driver and its stages, and
+     the compaction stage. A front end reaches the engine through the session
+     runtime, not the machinery under it (the pure `kmet.agent.compaction.core`
+     helpers are fine — the footer reads tokens).
+   - `:ui` (the app-UI layer alone): the session driver. It starts work —
+     prompts, turns, session switching, disposal — and a mode owns a run and may
+     drive it, while a widget reads the engine instead
+     (`kmet.agent.session.runtime`, one rank below the driver)."
+  [{:scope :front-ends
+    :prefixes ["kmet.agent.loop" "kmet.agent.compaction.stage"]
+    :why "front ends reach the engine through the session runtime"}
+   {:scope :ui
+    :prefixes ["kmet.agent.session.driver"]
+    :why "the UI layer reads the engine; the driver starts work, and a mode owns a run"}])
 
 (deftest front-ends-drive-the-runtime-not-the-loop
   (testing "modes and app UI reach the engine through the session runtime"
@@ -141,22 +147,12 @@
       ;; scan silently, and the rules below would pass on a smaller set
       (doseq [root ui-roots]
         (is (some #(str/starts-with? % root) files) (str root " not scanned")))
-      (doseq [f files]
-        (let [forbidden (filter (fn [d]
-                                  (some #(str/starts-with? d %)
-                                        front-end-forbidden-prefixes))
-                                (required-kmet f))]
-          (is (empty? forbidden)
-              (str f " requires " (vec forbidden)
-                   " — front ends drive kmet.agent.session.runtime instead"))))
-      (doseq [f (ui-source-files)]
-        (let [forbidden (filter (fn [d]
-                                  (some #(str/starts-with? d %) ui-forbidden-prefixes))
-                                (required-kmet f))]
-          (is (empty? forbidden)
-              (str f " requires " (vec forbidden)
-                   " — the UI layer reads kmet.agent.session.runtime; the driver
-                      starts work and belongs to the modes")))))))
+      (doseq [{:keys [scope prefixes why]} front-end-forbidden
+              f (if (= :ui scope) (ui-source-files) files)
+              :let [forbidden (filter (fn [d] (some #(str/starts-with? d %) prefixes))
+                                      (required-kmet f))]]
+        (is (empty? forbidden)
+            (str f " requires " (vec forbidden) " — " why))))))
 
 (deftest app-ui-does-not-require-entry-modes
   (testing "app UI components never reach up into kmet.agent.modes — the UI layer

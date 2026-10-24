@@ -1740,6 +1740,16 @@ publishes when it takes over the engine, and only then can a kmet2 registration 
 read by kmet2. Verified that no kmet2 namespace registers through these three
 today, so nothing is silently landing in the wrong handle.
 
+**One rule, written once.** `test_layer_guard` had grown two near-identical
+loops — same filter, same assertion, different prefix list — because the driver
+rule binds a narrower set of files than the loop rule. It is one table now
+(`{:scope :prefixes :why}`), one loop, and the failure message carries the reason
+instead of restating the rule: *"tree_selector requires
+[\"kmet.agent.session.driver\"] — the UI layer reads the engine; the driver starts
+work, and a mode owns a run"*. Mutation-checked both scopes: a `kmet.agent.loop`
+require in `print.clj` and a driver require in a selector each fail by name, while
+`print.clj`'s real driver require passes.
+
 **The headline claim, counted.** Every `kmet.agent.*` a `ui` file requires, after
 the move: `keybindings` 13, `session.runtime` 7, `config` 6, `session.core` 4,
 `debug` 3, `tools.bash-output` 2, `model-resolver` 2, `extensions.core` 2, and six
