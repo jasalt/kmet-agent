@@ -47,9 +47,20 @@
   "RECORD on CONN's wire, badged with the connection's `:agent-id`. Every record
    a client reads says whose it is: the server's other agents are writing to
    their own wires at the same time, and a log that collects both must be able
-   to tell them apart."
+   to tell them apart.
+
+   A write to a client that has gone away is **dropped, not raised**. A run's
+   events are written from the run's own thread, so a dead socket that threw
+   would fail a turn for a reason that is not the run's; on the server thread it
+   would end the server, which accepts connections and then serves none. The
+   connection's reader announces the close that releases it, so marking it dead
+   here is all this has to do."
   [conn record]
-  (out/record! (:writer conn) (assoc record :agent-id (:agent-id conn))))
+  (when-not @(:dead? conn)
+    (try
+      (out/record! (:writer conn) (assoc record :agent-id (:agent-id conn)))
+      (catch Throwable _ (reset! (:dead? conn) true))))
+  nil)
 
 (defn- state-for
   "The command state `kmet.app.modes.rpc/handle-line` serves CONN through: the
@@ -96,6 +107,7 @@
    withdraws the capability anyway — so this releases what it can and returns."
   [conn {:keys [agents]}]
   (when-let [dispose (:dispose conn)] (dispose))
+  (reset! (:dead? conn) true)
   (when-let [handle (:handle conn)] ((:dispose! agents) handle))
   (try (.close ^java.net.Socket (:socket conn)) (catch Throwable _))
   nil)
@@ -111,49 +123,58 @@
         known (get conns id)]
     (case op
       :open (try
-              [(assoc conns id (open-connection! conn server))]
+              (assoc conns id (open-connection! conn server))
               (catch Throwable t
                 (send! conn {:type :error
                              :error (str "cannot create an agent for this connection: "
                                          (or (ex-message t) (str t)))})
-                [(dissoc conns id)]))
+                (dissoc conns id)))
 
       ;; a line from a connection the server already released is dropped: its
       ;; reader thread can still be parked when the socket goes away
       :line (do (when known
                   (send! known (rpc/handle-line (state-for known server) line)))
-                [conns])
+                conns)
 
       :close (do (when known (close-connection! known server))
-                 [(dissoc conns id)]))))
+                 (dissoc conns id)))))
 
 (defn- serve-connections!
   "The server thread: the queue's one consumer, and the only thread that touches
    the kernel on a connection's behalf. Runs until the queue closes, then
-   disposes what it still holds."
+   disposes what it still holds. A failing item is reported and the loop
+   continues: one broken connection is not the end of the server."
   [server]
   (loop [conns {}]
     (let [item (concurrent/take! (:q server))]
       (if (= concurrent/closed item)
         (do (doseq [conn (vals conns)] (close-connection! conn server))
             conns)
-        (recur (first (serve-item! server conns item)))))))
+        (recur (try
+                 (serve-item! server conns item)
+                 (catch Throwable t
+                   (srce/log! (:scope server) :error "server connection work failed" t)
+                   conns)))))))
 
 ;; ── the accept loop ───────────────────────────────────────────────────────
 
 (defn- accept-connections!
   "Accept until the socket closes. Each connection is announced to the server
    thread and given a reader thread of its own; accepting never waits for an
-   agent to be built."
+   agent to be built. A refused announcement means the server is shutting down:
+   the socket is closed here rather than left for a reader thread nothing will
+   serve."
   [socket q]
   (loop []
     (when-let [client (try (.accept ^java.net.ServerSocket socket) (catch Throwable _ nil))]
       (let [conn {:id (str (random-uuid))
                   :socket client
+                  :dead? (atom false)
                   :writer (io/writer (.getOutputStream ^java.net.Socket client))}]
-        (concurrent/put! q {:op :open :conn conn})
-        (concurrent/spawn (fn [] (read-lines! q conn)))
-        (recur)))))
+        (if (concurrent/put! q {:op :open :conn conn})
+          (do (concurrent/spawn (fn [] (read-lines! q conn)))
+              (recur))
+          (try (.close ^java.net.Socket client) (catch Throwable _)))))))
 
 ;; ── supervision ───────────────────────────────────────────────────────────
 

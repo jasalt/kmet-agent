@@ -24,9 +24,9 @@
    catalog: each is a call on the `:agents` handle or the `:sessions` log. The
    session lifecycle, model switching, compaction and the dialog pair need a
    per-agent surface kmet2 does not have yet, and each names its landing
-   (`unsupported`) instead of pretending. landing 6 turns this row into a
-   server: the same protocol with `:agent-id` on every record and a socket as
-   the transport."
+   (`unsupported`) instead of pretending. The server row
+   (`kmet.app.modes.server`) serves this same protocol over a socket, one agent
+   per connection, out of this namespace's `handle-line`."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]

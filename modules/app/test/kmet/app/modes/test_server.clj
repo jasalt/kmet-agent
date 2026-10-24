@@ -149,7 +149,15 @@
               "and the two agents have sessions of their own"))
         (is (every? #(= ((:agent-id a)) (:agent-id %)) ((:records a)))
             "every record on a connection is badged with its agent's id")
-        (is (every? #(= ((:agent-id b)) (:agent-id %)) ((:records b))))))))
+        (is (every? #(= ((:agent-id b)) (:agent-id %)) ((:records b))))
+        ;; the command engine is rpc mode's, unshared state included: a refusal
+        ;; travels the socket with the same name and the same badge
+        ((:send! a) {:type :prompt :id "a2"})
+        (is (answered? a "a2"))
+        (let [refused (first (filter #(= "a2" (:id %)) ((:records a))))]
+          (is (false? (:success refused)))
+          (is (str/includes? (str (:error refused)) "requires a non-empty :message"))
+          (is (= ((:agent-id a)) (:agent-id refused))))))))
 
 (deftest a-client-that-never-finishes-a-line-holds-nothing
   ;; The reader thread parks in `readLine`, so a half-written record costs one

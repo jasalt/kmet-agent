@@ -1820,6 +1820,34 @@ and registering the listener on the app scope, each fail by name. What the row
 still lacks is the dialog surface — a run's extension UI calls and approvals
 answer headlessly until the approvals increment gives them a `:request`.
 
+**Review found the server could be killed by one client.** `send!` wrote
+straight to the connection's writer, and a client that vanished mid-write makes
+that write throw. On the server thread the throw ended `serve-connections!` —
+the server went on accepting and served nobody, silently, because `spawn` logs
+and swallows — and on a run's thread the same throw escaped into the kernel's
+emit, failing a turn for a reason that was not the run's. A connection now
+carries a `:dead?` flag: the write is dropped instead of raised, the reader's
+`:close` still releases the agent, `serve-connections!` reports a failing item
+and keeps looping, and the accept loop closes a socket whose announcement the
+closed queue refused rather than leaving it for a reader nothing will serve.
+
+That mechanism is **not pinned by a test**, and the ledger should say so: a
+socket client cannot force a mid-write failure deterministically, and the
+behaviour the suite can check — the server keeps serving after a client leaves
+— holds with or without the catch. The test that did come out of the review is
+the opposite kind: a *refused* command (`:prompt` with no message) travels the
+socket with the same name, the same error text and the same badge, which is what
+"one engine, two transports" means.
+
+**A named residual, not a bug in this increment:** the server thread calls
+`create!`/`dispose!` off the root's thread, and `new-app.md` says the crossing
+there is `kmet.app.runtime/submit!` + `boundary!`. The loop does not call
+`boundary!` yet (nothing in the tree does), so submissions have no drain point
+to ride; until the loop's turn boundary does that, a server mutation and a
+run's boundary are sequenced by the queue's single consumer and by nothing
+else. It is the same exposure print and rpc mode already have with one agent;
+6b makes it several, which is the reason to name it here.
+
 ### Landing 5i — the owner publishes, and the registries stop reaching up
 
 `resource_config` was blocked by `kmet.agent.packages`, which was blocked by
