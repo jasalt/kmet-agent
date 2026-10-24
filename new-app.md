@@ -1468,6 +1468,20 @@ same process), and a run's teardown must not take it away: the mode reads
 moved after the listener setup, so a run that fails while subscribing leaves no
 surface behind — the failure mode the `:extensions` row's own comment names.
 
+**What is still kmet1's on that surface: the per-agent half.** `install-session!`,
+the context and entry sinks, `bind-runtime-capabilities!` and the `:build-context`
+capability all live in kmet1's session runtime; kmet2's runs bind the front-end
+kind and port and nothing else, so an extension handler sees the host's own
+defaults — `:model nil`, `:is-idle` true, the session facades answering nil.
+That is not a front-end fact but an agent one, and it cannot be fixed before the
+per-agent scoping it needs: the host's session slot is one process atom, which is
+the same constraint that keeps print mode's event listeners at the app scope. It
+is landing 6's line, with the per-agent listeners, and it is the piece that makes
+a second mode in one process meaningful. `mode-rpc` has its own bind to remember
+when it lands: kmet1's rpc mode is `:mode :rpc`, `has-ui true`, with a dialog port
+that forwards requests to the client — the headless port is print mode's, not
+rpc's.
+
 **The `:ui` service waits for its first provider.** § "Pluggable UI" has it as a
 capability *service* (`:kind`, `:render-tree`, `:request!`, `:widget-set`,
 `:capabilities`), and its consumers are app plugins declaring
