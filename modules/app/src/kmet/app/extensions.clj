@@ -22,12 +22,39 @@
    loaders are policy the modes take with them (landing 5). A contribution with
    nowhere to go is refused by name instead of dropped.
 
+   **Tool registrations are routed, not held.** A tool — or a run_code-only
+   tool source — an extension registers is read through the composition's
+   `:tools` service (the loop's tool table, the `/tools` selector, run_code's
+   surface). The row's own handle would hold them where no reader looks, so the
+   host's `:registry` is a tag router: `:kmet/tool` and `:kmet/tool-source` go
+   to the composition's `:tools` service, every other host tag (hooks,
+   renderers, flags, the UI port, themes) stays in this row's handle.
+
    The binding is process-wide and one owner at a time, so disposing this row
    puts back what it replaced — a second composition (or a test) cannot leave
    the host pointing at a dead root."
   (:require [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.registry :as registry]
             [kmet.app.registries :as registries]
             [kmet.srce.core :as srce]))
+
+(def ^:private tool-tags
+  "The host tags the composition's `:tools` service owns: a registration under
+   either is read by `kmet.agent.tools.registry` through that service."
+  #{:kmet/tool :kmet/tool-source})
+
+(defn- host-registry
+  "The host's registry for this composition: a router sending TOOL-TAGS to the
+   mount site's `:tools` service and every other tag to REMAINDER. The tool
+   service is resolved per call, not here — the row mounts before the `:tools`
+   row in the composition, and a bare composition may not mount one at all (its
+   registrations then stay in REMAINDER, as they did before the route)."
+  [ctx remainder]
+  (registry/router
+   (fn [tag]
+     (or (when (contains? tool-tags tag)
+           (srce/get (:parent ctx) :tools))
+         remainder))))
 
 (defn- serve
   "Bind the host's services for this composition, over whatever was bound: this
@@ -35,10 +62,10 @@
    rest (see the ns docstring). Returns the disposer that restores it."
   [ctx _config]
   (let [base (extensions/host-binding)
-        host-registry (registries/service)]
+        handle (host-registry ctx (registries/service))]
     (extensions/bind-services!
      (fn [] (merge (when base (base))
-                   {:registry host-registry :ctx (:parent ctx)})))
+                   {:registry handle :ctx (:parent ctx)})))
     (fn [] (extensions/bind-services! base))))
 
 (srce/defplugin plugin

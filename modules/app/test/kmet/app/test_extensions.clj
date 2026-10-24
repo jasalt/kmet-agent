@@ -1,7 +1,10 @@
 (ns kmet.app.test-extensions
-  (:require [clojure.test :refer [deftest is]]
+  (:require [babashka.fs :as fs]
+            [clojure.test :refer [deftest is]]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.tools.registry :as tools]
             [kmet.app.extensions :as row]
+            [kmet.app.registries :as registries]
             [kmet.srce.core :as srce]))
 
 (defn- with-restored-host
@@ -77,3 +80,46 @@
         (srce/dispose! fiber)
         (is (identical? host (extensions/host-binding))
             "and disposing it puts back the binding it overlaid")))))
+
+(def ^:private probe-extension
+  "A single-file extension whose only contribution is a tool, so the test needs
+   no resource registries and exercises the tool path alone."
+  (str "(ns tool-route-probe\n"
+       "  (:require [kmet.extension :as ext]))\n\n"
+       "(defn init [api]\n"
+       "  (ext/register-tool! api {:name \"tool-route-probe\"\n"
+       "                           :description \"probe\"\n"
+       "                           :params {:x {:type :string}}\n"
+       "                           :execute (fn [args] {:content (str (:x args))})}))\n"))
+
+(deftest extension-tools-reach-the-compositions-tool-table
+  ;; The host's :registry is a tag router: :kmet/tool (and :kmet/tool-source)
+  ;; go to the composition's :tools service, which is what the loop's table,
+  ;; the /tools selector and run_code read. Held in the row's own handle they
+  ;; would register fine and be invisible — the Clojure extension's edit/eval
+  ;; tools did exactly that.
+  (with-restored-host
+    (fn []
+      (let [root (srce/root {:name :app})
+            ;; the composition's order: the host row mounts before :tools, so
+            ;; the route has to resolve the service per call, not at mount
+            ext-fiber (srce/plugin! root row/plugin)
+            tools-fiber (srce/plugin! root registries/tools)
+            dir "target/test-ext-tool-route"
+            path (str dir "/probe_ext.clj")]
+        (try
+          (fs/delete-tree dir)
+          (fs/create-dirs dir)
+          (spit path probe-extension)
+          (let [result (extensions/load-extension! path)
+                handle (srce/get root :tools)]
+            (is (nil? (:error result)) (str "loaded: " (:error result)))
+            (is (some? (tools/get-tool handle "tool-route-probe"))
+                "the extension's tool is in the composition's :tools service")
+            (extensions/unload-all-extensions!)
+            (is (nil? (tools/get-tool handle "tool-route-probe"))
+                "unload sweeps it out of the same service"))
+          (finally
+            (extensions/unload-all-extensions!)
+            (srce/dispose! ext-fiber)
+            (srce/dispose! tools-fiber)))))))

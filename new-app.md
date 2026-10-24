@@ -348,7 +348,7 @@ rewrite.
 | `:sessionPersistence` | the storage backend under `:sessions` (EDNL files first; a second backend shadows this key, not the log) | the file half of `session/core.clj` |
 | `:projections` | incremental derived state over the log — the inbox, the turn boundaries, the token meter — with a cache behind it | **landed** (`kmet.app.projections`, 4c-iii-b): the inbox is the log (an enqueue and a delivery are two `:custom` facts), and the fold extends from the cached prefix |
 | `:systemPrompt` | ordered sections, dynamic contexts, prompt variables and tool schemas, assembled by a waterfall before each request; per-agent composition lands here | **landed at 7a** as `kmet.app.system-prompt` (the app's pure builder over the `:skills` registry), provided as the builder itself; the loop state calls the one it names (`:system-prompt-fn`), an engine resolves caller → ctx row → suite, and `kmet.agent.skills/build-system-prompt` is the last stand-in for a context-free engine |
-| `:extensions` | the extension host's own bindings: the registry its tags live in (hooks, renderers, flags, the UI port) and the ctx an extension's `:inject` mounts under; a contribution with no bound resource registry is refused by name. No service key: the binding is the effect, and the handle becomes a key when a consumer reads it | **landed** as `kmet.app.extensions`; `kmet.agent.extensions.services` is kmet1's binding of the same seam |
+| `:extensions` | the extension host's own bindings: the registry its tags live in and the ctx an extension's `:inject` mounts under; a contribution with no bound resource registry is refused by name. The handle is a **tag router**: `:kmet/tool`/`:kmet/tool-source` resolve the composition's `:tools` service per call (the loop's table, `/tools` and run_code read only that), every other host tag — hooks, renderers, flags, the UI port, themes — stays in the row's handle. No service key: the binding is the effect, and the handle becomes a key when a consumer reads it | **landed** as `kmet.app.extensions`; `kmet.agent.extensions.services` is kmet1's binding of the same seam |
 | `:events` `:hooks` | three event domains (session/agent/capability) + 5 dispatch modes + hook chains | `event-bus.clj`, `apply-input-hooks` |
 | `:ui` | capability map: render, input, dialogs, notify, widget set | `extension-binding :ui`, lifted out |
 | `:approvals` | the one delivery seam for `:permissions :ask`: dialog, wire request/response, or headless default | **landed** (`kmet.app.permissions`, 4c-iii-a): the loop's pre-tool waterfall consults it through `permissions/check`; the row mounts the deny-by-default seam, because there is no dialog yet |
@@ -1410,6 +1410,20 @@ contribution with nowhere to go is still refused by name. Pinned by
 reproduces the warning verbatim. The alternative — kmet1 rebinding after the
 composition boots — would have been a process workaround for a row contract,
 and it only works because kmet1's root is a delay it can append to.
+
+**Its follow-up: extension tools were landing in a handle nobody reads.** The
+row's `:registry` is a fresh handle, and the host registers an extension's tools
+(and run_code-only tool sources) through that same handle — while a run's tool
+table is the composition's `:tools` service. Everything looked loaded: `/tools`
+listed `clojure_edit`, `clojure_eval`, the MCP tools, and the model saw none of
+them. The extension's *skill* still appeared, because resources go through the
+base's routed registries. The row now binds a **tag router** like kmet1's:
+`:kmet/tool` and `:kmet/tool-source` resolve the mount site's `:tools` service
+per call (the row mounts before the `:tools` row, and a bare composition may
+mount none — those registrations stay in the row's handle), every other host tag
+stays local. Pinned by `extension-tools-reach-the-compositions-tool-table`;
+deleting the route reproduces the split — the tool registers, the table stays the
+five built-ins — and the unload sweep is asserted on the same service.
 
 ### Landing 5b — kmet1's one-shot spellings, and the wire
 
