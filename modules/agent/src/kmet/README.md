@@ -22,8 +22,8 @@ modules/
 ├── app/    — kmet2's application, below every front end (kmet.app.*;
 │             the file/namespace rule is new-app.md)   (kmet.agent.version)
 ├── ui/     — the front ends: the TUI components kmet2 owns (kmet.ui.*;
-│             landing 5e — the half written against kmet1's runtime is still
-│             in agent/, under kmet.agent.ui.*)
+│             `kmet.agent.ui.tui.resource-config` is the one file left in
+│             agent's UI tree, waiting on its package lookup)
 ├── agent/  — this module: kmet1, the current app    (kmet.agent.*)
 ├── loader/ — extension loader                       (kmet.loader.*)
 └── tk/     — Tk backend + widget sample, Jolt-only  (kmet.tk.*, kmet.gui-sample.*)

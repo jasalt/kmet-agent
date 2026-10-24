@@ -3,8 +3,8 @@
 `kmet.tui.*` is a generic terminal-UI library (a Clojure/Babashka port of
 `@earendil-works/pi-tui`, extended with a Reagent-style component layer).
 It knows nothing about chat, LLMs or sessions — the app layer (`kmet.ui.tui.*`,
-plus the `kmet.agent.ui.tui.*` half that still reaches kmet1's runtime)
-builds on it, and extensions consume the same namespaces.
+plus `kmet.agent.ui.tui.resource-config`, which still reads kmet1's app) builds
+on it, and extensions consume the same namespaces.
 
 This document is the authoritative usage and development reference for the
 package: how `kmet.tui.*` works, and how `kmet.ui.tui.*` builds on it. Keep
@@ -463,7 +463,7 @@ An idle UI runs zero bodies.
   (a windowed list) tracks `kmet.tui.core/tui-terminal-size-ref` instead —
   the render loop publishes the live size before its reaction flush, so a
   body that derefs the ref re-lays out in the same frame as a resize.
-  A panel just re-budgets its rows (`kmet.agent.ui.tui.tree-selector`); a
+  A panel just re-budgets its rows (`kmet.ui.tui.tree-selector`); a
   standalone frame that must repaint cleanly rather than diff watches the
   ref and forces a render (`kmet.agent.ui.tui.resource-config`).
 - **Error contract**: a throwing component fn crashes the render loop
@@ -1468,9 +1468,9 @@ Frame glyphs come from `kmet.tui.border` (§2.8), not from the components:
 `dynamic_border` and `editor` draw a rule, `markdown` its table, and the
 app-layer `bash_execution` its top/bottom rules — each with a `:border` style.
 
-Message-like app components live in `kmet.ui.tui.*` (the moved ones) or
-`kmet.agent.ui.tui.*` (the rest, until landing 6 parameterizes their runtime
-edge), not here — this layer
+Message-like app components live in `kmet.ui.tui.*`, not here — landing 5h
+moved the last selector, so `kmet.agent.ui.tui.*` holds only
+`resource_config` until its package lookup moves below the UI; this layer
 stays generic: chat history, tool executions, the skill invocation
 message (`skill_message`, which renders a `/skill:name` block as a
 collapsible `[skill] name (ctrl+o to expand)` entry — pi:

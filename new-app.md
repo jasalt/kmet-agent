@@ -1717,6 +1717,13 @@ by `kmet.agent.packages`. With it, **10 files remain** before the TUI is entirel
 `ui`: that one, and the 9 `modes/interactive` files whose external edges are
 `commands`, `prompts`, `skills`, `packages`, `app-runtime`, `tools.core`.
 
+**The docs moved later than the code.** Two files named the selectors by their
+old namespace after the move: `tui.md` pointed at
+`kmet.agent.ui.tui.tree-selector` (and still described "the half that reaches
+kmet1's runtime" as a half rather than one file), and the agent README's module
+tree said the same. A namespace rename has three audiences — call sites, guards,
+and prose — and the third is the one that never fails.
+
 **Evidence.** `bb test` 4,195 / 24,751; full lint 0 errors / 0 warnings;
 `bb check` compiles; format clean; `--app old --version` and `--app new --profile
 rpc` both answer. One pre-existing defect found while re-running suites
