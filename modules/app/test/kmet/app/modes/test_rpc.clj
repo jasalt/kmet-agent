@@ -12,7 +12,8 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.ai.models :as models]
             [kmet.app.test-support :as support :refer [answering
-                                                       with-mode-run]]))
+                                                       with-mode-run
+                                                       with-model-catalog]]))
 
 (defn- run-rpc
   "Run the mode with LINES on stdin, answering `{:code :err :records}` — the
@@ -133,6 +134,27 @@
         (is (contains? state :turn-running?)
             "whether a turn is in flight, which is what a reconnecting client
              folds")))))
+
+(deftest the-invocations-model-reaches-the-run
+  ;; `--model` and `--provider` are the agent's creation options here too — the
+  ;; driver resolves the pattern per creation, exactly as in print mode. Without
+  ;; this the mode would silently run the settings' model while the command line
+  ;; said otherwise.
+  (with-model-catalog
+    (fn []
+      (with-mode-run
+        (answering "ok")
+        (fn []
+          (let [{:keys [records]}
+                (run-rpc {:lines ["{:type :get-state :id \"s\"}"]
+                          :args ["--profile" "rpc"
+                                 "--model" "opencode-go/deepseek-v4-flash:high"]})
+                state (:data (by-id records "s"))]
+            (is (= "deepseek-v4-flash" (:model state))
+                "the run's model is the one the pattern named")
+            (is (= :opencode-go (:provider state)))
+            (is (= :high (:thinking-level state))
+                "and its thinking level, which the settings did not set")))))))
 
 (deftest the-model-catalog-is-on-the-wire
   ;; get-available-models answers the snapshot a `--model` pattern resolves

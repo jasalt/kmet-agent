@@ -2,6 +2,7 @@
   "Shared helpers for the app's entry-point tests."
   (:require [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
+            [kmet.libs.concurrent :as concurrent]
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.app.core :as core]))
@@ -30,14 +31,15 @@
 (defn wait-until
   "Poll PRED every 5ms until it is true or TIMEOUT-MS (default 5s) pass, then
    answer whether it became true. For a test waiting on another thread's work:
-   a bounded wait for the actual condition, not a sleep hoping it happened."
+   a bounded wait for the actual condition, not a sleep hoping it happened. The
+   deadline is the monotonic clock, as every duration in kmet is."
   ([pred] (wait-until pred 5000))
   ([pred timeout-ms]
-   (let [deadline (+ (System/nanoTime) (* 1000000 (long timeout-ms)))]
+   (let [deadline (+ (concurrent/monotonic-ms) (long timeout-ms))]
      (loop []
        (cond
          (pred) true
-         (< (System/nanoTime) deadline) (do (Thread/sleep 5) (recur))
+         (< (concurrent/monotonic-ms) deadline) (do (Thread/sleep 5) (recur))
          :else false)))))
 
 ;; ── mode runs ─────────────────────────────────────────────────────────────

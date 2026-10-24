@@ -342,7 +342,9 @@
    A mode runs only when the entry point hands it somewhere to report
    (`:on-result`): `--dump-state` mounts this row without one, and a diagnostic
    mount must prove the row composes without creating an agent or reading
-   stdin."
+   stdin. Its input is `*in*` and its stream `*out*`, both read here — inside
+   the entry point's bindings — so a caller drives the mode by binding them, not
+   by smuggling a reader through the row's config."
   [ctx config]
   (let [scope (:parent ctx)
         agents (srce/get ctx :agents)
@@ -350,7 +352,7 @@
         {:keys [on-result]} config]
     (when on-result
       (let [out- *out*
-            in (or (:in config) *in*)
+            in *in*
             previous (extensions/front-end-surface)
             restore (fn [] (extensions/bind-extensions! previous))
             dispose (events/on-every scope (fn [event]
@@ -363,7 +365,10 @@
         (future
           (on-result
            {:exit (try
-                    (let [handle ((:create! agents) scope {})]
+                    ;; the invocation's model and provider are the agent's
+                    ;; own options, exactly as in print mode: the driver
+                    ;; resolves a `--model` pattern per creation
+                    (let [handle ((:create! agents) scope (select-keys config [:model :provider]))]
                       (try
                         (serve-commands {:agents agents :sessions sessions
                                          :scope scope :handle handle}

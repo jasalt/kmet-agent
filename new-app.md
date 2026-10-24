@@ -1560,6 +1560,21 @@ command: `printf '{:type :get-state…}' | kmet --app new --profile rpc` answers
 the live state, the loaded catalog (41 models) and a named refusal for an unknown
 command.
 
+**Review note: the invocation's model was not reaching the run.** The mode
+created its agent with no options, so `--model` and `--provider` — which
+`mode-input` hands every mode and print mode passes to `create!` — were ignored
+in rpc mode, silently: the command line named a model and the run used the
+settings'. The agent's options are the mode's to pass (`select-keys config
+[:model :provider]`), and the driver resolves a pattern per creation as it does
+for print. The test drives a real pattern (`--model
+opencode-go/deepseek-v4-flash:high`) and reads the answer back from
+`:get-state`; with the options dropped it reports `:off` where it must report
+`:high`.
+
+The mode also reads `*in*`/`*out*` where it stands rather than offering a
+config-supplied reader: a caller drives the mode by binding them, and a
+row-config seam nobody set was one more thing to get wrong.
+
 Inherited, not fixed: a model record crosses the wire as the tagged literal
 `#kmet.ai.models.Model{…}` (kmet1 prints the same), and a clean shutdown emits
 `{:type :queue-update :reason :aborted}` because the handle's dispose cancels
