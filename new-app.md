@@ -1623,7 +1623,7 @@ process.
 namespaces (6,918 lines) and 22 test namespaces; `kmet.agent.ui.X` became
 `kmet.ui.X` (`kmet.ui.tui.*` for the TUI's own). `kmet.agent.keybindings` — the
 one rank-4 file the components needed and that reached nothing itself — lifted to
-`app` with its name unchanged. Plumbing that the manifest guard checks: a
+`app`. Plumbing that the manifest guard checks: a
 `modules/ui/deps.edn` naming exactly the six modules the moved files require, the
 manifest row, the `bb.edn`/`deps.edn` literals, `agent`'s new `kmet/ui` edge, and
 the three extension `bb.edn` classpaths (an extension that requires
@@ -1643,10 +1643,9 @@ clean. They went back. The lesson is the guard's, not the scanner's: the edge is
 the edge, whether the target is in the same package or another module.
 
 **Path-scanning tests are part of the move.** `test-caching-conventions` enumerates
-the component trees (it now scans `modules/ui/src/kmet/ui/tui` as well, and the
-non-recursive `fs/list-dir` is why the module root alone was not enough), and the
-extension library-list test names the two source files it expects to exist — both
-now point at the files' new homes.
+the component trees — five now, because the non-recursive `fs/list-dir` means the
+module root alone would scan nothing — and the extension library-list test names
+the two source files it expects to exist. Both now point at the files' homes.
 
 **A latent lint finding, surfaced by the move.** `test_auth_selector` carried
 `(:refer-clojure :exclude [selector])`, which excludes a var `clojure.core` does
@@ -1662,9 +1661,15 @@ front end — and after the move it silently scanned 11 files instead of 38. The
 rank guard takes over the second rule (rank 3 → 4 is upward), but **not the
 first**: `kmet.agent.loop` sits at rank 2, below `ui`, so a moved component could
 require the loop driver and every guard would pass. Both rules now scan the
-union of the two trees, and `kmet.ui.` joined the forbidden front-end prefixes.
-Mutation-checked: a `kmet.agent.loop` require added to `kmet.ui.tui.footer` fails
-`front-ends-drive-the-runtime-not-the-loop` by name.
+union of the trees the layer lives in, and `kmet.ui.` joined the forbidden
+front-end prefixes. Mutation-checked: a `kmet.agent.loop` require added to
+`kmet.ui.tui.footer` fails `front-ends-drive-the-runtime-not-the-loop` by name.
+
+The union was wrong at first, and the next read found it: the file that kept its
+`kmet.agent.ui.*` name lives under `modules/ui/src/kmet/agent/ui`, so a walk of
+`modules/ui/src/kmet/ui` covered everything that was renamed and nothing that was
+not. Three roots, and the guard's own assertion now names each one it expects to
+have scanned — which is what caught it.
 
 The extension classpaths were the same question one level out: the three
 extension projects list every module src root in their `bb.edn`, and
@@ -1680,7 +1685,7 @@ is history and keeps its wording.
 
 **Evidence.** `--app old` boots and the TUI renders (tmux capture:
 header, footer hints, the context/skills/prompts/extensions panels); `--app new`
-runs rpc mode; `bb test` 4,193 / 24,613; `bb lint` (full tree, both views) 0
+runs rpc mode; `bb test` 4,193 / 24,669; `bb lint` (full tree, both views) 0
 errors, 0 warnings, 0 findings; `bb check` compiles; format clean.
 
 **Found by running it: kmet2's process entry never loaded the model catalog.**

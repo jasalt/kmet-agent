@@ -66,6 +66,7 @@
    ones still to move in kmet.agent.ui.tui) and the Tk skeleton's."
   ["modules/tui/src/kmet/tui/components"
    "modules/ui/src/kmet/ui/tui"
+   "modules/ui/src/kmet/agent/ui/tui"
    "modules/agent/src/kmet/agent/ui/tui"
    "modules/tk/src/kmet/gui_sample"])
 
