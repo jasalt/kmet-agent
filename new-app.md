@@ -1609,13 +1609,15 @@ Its 47 files require 24 `kmet.agent.*` namespaces; fifteen already live in `app`
 rank guard, and a module whose namespaces are checked file-by-file cannot be
 talked out of it.
 
-So the cut is what the requires already say: **30 of the 47 files reach nothing
+So the cut is what the requires already say: **29 of the 47 files reach nothing
 above `app`** — the component library, the dialogs, the renderers, the pickers
-that take their data as arguments — and they moved. The other 17 are the
-composition layer written against kmet1's runtime (`layout`, `builtins`,
-`ui_registry`, the selectors that fork or switch sessions), and they stay in
-`agent` until their edge is parameterized: they are landing 6's per-agent
-surface, where a UI reads a handle and a ctx instead of a process.
+that take their data as arguments. 27 moved (two went back, below). The other
+20 — 11 still under `kmet.agent.ui.tui.*` and the 9 `modes/interactive` files —
+are the composition layer written against kmet1's runtime (`layout`,
+`builtins`, `ui_registry`, `chat-history`, the selectors that fork or switch
+sessions), and they stay in `agent` until their edge is parameterized: they are
+landing 6's per-agent surface, where a UI reads a handle and a ctx instead of a
+process.
 
 **The move.** New module `ui` at rank 3, holding `modules/ui/src` with 27 source
 namespaces (6,918 lines) and 22 test namespaces; `kmet.agent.ui.X` became
@@ -1663,6 +1665,13 @@ require the loop driver and every guard would pass. Both rules now scan the
 union of the two trees, and `kmet.ui.` joined the forbidden front-end prefixes.
 Mutation-checked: a `kmet.agent.loop` require added to `kmet.ui.tui.footer` fails
 `front-ends-drive-the-runtime-not-the-loop` by name.
+
+The extension classpaths were the same question one level out: the three
+extension projects list every module src root in their `bb.edn`, and
+`test-modules-manifest` already holds them to the manifest
+(`extension-bb-edn-paths-cover-the-module-trees`), so adding `modules/ui/src`
+there was checked rather than remembered. A second version of that test was
+written in this review and deleted — the guard existed.
 
 The docs that name namespaces were updated too — `modules/tui/src/kmet/tui/tui.md`
 (the TUI's rules doc) and the layer README say `kmet.ui.tui.*` where the component
