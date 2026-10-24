@@ -1468,6 +1468,12 @@ same process), and a run's teardown must not take it away: the mode reads
 moved after the listener setup, so a run that fails while subscribing leaves no
 surface behind — the failure mode the `:extensions` row's own comment names.
 
+A mode **binds** the surface rather than installing it (`install-front-end!`):
+installing also registers the port under `[:app :ui]` so a listing can show who
+holds it, which is right for a front end that owns a port for the process's life
+(the TUI's) and wrong for a mode's ephemeral bind — an entry per run to sweep
+afterwards. The binding is the read path either way.
+
 **What is still kmet1's on that surface: the per-agent half.** `install-session!`,
 the context and entry sinks, `bind-runtime-capabilities!` and the `:build-context`
 capability all live in kmet1's session runtime; kmet2's runs bind the front-end
