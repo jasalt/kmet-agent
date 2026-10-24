@@ -1688,6 +1688,58 @@ header, footer hints, the context/skills/prompts/extensions panels); `--app new`
 runs rpc mode; `bb test` 4,193 / 24,669; `bb lint` (full tree, both views) 0
 errors, 0 warnings, 0 findings; `bb check` compiles; format clean.
 
+### Landing 6 — the server, and the queue it needs first
+
+Landing 6's row is one sentence with five deliverables: `mode-server` (rpc as a
+socket server, one agent per connection), `:agent-id` and the request/response
+pair on the wire, approvals end to end, and the **queue primitive** in
+`kmet.libs.concurrent` for the socket reader. Its gate is two agents concurrently,
+one stalling client, and one approval answered by a client.
+
+The queue comes first because nothing else can be written honestly without it. A
+server's shape is decided by where the blocking read happens: one thread parks in
+`read-line` per connection, and the owner thread — the only thread allowed to touch
+an agent — consumes what it read. That crossing is
+`kmet.libs.concurrent/queue`: any number of producers, **one consumer**, `close!`
+to end it.
+
+Three decisions worth the words:
+
+- **One atom, one deciding swap.** The queue's state is `{:items :closed? :signal}`
+  and a take is a *single* `swap!` that either hands out the next item or parks the
+  taker on a promise a later `put!` delivers. Deciding outside the swap is the
+  classic lost-wakeup bug (take reads "empty", put enqueues and delivers nothing,
+  take parks forever), and it is the reason this is not a `PersistentQueue` in an
+  atom plus an ad-hoc `when (seq …)`.
+- **`closed` is a keyword, not nil.** A reader's `read-line` answers nil at end of
+  input, so a consumer must be able to tell *nothing more will come* from *an empty
+  line*. `close!` also drains: items already queued are still handed over, and only
+  then does the take answer the marker — so a producer's last lines are not lost to
+  a close.
+- **A refused put is reported, not swallowed.** `put!` on a closed queue returns
+  false; a caller that queues into a finished connection learns it at the call
+  instead of believing it was sent.
+
+Single consumer is the contract, not a courtesy: `take!` parks what it handed out
+in the queue's own state for the duration of one swap, so two takers would race
+that slot. Two consumers need two queues, and the server has one owner per
+connection, so it never needs two.
+
+**Evidence.** Six new tests in `kmet.libs.test-concurrent` (order, a parked taker
+woken by a put, 200 rounds of a put racing a taker, close-drains-then-ends, close
+waking a parked taker, nil-as-a-value). Each guard mutation-checked: removing
+`put!`'s delivery fails the parked-taker test, removing `close!`'s fails the
+close-wake test, answering nil for `closed` fails three, and a `put!` that claims
+success after close fails the drain test. `jolt -e` runs the same sequence on the
+native host (`[:a :b ::closed]`). Full gates green: `bb test` 4,203 / 25,191.
+
+**What is left in landing 6**, in the order the row implies: `mode-server` as rpc
+over a socket with one agent per connection (`:agents`'s `create!`/`dispose!` carry
+it — the registry already exists, and what it lacks is a driver created *per
+agent*), the `:agent-id` + request/response pair on the wire, approvals answered
+from the client, and then the row's gate. kmet1's interactive front end moves at
+7b-ii, not here.
+
 ### Landing 5i — the owner publishes, and the registries stop reaching up
 
 `resource_config` was blocked by `kmet.agent.packages`, which was blocked by

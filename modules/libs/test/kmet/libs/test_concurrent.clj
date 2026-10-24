@@ -1,8 +1,8 @@
 (ns kmet.libs.test-concurrent
-  "kmet.libs.concurrent — the extension-safe spawn/or-signal primitives and
-   monotonic-ms, the clock every timeout, backoff and idle reaper measures
-   with."
-  (:require [clojure.test :refer [deftest is]]
+  "kmet.libs.concurrent — the extension-safe spawn/or-signal primitives, the
+   hand-off queue a blocking reader fills, and monotonic-ms, the clock every
+   timeout, backoff and idle reaper measures with."
+  (:require [clojure.test :refer [deftest is testing]]
             [kmet.libs.concurrent :as concurrent]))
 
 (deftest monotonic-ms-measures-elapsed-time
@@ -28,3 +28,71 @@
     (reset! b true)
     (is (true? @(concurrent/or-signal a b)))
     (is (false? @(concurrent/or-signal a nil)) "a nil signal never fires")))
+
+;; ─── queue: the crossing between a reader thread and the owner ───────────────
+
+(defn- parked?
+  "True once a taker is waiting on Q's signal — the loop reads the queue's own
+   state rather than sleeping a fixed time, so the assertion is about the queue,
+   not about the scheduler."
+  [q]
+  (loop [n 0]
+    (cond
+      (some? (:signal @q)) true
+      (< 500 n) false
+      :else (do (Thread/sleep 1) (recur (inc n))))))
+
+(deftest queue-hands-items-over-in-order
+  (let [q (concurrent/queue)]
+    (doseq [v [1 2 3]] (is (true? (concurrent/put! q v)) "put reports the hand-over"))
+    (is (= [1 2 3] [(concurrent/take! q) (concurrent/take! q) (concurrent/take! q)])
+        "FIFO, and a take with items waiting does not park")))
+
+(deftest take-blocks-until-a-put-arrives
+  (let [q (concurrent/queue)
+        taken (promise)]
+    (concurrent/spawn #(deliver taken [(concurrent/take! q) (concurrent/take! q)]))
+    (is (parked? q) "the taker parked on the queue's signal")
+    (concurrent/put! q :first)
+    (concurrent/put! q :second)
+    (is (= [:first :second] (deref taken 2000 :timeout))
+        "the parked taker woke, took one item, parked again, and took the next")))
+
+(deftest a-put-that-races-a-taker-is-not-lost
+  (let [q (concurrent/queue)]
+    (dotimes [i 200]
+      (let [taken (promise)]
+        (concurrent/spawn #(deliver taken (concurrent/take! q)))
+        (is (true? (concurrent/put! q i)))
+        (is (= i (deref taken 2000 :timeout))
+            (str "iteration " i ": the item reached the taker exactly once"))))))
+
+(deftest close-lets-the-consumer-drain-then-ends-it
+  (let [q (concurrent/queue)]
+    (concurrent/put! q :buffered)
+    (is (true? (concurrent/close! q)) "the first close reports the change")
+    (is (false? (concurrent/close! q)) "a second close changes nothing")
+    (is (= :buffered (concurrent/take! q))
+        "an item already queued is still delivered — close means no more will come")
+    (is (= concurrent/closed (concurrent/take! q)) "then the take answers the marker")
+    (is (= concurrent/closed (concurrent/take! q)) "and keeps answering it")
+    (is (false? (concurrent/put! q :late)) "a put after close is refused, by name")
+    (is (= concurrent/closed (concurrent/take! q)) "and the refused item was never queued")))
+
+(deftest close-wakes-a-parked-taker
+  (let [q (concurrent/queue)
+        taken (promise)]
+    (concurrent/spawn #(deliver taken (concurrent/take! q)))
+    (is (parked? q))
+    (concurrent/close! q)
+    (is (= concurrent/closed (deref taken 2000 :timeout))
+        "closing is what unblocks a reader whose producer is gone")))
+
+(deftest nil-is-a-value-not-an-end-of-input
+  (testing "the reader's read-line returns nil at EOF, and a queued nil means an
+            empty line rather than the end — hence the keyword marker"
+    (let [q (concurrent/queue)]
+      (concurrent/put! q nil)
+      (is (nil? (concurrent/take! q)))
+      (concurrent/close! q)
+      (is (= concurrent/closed (concurrent/take! q))))))
