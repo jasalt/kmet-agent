@@ -70,16 +70,20 @@
   {})
 
 (defn- source-files-under
-  "Every Clojure source file under DIR, path-normalized and sorted."
+  "Every Clojure source file under DIR, path-normalized and sorted. A missing
+   DIR yields nothing instead of throwing: the callers assert which roots they
+   expect files from (`<root> not scanned`), so a renamed or emptied tree fails
+   by name rather than as a NoSuchFileException from the walk."
   [dir]
-  (letfn [(walk [d]
-            (mapcat (fn [f]
-                      (if (fs/directory? f) (walk f) [f]))
-                    (fs/list-dir d)))]
-    (->> (walk dir)
-         (map slash)
-         (filter #(re-find #"\.clj[ca]?$" %))
-         (sort))))
+  (when (fs/exists? dir)
+    (letfn [(walk [d]
+              (mapcat (fn [f]
+                        (if (fs/directory? f) (walk f) [f]))
+                      (fs/list-dir d)))]
+      (->> (walk dir)
+           (map slash)
+           (filter #(re-find #"\.clj[ca]?$" %))
+           (sort)))))
 
 (defn- mode-source-files
   "Every entry-mode namespace file."
@@ -87,11 +91,11 @@
   (source-files-under "modules/agent/src/kmet/agent/modes"))
 
 (def ^:private ui-roots
-  "Where the app-UI layer's files are. `agent` still holds the half written
-   against kmet1's runtime; landing 5 moved the rest into the `ui` module under
-   `kmet.ui.*` — and one file kept its `kmet.agent.ui.*` name, because shipped
-   extensions require it by that name, so the module has two UI subtrees rather
-   than one."
+  "Where the app-UI layer's files are. Landings 5e-5h moved it into the `ui`
+   module under `kmet.ui.*`; one file kept its `kmet.agent.ui.*` name because
+   shipped extensions require it by that name (so the module has two UI subtrees),
+   and `resource_config` is the last file still in `agent`, waiting on its
+   package lookup."
   ["modules/agent/src/kmet/agent/ui"
    "modules/ui/src/kmet/ui"
    "modules/ui/src/kmet/agent/ui"])
@@ -142,12 +146,13 @@
   (testing "modes and app UI reach the engine through the session runtime"
     (let [files (front-end-source-files)]
       (is (seq files) "no front-end sources scanned — check the walk roots")
-      (is (some #(str/includes? % "/modes/") files) "modes tree not scanned")
-      (is (some #(str/includes? % "/ui/") files) "app UI tree not scanned")
-      (is (some #(str/includes? % "modules/ui/src/kmet/ui/") files)
-          "the ui module's half not scanned")
-      (is (some #(str/includes? % "modules/ui/src/kmet/agent/ui/") files)
-          "the file that kept its kmet.agent.ui.* name not scanned")
+      (is (some #(str/starts-with? % "modules/agent/src/kmet/agent/modes/") files)
+          "modes tree not scanned")
+      ;; every UI root must contribute a file, named by the root: a root that
+      ;; stops matching (moved file, renamed dir) would otherwise narrow the
+      ;; scan silently, and the rules below would pass on a smaller set
+      (doseq [root ui-roots]
+        (is (some #(str/starts-with? % root) files) (str root " not scanned")))
       (doseq [f files]
         (let [forbidden (filter (fn [d]
                                   (some #(str/starts-with? d %)

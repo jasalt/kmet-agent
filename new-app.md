@@ -1717,6 +1717,23 @@ by `kmet.agent.packages`. With it, **10 files remain** before the TUI is entirel
 `ui`: that one, and the 9 `modes/interactive` files whose external edges are
 `commands`, `prompts`, `skills`, `packages`, `app-runtime`, `tools.core`.
 
+**The guard's third root was not asserted.** `front-ends-drive-the-runtime-not-the-loop`
+checked the two `ui`-module roots by name and the `agent` one with a loose
+`"/ui/"` substring — which the other roots satisfy. With `resource_config` now the
+only file left in that tree, the next move would empty it and the guard would go on
+scanning nothing there. It asserts each root in `ui-roots` now, and
+`source-files-under` returns nothing for a missing directory instead of throwing:
+a renamed root fails as `<root> not scanned` (mutation-checked — previously the
+same mutation produced two uncaught `NoSuchFileException`s).
+
+**The selectors were exercised live, not just in unit tests.** A module move is
+invisible to unit tests: they construct their own keybindings and themes. Captured
+from a real TUI on `--app old`: `/model` renders the dialog with its scope line,
+provider tags, `✓` on the current model and the detail panel (`kmet.ui.tui.model-selector`
++ `model-catalog`), and `/settings` renders its 26 rows with search and detail
+(`kmet.ui.tui.settings-selector` → `model-selector`). The status line's `• max`
+is `thinking-selector`'s.
+
 **The docs moved later than the code.** Two files named the selectors by their
 old namespace after the move: `tui.md` pointed at
 `kmet.agent.ui.tui.tree-selector` (and still described "the half that reaches
