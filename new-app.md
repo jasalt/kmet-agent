@@ -1762,7 +1762,13 @@ with an agent handle, which is why the rest of the move waits for it: the UI
 should read a handle, not a process. `resource_config` is the exception, blocked
 by `kmet.agent.packages`.
 
-**Review.** The names that moved had left stale company behind them: the skill
+**Review.** The benchmarks count as call sites, and they were off by the seam:
+the three bench harnesses built their transcript without `:tool-fn`, so
+`kmet_render_bench` measured a session that production never renders — adding
+the lookup took the same session from 852 rendered lines to 860 in one case.
+Wiring them also keeps the numbers comparable across the move.
+
+The names that moved had left stale company behind them: the skill
 message's own docstring and the pi-alignment table still said
 `kmet.agent.skills/parse-skill-block`, and the skill-message test's docstring
 still promised parser coverage it no longer had (the parser is tested where it

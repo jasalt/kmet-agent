@@ -12,6 +12,7 @@
 (ns kmet-render-bench
   (:require [clojure.string :as str]
             [kmet.agent.session.core :as session]
+            [kmet.agent.tools.core :as tools]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.agent.modes.interactive :as inter]
             [kmet.tui.core :as core]
@@ -84,7 +85,8 @@
                   "  width: " width
                   "  mode: " mode))
     (let [sess (session/load-session session-file)
-          ch (chat-history/make-chat-history :tool-display-mode :expanded)
+          ch (chat-history/make-chat-history :tool-display-mode :expanded
+                                         :tool-fn tools/get-tool)
           cs (inter/map->CoreState {:chat-history ch})]
       (timed "replay" (fn [] (replay-branch! cs sess) nil))
       (if (= mode "roles")

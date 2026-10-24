@@ -35,6 +35,7 @@
 (ns kmet-frame-bench
   (:require [clojure.string :as str]
             [kmet.agent.session.core :as session]
+            [kmet.agent.tools.core :as tools]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.agent.modes.interactive :as inter]
             [kmet.tui.components.editor :as editor]
@@ -296,7 +297,8 @@
                   "  " width "x" height "  scenario: " scenario))
     (instrument!)
     (let [sess (session/load-session session-file)
-          ch (chat-history/make-chat-history :tool-display-mode :expanded)
+          ch (chat-history/make-chat-history :tool-display-mode :expanded
+                                         :tool-fn tools/get-tool)
           cs (inter/map->CoreState {:chat-history ch})
           _ (replay-branch! cs sess)
           ed (editor/make-editor :height 1)

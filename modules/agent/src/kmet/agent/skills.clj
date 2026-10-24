@@ -336,7 +336,8 @@
    (pi: agent-session _expandSkillCommand). Extension skills disclose from
    their in-memory body; file skills re-slurp their SKILL.md. Returns text
    unchanged when not a /skill: command, the skill is unknown, or the file
-   cannot be read."
+   cannot be read. Reading the block back is `kmet.app.skill-block/parse` (the
+   format's own namespace, below every front end)."
   [text]
   (if-not (str/starts-with? text "/skill:")
     text
