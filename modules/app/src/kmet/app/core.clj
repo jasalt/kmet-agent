@@ -223,13 +223,19 @@
   (println "kmet2 is the migration target: --app old runs the current app, whose")
   (println "options kmet --app old --help prints."))
 
-(defn- not-wired [args]
+(defn- not-wired
+  "What a profile without a mode row says: which profile it was, and which ones do
+   run. Named per profile because the set grows a landing at a time — `print` and
+   `rpc` run now, the TUI arrives with the fork and the server after it, so a
+   message promising all three would be wrong between landings."
+  [profile args]
   (binding [*out* *err*]
-    (println "this profile has no runnable mode yet — landing 5 adds the")
-    (println "interactive, rpc and server modes. --profile print runs one:")
-    (println "  kmet --app new --dump-config   print the composed rows")
-    (println "  kmet --app new --dump-state    print the booted ctx tree")
-    (println "  kmet --app new --version       print the version")
+    (println (str "profile " (name profile) " has no runnable mode yet — the TUI"
+                  " and server modes arrive with the fork."))
+    (println "Profiles that run today:")
+    (println "  kmet --app new --profile print \"list the files\"   one prompt, then exit")
+    (println "  kmet --app new --profile rpc                       a command stream on stdin/stdout")
+    (println "  kmet --app new --dump-config / --dump-state / --version")
     (when (seq args) (println "Arguments:" (pr-str (vec args))))
     (flush))
   1)
@@ -303,13 +309,13 @@
    mount, report what it mounted, dispose it, and say that this profile has no
    runnable mode yet. The boot is the point — it is what proves a profile's rows
    actually mount, without a turn to run."
-  [composed args]
+  [composed profile args]
   (let [booted (runtime/boot composed)]
     (try
       (binding [*out* *err*] (println (boot-summary booted)) (flush))
       (finally
         (runtime/shutdown! booted)))
-    (not-wired args)))
+    (not-wired profile args)))
 
 (defn- run-composed
   "A run with neither `--dump-…` flag: the profile's mode, when it has one, else
@@ -321,7 +327,7 @@
         (if (and (:prompt mode) (str/blank? prompt))
           (no-prompt (:profile opts))
           (run-mode composed mode opts prompt)))
-      (boot-and-report composed args))))
+      (boot-and-report composed (:profile opts) args))))
 
 (defn- configuration-error? [e]
   (str/starts-with? (str (:type (ex-data e))) ":kmet."))

@@ -258,7 +258,9 @@
                             " prompts sessionPersistence sessions skills"
                             " system-prompt tools)"))
         "the boot is the point: a bare run proves the profile's rows mount")
-    (is (str/includes? err "no runnable mode"))
+    (is (str/includes? err "profile tui has no runnable mode") "the profile is named")
+    (is (str/includes? err "--profile print") "and so is a profile that runs")
+    (is (str/includes? err "--profile rpc"))
     (is (str/includes? err "--dump-config"))
     (is (str/includes? err "--dump-state"))))
 

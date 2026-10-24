@@ -1740,6 +1740,14 @@ publishes when it takes over the engine, and only then can a kmet2 registration 
 read by kmet2. Verified that no kmet2 namespace registers through these three
 today, so nothing is silently landing in the wrong handle.
 
+**The bare run's message was one landing behind.** `--app new` with no profile
+still says its profile has no mode — true, `:tui` waits on the fork — but it said
+so by promising that "landing 5 adds the interactive, rpc and server modes", and
+`print` and `rpc` both ran by the time landing 5 closed. It names the profile it
+was asked for (`profile tui has no runnable mode yet`) and lists the profiles that
+do run, so the next landing only has to delete a line rather than discover the
+whole message was a guess.
+
 **One rule, written once.** `test_layer_guard` had grown two near-identical
 loops — same filter, same assertion, different prefix list — because the driver
 rule binds a narrower set of files than the loop rule. It is one table now
