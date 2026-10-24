@@ -946,7 +946,7 @@ pipeline both callers use:
   `create-bash-tool`, `on-tool-call` / `on-tool-result`).
 - `modules/app/src/kmet/agent/session/core.clj` — `:result-tokens`, `tool-usage`,
   `tool-usage-report`.
-- `modules/agent/src/kmet/modes/interactive.clj` — the `/session` **Tool Results** section.
+- `modules/agent/src/kmet/agent/modes/interactive.clj` — the `/session` **Tool Results** section.
 - `modules/app/src/kmet/agent/event_bus.clj` — event vocabulary shared with the TUI (the
   serialization seam a future RPC mode would use).
 - `kmet.loader.sci-loader` — `:base` fork (per-call contexts for T3's daemon),

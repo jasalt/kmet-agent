@@ -215,7 +215,7 @@ fire-and-forget records it does not render.
 
 ## Scripting with `kmet.agent.modes.rpc-client`
 
-The repository ships a thin EDN client (`modules/agent/src/kmet/modes/rpc_client.clj`) for
+The repository ships a thin EDN client (`modules/agent/src/kmet/agent/modes/rpc_client.clj`) for
 Clojure scripts — it spawns the process, correlates responses by `:id`, and
 subscribes to the event stream:
 
