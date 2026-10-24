@@ -24,9 +24,10 @@
    matters because closing stdin ends the mode — and a mode that ends while its
    run is live cancels the run, which is right for a client that left and wrong
    for a test that only wanted to read the answer. `:until` is a string to wait
-   for on the wire before closing. ARGS replace `--profile rpc` when a test
-   wants another spelling of the invocation."
-  [{:keys [lines args until]}]
+   for on the wire before closing, and `:then` lines are written after that
+   wait (a command whose answer depends on the run having ended). ARGS replace
+   `--profile rpc` when a test wants another spelling of the invocation."
+  [{:keys [lines args until then]}]
   (let [server (java.net.ServerSocket. 0)
         accepted (future (.accept server))
         client (java.net.Socket. "127.0.0.1" (.getLocalPort server))
@@ -42,6 +43,9 @@
     (try
       (when until
         (support/wait-until #(str/includes? (str out) until)))
+      (doseq [line then]
+        (.write writer (str line "\n")))
+      (.flush writer)
       (finally
         ;; EOF for the mode: the end of its input. The mode's own end of the
         ;; socket stays open until it has read to that EOF and returned.
@@ -155,6 +159,46 @@
             (is (= :opencode-go (:provider state)))
             (is (= :high (:thinking-level state))
                 "and its thinking level, which the settings did not set")))))))
+
+(deftest an-image-on-the-wire-is-refused-by-name
+  ;; The wire carries text: an agent's message reaches the loop as a string, so
+  ;; an image block would be dropped on the floor. Refused by name instead — a
+  ;; client that sent one learns it did not arrive.
+  (with-mode-run
+    (answering "never runs")
+    (fn []
+      (let [{:keys [records]}
+            (run-rpc {:lines ["{:type :prompt :id \"p\" :message \"look\" :images [{:type :image :data \"x\"}]}"
+                              "{:type :steer :id \"s\" :message \"look\" :images [{:type :image :data \"x\"}]}"]})]
+        (is (str/includes? (str (:error (by-id records "p"))) ":images")
+            "a prompt with images says images are not supported")
+        (is (str/includes? (str (:error (by-id records "s"))) ":images")
+            "and so does a queue command")))))
+
+(deftest the-session-log-is-on-the-wire
+  ;; get-entries is the log a client reads after a run, in append order: the
+  ;; queue bookkeeping the send appended, then the turn. The log is the record,
+  ;; not a transcript view — a client that wants only messages filters roles.
+  (with-mode-run
+    (answering "an answer")
+    (fn []
+      (let [{:keys [records]}
+            (run-rpc {:lines ["{:type :prompt :message \"hi\"}"]
+                      :until ":agent-settled"
+                      :then ["{:type :get-entries :id \"e\"}"]})
+            entries (:entries (:data (by-id records "e")))]
+        (is (= :assistant (:role (last entries)))
+            "the turn ends the log with the answer")
+        (is (= ["hi"] (mapv (comp :text first :content)
+                            (filter #(= :user (:role %)) entries)))
+            "and carries the user's message")
+        (is (= 2 (count (filter #(= :custom (:role %)) entries)))
+            "with the queue facts the send appended: the log is the record, not
+             a transcript view. Their position is the threads', not the
+             protocol's — the delivery fact lands when the run takes the
+             message, which is not the same moment as the turn's first entry")
+        (is (every? #(string? (:id %)) entries)
+            "every entry carries the id a fork or a client would name")))))
 
 (deftest the-model-catalog-is-on-the-wire
   ;; get-available-models answers the snapshot a `--model` pattern resolves

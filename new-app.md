@@ -1575,6 +1575,16 @@ The mode also reads `*in*`/`*out*` where it stands rather than offering a
 config-supplied reader: a caller drives the mode by binding them, and a
 row-config seam nobody set was one more thing to get wrong.
 
+**Review 2 adds two refusals and a transcript.** `:prompt` now refuses
+`:images` by name like the queue commands do: the wire carries text, the handle
+takes a string, and an image block would have been dropped between the two — a
+client that sent one learns it did not arrive. And `:get-entries` — the only
+transcript surface — is covered, which is what showed that the log's interleaving
+is the threads': the delivery fact lands when the run takes the message, so it
+may sit before or after the turn's first entry. The test asserts the facts (the
+turn ends the log, the queue facts are in it, every entry has an id), not their
+order; the first version asserted the order and failed one run in eleven.
+
 Inherited, not fixed: a model record crosses the wire as the tagged literal
 `#kmet.ai.models.Model{…}` (kmet1 prints the same), and a clean shutdown emits
 `{:type :queue-update :reason :aborted}` because the handle's dispose cancels

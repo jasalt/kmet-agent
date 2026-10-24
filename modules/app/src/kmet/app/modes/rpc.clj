@@ -120,6 +120,11 @@
   (let [text (message-of command)
         behavior (:streaming-behavior command)]
     (cond
+      ;; the wire carries text: kmet2's handle takes a string, and an image
+      ;; quietly dropped would be a wrong answer to a client that sent one
+      (:images command)
+      (failed :prompt "prompt does not support :images yet")
+
       (nil? text)
       (failed :prompt "prompt requires a non-empty :message string")
 
