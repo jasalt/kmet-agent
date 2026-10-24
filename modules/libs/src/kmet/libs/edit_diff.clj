@@ -263,6 +263,12 @@
    four. A plain character class: no anchor, so it stays fast on every host."
   #"[\u2018\u2019\u201A\u201B\u201C\u201D\u201E\u201F\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u00A0\u2002-\u200A\u202F\u205F\u3000]")
 
+(def ^:private nfkc-form
+  "The NFKC form as a value. SCI has no static-field access
+   (`Normalizer$Form/NFKC` is `Unable to resolve symbol` there), and resolving it
+   per call would normalize the form on every fuzzy match."
+  (java.text.Normalizer$Form/valueOf "NFKC"))
+
 (def ^:private ascii-only-re
   "Full-match ASCII. NFKC is the identity on ASCII and the quote/dash/space
    replaces below cannot match it either, so one scan makes a pure-ASCII text
@@ -276,7 +282,7 @@
   (let [ascii? (boolean (re-matches ascii-only-re text))
         text (if ascii?
                text
-               (java.text.Normalizer/normalize text (java.text.Normalizer$Form/valueOf "NFKC")))]
+               (java.text.Normalizer/normalize text nfkc-form))]
     (-> text
         (as-> s (->> (str/split-lines s)
                      ;; str/trimr, not a per-line (str/replace line #"\s+$" ""):

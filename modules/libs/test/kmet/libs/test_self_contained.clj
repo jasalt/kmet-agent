@@ -1,8 +1,12 @@
 (ns kmet.libs.test-self-contained
-  "Guard: every kmet.libs.* namespace must be self-contained — no requires
-   outside kmet.libs.* (app, tui, modes, ai are forbidden; sibling libs
-   like kmet.libs.yaml are allowed). The libs tree should be
-   extractable as a third-party library package on its own."
+  "Guards for the kmet.libs.* layer, which is extractable as a third-party
+   package and whitelisted wholesale into extension SCI contexts:
+
+   - self-contained: no requires outside kmet.libs.* (app, tui, modes, ai are
+     forbidden; sibling libs like kmet.libs.yaml are allowed)
+   - sandbox-safe: no static-field references (SCI has no static-field access,
+     so a `Class/FIELD` in a lib is a crash in every extension), checked both at
+     the source and by running the queue inside a bare SCI context."
   (:require [clojure.test :as t :refer [deftest is]]
             [clojure.string :as str]
             [babashka.fs :as fs]

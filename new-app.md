@@ -1758,6 +1758,13 @@ static methods now (`(TimeUnit/valueOf "MILLISECONDS")`,
 evaluate in SCI once the class is registered, which is what the extension loader's
 retry does.
 
+The three replacements first resolved the unit/form/offset per call, which is a
+per-iteration allocation in `sse`'s 100 ms poll slice and a per-diff one in
+`edit-diff` — the constant each had before. They are `def`s now (`time-unit-millis`,
+`nfkc-form`, `utc`), resolved once at load, so the fix costs nothing and the comment
+beside each says why the field form is unavailable rather than that the method form
+is preferred.
+
 Two guards, because a source rule and an executable rule catch different things:
 `libs-name-no-static-fields` (read with rewrite-clj, so a mention in a docstring,
 string or comment is prose and does not count — that distinction is the reason it is

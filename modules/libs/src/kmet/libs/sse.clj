@@ -39,6 +39,12 @@
   [body]
   (io/reader body))
 
+(def ^:private time-unit-millis
+  "The `MILLISECONDS` unit as a value, resolved once: SCI has no static-field
+   access (`TimeUnit/MILLISECONDS` is `Unable to resolve symbol` there), and a
+   static method inside the 100 ms poll slice would allocate per slice."
+  (java.util.concurrent.TimeUnit/valueOf "MILLISECONDS"))
+
 (def ^:private idle-chunk-size
   "Units (bytes/chars) the daemon reads per queue handoff. The handoff is the
    point: the per-unit protocol parks the consumer and wakes it for every
@@ -94,7 +100,7 @@
              ;; quiet.
              (let [deadline (+ (concurrent/monotonic-ms) idle-ms)]
                (loop []
-                 (let [v (.poll q 100 (java.util.concurrent.TimeUnit/valueOf "MILLISECONDS"))]
+                 (let [v (.poll q 100 time-unit-millis)]
                    (cond
                      (instance? Exception v) v
                      (nil? v) (cond

@@ -9,6 +9,11 @@
   (:require [clojure.string :as str]
             [babashka.fs :as fs]))
 
+(def ^:private utc
+  "UTC as a zone offset, resolved once: SCI has no static-field access
+   (`ZoneOffset/UTC` is `Unable to resolve symbol` there)."
+  (java.time.ZoneOffset/ofTotalSeconds 0))
+
 (def ^:private getenv
   (fn [k] (System/getenv k)))
 
@@ -110,7 +115,7 @@
         query (or (.getQuery uri) "")
         amz-date (or amz-date
                      (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss'Z'")
-                              (java.time.ZonedDateTime/now (java.time.ZoneOffset/ofTotalSeconds 0))))
+                              (java.time.ZonedDateTime/now utc)))
         date-stamp (subs amz-date 0 8)
         hashed-payload (or payload-hash (sha256-hex ""))
         all-headers (merge {"host" host
