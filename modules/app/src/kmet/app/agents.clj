@@ -246,6 +246,14 @@
                        (unsupported k (:id handle)))))]
     (letfn [(create! [ctx opts]
               (parent-ctx! (inside! ctx))
+              ;; a bad opt is refused before anything is claimed or extended: a
+              ;; composition can carry a keyword where this expects a fn, and
+              ;; that deserves its own name rather than "not a function" from
+              ;; inside the creation catch
+              (when-let [setup (:setup opts)]
+                (when-not (fn? setup)
+                  (throw (ex-info "a create! :setup is a fn of (ctx id)"
+                                  {:type :kmet.app/bad-setup :setup setup}))))
               (let [factory (factory-for state ctx)
                     id (mint (:handles @state))]
                 (claim-busy! state id)
@@ -263,10 +271,17 @@
                                  ;; half-built world
                                  (when-let [setup (:setup opts)] (setup child id))
                                  (validate-handle! id child
-                                                   ((:f factory) child (assoc opts :id id)))
+                                                   ((:f factory) child
+                                                                 (assoc (dissoc opts :setup) :id id)))
                                  (catch Throwable t
                                    (release-subtree! scope child)
-                                   (if (= :kmet.app/bad-agent-handle (:type (ex-data t)))
+                                   ;; a composition bug keeps its own type — the
+                                   ;; caller may act on it — and anything else
+                                   ;; is a creation that failed, with its cause
+                                   ;; still attached
+                                   (if (contains? #{:kmet.app/bad-agent-handle
+                                                    :kmet.app/preset-failed}
+                                                  (:type (ex-data t)))
                                      (throw t)
                                      (throw (ex-info (str "agent creation failed: "
                                                           (or (ex-message t) (str t)))

@@ -133,6 +133,34 @@
            ((:roots agents) root))
         "an agent created under a non-agent ctx is a root")))
 
+(deftest a-setup-runs-before-the-factory-and-stays-out-of-its-opts
+  ;; The seam `kmet.app.presets` mounts through: setup gets the child ctx and the
+  ;; minted id, the factory gets the same ctx, and `:setup` is the registry's
+  ;; option — it is consumed here, never forwarded.
+  (let [{:keys [root log agents]} (fixture)
+        session (create-session! {:log log})
+        order (atom [])
+        setup-seen (atom nil)
+        factory-seen (atom nil)
+        factory (stand-in {})
+        _ ((:register-factory! agents) root
+                                       (fn [child opts]
+                                         (swap! order conj :factory)
+                                         (reset! factory-seen {:ctx child :opts opts})
+                                         (factory child opts)))]
+    ((:create! agents) root
+                       {:session session
+                        :setup (fn [ctx id]
+                                 (swap! order conj :setup)
+                                 (reset! setup-seen {:ctx ctx :id id}))})
+    (is (= [:setup :factory] @order) "setup runs before the factory")
+    (is (identical? (:ctx @setup-seen) (:ctx @factory-seen))
+        "both see the agent's one child ctx")
+    (is (re-matches #"[0-9a-f]{8}" (:id @setup-seen))
+        "and setup is handed the id the agent will carry")
+    (is (false? (contains? (:opts @factory-seen) :setup))
+        ":setup is consumed by create!, not forwarded to the factory")))
+
 (deftest a-failed-factory-leaves-no-handle-and-no-ctx
   (let [{:keys [root agents]} (fixture)
         _ ((:register-factory! agents) root (fn [_ _] (throw (ex-info "boom" {}))))

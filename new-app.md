@@ -1969,6 +1969,20 @@ release. The first version of the test asserted `inside?` and passed the leak;
 the mutation (setup moved back outside the guard) now fails by name, as does
 deleting the unwinding loop.
 
+**Review #2 — the option and the types.** Three more, all small: `:setup` is the
+registry's option and was being forwarded to the factory (a factory that stored
+its opts could re-run a preset), so `create!` now hands it `(dissoc opts :setup)`
+— pinned by `a-setup-runs-before-the-factory-and-stays-out-of-its-opts`, which
+also pins the ordering and that setup and factory see the same child ctx and the
+minted id. A `:setup` that is not a fn — an EDN composition can carry a keyword
+here — is `:kmet.app/bad-setup` before anything is minted or extended, instead of
+"not a function" wrapped as a creation failure. And a `:kmet.app/preset-failed`
+now keeps its own type through the rollback, like `:kmet.app/bad-agent-handle`:
+both are composition bugs the caller may act on, which a generic "creation
+failed" hides. The preset tests also stopped creating agents with a default
+config — a test creates its session under `target/`, never in the agent dir a
+developer's kmet reads.
+
 ### Landing 5i — the owner publishes, and the registries stop reaching up
 
 `resource_config` was blocked by `kmet.agent.packages`, which was blocked by

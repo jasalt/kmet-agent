@@ -19,6 +19,11 @@
   []
   (runtime/boot (core/compose-config {:profile :tui}) {}))
 
+(def ^:private config
+  "What `create!` needs to place a session somewhere disposable, rather than in
+   the agent dir a developer's kmet reads."
+  {:session-dir "target/test-presets"})
+
 (def ^:private a-call
   "A tool call the gate can be asked about."
   {:tool-name "bash" :args {:command "echo hi"} :tool-call-id "call-1"})
@@ -50,17 +55,35 @@
                                             :apply (fn [_ _])}}]}}
                 :profiles {}}]
     (try
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"preset :bundle/broken did not mount"
-                            ((:create! agents) (:ctx boot)
-                                               {:setup (fn [ctx _id]
-                                                         (reset! child-ctx ctx)
-                                                         (presets/mount! ctx broken :bundle/broken))}))
-          "a row that never becomes active is a failed setup, not a half-built agent")
+      (let [thrown (try ((:create! agents) (:ctx boot)
+                                           {:config config
+                                            :setup (fn [ctx _id]
+                                                     (reset! child-ctx ctx)
+                                                     (presets/mount! ctx broken :bundle/broken))})
+                        ::no-throw
+                        (catch clojure.lang.ExceptionInfo e e))]
+        (is (= :kmet.app/preset-failed (:type (ex-data thrown)))
+            "a composition bug keeps its own type rather than becoming a generic creation failure")
+        (is (re-find #"preset :bundle/broken did not mount" (ex-message thrown))
+            "and names the preset and the row that did not mount"))
       (is (empty? ((:list agents) (:ctx boot)))
           "no handle is published")
       (is (not-any? #(identical? % @child-ctx) (srce/children (:ctx boot)))
           "and the child ctx is released from the tree, not left extended in it")
+      (finally (srce/dispose-subtree! (:ctx boot))))))
+
+(deftest a-setup-that-is-not-a-fn-is-refused
+  ;; An EDN composition can put a keyword where this expects a fn, so the
+  ;; opt has its own failure: named before anything is claimed or extended.
+  (let [boot (booted)
+        agents (srce/get (:ctx boot) :agents)]
+    (try
+      (is (= :kmet.app/bad-setup
+             (try ((:create! agents) (:ctx boot) {:setup :bundle/gated})
+                  ::no-throw
+                  (catch clojure.lang.ExceptionInfo e (:type (ex-data e))))))
+      (is (empty? ((:list agents) (:ctx boot)))
+          "nothing was minted, so nothing is listed")
       (finally (srce/dispose-subtree! (:ctx boot))))))
 
 (deftest a-failed-preset-unwinds-what-it-mounted
