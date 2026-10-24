@@ -1459,6 +1459,15 @@ kmet1 answers with the kind's default ("ask is not yes"). A process's default
 stays maximally inert — that is what a process with *no* front end is — and a
 run that has one says so.
 
+**Review note.** The first version put the surface back with
+`unbind-extensions!`, which resets to the dispatcher's default — the same
+"replace what you found" mistake the `:extensions` row was fixed for. A process
+can have a front end *before* the run (an embedder's port, another mode in the
+same process), and a run's teardown must not take it away: the mode reads
+`front-end-surface` before it binds and binds that back afterwards. The bind also
+moved after the listener setup, so a run that fails while subscribing leaves no
+surface behind — the failure mode the `:extensions` row's own comment names.
+
 **The `:ui` service waits for its first provider.** § "Pluggable UI" has it as a
 capability *service* (`:kind`, `:render-tree`, `:request!`, `:widget-set`,
 `:capabilities`), and its consumers are app plugins declaring

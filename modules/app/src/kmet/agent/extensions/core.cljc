@@ -541,6 +541,15 @@
                                   :ui (or ui {})})
   nil)
 
+(defn front-end-surface
+  "The bound front-end surface — `bind-extensions!`'s map over the headless
+   defaults. Read it before installing one and bind it back when your front end
+   goes away: restoring what was there is right where resetting to the default
+   would take away a port that was already installed (pi: an embedder's UI, a
+   second mode in one process)."
+  []
+  @extension-binding)
+
 (defn unbind-extensions!
   "Restore the headless binding. Returns nil."
   []

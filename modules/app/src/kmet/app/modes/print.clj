@@ -147,10 +147,13 @@
         (let [format (:format config :text)
               error (atom nil)
               settled (promise)
-              dispose (subscriptions scope format settled error)]
-          ;; the front end's surface goes down with the run: the host's default
-          ;; is what a process with no front end reports, and kmet1's print mode
-          ;; binds exactly this
+              dispose (subscriptions scope format settled error)
+              ;; what to put back when the run ends: the surface that was there,
+              ;; not the dispatcher's default — a process can have a front end
+              ;; before it has this run
+              previous (extensions/front-end-surface)]
+          ;; kmet1's print mode binds exactly this, a layer down: kind :print,
+          ;; no UI, the headless port that answers where it must
           (extensions/bind-extensions! {:mode :print
                                         :has-ui false
                                         :ui (extensions/headless-ui-port)})
@@ -163,7 +166,7 @@
             ;; would leave the thread parked
             (deliver settled {:outcome :disposed})
             (dispose)
-            (extensions/unbind-extensions!)))))))
+            (extensions/bind-extensions! previous)))))))
 
 (srce/defplugin plugin
   {:name :mode-print

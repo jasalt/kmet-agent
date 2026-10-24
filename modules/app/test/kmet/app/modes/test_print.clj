@@ -191,9 +191,13 @@
   ;; kmet1's print mode goes through its session runtime, which binds the
   ;; front-end surface: kind :print, no UI, and the headless port — so an
   ;; extension that branches on ctx.mode, or asks a question, gets kmet1's answer
-  ;; under either app. The binding is the run's: the dispatcher's default comes
-  ;; back when it ends.
-  (let [seen (atom nil)]
+  ;; under either app. The binding is the run's: what was there before it comes
+  ;; back, which is not the same as the dispatcher's default.
+  (let [seen (atom nil)
+        outer (fn [& _])]
+    ;; a front end installed before the run — an embedder's, another mode's
+    (extensions/bind-extensions! {:mode :interactive :has-ui true
+                                  :ui {:notify outer}})
     (with-mode-run
       (fn [opts]
         ;; read from inside the run, where the binding is live
@@ -212,9 +216,13 @@
         (is (false? (:has-ui @seen)) "and that there is no UI to draw on")
         (is (true? (:set-theme @seen))
             "the headless port answers where it must rather than staying inert")
-        (is (false? (:notify @seen))
-            "and stays inert where a no-op is right")
-        (is (= (extensions/ui-request-default :confirm) (:confirm @seen))
-            "a question gets its kind's default answer, never a prompt"))))
-  (is (nil? (extensions/ui-capability :set-theme))
-      "the dispatcher's own default is back once the run is over"))
+        (is (false? (:notify @seen)) "and stays inert where a no-op is right")
+        (is (false? (:confirm @seen))
+            "a confirm question is answered — never with yes, never with nil")))
+    (is (= :interactive (extensions/extension-mode))
+        "the surface that was there is back")
+    (is (true? (extensions/extension-has-ui?)))
+    (is (identical? outer (extensions/ui-capability :notify)))
+    (extensions/unbind-extensions!)
+    (is (nil? (extensions/ui-capability :set-theme))
+        "and a process with no front end of its own is back to inert")))
