@@ -38,13 +38,23 @@
       (let [form (read {:eof ::eof :read-cond :allow} r)]
         (if (= ::eof form) forms (recur (conj forms form)))))))
 
+(defn- bootstrap-call?
+  "A call to `bootstrap`, whatever alias the namespace was required under: the
+   session driver is the one namespace that constructs an engine, and the guard
+   is about the options a front end names, not about the alias it uses."
+  [form]
+  (and (seq? form)
+       (symbol? (first form))
+       (= "bootstrap" (name (first form)))
+       (nil? (namespace (symbol (name (first form)))))))
+
 (defn- bootstrap-opts
-  "The map literal PATH passes to its `runtime/bootstrap` call, or nil."
+  "The map literal PATH passes to its `bootstrap` call, or nil."
   [path]
   (->> (read-forms path)
        (tree-seq coll? seq)
        (some (fn [form]
-               (when (and (seq? form) (= 'runtime/bootstrap (first form)))
+               (when (bootstrap-call? form)
                  (nth form 2 nil))))))
 
 (t/deftest every-front-end-names-the-processes-resource-policy

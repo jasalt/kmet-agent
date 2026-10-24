@@ -651,7 +651,7 @@
 (def request-pending
   "Port return marker: the request was forwarded to an asynchronous client
    (or an in-process dialog that has not resolved yet) and is answered
-   later with kmet.agent.session.runtime/respond!."
+   later with kmet.agent.session.driver/respond!."
   ::pending)
 
 (defn ui-request-default

@@ -16,6 +16,7 @@
             [kmet.agent.loop :as agent]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.session.core :as session]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.skills :as skills]
@@ -180,12 +181,12 @@
             engine is bound to extensions as :rpc with the UI port"
     (let [disposed (promise)
           started (promise)
-          orig-dispose runtime/dispose!
-          orig-bootstrap runtime/bootstrap]
-      (with-redefs [runtime/dispose! (fn [engine] (deliver disposed engine) (orig-dispose engine))
-                    runtime/bootstrap (fn [config opts]
-                                        (deliver started opts)
-                                        (orig-bootstrap config opts))]
+          orig-dispose session-driver/dispose!
+          orig-bootstrap session-driver/bootstrap]
+      (with-redefs [session-driver/dispose! (fn [engine] (deliver disposed engine) (orig-dispose engine))
+                    session-driver/bootstrap (fn [config opts]
+                                               (deliver started opts)
+                                               (orig-bootstrap config opts))]
         (let [[result _] (run-lines [{:type :get-state :id 1}])]
           (is (= :ok result))
           (is (some? (deref disposed 1000 nil)) "dispose! ran on EOF")
@@ -359,8 +360,8 @@
             :scheduled true and queues the request for the settle"
     (let [dir (str "target/test-rpc-compact-" (System/currentTimeMillis))
           sess (session/create-session dir {:cwd (str (fs/cwd))})
-          engine (runtime/bootstrap (:config (opts)) {:session sess
-                                                      :ctx (app-runtime/ctx)})]
+          engine (session-driver/bootstrap (:config (opts)) {:session sess
+                                                             :ctx (app-runtime/ctx)})]
       (try
         (reset! (:turn-running? engine) true)
         (is (= {:type :response :command :compact :success true
@@ -370,7 +371,7 @@
             "the request is queued for the settle")
         (finally
           (reset! (:turn-running? engine) false)
-          (runtime/dispose! engine)
+          (session-driver/dispose! engine)
           (fs/delete-tree dir))))))
 
 (deftest test-model-commands
@@ -609,11 +610,11 @@
         out (java.io.StringWriter.)
         engine-p (promise)
         answered (promise)
-        orig-bootstrap runtime/bootstrap]
-    (with-redefs [runtime/bootstrap (fn [config opts]
-                                      (let [engine (orig-bootstrap config opts)]
-                                        (deliver engine-p engine)
-                                        engine))
+        orig-bootstrap session-driver/bootstrap]
+    (with-redefs [session-driver/bootstrap (fn [config opts]
+                                             (let [engine (orig-bootstrap config opts)]
+                                               (deliver engine-p engine)
+                                               engine))
                   agent/run-agent-turn
                   (fn [_ _]
                     (future
@@ -628,7 +629,7 @@
             :respond resolves the pending promise (the async answer seam)"
     (with-dialog
       (fn [engine]
-        (deref (runtime/request-ui! engine :confirm {:title "Allow?" :message "Sure?"})
+        (deref (session-driver/request-ui! engine :confirm {:title "Allow?" :message "Sure?"})
                5000 ::timeout))
       (fn [{:keys [runner out write! end! answered]}]
         (try
@@ -651,7 +652,7 @@
             client never answers (pi: ExtensionUIDialogOptions.timeout)"
     (with-dialog
       (fn [engine]
-        (deref (runtime/request-ui! engine :confirm {:title "Allow?" :timeout 50})
+        (deref (session-driver/request-ui! engine :confirm {:title "Allow?" :timeout 50})
                3000 ::timeout))
       (fn [{:keys [runner out write! end! answered]}]
         (try
@@ -668,7 +669,7 @@
             written"
     (with-dialog
       (fn [engine]
-        (deref (runtime/request-ui! engine :custom {:title "Component"})
+        (deref (session-driver/request-ui! engine :custom {:title "Component"})
                1000 ::timeout))
       (fn [{:keys [runner out write! end! answered]}]
         (try

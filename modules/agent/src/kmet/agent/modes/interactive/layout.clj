@@ -18,6 +18,7 @@
             [kmet.tui.components.expandable-text :as expandable-text]
             [kmet.ai.models :as models]
             [kmet.agent.session.core :as session]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.commands :as commands]
@@ -587,14 +588,14 @@
         cwd (or (session/session-cwd session) (str (fs/cwd)))
 
         ;; The runtime owns the agent state, system prompt, run options and
-        ;; extension handle (kmet.agent.session.runtime/bootstrap); the layout
+        ;; extension handle (kmet.agent.session.session-driver/bootstrap); the layout
         ;; owns view state and subscribes its event handler once the widgets
         ;; exist.
-        engine (runtime/bootstrap config {:session session
-                                          :cwd cwd
-                                          :ctx (app-runtime/ctx)
-                                          :load-resources! packages/load-resources!
-                                          :expand-input packages/expand-input})
+        engine (session-driver/bootstrap config {:session session
+                                                 :cwd cwd
+                                                 :ctx (app-runtime/ctx)
+                                                 :load-resources! packages/load-resources!
+                                                 :expand-input packages/expand-input})
         cwd-atom (:cwd engine)
 
         ;; Migrate legacy keybinding ids in keybindings.edn (pi: migrations
@@ -976,17 +977,17 @@
       ;; The interactive event handler is one subscriber on the runtime's
       ;; stream (pi: the TUI session's event handlers), subscribed after
       ;; cs-ref so :status events resolve the built CoreState.
-      (runtime/subscribe! engine
-                          (make-agent-event-handler
-                           {:chat-history ch :tui t :cs-ref cs-ref
-                            :pending-tool-comps pending-tool-comps}))
+      (session-driver/subscribe! engine
+                                 (make-agent-event-handler
+                                  {:chat-history ch :tui t :cs-ref cs-ref
+                                   :pending-tool-comps pending-tool-comps}))
 
       ;; The front end's default run presentation (streaming text/thinking,
       ;; the done/error teardown) for any run the runtime starts on its own
       ;; — an extension send-user-message/send-message!, the compaction
       ;; flush — so those runs present like the editor's start-agent-run!
       ;; path instead of streaming invisibly.
-      (runtime/set-run-callbacks! engine (turn/run-callbacks cs))
+      (session-driver/set-run-callbacks! engine (turn/run-callbacks cs))
 
       ;; Restore a --continue session into the chat history AND the agent
       ;; context (pi: renderInitialMessages from buildContextEntries) — the

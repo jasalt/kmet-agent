@@ -15,6 +15,7 @@
             [kmet.agent.app-runtime :as app]
             [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as rt]
             [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.registry :as tools-reg]
@@ -43,10 +44,10 @@
    (let [dir (str "target/test-session-runtime-" (System/currentTimeMillis))
          sess (session/create-session dir {:cwd (str (fs/cwd))})]
      (try
-       (let [engine (rt/bootstrap (test-config)
-                                  (merge {:session sess :ctx (app/ctx)} opts))]
+       (let [engine (session-driver/bootstrap (test-config)
+                                              (merge {:session sess :ctx (app/ctx)} opts))]
          (try (f engine sess)
-              (finally (rt/dispose! engine))))
+              (finally (session-driver/dispose! engine))))
        (finally (fs/delete-tree dir))))))
 
 (deftest test-commands-outlive-an-engine
@@ -151,10 +152,10 @@
   (prompts/register-prompt-template! {:name "expand-me" :content "Expanded body."})
   (with-engine {:expand-input packages/expand-input}
     (fn [engine _sess]
-      (is (= "Expanded body." (rt/expand-queued-text engine "/expand-me")))))
+      (is (= "Expanded body." (session-driver/expand-queued-text engine "/expand-me")))))
   (with-engine
     (fn [engine _sess]
-      (is (= "/expand-me" (rt/expand-queued-text engine "/expand-me"))
+      (is (= "/expand-me" (session-driver/expand-queued-text engine "/expand-me"))
           "no chain, no substitution"))))
 
 (deftest test-bootstrap-builds-the-engine
@@ -182,22 +183,22 @@
   (with-engine
     (fn [engine _]
       (let [events (atom [])
-            unsub (rt/subscribe! engine #(swap! events conj %))]
-        (rt/cancel! engine)
+            unsub (session-driver/subscribe! engine #(swap! events conj %))]
+        (session-driver/cancel! engine)
         (is (seq @events) "the subscriber receives the stream")
         (is (= :queue-update (:type (first @events))))
         (reset! events [])
         (unsub)
-        (rt/cancel! engine)
+        (session-driver/cancel! engine)
         (is (empty? @events) "an unsubscribed fn receives nothing")))))
 
 (deftest test-subscriber-errors-are-isolated
   (with-engine
     (fn [engine _]
       (let [events (atom [])]
-        (rt/subscribe! engine (fn [_] (throw (ex-info "boom" {}))))
-        (rt/subscribe! engine #(swap! events conj %))
-        (is (nil? (rt/cancel! engine))
+        (session-driver/subscribe! engine (fn [_] (throw (ex-info "boom" {}))))
+        (session-driver/subscribe! engine #(swap! events conj %))
+        (is (nil? (session-driver/cancel! engine))
             "a throwing subscriber cannot escape into the loop")
         (is (seq @events) "the other subscribers still receive the event")))))
 
@@ -212,7 +213,7 @@
                       (fn [ag run-opts]
                         (reset! seen {:ag ag :opts run-opts})
                         run)]
-          (is (nil? (rt/prompt! engine {:text "hi" :on-done done}))
+          (is (nil? (session-driver/prompt! engine {:text "hi" :on-done done}))
               "prompt! returns immediately (completion is :agent-settled)")
           (is (identical? (rt/agent-state engine) (:ag @seen)))
           (is (= "hi" (:message (:opts @seen))))
@@ -235,20 +236,20 @@
         (with-redefs [agent/run-agent-turn (fn [ag _]
                                              (reset! seen (:session ag))
                                              (future))]
-          (rt/prompt! engine {:text "hi"})
+          (session-driver/prompt! engine {:text "hi"})
           (is (= ::switched @seen)))))))
 
 (deftest test-dispose-clears-subscribers-and-wiring
   (with-engine
     (fn [engine _]
       (let [events (atom [])]
-        (rt/subscribe! engine #(swap! events conj %))
-        (is (nil? (rt/dispose! engine)))
+        (session-driver/subscribe! engine #(swap! events conj %))
+        (is (nil? (session-driver/dispose! engine)))
         (is (nil? (extensions/get-session)) "the extension session handle is cleared")
         (is (= :print (extensions/extension-mode))
             "dispose! restores the headless front-end binding")
-        (is (nil? (rt/dispose! engine)) "dispose! is idempotent")
-        (rt/cancel! engine)
+        (is (nil? (session-driver/dispose! engine)) "dispose! is idempotent")
+        (session-driver/cancel! engine)
         (is (empty? @events))))))
 
 (deftest test-session-install-is-last-wins
@@ -300,7 +301,7 @@
         (reset! (:signal ag) true)
         (is (true? (rt/cancel-signal engine)))
         (is (false? (rt/has-queued-messages? engine)))
-        (rt/steer! engine "queued")
+        (session-driver/steer! engine "queued")
         (is (true? (rt/has-queued-messages? engine))
             "a queued steer message makes the engine non-idle for extensions")))))
 
@@ -374,7 +375,7 @@
     (fn [engine _]
       (let [ag (rt/agent-state engine)]
         (is (false? @(:compaction-signal ag)))
-        (is (nil? (rt/abort-compaction! engine)))
+        (is (nil? (session-driver/abort-compaction! engine)))
         (is (true? @(:compaction-signal ag)) "escape during compaction signals it")
         (is (false? @(:signal ag)) "the run-cancel signal is untouched")))))
 
@@ -383,11 +384,11 @@
     (fn [engine _]
       (let [completed (promise)]
         (with-redefs [agent-compact/compact-context! (fn [& _] true)]
-          (is (= :started (rt/request-compaction! engine nil {:on-complete #(deliver completed %)})))
+          (is (= :started (session-driver/request-compaction! engine nil {:on-complete #(deliver completed %)})))
           (is (true? (deref completed 2000 ::timeout))
               "an idle request starts immediately and reports its result"))
         (reset! (:compacting? (rt/agent-state engine)) true)
-        (is (= :compacting (rt/request-compaction! engine nil nil))
+        (is (= :compacting (session-driver/request-compaction! engine nil nil))
             "a compaction in flight refuses a second one")
         (is (empty? (rt/pending-compaction engine))
             "a refused request is not queued")))))
@@ -403,7 +404,7 @@
                         (swap! seen conj [instructions reason])
                         true)]
           (is (= :scheduled
-                 (rt/request-compaction! engine "focus" {:on-complete #(deliver completed %)}))
+                 (session-driver/request-compaction! engine "focus" {:on-complete #(deliver completed %)}))
               "a live prompt defers the request")
           (is (= ["focus"] (mapv :custom-instructions (rt/pending-compaction engine))))
           ;; a settle while a newer prompt already owns the runtime leaves it
@@ -427,7 +428,7 @@
                       (fn [ag & _]
                         (reset! (:compaction-error ag) "Compaction failed: boom")
                         :failed)]
-          (rt/request-compaction! engine nil {:on-error #(deliver failed (ex-message %))})
+          (session-driver/request-compaction! engine nil {:on-error #(deliver failed (ex-message %))})
           (is (= "Compaction failed: boom" (deref failed 2000 ::timeout))
               ":failed reports pi's message through :on-error"))))))
 
@@ -438,16 +439,16 @@
     (let [dir (str "target/test-session-runtime-new-" (System/currentTimeMillis))
           sess (session/create-session dir {:cwd (str (fs/cwd))})]
       (try
-        (let [engine (rt/bootstrap (assoc (test-config) :session-dir dir)
-                                   {:session sess :ctx (app/ctx)})]
+        (let [engine (session-driver/bootstrap (assoc (test-config) :session-dir dir)
+                                               {:session sess :ctx (app/ctx)})]
           (try
             (reset! (:turn-running? engine) true)
-            (is (= :scheduled (rt/request-compaction! engine nil nil)))
+            (is (= :scheduled (session-driver/request-compaction! engine nil nil)))
             (is (= 1 (count (rt/pending-compaction engine))))
-            (rt/new-session! engine)
+            (session-driver/new-session! engine)
             (is (empty? (rt/pending-compaction engine))
                 "the deferred request is dropped before the settle")
-            (finally (rt/dispose! engine))))
+            (finally (session-driver/dispose! engine))))
         (finally (fs/delete-tree dir))))))
 
 (deftest test-http-timeout-setters
@@ -500,7 +501,7 @@
                         (reset! seen [ag entries instructions sig replace?])
                         {:summary "s"})]
           (is (= {:summary "s"}
-                 (rt/generate-branch-summary engine [{:id "e1"}] "instr" signal true)))
+                 (session-driver/generate-branch-summary engine [{:id "e1"}] "instr" signal true)))
           (is (identical? (rt/agent-state engine) (nth @seen 0))
               "the wrapper hands the live agent state over")
           (is (= [[{:id "e1"}] "instr" signal true] (subvec @seen 1))))))))
@@ -526,31 +527,31 @@
   (let [dir (str "target/test-session-runtime-resolve-" (System/currentTimeMillis))
         config {:provider :opencode-go :model "deepseek-v4-flash" :session-dir dir}]
     (try
-      (let [fresh (rt/resolve-run-session config {})]
+      (let [fresh (session-driver/resolve-run-session config {})]
         (is (some? (:file fresh)) "a fresh session is created in the cwd dir")
         ;; sessions reach disk on their first entry (create-session is lazy),
         ;; and --continue/--session search the files
         (session/append-entry fresh {:role :assistant :content "prior"})
-        (is (= (:id fresh) (:id (rt/resolve-run-session config {:continue true})))
+        (is (= (:id fresh) (:id (session-driver/resolve-run-session config {:continue true})))
             "--continue finds the most recent session for the cwd")
         (is (= (:id fresh)
-               (:id (rt/resolve-run-session config {:session (subs (:id fresh) 0 8)})))
+               (:id (session-driver/resolve-run-session config {:session (subs (:id fresh) 0 8)})))
             "--session takes an id prefix"))
-      (is (nil? (rt/resolve-run-session config {:session "no-such-session"}))
+      (is (nil? (session-driver/resolve-run-session config {:session "no-such-session"}))
           "--session matching nothing resolves to nil (the caller reports it)")
       (finally (fs/delete-tree dir)))))
 
 (deftest test-wait-idle
   (with-engine
     (fn [engine _]
-      (is (true? (rt/wait-idle! engine 100)) "an idle engine is idle immediately")
+      (is (true? (session-driver/wait-idle! engine 100)) "an idle engine is idle immediately")
       (reset! (:turn-running? engine) true)
-      (is (false? (rt/wait-idle! engine 30)) "a stuck turn times out")
+      (is (false? (session-driver/wait-idle! engine 30)) "a stuck turn times out")
       (reset! (:turn-running? engine) false)
       (reset! (:compacting? (rt/agent-state engine)) true)
-      (is (false? (rt/wait-idle! engine 30)) "a stuck compaction times out")
+      (is (false? (session-driver/wait-idle! engine 30)) "a stuck compaction times out")
       (reset! (:compacting? (rt/agent-state engine)) false)
-      (is (true? (rt/wait-idle! engine 100)) "idle again after both clear"))))
+      (is (true? (session-driver/wait-idle! engine 100)) "idle again after both clear"))))
 
 (deftest test-a-subscription-outlives-any-engine
   ;; Extensions subscribe at load, before any engine exists, and the bus is a
@@ -575,21 +576,21 @@
   (let [dir (str "target/test-prompt-fn-" (System/currentTimeMillis))
         sess (session/create-session dir {:cwd (str (fs/cwd))})
         calls (atom 0)
-        engine (rt/bootstrap (test-config)
-                             {:session sess
-                              :ctx (app/ctx)
-                              :agent-opts {:system-prompt-fn
-                                           (fn [& _] (swap! calls inc) "custom-prompt")}})]
+        engine (session-driver/bootstrap (test-config)
+                                         {:session sess
+                                          :ctx (app/ctx)
+                                          :agent-opts {:system-prompt-fn
+                                                       (fn [& _] (swap! calls inc) "custom-prompt")}})]
     (try
       (is (= "custom-prompt" @(:system (rt/agent-state engine)))
           "the initial build uses the caller's builder")
       (is (= 1 @calls))
-      (rt/apply-session-cwd! engine (session/create-session dir {:cwd "/"}))
+      (session-driver/apply-session-cwd! engine (session/create-session dir {:cwd "/"}))
       (is (= "custom-prompt" @(:system (rt/agent-state engine)))
           "and so does a cwd move")
       (is (= 2 @calls))
       (finally
-        (rt/dispose! engine)
+        (session-driver/dispose! engine)
         (fs/delete-tree dir)))))
 
 (deftest test-two-engines-do-not-cross-contaminate
@@ -598,11 +599,11 @@
         sess1 (session/create-session
                (rt/ensure-cwd-session-dir dir1 (str (fs/cwd)))
                {:cwd (str (fs/cwd))})
-        e1 (rt/bootstrap (test-config) {:session sess1 :ctx (app/ctx)})
+        e1 (session-driver/bootstrap (test-config) {:session sess1 :ctx (app/ctx)})
         sess2 (session/create-session
                (rt/ensure-cwd-session-dir dir2 (str (fs/cwd)))
                {:cwd (str (fs/cwd))})
-        e2 (rt/bootstrap (test-config) {:session sess2 :ctx (app/ctx)})]
+        e2 (session-driver/bootstrap (test-config) {:session sess2 :ctx (app/ctx)})]
     (try
       ;; The bus is not an engine's (F10): its registry is process-level, so
       ;; there is no per-engine listener storage to compare (see
@@ -629,14 +630,14 @@
             (commands/unregister-command!  "app-wide-demo"))))
       (let [e1-events (atom [])
             e2-events (atom [])]
-        (rt/subscribe! e1 #(swap! e1-events conj %))
-        (rt/subscribe! e2 #(swap! e2-events conj %))
-        (rt/cancel! e1)
+        (session-driver/subscribe! e1 #(swap! e1-events conj %))
+        (session-driver/subscribe! e2 #(swap! e2-events conj %))
+        (session-driver/cancel! e1)
         (is (seq @e1-events) "the first engine's subscribers receive its events")
         (is (empty? @e2-events) "the second engine's subscribers receive nothing"))
       (finally
-        (rt/dispose! e2)
-        (rt/dispose! e1)
+        (session-driver/dispose! e2)
+        (session-driver/dispose! e1)
         (fs/delete-tree dir1)
         (fs/delete-tree dir2)))))
 

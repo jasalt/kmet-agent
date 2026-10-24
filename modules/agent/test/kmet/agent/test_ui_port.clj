@@ -9,7 +9,7 @@
             [kmet.agent.app-runtime :as app]
             [kmet.agent.registry :as registry]
             [kmet.agent.session.core :as session]
-            [kmet.agent.session.runtime :as rt]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.test-utils :as tu]))
 
 ;; The binding and the app's registrations are process-global state;
@@ -109,9 +109,9 @@
 (deftest test-request-ui-falls-back-to-defaults
   (testing "without a :request capability the degraded default answers"
     (let [engine (bare-engine)]
-      (t/is (false? (deref (rt/request-ui! engine :confirm {}) 100 ::timeout)))
-      (t/is (nil? (deref (rt/request-ui! engine :select {}) 100 ::timeout)))
-      (t/is (true? (deref (rt/request-ui! engine :confirm {:default true})
+      (t/is (false? (deref (session-driver/request-ui! engine :confirm {}) 100 ::timeout)))
+      (t/is (nil? (deref (session-driver/request-ui! engine :select {}) 100 ::timeout)))
+      (t/is (true? (deref (session-driver/request-ui! engine :confirm {:default true})
                           100 ::timeout))
             ":default overrides the kind default"))))
 
@@ -126,9 +126,9 @@
                         (case (:kind request)
                           :confirm true
                           :select nil))}})
-      (t/is (true? (deref (rt/request-ui! engine :confirm {:title "ok?"})
+      (t/is (true? (deref (session-driver/request-ui! engine :confirm {:title "ok?"})
                           100 ::timeout)))
-      (t/is (nil? (deref (rt/request-ui! engine :select {}) 100 ::timeout))
+      (t/is (nil? (deref (session-driver/request-ui! engine :select {}) 100 ::timeout))
             "a synchronous nil answer resolves (not treated as pending)")
       (let [{:keys [type id kind title]} (first @seen)]
         (t/is (= :ui-request type))
@@ -148,17 +148,17 @@
        {:mode :rpc :has-ui false
         :ui {:request (fn [request] (swap! requests conj request)
                         ex/request-pending)}})
-      (let [p (rt/request-ui! engine :input {:title "name?" :default "fallback"})
+      (let [p (session-driver/request-ui! engine :input {:title "name?" :default "fallback"})
             {:keys [id]} (first @requests)]
         (t/is (not (realized? p)))
         (t/is (= 1 (count @(:pending-ui engine))))
-        (t/is (= "fallback" (rt/request-default engine id))
+        (t/is (= "fallback" (session-driver/request-default engine id))
               "a forwarding port's own deadline resolves with the recorded default")
-        (t/is (nil? (rt/respond! engine id "marko")))
+        (t/is (nil? (session-driver/respond! engine id "marko")))
         (t/is (= "marko" (deref p 100 ::timeout)))
         (t/is (empty? @(:pending-ui engine)))
-        (t/is (nil? (rt/request-default engine id)) "unknown once answered")
-        (t/is (nil? (rt/respond! engine id "twice"))
+        (t/is (nil? (session-driver/request-default engine id)) "unknown once answered")
+        (t/is (nil? (session-driver/respond! engine id "twice"))
               "an already-answered id is ignored")))))
 
 (deftest test-request-ui-throwing-port
@@ -166,7 +166,7 @@
     (let [engine (bare-engine)]
       (ex/bind-extensions! {:mode :interactive :has-ui true
                             :ui {:request (fn [_] (throw (ex-info "boom" {})))}})
-      (t/is (thrown? Exception (rt/request-ui! engine :confirm {})))
+      (t/is (thrown? Exception (session-driver/request-ui! engine :confirm {})))
       (t/is (empty? @(:pending-ui engine))))))
 
 (deftest test-dispose-resolves-pending-requests
@@ -174,9 +174,9 @@
     (let [engine (bare-engine)]
       (ex/bind-extensions! {:mode :rpc :has-ui false
                             :ui {:request (fn [_] ex/request-pending)}})
-      (let [p (rt/request-ui! engine :confirm {})]
+      (let [p (session-driver/request-ui! engine :confirm {})]
         (t/is (not (realized? p)))
-        (rt/dispose! engine)
+        (session-driver/dispose! engine)
         (t/is (false? (deref p 100 ::timeout))
               "the kind's degraded default resolves it, not nil")
         (t/is (empty? @(:pending-ui engine)))
@@ -186,8 +186,8 @@
     (let [engine (bare-engine)]
       (ex/bind-extensions! {:mode :rpc :has-ui false
                             :ui {:request (fn [_] ex/request-pending)}})
-      (let [p (rt/request-ui! engine :select {:default :cancelled})]
-        (rt/dispose! engine)
+      (let [p (session-driver/request-ui! engine :select {:default :cancelled})]
+        (session-driver/dispose! engine)
         (t/is (= :cancelled (deref p 100 ::timeout)))))))
 
 (deftest test-bootstrap-binds-headless-print-defaults
@@ -195,23 +195,23 @@
     (let [dir (str "target/test-ui-port-" (System/currentTimeMillis))
           sess (session/create-session dir {:cwd (str (fs/cwd))})]
       (try
-        (let [engine (rt/bootstrap {:provider :opencode-go
-                                    :model "deepseek-v4-flash"}
-                                   {:session sess :ctx (app/ctx)})]
+        (let [engine (session-driver/bootstrap {:provider :opencode-go
+                                                :model "deepseek-v4-flash"}
+                                               {:session sess :ctx (app/ctx)})]
           (try
             (t/is (= :print (ex/extension-mode)))
             (t/is (false? (ex/extension-has-ui?)))
             (let [ctx (ex/build-extension-context)]
               (t/is (= :print (:mode ctx)))
               (t/is (false? (:has-ui ctx))))
-            (t/is (false? (deref (rt/request-ui! engine :confirm {})
+            (t/is (false? (deref (session-driver/request-ui! engine :confirm {})
                                  100 ::timeout))
                   "a print-mode extension dialog answers with the default")
             (t/is (vector? (ex/runtime-call :get-active-tools))
                   "the runtime capabilities are installed for every front end")
             (t/is (false? (ex/runtime-call :set-model nil))
                   "a nil model is rejected without touching settings")
-            (finally (rt/dispose! engine)))
+            (finally (session-driver/dispose! engine)))
           (t/is (nil? (ex/runtime-call :get-active-tools))
                 "dispose! clears the runtime capabilities"))
         (finally (fs/delete-tree dir))))))

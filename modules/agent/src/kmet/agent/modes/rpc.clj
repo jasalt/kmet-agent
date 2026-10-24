@@ -19,6 +19,7 @@
             [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.session.core :as session]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.skills :as skills]
@@ -94,7 +95,7 @@
     (throw (ex-info (str (name type) " does not support :images yet")
                     {:type :unsupported})))
   (if-let [text (message-of command)]
-    (do (enqueue! engine (runtime/expand-queued-text engine text))
+    (do (enqueue! engine (session-driver/expand-queued-text engine text))
         (ok type {:disposition :queued}))
     (failed type (str (name type) " requires a non-empty :message string"))))
 
@@ -127,8 +128,8 @@
           (future
             (Thread/sleep (long timeout))
             (when-let [engine @engine-ref]
-              (runtime/respond! engine (:id request)
-                                (runtime/request-default engine (:id request))))))
+              (session-driver/respond! engine (:id request)
+                                       (session-driver/request-default engine (:id request))))))
         extensions/request-pending)
       (extensions/ui-request-default kind))))
 
@@ -200,12 +201,12 @@
 (defn- command-steer
   "Queue a message for mid-turn injection (pi: steer)."
   [engine command]
-  (command-queue engine command runtime/steer!))
+  (command-queue engine command session-driver/steer!))
 
 (defn- command-follow-up
   "Queue a message for after the run settles (pi: follow_up)."
   [engine command]
-  (command-queue engine command runtime/follow-up!))
+  (command-queue engine command session-driver/follow-up!))
 
 (defn- command-prompt
   "Start, steer, queue, or handle a prompt (pi: prompt). A slash-command
@@ -228,14 +229,14 @@
             (failed :prompt "The agent is already running; specify :streaming-behavior :steer or :follow-up")
 
             (and running? behavior)
-            (do ((if (= :steer behavior) runtime/steer! runtime/follow-up!)
-                 engine (runtime/expand-queued-text engine text))
+            (do ((if (= :steer behavior) session-driver/steer! session-driver/follow-up!)
+                 engine (session-driver/expand-queued-text engine text))
                 (ok :prompt {:disposition :queued}))
 
             :else
-            (let [result (runtime/submit! engine text
-                                          (cond-> {:expand? true}
-                                            (:images command) (assoc :run-opts {:images (:images command)})))]
+            (let [result (session-driver/submit! engine text
+                                                 (cond-> {:expand? true}
+                                                   (:images command) (assoc :run-opts {:images (:images command)})))]
               (ok :prompt {:disposition (case (:action result)
                                           :started :started
                                           :handled :handled
@@ -251,11 +252,11 @@
   [engine command]
   (let [id (:id command)]
     (if (and (string? id) (not (str/blank? id)))
-      (do (runtime/respond! engine id
-                            (cond
-                              (:cancelled command) nil
-                              (contains? command :confirmed) (boolean (:confirmed command))
-                              :else (:value command)))
+      (do (session-driver/respond! engine id
+                                   (cond
+                                     (:cancelled command) nil
+                                     (contains? command :confirmed) (boolean (:confirmed command))
+                                     :else (:value command)))
           nil)
       (failed :respond "respond requires a string :id"))))
 
@@ -267,8 +268,8 @@
   [engine _]
   (when (or (runtime/turn-running? engine)
             (runtime/compacting? engine))
-    (runtime/cancel! engine))
-  (ok :abort {:idle (runtime/wait-idle! engine)}))
+    (session-driver/cancel! engine))
+  (ok :abort {:idle (session-driver/wait-idle! engine)}))
 
 (defn- command-clear-queue
   "Drop the queued steering/follow-up messages and return their texts
@@ -284,7 +285,7 @@
    keeps serving; the client learns the new session here and through the
    session events."
   [engine _]
-  (let [{:keys [cancelled session was-running]} (runtime/new-session! engine)]
+  (let [{:keys [cancelled session was-running]} (session-driver/new-session! engine)]
     (if cancelled
       (ok :new-session {:cancelled true})
       (ok :new-session {:cancelled false
@@ -400,7 +401,7 @@
 
 (defn- command-compact
   "Start a manual compaction (pi: compact), or defer it when a run is in
-   flight (see runtime/request-compaction!): accepted is not completed — the
+   flight (see session-driver/request-compaction!): accepted is not completed — the
    response says :accepted (+ :scheduled true when the compaction was
    deferred until the running prompt settles) and the outcome arrives as
    :compaction-end / :session-compact(-failed) events. The work runs on a
@@ -413,7 +414,7 @@
       (failed :compact ":custom-instructions must be a string")
 
       :else
-      (case (runtime/request-compaction! engine instructions nil)
+      (case (session-driver/request-compaction! engine instructions nil)
         :compacting (failed :compact "Compaction already in progress")
         :scheduled (ok :compact {:accepted true :scheduled true})
         (ok :compact {:accepted true})))))
@@ -445,7 +446,7 @@
    the session lifecycle events."
   [engine command]
   (if-let [path (required-string command :session-path)]
-    (let [result (runtime/resume! engine path)]
+    (let [result (session-driver/resume! engine path)]
       (ok :switch-session {:cancelled (boolean (:cancelled result))}))
     (failed :switch-session "switch-session requires a non-empty :session-path string")))
 
@@ -454,7 +455,7 @@
    the message text for the client to restore to its editor."
   [engine command]
   (if-let [entry-id (required-string command :entry-id)]
-    (let [result (runtime/fork! engine entry-id)]
+    (let [result (session-driver/fork! engine entry-id)]
       (cond
         (:cancelled result) (ok :fork {:cancelled true})
         (:error result) (failed :fork (if (= :unknown-entry (:error result))
@@ -467,7 +468,7 @@
 (defn- command-clone
   "Duplicate the session at its current position (pi: clone)."
   [engine _]
-  (let [result (runtime/clone! engine)]
+  (let [result (session-driver/clone! engine)]
     (cond
       (:cancelled result) (ok :clone {:cancelled true})
       (:error result) (failed :clone (case (:error result)
@@ -646,24 +647,24 @@
     ;; the portable builtins this front end dispatches over prompt (6.3) and
     ;; reports through get-commands; registration is idempotent
     (builtins/register-runtime-commands!)
-    (if-let [session (runtime/resolve-run-session config opts)]
+    (if-let [session (session-driver/resolve-run-session config opts)]
       (let [;; the port is installed by bootstrap but needs the engine for a
             ;; dialog timeout's auto-answer; the ref closes the cycle
             engine-ref (atom nil)
             port (ui-port engine-ref out)
-            engine (runtime/bootstrap config {:session session
-                                              :model (:model opts)
-                                              :provider (:provider opts)
-                                              :ctx (app-runtime/ctx)
-                                              :load-resources! packages/load-resources!
-                                              :expand-input packages/expand-input
-                                              :mode :rpc
-                                              :has-ui true
-                                              :ui-context port})
+            engine (session-driver/bootstrap config {:session session
+                                                     :model (:model opts)
+                                                     :provider (:provider opts)
+                                                     :ctx (app-runtime/ctx)
+                                                     :load-resources! packages/load-resources!
+                                                     :expand-input packages/expand-input
+                                                     :mode :rpc
+                                                     :has-ui true
+                                                     :ui-context port})
             table (command-table (command-ui port))]
         (reset! engine-ref engine)
-        (let [unsubscribe (runtime/subscribe! engine (fn [event]
-                                                       (write-record! out (event-bus/wire-event event))))]
+        (let [unsubscribe (session-driver/subscribe! engine (fn [event]
+                                                              (write-record! out (event-bus/wire-event event))))]
           (try
             (serve-input table engine (:in opts) out)
             (finally
@@ -671,7 +672,7 @@
               ;; the terminal :agent-settled, which must reach the subscriber
               ;; before dispose clears it. The unsubscribe
               ;; after is then a no-op.
-              (runtime/dispose! engine)
+              (session-driver/dispose! engine)
               (unsubscribe))))
         :ok)
       (do (binding [*out* *err*]

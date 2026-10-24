@@ -9,7 +9,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.config :as cfg]
             [kmet.test-utils :as tu]))
 
@@ -18,7 +18,7 @@
    (bootstrap does this in production)."
   [cs]
   (extensions/bind-runtime-capabilities!
-   (runtime/runtime-capabilities (:engine cs))))
+   (session-driver/runtime-capabilities (:engine cs))))
 
 (deftest test-send-user-message-queues-while-the-prompt-settles
   (testing "a send during the settle window queues into the running prompt
@@ -38,7 +38,7 @@
         (try
           (install-runtime-capabilities! cs)
           (let [started (atom 0)]
-            (with-redefs [runtime/prompt! (fn [& _] (swap! started inc))]
+            (with-redefs [session-driver/prompt! (fn [& _] (swap! started inc))]
               (t/is (= :idle @(:status ag)) "the attempt already reported idle")
               (extensions/send-user-message "queued" {:deliver-as :follow-up})
               (t/is (= ["queued"] @(:follow-up ag))
@@ -92,7 +92,7 @@
                      ([m] (extensions/send-message! m))
                      ([m o] (extensions/send-message! m o)))
               started (atom 0)]
-          (with-redefs [runtime/prompt! (fn [& _] (swap! started inc))]
+          (with-redefs [session-driver/prompt! (fn [& _] (swap! started inc))]
             (testing "idle, no trigger: appended now, no run"
               (send {:custom-type :note :content "idle"})
               (t/is (= 1 (count (custom-entries))) "persisted")

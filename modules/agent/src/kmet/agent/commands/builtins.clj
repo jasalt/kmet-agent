@@ -11,6 +11,7 @@
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.app.inspect :as inspect]))
 
@@ -42,7 +43,7 @@
 
       :else
       (do (debug/log "/continue command")
-          (runtime/prompt! engine {})))))
+          (session-driver/prompt! engine {})))))
 
 (defn- handle-name
   [{:keys [ui] engine :runtime} args]
@@ -87,7 +88,7 @@
 (defn- handle-compact
   [{:keys [ui] engine :runtime} args]
   (let [instructions (when (seq args) args)
-        outcome (runtime/request-compaction!
+        outcome (session-driver/request-compaction!
                  engine instructions
                  {:on-complete (fn [result]
                                  (when-not (= :aborted result)

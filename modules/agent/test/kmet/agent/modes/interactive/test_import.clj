@@ -31,6 +31,7 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.skills :as skills]
             [kmet.ui.tui.footer-data-provider :as fdp]
@@ -512,7 +513,7 @@
               engine (tu/test-engine {:agent-state (atom (agent/make-agent-state :ctx (app/ctx)))
                                       :session (atom sess)
                                       :cwd spelled})]
-          (t/is (= spelled ((var runtime/apply-session-cwd!) engine sess))
+          (t/is (= spelled ((var session-driver/apply-session-cwd!) engine sess))
                 "the cwd in effect is returned unchanged")
           (t/is (= spelled (runtime/cwd engine)) "and kept as spelled"))
         (finally (fs/delete-tree dir))))))

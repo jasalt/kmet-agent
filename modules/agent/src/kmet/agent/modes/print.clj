@@ -6,7 +6,7 @@
    machine-readable variant)."
   (:require [clojure.string :as str]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.packages :as packages]
             [kmet.agent.config :as cfg]))
@@ -86,7 +86,7 @@
   (let [{:keys [model provider messages config]} opts
         mode (:mode opts :text)
         config (cfg/apply-cli-overrides (or config (cfg/load-config :no-env? true)) opts)
-        session (runtime/resolve-run-session config opts)]
+        session (session-driver/resolve-run-session config opts)]
     (if (nil? session)
       ;; --session matched nothing: report like interactive mode and return
       ;; nil — core exits 1 on a nil result
@@ -98,17 +98,17 @@
             ;; options, extension handle); print mode owns only its consumer.
             ;; The front-end kind extensions see follows the output variant
             ;; (pi: mode === "json" ? "json" : "print").
-            engine (runtime/bootstrap config {:session session
-                                              :model model
-                                              :provider provider
-                                              :ctx (app-runtime/ctx)
-                                              :load-resources! packages/load-resources!
+            engine (session-driver/bootstrap config {:session session
+                                                     :model model
+                                                     :provider provider
+                                                     :ctx (app-runtime/ctx)
+                                                     :load-resources! packages/load-resources!
                                               ;; print expands its message before it
                                               ;; prompts, so it never uses the engine's
                                               ;; own chain
-                                              :mode (if (= :edn mode) :json :print)})
+                                                     :mode (if (= :edn mode) :json :print)})
             result-promise (promise)
-            unsubscribe (runtime/subscribe! engine (event-consumer mode result-promise))
+            unsubscribe (session-driver/subscribe! engine (event-consumer mode result-promise))
             ;; pi: session.prompt expands skill commands + prompt templates
             message (packages/expand-input (str/join " " messages))]
         (try
@@ -116,9 +116,9 @@
             (when-let [header (:header session)]
               (prn header)
               (flush)))
-          (runtime/prompt! engine {:text message})
+          (session-driver/prompt! engine {:text message})
           @result-promise
           (finally
             ;; the run owns the globals it installed (one-shot mode)
             (unsubscribe)
-            (runtime/dispose! engine)))))))
+            (session-driver/dispose! engine)))))))

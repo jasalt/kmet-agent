@@ -11,6 +11,7 @@
             [kmet.tui.components.container :as container]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.bash-execution :as be]
@@ -349,7 +350,7 @@
    applied model/thinking; fork and clone pass false (pi: navigateTree
    keeps the current agent state)."
   [cs sess apply-settings?]
-  (runtime/switch-session! (:engine cs) sess {:apply-settings? apply-settings?})
+  (session-driver/switch-session! (:engine cs) sess {:apply-settings? apply-settings?})
   (replay-session! cs sess apply-settings?))
 
 (defn handle-new-session
@@ -361,8 +362,8 @@
    pending container, bash widgets, compaction queue, and editor (pi:
    editor.setText(\"\"))."
   [cs]
-  (let [result (runtime/new-session! (:engine cs)
-                                     {:before-settle #(state/cancel-bash! cs)})]
+  (let [result (session-driver/new-session! (:engine cs)
+                                            {:before-settle #(state/cancel-bash! cs)})]
     (when-not (:cancelled result)
       (when (:was-running result)
         (status/stop-anim-timer! cs)
@@ -439,7 +440,7 @@
    teardownCurrent: an in-flight turn refuses the import (like /fork and
    /clone — the switch path does not abort) and the switch emits
    :session-before-switch, exactly as /resume does. The session's recorded
-   cwd becomes the runtime cwd (runtime/switch-session! →
+   cwd becomes the runtime cwd (session-driver/switch-session! →
    apply-session-cwd!), so
    the tools, the prompt's cwd line and the footer follow it, as in pi's
    createRuntime."
@@ -480,14 +481,14 @@
                    (chat-history/chat-history-show-status! chat "Import cancelled")
                    (do (session/copy-imported-session! plan)
                        (let [sess (session/load-session (:path plan))]
-                         (runtime/switch-session! (:engine cs) sess {:apply-settings? true})
+                         (session-driver/switch-session! (:engine cs) sess {:apply-settings? true})
                          (sync-footer-model! cs)
                          (replay-session! cs sess true))
                        ;; pi: the import switch emits session_start (reason
                        ;; resume) like /resume — extensions restore from the
                        ;; imported branch
-                       (runtime/emit-session-start-async! (:engine cs)
-                                                          {:type :session-start :reason :resume})
+                       (session-driver/emit-session-start-async! (:engine cs)
+                                                                 {:type :session-start :reason :resume})
                        (chat-history/chat-history-show-status!
                         chat (str "Session imported from: " (:source plan)))
                        (tui/tui-request-render (:tui cs))))
@@ -511,12 +512,12 @@
   (try
     ;; the runtime owns the branch, the context rebuild, the compaction
     ;; queue drop and the :session-tree event
-    (runtime/branch-session! (:engine cs)
-                             {:old-leaf old-leaf
-                              :target-leaf target-leaf
-                              :summary-result summary-result
-                              :label label
-                              :from-extension? from-extension?})
+    (session-driver/branch-session! (:engine cs)
+                                    {:old-leaf old-leaf
+                                     :target-leaf target-leaf
+                                     :summary-result summary-result
+                                     :label label
+                                     :from-extension? from-extension?})
     (replay-branch! cs sess)
     ;; pi: restore the user message only when the editor is empty — a draft
     ;; the user is composing is not clobbered by navigation
@@ -572,7 +573,7 @@
     (start-branch-summary-render-driver! (:tui cs) done)
     (future
       (try
-        (deliver done (runtime/generate-branch-summary
+        (deliver done (session-driver/generate-branch-summary
                        (:engine cs) (:entries-to-summarize prep) custom-instructions
                        abort-atom replace-instructions?))
         (catch Throwable e
@@ -743,7 +744,7 @@
                                             {:role :assistant
                                              :content "Wait for the current response to finish before forking."})
     (try
-      (let [result (runtime/fork! (:engine cs) entry-id)]
+      (let [result (session-driver/fork! (:engine cs) entry-id)]
         (cond
           (= :unknown-entry (:error result))
           (chat-history/chat-history-add-message! (:chat-history cs)
@@ -782,7 +783,7 @@
                                             {:role :assistant
                                              :content "Wait for the current response to finish before cloning."})
     (try
-      (let [result (runtime/clone! (:engine cs))]
+      (let [result (session-driver/clone! (:engine cs))]
         (case (:error result)
           :no-session
           (chat-history/chat-history-add-message! (:chat-history cs)

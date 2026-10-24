@@ -13,6 +13,7 @@
             [kmet.tui.theme :as th]
             [kmet.tui.terminal :as term]
             [kmet.tui.components.container :as container]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.bash-execution :as be]
@@ -360,7 +361,7 @@
     (status/start-anim-timer! cs)
     (state/update-footer! cs)
     (tui/tui-request-render (:tui cs))
-    (runtime/prompt! engine (cond-> (run-callbacks cs) message (assoc :text message)))))
+    (session-driver/prompt! engine (cond-> (run-callbacks cs) message (assoc :text message)))))
 
 (defn- submit-through-runtime!
   "Send TEXT through the runtime's submission chain (input hooks, skill/
@@ -373,7 +374,7 @@
    keyword (:handled | :started | :steered | :compaction-queued)."
   [cs text opts]
   (let [{:keys [action] submitted-text :text}
-        (runtime/submit! (:engine cs) text (assoc opts :run-opts (run-callbacks cs)))]
+        (session-driver/submit! (:engine cs) text (assoc opts :run-opts (run-callbacks cs)))]
     (when (not= :handled action)
       (when-not (false? (:history? opts))
         (tui/editor-add-to-history! @(:current-editor-atom cs) (or submitted-text text)))
@@ -390,7 +391,7 @@
    only). Returns the expanded text, or nil when an extension command
    consumed the message."
   [cs text]
-  (let [result (runtime/expand-user-message-text (:engine cs) text)]
+  (let [result (session-driver/expand-user-message-text (:engine cs) text)]
     (when (nil? result)
       ;; an extension command consumed the message
       (state/update-footer! cs))
@@ -401,7 +402,7 @@
    the delivery (steer/follow-up/prompt per message mode); a failed delivery
    is reported as a transcript status line like before."
   [cs will-retry]
-  (when-let [{:keys [error count]} (runtime/flush-compaction-queue!
+  (when-let [{:keys [error count]} (session-driver/flush-compaction-queue!
                                     (:engine cs) will-retry (run-callbacks cs))]
     (chat-history/chat-history-show-status!
      (:chat-history cs)
@@ -418,7 +419,7 @@
    message queued during compaction stays invisible until the next
    queue/message event)."
   [cs text mode]
-  (runtime/queue-compaction-message! (:engine cs) text mode)
+  (session-driver/queue-compaction-message! (:engine cs) text mode)
   (status/update-pending-messages! cs))
 
 (defn interactive-command-ui
@@ -527,8 +528,8 @@
     ;; → extension commands execute immediately via prompt(), everything
     ;; else queues as followUp).
     (runtime/compacting? (:engine cs))
-    (if (runtime/extension-command? text)
-      (do (runtime/execute-extension-command! text) :executed)
+    (if (session-driver/extension-command? text)
+      (do (session-driver/execute-extension-command! text) :executed)
       (do (queue-compaction-message! cs text :follow-up) :compaction))
 
     (runtime/turn-running? (:engine cs))
@@ -536,7 +537,7 @@
     ;; settles). Not added to the chat here — like steering, it appears
     ;; as a user message when the loop consumes it (:message-start,
     ;; pi: message_start → addMessageToChat).
-    (do (runtime/follow-up! (:engine cs) text)
+    (do (session-driver/follow-up! (:engine cs) text)
         (status/update-pending-messages! cs)
         :queued)
 
@@ -571,7 +572,7 @@
             queued-text (str/join "\n\n" all)
             combined (str/join "\n\n" (remove str/blank? [queued-text current]))]
         (runtime/clear-queues! (:engine cs))
-        (runtime/clear-compaction-queue! (:engine cs))
+        (session-driver/clear-compaction-queue! (:engine cs))
         (tui/editor-set-text! ed combined)
         (status/update-pending-messages! cs)))
     (count all)))
@@ -605,7 +606,7 @@
       ;; clears the indicator and reports the cancellation.
       (do
         (debug/log "compaction cancelled by user")
-        (runtime/abort-compaction! engine))
+        (session-driver/abort-compaction! engine))
       (do
         (when (state/cancel-bash! cs)
           (debug/log "bash command cancelled by user")
@@ -622,7 +623,7 @@
             ;; cancel before the status teardown: the runtime drops the turn
             ;; flag, so a background revive racing the teardown sees the turn
             ;; over (see on-agent-done)
-            (runtime/cancel! (:engine cs))
+            (session-driver/cancel! (:engine cs))
             (status/stop-anim-timer! cs)
             (status/clear-status-indicator! cs)
             ;; Remove empty streaming placeholder if present — by identity, so

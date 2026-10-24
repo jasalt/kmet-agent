@@ -14,6 +14,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.session.core :as session]
+            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.bash-execution :as bash-execution]
@@ -63,7 +64,7 @@
   (try (when-let [engine (:engine cs)]
          ;; cancel an in-flight run and wait briefly for the terminal
          ;; :agent-settled to reach subscribers before they are cleared
-         (runtime/dispose! engine))
+         (session-driver/dispose! engine))
        (catch Throwable _))
   (try (reset! (:bash-signal cs) true) (catch Throwable _))
   (try (extensions/ui-reset!) (catch Throwable _))
@@ -145,7 +146,7 @@
                                  (fn [path]
                                    ;; pi: emitBeforeSwitch (reason :resume) —
                                    ;; extensions may cancel the switch
-                                   (let [result (runtime/resume! (:engine cs) path)]
+                                   (let [result (session-driver/resume! (:engine cs) path)]
                                      (when-not (:cancelled result)
                                        (let [sess (:session result)
                                              short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
