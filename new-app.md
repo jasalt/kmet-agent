@@ -866,7 +866,7 @@ Each is independently shippable and gated.
 | 4e | **landed** — **Retire the store**: `kmet.libs.scope` (288 lines, with its two test namespaces), `kmet.agent.registry-store`, `app_runtime`'s `node`/`app-node`/`*error-reporter*` plumbing, the `cli.clj` force that only existed for it, and the loader whitelist entry are gone. Nothing still read it: 4b-ii-a took the host's nine sites, the Engine's two, 4d the `owner-listing` walk, and `registry_store` was its own last reader. `scope.md` went with the code in the same change: its surviving rules moved to the homes that implement them | `grep` finds no `(scope/` under `kmet.agent.*`, no `kmet.libs.scope` or `registry-store` require; `bb test` green; `kmet --app old` loads with no store in the process. 613 lines deleted, no source added |
 | 4f | **landed** — **The tool layer into `app`**, in five shippable steps: `tools/bash-output`, `tools/bash-executor`, the seven tool bodies (`tool`, `bash`, `edit`, `write`, `read`, `invoke`, `run-code`), `kmet.agent.config`, then `tools/registry` + `tools/config` + `tools/core`. The tool layer now lives in `app` with its namespaces kept — the one exception is kmet1's arity-less façade, which the review moved back to `agent`; `app` declares the SCI backend the sandbox mints contexts with. The one behavioral change: the registry took its handle as a first parameter, so no app namespace requires a rank-4 one, and kmet1's convenience arities moved to a rank-4 façade (`kmet.agent.tools.core`) that supplies `(app-runtime/registry)`. The run_code record is built per registry, so its sandbox seams close over the caller's handle | `kmet.test-module-deps` green after every step (both directions, plus the library view); `bb test` green; `kmet --app old --version`/`--list-models` load; `kmet.agent.tools.registry` has no arity that resolves a handle it was not given |
 | 5 | **Nine increments have landed — print mode as a row (§ "Landing 5a"), kmet1's one-shot flags + the edn wire (§ "Landing 5b"), the run's front-end surface (§ "Landing 5c"), rpc mode serving the protocol (§ "Landing 5d"), the rank-clean half of the TUI move into the new `ui` module (§ "Landing 5e") the transcript + its two neighbours after the parser and the tool lookup moved to the caller (§ "Landing 5f") the session runtime split into the value a front end reads and the driver that runs it (§ "Landing 5g") the seven selectors moved with no edits of their own (§ "Landing 5h") and the registry handle became something the owner publishes, freeing four registries and the last UI file (§ "Landing 5i")**, and neither could be written before 7b-i: it is the first client of the `:agents` factory rather than the Engine, but its stream *and* its exit result are `:agent-settled` — kmet1's print mode is a `runtime/subscribe!` consumer, and kmet2 has no Engine to subscribe to. Then `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; the rest of the modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print landed and at kmet1 parity for the one-shot flags it had (`-p`, `--mode text|edn`, `--model`, `--provider`: streams or prints the wire, writes its session log, exits 0); rpc/tui parity via `scripts/capture/` and the tk provider on bb and Jolt still to come |
-| 6 | `:agents` **landed as a registry at 4c-iii-b** — landing 6 gives it agents a driver created — + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
+| 6 | **Two increments landed.** `:agents` is a registry (4c-iii-b) and **6a** gave the socket reader its queue (`kmet.libs.concurrent`), **6b** made a connection an agent (`mode-server`: rpc over a socket, `:agent-id` on every record, per-agent event scoping, `--port`). What remains is approvals end to end — the `:request`/`:response` pair on the wire — and the row's gate's approval leg | two agents concurrently **met** (6b), one stalling client **met** (6b), an approval answered by a client |
 | 7a | loop re-hosted as a driver plugin (`:agentLoop`), registering the `:agents` factory; the `:systemPrompt` row with its first reader | two agents created through `create!` each run a turn and settle once; `--dump-state` shows the driver active | **landed**: the stage map, the leaves and the whole cluster are `app`'s (names kept), 7a-ii made the resource load and input expansion the caller's, the `:systemPrompt` row reads over `:skills`, and `:agent-loop` registers the `:agents` factory with a runnable handle; the composition-level gate is met too — `:extensions` binds the host, and a composed agent runs a turn (`kmet.app.test-composition-run`); the Engine's `commands` dispatch and its wrapper fallback are the two named residuals; see § "Landing 7a" |
 | 7b-i | **landed** — **The events contract — the head of landing 5, not its tail**: the loop dispatches on the kernel from the run's own ctx, so `:agent-settled` is an event a front end subscribes to at the app's scope, while kmet1's process table keeps hearing the same events (the extension ABI registers there; kmet1 boots the composition, so a run cannot tell the two apps apart — only the listeners differ). A boundary threads **one** decision through both: the kernel's accumulated map seeds the table's chain. The composition test no longer listens on kmet1's table | a composed turn settles on the app's bus, and `kmet.app.test-composition-run` subscribes without kmet1's table — **met**; see § "Landing 7b-i settled" |
 | 7b-ii | Profiles as row+patch layers; presets = bundles. No listener coupling, so it lands whenever it is next in line | pi-alignment green; a tool swaps mid-session at the turn boundary; a profile stacking a preset bundle boots |
@@ -1773,12 +1773,52 @@ namespace's public vars to a bare `sci/init` and runs put/take/close inside it. 
 mutation-checked: a static field planted in `sse.clj`, and the queue put back on
 `PersistentQueue`, each fail by name.
 
-**What is left in landing 6**, in the order the row implies: `mode-server` as rpc
-over a socket with one agent per connection (`:agents`'s `create!`/`dispose!` carry
-it — the registry already exists, and what it lacks is a driver created *per
-agent*), the `:agent-id` + request/response pair on the wire, approvals answered
-from the client, and then the row's gate. kmet1's interactive front end moves at
-7b-ii, not here.
+**What is left in landing 6**: approvals answered from the client — the
+`:request`/`:response` pair on the wire, which needs a per-connection approver
+and the dialog surface beside it — and then the row's gate, whose first two legs
+(two agents at once, one stalling client) landing 6b now pins.
+
+### Landing 6b — a connection is an agent
+
+`mode-server` (`kmet.app.modes.server`) is rpc over a socket with one agent per
+connection: `--profile server --port n` opens the socket, announces a
+`:listening` record (so neither a test nor a client guesses a free port), and
+then gives every accepted connection its own agent. The command language is rpc
+mode's — the same records, the same answers, the same named refusals — which is
+why the engine became `kmet.app.modes.rpc/handle-line`: a fn of the line and a
+state (`{:agents :sessions :scope :handle}`) rather than of a stream, so stdio
+and a socket serve one protocol instead of two copies of it.
+
+Three decisions:
+
+- **One waiter, many readers.** A connection's reader thread parks in
+  `readLine` and hands the line to the server's `kmet.libs.concurrent` queue; one
+  server thread takes from that queue and is therefore the only thread that
+  creates, serves or disposes an agent. That is the queue's single-consumer
+  contract being used as intended, and it is what a stalling client costs: one
+  parked thread, and nothing else (the test writes half a record on one socket
+  and the other client is served meanwhile).
+- **An event belongs to the agent that emitted it.** The listener registers on
+  the agent's own ctx (`events/on-every (:ctx handle) …`), so the kernel's
+  subtree scoping routes a run's events to its connection and no other. That
+  closes the residual "per-agent event scoping" for the wire: with the listener
+  on the app scope instead, a second agent's events reach the first client —
+  which is the mutation the stalled-run test catches.
+- **A server is supervised.** It serves until its stdin closes — how a parent
+  process stops one — then ends its queue, releases the connections it still
+  holds and exits 0. `--port 0` (the default) asks the OS for the port the
+  `:listening` record carries; a value that is not a number is a usage error
+  before anything boots.
+
+Every record on a connection is badged with its `:agent-id`, and a `:ready`
+record names the agent before the client asks anything — six tests
+(`kmet.app.modes.test-server`) pin two agents with sessions of their own, the
+half-record stall, the stalled run that leaves the other agent's wire empty, the
+closed connection that leaves the server serving, the diagnostic mount that opens
+no socket, and the port usage error. Two mutations checked: dropping the badge,
+and registering the listener on the app scope, each fail by name. What the row
+still lacks is the dialog surface — a run's extension UI calls and approvals
+answer headlessly until the approvals increment gives them a `:request`.
 
 ### Landing 5i — the owner publishes, and the registries stop reaching up
 

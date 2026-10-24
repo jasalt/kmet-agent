@@ -74,7 +74,10 @@
    :rows [{:id :mode-rpc :plugin kmet.app.modes.rpc/plugin :mode true}]
    :patch []}
 
+  ;; server is rpc over a socket: one agent per connection, every record badged
+  ;; with its agent's id. `--port` picks the socket (0 asks the OS for one, and
+  ;; the mode announces it as a `:listening` record).
   :server
   {:bundles [[:bundle/minimal {}]]
-   :rows []
+   :rows [{:id :mode-server :plugin kmet.app.modes.server/plugin :mode true}]
    :patch []}}}

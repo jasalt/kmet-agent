@@ -43,7 +43,8 @@
    "--mode" :mode
    "--patch" :patch
    "--model" :model
-   "--provider" :provider})
+   "--provider" :provider
+   "--port" :port})
 
 (def ^:private print-flags
   "kmet1's one-shot spelling: `-p`/`--print` run the print profile, as `kmet -p
@@ -126,6 +127,10 @@
             (recur in (case k
                         :patch (update opts :patch conj v)
                         (:profile :provider) (assoc opts k (keyword v))
+                        ;; a socket port is a number, and a value that is not
+                        ;; one is a usage error here rather than a boot failure
+                        :port (assoc opts k (or (parse-long v)
+                                                (throw (bad-args (str "--port needs a number, got " (pr-str v))))))
                         (assoc opts k v))))
 
           (contains? print-flags flag)
@@ -212,6 +217,7 @@
   (println "  --patch <file>     Apply a composition layer from a file (repeatable)")
   (println "  --model <id>       Model the run's agent uses, over its settings")
   (println "  --provider <name>  Provider the run's agent uses, over its settings")
+  (println "  --port <n>         --profile server's socket (0, the default, asks the OS)")
   (println "  --dump-config      Print the composed plugin rows and exit")
   (println "  --dump-state       Boot the composition, print the ctx tree, and exit")
   (println "  --version          Print the version and exit")
@@ -231,10 +237,11 @@
   [profile args]
   (binding [*out* *err*]
     (println (str "profile " (name profile) " has no runnable mode yet — the TUI"
-                  " and server modes arrive with the fork."))
+                  " arrives with the fork."))
     (println "Profiles that run today:")
     (println "  kmet --app new --profile print \"list the files\"   one prompt, then exit")
     (println "  kmet --app new --profile rpc                       a command stream on stdin/stdout")
+    (println "  kmet --app new --profile server [--port n]         the same protocol on a socket, per connection")
     (println "  kmet --app new --dump-config / --dump-state / --version")
     (when (seq args) (println "Arguments:" (pr-str (vec args))))
     (flush))
@@ -274,7 +281,7 @@
    absent (`select-keys`), so a mode sees what was asked for rather than a map of
    every option it could have been told."
   [opts prompt on-result]
-  (cond-> (assoc (select-keys opts [:format :model :provider])
+  (cond-> (assoc (select-keys opts [:format :model :provider :port])
                  :on-result on-result)
     ;; a profile with no prompt to give hands the mode no prompt at all
     (not (str/blank? prompt)) (assoc :prompt prompt)))

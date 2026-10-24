@@ -325,6 +325,23 @@
     (catch Throwable t
       {:error (or (ex-message t) (str t))})))
 
+(defn handle-line
+  "LINE served against STATE — one record out, whatever LINE was: the command's
+   response, a parse failure, or a command answered with the `:id` it carried.
+
+   STATE is `{:agents :sessions :scope :handle}`: the registry, the log, the app
+   scope, and the one handle this door serves. This mode's transport is stdio;
+   the server mode serves the same protocol over a socket, one state per
+   connection, which is why the engine answers a line given a state rather than
+   reading a stream."
+  [state line]
+  (let [{:keys [command error]} (parse-line line)]
+    (if error
+      ;; a malformed record answers a parse response without an id: there is
+      ;; nothing to correlate it with
+      (failed :parse (str "Failed to parse command: " error))
+      (correlated (handle-command state command) (:id command)))))
+
 (defn- serve-commands
   "Serve commands from IN until it closes. Only OUT writes: the reader here and
    the loop's event listener share it, and `out/record!` is what keeps two
@@ -333,12 +350,7 @@
   (with-open [rdr (io/reader in)]
     (loop []
       (when-let [line (.readLine rdr)]
-        (let [{:keys [command error]} (parse-line line)]
-          (if error
-            ;; a malformed record answers a parse response without an id:
-            ;; there is nothing to correlate it with
-            (out/record! out- (failed :parse (str "Failed to parse command: " error)))
-            (out/record! out- (correlated (handle-command state command) (:id command)))))
+        (out/record! out- (handle-line state line))
         (recur)))))
 
 ;; ── the row ───────────────────────────────────────────────────────────────
