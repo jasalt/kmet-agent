@@ -2,7 +2,7 @@
   "The registry contract, over the handle the app installs (`atom-registry`).
    It ran against kmet1's scope-store handle too until 4e deleted the store;
    the rules stayed the same, so the assertions did."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.test :refer [deftest is testing]]
             [kmet.agent.registry :as registry]))
 
 (defn- fresh
@@ -10,6 +10,34 @@
    next."
   []
   (registry/atom-registry))
+
+(deftest an-unpublished-handle-still-remembers
+  (testing "a caller with no ctx in hand reads one per-process handle, not a
+            fresh map per call: a registration made before the owner publishes
+            is still visible to the next read"
+    (let [previous (registry/publish-process-handle! nil)]
+      (try
+        (is (identical? (registry/current) (registry/current))
+            "the fallback is one handle, not one per call")
+        (registry/register! (registry/current) :kmet/prompt "probe" {:name "probe"} [:test])
+        (is (= {:name "probe"} (registry/entry (registry/current) :kmet/prompt "probe")))
+        (finally (registry/clear! (registry/current) :kmet/prompt)
+                 (registry/publish-process-handle! previous))))))
+
+(deftest publishing-hands-the-previous-handle-back
+  (testing "a second owner takes over and can put the first one back; nil
+            un-publishes, so a test never leaves the process pointed at its own
+            handle"
+    (let [a (fresh)
+          b (fresh)
+          before (registry/publish-process-handle! a)]
+      (try
+        (is (identical? a (registry/current)))
+        (is (identical? a (registry/publish-process-handle! b)) "the handover returns A")
+        (is (identical? b (registry/current)))
+        (is (identical? b (registry/publish-process-handle! nil)) "un-publish returns B")
+        (is (not (identical? b (registry/current))) "nil un-publishes back to the fallback")
+        (finally (registry/publish-process-handle! before))))))
 
 (deftest register-entry-and-dispose
   (let [r (fresh)

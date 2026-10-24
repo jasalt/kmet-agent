@@ -1731,12 +1731,21 @@ bound the extension host the same way).
 list, packaged extensions), per-row toggles and the `(1/20)` counter, from
 `kmet.ui.tui.resource-config`.
 
-**What is left is landing 6.** The seven `agent` files that remain
-(`modes/interactive` and its neighbours, `modes/print`, `modes/rpc`,
-`commands/builtins`) are blocked by `kmet.agent.session.driver` — every mode
-drives it, which is legal and is the reason they cannot move yet — plus
-`app-runtime` and `commands/builtins`. Moving the driver below the modes is what
-landing 6 does when the driver becomes kmet2's `:agentLoop`.
+**What is left is landing 6.** Fourteen files under `modules/agent/src` still
+require some other `agent` namespace, and they are two different kinds:
+
+- **The TUI fork's blockers, 9**: the eight `modes/*` files plus
+  `commands/builtins`. Every one of them is blocked by
+  `kmet.agent.session.driver` — a mode drives it, which is legal and is exactly
+  why they cannot move down yet — and by `app-runtime` and `commands/builtins`
+  besides. Putting the driver below the modes is what landing 6 does when it
+  becomes kmet2's `:agentLoop`.
+- **kmet1's own process and core, 5**: `app_runtime`, `cli`, `jvm_main`,
+  `tools/core`, and `extensions/services`' edge to `app_runtime`. They do not
+  move; they are what retirement deletes.
+
+So landing 5's own work is done: every UI namespace is in `ui`, and what is left
+is the driver, which is landing 6's first deliverable.
 
 **Evidence.** `bb test` 4,195 / 24,765; `bb test-ext` the same pre-existing
 15 failures / 1 error (copilot end-to-end, jar/lib round-trips); full lint 0/0/0;
