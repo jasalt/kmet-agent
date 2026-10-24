@@ -1947,6 +1947,28 @@ What 7b-ii does **not** do: no `:per-agent true` plugin flag, no `isolate` realm
 wiring, no second backend for `:sessions`. Those are the multi-session server's
 work, and a preset is the seam they will use.
 
+**Review — two leaks, both in the failure path.** The `:setup` call as first
+written sat *outside* the guarded region (`setup` then `(try factory …)`), so a
+setup that threw escaped `create!` with the child ctx still extended and its
+mounted fibers still live: a tree line nobody owns, and the ledger's own claim
+("its throw path is the factory's") was false. One guarded region now covers all
+three failure modes — a throwing setup, a throwing factory, a handle that fails
+the contract — because all three owe the same release.
+
+The second: `presets/mount!` threw on a row that never became active *after*
+mounting the rows before it. Under `create!` that was invisible (the rollback
+releases the whole child ctx), but a caller mounting onto a ctx it means to keep
+would get half a preset — and half a policy row set is precisely the state a gate
+must not be left in. `mount!` now disposes what it mounted, in reverse, before
+throwing.
+
+Both were pinned only after the assertions were corrected: `srce/detach!`
+**keeps the `:parent` chain** (documented — what changes is the tree), so a
+released ctx is `inside?` its old root forever and only `srce/children` shows the
+release. The first version of the test asserted `inside?` and passed the leak;
+the mutation (setup moved back outside the guard) now fails by name, as does
+deleting the unwinding loop.
+
 ### Landing 5i — the owner publishes, and the registries stop reaching up
 
 `resource_config` was blocked by `kmet.agent.packages`, which was blocked by

@@ -251,16 +251,17 @@
                 (claim-busy! state id)
                 (try
                   (let [child (srce/extend ctx {:name (keyword "agent" id)})
-                        ;; setup composes the agent's scoped world on its own ctx
-                        ;; *before* the factory runs (dsh's setup(agentCtx,
-                        ;; agent)): a preset mounts its rows here, so no agent
-                        ;; observes a half-built world and a failing setup rolls
-                        ;; back exactly as a failing factory does
-                        _ (when-let [setup (:setup opts)] (setup child id))
-                        ;; one rollback for both failure modes: the factory
-                        ;; throwing, and the factory returning a handle that
-                        ;; does not fit the contract
+                        ;; one guarded region, three failure modes: a setup that
+                        ;; throws, the factory throwing, and the factory
+                        ;; returning a handle that does not fit the contract —
+                        ;; all three must leave no child ctx behind
                         handle (try
+                                 ;; setup composes the agent's scoped world on
+                                 ;; its own ctx *before* the factory runs
+                                 ;; (dsh's setup(agentCtx, agent)): a preset
+                                 ;; mounts its rows here, so no agent observes a
+                                 ;; half-built world
+                                 (when-let [setup (:setup opts)] (setup child id))
                                  (validate-handle! id child
                                                    ((:f factory) child (assoc opts :id id)))
                                  (catch Throwable t

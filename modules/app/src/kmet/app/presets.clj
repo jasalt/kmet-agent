@@ -18,7 +18,10 @@
    but does not mount (a name nothing provides, an `apply` that threw) is a
    composition bug, and the agent it was composing for must not be created with
    half its world — so the failure is thrown here, before the agent exists, and
-   `:agents/create!`'s rollback releases the child ctx."
+   what *did* mount is unwound before the throw. `:agents/create!`'s rollback
+   releases the child ctx on top of that, which is the belt to this
+   suspenders: a caller mounting onto a ctx it keeps is the case only this can
+   undo."
   (:require [kmet.app.profile :as profile]
             [kmet.app.runtime :as runtime]
             [kmet.srce.core :as srce]))
@@ -36,6 +39,12 @@
      (srce/settle! ctx)
      (let [failed (runtime/inactive-rows rows fibers)]
        (when (seq failed)
+         ;; a preset is a set: half of it is not this preset. `create!`'s
+         ;; rollback would release the whole child ctx, but a caller that
+         ;; mounted onto a ctx it means to keep has no other way to undo this
+         ;; one — and a half-mounted preset is precisely the state a per-agent
+         ;; policy must not be left in.
+         (doseq [fiber (rseq fibers)] (srce/dispose! fiber))
          (doseq [f failed] (srce/log! ctx :error "preset row did not mount" f))
          (throw (ex-info (str "preset " (pr-str preset-name) " did not mount: "
                               (mapv :id failed))
