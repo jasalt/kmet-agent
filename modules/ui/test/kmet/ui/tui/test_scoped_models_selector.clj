@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.test-scoped-models-selector
+(ns kmet.ui.tui.test-scoped-models-selector
   "Scoped-models selector tests — enabled-ids helpers and handle-input
    behaviors (toggle on Enter, Ctrl+A/X/P, Alt+Up/Down reorder, Ctrl+S save,
    search filter, cancel)."
@@ -6,7 +6,7 @@
             [clojure.test :as t]
             [babashka.fs :as fs]
             [kmet.agent.keybindings :as kb]
-            [kmet.agent.ui.tui.scoped-models-selector :as sms]
+            [kmet.ui.tui.scoped-models-selector :as sms]
             [kmet.ai.models :as models]
             [kmet.libs.hikap.core :as engine]
             [kmet.tui.keybindings :as tui-kb]

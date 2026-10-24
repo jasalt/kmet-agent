@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.test-tree-selector
+(ns kmet.ui.tui.test-tree-selector
   "Tree selector tests (pi TreeSelectorComponent/TreeList parity): flatten
    indentation rules (flat single-child chains, branch +1), connectors /
    gutters / virtual roots, filter modes with tool-call-only assistant
@@ -9,7 +9,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [kmet.agent.keybindings :as kb]
-            [kmet.agent.ui.tui.tree-selector :as ts]
+            [kmet.ui.tui.tree-selector :as ts]
             [kmet.tui.components.input :as input]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.protocols :as protocols]

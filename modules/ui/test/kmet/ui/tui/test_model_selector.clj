@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.test-model-selector
+(ns kmet.ui.tui.test-model-selector
   "Model selector tests — visible search filter, arrow navigation (rows
    rebuild, pi updateList), current-model checkmark + initial selection,
    Enter select / Escape cancel, and the all/scoped Tab toggle."
@@ -6,7 +6,7 @@
             [clojure.test :as t]
             [babashka.fs :as fs]
             [kmet.agent.keybindings :as kb]
-            [kmet.agent.ui.tui.model-selector :as ms]
+            [kmet.ui.tui.model-selector :as ms]
             [kmet.ai.models :as models]
             [kmet.tui.core :as core]
             [kmet.libs.hikap.core :as engine]

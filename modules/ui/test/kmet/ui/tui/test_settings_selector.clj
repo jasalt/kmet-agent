@@ -1,10 +1,10 @@
-(ns kmet.agent.ui.tui.test-settings-selector
+(ns kmet.ui.tui.test-settings-selector
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
-            [kmet.agent.ui.tui.settings-selector :as ss]
+            [kmet.ui.tui.settings-selector :as ss]
             [kmet.ui.tui.subs :as subs]
             [kmet.agent.config :as cfg]
             [kmet.libs.terminal-image :as timg]

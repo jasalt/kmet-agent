@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.thinking-selector
+(ns kmet.ui.tui.thinking-selector
   "Thinking-level selector panel (pi: modes/interactive/components/
    thinking-selector.ts): a bordered panel with a visible search filter and
    one row per level the current model can express — the active level marked

@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.tree-selector
+(ns kmet.ui.tui.tree-selector
   "Session tree navigation panel (pi: TreeSelectorComponent / TreeList):
    browse the entry tree and branch to the selected entry. Visual parity
    with pi: 3-char indent levels where single-child chains stay flat and

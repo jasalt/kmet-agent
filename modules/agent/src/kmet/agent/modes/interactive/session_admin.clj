@@ -23,8 +23,8 @@
             [kmet.ui.tui.tool-execution :as tool-execution]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.ui.tui.model-selector :refer [sync-footer-model!]]
-            [kmet.agent.ui.tui.tree-selector :refer [show-session-tree]]
+            [kmet.ui.tui.model-selector :refer [sync-footer-model!]]
+            [kmet.ui.tui.tree-selector :refer [show-session-tree]]
             [kmet.ai.usage :as usage]
             [kmet.agent.modes.interactive.state :as state]
             [kmet.agent.modes.interactive.status :as status]))

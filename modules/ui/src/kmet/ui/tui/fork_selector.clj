@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.fork-selector
+(ns kmet.ui.tui.fork-selector
   "Fork-from-message selector (pi: UserMessageSelectorComponent): rows are
    the session's user messages — two lines each (cursor + message text,
    then a muted \"Message N of M\" position line), the selection bold with

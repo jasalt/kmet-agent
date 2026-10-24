@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.model-selector
+(ns kmet.ui.tui.model-selector
   "Model selection UI (pi: modes/interactive/components/model-selector.ts +
    model-search.ts): the /model selector (pi ModelSelectorComponent —
    visible search filter, wrap-around navigation, current-model ✓, all/scoped
@@ -12,7 +12,7 @@
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.footer-data-provider :as fdp]
-            [kmet.agent.ui.tui.model-catalog :as model-catalog]
+            [kmet.ui.tui.model-catalog :as model-catalog]
             [kmet.tui.components.filter-panel :as fp]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]

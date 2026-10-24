@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.model-catalog
+(ns kmet.ui.tui.model-catalog
   "Shared model catalog/session helpers and selected-model details for the
    /model and /scoped-models overlays."
   (:require [clojure.string :as str]

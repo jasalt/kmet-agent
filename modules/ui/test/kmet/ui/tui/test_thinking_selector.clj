@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.test-thinking-selector
+(ns kmet.ui.tui.test-thinking-selector
   "Thinking-selector tests — row rendering (arrow selection, ✓ active level,
    · default note), arrow navigation, Enter selects / Ctrl+S persists / Esc
    cancels, and the search filter (pi ThinkingSelectorComponent)."
@@ -6,7 +6,7 @@
             [clojure.test :as t]
             [babashka.fs :as fs]
             [kmet.agent.keybindings :as kb]
-            [kmet.agent.ui.tui.thinking-selector :as ts]
+            [kmet.ui.tui.thinking-selector :as ts]
             [kmet.tui.core :as core]
             [kmet.libs.hikap.core :as engine]
             [kmet.tui.keybindings :as tui-kb]

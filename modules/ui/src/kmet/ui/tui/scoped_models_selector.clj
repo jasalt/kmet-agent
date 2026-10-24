@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.scoped-models-selector
+(ns kmet.ui.tui.scoped-models-selector
   "Scoped-models selector panel — enable/disable/reorder the models Ctrl+P
    cycles through (pi: ScopedModelsSelectorComponent). Changes are session-
    only until Ctrl+S persists them as settings :enabled-models patterns.
@@ -12,7 +12,7 @@
             [kmet.agent.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
-            [kmet.agent.ui.tui.model-catalog :as model-catalog]
+            [kmet.ui.tui.model-catalog :as model-catalog]
             [kmet.agent.config :as cfg]
             [kmet.tui.components.filter-panel :as fp]
             [kmet.tui.core :as tui]

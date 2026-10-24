@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.settings-selector
+(ns kmet.ui.tui.settings-selector
   "Settings selector panel (pi: showSettingsSelector +
    settings-selector.ts) — pi's rows backed by kmet machinery: thinking
    level (the current model's available levels), hide-thinking, auto-compact,
@@ -18,7 +18,7 @@
             [kmet.ui.tui.loaded-resources :as loaded-resources]
             [kmet.ui.tui.subs :as subs]
             [kmet.ui.tui.dock :as dock]
-            [kmet.agent.ui.tui.model-selector :as model-selector]
+            [kmet.ui.tui.model-selector :as model-selector]
             [kmet.ui.tui.theme-submenu :as theme-submenu]
             [kmet.agent.config :as cfg]
             [kmet.libs.http :as http]

@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.test-fork-selector
+(ns kmet.ui.tui.test-fork-selector
   "Fork selector list tests (pi UserMessageList parity): two-line rows with
    position metadata, initial selection at the most recent message, wrap-
    around navigation, enter/escape wiring, single-line normalization, and
@@ -7,7 +7,7 @@
             [clojure.test :as t :refer [deftest testing is]]
             [babashka.fs :as fs]
             [kmet.agent.keybindings :as kb]
-            [kmet.agent.ui.tui.fork-selector :as fork]
+            [kmet.ui.tui.fork-selector :as fork]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]))
