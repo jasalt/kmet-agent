@@ -129,9 +129,19 @@
                            (pr-str source) " — the extension host resolves those")
                       {:type :kmet.app/external-source :row row})))))
 
-(defn- boot-failure
-  "The rows whose fiber is not `:active` after the mounts settled, as plain
-   data: what a boot failure is reported in terms of."
+(defn mount-rows!
+  "Mount ROWS under CTX and return one fiber per row, in composition order.
+
+   `boot` is this on a fresh root; a **preset** is this on an agent's child ctx
+   (`kmet.app.presets`). The mount point, not the row shape, is what a profile
+   and a preset differ in — one composition language, two places to compose.
+   Nothing settles here: the caller does, and then asks `inactive-rows`."
+  [ctx rows]
+  (mapv (fn [row] (srce/plugin! ctx (row-source row) (:config row))) rows))
+
+(defn inactive-rows
+  "ROWS whose fiber is not `:active` after the mounts settled, as plain data:
+   what a failed mount is reported in terms of."
   [rows fibers]
   (into []
         (keep (fn [[row fiber]]
@@ -179,9 +189,9 @@
   ([composed] (boot composed nil))
   ([{:keys [rows]} {:keys [ctx-meta diagnose?]}]
    (let [ctx (srce/root (merge {queue-key (atom []) :name :app} ctx-meta))
-         fibers (mapv (fn [row] (srce/plugin! ctx (row-source row) (:config row))) rows)
+         fibers (mount-rows! ctx rows)
          _ (srce/settle! ctx)
-         failed (boot-failure rows fibers)]
+         failed (inactive-rows rows fibers)]
      (when (and (seq failed) (not diagnose?))
        (doseq [f failed]
          (srce/log! ctx :error "plugin did not mount" f))

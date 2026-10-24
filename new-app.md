@@ -869,7 +869,7 @@ Each is independently shippable and gated.
 | 6 | **Complete.** `:agents` is a registry (4c-iii-b), **6a** gave the socket reader its queue (`kmet.libs.concurrent`), **6b** made a connection an agent (`mode-server`: rpc over a socket, `:agent-id` on every record, per-agent event scoping, `--port`), and **6c** put the dialog pair on the wire (a named `:ask-all` policy, a server-owned approvals row, an approval answered by the client) | two agents concurrently **met**, one stalling client **met**, an approval answered by a client **met** — all three in `kmet.app.modes.test-server` |
 | 7a | loop re-hosted as a driver plugin (`:agentLoop`), registering the `:agents` factory; the `:systemPrompt` row with its first reader | two agents created through `create!` each run a turn and settle once; `--dump-state` shows the driver active | **landed**: the stage map, the leaves and the whole cluster are `app`'s (names kept), 7a-ii made the resource load and input expansion the caller's, the `:systemPrompt` row reads over `:skills`, and `:agent-loop` registers the `:agents` factory with a runnable handle; the composition-level gate is met too — `:extensions` binds the host, and a composed agent runs a turn (`kmet.app.test-composition-run`); the Engine's `commands` dispatch and its wrapper fallback are the two named residuals; see § "Landing 7a" |
 | 7b-i | **landed** — **The events contract — the head of landing 5, not its tail**: the loop dispatches on the kernel from the run's own ctx, so `:agent-settled` is an event a front end subscribes to at the app's scope, while kmet1's process table keeps hearing the same events (the extension ABI registers there; kmet1 boots the composition, so a run cannot tell the two apps apart — only the listeners differ). A boundary threads **one** decision through both: the kernel's accumulated map seeds the table's chain. The composition test no longer listens on kmet1's table | a composed turn settles on the app's bus, and `kmet.app.test-composition-run` subscribes without kmet1's table — **met**; see § "Landing 7b-i settled" |
-| 7b-ii | Profiles as row+patch layers; presets = bundles. No listener coupling, so it lands whenever it is next in line | pi-alignment green; a tool swaps mid-session at the turn boundary; a profile stacking a preset bundle boots |
+| 7b-ii | **landed** — presets are bundles: one composition language, two mount points. `runtime/mount-rows!` is the mount loop `boot` and a preset share, `kmet.app.presets` mounts a *bundle* under an agent's child ctx, and `:agents/create!` gained the `:setup` seam that runs between the child ctx and the factory — so per-agent composition happens before an agent exists, and a setup that throws rolls the ctx back the way a failing factory does. `:bundle/gated` (the policy row) is a bundle a profile stacks and a preset mounts; `:rpc-ask` is the profile that stacks it | pi-alignment green (no pi feature line moves: this is composition machinery); a tool swaps mid-session at the turn boundary — met by `a-tool-swaps-at-the-turn-boundary`; a profile stacking a preset bundle boots — met by `a-profile-may-stack-a-preset-bundle` + `a-preset-composes-one-agents-world`; see § "Landing 7b-ii" |
 
 **The order is not the table's order.** 7b's events half precedes landing 5:
 print mode is a listener, and the only stream kmet2 currently has is kmet1's
@@ -1894,6 +1894,58 @@ answers `:allow`, and the assertion that matters: the `:tool-execution-end`
 carries the tool's own output, not a block reason. Two mutations checked:
 removing the profile's approvals swap (the bundle denies, no `:request` arrives)
 and delivering a deny regardless of the client's answer; each fails by name.
+
+### Landing 7b-ii — presets are bundles
+
+Profiles as row+patch layers shipped with landing 1 and the composition has
+carried every landing since (6c's approvals row is a *patch*, 7b-ii's gate is a
+*bundle*). What was missing is the second mount point: `new-app.md`'s "an agent
+preset is a row set on the child ctx" had no code, and `:agents/create!` had no
+`setup` between the child ctx and the factory.
+
+Three pieces, each the smallest thing that could carry the next:
+
+- **`runtime/mount-rows!`** — the mount loop, public, over any ctx. `boot` is it
+  on a fresh root; a preset is it on an agent's child ctx. The mount point, not
+  the row shape, is the whole difference, which is why nothing about the row
+  language changed. `inactive-rows` came with it: the "every row must be active"
+  check is one function both callers use.
+- **`kmet.app.presets`** — `mount!` composes a *bundle* through
+  `kmet.app.profile` (so a preset is named like a bundle, not declared beside
+  it) and mounts it under one ctx; `setup` is the same thing shaped for
+  `create!`'s option. A row that composes but never becomes active is
+  `:kmet.app/preset-failed` naming it, thrown before any agent exists.
+- **`create!`'s `:setup`** — a fn of `(ctx id)`, called between the child ctx and
+  the factory (dsh's `setup(agentCtx, agent)`). Its throw path is the factory's:
+  the child ctx is released, no handle is published, and the caller sees
+  `:kmet.app/agent-create-failed`.
+
+Why the per-agent mount is the right home for a policy, in the kernel's words:
+`permissions` documents that a child may not shadow a service its ancestor
+provides, so a per-agent policy is not a *patch of the root's row* — it is the
+only provider on that chain, mounted by whoever composes the agent. That is what
+`:bundle/gated` is: one row, `{:policy :ask-all}`.
+
+**Evidence** — `kmet.app.test-presets` holds one booted root with two agents,
+one created with the preset and one without: the plain agent's call proceeds
+(nil from `permissions/check`) and the gated agent's is the bundle default's
+deny, while the root itself has no `:permissions` at all. The second test mounts
+a bundle whose row waits on a name nothing provides and asserts both halves of
+the rollback: `:kmet.app/preset-failed` and an empty `:agents/list`. Mutations
+checked: dropping the `setup` call fails both preset tests; disabling the
+`inactive-rows` check fails the rollback test; registering a tool under the
+wrong tag fails the turn-boundary test.
+
+The third gate leg — **a tool swaps mid-session at the turn boundary** — needed
+no code: the request path already reads `loop-state/active-tools` per request,
+so a tool registered between two turns is in the next turn's declaration. It is
+now pinned (`a-tool-swaps-at-the-turn-boundary`: registered → offered, then
+unregistered → not offered) rather than assumed, and the mutation that proves it
+is the registry tag, not the loop.
+
+What 7b-ii does **not** do: no `:per-agent true` plugin flag, no `isolate` realm
+wiring, no second backend for `:sessions`. Those are the multi-session server's
+work, and a preset is the seam they will use.
 
 ### Landing 5i — the owner publishes, and the registries stop reaching up
 

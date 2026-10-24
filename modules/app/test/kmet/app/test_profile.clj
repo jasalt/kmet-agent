@@ -151,8 +151,12 @@
 
 (deftest builtin-table-is-complete
   (let [table (profile/builtin)]
-    (is (= #{:tui :print :rpc :server} (set (keys (:profiles table)))))
+    (is (= #{:tui :print :rpc :rpc-ask :server} (set (keys (:profiles table)))))
     (is (contains? (:bundles table) :bundle/minimal))
+    (is (= [{:id :permissions :plugin 'kmet.app.permissions/permissions
+             :config {:policy :ask-all}}]
+           (:rows (profile/bundle table :bundle/gated)))
+        "the gate is a bundle, so a profile may stack it and a preset may mount it")
     (is (= [{:id :extensions :plugin 'kmet.app.extensions/plugin}
             {:id :events :plugin 'kmet.app.events/plugin}
             {:id :tools :plugin 'kmet.app.tools/plugin}

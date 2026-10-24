@@ -49,7 +49,17 @@
           ;; provides — a per-agent value has to be the only provider on its
           ;; chain). The default approver denies: nobody can ask yet.
           {:id :approvals :plugin kmet.app.permissions/approvals}]
-   :patch []}}
+   :patch []}
+
+ ;; The gate as a bundle: one row, the policy, mounted wherever an agent's child
+ ;; ctx should decide per agent. A profile stacks it at the root (the `:rpc-ask`
+ ;; profile below); a *preset* mounts it on one agent's ctx
+ ;; (`kmet.app.presets`), which is what the row's own docstring asks for — a
+ ;; policy decides per agent, so it mounts on the agent's ctx.
+ :bundle/gated
+ {:rows [{:id :permissions :plugin kmet.app.permissions/permissions
+          :config {:policy :ask-all}}]
+  :patch []}}
 
  :profiles
  {:tui
@@ -71,6 +81,15 @@
   ;; No :prompt — a bare `--profile rpc` is legal and waits on stdin.
   :rpc
   {:bundles [[:bundle/minimal {}]]
+   :rows [{:id :mode-rpc :plugin kmet.app.modes.rpc/plugin :mode true}]
+   :patch []}
+
+  ;; rpc with the gate mounted: every tool call is asked about. No answering
+  ;; surface yet, so the bundle's default approver denies — which is the point
+  ;; of naming the policy rather than assuming allow. A profile that stacks a
+  ;; bundle rather than reaching into it.
+  :rpc-ask
+  {:bundles [[:bundle/minimal {}] [:bundle/gated {}]]
    :rows [{:id :mode-rpc :plugin kmet.app.modes.rpc/plugin :mode true}]
    :patch []}
 

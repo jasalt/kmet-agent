@@ -83,7 +83,11 @@
     (throw (ex-info (str "a :bundles entry is [:bundle/name layer?]: " (pr-str entry))
                     {:type :kmet.app/bad-bundle-entry :entry entry}))))
 
-(defn- bundle [table bundle-name]
+(defn bundle
+  "The named BUNDLE-NAME from TABLE; throws :kmet.app/unknown-bundle. Public
+   because a bundle has two mount points: a profile stacks it at the root, a
+   preset mounts it on one child ctx (`kmet.app.presets`)."
+  [table bundle-name]
   (or (get (:bundles table) bundle-name)
       (throw (ex-info (str "unknown bundle: " (pr-str bundle-name))
                       {:type :kmet.app/unknown-bundle

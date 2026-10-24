@@ -37,7 +37,9 @@
 
    **Creation is serialized and rolls back.** A failed factory leaves no handle
    and no child context: the ctx is disposed and detached in the same breath, so
-   nothing observes a half-built agent. The kernel is single-owner-threaded
+   nothing observes a half-built agent. `:setup` — a fn of `(ctx id)` — runs
+   between the child ctx and the factory, which is where per-agent composition
+   happens (`kmet.app.presets`); a setup that throws rolls back the same way. The kernel is single-owner-threaded
    (`srce.md` §8), so a create already in flight is a caller on another thread —
    it is refused (`:kmet.app/create-busy`) rather than interleaved; such a
    caller submits through `kmet.app.runtime/submit!`.
@@ -249,6 +251,12 @@
                 (claim-busy! state id)
                 (try
                   (let [child (srce/extend ctx {:name (keyword "agent" id)})
+                        ;; setup composes the agent's scoped world on its own ctx
+                        ;; *before* the factory runs (dsh's setup(agentCtx,
+                        ;; agent)): a preset mounts its rows here, so no agent
+                        ;; observes a half-built world and a failing setup rolls
+                        ;; back exactly as a failing factory does
+                        _ (when-let [setup (:setup opts)] (setup child id))
                         ;; one rollback for both failure modes: the factory
                         ;; throwing, and the factory returning a handle that
                         ;; does not fit the contract

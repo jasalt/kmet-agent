@@ -9,12 +9,19 @@
             [clojure.test :refer [deftest is]]
             [kmet.agent.config :as cfg]
             [kmet.ai.llm :as llm]
+            [kmet.agent.tools.registry :as tools]
             [kmet.app.core :as core]
             [kmet.app.events :as events]
             [kmet.app.runtime :as runtime]
+            [kmet.app.test-support :as support]
             [kmet.srce.core :as srce]))
 
 (def ^:private sessions-dir "target/test-composition-run")
+
+(def ^:private config
+  {:provider :opencode-go
+   :model "deepseek-v4-flash"
+   :session-dir sessions-dir})
 
 (deftest a-composed-agent-runs-a-turn
   (fs/create-dirs sessions-dir)
@@ -25,10 +32,7 @@
             ;; the app's layer, not kmet1's process table: this test is what
             ;; 7b-i re-pointed, and subscribing here is the gate it leaves
             unsubscribe (events/on! (:ctx boot) :agent-settled
-                                    (fn [ev] (deliver settled ev)))
-            config {:provider :opencode-go
-                    :model "deepseek-v4-flash"
-                    :session-dir sessions-dir}]
+                                    (fn [ev] (deliver settled ev)))]
         (try
           (with-redefs [cfg/get-api-key (fn [_] "test-key")
                         llm/send-message (fn [opts]
@@ -43,5 +47,43 @@
                      (mapv :role @(:messages (:agent handle))))
                   "and the turn is the agent's context")))
           (finally (unsubscribe))))
+      (finally (srce/dispose-subtree! (:ctx boot))
+               (fs/delete-tree sessions-dir)))))
+
+(deftest a-tool-swaps-at-the-turn-boundary
+  ;; 7b-ii's second leg. The registry is live and what the model is offered is
+  ;; read per request (`loop-state/active-tools`), so a tool registered between
+  ;; two turns is in the next turn's declaration — and out of it again the turn
+  ;; after it is unregistered.
+  (fs/create-dirs sessions-dir)
+  (let [boot (runtime/boot (core/compose-config {:profile :tui}) {})]
+    (try
+      (let [agents (srce/get (:ctx boot) :agents)
+            offered (atom [])
+            echo {:name "custom-echo"
+                  :description "Echo the given text back"
+                  :parameters {:type "object"
+                               :properties {"text" {:type "string"}}}
+                  :execute (fn [_ _] "ok")}]
+        (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                      llm/send-message (fn [opts]
+                                         (swap! offered conj (set (map :name (:tools opts))))
+                                         (future
+                                           (when-let [done (:on-done opts)]
+                                             (done :stop))))]
+          (let [handle ((:create! agents) (:ctx boot) {:config config})
+                turn! (fn [text]
+                        (let [n (count @offered)]
+                          ((:send! agents) handle text {:target :next-turn})
+                          (is (support/wait-until #(> (count @offered) n) 20000)
+                              "the turn reached the model")
+                          (last @offered)))]
+            (is (not (contains? (turn! "one") "custom-echo")))
+            (tools/register-tool! (srce/get (:ctx boot) :tools) echo)
+            (is (contains? (turn! "two") "custom-echo")
+                "registered between turns, offered at the next")
+            (tools/unregister-tool! (srce/get (:ctx boot) :tools) "custom-echo")
+            (is (not (contains? (turn! "three") "custom-echo"))
+                "and gone the turn after it is unregistered"))))
       (finally (srce/dispose-subtree! (:ctx boot))
                (fs/delete-tree sessions-dir)))))
