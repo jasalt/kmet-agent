@@ -25,8 +25,10 @@
      kmet.tui.terminal-native-win}) ;; Jolt/Windows backend (.jolt source)
 
 (def ^:private agent-shared-namespaces
-  "Shared-layer namespaces owned by the agent module (the app-level renderers
-   in tui-library-namespaces)."
+  "Shared-layer namespaces an extension may require that are not the framework's
+   own: `kmet.agent.keybindings` (app's since landing 5, its name unchanged) and
+   `kmet.agent.ui.tui.tool-renderers` (the ui module's, and the one namespace
+   the rename may not touch — shipped extensions write it in their `:require`)."
   '#{kmet.agent.keybindings kmet.agent.ui.tui.tool-renderers})
 
 (defn- library-ns-name
@@ -70,9 +72,9 @@
                  (vec (sort (remove (into sources agent-shared-namespaces) entries)))))
       (t/is (empty? (filter entries host-backend-namespaces))
             "host backends stay out of the eagerly-required lists")
-      (t/is (every? fs/exists? ["modules/agent/src/kmet/agent/keybindings.clj"
-                                "modules/agent/src/kmet/agent/ui/tui/tool_renderers.clj"])
-            "the agent-owned list entries have source files"))))
+      (t/is (every? fs/exists? ["modules/app/src/kmet/agent/keybindings.clj"
+                                "modules/ui/src/kmet/agent/ui/tui/tool_renderers.clj"])
+            "the shared-layer list entries have source files"))))
 
 (t/deftest ^:slow ^:bb-only test-packed-clojure-jar-roundtrip
   ;; end-to-end jar distribution for a real shipped extension: pack

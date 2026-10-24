@@ -5,7 +5,8 @@
 ;; src user it was. They stay on this module's classpath transitively;
 ;; kmet.test-module-deps holds each module's declarations to its src's requires.
 {:paths ["src" "test"]
- :deps {kmet/libs {:local/root "../libs"}
+ :deps {kmet/ui   {:local/root "../ui"}
+        kmet/libs {:local/root "../libs"}
         kmet/reakt {:local/root "../reakt"}
         kmet/hikap {:local/root "../hikap"}
         kmet/tui  {:local/root "../tui"}

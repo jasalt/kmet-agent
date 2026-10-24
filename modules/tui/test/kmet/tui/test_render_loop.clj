@@ -37,7 +37,7 @@
             [kmet.tui.terminal :as term]
             [kmet.tui.timers :as timers]
             [kmet.tui.utils :as utils]
-            [kmet.agent.ui.tui.tool-execution :as te]))
+            [kmet.ui.tui.tool-execution :as te]))
 
 (def ^:private clear-seq
   "The clear sequence a clearing full redraw must emit: erase screen, home,

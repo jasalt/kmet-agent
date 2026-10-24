@@ -3,7 +3,7 @@
    /model and /scoped-models overlays."
   (:require [clojure.string :as str]
             [kmet.ai.models :as models]
-            [kmet.agent.ui.tui.footer-data-provider :as fdp]
+            [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.session.runtime :as runtime]
             [kmet.tui.theme :as theme]))
 

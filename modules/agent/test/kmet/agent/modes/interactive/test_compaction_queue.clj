@@ -19,7 +19,7 @@
             [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.ui.tui.footer-data-provider :as fdp]
+            [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.config :as cfg]
             [kmet.agent.modes.interactive.test-support :as support]))
 

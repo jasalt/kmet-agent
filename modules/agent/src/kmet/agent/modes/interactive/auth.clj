@@ -7,10 +7,10 @@
   (:require [clojure.string :as str]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]
-            [kmet.agent.ui.tui.auth-selector :as auth-selector]
+            [kmet.ui.tui.auth-selector :as auth-selector]
             [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.dock :as dock]
-            [kmet.agent.ui.tui.login-dialog :as login-dialog]
+            [kmet.ui.tui.dock :as dock]
+            [kmet.ui.tui.login-dialog :as login-dialog]
             [kmet.ai.auth :as auth]
             [kmet.ai.models :as models]
             [kmet.agent.modes.interactive.state :as state]))

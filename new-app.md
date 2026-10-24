@@ -865,7 +865,7 @@ Each is independently shippable and gated.
 | 4d | **landed** — **Inspection from the tree**: `kmet.app.inspect/units` renders a ctx's subtree, `--dump-state` boots the composition and renders the root's, `/units` re-points at the invocation ctx's subtree, and both halves of the old listing (the store's owner walk and the per-registry `keys=[…]` lines) are deleted. One kernel addition came with it: `srce/detach!`, the lifetime a plain child ctx (`extend`/`isolate`) had no way to end — the tree listed a line per ctx ever extended, so `test_tool_policy` released its agent ctxs and 4c-iii-b gets the release an agent ctx needs | `--dump-state` and `/units` show a `:pending` fiber with its `waiting-for` and a `:failed` one with its error, and a disposed or detached ctx leaves no line; `kmet.app.test-inspect` (10 tests) plus two rewritten `/units` tests replace the five listing tests |
 | 4e | **landed** — **Retire the store**: `kmet.libs.scope` (288 lines, with its two test namespaces), `kmet.agent.registry-store`, `app_runtime`'s `node`/`app-node`/`*error-reporter*` plumbing, the `cli.clj` force that only existed for it, and the loader whitelist entry are gone. Nothing still read it: 4b-ii-a took the host's nine sites, the Engine's two, 4d the `owner-listing` walk, and `registry_store` was its own last reader. `scope.md` went with the code in the same change: its surviving rules moved to the homes that implement them | `grep` finds no `(scope/` under `kmet.agent.*`, no `kmet.libs.scope` or `registry-store` require; `bb test` green; `kmet --app old` loads with no store in the process. 613 lines deleted, no source added |
 | 4f | **landed** — **The tool layer into `app`**, in five shippable steps: `tools/bash-output`, `tools/bash-executor`, the seven tool bodies (`tool`, `bash`, `edit`, `write`, `read`, `invoke`, `run-code`), `kmet.agent.config`, then `tools/registry` + `tools/config` + `tools/core`. The tool layer now lives in `app` with its namespaces kept — the one exception is kmet1's arity-less façade, which the review moved back to `agent`; `app` declares the SCI backend the sandbox mints contexts with. The one behavioral change: the registry took its handle as a first parameter, so no app namespace requires a rank-4 one, and kmet1's convenience arities moved to a rank-4 façade (`kmet.agent.tools.core`) that supplies `(app-runtime/registry)`. The run_code record is built per registry, so its sandbox seams close over the caller's handle | `kmet.test-module-deps` green after every step (both directions, plus the library view); `bb test` green; `kmet --app old --version`/`--list-models` load; `kmet.agent.tools.registry` has no arity that resolves a handle it was not given |
-| 5 | **Four increments have landed — print mode as a row (§ "Landing 5a"), kmet1's one-shot flags + the edn wire (§ "Landing 5b"), the run's front-end surface (§ "Landing 5c") and rpc mode serving the protocol (§ "Landing 5d")**, and neither could be written before 7b-i: it is the first client of the `:agents` factory rather than the Engine, but its stream *and* its exit result are `:agent-settled` — kmet1's print mode is a `runtime/subscribe!` consumer, and kmet2 has no Engine to subscribe to. Then `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; the rest of the modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print landed and at kmet1 parity for the one-shot flags it had (`-p`, `--mode text|edn`, `--model`, `--provider`: streams or prints the wire, writes its session log, exits 0); rpc/tui parity via `scripts/capture/` and the tk provider on bb and Jolt still to come |
+| 5 | **Five increments have landed — print mode as a row (§ "Landing 5a"), kmet1's one-shot flags + the edn wire (§ "Landing 5b"), the run's front-end surface (§ "Landing 5c"), rpc mode serving the protocol (§ "Landing 5d") and the rank-clean half of the TUI move into the new `ui` module (§ "Landing 5e")**, and neither could be written before 7b-i: it is the first client of the `:agents` factory rather than the Engine, but its stream *and* its exit result are `:agent-settled` — kmet1's print mode is a `runtime/subscribe!` consumer, and kmet2 has no Engine to subscribe to. Then `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; the rest of the modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print landed and at kmet1 parity for the one-shot flags it had (`-p`, `--mode text|edn`, `--model`, `--provider`: streams or prints the wire, writes its session log, exits 0); rpc/tui parity via `scripts/capture/` and the tk provider on bb and Jolt still to come |
 | 6 | `:agents` **landed as a registry at 4c-iii-b** — landing 6 gives it agents a driver created — + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
 | 7a | loop re-hosted as a driver plugin (`:agentLoop`), registering the `:agents` factory; the `:systemPrompt` row with its first reader | two agents created through `create!` each run a turn and settle once; `--dump-state` shows the driver active | **landed**: the stage map, the leaves and the whole cluster are `app`'s (names kept), 7a-ii made the resource load and input expansion the caller's, the `:systemPrompt` row reads over `:skills`, and `:agent-loop` registers the `:agents` factory with a runnable handle; the composition-level gate is met too — `:extensions` binds the host, and a composed agent runs a turn (`kmet.app.test-composition-run`); the Engine's `commands` dispatch and its wrapper fallback are the two named residuals; see § "Landing 7a" |
 | 7b-i | **landed** — **The events contract — the head of landing 5, not its tail**: the loop dispatches on the kernel from the run's own ctx, so `:agent-settled` is an event a front end subscribes to at the app's scope, while kmet1's process table keeps hearing the same events (the extension ABI registers there; kmet1 boots the composition, so a run cannot tell the two apps apart — only the listeners differ). A boundary threads **one** decision through both: the kernel's accumulated map seeds the table's chain. The composition test no longer listens on kmet1's table | a composed turn settles on the app's bus, and `kmet.app.test-composition-run` subscribes without kmet1's table — **met**; see § "Landing 7b-i settled" |
@@ -1598,6 +1598,65 @@ Inherited, not fixed: a model record crosses the wire as the tagged literal
 `#kmet.ai.models.Model{…}` (kmet1 prints the same), and a clean shutdown emits
 `{:type :queue-update :reason :aborted}` because the handle's dispose cancels
 unconditionally (kmet1's dispose does too).
+
+### Landing 5e — the TUI moves in pieces, and the guard picks the pieces
+
+The TUI's move is not one commit, and the reason is arithmetic rather than taste.
+Its 47 files require 24 `kmet.agent.*` namespaces; fifteen already live in `app`
+(rank 2), and **nine do not** — `session.runtime`, `app-runtime`, `commands`
+(+ `builtins`), `prompts`, `skills`, `packages`, `tools.core`. A file in the new
+`ui` module (rank 3) may reach only rank ≤ 2, so a wholesale move would fail the
+rank guard, and a module whose namespaces are checked file-by-file cannot be
+talked out of it.
+
+So the cut is what the requires already say: **30 of the 47 files reach nothing
+above `app`** — the component library, the dialogs, the renderers, the pickers
+that take their data as arguments — and they moved. The other 17 are the
+composition layer written against kmet1's runtime (`layout`, `builtins`,
+`ui_registry`, the selectors that fork or switch sessions), and they stay in
+`agent` until their edge is parameterized: they are landing 6's per-agent
+surface, where a UI reads a handle and a ctx instead of a process.
+
+**The move.** New module `ui` at rank 3, holding `modules/ui/src` with 27 source
+namespaces (6,918 lines) and 22 test namespaces; `kmet.agent.ui.X` became
+`kmet.ui.X` (`kmet.ui.tui.*` for the TUI's own). `kmet.agent.keybindings` — the
+one rank-4 file the components needed and that reached nothing itself — lifted to
+`app` with its name unchanged. Plumbing that the manifest guard checks: a
+`modules/ui/deps.edn` naming exactly the six modules the moved files require, the
+manifest row, the `bb.edn`/`deps.edn` literals, `agent`'s new `kmet/ui` edge, and
+the three extension `bb.edn` classpaths (an extension that requires
+`tool-renderers` must be able to find it).
+
+**The one name a `sed` may not touch.** `kmet.agent.ui.tui.tool-renderers` keeps
+its name in the new module: shipped extensions write it in their `:require`
+(`extensions/clojure`, `extensions/lsp-adapter`), and the loader whitelist admits
+it by name. The rename was written, tested against the extension tree, and
+reverted — the file moves, the namespace does not. `kmet.agent.keybindings` is the
+same case for the same reason.
+
+**Two files the guard caught that the first scan did not.** `external_editor` and
+`suspend` require `kmet.agent.ui.tui.chat-history` — a *sibling* that is blocked,
+not an external module, so a scan that only looks outside the package calls them
+clean. They went back. The lesson is the guard's, not the scanner's: the edge is
+the edge, whether the target is in the same package or another module.
+
+**Path-scanning tests are part of the move.** `test-caching-conventions` enumerates
+the component trees (it now scans `modules/ui/src/kmet/ui/tui` as well, and the
+non-recursive `fs/list-dir` is why the module root alone was not enough), and the
+extension library-list test names the two source files it expects to exist — both
+now point at the files' new homes.
+
+**A latent lint finding, surfaced by the move.** `test_auth_selector` carried
+`(:refer-clojure :exclude [selector])`, which excludes a var `clojure.core` does
+not have: clj-kondo reports it, and no one had seen it because the file had not
+been touched since the rule started applying. Removing the dead exclusion is the
+fix. It is also the reminder that `lint-changed` is the frequent gate and
+`lint` is the one that finds what a long-untouched file is carrying.
+
+**Evidence.** `--app old` boots and the TUI renders (tmux capture:
+header, footer hints, the context/skills/prompts/extensions panels); `--app new`
+runs rpc mode; `bb test` 4,193 / 24,613; `bb lint` (full tree, both views) 0
+errors, 0 warnings, 0 findings; `bb check` compiles; format clean.
 
 **Found by running it: kmet2's process entry never loaded the model catalog.**
 `kmet --app new -p "who are you"` answered `Error: Unknown provider:

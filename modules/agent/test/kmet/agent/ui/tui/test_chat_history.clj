@@ -7,8 +7,8 @@
             [kmet.tui.protocols :as protocols]
             [kmet.tui.components.text :as text]
             [kmet.libs.terminal-image :as timg]
-            [kmet.agent.ui.tui.bash-execution :as be]
-            [kmet.agent.ui.tui.tool-execution :as te]
+            [kmet.ui.tui.bash-execution :as be]
+            [kmet.ui.tui.tool-execution :as te]
             [kmet.agent.ui.tui.chat-history :as ch]
             [kmet.test-utils :as tu]))
 

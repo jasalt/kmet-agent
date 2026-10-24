@@ -5,7 +5,7 @@
    kmet.tui.core dispatchers (editor-get-text / editor-set-text! /
    editor-get-expanded-text)."
   (:require [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.footer-data-provider :as fdp]
+            [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.tui.core :as tui]
             [kmet.agent.debug :as debug]
             [clojure.string :as str]

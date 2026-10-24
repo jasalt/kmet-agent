@@ -6,7 +6,7 @@
             [babashka.fs :as fs]
             [babashka.process :as proc]
             [kmet.agent.ui.tui.external-editor :as external-editor]
-            [kmet.agent.ui.tui.footer-data-provider :as fdp]
+            [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.tui.core :as tui]))
 
 (deftest test-external-editor-spawns-in-the-runtime-cwd

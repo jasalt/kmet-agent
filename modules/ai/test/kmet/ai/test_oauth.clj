@@ -11,7 +11,7 @@
             [kmet.libs.http :as http]
             [kmet.ai.auth :as auth]
             [kmet.agent.commands :as commands]
-            [kmet.agent.ui.tui.dock :as dock]
+            [kmet.ui.tui.dock :as dock]
             [kmet.ai.models :as models]
             [kmet.ai.oauth :as oauth]
             [kmet.agent.ui.tui.chat-history :as chat-history]

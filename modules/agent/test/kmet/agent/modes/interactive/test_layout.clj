@@ -13,12 +13,12 @@
             [kmet.agent.modes.interactive.ui-registry :as ui-registry]
             [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.ui.tui.status-indicator :as status-indicator]
+            [kmet.ui.tui.status-indicator :as status-indicator]
             [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.dock :as dock]
+            [kmet.ui.tui.dock :as dock]
             [kmet.ai.auth :as auth]
             [kmet.agent.loop :as agent]
-            [kmet.agent.ui.tui.footer-data-provider :as fdp]
+            [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.config :as cfg]
             [kmet.agent.modes.interactive.test-support :as support]))
 
@@ -199,7 +199,7 @@
       (t/is (= 0 @cleanups) "dispose unwinds on dialog close"))))
 
 (deftest test-dispose-dialog-component-shapes
-  (testing "dispose-dialog-component! (kmet.agent.ui.tui.custom-dialog-adapter/
+  (testing "dispose-dialog-component! (kmet.ui.tui.custom-dialog-adapter/
             dispose-component!) handles every component shape: duck-typed
             maps via their :dispose key, records via the protocol, nil
             no-op — and a throwing foreign dispose never propagates"

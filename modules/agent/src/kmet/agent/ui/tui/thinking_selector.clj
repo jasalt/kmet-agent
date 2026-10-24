@@ -10,7 +10,7 @@
             [kmet.ai.models :as models]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.ui.tui.dock :as dock]
+            [kmet.ui.tui.dock :as dock]
             [kmet.agent.config :as cfg]
             [kmet.tui.components.filter-panel :as fp]
             [kmet.tui.fuzzy :as fuzzy]

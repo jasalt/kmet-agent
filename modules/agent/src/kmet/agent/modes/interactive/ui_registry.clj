@@ -26,14 +26,14 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
-            [kmet.agent.ui.tui.theme-controller :as theme-ctrl]
+            [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.custom-dialog-adapter :as cda]
-            [kmet.agent.ui.tui.dock :as dock]
-            [kmet.agent.ui.tui.footer :as footer]
-            [kmet.agent.ui.tui.footer-data-provider :as fdp]
-            [kmet.agent.ui.tui.loaded-resources :as loaded-resources]
-            [kmet.agent.ui.tui.status-indicator :as status-indicator]
+            [kmet.ui.tui.custom-dialog-adapter :as cda]
+            [kmet.ui.tui.dock :as dock]
+            [kmet.ui.tui.footer :as footer]
+            [kmet.ui.tui.footer-data-provider :as fdp]
+            [kmet.ui.tui.loaded-resources :as loaded-resources]
+            [kmet.ui.tui.status-indicator :as status-indicator]
             [kmet.agent.modes.interactive.builtins :as builtins]
             [kmet.agent.modes.interactive.session-admin :as session-admin]
             [kmet.agent.modes.interactive.state :as state]
@@ -66,7 +66,7 @@
     (vals (r/tracked-deref widgets-atom))))
 
 (defn- dispose-dialog-component!
-  "Dispose an extension dialog/widget value (kmet.agent.ui.tui.custom-dialog-adapter/
+  "Dispose an extension dialog/widget value (kmet.ui.tui.custom-dialog-adapter/
    dispose-component! — duck-typed :dispose, else the protocol multimethod)."
   [component]
   (cda/dispose-component! component))

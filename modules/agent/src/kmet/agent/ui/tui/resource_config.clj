@@ -47,7 +47,7 @@
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.packages :as pkgs]
             [kmet.agent.tools.config :as tools-config]
-            [kmet.agent.ui.tui.subs :as s]
+            [kmet.ui.tui.subs :as s]
             [kmet.agent.config :as cfg]
             [kmet.libs.reakt.core :as r]
             [kmet.libs.path :as path]

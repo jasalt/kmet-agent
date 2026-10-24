@@ -9,8 +9,8 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.ui.tui.footer-data-provider :as fdp]
-            [kmet.agent.ui.tui.dock :as dock]
+            [kmet.ui.tui.footer-data-provider :as fdp]
+            [kmet.ui.tui.dock :as dock]
             [kmet.tui.theme :as th]
             [kmet.tui.terminal :as term]
             [kmet.libs.host :as host]))

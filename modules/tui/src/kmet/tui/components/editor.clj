@@ -1662,7 +1662,7 @@
    centered scroll label when scrolled). This is the app's status-in-border
    hook (pi: CustomEditor.renderTopBorder — the embedWorkingStatus opt-in
    that puts the session status in the editor's first line; the app's
-   kmet.agent.ui.tui.status-indicator/editor-embeds-status? reads it back)."
+   kmet.ui.tui.status-indicator/editor-embeds-status? reads it back)."
   [editor f]
   (reset! (:top-border-fn-atom editor) f))
 

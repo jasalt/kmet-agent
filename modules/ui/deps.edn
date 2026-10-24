@@ -1,0 +1,23 @@
+{:paths ["src" "test"]
+ ;; Rank 3: the front ends (new-app.md, landing 5). A module here may require
+ ;; `app` (2) and the component backends (`tui`, `tk`, `hikap`) but never
+ ;; `agent` (4) — that is why the TUI moves here in pieces rather than all at
+ ;; once: what is written against kmet1's runtime (`kmet.agent.session.runtime`,
+ ;; `app-runtime`, the lifted registries) stays behind until its edge is
+ ;; parameterized, and only the components that already reach nothing above
+ ;; `app` move.
+ ;;
+ ;; `kmet.agent.ui.tui.tool-renderers` keeps its namespace: shipped extensions
+ ;; require it and the loader whitelist admits it by name, so the file moves and
+ ;; the name does not (the two-axes rule, and the one rename a `sed` may not do).
+ ;;
+ ;; The moved files are `kmet.ui.*`: a new prefix for kmet2's code, so a kmet1
+ ;; and a kmet2 namespace can never shadow each other on one classpath.
+ :deps {kmet/reakt {:local/root "../reakt"}
+        kmet/hikap {:local/root "../hikap"}
+        kmet/libs {:local/root "../libs"}
+        kmet/tui {:local/root "../tui"}
+        kmet/ai {:local/root "../ai"}
+        kmet/app {:local/root "../app"}
+        babashka/fs {:mvn/version "0.5.34"}
+        babashka/process {:mvn/version "0.6.25"}}}

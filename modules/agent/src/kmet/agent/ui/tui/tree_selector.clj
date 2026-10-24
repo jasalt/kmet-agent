@@ -20,7 +20,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.dock :as dock]
+            [kmet.ui.tui.dock :as dock]
             [kmet.agent.config :as cfg]
             [kmet.libs.clipboard :as clipboard]
             [kmet.libs.path :as path]

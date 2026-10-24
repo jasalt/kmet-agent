@@ -11,7 +11,7 @@
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.dock :as dock]
+            [kmet.ui.tui.dock :as dock]
             [kmet.agent.ui.tui.model-catalog :as model-catalog]
             [kmet.agent.config :as cfg]
             [kmet.tui.components.filter-panel :as fp]

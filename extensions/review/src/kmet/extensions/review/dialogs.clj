@@ -36,7 +36,7 @@
    The kmet frame carries a blank line between border and title (a
    deliberate deviation from pi's ExtensionSelectorComponent, which
    places them adjacent) — shared with kmet's own
-   kmet.agent.ui.tui.dialogs/frame kit for a consistent look."
+   kmet.ui.tui.dialogs/frame kit for a consistent look."
   [th title body-element hint-element & [{:keys [bold-title?]
                                           :or {bold-title? true}}]]
   (h/compile-tree

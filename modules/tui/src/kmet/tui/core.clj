@@ -743,7 +743,7 @@
    overlay; the no-arg arity is the same call for the top's component.
    Hiding never disposes: the owner disposes after the leave (tui.md
    §5.1), which is what makes the removal-before-dispose order checkable
-   (kmet.agent.ui.tui.dock/dispose!). Returns true when an entry was removed."
+   (kmet.ui.tui.dock/dispose!). Returns true when an entry was removed."
   ([tui]
    (if-let [top (peek @(:overlays tui))]
      (tui-hide-overlay tui (:component top))
