@@ -4,10 +4,17 @@
    an owner's registrations come back in one call (4c-ii)."
   (:require [clojure.test :as t]
             [kmet.agent.app-runtime :as app-runtime]
+            [kmet.agent.cli :as cli]
             [kmet.agent.commands :as commands]
+            [kmet.agent.config :as cfg]
+            [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.packages :as packages]
             [kmet.agent.registry :as registry]
             [kmet.agent.tools.registry :as tools]
-            [kmet.srce.core :as srce]))
+            [kmet.ai.image-models :as image-models]
+            [kmet.ai.models :as models]
+            [kmet.srce.core :as srce]
+            [kmet.tui.theme :as theme]))
 
 (t/deftest the-root-is-the-composed-app
   (let [ctx (app-runtime/ctx)]
@@ -16,6 +23,46 @@
     (doseq [service [:events :tools :commands :prompts :skills
                      :sessionPersistence :sessions]]
       (t/is (some? (srce/get ctx service)) (str service " is provided")))))
+
+(t/deftest a-published-root-is-the-process-root
+  ;; An entry that boots the composition itself publishes it, so kmet1's shims
+  ;; read the tree the entry mounted instead of booting a second one behind it.
+  (let [ours (srce/root {:name :app})
+        other (srce/root {:name :other})
+        prev (app-runtime/reset-root!)]
+    (try
+      (t/is (identical? ours (app-runtime/publish-root! ours)))
+      (t/is (identical? ours (app-runtime/ctx))
+            "the published root, not a freshly booted composition")
+      (t/is (identical? ours (app-runtime/publish-root! other))
+            "the first root wins — a second publish cannot strand the tree the
+             process is already reading")
+      (finally
+        (srce/dispose-subtree! ours)
+        (srce/dispose-subtree! other)
+        (app-runtime/restore-root! prev)))))
+
+(t/deftest a-world-loaded-against-a-composition-publishes-it
+  ;; The seam 5j needs and nothing else in the tree does: `load-world!` with a
+  ;; ctx makes that ctx the process root *before* the first read, so a TUI run's
+  ;; extensions register into the composition it mounted.
+  (let [ours (srce/root {:name :app})
+        prev (app-runtime/reset-root!)]
+    (try
+      (with-redefs [models/load-catalogs! (fn [])
+                    image-models/load-image-catalogs! (fn [])
+                    models/load-models-config! (fn [])
+                    models/get-model-config-error (fn [] nil)
+                    cfg/init! (fn [] {})
+                    packages/load-extensions! (fn [] nil)
+                    theme/load-theme-paths! (fn [_] nil)
+                    extensions/set-cli-flags! (fn [_] nil)]
+        (cli/load-world! {} ours))
+      (t/is (identical? ours (app-runtime/ctx))
+            "one composition: the one the entry booted")
+      (finally
+        (srce/dispose-subtree! ours)
+        (app-runtime/restore-root! prev)))))
 
 (t/deftest the-facade-routes-a-tag-to-its-service
   (let [handle (app-runtime/registry)]

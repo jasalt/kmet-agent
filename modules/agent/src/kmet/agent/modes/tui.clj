@@ -30,11 +30,13 @@
    never be delivered."
   [ctx on-result]
   (try
-    (interactive/run (cli/load-world! {:mode :interactive}) {:mode :interactive} ctx)
+    ;; the composition's ctx, not a process root the world loader would boot: the
+    ;; run's tool table, system prompt and session log are the ones it mounted
+    (interactive/run (cli/load-world! {:mode :interactive} ctx) {:mode :interactive} ctx)
     (on-result {:exit 0})
     (catch Throwable t
       (binding [*out* *err*]
-        (println "Error:" (ex-message t))
+        (println "Error:" (or (ex-message t) (str (class t))))
         (flush))
       (on-result {:exit 1}))))
 
@@ -54,4 +56,8 @@
 
 (srce/defplugin plugin
   {:name :mode-tui
+   ;; the run reads these from the ctx (`session.driver/bootstrap`'s `:ctx`):
+   ;; declare them so a composition that patched one out fails at the mount
+   ;; instead of at the first prompt
+   :inject [:tools :system-prompt]
    :apply serve})

@@ -2050,6 +2050,37 @@ it the `:ui` capability service (`:provide #{:ui}`, `ui-headless`,
 a row first makes that re-host a refactor of one namespace rather than a change
 to how kmet2 boots.
 
+**Review — one process, one tree.** The row as first shipped booted a *second*
+composition, and the review found it: `kmet.agent.app-runtime/ctx` lazily boots
+`{:profile :tui}` (that is how kmet1 gets its root) and `load-world!` called it, so
+`--app new` mounted 14 rows and then 14 more behind them. Worse than the waste:
+the TUI's engine ran on the first tree while every kmet1 shim — `/units`, the
+façades, the extension host's no-node reads — read the second, so an extension
+that registered a tool into `[:app …]` and a run that dispatched through `:tools`
+could have been looking at different registries. `app-runtime/publish-root!` makes
+the entry's own composition the process root, and `load-world!` publishes **before**
+the first `ctx` read, so nothing boots behind it. Measured with a script that
+stubs the world-loading leaves and keeps the publish path real: with the publish
+the process root *is* the entry's tree (same 14 children, `identical?`); without
+it a second 14-row composition appears. The shim's root moved from a `delay` to an
+atom to make publication possible; `reset-root!`/`restore-root!` are the test seam
+and they hand the old root back, because clearing it lets the next test boot a
+composition that lacks the registrations the first carried — which is exactly how
+the first attempt broke `test-search-tools-extensions`.
+
+Two smaller ones from the same pass: the row declared no `:inject`, so a
+composition that patched out `:tools` failed at the first prompt rather than at
+the mount — it now declares `[:tools :system-prompt]`; and a throwable with a nil
+message printed `Error: nil`, so the catch names the class when there is no
+message.
+
+What the review did **not** change: `--dump-config` resolves a row's plugin var, so
+listing the `:tui` composition loads kmet1's whole TUI tree — a side effect of the
+catalog's `requiring-resolve`, and an honest one (the row's card *is* that plugin);
+and the pty harness cannot send Enter in raw mode, so `/quit` stays unverified
+through it — ctrl+c twice exits in about a second under both entries, which is the
+same assertion both ways.
+
 ### Landing 5i — the owner publishes, and the registries stop reaching up
 
 `resource_config` was blocked by `kmet.agent.packages`, which was blocked by

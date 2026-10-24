@@ -13,7 +13,10 @@
 
 (deftest the-row-is-the-tui-mode
   (is (= :mode-tui (:name tui/plugin))
-      "the name is what a failed mount reports and what --dump-state shows"))
+      "the name is what a failed mount reports and what --dump-state shows")
+  (is (= [:tools :system-prompt] (:inject tui/plugin))
+      "the ctx services the run reads are declared, so a composition that patched
+       one out fails at the mount rather than at the first prompt"))
 
 (deftest a-diagnostic-mount-starts-nothing
   ;; `--dump-state` mounts every row and hands none of them an :on-result: a
