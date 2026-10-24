@@ -1705,7 +1705,8 @@ bug.** `kmet.agent.registry/current` is the rank-2 answer: the owner publishes
 (`publish-process-handle!`, returning the previous handle so a second owner can
 restore it), and a caller with no ctx in hand reads. Nobody having published is
 not an error — the fallback is one empty atom registry per process, so a
-registration made before the owner arrives is still visible to a later read.
+registration made before the owner arrives is still visible to a later read (until
+an owner publishes and takes over; that is the boot path, not a live swap).
 
 The shim now publishes at load, next to the place its tags→service table lives,
 and `commands`, `prompts` and `skills` no longer name it.
@@ -1730,6 +1731,21 @@ bound the extension host the same way).
 **Live check.** `kmet config` renders the moved screen: groups (the built-in tool
 list, packaged extensions), per-row toggles and the `(1/20)` counter, from
 `kmet.ui.tui.resource-config`.
+
+**The seam has one publisher, and it is kmet1's.** `--app new` loads no
+`app-runtime`, so today kmet2 code that registers a command, prompt or skill reads
+the fallback: consistent (writer and reader agree) but invisible to kmet2's own
+services. That is the seam's next obligation, not a bug yet — landing 6's driver
+publishes when it takes over the engine, and only then can a kmet2 registration be
+read by kmet2. Verified that no kmet2 namespace registers through these three
+today, so nothing is silently landing in the wrong handle.
+
+**The headline claim, counted.** Every `kmet.agent.*` a `ui` file requires, after
+the move: `keybindings` 13, `session.runtime` 7, `config` 6, `session.core` 4,
+`debug` 3, `tools.bash-output` 2, `model-resolver` 2, `extensions.core` 2, and six
+singles — all rank 2 except `tool-renderers`, which keeps its name for the
+extensions that require it. The UI layer's upward edges are gone; what is left is
+the ABI by design.
 
 **What is left is landing 6.** Fourteen files under `modules/agent/src` still
 require some other `agent` namespace, and they are two different kinds:
