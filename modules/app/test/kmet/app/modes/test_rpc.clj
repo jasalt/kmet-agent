@@ -37,9 +37,18 @@
         out (java.io.StringWriter.)
         result (future (binding [*in* reader]
                          (support/run-main-into (or args ["--profile" "rpc"]) out)))]
-    (doseq [line lines]
-      (.write writer (str line "\n")))
-    (.flush writer)
+    (try
+      (doseq [line lines]
+        (.write writer (str line "\n")))
+      (.flush writer)
+      (catch java.io.IOException e
+        ;; the mode stopped before the test finished writing: its own failure is
+        ;; the one to report, so wait for it and say what it printed
+        (let [{:keys [code err]} (deref result 60000 ::timeout)]
+          (throw (ex-info (str "the mode ended before the test's input did"
+                               " (exit " code "): " err)
+                          {:code code :err err :lines lines}
+                          e)))))
     (try
       (when until
         (support/wait-until #(str/includes? (str out) until)))

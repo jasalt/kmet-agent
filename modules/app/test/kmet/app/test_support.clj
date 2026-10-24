@@ -62,15 +62,20 @@
 
 (defn with-mode-run
   "Run F with the model stubbed by SEND-MESSAGE (a `send-message` stub) and the
-   settings above."
+   settings above.
+
+   The session dir is emptied *before* the run starts, never after it: a mode
+   test with a stalled provider can still be finishing a run when the next test
+   begins, and a cleanup that deleted the directory out from under it would turn
+   that into an unrelated failure. What the tests need is a clean start, and
+   `target/` is thrown away by `bb clean`."
   [send-message f]
+  (fs/delete-tree sessions-dir)
   (fs/create-dirs sessions-dir)
-  (try
-    (with-redefs [cfg/load-config (fn [& _] (settings))
-                  cfg/get-api-key (fn [_] "test-key")
-                  llm/send-message send-message]
-      (f))
-    (finally (fs/delete-tree sessions-dir))))
+  (with-redefs [cfg/load-config (fn [& _] (settings))
+                cfg/get-api-key (fn [_] "test-key")
+                llm/send-message send-message]
+    (f)))
 
 (defn answering
   "A `send-message` stub that streams TEXT and stops."

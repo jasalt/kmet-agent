@@ -32,6 +32,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
             [kmet.app.events :as events]
+            [kmet.app.front-end :as front-end]
             [kmet.app.modes.out :as out]
             [kmet.srce.core :as srce]))
 
@@ -136,15 +137,11 @@
             error (atom nil)
             settled (promise)
             dispose (subscriptions scope format settled error)
-            ;; what to put back when the run ends: the surface that was there,
-            ;; not the dispatcher's default — a process can have a front end
-            ;; before it has this run
-            previous (extensions/front-end-surface)]
-        ;; kmet1's print mode binds exactly this, a layer down: kind :print,
-        ;; no UI, the headless port that answers where it must
-        (extensions/bind-extensions! {:mode :print
-                                      :has-ui false
-                                      :ui (extensions/headless-ui-port)})
+            ;; kmet1's print mode binds exactly this, a layer down: kind :print,
+            ;; no UI, the headless port that answers where it must
+            restore (front-end/install! {:mode :print
+                                         :has-ui false
+                                         :ui (extensions/headless-ui-port)})]
         (future
           (on-result {:exit (run-prompt! scope agents (assoc config :format format)
                                          settled error)}))
@@ -154,7 +151,7 @@
           ;; leave the thread parked
           (deliver settled {:outcome :disposed})
           (dispose)
-          (extensions/bind-extensions! previous))))))
+          (restore))))))
 
 (srce/defplugin plugin
   {:name :mode-print

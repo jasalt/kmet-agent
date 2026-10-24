@@ -34,6 +34,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.ai.models :as models]
             [kmet.app.events :as events]
+            [kmet.app.front-end :as front-end]
             [kmet.app.modes.out :as out]
             [kmet.srce.core :as srce]))
 
@@ -111,14 +112,23 @@
   [agents handle]
   (= :running ((:status agents) handle)))
 
+(defn- enqueue!
+  "Queue TEXT for BEHAVIOR — `:steer` for the next step, `:follow-up` for the
+   next turn. The two targets are the loop's queues; the registry's ops are what
+   reach them."
+  [{:keys [agents handle]} behavior text]
+  ((get agents (if (= :steer behavior) :steer! :follow-up!)) handle text))
+
 (defn- command-prompt
   "Start, steer or queue a prompt (pi: prompt). While a run is live the client
    must choose `:streaming-behavior` — pi errors without one, because the two
    targets mean different things and guessing would drop the message or
    deliver it at the wrong boundary."
-  [{:keys [agents handle]} command]
-  (let [text (message-of command)
-        behavior (:streaming-behavior command)]
+  [state command]
+  (let [{:keys [agents handle]} state
+        text (message-of command)
+        behavior (:streaming-behavior command)
+        running? (running? agents handle)]
     (cond
       ;; the wire carries text: kmet2's handle takes a string, and an image
       ;; quietly dropped would be a wrong answer to a client that sent one
@@ -131,42 +141,35 @@
       (and (some? behavior) (not (#{:steer :follow-up} behavior)))
       (failed :prompt "streaming-behavior must be :steer or :follow-up")
 
-      :else
-      (if (running? agents handle)
-        (cond
-          (nil? behavior)
-          (failed :prompt (str "The agent is already running; specify"
-                               " :streaming-behavior :steer or :follow-up"))
+      (and running? (nil? behavior))
+      (failed :prompt (str "The agent is already running; specify"
+                           " :streaming-behavior :steer or :follow-up"))
 
-          :else
-          (do ((if (= :steer behavior) (:steer! agents) (:follow-up! agents))
-               handle text)
-              (ok :prompt {:disposition :queued})))
-        (do ((:send! agents) handle text {:target :next-turn})
-            (ok :prompt {:disposition :started}))))))
+      running?
+      (do (enqueue! state behavior text)
+          (ok :prompt {:disposition :queued}))
+
+      :else
+      (do ((:send! agents) handle text {:target :next-turn})
+          (ok :prompt {:disposition :started})))))
 
 (defn- command-queue
-  "The shared steer/follow-up path: the queues carry no image blocks, so reject
-   `:images` rather than drop them, and answer with the queued disposition."
-  [{:keys [agents handle]} command enqueue!]
-  (cond
-    (:images command)
-    (failed (:type command) (str (name (:type command)) " does not support :images yet"))
-
-    (nil? (message-of command))
-    (failed (:type command) (str (name (:type command)) " requires a non-empty :message string"))
-
-    :else
-    (do (enqueue! agents handle (message-of command))
-        (ok (:type command) {:disposition :queued}))))
-
-(defn- command-steer
+  "The `:steer` / `:follow-up` commands: the queues carry no image blocks, so
+   reject `:images` rather than drop them, and answer with the queued
+   disposition. The command's own `:type` is the behavior it queues for."
   [state command]
-  (command-queue state command (fn [agents handle text] ((:steer! agents) handle text))))
+  (let [type (:type command)
+        text (message-of command)]
+    (cond
+      (:images command)
+      (failed type (str (name type) " does not support :images yet"))
 
-(defn- command-follow-up
-  [state command]
-  (command-queue state command (fn [agents handle text] ((:follow-up! agents) handle text))))
+      (nil? text)
+      (failed type (str (name type) " requires a non-empty :message string"))
+
+      :else
+      (do (enqueue! state type text)
+          (ok type {:disposition :queued})))))
 
 (defn- command-abort
   "Cancel the in-flight run and answer whether the agent is idle now (pi:
@@ -276,8 +279,8 @@
    the handle this mode owns."
   [state]
   {:prompt #(command-prompt state %)
-   :steer #(command-steer state %)
-   :follow-up #(command-follow-up state %)
+   :steer #(command-queue state %)
+   :follow-up #(command-queue state %)
    :abort #(command-abort state %)
    :get-state #(command-get-state state %)
    :get-entries #(command-get-entries state %)
@@ -358,15 +361,13 @@
     (when on-result
       (let [out- *out*
             in *in*
-            previous (extensions/front-end-surface)
-            restore (fn [] (extensions/bind-extensions! previous))
             dispose (events/on-every scope (fn [event]
-                                             (out/record! out- (event-bus/wire-event event))))]
-        ;; kmet1's rpc mode binds exactly this: a front end with a port, whose
-        ;; extension UI calls travel the protocol
-        (extensions/bind-extensions! {:mode :rpc
-                                      :has-ui true
-                                      :ui (ui-port out-)})
+                                             (out/record! out- (event-bus/wire-event event))))
+            ;; kmet1's rpc mode binds exactly this: a front end with a port,
+            ;; whose extension UI calls travel the protocol
+            restore (front-end/install! {:mode :rpc
+                                         :has-ui true
+                                         :ui (ui-port out-)})]
         (future
           (on-result
            {:exit (try

@@ -1542,6 +1542,15 @@ anything boots*; rpc mode has no such input, and a bare `--profile rpc` is legal
 (it waits on stdin). The row says which it is, and `mode-input` omits a prompt
 the invocation did not give rather than passing an empty string.
 
+**Simplify pass.** `command-prompt`'s nested `if`/`cond` is one flat `cond` over
+the values it reads once, and the two queue commands lost their one-line wrappers
+to a shared `enqueue!`: the record's own `:type` is the behavior it queues for,
+so `:steer` and `:follow-up` are one implementation and two table entries. The
+surface-pair rule — install the front end, and put back what was there — moved
+into `kmet.app.front-end/install!`, which returns the restore; print mode and rpc
+mode call the same function instead of each writing the rule, so the review that
+found the reset bug is now the code's docstring rather than two comments.
+
 **Shared, not copied.** `kmet.app.events/on-every` is the one-subscription
 "every declared event" (print's edn stream and rpc's stream are the same
 subscription), and `kmet.app.modes.out` is the modes' output discipline — one
