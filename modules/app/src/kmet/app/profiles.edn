@@ -76,8 +76,12 @@
 
   ;; server is rpc over a socket: one agent per connection, every record badged
   ;; with its agent's id. `--port` picks the socket (0 asks the OS for one, and
-  ;; the mode announces it as a `:listening` record).
+  ;; the mode announces it as a `:listening` record). The approvals row is the
+  ;; server's own: a run's `:ask` becomes a `:request` the client answers. The
+  ;; *policy* stays the bundle's default (allow) — a profile that wants the gate
+  ;; mounted patches in `{:id :permissions :plugin kmet.app.permissions/permissions
+  ;; :config {:policy :ask-all}}`.
   :server
   {:bundles [[:bundle/minimal {}]]
    :rows [{:id :mode-server :plugin kmet.app.modes.server/plugin :mode true}]
-   :patch []}}}
+   :patch [{:id :approvals :plugin kmet.app.modes.server/approvals}]}}}

@@ -286,7 +286,7 @@
    :get-entries #(command-get-entries state %)
    :get-available-models #(command-get-available-models state %)})
 
-(defn- handle-command
+(defn handle-command
   "Handle one parsed command, returning the response — never nil: every command
    is answered. A handler that throws is that command's failure, not the
    mode's."
@@ -311,9 +311,11 @@
 
 ;; ── transport ─────────────────────────────────────────────────────────────
 
-(defn- parse-line
-  "Parse one stdin LINE as exactly one EDN form (pi: JSON.parse rejects
-   trailing content); returns `{:command value}` or `{:error message}`."
+(defn parse-line
+  "Parse one line as exactly one EDN form (pi: JSON.parse rejects trailing
+   content); returns `{:command value}` or `{:error message}`. Public because the
+   server mode asks what a record *is* before dispatching it: a `:response` from
+   a client answers a dialog, every other record is a command."
   [line]
   (try
     (let [rdr (java.io.PushbackReader. (java.io.StringReader. line))
@@ -325,22 +327,31 @@
     (catch Throwable t
       {:error (or (ex-message t) (str t))})))
 
+(defn parse-failure
+  "The response a line that is not one EDN map answers: a parse failure carrying
+   no id, because there is nothing to correlate it with."
+  [error]
+  (failed :parse (str "Failed to parse command: " error)))
+
+(defn handle-record
+  "RECORD — already parsed — served against STATE, with the request's `:id`
+   echoed when it carried one. The transport parses and this answers: a line
+   crossing a wire is parsed once, by whoever read it (`handle-line` for stdio,
+   the server for a socket, which must classify the record before serving it)."
+  [state record]
+  (correlated (handle-command state record) (:id record)))
+
 (defn handle-line
   "LINE served against STATE — one record out, whatever LINE was: the command's
    response, a parse failure, or a command answered with the `:id` it carried.
 
    STATE is `{:agents :sessions :scope :handle}`: the registry, the log, the app
-   scope, and the one handle this door serves. This mode's transport is stdio;
-   the server mode serves the same protocol over a socket, one state per
-   connection, which is why the engine answers a line given a state rather than
-   reading a stream."
+   scope, and the one handle this door serves."
   [state line]
   (let [{:keys [command error]} (parse-line line)]
     (if error
-      ;; a malformed record answers a parse response without an id: there is
-      ;; nothing to correlate it with
-      (failed :parse (str "Failed to parse command: " error))
-      (correlated (handle-command state command) (:id command)))))
+      (parse-failure error)
+      (handle-record state command))))
 
 (defn- serve-commands
   "Serve commands from IN until it closes. Only OUT writes: the reader here and

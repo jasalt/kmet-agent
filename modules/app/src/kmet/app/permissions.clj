@@ -96,6 +96,12 @@
   {:decision :deny
    :reason "no approval channel is mounted — this run cannot ask"})
 
+(def policies
+  "The policies a composition can name as data, beside the fn form: a profile or
+   a `--patch` layer is EDN, so mounting the gate means naming one of these."
+  {:allow-all allow-all
+   :ask-all (fn [_ctx _tool-call] :ask)})
+
 (defn- verdict
   "The keyword VERDICT of an answer, or nil when it is not one. A map answer
    carries `:decision`; anything else is a bug in the provider."
@@ -190,13 +196,32 @@
 
 ;; ── the rows ──────────────────────────────────────────────────────────────
 
+(defn- policy-fn
+  "NAMED as a policy fn: a fn is itself, a keyword names one of `policies`, and
+   anything else is a bad row — named now, not at the first tool call."
+  [named]
+  (if (fn? named)
+    named
+    (or (get policies named)
+        (throw (ex-info (str "unknown permission policy " (pr-str named)
+                             " — name one of " (pr-str (vec (keys policies)))
+                             ", or pass a fn")
+                        {:type :kmet.app/bad-service
+                         :service :permissions
+                         :policy named})))))
+
 (defn- serve-policy
   "The `:permissions` row: provide a policy (the row's `:config` may name a
    stricter one) into the mount site's scope, so siblings and child ctxs see it
-   while the entry stays this fiber's effect."
+   while the entry stays this fiber's effect.
+
+   A composition is data (`profiles.edn` and `--patch FILE` are EDN), so the
+   policy may also be **named**: `:allow-all` and `:ask-all` are the two a
+   profile can mount without code."
   [ctx config]
   (srce/provide! ctx :permissions
-                 (policy (or (:policy config) allow-all) (:remember! config))
+                 (policy (policy-fn (or (:policy config) :allow-all))
+                         (:remember! config))
                  {:in (:parent ctx)}))
 
 (defn- serve-approvals

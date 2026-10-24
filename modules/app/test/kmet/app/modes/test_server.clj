@@ -70,18 +70,19 @@
      :close! (fn [] (.close socket))}))
 
 (defn- start!
-  "Boot `--profile server` and return `{:port :records :stop!}`. The mode's stdin
-   is a loopback socket, so the test owns the supervisor signal: `:stop!` closes
-   it and answers the mode's exit code. `:records` are the mode's own: the
-   `:listening` announcement, since the protocol goes on the socket."
-  []
+  "Boot `--profile server` with ARGS and return `{:port :records :stop!}`. The
+   mode's stdin is a loopback socket, so the test owns the supervisor signal:
+   `:stop!` closes it and answers the mode's exit code. `:records` are the
+   mode's own: the `:listening` announcement, since the protocol goes on the
+   socket."
+  [& [args]]
   (let [signal (java.net.ServerSocket. 0)
         accepted (future (.accept signal))
         stdin-client (java.net.Socket. "127.0.0.1" (.getLocalPort signal))
         stdin-peer @accepted
         out (java.io.StringWriter.)
         result (future (binding [*in* (io/reader (.getInputStream stdin-peer))]
-                         (support/run-main-into ["--profile" "server"] out)))]
+                         (support/run-main-into (into ["--profile" "server"] args) out)))]
     (when-not (support/wait-until #(str/includes? (str out) ":listening"))
       (throw (ex-info "the server never announced a port" {:out (str out)})))
     (let [announced (some #(when (str/includes? % ":listening") (edn/read-string %))
@@ -94,22 +95,28 @@
        :result result})))
 
 (defn- with-server
-  "Run F with a served socket and the stubbed model. F gets `{:port :conn!
-   :stop!}`, and every connection it opened with `conn!` is closed on the way
-   out, even when F throws — a test never has to close what it opened, which is
-   also what keeps its body one nesting deep."
-  [f]
-  (with-mode-run
-    (replying (promise))
-    (fn []
-      (let [server (start!)
-            opened (atom [])
-            conn! (fn [] (let [c (connect (:port server))] (swap! opened conj c) c))]
-        (try
-          (f (assoc server :conn! conn!))
-          (finally
-            (doseq [c @opened] ((:close! c)))
-            ((:stop! server))))))))
+  "Run F with a served socket. F gets `{:port :conn! :stop!}`, and every
+   connection it opened with `conn!` is closed on the way out, even when F
+   throws — a test never has to close what it opened, which is also what keeps
+   its body one nesting deep.
+
+   OPTIONS override the two things a test may want different: `:send-message`
+   (the model stub — by default one that answers the prompt) and `:patch` (a
+   composition layer file, for a profile that mounts more than the built-in
+   rows)."
+  ([f] (with-server {} f))
+  ([{:keys [send-message patch]} f]
+   (with-mode-run
+     (or send-message (replying (promise)))
+     (fn []
+       (let [server (start! (cond-> [] patch (conj "--patch" patch)))
+             opened (atom [])
+             conn! (fn [] (let [c (connect (:port server))] (swap! opened conj c) c))]
+         (try
+           (f (assoc server :conn! conn!))
+           (finally
+             (doseq [c @opened] ((:close! c)))
+             ((:stop! server)))))))))
 
 (defn- ready
   "Wait until CONN's `:ready` record has arrived."
@@ -121,6 +128,38 @@
   "Has CONN received the response for request ID?"
   [conn id]
   (support/wait-until #(some? (first (filter (fn [r] (= id (:id r))) ((:records conn)))))))
+
+;; ── the gate: an approval answered by a client ────────────────────────
+
+(def ^:private ask-all-patch
+  "A composition layer that mounts the gate for this process: every tool call is
+   asked about. The *answer* is the server's business — its approvals row sends
+   the question to the client — so the layer only names the policy."
+  "target/test-server-ask-all.edn")
+
+(defn- ask-all!
+  "Write the gate's patch layer and answer its path."
+  []
+  (spit ask-all-patch
+        (pr-str {:patch [{:id :permissions
+                          :plugin 'kmet.app.permissions/permissions
+                          :config {:policy :ask-all}}]}))
+  ask-all-patch)
+
+(defn- tool-calling
+  "A `send-message` stub whose first call asks for a bash tool call and whose
+   second streams a closing answer, so an approved call runs and the run settles."
+  []
+  (let [n (atom 0)]
+    (fn [opts]
+      (future
+        (if (= 1 (swap! n inc))
+          (do (when-let [f (:on-tool-call opts)]
+                (f {:id "call-1" :name "bash" :arguments {:command "echo approved"}}))
+              (when-let [f (:on-done opts)] (f "tool_use")))
+          (do (when-let [f (:on-text opts)] (f "done"))
+              (when-let [f (:on-done opts)] (f "end_turn"))))
+        :done))))
 
 ;; ── tests ─────────────────────────────────────────────────────────────────
 
@@ -232,6 +271,33 @@
         "the mode row mounts and activates in a diagnostic boot")
     (is (not (str/includes? out ":listening"))
         "and nothing listened")))
+
+(deftest an-approval-is-answered-by-the-client
+  ;; The gate's third leg. The policy asks (`:ask-all`), the question travels the
+  ;; socket as a `:request`, the client answers `:allow`, and the call the
+  ;; question was about runs — its output, not a block reason, is what the wire
+  ;; reports back.
+  (with-server
+    {:send-message (tool-calling) :patch (ask-all!)}
+    (fn [{:keys [conn!]}]
+      (let [c (conn!)]
+        (ready c)
+        ((:send! c) {:type :prompt :id "p1" :message "run a tool"})
+        (is (answered? c "p1"))
+        (is (support/wait-until #(seq ((:of-type c) :request)) 20000)
+            "the policy asked, and the question reached the client")
+        (let [request (first ((:of-type c) :request))]
+          (is (= :ask (:method request)))
+          (is (= "bash" (:tool-name request)) "the question names the call")
+          (is (= ((:agent-id c)) (:agent-id request)) "and belongs to its agent")
+          ((:send! c) {:type :response :id (:id request) :data {:decision :allow}})
+          (is (support/wait-until #(seq ((:of-type c) :agent-settled)) 30000)
+              "an approved call runs and its run settles")
+          (let [end (first ((:of-type c) :tool-execution-end))]
+            (is (some? end) "the call reached its end")
+            (is (false? (:is-error end)) "approved, so it is not a block")
+            (is (str/includes? (pr-str (:result end)) "approved")
+                "and the result is the tool's own output")))))))
 
 (deftest a-port-that-is-not-a-number-is-a-usage-error
   (let [{:keys [code err]} (support/run-main ["--profile" "server" "--port" "abc"])]
