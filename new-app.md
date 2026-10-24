@@ -1774,6 +1774,19 @@ message's own docstring and the pi-alignment table still said
 still promised parser coverage it no longer had (the parser is tested where it
 lives now). Documentation that names a var is part of the var's move.
 
+**The fixture had to say what it actually does.** `with-extension-host` first
+claimed to *bind* the host for a test. A probe says otherwise: a fresh process has
+`host-binding` nil, and `(require 'kmet.test-utils)` is enough to make it non-nil
+— the binding is a load side effect of `kmet.agent.app-runtime`, reached
+transitively from `kmet.agent.skills`. So the fixture performs the load and the
+docstring says so: the dependency is declared instead of inherited, which is the
+part that survives `skills` moving down later. Mutation: drop the require from
+`test-user-message` and it is back to eleven errors when run alone.
+
+The same probe removed a fixture that was cargo: `test-tool-execution` renders
+tool components, not user messages, so it never consults the host and does not
+declare it. Three namespaces need the declaration; the fourth was imitating them.
+
 **Evidence.** `--app old --version` boots; rpc mode answers `:get-state` on
 `--app new`; `bb test` 4,195 / 24,686; `bb lint` (full tree, both views) 0
 errors, 0 warnings; `bb check` compiles; format clean. The `ui` module is 30

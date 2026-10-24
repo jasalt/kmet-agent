@@ -16,8 +16,6 @@
             [kmet.tui.protocols :as protocols]
             [kmet.tui.components.text :as text]))
 
-(t/use-fixtures :each tu/with-extension-host)
-
 (defn- strip-ansi [s]
   (utils/strip-ansi-codes s))
 

@@ -2,17 +2,13 @@
   "The `<skill>` text format a skill invocation is stored as — the reader.
 
    A `/skill:name args` command expands into a `<skill name=… location=…>`
-   wrapper around the skill's body, with any trailing arguments after it
-   (pi: agent-session _expandSkillCommand); the session stores that text, so
-   replay sees the wrapper rather than the command. Reading the wrapper back is
-   plain text work — no skill registry, no filesystem — which is why it lives
-   here, below every front end: the TUI renders an invocation as its own
-   message and re-parses the stored text, and it must not reach
-   `kmet.agent.skills` to do it (that namespace owns discovery, the registry
-   and the app root, and sits above the UI's module).
-
-   Its inverse, `expand-skill-command`, does need the registry and re-reads
-   the skill file, so it stays in `kmet.agent.skills`."
+   wrapper around the skill's body, trailing arguments after it (pi:
+   agent-session _expandSkillCommand); the session stores that text, so replay
+   sees the wrapper rather than the command. Reading it back is plain text work
+   — no registry, no filesystem — so it lives below every front end: the TUI
+   re-parses a stored invocation to render it as its own message, and must not
+   reach `kmet.agent.skills` (discovery, the registry and the app root) to do
+   it. Its inverse, `expand-skill-command`, does need those, and stays there."
   (:require [clojure.string :as str]))
 
 (defn parse

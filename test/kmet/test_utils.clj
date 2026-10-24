@@ -63,14 +63,16 @@
   (extensions/unregister-contributed-themes!))
 
 (defn with-extension-host
-  "clojure.test :each fixture: bind the kmet1 extension host for this test.
+  "clojure.test :each fixture: this namespace needs a bound extension host.
 
-   Loading `kmet.agent.app-runtime` binds it process-wide — that shim exists to
-   hand the host (`app` layer) the registry and ctx it may not require — and a
-   message render consults it for the markdown-transformers hook. A UI test
-   that renders messages must bind it rather than inherit it from whichever
-   namespace happened to load first: these namespaces used to pass alone or in
-   the suite depending on alphabetical order."
+   Rendering a message asks the host for the markdown-transformers hook, and
+   the host is unbound in a fresh process (`kmet/no-host-services`). Today the
+   binding arrives as a load side effect — `kmet.agent.app-runtime` binds it at
+   the top of the file, and kmet1's runtime namespaces reach it transitively —
+   so a test namespace that requires any of them passes and one that does not
+   fails. That is exactly the load-order luck this fixture names: the load is
+   performed here, so a namespace declares the dependency instead of inheriting
+   it from whichever require happened to come along."
   [f]
   (require 'kmet.agent.app-runtime)
   (f))
