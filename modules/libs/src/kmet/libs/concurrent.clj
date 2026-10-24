@@ -70,7 +70,7 @@
    a taker impossible to lose."
   [{:keys [items closed?] :as state}]
   (cond
-    (seq items) (assoc state :handed (peek items) :items (pop items))
+    (seq items) (assoc state :handed (first items) :items (subvec items 1))
     (true? closed?) (assoc state :handed closed)
     :else (update state :signal #(or % (promise)))))
 
@@ -84,10 +84,12 @@
    the owner a plain loop; an atom rather than a blocking Java collection keeps
    it usable on both hosts and in extension contexts.
 
-   The state is one atom — `:items` (a `PersistentQueue`), `:closed?`, a
-   `:signal` promise a waiting taker parks on, and the `:handed` slot a take holds
-   its value in for the length of one swap — so every take is a single deciding
-   swap. `close!` leaves buffered items readable and then answers
+   The state is one atom — `:items` (a vector), `:closed?`, a `:signal` promise a
+   waiting taker parks on, and the `:handed` slot a take holds its value in for the
+   length of one swap — so every take is a single deciding swap. A vector rather
+   than a `PersistentQueue` because extensions get this namespace through SCI, and
+   SCI resolves static *methods* but not static *fields*:
+   `clojure.lang.PersistentQueue/EMPTY` is `Unable to resolve symbol` there. `close!` leaves buffered items readable and then answers
    `closed`, so a consumer drains what it was sent before it learns why it
    stopped.
 
@@ -95,7 +97,7 @@
    out in the queue's own state for the duration of a swap, so two takers would
    race that slot. Two consumers need two queues."
   []
-  (atom {:items clojure.lang.PersistentQueue/EMPTY :closed? false :signal nil}))
+  (atom {:items [] :closed? false :signal nil}))
 
 (defn take!
   "The next value, blocking until one arrives; `closed` once the queue is closed

@@ -276,7 +276,7 @@
   (let [ascii? (boolean (re-matches ascii-only-re text))
         text (if ascii?
                text
-               (java.text.Normalizer/normalize text java.text.Normalizer$Form/NFKC))]
+               (java.text.Normalizer/normalize text (java.text.Normalizer$Form/valueOf "NFKC")))]
     (-> text
         (as-> s (->> (str/split-lines s)
                      ;; str/trimr, not a per-line (str/replace line #"\s+$" ""):

@@ -110,7 +110,7 @@
         query (or (.getQuery uri) "")
         amz-date (or amz-date
                      (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss'Z'")
-                              (java.time.ZonedDateTime/now java.time.ZoneOffset/UTC)))
+                              (java.time.ZonedDateTime/now (java.time.ZoneOffset/ofTotalSeconds 0))))
         date-stamp (subs amz-date 0 8)
         hashed-payload (or payload-hash (sha256-hex ""))
         all-headers (merge {"host" host

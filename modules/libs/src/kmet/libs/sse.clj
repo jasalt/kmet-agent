@@ -94,7 +94,7 @@
              ;; quiet.
              (let [deadline (+ (concurrent/monotonic-ms) idle-ms)]
                (loop []
-                 (let [v (.poll q 100 java.util.concurrent.TimeUnit/MILLISECONDS)]
+                 (let [v (.poll q 100 (java.util.concurrent.TimeUnit/valueOf "MILLISECONDS"))]
                    (cond
                      (instance? Exception v) v
                      (nil? v) (cond

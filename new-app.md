@@ -1738,8 +1738,33 @@ successful take. That is a double delivery, the worst thing a queue can do, and 
 now fails by name.
 
 `jolt -e` runs the same sequence on the native host (`[:a :b ::closed]`). Full
-gates green: `bb test` 4,203 / 25,191 at the landing; 4,204 / 25,194 after the
-review's test.
+gates green: `bb test` 4,203 / 25,191 at the landing; 4,206 / 25,228 after the
+review's fixes and guards.
+
+**Review found the queue was not extension-safe, and three older libs were not
+either.** `kmet.libs.concurrent` is whitelisted into the extension SCI context —
+"every lib is self-contained, so the whole prefix is whitelisted" — and the queue
+named `clojure.lang.PersistentQueue/EMPTY`. SCI resolves static **methods** but has
+no static-**field** access, so that symbol is `Unable to resolve symbol` in *every*
+extension context, with or without `:classes {:allow :all}`, and `add-class!` does
+not help. The host ran fine; the copy inside the sandbox threw. The queue holds its
+items in a vector now (`conj`/`first`/`subvec`), which needs no host class at all.
+
+Scanning the tree for the same shape found three pre-existing instances:
+`TimeUnit/MILLISECONDS` in `kmet.libs.sse`, `Normalizer$Form/NFKC` in
+`kmet.libs.edit-diff`, `ZoneOffset/UTC` in `kmet.libs.aws-sigv4`. All three are
+static methods now (`(TimeUnit/valueOf "MILLISECONDS")`,
+`(Normalizer$Form/valueOf "NFKC")`, `(ZoneOffset/ofTotalSeconds 0)`) — verified to
+evaluate in SCI once the class is registered, which is what the extension loader's
+retry does.
+
+Two guards, because a source rule and an executable rule catch different things:
+`libs-name-no-static-fields` (read with rewrite-clj, so a mention in a docstring,
+string or comment is prose and does not count — that distinction is the reason it is
+a reader and not a regex) and `the-queue-runs-inside-a-sandbox`, which hands the
+namespace's public vars to a bare `sci/init` and runs put/take/close inside it. Both
+mutation-checked: a static field planted in `sse.clj`, and the queue put back on
+`PersistentQueue`, each fail by name.
 
 **What is left in landing 6**, in the order the row implies: `mode-server` as rpc
 over a socket with one agent per connection (`:agents`'s `create!`/`dispose!` carry
