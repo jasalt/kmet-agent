@@ -4,48 +4,19 @@
    exit code — the first mode that drives agents instead of an engine.
 
    The model is stubbed and the session log is redirected under target/: an
-   entry-point test must not write to the agent dir a developer's kmet reads."
+   entry-point test must not write to the agent dir a developer's kmet reads.
+   Those are `kmet.app.test-support`'s (`with-mode-run`, `answering`), shared
+   with the other mode tests."
   (:require [babashka.fs :as fs]
             [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
-            [kmet.agent.config :as cfg]
-            [kmet.ai.llm :as llm]
             [kmet.agent.extensions.core :as extensions]
             [kmet.ai.models :as models]
-            [kmet.app.test-support :as support]))
-
-(def ^:private sessions-dir "target/test-print-mode")
-
-(defn- settings
-  "What the driver loads for a run: a provider and model that resolve, and the
-   session log under target/ so a test never writes to the agent dir a
-   developer's kmet reads."
-  []
-  {:session-dir sessions-dir
-   :provider :opencode-go
-   :model "deepseek-v4-flash"})
-
-(defn- with-mode-run
-  "Run F with the model stubbed by SEND-MESSAGE (a `send-message` stub) and the
-   settings above."
-  [send-message f]
-  (fs/create-dirs sessions-dir)
-  (try
-    (with-redefs [cfg/load-config (fn [& _] (settings))
-                  cfg/get-api-key (fn [_] "test-key")
-                  llm/send-message send-message]
-      (f))
-    (finally (fs/delete-tree sessions-dir))))
-
-(defn- answering
-  "A `send-message` stub that streams TEXT and stops."
-  [text]
-  (fn [opts]
-    (future
-      (when-let [on-text (:on-text opts)] (on-text text))
-      (when-let [on-done (:on-done opts)] (on-done :stop))
-      :done)))
+            [kmet.app.test-support :as support :refer [answering
+                                                       sessions-dir
+                                                       with-mode-run
+                                                       with-model-catalog]]))
 
 (deftest print-mode-runs-a-prompt-and-exits-zero
   (with-mode-run
@@ -115,15 +86,6 @@
             "the settle follows the message that ended, so a consumer can stop")
         (is (not (str/includes? out "hello from the model\nhello from the model"))
             "the text is not printed twice: edn mode prints events, not the answer")))))
-
-(defn- with-model-catalog
-  "The catalog a `--model` pattern resolves against: one reasoning model."
-  [f]
-  (with-redefs [models/get-provider (fn [p] {:id p})
-                models/get-models (fn [& _] [{:provider :opencode-go
-                                              :id "deepseek-v4-flash"
-                                              :reasoning true}])]
-    (f)))
 
 (deftest a-model-override-reaches-the-run
   ;; `--model` is kmet1's pattern — provider/model[:thinking], the provider

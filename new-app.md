@@ -865,7 +865,7 @@ Each is independently shippable and gated.
 | 4d | **landed** — **Inspection from the tree**: `kmet.app.inspect/units` renders a ctx's subtree, `--dump-state` boots the composition and renders the root's, `/units` re-points at the invocation ctx's subtree, and both halves of the old listing (the store's owner walk and the per-registry `keys=[…]` lines) are deleted. One kernel addition came with it: `srce/detach!`, the lifetime a plain child ctx (`extend`/`isolate`) had no way to end — the tree listed a line per ctx ever extended, so `test_tool_policy` released its agent ctxs and 4c-iii-b gets the release an agent ctx needs | `--dump-state` and `/units` show a `:pending` fiber with its `waiting-for` and a `:failed` one with its error, and a disposed or detached ctx leaves no line; `kmet.app.test-inspect` (10 tests) plus two rewritten `/units` tests replace the five listing tests |
 | 4e | **landed** — **Retire the store**: `kmet.libs.scope` (288 lines, with its two test namespaces), `kmet.agent.registry-store`, `app_runtime`'s `node`/`app-node`/`*error-reporter*` plumbing, the `cli.clj` force that only existed for it, and the loader whitelist entry are gone. Nothing still read it: 4b-ii-a took the host's nine sites, the Engine's two, 4d the `owner-listing` walk, and `registry_store` was its own last reader. `scope.md` went with the code in the same change: its surviving rules moved to the homes that implement them | `grep` finds no `(scope/` under `kmet.agent.*`, no `kmet.libs.scope` or `registry-store` require; `bb test` green; `kmet --app old` loads with no store in the process. 613 lines deleted, no source added |
 | 4f | **landed** — **The tool layer into `app`**, in five shippable steps: `tools/bash-output`, `tools/bash-executor`, the seven tool bodies (`tool`, `bash`, `edit`, `write`, `read`, `invoke`, `run-code`), `kmet.agent.config`, then `tools/registry` + `tools/config` + `tools/core`. The tool layer now lives in `app` with its namespaces kept — the one exception is kmet1's arity-less façade, which the review moved back to `agent`; `app` declares the SCI backend the sandbox mints contexts with. The one behavioral change: the registry took its handle as a first parameter, so no app namespace requires a rank-4 one, and kmet1's convenience arities moved to a rank-4 façade (`kmet.agent.tools.core`) that supplies `(app-runtime/registry)`. The run_code record is built per registry, so its sandbox seams close over the caller's handle | `kmet.test-module-deps` green after every step (both directions, plus the library view); `bb test` green; `kmet --app old --version`/`--list-models` load; `kmet.agent.tools.registry` has no arity that resolves a handle it was not given |
-| 5 | **Two increments have landed — print mode as a row (§ "Landing 5a") and kmet1's one-shot flags + the edn wire (§ "Landing 5b")**, and neither could be written before 7b-i: it is the first client of the `:agents` factory rather than the Engine, but its stream *and* its exit result are `:agent-settled` — kmet1's print mode is a `runtime/subscribe!` consumer, and kmet2 has no Engine to subscribe to. Then `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; the rest of the modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print landed and at kmet1 parity for the one-shot flags it had (`-p`, `--mode text|edn`, `--model`, `--provider`: streams or prints the wire, writes its session log, exits 0); rpc/tui parity via `scripts/capture/` and the tk provider on bb and Jolt still to come |
+| 5 | **Four increments have landed — print mode as a row (§ "Landing 5a"), kmet1's one-shot flags + the edn wire (§ "Landing 5b"), the run's front-end surface (§ "Landing 5c") and rpc mode serving the protocol (§ "Landing 5d")**, and neither could be written before 7b-i: it is the first client of the `:agents` factory rather than the Engine, but its stream *and* its exit result are `:agent-settled` — kmet1's print mode is a `runtime/subscribe!` consumer, and kmet2 has no Engine to subscribe to. Then `:ui` service (required/optional capabilities, widget set) + `ui-headless` + `ui-terminal`; the rest of the modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print landed and at kmet1 parity for the one-shot flags it had (`-p`, `--mode text|edn`, `--model`, `--provider`: streams or prints the wire, writes its session log, exits 0); rpc/tui parity via `scripts/capture/` and the tk provider on bb and Jolt still to come |
 | 6 | `:agents` **landed as a registry at 4c-iii-b** — landing 6 gives it agents a driver created — + `mode-server` (rpc = one-agent server); `:agent-id` and the request/response pair on the wire; approvals end to end; the **queue primitive** in `kmet.libs.concurrent` for the socket reader | two agents concurrently, one stalling client, an approval answered by a client |
 | 7a | loop re-hosted as a driver plugin (`:agentLoop`), registering the `:agents` factory; the `:systemPrompt` row with its first reader | two agents created through `create!` each run a turn and settle once; `--dump-state` shows the driver active | **landed**: the stage map, the leaves and the whole cluster are `app`'s (names kept), 7a-ii made the resource load and input expansion the caller's, the `:systemPrompt` row reads over `:skills`, and `:agent-loop` registers the `:agents` factory with a runnable handle; the composition-level gate is met too — `:extensions` binds the host, and a composed agent runs a turn (`kmet.app.test-composition-run`); the Engine's `commands` dispatch and its wrapper fallback are the two named residuals; see § "Landing 7a" |
 | 7b-i | **landed** — **The events contract — the head of landing 5, not its tail**: the loop dispatches on the kernel from the run's own ctx, so `:agent-settled` is an event a front end subscribes to at the app's scope, while kmet1's process table keeps hearing the same events (the extension ABI registers there; kmet1 boots the composition, so a run cannot tell the two apps apart — only the listeners differ). A boundary threads **one** decision through both: the kernel's accumulated map seeds the table's chain. The composition test no longer listens on kmet1's table | a composed turn settles on the app's bus, and `kmet.app.test-composition-run` subscribes without kmet1's table — **met**; see § "Landing 7b-i settled" |
@@ -1496,6 +1496,74 @@ nothing, and the first real provider is the TUI at the end of this landing. A ro
 written now would be a contract designed against a stub, which is the rule the
 `:systemPrompt` row already followed — the row lands with `ui-terminal`, and the
 surface a run binds today is the seam that row will plug into.
+
+### Landing 5d — rpc mode serves the protocol
+
+`:mode-rpc` is the second mode row and the first that is not headless. It boots
+the same thirteen rows and then serves kmet1's protocol: an EDN command per
+line on stdin, a record per line on stdout, and the run's events as the same
+`wire-event` projection edn print mode carries. One agent per mode, created
+before the first command and disposed when stdin closes.
+
+**A prompt is accepted, not completed.** `{:disposition :started}` says the run
+began; the answer arrives as `:message-update` deltas and the run ends at
+`:agent-settled`. A prompt that arrives while a run is live must name
+`:streaming-behavior` (`:steer` / `:follow-up`) — pi errors without one, because
+the two queue targets mean different things and guessing would drop the message
+or deliver it at the wrong boundary.
+
+**The command set is what kmet2's services answer**, and nothing more: prompt,
+steer, follow-up, abort, get-state, get-entries, get-available-models. Every
+other command in kmet1's table answers a *named refusal* naming the landing that
+fills it — `set-model` and the session lifecycle are landing 6's per-agent
+surface and branch-aware log, `compact` is landing 7's seam, `respond` is
+landing 6's `:request`/`:response` pair. A silent success would be a wrong
+answer; `"Unknown command"` would read as a typo.
+
+**The surface is a front end's, not headless.** The run binds `:mode :rpc`,
+`has-ui true` and a port whose fire-and-forget channels travel the protocol
+(`:notify`, `:set-status`, `:set-widget`, `:set-title`, `:chat-info`,
+`:set-editor-text`/`:paste-to-editor`; widget content crosses only as string
+lines). Dialogs stay the headless default: this mode has one agent and no
+correlation for a pending question, and a bridged dialog nobody could answer
+would be worse than the degraded answer kmet1's noOp port gives.
+
+**An abort answers a read, not a wait.** The handle's cancel drops its run flag
+on the calling thread, so the response says `{:idle true}` by the time the cancel
+returns, and a front end whose cancel is only a request would answer
+`{:idle false}` and let the client wait for the settle. kmet1 polls its engine
+for the same flag plus a compaction it knows about; kmet2's handle has neither at
+stake, and a wait here would occupy the reader thread — the one thread an abort
+must not take.
+
+**`--prompt true` is a row key, not a profile fact.** Print mode's input is the
+command line's remaining arguments, so an empty one is a usage error *before
+anything boots*; rpc mode has no such input, and a bare `--profile rpc` is legal
+(it waits on stdin). The row says which it is, and `mode-input` omits a prompt
+the invocation did not give rather than passing an empty string.
+
+**Shared, not copied.** `kmet.app.events/on-every` is the one-subscription
+"every declared event" (print's edn stream and rpc's stream are the same
+subscription), and `kmet.app.modes.out` is the modes' output discipline — one
+locked record per line on an explicit stream, one stderr line for the mode's own
+failure. Print mode lost its third copy of both. The mode-test harness
+(`with-mode-run`, `answering`, the session dir, `run-main-into`, `wait-until`)
+moved to `kmet.app.test-support`, because print and rpc tests are the same boot
+with a different mode.
+
+**Testing a mode whose stdin ends its process.** Closing stdin ends the mode, and
+a mode that ends with a run live cancels it — kmet1's rule, and right for a
+client that left. A test that only wanted to read the answer therefore cannot use
+`with-in-str`: it owns a loopback socket, keeps the mode's stdin open until the
+wire shows `:agent-settled`, then closes it. Verified by running the real
+command: `printf '{:type :get-state…}' | kmet --app new --profile rpc` answers
+the live state, the loaded catalog (41 models) and a named refusal for an unknown
+command.
+
+Inherited, not fixed: a model record crosses the wire as the tagged literal
+`#kmet.ai.models.Model{…}` (kmet1 prints the same), and a clean shutdown emits
+`{:type :queue-update :reason :aborted}` because the handle's dispose cancels
+unconditionally (kmet1's dispose does too).
 
 **Found by running it: kmet2's process entry never loaded the model catalog.**
 `kmet --app new -p "who are you"` answered `Error: Unknown provider:

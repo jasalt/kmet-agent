@@ -15,11 +15,17 @@
      {:id :permissions :remove true}                   ; drop the row
      {:id :tool/ls :plugin … :after :tool/read}         ; insert (unknown id)
 
-   One row key is not composition data: `:mode true` marks the row
-   `kmet.app.core` runs as the profile's mode, handing it the command line
-   (`new-app.md` § Landing 5a). It travels with the row rather than with the
-   profile so a patch that *replaces* the mode's plugin — an extension's own
-   print mode — replaces what runs and not that it runs.
+   Two row keys are not composition data:
+
+   - `:mode true` marks the row `kmet.app.core` runs as the profile's mode,
+     handing it the command line (`new-app.md` § Landing 5a). It travels with
+     the row rather than with the profile so a patch that *replaces* the mode's
+     plugin — an extension's own print mode — replaces what runs and not that it
+     runs.
+   - `:prompt true` says the mode takes the command line's remaining arguments
+     as its input, so an empty one is a usage error before anything boots
+     (print mode). A mode that reads nothing from the command line — rpc, a
+     server — omits it, and a bare invocation of that profile is legal.
 
    Config *values* deep-merge; composition does not — a bundle's rows are
    appended as they are, and later layers patch by id. A patch that names an

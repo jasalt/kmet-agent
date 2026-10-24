@@ -79,6 +79,17 @@
      (srce/log! ctx :warn "event-bus: unknown event type" type))
    (srce/on ctx type {:data owner} f)))
 
+(defn on-every
+  "Register F for every event the vocabulary declares, as one subscription:
+   F sees each event with its `:type`. Returns the disposer for the lot — a
+   consumer that wants the whole stream (a mode writing the wire) subscribes
+   once, not once per name."
+  [ctx f]
+  (let [disposers (mapv (fn [event] (on! ctx (:name event) f)) (declared-events))]
+    (fn []
+      (doseq [dispose disposers] (dispose))
+      nil)))
+
 (defn once!
   "Register F for TYPE's next emit on CTX; disposed before F runs."
   ([ctx type f] (once! ctx type nil f))

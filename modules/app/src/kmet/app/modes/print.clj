@@ -32,6 +32,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
             [kmet.app.events :as events]
+            [kmet.app.modes.out :as out]
             [kmet.srce.core :as srce]))
 
 (defn- text-delta
@@ -42,14 +43,6 @@
     (when (= :text (:type delta))
       (:content delta))))
 
-(defn- report!
-  "One line on stderr: the mode's only error output, while the exit code
-   carries the verdict (pi's runPrintMode prints the same way)."
-  [message]
-  (binding [*out* *err*]
-    (println "Error:" message)
-    (flush)))
-
 (defn- exit-code
   "The run's verdict: 0 for a completed prompt, 1 for anything else. A shutdown
    (`:disposed`) is not a failure to report — the process is going away — but it
@@ -59,11 +52,11 @@
   (if (= :completed outcome)
     0
     (do (when (and (= :text format) (not= :disposed outcome))
-          (report! (or error
-                       (case outcome
-                         :aborted "Request aborted"
-                         :error "Request failed"
-                         "Request ended without an outcome"))))
+          (out/error! (or error
+                          (case outcome
+                            :aborted "Request aborted"
+                            :error "Request failed"
+                            "Request ended without an outcome"))))
         1)))
 
 (defn- run-prompt!
@@ -88,7 +81,7 @@
         (finally
           ((:dispose! agents) handle))))
     (catch Throwable t
-      (report! (or (ex-message t) (str t)))
+      (out/error! (or (ex-message t) (str t)))
       1)))
 
 (defn- dispose-all
@@ -104,14 +97,12 @@
    `:disposed`."
   [scope format settled error]
   (if (= :edn format)
-    (let [print-event (fn [event]
-                        (prn (event-bus/wire-event event))
-                        (flush)
+    (let [out *out*
+          print-event (fn [event]
+                        (out/record! out (event-bus/wire-event event))
                         (when (= :agent-settled (:type event))
                           (deliver settled event)))]
-      (dispose-all (mapv (fn [event]
-                           (events/on! scope (:name event) print-event))
-                         (events/declared-events))))
+      (events/on-every scope print-event))
     (dispose-all
      [(events/on! scope :message-update
                   (fn [event]

@@ -62,12 +62,16 @@
   ;; entry point hands the invocation's input to (the prompt, where to report).
   :print
   {:bundles [[:bundle/minimal {}]]
-   :rows [{:id :mode-print :plugin kmet.app.modes.print/plugin :mode true}]
+   :rows [{:id :mode-print :plugin kmet.app.modes.print/plugin
+          :mode true :prompt true}]
    :patch []}
 
+  ;; rpc is the same rows with a mode that serves a protocol instead of a
+  ;; prompt: one agent, its events as the wire projection, commands on stdin.
+  ;; No :prompt — a bare `--profile rpc` is legal and waits on stdin.
   :rpc
   {:bundles [[:bundle/minimal {}]]
-   :rows []
+   :rows [{:id :mode-rpc :plugin kmet.app.modes.rpc/plugin :mode true}]
    :patch []}
 
   :server

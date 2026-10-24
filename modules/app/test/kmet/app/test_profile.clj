@@ -166,8 +166,11 @@
             {:id :agents :plugin 'kmet.app.agents/plugin}
             {:id :agent-loop :plugin 'kmet.app.loop.driver/plugin}
             {:id :approvals :plugin 'kmet.app.permissions/approvals}]
-           (:rows (profile/compose (profile/layers table :rpc))))
-        "the bundle carries the rows the landed plugins add, for every profile")))
+           (:rows (profile/compose (profile/layers table :tui))))
+        "the bundle carries the rows the landed plugins add, for every profile")
+    (is (= {:id :mode-rpc :plugin 'kmet.app.modes.rpc/plugin :mode true}
+           (last (:rows (profile/compose (profile/layers table :rpc)))))
+        "and a profile with a mode row carries it last, marked :mode")))
 
 (deftest render-prints-the-composition
   (let [text (profile/render :tui

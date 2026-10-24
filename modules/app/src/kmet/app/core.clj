@@ -268,9 +268,10 @@
    absent (`select-keys`), so a mode sees what was asked for rather than a map of
    every option it could have been told."
   [opts prompt on-result]
-  (assoc (select-keys opts [:format :model :provider])
-         :prompt prompt
-         :on-result on-result))
+  (cond-> (assoc (select-keys opts [:format :model :provider])
+                 :on-result on-result)
+    ;; a profile with no prompt to give hands the mode no prompt at all
+    (not (str/blank? prompt)) (assoc :prompt prompt)))
 
 (defn- run-mode
   "Boot COMPOSED and drive MODE, the row `mode-row` found: give it the
@@ -287,9 +288,13 @@
       (finally
         (runtime/shutdown! booted)))))
 
-(defn- no-prompt []
+(defn- no-prompt
+  "The usage error of a mode that takes the command line as its input
+   (`:prompt true` on its row) and was given none: named before anything boots."
+  [profile]
   (binding [*out* *err*]
-    (println "No message provided. Usage: kmet --app new --profile print \"your message\"")
+    (println (str "No message provided. Usage: kmet --app new --profile "
+                  (name profile) " \"your message\""))
     (flush))
   1)
 
@@ -313,8 +318,8 @@
   (let [composed (compose-config opts)]
     (if-let [mode (mode-row (:rows composed))]
       (let [prompt (str/join " " args)]
-        (if (str/blank? prompt)
-          (no-prompt)
+        (if (and (:prompt mode) (str/blank? prompt))
+          (no-prompt (:profile opts))
           (run-mode composed mode opts prompt)))
       (boot-and-report composed args))))
 
