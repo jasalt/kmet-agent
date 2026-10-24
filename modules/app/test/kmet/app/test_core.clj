@@ -7,8 +7,41 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [kmet.agent.version :as version]
+            [kmet.ai.models :as models]
             [kmet.app.core :as core]
             [kmet.app.test-support :as support]))
+
+(deftest the-process-entry-loads-the-model-catalog
+  ;; A run resolves its provider and model against kmet.ai.models' registry —
+  ;; process-wide state that starts empty, so a process that never loads it
+  ;; answers "Unknown provider" for every provider. Loading is the entry point's
+  ;; work, in kmet1's order: the committed catalogs, then models.edn's layer.
+  (let [calls (atom [])
+        stub (fn [k] (fn [] (swap! calls conj k)))]
+    (with-redefs [models/load-catalogs! (stub :catalogs)
+                  models/load-models-config! (stub :config)
+                  models/get-model-config-error (fn [] nil)]
+      (core/load-catalog!)
+      (is (= [:catalogs :config] @calls) "built-ins first, the user layer over them")))
+
+  ;; models.edn is the user's file: a broken one keeps the built-ins and says
+  ;; what is wrong on stderr, rather than failing the process
+  (let [err (java.io.StringWriter.)]
+    (with-redefs [models/load-catalogs! (fn [])
+                  models/load-models-config! (fn [])
+                  models/get-model-config-error (fn [] "bad models.edn")]
+      (binding [*err* err]
+        (core/load-catalog!)))
+    (is (str/includes? (str err) "Warning: models.edn: bad models.edn"))))
+
+(deftest a-process-start-loads-the-catalog-before-it-runs
+  ;; The order is the point: a run may name `--model commandcode/…` in its
+  ;; first argument, and the catalog has to be there when it does.
+  (let [calls (atom [])]
+    (with-redefs [core/load-catalog! #(swap! calls conj :catalog)
+                  core/main (fn [args] (swap! calls conj args) 7)]
+      (is (= 7 (core/run-process ["-p" "hi"])) "the exit code is main's")
+      (is (= [:catalog ["-p" "hi"]] @calls) "the catalog loads first"))))
 
 (def sample-plugin
   "A var-addressable plugin map — the shape a `defplugin` var holds."

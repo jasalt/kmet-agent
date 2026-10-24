@@ -23,6 +23,7 @@
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [kmet.agent.version :as version]
+            [kmet.ai.models :as models]
             [kmet.app.catalog :as catalog]
             [kmet.app.inspect :as inspect]
             [kmet.app.profile :as profile]
@@ -342,7 +343,31 @@
 
         :else (throw e)))))
 
+(defn load-catalog!
+  "The provider/model registry every run resolves against: the committed
+   catalogs, then models.edn's user layer (custom providers and overrides).
+
+   It is process-wide state in `kmet.ai.models`, and it starts empty, so a
+   process that never loads it answers `Unknown provider: …` for every provider
+   — kmet1 loads it at the top of its entry point and kmet2's process entry does
+   the same. A models.edn problem is a warning rather than a failure: the
+   built-in catalogs still work."
+  []
+  (models/load-catalogs!)
+  (models/load-models-config!)
+  (when-let [err (models/get-model-config-error)]
+    (binding [*out* *err*]
+      (println "Warning: models.edn:" err))))
+
+(defn run-process
+  "What a process start does before it exits: load the catalog the run resolves
+   against, then run ARGS. `-main` is this plus the exit code, so a test can read
+   the order without forking."
+  [args]
+  (load-catalog!)
+  (main args))
+
 (defn -main
   "Process entry: kmet.app.core through the bootstrap's `--app new`."
   [& args]
-  (System/exit (main args)))
+  (System/exit (run-process args)))

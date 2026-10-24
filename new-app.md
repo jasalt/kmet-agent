@@ -1447,6 +1447,20 @@ its print mode before prompting and kmet2's modes have not taken over. Sending
 `@tasks.md` as the prompt would be a wrong answer; the refusal names
 `--app old -p @tasks.md`, where it still reads files.
 
+**Found by running it: kmet2's process entry never loaded the model catalog.**
+`kmet --app new -p "who are you"` answered `Error: Unknown provider:
+commandcode` — for a settings file that works under `--app old`. `kmet.ai.models`'
+registry starts empty, and kmet1 loads it at the top of its own `-main`
+(`load-catalogs!` then `load-models-config!`); kmet2's entry loaded neither, so
+*every* provider was unknown and the failure looked like a bad settings file. The
+tests could not have caught it: every one of them stubs the LLM, and a stub never
+asks the catalog whether the provider exists. `run-process` is the fix — catalog,
+then `main`, with `-main` adding the exit code so the order is testable without
+forking — and the load is the entry point's rather than a row's for the same
+reason it is kmet1's: the registry is process-wide state in `ai`, not a service
+in a ctx. kmet1's other process load, `load-image-catalogs!`, has no kmet2 reader
+yet — no image row — and moves with one.
+
 Two review notes. The mode's listeners are scoped to the **app**, not to its
 agent, because print mode holds exactly one: a second concurrent agent in the
 same process would settle this mode's promise. That is exact today (`--profile
