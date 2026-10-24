@@ -97,6 +97,11 @@
   []
   @registry-handle)
 
+;; Readers with no ctx in hand (commands, prompts, skills) ask
+;; `kmet.agent.registry/current`; this shim is the owner that answers, so the
+;; publishing happens here, where the tags->service table lives.
+(reg/publish-process-handle! (registry))
+
 ;; The extension host lives in `app` and may not require this shim, so this is
 ;; where the process hands it its handles: the registry above, the ctx below,
 ;; and the resource registries it would otherwise have to name. The thunk is

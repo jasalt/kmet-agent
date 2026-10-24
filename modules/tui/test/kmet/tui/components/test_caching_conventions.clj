@@ -62,12 +62,11 @@
 
 (def ^:private component-dirs
   "Every tree that defines a render-bearing component: the framework's own
-   components, the app UI's (kmet.ui.* since landing 5 moved them, with the
-   ones still to move in kmet.agent.ui.tui) and the Tk skeleton's."
+   components, the app UI's (the `ui` module's two subtrees — landing 5i moved
+   the last one out of `agent`) and the Tk skeleton's."
   ["modules/tui/src/kmet/tui/components"
    "modules/ui/src/kmet/ui/tui"
    "modules/ui/src/kmet/agent/ui/tui"
-   "modules/agent/src/kmet/agent/ui/tui"
    "modules/tk/src/kmet/gui_sample"])
 
 ;; ─── Top-level form splitting (paren-balanced, strings/comments skipped) ──

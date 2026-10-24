@@ -16,7 +16,6 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.registry :as registry]
             [kmet.libs.yaml :as yaml]))
 
@@ -30,13 +29,13 @@
   "The effective prompt templates in registration order (a re-registration of
    a name moves the template to the end), one per name."
   []
-  (mapv second (registry/effective-entries (app-runtime/registry) :kmet/prompt)))
+  (mapv second (registry/effective-entries (registry/current) :kmet/prompt)))
 
 (defn- prompt-template-for
   "The template named NAME, or nil (see `kmet.agent.registry/entry` for the
    owner rule)."
   [name]
-  (registry/entry (app-runtime/registry) :kmet/prompt name))
+  (registry/entry (registry/current) :kmet/prompt name))
 
 ;; ─── Argument parsing (pi: parseCommandArgs) ──────────────────────────────
 
@@ -198,7 +197,7 @@
   (if-let [t (make-template-from-content content name
                                          (or location (str (or extension "prompt")))
                                          extension)]
-    (registry/register! (app-runtime/registry)
+    (registry/register! (registry/current)
                         :kmet/prompt (:name t) t (or owner prompts-owner))
     (fn [] nil)))
 
@@ -238,7 +237,7 @@
      (let [ts @loaded
            owner (or owner prompts-owner)]
        (doseq [t ts]
-         (registry/register! (app-runtime/registry)
+         (registry/register! (registry/current)
                              :kmet/prompt (:name t) t owner))
        ts))))
 
@@ -258,7 +257,7 @@
   "Remove every loaded prompt template (pi: resourceLoader.reload re-discovers
    from scratch). Used by /reload."
   []
-  (registry/clear! (app-runtime/registry) :kmet/prompt))
+  (registry/clear! (registry/current) :kmet/prompt))
 
 (defn get-prompt-template
   [name]

@@ -83,13 +83,12 @@
   (source-files-under "modules/agent/src/kmet/agent/modes"))
 
 (def ^:private ui-roots
-  "Where the app-UI layer's files are. Landings 5e-5h moved it into the `ui`
-   module under `kmet.ui.*`; one file kept its `kmet.agent.ui.*` name because
-   shipped extensions require it by that name (so the module has two UI subtrees),
-   and `resource_config` is the last file still in `agent`, waiting on its
-   package lookup."
-  ["modules/agent/src/kmet/agent/ui"
-   "modules/ui/src/kmet/ui"
+  "Where the app-UI layer's files are: the `ui` module, in two subtrees — the
+   files that moved under `kmet.ui.*`, and the one that kept its
+   `kmet.agent.ui.*` name because shipped extensions require it by that name.
+   `agent` holds no UI tree since landing 5i moved `resource_config`, its last
+   file."
+  ["modules/ui/src/kmet/ui"
    "modules/ui/src/kmet/agent/ui"])
 
 (defn- ui-source-files

@@ -22,7 +22,6 @@
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.agent.debug :as debug]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.registry :as registry]
             [kmet.agent.tools.read :as read]
             [kmet.agent.system-prompt :as system-prompt]
@@ -44,13 +43,13 @@
 (defn- registered-skills
   "The tree's skills, in registration order."
   []
-  (mapv second (registry/entries (app-runtime/registry) :kmet/skill)))
+  (mapv second (registry/entries (registry/current) :kmet/skill)))
 
 (defn- skill-for
   "The skill named NAME, or nil (see `kmet.agent.registry/entry` for the
    owner rule)."
   [name]
-  (registry/entry (app-runtime/registry) :kmet/skill name))
+  (registry/entry (registry/current) :kmet/skill name))
 
 ;; ─── Validation (pi: validateName / validateDescription) ──────────────────
 
@@ -121,7 +120,7 @@
    its own tree).
    Returns the registration's deregister fn."
   [name description]
-  (registry/register! (app-runtime/registry)
+  (registry/register! (registry/current)
                       :kmet/skill name
                       {:name name
                        :description description
@@ -197,10 +196,10 @@
    registered — f removes exactly this registration — else {:collision
    diagnostic}."
   [owner skill location]
-  (let [by-owner (registry/by-owner (app-runtime/registry) :kmet/skill (:name skill))]
+  (let [by-owner (registry/by-owner (registry/current) :kmet/skill (:name skill))]
     (if (and (seq by-owner) (not (contains? by-owner owner)))
       {:collision (skill-collision skill location)}
-      {:deregister (registry/register! (app-runtime/registry)
+      {:deregister (registry/register! (registry/current)
                                        :kmet/skill (:name skill) skill owner)})))
 
 (defn- add-skill-results!
@@ -231,7 +230,7 @@
   "Remove every loaded skill from NODE (pi: resourceLoader.reload
    re-discovers from scratch). Used by /reload."
   []
-  (registry/clear! (app-runtime/registry) :kmet/skill))
+  (registry/clear! (registry/current) :kmet/skill))
 
 (defn discover-skill-files
   "Discover skill files under DIR using pi's discovery rules (a dir
@@ -398,5 +397,5 @@
                  (assoc opts
                         :tools (or tools
                                    (vals (tools-registry/get-all-tools
-                                          (app-runtime/registry))))
+                                          (registry/current))))
                         :skills (or skills (registered-skills))))))

@@ -22,7 +22,6 @@
    rather than reset by hand. The extension ABI registers
    under its own owner path, so unload disposes what an extension added."
   (:require [clojure.string :as str]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.registry :as registry]))
 
 (def commands-owner
@@ -34,14 +33,14 @@
   "The command named NAME, or nil (see `kmet.agent.registry/entry` for the
    owner rule)."
   [name]
-  (registry/entry (app-runtime/registry) :kmet/command name))
+  (registry/entry (registry/current) :kmet/command name))
 
 (defn- command-names
   "Every effective command name in display order: owners in
    first-registration order, each owner's commands in its own registration
    order, each name once."
   []
-  (mapv first (registry/effective-entries (app-runtime/registry) :kmet/command)))
+  (mapv first (registry/effective-entries (registry/current) :kmet/command)))
 
 (defn register-command!
   "Register (or replace by :name) a slash command, owned by OWNER — the app's
@@ -52,7 +51,7 @@
    deregister fn."
   ([cmd] (register-command! cmd commands-owner))
   ([cmd owner]
-   (registry/register! (app-runtime/registry)
+   (registry/register! (registry/current)
                        :kmet/command (:name cmd) cmd owner)))
 
 (defn unregister-command!
@@ -61,13 +60,13 @@
    one of its own; another owner's same-name command survives). Returns nil."
   ([name] (unregister-command! name nil))
   ([name owner]
-   (registry/deregister! (app-runtime/registry) :kmet/command name owner)
+   (registry/deregister! (registry/current) :kmet/command name owner)
    nil))
 
 (defn clear-commands!
   "Remove every command registration (mainly for tests). Returns nil."
   []
-  (registry/clear! (app-runtime/registry) :kmet/command))
+  (registry/clear! (registry/current) :kmet/command))
 
 (defn command-line?
   "True when TEXT is a single-line command line: slash commands and bash

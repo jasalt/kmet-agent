@@ -103,8 +103,6 @@
     (entries [_ tag] (entries (handle-for tag) tag))
     (clear! [_ tag] (clear! (handle-for tag) tag))))
 
-;; ─── The atom backend ───────────────────────────────────────────────────────
-
 (defn atom-registry
   "A registry handle over an atom: the app's `:tools` service registry.
 
@@ -165,3 +163,30 @@
          (catch Throwable t
            (debug/log-error "extension cleanup failed: " t))))
   nil)
+
+;; ─── The handle a caller with no ctx in hand reads ──────────────────────────
+
+(defonce ^:private nobody-published (atom-registry))
+
+(defonce ^:private process-handle (atom nil))
+
+(defn current
+  "The registry handle a caller that has no ctx in hand reads — the commands,
+   prompts and skills registries, which are addressed by a name and answer
+   questions outside any one agent's ctx.
+
+   The owner publishes: kmet1's process shim publishes a router over the app
+   ctx's services, an agent driver an agent's own. Nobody having published (a
+   cold process, a bare test) is not an error — the handle is an empty atom
+   registry, one per process, so a registration made then is still visible to a
+   later read in the same process rather than vanishing into a fresh map."
+  []
+  (or @process-handle nobody-published))
+
+(defn publish-process-handle!
+  "Point `current` at HANDLE and return the previous one, so a second owner (an
+  agent's ctx, a test) can put it back. nil un-publishes."
+  [handle]
+  (let [previous @process-handle]
+    (reset! process-handle handle)
+    previous))

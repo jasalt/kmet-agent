@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.resource-config
+(ns kmet.ui.tui.resource-config
   "The `kmet config` resource-configuration screen (pi:
    modes/interactive/components/config-selector.ts — the bundled group
    first, then packages, then top-level groups, pi buildGroups over the

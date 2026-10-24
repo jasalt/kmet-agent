@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.test-resource-config
+(ns kmet.ui.tui.test-resource-config
   "Resource-config screen tests (pi: config-selector.ts): row model,
    global/project scope toggles and their settings writes, tri-state
    cycling and search."
@@ -9,7 +9,7 @@
             [kmet.agent.extensions.bundled :as bundled]
             [kmet.agent.packages :as pkgs]
             [kmet.agent.tools.config :as tools-config]
-            [kmet.agent.ui.tui.resource-config :as rc]
+            [kmet.ui.tui.resource-config :as rc]
             [kmet.agent.config :as cfg]
             [kmet.libs.hikap.core :as engine]
             [kmet.tui.keybindings :as tui-kb]
