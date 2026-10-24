@@ -6,7 +6,7 @@
    and is stored in the session as the user message's content. Rendering
    that text directly would dump the XML wrapper and the whole skill body
    into the transcript, so the block is parsed back
-   (kmet.agent.skills/parse-skill-block) and shown as a dedicated message:
+   (kmet.app.skill-block/parse) and shown as a dedicated message:
 
      collapsed   [skill] <name> (ctrl+o)
      expanded    [skill]

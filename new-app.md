@@ -1720,9 +1720,14 @@ UI may not require. So the history takes the lookup as an option:
 with `tool-fn` the same shape as the `cwd-fn` seam beside it. The default is
 "none", and it is documented as such rather than guessed at: a caller that omits
 it gets the builtin renderers, which is why **the tests that assert a tool
-definition's own rendering now wire the registry themselves** — three of them
-failed the first time the seam landed, which is how a seam proves it is real
-rather than decorative. Production has exactly one construction site, so
+definition's own rendering now wire the registry themselves**: four of them, in
+three namespaces (the transcript's own suite, the interactive handler's, and
+compaction's) failed the first time the seam landed with its default. That is how
+a seam proves it is real rather than decorative — and the same review pass wired
+the two test CoreStates (the interactive-support engine and compaction's) the way
+the layout is wired, so the stand-ins do not quietly render less than production.
+
+Production has exactly one construction site, so
 `layout/make-app-chat-history` was extracted to hold it: the wiring — session
 cwd, thinking hidden, display mode, output pad, tool registry — is now asserted
 without booting a terminal (mutating `:tool-fn` to `(constantly nil)` fails that
@@ -1756,6 +1761,12 @@ setters. Those are *runtime state reads and writes*, the thing landing 6 replace
 with an agent handle, which is why the rest of the move waits for it: the UI
 should read a handle, not a process. `resource_config` is the exception, blocked
 by `kmet.agent.packages`.
+
+**Review.** The names that moved had left stale company behind them: the skill
+message's own docstring and the pi-alignment table still said
+`kmet.agent.skills/parse-skill-block`, and the skill-message test's docstring
+still promised parser coverage it no longer had (the parser is tested where it
+lives now). Documentation that names a var is part of the var's move.
 
 **Evidence.** `--app old --version` boots; rpc mode answers `:get-state` on
 `--app new`; `bb test` 4,195 / 24,686; `bb lint` (full tree, both views) 0

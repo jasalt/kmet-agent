@@ -10,6 +10,7 @@
             [kmet.agent.keybindings :as app-kb]
             [kmet.ui.tui.pending-messages :as pending-messages]
             [kmet.ui.tui.status-indicator :as status-indicator]
+            [kmet.agent.tools.core :as tools]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
@@ -72,7 +73,7 @@
         sess-atom (atom (session/create-session
                          (str "target/test-compaction-queue-" (System/currentTimeMillis))))
         engine (tu/test-engine {:agent-state ag-atom :session sess-atom})
-        ch (chat-history/make-chat-history)
+        ch (chat-history/make-chat-history :tool-fn tools/get-tool)
         ed (editor/make-editor)
         si (status-indicator/make-status-indicator :text "Working")
         cur (atom nil)

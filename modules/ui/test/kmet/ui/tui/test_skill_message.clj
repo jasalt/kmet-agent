@@ -1,8 +1,9 @@
 (ns kmet.ui.tui.test-skill-message
-  "Tests for the skill invocation message (pi: parseSkillBlock +
-   SkillInvocationMessageComponent): a `/skill:name` block renders as a
-   collapsible invocation instead of dumping its body into the transcript,
-   and the trailing args stay a normal user message."
+  "Tests for the skill invocation message (pi: SkillInvocationMessageComponent):
+   a `/skill:name` block renders as a collapsible invocation instead of dumping
+   its body into the transcript, and the trailing args stay a normal user
+   message. The parser itself is tested where it lives —
+   kmet.app.test-skill-block."
   (:require [clojure.string :as str]
             [kmet.test-utils :as tu]
             [clojure.test :as t :refer [deftest is testing]]
