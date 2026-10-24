@@ -1719,11 +1719,20 @@ selectors needed **no edit at all** — they only read, so the alias they alread
 had now resolves one rank lower. Sixteen files swapped the driver calls
 (`session-driver/prompt!`), which are exactly the files that start work.
 
-The driver calls the value's accessors 21 ways, so it `:refer`s them rather than
-growing 200 prefixes — and pays the one hazard of that choice: `entries`, `model`
-and `provider` are shadowed by locals in three of its own functions, so lint saw
-those refers as unused. Found by lint, not by tests, which is the right way
-round.
+The driver calls the value's accessors from 14 names, so it `:refer`s them rather
+than growing 200 prefixes — and pays the one hazard of that choice: `entries`,
+`model` and `provider` are shadowed by locals in three of its own functions, so
+lint saw those refers as unused. Found by lint, not by tests, which is the right
+way round.
+
+**The boundary had to be guarded, not just written.** `test_layer_guard` forbids
+`kmet.agent.loop` and `kmet.agent.compaction.stage` in every front end, and after
+the split the namespace a *widget* must not reach is the driver: `ui-forbidden-prefixes`
+holds `kmet.agent.session.driver` for the three UI roots, while modes keep
+reaching it — a mode owns a run and may drive it, a widget reads the engine. The
+new rule is mutation-checked: requiring the driver from `kmet.ui.tui.thinking-selector`
+fails the guard by name. Without it the seven selectors' new freedom is
+unpinned — the exact edge landing 5h is about to move.
 
 **A guard was watching the alias.** `test_front_end_policy` matched the *symbol*
 `runtime/bootstrap` in three front ends, so the rename made it report "the

@@ -131,6 +131,13 @@
    kmet.agent.compaction.core helpers are fine — the footer reads tokens)."
   ["kmet.agent.loop" "kmet.agent.compaction.stage"])
 
+(def ^:private ui-forbidden-prefixes
+  "Namespaces only a mode may reach. The session driver starts work — prompts,
+   turns, session switching, disposal — and the UI layer reads the engine
+   instead (kmet.agent.session.runtime, one rank below it). A mode owns a run
+   and may drive it; a widget may not, whichever module it lives in."
+  ["kmet.agent.session.driver"])
+
 (deftest front-ends-drive-the-runtime-not-the-loop
   (testing "modes and app UI reach the engine through the session runtime"
     (let [files (front-end-source-files)]
@@ -148,7 +155,15 @@
                                 (required-kmet f))]
           (is (empty? forbidden)
               (str f " requires " (vec forbidden)
-                   " — front ends drive kmet.agent.session.runtime instead")))))))
+                   " — front ends drive kmet.agent.session.runtime instead"))))
+      (doseq [f (ui-source-files)]
+        (let [forbidden (filter (fn [d]
+                                  (some #(str/starts-with? d %) ui-forbidden-prefixes))
+                                (required-kmet f))]
+          (is (empty? forbidden)
+              (str f " requires " (vec forbidden)
+                   " — the UI layer reads kmet.agent.session.runtime; the driver
+                      starts work and belongs to the modes")))))))
 
 (def ^:private ui-temporary-leaks
   ;; Known app-UI namespaces and the entry-mode prefixes they may require.
