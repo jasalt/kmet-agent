@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.test-chat-history
+(ns kmet.ui.tui.test-chat-history
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.tui.core :as core]
@@ -9,8 +9,16 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.ui.tui.bash-execution :as be]
             [kmet.ui.tui.tool-execution :as te]
-            [kmet.agent.ui.tui.chat-history :as ch]
+            [kmet.agent.tools.core :as tools]
+            [kmet.ui.tui.chat-history :as ch]
             [kmet.test-utils :as tu]))
+
+(defn- history
+  "A chat history wired to the real tool registry — what a front end does, and
+   what any test that asserts a tool's own rendering must do: the component
+   takes the lookup from its caller instead of reaching a registry itself."
+  [& opts]
+  (apply ch/make-chat-history :tool-fn tools/get-tool opts))
 
 (defn- plain-lines
   "Render component and strip ANSI codes for easier testing."
@@ -88,7 +96,7 @@
 (deftest test-tool-message-resolves-the-status-opt-in
   (testing "the tool definition's :status reaches its component: the bash
             tool opts into the tail status line, an unknown tool does not"
-    (let [ch (ch/make-chat-history)
+    (let [ch (history)
           bash (ch/chat-history-add-message!
                 ch {:role :tool :tool-name "bash" :content "" :is-error false})
           plain (ch/chat-history-add-message!
@@ -267,7 +275,7 @@
 
 (deftest test-quiet-run-groups-without-inner-separators
   (testing "consecutive quiet :tool entries share one run separator; other roles keep theirs"
-    (let [ch (ch/make-chat-history :tool-display-mode :quiet)]
+    (let [ch (history :tool-display-mode :quiet)]
       (ch/chat-history-add-message! ch {:role :user :content "hello"})
       (ch/chat-history-add-message! ch {:role :tool :name "first-tool" :content "a"})
       (ch/chat-history-add-message! ch {:role :tool :name "second-tool" :content "b"})
@@ -463,7 +471,7 @@
                  :content [{:type :tool_result :tool_use_id "t2" :content "out-b"}]}
                 {:role :tool :tool-name "read" :is-error false
                  :content [{:type :tool_result :tool_use_id "t1" :content "out-a"}]}]
-          ch (ch/make-chat-history :tool-display-mode :expanded)]
+          ch (history :tool-display-mode :expanded)]
       (ch/chat-history-rebuild! ch msgs)
       (let [tools (filter #(= :tool (:kind %))
                           (map :component @(:messages-atom ch)))
@@ -483,7 +491,7 @@
             "paired components carry their call id (render-context parity)"))))
 
   (testing "a paired edit result renders its recorded diff (details survive)"
-    (let [ch (ch/make-chat-history :tool-display-mode :expanded)]
+    (let [ch (history :tool-display-mode :expanded)]
       (ch/chat-history-rebuild! ch
                                 [{:role :assistant :content ""
                                   :tool-calls [{:id "t1" :name "edit"
@@ -503,7 +511,7 @@
             "the filesystem preview is not used (the recorded diff wins)"))))
 
   (testing "a rebuilt tool keeps its title through a display-mode toggle"
-    (let [ch (ch/make-chat-history :tool-display-mode :quiet)]
+    (let [ch (history :tool-display-mode :quiet)]
       (ch/chat-history-rebuild! ch
                                 [{:role :assistant :content ""
                                   :tool-calls [{:id "t1" :name "read"

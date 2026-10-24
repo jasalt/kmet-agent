@@ -14,7 +14,8 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
             [kmet.ui.tui.status-indicator :as status-indicator]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.tool-execution :as te]
             [kmet.ui.tui.dock :as dock]
             [kmet.ai.auth :as auth]
             [kmet.agent.loop :as agent]
@@ -54,6 +55,26 @@
         (dock/release! cs panel-b)
         (t/is (nil? (dock/top-component @(:dock-stack cs)))
               "double release stays nil")))))
+
+(deftest the-layout-hands-the-transcript-the-tool-registry
+  (testing "the chat history the layout builds resolves a tool's own renderers
+            through the app registry — the UI layer takes the lookup from its
+            caller — and tool components resolve paths against the session's
+            cwd, not the process's"
+    (let [cwd (atom "/project/session")
+          ch (layout/make-app-chat-history {:tool-display-mode :quiet} cwd)
+          _ (chat-history/chat-history-add-message!
+             ch {:role :tool :tool-name "read" :arguments {:path "a.txt"}
+                 :content "" :is-error false})
+          comps (filter #(= :tool (:kind %)) (map :component @(:messages-atom ch)))
+          rendered (mapv strip-ansi (mapcat #(protocols/render % 60) comps))
+          ctx (var te/tool-execution-context)]
+      (t/is (seq comps) "the tool message became a component")
+      (t/is (some #(re-find #"read a\.txt" %) rendered)
+            "the tool definition's :title rendered — the registry lookup
+             reached the component")
+      (t/is (= "/project/session" (:cwd (ctx (first comps) nil true)))
+            "tool components resolve paths against the session's cwd"))))
 
 (deftest test-oauth-login-dialog-covers-and-releases
   (testing "kmetia/kmet-agent#5: the :select round trip COVERS the login

@@ -14,7 +14,7 @@
             [kmet.ui.tui.dock :as dock]
             [kmet.ai.models :as models]
             [kmet.ai.oauth :as oauth]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.agent.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.tui.protocols :as protocols]

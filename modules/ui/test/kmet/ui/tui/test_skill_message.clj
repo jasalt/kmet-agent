@@ -4,10 +4,11 @@
    collapsible invocation instead of dumping its body into the transcript,
    and the trailing args stay a normal user message."
   (:require [clojure.string :as str]
+            [kmet.test-utils :as tu]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.skills :as skills]
-            [kmet.agent.ui.tui.chat-history :as ch]
+            [kmet.app.skill-block :as skill-block]
+            [kmet.ui.tui.chat-history :as ch]
             [kmet.ui.tui.skill-message :as sm]
             [kmet.ui.tui.subs :as subs]
             [kmet.tui.core :as core]
@@ -34,66 +35,17 @@
       (f)
       (finally (kb/set-global-keybindings! prev)))))
 
-(t/use-fixtures :each with-keybindings)
+(t/use-fixtures :each tu/with-extension-host with-keybindings)
 
 (def ^:private block
   "<skill name=\"demo-skill\" location=\"demo:SKILL.md\">\nReferences are relative to /skills/demo.\n\n# Steps\n\n1. do a thing\n2. do another\n</skill>")
-
-;; ─── parse-skill-block (pi: parseSkillBlock) ───────────────────────────────
-
-(deftest test-parse-skill-block
-  (testing "a block without a trailing message"
-    (let [p (skills/parse-skill-block block)]
-      (is (= "demo-skill" (:name p)))
-      (is (= "demo:SKILL.md" (:location p)))
-      (is (str/includes? (:content p) "# Steps"))
-      (is (str/includes? (:content p) "References are relative to"))
-      (is (nil? (:user-message p)))))
-  (testing "a block with a trailing message"
-    (let [p (skills/parse-skill-block (str block "\n\ndo the thing"))]
-      (is (= "do the thing" (:user-message p)))))
-  (testing "the trailing message is trimmed"
-    (let [p (skills/parse-skill-block (str block "\n\n  padded  "))]
-      (is (= "padded" (:user-message p)))))
-  (testing "an empty trailing message is no message"
-    (is (nil? (:user-message (skills/parse-skill-block (str block "\n\n"))))))
-  (testing "non-blocks"
-    (is (nil? (skills/parse-skill-block "just a message")))
-    (is (nil? (skills/parse-skill-block "")))
-    (is (nil? (skills/parse-skill-block nil)))
-    (is (nil? (skills/parse-skill-block 42)))
-    (is (nil? (skills/parse-skill-block (str "prefix " block)))
-        "the block must span the whole message")
-    (is (nil? (skills/parse-skill-block (str block " suffix"))))))
-
-(deftest test-parse-round-trips-the-expander
-  ;; the parser is the inverse of what expand-skill-command builds — keep
-  ;; them in step (both live in kmet.agent.skills)
-  (let [deregister (skills/register-extension-skill!
-                    (str "---\nname: round-trip-demo\ndescription: a demo skill\n---\n"
-                         "# Body\n\nStep one.\n")
-                    {:location "test-ext:skills/round-trip/SKILL.md"
-                     :extension "test-ext"})]
-    (try
-      (testing "no args"
-        (let [expanded (skills/expand-skill-command "/skill:round-trip-demo")
-              parsed (skills/parse-skill-block expanded)]
-          (is (= "round-trip-demo" (:name parsed)))
-          (is (= "test-ext:skills/round-trip/SKILL.md" (:location parsed)))
-          (is (str/includes? (:content parsed) "Step one."))
-          (is (nil? (:user-message parsed)))))
-      (testing "with args"
-        (let [parsed (skills/parse-skill-block
-                      (skills/expand-skill-command "/skill:round-trip-demo be brief"))]
-          (is (= "be brief" (:user-message parsed)))))
-      (finally (deregister)))))
 
 ;; ─── The component ────────────────────────────────────────────────────────
 
 (deftest test-collapsed-is-one-line-with-the-expand-hint
   (let [toggle (atom :collapsed)
         c (sm/make-skill-invocation-message
-           :skill-block (skills/parse-skill-block block)
+           :skill-block (skill-block/parse block)
            :tools-expanded-atom toggle)
         lines (plain-lines c 60)]
     (is (= 3 (count lines)) "box padding-y 1 above and below")
@@ -107,7 +59,7 @@
 (deftest test-expanded-shows-name-and-body
   (let [toggle (atom :expanded)
         c (sm/make-skill-invocation-message
-           :skill-block (skills/parse-skill-block block)
+           :skill-block (skill-block/parse block)
            :tools-expanded-atom toggle)
         text (joined c 60)]
     (is (str/includes? text "[skill]"))
@@ -121,10 +73,10 @@
   ;; pi: setExpanded(toolOutputExpanded) — one atom flips every skill message
   (let [toggle (atom :collapsed)
         a (sm/make-skill-invocation-message
-           :skill-block (skills/parse-skill-block block)
+           :skill-block (skill-block/parse block)
            :tools-expanded-atom toggle)
         b (sm/make-skill-invocation-message
-           :skill-block (skills/parse-skill-block block)
+           :skill-block (skill-block/parse block)
            :tools-expanded-atom toggle)]
     (is (not (str/includes? (joined a 60) "do a thing")))
     (is (not (str/includes? (joined b 60) "do a thing")))
@@ -139,7 +91,7 @@
   ;; local expansion state a caller could set behind its back
   (let [toggle (atom :collapsed)
         c (sm/make-skill-invocation-message
-           :skill-block (skills/parse-skill-block block)
+           :skill-block (skill-block/parse block)
            :tools-expanded-atom toggle)]
     (is (not (str/includes? (joined c 60) "do a thing")))
     (reset! toggle :expanded)
@@ -152,7 +104,7 @@
   ;; the box background and the markdown tint come from the theme; a palette
   ;; switch must re-apply them (apply-once on theme-sub)
   (let [c (sm/make-skill-invocation-message
-           :skill-block (skills/parse-skill-block block)
+           :skill-block (skill-block/parse block)
            :tools-expanded-atom (atom :collapsed))
         before (core/render c 60)]
     (is (some #(str/includes? % "\u001b[") before) "themed output carries ANSI")

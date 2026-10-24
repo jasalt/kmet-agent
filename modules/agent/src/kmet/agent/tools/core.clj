@@ -22,7 +22,7 @@
    from the agent ctx's `:tools` service (`kmet.agent.loop.state/tool-table`,
    `tool-executor`), which is 4c-iii-c's property — two agents, two tables. What
    keeps these arities alive is the TUI's display read
-   (`kmet.agent.ui.tui.chat-history` resolves a tool's render fn while building
+   (`kmet.ui.tui.chat-history` resolves a tool's render fn while building
    a message component, where no engine is in hand); that read moves with the
    TUI at landing 5, and the arities go with it."
   (:require [kmet.agent.app-runtime :as app-runtime]

@@ -1,11 +1,11 @@
-(ns kmet.agent.ui.tui.test-external-editor
+(ns kmet.ui.tui.test-external-editor
   "The external editor ($EDITOR on the editor content) spawns in the
    session's runtime working directory, so a session resumed or imported from
    another project opens the editor there rather than in the launch dir."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [babashka.fs :as fs]
             [babashka.process :as proc]
-            [kmet.agent.ui.tui.external-editor :as external-editor]
+            [kmet.ui.tui.external-editor :as external-editor]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.tui.core :as tui]))
 

@@ -1,12 +1,12 @@
-(ns kmet.agent.ui.tui.test-suspend
+(ns kmet.ui.tui.test-suspend
   "Suspend-to-background (ctrl+z / app.suspend): the TUI hands the terminal
    back before the process group stops and reclaims it when the shell
    resumes us; Windows only reports that it cannot stop (pi: handleCtrlZ).
    The stop itself is stubbed — a test that really sent SIGTSTP to its own
    process group would suspend the test runner."
   (:require [clojure.test :as t :refer [deftest is testing]]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
-            [kmet.agent.ui.tui.suspend :as suspend]
+            [kmet.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.suspend :as suspend]
             [kmet.libs.process :as process]
             [kmet.tui.core :as tui]))
 

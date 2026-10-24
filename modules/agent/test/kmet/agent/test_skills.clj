@@ -4,6 +4,7 @@
             [clojure.java.io :as io]
             [babashka.fs :as fs]
             [kmet.agent.app-runtime :as app-runtime]
+            [kmet.app.skill-block :as skill-block]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.agent.registry :as registry]
@@ -268,6 +269,28 @@
       (t/testing "non-skill text passes through"
         (t/is (= "hello" (skills/expand-skill-command "hello"))))
       (finally (fs/delete-tree tmp-dir)))))
+
+(t/deftest test-parse-round-trips-the-expander
+  ;; the parser is the inverse of what expand-skill-command builds; they live
+  ;; apart now (kmet.app.skill-block vs this namespace) so keep them in step
+  (let [deregister (skills/register-extension-skill!
+                    (str "---\nname: round-trip-demo\ndescription: a demo skill\n---\n"
+                         "# Body\n\nStep one.\n")
+                    {:location "test-ext:skills/round-trip/SKILL.md"
+                     :extension "test-ext"})]
+    (try
+      (t/testing "no args"
+        (let [expanded (skills/expand-skill-command "/skill:round-trip-demo")
+              parsed (skill-block/parse expanded)]
+          (t/is (= "round-trip-demo" (:name parsed)))
+          (t/is (= "test-ext:skills/round-trip/SKILL.md" (:location parsed)))
+          (t/is (str/includes? (:content parsed) "Step one."))
+          (t/is (nil? (:user-message parsed)))))
+      (t/testing "with args"
+        (let [parsed (skill-block/parse
+                      (skills/expand-skill-command "/skill:round-trip-demo be brief"))]
+          (t/is (= "be brief" (:user-message parsed)))))
+      (finally (deregister)))))
 
 (t/deftest test-as-command-maps
   (let [skills-list [{:name "code-review" :description "Review code."}

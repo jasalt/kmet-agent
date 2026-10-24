@@ -31,7 +31,7 @@
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.registry :as tools]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.footer :as footer]
             [kmet.agent.ui.tui.fork-selector :refer [show-fork-selector]]
             [kmet.ui.tui.hotkeys :as hotkeys-ui]

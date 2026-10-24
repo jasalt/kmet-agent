@@ -1,5 +1,6 @@
 (ns kmet.ui.tui.test-tool-execution
-  (:require [clojure.test :as t :refer [deftest is testing]]
+  (:require [kmet.test-utils :as tu]
+            [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.tui.core :as core]
@@ -14,6 +15,8 @@
             [kmet.agent.tools.bash :as bash]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.components.text :as text]))
+
+(t/use-fixtures :each tu/with-extension-host)
 
 (defn- strip-ansi [s]
   (utils/strip-ansi-codes s))

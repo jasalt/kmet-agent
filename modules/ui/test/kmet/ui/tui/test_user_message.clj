@@ -1,11 +1,14 @@
 (ns kmet.ui.tui.test-user-message
   (:require [clojure.string :as str]
+            [kmet.test-utils :as tu]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.tui.theme :as theme]
             [kmet.tui.core :as core]
             [kmet.libs.terminal-image :as timg]
             [kmet.ui.tui.subs :as subs]
             [kmet.ui.tui.user-message :as um]))
+
+(t/use-fixtures :each tu/with-extension-host)
 
 (defn- strip-ansi [s]
   (clojure.string/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))

@@ -62,6 +62,19 @@
   (skills/clear-skills!)
   (extensions/unregister-contributed-themes!))
 
+(defn with-extension-host
+  "clojure.test :each fixture: bind the kmet1 extension host for this test.
+
+   Loading `kmet.agent.app-runtime` binds it process-wide — that shim exists to
+   hand the host (`app` layer) the registry and ctx it may not require — and a
+   message render consults it for the markdown-transformers hook. A UI test
+   that renders messages must bind it rather than inherit it from whichever
+   namespace happened to load first: these namespaces used to pass alone or in
+   the suite depending on alphabetical order."
+  [f]
+  (require 'kmet.agent.app-runtime)
+  (f))
+
 (defn with-clean-app-registries
   "clojure.test :each fixture: clear the app tree's process-global
    registrations before and after each test (see clear-app-registries!)."

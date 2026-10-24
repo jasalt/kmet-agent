@@ -15,7 +15,8 @@
             [kmet.agent.app-runtime :as runtime]
             [kmet.agent.config :as cfg]
             [kmet.agent.debug :as debug]
-            [kmet.agent.ui.tui.chat-history :as ui]
+            [kmet.agent.tools.core :as tools]
+            [kmet.ui.tui.chat-history :as ui]
             [kmet.tui.protocols :as protocols]
             [kmet.test-utils :as tu]
             [kmet.agent.loop.test-support :as support]))
@@ -1113,7 +1114,8 @@
                :on-event (fn [e] (swap! events conj e))
                :compact-token-threshold 10
                :keep-recent-tokens 40)
-        ch (ui/make-chat-history :tool-display-mode :collapsed)
+        ch (ui/make-chat-history :tool-display-mode :collapsed
+                                 :tool-fn tools/get-tool)
 
         render (fn [mode]
                  (ui/chat-history-set-tool-display-mode! ch mode)

@@ -14,7 +14,7 @@
             [kmet.agent.modes.interactive.turn :as turn]
             [kmet.agent.commands :as commands]
             [kmet.ui.tui.status-indicator :as status-indicator]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.agent.ui.tui.model-selector :as model-selector]
             [kmet.agent.ui.tui.thinking-selector :as thinking-selector]

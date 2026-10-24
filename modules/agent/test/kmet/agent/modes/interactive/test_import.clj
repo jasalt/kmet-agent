@@ -17,7 +17,7 @@
             [kmet.agent.commands :as commands]
             [kmet.ui.tui.footer :as footer]
             [kmet.agent.ui.tui.scoped-models-selector :as scoped-models-selector]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.agent.ui.tui.model-catalog :as model-catalog]
             [kmet.agent.ui.tui.model-selector :as model-selector]

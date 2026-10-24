@@ -14,7 +14,7 @@
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
             [kmet.agent.config :as cfg]
-            [kmet.agent.ui.tui.chat-history :as ui]
+            [kmet.ui.tui.chat-history :as ui]
             [kmet.tui.theme :as th]
             [kmet.agent.loop.test-support :as support]))
 

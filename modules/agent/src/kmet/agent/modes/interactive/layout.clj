@@ -26,9 +26,10 @@
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.agent.tools.core :as tools]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
-            [kmet.agent.ui.tui.external-editor :refer [handle-external-editor]]
+            [kmet.ui.tui.external-editor :refer [handle-external-editor]]
             [kmet.ui.tui.footer :as footer]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.ui.tui.image-block :as image-block]
@@ -38,7 +39,7 @@
             [kmet.ui.tui.pending-messages :as pending-messages]
             [kmet.ui.tui.status-indicator :as status-indicator]
             [kmet.ui.tui.subs :as subs]
-            [kmet.agent.ui.tui.suspend :refer [handle-suspend]]
+            [kmet.ui.tui.suspend :refer [handle-suspend]]
             [kmet.ui.tui.tool-execution :as tool-execution]
             [kmet.agent.modes.interactive.builtins :as builtins]
             [kmet.agent.modes.interactive.resources :as resources]
@@ -550,6 +551,23 @@
          "Only one model in scope"
          "Only one model available")))))
 
+(defn make-app-chat-history
+  "The chat history the interactive layout mounts, wired to the app's state:
+   the session's cwd (not the process's) and the tool registry, whose
+   per-tool renderers are the reason the UI layer takes the lookup from its
+   caller instead of reaching for a registry itself. Kept as one fn so the
+   wiring can be tested without booting a terminal."
+  [config cwd-atom]
+  (chat-history/make-chat-history
+   :cwd-fn #(deref cwd-atom)
+   ;; a tool's own renderers are the registry's, not the UI layer's: the
+   ;; lookup is supplied here so a tool result renders exactly as its live
+   ;; call did
+   :tool-fn tools/get-tool
+   :thinking-hidden (cfg/get-hide-thinking-block config)
+   :tool-display-mode (cfg/get-tool-display-mode config)
+   :output-pad (cfg/get-output-pad config)))
+
 (defn build-layout
   "Create TUI layout and return CoreState."
   [config session]
@@ -602,11 +620,7 @@
                    :image-width-cells (cfg/get-image-width-cells config)})
         ;; no :theme — message components subscribe to ui.subs/theme-sub
         ;; themselves (Stage 5)
-        ch (chat-history/make-chat-history
-            :cwd-fn #(deref cwd-atom)
-            :thinking-hidden (cfg/get-hide-thinking-block config)
-            :tool-display-mode (cfg/get-tool-display-mode config)
-            :output-pad (cfg/get-output-pad config))
+        ch (make-app-chat-history config cwd-atom)
         pending-tool-comps (atom {})  ;; Pi: pendingTools Map (tool-call-id → comp)
         cs-ref (atom nil)             ;; CoreState, filled after layout (for :status events)
 

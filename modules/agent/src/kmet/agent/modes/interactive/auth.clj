@@ -8,7 +8,7 @@
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.ui.tui.auth-selector :as auth-selector]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.login-dialog :as login-dialog]
             [kmet.ai.auth :as auth]

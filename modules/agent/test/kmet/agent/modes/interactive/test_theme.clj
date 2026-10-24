@@ -19,7 +19,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.status-indicator :as status-indicator]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ai.models :as m]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]

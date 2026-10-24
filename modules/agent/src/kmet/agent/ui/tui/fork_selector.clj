@@ -10,7 +10,7 @@
             [clojure.string :as str]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.subs :as s]
             [kmet.libs.reakt.core :as r]

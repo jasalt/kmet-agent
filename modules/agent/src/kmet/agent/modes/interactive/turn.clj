@@ -14,7 +14,7 @@
             [kmet.tui.terminal :as term]
             [kmet.tui.components.container :as container]
             [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.bash-execution :as be]
             [kmet.agent.tools.bash-executor :as bash-exec]
             [kmet.agent.tools.bash :as bash-tool]

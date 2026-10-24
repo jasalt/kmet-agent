@@ -7,7 +7,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.ui.tui.chat-history :as ch]
+            [kmet.ui.tui.chat-history :as ch]
             [kmet.ui.tui.summary-message :as sm]
             [kmet.tui.core :as core]
             [kmet.tui.keybindings :as kb]

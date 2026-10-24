@@ -1,4 +1,4 @@
-(ns kmet.agent.ui.tui.chat-history
+(ns kmet.ui.tui.chat-history
   "ChatHistoryComponent — data-driven chat history.
    Holds messages as plain maps in a single messages-atom (the single source
    of truth); each message map carries its :component. Render derives the
@@ -18,8 +18,7 @@
             [kmet.ui.tui.summary-message :as summary-message]
             [kmet.ui.tui.image-block :as image-block]
             [kmet.ui.tui.skill-message :as skill-message]
-            [kmet.agent.skills :as skills]
-            [kmet.agent.tools.core :as tools]
+            [kmet.app.skill-block :as skill-block]
             [kmet.tui.macros :refer [defcomponent]]))
 
 ;; ─── Info component at top ─────────────────────────────────────────────────
@@ -56,7 +55,7 @@
   [m]
   (and (= :user (:role m))
        (boolean
-        (when-let [block (skills/parse-skill-block
+        (when-let [block (skill-block/parse
                           (content->user-text (:content m "")))]
           (empty? (:user-message block))))))
 
@@ -121,6 +120,10 @@
                cwd-fn          ;; 0-arg fn → the runtime cwd for tool components
                                ;; (pi: ToolRenderContext.cwd — path displays are
                                ;; relative to the session's cwd)
+               tool-fn         ;; 1-arg fn name → tool definition map, or nil
+                               ;; (pi: ToolRenderContext's tool registry): the
+                               ;; history takes the lookup from its caller, so
+                               ;; this layer never reaches a tool registry
                streaming-atom  ;; atom of streaming message map or nil
                tools-expanded-atom   ;; tool display mode: :collapsed | :expanded | :quiet
                                       ;; (pi: toolOutputExpanded, extended with quiet)
@@ -160,14 +163,22 @@
      :tool-display-mode — initial tool display mode (default :collapsed;
                          loaded from settings at startup)
      :cwd-fn           — 0-arg fn returning the runtime working directory for
-                         tool components (default: the process cwd)"
-  [& {:keys [output-pad thinking-hidden tool-display-mode cwd-fn]
+                         tool components (default: the process cwd)
+     :tool-fn          — 1-arg fn name → tool definition map, supplying a tool's
+                         own :render-call/:render-result/:render-shell/:status/
+                         :title (extension tools win over the builtin
+                         renderers). Default: none — tool results then render
+                         through the builtin renderers, so a caller that wants
+                         a tool's own rendering must pass this."
+  [& {:keys [output-pad thinking-hidden tool-display-mode cwd-fn tool-fn]
       :or {output-pad 1 thinking-hidden false tool-display-mode :collapsed
-           cwd-fn #(or (System/getProperty "user.dir") ".")}}]
+           cwd-fn #(or (System/getProperty "user.dir") ".")
+           tool-fn (constantly nil)}}]
   (map->ChatHistoryComponent {:messages-atom (atom [])
                               :info-comp-atom (atom nil)
                               :output-pad-atom (atom output-pad)
                               :cwd-fn cwd-fn
+                              :tool-fn tool-fn
                               :streaming-atom (atom nil)
                               :tools-expanded-atom (atom (normalize-tool-display-mode tool-display-mode))
                               :thinking-hidden-atom (atom (boolean thinking-hidden))
@@ -265,7 +276,7 @@
         ;; already flattened to text) — accept both
         images (into (vec (:images msg))
                      (image-block/content-images (:content msg)))]
-    (if-let [block (skills/parse-skill-block text)]
+    (if-let [block (skill-block/parse text)]
       (let [args (:user-message block)]
         (skill-message/make-skill-invocation-message
          :skill-block block
@@ -292,9 +303,22 @@
                           :when (= :text (:type b))]
                       (:text b)))))
 
+(defn- message-context
+  "The atoms and lookups every message component shares — read off the history
+   once per message instead of at each call site."
+  [ch]
+  {:output-pad-atom (:output-pad-atom ch)
+   :tools-expanded-atom (:tools-expanded-atom ch)
+   :thinking-hidden-atom (:thinking-hidden-atom ch)
+   :hidden-label-atom (:hidden-label-atom ch)
+   :cwd-fn (:cwd-fn ch)
+   :tool-fn (:tool-fn ch)})
+
 (defn- make-component-for-msg
-  "Create the appropriate component for a message map.
-   For tool messages, looks up render functions from the tool registry.
+  "Create the appropriate component for a message map, given the history's
+   shared context (message-context). For tool messages, the context's :tool-fn
+   resolves the tool definition whose render functions win over the builtin
+   ones.
    Assistant messages SHARE the chat history's thinking-hidden/hidden-label
    atoms (pi: hideThinkingBlock / hiddenThinkingLabel) — a toggle is one
    reset! that invalidates every message at once; tool, skill, and summary
@@ -306,7 +330,8 @@
    :custom messages render through the default labeled box (a registered
    message renderer arrives as :component) and honor the display flag, and
    :compaction / :branch-summary render as collapsible summary boxes."
-  [msg output-pad-atom tools-expanded-atom thinking-hidden-atom hidden-label-atom cwd-fn]
+  [msg {:keys [output-pad-atom tools-expanded-atom thinking-hidden-atom
+               hidden-label-atom cwd-fn tool-fn]}]
   (let [thm @subs/theme-sub]
     (cond
     ;; Pre-built component — extension entry/message renderers may return a
@@ -327,7 +352,7 @@
                     :thinking-hidden-atom thinking-hidden-atom
                     :hidden-label-atom hidden-label-atom)
         :tool (let [name (or (:tool-name msg) (:name msg) "")
-                    tool (tools/get-tool name)
+                    tool (tool-fn name)
                     comp (te/make-tool-execution
                           :name name
                           :args (:arguments msg {})
@@ -430,9 +455,7 @@
    created component (or nil)."
   [ch msg]
   (let [msg (with-assistant-data msg)
-        comp (make-component-for-msg msg (:output-pad-atom ch)
-                                     (:tools-expanded-atom ch) (:thinking-hidden-atom ch)
-                                     (:hidden-label-atom ch) (:cwd-fn ch))]
+        comp (make-component-for-msg msg (message-context ch))]
     (when comp
       (swap! (:messages-atom ch) conj (assoc msg :component comp)))
     comp))
@@ -444,9 +467,7 @@
    no streaming message exists. Returns the created component (or nil)."
   [ch msg]
   (let [msg (with-assistant-data msg)
-        comp (make-component-for-msg msg (:output-pad-atom ch)
-                                     (:tools-expanded-atom ch) (:thinking-hidden-atom ch)
-                                     (:hidden-label-atom ch) (:cwd-fn ch))
+        comp (make-component-for-msg msg (message-context ch))
         streaming @(:streaming-atom ch)]
     (when comp
       (let [entry (assoc msg :component comp)]

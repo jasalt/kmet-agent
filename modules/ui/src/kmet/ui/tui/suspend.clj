@@ -1,10 +1,10 @@
-(ns kmet.agent.ui.tui.suspend
+(ns kmet.ui.tui.suspend
   "Suspend-to-background flow (app.suspend, ctrl+z; pi:
    modes/interactive/interactive-mode.ts handleCtrlZ). The TUI hands the
    terminal back before the process group stops and reclaims it when the
    shell resumes us — the tui-suspend!/tui-resume! pair the external-editor
    flow already uses."
-  (:require [kmet.agent.ui.tui.chat-history :as chat-history]
+  (:require [kmet.ui.tui.chat-history :as chat-history]
             [kmet.libs.process :as process]
             [kmet.tui.core :as tui]))
 

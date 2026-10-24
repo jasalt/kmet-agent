@@ -10,7 +10,7 @@
             [kmet.agent.keybindings :as app-kb]
             [kmet.ui.tui.pending-messages :as pending-messages]
             [kmet.ui.tui.status-indicator :as status-indicator]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
             [kmet.tui.keybindings :as tui-kb]))

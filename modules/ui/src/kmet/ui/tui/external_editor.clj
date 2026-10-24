@@ -1,10 +1,10 @@
-(ns kmet.agent.ui.tui.external-editor
+(ns kmet.ui.tui.external-editor
   "External editor launch (pi: modes/interactive/external-editor.ts):
    handle-external-editor opens the active editor's content in $EDITOR on a
    temp file and reads the result back. Editor text access goes through the
    kmet.tui.core dispatchers (editor-get-text / editor-set-text! /
    editor-get-expanded-text)."
-  (:require [kmet.agent.ui.tui.chat-history :as chat-history]
+  (:require [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.tui.core :as tui]
             [kmet.agent.debug :as debug]

@@ -17,7 +17,7 @@
             [kmet.agent.session.runtime :as runtime]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.bash-execution :as bash-execution]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.session-selector :refer [show-session-selector]]
             [kmet.libs.process :as process]

@@ -12,7 +12,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.bash-execution :as be]
             [kmet.ui.tui.dialogs :as dialogs]
             [kmet.ui.tui.dock :as dock]

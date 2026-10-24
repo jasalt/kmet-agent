@@ -13,7 +13,7 @@
   (:require [kmet.agent.session.runtime :as runtime]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ai.models :as models]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.footer :as footer]
             [kmet.ui.tui.loaded-resources :as loaded-resources]
             [kmet.ui.tui.subs :as subs]

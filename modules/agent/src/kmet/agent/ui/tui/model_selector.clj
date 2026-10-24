@@ -9,7 +9,7 @@
             [kmet.ai.models :as models]
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.ui.tui.model-catalog :as model-catalog]
