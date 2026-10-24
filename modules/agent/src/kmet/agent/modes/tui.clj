@@ -16,10 +16,30 @@
    the TUI creates its agent through `create!` and the mode's tree becomes
    `kmet.ui.tui` (new-app.md, landing 5). Mounting it as a row first is what
    makes that re-host a change to one namespace instead of a change to how kmet2
-   boots."
+   boots.
+
+   **The session the run opens is the invocation's.** `-c`/`--continue`,
+   `-r`/`--resume` and `--session <id>` arrive in the row's config and become
+   `interactive/run`'s opts: that mode already resolves a session from those
+   keys, so the row only has to say that the flags have a home here
+   (`:session-lifecycle`, declared where the profile names the row). A mode that
+   creates its agent through `:agents` has no session option to give its factory
+   yet, and `kmet.app.core` refuses those flags there by name."
   (:require [kmet.agent.cli :as cli]
             [kmet.agent.modes.interactive :as interactive]
             [kmet.srce.core :as srce]))
+
+(defn- run-opts
+  "The invocation's input this row applies, in kmet1's own spellings: the mode
+   the world load and the run are told they are, and the session a run opens
+   (`:session`, `:resume`, `:continue` — `interactive/run` resolves the session
+   with them). A run the command line did not ask to continue resolves a new
+   session, as it always did."
+  [config]
+  (cond-> {:mode :interactive}
+    (:session config) (assoc :session (:session config))
+    (:resume config) (assoc :resume true)
+    (:continue config) (assoc :continue true)))
 
 (defn- run-tui!
   "Load the world, run the TUI on CTX until it quits, and report the exit.
@@ -28,11 +48,11 @@
    on both paths: the mode owns its output, and a failing TUI reports the
    failure here instead of leaving the entry waiting for a promise that will
    never be delivered."
-  [ctx on-result]
+  [ctx opts on-result]
   (try
     ;; the composition's ctx, not a process root the world loader would boot: the
     ;; run's tool table, system prompt and session log are the ones it mounted
-    (interactive/run (cli/load-world! {:mode :interactive} ctx) {:mode :interactive} ctx)
+    (interactive/run (cli/load-world! opts ctx) opts ctx)
     (on-result {:exit 0})
     (catch Throwable t
       (binding [*out* *err*]
@@ -52,7 +72,7 @@
     ;; the app scope: the row's own ctx is a mount site, and every lookup the
     ;; run makes (:tools, :sessions, :skills) walks up from the scope it was
     ;; given
-    (future (run-tui! (:parent ctx) on-result))))
+    (future (run-tui! (:parent ctx) (run-opts config) on-result))))
 
 (srce/defplugin plugin
   {:name :mode-tui

@@ -26,6 +26,12 @@
      as its input, so an empty one is a usage error before anything boots
      (print mode). A mode that reads nothing from the command line — rpc, a
      server — omits it, and a bare invocation of that profile is legal.
+   - `:session-lifecycle true` says the mode opens the session itself, so
+     kmet1's `-c`/`--continue`, `-r`/`--resume` and `--session <id>` are handed
+     to it (the TUI row, which passes them to `interactive/run`). Every other
+     mode creates its agent through `:agents`, whose factory takes no session
+     option yet, and the entry point refuses those flags by name there rather
+     than silently starting the fresh session the flag exists to prevent.
 
    Config *values* deep-merge; composition does not — a bundle's rows are
    appended as they are, and later layers patch by id. A patch that names an

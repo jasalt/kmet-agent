@@ -170,10 +170,11 @@
             {:id :agents :plugin 'kmet.app.agents/plugin}
             {:id :agent-loop :plugin 'kmet.app.loop.driver/plugin}
             {:id :approvals :plugin 'kmet.app.permissions/approvals}
-            {:id :mode-tui :plugin 'kmet.agent.modes.tui/plugin :mode true}]
+            {:id :mode-tui :plugin 'kmet.agent.modes.tui/plugin :mode true
+             :session-lifecycle true}]
            (:rows (profile/compose (profile/layers table :tui))))
         "the bundle carries the rows the landed plugins add, and the TUI is the
-         default profile's mode row")
+         default profile's mode row — the one row that opens its own session")
     (is (= {:id :mode-rpc :plugin 'kmet.app.modes.rpc/plugin :mode true}
            (last (:rows (profile/compose (profile/layers table :rpc)))))
         "and a profile with a mode row carries it last, marked :mode")))

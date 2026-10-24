@@ -27,3 +27,18 @@
       (is (nil? ((:apply tui/plugin) root {}))
           "no :on-result, so no run")
       (finally (srce/dispose-subtree! root)))))
+
+(deftest the-invocations-session-reaches-kmet1s-run
+  ;; The row's only work for `-c`/`-r`/`--session` is the hand-off: kmet1's
+  ;; `interactive/run` resolves the session from those keys itself, so the row
+  ;; passes them through in its own spellings and decides nothing. A run the
+  ;; command line did not ask to continue creates a session, as it always did.
+  (let [run-opts @#'tui/run-opts]
+    (is (= {:mode :interactive} (run-opts {})))
+    (is (= {:mode :interactive :continue true} (run-opts {:continue true})))
+    (is (= {:mode :interactive :resume true} (run-opts {:resume true})))
+    (is (= {:mode :interactive :session "1a001ea0a00"}
+           (run-opts {:session "1a001ea0a00"})))
+    (is (= {:mode :interactive :session "1a001ea0a00" :continue true}
+           (run-opts {:session "1a001ea0a00" :continue true}))
+        "an invocation that asked for both is the mode's to resolve")))

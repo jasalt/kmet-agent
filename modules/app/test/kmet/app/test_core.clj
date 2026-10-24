@@ -124,15 +124,49 @@
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--version=1"]))))
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--print=1"])))
       "a one-shot flag takes no value either")
+  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--p"])))
+      "kmet1's flags are not kmet2's, but for the ones it takes")
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--profile="])))
       "an empty value is no value")
-  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-c"])))
-      "kmet1's flags are not kmet2's, but for the one-shot spellings")
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-p" "--profile" "print"])))
       "choosing print mode twice, two ways, is a usage error")
   (is (= :kmet.app/bad-args
          (error-type #(core/parse-args ["--dump-config" "--dump-state"])))
       "the two dumps are different views; asking for both is a usage error"))
+
+(deftest parse-args-takes-kmet1s-session-lifecycle-flags
+  ;; Which session a run opens is the mode's, but the flags are the command
+  ;; line's: they are kmet1's, and the TUI row applies them (the modes that
+  ;; cannot honor them refuse them by name — the next test).
+  (is (true? (:continue? (core/parse-args ["-c"]))))
+  (is (true? (:continue? (core/parse-args ["--continue"]))))
+  (is (true? (:resume? (core/parse-args ["-r"]))))
+  (is (true? (:resume? (core/parse-args ["--resume"]))))
+  (is (= "1a001ea0a00" (:session (core/parse-args ["--session" "1a001ea0a00"]))))
+  (is (= "1a001ea0a00" (:session (core/parse-args ["--session=1a001ea0a00"])))
+      "the --flag=value form")
+  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--session"])))
+      "--session takes a value")
+  (is (= :tui (:profile (core/parse-args ["-c"])))
+      "continuing needs no mode: the default profile is the TUI, which has one"))
+
+(deftest session-flags-need-a-mode-that-opens-a-session
+  ;; Print, rpc and the server create their agent through `:agents`, whose
+  ;; factory takes no session option yet (new-app.md, 10a). Accepting the flag
+  ;; there would start the fresh session it exists to prevent, so it is refused
+  ;; by name, before anything boots.
+  (doseq [[args flag profile] [[["-p" "hi" "-c"] "--continue" "print"]
+                               [["--profile" "rpc" "--resume"] "--resume" "rpc"]
+                               [["--profile" "rpc" "--session" "abc"]
+                                "--session" "rpc"]]]
+    (let [{:keys [code err]} (support/run-main args)]
+      (is (= 1 code) (pr-str args))
+      (is (str/includes? err (str flag " needs a mode that opens a session"))
+          "the flag is named, not silently dropped")
+      (is (str/includes? err (str "profile " profile))
+          "and so is the profile whose mode cannot honor it")
+      (is (str/includes? err "--app new -c")
+          "and the invocation that can"))))
 
 (deftest version-prints-the-shared-string
   (with-redefs [version/kmet-version (constantly "v9.9.9")]
@@ -147,6 +181,9 @@
     (is (str/includes? out "--dump-config"))
     (is (str/includes? out "--dump-state"))
     (is (str/includes? out "--profile"))
+    (is (str/includes? out "-c, --continue")
+        "the session-lifecycle flags are listed with the profile they belong to")
+    (is (str/includes? out "--session <id>"))
     (is (str/includes? out "install <source>")
         "the package subcommands the entry dispatches are listed too")
     (is (str/includes? out "config             Enable/disable resources"))))
@@ -308,7 +345,9 @@
     (is (= :tui (:profile opts)))
     (is (= :mode-tui (:id mode)) "the last row is the mode")
     (is (= 'kmet.agent.modes.tui/plugin (:plugin mode)) "and it is the TUI")
-    (is (true? (:mode mode)) "marked as the row the entry point hands the run to")))
+    (is (true? (:mode mode)) "marked as the row the entry point hands the run to")
+    (is (true? (:session-lifecycle mode))
+        "and as the row that opens the session, so -c/-r/--session reach it")))
 
 (deftest a-boot-failure-is-reported-as-a-configuration-error
   (let [path (scratch-patch!

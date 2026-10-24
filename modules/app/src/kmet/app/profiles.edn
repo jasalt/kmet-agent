@@ -66,8 +66,11 @@
   ;; the default profile: the TUI as a row. Its plugin is kmet1's interactive
   ;; mode mounted over this composition — the row is the whole difference
   ;; between the two entries for a TUI run (kmet.agent.modes.tui).
+  ;; :session-lifecycle says the mode opens the session itself, so the entry
+  ;; point may hand it -c/-r/--session instead of refusing them by name.
   {:bundles [[:bundle/minimal {}]]
-   :rows [{:id :mode-tui :plugin kmet.agent.modes.tui/plugin :mode true}]
+   :rows [{:id :mode-tui :plugin kmet.agent.modes.tui/plugin :mode true
+          :session-lifecycle true}]
    :patch []}
 
   ;; print is the first profile with a mode row: one prompt, one run, its text

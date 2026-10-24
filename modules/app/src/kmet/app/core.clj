@@ -43,7 +43,14 @@
    "--help" :help?
    "-h" :help?
    "--dump-config" :dump-config?
-   "--dump-state" :dump-state?})
+   "--dump-state" :dump-state?
+   ;; kmet1's session-lifecycle switches. They name which session a run opens
+   ;; instead of the new one it would otherwise create; only a mode that opens
+   ;; a session itself can honor them (`run-composed` answers for the rest).
+   "-c" :continue?
+   "--continue" :continue?
+   "-r" :resume?
+   "--resume" :resume?})
 
 (def ^:private value-flags
   {"--profile" :profile
@@ -51,7 +58,8 @@
    "--patch" :patch
    "--model" :model
    "--provider" :provider
-   "--port" :port})
+   "--port" :port
+   "--session" :session})
 
 (def ^:private print-flags
   "kmet1's one-shot spelling: `-p`/`--print` run the print profile, as `kmet -p
@@ -107,7 +115,8 @@
 
 (defn parse-args
   "Parse kmet2's argv → `{:profile kw :patch [path …] :args [rest …] :version?
-   :help? :dump-config? :dump-state? :format kw :model str :provider kw}`.
+   :help? :dump-config? :dump-state? :format kw :model str :provider kw
+   :continue? :resume? :session str}`.
    `:profile` defaults to `profile/default-profile`; `--mode` is kmet1's spelling
    of it (`resolve-mode`), `--model`/`--provider` are the run overrides a mode
    hands the agent it creates; the two dumps are different views of one
@@ -241,6 +250,9 @@
   (println "  --model <id>       Model the run's agent uses, over its settings")
   (println "  --provider <name>  Provider the run's agent uses, over its settings")
   (println "  --port <n>         --profile server's socket (0, the default, asks the OS)")
+  (println "  -c, --continue     Continue this directory's last session (the TUI)")
+  (println "  -r, --resume       Pick a session to resume (the TUI)")
+  (println "  --session <id>     Open a session by id, prefix or path (the TUI)")
   (println "  --dump-config      Print the composed plugin rows and exit")
   (println "  --dump-state       Boot the composition, print the ctx tree, and exit")
   (println "  --version          Print the version and exit")
@@ -306,13 +318,17 @@
 
 (defn- mode-input
   "What the command line asks a mode for: the prompt and where to report, plus
-   what the mode hands its run — the output `:format` and the agent's
-   `:model`/`:provider` overrides. A value the invocation did not give stays
-   absent (`select-keys`), so a mode sees what was asked for rather than a map of
-   every option it could have been told."
+   what the mode hands its run — the output `:format`, the agent's
+   `:model`/`:provider` overrides, and the session the run opens (`:session`,
+   `:resume`, `:continue`, in kmet1's spelling because the TUI row hands them to
+   kmet1's `interactive/run`). A value the invocation did not give stays absent
+   (`select-keys`), so a mode sees what was asked for rather than a map of every
+   option it could have been told."
   [opts prompt on-result]
-  (cond-> (assoc (select-keys opts [:format :model :provider :port])
+  (cond-> (assoc (select-keys opts [:format :model :provider :port :session])
                  :on-result on-result)
+    (:continue? opts) (assoc :continue true)
+    (:resume? opts) (assoc :resume true)
     ;; a profile with no prompt to give hands the mode no prompt at all
     (not (str/blank? prompt)) (assoc :prompt prompt)))
 
@@ -354,16 +370,49 @@
         (runtime/shutdown! booted)))
     (not-wired profile args)))
 
+(defn- session-flag
+  "The session-lifecycle flag OPTS asked for, in its long spelling, or nil.
+
+   `--session` wins, as it does in `interactive/run`'s own `cond`: the two
+   switches are answering the same question, and the explicit id is the more
+   specific answer."
+  [opts]
+  (cond
+    (:session opts) "--session"
+    (:resume? opts) "--resume"
+    (:continue? opts) "--continue"))
+
+(defn- no-session-lifecycle
+  "The usage error of a mode that does not open its own session, given the flag
+   that asked: named after composition, before anything boots. Print, rpc and
+   the server create their agent through `:agents`, whose factory takes no
+   session option yet (new-app.md, landing 10a), so accepting the flag there
+   would silently start the fresh session the flag exists to prevent."
+  [profile flag]
+  (binding [*out* *err*]
+    (println (str flag " needs a mode that opens a session; profile "
+                  (name profile) " creates its own, so it has none to continue"))
+    (println "  kmet --app new -c   continues this directory's last session in the TUI")
+    (flush))
+  1)
+
 (defn- run-composed
   "A run with neither `--dump-…` flag: the profile's mode, when it has one, else
-   the boot report."
+   the boot report. A mode honors the session-lifecycle flags when its row says
+   it owns the session (`:session-lifecycle`); the rest refuse them by name."
   [opts args]
   (let [composed (compose-config opts)]
     (if-let [mode (mode-row (:rows composed))]
-      (let [prompt (str/join " " args)]
-        (if (and (:prompt mode) (str/blank? prompt))
+      (let [prompt (str/join " " args)
+            flag (session-flag opts)]
+        (cond
+          (and flag (not (:session-lifecycle mode)))
+          (no-session-lifecycle (:profile opts) flag)
+
+          (and (:prompt mode) (str/blank? prompt))
           (no-prompt (:profile opts))
-          (run-mode composed mode opts prompt)))
+
+          :else (run-mode composed mode opts prompt)))
       (boot-and-report composed (:profile opts) args))))
 
 (defn- configuration-error? [e]
