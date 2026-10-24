@@ -67,6 +67,19 @@
         (is (= i (deref taken 2000 :timeout))
             (str "iteration " i ": the item reached the taker exactly once"))))))
 
+(deftest a-handed-out-item-leaves-nothing-behind
+  (testing "the take clears the item it handed out, so the next take on an empty
+            queue parks instead of re-delivering it — the mutation a missing
+            cleanup would hide, because a parking take cannot overwrite the slot"
+    (let [q (concurrent/queue)]
+      (concurrent/put! q :only)
+      (is (= :only (concurrent/take! q)))
+      (let [taken (promise)]
+        (concurrent/spawn #(deliver taken (concurrent/take! q)))
+        (is (parked? q) "the queue parked: :only was not handed over twice")
+        (concurrent/put! q :next)
+        (is (= :next (deref taken 2000 :timeout)))))))
+
 (deftest close-lets-the-consumer-drain-then-ends-it
   (let [q (concurrent/queue)]
     (concurrent/put! q :buffered)

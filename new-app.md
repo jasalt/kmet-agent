@@ -1725,13 +1725,21 @@ in the queue's own state for the duration of one swap, so two takers would race
 that slot. Two consumers need two queues, and the server has one owner per
 connection, so it never needs two.
 
-**Evidence.** Six new tests in `kmet.libs.test-concurrent` (order, a parked taker
+**Evidence.** Seven new tests in `kmet.libs.test-concurrent`: order, a parked taker
 woken by a put, 200 rounds of a put racing a taker, close-drains-then-ends, close
-waking a parked taker, nil-as-a-value). Each guard mutation-checked: removing
-`put!`'s delivery fails the parked-taker test, removing `close!`'s fails the
-close-wake test, answering nil for `closed` fails three, and a `put!` that claims
-success after close fails the drain test. `jolt -e` runs the same sequence on the
-native host (`[:a :b ::closed]`). Full gates green: `bb test` 4,203 / 25,191.
+waking a parked taker, nil-as-a-value, and the one the review added — *a handed-out
+item leaves nothing behind*. Each guard mutation-checked: removing `put!`'s
+delivery fails the parked-taker test, removing `close!`'s fails the close-wake test,
+answering nil for `closed` fails three, a `put!` that claims success after close
+fails the drain test, and — the gap the first six missed — **removing the `:handed`
+cleanup is invisible to them**: a non-parking take overwrites the stale slot, so
+only a take that *parks* re-delivers it, and no earlier test parked one after a
+successful take. That is a double delivery, the worst thing a queue can do, and it
+now fails by name.
+
+`jolt -e` runs the same sequence on the native host (`[:a :b ::closed]`). Full
+gates green: `bb test` 4,203 / 25,191 at the landing; 4,204 / 25,194 after the
+review's test.
 
 **What is left in landing 6**, in the order the row implies: `mode-server` as rpc
 over a socket with one agent per connection (`:agents`'s `create!`/`dispose!` carry

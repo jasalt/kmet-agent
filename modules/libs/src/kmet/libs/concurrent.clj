@@ -84,9 +84,10 @@
    the owner a plain loop; an atom rather than a blocking Java collection keeps
    it usable on both hosts and in extension contexts.
 
-   The state is one atom — `:items` (a `PersistentQueue`), `:closed?`, and a
-   `:signal` promise a waiting taker parks on — so every take is a single
-   deciding swap. `close!` leaves buffered items readable and then answers
+   The state is one atom — `:items` (a `PersistentQueue`), `:closed?`, a
+   `:signal` promise a waiting taker parks on, and the `:handed` slot a take holds
+   its value in for the length of one swap — so every take is a single deciding
+   swap. `close!` leaves buffered items readable and then answers
    `closed`, so a consumer drains what it was sent before it learns why it
    stopped.
 
