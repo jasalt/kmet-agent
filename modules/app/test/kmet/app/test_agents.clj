@@ -161,6 +161,18 @@
     (is (false? (contains? (:opts @factory-seen) :setup))
         ":setup is consumed by create!, not forwarded to the factory")))
 
+(deftest a-resumed-agent-keeps-its-composition
+  ;; A resumed agent is still that agent's composition: `resume!` takes the same
+  ;; options `create!` does, so a preset mounted at creation can be mounted again
+  ;; on the resume rather than silently lost.
+  (let [{:keys [root log agents]} (fixture)
+        session (create-session! {:log log})
+        ran (atom false)
+        _ ((:register-factory! agents) root (stand-in {}))]
+    ((:resume! agents) root "a-session" {:session session
+                                         :setup (fn [_ _] (reset! ran true))})
+    (is (true? @ran) "the resume path runs the caller's setup")))
+
 (deftest a-failed-factory-leaves-no-handle-and-no-ctx
   (let [{:keys [root agents]} (fixture)
         _ ((:register-factory! agents) root (fn [_ _] (throw (ex-info "boom" {}))))

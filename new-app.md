@@ -1983,6 +1983,19 @@ failed" hides. The preset tests also stopped creating agents with a default
 config — a test creates its session under `target/`, never in the agent dir a
 developer's kmet reads.
 
+**Simplify — two rules get names, and the resume carries them.** The two
+predicates the review had spelled out inline are now named: `composition-bug?`
+(which types survive the rollback, and why) and `setup-fn` (the option read and
+checked in one place, before anything is minted). The built-in table is read
+**once** per process in `kmet.app.presets` — a preset mount is per agent and a
+server creates an agent per connection, so the delay turned a jar-entry parse per
+connection into one per process (the preset tests went from 933 ms to 25 ms,
+which is what a resource read per mount looks like). And the review found a gap
+beside the reviews: `resume!` took no options, so a resumed agent could not be
+given the preset it was created with — it now takes `create!`'s opts, and
+`a-resumed-agent-keeps-its-composition` pins that the setup runs on that path
+too.
+
 ### Landing 5i — the owner publishes, and the registries stop reaching up
 
 `resource_config` was blocked by `kmet.agent.packages`, which was blocked by

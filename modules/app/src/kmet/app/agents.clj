@@ -168,6 +168,27 @@
     (catch Throwable t
       (srce/log! scope :error "agent ctx release failed" t))))
 
+(defn- composition-bug?
+  "Is T the kernel saying *the composition* is wrong rather than that this
+   creation failed? A composition bug keeps its own type through the rollback —
+   the caller may act on it — and everything else is wrapped as a creation that
+   failed, with its cause still attached."
+  [t]
+  (contains? #{:kmet.app/bad-agent-handle :kmet.app/preset-failed}
+             (:type (ex-data t))))
+
+(defn- setup-fn
+  "The `:setup` option of a create: a fn of `(ctx id)`, or nil. Checked before
+   anything is minted or extended, because a composition can carry a keyword
+   where a fn belongs, and that deserves its own name rather than \"not a
+   function\" from inside the creation catch."
+  [opts]
+  (when-let [setup (:setup opts)]
+    (when-not (fn? setup)
+      (throw (ex-info "a create! :setup is a fn of (ctx id)"
+                      {:type :kmet.app/bad-setup :setup setup})))
+    setup))
+
 (defn- subtree-ctxs
   "CTX's descendant ctxs, parents before children and eagerly: a disposal
    mutates the tree it is walking, so the walk cannot be a lazy seq."
@@ -246,15 +267,8 @@
                        (unsupported k (:id handle)))))]
     (letfn [(create! [ctx opts]
               (parent-ctx! (inside! ctx))
-              ;; a bad opt is refused before anything is claimed or extended: a
-              ;; composition can carry a keyword where this expects a fn, and
-              ;; that deserves its own name rather than "not a function" from
-              ;; inside the creation catch
-              (when-let [setup (:setup opts)]
-                (when-not (fn? setup)
-                  (throw (ex-info "a create! :setup is a fn of (ctx id)"
-                                  {:type :kmet.app/bad-setup :setup setup}))))
-              (let [factory (factory-for state ctx)
+              (let [setup (setup-fn opts)
+                    factory (factory-for state ctx)
                     id (mint (:handles @state))]
                 (claim-busy! state id)
                 (try
@@ -269,19 +283,13 @@
                                  ;; (dsh's setup(agentCtx, agent)): a preset
                                  ;; mounts its rows here, so no agent observes a
                                  ;; half-built world
-                                 (when-let [setup (:setup opts)] (setup child id))
+                                 (when setup (setup child id))
                                  (validate-handle! id child
                                                    ((:f factory) child
                                                                  (assoc (dissoc opts :setup) :id id)))
                                  (catch Throwable t
                                    (release-subtree! scope child)
-                                   ;; a composition bug keeps its own type — the
-                                   ;; caller may act on it — and anything else
-                                   ;; is a creation that failed, with its cause
-                                   ;; still attached
-                                   (if (contains? #{:kmet.app/bad-agent-handle
-                                                    :kmet.app/preset-failed}
-                                                  (:type (ex-data t)))
+                                   (if (composition-bug? t)
                                      (throw t)
                                      (throw (ex-info (str "agent creation failed: "
                                                           (or (ex-message t) (str t)))
@@ -359,7 +367,11 @@
 
        :create! create!
 
-       :resume! (fn [ctx id] (create! ctx {:resume id}))
+       :resume! (fn
+                  ([ctx id] (create! ctx {:resume id}))
+                  ;; a resumed agent is still that agent's composition, so the
+                  ;; preset it was created with travels with the resume
+                  ([ctx id opts] (create! ctx (assoc opts :resume id))))
 
        :get (fn [ctx id]
               (inside! ctx)

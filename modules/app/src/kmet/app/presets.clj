@@ -26,19 +26,25 @@
             [kmet.app.runtime :as runtime]
             [kmet.srce.core :as srce]))
 
+(def ^:private builtin
+  "The built-in table, read once. A preset mount is per agent and a server
+   creates one agent per connection, so a resource read per mount would be a
+   parse of a jar entry for data that cannot change while the process lives."
+  (delay (profile/builtin)))
+
 (defn mount!
   "Mount PRESET-NAME's rows under CTX and return `{:preset :rows :fibers}`.
    Throws `:kmet.app/preset-failed` when a row is not active, naming it.
 
    CTX is the ctx the preset is for — an agent's child ctx from
    `:agents/create!`'s `:setup` — and the fibers live and die with it."
-  ([ctx preset-name] (mount! ctx (profile/builtin) preset-name))
+  ([ctx preset-name] (mount! ctx @builtin preset-name))
   ([ctx table preset-name]
    (let [{:keys [rows]} (profile/compose [(profile/bundle table preset-name)])
          fibers (runtime/mount-rows! ctx rows)]
      (srce/settle! ctx)
-     (let [failed (runtime/inactive-rows rows fibers)]
-       (when (seq failed)
+     (if-let [failed (seq (runtime/inactive-rows rows fibers))]
+       (do
          ;; a preset is a set: half of it is not this preset. `create!`'s
          ;; rollback would release the whole child ctx, but a caller that
          ;; mounted onto a ctx it means to keep has no other way to undo this
@@ -50,13 +56,13 @@
                               (mapv :id failed))
                          {:type :kmet.app/preset-failed
                           :preset preset-name
-                          :fibers failed}))))
-     {:preset preset-name :rows (count rows) :fibers fibers})))
+                          :fibers failed})))
+       {:preset preset-name :rows (count rows) :fibers fibers}))))
 
 (defn setup
   "The `:setup` a `:agents/create!` opts carries: mount PRESET-NAME under the
    agent's child ctx — `(create! ctx {:setup (presets/setup :bundle/gated)})`.
    `setup` runs before the factory, so no agent observes a half-composed world."
-  ([preset-name] (setup (profile/builtin) preset-name))
+  ([preset-name] (setup @builtin preset-name))
   ([table preset-name]
    (fn [ctx _id] (mount! ctx table preset-name))))
