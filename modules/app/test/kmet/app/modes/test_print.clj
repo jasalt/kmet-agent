@@ -203,8 +203,8 @@
         ;; read from inside the run, where the binding is live
         (reset! seen {:mode (extensions/extension-mode)
                       :has-ui (extensions/extension-has-ui?)
-                      :set-theme (some? (extensions/ui-capability :set-theme))
-                      :notify (some? (extensions/ui-capability :notify))
+                      :answers? (some? (extensions/ui-capability :set-theme))
+                      :inert? (nil? (extensions/ui-capability :notify))
                       :confirm (extensions/ui-call :request {:kind :confirm})})
         (future
           (when-let [on-text (:on-text opts)] (on-text "ok"))
@@ -212,17 +212,17 @@
           :done))
       (fn []
         (is (= 0 (:code (support/run-main ["-p" "hello"]))))
-        (is (= :print (:mode @seen)) "an extension sees the front end it runs under")
-        (is (false? (:has-ui @seen)) "and that there is no UI to draw on")
-        (is (true? (:set-theme @seen))
-            "the headless port answers where it must rather than staying inert")
-        (is (false? (:notify @seen)) "and stays inert where a no-op is right")
+        (is (= {:mode :print :has-ui false :answers? true :inert? true}
+               (dissoc @seen :confirm))
+            "an extension sees the run's front end: print, headless, the port
+             answering where it must and inert where a no-op is right")
         (is (false? (:confirm @seen))
             "a confirm question is answered — never with yes, never with nil")))
-    (is (= :interactive (extensions/extension-mode))
-        "the surface that was there is back")
-    (is (true? (extensions/extension-has-ui?)))
-    (is (identical? outer (extensions/ui-capability :notify)))
+    (is (= {:mode :interactive :has-ui true :notify? true}
+           {:mode (extensions/extension-mode)
+            :has-ui (extensions/extension-has-ui?)
+            :notify? (identical? outer (extensions/ui-capability :notify))})
+        "and the surface that was there is back, its port and all")
     (extensions/unbind-extensions!)
     (is (nil? (extensions/ui-capability :set-theme))
-        "and a process with no front end of its own is back to inert")))
+        "a process with no front end of its own is back to inert")))

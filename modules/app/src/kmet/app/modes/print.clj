@@ -104,15 +104,14 @@
    `:disposed`."
   [scope format settled error]
   (if (= :edn format)
-    (dispose-all
-     (mapv (fn [event]
-             (events/on! scope (:name event)
-                         (fn [e]
-                           (prn (event-bus/wire-event e))
-                           (flush)
-                           (when (= :agent-settled (:type e))
-                             (deliver settled e)))))
-           (events/declared-events)))
+    (let [print-event (fn [event]
+                        (prn (event-bus/wire-event event))
+                        (flush)
+                        (when (= :agent-settled (:type event))
+                          (deliver settled event)))]
+      (dispose-all (mapv (fn [event]
+                           (events/on! scope (:name event) print-event))
+                         (events/declared-events))))
     (dispose-all
      [(events/on! scope :message-update
                   (fn [event]
@@ -134,39 +133,37 @@
   (let [scope (:parent ctx)
         agents (srce/get ctx :agents)
         {:keys [prompt on-result]} config]
-    (if-not on-result
-      ;; nothing to dispose: the diagnostic mount started nothing
-      nil
-      (do
-        ;; the guard comes before any listener: a mount that throws leaves its
-        ;; fiber failed and nothing disposes what it registered
-        (when (str/blank? (str prompt))
-          (throw (ex-info (str "print mode needs a prompt: "
-                               "kmet --app new --profile print \"your message\"")
-                          {:type :kmet.app/no-prompt})))
-        (let [format (:format config :text)
-              error (atom nil)
-              settled (promise)
-              dispose (subscriptions scope format settled error)
-              ;; what to put back when the run ends: the surface that was there,
-              ;; not the dispatcher's default — a process can have a front end
-              ;; before it has this run
-              previous (extensions/front-end-surface)]
-          ;; kmet1's print mode binds exactly this, a layer down: kind :print,
-          ;; no UI, the headless port that answers where it must
-          (extensions/bind-extensions! {:mode :print
-                                        :has-ui false
-                                        :ui (extensions/headless-ui-port)})
-          (future
-            (on-result {:exit (run-prompt! scope agents (assoc config :format format)
-                                           settled error)}))
-          (fn []
-            ;; a shutdown before the run ends must wake it: the settle promise
-            ;; is the only thing it blocks on, and an event that never comes
-            ;; would leave the thread parked
-            (deliver settled {:outcome :disposed})
-            (dispose)
-            (extensions/bind-extensions! previous)))))))
+    ;; nothing to run and nothing to dispose: a diagnostic mount started nothing
+    (when on-result
+      ;; the guard comes before any listener: a mount that throws leaves its
+      ;; fiber failed and nothing disposes what it registered
+      (when (str/blank? (str prompt))
+        (throw (ex-info (str "print mode needs a prompt: "
+                             "kmet --app new --profile print \"your message\"")
+                        {:type :kmet.app/no-prompt})))
+      (let [format (:format config :text)
+            error (atom nil)
+            settled (promise)
+            dispose (subscriptions scope format settled error)
+            ;; what to put back when the run ends: the surface that was there,
+            ;; not the dispatcher's default — a process can have a front end
+            ;; before it has this run
+            previous (extensions/front-end-surface)]
+        ;; kmet1's print mode binds exactly this, a layer down: kind :print,
+        ;; no UI, the headless port that answers where it must
+        (extensions/bind-extensions! {:mode :print
+                                      :has-ui false
+                                      :ui (extensions/headless-ui-port)})
+        (future
+          (on-result {:exit (run-prompt! scope agents (assoc config :format format)
+                                         settled error)}))
+        (fn []
+          ;; a shutdown before the run ends must wake it: the settle promise is
+          ;; the only thing it blocks on, and an event that never comes would
+          ;; leave the thread parked
+          (deliver settled {:outcome :disposed})
+          (dispose)
+          (extensions/bind-extensions! previous))))))
 
 (srce/defplugin plugin
   {:name :mode-print
