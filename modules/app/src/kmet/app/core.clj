@@ -17,11 +17,18 @@
    a profile without a mode row still boots, reports what it mounted, and
    exits, which is what proves the rest of the rows mount.
 
+   Package subcommands (`install`, `remove`, `update`, `list`, `config`) are
+   commands rather than profiles: they run the same package CLI kmet1 uses
+   (`kmet.agent.packages-cli`) before the app's own flags, and the config
+   command's terminal UI is resolved when it runs, so a session never pays for
+   the TUI it does not start.
+
    Output and exit codes are separable on purpose: `main` returns the exit
    code and `-main` is the only form that calls `System/exit`, so tests read a
    command's output and status without forking a process."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
+            [kmet.agent.packages-cli :as packages-cli]
             [kmet.agent.version :as version]
             [kmet.ai.models :as models]
             [kmet.app.catalog :as catalog]
@@ -201,6 +208,22 @@
       (finally
         (runtime/shutdown! booted)))))
 
+;; ── package subcommands ──────────────────────────────────────────────────
+
+(defn run-config
+  "The `config` subcommand's terminal UI: kmet1's resource-config screen,
+   resolved when the command runs. The screen is a front end, not a row, so a
+   process that never runs `config` loads no TUI. Returns the screen's exit
+   code."
+  [opts]
+  ((requiring-resolve 'kmet.agent.modes.config-command/run-config!) opts))
+
+(defn- package-command
+  "ARGS start with a package subcommand: the shared CLI runs it, with the
+   config screen it cannot require injected."
+  [args]
+  (packages-cli/run-package-command args {:run-config! run-config}))
+
 ;; ── entry ─────────────────────────────────────────────────────────────────
 
 (defn- report [message]
@@ -223,6 +246,12 @@
   (println "  --version          Print the version and exit")
   (println "  -h, --help         Show this help")
   (println)
+  (println "Package subcommands:")
+  (println "  install <source>   Add a package (local dir/file or git: repo) to settings")
+  (println "  remove <source>    Remove a package (alias: uninstall)")
+  (println "  update [source]    Update installed git packages (all, or one source)")
+  (println "  list               List installed packages")
+  (println "  config             Enable/disable resources (TUI)")
   (println)
   (println "  kmet --app new --profile print \"list the files\"   run one prompt and exit")
   (println)
@@ -341,17 +370,20 @@
   (str/starts-with? (str (:type (ex-data e))) ":kmet."))
 
 (defn main
-  "Run kmet2 with ARGS and return the process exit code."
+  "Run kmet2 with ARGS and return the process exit code. A package subcommand
+   runs before the app's flags do, as kmet1 dispatches it."
   [args]
   (try
-    (let [{version? :version? help? :help? dump-config? :dump-config?
-           dump-state? :dump-state? leftover :args :as opts} (parse-args args)]
-      (cond
-        version? (do (println (str "kmet " (version/kmet-version))) (flush) 0)
-        help? (do (print-usage) (flush) 0)
-        dump-config? (do (print (dump-config opts)) (flush) 0)
-        dump-state? (do (print (dump-state opts)) (flush) 0)
-        :else (run-composed opts leftover)))
+    (if (packages-cli/package-command? args)
+      (package-command args)
+      (let [{version? :version? help? :help? dump-config? :dump-config?
+             dump-state? :dump-state? leftover :args :as opts} (parse-args args)]
+        (cond
+          version? (do (println (str "kmet " (version/kmet-version))) (flush) 0)
+          help? (do (print-usage) (flush) 0)
+          dump-config? (do (print (dump-config opts)) (flush) 0)
+          dump-state? (do (print (dump-state opts)) (flush) 0)
+          :else (run-composed opts leftover))))
     (catch Exception e
       (cond
         (= :kmet.app/bad-args (:type (ex-data e)))

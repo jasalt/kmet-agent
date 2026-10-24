@@ -797,6 +797,11 @@ where Node uses package names:
 - Profiles and bundles are EDN staged beside the binary the way
   `target/kmet-bundled` is, so a project can ship its own; a profile under the
   agent dir can name out-of-tree plugins the way dsh's Harness home does.
+- **Package subcommands are commands, not profiles.** `install`, `remove`,
+  `update`, `list` and `config` run the shared package CLI
+  (`kmet.agent.packages-cli`, now `app`'s) before the app's own flags, exactly
+  as kmet1 dispatches them. The `config` screen is a front end, not a row, so
+  `kmet --app new config` resolves it only when the command runs.
 
 ## One artifact, two apps
 

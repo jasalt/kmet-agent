@@ -33,7 +33,8 @@
     "install" "kmet install <source> [-l] [-a|--approve|--no-approve]"
     "remove" "kmet remove <source> [-l] [-a|--approve|--no-approve]"
     "update" "kmet update [source] [--extensions] [-a|--approve|--no-approve]"
-    "list" "kmet list [-a|--approve|--no-approve]"))
+    "list" "kmet list [-a|--approve|--no-approve]"
+    "config" "kmet config [-l] [-a|--approve|--no-approve]"))
 
 (defn- print-command-help
   "pi printPackageCommandHelp."

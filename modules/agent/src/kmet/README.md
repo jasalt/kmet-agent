@@ -123,8 +123,10 @@ kmet/agent/
 ├── skills.clj          — skill resources, discovery and registration (the
 │                         prompt builder itself is app's `system_prompt.clj`)
 ├── (model_resolver.clj) — model pattern/CLI resolution; moved at 7a
-├── packages.clj        — package/resource resolution (local + managed git)
-├── packages_cli.clj    — the install/remove/update/list/config CLI
+├── (packages.clj)      — package/resource resolution (local + managed git);
+│                         moved to `modules/app`
+├── (packages_cli.clj)  — the install/remove/update/list/config CLI; moved to
+│                         `modules/app` (both entries dispatch it)
 ├── (git_packages.clj)  — git source parsing + managed checkouts; moved at 7a
 ├── (loop.clj)          — the agent loop driver (`kmet.agent.loop`, public:
 │                         make-agent-state, run-agent-turn, cancel-turn);
