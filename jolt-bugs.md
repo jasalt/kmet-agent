@@ -24,6 +24,11 @@ fixes; until then a source build wants a Jolt from `main`. `#1031` is
 unchanged: still open, as is
 [babashka/sci#1093](https://github.com/babashka/sci/pull/1093).
 
+Filing: [`#1433`](https://github.com/jolt-lang/jolt/issues/1433) (shim enums
+lack `valueOf`/`values`) was filed 2026-10-24 against the installed
+`v0.8.23-47-g75c8b610` dev build, where it still reproduces; no fix on `main`
+yet.
+
 ## Live issues
 
 ### [jolt#1031](https://github.com/jolt-lang/jolt/issues/1031) — SCI host-protocol support on Jolt
@@ -92,7 +97,7 @@ collections — stays in place because the `v0.8.22` floor still lacks the fix;
 it is also harmless and keeps ordering deterministic. The entry stays live
 until a tag carries the fix.
 
-### Not yet filed — `valueOf`/`values` missing from Jolt's shim-provided enums
+### [jolt#1433](https://github.com/jolt-lang/jolt/issues/1433) — `valueOf`/`values` missing from Jolt's shim-provided enums
 
 Static *fields* on enum classes resolve, but the JVM-synthesized static
 methods `valueOf`/`values` do not, for the enums Jolt's dependency shims
@@ -143,5 +148,8 @@ one spelling serves both hosts — and `kmet.libs.test-self-contained` /
 `libs-name-no-static-fields-in-sandbox-code` fails a static field anywhere a
 sandbox would execute it (mutations checked: `defn` body, a lambda and a
 `fn` nested in a `def` initializer all fail by name; a field as the initializer
-itself passes). "jolt-bugs.md" says a ticket is dropped once a tag carries
-the fix; add the number here when this is filed.
+itself passes). Filed 2026-10-24, still open, no fix on `main`; reproduced on
+the installed `v0.8.23-47-g75c8b610` dev build (reflection confirms the shim
+enum classes declare neither `values()` nor `valueOf(String)`, so nothing
+synthesizes them). The entry stays live until a tag carries the fix, and it
+drops then if the workaround stays harmless.
