@@ -39,10 +39,8 @@
    (when-let [err (models/get-model-config-error)]
      (binding [*out* *err*]
        (println "Warning: models.edn:" err)))
-   ;; Configuration + extensions load before model resolution (pi:
-   ;; createAgentSessionRuntime registers extension providers, then the CLI model
-   ;; resolves) — so --model/--provider and settings.edn can select
-   ;; extension-registered providers, and print mode gets extension hooks.
+   ;; Config before the packages (their settings decide what loads), and both
+   ;; before the model resolution `run-mode` does afterwards.
    (let [config (cfg/init!)]
      (when ctx (root/publish! ctx))
      ;; One unified load per type (pi: resourceLoader — top-level entries, auto

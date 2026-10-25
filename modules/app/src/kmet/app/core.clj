@@ -499,14 +499,12 @@
         :else (throw e)))))
 
 (defn run-process
-  "What a process start does before it exits: ARGS through `main`. `-main` is
-   this plus the exit code, so a test can drive the whole entry without forking.
+  "What a process start does before it exits: ARGS through `main`; `-main` adds
+   the exit code, so a test drives the entry without forking.
 
-   The model catalog is not loaded here: it is part of the process world, which
-   loads into the composition's own registries (`run-mode`), after the boot that
-   mounts them. 5n's `-d` and `--generate-models` sit on this side of that load;
-   `--list-models` on the far side, since the table it prints includes the
-   extension providers the load installs."
+   The model catalog is not loaded here — it is part of the process world
+   (`run-mode`), after the boot that mounts its registries. 5n's `-d` and
+   `--generate-models` go on this side of that load; `--list-models` after it."
   [args]
   (main args))
 

@@ -3653,9 +3653,9 @@ so every profile has extensions, themes and the loaded catalogs the way kmet1's
 (it was the only caller, which is why print, rpc and server ran extension-less).
 
 **Landed so far (5l-ii-a) — the body, and the root it publishes onto.**
-`kmet.app.world/load!` owns the load; `cli/load-world!` is a one-line delegate,
-so kmet1's call sites and the TUI row stayed unchanged until 5l-ii-b rewired
-them. The move needed two supporting pieces, and each is a leak the old location
+`kmet.app.world/load!` owns the load; kmet1's `-main` called it through a
+one-line delegate until the review removed it, and the TUI row read its result
+until 5l-ii-b rewired the entry. The move needed two supporting pieces, and each is a leak the old location
 was hiding:
 
 - `kmet.tui.theme` moved to `libs`, its name kept. The load (in `app`, rank 2)
@@ -3665,11 +3665,13 @@ was hiding:
   universe from the module tree, so it scans `modules/libs/src` whole instead
   of assuming every file there is `kmet.libs.*`.
 - The process root's atom moved to `kmet.app.root` (`publish!`, `ctx`, `boot!`,
-  `reset-root!`, `restore-root!`), which `kmet.agent.app-runtime` now
-  delegates to. Without it the world load cannot publish an entry's composition
-  without requiring the rank-4 shim; with it, the publisher is rank 2 like the
-  load. `boot!` takes the boot thunk, so kmet1's lazy `{:profile :tui}` boot
-  stays in the shim — `kmet.app.root` never learns a profile.
+  `reset-root!`, `restore-root!`); `kmet.agent.app-runtime/ctx` delegates to it,
+  and the tests use the root ns directly, so the shim carries no
+  publication pass-throughs. Without the move the world load cannot publish an
+  entry's composition without requiring the rank-4 shim; with it, the publisher
+  is rank 2 like the load. `boot!` takes the boot thunk, so kmet1's lazy
+  `{:profile :tui}` boot stays in the shim — `kmet.app.root` never learns a
+  profile.
 
 **Landed (5l-ii-b) — the entry loads it, and the mode mounts after.**
 `runtime/boot` takes `{:defer (fn [row])}` and returns the held-back rows in

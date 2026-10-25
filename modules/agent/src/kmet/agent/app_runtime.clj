@@ -1,9 +1,10 @@
 (ns kmet.agent.app-runtime
   "The agent runtime: the app's root ctx.
 
-   `ctx` is the root context: kmet1 boots kmet2's composition behind it, so the
-   registries, the event bus's scope, the loop's stage map and the session log
-   all live on the ctx. The extension host registers there too since 4b-ii-a
+   `ctx` is the root context: kmet1 boots kmet2's composition behind it, and the
+   publication and its first-root rule live in `kmet.app.root`. The registries,
+   the event bus's scope, the loop's stage map and the session log all live on
+   the ctx. The extension host registers there too since 4b-ii-a
    (its hooks, themes, UI port, renderers and flags are registry entries), and
    kmet1's own store node is gone since 4e — a registration is a service entry,
    not a key in a per-process node. `/units` renders the ctx tree the root
@@ -40,24 +41,6 @@
   []
   (:ctx (app-runtime/boot (app-core/compose-config {:profile :tui})
                           {:ctx-meta {:loop-stages (atom loop-stages/defaults)}})))
-
-(defn publish-root!
-  "Make CTX the process root — the ctx `ctx` returns and every kmet1 shim
-   reads. `kmet.app.root/publish!` owns the publication and its first-root
-   rule; this name is kmet1's entry point onto it."
-  [ctx]
-  (root/publish! ctx))
-
-(defn reset-root!
-  "Clear the process root and return what it was (a test seam; see
-   `kmet.app.root/reset-root!`)."
-  []
-  (root/reset-root!))
-
-(defn restore-root!
-  "Put back what `reset-root!` returned (nil clears it)."
-  [prev]
-  (root/restore-root! prev))
 
 (defn ctx
   "The app root ctx: the composed rows kmet1 registers into. The process
@@ -110,10 +93,13 @@
 ;; it, and re-binding is how a different owner takes over.
 (defonce ^:private shim-binding
   (fn []
-    (ctx)
-    (let [f (extensions/host-binding)]
+    ;; Boot the root first: its `:extensions` row binds services (the process
+    ;; handle, the resource operations), and the first registration must be
+    ;; served from those, not from this fallback.
+    (let [root (ctx)
+          f (extensions/host-binding)]
       (if (identical? f shim-binding)
-        (registries/host-services (reg/current) (ctx))
+        (registries/host-services (reg/current) root)
         (f)))))
 
 (extensions/bind-services! shim-binding)
@@ -124,8 +110,9 @@
    registries are services rather than store entries (4c-ii): one call per tag
    instead of tracking a disposer per registration."
   [owner]
-  (doseq [tag (keys registry-tags)]
-    (reg/deregister-owner! (registry) tag owner))
+  (let [handle (registry)]
+    (doseq [tag (keys registry-tags)]
+      (reg/deregister-owner! handle tag owner)))
   nil)
 
 (defn refresh-stages!

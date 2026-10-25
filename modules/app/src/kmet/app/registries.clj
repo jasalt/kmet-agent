@@ -102,7 +102,7 @@
              (srce/get scope service))
            remainder)))))
 
-(defn resource-services
+(defn- resource-services
   "The resource operations the extension host calls, backed by the registries
    their own namespaces read: those answer through HANDLE, the process handle
    the `:extensions` row publishes, so these are the app's own fns rather than a

@@ -286,17 +286,6 @@
             (println "--mode requires text, edn, or rpc"))
           (System/exit 1)))))
 
-(defn load-world!
-  "Kmet1's name for `kmet.app.world/load!`: the provider catalogs and the
-   models.edn layer over them, the config, the extension packages, the themes,
-   and the extension CLI flags. Returns the config.
-
-   `-main` runs this after its own flags and before dispatch; kmet2's entry
-   runs the same load, into the composition it booted and before it mounts the
-   mode, so the two entries cannot drift."
-  [opts]
-  (world/load! opts))
-
 (defn -main
   "Entry point. Parses CLI args and dispatches to the requested mode."
   [& args]
@@ -345,7 +334,7 @@
       (debug/enable!)
       (debug/log "kmet started with --debug"))
 
-    (let [config (load-world! opts)]
+    (let [config (world/load! opts)]
 
       ;; --list-models prints the available table and exits (pi: main.ts
       ;; listModels — after catalogs, models.edn, and extensions load so

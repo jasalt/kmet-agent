@@ -39,25 +39,27 @@
   []
   (:ctx @app-root))
 
+(defn- start!
+  "BOOT-FN under the boot flag: a nested read of the root is the one thing it
+   may not do, because the tree does not exist yet."
+  [boot-fn]
+  (when *booting*
+    (throw (ex-info (str "the process root was read while it was being booted: "
+                         "a row cannot read the root it is being mounted into")
+                    {:type :kmet.app/root-boot-loop})))
+  (binding [*booting* true]
+    (publish! (boot-fn))))
+
 (defn boot!
   "The process root, booting and publishing one when the process has none
    yet: BOOT-FN is called at most once, under the atom's lock, so two readers
-   racing the first read mount one tree.
-
-   A read that arrives *while* BOOT-FN runs — a row mounted before the extension
-   host asking for the root it is part of — is refused by name
-   (`:kmet.app/root-boot-loop`) instead of booting a second composition behind
-   the one already being mounted."
+   racing the first read mount one tree. A read that arrives *while* it runs
+   fails by name (`:kmet.app/root-boot-loop`, see `start!`) instead of booting a
+   second composition behind the one already being mounted."
   [boot-fn]
   (or (ctx)
       (locking app-root
-        (or (ctx)
-            (if *booting*
-              (throw (ex-info (str "the process root was read while it was being booted: "
-                                   "a row cannot read the root it is being mounted into")
-                              {:type :kmet.app/root-boot-loop}))
-              (binding [*booting* true]
-                (publish! (boot-fn))))))))
+        (or (ctx) (start! boot-fn)))))
 
 (defn reset-root!
   "Clear the process root and return what it was.

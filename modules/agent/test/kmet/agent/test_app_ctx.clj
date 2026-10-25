@@ -7,6 +7,7 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.registry :as registry]
             [kmet.agent.tools.registry :as tools]
+            [kmet.app.root :as root]
             [kmet.srce.core :as srce]))
 
 (t/deftest the-root-is-the-composed-app
@@ -22,18 +23,18 @@
   ;; read the tree the entry mounted instead of booting a second one behind it.
   (let [ours (srce/root {:name :app})
         other (srce/root {:name :other})
-        prev (app-runtime/reset-root!)]
+        prev (root/reset-root!)]
     (try
-      (t/is (identical? ours (app-runtime/publish-root! ours)))
+      (t/is (identical? ours (root/publish! ours)))
       (t/is (identical? ours (app-runtime/ctx))
             "the published root, not a freshly booted composition")
-      (t/is (identical? ours (app-runtime/publish-root! other))
+      (t/is (identical? ours (root/publish! other))
             "the first root wins — a second publish cannot strand the tree the
              process is already reading")
       (finally
         (srce/dispose-subtree! ours)
         (srce/dispose-subtree! other)
-        (app-runtime/restore-root! prev)))))
+        (root/restore-root! prev)))))
 
 (t/deftest the-facade-routes-a-tag-to-its-service
   (let [handle (app-runtime/registry)]
