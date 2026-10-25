@@ -1114,8 +1114,7 @@
                                                   ["mid bash command" true true false]
                                                   ["clean scrollback" false false false]]]
         (let [cs (hs/core-state (hs/new-handle)
-                                {:anim-timer (atom nil)
-                                 ;; the run settles its flag before the
+                                {;; the run settles its flag before the
                                  ;; teardown event reaches the UI
                                  :turn-running? false
                                  :bash-running? (atom bash?)
@@ -1140,8 +1139,7 @@
       ;; settle saw it (an extension's settle handler sending a message) keeps
       ;; its claim.
       (let [cs (hs/core-state (hs/new-handle)
-                              {:anim-timer (atom nil)
-                               :turn-running? true
+                              {:turn-running? true
                                :bash-running? (atom false)
                                :compacting? false
                                :chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
@@ -1254,8 +1252,7 @@
           ch (chat-history/make-chat-history :tool-fn tools/get-tool)
           cs (assoc (hs/core-state (hs/new-handle)
                                    {:tui ui
-                                    :chat-history ch
-                                    :bash-signal (atom false)})
+                                    :chat-history ch})
                     :dock-stack (atom []))]
       (chat-history/chat-history-add-message! ch {:role :user :content "hello"})
       (tui/tui-add-child ui ch)
@@ -1390,8 +1387,7 @@
     (let [requested (atom 0)
           tui {:running? (atom true)}
           cs (hs/core-state (hs/new-handle) {:tui tui
-                                             :turn-running? true
-                                             :anim-timer (atom nil)})
+                                             :turn-running? true})
           driver (fn [gate]
                    (reset! requested 0)
                    (with-redefs [tui/tui-request-render (fn [_] (swap! requested inc))

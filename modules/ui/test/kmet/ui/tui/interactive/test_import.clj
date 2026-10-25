@@ -9,13 +9,11 @@
             [kmet.tui.protocols :as protocols]
             [kmet.tui.terminal :as terminal]
             [kmet.tui.core :as tui]
-            [kmet.ui.tui.interactive :as inter]
             [kmet.ui.tui.interactive.builtins :as builtins]
             [kmet.ui.tui.interactive.layout :as layout]
             [kmet.ui.tui.interactive.turn :as turn]
             [kmet.ui.tui.interactive.session-admin :as session-admin]
             [kmet.agent.commands :as commands]
-            [kmet.ui.tui.footer :as footer]
             [kmet.ui.tui.scoped-models-selector :as scoped-models-selector]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
@@ -74,13 +72,11 @@
         ag (runtime/agent-state handle)]
     (reset! (:system-prompt-opts ag) prompt-opts)
     (reset! (:system ag) (apply skills/build-system-prompt (mapcat identity prompt-opts)))
-    (inter/map->CoreState
-     {:engine handle
-      :chat-history ch
-      :editor ed
-      :current-editor-atom (atom ed)
-      :footer-provider prov
-      :footer-comp (footer/make-footer :provider prov)})))
+    (hs/core-state handle {:tui nil
+                           :chat-history ch
+                           :editor ed
+                           :current-editor-atom (atom ed)
+                           :footer-provider prov})))
 
 (defn- last-message [ch] (select-keys (peek @(:messages-atom ch)) [:role :content]))
 

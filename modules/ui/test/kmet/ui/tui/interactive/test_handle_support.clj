@@ -126,17 +126,15 @@
    to the run's session, the status layer, and the bash flags they settle.
 
    OPTS override what it builds (`:tui`, `:chat-history`, `:editor`,
-   `:current-editor-atom`, `:anim-timer`, `:bash-running?`, `:bash-signal`,
-   `:pending-bash-components`, `:status-indicator`, `:status-current`,
-   `:status-root`, `:footer-provider`, `:footer-comp`) and seed what the run
-   reads: the handle's own atoms (`:config`, `:cwd`, `:turn-running?`, the
-   compaction queues), the state record's session (`:session`), and the state's
-   atoms (`:messages`, `:model`, `:provider`, `:thinking`, `:scoped-models`,
-   `:cfg`, `:compacting?`) — the values a test writes directly, written where
-   the run reads them."
+   `:current-editor-atom`, `:bash-running?`, `:status-indicator`,
+   `:status-current`, `:status-root`, `:footer-provider`) and seed what the run
+   reads: the handle's own atoms (`:config`, `:cwd`, `:turn-running?`), the
+   state record's session (`:session`), and the state's atoms (`:messages`,
+   `:model`, `:provider`, `:thinking`, `:scoped-models`, `:cfg`, `:compacting?`)
+   — the values a test writes directly, written where the run reads them."
   ([handle] (core-state handle nil))
   ([handle opts]
-   (doseq [k [:config :cwd :turn-running? :compaction-queued :pending-compaction]
+   (doseq [k [:config :cwd :turn-running?]
            :when (contains? opts k)]
      (reset! (get handle k) (get opts k)))
    ;; the live session the handle answers is the state record's, the way a
@@ -166,15 +164,15 @@
        :chat-history ch
        :editor ed
        :current-editor-atom (opt-or opts :current-editor-atom (atom ed))
-       :anim-timer (opt-or opts :anim-timer (atom nil))
+       :anim-timer (atom nil)
        :bash-running? (opt-or opts :bash-running? (atom false))
-       :bash-signal (opt-or opts :bash-signal (atom false))
+       :bash-signal (atom false)
        :pending-messages-container (container/make-container)
-       :pending-bash-components (opt-or opts :pending-bash-components (atom []))
+       :pending-bash-components (atom [])
        :pending-messages-comp (pending-messages/make-pending-messages)
        :status-current (opt-or opts :status-current (atom nil))
        :status-root (:status-root opts)
        :status-indicator (opt-or opts :status-indicator
                                  (status-indicator/make-status-indicator))
-       :footer-comp (opt-or opts :footer-comp (footer/make-footer :provider fdp))
+       :footer-comp (footer/make-footer :provider fdp)
        :footer-provider fdp}))))
