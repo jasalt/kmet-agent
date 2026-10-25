@@ -4316,6 +4316,20 @@ described the pre-rename namespaces. Then
 the `kmet.agent.tools.core` façade collapse, the deletion and the flag flip, and
 the documents.
 
+The deletion has guard work of its own, and each item is a guard that would
+either fail or go silently narrow: `test-front-end-policy`'s table names kmet1's
+print and rpc (the handle front ends it also names are the ones that survive);
+`test-core`'s CLI section and `test-app-dispatch` are the flag's own tests, so
+they go with it; `test-layer-guard`'s `mode-source-files` drops the
+`modules/agent/src/kmet/agent/modes` root; and `test-no-global-node`'s ban list
+keeps `kmet.agent.app-runtime`, because a name that no longer exists is what the
+tripwire is for. `kmet.test-retirement` loses its `agent`-module exception and
+becomes the whole-tree rule.
+
+`kmet.app.test-support/with-host` delegates to `kmet.test-utils`'s fixture: the
+loop tests and the root tree's bind the same host, and one fixture disposes the
+ctx it created.
+
 The two-axes endgame, in one landing because it cannot be split once started:
 the `s/kmet\.agent\./kmet.app./` pass over the known list (minus
 `kmet.extension`, the ABI, and minus the names re-hosted under `kmet.ui.*`),

@@ -6,11 +6,9 @@
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.app.core :as core]
-            [kmet.app.extensions.core :as extensions]
-            [kmet.app.registries :as registries]
-            [kmet.app.registry :as registry]
             [kmet.app.runtime :as runtime]
-            [kmet.srce.core :as srce]))
+            [kmet.srce.core :as srce]
+            [kmet.test-utils :as tu]))
 
 (defn run-main-into
   "`main` on ARGS with stdout going to OUT, a writer the caller keeps. A mode
@@ -136,16 +134,11 @@
   (:ctx *composition*))
 
 (defn with-host
-  "clojure.test :each fixture: bind the extension host over a fresh registry,
-   then restore whatever was bound before.
+  "clojure.test :each fixture: this namespace needs a bound extension host.
 
-   A bare test process has no composition to bind one, and the loop's tool and
-   render paths ask the host for its hooks. One handle serves the whole binding:
-   a thunk that built a fresh one per call would register into one table and
-   read from another."
+   The loop's tool path and the render path ask the host for its hooks, and a
+   bare test process has no composition to bind one. `kmet.test-utils` owns the
+   fixture (a fresh registry over a bare ctx, restored and disposed in its
+   `finally`), so the app's tests and the root tree's bind the same thing."
   [f]
-  (let [handle (registry/atom-registry)
-        base (extensions/host-binding)]
-    (extensions/bind-services!
-     (fn [] (registries/host-services handle nil)))
-    (try (f) (finally (extensions/bind-services! base)))))
+  (tu/with-extension-host f))

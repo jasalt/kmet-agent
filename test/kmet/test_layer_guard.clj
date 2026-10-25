@@ -119,8 +119,14 @@
    the *module*, so it reads the tree rather than the prefix alone."
   (delay (into #{} (map path->ns) (source-files-under "modules/libs/src"))))
 
+(def ^:private mode-prefixes
+  "The modes' namespace prefixes: kmet2's rows, which live in this module but
+   are front ends (a business file reaching one would be the same inversion),
+   and kmet1's entry modes while that module exists."
+  ["kmet.app.modes." "kmet.agent.modes."])
+
 (deftest app-layer-does-not-require-front-ends
-  (testing "no new kmet.agent namespace reaches the TUI/Tk/interactive layers"
+  (testing "no app business namespace reaches the TUI/Tk/UI layers or a mode"
     (let [shared @libs-namespaces]
       (doseq [f (app-source-files)
               :let [ns-name (path->ns f)
@@ -130,7 +136,7 @@
                                                 (or (str/starts-with? d "kmet.tui.")
                                                     (str/starts-with? d "kmet.tk.")
                                                     (str/starts-with? d "kmet.ui.")
-                                                    (str/starts-with? d "kmet.agent.modes.")))
+                                                    (some #(str/starts-with? d %) mode-prefixes)))
                                               deps))]]
         (is (empty? forbidden)
             (str ns-name " requires forbidden namespaces: " (vec (sort forbidden))))))))
@@ -176,14 +182,14 @@
             (str f " requires " (vec forbidden) " — " why))))))
 
 (deftest app-ui-does-not-require-entry-modes
-  (testing "app UI components never reach up into kmet.agent.modes — the UI layer
-            sits below the modes, so it takes its data from the caller or the
-            runtime, never from an entry mode"
+  (testing "app UI components never reach up into a mode — the UI layer sits
+            below the modes, so it takes its data from the caller or the
+            runtime, never from a mode row or an entry mode"
     (let [files (ui-source-files)]
       (is (seq files) "no app UI sources scanned — check the walk roots")
       (doseq [f files
               :let [ns-name (path->ns f)
-                    forbidden (filter #(str/starts-with? % "kmet.agent.modes.")
+                    forbidden (filter #(some (fn [p] (str/starts-with? % p)) mode-prefixes)
                                       (required-kmet f))]]
         (is (empty? forbidden)
             (str ns-name " requires " (vec forbidden)))))))

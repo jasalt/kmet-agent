@@ -22,6 +22,7 @@
             [kmet.app.registries :as registries]
             [kmet.app.sessions :as sessions]
             [kmet.app.system-prompt :as system-prompt]
+            [kmet.app.test-support :as support]
             [kmet.srce.core :as srce]))
 
 (def ^:private sessions-dir
@@ -502,7 +503,13 @@
                      ((:submit! agents) handle "hello" {})))
               (is (= :steered (:action ((:submit! agents) handle "later" {})))
                   "a submission while the run is live steers it")
-              (is (= ["later"] (:steering (runtime/queues handle))))
+              ;; the queue is the durable inbox's projection: the submit answers
+              ;; the disposition, and the run's delivery is what fills the
+              ;; in-memory queue, so wait for the condition rather than the
+              ;; scheduler
+              (is (support/wait-until
+                   #(= ["later"] (:steering (runtime/queues handle))))
+                  "the steered text reached the run's queue")
               (is (= [nil :steer] @seen)
                   "the hooks were told the second text would be steered")
               (deliver gate true)
