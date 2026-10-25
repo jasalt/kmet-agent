@@ -3550,14 +3550,15 @@ finished, measured from the TUI's own code:
   suite builds kmet1's `session.driver` engine (`tu/test-engine`); a handle-shaped
   fixture boots the `:tui` composition and creates through `:agents`, so a
   test fails when the handle stops answering an op the TUI calls. The fixture
-  is `kmet.ui.tui.interactive.test-handle-support`: `with-boot` for a namespace,
-  `with-handle` for one test, `new-handle` for a second agent of the installed
-  composition, `create-handle!` with `:session`/`:cwd`/`:config`, and
-  `core-state` for a CoreState — its options override the fields it builds and
-  seed the handle's own atoms (`:session`, `:config`, `:cwd`,
-  `:turn-running?`, `:messages`, `:model`, `:provider`, `:thinking`,
-  `:scoped-models`, `:cfg`, `:compacting?`, the compaction queues), with an
-  explicit nil meaning none. Each boot owns a session directory, so two
+  is `kmet.ui.tui.interactive.test-handle-support`: `with-boot` for a
+  namespace (the only way a test gets a composition — the fixture owns the
+  boot), `create-handle!` for the full creation (`:session`/`:cwd`/`:config`,
+  with the boot map's ctx and agents), `handle-with` for the handle alone,
+  `new-handle` for one with no options, and `core-state` for a CoreState — its
+  options override the fields it builds and seed the handle's own atoms
+  (`:session`, `:config`, `:cwd`, `:turn-running?`, `:messages`, `:model`,
+  `:provider`, `:thinking`, `:scoped-models`, `:cfg`, `:compacting?`, the
+  compaction queues), with an explicit nil meaning none. Each boot owns a session directory, so two
   boots in one test (the two-agent shape landings 9 and 10 need) do not delete
   each other's sessions.
 
