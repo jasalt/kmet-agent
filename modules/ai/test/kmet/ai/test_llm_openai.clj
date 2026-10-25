@@ -20,6 +20,7 @@
             [kmet.agent.loop.test-support :as loop-support]
             [kmet.agent.session.core :as session]
             [kmet.agent.config :as cfg]
+            [kmet.ai.model-gen :as model-gen]
             [kmet.ai.models :as m]
             [kmet.agent.tools.core :as tools]))
 
@@ -726,11 +727,13 @@
         (t/is (= "conversation-edits" (get h "Openai-Intent")))
         (t/is (nil? (get h "session_id")) "copilot still skips affinity headers under :none")))))
 
-(t/deftest ^:slow test-llm-copilot-responses-end-to-end
-  ;; the copilot responses path: per-request dynamic headers (X-Initiator /
-  ;; Openai-Intent / Copilot-Vision-Request) + the static COPILOT headers +
-  ;; the session-affinity headers, on the real send-message flow
-  (m/load-catalogs!)
+(defn- copilot-responses-run
+  "The copilot responses round trip against a mock server: per-request dynamic
+   headers (X-Initiator / Openai-Intent / Copilot-Vision-Request) + the static
+   COPILOT headers + the session-affinity headers, on the real send-message
+   flow. The caller names the model: the shipped catalog moves with models.dev,
+   and a rename there must not empty this wire test (it did once)."
+  []
   (let [ss (java.net.ServerSocket. 0)
         port (.getLocalPort ss)
         request-body (atom nil)
@@ -817,6 +820,34 @@
           (t/is (= {:role "developer" :content "S"} (first (:input payload))))))
       (finally
         (.close ss)))))
+
+(t/deftest ^:slow test-llm-copilot-responses-end-to-end
+  (m/load-catalogs!)
+  (let [shipped (m/get-provider :github-copilot)
+        _ (t/is (some? shipped) "the catalog still has the copilot provider")
+        model (m/map->Model
+               {:id "gpt-5.4" :name "GPT-5.4" :provider :github-copilot
+                :api :openai-responses
+                :base-url "https://api.individual.githubcopilot.com"
+                :reasoning true :input [:text :image]
+                ;; the generated copilot models carry pi's static headers;
+                ;; the responses wire merges the model's, not the provider's
+                :headers model-gen/copilot-static-headers
+                :cost {:input 2.5 :output 15 :cache-read 0.25 :cache-write 0}
+                :context-window 272000 :max-tokens 128000
+                :thinking-level-map {:minimal "low" :low "low" :medium "medium"
+                                     :high "high" :xhigh "xhigh" :max "max"}})
+        provider (assoc shipped
+                        :models (conj (into [] (remove #(= "gpt-5.4" (:id %)))
+                                            (:models shipped))
+                                      model)
+                        :default-model "gpt-5.4"
+                        :api-types (conj (set (:api-types shipped)) :openai-responses))]
+    (m/register-provider! provider)
+    (try
+      (copilot-responses-run)
+      (finally
+        (m/register-provider! shipped)))))
 
 ;; ─── Codex + Azure responses end-to-end (mock server) ─────────────────────
 
