@@ -3504,16 +3504,16 @@ five decisions, and an explicit list of what the plan does *not* reopen.
 
 ### What is left, measured
 
-`modules/agent/src` is 21 files and 7,327 lines, and every one of them is
+`modules/agent/src` is 20 files and 7,253 lines, and every one of them is
 either kmet1's to delete or blocked on an edge that is now one call deep:
 
 | Block | Files | Lines | Edges that hold it | Cut |
 |---|---|---|---|---|
-| the interactive cluster (`modes/interactive/*` + `interactive.clj`) | 10 | 5,207 | `app-runtime` 3 sites, `tools.core` 2 (the driver and the builtin table moved at 5l-i) | the ctx becomes the caller's argument (5j already added the arity), and the two tool-layer reads take the table the mode passes |
+| the interactive cluster (`modes/interactive/*` + `interactive.clj`) | 10 | 5,207 | `app-runtime` 4 sites, `tools.core` 1 (the driver and the builtin table moved at 5l-i; `tools.registry` is `app`'s, so it is not an edge) | the ctx becomes the caller's argument (5j already added the arity), and the two tool-layer reads take the table the mode passes |
 | kmet2's TUI row (`modes/tui.clj`) | 1 | 100 | none — the process world the entry loaded arrives as the row's `:config` | the file moves to `ui` at 5l-iii |
 | the `config` front end (`modes/config_command.clj`) | 1 | 57 | — | moves to `ui`: `kmet config` is a shared command, not kmet1's — the screen it hosts is already `kmet.ui.tui.resource-config`, and kmet2's entry resolves the command by name |
 | kmet1's own modes (`print`, `rpc`, `rpc_client`) | 3 | 1,150 | — | deleted at retirement, untouched until then |
-| kmet1's entry and process (`cli`, `core`, `jvm_main`, `app_runtime`, `extensions/services`, `tools/core`) | 6 | 813 | — | deleted at retirement; both successors landed at 5l-ii: `kmet.app.root` for the process root, `kmet.app.registries/process-handle` for the registry routing |
+| kmet1's entry and process (`cli`, `core`, `jvm_main`, `app_runtime`, `tools/core`) | 5 | 739 | — | deleted at retirement; both successors landed at 5l-ii: `kmet.app.root` for the process root, `kmet.app.registries/process-handle` for the registry routing |
 
 Three things are missing rather than blocked, and they are the rest of the plan:
 
