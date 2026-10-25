@@ -128,11 +128,12 @@
    OPTS override what it builds (`:tui`, `:chat-history`, `:editor`,
    `:current-editor-atom`, `:anim-timer`, `:bash-running?`, `:bash-signal`,
    `:pending-bash-components`, `:status-indicator`, `:status-current`,
-   `:status-root`, `:footer-provider`, `:footer-comp`) and seed the handle's
-   own atoms (`:session`, `:config`, `:cwd`, `:turn-running?`, `:messages`, `:model`,
-   `:provider`, `:thinking`, `:scoped-models`, `:cfg`,
-   `:compaction-queued`, `:pending-compaction`) — the values a test writes
-   directly, written where the run reads them."
+   `:status-root`, `:footer-provider`, `:footer-comp`) and seed what the run
+   reads: the handle's own atoms (`:config`, `:cwd`, `:turn-running?`, the
+   compaction queues), the state record's session (`:session`), and the state's
+   atoms (`:messages`, `:model`, `:provider`, `:thinking`, `:scoped-models`,
+   `:cfg`, `:compacting?`) — the values a test writes directly, written where
+   the run reads them."
   ([handle] (core-state handle nil))
   ([handle opts]
    (doseq [k [:config :cwd :turn-running? :compaction-queued :pending-compaction]
