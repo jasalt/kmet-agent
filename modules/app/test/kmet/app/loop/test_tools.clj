@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-tools
+(ns kmet.app.loop.test-tools
   "Tool execution: before/after hooks, parallel tool calls, bash result recording,
    active tools, and thinking-level events."
   (:require [clojure.test :as t]
@@ -6,8 +6,7 @@
             [babashka.fs :as fs]
             [kmet.ai.llm :as llm]
             [kmet.libs.json :as json]
-            [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.tools.core :as tools]
+            [kmet.app.tools.tool :as tool]
             [kmet.app.tools.registry :as tools-registry]
             [kmet.app.session.core :as session]
             [kmet.app.loop.tool-exec :as tool-exec]
@@ -16,14 +15,13 @@
             [kmet.app.config :as cfg]
             [kmet.ui.tui.chat-history :as ui]
             [kmet.tui.theme :as th]
-            [kmet.agent.loop.test-support :as support]))
+            [kmet.app.loop.test-support :as support]))
 
 (t/use-fixtures
   :each
   ;; A test that needs a tool table should not boot the app root: the loop
-  ;; resolves tools through `kmet.agent.tools.core`, so a redef of
-  ;; `app-runtime/registry` gives this namespace its own (see
-  ;; `test-support/with-registry`).
+  ;; reads the table from its ctx's `:tools` service, so `with-registry` gives
+  ;; this namespace its own (see `test-support/with-registry`).
   (fn [f] (support/with-registry f)))
 
 ;; ─── Tool hooks (before/after tool-call) ─────────────────────────────────
@@ -262,12 +260,12 @@
   ;; pipeline refactor)
   (let [seen (atom nil)
         calls (atom 0)]
-    (tools/register-tool!
-     (tools/make-tool :name "rewrite-seq-tool" :label "Seq"
-                      :description "sequential rewrite test tool"
-                      :parameters {:x (tools/param :x :string "x")}
-                      :execute (fn [_] {:content "seq" :is-error false})
-                      :execution-mode :sequential))
+    (tools-registry/register-tool! (support/tool-table)
+                                   (tool/make-tool :name "rewrite-seq-tool" :label "Seq"
+                                                   :description "sequential rewrite test tool"
+                                                   :parameters {:x (tool/param :x :string "x")}
+                                                   :execute (fn [_] {:content "seq" :is-error false})
+                                                   :execution-mode :sequential))
     (try
       (let [agent (support/make-agent-state)]
         (reset! (:before-tool-call agent)
@@ -293,7 +291,7 @@
           @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])})))
       (t/is (= {:x "rewritten"} @seen))
       (finally
-        (tools/unregister-tool!  "rewrite-seq-tool")))))
+        (tools-registry/unregister-tool! (support/tool-table)  "rewrite-seq-tool")))))
 
 (t/deftest test-a-tool-dropped-after-the-request-still-runs
   ;; the request's tool map is captured once and threaded through the turn
@@ -304,11 +302,11 @@
   (let [events (atom [])
         offered (atom nil)
         calls (atom 0)]
-    (tools-registry/register-tool! (app-runtime/registry)
-                                   (tools/make-tool :name "capture-probe" :label "Probe"
-                                                    :description "captured-dispatch probe"
-                                                    :parameters {:x (tools/param :x :string "x")}
-                                                    :execute (fn [_] {:content "captured-ran" :is-error false}))
+    (tools-registry/register-tool! (support/tool-table)
+                                   (tool/make-tool :name "capture-probe" :label "Probe"
+                                                   :description "captured-dispatch probe"
+                                                   :parameters {:x (tool/param :x :string "x")}
+                                                   :execute (fn [_] {:content "captured-ran" :is-error false}))
                                    [:probe :test])
     (try
       (let [agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
@@ -318,7 +316,7 @@
                         (when (nil? @offered)
                           (reset! offered (:tools opts)))
                         ;; gone by the time the model's call comes back
-                        (tools-registry/unregister-tool! (app-runtime/registry) "capture-probe" [:probe :test])
+                        (tools-registry/unregister-tool! (support/tool-table) "capture-probe" [:probe :test])
                         (future
                           (if (= 1 (swap! calls inc))
                             (do (when-let [on-tc (:on-tool-call opts)]
@@ -341,7 +339,7 @@
               "dispatch resolves against the request's capture, not the live registry")
         (t/is (false? (:is-error end))))
       (finally
-        (tools-registry/unregister-tool! (app-runtime/registry) "capture-probe" [:probe :test])))))
+        (tools-registry/unregister-tool! (support/tool-table) "capture-probe" [:probe :test])))))
 
 (t/deftest test-loop-scripted-calls-fire-tool-hooks
   ;; the run's agent-level hooks reach calls made inside a script: the loop
@@ -499,12 +497,12 @@
         release-first (promise)
         release-second (promise)
         agent (support/make-agent-state)]
-    (tools/register-tool!
-     (tools/make-tool :name "seq-tool" :label "Seq"
-                      :description "sequential test tool"
-                      :parameters {:x (tools/param :x :string "x")}
-                      :execute (fn [_] {:content "seq" :is-error false})
-                      :execution-mode :sequential))
+    (tools-registry/register-tool! (support/tool-table)
+                                   (tool/make-tool :name "seq-tool" :label "Seq"
+                                                   :description "sequential test tool"
+                                                   :parameters {:x (tool/param :x :string "x")}
+                                                   :execute (fn [_] {:content "seq" :is-error false})
+                                                   :execution-mode :sequential))
     (try
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message
@@ -545,7 +543,7 @@
               (deliver release-first true)
               (deliver release-second true)))))
       (finally
-        (tools/unregister-tool!  "seq-tool")))))
+        (tools-registry/unregister-tool! (support/tool-table)  "seq-tool")))))
 
 ;; ─── Bash result recording (pi: recordBashResult + _flushPendingBashMessages)
 
@@ -687,7 +685,7 @@
 (t/deftest test-active-tools-default-tools
   (t/testing "a :default-tools selection filters built-ins; extension tools
               stay enabled; a runtime selection wins; nil restores the default"
-    (let [builtins (set tools/builtin-tool-names)
+    (let [builtins (set tools-registry/builtin-tool-names)
           builtin-names (fn [ag] (into #{} (filter builtins) (map :name (state/active-tools ag))))
           all-names (fn [ag] (set (map :name (state/active-tools ag))))
           ag (support/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
@@ -695,11 +693,11 @@
       (t/is (= #{"read"} (builtin-names ag)))
       (t/testing "extension tools registered later stay active"
         (try
-          (tools-registry/register-tool! (app-runtime/registry) {:name "default-tools-ext"
-                                                                 :description "d"
-                                                                 :execute (fn [_] {:content ""})})
+          (tools-registry/register-tool! (support/tool-table) {:name "default-tools-ext"
+                                                               :description "d"
+                                                               :execute (fn [_] {:content ""})})
           (t/is (contains? (all-names ag) "default-tools-ext"))
-          (finally (tools-registry/unregister-tool! (app-runtime/registry) "default-tools-ext"))))
+          (finally (tools-registry/unregister-tool! (support/tool-table) "default-tools-ext"))))
       (t/testing "an explicit set-active-tools! selection replaces the default"
         (state/set-active-tools! ag ["bash"])
         (t/is (= #{"bash"} (all-names ag))))
@@ -708,14 +706,14 @@
         (t/is (= #{"read"} (builtin-names ag))))
       (t/testing "no setting → every tool active"
         (let [fal (support/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")]
-          (t/is (= (set (keys (tools/get-all-tools))) (all-names fal))))))))
+          (t/is (= (set (keys (tools-registry/get-all-tools (support/tool-table)))) (all-names fal))))))))
 
 (t/deftest test-apply-default-tools-reload
   (t/testing "reload replaces the selection: tools newly in
               :default-tools become active; tools removed from it
               go inactive (pi: defaultTools controls the built-in
               surface)"
-    (let [builtins (set tools/builtin-tool-names)
+    (let [builtins (set tools-registry/builtin-tool-names)
           builtin-names (fn [ag] (into #{} (filter builtins) (map :name (state/active-tools ag))))
           ag (support/make-agent-state :provider :opencode-go :model "deepseek-v4-flash"
                                        :default-tools ["read"])]

@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-boundaries
+(ns kmet.app.loop.test-boundaries
   "Turn boundaries and phases: transform-context, system-prompt override,
    prepareNextTurn/finishTurn, the turn_end and agent_before_settle boundaries,
    and total request deadlines."
@@ -14,8 +14,10 @@
             [kmet.app.loop :as loop]
             [kmet.app.retry :as retry]
             [kmet.app.config :as cfg]
-            [kmet.agent.loop.test-support :as support]
+            [kmet.app.loop.test-support :as support]
             [kmet.srce.core :as srce]))
+
+(t/use-fixtures :each support/with-host)
 
 ;; ─── Phase 3: transform-context ──────────────────────────────────────────
 
@@ -318,7 +320,7 @@
           "nothing was committed")))
 
 (t/deftest test-loop-append-context-edit-refreshes-the-context
-  ;; K: kmet.agent.state/append-context-edit! — the session keeps the raw entry,
+  ;; K: kmet.app.session.core/append-context-edit! — the session keeps the raw entry,
   ;; the live context is rebuilt from the projection (pi: appendContextEdit +
   ;; _refreshFinalizedContext)
   (let [dir (str (fs/create-dirs (fs/path "target" "test-loop-context-edit")))

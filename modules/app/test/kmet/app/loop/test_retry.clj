@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-retry
+(ns kmet.app.loop.test-retry
   "Auto-retry: exhausted attempts, backoff, and the events that report them."
   (:require [clojure.test :as t]
             [babashka.fs :as fs]
@@ -7,8 +7,10 @@
             [kmet.app.session.core :as session]
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
-            [kmet.agent.loop.test-support :as support]
+            [kmet.app.loop.test-support :as support]
             [kmet.app.config :as cfg]))
+
+(t/use-fixtures :each support/with-host)
 
 ;; ─── Auto-retry ───────────────────────────────────────────────────────────
 

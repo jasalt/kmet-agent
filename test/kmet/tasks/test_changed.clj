@@ -12,7 +12,7 @@
     (is (= 'kmet.ai.api.openai-completions (changed/path->ns "modules/ai/src/kmet/ai/api/openai_completions.clj")))
     (is (= 'kmet.libs.text (changed/path->ns "modules/libs/src/kmet/libs/text.clj"))))
   (testing "test files map to test namespaces"
-    (is (= 'kmet.agent.loop.test-turn (changed/path->ns "modules/agent/test/kmet/agent/loop/test_turn.clj")))
+    (is (= 'kmet.app.loop.test-turn (changed/path->ns "modules/app/test/kmet/app/loop/test_turn.clj")))
     (is (= 'kmet.libs.test-text (changed/path->ns "modules/libs/test/kmet/libs/test_text.clj"))))
   (testing "task files map through their own root (tasks/, not src/)"
     (is (= 'kmet.tasks.build (changed/path->ns "tasks/kmet/tasks/build.cljc")))

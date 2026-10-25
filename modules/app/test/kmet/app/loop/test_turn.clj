@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-turn
+(ns kmet.app.loop.test-turn
   "Turn execution: run-agent-turn without a key, with a scripted provider, continue,
    successive turns, signal cleanup, event routing, start hooks, and images."
   (:require [clojure.test :as t]
@@ -15,8 +15,10 @@
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
             [kmet.app.config :as cfg]
-            [kmet.agent.loop.test-support :as support]
+            [kmet.app.loop.test-support :as support]
             [kmet.test-utils :refer [slash]]))
+
+(t/use-fixtures :each support/with-host)
 
 (t/deftest run-binds-the-session-cwd-for-tools
   (t/testing "an agent run binds the tool cwd from the session (pi: the

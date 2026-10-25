@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-compact
+(ns kmet.app.loop.test-compact
   "Compaction orchestration: threshold and window triggers, summarization and its
    failures, extension-supplied compaction, manual runs, and branch summaries."
   (:require [clojure.test :as t]
@@ -12,14 +12,15 @@
             [kmet.app.compaction.stage :as compact]
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
-            [kmet.agent.app-runtime :as runtime]
             [kmet.app.config :as cfg]
             [kmet.app.debug :as debug]
-            [kmet.agent.tools.core :as tools]
+            [kmet.app.tools.registry :as tools-registry]
             [kmet.ui.tui.chat-history :as ui]
             [kmet.tui.protocols :as protocols]
             [kmet.test-utils :as tu]
-            [kmet.agent.loop.test-support :as support]))
+            [kmet.app.loop.test-support :as support]))
+
+(t/use-fixtures :each support/with-host)
 
 ;; ─── Phase 3: compaction ─────────────────────────────────────────────────
 
@@ -691,9 +692,10 @@
         sess (session/create-session (str dir))
         events (atom [])
         attempts (atom 0)
-        run-ctx (runtime/child-ctx nil {:retry-policy {:config {:max-retries 1
-                                                                :base-delay-ms 3
-                                                                :max-agent-delay-ms 5}}})
+        run-ctx (:ctx (support/test-ctx
+                       {:retry-policy {:config {:max-retries 1
+                                                :base-delay-ms 3
+                                                :max-agent-delay-ms 5}}}))
         agent (support/make-agent-state
                :ctx run-ctx
                :session sess
@@ -1115,7 +1117,8 @@
                :compact-token-threshold 10
                :keep-recent-tokens 40)
         ch (ui/make-chat-history :tool-display-mode :collapsed
-                                 :tool-fn tools/get-tool)
+                                 :tool-fn (partial tools-registry/get-tool
+                                                   (support/tool-table)))
 
         render (fn [mode]
                  (ui/chat-history-set-tool-display-mode! ch mode)

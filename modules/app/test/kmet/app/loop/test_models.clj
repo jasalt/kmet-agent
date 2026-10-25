@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-models
+(ns kmet.app.loop.test-models
   "Model management: selection, per-call API-key resolution, the get-api-key hook,
    and endpoint discovery from the model registry."
   (:require [clojure.test :as t]
@@ -8,7 +8,9 @@
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
             [kmet.app.config :as cfg]
-            [kmet.agent.loop.test-support :as support]))
+            [kmet.app.loop.test-support :as support]))
+
+(t/use-fixtures :each support/with-host)
 
 ;; ─── Phase 3: model management ───────────────────────────────────────────
 

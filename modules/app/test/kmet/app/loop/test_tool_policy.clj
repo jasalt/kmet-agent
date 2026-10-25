@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-tool-policy
+(ns kmet.app.loop.test-tool-policy
   "The permission gate in the loop: a deny settles the call without executing,
   an `:ask` goes to the approvals seam, a scripted inner call is gated too, and
   two agents in one process decide independently because the policy is read
@@ -7,26 +7,34 @@
             [clojure.test :refer [deftest is use-fixtures]]
             [kmet.ai.llm :as llm]
             [kmet.app.permissions :as permissions]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.app.config :as cfg]
+            [kmet.app.core :as core]
             [kmet.app.loop :as loop]
-            [kmet.agent.loop.test-support :as support]
+            [kmet.app.loop.test-support :as support]
+            [kmet.app.runtime :as runtime]
             [kmet.libs.json :as json]
             [kmet.srce.core :as srce]))
+
+(def ^:private boot
+  "The composed application, once per namespace: the loop resolves the `:tools`
+   table, the prompt rows and the ask route through a ctx, and a bare root has
+   none of them. Disposed by `with-boot`."
+  (delay (runtime/boot (core/compose-config {:profile :tui}) {})))
 
 (def ^:private agent-ctxs
   "Every agent ctx this namespace built, so the fixture can detach them."
   (atom []))
 
 (defn- agent-ctx
-  "A child of the app root — so the loop's own services resolve — named NAME and
-   carrying POLICY as this agent's `:permissions`, if given. The app root mounts
-   no policy, so a child may provide one (one provider per name per chain).
+  "A child of the suite's ctx — so the loop's own services resolve — named NAME
+   and carrying POLICY as this agent's `:permissions`, if given. The suite ctx
+   mounts no policy, so a child may provide one (one provider per name per
+   chain).
 
-   The app root is process-wide, so a ctx left attached outlives the test:
+   The suite ctx is process-wide, so a ctx left attached outlives the test:
    `detach-agent-ctxs!` releases them, or `/units` would list a line per test."
   ([name]
-   (let [ctx (srce/extend (app-runtime/ctx) {:name name})]
+   (let [ctx (srce/extend (:ctx @boot) {:name name})]
      (swap! agent-ctxs conj ctx)
      ctx))
   ([name policy]
@@ -46,6 +54,12 @@
       (doseq [ctx @agent-ctxs] (srce/detach! ctx))
       (reset! agent-ctxs []))))
 
+(defn- with-boot
+  [f]
+  (f)
+  (srce/dispose-subtree! (:ctx @boot)))
+
+(use-fixtures :once with-boot)
 (use-fixtures :each detach-agent-ctxs!)
 
 (defn- run-bash-turn

@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-guard
+(ns kmet.app.loop.test-guard
   "Repeat-loop guard: the circuit breaker that ends a turn whose tool calls repeat."
   (:require [clojure.test :as t]
             [clojure.string :as str]
@@ -7,10 +7,11 @@
             [kmet.app.loop :as loop]
             [kmet.app.loop-guard :as guard]
             [kmet.app.loop.stages :as loop-stages]
-            [kmet.agent.app-runtime :as runtime]
             [kmet.app.retry :as retry]
             [kmet.app.config :as cfg]
-            [kmet.agent.loop.test-support :as support]))
+            [kmet.app.loop.test-support :as support]))
+
+(t/use-fixtures :each support/with-host)
 
 ;; ─── Repeat-loop guard (circuit breaker) ────────────────────────────────
 
@@ -152,7 +153,7 @@
   ;; A state names the ctx it reads its stages and tool table from — there is no
   ;; process default left (new-app.md, 7a) — and a run can be pointed at its own
   ;; child ctx (landing 4c-ii-b).
-  (let [mine (runtime/child-ctx)]
+  (let [mine (:ctx (support/test-ctx))]
     (t/is (identical? mine (:ctx (support/make-agent-state :ctx mine)))
           "a run names the ctx it reads")
     (t/is (= :kmet/no-tool-service

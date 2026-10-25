@@ -13,7 +13,7 @@
             [kmet.app.event-bus :as event-bus]
             [kmet.app.events :as app-events]
             [kmet.app.loop :as loop]
-            [kmet.agent.loop.test-support :as support]
+            [kmet.app.loop.test-support :as support]
             [kmet.app.config :as cfg]))
 
 ;; ─── The headless renderer ────────────────────────────────────────────────

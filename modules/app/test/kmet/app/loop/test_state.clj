@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-state
+(ns kmet.app.loop.test-state
   "Agent-state construction and lifecycle: make-agent-state defaults and helpers,
    model/thinking persistence, cancellation and status transitions, event
    dispatching, and the pure phase helpers of run-agent-turn."
@@ -8,7 +8,6 @@
             [kmet.ai.models :as models]
             [kmet.ai.auth :as auth]
             [kmet.app.skills :as skills]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.app.tools.registry :as tools-registry]
             [kmet.app.session.core :as session]
             [kmet.app.loop.state :as state]
@@ -17,7 +16,7 @@
             [kmet.app.retry :as retry]
             [kmet.app.event-bus :as event-bus]
             [kmet.app.events :as events]
-            [kmet.agent.loop.test-support :as support]))
+            [kmet.app.loop.test-support :as support]))
 
 (t/use-fixtures
   :each
@@ -58,7 +57,7 @@
     (t/is (fn? (:on-event agent)))))
 
 (t/deftest test-loop-set-active-tools-rebuilds-system-prompt
-  (let [all-tools (vals (tools-registry/get-all-tools (app-runtime/registry)))
+  (let [all-tools (vals (tools-registry/get-all-tools (support/tool-table)))
         opts {:tools all-tools}
         prompt (skills/build-system-prompt :tools all-tools)
         agent (support/make-agent-state
@@ -78,15 +77,15 @@
     ;; a dedicated search tool in the active set suppresses the shell rule
     ;; (pi: buildRules — grep/find/ls); the stand-in mirrors the grep extension
     (try
-      (tools-registry/register-tool! (app-runtime/registry) {:name "grep"
-                                                             :description "stand-in for the grep extension"
-                                                             :prompt-snippet "stand-in for the grep extension"
-                                                             :execute (fn [_] {:content ""})})
+      (tools-registry/register-tool! (support/tool-table) {:name "grep"
+                                                           :description "stand-in for the grep extension"
+                                                           :prompt-snippet "stand-in for the grep extension"
+                                                           :execute (fn [_] {:content ""})})
       (state/set-active-tools! agent ["bash" "read" "grep"])
       (t/is (str/includes? @(:system agent) "- grep:"))
       (t/is (not (str/includes? @(:system agent) "Use bash for file operations")))
       (finally
-        (tools-registry/unregister-tool! (app-runtime/registry) "grep")))
+        (tools-registry/unregister-tool! (support/tool-table) "grep")))
     ;; restore all
     (state/set-active-tools! agent nil)
     (t/is (nil? @(:enabled-tools agent)))
@@ -107,7 +106,7 @@
   ;; disabled before the reload must be re-enableable afterwards (the
   ;; reload handler in interactive.clj rebuilds opts over the active set;
   ;; set-active-tools! always validates against the live registry).
-  (let [all-tools (vals (tools-registry/get-all-tools (app-runtime/registry)))
+  (let [all-tools (vals (tools-registry/get-all-tools (support/tool-table)))
         opts {:tools all-tools}
         agent (support/make-agent-state
                :model "m"

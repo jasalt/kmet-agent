@@ -1,13 +1,15 @@
-(ns kmet.agent.loop.test-errors
+(ns kmet.app.loop.test-errors
   "Cancellation, error events, and retry classification: how failures surface and
    which ones the loop retries."
   (:require [clojure.test :as t]
             [kmet.ai.llm :as llm]
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
-            [kmet.agent.loop.test-support :as support]
+            [kmet.app.loop.test-support :as support]
             [kmet.app.retry :as retry]
             [kmet.app.config :as cfg]))
+
+(t/use-fixtures :each support/with-host)
 
 ;; ─── Cancellation ─────────────────────────────────────────────────────────
 

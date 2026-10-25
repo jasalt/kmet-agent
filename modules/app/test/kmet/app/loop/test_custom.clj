@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-custom
+(ns kmet.app.loop.test-custom
   "Custom-message delivery (sendCustomMessage) and the settled outcome a run reports."
   (:require [clojure.test :as t]
             [clojure.edn :as edn]
@@ -12,7 +12,9 @@
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
             [kmet.app.config :as cfg]
-            [kmet.agent.loop.test-support :as support]))
+            [kmet.app.loop.test-support :as support]))
+
+(t/use-fixtures :each support/with-host)
 
 ;; ─── Phase 4: custom-message delivery (pi: sendCustomMessage) ────────────
 

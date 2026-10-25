@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-support
+(ns kmet.app.loop.test-support
   "Shared stubs for the loop tests: scripted LLM transports, event capture,
    provider registration, compaction runs, and turn-capture helpers."
   (:require [clojure.test :as t]
@@ -7,10 +7,11 @@
             [kmet.ai.models :as models]
             [kmet.ai.auth :as auth]
             [kmet.app.event-bus :as event-bus]
+            [kmet.app.extensions.core :as extensions]
             [kmet.app.session.core :as session]
             [kmet.app.loop :as loop]
             [kmet.app.loop.stages :as loop-stages]
-            [kmet.agent.app-runtime :as app-runtime]
+            [kmet.app.registries :as registries]
             [kmet.app.registry :as registry]
             [kmet.app.config :as cfg]
             [kmet.srce.core :as srce]))
@@ -25,9 +26,8 @@
 
 (defonce ^:private suite-ctx
   ;; One test ctx per process, built on first use: a hand-built state names the
-  ;; ctx it reads, and a test process's is `test-ctx`, not the application root
-  ;; the process default this replaces (`kmet.agent.app-runtime/ctx`) used to
-  ;; boot.
+  ;; ctx it reads, and a test process's is `test-ctx` — a bare root carrying a
+  ;; fresh tool table — not the composed application root.
   (delay (:ctx (test-ctx))))
 
 (defn process-ctx
@@ -35,6 +35,12 @@
    suite's own ctx otherwise."
   []
   (or *ctx* @suite-ctx))
+
+(defn tool-table
+  "The tool table the loop reads on `process-ctx`: the `:tools` service, a
+   registry handle (a fresh one under `with-registry`)."
+  []
+  (srce/get (process-ctx) :tools))
 
 (defn make-agent-state
   "`kmet.app.loop/make-agent-state` on the test process's ctx (`process-ctx`):
@@ -275,8 +281,8 @@
   ([] (test-ctx nil))
   ([stages]
    (let [handle (registry/atom-registry)
-         ;; the stage map rides the ctx meta as an atom, the way
-         ;; app-runtime/child-ctx builds one, so a refresh can swap it
+         ;; the stage map rides the ctx meta as an atom, the way a run's own
+         ;; ctx carries one, so a refresh can swap it
          ctx (srce/root {:name :test-loop
                          :loop-stages (atom (loop-stages/with-defaults stages))})]
      (srce/plugin! ctx {:name :tools
@@ -287,24 +293,40 @@
      (srce/settle! ctx)
      {:ctx ctx :tools handle})))
 
+(defn with-host
+  "Run F with a bound extension host over a fresh registry handle.
+
+   The loop's tool and render paths ask the host for its hooks, and a bare test
+   process has no composition to bind one. The binding is scoped to F and the
+   previous one restored, so a test that boots a composition still gets that
+   composition's own host while it runs."
+  [f]
+  (let [{:keys [ctx]} (test-ctx)
+        ;; one handle for the whole binding: a thunk that built a fresh one per
+        ;; call would register into one table and read from another
+        handle (registry/atom-registry)
+        base (extensions/host-binding)]
+    (extensions/bind-services!
+     (fn [] (registries/host-services handle ctx)))
+    (try (f) (finally (extensions/bind-services! base)))))
+
 (defn with-registry
   "Run F with the loop's tool table replaced by a fresh handle.
 
    The loop reads the table from the `:tools` service on the agent's ctx
    (`loop.state/tool-table`), so a test needs a ctx of its own: binding `*ctx*`
    to a bare ctx whose `:tools` is a fresh handle hands every
-   `make-agent-state` in F that table. `app-runtime/registry` — kmet1's process
-   façade — is pointed at the same handle, so a test may register a stand-in
-   either way and both land where the loop looks.
+   `make-agent-state` in F that table. A test registers a stand-in through
+   `tool-table`, so what it adds is what the loop reads.
 
    A test that needs a tool table should not boot an application: booting the
-   root here used to be observable, because `kmet.agent.modes.test-rpc`'s
+   root here used to be observable, because `kmet.app.modes.test-rpc`'s
    terminal-event test races a stubbed run's `:agent-settled` against the
    `:status` the mode writes on dispose, and an earlier boot made it fail in
    most full runs."
   [f]
-  (let [{:keys [ctx tools]} (test-ctx)]
-    (with-redefs [app-runtime/registry (constantly tools)]
-      (binding [*ctx* ctx]
-        (f)))))
+  (let [{:keys [ctx]} (test-ctx)]
+    (with-host
+      (fn [] (binding [*ctx* ctx]
+               (f))))))
 

@@ -1,4 +1,4 @@
-(ns kmet.agent.loop.test-queues
+(ns kmet.app.loop.test-queues
   "Message queues: steering and follow-up delivery, per-queue modes, and how they
    interact with a running turn."
   (:require [clojure.test :as t]
@@ -7,8 +7,10 @@
             [kmet.app.compaction.stage :as compact]
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
-            [kmet.agent.loop.test-support :as support]
+            [kmet.app.loop.test-support :as support]
             [kmet.app.config :as cfg]))
+
+(t/use-fixtures :each support/with-host)
 
 ;; ─── Queues (steering / follow-up) ────────────────────────────────────────
 
