@@ -23,10 +23,10 @@
 
    **The commands are the ones kmet2's services answer.** A prompt, a steer, a
    follow-up, an abort, the live state, the session's entries, the model
-   catalog: each is a call on the `:agents` handle or the `:sessions` log. The
-   session lifecycle, model switching, compaction and the dialog pair need a
-   per-agent surface kmet2 does not have yet, and each names its landing
-   (`unsupported`) instead of pretending. The server row
+   catalog, the model and compaction setters: each is a call on the `:agents`
+   handle or the `:sessions` log. The session lifecycle, the thinking and cycle
+   setters and the dialog pair need the server's phase 1, and each names its
+   landing (`unsupported`) instead of pretending. The server row
    (`kmet.app.modes.server`) serves this same protocol over a socket, one agent
    per connection, out of this namespace's `handle-line`."
   (:require [clojure.edn :as edn]
@@ -34,6 +34,7 @@
             [clojure.string :as str]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.packages :as packages]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.ai.models :as models]
             [kmet.app.events :as events]
             [kmet.app.front-end :as front-end]
@@ -152,9 +153,13 @@
 
       :else
       ;; the prompt carries the client's images to the loop: a prompt either
-      ;; starts a run with them or the handle refuses, never a silent drop
+      ;; starts a run with them or the handle refuses, never a silent drop. A
+      ;; text-only prompt stays a string, because that is the shape the queue
+      ;; fact records (a map only when images ride along).
       (do ((:send! agents) handle
-                           (cond-> {:text text} (:images command) (assoc :images (:images command)))
+                           (if (seq (:images command))
+                             {:text text :images (:images command)}
+                             text)
                            {:target :next-turn})
           (ok :prompt {:disposition :started})))))
 
@@ -256,8 +261,10 @@
    model and thinking level, whether a turn is in flight, what is queued, and
    the session it all belongs to."
   [{:keys [agents scope handle sessions]} _command]
-  (let [state (:agent handle)
-        session (:session state)
+  ;; the live state and session: a session switch replaces the record, so the
+  ;; handle's accessors are the ones to read, not a snapshot of `:agent`
+  (let [state (runtime/agent-state handle)
+        session (runtime/session handle)
         ;; the state is live: its model, provider, thinking level and run
         ;; knobs move while a run cycles them, so every value here is read
         ;; through its atom
@@ -281,7 +288,7 @@
    kmet2's log is the entry list itself — there is no leaf id to report, so the
    answer is the whole branch."
   [{:keys [handle sessions]} _command]
-  (if-let [session (:session (:agent handle))]
+  (if-let [session (runtime/session handle)]
     (ok :get-entries {:entries (vec ((:entries sessions) session))})
     (failed :get-entries "No active session")))
 
@@ -299,30 +306,29 @@
 
    | group | why not yet |
    |---|---|
-   | session lifecycle | one agent per mode; switching, forking and cloning need the session work landing 6 owns |
-   | model and thinking setters | an agent's model is its creation option; a per-agent setter is landing 6's surface |
-   | queue modes | the queue belongs to the agent's loop; draining it from the wire is landing 6's queue primitive |
-   | compaction | the loop's compaction seam is landing 7's |
+   | session lifecycle | one agent per mode until the server's phase 1; switching, forking, cloning and naming are 10a's session surface |
+   | cycle and thinking | the handle answers them; the wire entries are 10a's command table |
+   | queue modes | the handle answers them; the wire entries are 10a's command table |
    | commands listing | the slash-command registry's wire shape moves with the dispatcher |"
-  {:new-session "one agent serves this mode; creating and switching sessions is landing 6's server"
-   :switch-session "one agent serves this mode; switching sessions is landing 6's server"
-   :fork "session forking needs the branch-aware log landing 6 adds"
-   :clone "session cloning needs the branch-aware log landing 6 adds"
-   :get-tree "the entry tree is landing 6's session surface"
-   :get-last-assistant-text "the transcript view is landing 6's session surface"
-   :get-messages "the transcript view is landing 6's session surface"
-   :set-session-name "session naming is landing 6's session surface"
-   :get-session-stats "session stats are landing 6's session surface"
-   :export-html "HTML export is landing 6's session surface"
+  {:new-session "one agent serves this mode; the server's session surface is landing 10a"
+   :switch-session "one agent serves this mode; the server's session surface is landing 10a"
+   :fork "the session's tree surface is landing 10a"
+   :clone "the session's tree surface is landing 10a"
+   :get-tree "the entry tree is landing 10a's session surface"
+   :get-last-assistant-text "the transcript view is landing 10a's session surface"
+   :get-messages "the transcript view is landing 10a's session surface"
+   :set-session-name "session naming is landing 10a's session surface"
+   :get-session-stats "session stats are landing 10a's session surface"
+   :export-html "HTML export is landing 10a's session surface"
 
    :cycle-model "cycle-model is landing 10a's command table (the handle answers it; the wire shape is the server's landing)"
-   :set-thinking-level "an agent's thinking level is its creation option; changing it is landing 6's per-agent surface"
-   :cycle-thinking-level "an agent's thinking level is its creation option; changing it is landing 6's per-agent surface"
-   :get-available-thinking-levels "the per-model thinking levels arrive with landing 6's model surface"
+   :set-thinking-level "the handle answers it; the wire entry is landing 10a's command table"
+   :cycle-thinking-level "the handle answers it; the wire entry is landing 10a's command table"
+   :get-available-thinking-levels "the model record answers it; the wire entry is landing 10a's command table"
 
-   :set-steering-mode "the queue belongs to the agent's loop; its modes are landing 6's queue primitive"
-   :set-follow-up-mode "the queue belongs to the agent's loop; its modes are landing 6's queue primitive"
-   :clear-queue "the queue belongs to the agent's loop; draining it from the wire is landing 6's queue primitive"
+   :set-steering-mode "the handle answers it; the wire entry is landing 10a's command table"
+   :set-follow-up-mode "the handle answers it; the wire entry is landing 10a's command table"
+   :clear-queue "the handle answers it; the wire entry is landing 10a's command table"
 
    :respond "dialogs are landing 10a's command table (:request/:response over the wire)"
    :get-commands "the slash-command registry's wire shape moves with the dispatcher"})

@@ -48,7 +48,10 @@
    `:projections` and only then notifies the live handle (its `:send!`, the
    driver's in-memory queue): the log is the record, the atom is the wake-up.
    A message queued while the process was down is still in the inbox when the
-   session resumes."
+   session resumes. A send carrying `:images` appends no queue fact: it either
+   starts a run (the user message is the session log's own) or the handle
+   refuses it, so nothing is ever queued with an image and a refusal cannot
+   leave an undelivered entry behind."
   (:require [kmet.srce.core :as srce]))
 
 ;; ── the handle contract ───────────────────────────────────────────────────

@@ -267,7 +267,10 @@
              protocol's — the delivery fact lands when the run takes the
              message, which is not the same moment as the turn's first entry")
         (is (every? #(string? (:id %)) entries)
-            "every entry carries the id a fork or a client would name")))))
+            "every entry carries the id a fork or a client would name")
+        (is (some #(= "hi" (get-in % [:data :text])) entries)
+            "a text prompt's queue fact carries the string it queued, not a
+             wrapper map — the payload shape is part of the log's")))))
 
 (deftest the-model-catalog-is-on-the-wire
   ;; get-available-models answers the snapshot a `--model` pattern resolves
