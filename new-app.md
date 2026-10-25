@@ -880,7 +880,7 @@ Each is independently shippable and gated.
 | 7b-i | **landed** — **The events contract — the head of landing 5, not its tail**: the loop dispatches on the kernel from the run's own ctx, so `:agent-settled` is an event a front end subscribes to at the app's scope, while kmet1's process table keeps hearing the same events (the extension ABI registers there; kmet1 boots the composition, so a run cannot tell the two apps apart — only the listeners differ). A boundary threads **one** decision through both: the kernel's accumulated map seeds the table's chain. The composition test no longer listens on kmet1's table | a composed turn settles on the app's bus, and `kmet.app.test-composition-run` subscribes without kmet1's table — **met**; see § "Landing 7b-i settled" |
 | 7b-ii | **landed** — presets are bundles: one composition language, two mount points. `runtime/mount-rows!` is the mount loop `boot` and a preset share, `kmet.app.presets` mounts a *bundle* under an agent's child ctx, and `:agents/create!` gained the `:setup` seam that runs between the child ctx and the factory — so per-agent composition happens before an agent exists, and a setup that throws rolls the ctx back the way a failing factory does. `:bundle/gated` (the policy row) is a bundle a profile stacks and a preset mounts; `:rpc-ask` is the profile that stacks it | pi-alignment green (no pi feature line moves: this is composition machinery); a tool swaps mid-session at the turn boundary — met by `a-tool-swaps-at-the-turn-boundary`; a profile stacking a preset bundle boots — met by `a-profile-may-stack-a-preset-bundle` + `a-preset-composes-one-agents-world`; see § "Landing 7b-ii" |
 | 5k | **landed** — the `:ui` capability contract and its headless provider: `kmet.app.ui` (four required keys, checked at the mount, plus the ABI `:port` a mode binds), `kmet.ui.headless`, `:bundle/headless`, and print/rpc binding the port (the server stacks the bundle but binds none until 8's per-agent surface); § "The remaining plan" | every shipped provider answers `:kind :render-tree :request! :capabilities`; a mode's `(ui :request {:kind :confirm})` answers the kind's default (`false`) *from the row* and nil without it |
-| 5l | **in progress** — the TUI library moves into `ui`: the driver and the builtin command table **landed** (5l-i, namespaces kept), the process world load next (5l-ii), then the interactive cluster and the mode row into `kmet.ui.tui.*` behind a ctx argument and a tool-lookup argument, and a rank-2 publisher for the process registry handle so a kmet2 extension's command is kmet2's; § "The remaining plan" | pty capture parity on `--app new`; `modules/agent/src/kmet/agent/modes` gone; an extension's command registered under `--app new` is in the ctx's `:commands` |
+| 5l | **in progress** — the TUI library moves into `ui`: the driver and the builtin command table **landed** (5l-i, namespaces kept), then the process world's body, the rank-2 root publisher and the load at the entry (**5l-ii-a/b**, so every profile boots with extensions); next the registry publisher, then the interactive cluster and the mode row into `kmet.ui.tui.*` behind a ctx argument and a tool-lookup argument; § "The remaining plan" | pty capture parity on `--app new`; `modules/agent/src/kmet/agent/modes` gone; an extension's command registered under `--app new` is in the ctx's `:commands` |
 | 5n | **in progress** — the invocation surface: kmet1's run flags on kmet2's entry (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) and their hand-off — **landed**, model patterns resolved by the entry so every mode, the TUI included, applies them; `@file` **landed** (read at parse time); its maintenance flags (`-d`/`--debug`, `--generate-models`, `--list-models`), extension `--flag` values, the skill/prompt expansion chain for every mode, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) — **landed** for the TUI row, refused by name by the modes whose factory opens no session until 10a; § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:` expands, `--list-models` diffs clean against `--app old`, `(get-flag …)` answers, `--debug`/`--generate-models`/`--session-dir` behave, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run |
 | 8 | **planned** — the TUI reads an agent handle: `create!`/`send!`/`steer!`/`inbox`/`when-idle`/`cancel!` instead of the `Engine` and the driver, the handle grows the settings a front end changes, and a mode's listeners scope to its agent | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises |
 | 5m | **planned** — `ui-tk`: `kmet.ui.tk` over `kmet.tk` and the `:ui/transcript` skeleton; the second toolkit provider, no app change | one profile patch swaps `:ui/terminal` for `:ui/tk` and the same session paints on bb and Jolt; JVM refuses the row by name |
@@ -3504,19 +3504,18 @@ five decisions, and an explicit list of what the plan does *not* reopen.
 
 ### What is left, measured
 
-`modules/agent/src` is 23 files and 8,532 lines, and every one of them is
+`modules/agent/src` is 21 files and 7,340 lines, and every one of them is
 either kmet1's to delete or blocked on an edge that is now one call deep:
 
 | Block | Files | Lines | Edges that hold it | Cut |
 |---|---|---|---|---|
-| the interactive cluster (`modes/interactive/*` + `interactive.clj`) | 10 | 5,207 | `app-runtime` 3 sites, `session.driver` 32, `tools.core` 2, `commands.builtins` 1 file | the ctx becomes the caller's argument (5j already added the arity), the two tool-layer reads take the table the mode passes, and the driver and the builtin table move into `app` |
-| kmet2's TUI row (`modes/tui.clj`) | 1 | 63 | `kmet.agent.cli` (`load-world!`) | the process world load moves into `app` |
+| the interactive cluster (`modes/interactive/*` + `interactive.clj`) | 10 | 5,207 | `app-runtime` 3 sites, `tools.core` 2 (the driver and the builtin table moved at 5l-i) | the ctx becomes the caller's argument (5j already added the arity), and the two tool-layer reads take the table the mode passes |
+| kmet2's TUI row (`modes/tui.clj`) | 1 | 100 | none — the process world the entry loaded arrives as the row's `:config` | the file moves to `ui` at 5l-iii |
 | the `config` front end (`modes/config_command.clj`) | 1 | 57 | — | moves to `ui`: `kmet config` is a shared command, not kmet1's — the screen it hosts is already `kmet.ui.tui.resource-config`, and kmet2's entry resolves the command by name |
 | kmet1's own modes (`print`, `rpc`, `rpc_client`) | 3 | 1,150 | — | deleted at retirement, untouched until then |
-| kmet1's entry and process (`cli`, `core`, `jvm_main`, `app_runtime`, `extensions/services`, `tools/core`) | 6 | 887 | — | deleted at retirement; `app_runtime`'s two service tables are the only pieces with successors (5l) |
-| already clean, move whenever | 2 | 1,168 | none — the driver's one `ui-registry` mention is a comment (line 61) | `session/driver.clj` and `commands/builtins.clj` are file moves into `app` |
+| kmet1's entry and process (`cli`, `core`, `jvm_main`, `app_runtime`, `extensions/services`, `tools/core`) | 6 | 887 | — | deleted at retirement; `app_runtime`'s root publication already has its successor (`kmet.app.root`, 5l-ii-a), and its registry routing is 5l-ii's publisher |
 
-Four things are missing rather than blocked, and they are the rest of the plan:
+Three things are missing rather than blocked, and they are the rest of the plan:
 
 - **`:ui` has a provider, but no renderer.** 5k landed the contract
   (`kmet.app.ui`) and `kmet.ui.headless`, and print/rpc bind the row's port;
@@ -3535,13 +3534,6 @@ Four things are missing rather than blocked, and they are the rest of the plan:
   `kmet.app.runtime/boundary!` has no non-test caller (`submit!`'s only reader
   is `kmet.app.test-runtime`), and `resume!` still refuses
   `:kmet.app/unsupported-op`.
-- **The process world is the TUI's, not the entry's.** `load-world!` — config,
-  extension packages, themes, extension CLI flags — runs from
-  `kmet.agent.modes.tui` and from kmet1's `-main`, so
-  `--app new --profile print|rpc|server` boots with **no extensions at all**
-  (only the model catalog, from `kmet.app.core/run-process`) where kmet1 loads
-  them for every mode. Nothing in the tests caught it because every mode test
-  stubs its model and none of them installs an extension.
 
 ### The landings
 
@@ -3560,8 +3552,8 @@ Four things are missing rather than blocked, and they are the rest of the plan:
 gate is a provider, and a second toolkit is worth building over a front end that
 reads a handle — otherwise `kmet.ui.tk` implements the `Engine` port that 8 is
 about to delete. 5n sits between 5l and 8: it needs the world load at the entry
-(5l-ii) and it extends the same create-opts map that 8's handle ops read, so
-landing it first keeps 8 about the port and not about flags. 9 and 5m are
+(5l-ii, landed) and it extends the same create-opts map that 8's handle ops read,
+so landing it first keeps 8 about the port and not about flags. 9 and 5m are
 independent; if the server matters first, they swap and nothing else moves.
 
 ### What kmet1 has, and where each piece lands
@@ -3654,11 +3646,54 @@ already at rank 2, so the pair the front ends read is one module again.
 provider catalogs, the models.edn layer, config, extension packages, theme paths,
 extension CLI flags — into `app` (`kmet.app.world`), with `kmet.agent.cli` calling
 it, so kmet2's processes no longer load a rank-4 namespace to boot. **And it
-moves to the entry, not to a row:** `kmet.app.core/main` runs it after `boot`
-and before `run-mode`, so every profile has extensions, themes and the loaded
-catalogs the way kmet1's `-main` gives every mode them; `kmet.agent.modes.tui`
-stops loading its own (today it is the only caller, which is why print, rpc and
-server run extension-less).
+moves to the entry, not to a row:** the entry boots the profile with its mode
+row deferred, loads the world into that tree, and only then mounts the mode —
+so every profile has extensions, themes and the loaded catalogs the way kmet1's
+`-main` gives every mode them. `kmet.agent.modes.tui` stops loading its own
+(it was the only caller, which is why print, rpc and server ran extension-less).
+
+**Landed so far (5l-ii-a) — the body, and the root it publishes onto.**
+`kmet.app.world/load!` owns the load; `cli/load-world!` is a one-line delegate,
+so kmet1's call sites and the TUI row are unchanged while the entry wiring
+follows. The move needed two supporting pieces, and each is a leak the old
+location was hiding:
+
+- `kmet.tui.theme` moved to `libs`, its name kept. The load (in `app`, rank 2)
+  reads `load-theme-paths!`, and the components that style themselves (`tui`,
+  rank 2) read the rest — a peer may not require a peer, and the file's only
+  dependencies are libraries. The extension shared-library test derives its
+  universe from the module tree, so it scans `modules/libs/src` whole instead
+  of assuming every file there is `kmet.libs.*`.
+- The process root's atom moved to `kmet.app.root` (`publish!`, `ctx`, `boot!`,
+  `reset-root!`, `restore-root!`), which `kmet.agent.app-runtime` now
+  delegates to. Without it the world load cannot publish an entry's composition
+  without requiring the rank-4 shim; with it, the publisher is rank 2 like the
+  load. `boot!` takes the boot thunk, so kmet1's lazy `{:profile :tui}` boot
+  stays in the shim — `kmet.app.root` never learns a profile.
+
+**Landed (5l-ii-b) — the entry loads it, and the mode mounts after.**
+`runtime/boot` takes `{:defer (fn [row])}` and returns the held-back rows in
+`:deferred`; `mount-deferred!` mounts them, transformed, once the caller is
+ready. That is what makes "after `boot`, before the run" a fact rather than a
+hope: the mode row's `serve` *is* the run, so it cannot be in the tree while
+the world loads into it. `run-mode` boots the profile with the mode deferred,
+loads the world into that tree (`world/load!` publishes the ctx before the first
+extension registers), resolves the invocation's model patterns — after the
+load, because an extension provider is a catalog entry only once it has —
+and mounts the mode with the prompt, the result callback and the loaded config.
+The TUI row reads that `:config` instead of loading its own (and fails at the
+mount naming it when the entry supplied none); print, rpc and the server ignore
+it. `load-catalog!` retired into `world/load!`, so `run-process` loads nothing
+and is now only the exit code around `main` — the seam 5n's pre-parse flags
+will hang on. `--dump-state` still mounts every row at once: a diagnostic boot
+starts nothing (each mode checks `:on-result`), and a dump that needed a world
+load first would be answering a different question.
+
+The gate: a pty capture on `--app new` lists the extensions in the startup block
+(clojure, mcp-adapter, review, …), and `kmet.app.modes.test-print`'s
+`the-entry-loads-the-world-before-it-mounts-the-mode` pins the order — the mode's
+first model call can only come after the load, and the load sees the tree's
+`:agents` row already mounted.
 
 **The entry owns the load order, and the flags bracket it.**
 `kmet.app.core/run-process` loads the provider catalogs *before* `main` parses,

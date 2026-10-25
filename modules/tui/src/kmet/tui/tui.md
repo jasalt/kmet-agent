@@ -136,7 +136,7 @@ atom change → reaction dirty → queued → frame flush runs it →
 | `kmet.libs.hikap.alias` | qualified-keyword tag aliases: process-global registry, resolution, `defalias` (§2.9) |
 | `kmet.tui.hikap` | the TUI backend: tag table, `*width*`/`*comp*`, IComponent extension for the engine's ComponentFn, and the TUI-bound entry points (`root`, `compile-tree`, `reconcile!`, `render-lines`, `materialize-ref!`) |
 | `kmet.tui.components.*` | host elements (see §10) |
-| `kmet.tui.theme` | color/styling API, active theme atom, theme files |
+| `kmet.tui.theme` | color/styling API, active theme atom, theme files — a leaf library in `libs` (the world load and the components both read it; it may reach neither side) |
 | `kmet.tui.keys` / `keybindings` | key names, Kitty protocol decoding, keybinding manager |
 | `kmet.tui.autocomplete` / `fuzzy` | editor autocomplete dropdown: slash commands + arguments, plain path completion, gitignore-aware fuzzy `@` file search scoped to the session cwd (tree snapshot refreshed on each new `@` token, cleared on submit/clear via `invalidate-file-cache!`), fuzzy matching |
 | `kmet.tui.utils` | text wrapping, visible width, truncation helpers |

@@ -2,7 +2,12 @@
   "Theme system — identical structure to pi's theme.ts.
    EDN-only loading with the same :vars/:colors schema and color values
    (hex, OKHSL, OKLCH, 256-color index, variable refs, terminal default)
-   as pi's JSON."
+   as pi's JSON.
+
+   A leaf library even though its name says tui: both the process world load
+   (`kmet.app.world`) and the components read it, so it lives in `libs` and may
+   reach neither side. The name is the axis — moving the file changes the
+   module only."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]

@@ -9,39 +9,16 @@
             [kmet.agent.version :as version]
             [kmet.ai.models :as models]
             [kmet.app.core :as core]
-            [kmet.app.test-support :as support]))
+            [kmet.app.test-support :as support]
+            [kmet.app.world :as world]))
 
-(deftest the-process-entry-loads-the-model-catalog
-  ;; A run resolves its provider and model against kmet.ai.models' registry —
-  ;; process-wide state that starts empty, so a process that never loads it
-  ;; answers "Unknown provider" for every provider. Loading is the entry point's
-  ;; work, in kmet1's order: the committed catalogs, then models.edn's layer.
-  (let [calls (atom [])
-        stub (fn [k] (fn [] (swap! calls conj k)))]
-    (with-redefs [models/load-catalogs! (stub :catalogs)
-                  models/load-models-config! (stub :config)
-                  models/get-model-config-error (fn [] nil)]
-      (core/load-catalog!)
-      (is (= [:catalogs :config] @calls) "built-ins first, the user layer over them")))
-
-  ;; models.edn is the user's file: a broken one keeps the built-ins and says
-  ;; what is wrong on stderr, rather than failing the process
-  (let [err (java.io.StringWriter.)]
-    (with-redefs [models/load-catalogs! (fn [])
-                  models/load-models-config! (fn [])
-                  models/get-model-config-error (fn [] "bad models.edn")]
-      (binding [*err* err]
-        (core/load-catalog!)))
-    (is (str/includes? (str err) "Warning: models.edn: bad models.edn"))))
-
-(deftest a-process-start-loads-the-catalog-before-it-runs
-  ;; The order is the point: a run may name `--model commandcode/…` in its
-  ;; first argument, and the catalog has to be there when it does.
-  (let [calls (atom [])]
-    (with-redefs [core/load-catalog! #(swap! calls conj :catalog)
-                  core/main (fn [args] (swap! calls conj args) 7)]
-      (is (= 7 (core/run-process ["-p" "hi"])) "the exit code is main's")
-      (is (= [:catalog ["-p" "hi"]] @calls) "the catalog loads first"))))
+(deftest a-process-start-runs-the-entry
+  ;; The model catalog is not loaded here: it is part of the process world,
+  ;; which loads into the composition's registries (kmet.app.test-world pins
+  ;; that order). `run-process` is the seam 5n hangs its pre-parse flags on;
+  ;; today it is the exit code around `main`.
+  (with-redefs [core/main (fn [args] (is (= ["-p" "hi"] args)) 7)]
+    (is (= 7 (core/run-process ["-p" "hi"])) "the exit code is main's")))
 
 (def sample-plugin
   "A var-addressable plugin map — the shape a `defplugin` var holds."
@@ -189,7 +166,9 @@
   ;; The hand-off is the entry's: the mode's row config carries what the
   ;; command line asked for, and a mode applies it (the TUI row hands the map
   ;; to kmet1's `interactive/run`; print/rpc/server hand `create-opts` to
-  ;; `:agents`). Only the keys the invocation gave are there.
+  ;; `:agents`), and the process world's loaded config rides the same map so a
+  ;; mode that runs on it (the TUI) needs no second load. Only the keys the
+  ;; invocation gave are there.
   (let [mode-input @#'core/mode-input
         opts (core/parse-args ["-p" "--thinking" "high"
                                "--system-prompt" "SYS"
@@ -198,18 +177,21 @@
                                "--models" "a,b"])]
     (is (= {:format :text :thinking :high :system-prompt "SYS"
             :append-system-prompt ["MORE"] :session-dir "target/sessions"
-            :models ["a" "b"] :prompt "hi" :on-result :result}
-           (mode-input opts "hi" :result))))
-  (is (= {:format :text :on-result :result}
-         (@#'core/mode-input (core/parse-args ["-p"]) "" :result))
+            :models ["a" "b"] :prompt "hi" :on-result :result
+            :config {:model "x"}}
+           (mode-input opts {:model "x"} "hi" :result))))
+  (is (= {:format :text :on-result :result :config {}}
+         (@#'core/mode-input (core/parse-args ["-p"]) {} "" :result))
       "a bare -p gives the mode nothing it did not ask for"))
 
-(deftest a-model-the-catalog-does-not-have-is-reported-before-the-boot
-  ;; The entry resolves the invocation's model patterns, as kmet1 does, so a
-  ;; bad one is a configuration error naming the pattern — not a boot, a
-  ;; session and then a request that dies with nothing to say.
+(deftest a-model-the-catalog-does-not-have-is-reported-before-the-mode-mounts
+  ;; The entry resolves the invocation's model patterns after the process world
+  ;; loads (an extension provider is a catalog entry only once it has) and
+  ;; before the mode mounts, so a bad one is a configuration error naming the
+  ;; pattern — not a session and then a request that dies with nothing to say.
   (with-redefs [models/get-provider (fn [p] {:id p})
-                models/get-models (fn [& _] [])]
+                models/get-models (fn [& _] [])
+                world/load! (fn [_ _] {})]
     (let [{:keys [code out err]} (support/run-main ["-p" "--model" "nope" "hi"])]
       (is (= 1 code))
       (is (= "" out) "nothing runs, so nothing is printed")

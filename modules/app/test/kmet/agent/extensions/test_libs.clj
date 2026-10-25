@@ -32,9 +32,10 @@
   '#{kmet.agent.keybindings kmet.agent.ui.tui.tool-renderers})
 
 (defn- library-ns-name
-  "The namespace symbol for source file P under DIR with PREFIX."
+  "The namespace symbol for source file P under DIR, read from its path; PREFIX
+   is prefixed unless it is empty (a module whose tree spans namespaces)."
   [prefix dir p]
-  (symbol (str prefix "."
+  (symbol (str (when (seq prefix) (str prefix "."))
                (-> (str/replace (str (fs/relativize (fs/path dir) p)) "\\" "/")
                    (str/replace #"\.(clj|cljc|jolt|bb)$" "")
                    (str/replace "_" "-")
@@ -45,7 +46,9 @@
    universe, host backends included so the test can pin their exclusion."
   []
   (let [roots [["kmet.tui" "modules/tui/src/kmet/tui"]
-               ["kmet.libs" "modules/libs/src/kmet/libs"]
+               ;; the whole module: the theme loader lives here now, under its
+               ;; kmet.tui name, because app (rank 2) and tui (rank 2) both read it
+               ["" "modules/libs/src"]
                ["kmet.libs" "modules/hikap/src/kmet/libs"]
                ["kmet.libs" "modules/reakt/src/kmet/libs"]]]
     (into #{}

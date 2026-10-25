@@ -27,63 +27,41 @@
             [kmet.agent.extensions.services :as extensions-services]
             [kmet.agent.registry :as reg]
             [kmet.app.core :as app-core]
+            [kmet.app.root :as root]
             [kmet.app.runtime :as app-runtime]
             [kmet.srce.core :as srce]))
 
-(defonce ^:private app-root
-  ;; The stage map rides the root ctx under `:loop-stages`, so a child ctx
-  ;; reaches it by `srce/attr` and a run that passes its own carries its own.
-  ;;
-  ;; An atom rather than a delay: an entry that boots the composition itself
-  ;; (`--app new`) publishes *its* root here, so a process has one tree — the
-  ;; one it mounted — instead of this shim booting a second one behind it.
-  (atom nil))
-
 (defn- boot-root!
-  "Boot kmet1's process root: the composition, with the loop's stage map on it."
+  "Boot kmet1's process root: the composition, with the loop's stage map on it.
+   The fibers are dropped with the boot map — the root lives for the process."
   []
-  (app-runtime/boot (app-core/compose-config {:profile :tui})
-                    {:ctx-meta {:loop-stages (atom loop-stages/defaults)}}))
+  (:ctx (app-runtime/boot (app-core/compose-config {:profile :tui})
+                          {:ctx-meta {:loop-stages (atom loop-stages/defaults)}})))
 
 (defn publish-root!
-  "Make CTX the process root — the ctx `ctx` returns and every kmet1 shim reads.
-
-   An entry that boots the composition (`kmet --app new --profile tui`) calls
-   this **before** anything reads the shim: otherwise the first reader boots a
-   second composition behind the one the entry mounted, and kmet1's process-level
-   code (the façades, the extension host's no-node reads, `/units`) sees a tree
-   that is not the one the run is using. The first root wins — a second publish
-   returns the root already in place rather than stranding a tree things are
-   already reading."
+  "Make CTX the process root — the ctx `ctx` returns and every kmet1 shim
+   reads. `kmet.app.root/publish!` owns the publication and its first-root
+   rule; this name is kmet1's entry point onto it."
   [ctx]
-  (if (compare-and-set! app-root nil {:ctx ctx})
-    ctx
-    (:ctx @app-root)))
+  (root/publish! ctx))
 
 (defn reset-root!
-  "Clear the process root and return what it was.
-
-   A test seam, and it hands the old state back for a reason: the root is
-   process-global and carries registrations, so a test that published its own
-   must put the previous one back (`restore-root!`) — clearing it would make the
-   next test boot a **second** composition that has none of the registrations the
-   first one carried."
+  "Clear the process root and return what it was (a test seam; see
+   `kmet.app.root/reset-root!`)."
   []
-  (let [prev @app-root]
-    (reset! app-root nil)
-    prev))
+  (root/reset-root!))
 
 (defn restore-root!
   "Put back what `reset-root!` returned (nil clears it)."
   [prev]
-  (reset! app-root prev))
+  (root/restore-root! prev))
 
 (defn ctx
-  "The app root ctx: the composed rows kmet1 registers into."
+  "The app root ctx: the composed rows kmet1 registers into. The process
+   publishes an entry's own composition here; a process without one boots
+   kmet1's composition on the first read."
   []
-  (:ctx (or @app-root
-            (locking app-root
-              (or @app-root (reset! app-root (boot-root!)))))))
+  (root/boot! boot-root!))
 
 (defn child-ctx
   "A ctx carrying the loop stages — STAGES merged over the builtin defaults —

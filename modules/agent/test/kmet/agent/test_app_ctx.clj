@@ -4,17 +4,10 @@
    an owner's registrations come back in one call (4c-ii)."
   (:require [clojure.test :as t]
             [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.cli :as cli]
             [kmet.agent.commands :as commands]
-            [kmet.agent.config :as cfg]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.packages :as packages]
             [kmet.agent.registry :as registry]
             [kmet.agent.tools.registry :as tools]
-            [kmet.ai.image-models :as image-models]
-            [kmet.ai.models :as models]
-            [kmet.srce.core :as srce]
-            [kmet.tui.theme :as theme]))
+            [kmet.srce.core :as srce]))
 
 (t/deftest the-root-is-the-composed-app
   (let [ctx (app-runtime/ctx)]
@@ -40,28 +33,6 @@
       (finally
         (srce/dispose-subtree! ours)
         (srce/dispose-subtree! other)
-        (app-runtime/restore-root! prev)))))
-
-(t/deftest a-world-loaded-against-a-composition-publishes-it
-  ;; The seam 5j needs and nothing else in the tree does: `load-world!` with a
-  ;; ctx makes that ctx the process root *before* the first read, so a TUI run's
-  ;; extensions register into the composition it mounted.
-  (let [ours (srce/root {:name :app})
-        prev (app-runtime/reset-root!)]
-    (try
-      (with-redefs [models/load-catalogs! (fn [])
-                    image-models/load-image-catalogs! (fn [])
-                    models/load-models-config! (fn [])
-                    models/get-model-config-error (fn [] nil)
-                    cfg/init! (fn [] {})
-                    packages/load-extensions! (fn [] nil)
-                    theme/load-theme-paths! (fn [_] nil)
-                    extensions/set-cli-flags! (fn [_] nil)]
-        (cli/load-world! {} ours))
-      (t/is (identical? ours (app-runtime/ctx))
-            "one composition: the one the entry booted")
-      (finally
-        (srce/dispose-subtree! ours)
         (app-runtime/restore-root! prev)))))
 
 (t/deftest the-facade-routes-a-tag-to-its-service

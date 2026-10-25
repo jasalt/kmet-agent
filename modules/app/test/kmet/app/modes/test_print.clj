@@ -16,7 +16,9 @@
             [kmet.app.test-support :as support :refer [answering
                                                        sessions-dir
                                                        with-mode-run
-                                                       with-model-catalog]]))
+                                                       with-model-catalog]]
+            [kmet.app.world :as world]
+            [kmet.srce.core :as srce]))
 
 (deftest print-mode-runs-a-prompt-and-exits-zero
   (with-mode-run
@@ -45,6 +47,30 @@
     (is (some #(and (str/includes? % ":mode-print") (str/includes? % ":active"))
               (str/split-lines out))
         "the mode row mounts and activates in a diagnostic boot")))
+
+(deftest the-entry-loads-the-world-before-it-mounts-the-mode
+  ;; 5l-ii: the mode row is deferred out of the boot, the process world loads
+  ;; into the mounted tree, and only then does the mode mount. The order is the
+  ;; assertion: the model call is the mode's first work, so it can only come
+  ;; after the load.
+  (let [order (atom [])]
+    (with-mode-run
+      (fn [opts]
+        (swap! order conj :llm)
+        (future
+          (when-let [on-text (:on-text opts)] (on-text "ok"))
+          (when-let [on-done (:on-done opts)] (on-done :stop))
+          :done))
+      (fn []
+        (with-redefs [world/load! (fn [_opts ctx]
+                                    (swap! order conj
+                                           [:world (some? (srce/get ctx :agents))])
+                                    {})]
+          (let [{:keys [code]} (support/run-main ["--profile" "print" "hello"])]
+            (is (= 0 code))
+            (is (= [[:world true] :llm] @order)
+                "the load runs over a tree whose world rows are already
+                 mounted, and the mode's run is the last thing to start")))))))
 
 (deftest a-failed-run-exits-one-and-says-why
   ;; The mode's verdict is its exit code: a shell script reads it. The model

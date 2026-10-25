@@ -169,12 +169,41 @@
                   :declarations (mapv (fn [[_ plugin spec]] {:plugin plugin :spec spec}) decls)})))
        vec))
 
+(defn- check-mounts!
+  "Throw when any of ROWS is not `:active` in FIBERS, or when two of
+   ALL-FIBERS (the boot's plus the just-mounted) declare one event differently —
+   the two rules a boot holds every mount to. `boot` and `mount-deferred!`
+   share them, so a mode mounted after the boot fails the same way a world row
+   does."
+  [ctx rows fibers all-fibers diagnose?]
+  (let [failed (inactive-rows rows fibers)]
+    (when (and (seq failed) (not diagnose?))
+      (doseq [f failed]
+        (srce/log! ctx :error "plugin did not mount" f))
+      (throw (ex-info (str "kmet2 boot failed: " (str/join ", " (map (comp pr-str :id) failed))
+                           " not active")
+                      {:type :kmet.app/boot-failed :fibers failed}))))
+  (let [conflicts (declaration-conflicts all-fibers)]
+    (when (seq conflicts)
+      (doseq [c conflicts]
+        (srce/log! ctx :error "two plugins declare one event differently" c))
+      (throw (ex-info (str "kmet2 boot failed: conflicting event declarations "
+                           (str/join ", " (map (comp pr-str :event) conflicts)))
+                      {:type :kmet.app/event-conflict :conflicts conflicts}))))
+  true)
+
 (defn boot
   "Mount COMPOSED's rows under a fresh root ctx and return `{:ctx :fibers
-   :rows n :failed […]}`. Rows mount in composition order and settle once;
-   every fiber must be `:active` afterwards, and no two fibers may declare one
-   event differently, or boot throws `:kmet.app/boot-failed` naming the rows and
-   their waiting-for, or the events they disagree about.
+   :rows n :deferred […] :failed […]}`. Rows mount in composition order and
+   settle once; every fiber must be `:active` afterwards, and no two fibers may
+   declare one event differently, or boot throws `:kmet.app/boot-failed` naming
+   the rows and their waiting-for, or the events they disagree about.
+
+   `{:defer (fn [row])}` holds back the rows it matches: they are not mounted
+   and come back in `:deferred` for `mount-deferred!`. The entry uses it for
+   the mode row, whose `serve` starts the run: everything else mounts and
+   settles first, the entry loads the process world into that tree, and only
+   then does the mode mount.
 
    `{:diagnose? true}` returns the same map with the mounted-but-inactive rows
    in `:failed` instead of throwing: a diagnostic that cannot show the tree
@@ -187,25 +216,36 @@
    inspection renderer prints; CTX-META may name it differently (a root a test
    builds, a profile with a second tree)."
   ([composed] (boot composed nil))
-  ([{:keys [rows]} {:keys [ctx-meta diagnose?]}]
+  ([{:keys [rows]} {:keys [ctx-meta diagnose? defer]}]
    (let [ctx (srce/root (merge {queue-key (atom []) :name :app} ctx-meta))
-         fibers (mount-rows! ctx rows)
-         _ (srce/settle! ctx)
-         failed (inactive-rows rows fibers)]
-     (when (and (seq failed) (not diagnose?))
-       (doseq [f failed]
-         (srce/log! ctx :error "plugin did not mount" f))
-       (throw (ex-info (str "kmet2 boot failed: " (str/join ", " (map (comp pr-str :id) failed))
-                            " not active")
-                       {:type :kmet.app/boot-failed :fibers failed})))
-     (let [conflicts (declaration-conflicts fibers)]
-       (when (seq conflicts)
-         (doseq [c conflicts]
-           (srce/log! ctx :error "two plugins declare one event differently" c))
-         (throw (ex-info (str "kmet2 boot failed: conflicting event declarations "
-                              (str/join ", " (map (comp pr-str :event) conflicts)))
-                         {:type :kmet.app/event-conflict :conflicts conflicts}))))
-     {:ctx ctx :fibers fibers :rows (count rows) :failed failed})))
+         [deferred mounted] ((juxt filter remove) (or defer (constantly false)) rows)
+         fibers (mount-rows! ctx mounted)
+         _ (srce/settle! ctx)]
+     (check-mounts! ctx mounted fibers fibers diagnose?)
+     {:ctx ctx :fibers fibers :rows (count mounted)
+      :deferred (vec deferred) :failed (inactive-rows mounted fibers)})))
+
+(defn mount-deferred!
+  "Mount the rows BOOT deferred, TRANSFORM applied to each first, and settle.
+   Returns BOOT with the rows moved into `:fibers` (and `:deferred` empty), so
+   a later `shutdown!` disposes them with the rest.
+
+   The transform is where the entry merges the invocation into the mode's
+   config — the values the world load had to install before the mode could be
+   told them (a `--model` an extension provider names). Throws like `boot` when
+   a row does not become active."
+  [{:keys [ctx fibers deferred] :as booted} transform]
+  (if (empty? deferred)
+    booted
+    (let [rows (mapv transform deferred)
+          mounted (mount-rows! ctx rows)
+          _ (srce/settle! ctx)
+          all-fibers (into (vec fibers) mounted)]
+      (check-mounts! ctx rows mounted all-fibers false)
+      (assoc booted
+             :fibers all-fibers
+             :rows (+ (:rows booted) (count rows))
+             :deferred []))))
 
 (defn shutdown!
   "Dispose everything `boot` mounted, children first; the ctx is finished."

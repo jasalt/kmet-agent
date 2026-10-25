@@ -8,17 +8,13 @@
             [kmet.agent.modes.interactive :as interactive]
             [kmet.agent.modes.print :as print-mode]
             [kmet.agent.modes.rpc :as rpc-mode]
-            [kmet.agent.config :as cfg]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.packages :as packages]
-            [kmet.tui.theme :as theme]
             [kmet.agent.packages-cli :as package-manager]
             [kmet.ai.image-models :as image-models]
             [kmet.ai.image-model-gen :as image-gen]
             [kmet.ai.model-gen :as model-gen]
             [kmet.ai.models :as models]
+            [kmet.app.world :as world]
             [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.app-runtime :as runtime]
             [kmet.agent.debug :as debug]
             [kmet.agent.version :as version]
             [kmet.tui.fuzzy :as fuzzy]
@@ -291,50 +287,15 @@
           (System/exit 1)))))
 
 (defn load-world!
-  "Load the process world a front end runs on: the provider catalogs and the
+  "Kmet1's name for `kmet.app.world/load!`: the provider catalogs and the
    models.edn layer over them, the config, the extension packages, the themes,
    and the extension CLI flags. Returns the config.
 
-   `-main` runs this after its own flags and before dispatch. A mode mounted by
-   another entry point runs it itself: `kmet --app new --profile tui` boots a
-   *composition*, not a process world, and the TUI still needs the catalogs, the
-   loaded extensions and the themes a process world has — so the list lives here
-   once rather than in each entry.
-
-   CTX is the composition that entry booted. It is published as the process root
-   **before** the first read of `kmet.agent.app-runtime/ctx` (the `runtime/ctx`
-   call below): a world loaded against a root nobody mounted would register
-   extensions into a second tree, and every kmet1 shim would read that one. The
-   one-arity is kmet1's own entry, which has no composition yet and boots its
-   root here."
-  ([opts] (load-world! opts nil))
-  ([opts ctx]
-   ;; Provider/model registry — loads the committed catalogs (pi registers its
-   ;; generated providers at startup), then the models.edn user config layer
-   ;; (custom providers + overrides; errors surface as warnings)
-   (models/load-catalogs!)
-   (image-models/load-image-catalogs!)
-   (models/load-models-config!)
-   (when-let [err (models/get-model-config-error)]
-     (binding [*out* *err*]
-       (println "Warning: models.edn:" err)))
-   ;; Configuration + extensions load before model resolution (pi:
-   ;; createAgentSessionRuntime registers extension providers, then the CLI model
-   ;; resolves) — so --model/--provider and settings.edn can select
-   ;; extension-registered providers, and print mode gets extension hooks.
-   (let [config (cfg/init!)]
-     (when ctx (runtime/publish-root! ctx))
-     ;; Extension loading below registers into the root ctx's registries, so the
-     ;; root has to exist before any init(api) runs.
-     (runtime/ctx)
-     ;; One unified load per type (pi: resourceLoader — top-level entries, auto
-     ;; dirs, then packages in precedence order)
-     (packages/load-extensions!)
-     (theme/load-theme-paths! (packages/resolve-theme-paths))
-     ;; Extension CLI flags: the collected --flags become readable via
-     ;; extensions/get-flag (pi: registerFlag + getFlag).
-     (extensions/set-cli-flags! (:ext-flags opts))
-     config)))
+   `-main` runs this after its own flags and before dispatch; kmet2's entry
+   runs the same load, into the composition it booted and before it mounts the
+   mode, so the two entries cannot drift."
+  [opts]
+  (world/load! opts))
 
 (defn -main
   "Entry point. Parses CLI args and dispatches to the requested mode."

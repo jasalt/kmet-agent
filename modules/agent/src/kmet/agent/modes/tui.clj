@@ -7,8 +7,9 @@
    engine takes its ctx as an argument (`kmet.agent.modes.interactive/run`), so
    the run reads the composition's own `:tools`, `:sessions` and
    `:systemPrompt` rows; and the startup a *process* world needs — catalogs,
-   config, extension packages, themes — is `kmet.agent.cli/load-world!`, the
-   same list kmet1's entry runs, so the two entries cannot drift.
+   config, extension packages, themes — arrives as the config the entry loads
+   into this tree before mounting the row (`kmet.app.world`, 5l-ii), the same
+   list kmet1's entry runs, so the two entries cannot drift.
 
    **What this row does not do yet.** The mode drives kmet1's engine rather than
    an `:agents` handle: the registry stays empty for a TUI run, and the per-agent
@@ -30,8 +31,7 @@
    them as kmet1's front end always did (`run-opts`). A mode that creates its
    agent through `:agents` has no session option to give its factory yet, and
    `kmet.app.core` refuses the session flags there by name."
-  (:require [kmet.agent.cli :as cli]
-            [kmet.agent.modes.interactive :as interactive]
+  (:require [kmet.agent.modes.interactive :as interactive]
             [kmet.app.invocation :as invocation]
             [kmet.srce.core :as srce]))
 
@@ -53,17 +53,19 @@
     (:continue config) (assoc :continue true)))
 
 (defn- run-tui!
-  "Load the world, run the TUI on CTX until it quits, and report the exit.
+  "Run the TUI on CTX with the entry's loaded world CONFIG until it quits, and
+   report the exit.
 
    The entry point waits on `:on-result` (`kmet.app.core/run-mode`), so it fires
    on both paths: the mode owns its output, and a failing TUI reports the
    failure here instead of leaving the entry waiting for a promise that will
    never be delivered."
-  [ctx opts on-result]
+  [ctx config on-result]
   (try
-    ;; the composition's ctx, not a process root the world loader would boot: the
-    ;; run's tool table, system prompt and session log are the ones it mounted
-    (interactive/run (cli/load-world! opts ctx) opts ctx)
+    ;; the composition's ctx, not a process root: the run's tool table, system
+    ;; prompt and session log are the ones the profile mounted, and the config
+    ;; is the world the entry loaded into that same tree
+    (interactive/run (:config config) (run-opts config) ctx)
     (on-result {:exit 0})
     (catch Throwable t
       (binding [*out* *err*]
@@ -80,10 +82,14 @@
    mount (`--dump-state`) hands the row no `:on-result` and starts nothing."
   [ctx config]
   (when-let [on-result (:on-result config)]
+    (when-not (:config config)
+      (throw (ex-info (str "the TUI mode needs the entry's loaded world: "
+                           "kmet --app new --profile tui")
+                      {:type :kmet.app/no-world})))
     ;; the app scope: the row's own ctx is a mount site, and every lookup the
     ;; run makes (:tools, :sessions, :skills) walks up from the scope it was
     ;; given
-    (future (run-tui! (:parent ctx) (run-opts config) on-result))))
+    (future (run-tui! (:parent ctx) config on-result))))
 
 (srce/defplugin plugin
   {:name :mode-tui

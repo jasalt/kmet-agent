@@ -10,10 +10,13 @@
    on what, what failed and with which error.
 
    A profile with a **mode row** runs it: the row is marked `:mode true`, and
-   the entry point merges the invocation's input into that row's config before
-   booting (the prompt, and where the mode reports its exit). The mode owns its
-   output and runs on its own thread; `main` waits for the exit and disposes the
-   composition it booted. Print mode is the first (`kmet.app.modes.print`);
+   the entry point boots the world rows with that one deferred, loads the process
+   world into the mounted tree, then mounts the mode with the invocation's
+   input (the prompt, where it reports its exit, and the loaded config). The
+   mode owns its output and runs on its own thread; `main` waits for the exit
+   and disposes the composition it booted. A mode mounts last because its
+   `serve` starts the run, and the run must see the extensions and themes the
+   world load installs. Print mode is the first (`kmet.app.modes.print`);
    a profile without a mode row still boots, reports what it mounted, and
    exits, which is what proves the rest of the rows mount.
 
@@ -30,10 +33,10 @@
             [clojure.string :as str]
             [kmet.agent.packages-cli :as packages-cli]
             [kmet.agent.version :as version]
-            [kmet.ai.models :as models]
             [kmet.app.catalog :as catalog]
             [kmet.app.inspect :as inspect]
             [kmet.app.invocation :as invocation]
+            [kmet.app.world :as world]
             [kmet.app.profile :as profile]
             [kmet.app.runtime :as runtime]))
 
@@ -349,19 +352,6 @@
   [rows]
   (some #(when (:mode %) %) rows))
 
-(defn- with-mode-input
-  "COMPOSED with INPUT merged into MODE's config — that row only, so a profile
-   that stacks two mode rows cannot start two runs. Matching by id is what
-   `mode-row` found the row by."
-  [composed mode input]
-  (update composed :rows
-          (fn [rows]
-            (mapv (fn [row]
-                    (if (= (:id row) (:id mode))
-                      (update row :config merge input)
-                      row))
-                  rows))))
-
 (defn- mode-input
   "What the command line asks a mode for: the prompt and where to report, plus
    what the mode hands its run — the output `:format`, the agent's
@@ -372,28 +362,37 @@
    because the TUI row hands them to kmet1's `interactive/run`). A value the
    invocation did not give stays absent (`select-keys`), so a mode sees what was
    asked for rather than a map of every option it could have been told."
-  [opts prompt on-result]
+  [opts config prompt on-result]
   (cond-> (assoc (select-keys opts [:format :model :provider :thinking :models
                                     :system-prompt :append-system-prompt
                                     :session-dir :port :session])
-                 :on-result on-result)
+                 :on-result on-result
+                 ;; the process world's loaded config: the TUI runs on it, and a
+                 ;; mode that reads settings itself ignores the key
+                 :config config)
     (:continue? opts) (assoc :continue true)
     (:resume? opts) (assoc :resume true)
     ;; a profile with no prompt to give hands the mode no prompt at all
     (not (str/blank? prompt)) (assoc :prompt prompt)))
 
 (defn- run-mode
-  "Boot COMPOSED and drive MODE, the row `mode-row` found: give it the
-   invocation's input, wait for it to report, and return its exit code. The
-   mode owns what it prints; the entry point owns the process, the boot and the
-   teardown."
+  "Boot COMPOSED's world rows, load the process world into that tree, then mount
+   MODE — the row `mode-row` found — with the invocation's input, wait for it
+   to report, and return its exit code. The mode mounts last, not with the
+   world: its `serve` starts the run, and the run must see the extensions,
+   themes and catalogs the load installs. The model patterns resolve after the
+   load for the same reason — an extension provider is one the catalog does not
+   have until then. The mode owns what it prints; the entry point owns the
+   process, the boot, the load and the teardown."
   [composed mode opts prompt]
   (let [result (promise)
-        booted (runtime/boot (with-mode-input composed mode
-                               (mode-input opts prompt
-                                           #(deliver result %))))]
+        booted (runtime/boot composed {:defer #(= (:id mode) (:id %))})]
     (try
-      (:exit (deref result) 1)
+      (let [config (world/load! opts (:ctx booted))
+            opts (invocation/resolve-overrides opts)
+            input (mode-input opts config prompt #(deliver result %))]
+        (runtime/mount-deferred! booted (fn [row] (update row :config merge input)))
+        (:exit (deref result) 1))
       (finally
         (runtime/shutdown! booted)))))
 
@@ -448,14 +447,13 @@
 
 (defn- run-composed
   "A run with neither `--dump-…` flag: the profile's mode, when it has one, else
-   the boot report. The invocation's model patterns are resolved against the
-   catalog first (`invocation/resolve-overrides`, kmet1's order), so a mode gets
-   catalog ids and the entry reports an unknown model before anything boots. A
-   mode honors the session-lifecycle flags when its row says it owns the session
-   (`:session-lifecycle`); the rest refuse them by name."
+   the boot report. A mode's model patterns resolve against the catalog inside
+   the run (after the process world loads, so extension providers are real
+   catalog entries); the invocation's other checks happen here, before anything
+   boots. A mode honors the session-lifecycle flags when its row says it owns
+   the session (`:session-lifecycle`); the rest refuse them by name."
   [opts args]
-  (let [opts (invocation/resolve-overrides opts)
-        composed (compose-config opts)]
+  (let [composed (compose-config opts)]
     (if-let [mode (mode-row (:rows composed))]
       (let [prompt (str/join " " args)
             flag (session-flag opts)]
@@ -497,31 +495,16 @@
 
         :else (throw e)))))
 
-(defn load-catalog!
-  "The provider/model registry every run resolves against: the committed
-   catalogs, then models.edn's user layer (custom providers and overrides).
-
-   It is process-wide state in `kmet.ai.models`, and it starts empty, so a
-   process that never loads it answers `Unknown provider: …` for every provider
-   — kmet1 loads it at the top of its entry point and kmet2's process entry does
-   the same. A models.edn problem is a warning rather than a failure: the
-   built-in catalogs still work."
-  []
-  (models/load-catalogs!)
-  (models/load-models-config!)
-  (when-let [err (models/get-model-config-error)]
-    (binding [*out* *err*]
-      (println "Warning: models.edn:" err))))
-
 (defn run-process
-  "What a process start does before it exits: load the catalog the run resolves
-   against, then run ARGS. The order is load-bearing twice over: a run may name
-   `--model provider/model` in its first argument, and the entry resolves that
-   pattern against the catalog before any mode boots
-   (`kmet.app.invocation/resolve-overrides`). `-main` is this plus the exit code,
-   so a test can read the order without forking."
+  "What a process start does before it exits: ARGS through `main`. `-main` is
+   this plus the exit code, so a test can drive the whole entry without forking.
+
+   The model catalog is not loaded here: it is part of the process world, which
+   loads into the composition's own registries (`run-mode`), after the boot that
+   mounts them. 5n's `-d` and `--generate-models` sit on this side of that load;
+   `--list-models` on the far side, since the table it prints includes the
+   extension providers the load installs."
   [args]
-  (load-catalog!)
   (main args))
 
 (defn -main

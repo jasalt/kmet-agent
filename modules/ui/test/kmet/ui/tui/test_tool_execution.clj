@@ -1,20 +1,20 @@
 (ns kmet.ui.tui.test-tool-execution
-  (:require [kmet.test-utils :as tu]
-            [clojure.test :as t :refer [deftest is testing]]
-            [clojure.string :as str]
-            [babashka.fs :as fs]
-            [kmet.tui.core :as core]
-            [kmet.tui.utils :as utils]
-            [kmet.libs.terminal-image :as timg]
-            [kmet.tui.theme :as theme]
-            [kmet.tui.timers :as timers]
-            [kmet.libs.hikap.component :as component]
-            [kmet.ui.tui.subs :as subs]
-            [kmet.ui.tui.tool-execution :as te]
-            [kmet.agent.ui.tui.tool-renderers :as renderers]
-            [kmet.agent.tools.bash :as bash]
-            [kmet.tui.protocols :as protocols]
-            [kmet.tui.components.text :as text]))
+  (:require
+   [clojure.test :as t :refer [deftest is testing]]
+   [clojure.string :as str]
+   [babashka.fs :as fs]
+   [kmet.tui.core :as core]
+   [kmet.tui.utils :as utils]
+   [kmet.libs.terminal-image :as timg]
+   [kmet.tui.theme :as theme]
+   [kmet.tui.timers :as timers]
+   [kmet.libs.hikap.component :as component]
+   [kmet.ui.tui.subs :as subs]
+   [kmet.ui.tui.tool-execution :as te]
+   [kmet.agent.ui.tui.tool-renderers :as renderers]
+   [kmet.agent.tools.bash :as bash]
+   [kmet.tui.protocols :as protocols]
+   [kmet.tui.components.text :as text]))
 
 (defn- strip-ansi [s]
   (utils/strip-ansi-codes s))
