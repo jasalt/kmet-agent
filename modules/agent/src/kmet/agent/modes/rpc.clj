@@ -646,7 +646,7 @@
         out (or (:out opts) *out*)]
     ;; the portable builtins this front end dispatches over prompt (6.3) and
     ;; reports through get-commands; registration is idempotent
-    (builtins/register-runtime-commands!)
+    (builtins/register-runtime-commands! app-runtime/ctx)
     (if-let [session (session-driver/resolve-run-session config opts)]
       (let [;; the port is installed by bootstrap but needs the engine for a
             ;; dialog timeout's auto-answer; the ref closes the cycle

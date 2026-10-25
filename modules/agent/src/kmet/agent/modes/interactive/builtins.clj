@@ -346,7 +346,7 @@
   "Register kmet's builtin slash commands. Handlers receive [cs args];
    argument completions feed the editor autocomplete dropdown."
   [_config]
-  (runtime-commands/register-runtime-commands!)
+  (runtime-commands/register-runtime-commands! app-runtime/ctx)
   (register-builtin-command!
    {:name "quit"
     :description "Exit kmet"

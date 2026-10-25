@@ -111,7 +111,7 @@
   ;; `/units` renders the ctx tree (`kmet.app.inspect`): every mounted row is a
   ;; fiber line with its state, what it provides and its effect labels — the
   ;; store's owner walk and the per-registry `keys=[…]` lines are gone (4d).
-  (builtins/register-runtime-commands!)
+  (builtins/register-runtime-commands! app-runtime/ctx)
   (let [got (atom nil)]
     ((:handler (commands/find-command "units"))
      {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
@@ -130,7 +130,7 @@
 (t/deftest units-shows-a-pending-fiber-and-what-it-waits-for
   ;; The question the store could only answer as absence: a row that is not
   ;; active says so, and says what it is waiting for.
-  (builtins/register-runtime-commands!)
+  (builtins/register-runtime-commands! app-runtime/ctx)
   (let [ctx (app-runtime/ctx)
         probe (srce/plugin! ctx {:name :probe/unit
                                  :inject [:nothing-provides-this]

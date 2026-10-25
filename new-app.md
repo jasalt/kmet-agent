@@ -880,7 +880,7 @@ Each is independently shippable and gated.
 | 7b-i | **landed** — **The events contract — the head of landing 5, not its tail**: the loop dispatches on the kernel from the run's own ctx, so `:agent-settled` is an event a front end subscribes to at the app's scope, while kmet1's process table keeps hearing the same events (the extension ABI registers there; kmet1 boots the composition, so a run cannot tell the two apps apart — only the listeners differ). A boundary threads **one** decision through both: the kernel's accumulated map seeds the table's chain. The composition test no longer listens on kmet1's table | a composed turn settles on the app's bus, and `kmet.app.test-composition-run` subscribes without kmet1's table — **met**; see § "Landing 7b-i settled" |
 | 7b-ii | **landed** — presets are bundles: one composition language, two mount points. `runtime/mount-rows!` is the mount loop `boot` and a preset share, `kmet.app.presets` mounts a *bundle* under an agent's child ctx, and `:agents/create!` gained the `:setup` seam that runs between the child ctx and the factory — so per-agent composition happens before an agent exists, and a setup that throws rolls the ctx back the way a failing factory does. `:bundle/gated` (the policy row) is a bundle a profile stacks and a preset mounts; `:rpc-ask` is the profile that stacks it | pi-alignment green (no pi feature line moves: this is composition machinery); a tool swaps mid-session at the turn boundary — met by `a-tool-swaps-at-the-turn-boundary`; a profile stacking a preset bundle boots — met by `a-profile-may-stack-a-preset-bundle` + `a-preset-composes-one-agents-world`; see § "Landing 7b-ii" |
 | 5k | **landed** — the `:ui` capability contract and its headless provider: `kmet.app.ui` (four required keys, checked at the mount, plus the ABI `:port` a mode binds), `kmet.ui.headless`, `:bundle/headless`, and print/rpc binding the port (the server stacks the bundle but binds none until 8's per-agent surface); § "The remaining plan" | every shipped provider answers `:kind :render-tree :request! :capabilities`; a mode's `(ui :request {:kind :confirm})` answers the kind's default (`false`) *from the row* and nil without it |
-| 5l | **planned** — the TUI library moves into `ui`: the driver, the builtin command table and the process world load down into `app`, the interactive cluster and the mode row into `kmet.ui.tui.*` behind a ctx argument and a tool-lookup argument, and a rank-2 publisher for the process registry handle so a kmet2 extension's command is kmet2's; § "The remaining plan" | pty capture parity on `--app new`; `modules/agent/src/kmet/agent/modes` gone; an extension's command registered under `--app new` is in the ctx's `:commands` |
+| 5l | **in progress** — the TUI library moves into `ui`: the driver and the builtin command table **landed** (5l-i, namespaces kept), the process world load next (5l-ii), then the interactive cluster and the mode row into `kmet.ui.tui.*` behind a ctx argument and a tool-lookup argument, and a rank-2 publisher for the process registry handle so a kmet2 extension's command is kmet2's; § "The remaining plan" | pty capture parity on `--app new`; `modules/agent/src/kmet/agent/modes` gone; an extension's command registered under `--app new` is in the ctx's `:commands` |
 | 5n | **in progress** — the invocation surface: kmet1's run flags on kmet2's entry (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) and their hand-off — **landed**, model patterns resolved by the entry so every mode, the TUI included, applies them; `@file` **landed** (read at parse time); its maintenance flags (`-d`/`--debug`, `--generate-models`, `--list-models`), extension `--flag` values, the skill/prompt expansion chain for every mode, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) — **landed** for the TUI row, refused by name by the modes whose factory opens no session until 10a; § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:` expands, `--list-models` diffs clean against `--app old`, `(get-flag …)` answers, `--debug`/`--generate-models`/`--session-dir` behave, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run |
 | 8 | **planned** — the TUI reads an agent handle: `create!`/`send!`/`steer!`/`inbox`/`when-idle`/`cancel!` instead of the `Engine` and the driver, the handle grows the settings a front end changes, and a mode's listeners scope to its agent | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises |
 | 5m | **planned** — `ui-tk`: `kmet.ui.tk` over `kmet.tk` and the `:ui/transcript` skeleton; the second toolkit provider, no app change | one profile patch swaps `:ui/terminal` for `:ui/tk` and the same session paints on bb and Jolt; JVM refuses the row by name |
@@ -3638,13 +3638,17 @@ are landing 6's.
 
 Three commits, each independently gated, because each has its own blocker.
 
-**5l-i: the clean two move down.** `kmet.agent.session.driver` (1,009) and
-`kmet.agent.commands.builtins` (159) into `app`, namespaces kept (the two-axes
-rule, so this is `git mv` plus two edits): `commands/builtins`' `/units` takes
-the ctx from its command ctx instead of `(app-runtime/ctx)`, which is the last
-`app-runtime` call in it; the driver needs nothing. Their tests move with them
-(the UI's did at 5e), and `kmet.agent.session.runtime` is already at rank 2, so
-the pair the front ends read is one module again.
+**5l-i: the clean two move down.** **Landed.** `kmet.agent.session.driver`
+(1,009) and `kmet.agent.commands.builtins` (159) moved into `app`, namespaces
+kept (the two-axes rule: `git mv` plus one edit). That edit is `builtins`'
+`/units`, the last `app-runtime` call in it: `register-runtime-commands!` now
+takes a thunk that returns the process root, so the command is pure rank 2 and
+the front end — which has the root in hand — supplies it. A thunk rather than
+the ctx itself because `/units` reads it per invocation: a root booted after
+registration is the one rendered, which is the behavior the old
+`(app-runtime/ctx)` call had. The driver needed nothing; every one of its
+requires already lived in `app` or below. `kmet.agent.session.runtime` was
+already at rank 2, so the pair the front ends read is one module again.
 
 **5l-ii: the world load, and the publisher.** `kmet.agent.cli/load-world!` —
 provider catalogs, the models.edn layer, config, extension packages, theme paths,
