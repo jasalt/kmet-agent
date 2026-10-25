@@ -9,7 +9,6 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.ui.tui.bash-execution :as be]
             [kmet.ui.tui.tool-execution :as te]
-            [kmet.agent.tools.core :as tools]
             [kmet.ui.tui.chat-history :as ch]
             [kmet.test-utils :as tu]))
 
@@ -18,7 +17,9 @@
    what any test that asserts a tool's own rendering must do: the component
    takes the lookup from its caller instead of reaching a registry itself."
   [& opts]
-  (apply ch/make-chat-history :tool-fn tools/get-tool opts))
+  (apply ch/make-chat-history :tool-fn (tu/tool-fn) opts))
+
+(t/use-fixtures :each tu/with-extension-host)
 
 (defn- plain-lines
   "Render component and strip ANSI codes for easier testing."

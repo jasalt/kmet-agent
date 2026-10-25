@@ -22,7 +22,7 @@
             [kmet.app.config :as cfg]
             [kmet.ai.model-gen :as model-gen]
             [kmet.ai.models :as m]
-            [kmet.agent.tools.core :as tools]))
+            [kmet.app.tools.tool :as tools]))
 
 ;; ─── OpenAI Codex + Azure responses (shared processor, new URL + auth) ────
 
@@ -434,7 +434,9 @@
                                   :base-url (str "http://localhost:" port "/v1/chat/completions"))]
     (try
       (with-redefs [cfg/get-api-key (fn [_] "sk-test")]
-        @(loop/run-agent-turn ag {:message "hi" :on-done (fn [_]) :on-error (fn [_])}))
+        (loop-support/with-host
+          (fn []
+            @(loop/run-agent-turn ag {:message "hi" :on-done (fn [_]) :on-error (fn [_])}))))
       (let [assistant (last (filter #(= :assistant (:role %)) (session/get-branch sess)))]
         (t/is (= :idle @(:status ag)))
         (t/is (= {:prompt_tokens 1000 :completion_tokens 200 :total_tokens 1200

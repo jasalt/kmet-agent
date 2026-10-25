@@ -10,8 +10,8 @@
    [kmet.ui.tui.interactive.turn :as turn]
    [kmet.app.keybindings :as app-kb]
    [kmet.ui.tui.status-indicator :as status-indicator]
-   [kmet.agent.tools.core :as tools]
    [kmet.ui.tui.chat-history :as chat-history]
+   [kmet.test-utils :as tu]
    [kmet.tui.keybindings :as tui-kb]))
 
 (defn capture-mount!
@@ -79,7 +79,7 @@
         ced (atom ed)]
     (hs/core-state handle
                    {:tui {:render-requested? (atom false)}
-                    :chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+                    :chat-history (chat-history/make-chat-history :tool-fn (tu/tool-fn))
                     :editor ed
                     :current-editor-atom ced
                     :status-indicator si

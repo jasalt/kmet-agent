@@ -6,26 +6,33 @@
             [clojure.string :as str]
             [clojure.test :as t]
             [kmet.app.tools.bash :as bash-tool]
-            [kmet.agent.tools.core :as tools]
+            [kmet.app.tools.registry :as tools]
             [kmet.app.tools.run-code :as run-code]
             [kmet.app.tools.util :as tool-util]
             [kmet.libs.host :as host]
-            [kmet.libs.concurrent :as concurrent]))
+            [kmet.libs.concurrent :as concurrent]
+            [kmet.test-utils :as tu]))
+
+(def ^:private reg
+  "The tool registry these tests drive: one handle for the namespace, since the
+   tool layer takes its registry as the first argument and the run_code tool
+   resolves its sibling tools through the same one."
+  (tu/tool-registry))
 
 (defn- run
   "Execute the run_code tool the way the registry does."
   [code & [opts on-update]]
-  (tools/execute-tool "run_code" (merge {:code code} opts) {:on-update on-update}))
+  (tools/execute-tool reg "run_code" (merge {:code code} opts) {:on-update on-update}))
 
 (defn- with-custom-tool [tool f]
-  (tools/register-tool! tool)
+  (tools/register-tool! reg tool)
   (try (f)
-       (finally (tools/unregister-tool! (:name tool)))))
+       (finally (tools/unregister-tool! reg (:name tool)))))
 
 (defn- with-tool-source [id tools-fn f]
-  (tools/register-tool-source! id tools-fn)
+  (tools/register-tool-source! reg id tools-fn)
   (try (f)
-       (finally (tools/unregister-tool-source! id))))
+       (finally (tools/unregister-tool-source! reg id))))
 
 (defn- temp-dir []
   (let [dir (str (fs/absolutize (str "target/test-run-code-" (System/nanoTime))))]
@@ -126,7 +133,7 @@
 
 (t/deftest ^:slow test-run-code-signal-abort
   (let [signal (atom false)
-        f (future (tools/execute-tool "run_code" {:code "(loop [] (recur))"} {:signal signal}))]
+        f (future (tools/execute-tool reg "run_code" {:code "(loop [] (recur))"} {:signal signal}))]
     (Thread/sleep 100)
     (reset! signal true)
     (let [r (deref f 10000 nil)]
@@ -496,26 +503,26 @@
         (t/is (str/includes? (:content (run "(emit @(tools/call \"bash\" {}))")) "not active"))))))
 
 (t/deftest test-run-code-contributed-tools-unregister
-  (tools/register-tool-source! ::extension
+  (tools/register-tool-source! reg ::extension
                                (fn [] {"run-code-test-gone" {:name "run-code-test-gone"
                                                              :execute (fn [_] {:content "x"})}}))
   (try
     (t/is (str/includes? (:content (run "(emit (tools/list))")) "run-code-test-gone"))
-    (finally (tools/unregister-tool-source! ::extension)))
+    (finally (tools/unregister-tool-source! reg ::extension)))
   (t/is (not (str/includes? (:content (run "(emit (tools/list))")) "run-code-test-gone"))))
 
 (t/deftest test-run-code-broken-tool-source
   ;; a source that throws (or returns a non-map) contributes nothing and
   ;; cannot take the sandbox down
-  (tools/register-tool-source! ::broken (fn [] (throw (ex-info "boom" {}))))
-  (tools/register-tool-source! ::bad-shape (fn [] [1 2 3]))
+  (tools/register-tool-source! reg ::broken (fn [] (throw (ex-info "boom" {}))))
+  (tools/register-tool-source! reg ::bad-shape (fn [] [1 2 3]))
   (try
     (let [r (run "(emit (+ 1 2))")]
       (t/is (not (:is-error r)) (:content r))
       (t/is (= "3" (:content r))))
     (finally
-      (tools/unregister-tool-source! ::broken)
-      (tools/unregister-tool-source! ::bad-shape))))
+      (tools/unregister-tool-source! reg ::broken)
+      (tools/unregister-tool-source! reg ::bad-shape))))
 
 (t/deftest test-run-code-inner-call-streams-updates
   ;; the bridge hands inner :streams? calls the script's on-update, so
@@ -554,10 +561,7 @@
     (t/is (:is-error r))
     (t/is (str/includes? (:content r) "kmet.app.loop"))
     (t/is (str/includes? (:content r) "cannot load namespace")
-          "the sandbox's own boundary error, not SCI's generic one"))
-  (let [r (run "(require 'kmet.agent.tools.core)")]
-    (t/is (:is-error r))
-    (t/is (str/includes? (:content r) "cannot load namespace"))))
+          "the sandbox's own boundary error, not SCI's generic one")))
 
 (t/deftest test-run-code-context-isolation
   (let [r (run "(def leaked 42) (defn tally [] 1) (emit leaked)")]
@@ -747,7 +751,7 @@
   ;; call: a host-blocked script (the interrupt cannot reach it) is abandoned
   ;; after the same 1.5 s grace the timeout path uses
   (let [signal (atom false)
-        f (future (tools/execute-tool "run_code"
+        f (future (tools/execute-tool reg "run_code"
                                       {:code "(sandbox/sleep 5000) :ok"}
                                       {:signal signal}))]
     (Thread/sleep 200)

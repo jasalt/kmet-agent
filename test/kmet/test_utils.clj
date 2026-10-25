@@ -11,6 +11,7 @@
             [kmet.app.session.lifecycle :as lifecycle]
             [kmet.app.session.runtime :as rt]
             [kmet.app.skills :as skills]
+            [kmet.app.tools.registry :as tools]
             [kmet.srce.core :as srce]
             [kmet.tui.utils :as u]))
 
@@ -112,6 +113,22 @@
   (prompts/clear-prompt-templates!)
   (skills/clear-skills!)
   (extensions/unregister-contributed-themes!))
+
+(defn tool-registry
+  "A tool registry handle for tests: the app's tag registry over an atom, with
+   the builtin table layered under it. The tool layer takes its registry as the
+   first argument (two agents, two tables), so a test that reads the table says
+   which one — never a process global."
+  []
+  (registry/atom-registry))
+
+(defn tool-fn
+  "The chat history's `:tool-fn` — a 1-arg name → tool definition lookup — over
+   a fresh `tool-registry`. A display reads builtins, which are the registry's
+   static table, so the handle needs no owner."
+  []
+  (let [reg (tool-registry)]
+    (fn [name] (tools/get-tool reg name))))
 
 (defn with-extension-host
   "clojure.test :each fixture: this namespace needs a bound extension host.

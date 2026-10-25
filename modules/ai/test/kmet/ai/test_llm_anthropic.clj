@@ -10,7 +10,7 @@
             [kmet.ai.api.shared :as shared]
             [kmet.ai.api.anthropic-messages :as anthropic]
             [kmet.ai.models :as m]
-            [kmet.agent.tools.core :as tools]))
+            [kmet.app.tools.tool :as tools]))
 
 ;; ─── Phase 9: anthropic auth-token (Authorization: Bearer) ─────────────────
 

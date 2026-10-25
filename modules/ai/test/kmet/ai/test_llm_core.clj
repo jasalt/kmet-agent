@@ -9,8 +9,9 @@
             [kmet.ai.api.shared :as shared]
             [kmet.ai.api.openai-responses :as responses]
             [kmet.ai.models :as m]
-            [kmet.agent.tools.core :as tools]
-            [kmet.libs.concurrent :as concurrent]))
+            [kmet.app.tools.registry :as tools]
+            [kmet.libs.concurrent :as concurrent]
+            [kmet.test-utils :as tu]))
 
 ;; ─── Module loads ─────────────────────────────────────────────────────────
 
@@ -156,7 +157,7 @@
 ;; ─── Tool schema consistency ──────────────────────────────────────────────
 
 (t/deftest test-llm-tool-schemas
-  (let [tools (vals (tools/get-all-tools))]
+  (let [tools (vals (tools/get-all-tools (tu/tool-registry)))]
     (doseq [t tools]
       (let [openai-schema (shared/tool->openai-schema t)
             anthropic-schema (shared/tool->anthropic-schema t)]

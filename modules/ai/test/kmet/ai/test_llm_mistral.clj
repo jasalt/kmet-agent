@@ -3,7 +3,7 @@
   (:require [clojure.test :as t]
             [kmet.ai.api.shared :as shared]
             [kmet.ai.api.mistral-conversations :as mistral]
-            [kmet.agent.tools.core :as tools]))
+            [kmet.app.tools.tool :as tools]))
 
 ;; ─── Mistral conversations ────────────────────────────────────────────────
 

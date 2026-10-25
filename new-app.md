@@ -4316,6 +4316,24 @@ described the pre-rename namespaces. Then
 the `kmet.agent.tools.core` façade collapse, the deletion and the flag flip, and
 the documents.
 
+The façade's callers moved first, so that what is left of
+`kmet.agent.tools.core` is kmet1's (and dies with it): thirteen files required
+it, and none of them needs a process global — five `ai` tests wanted
+`make-tool`/`map->Tool` (the record helpers, which live in
+`kmet.app.tools.tool`) and one wanted the builtin table,
+`kmet.test-utils/tool-registry`'s handle answers; five `ui` tests wanted the
+chat history's `:tool-fn`, which `kmet.test-utils/tool-fn` builds over a handle;
+`test_run_code` drives its own handle, one per namespace. That repoint also
+removed the last load-order luck in those namespaces: requiring the façade
+loaded `kmet.agent.app-runtime`, whose **load** binds the extension host to a
+thunk that boots kmet1's composition — so a run that asked the host for a hook
+got a booted composition instead of the `:kmet/no-host-services` error. Three
+tests were passing on that accident (`test-run-code`'s turn and two chat-history
+namespaces' render paths); they name their host now (`with-host`,
+`with-extension-host`), which is what the T landing's fixture existed for. The
+boundary case that required the façade inside the sandbox went with it: the
+sandbox's own exclusion is already pinned by `kmet.app.loop`.
+
 The deletion has guard work of its own, and each item is a guard that would
 either fail or go silently narrow: `test-front-end-policy`'s table names kmet1's
 print and rpc (the handle front ends it also names are the ones that survive);

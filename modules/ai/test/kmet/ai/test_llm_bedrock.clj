@@ -12,7 +12,7 @@
             [kmet.ai.api.openai-responses :as responses]
             [kmet.ai.api.bedrock-converse-stream :as bedrock]
             [kmet.ai.models :as m]
-            [kmet.agent.tools.core :as tools]))
+            [kmet.app.tools.tool :as tools]))
 
 ;; ─── AWS Bedrock ConverseStream ───────────────────────────────────────────
 

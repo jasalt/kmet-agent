@@ -23,7 +23,6 @@
             [kmet.app.loop :as agent]
             [kmet.app.session.core :as session]
             [kmet.ui.tui.bash-execution :as bash-execution]
-            [kmet.agent.tools.core :as tools]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.loaded-resources :as loaded-resources]
             [kmet.ui.tui.status-indicator :as status-indicator]
@@ -69,7 +68,7 @@
    cs-ref; tool-execution events correlate through an empty pending map."
   []
   ((var layout/make-agent-event-handler)
-   {:chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+   {:chat-history (chat-history/make-chat-history :tool-fn (tu/tool-fn))
     :tui {:render-requested? (atom false)}
     :cs-ref (atom nil)
     :pending-tool-comps (atom {})}))
@@ -197,7 +196,7 @@
             indicator up on :agent-start — once per run, not per attempt"
     (let [cs (assoc (hs/core-state (hs/new-handle)
                                    {:tui {:render-requested? (atom false) :running? (atom false)}
-                                    :chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+                                    :chat-history (chat-history/make-chat-history :tool-fn (tu/tool-fn))
                                     :status-indicator (status-indicator/make-status-indicator :text "Working")
                                     :current-editor-atom (atom nil)
                                     :footer-provider (fdp/make-footer-data-provider
@@ -243,7 +242,7 @@
             and clear their own elapsed ticker (pi: pendingTools Map)"
     (let [pending (atom {})
           h ((var layout/make-agent-event-handler)
-             {:chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+             {:chat-history (chat-history/make-chat-history :tool-fn (tu/tool-fn))
               :tui {:render-requested? (atom false)}
               :cs-ref (atom nil)
               :pending-tool-comps pending})]
@@ -289,7 +288,7 @@
     (let [render-requested? (atom false)
           pending (atom {})
           h ((var layout/make-agent-event-handler)
-             {:chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+             {:chat-history (chat-history/make-chat-history :tool-fn (tu/tool-fn))
               :tui {:render-requested? render-requested?}
               :cs-ref (atom nil)
               :pending-tool-comps pending})]
@@ -324,7 +323,7 @@
 (deftest loop-guard-message-requests-frame
   (testing "the loop-guard warning requests a frame after appending to the chat"
     (let [render-requested? (atom false)
-          chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+          chat-history (chat-history/make-chat-history :tool-fn (tu/tool-fn))
           h ((var layout/make-agent-event-handler)
              {:chat-history chat-history
               :tui {:render-requested? render-requested?}
@@ -356,7 +355,7 @@
               "GitHub CLI did not respond (timed out)." 0]]]
       (testing (str "auth status " auth-status ", session " (some? sess))
         (let [shared (atom [])
-              chat (chat-history/make-chat-history :tool-fn tools/get-tool)
+              chat (chat-history/make-chat-history :tool-fn (tu/tool-fn))
               cs (hs/core-state (hs/new-handle)
                                 {:session sess
                                  :chat-history chat})]
@@ -377,7 +376,7 @@
               released kind-gated, so a second flow would take over the slot
               the first one clears"
       (let [shared (atom [])
-            chat (chat-history/make-chat-history :tool-fn tools/get-tool)
+            chat (chat-history/make-chat-history :tool-fn (tu/tool-fn))
             cs (hs/core-state (hs/new-handle)
                               {:session {:id "session"}
                                :chat-history chat
@@ -399,7 +398,7 @@
           tui* {:render-requested? render-requested?
                 :running? (atom false)}
           cs (hs/core-state (hs/handle-with {:session sess})
-                            {:chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+                            {:chat-history (chat-history/make-chat-history :tool-fn (tu/tool-fn))
                              :tui tui*
                              :status-indicator (status-indicator/make-status-indicator)
                              :turn-running? false})]
@@ -432,7 +431,7 @@
           render-requested? (atom false)
           request-message-counts (atom [])
           tui* {:render-requested? render-requested?}
-          chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+          chat-history (chat-history/make-chat-history :tool-fn (tu/tool-fn))
           cs (hs/core-state (hs/handle-with {:session sess})
                             {:tui tui*
                              :chat-history chat-history})
@@ -497,7 +496,7 @@
         (session/append-entry sess {:role :assistant
                                     :content [{:type :text :text "Done."}]})
         (let [loaded (session/load-session (:file sess))
-              ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+              ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
               cs (inter/map->CoreState {:chat-history ch})]
           ((var session-admin/replay-branch!) cs loaded)
           (let [msgs @(:messages-atom ch)
@@ -536,7 +535,7 @@
         (session/append-entry sess {:role :assistant
                                     :content [{:type :text :text "ok"}]})
         (let [loaded (session/load-session (:file sess))
-              ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+              ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
               cs (inter/map->CoreState {:chat-history ch})
               prev-caps (timg/get-capabilities)]
           (timg/set-capabilities! {:images nil :true-color true :hyperlinks true})
@@ -567,7 +566,7 @@
                                       :content [{:type :text :text "answer"}]})
           (session/append-context-edit! sess (:id u) nil)
           (let [loaded (session/load-session (:file sess))
-                ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+                ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
                 cs (inter/map->CoreState {:chat-history ch})]
             ((var session-admin/replay-branch!) cs loaded)
             (let [roles (mapv :role @(:messages-atom ch))]
@@ -592,7 +591,7 @@
                                :stop-reason :error
                                :error-message "upstream connect error"})
         (let [loaded (session/load-session (:file sess))
-              ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+              ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
               cs (inter/map->CoreState {:chat-history ch})]
           ((var session-admin/replay-branch!) cs loaded)
           (let [msgs @(:messages-atom ch)
@@ -618,7 +617,7 @@
                                              :arguments {:command "ls"}}]
                                :stop-reason :aborted})
         (let [loaded (session/load-session (:file sess))
-              ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+              ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
               cs (inter/map->CoreState {:chat-history ch})]
           ((var session-admin/replay-branch!) cs loaded)
           (let [tools (filterv #(= :tool (:role %)) @(:messages-atom ch))]
@@ -663,7 +662,7 @@
                                :tool-name "read" :is-error false
                                :images [{:data "AA" :mime-type "image/png"}]})
         (let [loaded (session/load-session (:file sess))
-              ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+              ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
               cs (inter/map->CoreState {:chat-history ch})
               prev-caps (timg/get-capabilities)]
           (timg/set-capabilities! {:images nil :true-color true :hyperlinks true})
@@ -699,7 +698,7 @@
         (session/append-entry sess {:role :assistant
                                     :content [{:type :text :text "done"}]})
         (let [loaded (session/load-session (:file sess))
-              ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+              ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
               cs (inter/map->CoreState {:chat-history ch})]
           ((var session-admin/replay-branch!) cs loaded)
           (let [bashes (filterv #(= :bash (:role %)) @(:messages-atom ch))
@@ -732,7 +731,7 @@
           (session/append-entry sess {:role :assistant
                                       :content [{:type :text :text "after"}]})
           (let [loaded (session/load-session (:file sess))
-                ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+                ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
                 cs (inter/map->CoreState {:chat-history ch})]
             ((var session-admin/replay-branch!) cs loaded)
             (is (= [:compaction :user :user :assistant]
@@ -808,7 +807,7 @@
             (session/append-entry sess {:role :assistant
                                         :content [{:type :text :text "a"}]})
             (let [loaded (session/load-session (:file sess))
-                  ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+                  ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
                   cs (inter/map->CoreState {:chat-history ch})]
               ((var session-admin/replay-branch!) cs loaded)
               (let [text (str/join "\n"
@@ -837,7 +836,7 @@
 (deftest context-replaced-renders-summary-roles-live
   ;; the live compaction rebuild carries role-preserving context messages,
   ;; so the dedicated summary component renders without a reload
-  (let [ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+  (let [ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
         handler ((var layout/make-agent-event-handler)
                  {:chat-history ch
                   :tui {:render-requested? (atom false)}
@@ -856,7 +855,7 @@
   ;; the live compaction rebuild carries role-preserving context messages:
   ;; tool results must re-render with the preceding assistant call's name +
   ;; args (regression: a rebuilt tool box rendered an empty call line/title)
-  (let [ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+  (let [ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
         handler ((var layout/make-agent-event-handler)
                  {:chat-history ch
                   :tui {:render-requested? (atom false)}
@@ -887,7 +886,7 @@
         (session/append-entry sess {:role :assistant
                                     :content [{:type :text :text "a"}]})
         (let [loaded (session/load-session (:file sess))
-              ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+              ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
               cs (inter/map->CoreState {:chat-history ch})]
           ((var session-admin/replay-branch!) cs loaded)
           (is (= [:user :branch-summary :assistant] (mapv :role @(:messages-atom ch))))
@@ -906,7 +905,7 @@
             knob from the reloaded config (pi: settingsManager.reload)"
     (let [handle (hs/new-handle)
           ag (runtime/agent-state handle)
-          ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+          ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
           cs (hs/core-state handle {:chat-history ch
                                     :config cfg/default-config
                                     :tui nil})
@@ -996,7 +995,7 @@
     (let [handle (hs/new-handle)
           ag (runtime/agent-state handle)
           runtime-cwd "/fake/runtime-project"
-          cs (hs/core-state handle {:chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+          cs (hs/core-state handle {:chat-history (chat-history/make-chat-history :tool-fn (tu/tool-fn))
                                     :footer-provider (fdp/make-footer-data-provider
                                                       :cwd-atom (atom runtime-cwd))
                                     :config cfg/default-config
@@ -1119,7 +1118,7 @@
                                  :turn-running? false
                                  :bash-running? (atom bash?)
                                  :compacting? false
-                                 :chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+                                 :chat-history (chat-history/make-chat-history :tool-fn (tu/tool-fn))
                                  :tui {:scrollback-dirty? (atom dirty?)
                                        :force-redraw? (atom false)
                                        :render-requested? (atom false)
@@ -1142,7 +1141,7 @@
                               {:turn-running? true
                                :bash-running? (atom false)
                                :compacting? false
-                               :chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+                               :chat-history (chat-history/make-chat-history :tool-fn (tu/tool-fn))
                                :tui {:scrollback-dirty? (atom false)
                                      :force-redraw? (atom false)
                                      :render-requested? (atom false)}})]
@@ -1249,7 +1248,7 @@
             chat-history cascade reaches the messages a tui-clear alone
             used to strand"
     (let [ui (tui/create-tui nil)
-          ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+          ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
           cs (assoc (hs/core-state (hs/new-handle)
                                    {:tui ui
                                     :chat-history ch})
@@ -1311,7 +1310,7 @@
   (testing "a stalled/errored agent attempt leaves no bare (no response)
             bubble, keeps whatever streamed, and reports the reason with the
             retry line (terminal failures report through on-agent-error)"
-    (let [ch (chat-history/make-chat-history :tool-fn tools/get-tool)
+    (let [ch (chat-history/make-chat-history :tool-fn (tu/tool-fn))
           handler ((var layout/make-agent-event-handler)
                    {:chat-history ch
                     :tui {:render-requested? (atom false)}

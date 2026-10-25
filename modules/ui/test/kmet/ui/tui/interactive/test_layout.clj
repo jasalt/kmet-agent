@@ -20,7 +20,6 @@
             [kmet.ai.auth :as auth]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.app.config :as cfg]
-            [kmet.agent.tools.core :as tools]
             [kmet.ui.tui.interactive.test-handle-support :as hs]
             [kmet.ui.tui.interactive.test-support :as support]))
 
@@ -65,7 +64,7 @@
             cwd, not the process's"
     (let [cwd (atom "/project/session")
           ch (layout/make-app-chat-history {:tool-display-mode :quiet} cwd
-                                           tools/get-tool)
+                                           (tu/tool-fn))
           _ (chat-history/chat-history-add-message!
              ch {:role :tool :tool-name "read" :arguments {:path "a.txt"}
                  :content "" :is-error false})

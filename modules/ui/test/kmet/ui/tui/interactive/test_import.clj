@@ -22,7 +22,7 @@
             [kmet.ai.models :as m]
             [kmet.ai.auth :as auth]
             [kmet.app.loop.state :as loop-state]
-            [kmet.agent.tools.core :as tools]
+            [kmet.app.tools.registry :as tools]
             [kmet.libs.http :as http]
             [kmet.libs.terminal-image :as timg]
             [kmet.app.session.core :as session]
