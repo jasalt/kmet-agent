@@ -4330,14 +4330,18 @@ becomes the whole-tree rule.
 loop tests and the root tree's bind the same host, and one fixture disposes the
 ctx it created.
 
-The two-axes endgame, in one landing because it cannot be split once started:
-the `s/kmet\.agent\./kmet.app./` pass over the known list (minus
-`kmet.extension`, the ABI, and minus the names re-hosted under `kmet.ui.*`),
-kmet1's files deleted (the 6 entry/process files and its 4 modes), the `agent`
-module row and its four manifests removed, `--app` flipped to the default and
-the flag dropped, `kmet.agent.tools.core`'s façade arities collapsed into the
-handle-taking registry, and `kmet.agent.app-runtime` + `session.driver`'s engine
-path deleted with the last caller. **And the module's two documents move with
+The endgame, in one landing because it cannot be split once started (the rename
+pass ahead of it is three commits of this landing, landed): kmet1's files
+deleted (the 6 entry/process files and its 4 modes), the `agent` module row and
+its four manifests removed, `--app` flipped to the default and the flag dropped,
+`kmet.agent.tools.core`'s façade arities collapsed into the handle-taking
+registry, and `kmet.agent.app-runtime` + `session.driver`'s engine path deleted
+with the last caller. The façade's reach is wider than its 93 lines: thirteen
+files require it — five of `ai`'s tests, five of `ui`'s, `test_run_code`, the
+`test-tools` file that dies with it, and two docstrings in `app`'s source — and
+a handle-taking registry needs a handle, so the tool fixture (an
+`atom-registry` over the real registry) lands in `kmet.test-utils` where every
+module's test tree can bind it. **And the module's two documents move with
 the code**: `kmet/README.md` and `agent/development/pi-alignment.md` are cited
 five times in `AGENTS.md`'s topic map and rule sections, so a module deletion
 that leaves them behind deletes the contributor entry point — they land in
