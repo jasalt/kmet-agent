@@ -238,9 +238,9 @@
                      {:session session
                       :system-prompt-fn prompt-fn
                       ;; a manual compaction deferred by a running prompt
-                      ;; starts when the prompt settles (kmet.app.agents'
-                      ;; `compact`/rpc's `compact`); the loop's own post-run
-                      ;; check has run by then
+                      ;; starts when the prompt settles (the handle's
+                      ;; `:request-compaction!`, rpc's `compact`); the loop's
+                      ;; own post-run check has run by then
                       :on-event (fn [ev]
                                   (when (= :agent-settled (:type ev))
                                     (manual/start-pending-compactions! @engine-ref)))})
@@ -326,35 +326,38 @@
          :status (fn [] (if @running? :running :idle))
          :dispose! (fn []
                      (reset! disposed? true)
-                     (stop!))
-         ;; the settings a front end changes: each writes this agent's state
-         ;; through the same functions the engine path used, so there is one
-         ;; implementation of the rule (the thinking-level rank rule included)
-         :set-model! (fn [model] (runtime/set-model! engine model))
-         :cycle-model! (fn
-                         ([] (runtime/cycle-model! engine))
-                         ([direction] (runtime/cycle-model! engine direction)))
-         :set-thinking-level! (fn [level] (runtime/set-thinking-level! engine level))
-         :cycle-thinking-level! (fn [] (runtime/cycle-thinking-level! engine))
-         :set-scoped-models! (fn [models] (runtime/set-scoped-models! engine models))
-         :set-auto-compaction! (fn [enabled?] (runtime/set-auto-compact! engine enabled?))
-         :set-steering-mode! (fn [mode] (runtime/set-steering-mode! engine mode))
-         :set-follow-up-mode! (fn [mode] (runtime/set-follow-up-mode! engine mode))
-         :set-block-images! (fn [blocked?] (runtime/set-block-images! engine blocked?))
-         :set-system-prompt! (fn [prompt opts] (runtime/set-system-prompt! engine prompt opts))
-         :apply-default-tools! (fn [selection] (runtime/apply-default-tools! engine selection))
-         :set-config! (fn [config] (runtime/set-config! engine config))
-         :set-run-options! (fn [m] (runtime/set-run-options! engine m))
-         :set-http-idle-timeout-ms! (fn [ms] (runtime/set-http-idle-timeout-ms! engine ms))
-         :set-http-total-timeout-ms! (fn [ms] (runtime/set-http-total-timeout-ms! engine ms))
-         :clear-queues! (fn [] (runtime/clear-queues! engine))
-         ;; the manual compaction queue: a request while a prompt runs is
-         ;; deferred to the settle (the state's :on-event above drains it), a
-         ;; disposal drops what is queued
-         :request-compaction! (fn [& args] (apply manual/request-compaction! engine args))
-         :abort-compaction! (fn [] (manual/abort-compaction! engine))
-         :queue-compaction-message! (fn [text mode] (manual/queue-compaction-message! engine text mode))
-         :clear-compaction-queue! (fn [] (manual/clear-compaction-queue! engine))))))
+                     (stop!)))
+        ;; the front end's settings and compaction surface: each
+        ;; op is the value's own fn behind a wrapper that supplies this
+        ;; handle, so the thinking-level rank rule, the model-change entry and
+        ;; the deferred compaction queue keep one implementation each
+        (merge (into {}
+                     (map (fn [[op f]]
+                            [op (fn [& args] (apply f engine args))]))
+                     {;; settings
+                      :set-model! runtime/set-model!
+                      :cycle-model! runtime/cycle-model!
+                      :set-thinking-level! runtime/set-thinking-level!
+                      :cycle-thinking-level! runtime/cycle-thinking-level!
+                      :set-scoped-models! runtime/set-scoped-models!
+                      :set-auto-compaction! runtime/set-auto-compact!
+                      :set-steering-mode! runtime/set-steering-mode!
+                      :set-follow-up-mode! runtime/set-follow-up-mode!
+                      :set-block-images! runtime/set-block-images!
+                      :set-system-prompt! runtime/set-system-prompt!
+                      :apply-default-tools! runtime/apply-default-tools!
+                      :set-config! runtime/set-config!
+                      :set-run-options! runtime/set-run-options!
+                      :set-http-idle-timeout-ms! runtime/set-http-idle-timeout-ms!
+                      :set-http-total-timeout-ms! runtime/set-http-total-timeout-ms!
+                      :clear-queues! runtime/clear-queues!
+                      ;; the manual compaction queue: a request while a prompt
+                      ;; runs is deferred to the settle (the state's :on-event
+                      ;; drains it), a disposal drops what is queued
+                      :request-compaction! manual/request-compaction!
+                      :abort-compaction! manual/abort-compaction!
+                      :queue-compaction-message! manual/queue-compaction-message!
+                      :clear-compaction-queue! manual/clear-compaction-queue!})))))
 
 ;; ── the row ───────────────────────────────────────────────────────────────
 

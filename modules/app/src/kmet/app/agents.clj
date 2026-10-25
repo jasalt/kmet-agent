@@ -78,24 +78,29 @@
    :session (fn [_ _ handle] (fn? (:session handle)))
    :dispose! (fn [_ _ handle] (fn? (:dispose! handle)))})
 
-(def handle-ops
-  "The optional control surface a handle may answer. A caller asking for one a
-   handle does not implement gets `:kmet.app/unsupported-op` naming it, never a
-   silent nil.
-
-   The first five are the run's: send, out-of-band context, cancel, the idle
-   awaitable, and the status a listing shows. The rest is the settings a front
-   end changes on the agent it holds — each writes that agent's state, so two
-   agents of one process can differ — measured from the interactive TUI's own
-   call sites (new-app.md, landing 8)."
-  [:send! :inject! :cancel! :when-idle :status
-   :set-model! :cycle-model! :set-thinking-level! :cycle-thinking-level!
+(def setting-ops
+  "The settings, queue and compaction ops a handle answers by name, with the
+   same call shape: `(op handle & args)` dispatches to the handle's fn. Listed
+   once, because two lists (validate, dispatch) that must agree is the drift a
+   registry exists to prevent."
+  [:set-model! :cycle-model! :set-thinking-level! :cycle-thinking-level!
    :set-scoped-models! :set-auto-compaction! :set-steering-mode!
    :set-follow-up-mode! :set-block-images! :set-system-prompt!
    :apply-default-tools! :set-config! :set-run-options!
    :set-http-idle-timeout-ms! :set-http-total-timeout-ms! :clear-queues!
    :request-compaction! :abort-compaction! :queue-compaction-message!
    :clear-compaction-queue!])
+
+(def handle-ops
+  "The optional control surface a handle may answer. A caller asking for one a
+   handle does not implement gets `:kmet.app/unsupported-op` naming it, never a
+   silent nil.
+
+   The first five are the run's: send, out-of-band context, cancel, the idle
+   awaitable, and the status a listing shows. `setting-ops` is the rest — each
+   writes that agent's state, so two agents of one process can differ —
+   measured from the interactive TUI's own call sites (new-app.md, landing 8)."
+  (into [:send! :inject! :cancel! :when-idle :status] setting-ops))
 
 (defn- validate-handle!
   "HANDLE checked against `handle-contract` for ID and CHILD; returns it. A
@@ -441,13 +446,7 @@
       ;; repeating the same closure
        (into {}
              (map (fn [op] [op (fn [handle & args] (dispatch handle op args))]))
-             [:set-model! :cycle-model! :set-thinking-level! :cycle-thinking-level!
-              :set-scoped-models! :set-auto-compaction! :set-steering-mode!
-              :set-follow-up-mode! :set-block-images! :set-system-prompt!
-              :apply-default-tools! :set-config! :set-run-options!
-              :set-http-idle-timeout-ms! :set-http-total-timeout-ms! :clear-queues!
-              :request-compaction! :abort-compaction! :queue-compaction-message!
-              :clear-compaction-queue!])))))
+             setting-ops)))))
 
 (defn- serve
   "The `:agents` row: the registry over the injected projections, provided into

@@ -307,3 +307,12 @@
           ((:dispose! agents) handle)
           (is (true? @(:disposed? handle)))
           (deliver gate :done))))))
+
+(deftest the-handle-answers-every-setting-op
+  ;; `setting-ops` is the registry's list; the loop handle is the one
+  ;; implementation behind it, so a name added there without a body fails here
+  ;; instead of at a caller's first use.
+  (let [{:keys [root agents]} (mounted)
+        handle (create! {:root root :agents agents})]
+    (doseq [op agents/setting-ops]
+      (is (fn? (get handle op)) (str "the loop handle answers " op)))))

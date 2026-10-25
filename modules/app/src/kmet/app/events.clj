@@ -90,6 +90,16 @@
       (doseq [dispose disposers] (dispose))
       nil)))
 
+(defn unsubscribe!
+  "Dispose the subscription a late-bound ATOM holds, once; nothing to do when
+   it holds none. A front end that subscribes after the thing it listens to
+   exists (print and rpc create their agent first) keeps the disposer in an
+   atom: the mode's teardown and the run's `finally` both call this, and only
+   one of them gets the fn."
+  [subscription]
+  (when-let [f (first (reset-vals! subscription nil))]
+    (f)))
+
 (defn once!
   "Register F for TYPE's next emit on CTX; disposed before F runs."
   ([ctx type f] (once! ctx type nil f))

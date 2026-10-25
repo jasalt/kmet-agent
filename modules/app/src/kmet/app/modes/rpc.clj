@@ -450,9 +450,6 @@
             ;; the mode's stream is its own agent's events, not every agent's
             ;; the process booted (5d listened on the app scope)
             listener (atom nil)
-            dispose-listener! (fn []
-                                (when-let [f (first (reset-vals! listener nil))]
-                                  (f)))
             ;; kmet1's rpc mode binds exactly this: a front end with a port,
             ;; whose extension UI calls travel the protocol — the row's port as
             ;; the base, the wire capabilities on top
@@ -477,13 +474,13 @@
                                         in out-)
                         0
                         (finally
-                          (dispose-listener!)
+                          (events/unsubscribe! listener)
                           ((:dispose! agents) handle))))
                     (catch Throwable t
                       (out/error! (or (ex-message t) (str t)))
                       1))}))
         (fn []
-          (dispose-listener!)
+          (events/unsubscribe! listener)
           (restore))))))
 
 (srce/defplugin plugin

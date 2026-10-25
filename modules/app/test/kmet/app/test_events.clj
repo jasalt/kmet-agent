@@ -242,6 +242,20 @@
   (is (not (events/known-event-type? :srce/status))
       "the kernel's own names are documented in srce.md §5, never here"))
 
+(deftest a-late-bound-subscription-is-disposed-once
+  ;; print, rpc and the next front end install their listener after the agent
+  ;; exists; the mode's teardown and the run's finally both take it out, and
+  ;; only one of them may call it.
+  (let [subscription (atom nil)
+        calls (atom 0)]
+    (events/unsubscribe! subscription)
+    (is (zero? @calls) "nothing installed: nothing to call")
+    (reset! subscription (fn [] (swap! calls inc)))
+    (events/unsubscribe! subscription)
+    (events/unsubscribe! subscription)
+    (is (= 1 @calls) "the disposer runs once, however many callers ask")
+    (is (nil? @subscription))))
+
 (deftest app-and-loop-event-types-partition-the-vocabulary
   (is (every? #(contains? events/event-types %) events/app-event-types))
   (is (not-any? #(contains? events/loop-event-types %) events/app-event-types))

@@ -118,7 +118,7 @@
         ((:send! agents) handle (packages/expand-input prompt) {:target :next-turn})
         (exit-code format (:outcome (deref settled)) @error)
         (finally
-          (when-let [f (first (reset-vals! listener nil))] (f))
+          (events/unsubscribe! listener)
           ((:dispose! agents) handle))))
     (catch Throwable t
       (out/error! (or (ex-message t) (str t)))
@@ -150,9 +150,6 @@
             ;; the agent does not exist yet: its listener is set once it does,
             ;; and either the teardown or the run's finally disposes it
             listener (atom nil)
-            dispose-listener! (fn []
-                                (when-let [f (first (reset-vals! listener nil))]
-                                  (f)))
             ;; kmet1's print mode binds exactly this, a layer down: kind :print,
             ;; no UI, and the composition's port (the headless answers, because
             ;; the profile stacks :bundle/headless)
@@ -167,7 +164,7 @@
           ;; the only thing it blocks on, and an event that never comes would
           ;; leave the thread parked
           (deliver settled {:outcome :disposed})
-          (dispose-listener!)
+          (events/unsubscribe! listener)
           (restore))))))
 
 (srce/defplugin plugin
