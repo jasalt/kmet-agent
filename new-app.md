@@ -886,7 +886,7 @@ Each is independently shippable and gated.
 | 5k | **landed** — the `:ui` capability contract and its headless provider: `kmet.app.ui` (four required keys, checked at the mount, plus the ABI `:port` a mode binds), `kmet.ui.headless`, `:bundle/headless`, and print/rpc binding the port (the server stacks the bundle but binds none until 8's per-agent surface); § "The remaining plan" | every shipped provider answers `:kind :render-tree :request! :capabilities`; a mode's `(ui :request {:kind :confirm})` answers the kind's default (`false`) *from the row* and nil without it |
 | 5l | **landed** — the TUI library is `ui`'s: the driver and the builtin command table (5l-i, namespaces kept), the process world's body, the rank-2 root publisher, the load at the entry and one registry publisher (5l-ii), and the interactive cluster, the mode row and the config command (5l-iii) — so a TUI run is kmet2's own front end, with the terminal `:ui` provider and the approval seam a terminal needs; § "The remaining plan" | pty capture parity on `--app new` **met** (same header, resources, extensions, footer); `modules/agent/src/kmet/agent/modes` holds only kmet1's three; an extension's command registered under `--app new` is in the ctx's `:commands`; a TUI profile's ctx provides `:ui` (`:kind :terminal`) and `:approvals` |
 | 5n | **landed** — the invocation surface is kmet1's: the run flags (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) parsed by the entry and resolved before a run, `@file` read at parse time, the maintenance flags (`-d`/`--debug` before the first load, `--generate-models` before the world, `--list-models [filter]` after it — one implementation in `kmet.app.maintenance` for both entries), extension `--flag` values in kmet1's three forms, the skill/prompt expansion chain in print and rpc, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) handed to the TUI row and refused by name where no factory opens a session (10a's); § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:`-style expansion reaches the agent in print and rpc, `--list-models` is byte-identical to `--app old` bare and filtered, `--session-dir` places the session, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run — met |
-| 8 | **in progress** — the handle is the value a front end reads and its settings/compaction surface landed (`479eb19d`), per-agent listeners and rpc's model/compaction setters landed (`c6723127`), a run now binds the extension surface (session, runtime capabilities, context) to its agent (`2ce32596`), the session lifecycle moved below both drivers with its ops on the handle (`5a314785`), the TUI's agent is a handle presented from loop events (`6e3b6ce6`), and 8f landed the TUI's session commands and the per-agent front-end surface/sinks plus the builtins' handle path (`8f712922`, `5e9bbc98`); the gate tests (8g) remain | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises (**the last is met at the listener level**: print and rpc subscribe on the agent's ctx, and two agents settle their own promises; no test mounts two print rows in one composition) |
+| 8 | **done** — the handle is the value a front end reads: its settings/compaction surface (`479eb19d`), per-agent listeners and rpc's model/compaction setters (`c6723127`), a run binding the extension surface to its agent (`2ce32596`), the session lifecycle below both drivers with its ops on the handle (`5a314785`), the TUI's agent as a handle presented from loop events (`6e3b6ce6`), the TUI's session commands and the per-agent front-end surface/sinks plus the builtins' handle path (`8f712922`, `5e9bbc98`), and the gate tests (`44044636` 8g: the agent in the tree, per-agent settings, per-ctx settlement, the image path) | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises (**the last is met at the listener level**: print and rpc subscribe on the agent's ctx, and two agents settle their own promises; no test mounts two print rows in one composition) |
 | 9 | **planned** — the execution seams: `:shell`/`:subprocess`, `:workspace`/`:fs`, `:sandbox`, `:llm`/`:models`, `:config`/`:auth`; every `defonce` cell the audit names becomes a per-context read | two agents run shell in two cwds with two shells; the § "Multi-session server mode" audit table holds only the extension host's own bindings, each with a written reason |
 | 10 | **planned** — the server's phase 1: resume-by-id, the boundary drain (`submit!`'s first consumer), bearer token, unix socket where the host has one, `--max-sessions`, per-client depth, idle reaping, `:lag`/`:stream-gap`, `:remember!` enforced | an agent disposed, resumed by id and answered; a tool thread's mount lands at the next turn; two sessions isolated by cwd, shell and model |
 | 11 | **planned** — retirement: one `s/kmet\.agent\./kmet.app./` pass, kmet1's files deleted, `--app` flipped to the default and the flag dropped, the `agent` module row removed | the full gate set plus pi-alignment green with no `kmet.agent.*` in the tree except the ABI |
@@ -3550,9 +3550,9 @@ Three things are missing rather than blocked, and they are the rest of the plan:
 | 10 | `app` | ~1,100 | 8 (10a); 9 (10b/10c) | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; two sessions isolated |
 | 11 | all modules | −8,500, ~240 renames | 8, 10a | full gates + pi-alignment, no `kmet.agent.*` but the ABI |
 
-**The execution order is 8 → 10a → 11 → 9 → 10b/10c.** Retirement is
+**The execution order is 10a → 11 → 9 → 10b/10c** (8 is done). Retirement is
 wanted as soon as it can be taken, so the schedule follows what each landing
-actually blocks on, not the landing numbers. 11's hard prerequisites are a
+actually blocks on, not the landing numbers. 11's hard prerequisites were a
 complete 8 (the TUI reads a handle, so `session.driver`'s engine path and the
 interactive tests' `agent`-module home can go) and 10a (kmet1's rpc modes are
 deleted by 11, and kmet2 must already answer the whole `docs/rpc.md` table, or
@@ -4029,11 +4029,17 @@ starts through the handle's `:send!` (so it runs with the agent's extension
 binding, which it used to bypass) and `/compact` prefers the handle's
 `:request-compaction!`, falling back to `session-driver` for kmet1's engine.
 
-**What remains is 8g, the gate tests**: a TUI run's agent appears in `:agents`
-(`:agent/created`), `/model` on that agent leaves a sibling's ctx alone, and
-the composition-level checks the plan's row names. A `-c`-style continue is
-`find-recent-session` plus a resume at the caller, not a handle op: a query is
-not an agent's state.
+**8g, the gate tests** (`kmet.app.test-front-end-gates`), pins what a front end
+may rely on at the composition level: a created agent is a child context of the
+ctx the front end mounted on (the `[:app :agent/<id>]` line `--dump-state`
+prints) and `:agent/created` announces it; two agents of one composition hold
+their own model and thinking level, and a write to one leaves the sibling's
+state and the context its handlers would build alone; two runs settle their own
+promises on their own contexts; and an image prompt reaches the model as an
+image block while a queued image is refused by name. The widget wiring itself
+stays the modes' subject — those tests stub the handle. With that, landing 8 is
+complete. A `-c`-style continue is `find-recent-session` plus a resume at the
+caller, not a handle op: a query is not an agent's state.
 
 ### `ui-tk` — deferred to separate development
 
