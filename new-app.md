@@ -4124,7 +4124,11 @@ to the mode's mount scope for a composition that published none. The server row
 serves the same command language but has no per-connection command surface yet,
 so it calls the same `register-commands!` and refuses a slash command by name
 rather than running one with its reply dropped — the per-connection port is
-10b's. The
+10b's. One named residual remains in the delivery path: a prompt submitted
+while a compaction runs lands in the compaction queue, which records no fact —
+the queue is memory, and recording at submit time would leave a queue fact the
+delivery never folds, so 10b's inbox read decides whether to record at the
+flush instead. The
 steers/follow-ups still expand in the mode; the session family, the cycles, the
 queue modes, the dialog pair (`:request`/`:response`) and `respond` remain.
 
