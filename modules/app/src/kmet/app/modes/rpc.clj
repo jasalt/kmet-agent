@@ -507,6 +507,16 @@
 
 ;; ── the row ───────────────────────────────────────────────────────────────
 
+(defn register-commands!
+  "Register the portable builtins this wire front end dispatches over `prompt`
+   and reports through `get-commands` (docs/rpc.md § Portable slash commands).
+   Idempotent and owned by the app root, so a second mode in one process reuses
+   them. `/units` answers the process tree when the entry published one — the
+   tree kmet1's rpc answered from — and FALLBACK, the mode's mount scope, for a
+   composition that published none."
+  [fallback]
+  (builtins/register-runtime-commands! (fn [] (or (root/ctx) fallback))))
+
 (defn- serve
   "The `:mode-rpc` row's apply: create the mode's one agent, bind the front-end
    surface, stream the wire, then serve commands until stdin closes.
@@ -525,15 +535,7 @@
     (when on-result
       (let [out- *out*
             in *in*
-            ;; the portable builtins this front end dispatches over `prompt`
-            ;; and reports through `get-commands` (docs/rpc.md § Portable slash
-            ;; commands); registration is idempotent and owned by the app root,
-            ;; so a second mode in one process reuses them. `/units` renders
-            ;; the process tree when the entry published one — the answer
-            ;; kmet1's rpc registered — and otherwise the tree this mode is
-            ;; mounted under (a test composition).
-            _ (builtins/register-runtime-commands!
-               (fn [] (or (root/ctx) (:parent ctx))))
+            _ (register-commands! (:parent ctx))
             ;; the agent does not exist yet, and the listener must scope to it:
             ;; the mode's stream is its own agent's events, not every agent's
             ;; the process booted (5d listened on the app scope)
