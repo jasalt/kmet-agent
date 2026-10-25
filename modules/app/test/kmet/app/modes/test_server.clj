@@ -314,6 +314,41 @@
             (is (str/includes? (pr-str (:result end)) "approved")
                 "and the result is the tool's own output")))))))
 
+(deftest a-session-move-is-a-connections-own
+  ;; The session commands are the shared table's; what the socket changes is
+  ;; whose agent they move. Two clients, two agents: `new-session` on one is
+  ;; invisible on the other, every answer carries the agent it belongs to, and
+  ;; the move lands on the connection that asked.
+  (with-server
+    (fn [{:keys [conn!]}]
+      (let [a (conn!) b (conn!)
+            state (fn [conn id]
+                    (let [r (first (filter #(= id (:id %)) ((:records conn))))]
+                      [(:data r) (:agent-id r)]))]
+        (ready a) (ready b)
+        ((:send! a) {:type :get-state :id "a1"})
+        ((:send! b) {:type :get-state :id "b1"})
+        (answered? a "a1") (answered? b "b1")
+        (let [[a-before _] (state a "a1")
+              [b-before _] (state b "b1")]
+          (is (not= (get-in a-before [:session :id]) (get-in b-before [:session :id]))
+              "each connection created its own session")
+          ((:send! a) {:type :new-session :id "a2"})
+          (is (answered? a "a2"))
+          ((:send! a) {:type :get-state :id "a3"})
+          ((:send! b) {:type :get-state :id "b2"})
+          (answered? a "a3") (answered? b "b2")
+          (let [[moved badge] (state a "a2")
+                [a-after _] (state a "a3")
+                [b-after _] (state b "b2")]
+            (is (false? (:cancelled moved)))
+            (is (= (:session-id moved) (get-in a-after [:session :id]))
+                "the connection that asked moved to the session it was told")
+            (is (= ((:agent-id a)) badge)
+                "and the answer is badged with that connection's agent")
+            (is (= (get-in b-before [:session :id]) (get-in b-after [:session :id]))
+                "the other connection's agent did not move")))))))
+
 (deftest a-port-that-is-not-a-number-is-a-usage-error
   (let [{:keys [code err]} (support/run-main ["--profile" "server" "--port" "abc"])]
     (is (= 1 code))

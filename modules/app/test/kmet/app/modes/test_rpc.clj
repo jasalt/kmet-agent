@@ -194,18 +194,19 @@
   ;; landing that fills it: a silent success would be a wrong answer, and
   ;; "Unknown command" would read as a typo. The model and compaction setters
   ;; left this table at landing 8 — the handle answers them now — and the wire's
-  ;; prompt dispatch and get-commands left it at 10a's first slice, so the
-  ;; remaining names are the session and cycle surface.
+  ;; prompt dispatch, get-commands, the session reads and the session moves left
+  ;; it in 10a's slices, so the remaining names are the cycles, the queue modes
+  ;; and the dialog pair.
   (with-mode-run
     (answering "never runs")
     (fn []
       (let [{:keys [records]}
             (run-rpc {:lines ["{:type :cycle-model :id \"m1\"}"
-                              "{:type :new-session :id \"s1\"}"]})]
+                              "{:type :clear-queue :id \"q1\"}"]})]
         (is (str/includes? (str (:error (by-id records "m1"))) "landing 10a")
             "the cycle surface is 10a's command table")
         (is (every? #(str/includes? (str (:error (by-id records %))) "is not implemented in rpc mode yet")
-                    ["m1" "s1"])
+                    ["m1" "q1"])
             "and every one of them is the named refusal")))))
 
 (deftest the-command-registry-is-on-the-wire
@@ -417,6 +418,73 @@
         (is (= (:id (last @(:entries sess))) (:leaf-id all))
             "the leaf id is the tip the next append chains onto"))
       (finally (fs/delete-tree dir)))))
+
+(deftest the-session-moves-are-on-the-wire
+  ;; docs/rpc.md § Session: new-session, switch-session, clone and
+  ;; set-session-name move the one agent this mode serves, and get-state reads
+  ;; the move back. switch-session takes a file the test wrote, so the client's
+  ;; :since sits on an id from a session it knows — the narrowing the read was
+  ;; built for. Every move re-installs the process-wide extension session.
+  (let [installed (atom [])]
+    (with-mode-run
+      (answering "an answer")
+      (fn []
+        (with-redefs [extensions/install-session! (fn [sess] (swap! installed conj (:id sess)))]
+          (let [other (session/create-session "target/test-modes")
+                _ (session/append-entry other {:role :user
+                                               :content [{:type :text :text "earlier"}]})
+                _ (session/append-entry other {:role :assistant
+                                               :content [{:type :text :text "reply"}]})
+                tip (last @(:entries other))
+                {records :records}
+                (run-rpc {:lines ["{:type :new-session :id \"n\"}"
+                                  "{:type :get-state :id \"s1\"}"
+                                  (str "{:type :switch-session :id \"w\" :session-path \""
+                                       (:file other) "\"}")
+                                  "{:type :get-state :id \"s2\"}"
+                                  (str "{:type :get-entries :id \"e\" :since \"" (:id tip) "\"}")
+                                  "{:type :set-session-name :id \"nm\" :name \"  wire session  \"}"
+                                  "{:type :get-state :id \"s3\"}"
+                                  "{:type :clone :id \"c\"}"
+                                  "{:type :get-state :id \"s4\"}"
+                                  "{:type :fork :id \"f\" :entry-id \"no-such-entry\"}"
+                                  "{:type :switch-session :id \"bad\" :session-path \"\"}"
+                                  "{:type :set-session-name :id \"bn\" :name \"  \"}"]})
+                new-session (:data (by-id records "n"))
+                after-new (:data (by-id records "s1"))
+                switched (:data (by-id records "s2"))
+                renamed (:data (by-id records "s3"))
+                cloned (:data (by-id records "s4"))]
+            (is (= :new-session (:command (by-id records "n"))))
+            (is (false? (:cancelled new-session)))
+            (is (string? (:session-id new-session))
+                "a fresh session, and the client learns its id and file")
+            (is (= (:session-id new-session) (:id (:session after-new)))
+                "and get-state reads the move back (the commands are served
+                 in order, so the state follows the new session)")
+            (is (false? (:was-running new-session))
+                "nothing was in flight to settle")
+            (is (= (:id other) (get-in switched [:session :id]))
+                "switch-session moved the agent to the file it named")
+            (is (= [] (get-in (by-id records "e") [:data :entries]))
+                "and the log after the tip is empty: :since narrowed to nothing")
+            (is (= (:id tip) (get-in (by-id records "e") [:data :leaf-id])))
+            (is (= "wire session" (get-in renamed [:session :name]))
+                "set-session-name sanitizes and the state reads it back")
+            (is (= {:cancelled false} (:data (by-id records "c")))
+                "clone forked at the leaf")
+            (is (not= (:id (:session switched)) (:id (:session cloned)))
+                "and the agent moved to the clone")
+            (is (str/includes? (str (:error (by-id records "f"))) "Entry not found")
+                "a fork naming no entry is refused by name")
+            (is (str/includes? (str (:error (by-id records "bad"))) ":session-path")
+                "a blank path is a command-shape error, not a move")
+            (is (= "Session name cannot be empty" (:error (by-id records "bn")))
+                "and a whitespace-only name is refused")
+            (is (= 4 (count @installed))
+                "the created session, then each of the three moves, was installed")
+            (is (= (get-in cloned [:session :id]) (peek @installed))
+                "the last install is the session the agent ended on")))))))
 
 (deftest the-model-catalog-is-on-the-wire
   ;; get-available-models answers the snapshot a `--model` pattern resolves

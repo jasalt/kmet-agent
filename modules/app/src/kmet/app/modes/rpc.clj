@@ -32,9 +32,11 @@
    input hooks and the engine's expansion before the handle starts or queues
    it — the wire's queue being durable, the enqueue and delivery facts land in
    the session log, so a reconnect reads the inbox rather than a gap. The
-   session lifecycle, the thinking and cycle setters and the dialog pair need
-   the server's phase 1, and each names its landing (`unsupported`) instead of
-   pretending. The server row (`kmet.app.modes.server`) serves this same
+   session moves are the handle's session ops (`new-session`, `switch-session`,
+   `fork`, `clone`, `set-session-name`), and each move re-installs the
+   process-wide extension session an out-of-run handler reads; the cycles, the
+   queue modes and the dialog pair name their landing (`unsupported`) instead
+   of pretending. The server row (`kmet.app.modes.server`) serves this same
    protocol over a socket, one agent per connection, out of this namespace's
    `handle-line`."
   (:require [clojure.edn :as edn]
@@ -389,6 +391,91 @@
              :leaf-id @(:leaf-id sess)})))
     (failed :get-entries "No active session")))
 
+(defn- after-move
+  "Tell STATE's `:on-session-move` hook about the session a move landed on, when
+   it has one, and answer SESS. An rpc row owns the process-wide extension
+   session — an out-of-run handler (an extension command over the wire) reads it
+   — so it re-installs on every move, as the interactive front end does. A
+   server connection passes no hook: one process, many agents, and a slot that
+   is process-global is not a connection's to take."
+  [{:keys [on-session-move]} sess]
+  (when (and sess on-session-move) (on-session-move sess))
+  sess)
+
+(defn- command-new-session
+  "Start a fresh session in the runtime cwd (pi: new-session). The agent keeps
+   serving; the client learns the new session here and through the session
+   events. `:was-running` is read before the move, which is what a client needs
+   to know the run it had in flight was settled."
+  [{:keys [agents handle] :as state} _command]
+  (let [was-running (runtime/turn-running? handle)
+        result ((:new-session! agents) handle)]
+    (if (:cancelled result)
+      (ok :new-session {:cancelled true})
+      (let [sess (after-move state (:session result))]
+        (ok :new-session {:cancelled false
+                          :session-id (:id sess)
+                          :session-file (:file sess)
+                          :was-running was-running})))))
+
+(defn- command-switch-session
+  "Load a stored session and switch to it (pi: switch-session) — the wire's
+   resume-by-path. The switch emits the session lifecycle events on the same
+   stream, so a subscribed client sees the swap."
+  [{:keys [agents handle] :as state} command]
+  (let [path (:session-path command)]
+    (if (and (string? path) (not (str/blank? path)))
+      (let [result ((:resume-session! agents) handle path)]
+        (if (:cancelled result)
+          (ok :switch-session {:cancelled true})
+          (do (after-move state (:session result))
+              (ok :switch-session {:cancelled false}))))
+      (failed :switch-session "switch-session requires a non-empty :session-path string"))))
+
+(defn- command-fork
+  "Fork the session before the user message ENTRY-ID (pi: fork); `:text` is the
+   message's text for the client to restore to its editor."
+  [{:keys [agents handle] :as state} command]
+  (let [entry-id (:entry-id command)]
+    (if (and (string? entry-id) (not (str/blank? entry-id)))
+      (let [result ((:fork! agents) handle entry-id)]
+        (cond
+          (:cancelled result) (ok :fork {:cancelled true})
+          (:error result) (failed :fork (if (= :unknown-entry (:error result))
+                                          (str "Entry not found: " entry-id)
+                                          "Cannot fork session"))
+          :else (do (after-move state (:session result))
+                    (ok :fork {:cancelled false
+                               :text (session/session-entry-text (:entry result))}))))
+      (failed :fork "fork requires a non-empty :entry-id string"))))
+
+(defn- command-clone
+  "Duplicate the live session at its current position (pi: clone) — a fork at
+   the leaf, keeping the agent's own model and thinking level."
+  [{:keys [agents handle] :as state} _command]
+  (let [result ((:clone! agents) handle)]
+    (cond
+      (:cancelled result) (ok :clone {:cancelled true})
+      (:error result) (failed :clone (case (:error result)
+                                       :no-leaf "Cannot clone session: no current entry selected"
+                                       :not-persisted "Cannot clone session: the session is not persisted yet"
+                                       :no-session "Cannot clone session: there is no session"
+                                       "Cannot clone session"))
+      :else (do (after-move state (:session result))
+                (ok :clone {:cancelled false})))))
+
+(defn- command-set-session-name
+  "Set the session display name (pi: set-session-name) — the append and event
+   are the /name builtin's, shared through the runtime. A blank name is
+   refused: a session that loses its name to a whitespace-only string is not
+   what the client asked for."
+  [{:keys [agents handle]} command]
+  (let [name (:name command)]
+    (if (and (string? name) (not (str/blank? name)))
+      (do ((:set-session-name! agents) handle name)
+          (ok :set-session-name nil))
+      (failed :set-session-name "Session name cannot be empty"))))
+
 (defn- command-get-messages
   "The live model context a client reads (pi: get-messages): what the next
    request would send, with compaction summaries and context edits applied —
@@ -448,17 +535,10 @@
 
    | group | why not yet |
    |---|---|
-   | session lifecycle | one agent per mode until the server's phase 1; switching, forking, cloning and naming are 10a's session surface |
    | cycle and thinking | the handle answers them; the wire entries are 10a's command table |
    | queue modes | the handle answers them; the wire entries are 10a's command table |
    | dialogs | the `:request`/`:response` pair over the wire is 10a's command table |"
-  {:new-session "one agent serves this mode; the session moves are landing 10a"
-   :switch-session "one agent serves this mode; the session moves are landing 10a"
-   :fork "the session's tree surface is landing 10a"
-   :clone "the session's tree surface is landing 10a"
-   :set-session-name "session naming is landing 10a's session surface"
-
-   :cycle-model "cycle-model is landing 10a's command table (the handle answers it; the wire shape is the server's landing)"
+  {:cycle-model "cycle-model is landing 10a's command table (the handle answers it; the wire shape is the server's landing)"
    :set-thinking-level "the handle answers it; the wire entry is landing 10a's command table"
    :cycle-thinking-level "the handle answers it; the wire entry is landing 10a's command table"
    :get-available-thinking-levels "the model record answers it; the wire entry is landing 10a's command table"
@@ -479,6 +559,11 @@
    :abort #(command-abort state %)
    :get-state #(command-get-state state %)
    :get-entries #(command-get-entries state %)
+   :new-session #(command-new-session state %)
+   :switch-session #(command-switch-session state %)
+   :fork #(command-fork state %)
+   :clone #(command-clone state %)
+   :set-session-name #(command-set-session-name state %)
    :get-messages #(command-get-messages state %)
    :get-last-assistant-text #(command-get-last-assistant-text state %)
    :get-session-stats #(command-get-session-stats state %)
@@ -619,13 +704,19 @@
                     ;; the settings it loads
                     (let [handle ((:create! agents) scope (invocation/create-opts config))]
                       (try
+                        ;; an out-of-run handler (an extension command over the
+                        ;; wire) reads the process-wide slot; one agent serves
+                        ;; this mode, so it is this session — and every move
+                        ;; re-installs, as the interactive front end does
+                        (extensions/install-session! (runtime/session handle))
                         (reset! listener
                                 (events/on-every (:ctx handle)
                                                  (fn [event]
                                                    (out/record! out- (event-bus/wire-event event)))))
                         (serve-commands {:agents agents :sessions sessions
                                          :scope scope :handle handle
-                                         :command-ui (command-ui port)}
+                                         :command-ui (command-ui port)
+                                         :on-session-move extensions/install-session!}
                                         in out-)
                         0
                         (finally
