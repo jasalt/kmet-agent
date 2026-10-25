@@ -189,24 +189,28 @@
             "an unknown type says so, so a client can tell a typo from a
              refusal")))))
 
-(deftest the-one-remaining-command-is-refused-by-name
-  ;; kmet1's dialog pair is the last table row kmet2 cannot answer: the wire has
-  ;; no pending-request surface yet. It names that rather than pretending, and
-  ;; "Unknown command" stays what a typo gets. The model and compaction setters
-  ;; left this table at landing 8, and the wire's prompt dispatch, get-commands,
-  ;; the session reads, the session moves and the cycles and queue modes left it
-  ;; in 10a's slices.
+(deftest the-tables-last-command-answers-silently
+  ;; kmet1's table is complete: `respond` is the one command pi answers no
+  ;; record to, and this mode has nothing pending to resolve (kmet2's extension
+  ;; ABI carries no dialogs — the live request/response pair is the server's
+  ;; approval route). An answer with no id is a failure, because the id is what
+  ;; correlates it; an unknown type still reads as a typo.
   (with-mode-run
     (answering "never runs")
     (fn []
       (let [{:keys [records]}
             (run-rpc {:lines ["{:type :respond :id \"r\"}"
+                              "{:type :respond}"
+                              "{:type :get-state :id \"s\"}"
                               "{:type :frobnicate :id \"f\"}"]})]
-        (is (str/includes? (str (:error (by-id records "r")))
-                           "is not implemented in rpc mode yet")
-            "the dialog pair names its landing")
+        (is (nil? (by-id records "r"))
+            "a valid answer writes no record")
+        (is (str/includes? (str (:error (by-id records nil))) "respond requires a string :id")
+            "and the failure for one without an id carries no id either")
+        (is (some? (by-id records "s"))
+            "the reader kept serving after the silent command")
         (is (str/includes? (str (:error (by-id records "f"))) "Unknown command")
-            "and an unknown type still reads as a typo")))))
+            "an unknown type still reads as a typo")))))
 
 (deftest the-command-registry-is-on-the-wire
   ;; get-commands reports the same filtered registry `prompt` dispatches
@@ -561,6 +565,31 @@
                 "the dropped texts, by target")
             (is (zero? (get-in (by-id records "s") [:data :pending-message-count]))
                 "and the queues are empty afterwards"))
+          (finally (deliver release true)))))))
+
+(deftest a-queue-command-tells-the-client-what-it-did
+  ;; kmet2's delivery rule is start-or-queue: `steer`/`follow-up` on an idle
+  ;; agent starts a run (kmet1 queued and waited for one), so the answer says
+  ;; `:started` rather than a `:queued` nothing would drain. While a run is live
+  ;; the answer is `:queued`, which is the pi-compatible case.
+  (let [release (promise)
+        stalled (fn [opts]
+                  (future
+                    (deref release 20000 ::timeout)
+                    (when-let [on-text (:on-text opts)] (on-text "ok"))
+                    (when-let [on-done (:on-done opts)] (on-done :stop))
+                    :done))]
+    (with-mode-run
+      stalled
+      (fn []
+        (try
+          (let [{:keys [records]}
+                (run-rpc {:lines ["{:type :steer :id \"s1\" :message \"idle steer\"}"
+                                  "{:type :follow-up :id \"f1\" :message \"busy follow-up\"}"]})]
+            (is (= {:disposition :started} (:data (by-id records "s1")))
+                "an idle steer starts the run it would otherwise wait for")
+            (is (= {:disposition :queued} (:data (by-id records "f1")))
+                "and a follow-up behind that run queues"))
           (finally (deliver release true)))))))
 
 (deftest the-model-catalog-is-on-the-wire

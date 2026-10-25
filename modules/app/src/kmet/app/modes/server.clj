@@ -243,9 +243,12 @@
               (let [{:keys [command error]} (rpc/parse-line line)]
                 (if (= :response (:type command))
                   (answer-dialog! server command)
-                  (send! known (if error
-                                 (rpc/parse-failure error)
-                                 (rpc/handle-record (state-for known server) command))))))
+                  ;; a silent command (`:respond`) answers nothing: pi writes
+                  ;; no record for one, and a client that sent one gets none
+                  (when-let [response (if error
+                                        (rpc/parse-failure error)
+                                        (rpc/handle-record (state-for known server) command))]
+                    (send! known response)))))
 
       :close (do (when known (close-connection! known server))
                  (swap! (:conns server) dissoc id)))

@@ -349,6 +349,20 @@
             (is (= (get-in b-before [:session :id]) (get-in b-after [:session :id]))
                 "the other connection's agent did not move")))))))
 
+(deftest a-silent-command-writes-nothing
+  ;; `respond` is the protocol's one silent command (pi writes no record for an
+  ;; answer). A connection that sends one gets none back, and keeps being served
+  ;; — the get-state after it is the proof.
+  (with-server
+    (fn [{:keys [conn!]}]
+      (let [c (conn!)]
+        (ready c)
+        ((:send! c) {:type :respond :id "r"})
+        ((:send! c) {:type :get-state :id "s"})
+        (is (answered? c "s") "the connection is still served after the silence")
+        (is (nil? (first (filter #(= "r" (:id %)) ((:records c)))))
+            "and nothing came back for it")))))
+
 (deftest a-port-that-is-not-a-number-is-a-usage-error
   (let [{:keys [code err]} (support/run-main ["--profile" "server" "--port" "abc"])]
     (is (= 1 code))

@@ -131,10 +131,15 @@
 
 (defn- enqueue!
   "Queue TEXT for BEHAVIOR — `:steer` for the next step, `:follow-up` for the
-   next turn. The two targets are the loop's queues; the registry's ops are what
-   reach them."
+   next turn — and answer the disposition it produced. The two targets are the
+   loop's queues, but kmet2's delivery rule is start-or-queue: an idle agent
+   starts a run whatever the target, so the answer says `:started` rather than a
+   `:queued` no run would ever drain. A running agent queues, which is the
+   pi-compatible case."
   [{:keys [agents handle]} behavior text]
-  ((get agents (if (= :steer behavior) :steer! :follow-up!)) handle text))
+  (let [running? (runtime/turn-running? handle)]
+    ((get agents (if (= :steer behavior) :steer! :follow-up!)) handle text)
+    (if running? :queued :started)))
 
 (defn- command-ui
   "The command-UI value the portable builtins receive over the wire: the shared
@@ -245,8 +250,10 @@
 (defn- command-queue
   "The `:steer` / `:follow-up` commands: the loop's queues carry no image
    blocks (pi: steer/followUp are text), so reject `:images` rather than drop
-   them, and answer with the queued disposition. The command's own `:type` is
-   the behavior it queues for."
+   them, and answer with the disposition the send produced — `:queued` while a
+   run is live, `:started` when an idle agent began one (kmet2's delivery rule;
+   kmet1 queued and waited). The command's own `:type` is the behavior it
+   queues for."
   [state command]
   (let [type (:type command)
         text (some-> (message-of command) packages/expand-input)]
@@ -258,8 +265,7 @@
       (failed type (str (name type) " requires a non-empty :message string"))
 
       :else
-      (do (enqueue! state type text)
-          (ok type {:disposition :queued})))))
+      (ok type {:disposition (enqueue! state type text)}))))
 
 (defn- command-abort
   "Cancel the in-flight run and answer whether the agent is idle now (pi:
@@ -593,14 +599,22 @@
     (ok :clear-queue {:steering (mapv queued-text steering)
                       :follow-up (mapv queued-text follow-up)})))
 
-(def ^:private unsupported
-  "kmet1's one command with no answer here, and the landing that gives it one.
-   A named refusal: `\"Unknown command\"` would read as a typo, and a silent
-   success would be a wrong answer. The dialog pair needs the wire's port to
-   hold a pending request (`:request` out, `:response` in) — the server's own
-   approvals route is a different question, asked by a run that the client
-   answers on the same records."
-  {:respond "dialogs are landing 10a's command table (:request/:response over the wire)"})
+(defn- command-respond
+  "Answer a dialog request (pi: respond — extension_ui_response). The answer is
+   silence: pi writes no response record for one, so the mode's own reader must
+   not write either.
+
+   kmet2's extension ABI carries no host-built dialogs (`kmet.extension`'s UI
+   surface has no select/confirm/input/editor), so nothing in this process asks
+   one and there is no pending request to resolve — an id nobody holds resolves
+   nothing, which is also what pi does with a late answer. The pair that *is*
+   live is the server row's approval route (`kmet.app.modes.server`), which
+   reads a client's `:response` record directly. Only a missing id is this
+   command's failure, because the id is what correlates an answer."
+  [_state command]
+  (let [id (:id command)]
+    (when-not (and (string? id) (not (str/blank? id)))
+      (failed :respond "respond requires a string :id"))))
 
 (defn- handlers
   "The dispatch table for STATE — the agent's door: the registry, the log, and
@@ -633,12 +647,13 @@
    :clear-queue #(command-clear-queue state %)
    :set-auto-compaction #(command-set-auto-compaction state %)
    :compact #(command-compact state %)
-   :get-commands #(command-get-commands state %)})
+   :get-commands #(command-get-commands state %)
+   :respond #(command-respond state %)})
 
 (defn handle-command
-  "Handle one parsed command, returning the response — never nil: every command
-   is answered. A handler that throws is that command's failure, not the
-   mode's."
+  "Handle one parsed command, returning the response — nil only for the one
+   command whose answer is silence (`:respond`). A handler that throws is that
+   command's failure, not the mode's."
   [state command]
   (let [type (:type command)]
     (cond
@@ -654,9 +669,7 @@
           (handler command)
           (catch Throwable t
             (failed type (or (ex-message t) (str t)))))
-        (if-let [reason (get unsupported type)]
-          (failed type (str (name type) " is not implemented in rpc mode yet — " reason))
-          (failed type (str "Unknown command: " (pr-str type))))))))
+        (failed type (str "Unknown command: " (pr-str type)))))))
 
 ;; ── transport ─────────────────────────────────────────────────────────────
 
@@ -688,11 +701,13 @@
    crossing a wire is parsed once, by whoever read it (`handle-line` for stdio,
    the server for a socket, which must classify the record before serving it)."
   [state record]
-  (correlated (handle-command state record) (:id record)))
+  (when-let [response (handle-command state record)]
+    (correlated response (:id record))))
 
 (defn handle-line
   "LINE served against STATE — one record out, whatever LINE was: the command's
    response, a parse failure, or a command answered with the `:id` it carried.
+   nil for the silent one (`:respond`), which writes nothing.
 
    STATE is `{:agents :sessions :scope :handle}`: the registry, the log, the app
    scope, and the one handle this door serves."
@@ -710,7 +725,8 @@
   (with-open [rdr (io/reader in)]
     (loop []
       (when-let [line (.readLine rdr)]
-        (out/record! out- (handle-line state line))
+        (when-let [response (handle-line state line)]
+          (out/record! out- response))
         (recur)))))
 
 ;; ── the row ───────────────────────────────────────────────────────────────

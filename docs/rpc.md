@@ -12,13 +12,12 @@ bb start --mode rpc                      # source checkout (babashka)
 jolt start --mode rpc                    # ...or Jolt
 ```
 
-Session resolution is the same policy print mode uses: `-c/--continue`
-resumes the most recent session for the current directory (falling back to a
-fresh one when none exists), `--session <id|path>` resumes a specific
-session (by id, id prefix, or file path), and with neither flag a fresh
-session starts. `--model`, `--provider`, `--session-dir`,
-`--system-prompt`, and `--append-system-prompt` all apply. `-r/--resume` is
-TUI-only and is not accepted.
+A mode run opens a fresh session. The session-lifecycle flags are refused by
+name (`--continue needs a mode that opens a session`, exit 1) rather than
+silently starting the fresh session they exist to prevent; a client that wants
+a stored session asks the protocol (`switch-session`) or resumes by id once
+that landing lands. `--model`, `--provider`, `--session-dir`,
+`--system-prompt`, and `--append-system-prompt` all apply.
 
 ## Transport
 
@@ -80,9 +79,9 @@ consumers watch `:message-update` deltas and stop at `:agent-settled`, whose
 | Command | Fields | Response data |
 |---|---|---|
 | `prompt` | `:message` (required), `:images`, `:streaming-behavior` (`:steer`/`:follow-up`) | `{:disposition :started|:queued|:handled}` |
-| `steer` | `:message` | `{:disposition :queued}` |
-| `follow-up` | `:message` | `{:disposition :queued}` |
-| `abort` | — | `{:idle true|false}` (bounded wait for idle) |
+| `steer` | `:message` | `{:disposition :queued|:started}` |
+| `follow-up` | `:message` | `{:disposition :queued|:started}` |
+| `abort` | — | `{:idle true|false}` (a read, not a wait) |
 | `clear-queue` | — | `{:steering [...] :follow-up [...]}` (the dropped texts) |
 
 While a run is active a `prompt` must name its `:streaming-behavior` (`:steer`
@@ -94,9 +93,17 @@ A `prompt` whose text begins with `/` first dispatches through the command
 registry (see [Portable slash commands](#portable-slash-commands)); only when
 no command matches does the text reach the model.
 
+A `steer` or `follow-up` on an **idle** agent starts a run in kmet2 (the
+handle's one start-or-queue delivery rule) and answers `:started`; while a run
+is live they queue and answer `:queued`. kmet1 queued in both cases and waited
+for a run, so a client that depended on that should send them only around a
+live run.
+
 An `abort` while a run is in flight drops the steering/follow-up queues (kmet
 persists the drop as an `:aborted` `:queue-update`). Send `clear-queue` first
-if the queued texts matter.
+if the queued texts matter. The answer is a read of the turn flag, not a wait:
+a cancel that only requests reports `:idle false`, and the client waits for
+`:agent-settled`.
 
 ### Session
 
@@ -111,7 +118,7 @@ if the queued texts matter.
 | `switch-session` | `:session-path` (required) | `{:cancelled bool}` |
 | `fork` | `:entry-id` (required) | `{:cancelled bool :text ...}` for the client editor |
 | `clone` | — | `{:cancelled bool}` |
-| `get-entries` | `:since` (optional entry id) | `{:entries [...] :leaf-id ...}` |
+| `get-entries` | `:since` (optional entry id) | `{:entries [...] :leaf-id ...}` — the entries, or those after `:since` |
 | `get-tree` | — | `{:tree [...] :leaf-id ...}` |
 | `set-session-name` | `:name` (required) | — |
 
@@ -178,23 +185,31 @@ The RPC port binds `{:mode :rpc :has-ui true}`: an extension's `ctx.mode` is
 
 ### Dialogs (request/response)
 
-`select`, `confirm`, `input`, and `editor` forward as requests and wait for
-the client's answer:
+kmet's extension ABI (`kmet.extension`) carries no host-built dialogs —
+`select`, `confirm`, `input` and `editor` are not capabilities a kmet extension
+can call — so no `:ui-request` of those kinds is produced, and `respond`
+resolves nothing. It is still accepted, silently, because the id is what
+correlates an answer (pi writes no response record for a valid one); a
+`respond` without a string `:id` fails as a response.
+
+The `:request`/`:response` pair that *is* live is the **server** row's
+approval route: a run whose policy asks sends the question on the connection
+that owns its agent, and the client answers it on the same records.
 
 ```clojure
-;; stdout
-{:type :ui-request :id "uuid" :method :confirm :title "Allow?" :message "Run it?"}
+;; stdout, on the server
+{:type :request :id "req-…" :method :ask :tool-name "bash" :args {...}}
 
-;; stdin — resolve it
-{:type :respond :id "uuid" :confirmed true}
-;; :value <any> is the general answer; :cancelled true resolves the default
+;; stdin — answer it
+{:type :response :id "req-…" :data {:decision :allow}}
+;; :data {:decision :deny :reason "…"} declines; a connection that goes away
+;; answers its open questions with a deny
 ```
 
-A valid answer is silent (pi writes no `extension_ui_response` record); a
-`respond` without a string `:id` fails as a response. A request carrying a
-`:timeout` auto-resolves with its default; a request never answered resolves
-at shutdown. `:custom` has no client surface (pi limitation) and keeps the
-headless default.
+A client that leaves a question unanswered blocks the run that asked it (that
+is what a question means), so a UI that cannot ask should keep the bundle's
+default approver. `:custom` has no client surface (pi limitation) and keeps
+the headless default.
 
 ### Output channels (fire-and-forget)
 
@@ -265,7 +280,8 @@ The command names and record shapes follow pi's RPC mode. Supported:
 `set_session_name`, `set_model`, `cycle_model`, `get_available_models`,
 `set_thinking_level`, `cycle_thinking_level`,
 `get_available_thinking_levels`, `set_steering_mode`, `set_follow_up_mode`,
-`compact`, `set_auto_compaction`, `get_commands`, `respond`.
+`compact`, `set_auto_compaction`, `get_commands`, `respond` — the whole
+table.
 
 Deferred (no kmet equivalent yet): `bash`, `abort_bash`, `set_auto_retry`,
 `abort_retry` — kmet's bash path is the interactive `!` flow, and the retry
@@ -275,6 +291,12 @@ Known differences to account for in a client:
 
 - A running `abort` drops the steering/follow-up queues (kmet's cancel
   semantics); send `clear_queue` first to capture the texts.
+- `steer`/`follow_up` on an idle agent start a run and answer `:started` (see
+  § Prompt and queues).
+- `startup` session flags are refused rather than honored (see § Transport);
+  a stored session is opened with `switch_session`.
+- Dialog methods are not produced (kmet's extension ABI has no such
+  capabilities); `respond` is accepted and resolves nothing.
 - `steer`/`follow_up` do not run extension input hooks (kmet's hooks live in
   the submit path) and reject `:images` until the queues carry image blocks.
 - `get_state`'s model is the id plus provider, not a full model object;
