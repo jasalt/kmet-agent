@@ -4556,6 +4556,19 @@ files and cuts two seams, it does not restructure the interactive loop.
   11 removes. Scheduled with 11: the docs move, and the topic map is updated
   in the same change.
 
+- **MARKED: `kmet.app.skills` pushes its resolver into the read tool at load
+  time.** `skills.clj` ends with `(read/set-skill-content-resolver! …)` and a
+  comment offering the require cycle as the reason. The effect is that
+  requiring `kmet.app.skills` for any reason — nine namespaces do, including
+  `registries` and the TUI's `layout` — rewires the process's read tool, and a
+  composition that never loaded skills still reads the first one's table. This
+  is the retired `kmet.agent.app-runtime` defect at a smaller size: a load side
+  effect standing in for a declared dependency — and no test names it, which is
+  why it has survived every landing around it. Marked in place (`MARKED` at the
+  site) and fixed by 9b, where the `:tools` row takes a `:skill-resolver` in its
+  config, injected from `:skills`, so the factory builds the tool with it and
+  9d's process-state test can hold the cell's absence.
+
 ## Gates
 
 - `bb test`, `bb test-ext`, `bb lint` (zero findings), `bb format-check`,

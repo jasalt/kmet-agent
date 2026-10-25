@@ -320,6 +320,13 @@
 
 ;; tools.read cannot require this namespace (skills -> registry -> read
 ;; would cycle), so the locator resolver is pushed there at load time.
+;;
+;; MARKED — a load side effect standing in for a dependency (new-app.md,
+;; "Drift found while planning"): every namespace that requires this one
+;; rewires the process's read tool, and a composition that never loaded skills
+;; would still read the first one's table. Landing 9b removes the push: the
+;; :tools row takes a :skill-resolver in its config, injected from :skills, so
+;; the factory builds the tool with it and the cycle never exists.
 (read/set-skill-content-resolver! (fn [p] (skill-content-for-path p)))
 
 (defn get-skills
