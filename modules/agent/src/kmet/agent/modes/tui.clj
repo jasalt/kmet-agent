@@ -18,25 +18,36 @@
    makes that re-host a change to one namespace instead of a change to how kmet2
    boots.
 
-   **The session the run opens is the invocation's.** `-c`/`--continue`,
-   `-r`/`--resume` and `--session <id>` arrive in the row's config and become
-   `interactive/run`'s opts: that mode already resolves a session from those
-   keys, so the row only has to say that the flags have a home here
-   (`:session-lifecycle`, declared where the profile names the row). A mode that
-   creates its agent through `:agents` has no session option to give its factory
-   yet, and `kmet.app.core` refuses those flags there by name."
+   **The invocation is the run's, and this row only maps it.** `-c`/
+   `--continue`, `-r`/`--resume` and `--session <id>` arrive in the row's config
+   and become `interactive/run`'s opts: that mode already resolves a session
+   from those keys, so the row only has to say that the flags have a home here
+   (`:session-lifecycle`, declared where the profile names the row). The run's
+   overrides ride the same map — `--model` already resolved to its catalog id,
+   `--provider`, `--thinking`, the `--models` scope, and the
+   `--system-prompt`/`--append-system-prompt`/`--session-dir` config overrides —
+   and `interactive/run` applies them to the config it loads, so a TUI run honors
+   them as kmet1's front end always did (`run-opts`). A mode that creates its
+   agent through `:agents` has no session option to give its factory yet, and
+   `kmet.app.core` refuses the session flags there by name."
   (:require [kmet.agent.cli :as cli]
             [kmet.agent.modes.interactive :as interactive]
+            [kmet.app.invocation :as invocation]
             [kmet.srce.core :as srce]))
 
 (defn- run-opts
   "The invocation's input this row applies, in kmet1's own spellings: the mode
-   the world load and the run are told they are, and the session a run opens
-   (`:session`, `:resume`, `:continue` — `interactive/run` resolves the session
-   with them). A run the command line did not ask to continue resolves a new
-   session, as it always did."
+   the world load and the run are told they are, the run's overrides — the model
+   pattern `--model` resolved, `--provider`, `--thinking`, the scope
+   `--models`, the prompt and session-dir overrides — and the session a run
+   opens (`:session`, `:resume`, `:continue`). `interactive/run` applies the
+   overrides to the config it loads (`cfg/apply-cli-overrides`) and resolves the
+   session from those keys, so this row only maps names, and a key the
+   invocation did not give stays absent. A run the command line did not ask to
+   continue resolves a new session, as it always did."
   [config]
-  (cond-> {:mode :interactive}
+  (cond-> (merge {:mode :interactive}
+                 (select-keys config invocation/run-override-keys))
     (:session config) (assoc :session (:session config))
     (:resume config) (assoc :resume true)
     (:continue config) (assoc :continue true)))

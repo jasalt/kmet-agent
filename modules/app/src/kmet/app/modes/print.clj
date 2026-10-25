@@ -33,6 +33,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.app.events :as events]
             [kmet.app.front-end :as front-end]
+            [kmet.app.invocation :as invocation]
             [kmet.app.modes.out :as out]
             [kmet.srce.core :as srce]))
 
@@ -66,13 +67,13 @@
    the run did — and a failure to create or send is one line on stderr and
    exit 1, never a thrown thread.
 
-   CREATE-OPTS are the agent's own options (the invocation's model overrides);
-   the driver applies them to the settings it loads. In edn mode the session
-   header goes out first, before the run produces any event: a consumer reads
-   the header to learn the id the events belong to."
+   CREATE-OPTS are the agent's own options — the invocation's run overrides
+   (`invocation/create-opts`); the driver applies them to the settings it loads.
+   In edn mode the session header goes out first, before the run produces any
+   event: a consumer reads the header to learn the id the events belong to."
   [scope agents {:keys [prompt format] :as config} settled error]
   (try
-    (let [handle ((:create! agents) scope (select-keys config [:model :provider]))]
+    (let [handle ((:create! agents) scope (invocation/create-opts config))]
       (try
         (when (= :edn format)
           (prn (:header ((:session handle))))

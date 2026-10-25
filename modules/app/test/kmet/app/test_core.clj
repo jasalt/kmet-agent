@@ -104,19 +104,28 @@
   (is (= :deepseek (:provider (core/parse-args ["-p" "--provider" "deepseek" "hi"])))
       "a provider is a keyword, as settings spell it"))
 
-(deftest parse-args-refuses-what-the-modes-cannot-do-yet
-  ;; kmet1 reads a file into the message at parse time. Expansion is a mode's
-  ;; (skills, prompt templates, @files) and has not moved, so the arg is refused
-  ;; by name — sending "@tasks.md" as the prompt would answer a question nobody
-  ;; asked.
-  (is (= :kmet.app/unsupported-op
-         (error-type #(core/parse-args ["-p" "@tasks.md"]))))
-  (let [{:keys [code err]} (support/run-main ["-p" "@tasks.md"])]
-    (is (= 1 code))
-    (is (str/includes? err "@tasks.md reads the message from a file")
-        "the refusal names the argument")
-    (is (str/includes? err "--app old -p @tasks.md")
-        "and where the behaviour still lives")))
+(deftest parse-args-reads-at-files-into-messages
+  ;; kmet1 reads a file into the message at parse time, and the two entries
+  ;; must agree: `-p @tasks.md` sends the file's contents, in the argument's
+  ;; place. An unreadable file is a warning and an empty message (the rest of
+  ;; the invocation still runs), an empty path is skipped — kmet1's three
+  ;; outcomes, word for word.
+  (let [path (str "target/test-at-file-" (System/nanoTime) ".md")]
+    (spit path "from the file")
+    (try
+      (is (= ["from the file"] (:args (core/parse-args [(str "@" path)]))))
+      (is (= ["before" "from the file" "after"]
+             (:args (core/parse-args ["before" (str "@" path) "after"])))
+          "the text takes the argument's place, in order")
+      (finally (io/delete-file path true))))
+  (let [err (java.io.StringWriter.)]
+    (is (= [] (:args (binding [*err* err] (core/parse-args ["@"]))))
+        "an empty path is not a file and not a message")
+    (is (str/includes? (str err) "Warning: empty path after @")))
+  (let [err (java.io.StringWriter.)]
+    (is (= [""] (:args (binding [*err* err] (core/parse-args ["@target/does-not-exist.md"]))))
+        "an unreadable file is an empty message, as in kmet1")
+    (is (str/includes? (str err) "Warning: could not read target/does-not-exist.md"))))
 
 (deftest parse-args-rejects-bad-flags
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--nope"]))))
@@ -149,6 +158,62 @@
       "--session takes a value")
   (is (= :tui (:profile (core/parse-args ["-c"])))
       "continuing needs no mode: the default profile is the TUI, which has one"))
+
+(deftest parse-args-takes-kmet1s-run-flags
+  ;; kmet1's run flags, in kmet1's spellings: the thinking level, the prompt
+  ;; overrides (one replaces, the other stacks), the session's model scope and
+  ;; its storage dir. The entry parses them; what they mean to a run is
+  ;; `kmet.app.invocation`'s (the patterns resolved before the boot, the rest
+  ;; applied by the mode).
+  (is (= :high (:thinking (core/parse-args ["-t" "high"]))))
+  (is (= :low (:thinking (core/parse-args ["--thinking=low"])))
+      "the --flag=value form")
+  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--thinking"])))
+      "a thinking level needs a value")
+  (is (= "be brief" (:system-prompt (core/parse-args ["--system-prompt" "be brief"]))))
+  (is (= "- be concise" (:system-prompt (core/parse-args ["--system-prompt" "- be concise"])))
+      "a prompt is free text: a dash-led line is the value, not the next flag")
+  (is (= ["a" "b"]
+         (:append-system-prompt
+          (core/parse-args ["--append-system-prompt" "a"
+                            "--append-system-prompt" "b"])))
+      "repeatable: `cfg/apply-cli-overrides` joins the pieces")
+  (is (= ["p/a" "p/b"] (:models (core/parse-args ["--models" " p/a , p/b "])))
+      "one comma-separated argument, trimmed, as kmet1 reads it")
+  (is (= "target/sessions" (:session-dir (core/parse-args ["--session-dir" "target/sessions"]))))
+  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--session-dir"]))))
+  (is (not (contains? (core/parse-args ["-p" "hi"]) :thinking))
+      "a flag the invocation did not give stays absent"))
+
+(deftest the-invocations-run-flags-reach-the-mode-row
+  ;; The hand-off is the entry's: the mode's row config carries what the
+  ;; command line asked for, and a mode applies it (the TUI row hands the map
+  ;; to kmet1's `interactive/run`; print/rpc/server hand `create-opts` to
+  ;; `:agents`). Only the keys the invocation gave are there.
+  (let [mode-input @#'core/mode-input
+        opts (core/parse-args ["-p" "--thinking" "high"
+                               "--system-prompt" "SYS"
+                               "--append-system-prompt" "MORE"
+                               "--session-dir" "target/sessions"
+                               "--models" "a,b"])]
+    (is (= {:format :text :thinking :high :system-prompt "SYS"
+            :append-system-prompt ["MORE"] :session-dir "target/sessions"
+            :models ["a" "b"] :prompt "hi" :on-result :result}
+           (mode-input opts "hi" :result))))
+  (is (= {:format :text :on-result :result}
+         (@#'core/mode-input (core/parse-args ["-p"]) "" :result))
+      "a bare -p gives the mode nothing it did not ask for"))
+
+(deftest a-model-the-catalog-does-not-have-is-reported-before-the-boot
+  ;; The entry resolves the invocation's model patterns, as kmet1 does, so a
+  ;; bad one is a configuration error naming the pattern — not a boot, a
+  ;; session and then a request that dies with nothing to say.
+  (with-redefs [models/get-provider (fn [p] {:id p})
+                models/get-models (fn [& _] [])]
+    (let [{:keys [code out err]} (support/run-main ["-p" "--model" "nope" "hi"])]
+      (is (= 1 code))
+      (is (= "" out) "nothing runs, so nothing is printed")
+      (is (str/includes? err "Model \"nope\" not found")))))
 
 (deftest session-flags-need-a-mode-that-opens-a-session
   ;; Print, rpc and the server create their agent through `:agents`, whose
@@ -184,6 +249,11 @@
     (is (str/includes? out "-c, --continue")
         "the session-lifecycle flags are listed with the profile they belong to")
     (is (str/includes? out "--session <id>"))
+    (is (str/includes? out "--thinking <level>"))
+    (is (str/includes? out "--system-prompt <text>"))
+    (is (str/includes? out "--append-system-prompt <text>"))
+    (is (str/includes? out "--models <a,b>"))
+    (is (str/includes? out "--session-dir <dir>"))
     (is (str/includes? out "install <source>")
         "the package subcommands the entry dispatches are listed too")
     (is (str/includes? out "config             Enable/disable resources"))))

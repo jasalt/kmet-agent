@@ -28,6 +28,25 @@
           "no :on-result, so no run")
       (finally (srce/dispose-subtree! root)))))
 
+(deftest the-invocations-run-flags-reach-kmet1s-run
+  ;; The same hand-off one category over: the run's overrides are kmet1's run
+  ;; flags, and `interactive/run` applies them to the config it loads
+  ;; (`cfg/apply-cli-overrides`), so the row maps names and decides nothing.
+  ;; Dropping one here is the defect 5d found in rpc one mode over: the run
+  ;; silently uses the settings instead.
+  (let [run-opts @#'tui/run-opts]
+    (is (= {:mode :interactive
+            :model "deepseek-v4-flash" :provider :opencode-go :thinking :high
+            :models ["deepseek-v4-flash"] :session-dir "target/sessions"
+            :system-prompt "SYS" :append-system-prompt ["MORE"]}
+           (run-opts {:model "deepseek-v4-flash" :provider :opencode-go
+                      :thinking :high :models ["deepseek-v4-flash"]
+                      :session-dir "target/sessions"
+                      :system-prompt "SYS" :append-system-prompt ["MORE"]})))
+    (is (= {:mode :interactive :system-prompt "SYS"}
+           (run-opts {:system-prompt "SYS"}))
+        "only the keys the invocation gave are in kmet1's opts")))
+
 (deftest the-invocations-session-reaches-kmet1s-run
   ;; The row's only work for `-c`/`-r`/`--session` is the hand-off: kmet1's
   ;; `interactive/run` resolves the session from those keys itself, so the row

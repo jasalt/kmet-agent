@@ -35,6 +35,7 @@
             [kmet.ai.models :as models]
             [kmet.app.events :as events]
             [kmet.app.front-end :as front-end]
+            [kmet.app.invocation :as invocation]
             [kmet.app.modes.out :as out]
             [kmet.srce.core :as srce]))
 
@@ -394,10 +395,11 @@
         (future
           (on-result
            {:exit (try
-                    ;; the invocation's model and provider are the agent's
-                    ;; own options, exactly as in print mode: the driver
-                    ;; resolves a `--model` pattern per creation
-                    (let [handle ((:create! agents) scope (select-keys config [:model :provider]))]
+                    ;; the invocation's run overrides are the agent's own
+                    ;; options, exactly as in print mode: the driver resolves a
+                    ;; `--model` pattern per creation and applies the rest over
+                    ;; the settings it loads
+                    (let [handle ((:create! agents) scope (invocation/create-opts config))]
                       (try
                         (serve-commands {:agents agents :sessions sessions
                                          :scope scope :handle handle}

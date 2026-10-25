@@ -36,6 +36,7 @@
   (:require [clojure.java.io :as io]
             [kmet.agent.event-bus :as event-bus]
             [kmet.app.events :as events]
+            [kmet.app.invocation :as invocation]
             [kmet.app.modes.out :as out]
             [kmet.app.modes.rpc :as rpc]
             [kmet.app.permissions :as permissions]
@@ -189,7 +190,7 @@
    serves. The listener registers on the agent's ctx, so it hears that run's
    events and no other connection's."
   [conn {:keys [agents scope config]}]
-  (let [handle ((:create! agents) scope (select-keys config [:model :provider]))
+  (let [handle ((:create! agents) scope (invocation/create-opts config))
         conn (assoc conn :handle handle :agent-id (:id handle))
         dispose (events/on-every (:ctx handle)
                                  (fn [event]

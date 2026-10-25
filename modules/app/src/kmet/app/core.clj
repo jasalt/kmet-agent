@@ -33,6 +33,7 @@
             [kmet.ai.models :as models]
             [kmet.app.catalog :as catalog]
             [kmet.app.inspect :as inspect]
+            [kmet.app.invocation :as invocation]
             [kmet.app.profile :as profile]
             [kmet.app.runtime :as runtime]))
 
@@ -59,7 +60,25 @@
    "--model" :model
    "--provider" :provider
    "--port" :port
-   "--session" :session})
+   "--session" :session
+   ;; kmet1's other run flags. `--model` is a pattern and is resolved against
+   ;; the catalog before a run (`kmet.app.invocation`); the rest are config
+   ;; overrides the mode applies (`cfg/apply-cli-overrides`).
+   "--models" :models
+   "-t" :thinking
+   "--thinking" :thinking
+   "--system-prompt" :system-prompt
+   "--append-system-prompt" :append-system-prompt
+   "--session-dir" :session-dir})
+
+(def ^:private text-flags
+  "Value flags whose value is free text, so the argument after them may start
+   with `-`: a prompt override is lines of prose (`--system-prompt \"- be
+   concise\"`), and kmet1 reads the token after the flag whichever way it
+   starts. Every other value flag keeps the stricter rule, which is what turns
+   `--model --thinking` into a usage error instead of a model named
+   \"--thinking\"."
+  #{"--system-prompt" "--append-system-prompt"})
 
 (def ^:private print-flags
   "kmet1's one-shot spelling: `-p`/`--print` run the print profile, as `kmet -p
@@ -85,11 +104,16 @@
 (defn- flag-value
   "The value of value flag FLAG from VALUE (the `=` form's) or the next argument
    in IN → `[value remaining]`. Throws :kmet.app/bad-args when the value is
-   missing, empty, or looks like the next flag."
+   missing, empty, or looks like the next flag — unless FLAG is free text
+   (`text-flags`), where the next argument is the value however it starts: a
+   prompt override may legitimately be `- be concise`, and kmet1 reads the
+   token after the flag either way."
   [flag value in]
   (let [[value in] (if (= ::missing value)
                      (let [v (second in)]
-                       (when (or (nil? v) (str/starts-with? v "-"))
+                       (when (or (nil? v)
+                                 (and (not (contains? text-flags flag))
+                                      (str/starts-with? v "-")))
                          (throw (bad-args (str flag " needs a value"))))
                        [v (nnext in)])
                      [value (next in)])]
@@ -116,10 +140,15 @@
 (defn parse-args
   "Parse kmet2's argv → `{:profile kw :patch [path …] :args [rest …] :version?
    :help? :dump-config? :dump-state? :format kw :model str :provider kw
-   :continue? :resume? :session str}`.
+   :thinking kw :models [pattern …] :system-prompt str
+   :append-system-prompt [str …] :session-dir path :continue? :resume?
+   :session str}`.
    `:profile` defaults to `profile/default-profile`; `--mode` is kmet1's spelling
-   of it (`resolve-mode`), `--model`/`--provider` are the run overrides a mode
-   hands the agent it creates; the two dumps are different views of one
+   of it (`resolve-mode`), and the run flags are kmet1's: `--model`/`--provider`
+   are the agent's overrides, `--thinking`/`--system-prompt`/
+   `--append-system-prompt`/`--models`/`--session-dir` the run's (resolved and
+   then applied by the mode — `kmet.app.invocation`). An `@file` argument is
+   read into `:args` as kmet1 reads it. The two dumps are different views of one
    composition, so asking for both is a usage error rather than a silent pick."
   [args]
   (loop [in (seq args) opts {:patch [] :args []}]
@@ -142,7 +171,13 @@
                 [v in] (flag-value flag value in)]
             (recur in (case k
                         :patch (update opts :patch conj v)
-                        (:profile :provider) (assoc opts k (keyword v))
+                        (:profile :provider :thinking) (assoc opts k (keyword v))
+                        ;; kmet1's spelling for the scope: one argument split on
+                        ;; commas (`--models a,b`), resolved by
+                        ;; `invocation/resolve-overrides` before the run
+                        :models (assoc opts k (mapv str/trim (str/split v #",")))
+                        ;; repeatable, joined by `cfg/apply-cli-overrides`
+                        :append-system-prompt (update opts k (fnil conj []) v)
                         ;; a socket port is a number, and a value that is not
                         ;; one is a usage error here rather than a boot failure
                         :port (assoc opts k (or (parse-long v)
@@ -155,14 +190,20 @@
             (throw (bad-args (str flag " takes no value"))))
 
           (str/starts-with? arg "@")
-          ;; kmet1 reads a file into the message here. Expansion is the modes'
-          ;; (skills, prompt templates, @files) and has not moved yet, so the
-          ;; arg is refused by name: sending "@tasks.md" as the prompt would be
-          ;; an answer to a question nobody asked
-          (throw (ex-info (str arg " reads the message from a file, which the modes "
-                               "do not expand yet — pass the text (--app old -p "
-                               arg " still reads files)")
-                          {:type :kmet.app/unsupported-op :op :at-file :path arg}))
+          ;; kmet1 reads a file into the message at parse time, and kmet2 keeps
+          ;; that: the file's text is the message the mode gets, one per @file
+          ;; in the order given. A file that cannot be read is a warning and an
+          ;; empty message, as in kmet1 — the rest of the invocation still runs
+          (let [path (subs arg 1)]
+            (if (seq path)
+              (let [text (try (slurp path)
+                              (catch Exception _
+                                (binding [*out* *err*]
+                                  (println "Warning: could not read" path))
+                                ""))]
+                (recur (next in) (update opts :args conj text)))
+              (do (binding [*out* *err*] (println "Warning: empty path after @"))
+                  (recur (next in) opts))))
 
           (str/starts-with? arg "-")
           (throw (bad-args (str "unknown option " arg)))
@@ -239,7 +280,7 @@
   (binding [*out* *err*] (println "Error:" message) (flush)))
 
 (defn- print-usage []
-  (println "Usage: kmet --app new [options] [messages...]")
+  (println "Usage: kmet --app new [options] [@files...] [messages...]")
   (println)
   (println "Options:")
   (println "  --profile <name>   Composition profile: tui (default), print, rpc, server")
@@ -249,10 +290,15 @@
   (println "  --patch <file>     Apply a composition layer from a file (repeatable)")
   (println "  --model <id>       Model the run's agent uses, over its settings")
   (println "  --provider <name>  Provider the run's agent uses, over its settings")
+  (println "  --models <a,b>     Models the session's scope offers (comma separated)")
+  (println "  -t, --thinking <level>  Thinking level (off, minimal, low, medium, high, xhigh, max)")
+  (println "  --system-prompt <text>  Replace the system prompt (text, or a path to a file)")
+  (println "  --append-system-prompt <text>  Append to the system prompt (repeatable)")
   (println "  --port <n>         --profile server's socket (0, the default, asks the OS)")
   (println "  -c, --continue     Continue this directory's last session (the TUI)")
   (println "  -r, --resume       Pick a session to resume (the TUI)")
   (println "  --session <id>     Open a session by id, prefix or path (the TUI)")
+  (println "  --session-dir <dir> Session storage directory")
   (println "  --dump-config      Print the composed plugin rows and exit")
   (println "  --dump-state       Boot the composition, print the ctx tree, and exit")
   (println "  --version          Print the version and exit")
@@ -319,13 +365,17 @@
 (defn- mode-input
   "What the command line asks a mode for: the prompt and where to report, plus
    what the mode hands its run — the output `:format`, the agent's
-   `:model`/`:provider` overrides, and the session the run opens (`:session`,
-   `:resume`, `:continue`, in kmet1's spelling because the TUI row hands them to
-   kmet1's `interactive/run`). A value the invocation did not give stays absent
-   (`select-keys`), so a mode sees what was asked for rather than a map of every
-   option it could have been told."
+   `:model`/`:provider`/`:thinking` overrides, the scope it offers
+   (`:models`), its prompt and session-dir overrides (`:system-prompt`,
+   `:append-system-prompt`, `:session-dir`), the socket `:port`, and the session
+   the run opens (`:session`, `:resume`, `:continue`, in kmet1's spelling
+   because the TUI row hands them to kmet1's `interactive/run`). A value the
+   invocation did not give stays absent (`select-keys`), so a mode sees what was
+   asked for rather than a map of every option it could have been told."
   [opts prompt on-result]
-  (cond-> (assoc (select-keys opts [:format :model :provider :port :session])
+  (cond-> (assoc (select-keys opts [:format :model :provider :thinking :models
+                                    :system-prompt :append-system-prompt
+                                    :session-dir :port :session])
                  :on-result on-result)
     (:continue? opts) (assoc :continue true)
     (:resume? opts) (assoc :resume true)
@@ -398,10 +448,14 @@
 
 (defn- run-composed
   "A run with neither `--dump-…` flag: the profile's mode, when it has one, else
-   the boot report. A mode honors the session-lifecycle flags when its row says
-   it owns the session (`:session-lifecycle`); the rest refuse them by name."
+   the boot report. The invocation's model patterns are resolved against the
+   catalog first (`invocation/resolve-overrides`, kmet1's order), so a mode gets
+   catalog ids and the entry reports an unknown model before anything boots. A
+   mode honors the session-lifecycle flags when its row says it owns the session
+   (`:session-lifecycle`); the rest refuse them by name."
   [opts args]
-  (let [composed (compose-config opts)]
+  (let [opts (invocation/resolve-overrides opts)
+        composed (compose-config opts)]
     (if-let [mode (mode-row (:rows composed))]
       (let [prompt (str/join " " args)
             flag (session-flag opts)]
@@ -461,8 +515,11 @@
 
 (defn run-process
   "What a process start does before it exits: load the catalog the run resolves
-   against, then run ARGS. `-main` is this plus the exit code, so a test can read
-   the order without forking."
+   against, then run ARGS. The order is load-bearing twice over: a run may name
+   `--model provider/model` in its first argument, and the entry resolves that
+   pattern against the catalog before any mode boots
+   (`kmet.app.invocation/resolve-overrides`). `-main` is this plus the exit code,
+   so a test can read the order without forking."
   [args]
   (load-catalog!)
   (main args))

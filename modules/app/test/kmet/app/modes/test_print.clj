@@ -130,6 +130,72 @@
             (is (str/includes? err "Model \"no-such-model\" not found")
                 "and the failure names the model that was asked for")))))))
 
+(deftest the-invocations-prompt-and-thinking-flags-reach-the-request
+  ;; new-app.md 5n's gate for these flags: read them back from the provider
+  ;; request, not from a map a test threaded. `--thinking` is the agent's
+  ;; state; the two prompt flags are what the system message is built from.
+  (let [request (atom nil)]
+    (with-mode-run
+      (fn [opts]
+        (reset! request opts)
+        (future
+          (when-let [on-text (:on-text opts)] (on-text "ok"))
+          (when-let [on-done (:on-done opts)] (on-done :stop))
+          :done))
+      (fn []
+        (let [{:keys [code err]} (support/run-main
+                                  ["-p" "--thinking" "high"
+                                   "--system-prompt" "SYS-MARKER"
+                                   "--append-system-prompt" "APPEND-MARKER"
+                                   "hello"])
+              system (->> (:messages @request)
+                          (some #(when (= :system (:role %)) %))
+                          :content first :text)]
+          (is (= 0 code) err)
+          (is (= :high (:thinking @request))
+              "--thinking reaches the run, over the settings'")
+          (is (str/includes? (or system "") "SYS-MARKER")
+              "--system-prompt replaces the prompt source")
+          (is (str/includes? (or system "") "APPEND-MARKER")
+              "--append-system-prompt appends to it"))))))
+
+(deftest the-invocations-session-dir-places-the-session
+  ;; `--session-dir` is a config override, and the run's session is created from
+  ;; that config: the flag moves where this run writes, not the settings' dir.
+  (let [dir "target/test-modes-flag"]
+    (fs/delete-tree dir)
+    (with-mode-run
+      (answering "ok")
+      (fn []
+        (let [{:keys [code err]} (support/run-main ["-p" "--session-dir" dir "hi"])]
+          (is (= 0 code) err)
+          (is (seq (fs/glob dir "**/*.ednl"))
+              "the session landed where the flag said")
+          (is (empty? (fs/glob sessions-dir "**/*.ednl"))
+              "and not in the settings' directory"))))))
+
+(deftest an-at-file-is-the-message
+  ;; new-app.md 5n's gate: `-p @tasks.md` sends the file's contents, where the
+  ;; argument was, so every mode sees text rather than a filename.
+  (let [path (str "target/test-at-file-" (System/nanoTime) ".md")
+        request (atom nil)]
+    (spit path "hello from the file")
+    (try
+      (with-mode-run
+        (fn [opts]
+          (reset! request opts)
+          (future
+            (when-let [on-text (:on-text opts)] (on-text "ok"))
+            (when-let [on-done (:on-done opts)] (on-done :stop))
+            :done))
+        (fn []
+          (let [{:keys [code err]} (support/run-main ["-p" (str "@" path)])]
+            (is (= 0 code) err)
+            (is (str/includes? (str/join "\n" (map :content (:messages @request)))
+                               "hello from the file")
+                "the run was asked the file's text"))))
+      (finally (fs/delete-if-exists path)))))
+
 (deftest edn-mode-carries-the-failure-on-the-wire
   ;; In edn mode the failure is an event, so it is printed like every other and
   ;; the mode adds no error line of its own: the exit code is the verdict, and a
