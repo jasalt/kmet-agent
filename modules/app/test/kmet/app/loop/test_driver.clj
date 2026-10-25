@@ -388,6 +388,35 @@
       (finally
         (extensions/bind-extensions! previous)))))
 
+(deftest a-runs-front-end-answers-wholesale
+  ;; A run whose agent published a front end gets that front end's answers for
+  ;; every capability: one it did not install is nil, not the process port's.
+  ;; Two front ends in one process must not lend each other their ports (pi:
+  ;; the session's own ui context).
+  (let [{:keys [root agents]} (mounted)
+        previous (extensions/front-end-surface)
+        called (atom [])]
+    (try
+      (extensions/bind-extensions!
+       {:mode :print :has-ui false
+        :ui {:notify (fn [message _type] (swap! called conj message))}})
+      (with-stubbed-llm
+        (fn [_]
+          (let [h (create! {:root root :agents agents})
+                off (event-bus/on-event
+                     :agent-start nil
+                     (fn [_] (extensions/ui-notify "inert"))
+                     (:ctx h))]
+            (try
+              (reset! (:front-end h) {:mode :interactive :has-ui true :ui {}})
+              ((:send! agents) h "go" {:target :next-turn})
+              ((:when-idle agents) h)
+              (is (empty? @called)
+                  "the agent's own (empty) port answered; the process port did not")
+              (finally (off))))))
+      (finally
+        (extensions/bind-extensions! previous)))))
+
 (deftest an-extension-send-user-message-acts-on-the-running-agent
   ;; The runtime capability resolves through the run's binding: a handler that
   ;; steers steers this agent, and the message reaches this agent's context.

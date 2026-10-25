@@ -629,11 +629,15 @@
 
 (defn ui-capability
   "The bound fn for CAPABILITY: the running agent's own front end when this
-   call is inside a run (the run binds it), otherwise the process's install —
-   nil when neither installed it (headless/print)."
+   call is inside a run whose agent published one (the run binds it), otherwise
+   the process's install. A front end answers wholesale — a capability it did
+   not install is nil, never another front end's (pi: the session's own ui
+   context) — and nil when neither installed it (headless/print)."
   [capability]
-  (or (get (some-> *agent-context* :front-end :ui) capability)
-      (get (:ui @extension-binding) capability)))
+  (let [front-end (:front-end *agent-context*)]
+    (if front-end
+      (get-in front-end [:ui capability])
+      (get (:ui @extension-binding) capability))))
 
 (defn ui-call
   "Dispatch a UI capability call through the bound map. No-op (nil) when
@@ -950,26 +954,28 @@
 
 (defn append-custom-entry!
   "Append a custom entry (extension state, never in LLM context) to the live
-   session (extension api: session :append-entry!). The running agent's own
-   front end sink wins over the process's install. Returns the entry id."
+   session (extension api: session :append-entry!). A run's own front end
+   answers for its sink; the process's install answers outside a run. Returns
+   the entry id."
   [custom-type & [data]]
   (when-let [sess (get-session)]
-    (let [entry (session/append-custom-entry! sess custom-type data)]
-      (when-let [sink (or (some-> *agent-context* :front-end :entry-sink)
-                          @entry-sink-atom)]
-        (sink entry))
+    (let [entry (session/append-custom-entry! sess custom-type data)
+          front-end (:front-end *agent-context*)
+          sink (if front-end (:entry-sink front-end) @entry-sink-atom)]
+      (when sink (sink entry))
       (:id entry))))
 
 (defn append-custom-message!
   "Append a custom message that participates in LLM context (extension api:
-   session :append-message!). The running agent's own front end sink wins over
-   the process's install. Returns the entry id."
+   session :append-message!). A run's own front end answers for its sink; the
+   process's install answers outside a run. Returns the entry id."
   [custom-type content display & [details]]
   (when-let [sess (get-session)]
     (let [entry (session/append-custom-message-entry! sess custom-type
-                                                      content display details)]
-      (when-let [sink (or (some-> *agent-context* :front-end :context-sink)
-                          @context-sink-atom)]
+                                                      content display details)
+          front-end (:front-end *agent-context*)
+          sink (if front-end (:context-sink front-end) @context-sink-atom)]
+      (when sink
         (sink {:role :custom
                :custom-type custom-type
                :content content

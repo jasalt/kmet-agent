@@ -4021,9 +4021,10 @@ command handler runs outside a run and must act on the session the user chose.
 The front end also publishes its surface on the agent it serves (mode,
 `:has-ui`, the UI port, the context/entry sinks) into the handle's `:front-end`
 slot; a run binds it, and `ui-capability`, `build-extension-context` and the
-append sinks prefer it over the process install, so two agents under two front
-ends in one process each read their own while a command handler still reads
-the front end's install. The shared builtins take either runtime: `/continue`
+append sinks answer with it instead of the process install — wholesale, so a
+capability or sink that front end did not install is nil rather than another
+front end's — so two agents under two front ends in one process each read their
+own while a command handler still reads the front end's install. The shared builtins take either runtime: `/continue`
 starts through the handle's `:send!` (so it runs with the agent's extension
 binding, which it used to bypass) and `/compact` prefers the handle's
 `:request-compaction!`, falling back to `session-driver` for kmet1's engine.
