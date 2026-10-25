@@ -1,4 +1,4 @@
-(ns kmet.agent.extensions.test-api-contract
+(ns kmet.app.extensions.test-api-contract
   "The extension ABI's half of the contract: every map read a `kmet.extension`
    wrapper performs on an extension's `api` must exist in the api the host
    builds.

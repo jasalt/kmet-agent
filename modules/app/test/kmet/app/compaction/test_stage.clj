@@ -1,8 +1,8 @@
-(ns kmet.agent.compaction.test-stage
+(ns kmet.app.compaction.test-stage
   "The compaction orchestrator's planning step (prepare-compaction): what it
    reports for a compactable branch, the manual already-compacted case, and
    an empty session. The orchestration itself is covered by
-   kmet.agent.loop.test-compact."
+   kmet.app.loop.test-compact."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [babashka.fs :as fs]
             [kmet.app.compaction.stage :as stage]

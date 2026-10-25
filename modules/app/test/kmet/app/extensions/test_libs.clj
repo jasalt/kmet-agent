@@ -7,10 +7,13 @@
             [babashka.fs :as fs]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.extensions.context :as ext-context]
-            [kmet.agent.app-runtime :as rt]
             [kmet.app.registry :as registry]
             [kmet.app.skills :as skills]
-            [kmet.agent.tools.core :as tools]))
+            [kmet.app.test-support :as support]
+            [kmet.app.tools.registry :as tools]))
+
+;; The extension host is the composition's: boot one for the namespace.
+(t/use-fixtures :once support/with-composition)
 
 ;; ─── The shared-library lists vs the source trees ────────────────────────
 
@@ -98,7 +101,7 @@
             (.closeEntry zos))))
       (let [result (extensions/load-extension! jar)]
         (t/is (nil? (:error result)) (str "packed jar loaded: " (:error result)))
-        (t/is (some? (tools/get-tool "clojure_edit")))
+        (t/is (some? (tools/get-tool (registry/current) "clojure_edit")))
         (t/is (str/includes? (skills/expand-skill-command "/skill:clojure-edit")
                              "clojure_edit")))
       (finally
@@ -125,7 +128,7 @@
       (t/is (= {:input 1 :before-agent-start 1}
                (frequencies
                 (keep (fn [[n m]] (when (= owner (:owner m)) (first n)))
-                      (registry/entries (rt/registry) :kmet/hook))))
+                      (registry/entries (registry/current) :kmet/hook))))
             "both registered under the extension's own owner, tagged per kind")
       (finally (dereg) (dereg-start)))
     (t/is (= "hi" (:text (extensions/apply-input-hooks "hi" :interactive)))
@@ -184,7 +187,7 @@
         (t/is (= (inc tool-hooks) (count (extensions/get-tool-call-hooks)))
               "and its tool-call hook reaches the transform chain")
         (t/is (= 3 (count (filter (fn [[_ m]] (= owner (:owner m)))
-                                  (registry/entries (rt/registry) :kmet/hook))))
+                                  (registry/entries (registry/current) :kmet/hook))))
               "all three live under the extension's owner")
         (extensions/unload-all-extensions!)
         (t/is (= tool-hooks (count (extensions/get-tool-call-hooks)))
@@ -197,7 +200,7 @@
                                   "HOOK SYS"))
               "and the before-agent-start hook")
         (t/is (empty? (filter (fn [[_ m]] (= owner (:owner m)))
-                              (registry/entries (rt/registry) :kmet/hook)))
+                              (registry/entries (registry/current) :kmet/hook)))
               "with nothing left under the owner"))
       (finally
         (extensions/unload-all-extensions!)

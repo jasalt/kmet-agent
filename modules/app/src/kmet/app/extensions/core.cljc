@@ -271,8 +271,8 @@
   (if-let [f @services*]
     (f)
     (throw (ex-info (str "the extension host was used before its services were bound: "
-                         "a composition needs its :extensions row, and kmet1 binds "
-                         "the process host at load")
+                         "a composition binds it from its :extensions row, and a "
+                         "bare test binds one over its own registry")
                     {:type :kmet/no-host-services}))))
 
 (defn- handle

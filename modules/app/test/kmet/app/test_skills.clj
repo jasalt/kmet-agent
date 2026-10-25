@@ -3,13 +3,17 @@
             [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.app-runtime :as app-runtime]
+            [kmet.app.test-support :as support]
             [kmet.app.skill-block :as skill-block]
             [kmet.app.skills :as skills]
-            [kmet.agent.tools.core :as tools]
+            [kmet.app.tools.registry :as tools]
+            [kmet.app.tools.tool :as tool]
             [kmet.app.registry :as registry]
             [kmet.srce.core :as srce]
             [kmet.test-utils :as tu]))
+
+;; The extension host is the composition's: boot one for the namespace.
+(t/use-fixtures :once support/with-composition)
 
 ;; The skill registry is process state on the app tree (P2): a test that loads
 ;; a fixture skill must not leave it for the rest of the process.
@@ -32,7 +36,7 @@
   ;; registration's deregister fn removes exactly it.
   ;; the registration goes to the process handle, so the test publishes the
   ;; ctx's own service as that handle for its duration
-  (let [ctx (app-runtime/ctx)
+  (let [ctx (support/composition-ctx)
         previous (registry/publish-process-handle! (srce/get ctx :skills))]
     (try
       (let [dereg (skills/register-skill!  "stored-skill" "Stored.")]
@@ -96,13 +100,13 @@
       (t/is (str/includes? result "# Rules"))))
   (t/testing "tools without a snippet are hidden, list shows (none) (pi)"
     (let [result (skills/build-system-prompt :cwd "/tmp"
-                                             :tools [(tools/make-tool :name "no-snippet" :description "d")])]
+                                             :tools [(tool/make-tool :name "no-snippet" :description "d")])]
       (t/is (str/includes? result "(none)"))
       (t/is (not (str/includes? result "no-snippet")))))
   (t/testing "skills block is omitted when read tool is not available (pi)"
     (let [result (skills/build-system-prompt :cwd "/tmp"
-                                             :tools [(tools/make-tool :name "bash" :description "d"
-                                                                      :prompt-snippet "Execute bash commands")])]
+                                             :tools [(tool/make-tool :name "bash" :description "d"
+                                                                     :prompt-snippet "Execute bash commands")])]
       (t/is (not (str/includes? result "<available_skills>"))))))
 
 (t/deftest test-build-system-prompt-shell-rules
@@ -111,8 +115,8 @@
                    (skills/build-system-prompt
                     :cwd "/tmp"
                     :skills []
-                    :tools (mapv (fn [n] (tools/make-tool :name n :description "d"
-                                                          :prompt-snippet n))
+                    :tools (mapv (fn [n] (tool/make-tool :name n :description "d"
+                                                         :prompt-snippet n))
                                  names)))]
       (t/is (str/includes? (prompt ["bash" "read"])
                            "Use bash for file operations like ls, rg, find"))
@@ -128,8 +132,8 @@
                    (skills/build-system-prompt
                     :cwd "/tmp"
                     :skills []
-                    :tools (mapv (fn [n] (tools/make-tool :name n :description "d"
-                                                          :prompt-snippet n))
+                    :tools (mapv (fn [n] (tool/make-tool :name n :description "d"
+                                                         :prompt-snippet n))
                                  names)))]
       (doseq [search ["grep" "find" "ls"]]
         (t/is (not (str/includes? (prompt ["bash" "read" search])
@@ -359,7 +363,7 @@
                                              {:location "e:dup/SKILL.md" :extension "e"
                                               :owner [:app :extensions "e"]}))
         (t/is (= "File version." (:description (skills/get-skill "dup"))))
-        (t/is (not (contains? (registry/by-owner (app-runtime/registry) :kmet/skill "dup")
+        (t/is (not (contains? (registry/by-owner (registry/current) :kmet/skill "dup")
                               [:app :extensions "e"]))
               "the colliding extension registration was refused, not shadowed")
         (finally (fs/delete-tree tmp-dir)
@@ -392,7 +396,7 @@
             "the loser's no-op left the winner in place")
       (dereg-winner)
       (t/is (nil? (skills/get-skill "dereg-winner")) "the winner's fn removes it")
-      (t/is (empty? (registry/by-owner (app-runtime/registry) :kmet/skill "dereg-winner"))))
+      (t/is (empty? (registry/by-owner (registry/current) :kmet/skill "dereg-winner"))))
     (finally (skills/clear-skills!))))
 
 (t/deftest test-extension-skill-readable-via-read-tool
@@ -403,27 +407,27 @@
                  {:location "my-ext:skills/read-me/SKILL.md" :extension "my-ext"})]
       (try
         (t/testing "exact location resolves"
-          (let [result (tools/execute-tool "read" {:path "my-ext:skills/read-me/SKILL.md"})]
+          (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/read-me/SKILL.md"})]
             (t/is (not (:is-error result)))
             (t/is (str/includes? (:content result) "Do it."))))
         (t/testing "cwd-joined absolute locator resolves (model verbatim join)"
-          (let [result (tools/execute-tool "read" {:path (str (fs/cwd) "/my-ext:skills/read-me/SKILL.md")})]
+          (let [result (tools/execute-tool (registry/current) "read" {:path (str (fs/cwd) "/my-ext:skills/read-me/SKILL.md")})]
             (t/is (not (:is-error result)))
             (t/is (str/includes? (:content result) "Do it."))))
         (t/testing "backslash-joined locator resolves (Windows path join)"
-          (let [result (tools/execute-tool "read" {:path "C:\\work\\my-ext:skills/read-me/SKILL.md"})]
+          (let [result (tools/execute-tool (registry/current) "read" {:path "C:\\work\\my-ext:skills/read-me/SKILL.md"})]
             (t/is (not (:is-error result)))
             (t/is (str/includes? (:content result) "Do it."))))
         (t/testing "offset/limit apply to skill reads"
-          (let [result (tools/execute-tool "read" {:path "my-ext:skills/read-me/SKILL.md" :offset 1 :limit 1})]
+          (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/read-me/SKILL.md" :offset 1 :limit 1})]
             (t/is (not (:is-error result)))
             (t/is (str/includes? (:content result) "---"))))
         (t/testing "unknown locator still reports File not found"
-          (let [result (tools/execute-tool "read" {:path "my-ext:skills/nope/SKILL.md"})]
+          (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/nope/SKILL.md"})]
             (t/is (:is-error result))
             (t/is (str/includes? (:content result) "File not found"))))
         (t/testing "deregistered skill no longer resolves"
           (dereg)
-          (let [result (tools/execute-tool "read" {:path "my-ext:skills/read-me/SKILL.md"})]
+          (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/read-me/SKILL.md"})]
             (t/is (:is-error result))))
         (finally (skills/clear-skills!))))))

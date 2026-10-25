@@ -1,4 +1,4 @@
-(ns kmet.agent.test-keybindings
+(ns kmet.app.test-keybindings
   (:require [clojure.test :as t]
             [babashka.fs :as fs]
             [kmet.app.keybindings :as kb]

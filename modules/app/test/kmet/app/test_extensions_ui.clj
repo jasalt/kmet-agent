@@ -1,4 +1,4 @@
-(ns kmet.agent.test-extensions-ui
+(ns kmet.app.test-extensions-ui
   "Extension UI registry tests — dispatch, no-op-before-install, and the
    extension-facing ui-* API (pi: ExtensionUIContext)."
   (:require [clojure.test :as t :refer [deftest testing]]

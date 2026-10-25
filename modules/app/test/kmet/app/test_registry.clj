@@ -1,4 +1,4 @@
-(ns kmet.agent.test-registry
+(ns kmet.app.test-registry
   "The registry contract, over the handle the app installs (`atom-registry`).
    It ran against kmet1's scope-store handle too until 4e deleted the store;
    the rules stayed the same, so the assertions did."

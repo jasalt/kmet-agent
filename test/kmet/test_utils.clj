@@ -5,10 +5,13 @@
             [kmet.app.commands :as commands]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.prompts :as prompts]
+            [kmet.app.registries :as registries]
+            [kmet.app.registry :as registry]
             [kmet.app.session.driver :as session-driver]
             [kmet.app.session.lifecycle :as lifecycle]
             [kmet.app.session.runtime :as rt]
             [kmet.app.skills :as skills]
+            [kmet.srce.core :as srce]
             [kmet.tui.utils :as u]))
 
 (defn test-engine
@@ -114,16 +117,19 @@
   "clojure.test :each fixture: this namespace needs a bound extension host.
 
    Rendering a message asks the host for the markdown-transformers hook, and
-   the host is unbound in a fresh process (`kmet/no-host-services`). Today the
-   binding arrives as a load side effect — `kmet.agent.app-runtime` binds it at
-   the top of the file, and kmet1's runtime namespaces reach it transitively —
-   so a test namespace that requires any of them passes and one that does not
-   fails. That is exactly the load-order luck this fixture names: the load is
-   performed here, so a namespace declares the dependency instead of inheriting
-   it from whichever require happened to come along."
+   the host is unbound in a fresh process (`kmet/no-host-services`). The binding
+   is a composition's `:extensions` row, so a namespace that boots one has a
+   host and one that does not must bind its own: this fixture binds a fresh
+   registry over a bare ctx for the test and restores the previous binding.
+   Declaring it here makes the dependency the namespace's, not whichever
+   require happened to come along first."
   [f]
-  (require 'kmet.agent.app-runtime)
-  (f))
+  (let [handle (registry/atom-registry)
+        ctx (srce/root {:name :test-host})
+        base (extensions/host-binding)]
+    (extensions/bind-services!
+     (fn [] (registries/host-services handle ctx)))
+    (try (f) (finally (extensions/bind-services! base)))))
 
 (defn with-clean-app-registries
   "clojure.test :each fixture: clear the app tree's process-global

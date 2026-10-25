@@ -8,9 +8,8 @@
    4e), so this bans its name and `kmet.agent.app-runtime`'s — whose `ctx`
    resolves *the* root — as tripwires against reintroducing either, in the
    modules that must be kmet1-free: the kernel, the app, and (from landing 5)
-   the front ends. `kmet.app.version` is a `kmet.agent.*` namespace that
-   lives in the app module (the file moved, the namespace did not), so only
-   the process-state edges are listed, not the prefix."
+   the front ends. Only the process-state edges are listed, not the prefix."
+
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]

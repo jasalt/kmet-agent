@@ -1,5 +1,5 @@
 (ns kmet.app.test-prompts
-  (:require [kmet.agent.app-runtime :as app-runtime]
+  (:require [kmet.app.test-support :as support]
             [clojure.test :as t]
             [clojure.string :as str]
             [clojure.java.io :as io]
@@ -7,6 +7,9 @@
             [kmet.app.prompts :as prompts]
             [kmet.app.registry :as registry]
             [kmet.srce.core :as srce]))
+
+;; The extension host is the composition's: boot one for the namespace.
+(t/use-fixtures :once support/with-composition)
 
 ;; ─── parse-command-args (pi: parseCommandArgs) ─────────────────────────────
 
@@ -237,7 +240,7 @@
   ;; the registration goes to the process handle, so the test publishes the
   ;; ctx's own service as that handle for its duration: another test in the same
   ;; process may have published a different composition's
-  (let [ctx (app-runtime/ctx)
+  (let [ctx (support/composition-ctx)
         previous (registry/publish-process-handle! (srce/get ctx :prompts))]
     (try
       (prompts/register-prompt-template!

@@ -14,13 +14,13 @@
    can name a process-wide one.
 
    There is deliberately no default. An earlier draft resolved an installed
-   cell when the handle was left out, and kmet1's own tests broke it: the
-   extension sandbox loads `kmet.agent.app-runtime` a second time, so that load
-   ran the install with an SCI closure and the shared cell ended up holding a
-   handle from the sandbox's copy of the process. A parameter cannot be written
-   from a sandbox. kmet1's process handle is supplied where it already lives,
-   in a rank-4 namespace: `kmet.agent.tools.core` keeps the arity-less forms
-   and passes `(kmet.agent.app-runtime/registry)`."
+   cell when the handle was left out, and a sandboxed load broke it: the
+   extension sandbox required a process-bound namespace a second time, so that
+   load ran the install with an SCI closure and the shared cell ended up holding
+   a handle from the sandbox's copy of the process. A parameter cannot be
+   written from a sandbox. A caller that has no handle of its own resolves the
+   process one where it lives — `kmet.app.registry/current` — which is what
+   kmet1's arity-less façade does while it survives."
   (:require [clojure.string :as str]
             [kmet.libs.json :as json]
             [kmet.app.registry :as registry]

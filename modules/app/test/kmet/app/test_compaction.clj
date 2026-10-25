@@ -1,4 +1,4 @@
-(ns kmet.agent.test-compaction
+(ns kmet.app.test-compaction
   (:require [clojure.test :as t]
             [clojure.string :as str]
             [kmet.app.compaction.core :as core]))

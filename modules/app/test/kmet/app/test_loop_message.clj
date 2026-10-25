@@ -1,4 +1,4 @@
-(ns kmet.agent.test-loop-message
+(ns kmet.app.test-loop-message
   (:require [clojure.test :as t]
             [kmet.app.loop.message :as message]))
 

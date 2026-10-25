@@ -1,19 +1,21 @@
-(ns kmet.agent.extensions.test-inject
+(ns kmet.app.extensions.test-inject
   "`extension.edn :inject` — an extension that declares what it waits for
    mounts as a plugin: pending while the ctx has not provided it, active (and
    initialized) once it has, and its unload disposes the fiber."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :as t :refer [testing]]
-            [kmet.agent.app-runtime :as app]
             [kmet.app.extensions.core :as extensions]
-            [kmet.srce.core :as srce]))
+            [kmet.srce.core :as srce]
+            [kmet.app.test-support :as support]))
+;; `:inject` mounts under the composition's ctx, so the namespace boots one.
+(t/use-fixtures :once support/with-composition)
 
 (defn- mount-fiber
   "The fiber of the extension mount named NAME under the app root, or nil."
   [name]
   (some (fn [ctx] (when (= name (:name ctx)) @(:fiber ctx)))
-        (srce/children (app/ctx))))
+        (srce/children (support/composition-ctx))))
 
 (def ^:private hook-init
   "(defn init [api]
@@ -76,7 +78,7 @@
                               (str "{:name \"" name "\" :entry " entry
                                    " :loader [:sci] :inject [:tools]}\n")
                               hook-init)]
-      (t/is (some? (srce/get (app/ctx) :tools))
+      (t/is (some? (srce/get (support/composition-ctx) :tools))
             ":tools is provided by the app composition")
       (try
         (let [result (extensions/load-extension! dir)]
@@ -105,7 +107,7 @@
                 "with the mount's own error"))
         (t/is (not (some #(= name (:name %)) (extensions/get-loaded-extensions)))
               "a failed mount is not a loaded extension")
-        (t/is (not (some #{[(keyword name)]} (srce/children (app/ctx))))
+        (t/is (not (some #{[(keyword name)]} (srce/children (support/composition-ctx))))
               "and its mount is gone")
         (finally
           (extensions/clear-extensions!)

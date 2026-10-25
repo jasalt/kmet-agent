@@ -5,7 +5,12 @@
             [kmet.libs.concurrent :as concurrent]
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
-            [kmet.app.core :as core]))
+            [kmet.app.core :as core]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.registries :as registries]
+            [kmet.app.registry :as registry]
+            [kmet.app.runtime :as runtime]
+            [kmet.srce.core :as srce]))
 
 (defn run-main-into
   "`main` on ARGS with stdout going to OUT, a writer the caller keeps. A mode
@@ -95,3 +100,49 @@
                                               :id "deepseek-v4-flash"
                                               :reasoning true}])]
     (f)))
+
+;; ── the composition ───────────────────────────────────────────────────────
+;;
+;; A test whose subject is the composed app (the rows, the process registries,
+;; the extension host the rows bind) boots it once for the namespace. The ctx is
+;; the boot's root: it holds every service a front end would `srce/get`, which
+;; is what kmet1's `app-runtime/ctx` used to hand out through the shim.
+
+(def ^:dynamic *composition*
+  "The boot map `with-composition` bound, or nil outside it."
+  nil)
+
+(defn with-composition
+  "clojure.test :once fixture: boot the app's composition for the namespace and
+   dispose it after. Read its root with `composition-ctx`.
+
+   The boot is the test process's own: a namespace that themes or binds the
+   extension host publishes a process registry, so it must not share a
+   composition with another namespace's fixture."
+  [f]
+  (let [boot (runtime/boot (core/compose-config {:profile :tui}) {})]
+    (try
+      (binding [*composition* boot]
+        (f))
+      (finally
+        (srce/dispose-subtree! (:ctx boot))))))
+
+(defn composition-ctx
+  "The composed root ctx `with-composition` bound."
+  []
+  (:ctx *composition*))
+
+(defn with-host
+  "clojure.test :each fixture: bind the extension host over a fresh registry,
+   then restore whatever was bound before.
+
+   A bare test process has no composition to bind one, and the loop's tool and
+   render paths ask the host for its hooks. One handle serves the whole binding:
+   a thunk that built a fresh one per call would register into one table and
+   read from another."
+  [f]
+  (let [handle (registry/atom-registry)
+        base (extensions/host-binding)]
+    (extensions/bind-services!
+     (fn [] (registries/host-services handle nil)))
+    (try (f) (finally (extensions/bind-services! base)))))

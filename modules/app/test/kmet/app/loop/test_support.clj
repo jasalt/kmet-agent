@@ -7,12 +7,11 @@
             [kmet.ai.models :as models]
             [kmet.ai.auth :as auth]
             [kmet.app.event-bus :as event-bus]
-            [kmet.app.extensions.core :as extensions]
             [kmet.app.session.core :as session]
             [kmet.app.loop :as loop]
             [kmet.app.loop.stages :as loop-stages]
-            [kmet.app.registries :as registries]
             [kmet.app.registry :as registry]
+            [kmet.app.test-support :as app-support]
             [kmet.app.config :as cfg]
             [kmet.srce.core :as srce]))
 
@@ -294,21 +293,11 @@
      {:ctx ctx :tools handle})))
 
 (defn with-host
-  "Run F with a bound extension host over a fresh registry handle.
-
-   The loop's tool and render paths ask the host for its hooks, and a bare test
-   process has no composition to bind one. The binding is scoped to F and the
-   previous one restored, so a test that boots a composition still gets that
-   composition's own host while it runs."
+  "Run F with a bound extension host over a fresh registry handle
+   (`kmet.app.test-support/with-host`): the loop's tool and render paths ask the
+   host for its hooks, and a bare test process has no composition to bind one."
   [f]
-  (let [{:keys [ctx]} (test-ctx)
-        ;; one handle for the whole binding: a thunk that built a fresh one per
-        ;; call would register into one table and read from another
-        handle (registry/atom-registry)
-        base (extensions/host-binding)]
-    (extensions/bind-services!
-     (fn [] (registries/host-services handle ctx)))
-    (try (f) (finally (extensions/bind-services! base)))))
+  (app-support/with-host f))
 
 (defn with-registry
   "Run F with the loop's tool table replaced by a fresh handle.

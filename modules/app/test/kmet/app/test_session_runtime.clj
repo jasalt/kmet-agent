@@ -1,4 +1,4 @@
-(ns kmet.agent.test-session-runtime
+(ns kmet.app.test-session-runtime
   "Tests for kmet.app.session.runtime: the engine front ends drive, and
    the front-end surface (state accessors + operations) modes and app UI
    use to read and drive it."
@@ -12,7 +12,6 @@
             [kmet.app.loop :as agent]
             [kmet.app.packages :as packages]
             [kmet.app.prompts :as prompts]
-            [kmet.agent.app-runtime :as app]
             [kmet.app.session.core :as session]
             [kmet.app.skills :as skills]
             [kmet.app.session.driver :as session-driver]
@@ -23,7 +22,11 @@
             [kmet.app.registry :as registry]
             [kmet.app.registries :as registries]
             [kmet.srce.core :as srce]
-            [kmet.test-utils :as tu]))
+            [kmet.test-utils :as tu]
+            [kmet.app.test-support :as support]))
+;; The extension host and the registries a bootstrapped engine reads are the
+;; composition's, so the namespace boots one for its duration.
+(clojure.test/use-fixtures :once support/with-composition)
 
 ;; Several tests bootstrap real engines into the app's registries (loading the
 ;; developer's own skills and prompts) and register app-wide fixtures; clear
@@ -45,7 +48,7 @@
          sess (session/create-session dir {:cwd (str (fs/cwd))})]
      (try
        (let [engine (session-driver/bootstrap (test-config)
-                                              (merge {:session sess :ctx (app/ctx)} opts))]
+                                              (merge {:session sess :ctx (support/composition-ctx)} opts))]
          (try (f engine sess)
               (finally (session-driver/dispose! engine))))
        (finally (fs/delete-tree dir))))))
@@ -68,21 +71,21 @@
   ;; pending buffer could only have filled the engine that was copied from.
   (with-engine
     (fn [_engine _sess]
-      (tools-reg/register-tool! (app/registry)
+      (tools-reg/register-tool! (registry/current)
                                 {:name "outlives-tool" :label "Outlives"
                                  :description "d"
                                  :parameters {:type "object" :properties {}}
                                  :execute (fn [_] {:content "ok"})})
-      (tools-reg/register-tool-source! (app/registry) ::outlives
+      (tools-reg/register-tool-source! (registry/current) ::outlives
                                        (fn [] {"sandbox-outlives" {}}))))
   (try
-    (is (contains? (tools-reg/get-all-tools (app/registry))
+    (is (contains? (tools-reg/get-all-tools (registry/current))
                    "outlives-tool"))
-    (is (contains? (tools-reg/get-contributed-tools (app/registry))
+    (is (contains? (tools-reg/get-contributed-tools (registry/current))
                    "sandbox-outlives"))
     (finally
-      (tools-reg/unregister-tool! (app/registry) "outlives-tool")
-      (tools-reg/unregister-tool-source! (app/registry) ::outlives))))
+      (tools-reg/unregister-tool! (registry/current) "outlives-tool")
+      (tools-reg/unregister-tool-source! (registry/current) ::outlives))))
 
 (deftest test-prompt-templates-outlive-an-engine
   ;; Prompt templates are the app's too (P2): one registered while an engine
@@ -170,13 +173,13 @@
         (is (fn? (:on-event ag)) "the agent's UI callback is the subscriber dispatcher")
         (is (= [] (rt/scoped-models engine)))
         (is (= :off @(:thinking ag)) "thinking defaults to off")
-        (is (identical? (app/ctx) (rt/agent-ctx engine))
+        (is (identical? (support/composition-ctx) (rt/agent-ctx engine))
             "the engine resolves a ctx: the app root's by default")
         (is (identical? sess (extensions/get-session))
             "the extension session handle is installed")
         (is (= :print (extensions/extension-mode))
             "the front end's headless kind is bound")
-        (is (contains? (registry/by-owner (app/registry) :kmet/ui-port :port) [:app :ui])
+        (is (contains? (registry/by-owner (registry/current) :kmet/ui-port :port) [:app :ui])
             "the front end's headless port is the [:app :ui] registration")))))
 
 (deftest test-subscribe-receives-and-unsubscribes
@@ -440,7 +443,7 @@
           sess (session/create-session dir {:cwd (str (fs/cwd))})]
       (try
         (let [engine (session-driver/bootstrap (assoc (test-config) :session-dir dir)
-                                               {:session sess :ctx (app/ctx)})]
+                                               {:session sess :ctx (support/composition-ctx)})]
           (try
             (reset! (:turn-running? engine) true)
             (is (= :scheduled (session-driver/request-compaction! engine nil nil)))
@@ -578,7 +581,7 @@
         calls (atom 0)
         engine (session-driver/bootstrap (test-config)
                                          {:session sess
-                                          :ctx (app/ctx)
+                                          :ctx (support/composition-ctx)
                                           :agent-opts {:system-prompt-fn
                                                        (fn [& _] (swap! calls inc) "custom-prompt")}})]
     (try
@@ -599,11 +602,11 @@
         sess1 (session/create-session
                (rt/ensure-cwd-session-dir dir1 (str (fs/cwd)))
                {:cwd (str (fs/cwd))})
-        e1 (session-driver/bootstrap (test-config) {:session sess1 :ctx (app/ctx)})
+        e1 (session-driver/bootstrap (test-config) {:session sess1 :ctx (support/composition-ctx)})
         sess2 (session/create-session
                (rt/ensure-cwd-session-dir dir2 (str (fs/cwd)))
                {:cwd (str (fs/cwd))})
-        e2 (session-driver/bootstrap (test-config) {:session sess2 :ctx (app/ctx)})]
+        e2 (session-driver/bootstrap (test-config) {:session sess2 :ctx (support/composition-ctx)})]
     (try
       ;; The bus is not an engine's (F10): its registry is process-level, so
       ;; there is no per-engine listener storage to compare (see

@@ -1,14 +1,17 @@
-(ns kmet.agent.test-commands
+(ns kmet.app.test-commands
   "Tests for kmet.app.commands — slash command registry, and the runtime
    builtins' registry-facing behavior."
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [kmet.app.commands :as commands]
             [kmet.app.commands.builtins :as builtins]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.app.registry :as registry]
             [kmet.srce.core :as srce]
-            [kmet.test-utils :as tu]))
+            [kmet.test-utils :as tu]
+            [kmet.app.test-support :as support]))
+;; The commands service and the root ctx a builtin reads live on the
+;; composition, so the namespace boots one (`support/with-composition`).
+(t/use-fixtures :once support/with-composition)
 
 ;; The builtins' registry-facing tests fill the app tree's slash registry;
 ;; clear the process-global registrations before and after every test.
@@ -44,7 +47,7 @@
       (commands/register-command!
        {:name name :description "x" :handler (fn [_ _] nil)})
       (t/is (= [name] (mapv :name (commands/get-commands))))
-      (t/is (nil? (registry/entry (app-runtime/registry) :kmet/tool name))
+      (t/is (nil? (registry/entry (registry/current) :kmet/tool name))
             "the command is not a tool")
       (commands/clear-commands!)
       (t/is (empty? (commands/get-commands)))
@@ -79,12 +82,12 @@
   (commands/register-command!
    {:name "stored" :description "x" :handler (fn [_ _] nil)})
   (t/is (identical? (:handler (commands/find-command "stored"))
-                    (:handler (registry/entry (srce/get (app-runtime/ctx) :commands)
+                    (:handler (registry/entry (srce/get ((fn [] (support/composition-ctx))) :commands)
                                               :kmet/command "stored"))))
   (t/is (= 1 (count (commands/get-commands))))
   (commands/clear-commands!)
   (t/is (empty? (commands/get-commands)))
-  (t/is (empty? (registry/entries (srce/get (app-runtime/ctx) :commands)
+  (t/is (empty? (registry/entries (srce/get ((fn [] (support/composition-ctx))) :commands)
                                   :kmet/command))))
 
 (t/deftest get-commands-keeps-registration-order
@@ -111,7 +114,7 @@
   ;; `/units` renders the ctx tree (`kmet.app.inspect`): every mounted row is a
   ;; fiber line with its state, what it provides and its effect labels — the
   ;; store's owner walk and the per-registry `keys=[…]` lines are gone (4d).
-  (builtins/register-runtime-commands! app-runtime/ctx)
+  (builtins/register-runtime-commands! (fn [] (support/composition-ctx)))
   (let [got (atom nil)]
     ((:handler (commands/find-command "units"))
      {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
@@ -130,8 +133,8 @@
 (t/deftest units-shows-a-pending-fiber-and-what-it-waits-for
   ;; The question the store could only answer as absence: a row that is not
   ;; active says so, and says what it is waiting for.
-  (builtins/register-runtime-commands! app-runtime/ctx)
-  (let [ctx (app-runtime/ctx)
+  (builtins/register-runtime-commands! (fn [] (support/composition-ctx)))
+  (let [ctx ((fn [] (support/composition-ctx)))
         probe (srce/plugin! ctx {:name :probe/unit
                                  :inject [:nothing-provides-this]
                                  :apply (fn [_ _] nil)})

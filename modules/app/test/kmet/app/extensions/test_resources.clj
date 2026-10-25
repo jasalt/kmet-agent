@@ -1,4 +1,4 @@
-(ns kmet.agent.extensions.test-resources
+(ns kmet.app.extensions.test-resources
   "Resource descriptors and extension contexts: native roots, deps lookup, the
    bundled ports, per-extension isolation, reload, and the rollback cases."
   (:require [clojure.test :as t :refer [testing]]
@@ -9,12 +9,15 @@
             [kmet.ai.models :as models]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.extensions.context :as ext-context]
-            [kmet.agent.app-runtime :as rt]
             [kmet.app.commands :as commands]
             [kmet.app.event-bus :as event-bus]
             [kmet.app.registry :as registry]
+            [kmet.app.test-support :as support]
             [kmet.app.skills :as skills]
-            [kmet.agent.tools.core :as tools]))
+            [kmet.app.tools.registry :as tools-registry]))
+
+;; The extension host is the composition's: boot one for the namespace.
+(t/use-fixtures :once support/with-composition)
 
 ;; ─── Bundled resource descriptors ───────────────────
 
@@ -46,7 +49,7 @@
           (t/is (nil? (:error result)) (str "loaded: " (:error result)))
           (t/is (= :sci (:loader-kind result)))
           (t/is (true? (:bundled result)))
-          (t/is (some? (tools/get-tool "multi-ext-tool")))
+          (t/is (some? (tools-registry/get-tool (registry/current) "multi-ext-tool")))
           (let [loaded (first (extensions/get-loaded-extensions))]
             (t/is (= "multi-ext" (:name loaded)))
             (t/is (= :resource-dir (:kind loaded)))
@@ -219,7 +222,7 @@
         (let [result (extensions/load-extension! link)]
           (t/is (nil? (:error result)) (str "loaded: " (:error result)))
           (testing "multi-file extension loads through a symlinked dir"
-            (t/is (= "multi-ok" (:content (tools/execute-tool "multi-ext-tool" {}))))))
+            (t/is (= "multi-ok" (:content (tools-registry/execute-tool (registry/current) "multi-ext-tool" {}))))))
         (finally
           (extensions/unload-all-extensions!)
           (fs/delete-if-exists link))))))
@@ -245,7 +248,7 @@
     (try
       (let [result (extensions/load-extension! dir)]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
-        (t/is (= "input" (:content (tools/execute-tool "slurp-tool" {}))))
+        (t/is (= "input" (:content (tools-registry/execute-tool (registry/current) "slurp-tool" {}))))
         (t/is (= "written" (slurp "target/slurp-ext-out.txt"))))
       (finally
         (extensions/unload-all-extensions!)
@@ -275,7 +278,7 @@
     (try
       (let [result (extensions/load-extension! dir)]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
-        (t/is (= "h(1 2 3)" (:content (tools/execute-tool "tr-tool" {})))))
+        (t/is (= "h(1 2 3)" (:content (tools-registry/execute-tool (registry/current) "tr-tool" {})))))
       (finally
         (extensions/unload-all-extensions!)
         (fs/delete-tree dir)))))
@@ -314,7 +317,7 @@
     (try
       (let [result (extensions/load-extension! dir)]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
-        (t/is (= "true 3" (:content (tools/execute-tool "spec-tool" {})))))
+        (t/is (= "true 3" (:content (tools-registry/execute-tool (registry/current) "spec-tool" {})))))
       (finally
         (extensions/unload-all-extensions!)
         (fs/delete-tree dir)))))
@@ -344,8 +347,8 @@
         (t/is (not-any? #(re-find #"/clojure-\\d" %) jars))))
     (testing "cljfmt works end-to-end in the extension context"
       (t/is (= "(defn foo [x]\n  (if x\n    1\n    2))"
-               (:content (tools/execute-tool "cljfmt-fmt"
-                                             {:code "(defn foo [x]\n  (if x\n   1\n   2))"})))))
+               (:content (tools-registry/execute-tool (registry/current) "cljfmt-fmt"
+                                                      {:code "(defn foo [x]\n  (if x\n   1\n   2))"})))))
     (extensions/unload-all-extensions!)))
 
 (t/deftest test-extension-fixed-bundled-set
@@ -388,7 +391,7 @@
       (let [result (extensions/load-extension! f)]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
         (t/is (= "(defn f [x]\n  (+ x 1))|true|42|(a b)|1|1"
-                 (:content (tools/execute-tool "fixed-set-tool" {})))))
+                 (:content (tools-registry/execute-tool (registry/current) "fixed-set-tool" {})))))
       (finally
         (extensions/unload-all-extensions!)
         (fs/delete-tree dir)))))
@@ -424,8 +427,8 @@
         (t/is (not-any? #(str/includes? % "tools.cli-1.0.206.jar") jars-a))
         (t/is (not-any? #(str/includes? % "tools.cli-0.4.1.jar") jars-b))))
     (testing "both extensions' tools work simultaneously"
-      (t/is (= "iso-a" (:content (tools/execute-tool "iso-a" {}))))
-      (t/is (= "iso-b" (:content (tools/execute-tool "iso-b" {})))))
+      (t/is (= "iso-a" (:content (tools-registry/execute-tool (registry/current) "iso-a" {}))))
+      (t/is (= "iso-b" (:content (tools-registry/execute-tool (registry/current) "iso-b" {})))))
     (testing "reload keeps each extension on its declared version"
       (extensions/unload-all-extensions!)
       (t/is (nil? (:error (extensions/load-extension! "test/fixtures/ext-iso-a"))))
@@ -434,13 +437,13 @@
                   (extensions/extension-jars "iso-a")))
       (t/is (some #(str/includes? % "tools.cli-1.0.206.jar")
                   (extensions/extension-jars "iso-b")))
-      (t/is (= "iso-a" (:content (tools/execute-tool "iso-a" {}))))
-      (t/is (= "iso-b" (:content (tools/execute-tool "iso-b" {})))))
+      (t/is (= "iso-a" (:content (tools-registry/execute-tool (registry/current) "iso-a" {}))))
+      (t/is (= "iso-b" (:content (tools-registry/execute-tool (registry/current) "iso-b" {})))))
     (testing "unload releases both"
       (extensions/unload-all-extensions!)
       (t/is (empty? (extensions/get-loaded-extensions)))
-      (t/is (nil? (tools/get-tool "iso-a")))
-      (t/is (nil? (tools/get-tool "iso-b"))))))
+      (t/is (nil? (tools-registry/get-tool (registry/current) "iso-a")))
+      (t/is (nil? (tools-registry/get-tool (registry/current) "iso-b"))))))
 
 (t/deftest test-load-failure-rolls-back
   (extensions/clear-extensions!)
@@ -479,9 +482,9 @@
         (t/is (some? (:error result)) "the load fails")
         (t/is (empty? (extensions/get-loaded-extensions)))
         (t/is (nil? (commands/find-command "rb-cmd")) "the command was rolled back")
-        (t/is (nil? (tools/get-tool "rb-tool")) "the tool was rolled back")
+        (t/is (nil? (tools-registry/get-tool (registry/current) "rb-tool")) "the tool was rolled back")
         (t/is (nil? (skills/get-skill "rb-skill")) "the skill was rolled back")
-        (t/is (empty? (registry/by-owner (rt/registry) :kmet/command "rb-cmd"))
+        (t/is (empty? (registry/by-owner (registry/current) :kmet/command "rb-cmd"))
               "and the owner holds nothing"))
       (finally
         (extensions/clear-extensions!)
@@ -513,9 +516,9 @@
       (try
         (t/is (nil? (:error (extensions/load-extension! (str dir "/iso_a.clj")))))
         (t/is (nil? (:error (extensions/load-extension! (str dir "/iso_b.clj")))))
-        (t/is (= "a" (:content (tools/execute-tool "fork-iso-a" {})))
+        (t/is (= "a" (:content (tools-registry/execute-tool (registry/current) "fork-iso-a" {})))
               "each fork sees its own def")
-        (t/is (= "b" (:content (tools/execute-tool "fork-iso-b" {}))))
+        (t/is (= "b" (:content (tools-registry/execute-tool (registry/current) "fork-iso-b" {}))))
         (finally
           (extensions/unload-all-extensions!)
           (fs/delete-tree dir))))))
@@ -746,7 +749,7 @@
         (t/is (= 2 (count (filter #(nil? (:error %)) results)))
               (str "both loaded: " (pr-str results)))
         (t/is (some? (commands/find-command "hello-ext")))
-        (t/is (some? (tools/get-tool "multi-ext-tool")))
+        (t/is (some? (tools-registry/get-tool (registry/current) "multi-ext-tool")))
         (testing "reload again: old state fully replaced, no duplicates"
           (extensions/reload-extensions! [container])
           (t/is (= 1 (count (filter #(= "hello_ext.clj" (:name %))

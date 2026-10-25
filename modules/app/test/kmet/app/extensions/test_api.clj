@@ -1,4 +1,4 @@
-(ns kmet.agent.extensions.test-api
+(ns kmet.app.extensions.test-api
   "The extension api surface: exec in the runtime cwd, the nullable api that
    captures registrations for isolated extension tests, and provider
    registration through the :models facades."
@@ -9,7 +9,6 @@
             [kmet.extension :as ext]
             [kmet.app.config :as cfg]
             [kmet.ai.models :as models]
-            [kmet.agent.app-runtime :as rt]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.registry :as registry]
             [kmet.app.registries :as registries]
@@ -227,9 +226,8 @@
   ;; The host holds no process handle of its own: it registers into whatever
   ;; services its owner bound. That is what lets it live in `app` below the
   ;; process it serves, and what gives a second owner (an agent's ctx) a
-  ;; per-agent api. kmet1 binds the app root (kmet.agent.app-runtime); the
-  ;; composition's row binds its own; `registries/host-services` builds either
-  ;; map.
+  ;; per-agent api. The composition's `:extensions` row binds the process one
+  ;; and a test binds its own; `registries/host-services` builds either map.
   (let [handle (registry/atom-registry)
         ctx (srce/root {:name :host-test})
         previous (extensions/bind-services!
@@ -239,7 +237,7 @@
       (t/is (= {:type :boolean :default nil}
                (registry/entry handle :kmet/flag "host-test-flag"))
             "the registration landed in the handle its owner bound")
-      (t/is (nil? (registry/entry (rt/registry) :kmet/flag "host-test-flag"))
+      (t/is (nil? (registry/entry (registry/current) :kmet/flag "host-test-flag"))
             "and not in the process's")
       (finally
         ;; back to the binding every test after this one expects — exactly the

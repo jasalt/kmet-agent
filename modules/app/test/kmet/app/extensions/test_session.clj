@@ -1,4 +1,4 @@
-(ns kmet.agent.extensions.test-session
+(ns kmet.app.extensions.test-session
   "Session facades through the api: message and renderer ownership, headless
    registration, provider event bridges, skill/prompt self-registration, resources
    discovery, and the shipped extensions."
@@ -9,14 +9,18 @@
             [kmet.extension :as ext]
             [kmet.libs.host :as host]
             [kmet.app.extensions.core :as extensions]
-            [kmet.agent.app-runtime :as rt]
+            [kmet.app.registries :as registries]
             [kmet.app.registry :as registry]
             [kmet.app.event-bus :as event-bus]
             [kmet.app.prompts :as prompts]
             [kmet.app.session.core :as session]
             [kmet.app.skills :as skills]
-            [kmet.agent.tools.core :as tools]
-            [kmet.tui.theme :as theme]))
+            [kmet.app.test-support :as support]
+            [kmet.tui.theme :as theme]
+            [kmet.app.tools.registry :as tools-registry]))
+
+;; The extension host is the composition's: boot one for the namespace.
+(t/use-fixtures :once support/with-composition)
 
 ;; ─── Session facades through the api ──────────────────────────────────────
 
@@ -103,7 +107,7 @@
         (d1) (d2)))
     (testing "the registration is the owner's key in the host registry"
       (let [own? (fn [] (some (fn [[_ m]] (= owner (:owner m)))
-                              (registry/entries (rt/registry) :kmet/hook)))
+                              (registry/entries (registry/current) :kmet/hook)))
             dereg (extensions/register-markdown-transformer! owner (fn [md _] md))]
         (t/is (own?) "the transformer registered under its owner's path")
         (dereg)
@@ -115,7 +119,7 @@
     ;; façade's remainder handle; ownership is the registry's, not a store path.
     (let [owner (extensions/extension-owner "test-renderer-owner")
           dereg (extensions/register-entry-renderer! owner "probe-entry" (fn [_] {:role :info}))]
-      (t/is (= [owner] (vec (keys (registry/by-owner (rt/registry)
+      (t/is (= [owner] (vec (keys (registry/by-owner (registry/current)
                                                      :kmet/entry-renderer "probe-entry"))))
             "the renderer registers under its owner")
       (t/is (some? (extensions/get-entry-renderer "probe-entry")))
@@ -125,7 +129,7 @@
   (testing "message renderers share the shape"
     (let [owner (extensions/extension-owner "test-message-renderer-owner")
           dereg (extensions/register-message-renderer! owner "probe-message" (fn [_] {:role :info}))]
-      (t/is (= [owner] (vec (keys (registry/by-owner (rt/registry)
+      (t/is (= [owner] (vec (keys (registry/by-owner (registry/current)
                                                      :kmet/message-renderer
                                                      "probe-message")))))
       (t/is (some? (extensions/get-message-renderer "probe-message")))
@@ -143,7 +147,7 @@
         (t/is (identical? renderer (extensions/get-entry-renderer "taken-type")))
         (finally
           (dereg)
-          (rt/deregister-owner! second-owner))))))
+          (registries/deregister-owner! (registry/current) second-owner))))))
 
 (t/deftest test-flag-ownership
   ;; A flag is the registering owner's entry in the registry; the --ext-* value
@@ -152,7 +156,7 @@
         dereg (extensions/register-flag! owner "probe-flag"
                                          {:type :boolean :default false})]
     (try
-      (t/is (= [owner] (vec (keys (registry/by-owner (rt/registry)
+      (t/is (= [owner] (vec (keys (registry/by-owner (registry/current)
                                                      :kmet/flag "probe-flag"))))
             "the flag registers under its owner")
       (t/is (false? (extensions/get-flag "probe-flag"))
@@ -180,7 +184,7 @@
 (t/deftest test-send-message-headless
   (testing "headless send-message! persists a custom message to the live session"
     ;; no runtime capabilities bound: the sink fallback is the runtime-less
-    ;; path (kmet.agent.test-ui-port covers the engine-backed path)
+    ;; path (kmet.app.test-ui-port covers the engine-backed path)
     (extensions/unbind-extensions!)
     (let [dir (str "target/test-ext-send-" (System/currentTimeMillis))
           sess (session/create-session dir)]
@@ -404,7 +408,7 @@
           (.closeEntry zos)))
       (let [result (extensions/load-extension! jar)]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
-        (t/is (= "jar-ok|bundled" (:content (tools/execute-tool "jar-ext-tool" {})))
+        (t/is (= "jar-ok|bundled" (:content (tools-registry/execute-tool (registry/current) "jar-ext-tool" {})))
               "own namespaces resolve + io/resource reads the jar entry")
         (t/is (= :jar (:kind (first (extensions/get-loaded-extensions)))))
         (t/is (nil? (:extension-dir (first (extensions/get-loaded-extensions))))
@@ -416,7 +420,7 @@
           (extensions/unload-all-extensions!)
           (let [result (extensions/load-extension! zip)]
             (t/is (nil? (:error result)) (str "loaded: " (:error result)))
-            (t/is (= "jar-ok|bundled" (:content (tools/execute-tool "jar-ext-tool" {})))))
+            (t/is (= "jar-ok|bundled" (:content (tools-registry/execute-tool (registry/current) "jar-ext-tool" {})))))
           ;; The JVM caches JarURLConnection archives; unload before deleting.
           (extensions/unload-all-extensions!)
           (fs/delete-if-exists zip)))
@@ -429,7 +433,7 @@
           (let [results (extensions/load-extensions-from-dir container)]
             (t/is (= 1 (count (filter #(nil? (:error %)) results)))
                   (str "jar picked up: " (pr-str results)))
-            (t/is (= "jar-ok|bundled" (:content (tools/execute-tool "jar-ext-tool" {})))))
+            (t/is (= "jar-ok|bundled" (:content (tools-registry/execute-tool (registry/current) "jar-ext-tool" {})))))
           (extensions/unload-all-extensions!)
           (fs/delete-tree container)))
       (testing "the SCI backend serves the archive too"
@@ -447,7 +451,7 @@
           (let [result (extensions/load-extension! sci-jar)]
             (t/is (nil? (:error result)) (str "loaded: " (:error result)))
             (t/is (= :sci (:loader-kind result)))
-            (t/is (= "jar-ok|bundled" (:content (tools/execute-tool "jar-ext-tool" {})))))
+            (t/is (= "jar-ok|bundled" (:content (tools-registry/execute-tool (registry/current) "jar-ext-tool" {})))))
           (extensions/unload-all-extensions!)
           (fs/delete-if-exists sci-jar)))
       (testing "sloppy ns (file declares another namespace) fails with an actionable error"
@@ -473,7 +477,7 @@
           (fs/delete-if-exists sjar)))
       (finally
         (extensions/unload-all-extensions!)
-        (t/is (nil? (tools/get-tool "jar-ext-tool")) "unload removes the tool")
+        (t/is (nil? (tools-registry/get-tool (registry/current) "jar-ext-tool")) "unload removes the tool")
         (fs/delete-tree dir)
         (fs/delete-if-exists jar)))))
 
@@ -497,7 +501,7 @@
     (try
       (let [result (extensions/load-extension! dir)]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
-        (t/is (= "dir-data" (:content (tools/execute-tool "dir-ext-tool" {}))))
+        (t/is (= "dir-data" (:content (tools-registry/execute-tool (registry/current) "dir-ext-tool" {}))))
         (t/is (= (str (fs/canonicalize dir))
                  (str (fs/canonicalize (:extension-dir (first (extensions/get-loaded-extensions))))))))
       (finally
@@ -571,10 +575,10 @@
         (t/is (contains? #{:sci :jolt} (:loader-kind result))
               (str path " selected a backend (declares :loader)")))))
   (testing "tools + skills from the shipped extensions are live"
-    (t/is (some? (tools/get-tool "lsp")))
-    (t/is (some? (tools/get-tool "mcp")))
+    (t/is (some? (tools-registry/get-tool (registry/current) "lsp")))
+    (t/is (some? (tools-registry/get-tool (registry/current) "mcp")))
     (t/is (some? (skills/get-skill "mcp")))
-    (t/is (some? (tools/get-tool "clojure_edit")))
+    (t/is (some? (tools-registry/get-tool (registry/current) "clojure_edit")))
     (t/is (some? (skills/get-skill "clojure-edit"))))
   (testing "extension skills disclose from memory"
     (t/is (str/includes? (skills/expand-skill-command "/skill:mcp") "mcp"))

@@ -131,6 +131,15 @@
    key the host grows cannot be silently dropped."
   [:registry :ctx :commands :prompts :skills :deregister-owner!])
 
+(defn deregister-owner!
+  "Remove every registration OWNER holds, across every tag `registry-tags`
+   routes — unloading a contributor's entries in one call, on top of the
+   resource sweep `host-services` supplies."
+  [handle owner]
+  (doseq [tag (keys registry-tags)]
+    (registry/deregister-owner! handle tag owner))
+  nil)
+
 (defn host-services
   "The complete service map the extension host reads, for HANDLE and CTX — what
    an owner binds with `kmet.app.extensions.core/bind-services!`. One builder

@@ -1,4 +1,4 @@
-(ns kmet.agent.extensions.test-lifecycle
+(ns kmet.app.extensions.test-lifecycle
   "Extension lifecycle against the real runtime: load a single file or a manifest,
    per-extension ownership of registrations and resource paths, and rollback when
    loading or init fails."
@@ -6,7 +6,6 @@
             [babashka.fs :as fs]
             [kmet.libs.host :as host]
             [kmet.app.extensions.core :as extensions]
-            [kmet.agent.app-runtime :as rt]
             [kmet.app.registries :as registries]
             [kmet.app.commands :as commands]
             [kmet.app.registry :as registry]
@@ -14,9 +13,13 @@
             [kmet.srce.core :as srce]
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
-            [kmet.agent.tools.core :as tools]
             [kmet.libs.hikap.alias :as alias]
-            [kmet.tui.theme :as theme]))
+            [kmet.tui.theme :as theme]
+            [kmet.app.test-support :as support]
+            [kmet.app.tools.registry :as tools-registry]))
+
+;; The extension host is the composition's: boot one for the namespace.
+(t/use-fixtures :once support/with-composition)
 
 ;; ─── Load / unload / reload lifecycle (real runtime) ─────────────────────
 
@@ -27,7 +30,7 @@
     (t/is (some #(= "hello_ext.clj" (:name %)) (extensions/get-loaded-extensions)))
     (testing "registrations live in the real registries"
       (t/is (some? (commands/find-command "hello-ext")))
-      (t/is (some? (tools/get-tool "hello-ext-tool")))
+      (t/is (some? (tools-registry/get-tool (registry/current) "hello-ext-tool")))
       (t/is (some? (extensions/get-flag "ext-hello")))
       (t/is (fn? (alias/lookup :hello-ext/chip))
             "the extension's tag alias registered through the api"))
@@ -35,7 +38,7 @@
       (extensions/unload-all-extensions!)
       (t/is (empty? (extensions/get-loaded-extensions)))
       (t/is (nil? (commands/find-command "hello-ext")))
-      (t/is (nil? (tools/get-tool "hello-ext-tool")))
+      (t/is (nil? (tools-registry/get-tool (registry/current) "hello-ext-tool")))
       (t/is (nil? (extensions/get-flag "ext-hello")))
       (t/is (nil? (alias/lookup :hello-ext/chip))
             "the alias was deregistered with the extension"))))
@@ -45,8 +48,8 @@
   (let [result (extensions/load-extension! "test/fixtures/ext-dir")]
     (t/is (nil? (:error result)) (str "loaded: " (:error result)))
     (testing "multi-file: helper ns + entry ns load isolated; tool from helper works"
-      (t/is (some? (tools/get-tool "multi-ext-tool")))
-      (t/is (= "multi-ok" (:content (tools/execute-tool "multi-ext-tool" {}))))
+      (t/is (some? (tools-registry/get-tool (registry/current) "multi-ext-tool")))
+      (t/is (= "multi-ok" (:content (tools-registry/execute-tool (registry/current) "multi-ext-tool" {}))))
       (if (host/jolt?)
         ;; The native backend keeps a context's namespaces in the process-global
         ;; registry — context-private there: the root hides them and unload
@@ -58,7 +61,7 @@
             (t/is (nil? (find-ns 'multi-ext.helper))))))
     (testing "unload removes the tool"
       (extensions/unload-all-extensions!)
-      (t/is (nil? (tools/get-tool "multi-ext-tool")))
+      (t/is (nil? (tools-registry/get-tool (registry/current) "multi-ext-tool")))
       (t/is (nil? (find-ns 'multi-ext.main))
             "unload unmaps the native backend's context namespaces")
       (t/is (empty? (extensions/get-loaded-extensions))))))
@@ -100,24 +103,24 @@
                                     [:skills :kmet/skill "owned-skill"]
                                     [:prompts :kmet/prompt "owned-prompt"]]]
           (t/is (= [owner]
-                   (vec (keys (registry/by-owner (srce/get (rt/ctx) service)
+                   (vec (keys (registry/by-owner (srce/get (support/composition-ctx) service)
                                                  tag name))))
                 (str tag " " name " is owned by the extension")))
         (t/is (= [owner]
-                 (vec (keys (registry/by-owner (rt/registry) :kmet/flag "owned-flag"))))
+                 (vec (keys (registry/by-owner (registry/current) :kmet/flag "owned-flag"))))
               "the extension's flag is owned by it too")
         (t/is (= 1 (count @(:deregister-fns (first (extensions/registered-extensions)))))
               "only the event subscription stays on the tracked list")
         (extensions/unload-all-extensions!)
         (t/is (nil? (commands/find-command "owned-cmd")))
-        (t/is (nil? (tools/get-tool "owned-tool")))
+        (t/is (nil? (tools-registry/get-tool (registry/current) "owned-tool")))
         (t/is (nil? (skills/get-skill "owned-skill")))
         (t/is (nil? (prompts/get-prompt-template "owned-prompt")))
-        (t/is (empty? (registry/entries (srce/get (rt/ctx) :tools)
+        (t/is (empty? (registry/entries (srce/get (support/composition-ctx) :tools)
                                         :kmet/tool-source))
               "the sandbox-only tool source went with the owner too — it is
                invisible in the tool table, so only this registry shows it")
-        (t/is (empty? (registry/entries (rt/registry) :kmet/flag))
+        (t/is (empty? (registry/entries (registry/current) :kmet/flag))
               "one dispose took everything the extension registered"))
       (finally
         (extensions/clear-extensions!)
@@ -196,10 +199,10 @@
       (doseq [[service tag name] [[:skills :kmet/skill "res-owned-skill"]
                                   [:prompts :kmet/prompt "res-owned-prompt"]]]
         (t/is (= [owner]
-                 (vec (keys (registry/by-owner (srce/get (rt/ctx) service) tag name))))
+                 (vec (keys (registry/by-owner (srce/get (support/composition-ctx) service) tag name))))
               (str tag " " name " is owned by the contributor")))
       (t/is (= #{owner}
-               (set (keys (registry/by-owner (rt/registry) :kmet/theme "res-owned-theme"))))
+               (set (keys (registry/by-owner (registry/current) :kmet/theme "res-owned-theme"))))
             "the theme is the contributor's registry record")
       (t/is (some? (theme/get-theme-by-name "res-owned-theme")))
       (extensions/discover-resources! :startup)
@@ -207,14 +210,14 @@
       (t/is (= 1 (count (filter #(= "res-owned-prompt" (:name %))
                                 (prompts/get-prompt-templates)))))
       (t/is (= 1 (count (filter (fn [[k _]] (= "res-owned-theme" k))
-                                (registry/entries (rt/registry) :kmet/theme))))
+                                (registry/entries (registry/current) :kmet/theme))))
             "a second discovery re-registers in place")
       (extensions/unload-all-extensions!)
       (t/is (nil? (skills/get-skill "res-owned-skill")))
       (t/is (nil? (prompts/get-prompt-template "res-owned-prompt")))
       (t/is (nil? (theme/get-theme-by-name "res-owned-theme"))
             "the owner's teardown removed the theme from the theme store")
-      (t/is (empty? (registry/by-owner (rt/registry) :kmet/theme "res-owned-theme")))
+      (t/is (empty? (registry/by-owner (registry/current) :kmet/theme "res-owned-theme")))
       (finally
         (extensions/clear-extensions!)
         (event-bus/clear-event-listeners!)
@@ -236,13 +239,13 @@
             "the later callback resolves the extension's own resource"))
     (extensions/unload-all-extensions!)))
 
-(t/deftest test-unload-sweeps-every-tag-kmet1-routes
-  ;; kmet1 routes each tag to the service that owns it
-  ;; (kmet.agent.app-runtime/registry-tags); unloading an extension sweeps the
-  ;; same tags, but through two lists in namespaces that may not require that
-  ;; shim. A tag in neither list is never swept, and nothing fails loudly:
-  ;; :kmet/tool-source leaked that way, and an unloaded extension's
-  ;; sandbox-only tools survived into the next namespace's run_code surface.
-  (t/is (= (set (keys rt/registry-tags))
+(t/deftest test-unload-sweeps-every-routed-tag
+  ;; `kmet.app.registries/registry-tags` routes each tag to the service that
+  ;; owns it; unloading an extension sweeps the same tags, but through two
+  ;; lists in namespaces that may not require that router. A tag in neither
+  ;; list is never swept, and nothing fails loudly: :kmet/tool-source leaked
+  ;; that way, and an unloaded extension's sandbox-only tools survived into the
+  ;; next namespace's run_code surface.
+  (t/is (= (set (keys registries/registry-tags))
            (into (set extensions/host-tags) registries/resource-tags))
-        "host-tags + resource-tags must cover exactly the tags kmet1 routes"))
+        "host-tags + resource-tags must cover exactly the tags the router holds"))

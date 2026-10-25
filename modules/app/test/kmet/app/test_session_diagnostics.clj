@@ -1,4 +1,4 @@
-(ns kmet.agent.test-session-diagnostics
+(ns kmet.app.test-session-diagnostics
   "The host side of the session loader's strict pass: `--debug` owns one
    switch, and turning it on is the only thing that makes the loader validate
    and skip. The loader's own tests live with it in modules/app; this one

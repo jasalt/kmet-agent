@@ -1,4 +1,4 @@
-(ns kmet.agent.test-event-conformance
+(ns kmet.app.test-event-conformance
   "Headless conformance harness (engine/UI split step 0): a text renderer
    driven by the loop's event stream alone. It proves a front end can be
    built from events, and its dispatch table must cover every
