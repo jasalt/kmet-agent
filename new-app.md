@@ -3558,9 +3558,13 @@ finished, measured from the TUI's own code:
   (`test-interactive`), whose turn flag, session, context, editor, shutdown
   event and parked bash now come from the handle; the cancel test lost the
   duplicate ``(:session @ag-atom)`` assertion, which read the same value
-  `runtime/session` answers. Remaining: the session commands (`/tree`, `/fork`,
-  `/clone`, `/resume`, `/export`, `/name`, `/stats`, `/messages`), then the
-  settings, queue and compaction paths.
+  `runtime/session` answers. `/name` followed: it renames through the handle's
+  own `:set-session-name!`, so a missing session op fails there. A converted
+  test registers its builtins inside the fixture — boot publishes the
+  composition's registry as the process command registry, and a registration
+  made before it is invisible to `find-command`. Remaining: the rest of the
+  session commands (`/tree`, `/fork`, `/clone`, `/resume`, `/export`, `/stats`,
+  `/messages`), then the settings, queue and compaction paths.
 - **T-2. The interactive suite moved to `modules/ui/test` — landed.** The ten
   files that test the TUI now live beside it: the interactive cluster — the
   support fixture, autocomplete, commands, the compaction queue, import,

@@ -6,9 +6,15 @@
    `with-boot` is the per-test fixture for a namespace where every test needs
    the composition; `with-handle` boots one for a single test. Both delete the
    session tree they wrote and clear the process-wide extension slot — a
-   composition left installed would leak into the next test."
+   composition left installed would leak into the next test.
+
+   Boot publishes the composition's registry as the process command registry
+   (its disposer restores the previous one), so a test registers its builtins
+   *inside* `with-handle`; a registration made before the boot lands in the
+   handle the boot replaces and `find-command` will not see it."
   (:require [babashka.fs :as fs]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.app.core :as core]
             [kmet.app.runtime :as runtime-app]
@@ -61,18 +67,22 @@
 
 (defn create-handle!
   "The agent the TUI's layout creates: through the composition's registry, with
-   the run config a TUI run hands its factory. OPTS merge over that config."
+   the run config a TUI run hands its factory (and the session the run
+   resolved, created here when OPTS names none). OPTS merge over that config."
   ([boot] (create-handle! boot {}))
-  ([{:keys [ctx]} opts]
-   (let [agents (srce/get ctx :agents)]
+  ([{:keys [ctx]} {:keys [session] :as opts}]
+   (let [agents (srce/get ctx :agents)
+         session (or session (session/create-session sessions-dir))]
      {:ctx ctx
       :agents agents
+      :session session
       :handle ((:create! agents)
                ctx
-               {:config (merge {:provider :opencode-go
+               {:session session
+                :config (merge {:provider :opencode-go
                                 :model "claude-haiku-5-5"
                                 :session-dir sessions-dir}
-                               opts)})})))
+                               (dissoc opts :session))})})))
 
 (defn with-handle
   "Boot a composition for F and hand it the created handle map; the boot is

@@ -26,8 +26,8 @@
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
+            [kmet.ui.tui.interactive.test-handle-support :as hs]
             [kmet.agent.session.driver :as session-driver]
-            [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
             [kmet.libs.concurrent :as concurrent]
             [kmet.ui.tui.interactive.test-support :as support]))
@@ -68,25 +68,26 @@
             "the view-bound handler saw the CoreState through :state"))))
 
 (deftest test-name-command-portable
-  (testing "/name runs from the command ctx: it renames the session and
-            reports through the shared UI capabilities (no CoreState)"
-    (commands/clear-commands!)
-    ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [dir (str "target/test-name-command-" (System/currentTimeMillis))
-          sess (session/create-session dir)
-          engine (tu/test-engine {:session (atom sess)})
-          calls (atom [])]
-      (try
-        ((:handler (commands/find-command "name"))
-         {:runtime engine
-          :ui {:info (fn [label content] (swap! calls conj [:info label content]))
-               :set-title (fn [] (swap! calls conj [:set-title]))}}
-         "  my session  ")
-        (t/is (= "my session" (session/get-session-name sess)))
-        (t/is (= [:set-title] (first @calls)) "the title refresh comes first")
-        (t/is (= [:info "Name" "Session name set: my session"] (second @calls)))
-        (t/is (= 2 (count @calls)) "no warning for an already-clean name")
-        (finally (fs/delete-tree dir))))))
+  (testing "/name runs from the command ctx: it renames the session through
+            the handle's own op and reports through the shared UI capabilities
+            (no CoreState)"
+    (hs/with-handle
+      (fn [{:keys [handle]}]
+        ;; the boot publishes the composition's registry as the process
+        ;; handle, so the builtins go into the registry the handle reads
+        (commands/clear-commands!)
+        ((var builtins/register-builtin-commands!) cfg/default-config)
+        (let [sess (runtime/session handle)
+              calls (atom [])]
+          ((:handler (commands/find-command "name"))
+           {:runtime handle
+            :ui {:info (fn [label content] (swap! calls conj [:info label content]))
+                 :set-title (fn [] (swap! calls conj [:set-title]))}}
+           "  my session  ")
+          (t/is (= "my session" (session/get-session-name sess)))
+          (t/is (= [:set-title] (first @calls)) "the title refresh comes first")
+          (t/is (= [:info "Name" "Session name set: my session"] (second @calls)))
+          (t/is (= 2 (count @calls)) "no warning for an already-clean name"))))))
 
 (deftest test-builtins-do-not-clobber-extension-commands
   (testing "builtin registration skips names an extension already took
