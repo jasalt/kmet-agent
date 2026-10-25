@@ -4282,14 +4282,31 @@ run's own stage map is `support/test-ctx`, and the extension host is
 `support/with-host`, a scoped binding over a fresh registry handle rather than
 the load side effect of requiring kmet1's shim. `test_tools`' stand-ins register
 through that handle; `test_tool_policy` keeps a booted composition as its base
-because a policy turn needs the real tool table and the ask route. What is left:
-22 more test namespaces (the `extensions/*` five still use the shim's registry
-names, `test_app_ctx`/`test_runtime` test the shim itself and die with it, the
-four `modes/*` are kmet1's and die with it, and `test_ui_port`/
-`test_runtime_capabilities` reach the composition through `tu/test-engine`, which
-an app test cannot require — they need the handle fixture instead), the
-`kmet.agent.tools.core` façade collapse, the deletion and the flag flip, and the
-documents.
+because a policy turn needs the real tool table and the ask route.
+
+The rest of the app-code tree followed in one slice: the compaction stage, the
+six `extensions/*`, and the plain subjects (bundled extensions, commands,
+compaction, event conformance, the extensions UI, keybindings, loop message, the
+provider registry, session diagnostics, session runtime) — 17 namespaces. What
+it needed is what any namespace that used the shim's `ctx`/`registry` needs:
+`kmet.app.test-support/with-composition` (boot the composed app for the
+namespace, dispose after) and `composition-ctx` for the root; `registry/current`
+for the handle; `kmet.app.registries/deregister-owner!` for the sweep the shim
+was the only owner of; and a scoped `with-host` for a bare test that needs the
+host's hooks without a composition (the loop's support delegates to it, so one
+definition serves both clusters). `kmet.test-utils/with-extension-host` binds
+its own host instead of requiring a namespace for the side effect — the
+load-order luck the fixture's docstring used to name is gone, and the message a
+host throws when it is used unbound no longer claims kmet1 binds it at load.
+
+What is left in `modules/agent/test` (2,087 lines): the four `modes/*` and
+`test_app_ctx`/`test_runtime` die with kmet1 and its shim; `kmet.agent.test-tools`
+dies with the façade; `test_layer_guard` moves to `test/kmet/` with the other
+cross-cutting guards; `test_ui_port` and `test_runtime_capabilities` reach the
+composition through `tu/test-engine`, which an app test cannot require (rank 2
+below ui's 3), so they take the handle fixture or stay until the endgame. Then
+the `kmet.agent.tools.core` façade collapse, the deletion and the flag flip, and
+the documents.
 
 The two-axes endgame, in one landing because it cannot be split once started:
 the `s/kmet\.agent\./kmet.app./` pass over the known list (minus
