@@ -28,24 +28,26 @@
             [kmet.ui.tui.pending-messages :as pending-messages]
             [kmet.ui.tui.status-indicator :as status-indicator]))
 
-(def ^:private sessions-dir "target/test-interactive-handle")
-
 (def ^:private booted
   "The composition the `with-boot` fixture installed; nil outside it."
   (atom nil))
 
 (defn start!
   "A fresh booted `:tui` composition — the real rows, so the handle
-   `build-layout` would create is the one a front end reads."
+   `build-layout` would create is the one a front end reads — with its own
+   session directory, so a test that boots twice does not have the first
+   boot's sessions deleted with the second's."
   []
-  (fs/create-dirs sessions-dir)
-  (runtime-app/boot (core/compose-config {:profile :tui}) {}))
+  (let [dir (str "target/test-handle-" (System/nanoTime))]
+    (fs/create-dirs dir)
+    (assoc (runtime-app/boot (core/compose-config {:profile :tui}) {})
+           ::sessions-dir dir)))
 
 (defn stop!
   "Tear BOOT down and remove the sessions it wrote."
   [boot]
   (runtime-app/shutdown! boot)
-  (fs/delete-tree sessions-dir)
+  (fs/delete-tree (::sessions-dir boot) {:missing-ok true})
   (extensions/clear-runtime!))
 
 (defn with-boot
@@ -74,18 +76,20 @@
    `tu/test-engine`'s `:config` reads — and any further keys merged into it, so
    a test names one setting without rebuilding the map."
   ([boot] (create-handle! boot {}))
-  ([{:keys [ctx]} {:keys [session config] :as opts}]
-   (let [agents (srce/get ctx :agents)
-         sess (or session (session/create-session sessions-dir))]
+  ([{:keys [ctx] :as boot} {:keys [session config] :as opts}]
+   (let [dir (or (::sessions-dir boot)
+                 (throw (ex-info "create-handle! takes a boot from start!"
+                                 {:type ::not-a-boot})))
+         agents (srce/get ctx :agents)
+         sess (or session (session/create-session dir))]
      {:ctx ctx
       :agents agents
-      :session sess
       :handle ((:create! agents)
                ctx
                {:session sess
                 :config (merge {:provider :opencode-go
                                 :model "claude-haiku-5-5"
-                                :session-dir sessions-dir}
+                                :session-dir dir}
                                config
                                (dissoc opts :session :config))})})))
 
