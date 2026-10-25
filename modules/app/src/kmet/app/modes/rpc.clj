@@ -382,7 +382,7 @@
    | session lifecycle | one agent per mode until the server's phase 1; switching, forking, cloning and naming are 10a's session surface |
    | cycle and thinking | the handle answers them; the wire entries are 10a's command table |
    | queue modes | the handle answers them; the wire entries are 10a's command table |
-   | commands listing | the slash-command registry's wire shape moves with the dispatcher |"
+   | dialogs | the `:request`/`:response` pair over the wire is 10a's command table |"
   {:new-session "one agent serves this mode; the server's session surface is landing 10a"
    :switch-session "one agent serves this mode; the server's session surface is landing 10a"
    :fork "the session's tree surface is landing 10a"
