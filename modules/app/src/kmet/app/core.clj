@@ -207,7 +207,8 @@
                         ;; commas (`--models a,b`), resolved by
                         ;; `invocation/resolve-overrides` before the run
                         :models (assoc opts k (mapv str/trim (str/split v #",")))
-                        ;; repeatable, joined by `cfg/apply-cli-overrides`
+                        ;; repeatable; `cfg/get-append-system-prompt` resolves
+                        ;; the pieces and joins them like pi
                         :append-system-prompt (update opts k (fnil conj []) v)
                         ;; a socket port is a number, and a value that is not
                         ;; one is a usage error here rather than a boot failure

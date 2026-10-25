@@ -315,6 +315,20 @@
 (t/deftest test-get-append-system-prompt
   (t/testing "config value wins"
     (t/is (= "Extra" (cfg/get-append-system-prompt {:append-system-prompt "Extra"}))))
+  (t/testing "a repeatable flag's pieces are joined with blank lines (pi)"
+    (t/is (= "One\n\nTwo"
+             (cfg/get-append-system-prompt {:append-system-prompt ["One" "Two"]}))))
+  (t/testing "each piece is resolved, so a file piece is read and text stays text"
+    (let [dir (str (fs/absolutize (fs/file "target" (str "test-append-" (System/currentTimeMillis)))))
+          file (str dir "/EXTRA.md")]
+      (io/make-parents file)
+      (spit file "from the file")
+      (try
+        (t/is (= "from the file\n\ninline"
+                 (cfg/get-append-system-prompt {:append-system-prompt [file "inline"]}))
+              "pi resolves every append source before joining; joining first
+               would send the path as text")
+        (finally (fs/delete-tree dir)))))
   (t/testing "no config value, no files yields nil"
     (with-redefs [cfg/prompt-file-candidates (fn [_] [])]
       (t/is (nil? (cfg/get-append-system-prompt {}))))))
@@ -328,8 +342,9 @@
     (t/is (= "b" (:model (cfg/apply-cli-overrides base opts))))
     (t/is (= :anthropic (:provider (cfg/apply-cli-overrides base opts))))
     (t/is (= "Custom" (:system-prompt (cfg/apply-cli-overrides base opts))))
-    (t/testing "repeatable append-system-prompt joins with newlines (pi)"
-      (t/is (= "One\n\nTwo" (:append-system-prompt (cfg/apply-cli-overrides base opts)))))
+    (t/testing "repeatable append-system-prompt stays a list for the resolver"
+      (t/is (= ["One" "Two"]
+               (:append-system-prompt (cfg/apply-cli-overrides base opts)))))
     (t/testing "absent keys pass through untouched"
       (t/is (= base (cfg/apply-cli-overrides base {}))))))
 

@@ -723,19 +723,30 @@
 
 (defn get-append-system-prompt
   "Append system prompt source (pi: appendSystemPromptSource ??
-   discoverAppendSystemPromptFile): the :append-system-prompt config value
-   (read as a file when it names an existing one), else .kmet/APPEND_SYSTEM.md,
-   else ~/.kmet/agent/APPEND_SYSTEM.md.
+   discoverAppendSystemPromptFile): the :append-system-prompt config value —
+   one source or a collection of them, each read as a file when it names an
+   existing one and joined with blank lines (pi resolves each append source
+   before joining, so `--append-system-prompt a.md --append-system-prompt b.md`
+   sends both files' text) — else .kmet/APPEND_SYSTEM.md, else
+   ~/.kmet/agent/APPEND_SYSTEM.md.
    Deviations from pi: no project-trust gate."
   [config]
-  (resolve-prompt-input (or (:append-system-prompt config)
-                            (discover-prompt-file "APPEND_SYSTEM.md"))))
+  (let [sources (:append-system-prompt config)
+        sources (cond (nil? sources) nil
+                      (coll? sources) (seq sources)
+                      :else [sources])]
+    (if sources
+      (str/join "
+
+" (keep resolve-prompt-input sources))
+      (resolve-prompt-input (discover-prompt-file "APPEND_SYSTEM.md")))))
 
 (defn apply-cli-overrides
   "Apply CLI opts onto a config map (pi: CLI flags override settings).
    Handles :model, :provider, :thinking, :models (scoped list), :system-prompt
-   (last wins), :session-dir, and :append-system-prompt (repeatable, joined with newlines
-   like pi)."
+   (last wins), :session-dir, and :append-system-prompt (repeatable; each
+   piece is resolved and they are joined with blank lines by
+   `get-append-system-prompt`, like pi)."
   [config opts]
   (cond-> config
     (:model opts) (assoc :model (:model opts))
@@ -744,8 +755,11 @@
     (:models opts) (assoc :models (:models opts))
     (:session-dir opts) (assoc :session-dir (:session-dir opts))
     (:system-prompt opts) (assoc :system-prompt (:system-prompt opts))
+    ;; repeatable: the pieces stay separate until
+    ;; `get-append-system-prompt` resolves each one and joins, so a piece that
+    ;; names a file is read rather than sent as its path
     (:append-system-prompt opts) (assoc :append-system-prompt
-                                        (str/join "\n\n" (:append-system-prompt opts)))))
+                                        (:append-system-prompt opts))))
 
 (defn get-theme-name [config]
   (:theme config "dark"))

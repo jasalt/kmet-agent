@@ -223,7 +223,7 @@
          (:append-system-prompt
           (core/parse-args ["--append-system-prompt" "a"
                             "--append-system-prompt" "b"])))
-      "repeatable: `cfg/apply-cli-overrides` joins the pieces")
+      "repeatable: the pieces stay separate for `get-append-system-prompt`")
   (is (= ["p/a" "p/b"] (:models (core/parse-args ["--models" " p/a , p/b "])))
       "one comma-separated argument, trimmed, as kmet1 reads it")
   (is (= "target/sessions" (:session-dir (core/parse-args ["--session-dir" "target/sessions"]))))
