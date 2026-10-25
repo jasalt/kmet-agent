@@ -102,20 +102,24 @@
   [:new-session! :resume-session! :switch-session! :fork! :branch-session! :clone!
    :set-session-name! :export-html!])
 
+(def run-ops
+  "The run's own ops: send, the submission chain (`:submit!`, pi's
+   session.prompt input event), the compaction-queue flush, the custom message
+   (`:inject!`, pi's sendCustomMessage), cancel, the idle awaitable, and the
+   status a listing shows."
+  [:send! :submit! :flush-compaction-queue! :inject! :cancel! :when-idle
+   :status])
+
 (def handle-ops
   "The optional control surface a handle may answer. A caller asking for one a
    handle does not implement gets `:kmet.app/unsupported-op` naming it, never a
    silent nil.
 
-   The first group is the run's: send, the submission chain (`:submit!`,
-   pi's session.prompt input event), the compaction-queue flush, the custom
-   message (`:inject!`, pi's sendCustomMessage), cancel, the idle awaitable,
-   and the status a listing shows. `setting-ops` and `session-ops` are the rest — each writes that
-   agent's state or moves its session, so two agents of one process can differ —
-   measured from the interactive TUI's own call sites (new-app.md, landing 8)."
-  (into [:send! :submit! :flush-compaction-queue! :inject! :cancel! :when-idle
-         :status]
-        (concat setting-ops session-ops)))
+   `run-ops` are the run's; `setting-ops` and `session-ops` are the rest — each
+   writes that agent's state or moves its session, so two agents of one process
+   can differ — measured from the interactive TUI's own call sites
+   (new-app.md, landing 8)."
+  (into run-ops (concat setting-ops session-ops)))
 
 (defn- validate-handle!
   "HANDLE checked against `handle-contract` for ID and CHILD; returns it. A

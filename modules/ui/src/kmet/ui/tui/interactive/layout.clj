@@ -214,11 +214,10 @@
   (case (:type evt)
     :agent-start
     ;; Pi: agent_start → setProgress(true) (showTerminalProgress gated).
-    ;; A run the runtime started on its own (a submit! or the compaction-
-    ;; queue flush) has no start-agent-run! presentation pass: bring the
-    ;; spinner and the animation up like any other start. The anim timer
-    ;; is nil exactly while no presentation is up, so this is idempotent
-    ;; across an explicit start's :agent-start and across retry attempts.
+    ;; Every run presents here — the editor's, an extension's send, the
+    ;; compaction-queue flush — because the front end only sends. The anim
+    ;; timer is nil exactly while no presentation is up, so this is
+    ;; idempotent across retry attempts.
     (when-let [cs @cs-ref]
       (turn/set-terminal-progress! cs true)
       (when (and (runtime/turn-running? (:engine cs))
@@ -611,8 +610,7 @@
         ;; driver; here the front end does, for the agent it is about to make).
         _ (packages/load-resources!)
         agents (or (srce/get ctx :agents)
-                   (throw (ex-info (str "the TUI needs an :agents service on its ctx: "
-                                        "mount a loop driver (`:agentLoop`)")
+                   (throw (ex-info "the TUI needs an :agents service on its ctx: mount a loop driver (`:agentLoop`)"
                                    {:type :kmet.app/no-agents
                                     :ctx (:name ctx)})))
         engine ((:create! agents) ctx {:session session :config config})

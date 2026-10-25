@@ -47,8 +47,9 @@
       (str (fs/cwd))))
 
 (defn turn-running?
-  "True while a prompt started through the runtime has not settled. The
-   runtime owns the turn flag; a nil engine counts as idle."
+  "True while a prompt has not settled. The run owns the turn flag — an
+   engine's prompt wrapper or a handle's start/settle — and a nil engine
+   counts as idle."
   [cs]
   (runtime/turn-running? (:engine cs)))
 

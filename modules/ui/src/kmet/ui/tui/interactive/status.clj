@@ -159,20 +159,19 @@
    backoff or compaction, which swapped in a transient indicator."
   [cs]
   ;; The nil swap schedules the frame through the status-area root's
-  ;; reaction when a transient indicator was shown; start-agent-run! (the
-  ;; one cold-start path where current is already nil) requests its own
-  ;; frame right after, covering the spinner activation. The transient
-  ;; indicator's frame driver stops — the working spinner animates via the
-  ;; anim timer once the turn runs.
+  ;; reaction when a transient indicator was shown; the :agent-start handler
+  ;; calls this for every run (the editor's, an extension's, the compaction
+  ;; flush's). The transient indicator's frame driver stops — the working
+  ;; spinner animates via the anim timer once the turn runs.
   (cancel-indicator-driver! cs)
   (dispose-transient-indicator! cs)
   (reset! (:status-current cs) nil)
   (status-indicator/status-indicator-start! (:status-indicator cs))
   ;; A background thread (share/branch-summary completion, an extension's
-  ;; set-working-visible) can revive into a turn that just ended: teardown
-  ;; (on-agent-done/on-agent-error) drops running-turn? BEFORE clearing
-  ;; the status, so an activation interleaved with it can land after the
-  ;; clear. Never leave a spinner with no turn behind it.
+  ;; set-working-visible) can revive into a turn that just ended: the run
+  ;; settles its turn flag before the teardown event reaches the UI, and the
+  ;; teardown clears the status, so an activation interleaved with it can
+  ;; land after the clear. Never leave a spinner with no turn behind it.
   (when-not (runtime/turn-running? (:engine cs))
     (status-indicator/status-indicator-stop! (:status-indicator cs))))
 
