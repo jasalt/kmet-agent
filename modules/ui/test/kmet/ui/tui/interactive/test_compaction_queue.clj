@@ -22,11 +22,12 @@
             [kmet.agent.session.runtime :as runtime]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.config :as cfg]
+            [kmet.ui.tui.interactive.test-handle-support :as hs]
             [kmet.ui.tui.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
 ;; so a later namespace never sees the tree filled by this one.
-(t/use-fixtures :each tu/with-clean-app-registries)
+(t/use-fixtures :each hs/with-boot tu/with-clean-app-registries)
 
 ;; ─── Compaction queue (pi: queueCompactionMessage / flushCompactionQueue) ──
 
@@ -190,11 +191,8 @@
   (testing "the extension UI's compact defers mid-turn — pi's compact() aborts
             the running operation first, but kmet's cancel is cooperative, so
             the request is queued and starts when the prompt settles"
-    (let [ag (agent/make-agent-state)
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :config cfg/default-config
-                                   :session-atom (atom nil)
-                                   :running-turn? (atom true)})
+    (let [cs (hs/core-state (hs/new-handle) {:config cfg/default-config
+                                             :turn-running? true})
           registry ((var ui-registry/build-extension-ui-registry)
                     {:tui nil :cs cs}
                     {:fdp (fdp/make-footer-data-provider)}
@@ -219,11 +217,8 @@
   (testing "a failed compaction reaches the extension caller with pi's
             `Compaction failed: …` message exactly once — :compaction-error
             already carries the reason prefix"
-    (let [ag (agent/make-agent-state)
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :config cfg/default-config
-                                   :session-atom (atom nil)
-                                   :running-turn? (atom false)})
+    (let [cs (hs/core-state (hs/new-handle) {:config cfg/default-config
+                                             :turn-running? false})
           registry ((var ui-registry/build-extension-ui-registry)
                     {:tui nil :cs cs}
                     {:fdp (fdp/make-footer-data-provider)}
@@ -271,7 +266,7 @@
           ran (promise)]
       (try
         ((var builtins/register-builtin-commands!) cfg/default-config)
-        (reset! (:running-turn? cs) true)
+        (reset! (:turn-running? (:engine cs)) true)
         (with-redefs [agent-compact/compact-context!
                       (fn [_ag instructions reason]
                         (deliver ran [instructions reason])
@@ -283,7 +278,7 @@
                                  @(:messages-atom (:chat-history cs)))))
                 "the reply says the compaction is scheduled")
           (t/is (not (realized? ran)) "nothing runs while the turn is live")
-          (reset! (:running-turn? cs) false)
+          (reset! (:turn-running? (:engine cs)) false)
           (manual/start-pending-compactions! (:engine cs))
           (t/is (= ["focus" :manual] (deref ran 2000 nil))
                 "the deferred compaction ran after the turn settled"))

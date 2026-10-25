@@ -39,11 +39,12 @@
             [kmet.agent.config :as cfg]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.ui.tui.interactive.test-handle-support :as hs]
             [kmet.ui.tui.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
 ;; so a later namespace never sees the tree filled by this one.
-(t/use-fixtures :each tu/with-clean-app-registries)
+(t/use-fixtures :each hs/with-boot tu/with-clean-app-registries)
 
 (def ^:private no-image-caps
   "Capabilities stub for the /settings tests: the image rows (Show images /

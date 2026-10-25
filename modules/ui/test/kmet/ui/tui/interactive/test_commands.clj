@@ -21,11 +21,11 @@
             [kmet.ai.models :as m]
             [kmet.ai.auth :as auth]
             [kmet.agent.loop.state :as loop-state]
-            [kmet.agent.loop.test-support :as loop-support]
             [kmet.agent.tools.registry :as tools-registry]
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
+            [kmet.srce.core :as srce]
             [kmet.ui.tui.interactive.test-handle-support :as hs]
             [kmet.agent.session.driver :as session-driver]
             [kmet.agent.config :as cfg]
@@ -34,7 +34,7 @@
 
 ;; The interactive builtins register the app's whole slash registry; clear it
 ;; so a later namespace never sees the tree filled by this one.
-(t/use-fixtures :each tu/with-clean-app-registries)
+(t/use-fixtures :each hs/with-boot tu/with-clean-app-registries)
 
 ;; ─── Builtin auth commands (Phase 3) ───────────────────────────────────────
 
@@ -57,11 +57,9 @@
             /help dispatched through the real command ctx reaches the chat"
     (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state)
+    (let [handle (hs/new-handle)
           msgs (atom [])
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :tui nil})]
+          cs (hs/core-state handle {:tui nil})]
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (swap! msgs conj m))]
         ((:handler (commands/find-command "help")) (turn/command-context cs) ""))
       (t/is (some #(str/includes? (str (:content %)) "Available commands") @msgs)
@@ -129,13 +127,12 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :provider :opencode-go :model "deepseek-v4-flash")
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :footer-comp nil
-                                   :footer-provider nil
-                                   :config cfg/default-config
-                                   :tui nil})]
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
+          cs (hs/core-state handle {:config cfg/default-config
+                                    :provider :opencode-go
+                                    :model "deepseek-v4-flash"
+                                    :tui nil})]
       (with-redefs [auth/configured? (fn [_] true)
                     chat-history/chat-history-add-message! (fn [_ _] nil)
                     model-selector/sync-footer-model! (fn [_] nil)
@@ -176,16 +173,14 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :provider :deepseek :model "deepseek-v4-pro")
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
           status (atom nil)
           saved (atom nil)
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :editor (editor/make-editor)
-                                   :footer-comp nil
-                                   :footer-provider nil
-                                   :config cfg/default-config
-                                   :tui nil})]
+          cs (hs/core-state handle {:config cfg/default-config
+                                    :provider :deepseek
+                                    :model "deepseek-v4-pro"
+                                    :tui nil})]
       (with-redefs [chat-history/chat-history-show-status! (fn [_ m] (reset! status m))
                     model-selector/sync-footer-model! (fn [_] nil)
                     cfg/save-setting! (fn [path value] (reset! saved [path value]))
@@ -220,20 +215,16 @@
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [status (atom nil)
           sel-ref (atom nil)
-          reasoning-cs (tu/with-test-engine {:agent-state (atom (agent/make-agent-state :provider :deepseek
-                                                                                        :model "deepseek-v4-pro"))
-                                             :chat-history nil
-                                             :editor (editor/make-editor)
-                                             :footer-comp nil
-                                             :footer-provider nil
-                                             :config cfg/default-config
-                                             :tui nil})
-          plain-cs (tu/with-test-engine {:agent-state (atom (agent/make-agent-state :provider :ghost
-                                                                                    :model "unknown-model"))
-                                         :chat-history nil
-                                         :editor (editor/make-editor)
-                                         :config cfg/default-config
-                                         :tui nil})]
+          reasoning-cs (hs/core-state (hs/new-handle)
+                                      {:config cfg/default-config
+                                       :provider :deepseek
+                                       :model "deepseek-v4-pro"
+                                       :tui nil})
+          plain-cs (hs/core-state (hs/new-handle)
+                                  {:config cfg/default-config
+                                   :provider :ghost
+                                   :model "unknown-model"
+                                   :tui nil})]
       (with-redefs [chat-history/chat-history-show-status! (fn [_ m] (reset! status m))
                     chat-history/chat-history-add-message! (fn [_ _] nil)
                     ;; deterministic default — must not depend on the real
@@ -258,16 +249,14 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :provider :deepseek :model "deepseek-v4-pro")
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
           saved (atom nil)
           sel-ref (atom nil)
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :editor (editor/make-editor)
-                                   :footer-comp nil
-                                   :footer-provider nil
-                                   :config cfg/default-config
-                                   :tui nil})]
+          cs (hs/core-state handle {:config cfg/default-config
+                                    :provider :deepseek
+                                    :model "deepseek-v4-pro"
+                                    :tui nil})]
       (with-redefs [chat-history/chat-history-show-status! (fn [_ _] nil)
                     thinking-selector/default-thinking-level (fn [_] :off)
                     cfg/save-setting! (fn [path value] (reset! saved [path value]))
@@ -301,12 +290,11 @@
   (testing "/continue refuses while the agent is running"
     (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state)
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
           msg (atom nil)
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :running-turn? (atom true)
-                                   :tui nil})]
+          cs (hs/core-state handle {:turn-running? true
+                                    :tui nil})]
       (reset! (:status ag) :thinking)
       (swap! (:messages ag) conj {:role :user :content [{:type :text :text "hi"}]})
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
@@ -319,12 +307,10 @@
   (testing "/continue refuses when there is no conversation to continue"
     (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state)
+    (let [handle (hs/new-handle)
           msg (atom nil)
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :running-turn? (atom false)
-                                   :tui nil})]
+          cs (hs/core-state handle {:turn-running? false
+                                    :tui nil})]
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
         ((:handler (commands/find-command "continue")) (support/command-ctx cs) ""))
       (t/is (= "No conversation to continue." (:content @msg))))))
@@ -335,10 +321,10 @@
             (kmet1's modes) — the table is shared"
     (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state)
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :running-turn? (atom false)
-                                   :tui nil})
+    (let [handle* (hs/new-handle)
+          ag (runtime/agent-state handle*)
+          cs (hs/core-state handle* {:turn-running? false
+                                     :tui nil})
           engine (:engine cs)]
       (swap! (:messages ag) conj {:role :user :content [{:type :text :text "hi"}]})
       (let [sent (atom nil)
@@ -360,12 +346,11 @@
             flag is what counts (pi: isStreaming)"
     (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state)
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
           msg (atom nil)
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :running-turn? (atom true)
-                                   :tui nil})]
+          cs (hs/core-state handle {:turn-running? true
+                                    :tui nil})]
       (t/is (= :idle @(:status ag))
             "precondition: the status atom already reads idle")
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
@@ -382,20 +367,13 @@
             a network error the last entry is an unanswered user message)"
     (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state)
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
           _ (swap! (:messages ag) conj
                    {:role :user :content [{:type :text :text "fix the bug"}]})
           started (atom nil)
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :running-turn? (atom false)
-                                   :tui nil
-                                   :footer-comp nil
-                                   :footer-provider nil
-                                   :status-root nil
-                                   :status-indicator nil
-                                   :status-current (atom nil)
-                                   :anim-timer (atom nil)})]
+          cs (hs/core-state handle {:turn-running? false
+                                    :tui nil})]
       (with-redefs [chat-history/chat-history-add-message! (fn [_ _] nil)
                     chat-history/chat-history-start-streaming! (fn [_] nil)
                     agent/run-agent-turn (fn [a opts]
@@ -775,7 +753,8 @@
   (testing "/tools lists the table the engine runs on (4c-iii-c)"
     (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [{:keys [ctx tools]} (loop-support/test-ctx)
+    (let [handle (hs/new-handle)
+          tools (srce/get (:ctx handle) :tools)
           _ (tools-registry/register-tool! tools
                                            {:name "probe" :label "Probe"
                                             :description "Says what it is"
@@ -783,9 +762,8 @@
                                                          :description "an x"
                                                          :required? true}}
                                             :execute (fn [_] {:content "ok"})})
-          ag (agent/make-agent-state :ctx ctx)
           msg (atom nil)
-          cs (tu/with-test-engine {:agent-state (atom ag)})]
+          cs (hs/core-state handle)]
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
         ((:handler (commands/find-command "tools")) (support/command-ctx cs) ""))
       (let [content (:content @msg)]
