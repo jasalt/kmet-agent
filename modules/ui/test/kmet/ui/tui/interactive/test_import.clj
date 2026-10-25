@@ -65,7 +65,7 @@
    launch-project context file — the switch must keep them (only the cwd line
    follows the session's working directory)."
   [active-sess]
-  (let [handle (:handle (hs/create-handle! (hs/current) {:session active-sess}))
+  (let [handle (hs/handle-with {:session active-sess})
         ch (chat-history/make-chat-history :cwd-fn #(runtime/cwd handle))
         prov (fdp/make-footer-data-provider :cwd-atom (:cwd handle) :session active-sess)
         ed (editor/make-editor)
@@ -412,8 +412,7 @@
                                        (System/currentTimeMillis))))]
       (try
         (let [ch (chat-history/make-chat-history)
-              cs (hs/core-state (:handle (hs/create-handle! (hs/current)
-                                                            {:session (session/create-session dir)}))
+              cs (hs/core-state (hs/handle-with {:session (session/create-session dir)})
                                 {:turn-running? true
                                  :chat-history ch})]
           ((:handler (commands/find-command "resume")) cs "")
@@ -437,7 +436,7 @@
               entry (session/append-entry sess
                                           {:role :user
                                            :content [{:type :text :text "q"}]})
-              cs (hs/core-state (:handle (hs/create-handle! (hs/current) {:session sess})))]
+              cs (hs/core-state (hs/handle-with {:session sess}))]
           (with-redefs [dock/mount! (support/capture-mount! sel-ref)
                         tui/tui-request-render (fn [_])
                         ;; hermetic: no branchSummary.skipPrompt from the
@@ -476,7 +475,7 @@
               entry (session/append-entry sess
                                           {:role :user
                                            :content [{:type :text :text "q"}]})
-              cs (hs/core-state (:handle (hs/create-handle! (hs/current) {:session sess})))]
+              cs (hs/core-state (hs/handle-with {:session sess}))]
           (with-redefs [dock/mount! (support/capture-mount! sel-ref)
                         tui/tui-request-render (fn [_])
                         cfg/global-settings-path (fn [] settings-file)
@@ -528,8 +527,7 @@
       (try
         (fs/create-dirs project)
         (let [sess (session/create-session (str dir "/sessions") {:cwd project})
-              engine (:handle (hs/create-handle! (hs/current) {:session sess
-                                                               :cwd spelled}))]
+              engine (hs/handle-with {:session sess :cwd spelled})]
           (t/is (= spelled ((var session-driver/apply-session-cwd!) engine sess))
                 "the cwd in effect is returned unchanged")
           (t/is (= spelled (runtime/cwd engine)) "and kept as spelled"))

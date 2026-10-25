@@ -69,23 +69,22 @@
   (testing "/name runs from the command ctx over a handle: it renames the live
             session the handle answers and reports through the shared UI
             capabilities (no CoreState)"
-    (hs/with-handle
-      (fn [{:keys [handle]}]
-        ;; the boot publishes the composition's registry as the process
-        ;; handle, so the builtins go into the registry the handle reads
-        (commands/clear-commands!)
-        ((var builtins/register-builtin-commands!) cfg/default-config)
-        (let [sess (runtime/session handle)
-              calls (atom [])]
-          ((:handler (commands/find-command "name"))
-           {:runtime handle
-            :ui {:info (fn [label content] (swap! calls conj [:info label content]))
-                 :set-title (fn [] (swap! calls conj [:set-title]))}}
-           "  my session  ")
-          (t/is (= "my session" (session/get-session-name sess)))
-          (t/is (= [:set-title] (first @calls)) "the title refresh comes first")
-          (t/is (= [:info "Name" "Session name set: my session"] (second @calls)))
-          (t/is (= 2 (count @calls)) "no warning for an already-clean name"))))))
+    (let [handle (hs/new-handle)
+          sess (runtime/session handle)
+          calls (atom [])]
+      ;; the boot published the composition's registry as the process handle,
+      ;; so the builtins go into the registry the handle reads
+      (commands/clear-commands!)
+      ((var builtins/register-builtin-commands!) cfg/default-config)
+      ((:handler (commands/find-command "name"))
+       {:runtime handle
+        :ui {:info (fn [label content] (swap! calls conj [:info label content]))
+             :set-title (fn [] (swap! calls conj [:set-title]))}}
+       "  my session  ")
+      (t/is (= "my session" (session/get-session-name sess)))
+      (t/is (= [:set-title] (first @calls)) "the title refresh comes first")
+      (t/is (= [:info "Name" "Session name set: my session"] (second @calls)))
+      (t/is (= 2 (count @calls)) "no warning for an already-clean name"))))
 
 (deftest test-builtins-do-not-clobber-extension-commands
   (testing "builtin registration skips names an extension already took
@@ -770,6 +769,6 @@
         (t/is (str/starts-with? content "Available tools (")
               "the listing is the tools section")
         (t/is (str/includes? content "  probe — Says what it is")
-              "a tool only this agent's ctx holds is listed")
+              "a tool the run's ctx holds is listed")
         (t/is (str/includes? content "    x (string) (required) — an x")
               "with its parameters and which are required")))))

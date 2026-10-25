@@ -3,15 +3,15 @@
    tests that must prove the mode over the real registry and not a stand-in
    engine.
 
-   `with-boot` is the per-test fixture for a namespace where every test needs
-   the composition; `with-handle` boots one for a single test. Both delete the
-   session tree they wrote and clear the process-wide extension slot — a
-   composition left installed would leak into the next test.
+   `with-boot` is the per-test fixture: one composition per test, torn down
+   with the session tree it wrote (a boot owns its directory, so two boots in
+   one test do not delete each other's sessions) and the process-wide extension
+   slot a composition left installed would leak into the next test.
 
    Boot publishes the composition's registry as the process command registry
    (its disposer restores the previous one), so a test registers its builtins
-   *inside* `with-handle`; a registration made before the boot lands in the
-   handle the boot replaces and `find-command` will not see it."
+   *after* the boot; a registration made before it lands in the handle the boot
+   replaces and `find-command` will not see it."
   (:require [babashka.fs :as fs]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.session.core :as session]
@@ -97,22 +97,18 @@
       :agents agents
       :handle handle})))
 
+(defn handle-with
+  "A handle created through the installed composition's registry with OPTS
+   (`create-handle!`) — the way a run creates one, without the boot map's ctx
+   and agents."
+  [opts]
+  (:handle (create-handle! (current) opts)))
+
 (defn new-handle
   "A handle over the composition `with-boot` installed — the fixture's, so a
    test that needs a CoreState does not boot a second composition."
   []
-  (:handle (create-handle! (current))))
-
-(defn with-handle
-  "Boot a composition for F and hand it the created handle map; the boot is
-   torn down afterwards. A composition per test is the cost of reading the
-   real registry, so only the tests that need one pay it."
-  [f]
-  (let [boot (start!)]
-    (try
-      (f (create-handle! boot))
-      (finally
-        (stop! boot)))))
+  (handle-with {}))
 
 (defn- opt-or
   "OPTS' K, or DEFAULT when the caller did not name it — an explicit nil is
@@ -149,12 +145,16 @@
                 :compacting?]
              :when (contains? opts k)]
        (reset! (get state k) (get opts k))))
-   (let [ch (opt-or opts :chat-history
+   ;; the editor a CoreState holds is the one its :current-editor-atom holds
+   ;; (build-layout keeps one object); only a created editor gets a draft
+   (let [given-editor (or (:editor opts)
+                          (some-> (:current-editor-atom opts) deref))
+         ed (or given-editor (editor/make-editor))
+         ch (opt-or opts :chat-history
                     (chat-history/make-chat-history :tool-fn (constantly nil)))
-         ed (or (:editor opts) (editor/make-editor))
          fdp (opt-or opts :footer-provider
                      (fdp/make-footer-data-provider :session (runtime/session handle)))]
-     (when (nil? (:editor opts))
+     (when-not given-editor
        (editor/editor-set-text! ed "draft"))
      (inter/map->CoreState
       {:tui (opt-or opts :tui {:render-requested? (atom false)})
