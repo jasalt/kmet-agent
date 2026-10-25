@@ -1040,17 +1040,20 @@
             ;; session since no LLM call will consume it.
             (state/emit agent {:type :message-start
                                :message (message/user-message message images)}))
-          (when on-error
-            (on-error (str "No API key for " (name provider)
-                           ". Set the key in ~/.kmet/agent/auth.edn or the appropriate environment variable.")))
-          ;; The prompt cannot start, but a streaming consumer waits for
-          ;; :agent-settled — settle it like any other failed prompt. Record
-          ;; the outcome too: the settle event carries it, and a state
-          ;; consumer (get-state / a client's wait-idle) reads it back from
-          ;; :last-outcome, which no finally touches on this early-return
-          ;; path.
-          (reset! (:last-outcome agent) :error)
-          (state/emit agent {:type :agent-settled :outcome :error})
+          (let [reason (str "No API key for " (name provider)
+                            ". Set the key in ~/.kmet/agent/auth.edn or the appropriate environment variable.")]
+            (when on-error (on-error reason))
+            ;; The prompt cannot start, but a streaming consumer waits for
+            ;; :agent-settled — settle it like any other failed prompt. Record
+            ;; the outcome too: the settle event carries it, and a state
+            ;; consumer (get-state / a client's wait-idle) reads it back from
+            ;; :last-outcome, which no finally touches on this early-return
+            ;; path. The :error event is the terminal/catch paths' too: a
+            ;; front end that only reads the event stream (print mode, the
+            ;; TUI) must see the failure, not a silent settle.
+            (reset! (:last-outcome agent) :error)
+            (state/emit agent {:type :error :message reason})
+            (state/emit agent {:type :agent-settled :outcome :error}))
           (future))
       ;; Bind the run's cancel signal for the whole prompt: it conveys into the
       ;; tool futures AND into synchronous extension code (custom tool

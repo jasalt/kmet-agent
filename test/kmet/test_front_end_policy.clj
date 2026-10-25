@@ -20,15 +20,20 @@
 
 (def ^:private front-ends
   "Front-end file → the `bootstrap` options it must name, with the exact value
-   another file cannot quietly substitute."
+   another file cannot quietly substitute. The TUI is not here: it reads an
+   agent handle (landing 8), so its policy is split below."
   {"modules/agent/src/kmet/agent/modes/print.clj"
    {:load-resources! 'packages/load-resources!}
    "modules/agent/src/kmet/agent/modes/rpc.clj"
    {:load-resources! 'packages/load-resources!
-    :expand-input 'packages/expand-input}
-   "modules/ui/src/kmet/ui/tui/interactive/layout.clj"
-   {:load-resources! 'packages/load-resources!
     :expand-input 'packages/expand-input}})
+
+(def ^:private handle-front-ends
+  "The policy's two halves where a handle front end names them: the layout
+   loads the process's resources before it creates its agent, and the handle
+   factory names the expansion chain the engine applies."
+  {"modules/ui/src/kmet/ui/tui/interactive/layout.clj" 'packages/load-resources!
+   "modules/app/src/kmet/app/loop/driver.clj" 'packages/expand-input})
 
 (defn- read-forms
   "Every top-level form of PATH, read once."
@@ -64,3 +69,10 @@
         (t/is (map? opts) "the bootstrap options are a map literal")
         (t/is (= expected (select-keys opts [:load-resources! :expand-input]))
               "the front end names its resource policy, and only that")))))
+
+(t/deftest every-handle-front-end-names-the-processes-resource-policy
+  (doseq [[path value] handle-front-ends]
+    (t/testing path
+      (t/is (fs/exists? path) "the front end is where the table says")
+      (t/is (some #(= value %) (tree-seq coll? seq (read-forms path)))
+            (str "it names " value)))))

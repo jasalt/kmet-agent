@@ -17,6 +17,7 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
+            [kmet.app.events :as events]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.bash-execution :as bash-execution]
             [kmet.ui.tui.chat-history :as chat-history]
@@ -64,14 +65,27 @@
    second call is a no-op."
   [cs]
   (try (when-let [engine (:engine cs)]
-         ;; cancel an in-flight run and wait briefly for the terminal
-         ;; :agent-settled to reach subscribers before they are cleared
-         (session-driver/dispose! engine))
+         ;; cancel an in-flight run and wait for it to settle before the
+         ;; listener goes: the registry's :dispose! releases the agent (and its
+         ;; child ctx), it does not wait for a run
+         (let [running? (runtime/turn-running? engine)]
+           (when (or running? (runtime/compacting? engine))
+             ((:cancel! engine) nil))
+           ;; the cancel drops the turn flag synchronously, so the run's future
+           ;; is what is waited on, not the flag
+           (when running?
+             ((:when-idle engine))))
+         (when-let [agents (:agents cs)]
+           ((:dispose! agents) engine)))
+       (catch Throwable _))
+  (try (when-let [subscription (:event-subscription cs)]
+         (events/unsubscribe! subscription))
        (catch Throwable _))
   (try (reset! (:bash-signal cs) true) (catch Throwable _))
   (try (extensions/ui-reset!) (catch Throwable _))
   (try (dispose-mode-tree! cs) (catch Throwable _))
   (try (extensions/clear-runtime!) (catch Throwable _))
+  (try (extensions/unbind-extensions!) (catch Throwable _))
   (try (theme-ctrl/shutdown! (:theme-controller cs)) (catch Throwable _))
   (try (reakt/discard-queued!) (catch Throwable _))
   nil)

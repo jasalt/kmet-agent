@@ -2,8 +2,7 @@
   "TUI layout construction for the interactive mode: the agent event
    handler and build-layout's widget tree, session wiring, and input
    listeners."
-  (:require [babashka.fs :as fs]
-            [kmet.agent.debug :as debug]
+  (:require [kmet.agent.debug :as debug]
             [kmet.libs.concurrent :as concurrent]
             [kmet.agent.config :as cfg]
             [kmet.tui.core :as tui]
@@ -18,11 +17,11 @@
             [kmet.tui.components.expandable-text :as expandable-text]
             [kmet.ai.models :as models]
             [kmet.agent.session.core :as session]
-            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.commands :as commands]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.packages :as packages]
+            [kmet.app.events :as events]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.skills :as skills]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
@@ -186,7 +185,15 @@
                   (tui/tui-request-render tui))
       nil)
 
-    :message-update nil
+    :message-update
+    ;; the streaming delta the run callbacks used to deliver (pi:
+    ;; text_delta / thinking_delta). The delta's type picks the sink; a tool
+    ;; call's has no UI of its own (the tool-execution events carry it).
+    (when-let [cs @cs-ref]
+      (case (:type (:delta evt))
+        :text (turn/on-agent-text cs (:content (:delta evt)))
+        :thinking (turn/on-agent-thinking cs (:content (:delta evt)))
+        nil))
 
     :message-end
     ;; A failed attempt finalizes empty when the stream delivered
@@ -253,7 +260,14 @@
 
     :agent-before-settle nil
 
-    :agent-settled nil
+    :agent-settled
+    ;; The run ended. A completed prompt runs the done teardown here — the
+    ;; callbacks' :on-done used to — while an error or a cancel was already
+    ;; torn down by its own event (on-agent-error) or by handle-cancel, which
+    ;; is what pi's split between agent_end and abort() gives.
+    (when-let [cs @cs-ref]
+      (when (= :completed (:outcome evt))
+        (turn/on-agent-done cs)))
 
     :status
     ;; Pi: agent status changes keep the footer/status
@@ -502,18 +516,19 @@
       (:model-select :thinking-level-select)
       (on-model-change deps evt)
 
-      :error nil
+      :error
+      ;; a terminal error (the loop reports it once, before the settle); the
+      ;; teardown clears the working state and writes the transcript line
+      (when-let [cs @(:cs-ref deps)]
+        (turn/on-agent-error cs (:message evt)))
 
-      ;; Remaining vocabulary events need no UI action in
-      ;; kmet's architecture: streaming text/thinking
-      ;; arrives via the on-text/on-thinking callbacks,
-      ;; message finalization + the idle transition happen
-      ;; in on-agent-done, errors surface via on-error, and
-      ;; the /model + Ctrl+P cycling paths sync the footer
-      ;; themselves. Every event must still be consumed — a
-      ;; case with no matching clause throws, and the
-      ;; exception is swallowed by the run future, leaving
-      ;; the UI stuck on "Working" forever.
+      ;; Remaining vocabulary events need no UI action: streaming deltas are
+      ;; :message-update (on-message), message finalization + the idle
+      ;; transition happen on :agent-settled (on-run-lifecycle), errors
+      ;; surface through :error, and the /model + Ctrl+P cycling paths sync
+      ;; the footer themselves. Every event must still be consumed — a case
+      ;; with no matching clause throws, and the exception is swallowed by
+      ;; the run future, leaving the UI stuck on "Working" forever.
       nil)))
 
 (defn- make-editor-submit-handler
@@ -573,8 +588,8 @@
 (defn build-layout
   "Create TUI layout and return CoreState.
 
-   CTX is the ctx the engine runs on — the one whose `:tools`, `:sessions` and
-   `:systemPrompt` the run reads (`session-driver/bootstrap`'s `:ctx`), and the
+   CTX is the ctx the agent runs on — the one whose `:tools`, `:sessions` and
+   `:systemPrompt` the run reads, and the scope `:agents` serves. It is the
    required argument: kmet1's entry passes its process root, `kmet --app new
    --profile tui` the composition it booted. The tool lookup the chat history
    renders with comes from that ctx, so the layout reaches for no registry of
@@ -587,23 +602,20 @@
         provider (cfg/get-provider config)
         model (models/resolve-config-model config)
 
-        ;; The runtime working directory (pi: AgentSession._cwd — the cwd
-        ;; the resumed/continued session was recorded in, else the process
-        ;; cwd). The runtime owns the atom (bootstrap seeds it, a session
-        ;; switch moves it); the footer data provider (the footer pwd, the
-        ;; extension ctx.cwd) and the chat history (tool-component path
-        ;; displays) share it.
-        cwd (or (session/session-cwd session) (str (fs/cwd)))
-
-        ;; The runtime owns the agent state, system prompt, run options and
-        ;; extension handle (kmet.agent.session.session-driver/bootstrap); the layout
-        ;; owns view state and subscribes its event handler once the widgets
-        ;; exist.
-        engine (session-driver/bootstrap config {:session session
-                                                 :cwd cwd
-                                                 :ctx ctx
-                                                 :load-resources! packages/load-resources!
-                                                 :expand-input packages/expand-input})
+        ;; The agent is the registry's: created through `:agents` like any
+        ;; other, so a TUI run's agent is a live handle with an id (landing 8)
+        ;; rather than an engine the layout owns. The run reads its tool table
+        ;; and system prompt from CTX, which is why the layout needs no registry
+        ;; of its own. The process's skills and prompt templates load once,
+        ;; before the prompt is built from them (kmet1 loads them in the
+        ;; driver; here the front end does, for the agent it is about to make).
+        _ (packages/load-resources!)
+        agents (or (srce/get ctx :agents)
+                   (throw (ex-info (str "the TUI needs an :agents service on its ctx: "
+                                        "mount a loop driver (`:agentLoop`)")
+                                   {:type :kmet.app/no-agents
+                                    :ctx (:name ctx)})))
+        engine ((:create! agents) ctx {:session session :config config})
         cwd-atom (:cwd engine)
 
         ;; Migrate legacy keybinding ids in keybindings.edn (pi: migrations
@@ -688,6 +700,10 @@
         cs (state/map->CoreState {:tui t
                                   :ctx ctx
                                   :engine engine
+                                  :agents agents
+                                  ;; the mode's one subscription to the agent's
+                                  ;; events; teardown disposes it
+                                  :event-subscription (atom nil)
                                   :chat-history ch
                                   :editor ed
                                   :current-editor-atom current-editor-atom
@@ -985,20 +1001,16 @@
       ;; indicator/container and theme controller are present
       (reset! cs-ref cs)
 
-      ;; The interactive event handler is one subscriber on the runtime's
-      ;; stream (pi: the TUI session's event handlers), subscribed after
-      ;; cs-ref so :status events resolve the built CoreState.
-      (session-driver/subscribe! engine
-                                 (make-agent-event-handler
-                                  {:chat-history ch :tui t :cs-ref cs-ref
-                                   :pending-tool-comps pending-tool-comps}))
-
-      ;; The front end's default run presentation (streaming text/thinking,
-      ;; the done/error teardown) for any run the runtime starts on its own
-      ;; — an extension send-user-message/send-message!, the compaction
-      ;; flush — so those runs present like the editor's start-agent-run!
-      ;; path instead of streaming invisibly.
-      (session-driver/set-run-callbacks! engine (turn/run-callbacks cs))
+      ;; The loop's events on this agent's ctx are the front end's stream
+      ;; (pi: the TUI session's event handlers): streaming deltas, the run's
+      ;; lifecycle, compaction and the settle that ends the turn. One
+      ;; subscription for the whole vocabulary, after cs-ref so a handler
+      ;; resolves the built CoreState.
+      (reset! (:event-subscription cs)
+              (events/on-every (:ctx engine)
+                               (make-agent-event-handler
+                                {:chat-history ch :tui t :cs-ref cs-ref
+                                 :pending-tool-comps pending-tool-comps})))
 
       ;; Restore a --continue session into the chat history AND the agent
       ;; context (pi: renderInitialMessages from buildContextEntries) — the

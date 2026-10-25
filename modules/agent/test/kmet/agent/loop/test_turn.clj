@@ -72,6 +72,11 @@
     (t/is (.contains (first @errors) "No API key"))
     (t/is (= :error (:outcome (last (filter #(= :agent-settled (:type %)) @events))))
           "the settle reports :error")
+    (t/is (some #(and (= :error (:type %))
+                      (str/includes? (str (:message %)) "No API key"))
+                @events)
+          "the event stream carries the refusal: a front end that only reads
+           events (print, the TUI) shows it instead of a silent settle")
     (t/is (= :error @(:last-outcome agent))
           "the outcome is recorded: a state reader (get-state, a client's
            wait-idle) sees the failure, not the initial :completed")))

@@ -2,9 +2,9 @@
   "Turn lifecycle for the interactive mode: the agent event handlers,
    the submit/cancel/queue paths, the compaction-queue display, and the
    terminal-progress indicator (pi: session.prompt input events, agent
-   event handlers, flushCompactionQueue). The runtime owns the submission
-   chain and the compaction queue itself (kmet.agent.session.runtime); this
-   namespace keeps the UI reactions."
+   event handlers, flushCompactionQueue). The agent handle owns the run, the
+   submission chain and the compaction queue (landing 8); this namespace
+   keeps the UI reactions."
   (:require [clojure.string :as str]
             [kmet.agent.debug :as debug]
             [kmet.agent.config :as cfg]
@@ -13,7 +13,7 @@
             [kmet.tui.theme :as th]
             [kmet.tui.terminal :as term]
             [kmet.tui.components.container :as container]
-            [kmet.agent.session.driver :as session-driver]
+            [kmet.agent.session.submission :as submission]
             [kmet.agent.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.bash-execution :as be]
@@ -60,7 +60,7 @@
 
 ;; ─── Agent response handler ────────────────────────────────────────────────
 
-(defn- on-agent-text
+(defn on-agent-text
   "Called for each text delta from the LLM during streaming. A pure data
    append: the swap hits the message map's text atom (shared with the
    assistant component), whose track! watch invalidates the cache and
@@ -74,7 +74,7 @@
       (debug/log "on-agent-text callback: " e)
       (binding [*out* *err*] (println "on-agent-text error:" (ex-message e) (.getClass e))))))
 
-(defn- on-agent-thinking
+(defn on-agent-thinking
   "Called for each thinking/reasoning delta from the LLM during streaming
    (pure data append — see on-agent-text)."
   [cs text]
@@ -84,7 +84,7 @@
       (debug/log "on-agent-thinking callback: " e)
       (binding [*out* *err*] (println "on-agent-thinking error:" (ex-message e) (.getClass e))))))
 
-(defn- on-agent-done
+(defn on-agent-done
   "Called when the LLM turn completes.
    Drop the running-turn flag FIRST — a background status completion
    (share, branch summary: status/release-background-status!) racing this teardown
@@ -114,7 +114,7 @@
       (debug/log "on-agent-done callback: " e)
       (binding [*out* *err*] (println "on-agent-done error:" (ex-message e) (.getClass e))))))
 
-(defn- on-agent-error
+(defn on-agent-error
   "Called when an error occurs during the agent turn."
   [cs error-msg]
   (try
@@ -328,40 +328,21 @@
   [cs]
   (tui/tui-request-render (:tui cs) true))
 
-(defn run-callbacks
-  "The run callbacks the interactive front end installs on every prompt
-   (start-agent-run! and the runtime's compaction-queue flush): streaming
-   text/thinking land in the chat, completion/errors run the turn
-   teardown."
-  [cs]
-  {:on-text #(on-agent-text cs %)
-   :on-thinking #(on-agent-thinking cs %)
-   :on-done (fn [_] (on-agent-done cs))
-   :on-error #(on-agent-error cs %)})
-
 (defn start-agent-run!
-  "Start an agent run: set turn state, show the working indicator + animation
-   timer, install the streaming callbacks, and hand the prompt to the
-   runtime (which records the run so dispose! can cancel an exit while
-   streaming and wait for the terminal :agent-settled). The user message and
-   the assistant streaming placeholder are created from the loop's
-   :message-start events (pi: message_start → addMessageToChat / new
-   streaming component), so the initial prompt and consumed steering/
-   follow-up messages all land in the chat at the same lifecycle point.
+  "Start an agent run: hand the prompt to the handle (the one start-or-queue
+   rule) and let the loop's events present it — the working indicator and
+   animation timer come up on :agent-start, streaming text and thinking on
+   :message-update, and the teardown on :agent-settled (pi: message_start →
+   addMessageToChat / new streaming component). The user message and the
+   assistant streaming placeholder are created from :message-start, so the
+   initial prompt and consumed steering/follow-up messages all land in the
+   chat at the same lifecycle point.
    MESSAGE — optional initial user message; when nil the run continues on the
    existing context without adding a message (the /continue path, where the
    last entry is an unanswered user message or a dangling tool result the
    model must pick up)."
   [cs & [message]]
-  (let [engine (:engine cs)]
-    ;; the flag is set before the presentation: activate-working-indicator!
-    ;; stops a spinner with no live turn behind it
-    (reset! (:turn-running? engine) true)
-    (status/activate-working-indicator! cs)
-    (status/start-anim-timer! cs)
-    (state/update-footer! cs)
-    (tui/tui-request-render (:tui cs))
-    (session-driver/prompt! engine (cond-> (run-callbacks cs) message (assoc :text message)))))
+  ((:send! (:engine cs)) message {:target :next-turn}))
 
 (defn- submit-through-runtime!
   "Send TEXT through the runtime's submission chain (input hooks, skill/
@@ -374,7 +355,7 @@
    keyword (:handled | :started | :steered | :compaction-queued)."
   [cs text opts]
   (let [{:keys [action] submitted-text :text}
-        (session-driver/submit! (:engine cs) text (assoc opts :run-opts (run-callbacks cs)))]
+        ((:submit! (:engine cs)) text opts)]
     (when (not= :handled action)
       (when-not (false? (:history? opts))
         (tui/editor-add-to-history! @(:current-editor-atom cs) (or submitted-text text)))
@@ -383,27 +364,12 @@
       (tui/tui-request-render (:tui cs)))
     action))
 
-(defn expand-user-message-text
-  "pi: prompt() expansion chain (sendUserMessage with
-   :expand-prompt-templates?): extension commands execute immediately and
-   consume the message; then skill commands and prompt templates expand.
-   Builtin commands are NOT dispatched (pi: _tryExecuteExtensionCommand
-   only). Returns the expanded text, or nil when an extension command
-   consumed the message."
-  [cs text]
-  (let [result (session-driver/expand-user-message-text (:engine cs) text)]
-    (when (nil? result)
-      ;; an extension command consumed the message
-      (state/update-footer! cs))
-    result))
-
 (defn flush-compaction-queue!
   "Deliver messages queued during compaction: the runtime owns the queue and
    the delivery (steer/follow-up/prompt per message mode); a failed delivery
    is reported as a transcript status line like before."
   [cs will-retry]
-  (when-let [{:keys [error count]} (session-driver/flush-compaction-queue!
-                                    (:engine cs) will-retry (run-callbacks cs))]
+  (when-let [{:keys [error count]} ((:flush-compaction-queue! (:engine cs)) will-retry)]
     (chat-history/chat-history-show-status!
      (:chat-history cs)
      (str "Failed to send queued message"
@@ -419,7 +385,7 @@
    message queued during compaction stays invisible until the next
    queue/message event)."
   [cs text mode]
-  (session-driver/queue-compaction-message! (:engine cs) text mode)
+  ((:queue-compaction-message! (:engine cs)) text mode)
   (status/update-pending-messages! cs))
 
 (defn interactive-command-ui
@@ -528,8 +494,8 @@
     ;; → extension commands execute immediately via prompt(), everything
     ;; else queues as followUp).
     (runtime/compacting? (:engine cs))
-    (if (session-driver/extension-command? text)
-      (do (session-driver/execute-extension-command! text) :executed)
+    (if (submission/extension-command? text)
+      (do (submission/execute-extension-command! text) :executed)
       (do (queue-compaction-message! cs text :follow-up) :compaction))
 
     (runtime/turn-running? (:engine cs))
@@ -537,7 +503,7 @@
     ;; settles). Not added to the chat here — like steering, it appears
     ;; as a user message when the loop consumes it (:message-start,
     ;; pi: message_start → addMessageToChat).
-    (do (session-driver/follow-up! (:engine cs) text)
+    (do ((:send! (:engine cs)) text {:target :next-turn})
         (status/update-pending-messages! cs)
         :queued)
 
@@ -572,7 +538,7 @@
             queued-text (str/join "\n\n" all)
             combined (str/join "\n\n" (remove str/blank? [queued-text current]))]
         (runtime/clear-queues! (:engine cs))
-        (session-driver/clear-compaction-queue! (:engine cs))
+        ((:clear-compaction-queue! (:engine cs)))
         (tui/editor-set-text! ed combined)
         (status/update-pending-messages! cs)))
     (count all)))
@@ -606,7 +572,7 @@
       ;; clears the indicator and reports the cancellation.
       (do
         (debug/log "compaction cancelled by user")
-        (session-driver/abort-compaction! engine))
+        ((:abort-compaction! engine)))
       (do
         (when (state/cancel-bash! cs)
           (debug/log "bash command cancelled by user")
@@ -623,7 +589,7 @@
             ;; cancel before the status teardown: the runtime drops the turn
             ;; flag, so a background revive racing the teardown sees the turn
             ;; over (see on-agent-done)
-            (session-driver/cancel! (:engine cs))
+            ((:cancel! (:engine cs)) nil)
             (status/stop-anim-timer! cs)
             (status/clear-status-indicator! cs)
             ;; Remove empty streaming placeholder if present — by identity, so
