@@ -3538,6 +3538,42 @@ Three things are missing rather than blocked, and they are the rest of the plan:
   is `kmet.app.test-runtime`), and `resume!` still refuses
   `:kmet.app/unsupported-op`.
 
+### The interactive front end first
+
+The TUI is the front end the app is used through, so its completeness comes
+before the wire's remaining table: nothing in 10a is user-facing on its own, and
+every capability it would serve already exists on the handle the TUI drives.
+The work is not new features — it is the last pieces of the re-host landing 8
+finished, measured from the TUI's own code:
+
+- **T-1. The interactive tests run on the composition's handle.** The suite in
+  `modules/agent/test/kmet/agent/modes/test_interactive.clj` builds kmet1's
+  `session.driver` engine (`tu/test-engine`); a handle-shaped fixture boots the
+  `:tui` composition and creates through `:agents`, so a test fails when the
+  handle stops answering an op the TUI calls. Started:
+  `kmet.ui.tui.interactive.test-handle-path` — the TUI's `/new` over a real
+  handle: one agent, a moved session, the process slot re-installed, the
+  shutdown event carrying the outgoing file.
+- **T-2. The interactive suite moves to `modules/ui/test`**, where the mode
+  lives; its `agent`-module home is 11's remaining blocker on that file.
+- **T-3. A preset reaches a TUI run's child ctx.** `create!`'s `:setup` seam
+  (7b-ii) has no production caller: `build-layout` passes `{:session :config}`
+  and the row passes no preset. The row's config names the bundles, the run's
+  opts carry them, and a profile (the TUI's `:rpc-ask` counterpart) mounts one —
+  which is 8's gate item for presets, not met yet.
+- **T-4. The TUI's last driver edges.** `session_admin` calls
+  `session.driver/emit-session-start-async!` and `generate-branch-summary`; the
+  first is `kmet.agent.session.lifecycle`'s already, and the second is the only
+  reason the module requires the driver at all.
+- **T-5. The mode's docs describe the shipped contract** — the row docstring's
+  "does not do yet" paragraph described 5j, superseded by 8, and the ledger's
+  gate sentences must match the code.
+
+Gate: every TUI code path a test drives creates its agent through `:agents`;
+the interactive suite needs no `session.driver` and no `kmet.agent.modes.*`
+namespace; a TUI run with a preset names the policy in its child ctx; and the
+row's docstring describes the handle path a reader will find.
+
 ### The landings
 
 | # | Touches | Size | Waits on | Gate |
@@ -3546,17 +3582,21 @@ Three things are missing rather than blocked, and they are the rest of the plan:
 | 5l | **landed** — `agent` → `app` (two moves + the world load), `agent` → `ui` (12 moves) | ~5,300 moved, ~120 changed | 5k | pty parity; `agent/modes` holds only kmet1's three; a kmet2 extension's command is in the ctx's `:commands`; a print run has extensions loaded; the TUI profile's ctx provides a terminal `:ui` and an approver |
 | 5n | **landed** — `app` (the entry + the modes), no move | ~450 src, ~250 test | 5l | `-p @tasks.md`, `/skill:` expansion, `--thinking`/`--list-models`/`--debug`/`--generate-models`/`--session-dir`/`--my-ext-flag`, and `config` with no rank-4 load |
 | 8 | `ui`, `app` (the handle's op set, the mode listeners) | ~900 changed | 5n | a TUI run's agent is in `:agents`; no `session.driver` mutator left in `kmet.ui.tui.*`; two print runs settle their own promises |
+| T | `ui`, `app` (the tests' engine, the preset seam, the last driver edges) | ~400 changed | 8 | every TUI path a test drives creates through `:agents`; a preset reaches a run's child ctx; no `session.driver` in `kmet.ui.tui.*` |
 | 9 | `app`, `libs` | ~1,500 adapted | 8 | two agents run shell in two cwds with two shells |
 | 10 | `app` | ~1,100 | 8 (10a); 9 (10b/10c) | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; two sessions isolated |
 | 11 | all modules | −8,500, ~240 renames | 8, 10a | full gates + pi-alignment, no `kmet.agent.*` but the ABI |
 
-**The execution order is 10a → 11 → 9 → 10b/10c** (8 is done). Retirement is
-wanted as soon as it can be taken, so the schedule follows what each landing
-actually blocks on, not the landing numbers. 11's hard prerequisites were a
-complete 8 (the TUI reads a handle, so `session.driver`'s engine path and the
-interactive tests' `agent`-module home can go) and 10a (kmet1's rpc modes are
-deleted by 11, and kmet2 must already answer the whole `docs/rpc.md` table, or
-the protocol regresses). 10b and 10c are kmet2's own boundary and transport
+**The execution order is T → 10a → 11 → 9 → 10b/10c** (8 is done). The
+interactive front end goes first: it is what the app is used through, its
+remaining work is small and measured, and 10a's table is invisible to a TUI
+user. Then retirement is wanted as soon as it can be taken, so the schedule
+follows what each landing actually blocks on, not the landing numbers. 11's
+hard prerequisites were a complete 8 (the TUI reads a handle, so
+`session.driver`'s engine path and the interactive tests' `agent`-module home
+can go — T finishes both) and 10a (kmet1's rpc modes are deleted by 11, and
+kmet2 must already answer the whole `docs/rpc.md` table, or the protocol
+regresses). 10b and 10c are kmet2's own boundary and transport
 work — the old app has no server to compare against — so they follow
 retirement; 9's isolation seams are also kmet2-only and now land after the
 rename pass, which keeps that pass out of files 9 would touch.
@@ -3960,10 +4000,12 @@ Gate: a TUI run's agent is in `:agents` (`:agent/created` fired, the dump shows
 `[:app :agent/…]`), a `/model` change lands on that agent's ctx and leaves a
 sibling agent's alone, two print runs in one process each settle their own
 promise, an image in the prompt reaches the provider's request, and `/new`
-leaves one agent disposed and another created (the dump shows one line, not
-two). Presets reach a TUI run for the first time (7b-ii's `:bundle/gated`
-mounted by a TUI session), which is the reason the port is worth doing before the
-second toolkit.
+moves that agent's session while the registry still lists one agent (the dump
+shows one line, not two). **Two gate items were not met when the row was marked
+done, and T owns them**: the `/new` sentence above now states what the shipped
+path does (the handle's session op, not a second agent), and a preset reaching
+a TUI run's child ctx is T-3 — `create!`'s `:setup` seam has no caller in
+`build-layout`, so `:bundle/gated` mounts on a TUI agent nowhere yet.
 
 **Landed so far** (`479eb19d`, `c6723127`, `2ce32596`): the handle is the value a front
 end reads — Engine-shaped (`:agent-state`, `:config`, `:cwd`,

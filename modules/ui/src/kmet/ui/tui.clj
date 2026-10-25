@@ -19,11 +19,13 @@
    is what makes an `:ask-all` policy usable at a terminal (the minimal
    bundle's default denies because nobody could ask).
 
-   **What this row does not do yet.** The mode drives kmet1's engine rather than
-   an `:agents` handle: the registry stays empty for a TUI run, and the per-agent
-   rows a preset mounts (7b-ii) are not on its path. That is 8's re-host — the
-   TUI creates its agent through `create!` — and moving the tree here is what
-   makes it a change to one namespace instead of a change to how kmet2 boots.
+   **The agent is the composition's.** `build-layout` creates the run's agent
+   through the composition's `:agents` registry (`:create!` with the resolved
+   session and the run config), so a TUI run is a handle like any other: its ctx
+   is a child of the ctx the row mounted on, its settings and session ops write
+   that agent, and the registry lists it (`:agent/created`). What the row does
+   not pass yet is `create!`'s `:setup` seam (7b-ii), so a **preset** — a bundle
+   mounted per agent — has no way into a TUI run's child ctx.
 
    **The invocation is the run's, and this row only maps it.** `-c`/
    `--continue`, `-r`/`--resume` and `--session <id>` arrive in the row's config
