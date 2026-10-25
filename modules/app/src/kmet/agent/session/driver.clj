@@ -58,7 +58,7 @@
    auto-answers (extensions/headless-ui-port) plus the `build-context`
    callback every map must provide (the extension ctx
    :model/:scoped-models/:thinking-level read the live agent). Interactive
-   replaces the map from `kmet.agent.modes.interactive.ui-registry` once its
+   replaces the map from `kmet.ui.tui.interactive.ui-registry` once its
    widgets exist."
   [engine]
   (assoc (extensions/headless-ui-port)

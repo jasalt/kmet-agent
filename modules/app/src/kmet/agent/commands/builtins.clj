@@ -3,7 +3,7 @@
    against the command ctx's :runtime and the shared command-UI
    capabilities (:message, :info, :warning, :set-title), so any front end
    can dispatch them. The interactive mode registers its view-bound
-   commands itself (kmet.agent.modes.interactive.builtins)."
+   commands itself (kmet.ui.tui.interactive.builtins)."
   (:require [clojure.string :as str]
             [kmet.agent.debug :as debug]
             [kmet.agent.commands :as commands]

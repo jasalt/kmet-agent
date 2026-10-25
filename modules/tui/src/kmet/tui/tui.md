@@ -879,7 +879,7 @@ overlay close, reconcile removal, shutdown; implementations must be
   atom, a dock entry or a test holding a dead record keeps its tree, caches
   and timers alive.
 - **Mode exit is the deterministic cleanup of last resort.** Both mode
-  owners (`kmet.agent.modes.interactive/run`, `package_manager/run-config`)
+  owners (`kmet.ui.tui.interactive/run`, `package_manager/run-config`)
   release the layout in a `finally`; `teardown-mode!` runs abort signals →
   extension surfaces (`ui-reset!`) → the mode tree (pending bash,
   overlays, dock, TUI children) → global runtime sinks → the theme watcher
@@ -1134,7 +1134,7 @@ that renders — and may touch widgets and component state directly:
   frame start. Frames are a pure function of elapsed time, so a closed gate
   delays a sample but never drops one from the cycle; the half-bucket margin
   keeps a driver from seeing the frame it just requested and halving its
-  beat (`kmet.agent.modes.interactive.status/frame-driver!`, the Bash spinner
+  beat (`kmet.ui.tui.interactive.status/frame-driver!`, the Bash spinner
   driver).
 - A throwing thunk is logged and swallowed; its repeating timer keeps its
   next tick — the `schedule-frame!` policy.

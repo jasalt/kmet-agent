@@ -1,10 +1,10 @@
-(ns kmet.agent.modes.tui
+(ns kmet.ui.tui
   "The TUI as a mode row: `kmet --app new --profile tui`, the kmet2 entry's
    default profile.
 
    The row mounts kmet1's interactive mode over the composition the profile
    booted. Two things make that work without moving anything yet: the mode's
-   engine takes its ctx as an argument (`kmet.agent.modes.interactive/run`), so
+   engine takes its ctx as an argument (`kmet.ui.tui.interactive/run`), so
    the run reads the composition's own `:tools`, `:sessions` and
    `:systemPrompt` rows; and the startup a *process* world needs — catalogs,
    config, extension packages, themes — arrives as the config the entry loads
@@ -31,7 +31,7 @@
    them as kmet1's front end always did (`run-opts`). A mode that creates its
    agent through `:agents` has no session option to give its factory yet, and
    `kmet.app.core` refuses the session flags there by name."
-  (:require [kmet.agent.modes.interactive :as interactive]
+  (:require [kmet.ui.tui.interactive :as interactive]
             [kmet.app.invocation :as invocation]
             [kmet.srce.core :as srce]))
 

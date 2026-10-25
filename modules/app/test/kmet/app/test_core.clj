@@ -396,7 +396,7 @@
         mode (last (:rows (core/compose-config opts)))]
     (is (= :tui (:profile opts)))
     (is (= :mode-tui (:id mode)) "the last row is the mode")
-    (is (= 'kmet.agent.modes.tui/plugin (:plugin mode)) "and it is the TUI")
+    (is (= 'kmet.ui.tui/plugin (:plugin mode)) "and it is the TUI")
     (is (true? (:mode mode)) "marked as the row the entry point hands the run to")
     (is (true? (:session-lifecycle mode))
         "and as the row that opens the session, so -c/-r/--session reach it")))

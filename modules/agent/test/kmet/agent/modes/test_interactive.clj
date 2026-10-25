@@ -9,14 +9,14 @@
    (its catch re-emits :error through the same handler, which also threw),
    and the UI stayed on \"Working...\" forever while print mode kept working."
   (:require [clojure.test :as t :refer [deftest is testing]]
-            [kmet.agent.modes.interactive :as inter]
-            [kmet.agent.modes.interactive.builtins :as builtins]
-            [kmet.agent.modes.interactive.layout :as layout]
-            [kmet.agent.modes.interactive.ui-registry :as ui-registry]
-            [kmet.agent.modes.interactive.state :as state]
-            [kmet.agent.modes.interactive.status :as status]
-            [kmet.agent.modes.interactive.turn :as turn]
-            [kmet.agent.modes.interactive.session-admin :as session-admin]
+            [kmet.ui.tui.interactive :as inter]
+            [kmet.ui.tui.interactive.builtins :as builtins]
+            [kmet.ui.tui.interactive.layout :as layout]
+            [kmet.ui.tui.interactive.ui-registry :as ui-registry]
+            [kmet.ui.tui.interactive.state :as state]
+            [kmet.ui.tui.interactive.status :as status]
+            [kmet.ui.tui.interactive.turn :as turn]
+            [kmet.ui.tui.interactive.session-admin :as session-admin]
             [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.loop.state :as loop-state]
@@ -1244,7 +1244,7 @@
                                                           :session-atom (atom sess)})
                       tui/tui-start noop
                       process/kill-tracked-children! noop]
-          (inter/run {} {:session "fake"}))
+          (inter/run {} {:session "fake"} nil))
         (is (nil? (extensions/ui-call :probe))
             "the registry is cleared when the mode ends")
         (finally

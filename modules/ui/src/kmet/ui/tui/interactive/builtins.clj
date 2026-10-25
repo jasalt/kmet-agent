@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.builtins
+(ns kmet.ui.tui.interactive.builtins
   "Builtin slash commands for the interactive mode: the view-bound commands
    (thinking handling, help/tools text, /session, /share, /reload, and the
    session/selector flows) and their registration. The engine-portable
@@ -28,7 +28,8 @@
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.app-runtime :as app-runtime]
+            [kmet.app.loop.stages :as loop-stages]
+            [kmet.app.root :as root]
             [kmet.agent.skills :as skills]
             [kmet.agent.tools.registry :as tools]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
@@ -49,12 +50,12 @@
             [kmet.agent.project-context :as context]
             [kmet.libs.process :as process]
             [kmet.tui.terminal-escape :as lib-term]
-            [kmet.agent.modes.interactive.auth :as auth]
-            [kmet.agent.modes.interactive.resources :as resources]
-            [kmet.agent.modes.interactive.session-admin :as session-admin]
-            [kmet.agent.modes.interactive.state :as state]
-            [kmet.agent.modes.interactive.status :as status]
-            [kmet.agent.modes.interactive.turn :as turn]))
+            [kmet.ui.tui.interactive.auth :as auth]
+            [kmet.ui.tui.interactive.resources :as resources]
+            [kmet.ui.tui.interactive.session-admin :as session-admin]
+            [kmet.ui.tui.interactive.state :as state]
+            [kmet.ui.tui.interactive.status :as status]
+            [kmet.ui.tui.interactive.turn :as turn]))
 
 ;; ─── Command handling ──────────────────────────────────────────────────────
 
@@ -344,284 +345,290 @@
 
 (defn register-builtin-commands!
   "Register kmet's builtin slash commands. Handlers receive [cs args];
-   argument completions feed the editor autocomplete dropdown."
-  [_config]
-  (runtime-commands/register-runtime-commands! app-runtime/ctx)
-  (register-builtin-command!
-   {:name "quit"
-    :description "Exit kmet"
-    :handler (fn [cs _]
-               (debug/log "/quit command")
-               (tui/tui-stop (:tui cs)))})
-  (register-builtin-command!
-   {:name "help"
-    :description "Show available commands and shortcuts"
-    :handler (fn [cs _]
-               (chat-history/chat-history-add-message! (:chat-history cs)
-                                                       {:role :assistant :content (help-text)}))})
-  (register-builtin-command!
-   {:name "hotkeys"
-    :description "Show all keyboard shortcuts"
-    :handler (fn [cs _]
-               (chat-history/chat-history-add-message!
-                (:chat-history cs)
-                {:component (hotkeys-ui/make-hotkeys-view
-                             (make-hotkey-wired? cs))}))})
-  (register-builtin-command!
-   {:name "tools"
-    :description "List available tools with parameters"
-    :handler (fn [cs _]
-               (chat-history/chat-history-add-message! (:chat-history cs)
-                                                       {:role :assistant :content (tools-text cs)}))})
-  (register-builtin-command!
-   {:name "model"
-    :description "Switch model"
-    :argument-hint "<provider:model[:thinking]>"
-    :get-argument-completions
-    (fn [_]
-      (mapv (fn [m] (let [v (str (name (:provider m)) "/" (:id m))]
-                      {:value v :label v}))
-            (models/get-available)))
-    :handler
-    (fn [cs args]
-      (if (seq args)
-        (let [{:keys [model thinking-level]} (resolve-model-ref cs args)]
-          (if model
-            (apply-model-switch! cs model thinking-level)
+   argument completions feed the editor autocomplete dropdown.
+
+   ROOT-CTX-FN returns the ctx `/units` falls back to for an engine with no
+   agent ctx of its own. The layout passes the run's composition root; the
+   1-arity reads the process root, which is what kmet1's entry registers
+   against (and what a bare test has)."
+  ([config] (register-builtin-commands! config root/ctx))
+  ([_config root-ctx-fn]
+   (runtime-commands/register-runtime-commands! root-ctx-fn)
+   (register-builtin-command!
+    {:name "quit"
+     :description "Exit kmet"
+     :handler (fn [cs _]
+                (debug/log "/quit command")
+                (tui/tui-stop (:tui cs)))})
+   (register-builtin-command!
+    {:name "help"
+     :description "Show available commands and shortcuts"
+     :handler (fn [cs _]
+                (chat-history/chat-history-add-message! (:chat-history cs)
+                                                        {:role :assistant :content (help-text)}))})
+   (register-builtin-command!
+    {:name "hotkeys"
+     :description "Show all keyboard shortcuts"
+     :handler (fn [cs _]
+                (chat-history/chat-history-add-message!
+                 (:chat-history cs)
+                 {:component (hotkeys-ui/make-hotkeys-view
+                              (make-hotkey-wired? cs))}))})
+   (register-builtin-command!
+    {:name "tools"
+     :description "List available tools with parameters"
+     :handler (fn [cs _]
+                (chat-history/chat-history-add-message! (:chat-history cs)
+                                                        {:role :assistant :content (tools-text cs)}))})
+   (register-builtin-command!
+    {:name "model"
+     :description "Switch model"
+     :argument-hint "<provider:model[:thinking]>"
+     :get-argument-completions
+     (fn [_]
+       (mapv (fn [m] (let [v (str (name (:provider m)) "/" (:id m))]
+                       {:value v :label v}))
+             (models/get-available)))
+     :handler
+     (fn [cs args]
+       (if (seq args)
+         (let [{:keys [model thinking-level]} (resolve-model-ref cs args)]
+           (if model
+             (apply-model-switch! cs model thinking-level)
             ;; pi: no cached match → selector with the term pre-filled (kmet
             ;; catalogs are static — no catalog refresh on a miss)
-            (show-model-selector cs args)))
-        (show-model-selector cs)))})
-  (register-builtin-command!
-   {:name "thinking"
-    :description "Set thinking level"
-    :argument-hint "<level>"
-    :get-argument-completions
-    (fn [prefix]
-      (let [items (mapv (fn [l] {:value (name l)
-                                 :label (name l)
-                                 :description (thinking-selector/level-description l)})
-                        models/thinking-levels)]
-        (if (str/blank? prefix)
-          items
-          (fuzzy/fuzzy-filter items prefix
-                              (fn [it] (str (:value it) " " (:description it)))))))
-    :handler (fn [cs args] (handle-thinking-command! cs args))})
-  (register-builtin-command!
-   {:name "scoped-models"
-    :description "Enable/disable models for Ctrl+P cycling"
-    :handler (fn [cs _] (show-scoped-models-selector cs))})
-  (register-builtin-command!
-   {:name "settings"
-    :description "Open settings menu"
-    :handler (fn [cs _] (show-settings cs))})
-  (register-builtin-command!
-   {:name "new"
-    :description "Start a new session"
-    :handler (fn [cs _] (session-admin/handle-new-session cs))})
-  (register-builtin-command!
-   {:name "resume"
-    :description "Browse past sessions"
-    :handler (fn [cs _]
-               (debug/log "/resume command")
+             (show-model-selector cs args)))
+         (show-model-selector cs)))})
+   (register-builtin-command!
+    {:name "thinking"
+     :description "Set thinking level"
+     :argument-hint "<level>"
+     :get-argument-completions
+     (fn [prefix]
+       (let [items (mapv (fn [l] {:value (name l)
+                                  :label (name l)
+                                  :description (thinking-selector/level-description l)})
+                         models/thinking-levels)]
+         (if (str/blank? prefix)
+           items
+           (fuzzy/fuzzy-filter items prefix
+                               (fn [it] (str (:value it) " " (:description it)))))))
+     :handler (fn [cs args] (handle-thinking-command! cs args))})
+   (register-builtin-command!
+    {:name "scoped-models"
+     :description "Enable/disable models for Ctrl+P cycling"
+     :handler (fn [cs _] (show-scoped-models-selector cs))})
+   (register-builtin-command!
+    {:name "settings"
+     :description "Open settings menu"
+     :handler (fn [cs _] (show-settings cs))})
+   (register-builtin-command!
+    {:name "new"
+     :description "Start a new session"
+     :handler (fn [cs _] (session-admin/handle-new-session cs))})
+   (register-builtin-command!
+    {:name "resume"
+     :description "Browse past sessions"
+     :handler (fn [cs _]
+                (debug/log "/resume command")
                ;; mid-turn refusal like the other switch commands (pi:
                ;; teardownCurrent aborts the run; kmet waits instead)
-               (if (state/turn-running? cs)
-                 (chat-history/chat-history-add-message! (:chat-history cs)
-                                                         {:role :assistant
-                                                          :content "Wait for the current response to finish before resuming."})
-                 (show-session-selector cs (fn [] (state/ensure-session-dir (runtime/config (:engine cs))))
-                                        (fn [path]
+                (if (state/turn-running? cs)
+                  (chat-history/chat-history-add-message! (:chat-history cs)
+                                                          {:role :assistant
+                                                           :content "Wait for the current response to finish before resuming."})
+                  (show-session-selector cs (fn [] (state/ensure-session-dir (runtime/config (:engine cs))))
+                                         (fn [path]
                                           ;; pi: emitBeforeSwitch (reason :resume)
                                           ;; — extensions may cancel the switch
-                                          (let [result (session-driver/resume! (:engine cs) path)]
-                                            (when-not (:cancelled result)
-                                              (let [sess (:session result)
-                                                    short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
-                                                (session-admin/replay-session! cs sess true)
-                                                (chat-history/chat-history-add-message! (:chat-history cs)
-                                                                                        {:role :assistant
-                                                                                         :content (str "Resumed session " short-id ".")})
-                                                (tui/tui-request-render (:tui cs)))))))))})
-  (register-builtin-command!
+                                           (let [result (session-driver/resume! (:engine cs) path)]
+                                             (when-not (:cancelled result)
+                                               (let [sess (:session result)
+                                                     short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
+                                                 (session-admin/replay-session! cs sess true)
+                                                 (chat-history/chat-history-add-message! (:chat-history cs)
+                                                                                         {:role :assistant
+                                                                                          :content (str "Resumed session " short-id ".")})
+                                                 (tui/tui-request-render (:tui cs)))))))))})
+   (register-builtin-command!
    ;; pi: no equivalent — /followup is the slash-command form of Alt+Enter
    ;; (app.message.followUp), letting the follow-up text ride the args
    ;; instead of the editor
-   {:name "followup"
-    :description "Queue a follow-up message (like Alt+Enter)"
-    :argument-hint "<message>"
-    :handler (fn [cs args]
-               (let [text (str/trim args)]
-                 (if (seq text)
+    {:name "followup"
+     :description "Queue a follow-up message (like Alt+Enter)"
+     :argument-hint "<message>"
+     :handler (fn [cs args]
+                (let [text (str/trim args)]
+                  (if (seq text)
                    ;; Alt+Enter semantics with the args as the text: during
                    ;; compaction the text queues as follow-up (extension
                    ;; commands execute immediately); while the agent runs it
                    ;; joins the follow-up queue (processed after the run
                    ;; settles, shown in the pending display); when idle it
                    ;; submits like a regular message.
-                   (when (= :queued (turn/queue-follow-up-text! cs text))
-                     (chat-history/chat-history-show-status!
-                      (:chat-history cs)
-                      "Queued follow-up message")
-                     (tui/tui-request-render (:tui cs)))
-                   (chat-history/chat-history-add-message!
-                    (:chat-history cs)
-                    {:role :info :label "Follow-up"
-                     :content "Usage: /followup <message>"}))))})
-  (register-builtin-command!
-   {:name "tree"
-    :description "Navigate session tree (switch branches)"
-    :handler (fn [cs _]
+                    (when (= :queued (turn/queue-follow-up-text! cs text))
+                      (chat-history/chat-history-show-status!
+                       (:chat-history cs)
+                       "Queued follow-up message")
+                      (tui/tui-request-render (:tui cs)))
+                    (chat-history/chat-history-add-message!
+                     (:chat-history cs)
+                     {:role :info :label "Follow-up"
+                      :content "Usage: /followup <message>"}))))})
+   (register-builtin-command!
+    {:name "tree"
+     :description "Navigate session tree (switch branches)"
+     :handler (fn [cs _]
                ;; mid-turn refusal like the other switch commands — branching
                ;; while a run streams would leave its events in the new branch
-               (if (state/turn-running? cs)
-                 (chat-history/chat-history-add-message! (:chat-history cs)
-                                                         {:role :assistant
-                                                          :content "Wait for the current response to finish before navigating the tree."})
-                 (show-session-tree cs
-                                    (fn [entry]
-                                      (session-admin/ask-branch-summary cs (runtime/session (:engine cs)) entry)))))})
-  (register-builtin-command!
-   {:name "fork"
-    :description "Create a new fork from a previous user message"
-    :handler (fn [cs _]
-               (show-fork-selector cs (fn [entry-id] (session-admin/fork-at! cs entry-id))))})
-  (register-builtin-command!
-   {:name "clone"
-    :description "Duplicate the current session at the current position"
-    :handler (fn [cs _]
-               (session-admin/clone-current-session! cs))})
-  (register-builtin-command!
-   {:name "session"
-    :description "Show session info and stats"
-    :handler (fn [cs _]
-               (let [sess (runtime/session (:engine cs))
-                     chat (:chat-history cs)]
-                 (if (nil? sess)
-                   (chat-history/chat-history-add-message! chat
-                                                           {:role :info :label "Session"
-                                                            :content "No active session."})
-                   (chat-history/chat-history-add-message! chat
-                                                           {:role :assistant
-                                                            :content (session-info-text sess)}))))})
-  (register-builtin-command!
+                (if (state/turn-running? cs)
+                  (chat-history/chat-history-add-message! (:chat-history cs)
+                                                          {:role :assistant
+                                                           :content "Wait for the current response to finish before navigating the tree."})
+                  (show-session-tree cs
+                                     (fn [entry]
+                                       (session-admin/ask-branch-summary cs (runtime/session (:engine cs)) entry)))))})
+   (register-builtin-command!
+    {:name "fork"
+     :description "Create a new fork from a previous user message"
+     :handler (fn [cs _]
+                (show-fork-selector cs (fn [entry-id] (session-admin/fork-at! cs entry-id))))})
+   (register-builtin-command!
+    {:name "clone"
+     :description "Duplicate the current session at the current position"
+     :handler (fn [cs _]
+                (session-admin/clone-current-session! cs))})
+   (register-builtin-command!
+    {:name "session"
+     :description "Show session info and stats"
+     :handler (fn [cs _]
+                (let [sess (runtime/session (:engine cs))
+                      chat (:chat-history cs)]
+                  (if (nil? sess)
+                    (chat-history/chat-history-add-message! chat
+                                                            {:role :info :label "Session"
+                                                             :content "No active session."})
+                    (chat-history/chat-history-add-message! chat
+                                                            {:role :assistant
+                                                             :content (session-info-text sess)}))))})
+   (register-builtin-command!
    ;; kmet keeps the path hint /export carries (pi hints neither; its usage
    ;; error spells the syntax out). kmet sessions are EDN, hence "from a
    ;; file" where pi says "from a JSONL file"
-   {:name "import"
-    :description "Import and resume a session from a file"
-    :argument-hint "<path>"
-    :handler (fn [cs args] (session-admin/handle-import-command cs args))})
-  (register-builtin-command!
-   {:name "share"
-    :description "Share session as a secret GitHub gist"
-    :handler (fn [cs _]
-               (let [chat (:chat-history cs)]
-                 (case (gh-auth-status)
-                   :not-installed
-                   (chat-history/chat-history-add-message! chat
-                                                           {:role :info :label "Share"
-                                                            :content "GitHub CLI (gh) is not installed. Install it from https://cli.github.com/"})
+    {:name "import"
+     :description "Import and resume a session from a file"
+     :argument-hint "<path>"
+     :handler (fn [cs args] (session-admin/handle-import-command cs args))})
+   (register-builtin-command!
+    {:name "share"
+     :description "Share session as a secret GitHub gist"
+     :handler (fn [cs _]
+                (let [chat (:chat-history cs)]
+                  (case (gh-auth-status)
+                    :not-installed
+                    (chat-history/chat-history-add-message! chat
+                                                            {:role :info :label "Share"
+                                                             :content "GitHub CLI (gh) is not installed. Install it from https://cli.github.com/"})
 
-                   :not-logged-in
-                   (chat-history/chat-history-add-message! chat
-                                                           {:role :info :label "Share"
-                                                            :content "GitHub CLI is not logged in. Run 'gh auth login' first."})
+                    :not-logged-in
+                    (chat-history/chat-history-add-message! chat
+                                                            {:role :info :label "Share"
+                                                             :content "GitHub CLI is not logged in. Run 'gh auth login' first."})
 
-                   :timed-out
-                   (chat-history/chat-history-add-message! chat
-                                                           {:role :info :label "Share"
-                                                            :content "GitHub CLI did not respond (timed out)."})
+                    :timed-out
+                    (chat-history/chat-history-add-message! chat
+                                                            {:role :info :label "Share"
+                                                             :content "GitHub CLI did not respond (timed out)."})
 
-                   :ok
-                   (cond
-                     (nil? (runtime/session (:engine cs)))
-                     (chat-history/chat-history-add-message! chat
-                                                             {:role :info :label "Share"
-                                                              :content "No active session."})
+                    :ok
+                    (cond
+                      (nil? (runtime/session (:engine cs)))
+                      (chat-history/chat-history-add-message! chat
+                                                              {:role :info :label "Share"
+                                                               :content "No active session."})
 
                      ;; one share at a time: the background-status release is
                      ;; kind-gated, so a second flow would take over the slot
                      ;; the first one clears when it finishes
-                     (= :share (:kind (some-> (:status-current cs) deref)))
-                     (chat-history/chat-history-add-message! chat
-                                                             {:role :info :label "Share"
-                                                              :content "A share is already in progress."})
+                      (= :share (:kind (some-> (:status-current cs) deref)))
+                      (chat-history/chat-history-add-message! chat
+                                                              {:role :info :label "Share"
+                                                               :content "A share is already in progress."})
 
-                     :else
-                     (share-session! cs)))))})
-  (register-builtin-command!
-   {:name "copy"
-    :description "Copy last agent message to clipboard"
-    :handler (fn [cs _]
-               (let [sess (runtime/session (:engine cs))
-                     chat (:chat-history cs)]
-                 (cond
-                   (nil? sess)
-                   (chat-history/chat-history-add-message! chat
-                                                           {:role :info :label "Copy"
-                                                            :content "No active session."})
+                      :else
+                      (share-session! cs)))))})
+   (register-builtin-command!
+    {:name "copy"
+     :description "Copy last agent message to clipboard"
+     :handler (fn [cs _]
+                (let [sess (runtime/session (:engine cs))
+                      chat (:chat-history cs)]
+                  (cond
+                    (nil? sess)
+                    (chat-history/chat-history-add-message! chat
+                                                            {:role :info :label "Copy"
+                                                             :content "No active session."})
 
-                   :else
-                   (if-let [text (session/get-last-assistant-text sess)]
-                     (if (clipboard/copy-text! text)
-                       (tui/tui-flash! (:tui cs) "Copied!")
+                    :else
+                    (if-let [text (session/get-last-assistant-text sess)]
+                      (if (clipboard/copy-text! text)
+                        (tui/tui-flash! (:tui cs) "Copied!")
                      ;; No platform tool — fall back to the OSC 52 terminal
                      ;; protocol (pi: copyToClipboard remote fallback).
-                       (if (lib-term/osc52-copy! (term/write-fn @(:terminal (:tui cs)))
-                                                 text)
-                         (tui/tui-flash! (:tui cs) "Copied!")
-                         (chat-history/show-warning! chat
-                                                     "No clipboard tool available on this system.")))
-                     (chat-history/show-warning! chat
-                                                 "No agent messages to copy yet.")))))})
-  (register-builtin-command!
-   {:name "reload"
-    :description "Reload settings, extensions, skills, prompts, themes, and the builtin loop stages"
-    :handler handle-reload})
-  (register-builtin-command!
-   {:name "theme"
-    :description "Switch theme"
-    :argument-hint "<name>"
-    :get-argument-completions
-    (fn [_]
-      (mapv (fn [t] {:value t :label t})
-            (sort (keys (th/get-all-themes)))))
-    :handler (fn [cs args]
-               (let [tc (:theme-controller cs)
+                        (if (lib-term/osc52-copy! (term/write-fn @(:terminal (:tui cs)))
+                                                  text)
+                          (tui/tui-flash! (:tui cs) "Copied!")
+                          (chat-history/show-warning! chat
+                                                      "No clipboard tool available on this system.")))
+                      (chat-history/show-warning! chat
+                                                  "No agent messages to copy yet.")))))})
+   (register-builtin-command!
+    {:name "reload"
+     :description "Reload settings, extensions, skills, prompts, themes, and the builtin loop stages"
+     :handler handle-reload})
+   (register-builtin-command!
+    {:name "theme"
+     :description "Switch theme"
+     :argument-hint "<name>"
+     :get-argument-completions
+     (fn [_]
+       (mapv (fn [t] {:value t :label t})
+             (sort (keys (th/get-all-themes)))))
+     :handler (fn [cs args]
+                (let [tc (:theme-controller cs)
                      ;; args is the trimmed argument string — take it whole
                      ;; (a string is a seq of chars; (first args) would yield
                      ;; the first character)
-                     name (str/trim (or args ""))]
-                 (if (seq name)
-                   (let [result (theme-ctrl/set-theme-name! tc name)]
-                     (when (:success result)
-                       (cfg/save-setting! [:theme] name))
-                     (chat-history/chat-history-add-message! (:chat-history cs)
-                                                             {:role :assistant
-                                                              :content (if (:success result)
-                                                                         (str "Switched to theme \"" name "\".")
-                                                                         (str "Failed to load theme \"" name "\": "
-                                                                              (:error result)))}))
-                   (chat-history/chat-history-add-message! (:chat-history cs)
-                                                           {:role :assistant
-                                                            :content (str "Current theme: "
-                                                                          (theme-ctrl/get-active-theme-name tc)
-                                                                          "\nAvailable themes: "
-                                                                          (str/join ", " (sort (keys (th/get-all-themes))))
-                                                                          "\nUsage: /theme <name>")}))))})
-  (register-builtin-command!
-   {:name "login"
-    :description "Configure provider authentication"
-    :argument-hint "<provider>"
-    :get-argument-completions auth/login-argument-completions
-    :handler (fn [cs args] (auth/handle-login-command! cs args))})
-  (register-builtin-command!
+                      name (str/trim (or args ""))]
+                  (if (seq name)
+                    (let [result (theme-ctrl/set-theme-name! tc name)]
+                      (when (:success result)
+                        (cfg/save-setting! [:theme] name))
+                      (chat-history/chat-history-add-message! (:chat-history cs)
+                                                              {:role :assistant
+                                                               :content (if (:success result)
+                                                                          (str "Switched to theme \"" name "\".")
+                                                                          (str "Failed to load theme \"" name "\": "
+                                                                               (:error result)))}))
+                    (chat-history/chat-history-add-message! (:chat-history cs)
+                                                            {:role :assistant
+                                                             :content (str "Current theme: "
+                                                                           (theme-ctrl/get-active-theme-name tc)
+                                                                           "\nAvailable themes: "
+                                                                           (str/join ", " (sort (keys (th/get-all-themes))))
+                                                                           "\nUsage: /theme <name>")}))))})
+   (register-builtin-command!
+    {:name "login"
+     :description "Configure provider authentication"
+     :argument-hint "<provider>"
+     :get-argument-completions auth/login-argument-completions
+     :handler (fn [cs args] (auth/handle-login-command! cs args))})
+   (register-builtin-command!
    ;; pi: no argument hint and no completions — /logout always opens the
    ;; stored-credential selector
-   {:name "logout"
-    :description "Remove provider authentication"
-    :handler (fn [cs _] (auth/handle-logout-command! cs))}))
+    {:name "logout"
+     :description "Remove provider authentication"
+     :handler (fn [cs _] (auth/handle-logout-command! cs))})))
 
 (defn handle-reload
   "Reload settings, extensions, skills, prompts, themes and context files,
@@ -640,7 +647,7 @@
         (let [config (cfg/init!)
               ;; a reloaded loop stage reaches the next attempt by re-seating
               ;; the app node's stages
-              _ (app-runtime/refresh-stages!)
+              _ (loop-stages/refresh! (:ctx cs))
               ;; pi: keybindings.reload() — re-read keybindings.edn
               _ (app-kb/reload-agent-keybindings!)
         ;; pi: session.reload → emitSessionShutdownEvent(reason reload)

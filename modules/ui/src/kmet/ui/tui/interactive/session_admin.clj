@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.session-admin
+(ns kmet.ui.tui.interactive.session-admin
   "Session administration for the interactive mode: the message/entry
    renderers, resume + import, the session tree, and fork/clone."
   (:require [clojure.string :as str]
@@ -26,8 +26,8 @@
             [kmet.ui.tui.model-selector :refer [sync-footer-model!]]
             [kmet.ui.tui.tree-selector :refer [show-session-tree]]
             [kmet.ai.usage :as usage]
-            [kmet.agent.modes.interactive.state :as state]
-            [kmet.agent.modes.interactive.status :as status]))
+            [kmet.ui.tui.interactive.state :as state]
+            [kmet.ui.tui.interactive.status :as status]))
 
 ;; Forward reference inside this namespace (the tree's custom-summary path).
 (declare ask-branch-summary)

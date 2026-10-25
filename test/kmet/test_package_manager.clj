@@ -8,7 +8,7 @@
             [babashka.fs :as fs]
             [kmet.agent.git-packages :as gitp]
             [kmet.agent.packages-cli :as pm]
-            [kmet.agent.modes.config-command :as config-command]
+            [kmet.ui.tui.config-command :as config-command]
             [kmet.agent.config :as cfg]
             [kmet.agent.packages :as pkgs]
             [kmet.ui.tui.resource-config :as resource-config]
@@ -466,7 +466,7 @@
 
 (t/deftest run-config-is-injected-by-the-caller
   (t/testing "the config subcommand's terminal UI is injected; the package
-            manager itself stays headless (kmet.agent.modes.config-command)"
+            manager itself stays headless (kmet.ui.tui.config-command)"
     (let [seen (atom nil)]
       (t/is (= 0 (pm/run-package-command ["config" "-l"]
                                          {:run-config! (fn [opts]

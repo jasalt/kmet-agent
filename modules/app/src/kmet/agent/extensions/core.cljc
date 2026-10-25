@@ -526,7 +526,7 @@
 ;; capability map the front end supplies (see the headless-binding
 ;; default). The runtime binds the headless defaults at bootstrap and
 ;; unbinds at dispose!; a front end with its own port re-binds after its
-;; widgets exist (kmet.agent.modes.interactive installs its registry through
+;; widgets exist (kmet.ui.tui.interactive installs its registry through
 ;; bind-extensions!).
 
 (defn bind-extensions!

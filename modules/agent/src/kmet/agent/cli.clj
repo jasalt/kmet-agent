@@ -1,11 +1,12 @@
 (ns kmet.agent.cli
   "kmet1's entry point — the application `kmet.agent.core` dispatches to for
    `--app old` (the default). CLI argument parsing and mode dispatch. The
-   interactive TUI lives in kmet.agent.modes.interactive; print mode in
+   interactive TUI lives in kmet.ui.tui.interactive; print mode in
    kmet.agent.modes.print; RPC mode in kmet.agent.modes.rpc.
    pi: dist/cli.js."
-  (:require [kmet.agent.modes.config-command :as config-command]
-            [kmet.agent.modes.interactive :as interactive]
+  (:require [kmet.agent.app-runtime :as app-runtime]
+            [kmet.ui.tui.config-command :as config-command]
+            [kmet.ui.tui.interactive :as interactive]
             [kmet.agent.modes.print :as print-mode]
             [kmet.agent.modes.rpc :as rpc-mode]
             [kmet.agent.packages-cli :as package-manager]
@@ -352,7 +353,7 @@
         (println "Starting kmet...")
 
         (try
-          (interactive/run config opts)
+          (interactive/run config opts (app-runtime/ctx))
           (catch Exception e
             (debug/log-error "unhandled exception: " e)
             (binding [*out* *err*]

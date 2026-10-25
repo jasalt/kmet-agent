@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.config-command
+(ns kmet.ui.tui.config-command
   "The `kmet config` command's terminal UI (pi: cli/config-selector.ts — a
    standalone TuiMainScreen hosting the config selector). Command parsing
    and dispatch stay in kmet.agent.packages-cli (headless); this

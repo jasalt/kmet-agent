@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.resources
+(ns kmet.ui.tui.interactive.resources
   "The loaded-resources sections shown by the interactive mode's
    LoadedResources component (pi: showLoadedResources)."
   (:require [babashka.fs :as fs]

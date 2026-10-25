@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.state
+(ns kmet.ui.tui.interactive.state
   "Shared state of the interactive mode: the CoreState record, the
    process config ref, session-directory helpers, header formatting,
    and the live-state updaters (footer/title/border + selector
@@ -151,7 +151,11 @@
                       theme-controller
                       ;; the kmet.agent.session.runtime engine; the layout owns
                       ;; view state and subscribes to the engine's stream
-                      engine])
+                      engine
+                      ;; the run's composition ctx: `/units` and /reload's
+                      ;; stage re-seat read it, so the mode never reaches for a
+                      ;; process root it was not given
+                      ctx])
 
 ;; ─── Formatting helpers ────────────────────────────────────────────────────
 

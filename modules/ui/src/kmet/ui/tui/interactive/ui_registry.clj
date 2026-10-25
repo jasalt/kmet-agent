@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.ui-registry
+(ns kmet.ui.tui.interactive.ui-registry
   "The ExtensionUIContext implementation for the interactive mode: widget
    areas, custom components, dialogs, and editor transfer (pi:
    ExtensionUIContext)."
@@ -35,11 +35,11 @@
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.ui.tui.loaded-resources :as loaded-resources]
             [kmet.ui.tui.status-indicator :as status-indicator]
-            [kmet.agent.modes.interactive.builtins :as builtins]
-            [kmet.agent.modes.interactive.session-admin :as session-admin]
-            [kmet.agent.modes.interactive.state :as state]
-            [kmet.agent.modes.interactive.status :as status]
-            [kmet.agent.modes.interactive.turn :as turn]))
+            [kmet.ui.tui.interactive.builtins :as builtins]
+            [kmet.ui.tui.interactive.session-admin :as session-admin]
+            [kmet.ui.tui.interactive.state :as state]
+            [kmet.ui.tui.interactive.status :as status]
+            [kmet.ui.tui.interactive.turn :as turn]))
 
 ;; ─── Extension UI registry (pi: ExtensionUIContext) ────────────────────────
 ;; build-layout installs this registry after the layout is live; extensions

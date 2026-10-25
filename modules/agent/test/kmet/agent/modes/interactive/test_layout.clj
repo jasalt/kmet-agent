@@ -8,9 +8,9 @@
             [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.core :as tui]
-            [kmet.agent.modes.interactive.auth :as ia]
-            [kmet.agent.modes.interactive.layout :as layout]
-            [kmet.agent.modes.interactive.ui-registry :as ui-registry]
+            [kmet.ui.tui.interactive.auth :as ia]
+            [kmet.ui.tui.interactive.layout :as layout]
+            [kmet.ui.tui.interactive.ui-registry :as ui-registry]
             [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
             [kmet.ui.tui.status-indicator :as status-indicator]
@@ -21,6 +21,7 @@
             [kmet.agent.loop :as agent]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.config :as cfg]
+            [kmet.agent.tools.core :as tools]
             [kmet.agent.modes.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
@@ -62,7 +63,8 @@
             caller — and tool components resolve paths against the session's
             cwd, not the process's"
     (let [cwd (atom "/project/session")
-          ch (layout/make-app-chat-history {:tool-display-mode :quiet} cwd)
+          ch (layout/make-app-chat-history {:tool-display-mode :quiet} cwd
+                                           tools/get-tool)
           _ (chat-history/chat-history-add-message!
              ch {:role :tool :tool-name "read" :arguments {:path "a.txt"}
                  :content "" :is-error false})

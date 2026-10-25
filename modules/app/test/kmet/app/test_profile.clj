@@ -170,7 +170,7 @@
             {:id :agents :plugin 'kmet.app.agents/plugin}
             {:id :agent-loop :plugin 'kmet.app.loop.driver/plugin}
             {:id :approvals :plugin 'kmet.app.permissions/approvals}
-            {:id :mode-tui :plugin 'kmet.agent.modes.tui/plugin :mode true
+            {:id :mode-tui :plugin 'kmet.ui.tui/plugin :mode true
              :session-lifecycle true}]
            (:rows (profile/compose (profile/layers table :tui))))
         "the bundle carries the rows the landed plugins add, and the TUI is the

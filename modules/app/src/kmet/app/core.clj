@@ -270,7 +270,7 @@
    process that never runs `config` loads no TUI. Returns the screen's exit
    code."
   [opts]
-  ((requiring-resolve 'kmet.agent.modes.config-command/run-config!) opts))
+  ((requiring-resolve 'kmet.ui.tui.config-command/run-config!) opts))
 
 (defn- package-command
   "ARGS start with a package subcommand: the shared CLI runs it, with the

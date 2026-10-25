@@ -2,7 +2,7 @@
   "Guard: a headless front end's static require graph reaches no
    interactive mode, no `kmet.tui.*` namespace, and no Tk backend. The
    extension ABI and the config command load the shared TUI layer at call
-   time (`host-requires!`, `kmet.agent.modes.config-command`), invisible to
+   time (`host-requires!`, `kmet.ui.tui.config-command`), invisible to
    this static graph."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
@@ -51,7 +51,7 @@
   (let [graph (transitive-requires [root])]
     {:root root
      :loaded? (contains? graph root)
-     :interactive (vec (filter #(str/starts-with? % "kmet.agent.modes.interactive") graph))
+     :interactive (vec (filter #(str/starts-with? % "kmet.ui.tui") graph))
      :view (vec (filter #(str/starts-with? % "kmet.agent.ui") graph))
      :tui (vec (filter #(str/starts-with? % "kmet.tui") graph))
      :tk (vec (filter #(str/starts-with? % "kmet.tk") graph))}))

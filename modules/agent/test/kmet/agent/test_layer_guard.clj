@@ -98,6 +98,15 @@
   []
   (sort (mapcat source-files-under ui-roots)))
 
+(defn- ui-mode-files
+  "The front ends that live under `ui` after 5l-iii: the TUI's provider/mode row
+   (`kmet.ui.tui`) and its interactive cluster. They are modes — they own a run
+   and drive the engine — so the widget-scoped `:ui` rules do not bind them."
+  []
+  (filter #(or (= "modules/ui/src/kmet/ui/tui.clj" %)
+               (str/starts-with? % "modules/ui/src/kmet/ui/tui/interactive"))
+          (ui-source-files)))
+
 (defn- front-end-source-files
   "Every mode and app-UI namespace file (the front-end layers)."
   []
@@ -125,10 +134,13 @@
      the compaction stage. A front end reaches the engine through the session
      runtime, not the machinery under it (the pure `kmet.agent.compaction.core`
      helpers are fine — the footer reads tokens).
-   - `:ui` (the app-UI layer alone): the session driver. It starts work —
+   - `:ui` (the app-UI widgets alone): the session driver. It starts work —
      prompts, turns, session switching, disposal — and a mode owns a run and may
      drive it, while a widget reads the engine instead
-     (`kmet.agent.session.runtime`, one rank below the driver)."
+     (`kmet.agent.session.runtime`, one rank below the driver). The TUI mode
+     entry and its interactive cluster are front ends that *are* a mode: 5l-iii
+     moved them under `ui`, so they keep the `:front-ends` rule and this one
+     skips them (`ui-mode-files`)."
   [{:scope :front-ends
     :prefixes ["kmet.agent.loop" "kmet.agent.compaction.stage"]
     :why "front ends reach the engine through the session runtime"}
@@ -148,7 +160,7 @@
       (doseq [root ui-roots]
         (is (some #(str/starts-with? % root) files) (str root " not scanned")))
       (doseq [{:keys [scope prefixes why]} front-end-forbidden
-              f (if (= :ui scope) (ui-source-files) files)
+              f (if (= :ui scope) (remove (set (ui-mode-files)) (ui-source-files)) files)
               :let [forbidden (filter (fn [d] (some #(str/starts-with? d %) prefixes))
                                       (required-kmet f))]]
         (is (empty? forbidden)

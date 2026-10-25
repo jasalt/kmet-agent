@@ -8,7 +8,6 @@
             [kmet.ai.api.shared :as shared]
             [kmet.ai.api.openai-completions :as completions]
             [kmet.ai.api.openai-responses :as responses]
-            [kmet.ai.api.anthropic-messages :as anthropic]
             [kmet.ai.api.google-generative-ai :as google]
             [kmet.ai.models :as m]))
 

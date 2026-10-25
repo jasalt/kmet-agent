@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.turn
+(ns kmet.ui.tui.interactive.turn
   "Turn lifecycle for the interactive mode: the agent event handlers,
    the submit/cancel/queue paths, the compaction-queue display, and the
    terminal-progress indicator (pi: session.prompt input events, agent
@@ -24,8 +24,8 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.modes.interactive.state :as state]
-            [kmet.agent.modes.interactive.status :as status]))
+            [kmet.ui.tui.interactive.state :as state]
+            [kmet.ui.tui.interactive.status :as status]))
 
 ;; Forward reference inside this namespace (the turn teardown path).
 (declare heal-stale-scrollback-when-idle!)

@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.status
+(ns kmet.ui.tui.interactive.status
   "Status display for the interactive mode: the animation timer, the
    working/background status indicator, and the queued steering/follow-up
    message display (pi: showStatusIndicator / clearStatusIndicator /

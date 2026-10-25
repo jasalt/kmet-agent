@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive
+(ns kmet.ui.tui.interactive
   "Interactive TUI mode entry — resolves the session, builds the layout,
    starts the render loop, and emits the session-start event.
    pi: modes/interactive/interactive-mode.ts."
@@ -16,7 +16,6 @@
             [kmet.agent.session.core :as session]
             [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.app-runtime :as app-runtime]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.bash-execution :as bash-execution]
             [kmet.ui.tui.chat-history :as chat-history]
@@ -24,11 +23,11 @@
             [kmet.ui.tui.session-selector :refer [show-session-selector]]
             [kmet.libs.process :as process]
             [kmet.libs.reakt.core :as reakt]
-            [kmet.agent.modes.interactive.layout :as layout]
-            [kmet.agent.modes.interactive.session-admin :as session-admin]
-            [kmet.agent.modes.interactive.state :as state]))
+            [kmet.ui.tui.interactive.layout :as layout]
+            [kmet.ui.tui.interactive.session-admin :as session-admin]
+            [kmet.ui.tui.interactive.state :as state]))
 
-;; CoreState lives in kmet.agent.modes.interactive.state; the constructors
+;; CoreState lives in kmet.ui.tui.interactive.state; the constructors
 ;; stay re-exported here for consumers of this namespace (tests).
 (def ->CoreState state/->CoreState)
 (def map->CoreState state/map->CoreState)
@@ -110,12 +109,12 @@
    closes over the whole mode.
    Error paths rethrow for the top-level handler.
 
-   CTX is the ctx the engine runs on (see `build-layout`); it defaults to the
-   process root, which is kmet1's entry. An entry that boots a composition
-   (`kmet --app new --profile tui`) names the composition's ctx, so the run's
-   tool table and system prompt come from the tree it booted.
+   CTX is the ctx the engine runs on (see `build-layout`) and is required: an
+   entry names the tree the run reads its tool table and system prompt from —
+   kmet1's entry its process root, `kmet --app new --profile tui` the
+   composition it booted. There is no process-root default: the decision
+   belongs to the entry, not to a library that would have to reach up for it.
    pi: cli.js dispatch to interactive mode."
-  ([config opts] (run config opts (app-runtime/ctx)))
   ([config opts ctx]
    (let [tui-ref (atom nil)
          cs-ref (atom nil)]

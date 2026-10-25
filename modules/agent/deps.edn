@@ -1,3 +1,7 @@
+;; Rank 4: kmet1's three modes (`print`, `rpc`, `rpc-client`) and its entry and
+;; process shims. The TUI, its interactive cluster and the config command left
+;; for `ui` at 5l-iii; what remains is what retirement deletes.
+;;
 ;; The bundled extension libraries (cljfmt, rewrite-clj, parinferish, edamame,
 ;; spec.alpha, tools.reader) and the SCI pin are `app`'s since 4b-ii-b moved the
 ;; host's leaves (the evaluation contexts and the bundled library set) and the
@@ -7,11 +11,8 @@
 {:paths ["src" "test"]
  :deps {kmet/ui   {:local/root "../ui"}
         kmet/libs {:local/root "../libs"}
-        kmet/reakt {:local/root "../reakt"}
-        kmet/hikap {:local/root "../hikap"}
         kmet/tui  {:local/root "../tui"}
         kmet/ai   {:local/root "../ai"}
         kmet/srce {:local/root "../srce"}
         kmet/app  {:local/root "../app"}
-        babashka/fs {:mvn/version "0.5.34"}
         babashka/process {:mvn/version "0.6.25"}}}

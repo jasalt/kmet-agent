@@ -1,5 +1,5 @@
 (ns kmet.agent.modes.interactive.test-state
-  "kmet.agent.modes.interactive.state: the exit-hint conditions (pi
+  "kmet.ui.tui.interactive.state: the exit-hint conditions (pi
    formatResumeCommand: a persisted session file, attached stdout, and the
    --session-dir argument only for a non-default layout) and the shared
    bash-cancel helper."
@@ -8,7 +8,7 @@
             [kmet.agent.config :as cfg]
             [kmet.agent.session.core :as session]
             [kmet.libs.host :as host]
-            [kmet.agent.modes.interactive.state :as state]))
+            [kmet.ui.tui.interactive.state :as state]))
 
 (defn- persisted-session
   "A minimal session map whose :file exists on disk under DIR for CWD — the

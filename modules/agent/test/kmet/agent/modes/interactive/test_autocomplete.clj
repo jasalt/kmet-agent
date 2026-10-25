@@ -5,7 +5,7 @@
             [kmet.test-utils :as tu]
             [kmet.tui.autocomplete :as ac]
             [kmet.tui.components.editor :as editor]
-            [kmet.agent.modes.interactive.ui-registry :as ui-registry]
+            [kmet.ui.tui.interactive.ui-registry :as ui-registry]
             [kmet.agent.modes.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it

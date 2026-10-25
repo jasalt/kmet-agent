@@ -1,9 +1,9 @@
-(ns kmet.agent.modes.interactive.auth
+(ns kmet.ui.tui.interactive.auth
   "Login/logout flows for the interactive mode: provider option
    discovery, auth-type selection, API-key and OAuth login (pi:
    getLoginProviderOptions / showLoginAuthTypeSelector / showLoginDialog /
    showApiKeyLoginDialog / OAuthSelectorComponent). The command handlers
-   are registered by kmet.agent.modes.interactive.builtins."
+   are registered by kmet.ui.tui.interactive.builtins."
   (:require [clojure.string :as str]
             [kmet.tui.core :as tui]
             [kmet.tui.fuzzy :as fuzzy]
@@ -13,7 +13,7 @@
             [kmet.ui.tui.login-dialog :as login-dialog]
             [kmet.ai.auth :as auth]
             [kmet.ai.models :as models]
-            [kmet.agent.modes.interactive.state :as state]))
+            [kmet.ui.tui.interactive.state :as state]))
 
 ;; ─── Login/logout (pi getLoginProviderOptions / showLoginAuthTypeSelector /
 ;;    showLoginDialog / showApiKeyLoginDialog / OAuthSelectorComponent) ──────

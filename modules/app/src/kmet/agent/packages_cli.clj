@@ -433,7 +433,7 @@
 (defn run-package-command
   "Run a package subcommand (args includes the command word). OPTS carries
    :run-config!, the `config` subcommand's terminal UI injected by the CLI
-   composition root (kmet.agent.modes.config-command/run-config!) — the
+   composition root (kmet.ui.tui.config-command/run-config!) — the
    package manager itself stays headless. Returns the process exit code
    (pi: the CLI prints and sets process.exitCode; a command error prints
    `Error: …` and returns 1 like pi's catch-all)."

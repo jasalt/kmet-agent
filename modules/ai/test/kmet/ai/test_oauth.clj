@@ -18,14 +18,14 @@
             [kmet.agent.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.tui.protocols :as protocols]
-            [kmet.agent.modes.interactive.builtins :as builtins]
-            [kmet.agent.modes.interactive.auth :as interactive-auth]
+            [kmet.ui.tui.interactive.builtins :as builtins]
+            [kmet.ui.tui.interactive.auth :as interactive-auth]
             [kmet.test-utils :as tu]
             [kmet.libs.concurrent :as concurrent]))
 
 ;; The /login tests install the interactive builtins on the app tree; clear
 ;; the process-global registrations between tests.
-(t/use-fixtures :each tu/with-clean-app-registries)
+(t/use-fixtures :each tu/with-extension-host tu/with-clean-app-registries)
 
 ;; ─── Device-code poll state machine (pi pollOAuthDeviceCodeFlow) ───────────
 

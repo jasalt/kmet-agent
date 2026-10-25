@@ -26,7 +26,7 @@
    "modules/agent/src/kmet/agent/modes/rpc.clj"
    {:load-resources! 'packages/load-resources!
     :expand-input 'packages/expand-input}
-   "modules/agent/src/kmet/agent/modes/interactive/layout.clj"
+   "modules/ui/src/kmet/ui/tui/interactive/layout.clj"
    {:load-resources! 'packages/load-resources!
     :expand-input 'packages/expand-input}})
 
