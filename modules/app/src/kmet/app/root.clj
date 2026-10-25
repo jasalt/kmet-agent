@@ -3,7 +3,7 @@
    extension host's ctx-less reads and `/units` answer from.
 
    An atom rather than a delay because an entry that boots the composition
-   itself (`--app new`) publishes *its* root here, so a process has one tree —
+   itself (`bb start`) publishes *its* root here, so a process has one tree —
    the one it mounted — instead of a shim booting a second one behind it. The
    first root wins; a test that publishes its own puts the previous one back
    (`reset-root!`/`restore-root!`) rather than clearing it, because the root

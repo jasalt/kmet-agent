@@ -305,13 +305,18 @@
       (fn [_calls]
         (let [handle (create! {:root root :agents agents})]
           ((:send! agents) handle "first" {:target :next-turn})
+          ;; the stub blocks on the gate, so the prompt is live when the request
+          ;; arrives; without it the turn settles first and the request starts a
+          ;; compaction instead of deferring one
+          (is (= :running ((:status agents) handle)))
           (is (= :scheduled ((:request-compaction! agents) handle nil nil))
               "a request while the prompt runs waits for the settle")
           (is (= 1 (count (runtime/pending-compaction handle)))
               "and is queued on this agent's value")
           ((:dispose! agents) handle)
           (is (true? @(:disposed? handle)))
-          (deliver gate :done))))))
+          (deliver gate :done)))
+      gate)))
 
 (deftest a-runs-extension-surface-is-the-agent-it-runs-inside
   ;; Two agents, one process: each run's handler reads its own session and

@@ -610,8 +610,8 @@
 
    CTX is the ctx the agent runs on — the one whose `:tools`, `:sessions` and
    `:systemPrompt` the run reads, and the scope `:agents` serves. It is the
-   required argument: kmet1's entry passes its process root, `kmet --app new
-   --profile tui` the composition it booted. The tool lookup the chat history
+   required argument: the entry point passes the composition root it booted
+   for the `:profile tui` run. The tool lookup the chat history
    renders with comes from that ctx, so the layout reaches for no registry of
    its own.
 

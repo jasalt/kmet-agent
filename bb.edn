@@ -3,7 +3,7 @@
  ;; implementation lives there (see AGENTS.md § File layout). Both hosts
  ;; resolve kmet.tasks.* from it, and neither artifact carries it — the
  ;; uberjar walks src/, jolt's :jolt/build :embed does too.
- :paths ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/hikap/test" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/agent/src" "modules/agent/test" "modules/loader/src" "modules/loader/test" "modules/srce/src" "modules/srce/test" "modules/app/src" "modules/app/test" "modules/ui/src" "modules/ui/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions/clojure/src" "extensions/clojure/test" "extensions/tree-sitter/src" "extensions/tree-sitter/test" "extensions/review/src" "extensions/review/test"]
+ :paths ["modules/reakt/src" "modules/reakt/test" "modules/hikap/src" "modules/hikap/test" "modules/libs/src" "modules/libs/test" "modules/tui/src" "modules/tui/test" "modules/ai/src" "modules/ai/test" "modules/loader/src" "modules/loader/test" "modules/srce/src" "modules/srce/test" "modules/app/src" "modules/app/test" "modules/ui/src" "modules/ui/test" "modules/tk/src" "modules/tk/test" "test" "tasks" "extensions/clojure/src" "extensions/clojure/test" "extensions/tree-sitter/src" "extensions/tree-sitter/test" "extensions/review/src" "extensions/review/test"]
  :deps {dev.weavejester/cljfmt {:mvn/version "0.16.6"}
         ;; babashka >= 1.13.224 bundles data.json (2.5.2 as of 1.13.225) and
         ;; the built-in wins over any declared copy; pinned at the bundled
@@ -25,16 +25,16 @@
  :tasks
  {:requires ([kmet.tasks.help :as help])
   start   {:doc "Start kmet (interactive TUI); `bb start --help` for kmet's CLI options"
-           :requires ([kmet.agent.core :as core])
+           :requires ([kmet.app.core :as core])
            :task (apply core/-main *command-line-args*)}
   start-jvm {:doc "Start kmet under JVM Clojure (interactive TUI)\n\nRuns with the app's JVM aliases (:jvm :clj-pin) — the classpath the released JVM artifact gets, extension-dependency resolution included."
              :requires ([babashka.process :as p])
-             :task (apply p/shell "clojure" "-M:jvm:clj-pin" "-m" "kmet.agent.core" *command-line-args*)}
+             :task (apply p/shell "clojure" "-M:jvm:clj-pin" "-m" "kmet.app.core" *command-line-args*)}
   uberjar {:doc "Build target/uberjar-bb.jar (run with: bb target/uberjar-bb.jar)\n\nThe babashka payload: an uberjar of src + runtime deps that `bb dist` appends to a babashka release binary. Not JVM-loadable (babashka's built-in namespaces have no source files) — `bb uberjar-jvm` builds the JVM artifact."
            :requires ([kmet.tasks.build :as build])
            :task (help/with-help (build/uberjar*))
            :override-builtin true}
-  uberjar-jvm {:doc "Build target/uberjar-jvm.jar (run with: java -jar target/uberjar-jvm.jar)\n\nA self-contained JVM uberjar: the modules, the model catalogs, the staged bundled extensions and a baked version, AOT-compiled behind the :gen-class entry kmet.agent.jvm-main, then smoke-tested (`--list-models` + `--version`). Assembled by tools.build under the deps.edn :build alias, so it needs the Clojure CLI; platform-independent, unlike the bb/jolt executables. `bb dist-jvm` packs it for release."
+  uberjar-jvm {:doc "Build target/uberjar-jvm.jar (run with: java -jar target/uberjar-jvm.jar)\n\nA self-contained JVM uberjar: the modules, the model catalogs, the staged bundled extensions and a baked version, AOT-compiled behind the :gen-class entry kmet.app.jvm-main, then smoke-tested (`--list-models` + `--version`). Assembled by tools.build under the deps.edn :build alias, so it needs the Clojure CLI; platform-independent, unlike the bb/jolt executables. `bb dist-jvm` packs it for release."
                :requires ([babashka.process :as p])
                :task (help/with-help (p/shell "clojure" "-M:build" "-m" "kmet.tasks.build-jvm"))}
   dist-jvm {:doc "Package the JVM artifact (dist/kmetc-<version>-jvm.zip: kmetc.jar, the kmetc/kmetc.sh/kmetc.bat/kmetc.cmd/kmetc.ps1 launchers and LICENSE)\n\nOne platform-independent zip, no cross-building: the uberjar is built and smoke-tested first, then packed by the same conventions `bb dist` / `jolt dist` use (`jvm` sits in the platform slot, and the kmetc- prefix keeps the command distinct from kmet and kmetj). Needs the Clojure CLI."
@@ -49,7 +49,7 @@
            :requires ([kmet.tasks.runner :as runner])
            :task (help/with-help (apply runner/-main false *command-line-args*))
            :override-builtin true}
-  test-ext {:doc "Run ONLY the slow (^:slow) test suites\n\nArgs: plain test var names, ns/var pairs, or whole namespaces (bb test-ext kmet.agent.test-extensions). Whole-namespace args select slow vars; var args ignore slow?. Unloadable namespaces are reported with the load failure reason (full run: all; filtered run: requested only) and fail the run."
+  test-ext {:doc "Run ONLY the slow (^:slow) test suites\n\nArgs: plain test var names, ns/var pairs, or whole namespaces (bb test-ext kmet.app.test-extensions). Whole-namespace args select slow vars; var args ignore slow?. Unloadable namespaces are reported with the load failure reason (full run: all; filtered run: requested only) and fail the run."
             :requires ([kmet.tasks.runner :as runner])
             :task (help/with-help (apply runner/-main true *command-line-args*))
             :override-builtin true}
@@ -106,10 +106,9 @@
                      (p/shell "clojure" "-M:jvm:clj-pin:dev:nrepl"
                               "-m" "nrepl.cmdline"
                               "--port" (or (first *command-line-args*) "7803")))}
-  check   {:doc "Verify all code compiles\n\nBoth app entries are loaded in the task body: the --app dispatch is dynamic, so requiring is the only way to know this artifact carries them. The :requires list names the bootstrap only."
-           :requires ([kmet.agent.core])
-           :task (help/with-help (do (require 'kmet.agent.cli)
-                                     (require 'kmet.app.core)
+  check   {:doc "Verify all code compiles\n\nLoading the entry in the task body is what proves the app's namespace graph compiles whole; the :requires list names the entry only."
+           :requires ([kmet.app.core])
+           :task (help/with-help (do (require 'kmet.app.core)
                                      (println "All source namespaces compile successfully.")))
            :override-builtin true}
   generate-models {:doc "Regenerate the committed provider + image model catalogs (network)\n\nProvider catalogs come from models.dev + the live sources; the image catalog from OpenRouter. Either failure exits 1."

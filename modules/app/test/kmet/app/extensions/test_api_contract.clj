@@ -17,7 +17,11 @@
    `:ui`, `:register-provider!` under `:models`)."
   (:require [clojure.java.io :as io]
             [clojure.test :as t]
-            [kmet.app.extensions.core :as extensions]))
+            [kmet.app.extensions.core :as extensions]
+            [kmet.test-utils :as tu]))
+
+;; loading an extension writes into the host's registries, so the test binds one
+(t/use-fixtures :each tu/with-extension-host)
 
 (defn- abi-source []
   (or (some-> (io/resource "kmet/extension.clj") slurp)

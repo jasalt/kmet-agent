@@ -7,7 +7,7 @@
 
 (deftest path->ns-mapping
   (testing "src files map to namespaces (underscores become dashes)"
-    (is (= 'kmet.agent.core (changed/path->ns "modules/agent/src/kmet/agent/core.clj")))
+    (is (= 'kmet.app.core (changed/path->ns "modules/app/src/kmet/app/core.clj")))
     (is (= 'kmet.ui.tui.model-selector (changed/path->ns "modules/ui/src/kmet/ui/tui/model_selector.clj")))
     (is (= 'kmet.ai.api.openai-completions (changed/path->ns "modules/ai/src/kmet/ai/api/openai_completions.clj")))
     (is (= 'kmet.libs.text (changed/path->ns "modules/libs/src/kmet/libs/text.clj"))))
@@ -35,7 +35,7 @@
   (testing "vector entries"
     (is (= '#{kmet.app.loop kmet.ai.models kmet.app.config}
            (changed/ns-requires
-            '(ns kmet.agent.modes.print
+            '(ns kmet.app.modes.print
                "doc"
                (:require [kmet.app.loop :as agent]
                          [kmet.ai.models :as models]

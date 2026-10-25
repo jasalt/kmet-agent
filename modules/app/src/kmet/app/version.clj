@@ -83,9 +83,9 @@
    exists in every mode (sources ship in the jars and embedded stores), so
    only the URL scheme tells a checkout from a packaged image. It must name a
    real namespace: a stale path answers nil and pins `kmet --version` to `dev`
-   in every source run. kmet.agent.core is the process bootstrap, so every
+   in every source run. kmet.app.core is the process bootstrap, so every
    artifact carries it."
-  "kmet/agent/core.clj")
+  "kmet/app/core.clj")
 
 (defn source-run?
   "True when kmet's own source files resolve off disk — a `bb start` /

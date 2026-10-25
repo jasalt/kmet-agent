@@ -51,7 +51,7 @@
             [kmet.app.version :as version-lib]))
 
 (def ^:private scratch-root "target/jolt")
-(def ^:private entry-ns "kmet.agent.core")
+(def ^:private entry-ns "kmet.app.core")
 (def ^:private test-entry-ns "kmet.tasks.test-main")
 
 (def ^:private bake-root
@@ -63,7 +63,7 @@
   "target/kmet-version")
 
 (def ^:private smoke-args
-  "The model half of the smoke test: kmet.agent.core prints the model table and
+  "The model half of the smoke test: kmet.app.core prints the model table and
    exits, and the table is built from the embedded catalogs — a missing embed
    fails here. The version half runs --version and is checked against the
    bake."
@@ -643,7 +643,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
 
    Build kmet's Jolt executable as the bare `kmetj` (kmetj.exe on Windows):
    one native binary with the runtime, clojure.core, the stdlib, the
-   dependencies and kmet itself compiled in (the entry is kmet.agent.core),
+   dependencies and kmet itself compiled in (the entry is kmet.app.core),
    packaged as dist/kmetj-<ver>-<platform>-<link>.zip (static or dynamic —
    the two are different artifacts) with one top-level folder
    named after the zip (kmet.tasks.build/artifact-dir) holding the

@@ -1064,7 +1064,7 @@
 
 ;; ─── App actions (pi: CustomEditor.handleInput) ───────────────────────────
 ;; Registered action handlers (via editor-set-on-action!) are matched against
-;; the keybindings manager (the app-level KeybindingsManager in kmet.agent.core) and
+;; the keybindings manager (the app-level KeybindingsManager in kmet.app.core) and
 ;; take precedence over editor-internal key handling. Priority handlers
 ;; (editor-set-priority-action!, used for extension shortcuts — pi:
 ;; onExtensionShortcut) are checked BEFORE every app action, so extensions

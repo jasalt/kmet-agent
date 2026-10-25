@@ -4348,8 +4348,22 @@ becomes the whole-tree rule.
 loop tests and the root tree's bind the same host, and one fixture disposes the
 ctx it created.
 
-The endgame, in one landing because it cannot be split once started (the rename
-pass ahead of it is three commits of this landing, landed): kmet1's files
+**Landed: the endgame.** kmet1's module is gone — its six entry/process files,
+its four modes, its tool façade, its eight test files (the 1,530 lines that
+tested them) and the `agent` row with its four manifests; the single app's entry
+is `kmet.app.core/-main`, with `kmet.app.jvm-main` as the JVM artifact's
+`:gen-class` entry, and every packager, the jolt embed list, `deps.edn`'s root
+(the module chain now hangs off `kmet/ui`) and the `bb*` tasks name it. The
+`--app` flag is gone with the bootstrap that dispatched on it, so `bb start`,
+`jolt start` and the artifacts all run the same composition. `test_ui_port` and
+`test_runtime_capabilities` moved to `app` rather than dying: they test the
+host's `:ui` port and the runtime capabilities, both of which ship. The bundled
+manifest moved to `modules/app/src/kmet/bundled-extensions.edn` (a src root, so
+it is still a classpath resource in every mode). Twelve tests were passing on a
+load side effect of the deleted shim and now name their host. The module-deps
+guard drops to 632 declarations.
+
+ kmet1's files
 deleted (the 6 entry/process files and its 4 modes), the `agent` module row and
 its four manifests removed, `--app` flipped to the default and the flag dropped,
 `kmet.agent.tools.core`'s façade arities collapsed into the handle-taking

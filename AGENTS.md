@@ -9,14 +9,14 @@ change when behavior changes.
 
 | Area | Authoritative reference |
 |------|-------------------------|
-| Application layout and contributor workflow | [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md) |
+| Application layout and contributor workflow | [`docs/architecture.md`](docs/architecture.md) |
 | Kernel: ctx tree, services, inject, fibers, effects, events | [`modules/srce/src/kmet/srce/srce.md`](modules/srce/src/kmet/srce/srce.md) |
 | kmet2 application: services, agents, sessions, profiles, landings | [`new-app.md`](new-app.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
 | Tk backend and its widget sample (`kmet.tk.*`, `kmet.gui-sample.*`, Jolt-only) | [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md) |
 | Extension contract (`kmet.extension` API, allowed namespaces, lifecycle) | [`modules/app/src/kmet/extension.md`](modules/app/src/kmet/extension.md) |
 | Extension authoring guide (layouts, loaders, deps, UI, testing) | [`docs/extensions.md`](docs/extensions.md) |
-| pi alignment and feature-gap analysis | [`modules/agent/src/kmet/agent/development/pi-alignment.md`](modules/agent/src/kmet/agent/development/pi-alignment.md) |
+| pi alignment and feature-gap analysis | [`docs/pi-alignment.md`](docs/pi-alignment.md) |
 | Loader design and backends | [`modules/loader/src/kmet/loader/loader.md`](modules/loader/src/kmet/loader/loader.md) |
 | Jolt provider scaffolding and host integration | [`jolt/src/jolt/kmet/README.md`](jolt/src/jolt/kmet/README.md) |
 | User guides and examples | [`docs/README.md`](docs/README.md), [`docs/examples/README.md`](docs/examples/README.md) |
@@ -30,10 +30,10 @@ the session-runtime split’s GUI-independent steps landed.)
 
 ## Basic development flow
 
-- `bb start` starts `kmet.agent.core/-main`, the `--app` bootstrap; `jolt
-  start` is the native-host equivalent. `--app old` (the default) runs kmet1
-  (`kmet.agent.cli`), `--app new` runs kmet2 (`kmet.app.core`); the flag is the
-  migration lever [`new-app.md`](new-app.md) describes.
+- `bb start` starts `kmet.app.core/-main`, the process entry; `jolt start` is
+  the native-host equivalent. There is one app: kmet1 was retired with the
+  module that carried it, so the `--app` flag is gone and every host runs the
+  same composition (the ledger is [`new-app.md`](new-app.md)).
 - `bb clean` removes build output and caches; `bb clean --dry-run` lists what
   it would remove. `jolt clean` is the native-host equivalent.
 - `bb nrepl` starts the development server on port 7801, blocks, and writes
@@ -111,7 +111,7 @@ the session-runtime split’s GUI-independent steps landed.)
 - Both host lint views must remain valid for shared code.
 - The layer boundaries, task packaging rules, portability notes, and
   application state conventions are maintained in
-  [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md). Keep that document current
+  [`docs/architecture.md`](docs/architecture.md). Keep that document current
   when those rules change.
 
 ### Time and durations
@@ -145,7 +145,7 @@ the session-runtime split’s GUI-independent steps landed.)
   way.
 - Needing a variant is the signal to extend the lower layer (or the nearest
   shared namespace) — a second implementation is a bug even when it works.
-  The layer map is in [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md); the
+  The layer map is in [`docs/architecture.md`](docs/architecture.md); the
   dispatcher list is in [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md).
 
 ## Testing
@@ -207,4 +207,4 @@ the session-runtime split’s GUI-independent steps landed.)
 - Before implementing a new feature, consult the relevant package document
   and the reference implementation in `~/src/cvstree/pi/` when useful; the
   maintained gap list is
-  [`modules/agent/src/kmet/agent/development/pi-alignment.md`](modules/agent/src/kmet/agent/development/pi-alignment.md).
+  [`docs/pi-alignment.md`](docs/pi-alignment.md).

@@ -104,9 +104,9 @@ tasks/          — development and packaging tasks
 scripts/        — repo tooling (git hooks, repros)
 ```
 
-Implementation and development references are kept close to their packages;
-start with [`modules/agent/src/kmet/README.md`](modules/agent/src/kmet/README.md) for contributor
-information.
+Implementation and development references are kept close to their packages —
+each module's `README.md` or design note sits beside its source — and
+[`docs/architecture.md`](docs/architecture.md) is the contributor's map.
 
 ## License
 

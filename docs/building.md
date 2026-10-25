@@ -16,7 +16,7 @@ a JVM runs the jar (see [JVM artifacts](#jvm-artifacts)).
 
 On babashka the artifact is an official babashka release binary with the kmet
 uberjar appended (babashka detects the appended zip at startup and runs
-`kmet.agent.core/-main`, the `--app` bootstrap — see babashka's "Self-contained
+`kmet.app.core/-main`, the process entry — see babashka's "Self-contained
 executable" wiki page).
 Cross-builds work from any host because packaging is download + concat only.
 
@@ -31,7 +31,7 @@ bb dist --out ~/bin     # additionally copy the executable there
 ## Jolt artifacts
 
 On jolt the same task AOT-compiles the app through
-`jolt build -m kmet.agent.core` — runtime, stdlib, dependencies and kmet in one
+`jolt build -m kmet.app.core` — runtime, stdlib, dependencies and kmet in one
 native binary, with the model catalogs embedded. Builds default to Jolt's
 optimized emission (`--opt`, no inspector/procedure-source information) with
 its fast boot image; `--release` keeps Clojure backtraces at a larger size:
@@ -91,7 +91,7 @@ those runtime libraries must be reachable. A Windows static smoke test instead
 limits `PATH` to `System32`, proving no OpenSSL/lz4/zlib DLL is needed beside
 the artifact.
 
-A direct `jolt build -m kmet.agent.core` is still the one-off compiler command on
+A direct `jolt build -m kmet.app.core` is still the one-off compiler command on
 Unix. Use `jolt dist` when you want kmet's mode defaults, archive staging, and
 post-build verification.
 
@@ -114,7 +114,7 @@ bb uberjar-jvm                      # Build target/uberjar-jvm.jar
 java -jar target/uberjar-jvm.jar    # ...and run it
 ```
 
-The jar is AOT-compiled behind `kmet.agent.jvm-main`, the `:gen-class` entry
+The jar is AOT-compiled behind `kmet.app.jvm-main`, the `:gen-class` entry
 (a manifest Main-Class must name a Java class, which a namespace only becomes
 through `:gen-class`), carries the model catalogs, the version baked into
 `kmet/version.txt`, and the bundled extensions staged under the same
@@ -123,7 +123,7 @@ set is identical across hosts. Extensions run on SCI there: babashka and the
 JVM are the SCI-only hosts (`modules/loader/src/kmet/loader/loader.md`). Every
 build ends with a smoke test (`java -jar … --version`), the check a jar that
 assembles but cannot start fails. A source checkout needs no build at all:
-`bb start-jvm` runs `clojure -M:jvm:clj-pin -m kmet.agent.core`; `bb nrepl-jvm
+`bb start-jvm` runs `clojure -M:jvm:clj-pin -m kmet.app.core`; `bb nrepl-jvm
 [port]` opens an nREPL server on the same JVM classpath (default 7803) and
 writes `.nrepl-port` for `clojure_eval`.
 

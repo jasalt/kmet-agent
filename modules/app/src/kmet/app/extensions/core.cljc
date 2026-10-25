@@ -172,7 +172,7 @@
 ;; [:kmet/flag <name>]; the --ext-* values themselves are process argv, so
 ;; they live in the global below rather than in an engine (see get-flag).
 ;; The parsed --ext-* argv values by flag name, as set once at startup
-;; (kmet.agent.core). Process state: the values are the process's command
+;; (kmet.app.core). Process state: the values are the process's command
 ;; line, not a per-engine registration.
 (defonce ^:private cli-flag-values (atom {}))
 

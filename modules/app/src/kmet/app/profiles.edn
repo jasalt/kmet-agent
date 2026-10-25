@@ -8,7 +8,7 @@
 ;; Landing 1 ships the composition machinery; landing 2 adds the first row —
 ;; the event bus — and each later landing adds its own (the registries and
 ;; tools at 3, the agents and sessions at 4, the UI and modes at 5–7).
-;; `kmet --app new --dump-config` prints this composition without booting
+;; `kmet --dump-config` prints this composition without booting
 ;; anything; a plain run boots it (kmet.app.runtime).
 {:bundles
  {:bundle/minimal

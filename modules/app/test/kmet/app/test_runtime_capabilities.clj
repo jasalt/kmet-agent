@@ -1,4 +1,4 @@
-(ns kmet.agent.test-runtime-capabilities
+(ns kmet.app.test-runtime-capabilities
   "Tests for the runtime-owned extension capabilities (pi: bindCore):
    agent control every front end shares — send-user-message, send-message!,
    set-model, thinking level, active tools. The tests drive the extension

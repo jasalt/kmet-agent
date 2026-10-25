@@ -32,7 +32,7 @@
  ;; extensions/<name>/src layout, so io/resource reads a bundled extension at
  ;; the same path in a binary as in a checkout. A
  ;; missing root embeds nothing — the runtime then offers no bundled set.
- :jolt/build {:embed ["modules/reakt/src" "modules/hikap/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/agent/src" "modules/loader/src" "modules/srce/src" "modules/app/src" "modules/ui/src" "modules/tk/src" "target/kmet-version" "target/kmet-bundled"]}
+ :jolt/build {:embed ["modules/reakt/src" "modules/hikap/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/loader/src" "modules/srce/src" "modules/app/src" "modules/ui/src" "modules/tk/src" "target/kmet-version" "target/kmet-bundled"]}
 
  ;; OpenSSL stays dynamically loaded for run/repl and for the default dist mode
  ;; on Linux (including WSL), macOS, and other non-Windows platforms. Windows
@@ -62,8 +62,11 @@
                 :windows ["libssl-3-x64.dll" "libssl-3.dll"
                           "libssl-1_1-x64.dll" "libssl.dll"]}]
 
- :deps {kmet/agent {:local/root "modules/agent"}
+ :deps {kmet/ui {:local/root "modules/ui"}
 
+        ;; The module roots chain: ui → app → (libs, hikap, srce, ai, loader),
+        ;; and tui/reakt through them. babashka uses bb.edn's flat :paths; a JVM
+        ;; classpath resolves the same sources through these local roots.
         ;; babashka.fs / babashka.process are deliberately NOT deps: babashka
         ;; bundles them, and jolt vendors the same namespaces (built-in,
         ;; resolving ahead of any deps.edn copy). A Maven copy is redundant on
@@ -200,7 +203,7 @@
   ;; without it (clj-kondo's unresolved-namespace exception covers the lint
   ;; view).
   :build {:extra-deps {io.github.clojure/tools.build {:mvn/version "0.10.12"}}}
-  :start {:main-opts ["-m" "kmet.agent.core"]}
+  :start {:main-opts ["-m" "kmet.app.core"]}
   ;; jolt dist --test: the only source roots a test build adds — test/ and the
   ;; generated entry root (kmet.tasks.build/generate-test-main!). target/
   ;; scratch, so `bb clean` removes it. Kept separate from :dev so the build

@@ -29,7 +29,7 @@
    requested namespaces that failed to load.
 
    Filters select tests: a plain var name (e.g. `test-tool-bash`), an ns/var
-   pair (e.g. `kmet.agent.loop.test-turn/my-test`), or a whole namespace
+   pair (e.g. `kmet.app.loop.test-turn/my-test`), or a whole namespace
    (a known test ns, a dotted ns name, or ns/ with an empty var part).
    Whole-namespace filters select by slow?; var filters ignore slow?.
 
@@ -515,7 +515,7 @@
    changed files affect instead of the full tree (`bb test-changed`; the JVM
    task `test-changed-jvm` is `-m kmet.tasks.runner false --changed`).
    Remaining args are filters: plain test var names (`bb test
-   test-tool-bash`), ns/var pairs (`bb test-ext kmet.agent.loop.test-turn/my-test`),
+   test-tool-bash`), ns/var pairs (`bb test-ext kmet.app.loop.test-turn/my-test`),
    or whole namespaces (`bb test kmet.tui.test-fuzzy`, or ns/ with a trailing
    slash). Whole-namespace filters select by slow?; var filters ignore slow?.
    The skip report lists unloadable namespaces (full run: all of them;

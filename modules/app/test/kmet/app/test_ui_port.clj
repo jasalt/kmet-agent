@@ -1,4 +1,4 @@
-(ns kmet.agent.test-ui-port
+(ns kmet.app.test-ui-port
   "Front-end extension binding + UI request/response contract: bind-extensions!
    carries the front-end kind (ctx.mode /
    ctx.has-ui), the headless port auto-answers, and request-ui!/respond!
@@ -6,10 +6,11 @@
   (:require [babashka.fs :as fs]
             [clojure.test :as t :refer [deftest testing]]
             [kmet.app.extensions.core :as ex]
-            [kmet.agent.app-runtime :as app]
             [kmet.app.registry :as registry]
+            [kmet.srce.core :as srce]
             [kmet.app.session.core :as session]
             [kmet.app.session.driver :as session-driver]
+            [kmet.app.loop.test-support :as loop-support]
             [kmet.test-utils :as tu]))
 
 ;; The binding and the app's registrations are process-global state;
@@ -18,10 +19,15 @@
 (t/use-fixtures :each
   (fn [f]
     (ex/unbind-extensions!)
-    (tu/clear-app-registries!)
-    (try (f)
-         (finally (ex/unbind-extensions!)
-                  (tu/clear-app-registries!)))))
+    ;; the port and the capability registrations need a host; the fixture binds
+    ;; one over its own registry, as a bare test process does
+    (tu/with-extension-host
+      (fn []
+        (tu/clear-app-registries!)
+        (try (f)
+             (finally
+               (ex/unbind-extensions!)
+               (tu/clear-app-registries!)))))))
 
 (defn- bare-engine
   "A bare engine with just enough agent state for request/dispose tests."
@@ -51,11 +57,11 @@
                               :ui {:notify (fn [_ _] :notified)}})
       (t/is (= :interactive (ex/extension-mode)))
       (t/is (= :notified (ex/ui-call :notify "hi" :info)))
-      (t/is (contains? (registry/entry (app/registry) :kmet/ui-port :port) :notify)
+      (t/is (contains? (registry/entry (registry/current) :kmet/ui-port :port) :notify)
             "the port is the [:app :ui] registration")
       (finally
         (ex/unbind-extensions!)
-        (registry/deregister! (app/registry) :kmet/ui-port :port [:app :ui])))
+        (registry/deregister! (registry/current) :kmet/ui-port :port [:app :ui])))
     (t/is (= :print (ex/extension-mode))
           "unbinding restores the headless binding")))
 
@@ -193,11 +199,15 @@
 (deftest test-bootstrap-binds-headless-print-defaults
   (testing "a print-mode engine gets the degraded port, ctx says :print"
     (let [dir (str "target/test-ui-port-" (System/currentTimeMillis))
-          sess (session/create-session dir {:cwd (str (fs/cwd))})]
+          sess (session/create-session dir {:cwd (str (fs/cwd))})
+          ;; the engine's scope: the port and the capabilities hang on the ctx
+          ;; the driver is handed, and a run reads its tool table from that
+          ;; ctx's service — the loop support's bare ctx provides both
+          ctx (:ctx (loop-support/test-ctx))]
       (try
         (let [engine (session-driver/bootstrap {:provider :opencode-go
                                                 :model "deepseek-v4-flash"}
-                                               {:session sess :ctx (app/ctx)})]
+                                               {:session sess :ctx ctx})]
           (try
             (t/is (= :print (ex/extension-mode)))
             (t/is (false? (ex/extension-has-ui?)))
@@ -214,4 +224,6 @@
             (finally (session-driver/dispose! engine)))
           (t/is (nil? (ex/runtime-call :get-active-tools))
                 "dispose! clears the runtime capabilities"))
-        (finally (fs/delete-tree dir))))))
+        (finally
+          (srce/dispose-subtree! ctx)
+          (fs/delete-tree dir))))))

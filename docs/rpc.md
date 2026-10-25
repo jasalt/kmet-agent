@@ -232,49 +232,6 @@ headless default) and are listed in
 [`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md); the client can ignore
 fire-and-forget records it does not render.
 
-## Scripting with `kmet.agent.modes.rpc-client`
-
-The repository ships a thin EDN client (`modules/agent/src/kmet/agent/modes/rpc_client.clj`) for
-Clojure scripts — it spawns the process, correlates responses by `:id`, and
-subscribes to the event stream:
-
-```clojure
-(require '[kmet.agent.modes.rpc-client :as client])
-
-(def c (client/start {:args ["--provider" "opencode-go"
-                             "--model" "deepseek-v4.1-flash"]}))
-
-;; a request/response round trip (throws on timeout or process exit)
-(let [state (client/request! c {:type :get-state})]
-  (println (:model (:data state))))
-
-;; stream a prompt: arm the settle waiter before sending (see below)
-(let [{:keys [settle]} (client/on-settle! c)
-      resp (client/request! c {:type :prompt :message "summarize the diff"})]
-  (when (= :started (:data resp))
-    (println "settled:" (:outcome (deref settle 60000 nil)))))
-
-;; or let wait-idle! probe the state, covering a run that already finished
-(println (client/wait-idle! c))
-
-(println "exit" (client/stop! c))   ;; stdin EOF, bounded wait, exit code
-```
-
-- `start` options: `:command` (default `["bb"/"jolt" "start"]`; a dist binary
-  goes here), `:args`, `:cwd`, `:env`, `:on-event`, `:on-stderr`, plus the
-  timeout knobs `:request-timeout-ms` (30 s), `:idle-timeout-ms` (60 s), and
-  `:stop-timeout-ms` (5 s).
-- `request!` returns the full response map; check `:success` or read `:data`.
-  It throws an `ex-info` with `:type :rpc-timeout` or `:rpc-exited`.
-- `on-event!` callbacks run on the reader thread — keep them fast.
-- `on-settle!` installs its subscription synchronously, so arming it before
-  a prompt cannot miss that prompt's settle. `wait-idle!` probes `get-state`
-  first, so a run that finished before the call is reported instead of
-  waiting for the next one.
-- `stderr` and `unparsed-lines` expose the child's diagnostics and any
-  stdout line that was not a protocol record (treat a non-empty
-  `unparsed-lines` as a bug).
-
 ## Compatibility with pi
 
 The command names and record shapes follow pi's RPC mode. Supported:

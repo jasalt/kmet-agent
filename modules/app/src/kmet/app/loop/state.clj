@@ -436,8 +436,8 @@ Be precise and concise in your responses."}}]
 ;; ─── The agent's tool table ──────────────────────────────────────────────────
 ;; The table is read from the `:tools` handle the agent's ctx provides, never
 ;; from a process default: a child ctx may provide its own, which is what makes
-;; two agents two tables (new-app.md, 4c-iii-c). `kmet.agent.tools.core` — the
-;; arity-less façade — is left to the TUI's display reads.
+;; two agents two tables (new-app.md, 4c-iii-c). The display path takes the same
+;; table as a `:tool-fn` from its caller, never a process default.
 
 (defn ctx-tool-table
   "The tool table a ctx provides: name → Tool record from its `:tools` handle.

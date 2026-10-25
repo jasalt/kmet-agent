@@ -1,5 +1,6 @@
 (ns kmet.app.core
-  "kmet2's entry point: `kmet --app new` (kmet.agent.core does the dispatch).
+  "The process entry point (`bb start`, `jolt start`, the packaged
+   artifacts' Main-Class).
 
    The app resolves a profile's rows, patches them by row id and prints the
    result (`--dump-config`); a run without `--dump-config` composes the same
@@ -332,7 +333,7 @@
   (binding [*out* *err*] (println "Error:" message) (flush)))
 
 (defn- print-usage []
-  (println "Usage: kmet --app new [options] [@files...] [messages...]")
+  (println "Usage: kmet [options] [@files...] [messages...]")
   (println)
   (println "Options:")
   (println "  --profile <name>   Composition profile: tui (default), print, rpc, server")
@@ -366,10 +367,7 @@
   (println "  list               List installed packages")
   (println "  config             Enable/disable resources (TUI)")
   (println)
-  (println "  kmet --app new --profile print \"list the files\"   run one prompt and exit")
-  (println)
-  (println "kmet2 is the migration target: --app old runs the current app, whose")
-  (println "options kmet --app old --help prints."))
+  (println "  kmet --profile print \"list the files\"   run one prompt and exit"))
 
 (defn- not-wired
   "What a profile without a mode row says: which profile it was, and which ones
@@ -381,11 +379,11 @@
   (binding [*out* *err*]
     (println (str "profile " (name profile) " has no runnable mode — no row is marked :mode"))
     (println "Profiles that run today:")
-    (println "  kmet --app new                                    the TUI")
-    (println "  kmet --app new --profile print \"list the files\"   one prompt, then exit")
-    (println "  kmet --app new --profile rpc                       a command stream on stdin/stdout")
-    (println "  kmet --app new --profile server [--port n]         the same protocol on a socket, per connection")
-    (println "  kmet --app new --dump-config / --dump-state / --version")
+    (println "  kmet                                    the TUI")
+    (println "  kmet --profile print \"list the files\"   one prompt, then exit")
+    (println "  kmet --profile rpc                       a command stream on stdin/stdout")
+    (println "  kmet --profile server [--port n]         the same protocol on a socket, per connection")
+    (println "  kmet --dump-config / --dump-state / --version")
     (when (seq args) (println "Arguments:" (pr-str (vec args))))
     (flush))
   1)
@@ -463,7 +461,7 @@
    (`:prompt true` on its row) and was given none: named before anything boots."
   [profile]
   (binding [*out* *err*]
-    (println (str "No message provided. Usage: kmet --app new --profile "
+    (println (str "No message provided. Usage: kmet --profile "
                   (name profile) " \"your message\""))
     (flush))
   1)
@@ -503,7 +501,7 @@
   (binding [*out* *err*]
     (println (str flag " needs a mode that opens a session; profile "
                   (name profile) " creates its own, so it has none to continue"))
-    (println "  kmet --app new -c   continues this directory's last session in the TUI")
+    (println "  kmet -c   continues this directory's last session in the TUI")
     (flush))
   1)
 
@@ -594,6 +592,6 @@
   (main args))
 
 (defn -main
-  "Process entry: kmet.app.core through the bootstrap's `--app new`."
+  "Process entry: the CLI's exit code becomes the process's."
   [& args]
   (System/exit (run-process args)))

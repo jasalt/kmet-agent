@@ -142,7 +142,7 @@
       ;; fiber failed and nothing disposes what it registered
       (when (str/blank? (str prompt))
         (throw (ex-info (str "print mode needs a prompt: "
-                             "kmet --app new --profile print \"your message\"")
+                             "kmet --profile print \"your message\"")
                         {:type :kmet.app/no-prompt})))
       (let [format (:format config :text)
             error (atom nil)

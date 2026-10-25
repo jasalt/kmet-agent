@@ -2,11 +2,11 @@
   "The invocation surface: what the command line asks a run for, in the two
    shapes the entry point and a mode each need.
 
-   kmet1 resolves `--model`/`--models` against the catalog at its entry
-   (`kmet.agent.cli/resolve-cli-model-opts`) and applies the rest of its run
-   flags — thinking, the system prompt, the session dir — to the loaded config
-   (`cfg/apply-cli-overrides`, which every front end calls). kmet2 keeps the
-   same split, one namespace down: `resolve-overrides` is the entry's half —
+   The run's two halves stay apart: `resolve-overrides` is the entry's half —
+   `--model`/`--models` resolve against the catalog after the process world
+   loads, and the rest of the run flags — thinking, the system prompt, the
+   session dir — reach the loaded config through `cfg/apply-cli-overrides`,
+   which every front end calls. `resolve-overrides` is the pattern half —
    patterns become the catalog's ids after the process world loads (an
    extension provider is a catalog entry only then) and before the mode mounts —
    and `create-opts` is a mode's, the map `create!` takes so the driver applies

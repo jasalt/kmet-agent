@@ -2,7 +2,7 @@
          "../../modules/reakt/src"
          "../../modules/hikap/src" "../../modules/libs/src"
          "../../modules/tui/src" "../../modules/ai/src"
-         "../../modules/agent/src" "../../modules/loader/src"
+         "../../modules/loader/src"
          "../../modules/srce/src" "../../modules/app/src"
          "../../modules/ui/src"
          "../../modules/tk/src"]
@@ -10,7 +10,7 @@
                                 :exclusions [rewrite-clj/rewrite-clj]}
         parinferish/parinferish {:mvn/version "0.8.0"}
         ;; clojure-edit loads kmet.agent.ui.tui.tool-renderers
-        ;; (../../modules/agent/src), whose kmet.libs.json seam requires
+        ;; (), whose kmet.libs.json seam requires
         ;; clojure.data.json — bb >= 1.13.224 bundles it (the built-in wins),
         ;; declared here for a standalone classpath and version-aligned with
         ;; the root deps.edn.

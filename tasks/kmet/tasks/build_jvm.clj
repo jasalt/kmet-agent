@@ -5,7 +5,7 @@
 
    kmet.tasks.build's uberjar is a different artifact, not a sibling of this
    one: it is the babashka payload `bb dist` appends to a babashka release
-   binary (Main-Class kmet.agent.core, no AOT), and it is not JVM-loadable at
+   binary (Main-Class kmet.app.core, no AOT), and it is not JVM-loadable at
    all — babashka's built-in namespaces (babashka.fs, sci, http-client, …)
    are compiled into the binary, so no source file of theirs is left to copy
    into a jar.
@@ -24,7 +24,7 @@
      3. bake kmet/version.txt: what `kmet --version` reports out of a built
         artifact, since a jar is not a source run and git describe is never
         consulted from inside one;
-     4. AOT-compile kmet.agent.jvm-main, assemble the jar around it, and
+     4. AOT-compile kmet.app.jvm-main, assemble the jar around it, and
         smoke-test it (`--version` must answer).
 
    AOT is what makes the artifact usable: the namespaces are the same either
@@ -53,8 +53,8 @@
 (def ^:private main-class
   "The AOT'd :gen-class entry — a namespace is not a Java class, so the
    manifest's Main-Class must name the class :gen-class generates (see
-   kmet.agent.jvm-main)."
-  'kmet.agent.jvm-main)
+   kmet.app.jvm-main)."
+  'kmet.app.jvm-main)
 
 (def ^:private dist-platform
   "The platform slot of the release zip's name. The jar runs on any OS, so
@@ -99,21 +99,15 @@
                  "models listed")
         (throw (ex-info "the JVM uberjar did not list its model catalogs"
                         {:type ::smoke-failed :exit exit :err (str err)}))))
-    (println "smoke test:" "java -jar" (str jar) "--app old --version and --app new --version")
-    (let [versions (for [app ["old" "new"]]
-                     (let [{:keys [out exit err]} (run "--app" app "--version")
-                           reported (str/trim (str out))]
-                       (when-not (and (zero? exit) (= reported expected))
-                         (throw (ex-info (str "the JVM uberjar's --app " app
-                                              " did not report its baked version")
-                                         {:type ::smoke-failed :app app :exit exit
-                                          :expected expected :reported reported
-                                          :err (str err)})))
-                       reported))]
-      (if (apply = versions)
-        (println "smoke test passed:" (first versions) "(both entries)")
-        (throw (ex-info "the JVM uberjar's two entries disagree"
-                        {:type ::smoke-failed :versions versions :expected expected}))))))
+    (println "smoke test:" "java -jar" (str jar) "--version")
+    (let [{:keys [out exit err]} (run "--version")
+          reported (str/trim (str out))]
+      (if (and (zero? exit) (= reported expected))
+        (println "smoke test passed:" reported)
+        (throw (ex-info "the JVM uberjar did not report its baked version"
+                        {:type ::smoke-failed :exit exit
+                         :expected expected :reported reported
+                         :err (str err)}))))))
 
 (defn build!
   "Assemble jar-path and smoke-test it. Returns {:jar PATH :version DESCRIBED}

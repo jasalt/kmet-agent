@@ -45,10 +45,10 @@
             (a module local root may not name paths above itself)"
     (is (= (into ["tasks"] (modules/extension-paths))
            (:paths (read-edn "deps.edn")))))
-  (testing "the root deps.edn pulls the app module (which pulls the rest)"
-    (let [agent-mod (some #(when (= "agent" (:name %)) %) (modules/modules))
-          agent-root (str/replace (str (fs/parent (:src agent-mod))) "\\" "/")]
-      (is (= {:local/root agent-root} (get (:deps (read-edn "deps.edn")) 'kmet/agent))))))
+  (testing "the root deps.edn pulls the top module (which pulls the rest)"
+    (let [ui-mod (some #(when (= "ui" (:name %)) %) (modules/modules))
+          ui-root (str/replace (str (fs/parent (:src ui-mod))) "\\" "/")]
+      (is (= {:local/root ui-root} (get (:deps (read-edn "deps.edn")) 'kmet/ui))))))
 
 (deftest artifact-roots-drop-test-tooling-and-extension-trees
   (testing "a resolved classpath ships no test tree, no tasks/ and no

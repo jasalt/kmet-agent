@@ -17,10 +17,6 @@
   {:name "libs" :src "modules/libs/src" :test "modules/libs/test" :rank 0}
   {:name "tui" :src "modules/tui/src" :test "modules/tui/test" :rank 2}
   {:name "ai" :src "modules/ai/src" :test "modules/ai/test" :rank 1}
-  ;; agent is kmet1, the legacy app: rank 4 so it may reach the lifted app (2)
-  ;; and, from landing 5, the new front ends (3). Its inversion ends with the
-  ;; module, when kmet2 passes the full gate set and kmet1 is retired.
-  {:name "agent" :src "modules/agent/src" :test "modules/agent/test" :rank 4}
   {:name "loader" :src "modules/loader/src" :test "modules/loader/test" :rank 0}
   {:name "srce" :src "modules/srce/src" :test "modules/srce/test" :rank 1}
   ;; The kmet2 application: shared services, the session layer and the

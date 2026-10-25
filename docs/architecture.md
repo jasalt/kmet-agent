@@ -1,13 +1,16 @@
 # kmet developer guide
 
-This file documents the application package and its contributor workflow.
-Implementation-specific references live beside their namespaces, not in the
-user-facing `docs/` directory: see
-[`tui.md`](../../../tui/src/kmet/tui/tui.md),
-[`../../../loader/src/kmet/loader/loader.md`](../../../loader/src/kmet/loader/loader.md), [`extension.md`](extension.md),
-[`agent/development/pi-alignment.md`](agent/development/pi-alignment.md). Temporary
-analysis notes (`run_code.md`, `perf.md`, and `jolt-bugs.md`) remain at the
-repository root by convention.
+This file is the contributor's map: the package layout, the layering rules and
+the workflow. Implementation-specific references live beside their namespaces
+rather than in the user-facing `docs/` directory: see
+[`modules/tui/src/kmet/tui/tui.md`](../modules/tui/src/kmet/tui/tui.md),
+[`modules/loader/src/kmet/loader/loader.md`](../modules/loader/src/kmet/loader/loader.md),
+[`modules/srce/src/kmet/srce/srce.md`](../modules/srce/src/kmet/srce/srce.md),
+[`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md), and
+[`pi-alignment.md`](pi-alignment.md). The app's own design and landing ledger
+is [`new-app.md`](../new-app.md); temporary analysis notes (`run_code.md`,
+`perf.md`, `jolt-bugs.md`, `tcl.md`, `fix.md`) remain at the repository root by
+convention.
 
 ## Project structure
 
@@ -18,14 +21,10 @@ modules/
 ├── libs/   — generic, self-contained helpers        (kmet.libs.*)
 ├── tui/    — terminal backend over hikap            (kmet.tui.*; tui.md)
 ├── ai/     — provider/auth library                  (kmet.ai.*)
-├── srce/   — the kmet2 kernel: ctx, services, fibers  (kmet.srce.*; srce.md)
-├── app/    — kmet2's application, below every front end (kmet.app.*;
-│             the file/namespace rule is new-app.md)   (kmet.app.version)
-├── ui/     — the front ends: the TUI components kmet2 owns (kmet.ui.*;
-│             `kmet.agent.ui.tui.resource-config` is the one file left in
-│             agent's UI tree, waiting on its package lookup)
-├── agent/  — this module: kmet1, the current app    (kmet.agent.*)
-├── loader/ — extension loader                       (kmet.loader.*)
+├── srce/   — the kernel: ctx, services, fibers      (kmet.srce.*; srce.md)
+├── loader/ — extension loader                       (kmet.loader.*; loader.md)
+├── app/    — the application, below every front end (kmet.app.*)
+├── ui/     — the front ends                         (kmet.ui.*)
 └── tk/     — Tk backend + widget sample, Jolt-only  (kmet.tk.*, kmet.gui-sample.*)
 ```
 
@@ -37,14 +36,11 @@ extra source roots, and the tasks read it instead of repeating the paths
 
 Ranks are the manifest's layering guard (`kmet.test-module-deps`): a module
 may depend only on strictly lower-ranked ones, and a *namespace* may require
-only a file in a strictly lower-ranked module (`srce` 1, `app` 2, `ui` 3,
-`agent` 4 — the legacy app sits above the shared layers and the new front ends
-until it is retired). A file may
-change module without changing namespace: `kmet.app.version` lives in
-`modules/app` so both apps can print one version string, and the module's
-`deps.edn` carries the edge (`agent` → `app`). `kmet.agent.core` in the agent
-module is still the only process entry — it is a bootstrap that selects the
-app (see below).
+only a file in a strictly lower-ranked module — `reakt`/`libs`/`loader` 0,
+`hikap`/`ai`/`srce` 1, `tui`/`app` 2, `ui` 3. A shared leaf both `app` and
+`tui` read therefore lives in `libs`, which is why `kmet.tui.theme` and
+`kmet.tui.fuzzy` sit in `modules/libs` under a `kmet.tui.*` name: the rule is
+about the module, not the prefix.
 
 The guard holds the declaration in both directions: every module its `src`
 requires must be in the module's `deps.edn`, and nothing may be there that
@@ -60,125 +56,80 @@ keeps the repeated pins from drifting. Test-only libraries belong to the test
 project (`deps.edn`'s `:dev` alias; babashka bundles the ones the suites use
 and Jolt vendors them): a module `deps.edn` is a `:local/root` dependency, and
 tools.deps never applies a dependency's aliases, so a test alias there could
-not reach a test classpath. Test trees are still cross-cutting (`libs`' tests
-require `tui`, `ai`'s require `agent`) and often point upward; the classpath
-is their union, so they use modules no module `deps.edn` declares. It reads
-both hosts' reader branches, so a `#?(:jolt …)` require counts. The missing
-direction went unchecked until 4b-ii: `app` required `kmet.srce` from six
-namespaces across two landings without naming it, because the guard only
-checked the edges that were written down.
+not reach a test classpath. Test trees are still cross-cutting (`ui`'s tests
+require `app`) and often point upward; the classpath is their union, so they
+use modules no module `deps.edn` declares. It reads both hosts' reader
+branches, so a `#?(:jolt …)` require counts.
 
 The extension contract sits above the app tree, beside it:
 `modules/app/src/kmet/extension.clj` (`kmet.extension`) is the one kmet
-namespace an extension may depend on; `kmet/agent/extensions/` is its
-runtime.
+namespace an extension may depend on; `kmet.app.extensions` is its runtime.
 
-The app module (`modules/agent/src/kmet/agent`). Several `kmet.agent.*`
-namespaces live in `modules/app` instead — the two-axes rule: the file moves,
-its namespace does not — so this tree is what remains. `kmet.app.version`
-(landing 1), `kmet.app.registry` (landing 3), the session log
-(`kmet.app.session.*`, 4c-i), the extension host's leaf dependencies
-(`kmet.app.debug`, `.config-schema`, `.event-bus`, `.tools.util`, 4b-ii's
-prep), and since 4f the whole tool layer — `kmet.agent.tools.*` and
-`kmet.app.config` — which is app's now, handle-parameterized, with kmet1's
-default installed from `app-runtime`. 7a has since moved the loop the same way
-(namespaces kept): `kmet.app.loop` and its submodules, `kmet.agent.compaction.*`,
-and the three leaves the loop reaches for — `.model-resolver`,
-`.project-context`, `.git-packages` — so this tree is now kmet1's front ends,
-its resource registries and the Engine.
+### The app tree (`modules/app/src/kmet/app`)
+
+One application, ranked below every front end. Its parts, coarse to fine:
 
 ```
-kmet/agent/
-├── core.clj            — the process bootstrap: --app old|new dispatch, no
-│                         app require (kmet.agent.cli / kmet.app.core load
-│                         through requiring-resolve)
-├── cli.clj             — kmet1's CLI: global flags (--version, --list-models,
-│                         --generate-models), argument parsing, mode dispatch
-├── jvm_main.clj        — the JVM artifact's AOT entry point (delegates to
-│                         core.clj, i.e. the bootstrap)
-├── (config.clj)        — settings loading; moved to `modules/app` at 4f
-├── (project_context.clj) — project context files; moved to `modules/app` at 7a
-├── app_runtime.clj     — kmet1's process shim: the app root ctx it boots, the
-│                         registry façade over the services, `child-ctx`, and
-│                         `refresh-stages!` (`/reload`). The loop's stage map
-│                         itself is app's (`kmet.app.loop.stages`)
-├── extensions/         — what the extension runtime still needs from kmet1:
-│   └── services.clj    — kmet1's binding of the host's services: the app
-│                         root's handle and ctx, plus the commands/prompts/
-│                         skills delegates. The host itself (core.cljc, which
-│                         takes those as one bound value rather than requiring
-│                         them) and its artifact discovery (bundled.clj) moved
-│                         to `modules/app` at 4b-ii-b
-│   ├── (context.cljc)  — per-extension SCI isolation; moved to `modules/app`
-│   │                     at 4b-ii-b (its tests went with it)
-│   └── (libs.clj)      — the fixed bundled-extension library set; moved to
-│                         `modules/app` at 4b-ii-b, and the six coordinates
-│                         it names moved to `modules/app/deps.edn` with it
-├── commands.clj        — slash-command registry (the `:commands` service,
-│                         [:app :commands] owner; ctx-shaped handlers:
-│                         {:runtime :ui :frontend}, front-end tags)
-│   └── commands/builtins.clj — engine-portable builtin commands
-├── keybindings.clj     — the app keymap
-├── prompts.clj         — prompt-template resources
-├── skills.clj          — skill resources, discovery and registration (the
-│                         prompt builder itself is app's `system_prompt.clj`)
-├── (model_resolver.clj) — model pattern/CLI resolution; moved at 7a
-├── (packages.clj)      — package/resource resolution (local + managed git);
-│                         moved to `modules/app`
-├── (packages_cli.clj)  — the install/remove/update/list/config CLI; moved to
-│                         `modules/app` (both entries dispatch it)
-├── (git_packages.clj)  — git source parsing + managed checkouts; moved at 7a
-├── (loop.clj)          — the agent loop driver (`kmet.app.loop`, public:
-│                         make-agent-state, run-agent-turn, cancel-turn);
-│                         moved at 7a
-├── (loop/)             — loop submodules — `message`, `state`, `completion`,
-│                         `tool_exec` — moved at 7a; the DAG is still pinned by
-│                         test-layer-guard, which scans both trees
-├── (compaction/)       — the compaction subsystem (`core`, `stage`); moved at
-│                         7a
-├── (retry.clj)         — retry decision stage; moved to `modules/app` at
-│                         4b-ii-b
-├── (loop_guard.clj)    — repeat-loop guard stage; moved to `modules/app` at
-│                         4b-ii-b
-├── session/            — the session subsystem; only the runtime lives here
-│   └── runtime.clj     — the session runtime engine (bootstrap, lifecycle,
-│                         submission chain, compaction queue, subscribers,
-│                         UI requests, disposal). The log itself — core,
-│                         store, listing, context, stats, tree, schema,
-│                         export, backend — lives in `modules/app`
-│                         (`kmet.app.session.*`, moved at 4c-i)
-├── tools/              — only the façade is left: core.clj keeps kmet1's
-│   │                     arity-less tool API over
-│   └── core.clj        — `(app-runtime/registry)`, adding no state and no
-│                         arity to the registry's explicit-handle fns. The
-│                         layer itself (tool, util, invoke, bash + its two
-│                         halves, read/write/edit, run_code, the `kmet config`
-│                         rows) lives in `modules/app/src/kmet/agent/tools`
-│                         since 4f, namespaces kept; `kmet.app.config` went
-│                         with it.
-├── modes/              — entry modes
-│   ├── interactive.clj — interactive TUI entry: run + session start-up
-│   │                     (pi: modes/interactive/interactive-mode.ts)
-│   ├── interactive/    — the TUI application proper, split out of
-│   │                     interactive.clj: layout (agent event handler +
-│   │                     the widget tree), turn (submit/cancel/dequeue),
-│   │                     session admin (replay/resume/tree/fork), builtins,
-│   │                     state (CoreState), status, auth, resources,
-│   │                     ui registry (ExtensionUIContext)
-│   ├── print.clj       — non-interactive print mode (`--print`;
-│   │                     `--mode text|edn` output)
-│   ├── rpc.clj         — the long-lived EDN stdio protocol (docs/rpc.md)
-│   ├── rpc_client.clj  — the thin client scripts and tests drive RPC with
-│   └── config_command.clj — the `kmet config` terminal screen
-└── ui/                 — app UI over the front-end backends
-    ├── shared.clj      — backend-neutral view helpers (no kmet.tui/kmet.tk)
-    └── tui/            — TUI components: chat history, tool renderers,
-                          selectors, dock, footer, dialogs, the theme
-                          controller, ...
-                          (the Tk widget sample lives outside this module: it
-                          is kmet.gui-sample.* in modules/tk, so the agent has
-                          no Tk dependency)
+kmet/app/
+├── core.clj            — the process entry: parse, compose a profile, boot it,
+│                         run the mode row, report the exit code
+├── jvm_main.clj        — the JVM artifact's AOT entry point (`:gen-class`)
+├── maintenance.clj     — --list-models / --generate-models (the flags whose
+│                         order matters), --version's printing
+├── invocation.clj      — the invocation surface: patterns resolved against the
+│                         catalog, the run flags applied to the loaded config
+├── profile.clj         — profile → rows composition, layer patches, rendering
+├── rows/, registries.clj — the service rows and the registry router (one
+│                         handle per tag; `process-handle` is the published one)
+├── root.clj            — the one process root atom and its first-root rule
+├── agents.clj          — the `:agents` service: the handle factory + ops
+├── extensions/         — the extension host: core (the bound services, the
+│                         api, the registry tags), context (per-extension SCI),
+│                         libs (the bundled set), bundled.clj (artifact
+│                         discovery), plus the UI request/respond pair
+├── session/            — the log (core, store, listing, context, stats, tree,
+│                         schema, export, backend), the runtime
+│                         (`runtime.clj`: state, lifecycle, submission chain,
+│                         queues, compaction, subscribers), the shared
+│                         lifecycle and the driver (an engine over both)
+├── loop/               — the agent loop: message, state, completion,
+│                         tool_exec, the stages, and `driver.clj`/`stages.clj`
+├── compaction/         — the compaction subsystem (`core`, `stage`)
+├── tools/              — tool, util, invoke, registry, bash (+executor,
+│                         output), read, write, edit, run_code, config
+├── modes/              — the mode rows: print, rpc, server, out
+├── packages*.clj       — package/resource resolution, the install/remove/
+│                         update/list/config CLI
+├── prompts.clj, skills.clj, commands/ — the resource registries and the
+│                         slash-command registry + portable builtins
+├── event-bus.clj, events.clj, projections.clj — the event stream
+├── config*.clj, auth?   — settings (+ schema), the config screen's headless half
+└── version.clj          — the version string and the source-run marker
 ```
+
+`new-app.md` is the app's own map: each landing's design and the file/namespace
+rules live there, and its ledger is the authority on what a row provides.
+
+### The front ends (`modules/ui/src/kmet/ui`)
+
+```
+kmet/ui/
+├── tui.clj             — the TUI provider + mode row (one artifact: the ui
+│                         module's `:ui` surface and its `:mode` entry)
+└── tui/
+    ├── interactive/    — the interactive cluster: layout, turn, session admin,
+    │                     builtins, state (CoreState), status, auth, resources,
+    │                     the UI registry (ExtensionUIContext)
+    ├── chat-history.clj, tool-execution.clj, bash-execution.clj — the
+    │                     transcript and the tool/bash render paths
+    ├── *-selector.clj, *-dialog.clj, footer, dock, editor widgets
+    └── theme-controller.clj
+```
+
+One file keeps a pre-rename name on purpose:
+`kmet/agent/ui/tui/tool_renderers.clj` — shipped extensions require
+`kmet.agent.ui.tui.tool-renderers` by that name, so the module carries the old
+prefix at the path a require resolves.
 
 ```
 tasks/kmet/tasks/       — every bb-task implementation (a classpath root, not
@@ -232,17 +183,16 @@ root `AGENTS.md` topic map.
   `kmet.gui-sample.*` widget skeleton (the `:ui/…` widgets, today
   `:ui/transcript`), which is dependency-free like the backend; no app module
   requires the sample or Tk.
-- `kmet.agent.modes.*` is the entry-mode layer; `kmet.agent.*` is business
-  logic; `kmet.agent.ui.*` is app-specific UI. The direction is modes → UI (a
-  mode assembles components), never UI → modes;
-  `kmet.ui.tui.theme-controller` sits in the UI layer for exactly that
-  reason and the modes call it from above.
-  `kmet.agent.cli` is the composition root: it owns the CLI-only flags
-  (`--version`, `--list-models`, `--generate-models`), parses arguments and
-  dispatches to a mode. `kmet.agent.core` above it only selects an app:
-  `--app old` (the default) hands the argv to `kmet.agent.cli`, `--app new` to
-  `kmet.app.core` (new-app.md § One artifact, two apps); the flag is stripped
-  and neither app is a static require.
+- `kmet.app.*` is the application below every front end, and `kmet.app.modes.*`
+  is its mode-row layer: a mode row is what a profile runs, and the row mounts
+  the front end that does the work. The direction is front end → app services,
+  never app → front end; `kmet.ui.tui.theme-controller` sits in the UI layer
+  for exactly that reason and the rows call it from above.
+  `kmet.app.core` is the composition root: it owns the maintenance flags
+  (`--version`, `--list-models`, `--generate-models`, whose order matters),
+  parses the invocation and boots the composed profile, then runs the profile's
+  mode row. There is one app — kmet1 was retired with its module — so the
+  `--app` flag and the bootstrap that dispatched on it are gone.
 - `kmet.tasks.*` lives under `tasks/kmet/tasks/`, is never required by shipped
   code, and is not packaged. Task tests live under `test/kmet/tasks/`.
 - Facilities are extended at the layer that owns them, never copied into the
@@ -262,8 +212,8 @@ The registries a front end or extension can reach — commands, tools, skills an
 prompt templates — live in the app root **ctx**, one service per registry
 (`:tools`, `:commands`, `:prompts`, `:skills`). The process handle
 (`kmet.app.registries/process-handle`) routes each tag to its service, and
-`kmet.agent.app-runtime/registry` is kmet1's name for the one the composition
-published (`kmet.agent.registry/current`). Adding a tool or a command is a
+`kmet.app.registry/current` reads the one the composition published. Adding a
+tool or a command is a
 registry write on that handle and a plugin that adds one never re-provides.
 What has no service of its own yet —
 hooks, markdown transformers, themes, the UI port, and the renderers and flags
@@ -298,9 +248,9 @@ front end:
   `bootstrap` once and drive the engine through its operations: the TUI keeps
   its `CoreState` view state plus the engine, and print/RPC modes construct
   no agent state at all.
-  Modes and app UI (kmet.agent.modes.**, kmet.agent.ui.**) use the runtime's
-  front-end surface only — they never require `kmet.app.loop` — and
-  `kmet.agent.test-layer-guard` enforces that boundary.
+  The front ends (the mode rows and `kmet.ui.**`) use the runtime's front-end
+  surface only — they never require `kmet.app.loop` or the driver — and
+  `kmet.test-layer-guard` enforces that boundary.
 - The event stream is the API. `subscribe!` delivers plain EDN events on the
   emitting thread (fast, non-blocking) and the vocabulary — `event-types` /
   `app-event-types` / `loop-event-types`, declared as `:events` in
@@ -317,10 +267,9 @@ front end:
   `request-ui!`/`respond!`, so an asynchronous client can answer later; the
   degraded headless answers and the per-front-end capability table are in
   [`extension.md`](extension.md).
-- The RPC front end ([`docs/rpc.md`](../../../../docs/rpc.md)) is the headless
-  consumer and `kmet.agent.modes.rpc-client` is the scripted client;
-  `modules/agent/test/kmet/agent/modes/test_headless_guard.clj` asserts print
-  and RPC reach no interactive, TUI, or Tk namespace at all.
+- The RPC front end ([`rpc.md`](rpc.md)) is the headless consumer;
+  `kmet.test-layer-guard` asserts the front ends reach no interactive, TUI, or
+  Tk namespace at all.
 
 Tier 1 malli boundary schemas for session entries, config, and auth landed.
 The GUI live milestone remains the final GUI-dependent work.
@@ -329,7 +278,7 @@ The GUI live milestone remains the final GUI-dependent work.
 
 `kmet.app.session.core` re-exports the storage API (`store`, `listing`,
 `context`, `stats`, `tree`) as `(def name impl/name)` aliases; dependents
-require the façade, and `modules/agent/test/kmet/agent/session/test_facade.clj`
+require the façade, and `modules/app/test/kmet/app/session/test_facade.clj`
 pins its exact public surface. Two consequences for tests and REPL work:
 
 - The aliases capture values at load time — after redefining an
@@ -356,11 +305,11 @@ pins its exact public surface. Two consequences for tests and REPL work:
   (token/JWT expiry, epoch ids, file mtimes, persisted cross-process TTLs).
 - Host reader features are `:bb` and `:jolt`, never `:clj`. For a portable
   host carve-out use `#?(:jolt X :default Y)`.
-- `kmet.agent.cli/-main` ends with `shutdown-agents` + `System/exit 0`: Jolt waits
-  for non-daemon threads before exiting, as the JVM does, so the agent pool
-  behind `future` would otherwise hold the process open after `/quit`; the
-  explicit exit also covers any thread stuck outside that pool. bb exits on
-  its own and both calls are harmless there.
+- `kmet.app.core/-main` ends with `System/exit` on the entry's exit code: Jolt
+  waits for non-daemon threads before exiting, as the JVM does, so the agent
+  pool behind `future` would otherwise hold the process open after `/quit`; the
+  explicit exit also covers any thread stuck outside that pool. bb exits on its
+  own and the call is harmless there.
 - `babashka.fs` and `babashka.process` are built into babashka and vendored by
   Jolt, so only the JVM resolves the Maven copies. Test-only libraries go in
   the root `deps.edn`'s `:dev` alias (a module's `:deps` is its `src` edge

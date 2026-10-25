@@ -13,7 +13,7 @@
 
 (t/deftest test-source-paths
   (let [paths (#'format/source-paths)]
-    (t/is (contains? (set paths) (slash (str (fs/file "modules" "agent" "src" "kmet" "agent" "core.clj"))))
+    (t/is (contains? (set paths) (slash (str (fs/file "modules" "app" "src" "kmet" "app" "core.clj"))))
           "source files are included")
     (t/is (contains? (set paths) (slash (str (fs/file "modules" "app" "test" "kmet" "app" "loop" "test_turn.clj"))))
           "test files are included")

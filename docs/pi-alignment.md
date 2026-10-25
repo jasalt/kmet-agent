@@ -4,6 +4,13 @@ Reference: `~/src/cvstree/pi/` at **v1.3.0** — `packages/coding-agent` (the ap
 `packages/ai`, `packages/tui`, `packages/agent` (pi-agent-core), plus the newer
 frontier packages `packages/chord`, `packages/durable`, `packages/env`,
 `packages/codemode`, `packages/mcp`, `packages/telemetry`, `packages/evals`.
+
+> The paths and namespace names below are as of the landing that wrote them:
+> kmet1's module (`modules/agent`, `kmet.agent.*`) has since been retired, and
+> the trees it names live under `app/` and `ui/` with `kmet.app.*` /
+> `kmet.ui.*` names. [`architecture.md`](architecture.md) is the current map;
+> this document is the gap analysis, not a path index.
+
 Kmet side: `modules/agent` (`kmet.agent.*`), `modules/ai` (`kmet.ai.*`),
 `modules/tui`, `modules/tk`, `modules/libs`, `modules/loader`, `modules/reakt`,
 `modules/hikap`.

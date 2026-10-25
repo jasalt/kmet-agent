@@ -1,6 +1,6 @@
 (ns kmet.ui.tui
   "The TUI as a mode row, and the `:ui` provider a terminal needs:
-   `kmet --app new --profile tui`, the kmet2 entry's default profile.
+   `kmet --profile tui`, the kmet2 entry's default profile.
 
    The mode's tree moved here at 5l-iii, so a run is kmet2's own front end:
    the row mounts `kmet.ui.tui.interactive` over the composition the entry
@@ -100,7 +100,7 @@
   (when-let [on-result (:on-result config)]
     (when-not (:config config)
       (throw (ex-info (str "the TUI mode needs the entry's loaded world: "
-                           "kmet --app new --profile tui")
+                           "kmet --profile tui")
                       {:type :kmet.app/no-world})))
     ;; the app scope: the row's own ctx is a mount site, and every lookup the
     ;; run makes (:tools, :sessions, :skills) walks up from the scope it was

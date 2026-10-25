@@ -23,8 +23,7 @@
 (def execute-tool-contract
   "The injected per-tool dispatcher. `kmet.app.tools.registry/execute-tool`
    satisfies it (the registry builds the run_code record's seam from it), and
-   kmet1's arity-less facade `kmet.agent.tools.core/execute-tool` presents the
-   same shape to the loop:
+   the loop's tool executor presents the same shape:
 
      (fn [tool-name args {:keys [signal ctx on-update tools]}]
        {:content … :is-error …})

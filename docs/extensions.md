@@ -85,7 +85,7 @@ single-file resources map their namespace directly to the exact embedded key
 (for example `kmet.extensions.deepseek-peak` to
 `extensions/deepseek-peak.clj`). Older Jolt releases fall back to SCI.
 
-The shipped set is enumerated in `modules/agent/src/kmet/bundled-extensions.edn`;
+The shipped set is enumerated in `modules/app/src/kmet/bundled-extensions.edn`;
 `bb check-bundled-extensions` validates it (every artifact under
 `extensions/` is listed or excluded, directory manifests declare `:sci`,
 strict ns-path layout, `deps.edn` with only `:deps` and no `:local/root`).
@@ -505,7 +505,7 @@ Run those tests from inside the extension directory against its own deps
 (`bb test`), or from the repo root — extension test trees are part of the
 `bb test` manifest. For runtime integration tests, `load-extension!` +
 `unload-extension!` against the real registries (see
-`modules/agent/test/kmet/agent/extensions/`).
+`modules/app/test/kmet/app/extensions/`).
 
 Single-file extensions have no test tree of their own: validate changes by
 loading the file through `load-extension!` or against

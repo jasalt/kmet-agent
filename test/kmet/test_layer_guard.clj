@@ -74,12 +74,9 @@
       (str/replace #"_" "-")))
 
 (defn- mode-source-files
-  "Every mode namespace file: kmet2's mode rows, and kmet1's entry modes while
-   that module exists (landing 11 deletes those; the rows are what a front end
-   is afterwards)."
+  "Every mode namespace file: the mode rows, which are what a front end is."
   []
-  (concat (source-files-under "modules/app/src/kmet/app/modes")
-          (source-files-under "modules/agent/src/kmet/agent/modes")))
+  (source-files-under "modules/app/src/kmet/app/modes"))
 
 (def ^:private ui-roots
   "Where the app-UI layer's files are: the `ui` module, in two subtrees — the
@@ -120,10 +117,10 @@
   (delay (into #{} (map path->ns) (source-files-under "modules/libs/src"))))
 
 (def ^:private mode-prefixes
-  "The modes' namespace prefixes: kmet2's rows, which live in this module but
-   are front ends (a business file reaching one would be the same inversion),
-   and kmet1's entry modes while that module exists."
-  ["kmet.app.modes." "kmet.agent.modes."])
+  "The modes' namespace prefixes: the rows live in this module but are front
+   ends, so a business file reaching one is the same inversion as reaching the
+   TUI."
+  ["kmet.app.modes."])
 
 (deftest app-layer-does-not-require-front-ends
   (testing "no app business namespace reaches the TUI/Tk/UI layers or a mode"

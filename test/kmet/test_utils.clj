@@ -112,7 +112,10 @@
   (commands/clear-commands!)
   (prompts/clear-prompt-templates!)
   (skills/clear-skills!)
-  (extensions/unregister-contributed-themes!))
+  ;; the themes live in the host's registry, so there is nothing to clear when
+  ;; no host is bound — and asking an unbound host for its handle is an error
+  (when (extensions/host-binding)
+    (extensions/unregister-contributed-themes!)))
 
 (defn tool-registry
   "A tool registry handle for tests: the app's tag registry over an atom, with
@@ -139,15 +142,21 @@
    host and one that does not must bind its own: this fixture binds a fresh
    registry over a bare ctx for the test and restores the previous binding.
    Declaring it here makes the dependency the namespace's, not whichever
-   require happened to come along first."
+   require happened to come along first.
+
+   It also publishes the handle as the process registry, as a composition's row
+   does: a test that registers into `registry/current` and a test that reads
+   through the host must be looking at one table."
   [f]
   (let [handle (registry/atom-registry)
         ctx (srce/root {:name :test-host})
-        base (extensions/host-binding)]
+        base (extensions/host-binding)
+        previous (registry/publish-process-handle! handle)]
     (extensions/bind-services!
      (fn [] (registries/host-services handle ctx)))
     (try (f)
          (finally
+           (registry/publish-process-handle! previous)
            (extensions/bind-services! base)
            (srce/dispose-subtree! ctx)))))
 

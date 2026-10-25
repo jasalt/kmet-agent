@@ -281,7 +281,7 @@
           "the flag is named, not silently dropped")
       (is (str/includes? err (str "profile " profile))
           "and so is the profile whose mode cannot honor it")
-      (is (str/includes? err "--app new -c")
+      (is (str/includes? err "kmet -c")
           "and the invocation that can"))))
 
 (deftest version-prints-the-shared-string
@@ -293,7 +293,7 @@
 (deftest help-prints-kmet2-flags
   (let [{:keys [code out]} (support/run-main ["--help"])]
     (is (zero? code))
-    (is (str/includes? out "kmet --app new"))
+    (is (str/includes? out "Usage: kmet "))
     (is (str/includes? out "--dump-config"))
     (is (str/includes? out "--dump-state"))
     (is (str/includes? out "--profile"))
@@ -459,7 +459,7 @@
 
 (deftest a-bare-run-selects-the-tui
   ;; The default profile's mode row is the TUI: the entry point finds it and
-  ;; hands it the invocation, so a bare `kmet --app new` is a TUI session rather
+  ;; hands it the invocation, so a bare `kmet` is a TUI session rather
   ;; than a boot report. The row itself is not started here — a test has no
   ;; terminal.
   (let [opts (core/parse-args ["hello"])

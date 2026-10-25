@@ -67,7 +67,7 @@
    sources on disk)."
   []
   (or (io/resource manifest-resource)
-      (let [f (fs/path (fs/cwd) "modules" "agent" "src" "kmet" "bundled-extensions.edn")]
+      (let [f (fs/path (fs/cwd) "modules" "app" "src" "kmet" "bundled-extensions.edn")]
         (when (fs/exists? f) (str f)))))
 
 (defn manifest
