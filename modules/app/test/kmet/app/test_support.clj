@@ -118,7 +118,10 @@
 
    The boot is the test process's own: a namespace that themes or binds the
    extension host publishes a process registry, so it must not share a
-   composition with another namespace's fixture."
+   composition with another namespace's fixture. It composes the profile, not a
+   pinned settings map — the rows read the developer's config at mount, so a
+   test that depends on a resource set pins that config (or stubs the lookup),
+   as `test-lifecycle`'s resource test stubs `io/resource`."
   [f]
   (let [boot (runtime/boot (core/compose-config {:profile :tui}) {})]
     (try

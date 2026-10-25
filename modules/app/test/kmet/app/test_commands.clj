@@ -82,12 +82,12 @@
   (commands/register-command!
    {:name "stored" :description "x" :handler (fn [_ _] nil)})
   (t/is (identical? (:handler (commands/find-command "stored"))
-                    (:handler (registry/entry (srce/get ((fn [] (support/composition-ctx))) :commands)
+                    (:handler (registry/entry (srce/get (support/composition-ctx) :commands)
                                               :kmet/command "stored"))))
   (t/is (= 1 (count (commands/get-commands))))
   (commands/clear-commands!)
   (t/is (empty? (commands/get-commands)))
-  (t/is (empty? (registry/entries (srce/get ((fn [] (support/composition-ctx))) :commands)
+  (t/is (empty? (registry/entries (srce/get (support/composition-ctx) :commands)
                                   :kmet/command))))
 
 (t/deftest get-commands-keeps-registration-order
@@ -114,7 +114,7 @@
   ;; `/units` renders the ctx tree (`kmet.app.inspect`): every mounted row is a
   ;; fiber line with its state, what it provides and its effect labels — the
   ;; store's owner walk and the per-registry `keys=[…]` lines are gone (4d).
-  (builtins/register-runtime-commands! (fn [] (support/composition-ctx)))
+  (builtins/register-runtime-commands! support/composition-ctx)
   (let [got (atom nil)]
     ((:handler (commands/find-command "units"))
      {:ui {:info (fn [label content] (reset! got [label content]))}} nil)
@@ -133,8 +133,8 @@
 (t/deftest units-shows-a-pending-fiber-and-what-it-waits-for
   ;; The question the store could only answer as absence: a row that is not
   ;; active says so, and says what it is waiting for.
-  (builtins/register-runtime-commands! (fn [] (support/composition-ctx)))
-  (let [ctx ((fn [] (support/composition-ctx)))
+  (builtins/register-runtime-commands! support/composition-ctx)
+  (let [ctx (support/composition-ctx)
         probe (srce/plugin! ctx {:name :probe/unit
                                  :inject [:nothing-provides-this]
                                  :apply (fn [_ _] nil)})

@@ -129,7 +129,10 @@
         base (extensions/host-binding)]
     (extensions/bind-services!
      (fn [] (registries/host-services handle ctx)))
-    (try (f) (finally (extensions/bind-services! base)))))
+    (try (f)
+         (finally
+           (extensions/bind-services! base)
+           (srce/dispose! ctx)))))
 
 (defn with-clean-app-registries
   "clojure.test :each fixture: clear the app tree's process-global
