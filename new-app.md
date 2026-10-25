@@ -3557,10 +3557,10 @@ finished, measured from the TUI's own code:
   `new-handle` for one with no options, and `core-state` for a CoreState — its
   options override the fields it builds and seed the handle's own atoms
   (`:session`, `:config`, `:cwd`, `:turn-running?`, `:messages`, `:model`,
-  `:provider`, `:thinking`, `:scoped-models`, `:cfg`, `:compacting?`, the
-  compaction queues), with an explicit nil meaning none. Each boot owns a session directory, so two
-  boots in one test (the two-agent shape landings 9 and 10 need) do not delete
-  each other's sessions.
+  `:provider`, `:thinking`, `:scoped-models`, `:cfg`, `:compacting?`), with an
+  explicit nil meaning none. Each boot owns a session directory, so two boots
+  in one test (the two-agent shape landings 9 and 10 need) do not delete each
+  other's sessions.
 
   Every file in `modules/ui/test` is converted: `tu/test-engine` appears nowhere
   in it. `test-handle-path` and `test-interactive` (including the `/new` pair,
