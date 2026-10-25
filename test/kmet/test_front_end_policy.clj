@@ -16,6 +16,7 @@
    in the changed-file loop of a front-end edit."
   (:require [babashka.fs :as fs]
             [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.test :as t]))
 
 (def ^:private front-ends
@@ -79,11 +80,27 @@
        (filter symbol?)
        set))
 
+(def ^:private tui-sources
+  "The TUI's front-end files: the row/provider entry beside the provider
+   directory, and everything in it. Both roots, because `fs/glob`'s walk of the
+   directory does not include its sibling file — a require in the row would
+   otherwise go unseen."
+  ["modules/ui/src/kmet/ui/tui.clj"
+   "modules/ui/src/kmet/ui/tui"])
+
 (t/deftest the-tui-reads-a-handle-and-not-kmet1s-session-driver
-  (let [files (->> (fs/glob "modules/ui/src/kmet/ui/tui" "**.clj")
-                   (map str)
-                   sort)]
+  (let [files (->> (mapcat (fn [root]
+                             (if (fs/directory? root)
+                               (map str (fs/glob root "**.clj"))
+                               [root]))
+                           tui-sources)
+                   sort
+                   distinct)]
     (t/is (seq files) "the TUI's sources are where the guard looks")
+    (t/is (some #(str/ends-with? % "ui/tui.clj") files)
+          "the row file is scanned, not just the provider directory")
+    (t/is (some #(str/includes? % "/interactive/layout.clj") files)
+          "and the interactive cluster is scanned")
     (doseq [path files]
       (t/is (not (contains? (ns-requires path) 'kmet.agent.session.driver))
             (str path " requires kmet1's session driver — the TUI reads a"

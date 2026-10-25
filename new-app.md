@@ -3555,10 +3555,10 @@ finished, measured from the TUI's own code:
   handle: one agent, a moved session, the process slot re-installed, the
   shutdown event carrying the outgoing file.
 - **T-2. The interactive suite moved to `modules/ui/test` — landed.** The ten
-  files that test the TUI now live beside it: the interactive cluster
-  (`kmet.ui.tui.interactive.test-{support,autocomplete,commands,compaction-
-  queue,import,layout,state,theme,interactive,overlay-input-smoke}`) and the
-  row (`kmet.ui.tui.test-tui`). `modules/agent/test/kmet/agent/modes` keeps
+  files that test the TUI now live beside it: the interactive cluster — the
+  support fixture, autocomplete, commands, the compaction queue, import,
+  layout, state, theme, the mode entry and the overlay pty smoke, all under
+  `kmet.ui.tui.interactive.test-*` — and the row (`kmet.ui.tui.test-tui`). `modules/agent/test/kmet/agent/modes` keeps
   only kmet1's front-end tests (`print`, `rpc`, `rpc-client`) and the
   headless-require guard, which is about those front ends. Discovery needed no
   registration: the module test roots find the files where they now are.
@@ -3914,7 +3914,7 @@ loads. That is what makes `kmet --app new --model x` use x in every profile;
 before this, the TUI dropped the map and ran the settings' model silently (5d's
 review found the same defect in rpc one mode over). The hand-off is held per
 mode — `kmet.app.test-invocation` for the resolution and `create-opts`,
-`kmet.agent.modes.test-tui` for the TUI's mapping, `test-print` for what the
+`kmet.ui.tui.test-tui` for the TUI's mapping, `test-print` for what the
 request actually carries, `test-rpc` for the state it reports — and
 `test_front_end_policy`, which already asserts each front end names the loader
 and the chain, will hold the expansion half when it lands.

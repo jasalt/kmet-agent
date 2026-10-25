@@ -1039,7 +1039,7 @@ through the public accessors (`dock/top-component`,
 full contract lives in the `kmet.ui.tui.dock` namespace docstring; the
 regression test for the round trip this shape was built from is
 `test-oauth-login-dialog-covers-and-releases` in
-`modules/agent/test/kmet/agent/modes/interactive/test_layout.clj`.
+`modules/ui/test/kmet/ui/tui/interactive/test_layout.clj`.
 
 ---
 

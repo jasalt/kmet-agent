@@ -45,6 +45,7 @@
    [kmet.ai.models :as models]
    [kmet.agent.session.runtime :refer [agent-state ensure-cwd-session-dir extension-context find-recent-session map->Engine switch-model! turn-running?]]
    [kmet.agent.session.submission :as submission]
+   [kmet.agent.session.summary :as summary]
    [kmet.agent.skills :as skills]
    [kmet.app.loop.driver :as driver]
    [kmet.libs.concurrent :as concurrent]
@@ -493,12 +494,13 @@
   (manual/abort-compaction! engine))
 
 (defn generate-branch-summary
-  "LLM summary of abandoned branch entries for tree navigation. Returns
+  "LLM summary of abandoned branch entries for tree navigation (see
+   `kmet.agent.session.summary/generate-branch-summary`). Returns
    {:summary str :usage map} | {:aborted true} | {:error msg}; SIGNAL
    aborts the call."
   [engine entries custom-instructions signal replace-instructions?]
-  (agent-compact/generate-branch-summary (agent-state engine) entries custom-instructions
-                                         signal replace-instructions?))
+  (summary/generate-branch-summary engine entries custom-instructions
+                                   signal replace-instructions?))
 
 (defn- set-model-capability
   "pi: ctx.setModel — auth-gated; the switch applies the position-preserving
