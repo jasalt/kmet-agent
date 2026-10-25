@@ -114,9 +114,7 @@
             — the old conversation must never reach the next LLM call"
     (hs/with-handle
       (fn [{:keys [handle]}]
-        (let [sess-dir (str "target/test-interactive-new-session-"
-                            (System/currentTimeMillis))
-              old-sess (runtime/session handle)
+        (let [old-sess (runtime/session handle)
               _ (swap! (:messages (runtime/agent-state handle))
                        conj {:role :user :content "old message"})
               _ (swap! (:messages (runtime/agent-state handle))
@@ -158,8 +156,8 @@
               (is (empty? @(:pending-bash-components cs))
                   "parked bash refs are dropped"))
             (finally
-              (event-bus/clear-event-listeners!)
-              (fs/delete-tree sess-dir))))))))
+              ;; the fixture deletes the session tree it created
+              (event-bus/clear-event-listeners!))))))))
 
 (deftest handle-new-session-extension-cancel
   (testing "a {:cancel true} :session-before-switch handler aborts /new —

@@ -68,9 +68,9 @@
             "the view-bound handler saw the CoreState through :state"))))
 
 (deftest test-name-command-portable
-  (testing "/name runs from the command ctx: it renames the session through
-            the handle's own op and reports through the shared UI capabilities
-            (no CoreState)"
+  (testing "/name runs from the command ctx over a handle: it renames the live
+            session the handle answers and reports through the shared UI
+            capabilities (no CoreState)"
     (hs/with-handle
       (fn [{:keys [handle]}]
         ;; the boot publishes the composition's registry as the process

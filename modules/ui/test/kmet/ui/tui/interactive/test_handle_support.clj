@@ -68,21 +68,26 @@
 (defn create-handle!
   "The agent the TUI's layout creates: through the composition's registry, with
    the run config a TUI run hands its factory (and the session the run
-   resolved, created here when OPTS names none). OPTS merge over that config."
+   resolved, created here when OPTS names none).
+
+   OPTS: `:session`, plus `:config` — a map merged over the run config, the way
+   `tu/test-engine`'s `:config` reads — and any further keys merged into it, so
+   a test names one setting without rebuilding the map."
   ([boot] (create-handle! boot {}))
-  ([{:keys [ctx]} {:keys [session] :as opts}]
+  ([{:keys [ctx]} {:keys [session config] :as opts}]
    (let [agents (srce/get ctx :agents)
-         session (or session (session/create-session sessions-dir))]
+         sess (or session (session/create-session sessions-dir))]
      {:ctx ctx
       :agents agents
-      :session session
+      :session sess
       :handle ((:create! agents)
                ctx
-               {:session session
+               {:session sess
                 :config (merge {:provider :opencode-go
                                 :model "claude-haiku-5-5"
                                 :session-dir sessions-dir}
-                               (dissoc opts :session))})})))
+                               config
+                               (dissoc opts :session :config))})})))
 
 (defn with-handle
   "Boot a composition for F and hand it the created handle map; the boot is

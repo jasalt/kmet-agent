@@ -3558,8 +3558,9 @@ finished, measured from the TUI's own code:
   (`test-interactive`), whose turn flag, session, context, editor, shutdown
   event and parked bash now come from the handle; the cancel test lost the
   duplicate ``(:session @ag-atom)`` assertion, which read the same value
-  `runtime/session` answers. `/name` followed: it renames through the handle's
-  own `:set-session-name!`, so a missing session op fails there. A converted
+  `runtime/session` answers. `/name` followed: it renames the live session the
+  handle answers (the shared builtin reaches it through the runtime accessor,
+  not the op key; the contract test covers the op set). A converted
   test registers its builtins inside the fixture — boot publishes the
   composition's registry as the process command registry, and a registration
   made before it is invisible to `find-command`. Remaining: the rest of the
