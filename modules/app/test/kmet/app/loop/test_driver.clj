@@ -248,11 +248,11 @@
           (is (every? empty? (vals ((:inbox agents) root handle)))
               "a prompt is in the session log, not the queue")))))
   (let [{:keys [root agents]} (mounted)
-        image {:type :image :data "aGVsbG8=" :mime-type "image/png"}]
+        image {:type :image :data "aGVsbG8=" :mime-type "image/png"}
+        gate (promise)]
     (with-stubbed-llm
       (fn [_calls]
-        (let [handle (create! {:root root :agents agents})
-              gate (promise)]
+        (let [handle (create! {:root root :agents agents})]
           ((:send! agents) handle "first" {:target :next-turn})
           (try
             ((:send! agents) handle {:text "mid-run" :images [image]}
@@ -261,4 +261,47 @@
             (catch Exception e
               (is (= :kmet.app/unsupported-images (:type (ex-data e))))
               (is (= :next-turn (:target (ex-data e)))))
-            (finally (deliver gate :done))))))))
+            (finally (deliver gate :done)))))
+      gate)))
+
+(deftest an-agent-listener-hears-only-its-agent
+  ;; 5f's note: a mode subscribed on the app scope, so a second agent's settle
+  ;; woke the first mode's promise. The fix is the scope: an agent's ctx hears
+  ;; only that agent (and its subagents), which is what print and rpc subscribe
+  ;; on now.
+  (let [{:keys [root agents]} (mounted)
+        one (create! {:root root :agents agents})
+        two (create! {:root root :agents agents})
+        heard (atom [])
+        unsubscribe [(events/on! (:ctx one) :agent-settled
+                                 (fn [ev] (swap! heard conj [:one (:outcome ev)])))
+                     (events/on! (:ctx two) :agent-settled
+                                 (fn [ev] (swap! heard conj [:two (:outcome ev)])))]]
+    (try
+      (with-stubbed-llm
+        (fn [_calls]
+          ((:send! agents) one "one" {:target :next-turn})
+          ((:when-idle agents) one)
+          ((:send! agents) two "two" {:target :next-turn})
+          ((:when-idle agents) two)
+          (is (= 2 (count @heard)) "one settle each, not two per attempt")
+          (is (some #(= [:one :completed] %) @heard))
+          (is (some #(= [:two :completed] %) @heard))))
+      (finally (doseq [f unsubscribe] (f))))))
+
+(deftest a-compaction-request-defers-to-the-settle
+  ;; The handle's manual compaction: idle starts it, a live prompt defers it to
+  ;; the settle (kmet's cancel is cooperative, so compacting under the run would
+  ;; race it), and a disposed handle drops what is queued rather than compacting
+  ;; a session nobody owns.
+  (let [{:keys [root agents]} (mounted)
+        gate (promise)]
+    (with-stubbed-llm
+      (fn [_calls]
+        (let [handle (create! {:root root :agents agents})]
+          ((:send! agents) handle "first" {:target :next-turn})
+          (is (= :scheduled ((:request-compaction! agents) handle nil nil))
+              "a request while the prompt runs waits for the settle")
+          ((:dispose! agents) handle)
+          (deliver gate :done))))
+    (is true "the deferred request is dropped with the handle")))

@@ -20,6 +20,7 @@
             [kmet.agent.loop.state :as loop-state]
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.project-context :as context]
+            [kmet.agent.session.compaction :as manual]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.tools.registry :as tools]
@@ -231,9 +232,18 @@
    changes one agent and never the process: `/model` on one handle leaves a
    sibling's alone."
   [child {:keys [id session config prompt-fn projections]}]
-  (let [{:keys [state] runtime-cwd :cwd}
-        (agent-state config child {:session session
-                                   :system-prompt-fn prompt-fn})
+  (let [engine-ref (atom nil)
+        {:keys [state] runtime-cwd :cwd}
+        (agent-state config child
+                     {:session session
+                      :system-prompt-fn prompt-fn
+                      ;; a manual compaction deferred by a running prompt
+                      ;; starts when the prompt settles (kmet.app.agents'
+                      ;; `compact`/rpc's `compact`); the loop's own post-run
+                      ;; check has run by then
+                      :on-event (fn [ev]
+                                  (when (= :agent-settled (:type ev))
+                                    (manual/start-pending-compactions! @engine-ref)))})
         live (atom state)
         running? (atom false)
         last-run (atom nil)
@@ -255,6 +265,7 @@
                  :pending-compaction (atom [])
                  :pending-ui (atom {})
                  :run-callbacks (atom nil)})
+        _ (reset! engine-ref engine)
         settle! (fn [] (reset! running? false))
         stop! (fn []
                 (loop/cancel-turn @live)
@@ -336,7 +347,14 @@
          :set-run-options! (fn [m] (runtime/set-run-options! engine m))
          :set-http-idle-timeout-ms! (fn [ms] (runtime/set-http-idle-timeout-ms! engine ms))
          :set-http-total-timeout-ms! (fn [ms] (runtime/set-http-total-timeout-ms! engine ms))
-         :clear-queues! (fn [] (runtime/clear-queues! engine))))))
+         :clear-queues! (fn [] (runtime/clear-queues! engine))
+         ;; the manual compaction queue: a request while a prompt runs is
+         ;; deferred to the settle (the state's :on-event above drains it), a
+         ;; disposal drops what is queued
+         :request-compaction! (fn [& args] (apply manual/request-compaction! engine args))
+         :abort-compaction! (fn [] (manual/abort-compaction! engine))
+         :queue-compaction-message! (fn [text mode] (manual/queue-compaction-message! engine text mode))
+         :clear-compaction-queue! (fn [] (manual/clear-compaction-queue! engine))))))
 
 ;; ── the row ───────────────────────────────────────────────────────────────
 

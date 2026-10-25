@@ -136,11 +136,6 @@
         behavior (:streaming-behavior command)
         running? (running? agents handle)]
     (cond
-      ;; the wire carries text: kmet2's handle takes a string, and an image
-      ;; quietly dropped would be a wrong answer to a client that sent one
-      (:images command)
-      (failed :prompt "prompt does not support :images yet")
-
       (nil? text)
       (failed :prompt "prompt requires a non-empty :message string")
 
@@ -156,13 +151,18 @@
           (ok :prompt {:disposition :queued}))
 
       :else
-      (do ((:send! agents) handle text {:target :next-turn})
+      ;; the prompt carries the client's images to the loop: a prompt either
+      ;; starts a run with them or the handle refuses, never a silent drop
+      (do ((:send! agents) handle
+                           (cond-> {:text text} (:images command) (assoc :images (:images command)))
+                           {:target :next-turn})
           (ok :prompt {:disposition :started})))))
 
 (defn- command-queue
-  "The `:steer` / `:follow-up` commands: the queues carry no image blocks, so
-   reject `:images` rather than drop them, and answer with the queued
-   disposition. The command's own `:type` is the behavior it queues for."
+  "The `:steer` / `:follow-up` commands: the loop's queues carry no image
+   blocks (pi: steer/followUp are text), so reject `:images` rather than drop
+   them, and answer with the queued disposition. The command's own `:type` is
+   the behavior it queues for."
   [state command]
   (let [type (:type command)
         text (some-> (message-of command) packages/expand-input)]
@@ -199,6 +199,57 @@
   "How many messages the agent has queued (the durable inbox, by target)."
   [agents scope handle]
   (reduce + 0 (map count (vals ((:inbox agents) scope handle)))))
+
+(defn- available-model
+  "The available (authenticated) model record for PROVIDER + MODEL-ID, or nil
+   (pi: modelRuntime.getAvailableSnapshot) — the same snapshot the catalog
+   command answers."
+  [provider model-id]
+  (first (filter #(and (= (keyword provider) (:provider %))
+                       (= model-id (:id %)))
+                 (models/get-available))))
+
+(defn- command-set-model
+  "Switch the agent's model (pi: set_model) — the model must be available
+   (authenticated, as in pi's snapshot). The handle writes the agent's own
+   state, so a sibling agent's model is untouched."
+  [{:keys [agents handle]} command]
+  (let [provider (:provider command)
+        model-id (:model-id command)]
+    (if (and (string? provider) (seq provider)
+             (string? model-id) (seq model-id))
+      (if-let [model (available-model provider model-id)]
+        (do ((:set-model! agents) handle model)
+            (ok :set-model model))
+        (failed :set-model (str "Model not found: " provider "/" model-id)))
+      (failed :set-model "set-model requires :provider and :model-id strings"))))
+
+(defn- command-set-auto-compaction
+  "Turn the loop's automatic compaction on or off for this agent
+   (pi: set_auto_compaction)."
+  [{:keys [agents handle]} command]
+  (if (boolean? (:enabled command))
+    (do ((:set-auto-compaction! agents) handle (:enabled command))
+        (ok :set-auto-compaction nil))
+    (failed :set-auto-compaction "set-auto-compaction requires :enabled boolean")))
+
+(defn- command-compact
+  "Start a manual compaction (pi: compact), or defer it when a run is in
+   flight: accepted is not completed — the response says :accepted (+ :scheduled
+   true when the compaction was deferred until the running prompt settles) and
+   the outcome arrives as :compaction-end / :session-compact(-failed) events.
+   The work runs on a future so the reader stays live."
+  [{:keys [agents handle]} command]
+  (let [instructions (:custom-instructions command)]
+    (cond
+      (and (some? instructions) (not (string? instructions)))
+      (failed :compact ":custom-instructions must be a string")
+
+      :else
+      (case ((:request-compaction! agents) handle instructions nil)
+        :compacting (failed :compact "Compaction already in progress")
+        :scheduled (ok :compact {:accepted true :scheduled true})
+        (ok :compact {:accepted true})))))
 
 (defn- command-get-state
   "The live state a client polls after a reconnect (pi: get-state): the agent's
@@ -264,8 +315,7 @@
    :get-session-stats "session stats are landing 6's session surface"
    :export-html "HTML export is landing 6's session surface"
 
-   :set-model "an agent's model is its creation option; switching it is landing 6's per-agent surface"
-   :cycle-model "an agent's model is its creation option; switching it is landing 6's per-agent surface"
+   :cycle-model "cycle-model is landing 10a's command table (the handle answers it; the wire shape is the server's landing)"
    :set-thinking-level "an agent's thinking level is its creation option; changing it is landing 6's per-agent surface"
    :cycle-thinking-level "an agent's thinking level is its creation option; changing it is landing 6's per-agent surface"
    :get-available-thinking-levels "the per-model thinking levels arrive with landing 6's model surface"
@@ -273,9 +323,6 @@
    :set-steering-mode "the queue belongs to the agent's loop; its modes are landing 6's queue primitive"
    :set-follow-up-mode "the queue belongs to the agent's loop; its modes are landing 6's queue primitive"
    :clear-queue "the queue belongs to the agent's loop; draining it from the wire is landing 6's queue primitive"
-
-   :compact "compaction rides the loop's compaction seam (landing 7)"
-   :set-auto-compaction "compaction rides the loop's compaction seam (landing 7)"
 
    :respond "dialogs are landing 10a's command table (:request/:response over the wire)"
    :get-commands "the slash-command registry's wire shape moves with the dispatcher"})
@@ -290,7 +337,10 @@
    :abort #(command-abort state %)
    :get-state #(command-get-state state %)
    :get-entries #(command-get-entries state %)
-   :get-available-models #(command-get-available-models state %)})
+   :get-available-models #(command-get-available-models state %)
+   :set-model #(command-set-model state %)
+   :set-auto-compaction #(command-set-auto-compaction state %)
+   :compact #(command-compact state %)})
 
 (defn handle-command
   "Handle one parsed command, returning the response — never nil: every command
@@ -390,8 +440,13 @@
     (when on-result
       (let [out- *out*
             in *in*
-            dispose (events/on-every scope (fn [event]
-                                             (out/record! out- (event-bus/wire-event event))))
+            ;; the agent does not exist yet, and the listener must scope to it:
+            ;; the mode's stream is its own agent's events, not every agent's
+            ;; the process booted (5d listened on the app scope)
+            listener (atom nil)
+            dispose-listener! (fn []
+                                (when-let [f (first (reset-vals! listener nil))]
+                                  (f)))
             ;; kmet1's rpc mode binds exactly this: a front end with a port,
             ;; whose extension UI calls travel the protocol — the row's port as
             ;; the base, the wire capabilities on top
@@ -407,16 +462,22 @@
                     ;; the settings it loads
                     (let [handle ((:create! agents) scope (invocation/create-opts config))]
                       (try
+                        (reset! listener
+                                (events/on-every (:ctx handle)
+                                                 (fn [event]
+                                                   (out/record! out- (event-bus/wire-event event)))))
                         (serve-commands {:agents agents :sessions sessions
                                          :scope scope :handle handle}
                                         in out-)
                         0
-                        (finally ((:dispose! agents) handle))))
+                        (finally
+                          (dispose-listener!)
+                          ((:dispose! agents) handle))))
                     (catch Throwable t
                       (out/error! (or (ex-message t) (str t)))
                       1))}))
         (fn []
-          (dispose)
+          (dispose-listener!)
           (restore))))))
 
 (srce/defplugin plugin

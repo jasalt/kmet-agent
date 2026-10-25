@@ -18,7 +18,7 @@
             [kmet.agent.compaction.stage :as agent-compact]
             [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
-            [kmet.agent.session.driver :as session-driver]
+            [kmet.agent.session.compaction :as manual]
             [kmet.agent.session.runtime :as runtime]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.config :as cfg]
@@ -284,7 +284,7 @@
                 "the reply says the compaction is scheduled")
           (t/is (not (realized? ran)) "nothing runs while the turn is live")
           (reset! (:running-turn? cs) false)
-          ((var session-driver/start-pending-compactions!) (:engine cs))
+          (manual/start-pending-compactions! (:engine cs))
           (t/is (= ["focus" :manual] (deref ran 2000 nil))
                 "the deferred compaction ran after the turn settled"))
         (finally (commands/clear-commands!))))))

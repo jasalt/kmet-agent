@@ -4,10 +4,10 @@
 
    pi: modes/print-mode.ts. It is the first client of the `:agents` factory
    rather than kmet1's engine — create a handle, send the message, and listen
-   on the app's event layer (new-app.md, 7b-i) for the streaming deltas and for
-   the settle that ends the run. One agent runs per print mode, so the listeners
-   take the whole app scope; a mode that holds several agents scopes per agent
-   instead (landing 8).
+   on the agent's own ctx (new-app.md, 7b-i and landing 8) for the streaming
+   deltas and for the settle that ends the run. The scope is per agent: two
+   print runs in one process settle their own promises, because the kernel
+   routes a listener on an agent's ctx only its own agent's events.
 
    The row's config carries the invocation's input — `:prompt`, the
    `:on-result` callback and the output `:format` — because a mode's job is what
@@ -63,34 +63,6 @@
                             "Request ended without an outcome"))))
         1)))
 
-(defn- run-prompt!
-  "One prompt: create, send, wait for the settle, report. Returns the exit
-   code. The mode owns the agent it made, so the handle is disposed whatever
-   the run did — and a failure to create or send is one line on stderr and
-   exit 1, never a thrown thread.
-
-   CREATE-OPTS are the agent's own options — the invocation's run overrides
-   (`invocation/create-opts`); the driver applies them to the settings it loads.
-   In edn mode the session header goes out first, before the run produces any
-   event: a consumer reads the header to learn the id the events belong to."
-  [scope agents {:keys [prompt format] :as config} settled error]
-  (try
-    (let [handle ((:create! agents) scope (invocation/create-opts config))]
-      (try
-        (when (= :edn format)
-          (prn (:header ((:session handle))))
-          (flush))
-        ;; the mode expands the invocation's text before the agent sees it:
-        ;; `/skill:` and prompt templates are the front end's chain (kmet1's
-        ;; print mode does the same one layer down)
-        ((:send! agents) handle (packages/expand-input prompt) {:target :next-turn})
-        (exit-code format (:outcome (deref settled)) @error)
-        (finally
-          ((:dispose! agents) handle))))
-    (catch Throwable t
-      (out/error! (or (ex-message t) (str t)))
-      1)))
-
 (defn- dispose-all
   "One disposer for several: a run's listeners go together."
   [disposers]
@@ -119,6 +91,39 @@
       (events/on! scope :error (fn [event] (reset! error (:message event))))
       (events/on! scope :agent-settled (fn [event] (deliver settled event)))])))
 
+(defn- run-prompt!
+  "One prompt: create, listen on its ctx, send, wait for the settle, report.
+   Returns the exit code. The mode owns the agent it made, so the handle is
+   disposed whatever the run did — and a failure to create or send is one line
+   on stderr and exit 1, never a thrown thread. LISTENER holds the
+   subscription: the teardown can dispose it before the run ends, and this
+   function never subscribes twice.
+
+   CREATE-OPTS are the agent's own options — the invocation's run overrides
+   (`invocation/create-opts`); the driver applies them to the settings it loads.
+   In edn mode the session header goes out first, before the run produces any
+   event: a consumer reads the header to learn the id the events belong to."
+  [scope agents {:keys [prompt format] :as config} settled error listener]
+  (try
+    (let [handle ((:create! agents) scope (invocation/create-opts config))]
+      (try
+        ;; the agent exists, so its ctx is the scope that hears only its events
+        (reset! listener (subscriptions (:ctx handle) format settled error))
+        (when (= :edn format)
+          (prn (:header ((:session handle))))
+          (flush))
+        ;; the mode expands the invocation's text before the agent sees it:
+        ;; `/skill:` and prompt templates are the front end's chain (kmet1's
+        ;; print mode does the same one layer down)
+        ((:send! agents) handle (packages/expand-input prompt) {:target :next-turn})
+        (exit-code format (:outcome (deref settled)) @error)
+        (finally
+          (when-let [f (first (reset-vals! listener nil))] (f))
+          ((:dispose! agents) handle))))
+    (catch Throwable t
+      (out/error! (or (ex-message t) (str t)))
+      1)))
+
 (defn- serve
   "The `:mode-print` row's apply: wire the stream, then run on a thread of its
    own — the mount must finish so the composition can settle before the run
@@ -142,7 +147,12 @@
       (let [format (:format config :text)
             error (atom nil)
             settled (promise)
-            dispose (subscriptions scope format settled error)
+            ;; the agent does not exist yet: its listener is set once it does,
+            ;; and either the teardown or the run's finally disposes it
+            listener (atom nil)
+            dispose-listener! (fn []
+                                (when-let [f (first (reset-vals! listener nil))]
+                                  (f)))
             ;; kmet1's print mode binds exactly this, a layer down: kind :print,
             ;; no UI, and the composition's port (the headless answers, because
             ;; the profile stacks :bundle/headless)
@@ -151,13 +161,13 @@
                                          :ui (:port (srce/get ctx :ui))})]
         (future
           (on-result {:exit (run-prompt! scope agents (assoc config :format format)
-                                         settled error)}))
+                                         settled error listener)}))
         (fn []
           ;; a shutdown before the run ends must wake it: the settle promise is
           ;; the only thing it blocks on, and an event that never comes would
           ;; leave the thread parked
           (deliver settled {:outcome :disposed})
-          (dispose)
+          (dispose-listener!)
           (restore))))))
 
 (srce/defplugin plugin

@@ -90,7 +90,9 @@
    :set-scoped-models! :set-auto-compaction! :set-steering-mode!
    :set-follow-up-mode! :set-block-images! :set-system-prompt!
    :apply-default-tools! :set-config! :set-run-options!
-   :set-http-idle-timeout-ms! :set-http-total-timeout-ms! :clear-queues!])
+   :set-http-idle-timeout-ms! :set-http-total-timeout-ms! :clear-queues!
+   :request-compaction! :abort-compaction! :queue-compaction-message!
+   :clear-compaction-queue!])
 
 (defn- validate-handle!
   "HANDLE checked against `handle-contract` for ID and CHILD; returns it. A
@@ -440,7 +442,9 @@
               :set-scoped-models! :set-auto-compaction! :set-steering-mode!
               :set-follow-up-mode! :set-block-images! :set-system-prompt!
               :apply-default-tools! :set-config! :set-run-options!
-              :set-http-idle-timeout-ms! :set-http-total-timeout-ms! :clear-queues!])))))
+              :set-http-idle-timeout-ms! :set-http-total-timeout-ms! :clear-queues!
+              :request-compaction! :abort-compaction! :queue-compaction-message!
+              :clear-compaction-queue!])))))
 
 (defn- serve
   "The `:agents` row: the registry over the injected projections, provided into

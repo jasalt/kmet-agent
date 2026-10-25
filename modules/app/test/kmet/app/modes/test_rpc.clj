@@ -137,20 +137,19 @@
 (deftest a-later-landings-command-is-refused-by-name
   ;; kmet1's protocol has commands kmet2 cannot answer yet. Each names the
   ;; landing that fills it: a silent success would be a wrong answer, and
-  ;; "Unknown command" would read as a typo.
+  ;; "Unknown command" would read as a typo. The model and compaction setters
+  ;; left this table at landing 8 — the handle answers them now — so the
+  ;; remaining names are the session and cycle surface.
   (with-mode-run
     (answering "never runs")
     (fn []
       (let [{:keys [records]}
-            (run-rpc {:lines ["{:type :set-model :id \"m1\" :provider \"p\" :model-id \"m\"}"
-                              "{:type :compact :id \"c1\"}"
+            (run-rpc {:lines ["{:type :cycle-model :id \"m1\"}"
                               "{:type :get-commands :id \"g1\"}"]})]
-        (is (str/includes? (str (:error (by-id records "m1"))) "landing 6")
-            "the model surface is landing 6's")
-        (is (str/includes? (str (:error (by-id records "c1"))) "landing 7")
-            "compaction is landing 7's")
+        (is (str/includes? (str (:error (by-id records "m1"))) "landing 10a")
+            "the cycle surface is 10a's command table")
         (is (every? #(str/includes? (str (:error (by-id records %))) "is not implemented in rpc mode yet")
-                    ["m1" "c1" "g1"])
+                    ["m1" "g1"])
             "and every one of them is the named refusal")))))
 
 (deftest the-state-a-client-polls
@@ -192,20 +191,57 @@
             (is (= :high (:thinking-level state))
                 "and its thinking level, which the settings did not set")))))))
 
-(deftest an-image-on-the-wire-is-refused-by-name
-  ;; The wire carries text: an agent's message reaches the loop as a string, so
-  ;; an image block would be dropped on the floor. Refused by name instead — a
-  ;; client that sent one learns it did not arrive.
-  (with-mode-run
-    (answering "never runs")
-    (fn []
-      (let [{:keys [records]}
-            (run-rpc {:lines ["{:type :prompt :id \"p\" :message \"look\" :images [{:type :image :data \"x\"}]}"
-                              "{:type :steer :id \"s\" :message \"look\" :images [{:type :image :data \"x\"}]}"]})]
-        (is (str/includes? (str (:error (by-id records "p"))) ":images")
-            "a prompt with images says images are not supported")
-        (is (str/includes? (str (:error (by-id records "s"))) ":images")
-            "and so does a queue command")))))
+(deftest an-image-reaches-a-run-but-never-a-queue
+  ;; The handle carries a prompt's images to the loop (landing 8), so a client
+  ;; that sends one gets it run. A queue command still refuses: the loop's
+  ;; queues carry text, and dropping the image would be a wrong answer.
+  (let [request (atom nil)]
+    (with-mode-run
+      (fn [opts]
+        (reset! request opts)
+        (future
+          (when-let [f (:on-text opts)] (f "ok"))
+          (when-let [f (:on-done opts)] (f :stop))
+          :done))
+      (fn []
+        (let [{:keys [records]}
+              (run-rpc {:lines ["{:type :prompt :id \"p\" :message \"look\" :images [{:type :image :data \"eA==\" :mime-type \"image/png\"}]}"
+                                "{:type :steer :id \"s\" :message \"look\" :images [{:type :image :data \"eA==\"}]}"]
+                        :until ":agent-settled"})]
+          (is (:success (by-id records "p"))
+              "a prompt with images is accepted")
+          (is (some #(= :image (:type %))
+                    (->> (:messages @request)
+                         (some #(when (= :user (:role %)) %))
+                         :content))
+              "and the image block is in the request the provider received")
+          (is (str/includes? (str (:error (by-id records "s"))) ":images")
+              "a queue command still refuses by name"))))))
+
+(deftest the-model-and-compaction-setters-answer-on-the-wire
+  ;; 8's three lifted commands: the handle writes this agent's state, the
+  ;; answer is the wire's, and the next get-state reads the change back.
+  (with-redefs [models/get-available (fn [& _] [{:provider :opencode-go
+                                                 :id "deepseek-v4-flash"}])]
+    (with-mode-run
+      (answering "never runs")
+      (fn []
+        (let [{:keys [code records]}
+              (run-rpc {:lines ["{:type :set-model :id \"m\" :provider \"opencode-go\" :model-id \"deepseek-v4-flash\"}"
+                                "{:type :set-auto-compaction :id \"a\" :enabled false}"
+                                "{:type :get-state :id \"s\"}"
+                                "{:type :compact :id \"c\"}"
+                                "{:type :set-model :id \"bad\" :provider \"x\" :model-id \"y\"}"]})]
+          (is (= 0 code))
+          (is (= "deepseek-v4-flash" (:id (:data (by-id records "m"))))
+              "set-model answers the switched record")
+          (is (true? (:success (by-id records "a"))))
+          (is (false? (get-in (by-id records "s") [:data :auto-compaction-enabled]))
+              "the auto-compaction change is read back")
+          (is (= {:accepted true} (:data (by-id records "c")))
+              "an idle compact is accepted")
+          (is (str/includes? (str (:error (by-id records "bad"))) "Model not found")
+              "an unavailable model is refused by name"))))))
 
 (deftest the-session-log-is-on-the-wire
   ;; get-entries is the log a client reads after a run, in append order: the
@@ -219,8 +255,9 @@
                       :until ":agent-settled"
                       :then ["{:type :get-entries :id \"e\"}"]})
             entries (:entries (:data (by-id records "e")))]
-        (is (= :assistant (:role (last entries)))
-            "the turn ends the log with the answer")
+        (is (= :assistant (:role (last (remove #(= :custom (:role %)) entries))))
+            "the turn's last message is the answer (the queue facts may land
+             before or after it: their position is the threads')")
         (is (= ["hi"] (mapv (comp :text first :content)
                             (filter #(= :user (:role %)) entries)))
             "and carries the user's message")

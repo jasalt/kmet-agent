@@ -43,15 +43,16 @@
    [kmet.agent.loop :as agent]
    [kmet.agent.loop.state :as loop-state]
    [kmet.agent.model-resolver :as resolver]
+   [kmet.agent.session.compaction :as manual]
    [kmet.agent.session.core :as session]
    [kmet.ai.models :as models]
-   [kmet.agent.session.runtime :refer [agent-ctx agent-state compacting? compaction-error compaction-queued config cwd ensure-cwd-session-dir find-recent-session map->Engine pending-compaction session switch-model! turn-running?]]
+   [kmet.agent.session.runtime :refer [agent-ctx agent-state compaction-queued config cwd ensure-cwd-session-dir find-recent-session map->Engine session switch-model! turn-running?]]
    [kmet.agent.skills :as skills]
    [kmet.app.loop.driver :as driver]
    [kmet.libs.concurrent :as concurrent]
    [kmet.srce.core :as srce]))
 
-(declare cancel! runtime-capabilities start-pending-compactions! subscribe!)
+(declare cancel! runtime-capabilities subscribe!)
 
 (defn- default-ui-port
   "The capability map a front end without its own port gets: the headless
@@ -201,7 +202,7 @@
     (subscribe! engine
                 (fn [ev]
                   (when (= :agent-settled (:type ev))
-                    (start-pending-compactions! engine))))
+                    (manual/start-pending-compactions! engine))))
     engine))
 
 (defn resolve-run-session
@@ -619,15 +620,12 @@
   "Queue TEXT typed during compaction for delivery after it
    (pi: queueCompactionMessage); MODE is :steer or :follow-up."
   [engine text mode]
-  (swap! (:compaction-queued engine) conj {:text text :mode mode})
-  nil)
+  (manual/queue-compaction-message! engine text mode))
 
 (defn clear-compaction-queue!
   "Drop all compaction-queued messages; returns the dropped messages."
   [engine]
-  (let [q (compaction-queued engine)]
-    (reset! (:compaction-queued engine) [])
-    q))
+  (manual/clear-compaction-queue! engine))
 
 (defn- split-command
   "Split a slash-command line into [name args]. Non-command text returns
@@ -801,61 +799,6 @@
   ([engine custom-instructions reason]
    (agent-compact/compact-context! (agent-state engine) custom-instructions reason)))
 
-(defn- run-manual-compaction!
-  "Run one queued manual compaction request and report it through the
-   request's callbacks. A :failed compaction reports through :on-error with
-   pi's `Compaction failed: …` message; a completed one (true, or false when
-   there was nothing to compact) and :aborted report through :on-complete —
-   the :compaction-end event carries the rest to the UI. An exception
-   escaping the compaction reports through :on-error too (logged either
-   way); one escaping a callback is contained so it cannot kill the drain."
-  [engine {:keys [custom-instructions on-complete on-error]}]
-  (let [outcome (try
-                  {:result (compact! engine custom-instructions :manual)}
-                  (catch Exception e
-                    ;; a future that swallows the exception hides real bugs,
-                    ;; so log it (pi: handleCompactCommand catches and ignores
-                    ;; — the events carry the failure)
-                    (debug/log-error "manual compaction failed: " e)
-                    {:error e}))]
-    (try
-      (if-let [e (:error outcome)]
-        (when on-error (on-error e))
-        (let [result (:result outcome)]
-          (if (= :failed result)
-            (when on-error
-              (on-error (ex-info (or (compaction-error engine)
-                                     "Compaction failed: Unknown error")
-                                 {:type :compaction-failed})))
-            (when on-complete (on-complete result)))))
-      (catch Exception e
-        (debug/log-error "compaction callback failed: " e)))))
-
-(defn- start-pending-compactions!
-  "Start the manual compactions queued in :pending-compaction — the deferred
-   ones from a running prompt and an idle request-compaction! alike. Runs on
-   a future so the caller/settle emit stays non-blocking, and serializes the
-   drains (locking on the queue): a settle and an idle request can both
-   trigger one, and two concurrent compact-context! calls would race — the
-   second returns false because one is in flight. When a newer prompt
-   already owns the runtime — or a compaction is somehow in flight — the
-   requests stay queued for the next settle. A disposed engine drops them."
-  [engine]
-  (when (and (not @(:disposed? engine))
-             (seq (pending-compaction engine)))
-    (future
-      (let [queue (:pending-compaction engine)]
-        (locking queue
-          (when-not (or (turn-running? engine)
-                        (compacting? engine))
-            (loop []
-              (when-not @(:disposed? engine)
-                (let [[claimed _] (swap-vals! queue
-                                              (fn [qs] (if (seq qs) (subvec qs 1) qs)))]
-                  (when-let [req (first claimed)]
-                    (run-manual-compaction! engine req)
-                    (recur)))))))))))
-
 (defn request-compaction!
   "Request a manual compaction (CUSTOM-INSTRUCTIONS optional). While the
    runtime is idle the compaction starts immediately; while a prompt is
@@ -872,19 +815,12 @@
    nothing is queued)."
   ([engine] (request-compaction! engine nil nil))
   ([engine custom-instructions opts]
-   (if (compacting? engine)
-     :compacting
-     (let [scheduled? (turn-running? engine)]
-       (swap! (:pending-compaction engine) conj
-              (assoc opts :custom-instructions custom-instructions))
-       (when-not scheduled?
-         (start-pending-compactions! engine))
-       (if scheduled? :scheduled :started)))))
+   (manual/request-compaction! engine custom-instructions opts)))
 
 (defn abort-compaction!
   "Abort the in-flight compaction without cancelling a running turn."
   [engine]
-  (agent-compact/abort-compaction! (agent-state engine)))
+  (manual/abort-compaction! engine))
 
 (defn generate-branch-summary
   "LLM summary of abandoned branch entries for tree navigation. Returns
