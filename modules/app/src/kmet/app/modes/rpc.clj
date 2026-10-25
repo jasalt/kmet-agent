@@ -346,37 +346,37 @@
   "The live state a client polls after a reconnect (pi: get-state): the agent's
    model and thinking level, whether a turn is in flight, whether a compaction
    runs, what is queued, how the last prompt settled, and the session it all
-   belongs to (its name only when it has one, as pi omits it)."
+   belongs to (its name only when it has one, as pi omits it).
+
+   The values are `runtime/snapshot`'s — one documented view of atoms that move
+   under a run — with the wire's field names on them. The pending count is the
+   durable inbox's rather than the in-memory queues': a client that reconnects
+   asks what is still waiting for it."
   [{:keys [agents scope handle]} _command]
-  ;; the live state and session: a session switch replaces the record, so the
-  ;; handle's accessors are the ones to read, not a snapshot of `:agent`
-  (let [state (runtime/agent-state handle)
-        sess (runtime/session handle)
-        sess-name (some-> sess session/get-session-name)
-        ;; the state is live: its model, provider, thinking level and run
-        ;; knobs move while a run cycles them, so every value here is read
-        ;; through its atom
-        cfg @(:cfg state)]
+  (let [{:keys [model provider thinking compacting? steering-mode follow-up-mode
+                auto-compact last-outcome session]}
+        (runtime/snapshot handle)
+        sess-name (some-> session session/get-session-name)]
     (ok :get-state
-        (cond-> {:model @(:model state)
-                 :provider @(:provider state)
-                 :thinking-level @(:thinking state)
+        (cond-> {:model model
+                 :provider provider
+                 :thinking-level thinking
                  :turn-running? (runtime/turn-running? handle)
-                 :compacting? (boolean @(:compacting? state))
-                 :steering-mode (:steering-mode cfg)
-                 :follow-up-mode (:follow-up-mode cfg)
-                 :auto-compaction-enabled (boolean (:auto-compact cfg))
+                 :compacting? compacting?
+                 :steering-mode steering-mode
+                 :follow-up-mode follow-up-mode
+                 :auto-compaction-enabled (boolean auto-compact)
                  :pending-message-count (pending-count agents scope handle)
-                 :last-outcome (runtime/last-outcome handle)}
-          sess (assoc :session
-                      (cond-> {:id (:id sess)
-                               :file (:file sess)
-                               ;; message entries only — queue facts and metadata
-                               ;; are the log's, not the transcript's (kmet1's
-                               ;; get-message-count)
-                               :message-count (session/get-message-count sess)}
-                         ;; pi omits sessionName when unset
-                        sess-name (assoc :name sess-name)))))))
+                 :last-outcome last-outcome}
+          session (assoc :session
+                         (cond-> {:id (:id session)
+                                  :file (:file session)
+                                  ;; message entries only — queue facts and
+                                  ;; metadata are the log's, not the
+                                  ;; transcript's (kmet1's get-message-count)
+                                  :message-count (session/get-message-count session)}
+                           ;; pi omits sessionName when unset
+                           sess-name (assoc :name sess-name)))))))
 
 (defn- command-get-entries
   "The session's entries, the durable log the run appends (pi: get-entries):
