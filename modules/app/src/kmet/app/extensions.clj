@@ -38,35 +38,23 @@
             [kmet.app.registries :as registries]
             [kmet.srce.core :as srce]))
 
-(def ^:private tool-tags
-  "The host tags the composition's `:tools` service owns: a registration under
-   either is read by `kmet.agent.tools.registry` through that service."
-  #{:kmet/tool :kmet/tool-source})
-
-(defn- host-registry
-  "The host's registry for this composition: a router sending TOOL-TAGS to the
-   mount site's `:tools` service and every other tag to REMAINDER. The tool
-   service is resolved per call, not here — the row mounts before the `:tools`
-   row in the composition, and a bare composition may not mount one at all (its
-   registrations then stay in REMAINDER, as they did before the route)."
-  [ctx remainder]
-  (registry/router
-   (fn [tag]
-     (or (when (contains? tool-tags tag)
-           (srce/get (:parent ctx) :tools))
-         remainder))))
-
 (defn- serve
-  "Bind the host's services for this composition, over whatever was bound: this
-   row owns the host's own handle and mount site, the previous owner keeps the
-   rest (see the ns docstring). Returns the disposer that restores it."
+  "Bind the host's services for this composition and publish its registry as
+   the process handle: the registry routes every tag to the service that owns
+   it, the resource operations are the app's own, and the ctx is the scope an
+   extension's `:inject` mounts under. Returns the disposer that restores both
+   (the previous binding, the previous publisher)."
   [ctx _config]
   (let [base (extensions/host-binding)
-        handle (host-registry ctx (registries/service))]
+        scope (:parent ctx)
+        handle (registries/process-handle scope)
+        previous (registry/publish-process-handle! handle)]
     (extensions/bind-services!
-     (fn [] (merge (when base (base))
-                   {:registry handle :ctx (:parent ctx)})))
-    (fn [] (extensions/bind-services! base))))
+     (fn [] (merge {:registry handle :ctx scope}
+                   (registries/resource-services handle))))
+    (fn []
+      (registry/publish-process-handle! previous)
+      (extensions/bind-services! base))))
 
 (srce/defplugin plugin
   {:name :extensions

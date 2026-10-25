@@ -231,10 +231,9 @@
   ;; kmet.agent.extensions.services/host-services builds either map.
   (let [handle (registry/atom-registry)
         ctx (srce/root {:name :host-test})
-        bind! #(extensions/bind-services!
-                (fn [] (services/host-services %1 %2)))]
+        previous (extensions/bind-services!
+                  (fn [] (services/host-services handle ctx)))]
     (try
-      (bind! handle ctx)
       (extensions/register-flag! [:app :test] "host-test-flag" {:type :boolean})
       (t/is (= {:type :boolean :default nil}
                (registry/entry handle :kmet/flag "host-test-flag"))
@@ -242,5 +241,7 @@
       (t/is (nil? (registry/entry (rt/registry) :kmet/flag "host-test-flag"))
             "and not in the process's")
       (finally
-        ;; back to kmet1's binding for every test after this one
-        (bind! (rt/registry) (rt/ctx))))))
+        ;; back to the binding every test after this one expects — exactly the
+        ;; one that was there, not a handle rebuilt from the process root (that
+        ;; read can force the boot, and the handle is captured before it)
+        (extensions/bind-services! previous)))))

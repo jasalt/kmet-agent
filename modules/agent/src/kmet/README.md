@@ -260,10 +260,12 @@ registration tables/maps over compile-time multimethod registries. Use
 
 The registries a front end or extension can reach — commands, tools, skills and
 prompt templates — live in the app root **ctx**, one service per registry
-(`:tools`, `:commands`, `:prompts`, `:skills`), reached through
-`kmet.agent.app-runtime/registry`, a façade handle that routes each tag to its
-service. Adding a tool or a command is a registry write on that handle and a
-plugin that adds one never re-provides. What has no service of its own yet —
+(`:tools`, `:commands`, `:prompts`, `:skills`). The process handle
+(`kmet.app.registries/process-handle`) routes each tag to its service, and
+`kmet.agent.app-runtime/registry` is kmet1's name for the one the composition
+published (`kmet.agent.registry/current`). Adding a tool or a command is a
+registry write on that handle and a plugin that adds one never re-provides.
+What has no service of its own yet —
 hooks, markdown transformers, themes, the UI port, and the renderers and flags
 the ABI registers — is an entry in the same registry mechanism on the façade's
 remainder handle (tags `:kmet/hook`, `:kmet/theme`, `:kmet/ui-port`,

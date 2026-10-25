@@ -18,6 +18,9 @@
    `[:app :extensions <name>]` in the app's registries, so unloading an
    extension is one `deregister-owner!` per tag plus the fns it recorded for
    what lives outside any registry (and its fiber, when it declared `:inject`).
+   The handle is the composition's (`kmet.app.registries/process-handle`,
+   published by its `:extensions` row); this shim reads it, it does not build a
+   second one.
 
    One sharp edge comes with the root ctx, and the host owns it: it is a
    process global every front end, engine and loaded extension shares — a run
@@ -27,6 +30,7 @@
             [kmet.agent.extensions.services :as extensions-services]
             [kmet.agent.registry :as reg]
             [kmet.app.core :as app-core]
+            [kmet.app.registries :as registries]
             [kmet.app.root :as root]
             [kmet.app.runtime :as app-runtime]
             [kmet.srce.core :as srce]))
@@ -80,57 +84,40 @@
      (if parent (srce/extend parent meta) (srce/root meta)))))
 
 (def registry-tags
-  "Every registry tag kmet1 registers under, and the service that owns it — nil
-   for the tags with no seam yet (the extension host's own registrations:
-   hooks, themes, the UI port, entry/message renderers, flags), which share the
-   façade's `remainder` handle until they get services.
-
-   This is the routing table `registry` builds its handle from; unloading an
-   extension sweeps the same tags through two other lists (the host's own
-   `host-tags` and the resources' `resource-tags`, since the host may not
-   require this shim). They are separate files, so they can drift — keep them
-   equal: `test-lifecycle` does (`test-unload-sweeps-every-tag-kmet1-routes`),
-   because a forgotten tag leaks (`:kmet/tool-source` did)."
-  {:kmet/tool :tools
-   :kmet/tool-source :tools
-   :kmet/command :commands
-   :kmet/prompt :prompts
-   :kmet/skill :skills
-   :kmet/hook nil
-   :kmet/theme nil
-   :kmet/ui-port nil
-   :kmet/entry-renderer nil
-   :kmet/message-renderer nil
-   :kmet/flag nil})
-
-(defonce ^:private registry-handle
-  (delay
-    (let [remainder (reg/atom-registry)]
-      (reg/router (fn [tag]
-                    (if-let [service (registry-tags tag)]
-                      (srce/get (ctx) service)
-                      remainder))))))
+  "Every registry tag the process handle routes, and the service that owns it —
+   nil for the tags with no service yet (the extension host's own
+   registrations). `kmet.app.registries` owns the table now; this name is
+   kmet1's entry point onto it, and unloading an extension sweeps the same tags
+   through the host's two lists. They are separate files, so they can drift —
+   keep them equal: `test-lifecycle` does (`test-unload-sweeps-every-tag-kmet1-
+   routes`), because a forgotten tag leaks (`:kmet/tool-source` did)."
+  registries/registry-tags)
 
 (defn registry
-  "The `Registry` handle kmet1 registers through: one façade that routes each
-   tag to the service that owns it in the app ctx (`kmet.agent.registry/router`),
-   so a command registered here is the `:commands` service kmet2 reads, and one
-   that has no seam yet still has somewhere to go."
+  "The `Registry` handle kmet1 registers through: the process handle this
+   composition published (`kmet.app.registries/process-handle`), so a command
+   registered here is the `:commands` service kmet2 reads. A process that
+   published nothing answers from the empty per-process fallback
+   (`kmet.agent.registry/current`), which is not an error: a bare test or a
+   cold start still has somewhere to write."
   []
-  @registry-handle)
-
-;; Readers with no ctx in hand (commands, prompts, skills) ask
-;; `kmet.agent.registry/current`; this shim is the owner that answers, so the
-;; publishing happens here, where the tags->service table lives.
-(reg/publish-process-handle! (registry))
+  (reg/current))
 
 ;; The extension host lives in `app` and may not require this shim, so this is
-;; where the process hands it its handles: the registry above, the ctx below,
-;; and the resource registries it would otherwise have to name. The thunk is
-;; only stored here — nothing resolves, let alone boots, until the host reads
-;; it — and re-binding is how a different owner (an agent's ctx) takes over.
-(extensions/bind-services!
- (fn [] (extensions-services/host-services (registry) (ctx))))
+;; where a kmet1 process hands it a binding before a composition exists: the
+;; root's own row replaces it at mount, and this thunk must not serve the first
+;; registration from the fallback handle — it mounts the root first, then reads
+;; the binding again. Nothing resolves, let alone boots, until the host reads
+;; it, and re-binding is how a different owner takes over.
+(defonce ^:private shim-binding
+  (fn []
+    (ctx)
+    (let [f (extensions/host-binding)]
+      (if (identical? f shim-binding)
+        (extensions-services/host-services (reg/current) (ctx))
+        (f)))))
+
+(extensions/bind-services! shim-binding)
 
 (defn deregister-owner!
   "Remove every registry registration OWNER holds, across every tag — what

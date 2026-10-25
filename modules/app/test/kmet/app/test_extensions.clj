@@ -1,7 +1,9 @@
 (ns kmet.app.test-extensions
   (:require [babashka.fs :as fs]
             [clojure.test :refer [deftest is]]
+            [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.registry :as registry]
             [kmet.agent.tools.registry :as tools]
             [kmet.app.extensions :as row]
             [kmet.app.registries :as registries]
@@ -33,11 +35,10 @@
       (extensions/register-tool-call-hook! :owner/fn (fn [_] nil))
       (is (= 1 (count (extensions/get-tool-call-hooks)))
           "a registration the host accepted is one its bound handle holds")
-      (is (= :kmet/no-resource-registries
-             (try (extensions/resources :skills)
-                  nil
-                  (catch Exception e (:type (ex-data e)))))
-          "and a contribution this owner bound no registries for says so"))))
+      (is (fn? (:register! (extensions/resources :skills)))
+          "and the row binds the resource operations itself, backed by the
+           composition's registries — a kmet2 process has no base binding to
+           inherit them from"))))
 
 (deftest a-second-composition-puts-the-first-binding-back
   ;; The binding is process-wide and one owner at a time: mounting replaces it,
@@ -60,26 +61,34 @@
                   (catch Exception e (:type (ex-data e)))))
           "disposing the last one unbinds: a host with no owner is a named error"))))
 
-(deftest a-process-hosts-resource-registries-survive-the-row
-  ;; kmet1 binds the host at load with the registries its extension installers
-  ;; write to, and boots this same composition as its root. The row may not take
-  ;; them away: every extension that contributes a command, prompt or skill
-  ;; would fail to load with "this owner bound no <kind> registry".
+(deftest an-extensions-command-is-the-compositions-command
+  ;; 5l-ii's publisher gate: the row publishes the composition's registry as the
+  ;; process handle and binds the resource operations the host calls, so a
+  ;; contribution made through the host is the `:commands` service the run reads
+  ;; — with nothing bound before the row (a kmet2 process), and with a base
+  ;; binding (kmet1's process host) replaced, then restored on dispose.
   (with-restored-host
     (fn []
-      (let [skills {:register! (fn [_ _] nil) :load-dir! (fn [_ _] nil)}
-            host (fn [] {:registry nil :ctx nil
-                         :skills skills
-                         :deregister-owner! (fn [_] nil)})
-            _ (extensions/bind-services! host)
-            fiber (:fiber (mounted))]
-        (is (= skills (extensions/resources :skills))
-            "the host the process bound still answers for its resources")
-        (is (= [] (extensions/get-tool-call-hooks))
-            "while the host's own handle is this composition's")
-        (srce/dispose! fiber)
-        (is (identical? host (extensions/host-binding))
-            "and disposing it puts back the binding it overlaid")))))
+      (let [root (srce/root {:name :app})
+            commands-fiber (srce/plugin! root registries/commands)
+            fiber (srce/plugin! root row/plugin)]
+        (try
+          (is (fn? (extensions/host-binding)) "the composition owns the host")
+          ((:register! (extensions/resources :commands))
+           {:name "gate-cmd" :description "d" :handler (fn [_ _] nil)}
+           [:app :test-owner])
+          (is (some? (registry/entry (srce/get root :commands)
+                                     :kmet/command "gate-cmd"))
+              "the contribution lands in the composition's :commands service")
+          (is (some? (commands/find-command "gate-cmd"))
+              "and a reader with no ctx sees it through the published handle")
+          (srce/dispose! fiber)
+          (is (nil? (extensions/host-binding))
+              "disposing the row puts back the binding it replaced")
+          (is (nil? (commands/find-command "gate-cmd"))
+              "and the shared reader no longer answers from that composition")
+          (finally
+            (srce/dispose! commands-fiber)))))))
 
 (def ^:private probe-extension
   "A single-file extension whose only contribution is a tool, so the test needs

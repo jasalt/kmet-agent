@@ -27,8 +27,8 @@
   "The registries an extension's contributed resources live in — what unloading
    it sweeps besides the host's own tags
    (`kmet.agent.extensions.core/host-tags`). Together the two must equal the
-   tags kmet1 routes (`kmet.agent.app-runtime/registry-tags`); a test holds
-   them to it."
+   tags the process handle routes (`kmet.app.registries/registry-tags`); a test
+   holds them to it."
   [:kmet/command :kmet/prompt :kmet/skill])
 
 (defn host-services

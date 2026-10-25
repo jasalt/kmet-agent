@@ -14,8 +14,16 @@
    The rows are one declaration each and one implementation: a handle has no
    knowledge of its tag, so the difference between them is the name and the key,
    and writing four copies of the same twenty lines would be the thing
-   AGENTS.md forbids."
-  (:require [kmet.agent.registry :as registry]
+   AGENTS.md forbids.
+
+   `process-handle` is the other half: the one handle a process publishes
+   (`kmet.agent.registry/current`), routing every tag to the service that owns
+   it in a composition. The `:extensions` row mounts it, because that row owns
+   the host whose registrations are the reason a process needs one handle."
+  (:require [kmet.agent.commands :as commands]
+            [kmet.agent.prompts :as prompts]
+            [kmet.agent.registry :as registry]
+            [kmet.agent.skills :as skills]
             [kmet.srce.core :as srce]))
 
 (defn service
@@ -50,3 +58,68 @@
   {:name :skills
    :provide #{:skills}
    :apply (apply-row :skills)})
+
+;; ─── The process handle ───────────────────────────────────────────────────
+
+(def registry-tags
+  "Every registry tag the process handle routes, and the service that owns it —
+   nil for the tags with no service (the extension host's own registrations:
+   hooks, themes, the UI port, entry/message renderers, flags), which share the
+   handle's `remainder` until they get one.
+
+   The host's own lists (`host-tags` plus
+   `kmet.agent.extensions.services/resource-tags`) must equal this one; a test
+   holds them to it, because a forgotten tag leaks silently."
+  {:kmet/tool :tools
+   :kmet/tool-source :tools
+   :kmet/command :commands
+   :kmet/prompt :prompts
+   :kmet/skill :skills
+   :kmet/hook nil
+   :kmet/theme nil
+   :kmet/ui-port nil
+   :kmet/entry-renderer nil
+   :kmet/message-renderer nil
+   :kmet/flag nil})
+
+(def resource-tags
+  "The registries an extension's contributed resources live in — what unloading
+   it sweeps besides the host's own tags."
+  [:kmet/command :kmet/prompt :kmet/skill])
+
+(defn process-handle
+  "The process registry handle for a composition: one façade that routes each
+   tag to the service that owns it in SCOPE, so a command registered here is the
+   `:commands` service kmet2 reads, and one with no service still has somewhere
+   to go. SCOPE is the app scope, not the mount site, because a row provides
+   into its parent."
+  [scope]
+  (let [remainder (registry/atom-registry)]
+    (registry/router
+     (fn [tag]
+       ;; a service the composition does not mount (a bare test tree, a profile
+       ;; without the row) falls back to the remainder rather than a nil handle
+       (or (when-let [service (registry-tags tag)]
+             (srce/get scope service))
+           remainder)))))
+
+(defn resource-services
+  "The resource operations the extension host calls, backed by the registries
+   their own namespaces read: those answer through HANDLE, the process handle
+   the `:extensions` row publishes, so these are the app's own fns rather than a
+   second registry implementation.
+
+   `:deregister-owner!` is the host's second sweep: it takes a contributor's
+   commands, prompts and skills with it, on top of the host's own tags the
+   caller sweeps through the same handle."
+  [handle]
+  {:commands {:register! commands/register-command!
+              :unregister! commands/unregister-command!
+              :all commands/get-commands}
+   :prompts {:register! prompts/register-prompt-template!
+             :load-dir! prompts/load-prompt-templates-from-dir}
+   :skills {:register! skills/register-extension-skill!
+            :load-dir! skills/load-skills-from-dir}
+   :deregister-owner! (fn [owner]
+                        (doseq [tag resource-tags]
+                          (registry/deregister-owner! handle tag owner)))})
