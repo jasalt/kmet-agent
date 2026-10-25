@@ -528,26 +528,79 @@
   [_state _command]
   (ok :get-available-models {:models (models/get-available)}))
 
+(defn- command-cycle-model
+  "Cycle to the next scoped or available model (pi: cycle-model). The answer
+   carries the switched record, the thinking level the switch settled on (kmet's
+   rank rule, not pi's keep-with-clamp) and whether a scoped list drove it; nil
+   data when the model offers fewer than two choices."
+  [{:keys [agents handle]} _command]
+  (if-let [model-id ((:cycle-model! agents) handle)]
+    (ok :cycle-model {:model (models/get-model (runtime/provider handle) model-id)
+                      :thinking-level (runtime/thinking-level handle)
+                      :scoped? (boolean (seq (runtime/scoped-models handle)))})
+    (ok :cycle-model nil)))
+
+(defn- command-set-thinking-level
+  "Set the thinking level (pi: set-thinking-level). The catalog decides what a
+   level is; an unknown one is refused by name rather than handed to a model."
+  [{:keys [agents handle]} command]
+  (let [level (:level command)]
+    (if (models/valid-thinking-level? level)
+      (do ((:set-thinking-level! agents) handle level)
+          (ok :set-thinking-level nil))
+      (failed :set-thinking-level (str "Unknown thinking level: " (pr-str level))))))
+
+(defn- command-cycle-thinking-level
+  "Advance the thinking level through the model's own set (pi:
+   cycle-thinking-level); nil data when it offers fewer than two levels."
+  [{:keys [agents handle]} _command]
+  (if-let [level ((:cycle-thinking-level! agents) handle)]
+    (ok :cycle-thinking-level {:level level})
+    (ok :cycle-thinking-level nil)))
+
+(defn- command-get-available-thinking-levels
+  "The current model's supported levels (pi: get-available-thinking-levels);
+   `[:off]` for an agent with no model record."
+  [{:keys [handle]} _command]
+  (let [model (runtime/model-record handle)]
+    (ok :get-available-thinking-levels
+        {:levels (if model (models/get-supported-thinking-levels model) [:off])})))
+
+(defn- command-set-queue-mode
+  "The shared steering/follow-up setter path (pi: set-steering-mode /
+   set-follow-up-mode). The runtime setter validates the mode, so an invalid one
+   is this command's failure through the handler's catch."
+  [{:keys [agents handle]} {:keys [type] :as command} op]
+  ((get agents op) handle (:mode command))
+  (ok type nil))
+
+(defn- queued-text
+  "The text of a queued entry: the loop's steering and follow-up queues carry
+   plain strings, and a compaction-queue entry is a map."
+  [item]
+  (cond
+    (string? item) item
+    (map? item) (str (or (:text item) (:content item) (:custom-type item)))
+    :else (str item)))
+
+(defn- command-clear-queue
+  "Drop the queued steering and follow-up messages and answer their texts (pi:
+   clear-queue). The drop emits the loop's `:queue-update`, so a subscribed
+   client sees the queues empty."
+  [{:keys [agents handle]} _command]
+  (let [{:keys [steering follow-up]} (runtime/queues handle)]
+    ((:clear-queues! agents) handle)
+    (ok :clear-queue {:steering (mapv queued-text steering)
+                      :follow-up (mapv queued-text follow-up)})))
+
 (def ^:private unsupported
-  "kmet1's other commands, each with the reason it has no answer here and the
-   landing that gives it one. A named refusal: `\"Unknown command\"` would read
-   as a typo, and a silent success would be a wrong answer.
-
-   | group | why not yet |
-   |---|---|
-   | cycle and thinking | the handle answers them; the wire entries are 10a's command table |
-   | queue modes | the handle answers them; the wire entries are 10a's command table |
-   | dialogs | the `:request`/`:response` pair over the wire is 10a's command table |"
-  {:cycle-model "cycle-model is landing 10a's command table (the handle answers it; the wire shape is the server's landing)"
-   :set-thinking-level "the handle answers it; the wire entry is landing 10a's command table"
-   :cycle-thinking-level "the handle answers it; the wire entry is landing 10a's command table"
-   :get-available-thinking-levels "the model record answers it; the wire entry is landing 10a's command table"
-
-   :set-steering-mode "the handle answers it; the wire entry is landing 10a's command table"
-   :set-follow-up-mode "the handle answers it; the wire entry is landing 10a's command table"
-   :clear-queue "the handle answers it; the wire entry is landing 10a's command table"
-
-   :respond "dialogs are landing 10a's command table (:request/:response over the wire)"})
+  "kmet1's one command with no answer here, and the landing that gives it one.
+   A named refusal: `\"Unknown command\"` would read as a typo, and a silent
+   success would be a wrong answer. The dialog pair needs the wire's port to
+   hold a pending request (`:request` out, `:response` in) — the server's own
+   approvals route is a different question, asked by a run that the client
+   answers on the same records."
+  {:respond "dialogs are landing 10a's command table (:request/:response over the wire)"})
 
 (defn- handlers
   "The dispatch table for STATE — the agent's door: the registry, the log, and
@@ -571,6 +624,13 @@
    :export-html #(command-export-html state %)
    :get-available-models #(command-get-available-models state %)
    :set-model #(command-set-model state %)
+   :cycle-model #(command-cycle-model state %)
+   :set-thinking-level #(command-set-thinking-level state %)
+   :cycle-thinking-level #(command-cycle-thinking-level state %)
+   :get-available-thinking-levels #(command-get-available-thinking-levels state %)
+   :set-steering-mode #(command-set-queue-mode state % :set-steering-mode!)
+   :set-follow-up-mode #(command-set-queue-mode state % :set-follow-up-mode!)
+   :clear-queue #(command-clear-queue state %)
    :set-auto-compaction #(command-set-auto-compaction state %)
    :compact #(command-compact state %)
    :get-commands #(command-get-commands state %)})

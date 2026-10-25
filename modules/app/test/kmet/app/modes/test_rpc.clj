@@ -189,25 +189,24 @@
             "an unknown type says so, so a client can tell a typo from a
              refusal")))))
 
-(deftest a-later-landings-command-is-refused-by-name
-  ;; kmet1's protocol has commands kmet2 cannot answer yet. Each names the
-  ;; landing that fills it: a silent success would be a wrong answer, and
-  ;; "Unknown command" would read as a typo. The model and compaction setters
-  ;; left this table at landing 8 — the handle answers them now — and the wire's
-  ;; prompt dispatch, get-commands, the session reads and the session moves left
-  ;; it in 10a's slices, so the remaining names are the cycles, the queue modes
-  ;; and the dialog pair.
+(deftest the-one-remaining-command-is-refused-by-name
+  ;; kmet1's dialog pair is the last table row kmet2 cannot answer: the wire has
+  ;; no pending-request surface yet. It names that rather than pretending, and
+  ;; "Unknown command" stays what a typo gets. The model and compaction setters
+  ;; left this table at landing 8, and the wire's prompt dispatch, get-commands,
+  ;; the session reads, the session moves and the cycles and queue modes left it
+  ;; in 10a's slices.
   (with-mode-run
     (answering "never runs")
     (fn []
       (let [{:keys [records]}
-            (run-rpc {:lines ["{:type :cycle-model :id \"m1\"}"
-                              "{:type :clear-queue :id \"q1\"}"]})]
-        (is (str/includes? (str (:error (by-id records "m1"))) "landing 10a")
-            "the cycle surface is 10a's command table")
-        (is (every? #(str/includes? (str (:error (by-id records %))) "is not implemented in rpc mode yet")
-                    ["m1" "q1"])
-            "and every one of them is the named refusal")))))
+            (run-rpc {:lines ["{:type :respond :id \"r\"}"
+                              "{:type :frobnicate :id \"f\"}"]})]
+        (is (str/includes? (str (:error (by-id records "r")))
+                           "is not implemented in rpc mode yet")
+            "the dialog pair names its landing")
+        (is (str/includes? (str (:error (by-id records "f"))) "Unknown command")
+            "and an unknown type still reads as a typo")))))
 
 (deftest the-command-registry-is-on-the-wire
   ;; get-commands reports the same filtered registry `prompt` dispatches
@@ -485,6 +484,84 @@
                 "the created session, then each of the three moves, was installed")
             (is (= (get-in cloned [:session :id]) (peek @installed))
                 "the last install is the session the agent ended on")))))))
+
+(deftest the-cycles-and-queue-modes-answer
+  ;; docs/rpc.md § Model, thinking, and queue modes: each setter writes this
+  ;; agent's state, get-state reads it back, and an invalid value is refused by
+  ;; name. The catalog is pinned to two models so the cycle has somewhere to go.
+  (let [catalog [{:provider :opencode-go :id "deepseek-v4-flash" :reasoning true}
+                 {:provider :opencode-go :id "deepseek-v4-pro" :reasoning true}]]
+    (with-redefs [models/get-available (fn [& _] catalog)
+                  ;; cycling resolves each candidate through get-model, so the
+                  ;; pinned snapshot and the record lookup agree
+                  models/get-model (fn [provider model-id]
+                                     (first (filter #(and (= provider (:provider %))
+                                                          (= model-id (:id %)))
+                                                    catalog)))]
+      (with-mode-run
+        (answering "never runs")
+        (fn []
+          (let [{:keys [records]}
+                (run-rpc {:lines ["{:type :get-available-thinking-levels :id \"l\"}"
+                                  "{:type :set-thinking-level :id \"t\" :level :high}"
+                                  "{:type :get-state :id \"s1\"}"
+                                  "{:type :cycle-thinking-level :id \"c\"}"
+                                  "{:type :set-thinking-level :id \"bad\" :level :nonsense}"
+                                  "{:type :set-steering-mode :id \"sm\" :mode :all}"
+                                  "{:type :set-follow-up-mode :id \"fm\" :mode :one-at-a-time}"
+                                  "{:type :get-state :id \"s2\"}"
+                                  "{:type :set-steering-mode :id \"bm\" :mode :nonsense}"
+                                  "{:type :cycle-model :id \"cm\"}"]})
+                levels (get-in (by-id records "l") [:data :levels])
+                cycled (by-id records "c")]
+            (is (seq levels) "the model's levels are the answer")
+            (is (= :high (get-in (by-id records "s1") [:data :thinking-level]))
+                "a set level is read back from the state")
+            (is (or (nil? (:data cycled))
+                    (not= :high (get-in cycled [:data :level])))
+                "a cycle moves off the level it was on (nil data when the model
+               offers fewer than two)")
+            (is (str/includes? (str (:error (by-id records "bad"))) "Unknown thinking level")
+                "an unknown level is refused by name")
+            (is (= [:all :one-at-a-time]
+                   [(get-in (by-id records "s2") [:data :steering-mode])
+                    (get-in (by-id records "s2") [:data :follow-up-mode])])
+                "the queue modes are read back")
+            (is (str/includes? (str (:error (by-id records "bm"))) "Unknown queue mode")
+                "an invalid mode is the runtime setter's refusal")
+            (is (= "deepseek-v4-pro" (get-in (by-id records "cm") [:data :model :id]))
+                "cycle-model answers the record it switched to")
+            (is (false? (get-in (by-id records "cm") [:data :scoped?]))
+                "nothing scoped it, so the catalog drove the cycle")))))))
+
+(deftest clear-queue-answers-the-texts-it-dropped
+  ;; pi: clear_queue — the queues are the loop's, and a client that clears them
+  ;; gets the texts back. The run stalls, so the follow-up queued behind it is
+  ;; still there to drop: a steer would be racy here, because the loop drains
+  ;; steering into the request it is building (that timing is its own, and the
+  ;; log test above pins the delivery fact instead).
+  (let [release (promise)
+        stalled (fn [opts]
+                  (future
+                    (deref release 20000 ::timeout)
+                    (when-let [on-text (:on-text opts)] (on-text "done"))
+                    (when-let [on-done (:on-done opts)] (on-done :stop))
+                    :done))]
+    (with-mode-run
+      stalled
+      (fn []
+        (try
+          (let [{:keys [records]}
+                (run-rpc {:lines ["{:type :prompt :message \"go\"}"
+                                  "{:type :follow-up :message \"later\"}"
+                                  "{:type :clear-queue :id \"q\"}"
+                                  "{:type :get-state :id \"s\"}"]})]
+            (is (= {:steering [] :follow-up ["later"]}
+                   (:data (by-id records "q")))
+                "the dropped texts, by target")
+            (is (zero? (get-in (by-id records "s") [:data :pending-message-count]))
+                "and the queues are empty afterwards"))
+          (finally (deliver release true)))))))
 
 (deftest the-model-catalog-is-on-the-wire
   ;; get-available-models answers the snapshot a `--model` pattern resolves
