@@ -159,10 +159,15 @@
   [{:keys [handle command-ui]} text]
   (when-let [{:keys [name args]} (commands/parse-command-line (str/trim text))]
     (when-let [c (commands/find-command name :rpc)]
-      (if-let [handler (:extension-handler c)]
-        (handler (extensions/build-extension-context) args)
-        ((:handler c) {:runtime handle :ui command-ui :frontend :rpc} args))
-      (ok :prompt {:disposition :handled}))))
+      (if command-ui
+        (do
+          (if-let [handler (:extension-handler c)]
+            (handler (extensions/build-extension-context) args)
+            ((:handler c) {:runtime handle :ui command-ui :frontend :rpc} args))
+          (ok :prompt {:disposition :handled}))
+        ;; the server row serves this protocol but has no per-connection command
+        ;; surface yet (10b's port): running a command would drop its reply
+        (failed :prompt "slash commands are not available on this connection yet")))))
 
 (defn- wire-command
   "One command in the shape `get-commands` reports: its source, and the

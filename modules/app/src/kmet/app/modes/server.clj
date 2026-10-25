@@ -34,12 +34,14 @@
    a per-connection port needs landing 8's per-agent surface — the host's
    front-end binding is one process atom."
   (:require [clojure.java.io :as io]
+            [kmet.agent.commands.builtins :as builtins]
             [kmet.agent.event-bus :as event-bus]
             [kmet.app.events :as events]
             [kmet.app.invocation :as invocation]
             [kmet.app.modes.out :as out]
             [kmet.app.modes.rpc :as rpc]
             [kmet.app.permissions :as permissions]
+            [kmet.app.root :as root]
             [kmet.libs.concurrent :as concurrent]
             [kmet.srce.core :as srce]))
 
@@ -66,7 +68,10 @@
 
 (defn- state-for
   "The command state `kmet.app.modes.rpc/handle-line` serves CONN through: the
-   registry and log, the app scope, and the one handle this connection is."
+   registry and log, the app scope, and the one handle this connection is. No
+   `:command-ui`: a connection has no wire surface for a command's reply until
+   10b gives it a per-connection port, so a slash command is refused by name
+   rather than run with its answer dropped."
   [conn {:keys [agents sessions scope]}]
   {:agents agents :sessions sessions :scope scope :handle (:handle conn)})
 
@@ -330,6 +335,13 @@
                     ;; runs on a *run's* thread and must read the same table
                     :conns (atom {})
                     :pending (atom {})}
+            ;; the command language is rpc's, so the registry behind it is
+            ;; too: the portable builtins register idempotently here as well,
+            ;; and `state-for` refuses them by name until a connection has a
+            ;; command surface (10b's per-connection port). `/units` answers the
+            ;; process tree the entry mounted.
+            _ (builtins/register-runtime-commands!
+               (fn [] (or (root/ctx) scope)))
             socket (java.net.ServerSocket. (int (or port 0)))
             server-thread (concurrent/spawn (fn [] (serve-connections! server)))
             previous-route @ask-route

@@ -198,6 +198,21 @@
           (is (str/includes? (str (:error refused)) "requires a non-empty :message"))
           (is (= ((:agent-id a)) (:agent-id refused))))))))
 
+(deftest a-command-needs-the-surface-a-connection-lacks
+  ;; The command language is rpc's, but a connection has no command surface
+  ;; until 10b gives it a per-connection port: a slash command is refused by
+  ;; name, never run with its reply dropped.
+  (with-server
+    (fn [{:keys [conn!]}]
+      (let [c (conn!)]
+        (ready c)
+        ((:send! c) {:type :prompt :id "cmd" :message "/name gates"})
+        (is (answered? c "cmd"))
+        (let [refused (first (filter #(= "cmd" (:id %)) ((:records c))))]
+          (is (false? (:success refused)) "the command is refused, not answered handled")
+          (is (str/includes? (str (:error refused)) "not available on this connection")
+              "and the refusal names what the connection lacks"))))))
+
 (deftest a-client-that-never-finishes-a-line-holds-nothing
   ;; The reader thread parks in `readLine`, so a half-written record costs one
   ;; parked thread and nothing else: the server thread is not reading sockets,

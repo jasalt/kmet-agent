@@ -4059,7 +4059,10 @@ idle, and a start that loses the race refuses rather than stripping it.
 `get-commands` answers the same filtered view the dispatcher uses. The
 builtins register idempotently with a thunk that reads the process root (so
 `/units` answers the tree the entry mounted, as kmet1's rpc did) and falls back
-to the mode's mount scope for a composition that published none. The
+to the mode's mount scope for a composition that published none. The server row
+serves the same command language but has no per-connection command surface yet,
+so it registers the same builtins and refuses a slash command by name rather
+than running one with its reply dropped — the per-connection port is 10b's. The
 steers/follow-ups still expand in the mode; the session family, the cycles, the
 queue modes, the dialog pair (`:request`/`:response`) and `respond` remain.
 
