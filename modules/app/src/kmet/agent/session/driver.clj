@@ -337,11 +337,9 @@
 (defn follow-up! [engine text] (loop-state/follow-up! (agent-state engine) text))
 
 (defn cancel!
-  "Cancel the in-flight run (if any): the turn flag drops synchronously and
-   the loop settles the prompt with :outcome :aborted."
+  "Cancel the in-flight run, if any (see `lifecycle/cancel-run!`)."
   [engine]
-  (reset! (:turn-running? engine) false)
-  (agent/cancel-turn (agent-state engine)))
+  (lifecycle/cancel-run! engine))
 
 (defn respond!
   "Answer the pending :ui-request ID with VALUE (pi: the RPC

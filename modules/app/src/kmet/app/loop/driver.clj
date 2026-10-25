@@ -276,9 +276,6 @@
                  :run-callbacks (atom nil)})]
     (reset! engine-ref engine)
     (letfn [(settle! [] (reset! running? false))
-            (stop! []
-              (loop/cancel-turn @live)
-              (settle!))
             (queue! [text target]
               (if (= :next-step target)
                 (loop-state/steer! @live text)
@@ -358,7 +355,7 @@
                                  (and (not @running?)
                                       (not (runtime/compacting? engine))))
                       :has-pending-messages (fn [] (boolean (seq (runtime/queues engine))))
-                      :abort (fn [] (stop!))
+                      :abort (fn [] (lifecycle/cancel-run! engine))
                       :compact (fn [& [instructions]]
                                  (manual/request-compaction! engine instructions nil))}))
             ;; true when this call claimed the run: the CAS is what decides, so
@@ -416,12 +413,12 @@
            :inject! (fn
                       ([message] (inject! message nil))
                       ([message opts] (inject! message opts)))
-           :cancel! (fn [_opts] (stop!))
+           :cancel! (fn [_opts] (lifecycle/cancel-run! engine))
            :when-idle (fn [] (when @running? (deref @last-run)))
            :status (fn [] (if @running? :running :idle))
            :dispose! (fn []
                        (reset! disposed? true)
-                       (stop!)))
+                       (lifecycle/cancel-run! engine)))
           ;; the rest is the front end's settings and compaction surface: each
           ;; op is the value's own fn behind a wrapper that supplies this
           ;; handle, so the thinking-level rank rule, the model-change entry and

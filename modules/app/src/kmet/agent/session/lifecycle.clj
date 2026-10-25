@@ -119,12 +119,18 @@
   [ctx event]
   (boolean (:cancel (event-bus/emit-event! event ctx))))
 
-(defn- cancel-run!
-  "Cancel an in-flight run the way both drivers' cancel does: drop the turn
-   flag synchronously, then abort the loop's turn."
+(defn cancel-run!
+  "Cancel the in-flight run, if any (pi: abort): abort the loop's turn, which
+   delivers its promise as :cancelled, clears the queues with :reason
+   :aborted and settles the run with :outcome :aborted, then drop the turn
+   flag. The flag stays set until the abort returns, so a submission arriving
+   concurrently queues behind the run being cancelled instead of starting a
+   second one over the same agent. Returns nil. Both drivers cancel through
+   this."
   [engine]
+  (agent/cancel-turn (runtime/agent-state engine))
   (reset! (:turn-running? engine) false)
-  (agent/cancel-turn (runtime/agent-state engine)))
+  nil)
 
 (defn- settle-for-switch!
   "Settle an in-flight turn and compaction before a session swap so the
