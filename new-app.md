@@ -4244,6 +4244,16 @@ agent's config, with `kmet.app.tools.bash/*shell*` bound by the run (and by the
 and `set-shell-options!` are gone; `config/load-config` carries the settings and
 writes nothing; `/reload` re-seats the value through `shell/refresh!`.
 
+The review of 9a found the regression the landing itself could not see: the
+TUI's `!` command calls `execute-bash` **directly** (it is not a tool call), and
+its command runs in a `future` — so it used to inherit the process atom and now
+inherited nothing, losing a configured `:shell-path`/`:shell-command-prefix` for
+every `!` command. It passes the value explicitly now (a future conveys no
+dynamic bindings), and `kmet.ui.tui.interactive.test-turn` observes the options
+the executor is handed. The run's own binding got a test too
+(`kmet.app.loop.test-driver`'s `a-run-binds-its-agents-shell`, observed from
+inside the model call): the ctx-value test proved the seam, not the wiring.
+
 The first attempt mounted a root row and failed at the kernel's rule: **a child
 may not shadow a service its ancestor provides**, so a root `:shell` could never
 be overridden per agent — the same reason `:permissions` mounts per agent and

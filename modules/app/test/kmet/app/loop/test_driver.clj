@@ -12,6 +12,8 @@
             [kmet.app.session.backend :as backend]
             [kmet.app.session.core :as session]
             [kmet.app.session.runtime :as runtime]
+            [kmet.app.tools.bash :as bash-tool]
+            [kmet.app.tools.shell :as shell]
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.app.agents :as agents]
@@ -111,6 +113,28 @@
                 "the turn's messages are the agent's context")
             (is (= ["hello"] (user-texts (:agent handle))) "the sent text, once"))))
       (finally (unsubscribe)))))
+
+(deftest a-run-binds-its-agents-shell
+  ;; The shell settings are the agent's, and the run conveys them to everything
+  ;; inside it. Observed from the model call, which runs inside the binding: a
+  ;; second agent's settings are not visible here, and since landing 9a there is
+  ;; no process default to fall back on.
+  (let [{:keys [root agents]} (mounted)
+        seen (atom nil)]
+    (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                  llm/send-message
+                  (fn [opts]
+                    (reset! seen bash-tool/*shell*)
+                    (future (when-let [done (:on-done opts)] (done :stop)) :done))]
+      (let [handle (create! {:root root :agents agents})]
+        (shell/refresh! (runtime/agent-ctx handle)
+                        {:shell-command-prefix "AGENT_SHELL=one"})
+        (is (= "AGENT_SHELL=one" (:command-prefix (runtime/shell handle)))
+            "the handle answers the agent's value")
+        ((:send! agents) handle "hello" {:target :next-turn})
+        ((:when-idle agents) handle)
+        (is (= "AGENT_SHELL=one" (:command-prefix @seen))
+            "and the run bound it for the tools it ran")))))
 
 (deftest a-state-needs-a-prompt-builder
   ;; The builder has no default on purpose; a state without one fails here,

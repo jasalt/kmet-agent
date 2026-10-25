@@ -174,6 +174,14 @@
                        ;; link to the chat-wide expansion toggle so ctrl+o
                        ;; reaches live bash executions too (reactive read)
                        :tools-expanded-atom (:tools-expanded-atom (:chat-history cs)))
+            ;; ── The shell this command runs with ────────────────────────
+            ;; The agent's own :shell value (the settings it was created
+            ;; with). Passed to the executor explicitly because the command
+            ;; runs in a future, which conveys no dynamic bindings, and bound
+            ;; around the user-bash emit so an extension handler's bash sees
+            ;; the same shell (new-app.md, landing 9a).
+            shell (runtime/shell (:engine cs))
+
             ;; ── Build session env (pi: resolveSpawnContext) ─────────────
             session-env
             (bash-tool/session-env {:session (runtime/session (:engine cs))
@@ -187,7 +195,7 @@
             ;; session-env thunk so their bash tools see the same KMET_*
             ;; metadata as the ! command itself (pi: the execute ctx).
             _ (binding [bash-tool/*cancel-signal* (:bash-signal cs)
-                        bash-tool/*shell* (runtime/shell (:engine cs))
+                        bash-tool/*shell* shell
                         bash-tool/*session-env-fn* (constantly session-env)
                         ;; relative paths in extension bash/tool calls resolve
                         ;; against the runtime cwd, as in an agent run
@@ -222,6 +230,8 @@
                           {:command command
                            :cwd (state/runtime-cwd cs)
                            :env session-env
+                           :shell-path (:shell-path shell)
+                           :command-prefix (:command-prefix shell)
                            :on-chunk (fn [chunk]
                                        ;; pure data append: the component's
                                        ;; track! watch schedules the frame
