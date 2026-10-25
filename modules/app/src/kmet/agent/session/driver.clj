@@ -830,13 +830,6 @@
   (agent-compact/generate-branch-summary (agent-state engine) entries custom-instructions
                                          signal replace-instructions?))
 
-(defn- reject-compacting!
-  "Extension sends cannot queue into a compaction (pi: prompt() throws)."
-  [ag]
-  (when @(:compacting? ag)
-    (throw (ex-info "Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry."
-                    {:type :compaction-in-progress}))))
-
 (defn- set-model-capability
   "pi: ctx.setModel — auth-gated; the switch applies the position-preserving
    thinking rule and persists the settings default (the front-end view rides
@@ -852,7 +845,7 @@
   "pi: ctx.sendUserMessage — the message steers the running turn or starts
    one, after the optional expansion chain."
   [engine text {:keys [deliver-as expand-prompt-templates?]}]
-  (reject-compacting! (agent-state engine))
+  (manual/reject-submit! engine)
   (let [text (if expand-prompt-templates? (expand-user-message-text engine text) text)]
     (when text
       (cond
@@ -866,7 +859,7 @@
    trigger-turn branches (see the extension api docs)."
   [engine message {:keys [deliver-as trigger-turn]}]
   (let [ag (agent-state engine)]
-    (reject-compacting! ag)
+    (manual/reject-submit! engine)
     (let [msg {:role :custom
                :custom-type (or (:custom-type message) :custom)
                :content (:content message)

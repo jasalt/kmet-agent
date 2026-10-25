@@ -3931,8 +3931,15 @@ closes the gap in six places:
 - **The per-agent half of the extension surface.** `install-session!`, the
   context and entry sinks, `bind-runtime-capabilities!` and `:build-context` are
   kmet1's session runtime (5c's note: a kmet2 run's extension sees `:model nil`
-  and `:is-idle` true). After 8 a run binds them from its handle's session and
-  ctx, so an extension handler sees the agent it is running inside.
+  and `:is-idle` true). **Landed**: a run binds `extensions/*agent-context*`
+  for its prompt (the handle's live session thunk, its runtime capabilities and
+  its context keys), and the host reads that binding before the process slot —
+  so an extension event handler, tool hook or custom tool sees the agent it is
+  running inside, while a command handler or an extension's own fiber still
+  reads the process install. The append sinks stay the front end's (they are a
+  UI notification, not an agent fact) until the TUI's per-agent port binds
+  them; `bind-runtime-capabilities!` gains the handle's implementation of
+  `:inject!`/`send-message!` rather than a second copy.
 
 Gate: a TUI run's agent is in `:agents` (`:agent/created` fired, the dump shows
 `[:app :agent/…]`), a `/model` change lands on that agent's ctx and leaves a
@@ -3943,7 +3950,8 @@ two). Presets reach a TUI run for the first time (7b-ii's `:bundle/gated`
 mounted by a TUI session), which is the reason the port is worth doing before the
 second toolkit.
 
-**Landed so far** (`479eb19d`, `c6723127`): the handle is the value a front
+**Landed so far** (`479eb19d`, `c6723127`, and the run's extension binding):
+the handle is the value a front
 end reads — Engine-shaped (`:agent-state`, `:config`, `:cwd`,
 `:turn-running?`, the queue atoms; `:agent` stays the contract's bare agent) —
 and its settings ops write the agent they were called with: `set-model!`,
@@ -3966,8 +3974,8 @@ after creating it: two runs in one process settle their own promises, and rpc's
 `switch-session!`, `fork!`, `branch-session!`, `clone!`, `set-session-name!`,
 `export-html!`, `continue!`, `find-recent-session`), the run's streaming and
 settle callbacks replaced by loop events on the handle's ctx, the front end's
-`:ui` port and `:mode` published per agent, and the per-agent extension
-surface. The TUI still bootstraps an engine; its reads already go through the
+`:ui` port and `:mode` published per agent, and the per-agent context/entry
+sinks. The TUI still bootstraps an engine; its reads already go through the
 accessors whose handle shape landed, which is what makes the port incremental.
 
 One decision awaits the session ops: the handle's `:agent` is the state record

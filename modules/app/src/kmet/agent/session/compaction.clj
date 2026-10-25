@@ -99,6 +99,16 @@
          (start-pending-compactions! engine))
        (if scheduled? :scheduled :started)))))
 
+(defn reject-submit!
+  "Throw when compaction is in flight: a send cannot queue into one (pi:
+   prompt() throws). Shared by the front-end capabilities and the handle's
+   `:inject!`, so the rule and its message have one home."
+  [value]
+  (when (runtime/compacting? value)
+    (throw (ex-info "Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry."
+                    {:type :compaction-in-progress})))
+  nil)
+
 (defn abort-compaction!
   "Abort the in-flight compaction without cancelling a running turn."
   [engine]

@@ -149,3 +149,32 @@
             (extensions/unload-all-extensions!)
             (srce/dispose! ext-fiber)
             (srce/dispose! tools-fiber)))))))
+
+(deftest a-bound-agent-wins-over-the-process-install
+  ;; A run binds the agent it is executing as; the host reads that binding
+  ;; before the process slot, so an extension handler sees the run's session and
+  ;; thinking level rather than whichever front end installed last. Outside a
+  ;; run the process install is still the answer — kmet1's front end and an
+  ;; extension's own fiber depend on it.
+  (extensions/install-session! {:id "process"})
+  (extensions/bind-runtime-capabilities! {:get-active-tools (fn [] [:process])})
+  (try
+    (is (= "process" (:id (extensions/get-session))))
+    (binding [extensions/*agent-context*
+              {:session (fn [] {:id "run"})
+               :runtime {:get-thinking-level (fn [] :high)}
+               :context {:thinking-level :high}}]
+      (is (= "run" (:id (extensions/get-session)))
+          "the run's session, not the process's")
+      (is (= :high (extensions/runtime-call :get-thinking-level))
+          "the run's capability")
+      (is (= [:process] (extensions/runtime-call :get-active-tools))
+          "a capability the run does not answer falls back to the process")
+      (is (= :high (:thinking-level (extensions/build-extension-context))))
+      (is (= "run" (:id (extensions/get-session)))
+          "the session facades read the run's session at call time"))
+    (is (= "process" (:id (extensions/get-session)))
+        "outside the run the process install answers again")
+    (finally
+      (extensions/clear-runtime!)
+      (extensions/bind-runtime-capabilities! nil))))

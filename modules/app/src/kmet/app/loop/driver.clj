@@ -18,6 +18,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as loop]
             [kmet.agent.loop.state :as loop-state]
+            [kmet.agent.packages :as packages]
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.project-context :as context]
             [kmet.agent.session.compaction :as manual]
@@ -230,7 +231,14 @@
 
    The settings ops write the same atoms the accessors read, so a front end
    changes one agent and never the process: `/model` on one handle leaves a
-   sibling's alone."
+   sibling's alone.
+
+   A run binds the extension surface for its prompt (`extensions/*agent-context*`):
+   the agent's session, the runtime capabilities (`extension-runtime`) and the
+   ExtensionContext keys only the loop knows (`extension-context`). An
+   extension event handler, tool hook or custom tool called by the run
+   therefore sees the agent it is running inside; outside a run a command
+   handler or an extension's own fiber still reads the process binding."
   [child {:keys [id session config prompt-fn projections]}]
   (let [engine-ref (atom nil)
         {:keys [state] runtime-cwd :cwd}
@@ -264,100 +272,194 @@
                  :compaction-queued (atom [])
                  :pending-compaction (atom [])
                  :pending-ui (atom {})
-                 :run-callbacks (atom nil)})
-        _ (reset! engine-ref engine)
-        settle! (fn [] (reset! running? false))
-        stop! (fn []
-                (loop/cancel-turn @live)
-                (settle!))
-        ;; true when this call claimed the run: the CAS is what decides, so a
-        ;; message arriving as another thread starts a run is queued by the
-        ;; caller rather than dropped
-        ;; a start that throws before it has a run to settle must not leave
-        ;; the handle claiming one: every later message would queue behind a
-        ;; run that does not exist
-        start! (fn [text images]
-                 (boolean
-                  (when (compare-and-set! running? false true)
-                    (try
-                      (reset! last-run
-                              (loop/run-agent-turn
-                               @live
-                               {:message text
-                                :images images
-                                :on-done (fn [_] (settle!))
-                                :on-error (fn [_] (settle!))}))
-                      (catch Throwable t
-                        (settle!)
-                        (throw t))))))
-        queue! (fn [text target]
-                 (if (= :next-step target)
-                   (loop-state/steer! @live text)
-                   (loop-state/follow-up! @live text)))
-        images-refused (fn [target]
-                         (ex-info (str "images can only start a prompt: a queued message ("
-                                       (name target) ") carries text")
-                                  {:type :kmet.app/unsupported-images
-                                   :target target}))]
-    (-> engine
-        (assoc
-         :id id
-         :ctx child
-         :agent state
-         :send! (fn [msg opts]
-                  (let [text (if (map? msg) (:text msg) msg)
-                        images (vec (:images msg))
-                        target (:target opts :next-turn)]
-                    (if (seq images)
-                      (when-not (and (= :next-turn target)
-                                     (not @running?)
-                                     (start! text images))
-                        (throw (images-refused target)))
-                      (when-not (and (not @running?) (start! text nil))
-                        (queue! text target)))
-                    ;; the run has the message now: the inbox's pending entry
-                    ;; folds away with the delivery fact, so a long-lived
-                    ;; server's inbox stays a queue rather than a log of
-                    ;; everything sent
-                    (when-let [entry (:entry opts)]
-                      ((:deliver! projections) (:session @live) [(:id entry)]))))
-         :cancel! (fn [_opts] (stop!))
-         :when-idle (fn [] (when @running? (deref @last-run)))
-         :status (fn [] (if @running? :running :idle))
-         :dispose! (fn []
-                     (reset! disposed? true)
-                     (stop!)))
-        ;; the front end's settings and compaction surface: each
-        ;; op is the value's own fn behind a wrapper that supplies this
-        ;; handle, so the thinking-level rank rule, the model-change entry and
-        ;; the deferred compaction queue keep one implementation each
-        (merge (into {}
-                     (map (fn [[op f]]
-                            [op (fn [& args] (apply f engine args))]))
-                     {;; settings
-                      :set-model! runtime/set-model!
-                      :cycle-model! runtime/cycle-model!
-                      :set-thinking-level! runtime/set-thinking-level!
-                      :cycle-thinking-level! runtime/cycle-thinking-level!
-                      :set-scoped-models! runtime/set-scoped-models!
-                      :set-auto-compaction! runtime/set-auto-compact!
-                      :set-steering-mode! runtime/set-steering-mode!
-                      :set-follow-up-mode! runtime/set-follow-up-mode!
-                      :set-block-images! runtime/set-block-images!
-                      :set-system-prompt! runtime/set-system-prompt!
-                      :apply-default-tools! runtime/apply-default-tools!
-                      :set-config! runtime/set-config!
-                      :set-run-options! runtime/set-run-options!
-                      :set-http-idle-timeout-ms! runtime/set-http-idle-timeout-ms!
-                      :set-http-total-timeout-ms! runtime/set-http-total-timeout-ms!
-                      :clear-queues! runtime/clear-queues!
-                      ;; the manual compaction queue: a request while a prompt
-                      ;; runs is deferred to the settle (the state's :on-event
-                      ;; drains it), a disposal drops what is queued
-                      :request-compaction! manual/request-compaction!
-                      :abort-compaction! manual/abort-compaction!
-                      :queue-compaction-message! manual/queue-compaction-message!
-                      :clear-compaction-queue! manual/clear-compaction-queue!})))))
+                 :run-callbacks (atom nil)})]
+    (reset! engine-ref engine)
+    (letfn [(settle! [] (reset! running? false))
+            (stop! []
+              (loop/cancel-turn @live)
+              (settle!))
+            (queue! [text target]
+              (if (= :next-step target)
+                (loop-state/steer! @live text)
+                (loop-state/follow-up! @live text)))
+            ;; an extension's sendCustomMessage (pi: ctx.sendCustomMessage):
+            ;; the four branches driver/send-message-capability has, over this
+            ;; agent's live state — a trigger while idle starts a run, a
+            ;; streaming message steers/follows up or defers, and next-turn
+            ;; never triggers
+            (inject! [message opts]
+              (manual/reject-submit! engine)
+              (let [msg {:role :custom
+                         :custom-type (or (:custom-type message) :custom)
+                         :content (:content message)
+                         :display (if (nil? (:display message)) true (:display message))
+                         :details (:details message)}
+                    busy? @running?]
+                (cond
+                  (= :next-turn (:deliver-as opts))
+                  (loop-state/queue-next-turn-message! @live msg)
+
+                  (and busy? (not (false? (:trigger-turn opts))))
+                  (if (= :follow-up (:deliver-as opts))
+                    (loop-state/follow-up! @live msg)
+                    (loop-state/steer! @live msg))
+
+                  (:trigger-turn opts)
+                  (do (loop-state/append-custom-message! @live msg)
+                      (start! nil nil))
+
+                  busy? (loop-state/defer-custom-message! @live msg)
+
+                  :else (loop-state/append-custom-message! @live msg))
+                nil))
+            ;; the runtime-owned extension capabilities (pi: bindCore) as this
+            ;; agent answers them: an extension's setModel / sendUserMessage /
+            ;; sendCustomMessage / active-tool calls act on this agent through
+            ;; the same fns a front end calls, never on a process-global slot
+            (extension-runtime []
+              {:set-model (fn [model]
+                            (when (and model (models/has-configured-auth model))
+                              (runtime/switch-model! engine model nil)
+                              true))
+               :get-thinking-level (fn [] (runtime/thinking-level engine))
+               :set-thinking-level (fn [level]
+                                     (when (models/valid-thinking-level? level)
+                                       (runtime/set-thinking-level! engine level))
+                                     nil)
+               :send-user-message
+               (fn [text {:keys [deliver-as expand-prompt-templates?]}]
+                 (let [text (if expand-prompt-templates?
+                              (packages/expand-input text)
+                              text)]
+                   (when text
+                     (if @running?
+                       (queue! text (if (= :steer deliver-as) :next-step :next-turn))
+                       ;; idle: start one, or queue behind the run another
+                       ;; caller claimed in the meantime
+                       (when-not (start! text nil)
+                         (queue! text :next-turn)))))
+                 nil)
+               :send-message! (fn [message opts] (inject! message opts))
+               :get-active-tools (fn []
+                                   (mapv :name (loop-state/active-tools @live)))
+               :set-active-tools (fn [names]
+                                   (loop-state/set-active-tools! @live names)
+                                   nil)})
+            ;; the ExtensionContext keys a run owns — the live agent's model,
+            ;; scoped set, thinking level, cwd and pending state, and the
+            ;; controls that act on this agent. Everything else (:mode,
+            ;; :has-ui, the front end's session flows) still comes from the
+            ;; front end's `:build-context` or the headless default.
+            (extension-context []
+              {:model (runtime/model-record engine)
+               :scoped-models (resolver/scoped-models-for-context
+                               (runtime/scoped-models engine)
+                               (runtime/provider engine))
+               :thinking-level (runtime/thinking-level engine)
+               :cwd (runtime/cwd engine)
+               :is-idle (fn []
+                          (and (not @running?)
+                               (not (runtime/compacting? engine))))
+               :has-pending-messages (fn [] (boolean (seq (runtime/queues engine))))
+               :abort (fn [] (stop!))
+               :compact (fn [& [instructions]]
+                          (manual/request-compaction! engine instructions nil))
+               :wait-for-idle (fn [] (when @running? (deref @last-run)))})
+            ;; true when this call claimed the run: the CAS is what decides, so
+            ;; a message arriving as another thread starts a run is queued by
+            ;; the caller rather than dropped. A start that throws before it
+            ;; has a run to settle must not leave the handle claiming one:
+            ;; every later message would queue behind a run that does not exist.
+            ;;
+            ;; The prompt binds the extension surface for its whole lifetime,
+            ;; and Clojure's binding conveyance carries it into the run's
+            ;; future: a handler, hook or custom tool the loop calls sees the
+            ;; agent it is running inside, not the process's last install.
+            (start! [text images]
+              (boolean
+               (when (compare-and-set! running? false true)
+                 (try
+                   (binding [extensions/*agent-context*
+                             {:session #(runtime/session engine)
+                              :runtime (extension-runtime)
+                              :context (extension-context)}]
+                     (reset! last-run
+                             (loop/run-agent-turn
+                              @live
+                              {:message text
+                               :images images
+                               :on-done (fn [_] (settle!))
+                               :on-error (fn [_] (settle!))})))
+                   (catch Throwable t
+                     (settle!)
+                     (throw t))))))
+            (images-refused [target]
+              (ex-info (str "images can only start a prompt: a queued message ("
+                            (name target) ") carries text")
+                       {:type :kmet.app/unsupported-images
+                        :target target}))]
+      (-> engine
+          (assoc
+           :id id
+           :ctx child
+           :agent state
+           :send! (fn [msg opts]
+                    (let [text (if (map? msg) (:text msg) msg)
+                          images (vec (:images msg))
+                          target (:target opts :next-turn)]
+                      (if (seq images)
+                        (when-not (and (= :next-turn target)
+                                       (not @running?)
+                                       (start! text images))
+                          (throw (images-refused target)))
+                        (when-not (and (not @running?) (start! text nil))
+                          (queue! text target)))
+                      ;; the run has the message now: the inbox's pending entry
+                      ;; folds away with the delivery fact, so a long-lived
+                      ;; server's inbox stays a queue rather than a log of
+                      ;; everything sent
+                      (when-let [entry (:entry opts)]
+                        ((:deliver! projections) (:session @live) [(:id entry)]))))
+           :inject! (fn
+                      ([message] (inject! message nil))
+                      ([message opts] (inject! message opts)))
+           :cancel! (fn [_opts] (stop!))
+           :when-idle (fn [] (when @running? (deref @last-run)))
+           :status (fn [] (if @running? :running :idle))
+           :dispose! (fn []
+                       (reset! disposed? true)
+                       (stop!)))
+          ;; the rest is the front end's settings and compaction surface: each
+          ;; op is the value's own fn behind a wrapper that supplies this
+          ;; handle, so the thinking-level rank rule, the model-change entry and
+          ;; the deferred compaction queue keep one implementation each
+          (merge (into {}
+                       (map (fn [[op f]]
+                              [op (fn [& args] (apply f engine args))]))
+                       {;; settings
+                        :set-model! runtime/set-model!
+                        :cycle-model! runtime/cycle-model!
+                        :set-thinking-level! runtime/set-thinking-level!
+                        :cycle-thinking-level! runtime/cycle-thinking-level!
+                        :set-scoped-models! runtime/set-scoped-models!
+                        :set-auto-compaction! runtime/set-auto-compact!
+                        :set-steering-mode! runtime/set-steering-mode!
+                        :set-follow-up-mode! runtime/set-follow-up-mode!
+                        :set-block-images! runtime/set-block-images!
+                        :set-system-prompt! runtime/set-system-prompt!
+                        :apply-default-tools! runtime/apply-default-tools!
+                        :set-config! runtime/set-config!
+                        :set-run-options! runtime/set-run-options!
+                        :set-http-idle-timeout-ms! runtime/set-http-idle-timeout-ms!
+                        :set-http-total-timeout-ms! runtime/set-http-total-timeout-ms!
+                        :clear-queues! runtime/clear-queues!
+                        ;; the manual compaction queue: a request while a prompt
+                        ;; runs is deferred to the settle (the state's :on-event
+                        ;; drains it), a disposal drops what is queued
+                        :request-compaction! manual/request-compaction!
+                        :abort-compaction! manual/abort-compaction!
+                        :queue-compaction-message! manual/queue-compaction-message!
+                        :clear-compaction-queue! manual/clear-compaction-queue!}))))))
 
 ;; ── the row ───────────────────────────────────────────────────────────────
 

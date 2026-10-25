@@ -185,6 +185,31 @@
 (defonce ^:private context-sink-atom (atom nil))
 (defonce ^:private entry-sink-atom (atom nil))
 
+(def ^:dynamic *agent-context*
+  "The agent the current run is executing as. A run binds it for the prompt's
+   whole lifetime (`kmet.app.loop.driver`), and Clojure's binding conveyance
+   carries it into the run's future — so an extension event handler, tool hook
+   or custom tool the loop calls resolves the agent it is running inside,
+   instead of whichever session the process last installed.
+
+   Keys:
+     :session  — a thunk returning the run's live session (a session switch
+                 replaces the record behind it)
+     :runtime  — the runtime capabilities this agent answers (see
+                 `runtime-capabilities` in `kmet.agent.session.driver`); a
+                 missing key falls back to the process binding
+     :context  — the ExtensionContext keys the run owns (:model,
+                 :scoped-models, :thinking-level, :cwd, :is-idle, :abort,
+                 :compact, ...), merged over the front end's `:build-context`
+
+   nil outside a run — a command handler, an extension's own fiber, kmet1 —
+   where the process binding the front end installed is the answer. That is
+   also why the process atoms stay: one process can run both kinds of front
+   end, and a run must not take the front end's binding away. A run with no
+   session answers nil rather than the process's: an agent without a log must
+   not read another agent's."
+  nil)
+
 ;; ─── Services (what this file may not require, bound by its owner) ───────
 ;; The host lives in `app` and cannot require the process above it: its
 ;; registry handle, the ctx an `:inject` mount lands under, and the
@@ -627,10 +652,12 @@
   nil)
 
 (defn runtime-capability
-  "The runtime capability fn for CAPABILITY, or nil when the runtime has
-   not installed it."
+  "The runtime capability fn for CAPABILITY: the running agent's own when this
+   call is inside a run (the loop binds it), otherwise the process's install.
+   nil when neither has it."
   [capability]
-  (get (:runtime @extension-binding) capability))
+  (or (get (some-> *agent-context* :runtime) capability)
+      (get (:runtime @extension-binding) capability)))
 
 (defn runtime-call
   "Dispatch a runtime-owned capability call. Nil when the runtime has not
@@ -735,7 +762,9 @@
    user-initiated command handlers, never from agent-loop event handlers
    (pi restricts these to the command ctx; they can re-enter the run loop)."
   []
-  (assoc (merge (default-extension-context) (ui-call :build-context))
+  (assoc (merge (default-extension-context)
+                (ui-call :build-context)
+                (:context *agent-context*))
          :mode (extension-mode)
          :has-ui (extension-has-ui?)))
 
@@ -863,7 +892,10 @@
   "Point the extension-facing live session at SESSION (`install-session!` is
    the api-facing name). Returns nil."
   [session] (reset! session-atom session) nil)
-(defn get-session [] @session-atom)
+(defn get-session []
+  (if-let [f (some-> *agent-context* :session)]
+    (f)
+    @session-atom))
 (defn set-context-sink!
   "Point the context sink at F (`install-context-sink!` is the api-facing
    name). Returns nil."
@@ -906,7 +938,7 @@
   "Append a custom entry (extension state, never in LLM context) to the live
    session (extension api: session :append-entry!). Returns the entry id."
   [custom-type & [data]]
-  (when-let [sess @session-atom]
+  (when-let [sess (get-session)]
     (let [entry (session/append-custom-entry! sess custom-type data)]
       (when-let [sink @entry-sink-atom]
         (sink entry))
@@ -916,7 +948,7 @@
   "Append a custom message that participates in LLM context (extension api:
    session :append-message!). Returns the entry id."
   [custom-type content display & [details]]
-  (when-let [sess @session-atom]
+  (when-let [sess (get-session)]
     (let [entry (session/append-custom-message-entry! sess custom-type
                                                       content display details)]
       (when-let [sink @context-sink-atom]
@@ -928,39 +960,39 @@
       (:id entry))))
 
 (defn get-custom-entries [custom-type]
-  (if-let [sess @session-atom]
+  (if-let [sess (get-session)]
     (session/get-custom-entries sess custom-type)
     []))
 
 (defn get-all-custom-entries [custom-type]
-  (if-let [sess @session-atom]
+  (if-let [sess (get-session)]
     (session/get-all-custom-entries sess custom-type)
     []))
 
 (defn get-branch-entries
   ([]
-   (if-let [sess @session-atom]
+   (if-let [sess (get-session)]
      (session/get-branch sess)
      []))
   ([from-id]
-   (if-let [sess @session-atom]
+   (if-let [sess (get-session)]
      (session/get-branch sess from-id)
      [])))
 
 (defn get-leaf-id []
-  (when-let [sess @session-atom]
+  (when-let [sess (get-session)]
     @(:leaf-id sess)))
 
 (defn get-entry [entry-id]
-  (when-let [sess @session-atom]
+  (when-let [sess (get-session)]
     (session/get-entry sess entry-id)))
 
 (defn set-label! [entry-id label]
-  (when-let [sess @session-atom]
+  (when-let [sess (get-session)]
     (session/set-label! sess entry-id label)))
 
 (defn get-label [entry-id]
-  (when-let [sess @session-atom]
+  (when-let [sess (get-session)]
     (session/get-label sess entry-id)))
 
 ;; ─── Extension API construction ──────────────────────────────────────────
@@ -1041,9 +1073,9 @@
    :set-label! set-label!
    :get-label get-label
    :set-name! (fn [name]
-                (when-let [sess @session-atom]
+                (when-let [sess (get-session)]
                   (session/append-session-info! sess (session/sanitize-session-name name))))
-   :get-name (fn [] (when-let [sess @session-atom] (session/get-session-name sess)))})
+   :get-name (fn [] (when-let [sess (get-session)] (session/get-session-name sess)))})
 
 (declare loader-aware loader-aware-map)
 

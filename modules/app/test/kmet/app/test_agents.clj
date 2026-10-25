@@ -419,7 +419,7 @@
         _ ((:register-factory! agents) root
                                        (stand-in {} {:status (fn [] :running)
                                                      :when-idle (fn [] :idle-promise)
-                                                     :inject! (fn [msg] (swap! seen conj [:inject msg]))
+                                                     :inject! (fn [msg _opts] (swap! seen conj [:inject msg]))
                                                      :cancel! (fn [opts] (swap! seen conj [:cancel opts]))}))
         handle ((:create! agents) root {:session session})]
     (is (= :running ((:status agents) handle)))

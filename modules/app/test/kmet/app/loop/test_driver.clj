@@ -4,8 +4,11 @@
    session, the `:systemPrompt` row's builder, and a run that starts on the
    first message and settles once."
   (:require [babashka.fs :as fs]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [kmet.agent.config :as cfg]
+            [kmet.agent.event-bus :as event-bus]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.session.backend :as backend]
             [kmet.agent.session.runtime :as runtime]
             [kmet.ai.llm :as llm]
@@ -307,6 +310,86 @@
           ((:dispose! agents) handle)
           (is (true? @(:disposed? handle)))
           (deliver gate :done))))))
+
+(deftest a-runs-extension-surface-is-the-agent-it-runs-inside
+  ;; Two agents, one process: each run's handler reads its own session and
+  ;; model — not the process slot kmet1's session runtime installs, and not the
+  ;; other agent's. Before the run's binding existed, `:model` was nil and the
+  ;; session facades answered nil in a kmet2 run.
+  (let [{:keys [root agents]} (mounted)
+        seen (atom [])
+        off (event-bus/on-event
+             :agent-start nil
+             (fn [_]
+               (swap! seen conj
+                      {:session (:id (extensions/get-session))
+                       :model (:model (extensions/build-extension-context))})))]
+    (try
+      (with-stubbed-llm
+        (fn [_]
+          (let [a (create! {:root root :agents agents})
+                b (create! {:root root :agents agents})]
+            (doseq [h [a b]]
+              ((:send! agents) h "hi" {:target :next-turn})
+              ((:when-idle agents) h))
+            (is (= [(:id (runtime/session a)) (:id (runtime/session b))]
+                   (mapv :session @seen))
+                "each run's handler saw its own agent's session")
+            (is (= [(runtime/model-record a) (runtime/model-record b)]
+                   (mapv :model @seen))
+                "and its own agent's model"))))
+      (finally (off)))))
+
+(deftest an-extension-send-user-message-acts-on-the-running-agent
+  ;; The runtime capability resolves through the run's binding: a handler that
+  ;; steers steers this agent, and the message reaches this agent's context.
+  (let [{:keys [root agents]} (mounted)
+        gate (promise)
+        handled (promise)
+        once (atom false)
+        off (event-bus/on-event
+             :agent-start nil
+             (fn [_]
+               (when (compare-and-set! once false true)
+                 (extensions/send-user-message "steer me" {:deliver-as :steer})
+                 (deliver handled true))))]
+    (try
+      (with-stubbed-llm
+        (fn [_]
+          (let [h (create! {:root root :agents agents})]
+            ((:send! agents) h "hi" {:target :next-turn})
+            (is (true? (deref handled 2000 false)) "the handler ran")
+            (is (some? (:steering (runtime/queues h))) "the steer queued")
+            (deliver gate :go)
+            ((:when-idle agents) h)
+            (is (some #(str/includes? (pr-str %) "steer me")
+                      @(:messages (:agent h)))
+                "the steered text reached the agent's context")
+            (is (= :idle ((:status agents) h))))))
+      (finally
+        (deliver gate :go)
+        (off)))))
+
+(deftest inject!-follows-the-custom-message-branches
+  ;; pi's sendCustomMessage, as the registry's `:inject!`: idle appends, a
+  ;; next-turn message queues without a run, and a trigger starts one.
+  (let [{:keys [root agents]} (mounted)
+        h (create! {:root root :agents agents})
+        custom (fn [] (map :content (filter #(= :custom-message (:role %))
+                                            (runtime/entries h))))]
+    ((:inject! agents) h {:custom-type :note :content "idle"})
+    (is (= ["idle"] (custom)) "an idle message is persisted, not run")
+    (is (= :idle ((:status agents) h)))
+    ((:inject! agents) h {:custom-type :note :content "next"} {:deliver-as :next-turn})
+    (is (= ["idle"] (custom)) "next-turn does not persist yet")
+    (is (= ["next"] (mapv :content @(:pending-next-turn (:agent h)))))
+    (with-stubbed-llm
+      (fn [_]
+        ((:inject! agents) h {:custom-type :note :content "run"} {:trigger-turn true})
+        ((:when-idle agents) h)
+        (is (= ["idle" "run" "next"] (custom))
+            "the trigger appends first, and the run flushes the next-turn one")
+        (is (= :completed @(:last-outcome (:agent h))))))))
 
 (deftest the-handle-answers-every-setting-op
   ;; `setting-ops` is the registry's list; the loop handle is the one

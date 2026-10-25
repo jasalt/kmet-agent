@@ -1056,12 +1056,17 @@ through `:get-provider-auth-status` / `:get-api-key-and-headers`.
 The same facades are available on the extension **context** as `(:session
 ctx)` (pi: `ctx.sessionManager`) — command and event handlers that only
 receive `ctx` can read session state. The ctx map itself is a fresh merge of
-a headless default and the running mode's live `:build-context`
-capability per call (pi: `createContext()`; the ctx `:model` contract is
-under Models). `get-entries` follows the active branch (a settings entry
-appended before a tree navigation is not on the new branch); use
-`get-all-entries` for extension settings that must outlive branch jumps (the
-review extension's custom instructions do).
+a headless default, the running front end's live `:build-context` capability,
+and — inside an agent run — the agent's own keys: the run binds the session,
+the runtime capabilities and the context for the prompt's lifetime, so a
+handler sees the agent it is running inside (`:model`, `:is-idle`, `:abort`,
+`:compact`, the session facades) rather than whichever session the process
+last installed. Outside a run (a command handler, an extension's own fiber)
+the process binding is still the answer (pi: `createContext()`; the ctx
+`:model` contract is under Models). `get-entries` follows the active branch (a
+settings entry appended before a tree navigation is not on the new branch);
+use `get-all-entries` for extension settings that must outlive branch jumps
+(the review extension's custom instructions do).
 
 ### Shell
 

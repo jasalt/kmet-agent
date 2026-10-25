@@ -434,7 +434,9 @@
                  (inside! ctx)
                  ((:inbox projections) (session! (live handle))))
 
-        :inject! (fn [handle msg] (dispatch handle :inject! [msg]))
+        :inject! (fn
+                   ([handle msg] (dispatch handle :inject! [msg nil]))
+                   ([handle msg opts] (dispatch handle :inject! [msg opts])))
 
         :cancel! (fn [handle opts] (dispatch handle :cancel! [opts]))
 
