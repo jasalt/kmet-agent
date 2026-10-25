@@ -37,9 +37,10 @@
                                      {:setup (presets/setup :bundle/gated)})]
         (is (nil? (permissions/check (:ctx plain) a-call))
             "no policy on the chain allows, so a plain agent's call proceeds")
-        (is (= "no approval channel is mounted — this run cannot ask"
+        (is (= "no terminal is running — nobody can ask"
                (:reason (permissions/check (:ctx gated) a-call)))
-            "the gated agent asks, and the bundle's default approver denies")
+            (str "the gated agent asks, and the TUI composition's terminal"
+                 " approver denies because no terminal is running"))
         (is (nil? (srce/get (:ctx boot) :permissions))
             "the preset's row is the agent's, not the root's"))
       (finally (srce/dispose-subtree! (:ctx boot))))))

@@ -1,23 +1,29 @@
 (ns kmet.ui.tui
-  "The TUI as a mode row: `kmet --app new --profile tui`, the kmet2 entry's
-   default profile.
+  "The TUI as a mode row, and the `:ui` provider a terminal needs:
+   `kmet --app new --profile tui`, the kmet2 entry's default profile.
 
-   The row mounts kmet1's interactive mode over the composition the profile
-   booted. Two things make that work without moving anything yet: the mode's
-   engine takes its ctx as an argument (`kmet.ui.tui.interactive/run`), so
-   the run reads the composition's own `:tools`, `:sessions` and
-   `:systemPrompt` rows; and the startup a *process* world needs — catalogs,
-   config, extension packages, themes — arrives as the config the entry loads
-   into this tree before mounting the row (`kmet.app.world`, 5l-ii), the same
-   list kmet1's entry runs, so the two entries cannot drift.
+   The mode's tree moved here at 5l-iii, so a run is kmet2's own front end:
+   the row mounts `kmet.ui.tui.interactive` over the composition the profile
+   booted, the run reads the composition's `:tools`, `:sessions` and
+   `:systemPrompt` rows through the ctx it is given, and the startup a
+   *process* world needs — catalogs, config, extension packages, themes —
+   arrives as the config the entry loads into this tree before mounting the
+   row (`kmet.app.world`, 5l-ii).
+
+   **The provider.** `provider` is the terminal implementation of
+   `kmet.app.ui`'s contract: a dialog is drawn by the running TUI
+   (`kmet.ui.tui.interactive/request!`), and `:render-tree` is a no-op because
+   this provider *is* the tree — its run owns the screen instead of drawing a
+   component a caller hands it. `provider-plugin` mounts it and the approval
+   seam together: a permission `:ask` becomes the TUI's Yes/No dialog, which
+   is what makes an `:ask-all` policy usable at a terminal (the minimal
+   bundle's default denies because nobody could ask).
 
    **What this row does not do yet.** The mode drives kmet1's engine rather than
    an `:agents` handle: the registry stays empty for a TUI run, and the per-agent
-   rows a preset mounts (7b-ii) are not on its path. That is the re-host's job —
-   the TUI creates its agent through `create!` and the mode's tree becomes
-   `kmet.ui.tui` (new-app.md, landing 5). Mounting it as a row first is what
-   makes that re-host a change to one namespace instead of a change to how kmet2
-   boots.
+   rows a preset mounts (7b-ii) are not on its path. That is 8's re-host — the
+   TUI creates its agent through `create!` — and moving the tree here is what
+   makes it a change to one namespace instead of a change to how kmet2 boots.
 
    **The invocation is the run's, and this row only maps it.** `-c`/
    `--continue`, `-r`/`--resume` and `--session <id>` arrive in the row's config
@@ -31,9 +37,11 @@
    them as kmet1's front end always did (`run-opts`). A mode that creates its
    agent through `:agents` has no session option to give its factory yet, and
    `kmet.app.core` refuses the session flags there by name."
-  (:require [kmet.ui.tui.interactive :as interactive]
-            [kmet.app.invocation :as invocation]
-            [kmet.srce.core :as srce]))
+  (:require [kmet.app.invocation :as invocation]
+            [kmet.app.permissions :as permissions]
+            [kmet.app.ui :as ui]
+            [kmet.srce.core :as srce]
+            [kmet.ui.tui.interactive :as interactive]))
 
 (defn- run-opts
   "The invocation's input this row applies, in kmet1's own spellings: the mode
@@ -90,6 +98,27 @@
     ;; run makes (:tools, :sessions, :skills) walks up from the scope it was
     ;; given
     (future (run-tui! (:parent ctx) config on-result))))
+
+(def provider
+  "The terminal `:ui` provider. Dialogs are answered by the running TUI; there
+   is no tree to render into because the TUI owns the screen, and the one
+   optional capability it adds over headless is dialogues a human answers."
+  {:kind :terminal
+   :render-tree (fn [_tree] nil)
+   :request! interactive/request!
+   :capabilities #{:dialogs}})
+
+(srce/defplugin provider-plugin
+  {:name :ui/terminal
+   ;; both keys are one human at one terminal: the generic dialog port and the
+   ;; permission `:ask` answer through the same running mode
+   :provide #{:ui :approvals}
+   :apply (fn [ctx _]
+            (ui/provide! ctx :ui/terminal provider)
+            (srce/provide! ctx :approvals
+                           (permissions/approver interactive/ask!)
+                           {:in (:parent ctx)})
+            nil)})
 
 (srce/defplugin plugin
   {:name :mode-tui

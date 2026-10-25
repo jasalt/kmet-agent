@@ -2,7 +2,8 @@
   "Interactive TUI mode entry — resolves the session, builds the layout,
    starts the render loop, and emits the session-start event.
    pi: modes/interactive/interactive-mode.ts."
-  (:require [kmet.tui.core :as tui]
+  (:require [clojure.string :as str]
+            [kmet.tui.core :as tui]
             [kmet.libs.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.terminal :as term]
@@ -19,6 +20,7 @@
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.bash-execution :as bash-execution]
             [kmet.ui.tui.chat-history :as chat-history]
+            [kmet.ui.tui.dialogs :as dialogs]
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.session-selector :refer [show-session-selector]]
             [kmet.libs.process :as process]
@@ -97,6 +99,114 @@
       (debug/log line))
     (catch Throwable _)))
 
+;; ─── The :ui port's dialogs ────────────────────────────────────────────────
+;;
+;; The TUI is the process's `:ui` and `:approvals` provider (`kmet.ui.tui`):
+;; a dialog is drawn by the terminal that is actually on screen, and there is
+;; at most one of those per process, so one atom is the whole state the
+;; provider needs. Both answers block the caller — a tool call or an extension
+;; handler — until a human answers, which is what an unanswered dialog means
+;; (kmet.app.permissions: the ask owns its timeout).
+
+;; the running TUI's CoreState, or nil outside a run
+(defonce ^:private live-mode (atom nil))
+
+;; promises callers are parked on while their dialog waits; teardown denies
+;; them, so a stopped TUI never leaves a tool call waiting on a dialog that can
+;; never be answered
+(defonce ^:private pending-answers (atom #{}))
+
+(defn- choose!
+  "Mount a selector over OPTIONS on CS's dock and return the chosen label, nil
+   when it is cancelled or the mode tears down first. Blocks."
+  [cs title options]
+  (let [dlg-atom (atom nil)
+        result (promise)
+        close! (fn []
+                 (dock/close-atom! cs dlg-atom)
+                 (tui/tui-request-render (:tui cs)))
+        dlg (dialogs/make-selector-dialog
+             title options
+             (fn [choice] (close!) (deliver result choice))
+             (fn [] (close!) (deliver result nil))
+             (th/get-current-theme))]
+    (reset! dlg-atom dlg)
+    (swap! pending-answers conj result)
+    (dock/mount! cs dlg)
+    (tui/tui-request-render (:tui cs))
+    (try
+      (deref result)
+      (finally
+        (swap! pending-answers disj result)))))
+
+(defn- type-in!
+  "Mount a one-line input dialog on CS's dock and return the submitted text,
+   nil when it is cancelled or the mode tears down first. Blocks."
+  [cs title prefill]
+  (let [dlg-atom (atom nil)
+        result (promise)
+        close! (fn []
+                 (dock/close-atom! cs dlg-atom)
+                 (tui/tui-request-render (:tui cs)))
+        dlg (dialogs/make-input-dialog
+             title
+             (fn [text] (close!) (deliver result text))
+             (fn [] (close!) (deliver result nil))
+             (th/get-current-theme)
+             prefill)]
+    (reset! dlg-atom dlg)
+    (swap! pending-answers conj result)
+    (dock/mount! cs dlg)
+    (tui/tui-request-render (:tui cs))
+    (try
+      (deref result)
+      (finally
+        (swap! pending-answers disj result)))))
+
+(defn- dialog-title
+  "TITLE and MESSAGE as the selector's one title block (a newline keeps the
+   dialog's chrome one line high)."
+  [request]
+  (let [title (or (:title request) "Confirm")
+        message (str (:message request))]
+    (if (str/blank? message) title (str title "\n" message))))
+
+(defn request!
+  "Answer a UI request through the live TUI — the `:ui` provider's `:request!`.
+   `:confirm`, `:select` and `:input` mount the dialog and block until it is
+   answered; every other kind takes the ABI's default answer, because no other
+   kind has a terminal answer yet. Outside a run every kind degrades the same
+   way (`kmet.agent.extensions.core/ui-request-default`)."
+  [_ctx request]
+  (if-let [cs @live-mode]
+    (case (:kind request)
+      :confirm (= "Yes" (choose! cs (dialog-title request) ["Yes" "No"]))
+      :select (let [options (vec (:options request))
+                    labels (mapv #(str (if (map? %) (:label %) %)) options)
+                    chosen (choose! cs (dialog-title request) labels)]
+                (when chosen
+                  (if (every? map? options)
+                    (:value (first (filter #(= chosen (str (:label %))) options)))
+                    chosen)))
+      :input (type-in! cs (dialog-title request) (or (:prefill request) (:value request)))
+      (extensions/ui-request-default (:kind request)))
+    (extensions/ui-request-default (:kind request))))
+
+(defn ask!
+  "Answer a permission `:ask` through the live TUI: a Yes/No dialog naming the
+   tool and, when the policy gave one, its reason. `:allow` on Yes; a deny
+   otherwise — including outside a run, because nobody being able to ask is not
+   a yes. Blocks while the dialog is up."
+  [_ctx request]
+  (if-let [cs @live-mode]
+    (let [reason (str (:reason request))
+          title (str "Allow " (or (:tool-name request) "this tool") "?"
+                     (when-not (str/blank? reason) (str "\n" reason)))]
+      (if (= "Yes" (choose! cs title ["Yes" "No"]))
+        :allow
+        {:decision :deny :reason "denied at the terminal"}))
+    {:decision :deny :reason "no terminal is running — nobody can ask"}))
+
 ;; ─── Run ───────────────────────────────────────────────────────────────────
 
 (defn run
@@ -146,6 +256,7 @@
                        :else (session/create-session (state/ensure-cwd-session-dir config (str (fs/cwd)))))
              cs (layout/build-layout config session ctx)]
          (reset! cs-ref cs)
+         (reset! live-mode cs)
          (reset! tui-ref (:tui cs))
          (when (:resume opts)
            (show-session-selector cs (fn [] (state/ensure-session-dir (runtime/config (:engine cs))))
@@ -233,6 +344,11 @@
            (try (tui/tui-stop t) (catch Exception _)))
          (throw e))
        (finally
+         (reset! live-mode nil)
+        ;; an approval or dialog that is still up can never be answered once the
+        ;; terminal is gone: deny it rather than park its caller forever
+         (doseq [p @pending-answers]
+           (deliver p nil))
         ;; A stopped mode must be fully released: the tree, the runtime
         ;; sinks, the theme callback/watcher and the reakt queue
         ;; (teardown-mode! — findings 2 and 10), then the extension UI

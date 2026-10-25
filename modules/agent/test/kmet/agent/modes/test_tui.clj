@@ -8,8 +8,10 @@
    over the composition's ctx; running it needs a real terminal, which is what
    `scripts/capture/pty_capture.py` drives."
   (:require [clojure.test :refer [deftest is]]
+            [kmet.app.ui :as ui]
+            [kmet.srce.core :as srce]
             [kmet.ui.tui :as tui]
-            [kmet.srce.core :as srce]))
+            [kmet.ui.tui.interactive :as interactive]))
 
 (deftest the-row-is-the-tui-mode
   (is (= :mode-tui (:name tui/plugin))
@@ -17,6 +19,26 @@
   (is (= [:tools :system-prompt] (:inject tui/plugin))
       "the ctx services the run reads are declared, so a composition that patched
        one out fails at the mount rather than at the first prompt"))
+
+(deftest the-terminal-provider-answers-the-ui-contract
+  (is (= tui/provider (ui/check :ui/terminal tui/provider))
+      "the provider answers every required key")
+  (is (= :terminal (:kind tui/provider)))
+  (is (contains? (:capabilities tui/provider) :dialogs)
+      "dialogs are the optional capability a terminal declares")
+  (is (= :ui/terminal (:name tui/provider-plugin)))
+  (is (= #{:ui :approvals} (:provide tui/provider-plugin))
+      "the row provides the dialog port and the approval seam together"))
+
+(deftest a-terminal-without-a-run-answers-inertly
+  ;; The provider is mounted before the TUI runs and after it ends: its port
+  ;; must answer then too, with the ABI's defaults, and an approval must deny
+  ;; rather than park a tool call on a dialog nobody can see.
+  (is (false? (interactive/request! nil {:kind :confirm})))
+  (is (nil? (interactive/request! nil {:kind :select})))
+  (is (nil? (interactive/request! nil {:kind :input})))
+  (is (= {:decision :deny :reason "no terminal is running — nobody can ask"}
+         (interactive/ask! nil {:tool-name "bash"}))))
 
 (deftest a-diagnostic-mount-starts-nothing
   ;; `--dump-state` mounts every row and hands none of them an :on-result: a

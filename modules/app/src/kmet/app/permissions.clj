@@ -227,8 +227,10 @@
 (defn- serve-approvals
   "The `:approvals` row: provide the delivery seam. The default has no one to
    ask, so it denies. A front end supplies the real one through this row's
-   config (`{:id :approvals :config {:ask! …}}`) — not by providing the key
-   beside it, which the kernel refuses as a duplicate."
+   config (`{:id :approvals :config {:ask! …}}`), or replaces the row
+   wholesale — the TUI's `:bundle/terminal` does, with the provider that shows
+   the Yes/No dialog on the running terminal (`kmet.ui.tui`). Neither provides
+   the key beside this row, which the kernel refuses as a duplicate."
   [ctx config]
   (srce/provide! ctx :approvals
                  (approver (or (:ask! config) no-approver))

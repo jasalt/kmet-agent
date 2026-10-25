@@ -86,11 +86,12 @@
     (is (false? (:is-error end)))))
 
 (deftest an-unanswerable-ask-is-a-deny
-  ;; the real composition: the app root mounts the approvals row, whose default
-  ;; has nobody to ask. An agent policy that says :ask therefore denies.
+  ;; the real composition mounts the terminal approver (kmet.ui.tui), and a unit
+  ;; test runs no terminal: an agent policy that says :ask still denies, because
+  ;; an approval nobody can answer is not a yes.
   (let [end (run-bash-turn (agent-ctx :agent/ask (fn [_ _] :ask)))]
     (is (true? (:is-error end)))
-    (is (= "no approval channel is mounted — this run cannot ask"
+    (is (= "no terminal is running — nobody can ask"
            (get-in end [:result :content])))))
 
 (deftest two-agents-decide-independently
