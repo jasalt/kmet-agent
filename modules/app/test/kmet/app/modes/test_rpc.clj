@@ -5,13 +5,16 @@
 
    The model is stubbed and the session log lives under target/
    (`kmet.app.test-support`), as for every mode test."
-  (:require [clojure.edn :as edn]
+  (:require [babashka.fs :as fs]
+            [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.packages :as packages]
+            [kmet.agent.session.core :as session]
             [kmet.ai.models :as models]
+            [kmet.app.modes.rpc :as rpc]
             [kmet.app.test-support :as support :refer [answering
                                                        with-mode-run
                                                        with-model-catalog]]))
@@ -340,6 +343,80 @@
         (is (some #(= "hi" (get-in % [:data :text])) entries)
             "a text prompt's queue fact carries the string it queued, not a
              wrapper map — the payload shape is part of the log's")))))
+
+(deftest the-session-reads-are-on-the-wire
+  ;; docs/rpc.md § Session: the reads a client makes after a settle — the
+  ;; transcript, /copy's text, the /session numbers, the tree, and the export.
+  ;; Each is a read of the agent this mode serves; none moves the session.
+  (with-mode-run
+    (answering "an answer")
+    (fn []
+      (let [{:keys [records]}
+            (run-rpc {:lines ["{:type :prompt :message \"hi\"}"]
+                      :until ":agent-settled"
+                      :then ["{:type :get-last-assistant-text :id \"t\"}"
+                             "{:type :get-session-stats :id \"st\"}"
+                             "{:type :get-tree :id \"tr\"}"
+                             "{:type :get-messages :id \"m\"}"
+                             "{:type :export-html :id \"x\" :output-path \"target/test-modes/export.html\"}"
+                             "{:type :get-entries :id \"e\"}"
+                             "{:type :get-entries :id \"es\" :since \"no-such-entry\"}"
+                             "{:type :get-state :id \"s\"}"]})
+            entries (get-in (by-id records "e") [:data :entries])
+            state (:data (by-id records "s"))]
+        (is (= "an answer" (get-in (by-id records "t") [:data :text]))
+            "the last assistant text is /copy's source")
+        (is (= [1 1] [(get-in (by-id records "st") [:data :user-messages])
+                      (get-in (by-id records "st") [:data :assistant-messages])])
+            "the stats count the turn's messages")
+        (is (string? (get-in (by-id records "st") [:data :file])))
+        (is (vector? (get-in (by-id records "tr") [:data :tree]))
+            "the tree is the branch structure, not the flat log")
+        (is (some #(= :user (:role %)) (get-in (by-id records "m") [:data :messages]))
+            "the live context is what the next request sends")
+        (is (str/ends-with? (str (get-in (by-id records "x") [:data :path])) "export.html")
+            "the export answers the path it wrote")
+        (is (= (:id (peek entries)) (get-in (by-id records "e") [:data :leaf-id]))
+            "get-entries reports the branch's tip, which is the last append here")
+        (is (str/includes? (str (:error (by-id records "es"))) "Entry not found")
+            "a :since that names no entry is refused by name")
+        (is (= :completed (:last-outcome state))
+            "the state says how the last prompt settled")
+        (is (false? (:compacting? state))
+            "and whether a compaction runs (none here)")
+        (is (nil? (get-in state [:session :name]))
+            "an unnamed session carries no :name, as pi omits it")))))
+
+(deftest get-entries-reads-after-the-entry-it-names
+  ;; The command, not the transport (the two tests above drive the wire): the
+  ;; positive `:since` path needs an id the client read from an earlier answer,
+  ;; so the state is a handle over a session the test built. `-c`/`--session`
+  ;; cannot drive it yet — an rpc row creates its own session and refuses the
+  ;; flags by name — which is landing 9's resume-by-id.
+  ;; a directory under target/: Termux has no /tmp, and a mode test's litter
+  ;; belongs where `bb clean` finds it
+  (let [dir (str "target/test-rpc-entries-" (random-uuid))]
+    (try
+      (let [sess (session/create-session dir)
+            append! (fn [role text]
+                      (session/append-entry sess {:role role
+                                                  :content [{:type :text :text text}]}))
+            _ (append! :user "one")
+            tip (last @(:entries sess))
+            _ (append! :assistant "two")
+            _ (append! :user "three")
+            state {:handle {:session (atom sess)}}
+            entry-text (fn [entry]
+                         (-> entry :content first :text))
+            after (:data (rpc/handle-record state {:type :get-entries
+                                                   :since (:id tip)}))
+            all (:data (rpc/handle-record state {:type :get-entries}))]
+        (is (= ["two" "three"] (mapv entry-text (:entries after)))
+            "the answer starts after the named entry")
+        (is (= 3 (count (:entries all))) "and without :since it is the whole log")
+        (is (= (:id (last @(:entries sess))) (:leaf-id all))
+            "the leaf id is the tip the next append chains onto"))
+      (finally (fs/delete-tree dir)))))
 
 (deftest the-model-catalog-is-on-the-wire
   ;; get-available-models answers the snapshot a `--model` pattern resolves

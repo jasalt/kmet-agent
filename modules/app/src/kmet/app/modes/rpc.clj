@@ -22,10 +22,11 @@
    profile that patched in a provider changes the answers this mode forwards.
 
    **The commands are the ones kmet2's services answer.** A prompt, a steer, a
-   follow-up, an abort, the live state, the session's entries, the model
-   catalog, the model and compaction setters, and the command registry
-   (`get-commands`) — each a call on the `:agents` handle or the `:sessions`
-   log. A prompt is the front end's submission chain (`:submit!`): the portable
+   follow-up, an abort, the live state, the session's reads (`get-entries` with
+   its `:since`, the live messages, the last assistant text, the `/session`
+   stats, the tree, the HTML export), the model catalog, the model and
+   compaction setters, and the command registry (`get-commands`) — each a call
+   on the `:agents` handle, the session runtime, or the `:sessions` log. A prompt is the front end's submission chain (`:submit!`): the portable
    slash commands dispatch through the registry first (kmet1's `command-ui`
    over this port's output channels), and everything else runs the extension
    input hooks and the engine's expansion before the handle starts or queues
@@ -45,6 +46,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
+            [kmet.agent.session.core :as session]
             [kmet.agent.skills :as skills]
             [kmet.agent.session.runtime :as runtime]
             [kmet.ai.models :as models]
@@ -125,10 +127,6 @@
 
 ;; ── commands ──────────────────────────────────────────────────────────────
 
-(defn- running?
-  [agents handle]
-  (= :running ((:status agents) handle)))
-
 (defn- enqueue!
   "Queue TEXT for BEHAVIOR — `:steer` for the next step, `:follow-up` for the
    next turn. The two targets are the loop's queues; the registry's ops are what
@@ -206,7 +204,7 @@
   [state command]
   (let [{:keys [agents handle]} state
         behavior (:streaming-behavior command)
-        running? (running? agents handle)]
+        running? (runtime/turn-running? handle)]
     (if-let [text (message-of command)]
       ;; a command never reaches the model, and runs even mid-stream; an
       ;; unknown slash is a prompt (dispatch answers nil)
@@ -266,18 +264,17 @@
    abort). An idle abort is a no-op: cancel! would drop nothing and report an
    abort that never happened.
 
-   The answer is a read, not a wait. The handle's cancel drops its run flag on
-   the calling thread, so this mode answers `:idle true` by the time the
+   The answer is a read, not a wait. The handle's cancel drops the turn flag
+   on the calling thread, so this mode answers `:idle true` by the time the
    cancel returns; a front end whose cancel is only a request reports `:idle
    false`, and the client waits for `:agent-settled` — the same rule a prompt's
-   `:started` follows. kmet1 polls its engine for the same flag (plus a
-   compaction it knows about); kmet2's handle has neither at stake here, and a
-   wait here would be the reader thread's time, which is the one thread an
-   abort must not occupy."
+   `:started` follows. kmet1's abort also cancelled a manual compaction and
+   then waited (bounded) for idle; a wait here would be the reader thread's
+   time, which is the one thread an abort must not occupy."
   [{:keys [agents handle]} _command]
-  (when (running? agents handle)
+  (when (runtime/turn-running? handle)
     ((:cancel! agents) handle {:kind :user}))
-  (ok :abort {:idle (not (running? agents handle))}))
+  (ok :abort {:idle (not (runtime/turn-running? handle))}))
 
 (defn- pending-count
   "How many messages the agent has queued (the durable inbox, by target)."
@@ -337,13 +334,15 @@
 
 (defn- command-get-state
   "The live state a client polls after a reconnect (pi: get-state): the agent's
-   model and thinking level, whether a turn is in flight, what is queued, and
-   the session it all belongs to."
+   model and thinking level, whether a turn is in flight, whether a compaction
+   runs, what is queued, how the last prompt settled, and the session it all
+   belongs to (its name only when it has one, as pi omits it)."
   [{:keys [agents scope handle sessions]} _command]
   ;; the live state and session: a session switch replaces the record, so the
   ;; handle's accessors are the ones to read, not a snapshot of `:agent`
   (let [state (runtime/agent-state handle)
-        session (runtime/session handle)
+        sess (runtime/session handle)
+        sess-name (some-> sess session/get-session-name)
         ;; the state is live: its model, provider, thinking level and run
         ;; knobs move while a run cycles them, so every value here is read
         ;; through its atom
@@ -352,24 +351,88 @@
         (cond-> {:model @(:model state)
                  :provider @(:provider state)
                  :thinking-level @(:thinking state)
-                 :turn-running? (running? agents handle)
+                 :turn-running? (runtime/turn-running? handle)
+                 :compacting? (boolean @(:compacting? state))
                  :steering-mode (:steering-mode cfg)
                  :follow-up-mode (:follow-up-mode cfg)
                  :auto-compaction-enabled (boolean (:auto-compact cfg))
-                 :pending-message-count (pending-count agents scope handle)}
-          session (assoc :session
-                         {:id (:id session)
-                          :file (:file session)
-                          :message-count (count ((:entries sessions) session))})))))
+                 :pending-message-count (pending-count agents scope handle)
+                 :last-outcome (runtime/last-outcome handle)}
+          sess (assoc :session
+                      (cond-> {:id (:id sess)
+                               :file (:file sess)
+                               :message-count (count ((:entries sessions) sess))}
+                         ;; pi omits sessionName when unset
+                        sess-name (assoc :name sess-name)))))))
 
 (defn- command-get-entries
-  "The session's entries, the durable log the run appends (pi: get-entries).
-   kmet2's log is the entry list itself — there is no leaf id to report, so the
-   answer is the whole branch."
-  [{:keys [handle sessions]} _command]
-  (if-let [session (runtime/session handle)]
-    (ok :get-entries {:entries (vec ((:entries sessions) session))})
+  "The session's entries, the durable log the run appends (pi: get-entries):
+   all of them, or those appended after `:since`. `:leaf-id` is the entry the
+   next append chains onto — the branch's tip, which a client that forked or
+   switched reads instead of assuming the last entry."
+  [{:keys [handle]} command]
+  (if-let [sess (runtime/session handle)]
+    (let [entries (vec (runtime/entries handle))
+          since (:since command)]
+      (cond
+        (and (some? since) (not (string? since)))
+        (failed :get-entries ":since must be an entry id string")
+
+        (and since (not-any? #(= since (:id %)) entries))
+        (failed :get-entries (str "Entry not found: " since))
+
+        :else
+        (ok :get-entries
+            {:entries (if since
+                        (vec (rest (drop-while #(not= since (:id %)) entries)))
+                        entries)
+             :leaf-id @(:leaf-id sess)})))
     (failed :get-entries "No active session")))
+
+(defn- command-get-messages
+  "The live model context a client reads (pi: get-messages): what the next
+   request would send, with compaction summaries and context edits applied —
+   not the raw log `get-entries` answers."
+  [{:keys [handle]} _command]
+  (ok :get-messages {:messages (vec (runtime/messages handle))}))
+
+(defn- command-get-last-assistant-text
+  "The last assistant message's text on the branch (pi:
+   get-last-assistant-text — /copy's source). A session with none answers
+   `{:text nil}` rather than failing: the question was answered."
+  [{:keys [handle]} _command]
+  (ok :get-last-assistant-text
+      {:text (some-> (runtime/session handle) session/get-last-assistant-text)}))
+
+(defn- command-get-session-stats
+  "The token/tool totals `/session` shows (pi: get-session-stats), aggregated
+   over every entry including the ones compaction replaced, so the numbers are
+   what was billed."
+  [{:keys [handle]} _command]
+  (if-let [sess (runtime/session handle)]
+    (ok :get-session-stats (session/get-session-stats sess))
+    (failed :get-session-stats "No active session")))
+
+(defn- command-get-tree
+  "The session's branch tree with the current leaf (pi: get-tree), the shape a
+   client renders a session tree from."
+  [{:keys [handle]} _command]
+  (if-let [sess (runtime/session handle)]
+    (ok :get-tree {:tree (session/get-tree sess) :leaf-id @(:leaf-id sess)})
+    (failed :get-tree "No active session")))
+
+(defn- command-export-html
+  "Export the session to HTML (pi: export-html), to `:output-path` or the
+   session's runtime cwd. The write is synchronous: the answer is the path, and
+   a failure to write it is this command's failure."
+  [{:keys [handle]} command]
+  (let [path (:output-path command)]
+    (cond
+      (and (some? path) (not (and (string? path) (not (str/blank? path)))))
+      (failed :export-html "export-html requires :output-path to be a non-empty string")
+
+      :else
+      (ok :export-html {:path (runtime/export-html! handle (cond-> {} path (assoc :path path)))}))))
 
 (defn- command-get-available-models
   "The models this process can run (pi: get-available-models): the catalog's
@@ -389,16 +452,11 @@
    | cycle and thinking | the handle answers them; the wire entries are 10a's command table |
    | queue modes | the handle answers them; the wire entries are 10a's command table |
    | dialogs | the `:request`/`:response` pair over the wire is 10a's command table |"
-  {:new-session "one agent serves this mode; the server's session surface is landing 10a"
-   :switch-session "one agent serves this mode; the server's session surface is landing 10a"
+  {:new-session "one agent serves this mode; the session moves are landing 10a"
+   :switch-session "one agent serves this mode; the session moves are landing 10a"
    :fork "the session's tree surface is landing 10a"
    :clone "the session's tree surface is landing 10a"
-   :get-tree "the entry tree is landing 10a's session surface"
-   :get-last-assistant-text "the transcript view is landing 10a's session surface"
-   :get-messages "the transcript view is landing 10a's session surface"
    :set-session-name "session naming is landing 10a's session surface"
-   :get-session-stats "session stats are landing 10a's session surface"
-   :export-html "HTML export is landing 10a's session surface"
 
    :cycle-model "cycle-model is landing 10a's command table (the handle answers it; the wire shape is the server's landing)"
    :set-thinking-level "the handle answers it; the wire entry is landing 10a's command table"
@@ -421,6 +479,11 @@
    :abort #(command-abort state %)
    :get-state #(command-get-state state %)
    :get-entries #(command-get-entries state %)
+   :get-messages #(command-get-messages state %)
+   :get-last-assistant-text #(command-get-last-assistant-text state %)
+   :get-session-stats #(command-get-session-stats state %)
+   :get-tree #(command-get-tree state %)
+   :export-html #(command-export-html state %)
    :get-available-models #(command-get-available-models state %)
    :set-model #(command-set-model state %)
    :set-auto-compaction #(command-set-auto-compaction state %)
