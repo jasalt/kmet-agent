@@ -847,7 +847,9 @@
     (try
       (copilot-responses-run)
       (finally
-        (m/register-provider! shipped)))))
+        (if shipped
+          (m/register-provider! shipped)
+          (m/unregister-provider! :github-copilot))))))
 
 ;; ─── Codex + Azure responses end-to-end (mock server) ─────────────────────
 

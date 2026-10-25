@@ -331,7 +331,18 @@
         (finally (fs/delete-tree dir)))))
   (t/testing "no config value, no files yields nil"
     (with-redefs [cfg/prompt-file-candidates (fn [_] [])]
-      (t/is (nil? (cfg/get-append-system-prompt {}))))))
+      (t/is (nil? (cfg/get-append-system-prompt {})))))
+  (t/testing "an explicitly empty list suppresses discovery (pi: [] is a source list)"
+    (let [dir (str (fs/absolutize (fs/file "target" (str "test-append-empty-" (System/currentTimeMillis)))))
+          file (str dir "/APPEND_SYSTEM.md")]
+      (io/make-parents file)
+      (spit file "discovered")
+      (try
+        (with-redefs [cfg/prompt-file-candidates (fn [_] [file])]
+          (t/is (= "discovered" (cfg/get-append-system-prompt {})))
+          (t/is (nil? (cfg/get-append-system-prompt {:append-system-prompt []}))
+                "[] is a choice, not an omission"))
+        (finally (fs/delete-tree dir))))))
 
 (t/deftest test-apply-cli-overrides
   (let [base {:model "a" :provider :openai}

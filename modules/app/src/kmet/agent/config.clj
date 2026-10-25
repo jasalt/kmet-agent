@@ -727,19 +727,18 @@
    one source or a collection of them, each read as a file when it names an
    existing one and joined with blank lines (pi resolves each append source
    before joining, so `--append-system-prompt a.md --append-system-prompt b.md`
-   sends both files' text) — else .kmet/APPEND_SYSTEM.md, else
-   ~/.kmet/agent/APPEND_SYSTEM.md.
+   sends both files' text). Absent or nil falls back to .kmet/APPEND_SYSTEM.md,
+   then ~/.kmet/agent/APPEND_SYSTEM.md; an explicitly empty collection means no
+   append and suppresses discovery, as an empty source list is truthy in pi.
    Deviations from pi: no project-trust gate."
   [config]
-  (let [sources (:append-system-prompt config)
-        sources (cond (nil? sources) nil
-                      (coll? sources) (seq sources)
-                      :else [sources])]
-    (if sources
-      (str/join "
-
-" (keep resolve-prompt-input sources))
-      (resolve-prompt-input (discover-prompt-file "APPEND_SYSTEM.md")))))
+  (let [declared (:append-system-prompt config)
+        sources (cond
+                  (some? declared) (if (coll? declared) declared [declared])
+                  :else (when-let [file (discover-prompt-file "APPEND_SYSTEM.md")]
+                          [file]))
+        text (str/join "\n\n" (keep resolve-prompt-input sources))]
+    (not-empty text)))
 
 (defn apply-cli-overrides
   "Apply CLI opts onto a config map (pi: CLI flags override settings).
