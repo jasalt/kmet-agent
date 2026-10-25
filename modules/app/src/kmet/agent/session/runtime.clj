@@ -57,9 +57,14 @@
 
 (defn session
   "The live session (an atom's value; a session switch replaces it). nil
-   for a context-less engine or a bare test engine."
+   for a context-less engine or a bare test engine.
+
+   The engine keeps it in an atom; a handle (`kmet.app.loop.driver`) keeps a
+   thunk, because its live state record is replaced on a session switch. Both
+   move, and a front end reads either through here."
   [engine]
-  (some-> engine :session deref))
+  (let [s (:session engine)]
+    (if (fn? s) (s) (some-> s deref))))
 
 (defn ensure-cwd-session-dir
   "The cwd-encoded sessions dir for CWD under BASE-DIR, created if missing
@@ -102,7 +107,7 @@
 (defn entries
   "The live session's entries (the session's own atom)."
   [engine]
-  (some-> @(:session engine) :entries deref))
+  (some-> (session engine) :entries deref))
 
 (defn messages
   "The agent's in-memory context messages (pi: session.messages — what the
@@ -151,7 +156,7 @@
   [engine]
   (let [agent-state (agent-state engine)
         cfg @(:cfg agent-state)]
-    {:session @(:session engine)
+    {:session (session engine)
      :status @(:status agent-state)
      :model @(:model agent-state)
      :provider @(:provider agent-state)

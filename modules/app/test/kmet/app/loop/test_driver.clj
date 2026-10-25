@@ -7,7 +7,9 @@
             [clojure.test :refer [deftest is]]
             [kmet.agent.config :as cfg]
             [kmet.agent.session.backend :as backend]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.ai.llm :as llm]
+            [kmet.ai.models :as models]
             [kmet.app.agents :as agents]
             [kmet.app.events :as events]
             [kmet.app.extensions :as host]
@@ -189,3 +191,74 @@
                  (try ((:dispose! agents) handle) nil
                       (catch Exception e (:type (ex-data e)))))
               "the capability is spent"))))))
+
+(deftest the-handle-is-the-value-a-front-end-reads
+  ;; The handle carries `session.runtime`'s shape, so a panel reads the same
+  ;; accessors it read on an engine and a settings op writes the agent's own
+  ;; atoms.
+  (let [{:keys [root agents]} (mounted)
+        handle (create! {:root root :agents agents})]
+    (is (= "deepseek-v4-flash" (runtime/model handle)))
+    (is (= :opencode-go (runtime/provider handle)))
+    (is (= :off (runtime/thinking-level handle)))
+    (is (some? (runtime/session handle)) "a created agent has its session")
+    (is (= (str (fs/cwd)) (runtime/cwd handle)))
+    (is (false? (runtime/turn-running? handle)))
+    (is (false? (runtime/compacting? handle)))
+    (is (= {:steering [] :follow-up []} (runtime/queues handle)))
+    (is (= test-config (runtime/config handle)))
+    (is (= (:agent handle) ((:get agents) root (:id handle)))
+        "the contract's bare agent is the state the handle runs")))
+
+(deftest a-setting-writes-one-agents-state
+  ;; Every op lands on the handle it was called with: two agents of one process
+  ;; hold two models, two thinking levels, two queue modes.
+  (let [{:keys [root agents]} (mounted)
+        one (create! {:root root :agents agents})
+        two (create! {:root root :agents agents})
+        pro (assoc (models/get-model :opencode-go "deepseek-v4-flash")
+                   :id "deepseek-v4-pro")]
+    ((:set-model! agents) one pro)
+    ((:set-thinking-level! agents) one :high)
+    ((:set-steering-mode! agents) one :one-at-a-time)
+    ((:set-auto-compaction! agents) one false)
+    (is (= "deepseek-v4-pro" (runtime/model one)))
+    (is (= :high (runtime/thinking-level one)))
+    (is (= :one-at-a-time (:steering-mode (runtime/run-options one))))
+    (is (false? (:auto-compact (runtime/run-options one))))
+    (is (= "deepseek-v4-flash" (runtime/model two)) "the sibling is untouched")
+    (is (= :off (runtime/thinking-level two)))
+    (is (= :all (:steering-mode (runtime/run-options two))))
+    (is (true? (:auto-compact (runtime/run-options two))))))
+
+(deftest images-reach-the-provider-and-never-a-queue
+  (let [{:keys [root agents]} (mounted)
+        image {:type :image :data "aGVsbG8=" :mime-type "image/png"}]
+    (with-stubbed-llm
+      (fn [calls]
+        (let [handle (create! {:root root :agents agents})]
+          ((:send! agents) handle {:text "look" :images [image]} {:target :next-turn})
+          ((:when-idle agents) handle)
+          (is (= 1 (count @calls)))
+          (is (some #(= :image (:type %))
+                    (->> (:messages (first @calls))
+                         (filter (comp #{:user} :role))
+                         first :content))
+              "the image block is in the request the provider received")
+          (is (every? empty? (vals ((:inbox agents) root handle)))
+              "a prompt is in the session log, not the queue")))))
+  (let [{:keys [root agents]} (mounted)
+        image {:type :image :data "aGVsbG8=" :mime-type "image/png"}]
+    (with-stubbed-llm
+      (fn [_calls]
+        (let [handle (create! {:root root :agents agents})
+              gate (promise)]
+          ((:send! agents) handle "first" {:target :next-turn})
+          (try
+            ((:send! agents) handle {:text "mid-run" :images [image]}
+                             {:target :next-turn})
+            (is false "a queued image is refused, not dropped")
+            (catch Exception e
+              (is (= :kmet.app/unsupported-images (:type (ex-data e))))
+              (is (= :next-turn (:target (ex-data e)))))
+            (finally (deliver gate :done))))))))

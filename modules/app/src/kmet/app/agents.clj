@@ -78,8 +78,19 @@
 (def handle-ops
   "The optional control surface a handle may answer. A caller asking for one a
    handle does not implement gets `:kmet.app/unsupported-op` naming it, never a
-   silent nil."
-  [:send! :inject! :cancel! :when-idle :status])
+   silent nil.
+
+   The first five are the run's: send, out-of-band context, cancel, the idle
+   awaitable, and the status a listing shows. The rest is the settings a front
+   end changes on the agent it holds — each writes that agent's state, so two
+   agents of one process can differ — measured from the interactive TUI's own
+   call sites (new-app.md, landing 8)."
+  [:send! :inject! :cancel! :when-idle :status
+   :set-model! :cycle-model! :set-thinking-level! :cycle-thinking-level!
+   :set-scoped-models! :set-auto-compaction! :set-steering-mode!
+   :set-follow-up-mode! :set-block-images! :set-system-prompt!
+   :apply-default-tools! :set-config! :set-run-options!
+   :set-http-idle-timeout-ms! :set-http-total-timeout-ms! :clear-queues!])
 
 (defn- validate-handle!
   "HANDLE checked against `handle-contract` for ID and CHILD; returns it. A
@@ -309,13 +320,20 @@
 
             (send! [handle msg opts]
               (let [handle (live handle)
-                    entry ((:enqueue! projections) (session! handle) msg opts)]
-                ;; the entry rides along: the driver is what knows when the
-                ;; message reached its run, so it appends the delivery the
-                ;; inbox folds
-                (when-let [f (:send! handle)]
-                  (f msg (assoc opts :entry entry)))
-                entry))
+                    images (when (map? msg) (:images msg))]
+                (if (seq images)
+                  ;; an image prompt starts a run or is refused by the handle:
+                  ;; nothing is ever queued with an image, so there is no
+                  ;; pending entry to fold (the user message itself is the
+                  ;; session log's), and a refusal must not leave one behind
+                  (when-let [f (:send! handle)] (f msg opts))
+                  (let [entry ((:enqueue! projections) (session! handle) msg opts)]
+                    ;; the entry rides along: the driver is what knows when the
+                    ;; message reached its run, so it appends the delivery the
+                    ;; inbox folds
+                    (when-let [f (:send! handle)]
+                      (f msg (assoc opts :entry entry)))
+                    entry))))
 
             (dispose! [handle]
               (let [handle (live handle)
@@ -340,78 +358,89 @@
                                                     (into [] (remove #{id}) order))))))
                 (emit! scope :agent/disposed {:id id :agent (:agent handle)})
                 nil))]
-      {:register-factory!
-       (fn [ctx factory]
-         (inside! ctx)
-         (when-not (fn? factory)
-           (throw (ex-info "an agent factory is a fn of (ctx opts)"
-                           {:type :kmet.app/bad-agent-factory})))
-         (loop []
-           (let [v @state]
-             (if-let [taken (:factory v)]
-               (throw (ex-info (str "an agent factory is already registered ("
-                                    (:owner taken) ")")
-                               {:type :kmet.app/factory-taken
-                                :owner (:owner taken)}))
-               (if (compare-and-set! state v (assoc v :factory {:owner (:name ctx)
-                                                                :f factory}))
+      (merge
+       {:register-factory!
+        (fn [ctx factory]
+          (inside! ctx)
+          (when-not (fn? factory)
+            (throw (ex-info "an agent factory is a fn of (ctx opts)"
+                            {:type :kmet.app/bad-agent-factory})))
+          (loop []
+            (let [v @state]
+              (if-let [taken (:factory v)]
+                (throw (ex-info (str "an agent factory is already registered ("
+                                     (:owner taken) ")")
+                                {:type :kmet.app/factory-taken
+                                 :owner (:owner taken)}))
+                (if (compare-and-set! state v (assoc v :factory {:owner (:name ctx)
+                                                                 :f factory}))
                  ;; the disposer removes *this* factory only: a restarted
                  ;; driver's old disposer must not clear its replacement
-                 (fn []
-                   (swap! state (fn [s]
-                                  (if (identical? (:f (:factory s)) factory)
-                                    (assoc s :factory nil)
-                                    s)))
-                   nil)
-                 (recur))))))
+                  (fn []
+                    (swap! state (fn [s]
+                                   (if (identical? (:f (:factory s)) factory)
+                                     (assoc s :factory nil)
+                                     s)))
+                    nil)
+                  (recur))))))
 
-       :create! create!
+        :create! create!
 
-       :resume! (fn
-                  ([ctx id] (create! ctx {:resume id}))
+        :resume! (fn
+                   ([ctx id] (create! ctx {:resume id}))
                   ;; a resumed agent is still that agent's composition, so the
                   ;; preset it was created with travels with the resume
-                  ([ctx id opts] (create! ctx (assoc opts :resume id))))
+                   ([ctx id opts] (create! ctx (assoc opts :resume id))))
 
-       :get (fn [ctx id]
-              (inside! ctx)
-              (:agent (get-in @state [:handles id])))
-
-       :list (fn [ctx]
+        :get (fn [ctx id]
                (inside! ctx)
-               (let [{:keys [handles order]} @state]
-                 (into [] (keep #(some-> (get handles %) summary)) order)))
+               (:agent (get-in @state [:handles id])))
 
-       :roots (fn [ctx]
+        :list (fn [ctx]
                 (inside! ctx)
-                (let [{:keys [handles order]} @state
-                      agent-ctxs (into #{} (map (comp :ctx val)) handles)]
-                  (into []
-                        (keep (fn [id]
-                                (let [handle (get handles id)]
-                                  (when-not (contains? agent-ctxs (:parent (:ctx handle)))
-                                    (summary handle)))))
-                        order)))
+                (let [{:keys [handles order]} @state]
+                  (into [] (keep #(some-> (get handles %) summary)) order)))
 
-       :dispose! dispose!
+        :roots (fn [ctx]
+                 (inside! ctx)
+                 (let [{:keys [handles order]} @state
+                       agent-ctxs (into #{} (map (comp :ctx val)) handles)]
+                   (into []
+                         (keep (fn [id]
+                                 (let [handle (get handles id)]
+                                   (when-not (contains? agent-ctxs (:parent (:ctx handle)))
+                                     (summary handle)))))
+                         order)))
 
-       :send! send!
+        :dispose! dispose!
 
-       :steer! (fn [handle msg] (send! handle msg {:target :next-step}))
+        :send! send!
 
-       :follow-up! (fn [handle msg] (send! handle msg {:target :next-turn}))
+        :steer! (fn [handle msg] (send! handle msg {:target :next-step}))
 
-       :inbox (fn [ctx handle]
-                (inside! ctx)
-                ((:inbox projections) (session! (live handle))))
+        :follow-up! (fn [handle msg] (send! handle msg {:target :next-turn}))
 
-       :inject! (fn [handle msg] (dispatch handle :inject! [msg]))
+        :inbox (fn [ctx handle]
+                 (inside! ctx)
+                 ((:inbox projections) (session! (live handle))))
 
-       :cancel! (fn [handle opts] (dispatch handle :cancel! [opts]))
+        :inject! (fn [handle msg] (dispatch handle :inject! [msg]))
 
-       :when-idle (fn [handle] (dispatch handle :when-idle []))
+        :cancel! (fn [handle opts] (dispatch handle :cancel! [opts]))
 
-       :status (fn [handle] (dispatch handle :status []))})))
+        :when-idle (fn [handle] (dispatch handle :when-idle []))
+
+        :status (fn [handle] (dispatch handle :status []))}
+      ;; the settings ops have one shape — take the handle, dispatch by name —
+      ;; so the table is generated from `handle-ops`' measured list rather than
+      ;; repeating the same closure
+       (into {}
+             (map (fn [op] [op (fn [handle & args] (dispatch handle op args))]))
+             [:set-model! :cycle-model! :set-thinking-level! :cycle-thinking-level!
+              :set-scoped-models! :set-auto-compaction! :set-steering-mode!
+              :set-follow-up-mode! :set-block-images! :set-system-prompt!
+              :apply-default-tools! :set-config! :set-run-options!
+              :set-http-idle-timeout-ms! :set-http-total-timeout-ms! :clear-queues!])))))
 
 (defn- serve
   "The `:agents` row: the registry over the injected projections, provided into

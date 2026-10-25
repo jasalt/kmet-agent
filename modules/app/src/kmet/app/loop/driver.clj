@@ -21,6 +21,7 @@
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.project-context :as context]
             [kmet.agent.session.core :as session]
+            [kmet.agent.session.runtime :as runtime]
             [kmet.agent.tools.registry :as tools]
             [kmet.ai.models :as models]
             [kmet.srce.core :as srce]))
@@ -207,19 +208,53 @@
     ((:create! log) {:dir dir :cwd cwd})))
 
 (defn- agent-handle
-  "The handle the registry publishes for one agent: its state, the run it
-   owns, and the control surface `kmet.app.agents/handle-contract` requires.
+  "The handle the registry publishes for one agent: the value a front end
+   reads, the run it owns, and the control surface
+   `kmet.app.agents/handle-contract` requires.
+
+   The value is `kmet.agent.session.runtime`'s shape — `:agent-state`,
+   `:session`, `:config`, `:cwd`, `:turn-running?` — so a front end that reads
+   a handle through that namespace's accessors (`model`, `session`,
+   `thinking-level`, `compacting?`, `queues`, …) needs no second accessor set.
+   `:agent` is the registry contract's bare agent; `:session` is the thunk the
+   contract asks for because a switch replaces the live state record.
 
    A run starts on the first message and settles on its own thread — the
    registry's `send!` is the wake-up, never a block. A message that arrives
-   while a run is live goes into the loop's queue (`:next-step` mid-turn,
-   `:next-turn` at the next boundary), which the loop drains itself."
+   while a run is live goes into the loop's own queue (`:next-step` mid-turn,
+   `:next-turn` at the next boundary), which the loop drains itself. Images
+   are a prompt's, not a queue's: a send that carries them either starts a run
+   or is refused, because the loop's queues carry text (pi: prompt(text,
+   images) vs steer/followUp(text)).
+
+   The settings ops write the same atoms the accessors read, so a front end
+   changes one agent and never the process: `/model` on one handle leaves a
+   sibling's alone."
   [child {:keys [id session config prompt-fn projections]}]
-  (let [{:keys [state]} (agent-state config child {:session session
-                                                   :system-prompt-fn prompt-fn})
+  (let [{:keys [state] runtime-cwd :cwd}
+        (agent-state config child {:session session
+                                   :system-prompt-fn prompt-fn})
         live (atom state)
         running? (atom false)
         last-run (atom nil)
+        disposed? (atom false)
+        ;; the front end's value over the agent state: the same field atoms a
+        ;; session engine holds, so `kmet.agent.session.runtime` reads it and
+        ;; the settings ops below write it without a second derivation
+        engine (runtime/map->Engine
+                {:agent-state live
+                 :session (fn [] (:session @live))
+                 :config (atom config)
+                 :subscribers (atom [])
+                 :last-run last-run
+                 :disposed? disposed?
+                 :cwd (atom runtime-cwd)
+                 :expand-input nil
+                 :turn-running? running?
+                 :compaction-queued (atom [])
+                 :pending-compaction (atom [])
+                 :pending-ui (atom {})
+                 :run-callbacks (atom nil)})
         settle! (fn [] (reset! running? false))
         stop! (fn []
                 (loop/cancel-turn @live)
@@ -230,7 +265,7 @@
         ;; a start that throws before it has a run to settle must not leave
         ;; the handle claiming one: every later message would queue behind a
         ;; run that does not exist
-        start! (fn [text]
+        start! (fn [text images]
                  (boolean
                   (when (compare-and-set! running? false true)
                     (try
@@ -238,31 +273,70 @@
                               (loop/run-agent-turn
                                @live
                                {:message text
+                                :images images
                                 :on-done (fn [_] (settle!))
                                 :on-error (fn [_] (settle!))}))
                       (catch Throwable t
                         (settle!)
-                        (throw t))))))]
-    {:id id
-     :ctx child
-     :agent state
-     :session (fn [] (:session @live))
-     :send! (fn [msg opts]
-              (let [text (if (map? msg) (:text msg) msg)
-                    target (:target opts :next-turn)]
-                (when-not (and (not @running?) (start! text))
-                  (if (= :next-step target)
-                    (loop-state/steer! @live text)
-                    (loop-state/follow-up! @live text)))
-                ;; the run has the message now: the inbox's pending entry
-                ;; folds away with the delivery fact, so a long-lived server's
-                ;; inbox stays a queue rather than a log of everything sent
-                (when-let [entry (:entry opts)]
-                  ((:deliver! projections) (:session @live) [(:id entry)]))))
-     :cancel! (fn [_opts] (stop!))
-     :when-idle (fn [] (when @running? (deref @last-run)))
-     :status (fn [] (if @running? :running :idle))
-     :dispose! stop!}))
+                        (throw t))))))
+        queue! (fn [text target]
+                 (if (= :next-step target)
+                   (loop-state/steer! @live text)
+                   (loop-state/follow-up! @live text)))
+        images-refused (fn [target]
+                         (ex-info (str "images can only start a prompt: a queued message ("
+                                       (name target) ") carries text")
+                                  {:type :kmet.app/unsupported-images
+                                   :target target}))]
+    (-> engine
+        (assoc
+         :id id
+         :ctx child
+         :agent state
+         :send! (fn [msg opts]
+                  (let [text (if (map? msg) (:text msg) msg)
+                        images (vec (:images msg))
+                        target (:target opts :next-turn)]
+                    (if (seq images)
+                      (when-not (and (= :next-turn target)
+                                     (not @running?)
+                                     (start! text images))
+                        (throw (images-refused target)))
+                      (when-not (and (not @running?) (start! text nil))
+                        (queue! text target)))
+                    ;; the run has the message now: the inbox's pending entry
+                    ;; folds away with the delivery fact, so a long-lived
+                    ;; server's inbox stays a queue rather than a log of
+                    ;; everything sent
+                    (when-let [entry (:entry opts)]
+                      ((:deliver! projections) (:session @live) [(:id entry)]))))
+         :cancel! (fn [_opts] (stop!))
+         :when-idle (fn [] (when @running? (deref @last-run)))
+         :status (fn [] (if @running? :running :idle))
+         :dispose! (fn []
+                     (reset! disposed? true)
+                     (stop!))
+         ;; the settings a front end changes: each writes this agent's state
+         ;; through the same functions the engine path used, so there is one
+         ;; implementation of the rule (the thinking-level rank rule included)
+         :set-model! (fn [model] (runtime/set-model! engine model))
+         :cycle-model! (fn
+                         ([] (runtime/cycle-model! engine))
+                         ([direction] (runtime/cycle-model! engine direction)))
+         :set-thinking-level! (fn [level] (runtime/set-thinking-level! engine level))
+         :cycle-thinking-level! (fn [] (runtime/cycle-thinking-level! engine))
+         :set-scoped-models! (fn [models] (runtime/set-scoped-models! engine models))
+         :set-auto-compaction! (fn [enabled?] (runtime/set-auto-compact! engine enabled?))
+         :set-steering-mode! (fn [mode] (runtime/set-steering-mode! engine mode))
+         :set-follow-up-mode! (fn [mode] (runtime/set-follow-up-mode! engine mode))
+         :set-block-images! (fn [blocked?] (runtime/set-block-images! engine blocked?))
+         :set-system-prompt! (fn [prompt opts] (runtime/set-system-prompt! engine prompt opts))
+         :apply-default-tools! (fn [selection] (runtime/apply-default-tools! engine selection))
+         :set-config! (fn [config] (runtime/set-config! engine config))
+         :set-run-options! (fn [m] (runtime/set-run-options! engine m))
+         :set-http-idle-timeout-ms! (fn [ms] (runtime/set-http-idle-timeout-ms! engine ms))
+         :set-http-total-timeout-ms! (fn [ms] (runtime/set-http-total-timeout-ms! engine ms))
+         :clear-queues! (fn [] (runtime/clear-queues! engine))))))
 
 ;; ── the row ───────────────────────────────────────────────────────────────
 
