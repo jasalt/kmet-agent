@@ -130,8 +130,8 @@
 
 (srce/defplugin plugin
   {:name :mode-tui
-   ;; the run reads these from the ctx (`session.driver/bootstrap`'s `:ctx`):
-   ;; declare them so a composition that patched one out fails at the mount
-   ;; instead of at the first prompt
+   ;; the run's agent reads these from the ctx it is created on (`create!`'s
+   ;; child ctx, a descendant of this mount site): declare them so a composition
+   ;; that patched one out fails at the mount instead of at the first prompt
    :inject [:tools :system-prompt]
    :apply serve})

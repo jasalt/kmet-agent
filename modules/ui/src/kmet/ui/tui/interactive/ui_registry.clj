@@ -617,8 +617,9 @@
                                                       (if (state/turn-running? cs)
                                                         {:cancelled true}
                                                         (try
-                                                   ;; pi: switchSession → session-driver/resume!
-                                                   ;; (emitBeforeSwitch, load, swap, session_start)
+                                                   ;; pi: switchSession → the handle's
+                                                   ;; :resume-session! (emitBeforeSwitch, load,
+                                                   ;; swap, session_start) + this front end's install
                                                           (let [result ((:resume-session! (:engine cs)) session-path)]
                                                             (if (:cancelled result)
                                                               {:cancelled true}

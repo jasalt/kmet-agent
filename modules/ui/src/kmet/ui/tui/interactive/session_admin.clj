@@ -11,7 +11,8 @@
             [kmet.tui.components.container :as container]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.export :as session-export]
-            [kmet.agent.session.driver :as session-driver]
+            [kmet.agent.session.lifecycle :as lifecycle]
+            [kmet.agent.session.summary :as summary]
             [kmet.agent.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.bash-execution :as be]
@@ -499,8 +500,11 @@
                        ;; pi: the import switch emits session_start (reason
                        ;; resume) like /resume — extensions restore from the
                        ;; imported branch
-                       (session-driver/emit-session-start-async! (:engine cs)
-                                                                 {:type :session-start :reason :resume})
+                       ;; the shared lifecycle below both drivers: the
+                       ;; handle installs nothing, and this front end's own
+                       ;; install already ran above
+                       (lifecycle/emit-session-start-async! (:engine cs)
+                                                            {:type :session-start :reason :resume})
                        (chat-history/chat-history-show-status!
                         chat (str "Session imported from: " (:source plan)))
                        (tui/tui-request-render (:tui cs))))
@@ -586,7 +590,7 @@
     (start-branch-summary-render-driver! (:tui cs) done)
     (future
       (try
-        (deliver done (session-driver/generate-branch-summary
+        (deliver done (summary/generate-branch-summary
                        (:engine cs) (:entries-to-summarize prep) custom-instructions
                        abort-atom replace-instructions?))
         (catch Throwable e

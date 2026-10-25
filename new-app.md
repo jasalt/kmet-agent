@@ -3568,10 +3568,15 @@ finished, measured from the TUI's own code:
   met. `kmet.ui.tui.test-tui-ask` pins the profile, the row-to-run mapping and
   the per-agent policy (a plain agent's call proceeds; the root provides no
   `:permissions`).
-- **T-4. The TUI's last driver edges.** `session_admin` calls
-  `session.driver/emit-session-start-async!` and `generate-branch-summary`; the
-  first is `kmet.agent.session.lifecycle`'s already, and the second is the only
-  reason the module requires the driver at all.
+- **T-4. The TUI's last driver edges — landed.** `session_admin`'s two
+  `session.driver` calls are gone: the session-start emission is
+  `kmet.agent.session.lifecycle`'s (the shared lifecycle below both drivers),
+  and the branch summary moved to **`kmet.agent.session.summary`** — a new
+  app-level name for the one-shot session work a front end runs about a session
+  (`kmet.agent.compaction.stage`'s call, named so no mode reaches the stage
+  itself; the layer guard forbids that require). `kmet.ui.tui.*` names
+  `session.driver` nowhere, and `kmet.test-front-end-policy` now holds it: the
+  guard reads every TUI source's ns form and fails on the require.
 - **T-5. The mode's docs describe the shipped contract** — the row docstring's
   "does not do yet" paragraph described 5j, superseded by 8, and the ledger's
   gate sentences must match the code.

@@ -70,6 +70,26 @@
         (t/is (= expected (select-keys opts [:load-resources! :expand-input]))
               "the front end names its resource policy, and only that")))))
 
+(defn- ns-requires
+  "The namespaces PATH's ns form requires."
+  [path]
+  (->> (tree-seq coll? seq (first (read-forms path)))
+       (filter vector?)
+       (map first)
+       (filter symbol?)
+       set))
+
+(t/deftest the-tui-reads-a-handle-and-not-kmet1s-session-driver
+  (let [files (->> (fs/glob "modules/ui/src/kmet/ui/tui" "**.clj")
+                   (map str)
+                   sort)]
+    (t/is (seq files) "the TUI's sources are where the guard looks")
+    (doseq [path files]
+      (t/is (not (contains? (ns-requires path) 'kmet.agent.session.driver))
+            (str path " requires kmet1's session driver — the TUI reads a"
+                 " handle and the shared lifecycle, not the engine constructor"
+                 " that dies with kmet1's entry (T-4)")))))
+
 (t/deftest a-handle-front-end-names-its-half-of-the-resource-policy
   (doseq [[path value] handle-front-ends]
     (t/testing path
