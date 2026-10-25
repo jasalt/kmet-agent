@@ -300,10 +300,28 @@
             ;; another caller claimed. Answers which happened: the submission
             ;; chain reports it, and a caller that only wakes the agent ignores
             ;; it.
-            (deliver! [text target]
-              (if (and (not @running?) (start! text nil))
-                :started
-                (do (queue! text target) :steered)))
+            ;; the one start-or-queue rule: an idle call starts, a call behind
+            ;; a live run queues. RUN-OPTS are the caller's delivery additions:
+            ;; rpc's images (the queues carry text, so an image prompt that
+            ;; cannot start is refused rather than silently stripped) and the
+            ;; queue fact's entry, which folds away once the message is
+            ;; delivered.
+            (record-delivery! [run-opts]
+              (when-let [entry (:entry run-opts)]
+                ((:deliver! projections) (:session @live) [(:id entry)])))
+            (refused-images! [target]
+              (ex-info (str "images can only start a prompt: a queued message ("
+                            (name target) ") carries text")
+                       {:type :kmet.app/unsupported-images :target target}))
+            (deliver! [text target run-opts]
+              (let [images (vec (:images run-opts))]
+                (if (and (not @running?) (start! text images))
+                  (do (record-delivery! run-opts) :started)
+                  (if (seq images)
+                    (throw (refused-images! target))
+                    (do (queue! text target)
+                        (record-delivery! run-opts)
+                        :steered)))))
             ;; an extension's sendCustomMessage (pi: ctx.sendCustomMessage):
             ;; the four branches driver/send-message-capability has, over this
             ;; agent's live state — a trigger while idle starts a run, a
@@ -354,7 +372,7 @@
                               (packages/expand-input text)
                               text)]
                    (when text
-                     (deliver! text (if (= :steer deliver-as) :next-step :next-turn))))
+                     (deliver! text (if (= :steer deliver-as) :next-step :next-turn) nil)))
                  nil)
                :send-message! (fn [message opts] (inject! message opts))
                :get-active-tools (fn []
@@ -426,23 +444,20 @@
                                        {:start! (fn [text] (start! text nil))}))
            :send! (fn [msg opts]
                     (let [text (if (map? msg) (:text msg) msg)
-                          images (vec (:images msg))
-                          target (:target opts :next-turn)]
-                      (if (seq images)
-                        (when-not (and (= :next-turn target)
-                                       (not @running?)
-                                       (start! text images))
-                          (throw (ex-info (str "images can only start a prompt: a queued message ("
-                                               (name target) ") carries text")
-                                          {:type :kmet.app/unsupported-images
-                                           :target target})))
-                        (deliver! text target))
-                      ;; the run has the message now: the inbox's pending entry
-                      ;; folds away with the delivery fact, so a long-lived
+                          target (:target opts :next-turn)
+                          images (vec (:images msg))]
+                      ;; a caller that names a queue target means "queue this",
+                      ;; so an image cannot ride it even while idle; a start
+                      ;; request (:next-turn) may refuse when it loses the race
+                      (when (and (seq images) (not= :next-turn target))
+                        (throw (refused-images! target)))
+                      ;; the entry is the caller's durable queue fact: the
+                      ;; delivery (or the queue) folds it away, so a long-lived
                       ;; server's inbox stays a queue rather than a log of
                       ;; everything sent
-                      (when-let [entry (:entry opts)]
-                        ((:deliver! projections) (:session @live) [(:id entry)]))))
+                      (deliver! text target
+                                (cond-> (when (map? msg) (select-keys msg [:images]))
+                                  (:entry opts) (assoc :entry (:entry opts))))))
            :inject! (fn
                       ([message] (inject! message nil))
                       ([message opts] (inject! message opts)))

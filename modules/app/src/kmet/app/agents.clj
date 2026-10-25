@@ -445,7 +445,25 @@
 
         :send! send!
 
-        :submit! (fn [handle text opts] (dispatch handle :submit! [text opts]))
+        :submit! (fn [handle text opts]
+                   (let [handle (live handle)]
+                     (dispatch handle :submit!
+                               [text
+                                ;; `:record?` is the caller saying its queue is
+                                ;; durable (the wire's): the enqueue fact lands
+                                ;; where the message is delivered, and the
+                                ;; handle appends the delivery when it gets
+                                ;; there. An image prompt starts a run — the
+                                ;; user entry is the log's own — so it records
+                                ;; nothing (see `send!`).
+                                (if (and (:record? opts)
+                                         (not (seq (get-in opts [:run-opts :images]))))
+                                  (assoc opts
+                                         :on-deliver! (fn [text target]
+                                                        ((:enqueue! projections)
+                                                         (session! handle) text
+                                                         {:target target})))
+                                  opts)])))
         :flush-compaction-queue! (fn [handle will-retry]
                                    (dispatch handle :flush-compaction-queue! [will-retry]))
 

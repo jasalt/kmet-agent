@@ -120,6 +120,58 @@
                         :content first :text))
                 "the run's message is the expansion, not the command")))))))
 
+(deftest a-portable-command-is-dispatched-before-the-model
+  ;; docs/rpc.md § Portable slash commands: the prompt's slash line runs the
+  ;; registry with {:runtime handle :ui command-ui :frontend :rpc}; the answer
+  ;; is :handled and nothing reaches the model. An unknown slash stays a prompt
+  ;; (pinned by rpc-expands-a-clients-text-before-the-agent-sees-it).
+  (let [request (atom nil)]
+    (with-mode-run
+      (fn [opts]
+        (reset! request opts)
+        (future
+          (when-let [f (:on-text opts)] (f "ran"))
+          (when-let [f (:on-done opts)] (f :stop))
+          :done))
+      (fn []
+        (let [{:keys [code records]}
+              (run-rpc {:lines ["{:type :prompt :id \"n\" :message \"/name gates\"}"]})]
+          (is (= 0 code))
+          (is (= {:disposition :handled} (:data (by-id records "n")))
+              "a command is answered as handled, not started")
+          (is (nil? @request)
+              "and the model was never called: the command is the front end's")
+          (is (some #(and (= :ui-request (:type %))
+                          (= :chat-info (:method %))
+                          (= "Name" (:label %))
+                          (str/includes? (str (:content %)) "gates"))
+                    records)
+              "the command's reply travels the port's output channel"))))))
+
+(deftest a-wire-prompt-runs-the-extension-input-hooks
+  ;; The wire's prompt is the submission chain, not a direct send (10a): an
+  ;; extension's input hook sees the client's text and may transform it, and
+  ;; the front-end kind it sees is :rpc.
+  (let [request (atom nil)]
+    (with-mode-run
+      (fn [opts]
+        (reset! request opts)
+        (future
+          (when-let [f (:on-done opts)] (f :stop))
+          :done))
+      (fn []
+        (with-redefs [extensions/apply-input-hooks
+                      (fn [text mode _opts]
+                        {:text (str "hooked:" text " from " (name mode))})]
+          (let [{:keys [code]} (run-rpc {:lines ["{:type :prompt :message \"hi\"}"]
+                                         :until ":agent-settled"})]
+            (is (= 0 code))
+            (is (= "hooked:hi from rpc"
+                   (->> (:messages @request)
+                        (some #(when (= :user (:role %)) %))
+                        :content first :text))
+                "the run receives the hooked text, and the hook saw :rpc")))))))
+
 (deftest rpc-mode-answers-a-malformed-line-and-an-unknown-command
   (with-mode-run
     (answering "never runs")
@@ -138,19 +190,36 @@
   ;; kmet1's protocol has commands kmet2 cannot answer yet. Each names the
   ;; landing that fills it: a silent success would be a wrong answer, and
   ;; "Unknown command" would read as a typo. The model and compaction setters
-  ;; left this table at landing 8 — the handle answers them now — so the
+  ;; left this table at landing 8 — the handle answers them now — and the wire's
+  ;; prompt dispatch and get-commands left it at 10a's first slice, so the
   ;; remaining names are the session and cycle surface.
   (with-mode-run
     (answering "never runs")
     (fn []
       (let [{:keys [records]}
             (run-rpc {:lines ["{:type :cycle-model :id \"m1\"}"
-                              "{:type :get-commands :id \"g1\"}"]})]
+                              "{:type :new-session :id \"s1\"}"]})]
         (is (str/includes? (str (:error (by-id records "m1"))) "landing 10a")
             "the cycle surface is 10a's command table")
         (is (every? #(str/includes? (str (:error (by-id records %))) "is not implemented in rpc mode yet")
-                    ["m1" "g1"])
+                    ["m1" "s1"])
             "and every one of them is the named refusal")))))
+
+(deftest the-command-registry-is-on-the-wire
+  ;; get-commands reports the same filtered registry `prompt` dispatches
+  ;; through (docs/rpc.md), so a client builds a palette without guessing: the
+  ;; portable builtins as :builtin, then prompt templates and skills.
+  (with-mode-run
+    (answering "never runs")
+    (fn []
+      (let [{:keys [records]} (run-rpc {:lines ["{:type :get-commands :id \"g\"}"]})
+            commands (:commands (:data (by-id records "g")))]
+        (is (seq commands))
+        (is (= :builtin (:source (some #(when (= "name" (:name %)) %) commands)))
+            "/name is one of the portable builtins")
+        (is (= :builtin (:source (some #(when (= "units" (:name %)) %) commands))))
+        (is (every? #(contains? #{:builtin :extension :prompt :skill} (:source %)) commands)
+            "every entry names its source")))))
 
 (deftest the-state-a-client-polls
   (with-mode-run

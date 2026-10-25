@@ -23,17 +23,29 @@
 
    **The commands are the ones kmet2's services answer.** A prompt, a steer, a
    follow-up, an abort, the live state, the session's entries, the model
-   catalog, the model and compaction setters: each is a call on the `:agents`
-   handle or the `:sessions` log. The session lifecycle, the thinking and cycle
-   setters and the dialog pair need the server's phase 1, and each names its
-   landing (`unsupported`) instead of pretending. The server row
-   (`kmet.app.modes.server`) serves this same protocol over a socket, one agent
-   per connection, out of this namespace's `handle-line`."
+   catalog, the model and compaction setters, and the command registry
+   (`get-commands`) — each a call on the `:agents` handle or the `:sessions`
+   log. A prompt is the front end's submission chain (`:submit!`): the portable
+   slash commands dispatch through the registry first (kmet1's `command-ui`
+   over this port's output channels), and everything else runs the extension
+   input hooks and the engine's expansion before the handle starts or queues
+   it — the wire's queue being durable, the enqueue and delivery facts land in
+   the session log, so a reconnect reads the inbox rather than a gap. The
+   session lifecycle, the thinking and cycle setters and the dialog pair need
+   the server's phase 1, and each names its landing (`unsupported`) instead of
+   pretending. The server row (`kmet.app.modes.server`) serves this same
+   protocol over a socket, one agent per connection, out of this namespace's
+   `handle-line`."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [kmet.agent.commands :as commands]
+            [kmet.agent.commands.builtins :as builtins]
             [kmet.agent.event-bus :as event-bus]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.packages :as packages]
+            [kmet.agent.prompts :as prompts]
+            [kmet.agent.skills :as skills]
             [kmet.agent.session.runtime :as runtime]
             [kmet.ai.models :as models]
             [kmet.app.events :as events]
@@ -123,45 +135,106 @@
   [{:keys [agents handle]} behavior text]
   ((get agents (if (= :steer behavior) :steer! :follow-up!)) handle text))
 
+(defn- command-ui
+  "The command-UI value the portable builtins receive over the wire: the shared
+   capabilities mapped onto the port's output channels (pi: the RPC command
+   UI). `:set-title` is absent — a terminal title has no wire meaning; /name's
+   reply carries the name."
+  [port]
+  {:message (fn [text] ((:chat-info port) nil text))
+   :info (:chat-info port)
+   :warning (fn [text] ((:notify port) text :warning))
+   :status (fn [text] ((:set-status port) "status" text))
+   :notify (:notify port)})
+
+(defn- dispatch-command
+  "A slash-command prompt is the registry's before it is the agent's (pi:
+   prompt → the command registry): a command available to :rpc — the portable
+   builtins and extension commands, the same filter `get-commands :rpc`
+   reports — runs with the command ctx `{:runtime handle :ui command-ui
+   :frontend :rpc}` and the prompt answers handled. Returns the handled
+   response, or nil when the trimmed text is not a known command: an unknown
+   slash stays a normal prompt, where skill and template expansion happen."
+  [{:keys [handle command-ui]} text]
+  (when-let [{:keys [name args]} (commands/parse-command-line (str/trim text))]
+    (when-let [c (commands/find-command name :rpc)]
+      (if-let [handler (:extension-handler c)]
+        (handler (extensions/build-extension-context) args)
+        ((:handler c) {:runtime handle :ui command-ui :frontend :rpc} args))
+      (ok :prompt {:disposition :handled}))))
+
+(defn- wire-command
+  "One command in the shape `get-commands` reports: its source, and the
+   description and argument hint when it has them."
+  [source c]
+  (cond-> {:name (:name c) :source source}
+    (:description c) (assoc :description (:description c))
+    (:argument-hint c) (assoc :argument-hint (:argument-hint c))))
+
+(defn- command-get-commands
+  "The registry as a client builds a palette from it (docs/rpc.md §
+   get-commands): the portable builtins and extension commands this front end
+   dispatches, then the prompt templates and skills a prompt expands."
+  [_state _command]
+  (ok :get-commands
+      {:commands (vec (concat (map #(wire-command (if (:extension-handler %) :extension :builtin) %)
+                                   (commands/get-commands :rpc))
+                              (map #(wire-command :prompt %)
+                                   (prompts/as-command-maps (prompts/get-prompt-templates)))
+                              (map #(wire-command :skill %)
+                                   (skills/as-command-maps (skills/get-skills)))))}))
+
 (defn- command-prompt
-  "Start, steer or queue a prompt (pi: prompt). While a run is live the client
-   must choose `:streaming-behavior` — pi errors without one, because the two
-   targets mean different things and guessing would drop the message or
-   deliver it at the wrong boundary."
+  "Start, steer, queue, or handle a prompt (pi: prompt). A slash-command line
+   dispatches through the registry first, even mid-run; otherwise, while a run
+   is live the client must choose `:streaming-behavior` — pi errors without
+   one, because the two targets mean different things and guessing would drop
+   the message or deliver it at the wrong boundary.
+
+   The idle prompt is the front end's submission chain (`:submit!`): the
+   extension input hooks, the engine's expansion (pi: prompt), then the
+   handle's start-or-queue rule. The disposition is what the chain did —
+   :started, :handled when a hook consumed the input, :queued when the start
+   lost the race and the message queued. `:images` ride the started path and
+   are refused if they cannot (a queue carries text)."
   [state command]
   (let [{:keys [agents handle]} state
-        ;; the mode expands the client's text before the agent sees it:
-        ;; `/skill:` and prompt templates are the front end's chain (kmet1's
-        ;; rpc expands on enqueue one layer down)
-        text (some-> (message-of command) packages/expand-input)
         behavior (:streaming-behavior command)
         running? (running? agents handle)]
-    (cond
-      (nil? text)
-      (failed :prompt "prompt requires a non-empty :message string")
+    (if-let [text (message-of command)]
+      ;; a command never reaches the model, and runs even mid-stream; an
+      ;; unknown slash is a prompt (dispatch answers nil)
+      (or (dispatch-command state text)
+          (cond
+            (and (some? behavior) (not (#{:steer :follow-up} behavior)))
+            (failed :prompt "streaming-behavior must be :steer or :follow-up")
 
-      (and (some? behavior) (not (#{:steer :follow-up} behavior)))
-      (failed :prompt "streaming-behavior must be :steer or :follow-up")
+            (and running? (nil? behavior))
+            (failed :prompt (str "The agent is already running; specify"
+                                 " :streaming-behavior :steer or :follow-up"))
 
-      (and running? (nil? behavior))
-      (failed :prompt (str "The agent is already running; specify"
-                           " :streaming-behavior :steer or :follow-up"))
+            running?
+            (do (enqueue! state behavior (packages/expand-input text))
+                (ok :prompt {:disposition :queued}))
 
-      running?
-      (do (enqueue! state behavior text)
-          (ok :prompt {:disposition :queued}))
-
-      :else
-      ;; the prompt carries the client's images to the loop: a prompt either
-      ;; starts a run with them or the handle refuses, never a silent drop. A
-      ;; text-only prompt stays a string, because that is the shape the queue
-      ;; fact records (a map only when images ride along).
-      (do ((:send! agents) handle
-                           (if (seq (:images command))
-                             {:text text :images (:images command)}
-                             text)
-                           {:target :next-turn})
-          (ok :prompt {:disposition :started})))))
+            :else
+            (let [{:keys [action]}
+                  ((:submit! agents) handle text
+                                     {:expand? true
+                                      :mode :rpc
+                                      ;; the wire's queue is durable: the
+                                      ;; enqueue and delivery facts land in the
+                                      ;; session log (kmet1's rpc recorded them
+                                      ;; through the registry's send!), so a
+                                      ;; reconnect reads the inbox, not a gap
+                                      :record? true
+                                      :run-opts (when (seq (:images command))
+                                                  {:images (:images command)})})]
+              (ok :prompt {:disposition (case action
+                                          :started :started
+                                          :handled :handled
+                                          :queued)}))))
+      (failed :prompt "prompt requires a non-empty :message string"))))
 
 (defn- command-queue
   "The `:steer` / `:follow-up` commands: the loop's queues carry no image
@@ -330,8 +403,7 @@
    :set-follow-up-mode "the handle answers it; the wire entry is landing 10a's command table"
    :clear-queue "the handle answers it; the wire entry is landing 10a's command table"
 
-   :respond "dialogs are landing 10a's command table (:request/:response over the wire)"
-   :get-commands "the slash-command registry's wire shape moves with the dispatcher"})
+   :respond "dialogs are landing 10a's command table (:request/:response over the wire)"})
 
 (defn- handlers
   "The dispatch table for STATE — the agent's door: the registry, the log, and
@@ -346,7 +418,8 @@
    :get-available-models #(command-get-available-models state %)
    :set-model #(command-set-model state %)
    :set-auto-compaction #(command-set-auto-compaction state %)
-   :compact #(command-compact state %)})
+   :compact #(command-compact state %)
+   :get-commands #(command-get-commands state %)})
 
 (defn handle-command
   "Handle one parsed command, returning the response — never nil: every command
@@ -446,6 +519,12 @@
     (when on-result
       (let [out- *out*
             in *in*
+            ;; the portable builtins this front end dispatches over `prompt`
+            ;; and reports through `get-commands` (docs/rpc.md § Portable slash
+            ;; commands); registration is idempotent and owned by the app root,
+            ;; so a second mode in one process reuses them. `/units` renders the
+            ;; tree the mode is mounted under.
+            _ (builtins/register-runtime-commands! (constantly (:parent ctx)))
             ;; the agent does not exist yet, and the listener must scope to it:
             ;; the mode's stream is its own agent's events, not every agent's
             ;; the process booted (5d listened on the app scope)
@@ -453,9 +532,10 @@
             ;; kmet1's rpc mode binds exactly this: a front end with a port,
             ;; whose extension UI calls travel the protocol — the row's port as
             ;; the base, the wire capabilities on top
+            port (ui-port (:port (srce/get ctx :ui)) out-)
             restore (front-end/install! {:mode :rpc
                                          :has-ui true
-                                         :ui (ui-port (:port (srce/get ctx :ui)) out-)})]
+                                         :ui port})]
         (future
           (on-result
            {:exit (try
@@ -470,7 +550,8 @@
                                                  (fn [event]
                                                    (out/record! out- (event-bus/wire-event event)))))
                         (serve-commands {:agents agents :sessions sessions
-                                         :scope scope :handle handle}
+                                         :scope scope :handle handle
+                                         :command-ui (command-ui port)}
                                         in out-)
                         0
                         (finally

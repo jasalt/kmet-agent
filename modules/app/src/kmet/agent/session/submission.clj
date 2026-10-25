@@ -93,9 +93,17 @@
    and starting.
 
    OPTS:
-     :deliver!  (fn [text target] → :started | :steered) — required; the one
-                start-or-queue rule of the caller (the handle's `deliver!`,
-                or the driver's prompt-or-queue).
+     :deliver!  (fn [text target run-opts] → :started | :steered) — required;
+                the one start-or-queue rule of the caller (the handle's
+                `deliver!`, or the driver's prompt-or-queue). RUN-OPTS is
+                `:run-opts` as given: the caller's own additions to the start
+                (rpc's images), which a queue cannot carry.
+     :run-opts  the start's additions, forwarded to :deliver!.
+     :on-deliver! (fn [text target] → entry) — optional; called once, just
+                before a delivery happens, so a caller that records the
+                queue fact (the wire's durable inbox) records it only where
+                a message is actually delivered, and never for input a hook
+                consumed. The returned entry rides :run-opts to :deliver!.
      :expand?   run the expansion chain (pi: the unknown-slash-command path).
      :mode      the front end kind the input hooks see; defaults :interactive.
 
@@ -103,7 +111,8 @@
    :text <hook-transformed text>} — the front end records :text in its editor
    history."
   ([engine text opts]
-   (let [{:keys [deliver! expand? mode] :or {mode :interactive}} opts]
+   (let [{:keys [deliver! expand? mode run-opts on-deliver!]
+          :or {mode :interactive}} opts]
      (when-not (fn? deliver!)
        (throw (ex-info "a submission needs a delivery fn: name one (:deliver!)"
                        {:type :kmet.app/no-delivery})))
@@ -111,8 +120,11 @@
        (do (manual/queue-compaction-message! engine text :steer)
            {:action :compaction-queued :text text})
        (if-let [hooked (apply-input-hooks engine text mode)]
-         (let [out (if expand? (expand-text engine hooked) hooked)]
-           {:action (deliver! out :next-step) :text hooked})
+         (let [out (if expand? (expand-text engine hooked) hooked)
+               run-opts (if on-deliver!
+                          (assoc run-opts :entry (on-deliver! out :next-step))
+                          run-opts)]
+           {:action (deliver! out :next-step run-opts) :text hooked})
          {:action :handled})))))
 
 (defn- deliver-queued-message!

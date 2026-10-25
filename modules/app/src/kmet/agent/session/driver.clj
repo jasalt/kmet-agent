@@ -441,13 +441,14 @@
   ([engine text {:keys [expand? run-opts]}]
    (submission/submit! engine text
                        {:expand? expand?
-                        :deliver! (fn [text target]
+                        :run-opts run-opts
+                        :deliver! (fn [text target opts]
                                     (if (turn-running? engine)
                                       (do (if (= :next-turn target)
                                             (follow-up! engine text)
                                             (steer! engine text))
                                           :steered)
-                                      (do (prompt! engine (merge run-opts {:text text}))
+                                      (do (prompt! engine (merge opts {:text text}))
                                           :started)))})))
 
 (defn flush-compaction-queue!
