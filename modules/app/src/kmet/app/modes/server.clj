@@ -66,12 +66,13 @@
 
 (defn- state-for
   "The command state `kmet.app.modes.rpc/handle-line` serves CONN through: the
-   registry and log, the app scope, and the one handle this connection is. No
+   registry, the app scope, and the one handle this connection is. No
    `:command-ui`: a connection has no wire surface for a command's reply until
    10b gives it a per-connection port, so a slash command is refused by name
-   rather than run with its answer dropped."
-  [conn {:keys [agents sessions scope]}]
-  {:agents agents :sessions sessions :scope scope :handle (:handle conn)})
+   rather than run with its answer dropped. No `:sessions` either — the log is
+   read through the handle."
+  [conn {:keys [agents scope]}]
+  {:agents agents :scope scope :handle (:handle conn)})
 
 ;; ── dialogs ───────────────────────────────────────────────────────────────
 

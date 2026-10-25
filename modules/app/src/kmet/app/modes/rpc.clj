@@ -276,13 +276,15 @@
    on the calling thread, so this mode answers `:idle true` by the time the
    cancel returns; a front end whose cancel is only a request reports `:idle
    false`, and the client waits for `:agent-settled` — the same rule a prompt's
-   `:started` follows. kmet1's abort also cancelled a manual compaction and
-   then waited (bounded) for idle; a wait here would be the reader thread's
-   time, which is the one thread an abort must not occupy."
+   `:started` follows. A manual compaction is cancelled too, as kmet1's abort
+   did — it is work nobody waits for once the client asks to stop — while the
+   answer's `:idle` speaks for the turn. kmet1 then waited (bounded) for idle;
+   a wait here would be the reader thread's time, which is the one thread an
+   abort must not occupy."
   [{:keys [agents handle]} _command]
-  (when (runtime/turn-running? handle)
-    ((:cancel! agents) handle {:kind :user}))
-  (ok :abort {:idle (not (runtime/turn-running? handle))}))
+  (let [working? (or (runtime/turn-running? handle) (runtime/compacting? handle))]
+    (when working? ((:cancel! agents) handle {:kind :user}))
+    (ok :abort {:idle (not (runtime/turn-running? handle))})))
 
 (defn- pending-count
   "How many messages the agent has queued (the durable inbox, by target)."
@@ -345,7 +347,7 @@
    model and thinking level, whether a turn is in flight, whether a compaction
    runs, what is queued, how the last prompt settled, and the session it all
    belongs to (its name only when it has one, as pi omits it)."
-  [{:keys [agents scope handle sessions]} _command]
+  [{:keys [agents scope handle]} _command]
   ;; the live state and session: a session switch replaces the record, so the
   ;; handle's accessors are the ones to read, not a snapshot of `:agent`
   (let [state (runtime/agent-state handle)
@@ -369,7 +371,10 @@
           sess (assoc :session
                       (cond-> {:id (:id sess)
                                :file (:file sess)
-                               :message-count (count ((:entries sessions) sess))}
+                               ;; message entries only — queue facts and metadata
+                               ;; are the log's, not the transcript's (kmet1's
+                               ;; get-message-count)
+                               :message-count (session/get-message-count sess)}
                          ;; pi omits sessionName when unset
                         sess-name (assoc :name sess-name)))))))
 
@@ -709,8 +714,10 @@
    response, a parse failure, or a command answered with the `:id` it carried.
    nil for the silent one (`:respond`), which writes nothing.
 
-   STATE is `{:agents :sessions :scope :handle}`: the registry, the log, the app
-   scope, and the one handle this door serves."
+   STATE is `{:agents :scope :handle}` (plus the rpc row's `:command-ui` and
+   `:on-session-move`): the registry, the app scope, and the one handle this
+   door serves. The log is read through the handle (`runtime/entries`, the
+   session's own entries), so the log service is not part of it."
   [state line]
   (let [{:keys [command error]} (parse-line line)]
     (if error
@@ -754,7 +761,6 @@
   [ctx config]
   (let [scope (:parent ctx)
         agents (srce/get ctx :agents)
-        sessions (srce/get ctx :sessions)
         {:keys [on-result]} config]
     (when on-result
       (let [out- *out*
@@ -789,7 +795,7 @@
                                 (events/on-every (:ctx handle)
                                                  (fn [event]
                                                    (out/record! out- (event-bus/wire-event event)))))
-                        (serve-commands {:agents agents :sessions sessions
+                        (serve-commands {:agents agents
                                          :scope scope :handle handle
                                          :command-ui (command-ui port)
                                          :on-session-move extensions/install-session!}

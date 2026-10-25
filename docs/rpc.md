@@ -101,7 +101,9 @@ live run.
 
 An `abort` while a run is in flight drops the steering/follow-up queues (kmet
 persists the drop as an `:aborted` `:queue-update`). Send `clear-queue` first
-if the queued texts matter. The answer is a read of the turn flag, not a wait:
+if the queued texts matter. A manual compaction is cancelled as well — it is
+work nobody waits for once the client asks to stop — while the answer's
+`:idle` speaks for the turn. The answer is a read of the turn flag, not a wait:
 a cancel that only requests reports `:idle false`, and the client waits for
 `:agent-settled`.
 
@@ -110,7 +112,7 @@ a cancel that only requests reports `:idle false`, and the client waits for
 | Command | Fields | Response data |
 |---|---|---|
 | `new-session` | — | `{:cancelled bool :session-id ... :session-file ... :was-running bool}` |
-| `get-state` | — | model, provider, thinking level, queue modes, `:turn-running?`, `:compacting?`, `:last-outcome`, pending count, session summary |
+| `get-state` | — | model, provider, thinking level, queue modes, `:turn-running?`, `:compacting?`, `:last-outcome`, pending count, session summary (`:message-count` counts message entries, as pi's does) |
 | `get-messages` | — | `{:messages [...]}` (the live model context) |
 | `get-last-assistant-text` | — | `{:text ...}` |
 | `get-session-stats` | — | token/tool totals (the `/session` numbers) |

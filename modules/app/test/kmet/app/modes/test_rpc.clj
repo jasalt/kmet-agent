@@ -388,6 +388,8 @@
             "the state says how the last prompt settled")
         (is (false? (:compacting? state))
             "and whether a compaction runs (none here)")
+        (is (= 2 (get-in state [:session :message-count]))
+            "the transcript's message entries — the queue facts are the log's")
         (is (nil? (get-in state [:session :name]))
             "an unnamed session carries no :name, as pi omits it")))))
 
@@ -591,6 +593,22 @@
             (is (= {:disposition :queued} (:data (by-id records "f1")))
                 "and a follow-up behind that run queues"))
           (finally (deliver release true)))))))
+
+(deftest abort-cancels-a-compaction-too
+  ;; kmet1's abort cancelled a manual compaction as well as the turn: it is
+  ;; work nobody waits for once the client asks to stop. The answer's `:idle`
+  ;; speaks for the turn, so it is still true. A command-level test: a
+  ;; compaction that stalls is not something the wire can arrange hermetically.
+  (let [cancelled (atom [])
+        handle {:turn-running? (atom false)
+                :agent-state (atom {:compacting? (atom true)})}
+        state {:agents {:cancel! (fn [_handle opts] (swap! cancelled conj opts))}
+               :handle handle}]
+    (is (= {:type :response :command :abort :success true :id "a"
+            :data {:idle true}}
+           (rpc/handle-record state {:type :abort :id "a"})))
+    (is (= [{:kind :user}] @cancelled)
+        "the compaction was cancelled, and only once")))
 
 (deftest the-model-catalog-is-on-the-wire
   ;; get-available-models answers the snapshot a `--model` pattern resolves
