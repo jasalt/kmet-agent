@@ -15,7 +15,6 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.session.core :as session]
-            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.app.events :as events]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
@@ -293,10 +292,11 @@
                                   (fn [path]
                                    ;; pi: emitBeforeSwitch (reason :resume) —
                                    ;; extensions may cancel the switch
-                                    (let [result (session-driver/resume! (:engine cs) path)]
+                                    (let [result ((:resume-session! (:engine cs)) path)]
                                       (when-not (:cancelled result)
                                         (let [sess (:session result)
                                               short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
+                                          (session-admin/install-live-session! cs)
                                           (session-admin/replay-session! cs sess true)
                                           (chat-history/chat-history-add-message! (:chat-history cs)
                                                                                   {:role :assistant

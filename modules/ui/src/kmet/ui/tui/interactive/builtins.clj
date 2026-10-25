@@ -18,7 +18,6 @@
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.ai.models :as models]
             [kmet.agent.session.core :as session]
-            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.session.export :as session-export]
             [kmet.agent.commands :as commands]
@@ -441,10 +440,11 @@
                                          (fn [path]
                                           ;; pi: emitBeforeSwitch (reason :resume)
                                           ;; — extensions may cancel the switch
-                                           (let [result (session-driver/resume! (:engine cs) path)]
+                                           (let [result ((:resume-session! (:engine cs)) path)]
                                              (when-not (:cancelled result)
                                                (let [sess (:session result)
                                                      short-id (subs (:id sess) 0 (min 8 (count (:id sess))))]
+                                                 (session-admin/install-live-session! cs)
                                                  (session-admin/replay-session! cs sess true)
                                                  (chat-history/chat-history-add-message! (:chat-history cs)
                                                                                          {:role :assistant

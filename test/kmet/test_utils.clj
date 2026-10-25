@@ -17,11 +17,11 @@
    :turn-running?/:compaction-queued/:pending-compaction atoms. Subscribers,
    last-run and disposal are fresh.
 
-   The engine also answers the handle's run ops — the fns a front end calls
-   after landing 8 — by delegating to the driver, which is what a production
-   handle wraps. A mode test's subject is the UI; the handle's ids, child ctx
-   and registry lifecycle are the loop driver's tests. Production builds
-   handles through `kmet.app.loop.driver`'s factory."
+   The engine also answers the handle's run and session ops — the fns a front
+   end calls after landing 8 — by delegating to the driver, which is what a
+   production handle wraps. A mode test's subject is the UI; the handle's ids,
+   child ctx and registry lifecycle are the loop driver's tests. Production
+   builds handles through `kmet.app.loop.driver`'s factory."
   [{:keys [agent-state session config cwd turn-running? compaction-queued
            pending-compaction]}]
   (let [engine (rt/map->Engine {:agent-state agent-state
@@ -61,7 +61,16 @@
            :clear-compaction-queue! (fn [] (session-driver/clear-compaction-queue! engine))
            :request-compaction! (fn [& args]
                                   (apply session-driver/request-compaction! engine args))
-           :dispose! (fn [] (session-driver/dispose! engine)))))
+           :dispose! (fn [] (session-driver/dispose! engine))
+           ;; the session lifecycle (landing 8f): the front end's commands move
+           ;; the agent in place and install the session slot themselves, so
+           ;; the driver's wrappers are the reference here too
+           :new-session! (fn [& args] (apply session-driver/new-session! engine args))
+           :resume-session! (fn [& args] (apply session-driver/resume! engine args))
+           :switch-session! (fn [& args] (apply session-driver/switch-session! engine args))
+           :branch-session! (fn [& args] (apply session-driver/branch-session! engine args))
+           :fork! (fn [& args] (apply session-driver/fork! engine args))
+           :clone! (fn [& args] (apply session-driver/clone! engine args)))))
 
 (defn with-test-engine
   "Add a test engine to a CoreState-like map, reusing the map's legacy

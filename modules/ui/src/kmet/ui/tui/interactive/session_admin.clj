@@ -339,6 +339,15 @@
   (state/update-footer! cs)
   (state/update-terminal-title! cs))
 
+(defn install-live-session!
+  "Point the process-wide extension session slot at the agent's live session.
+   The handle's session ops move the agent in place and install nothing (a
+   run's own binding already covers its handlers), so this front end
+   re-installs after each move: an extension command handler runs outside a run
+   and must act on the session the user just switched to. Returns nil."
+  [cs]
+  (extensions/install-session! (runtime/session (:engine cs))))
+
 (defn restore-session!
   "Restore a session into the UI and the agent: the runtime owns the swap
    (switch-session! — the session atom, the agent's in-memory context
@@ -350,7 +359,8 @@
    applied model/thinking; fork and clone pass false (pi: navigateTree
    keeps the current agent state)."
   [cs sess apply-settings?]
-  (session-driver/switch-session! (:engine cs) sess {:apply-settings? apply-settings?})
+  ((:switch-session! (:engine cs)) sess {:apply-settings? apply-settings?})
+  (install-live-session! cs)
   (replay-session! cs sess apply-settings?))
 
 (defn handle-new-session
@@ -362,9 +372,10 @@
    pending container, bash widgets, compaction queue, and editor (pi:
    editor.setText(\"\"))."
   [cs]
-  (let [result (session-driver/new-session! (:engine cs)
-                                            {:before-settle #(state/cancel-bash! cs)})]
+  (let [result ((:new-session! (:engine cs))
+                {:before-settle #(state/cancel-bash! cs)})]
     (when-not (:cancelled result)
+      (install-live-session! cs)
       (when (:was-running result)
         (status/stop-anim-timer! cs)
         (status/clear-status-indicator! cs))
@@ -481,7 +492,8 @@
                    (chat-history/chat-history-show-status! chat "Import cancelled")
                    (do (session/copy-imported-session! plan)
                        (let [sess (session/load-session (:path plan))]
-                         (session-driver/switch-session! (:engine cs) sess {:apply-settings? true})
+                         ((:switch-session! (:engine cs)) sess {:apply-settings? true})
+                         (install-live-session! cs)
                          (sync-footer-model! cs)
                          (replay-session! cs sess true))
                        ;; pi: the import switch emits session_start (reason
@@ -512,12 +524,13 @@
   (try
     ;; the runtime owns the branch, the context rebuild, the compaction
     ;; queue drop and the :session-tree event
-    (session-driver/branch-session! (:engine cs)
-                                    {:old-leaf old-leaf
-                                     :target-leaf target-leaf
-                                     :summary-result summary-result
-                                     :label label
-                                     :from-extension? from-extension?})
+    ((:branch-session! (:engine cs))
+     {:old-leaf old-leaf
+      :target-leaf target-leaf
+      :summary-result summary-result
+      :label label
+      :from-extension? from-extension?})
+    (install-live-session! cs)
     (replay-branch! cs sess)
     ;; pi: restore the user message only when the editor is empty — a draft
     ;; the user is composing is not clobbered by navigation
@@ -744,7 +757,7 @@
                                             {:role :assistant
                                              :content "Wait for the current response to finish before forking."})
     (try
-      (let [result (session-driver/fork! (:engine cs) entry-id)]
+      (let [result ((:fork! (:engine cs)) entry-id)]
         (cond
           (= :unknown-entry (:error result))
           (chat-history/chat-history-add-message! (:chat-history cs)
@@ -761,6 +774,7 @@
 
           :else
           (let [{:keys [session entry]} result]
+            (install-live-session! cs)
             (replay-session! cs session false)
             (tui/editor-set-text! (:editor cs) (session/session-entry-text entry))
             (chat-history/chat-history-add-message! (:chat-history cs)
@@ -783,7 +797,7 @@
                                             {:role :assistant
                                              :content "Wait for the current response to finish before cloning."})
     (try
-      (let [result (session-driver/clone! (:engine cs))]
+      (let [result ((:clone! (:engine cs)))]
         (case (:error result)
           :no-session
           (chat-history/chat-history-add-message! (:chat-history cs)
@@ -807,6 +821,7 @@
                                                     {:role :assistant
                                                      :content "Clone cancelled by an extension."})
             (let [clone (:session result)]
+              (install-live-session! cs)
               (replay-session! cs clone false)
               (chat-history/chat-history-add-message! (:chat-history cs)
                                                       {:role :assistant

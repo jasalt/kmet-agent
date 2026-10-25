@@ -20,7 +20,6 @@
             [kmet.agent.project-context :as context]
             [kmet.libs.reakt.core :as r]
             [kmet.agent.session.core :as session]
-            [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
@@ -525,7 +524,7 @@
                                         ;; entirely (restoreQueuedMessagesToEditor
                                         ;; {abort:true})
                                                (turn/restore-queued-messages! cs)
-                                               (session-driver/cancel! (:engine cs))))
+                                               ((:cancel! (:engine cs)) nil)))
                                     :shutdown (fn [] (tui/tui-stop t))
                                     :get-context-usage (fn []
                                                   ;; pi: null without an
@@ -540,8 +539,8 @@
                                                                          (int (* 100.0 (/ tokens window))))})))
                                     :compact (fn [& [{:keys [custom-instructions
                                                              on-complete on-error]}]]
-                                               (case (session-driver/request-compaction!
-                                                      engine custom-instructions
+                                               (case ((:request-compaction! engine)
+                                                      custom-instructions
                                                       {:on-complete (fn [result]
                                                                       (when on-complete
                                                                         (on-complete {:result result})))
@@ -620,10 +619,11 @@
                                                         (try
                                                    ;; pi: switchSession → session-driver/resume!
                                                    ;; (emitBeforeSwitch, load, swap, session_start)
-                                                          (let [result (session-driver/resume! (:engine cs) session-path)]
+                                                          (let [result ((:resume-session! (:engine cs)) session-path)]
                                                             (if (:cancelled result)
                                                               {:cancelled true}
-                                                              (do (session-admin/replay-session! cs (:session result) true)
+                                                              (do (session-admin/install-live-session! cs)
+                                                                  (session-admin/replay-session! cs (:session result) true)
                                                                   {:cancelled false})))
                                                           (catch Exception _ {:cancelled true}))))
                                     :is-project-trusted (fn [] false)})))
