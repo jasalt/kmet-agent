@@ -72,26 +72,30 @@
    the run config a TUI run hands its factory (and the session the run
    resolved, created here when OPTS names none).
 
-   OPTS: `:session`, plus `:config` — a map merged over the run config, the way
-   `tu/test-engine`'s `:config` reads — and any further keys merged into it, so
-   a test names one setting without rebuilding the map."
+   OPTS: `:session`, `:cwd` (the runtime cwd the run starts at), `:config` — a
+   map merged over the run config, the way `tu/test-engine`'s `:config` reads —
+   and any further keys merged into it, so a test names one setting without
+   rebuilding the map."
   ([boot] (create-handle! boot {}))
-  ([{:keys [ctx] :as boot} {:keys [session config] :as opts}]
+  ([{:keys [ctx] :as boot} {:keys [session config cwd] :as opts}]
    (let [dir (or (::sessions-dir boot)
                  (throw (ex-info "create-handle! takes a boot from start!"
                                  {:type ::not-a-boot})))
          agents (srce/get ctx :agents)
-         sess (or session (session/create-session dir))]
+         sess (or session (session/create-session dir))
+         handle ((:create! agents)
+                 ctx
+                 {:session sess
+                  :config (merge {:provider :opencode-go
+                                  :model "claude-haiku-5-5"
+                                  :session-dir dir}
+                                 config
+                                 (dissoc opts :session :config :cwd))})]
+     (when (some? cwd)
+       (reset! (:cwd handle) cwd))
      {:ctx ctx
       :agents agents
-      :handle ((:create! agents)
-               ctx
-               {:session sess
-                :config (merge {:provider :opencode-go
-                                :model "claude-haiku-5-5"
-                                :session-dir dir}
-                               config
-                               (dissoc opts :session :config))})})))
+      :handle handle})))
 
 (defn new-handle
   "A handle over the composition `with-boot` installed — the fixture's, so a

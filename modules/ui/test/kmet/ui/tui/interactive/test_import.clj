@@ -24,8 +24,6 @@
             [kmet.ai.models :as m]
             [kmet.ai.auth :as auth]
             [kmet.agent.loop.state :as loop-state]
-            [kmet.agent.loop :as agent]
-            [kmet.agent.app-runtime :as app]
             [kmet.agent.tools.core :as tools]
             [kmet.libs.http :as http]
             [kmet.libs.terminal-image :as timg]
@@ -57,29 +55,27 @@
 ;; ─── /import (pi: handleImportCommand) ────────────────────────────────────
 
 (defn- import-test-cs
-  "CoreState for the /import tests: real chat/session/agent/footer state so
-   the resume path runs for real (pi: importFromJsonl swaps the runtime),
-   with only the dock and the render calls stubbed (no terminal in tests).
-   The cwd atom is shared by the footer provider and the chat history, as in
-   build-layout, and the system-prompt options carry a launch-project
-   context file — the switch must keep them (only the cwd line follows the
-   session's working directory)."
+  "CoreState for the /import tests over a real handle: real chat/session/
+   agent/footer state so the resume path runs for real (pi: importFromJsonl
+   swaps the runtime), with only the dock and the render calls stubbed (no
+   terminal in tests).
+
+   The footer provider and the chat history read the handle's runtime cwd, as
+   in build-layout, and the state's system-prompt options carry a
+   launch-project context file — the switch must keep them (only the cwd line
+   follows the session's working directory)."
   [active-sess]
-  (let [cwd-atom (atom (or (session/session-cwd active-sess) (str (fs/cwd))))
-        ch (chat-history/make-chat-history :cwd-fn #(deref cwd-atom))
-        prov (fdp/make-footer-data-provider :cwd-atom cwd-atom :session active-sess)
+  (let [handle (:handle (hs/create-handle! (hs/current) {:session active-sess}))
+        ch (chat-history/make-chat-history :cwd-fn #(runtime/cwd handle))
+        prov (fdp/make-footer-data-provider :cwd-atom (:cwd handle) :session active-sess)
         ed (editor/make-editor)
-        opts {:cwd (deref cwd-atom)
-              :context-files [{:path "AGENTS.md" :content "LAUNCH-PROJECT CONTEXT"}]}
-        ag (agent/make-agent-state :ctx (app/ctx)
-                                   :session active-sess
-                                   :system-prompt-opts opts
-                                   :system (apply skills/build-system-prompt (mapcat identity opts)))
-        ag-atom (atom ag)
-        sess-atom (atom active-sess)
-        engine (tu/test-engine {:agent-state ag-atom :session sess-atom :cwd cwd-atom})]
+        prompt-opts {:cwd (runtime/cwd handle)
+                     :context-files [{:path "AGENTS.md" :content "LAUNCH-PROJECT CONTEXT"}]}
+        ag (runtime/agent-state handle)]
+    (reset! (:system-prompt-opts ag) prompt-opts)
+    (reset! (:system ag) (apply skills/build-system-prompt (mapcat identity prompt-opts)))
     (inter/map->CoreState
-     {:engine engine
+     {:engine handle
       :chat-history ch
       :editor ed
       :current-editor-atom (atom ed)
@@ -416,11 +412,10 @@
                                        (System/currentTimeMillis))))]
       (try
         (let [ch (chat-history/make-chat-history)
-              cs (inter/map->CoreState
-                  (tu/with-test-engine {:running-turn? (atom true)
-                                        :chat-history ch
-                                        :session-atom (atom (session/create-session dir))
-                                        :agent-state (atom (agent/make-agent-state :ctx (app/ctx)))}))]
+              cs (hs/core-state (:handle (hs/create-handle! (hs/current)
+                                                            {:session (session/create-session dir)}))
+                                {:turn-running? true
+                                 :chat-history ch})]
           ((:handler (commands/find-command "resume")) cs "")
           (t/is (= "Wait for the current response to finish before resuming."
                    (:content (last-message ch))))
@@ -442,8 +437,7 @@
               entry (session/append-entry sess
                                           {:role :user
                                            :content [{:type :text :text "q"}]})
-              cs (tu/with-test-engine {:tui {:render-requested? (atom false)}
-                                       :session-atom (atom sess)})]
+              cs (hs/core-state (:handle (hs/create-handle! (hs/current) {:session sess})))]
           (with-redefs [dock/mount! (support/capture-mount! sel-ref)
                         tui/tui-request-render (fn [_])
                         ;; hermetic: no branchSummary.skipPrompt from the
@@ -482,8 +476,7 @@
               entry (session/append-entry sess
                                           {:role :user
                                            :content [{:type :text :text "q"}]})
-              cs (tu/with-test-engine {:tui {:render-requested? (atom false)}
-                                       :session-atom (atom sess)})]
+              cs (hs/core-state (:handle (hs/create-handle! (hs/current) {:session sess})))]
           (with-redefs [dock/mount! (support/capture-mount! sel-ref)
                         tui/tui-request-render (fn [_])
                         cfg/global-settings-path (fn [] settings-file)
@@ -535,9 +528,8 @@
       (try
         (fs/create-dirs project)
         (let [sess (session/create-session (str dir "/sessions") {:cwd project})
-              engine (tu/test-engine {:agent-state (atom (agent/make-agent-state :ctx (app/ctx)))
-                                      :session (atom sess)
-                                      :cwd spelled})]
+              engine (:handle (hs/create-handle! (hs/current) {:session sess
+                                                               :cwd spelled}))]
           (t/is (= spelled ((var session-driver/apply-session-cwd!) engine sess))
                 "the cwd in effect is returned unchanged")
           (t/is (= spelled (runtime/cwd engine)) "and kept as spelled"))
@@ -549,13 +541,12 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4-flash")
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :footer-comp nil
-                                   :footer-provider nil
-                                   :config cfg/default-config
-                                   :tui nil})
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
+          cs (hs/core-state handle {:config cfg/default-config
+                                    :provider :opencode-go
+                                    :model "deepseek-v4-flash"
+                                    :tui nil})
           sel-ref (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
                     chat-history/chat-history-add-message! (fn [_ _] nil)
@@ -594,13 +585,12 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4-flash")
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :footer-comp nil
-                                   :footer-provider nil
-                                   :config cfg/default-config
-                                   :tui nil})
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
+          cs (hs/core-state handle {:config cfg/default-config
+                                    :provider :opencode-go
+                                    :model "deepseek-v4-flash"
+                                    :tui nil})
           sel-ref (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
                     chat-history/chat-history-add-message! (fn [_ _] nil)
@@ -628,15 +618,12 @@
           initially-available [kept disappeared disabled]
           available-at-save [kept disabled]
           available-calls (atom 0)
-          ag (agent/make-agent-state :ctx (app/ctx))
+          handle (hs/new-handle)
+          ag (runtime/agent-state handle)
           _ (loop-state/set-scoped-models! ag ["test-provider/kept"
                                                "test-provider/disappeared"])
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :footer-comp nil
-                                   :footer-provider nil
-                                   :config cfg/default-config
-                                   :tui nil})
+          cs (hs/core-state handle {:config cfg/default-config
+                                    :tui nil})
           sel-ref (atom nil)
           saved (atom ::not-saved)]
       ((var builtins/register-builtin-commands!) cfg/default-config)
@@ -664,14 +651,13 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4.1-flash"
-                                     :thinking :off)
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :footer-comp nil
-                                   :footer-provider nil
-                                   :config cfg/default-config
-                                   :tui nil})
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
+          cs (hs/core-state handle {:config cfg/default-config
+                                    :provider :opencode-go
+                                    :model "deepseek-v4.1-flash"
+                                    :thinking :off
+                                    :tui nil})
           sl-ref (atom nil)
           saved (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
@@ -700,13 +686,12 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4-flash")
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :footer-comp nil
-                                   :footer-provider nil
-                                   :config cfg/default-config
-                                   :tui nil})
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
+          cs (hs/core-state handle {:config cfg/default-config
+                                    :provider :opencode-go
+                                    :model "deepseek-v4-flash"
+                                    :tui nil})
           sl-ref (atom nil)
           saved (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
@@ -735,13 +720,12 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4-flash")
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :footer-comp nil
-                                   :footer-provider nil
-                                   :config cfg/default-config
-                                   :tui nil})
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
+          cs (hs/core-state handle {:config cfg/default-config
+                                    :provider :opencode-go
+                                    :model "deepseek-v4-flash"
+                                    :tui nil})
           sl-ref (atom nil)
           saved (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
@@ -789,8 +773,9 @@
                  (columns [_] 80)
                  (rows [_] 24)
                  (set-progress! [_ active] (swap! calls conj active)))
-          cs (tu/with-test-engine {:config {:show-terminal-progress false}
-                                   :tui {:terminal (atom term)}})]
+          cs (hs/core-state (hs/new-handle)
+                            {:config {:show-terminal-progress false}
+                             :tui {:terminal (atom term)}})]
       (with-redefs [cfg/global-settings-path (fn [] missing)]
         ((var turn/set-terminal-progress!) cs false)
         (t/is (= [false] @calls) "the clear passes while disabled")
@@ -804,13 +789,11 @@
     (commands/clear-commands!)
     (m/load-catalogs!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
-    (let [ag (agent/make-agent-state :ctx (app/ctx) :provider :opencode-go :model "deepseek-v4-flash")
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :chat-history nil
-                                   :footer-comp nil
-                                   :footer-provider nil
-                                   :config cfg/default-config
-                                   :tui nil})
+    (let [handle (hs/new-handle)
+          cs (hs/core-state handle {:config cfg/default-config
+                                    :provider :opencode-go
+                                    :model "deepseek-v4-flash"
+                                    :tui nil})
           sl-ref (atom nil)
           saved (atom nil)]
       (with-redefs [auth/configured? (fn [_] true)
