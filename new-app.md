@@ -4268,8 +4268,11 @@ about the module, so it exempts what the libs tree holds rather than a file
 list); and the TUI's `/reload` reaching `kmet.app.loop.stages` (now
 `kmet.app.session.runtime/refresh-loop-stages!`). Two process-registry tests
 publish the composition service they mean for their own duration, because the
-new run order reaches them before anything else published a handle. What is
-left: the `agent` module's ~14k-line test tree (most of it tests app code), the
+new run order reaches them before anything else published a handle. The gate's
+first half is a test now — `kmet.test-retirement` refuses any `kmet.agent.*`
+namespace outside `modules/agent/src` except the two the ABI and a shipped
+extension's require make contracts — and the four docstrings that still named
+the old prefix follow. What is left: the `agent` module's ~14k-line test tree (most of it tests app code), the
 `kmet.agent.tools.core` façade collapse, the deletion and the flag flip, and the
 documents.
 

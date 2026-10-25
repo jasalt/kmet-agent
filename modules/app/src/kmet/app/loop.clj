@@ -27,7 +27,7 @@
    :thinking-loop-guard-enabled.
 
    Tool hooks and execution mode (pi: beforeToolCall / afterToolCall,
-   toolExecution) live in kmet.agent.loop.tool-exec.
+   toolExecution) live in kmet.app.loop.tool-exec.
 
    Per-turn hooks (pi: prepareNextTurn / prepareRequest / finishTurn /
    transformContext): the :prepare-next-turn and :finish-turn hooks run after
@@ -37,7 +37,7 @@
    :transform-context rewrites the conversation before each LLM call. The
    :system-prompt-override atom holds a per-run system prompt override.
 
-   Compaction (pi: auto-compaction) lives in kmet.agent.compaction.stage.
+   Compaction (pi: auto-compaction) lives in kmet.app.compaction.stage.
 
    Model management lives in kmet.app.loop.state (set-scoped-models!,
    cycle-model!, the thinking-level setters).
@@ -58,7 +58,7 @@
    :images — a vector of {:type :image :data base64 :mime-type str} blocks
    attached to the initial user message; they flow to the provider as OpenAI
    image_url / Anthropic image blocks. The wire filter that honors
-   :block-images lives in kmet.agent.loop.message."
+   :block-images lives in kmet.app.loop.message."
   (:require [kmet.app.permissions :as permissions]
             [kmet.app.projections :as projections]
             [kmet.app.compaction.stage :as compact]

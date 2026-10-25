@@ -5,7 +5,7 @@
    token count), conversation serialization, and the summarization prompts.
    Session replacement happens in kmet.app.session.core (compact-with-summary!,
    the append-only entry constructor), orchestration in
-   kmet.agent.compaction.stage. Depends on session/project-entries for the
+   kmet.app.compaction.stage. Depends on session/project-entries for the
    projected cut point and kmet.ai.api.shared for the bash/custom wire text
    (pi: compaction.ts imports buildSessionContext from session-manager and
    convertToLlm from the message converters).
