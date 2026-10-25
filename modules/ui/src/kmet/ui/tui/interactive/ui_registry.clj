@@ -686,8 +686,9 @@
     ;; run and act on the session the user last selected.
     ;;
     ;; Installed once with the registry; reload mutates the same CoreState
-    ;; (agent, session atom), so the wiring stays valid across reloads —
-    ;; only /new, /resume, fork and clone re-install the session.
+    ;; (agent, session atom), so the wiring stays valid across reloads. The
+    ;; session is re-installed after every move it makes
+    ;; (`session-admin/install-live-session!`).
     (let [surface {:mode :interactive :has-ui true :ui registry}
           context-sink (fn [msg] (runtime/add-context-message! (:engine cs) msg))
           entry-sink (fn [entry]

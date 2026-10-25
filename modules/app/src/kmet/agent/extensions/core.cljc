@@ -952,6 +952,15 @@
   [sink]
   (set-entry-sink! sink))
 
+(defn- custom-sink
+  "The sink that echoes a custom append: the running agent's own front end when
+   it published one — nil included, so a front end that installed no sink never
+   writes into another's — else the process install's."
+  [k process-atom]
+  (if-let [front-end (:front-end *agent-context*)]
+    (k front-end)
+    @process-atom))
+
 (defn append-custom-entry!
   "Append a custom entry (extension state, never in LLM context) to the live
    session (extension api: session :append-entry!). A run's own front end
@@ -959,10 +968,9 @@
    the entry id."
   [custom-type & [data]]
   (when-let [sess (get-session)]
-    (let [entry (session/append-custom-entry! sess custom-type data)
-          front-end (:front-end *agent-context*)
-          sink (if front-end (:entry-sink front-end) @entry-sink-atom)]
-      (when sink (sink entry))
+    (let [entry (session/append-custom-entry! sess custom-type data)]
+      (when-let [sink (custom-sink :entry-sink entry-sink-atom)]
+        (sink entry))
       (:id entry))))
 
 (defn append-custom-message!
@@ -972,10 +980,8 @@
   [custom-type content display & [details]]
   (when-let [sess (get-session)]
     (let [entry (session/append-custom-message-entry! sess custom-type
-                                                      content display details)
-          front-end (:front-end *agent-context*)
-          sink (if front-end (:context-sink front-end) @context-sink-atom)]
-      (when sink
+                                                      content display details)]
+      (when-let [sink (custom-sink :context-sink context-sink-atom)]
         (sink {:role :custom
                :custom-type custom-type
                :content content
