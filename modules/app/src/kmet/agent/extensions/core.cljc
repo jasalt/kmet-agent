@@ -198,9 +198,11 @@
      :runtime  — the runtime capabilities this agent answers (see
                  `runtime-capabilities` in `kmet.agent.session.driver`); a
                  missing key falls back to the process binding
-     :context  — the ExtensionContext keys the run owns (:model,
+     :context  — a thunk of the ExtensionContext keys the run owns (:model,
                  :scoped-models, :thinking-level, :cwd, :is-idle, :abort,
                  :compact, ...), merged over the front end's `:build-context`
+                 per call — a mid-run model or thinking change is visible to
+                 the next handler, as it is through the front end's map
 
    nil outside a run — a command handler, an extension's own fiber, kmet1 —
    where the process binding the front end installed is the answer. That is
@@ -653,7 +655,7 @@
 
 (defn runtime-capability
   "The runtime capability fn for CAPABILITY: the running agent's own when this
-   call is inside a run (the loop binds it), otherwise the process's install.
+   call is inside a run (the run binds it), otherwise the process's install.
    nil when neither has it."
   [capability]
   (or (get (some-> *agent-context* :runtime) capability)
@@ -750,9 +752,11 @@
 (defn build-extension-context
   "Build the extension context (pi: ExtensionContext) for the current
    runtime: the front end's live :build-context capability merged over the
-   headless default. Returns a fresh map per call — the fns capture live
-   state at call time. Used for command handlers (replacing the internal
-   CoreState leak) and event handler ctx args.
+   headless default, and — inside an agent run — the run's own keys from
+   `*agent-context*`'s `:context` thunk (rebuilt per call, so a mid-run model
+   or thinking change is visible to the next handler). Returns a fresh map per
+   call — the fns capture live state at call time. Used for command handlers
+   (replacing the internal CoreState leak) and event handler ctx args.
 
    The bound front-end kind is authoritative: a :build-context capability
    cannot drift :mode/:has-ui away from bind-extensions!.
@@ -762,11 +766,12 @@
    user-initiated command handlers, never from agent-loop event handlers
    (pi restricts these to the command ctx; they can re-enter the run loop)."
   []
-  (assoc (merge (default-extension-context)
-                (ui-call :build-context)
-                (:context *agent-context*))
-         :mode (extension-mode)
-         :has-ui (extension-has-ui?)))
+  (let [run (:context *agent-context*)]
+    (assoc (merge (default-extension-context)
+                  (ui-call :build-context)
+                  (when run (run)))
+           :mode (extension-mode)
+           :has-ui (extension-has-ui?))))
 
 (defn wrap-event-handler
   "Adapt an extension event handler to the bus: handlers always receive

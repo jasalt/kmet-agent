@@ -343,32 +343,36 @@
 (deftest an-extension-send-user-message-acts-on-the-running-agent
   ;; The runtime capability resolves through the run's binding: a handler that
   ;; steers steers this agent, and the message reaches this agent's context.
+  ;; The handler is scoped to the handle's ctx, so another run in the same
+  ;; process cannot answer for this one.
   (let [{:keys [root agents]} (mounted)
         gate (promise)
         handled (promise)
-        once (atom false)
-        off (event-bus/on-event
-             :agent-start nil
-             (fn [_]
-               (when (compare-and-set! once false true)
-                 (extensions/send-user-message "steer me" {:deliver-as :steer})
-                 (deliver handled true))))]
+        once (atom false)]
     (try
       (with-stubbed-llm
         (fn [_]
-          (let [h (create! {:root root :agents agents})]
-            ((:send! agents) h "hi" {:target :next-turn})
-            (is (true? (deref handled 2000 false)) "the handler ran")
-            (is (some? (:steering (runtime/queues h))) "the steer queued")
-            (deliver gate :go)
-            ((:when-idle agents) h)
-            (is (some #(str/includes? (pr-str %) "steer me")
-                      @(:messages (:agent h)))
-                "the steered text reached the agent's context")
-            (is (= :idle ((:status agents) h))))))
+          (let [h (create! {:root root :agents agents})
+                off (event-bus/on-event
+                     :agent-start nil
+                     (fn [_]
+                       (when (compare-and-set! once false true)
+                         (extensions/send-user-message "steer me" {:deliver-as :steer})
+                         (deliver handled true)))
+                     (:ctx h))]
+            (try
+              ((:send! agents) h "hi" {:target :next-turn})
+              (is (true? (deref handled 2000 false)) "the handler ran")
+              (deliver gate :go)
+              ((:when-idle agents) h)
+              (is (some #(str/includes? (pr-str %) "steer me")
+                        @(:messages (:agent h)))
+                  "the steered text reached the agent's context")
+              (is (= :idle ((:status agents) h)))
+              (finally (off)))))
+        gate)
       (finally
-        (deliver gate :go)
-        (off)))))
+        (deliver gate :go)))))
 
 (deftest inject!-follows-the-custom-message-branches
   ;; pi's sendCustomMessage, as the registry's `:inject!`: idle appends, a

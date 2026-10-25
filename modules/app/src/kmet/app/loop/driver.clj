@@ -363,8 +363,7 @@
                :has-pending-messages (fn [] (boolean (seq (runtime/queues engine))))
                :abort (fn [] (stop!))
                :compact (fn [& [instructions]]
-                          (manual/request-compaction! engine instructions nil))
-               :wait-for-idle (fn [] (when @running? (deref @last-run)))})
+                          (manual/request-compaction! engine instructions nil))})
             ;; true when this call claimed the run: the CAS is what decides, so
             ;; a message arriving as another thread starts a run is queued by
             ;; the caller rather than dropped. A start that throws before it
@@ -382,7 +381,7 @@
                    (binding [extensions/*agent-context*
                              {:session #(runtime/session engine)
                               :runtime (extension-runtime)
-                              :context (extension-context)}]
+                              :context extension-context}]
                      (reset! last-run
                              (loop/run-agent-turn
                               @live

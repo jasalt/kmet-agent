@@ -96,8 +96,9 @@
    handle does not implement gets `:kmet.app/unsupported-op` naming it, never a
    silent nil.
 
-   The first five are the run's: send, out-of-band context, cancel, the idle
-   awaitable, and the status a listing shows. `setting-ops` is the rest — each
+   The first five are the run's: send, the custom message (`:inject!`, pi's
+   sendCustomMessage), cancel, the idle awaitable, and the status a listing
+   shows. `setting-ops` is the rest — each
    writes that agent's state, so two agents of one process can differ —
    measured from the interactive TUI's own call sites (new-app.md, landing 8)."
   (into [:send! :inject! :cancel! :when-idle :status] setting-ops))
