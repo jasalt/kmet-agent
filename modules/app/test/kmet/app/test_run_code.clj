@@ -116,6 +116,7 @@
           (let [started-at (concurrent/monotonic-ms)
                 f (future
                     (tools/execute-tool
+                     reg
                      "run_code"
                      {:code (str "(tools/await-all (tools/call-many "
                                  "[{:name \"run-code-test-block\" :args {}}]))")}

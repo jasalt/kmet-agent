@@ -56,41 +56,8 @@
                     extensions/set-cli-flags! (constantly nil)]
         (world/load! {}))
       (t/is (nil? (root/ctx))
-            "kmet1's entry has no composition yet; the host's services boot its
-             root on the first read instead")
+            "a world load with no ctx publishes nothing")
       (finally
-        (root/restore-root! prev)))))
-
-(t/deftest a-root-read-while-it-boots-is-named
-  ;; A row mounted before the extension host that reads the process root would
-  ;; boot a second composition behind the one being mounted; the guard names it
-  ;; instead of mounting a duplicate tree.
-  (let [prev (root/reset-root!)]
-    (try
-      (t/is (= :kmet.app/root-boot-loop
-               (try
-                 (root/boot! (fn []
-                               (root/boot! (fn [] (srce/root {:name :inner})))))
-                 nil
-                 (catch Exception e (:type (ex-data e)))))
-            "the nested read fails by name")
-      (t/is (nil? (root/ctx)) "and the failed boot published nothing")
-      (finally
-        (root/restore-root! prev)))))
-
-(t/deftest the-process-root-boots-once
-  (let [prev (root/reset-root!)
-        boots (atom 0)
-        ours (srce/root {:name :app})
-        other (srce/root {:name :other})]
-    (try
-      (t/is (identical? ours (root/boot! (fn [] (swap! boots inc) ours))))
-      (t/is (identical? ours (root/boot! (fn [] (swap! boots inc) other)))
-            "a reader that arrives after the first boot reuses its root")
-      (t/is (= 1 @boots) "the boot fn ran once")
-      (finally
-        (srce/dispose-subtree! ours)
-        (srce/dispose-subtree! other)
         (root/restore-root! prev)))))
 
 (t/deftest the-first-published-root-wins

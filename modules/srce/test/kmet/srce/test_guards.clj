@@ -30,7 +30,7 @@
   (is (every? #(str/ends-with? % ".clj") kernel-sources)))
 
 (deftest kernel-requires-only-rank-zero-code
-  (testing "no kmet.agent.*, tui/tk, or anything above rank 0"
+  (testing "no app/ui/tui/tk name, or anything else above rank 0"
     (doseq [f kernel-sources
             :let [kmet-deps (filter #(str/starts-with? (str %) "kmet.")
                                     (required-namespaces f))

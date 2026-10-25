@@ -5,31 +5,28 @@
    (kmet.app.loop/run-agent-turn) and routed to the UI (:on-event callback)
    and the extension system (emit-event!).
 
-   Mirrors pi's extension event types — see
-   modules/agent/src/kmet/agent/development/pi-alignment.md, Appendix: Event
-   Type Vocabulary — and pi's core/event-bus.js.
+   Mirrors pi's extension event types — see `docs/pi-alignment.md`, Appendix:
+   Event Type Vocabulary — and pi's core/event-bus.js.
 
    The extension bus itself is a process-level registry: a subscription lives
    from an extension's load to its unload, in registration order, and no
-   engine owns, copies or clears it. A subscription may
-   carry a scope — the ctx it listens to — so a listener in a child ctx
-   hears its own subtree's events and a sibling's listeners do not
-   (new-app.md, landing 4c-ii-b).
+   engine owns, copies or clears it. A subscription may carry a scope — the
+   ctx it listens to — so a listener in a child ctx hears its own subtree's
+   events and a sibling's listeners do not (new-app.md, landing 4c-ii-b).
 
-   The **vocabulary is the app's**: kmet.app.events holds `event-types` (and
-   the wire projections), so kmet1 and kmet2 declare one set of names while
-   each keeps its own delivery mechanism for the length of the migration
-   (new-app.md, landings 2 and 7). This namespace re-exports the names and the
-   wire projections (`wire-event`, `wire-error` — transport, which belongs with
-   the transport that serializes, not with the bus), so every kmet1 call site is
-   unchanged, and holds kmet1's process-level table with its owner and scope —
-   the mechanism kmet2's `:events` service replaces by the ctx tree.
+   The **vocabulary is the app's**: `kmet.app.events` holds `event-types` and
+   the wire projections, and this namespace re-exports both (`wire-event`,
+   `wire-error` are transport, which belongs with the transport that
+   serializes, not with the bus). The subscriptions are this table's: the
+   extension ABI and the front ends register here, with an owner for unload and
+   an optional scope for the ctx tree.
 
-   Both tables are live for the length of the migration, and the loop feeds
-   both (new-app.md, 7b-i): its events go to the kernel from the run's own ctx
-   and to this table, which is where the extension ABI registers until it is
-   re-pointed. They hold different listeners, so nothing hears an event twice;
-   a boundary threads one decision through both (`emit-boundary!`'s seed)."
+   The kernel's `:events` service is the other delivery path, on the ctx tree,
+   and the loop feeds both (new-app.md, 7b-i): its events go to the kernel from
+   the run's own ctx and to this table. They hold different listeners, so
+   nothing hears an event twice; a boundary threads one decision through both
+   (`emit-boundary!`'s seed). Converging the two is the server boundary work
+   (new-app.md, 10b) — until then this table is the one the ABI registers in."
   (:require [kmet.app.debug :as debug]
             [kmet.app.events :as events]
             [kmet.srce.core :as srce]))

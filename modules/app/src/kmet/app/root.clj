@@ -1,20 +1,15 @@
 (ns kmet.app.root
-  "The process root: the ctx an entry mounts once and every kmet1 shim, the
-   extension host's ctx-less reads and `/units` answer from.
+  "The process root: the ctx an entry mounts once, and what the extension
+   host's ctx-less reads, the rpc row's context-free commands and `/units`
+   answer from.
 
-   An atom rather than a delay because an entry that boots the composition
-   itself (`bb start`) publishes *its* root here, so a process has one tree —
-   the one it mounted — instead of a shim booting a second one behind it. The
-   first root wins; a test that publishes its own puts the previous one back
-   (`reset-root!`/`restore-root!`) rather than clearing it, because the root
-   carries the process's registrations.")
+   An atom rather than a delay because the entry that boots the composition
+   (`bb start`) publishes *its* root here, so a process has one tree — the one
+   it mounted. The first root wins; a test that publishes its own puts the
+   previous one back (`reset-root!`/`restore-root!`) rather than clearing it,
+   because the root carries the process's registrations.")
 
 (defonce ^:private app-root (atom nil))
-
-(def ^:dynamic ^:private *booting*
-  "True while BOOT-FN runs inside `boot!`, so a row that reads the root it is
-   being mounted into is refused by name instead of booting a second tree."
-  false)
 
 (defn publish!
   "Make CTX the process root — the ctx `ctx` returns and every kmet1 shim
@@ -38,28 +33,6 @@
    (or when the first one was reset for a test)."
   []
   (:ctx @app-root))
-
-(defn- start!
-  "BOOT-FN under the boot flag: a nested read of the root is the one thing it
-   may not do, because the tree does not exist yet."
-  [boot-fn]
-  (when *booting*
-    (throw (ex-info (str "the process root was read while it was being booted: "
-                         "a row cannot read the root it is being mounted into")
-                    {:type :kmet.app/root-boot-loop})))
-  (binding [*booting* true]
-    (publish! (boot-fn))))
-
-(defn boot!
-  "The process root, booting and publishing one when the process has none
-   yet: BOOT-FN is called at most once, under the atom's lock, so two readers
-   racing the first read mount one tree. A read that arrives *while* it runs
-   fails by name (`:kmet.app/root-boot-loop`, see `start!`) instead of booting a
-   second composition behind the one already being mounted."
-  [boot-fn]
-  (or (ctx)
-      (locking app-root
-        (or (ctx) (start! boot-fn)))))
 
 (defn reset-root!
   "Clear the process root and return what it was.

@@ -113,6 +113,11 @@
       "a one-shot flag takes no value either")
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-x"])))
       "a single-dash unknown flag is a usage error (there are no short ext flags)")
+  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--app" "new"])))
+      "the retired app selector is refused, not read as an extension flag whose
+       value becomes the prompt")
+  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--app=new"])))
+      "in either spelling")
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--profile="])))
       "an empty value is no value")
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-p" "--profile" "print"])))

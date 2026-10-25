@@ -897,7 +897,7 @@ upgrades that must satisfy the same suite.
   `sci/init`, sharing the injected namespaces and seeded classes, with only
   `:load-fn` / `:namespaces` overrides and definitions per fork. The
   extension runtime uses this — one base per shared-namespace set, forked
-  per extension (`kmet.agent.extensions.core/shared-context`).
+  per extension (`kmet.app.extensions.core/shared-context`).
 - `modules/app/src/kmet/agent/extensions/context.cljc` (moved at 4b-ii-b) — replace `create-context` +
   `make-load-fn` + `jars-for` plumbing with `loader/sci-loader` + policies
   (`allow` over the root for the shared layers; per-extension deps resolver
@@ -1060,7 +1060,7 @@ requested namespace to an exact native source key. A mapped hit names the
 owning context as its home, so it uses the real native reader and unloads with
 that context.
 
-`kmet.agent.extensions.core/create-loader` picks the native backend on Jolt: bundled
+`kmet.app.extensions.core/create-loader` picks the native backend on Jolt: bundled
 directories use an `embed:<prefix>` root; bundled single files map their
 declared namespace directly to the exact embedded key (no materialization or
 restaging); checkout single files are still materialized at their munged ns
@@ -1115,7 +1115,7 @@ one exception: they are stored and compared by identity.
 3. Phase 1 on Jolt: `jolt -e "(require 'kmet.loader.core)"`, the suite, then
    kmet's extension tests. **Done** — `jolt test
    kmet.loader.test-core kmet.loader.test-sci-loader` and the
-   `kmet.agent.extensions.test-*` namespaces are green on jolt.
+   `kmet.app.extensions.test-*` namespaces are green on jolt.
 4. Phase 2 (Jolt native) — **done** in the Jolt repo, 27/27. Phase 3 (JVM,
    plus hybrid) is last and may follow promotion. Each backend must pass
    the *same* suite; a native backend that fails a case is a bug in the

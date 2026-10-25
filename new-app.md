@@ -4348,6 +4348,24 @@ becomes the whole-tree rule.
 loop tests and the root tree's bind the same host, and one fixture disposes the
 ctx it created.
 
+**The review of the endgame** found one vacuous guard and one real bug in the
+repoint, both fixed: `test-seam-requires`'s "kmet.ai never reaches up" filtered
+the `kmet.agent` prefix after the app had become `kmet.app`, so it had stopped
+seeing anything (mutation-checked); and `test-run-code`'s slow suite passed a
+string where the registry belonged, because a mechanical insertion over call
+sites skipped the one written across two lines — the error only showed in
+`bb test-ext`, which is why the slow suite is a gate and not a convenience.
+Two slow tests were stale against the shapes they drive (`:running-turn?` on a
+CoreState that carries the flag on its engine; a compaction request whose gate
+was never handed to the stub). `kmet.app.root`'s boot-on-first-read — the
+deleted shim's entry path — went with its two tests; the publish rule stays.
+`kmet.app.event-bus`'s docstring described two tables "for the length of the
+migration"; it now says what holds: the ABI's table plus the kernel's ctx
+service, both fed by the loop, converging at 10b.
+`kmet.app.core` refuses the retired `--app` by name instead of letting its
+value become a prompt, and the help text no longer explains flags as "kmet1's
+spelling".
+
 **Landed: the endgame.** kmet1's module is gone — its six entry/process files,
 its four modes, its tool façade, its eight test files (the 1,530 lines that
 tested them) and the `agent` row with its four manifests; the single app's entry
@@ -4386,10 +4404,11 @@ that boots without kmet1.
 
 Gate: the full set (`bb test`, `bb test-ext`, `bb lint`, `bb format-check`,
 `bb check`) plus pi-alignment, and `grep kmet\.agent\.` over `src` returns the
-ABI only. `bb test-ext`'s baseline is recorded first: 15 failures and 1 error
-pre-date 5i (copilot end-to-end, jar/lib round-trips), and the gate is claimed
-against a baseline that names them or a landing that fixes them — not against a
-suite nobody has seen green.
+ABI only (a test holds the prefix; `kmet.agent.ui.tui.tool-renderers` is the
+one name it keeps). `bb test-ext` is **green** — 135 tests, 696 assertions —
+so the gate is claimed against a suite that runs green, not against a baseline:
+the 15 failures and 1 error that predated 5i went with the module that carried
+their tests.
 
 ### Decisions this plan makes
 

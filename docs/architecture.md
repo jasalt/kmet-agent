@@ -79,14 +79,13 @@ kmet/app/
 ├── invocation.clj      — the invocation surface: patterns resolved against the
 │                         catalog, the run flags applied to the loaded config
 ├── profile.clj         — profile → rows composition, layer patches, rendering
-├── rows/, registries.clj — the service rows and the registry router (one
-│                         handle per tag; `process-handle` is the published one)
-├── root.clj            — the one process root atom and its first-root rule
+├── registries.clj      — the registry router (one handle per tag;
+│                         `process-handle` is the published one)
 ├── agents.clj          — the `:agents` service: the handle factory + ops
 ├── extensions/         — the extension host: core (the bound services, the
 │                         api, the registry tags), context (per-extension SCI),
 │                         libs (the bundled set), bundled.clj (artifact
-│                         discovery), plus the UI request/respond pair
+│                         discovery), and the UI request/respond pair
 ├── session/            — the log (core, store, listing, context, stats, tree,
 │                         schema, export, backend), the runtime
 │                         (`runtime.clj`: state, lifecycle, submission chain,
@@ -98,14 +97,23 @@ kmet/app/
 ├── tools/              — tool, util, invoke, registry, bash (+executor,
 │                         output), read, write, edit, run_code, config
 ├── modes/              — the mode rows: print, rpc, server, out
-├── packages*.clj       — package/resource resolution, the install/remove/
-│                         update/list/config CLI
-├── prompts.clj, skills.clj, commands/ — the resource registries and the
-│                         slash-command registry + portable builtins
-├── event-bus.clj, events.clj, projections.clj — the event stream
-├── config*.clj, auth?   — settings (+ schema), the config screen's headless half
-└── version.clj          — the version string and the source-run marker
+├── packages.clj, packages_cli.clj — package/resource resolution and the
+│                         install/remove/update/list/config CLI
+├── commands/           — the slash-command registry + the portable builtins
+├── prompts.clj, skills.clj, skill_block.clj, system_prompt.clj — the resource
+│                         registries and the prompt builder
+├── event_bus.clj, events.clj, projections.clj — the event stream
+├── config.clj, config_schema.clj — settings and their schema
+├── world.clj           — the process world load (extensions, themes, flags)
+├── root.clj            — the one process-root atom and the publish rule
+├── front_end.clj       — the front end's published surface
+├── inspect.clj         — `/units` and the ctx-tree dump
+└── version.clj         — the version string and the source-run marker
 ```
+
+Each row names its own file (`tools.clj`, `sessions.clj`, `extensions.clj`,
+`agents.clj`, …): a row is a `srce` plugin whose `apply` provides its service,
+and `registries.clj` is the router behind them.
 
 `new-app.md` is the app's own map: each landing's design and the file/namespace
 rules live there, and its ledger is the authority on what a row provides.
@@ -122,8 +130,8 @@ kmet/ui/
     │                     the UI registry (ExtensionUIContext)
     ├── chat-history.clj, tool-execution.clj, bash-execution.clj — the
     │                     transcript and the tool/bash render paths
-    ├── *-selector.clj, *-dialog.clj, footer, dock, editor widgets
-    └── theme-controller.clj
+    ├── *_selector.clj, *_dialog.clj — model/auth/session/tree/fork/… pickers
+    └── footer.clj, dock.clj, theme_controller.clj, *_block.clj
 ```
 
 One file keeps a pre-rename name on purpose:

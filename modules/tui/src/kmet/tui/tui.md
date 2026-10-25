@@ -3,8 +3,8 @@
 `kmet.tui.*` is a generic terminal-UI library (a Clojure/Babashka port of
 `@earendil-works/pi-tui`, extended with a Reagent-style component layer).
 It knows nothing about chat, LLMs or sessions — the app layer (`kmet.ui.tui.*`,
-plus `kmet.agent.ui.tui.resource-config`, which still reads kmet1's app) builds
-on it, and extensions consume the same namespaces.
+plus the one `kmet.agent.ui.tui.tool-renderers` file shipped extensions require
+by that name) builds on it, and extensions consume the same namespaces.
 
 This document is the authoritative usage and development reference for the
 package: how `kmet.tui.*` works, and how `kmet.ui.tui.*` builds on it. Keep
@@ -465,7 +465,7 @@ An idle UI runs zero bodies.
   body that derefs the ref re-lays out in the same frame as a resize.
   A panel just re-budgets its rows (`kmet.ui.tui.tree-selector`); a
   standalone frame that must repaint cleanly rather than diff watches the
-  ref and forces a render (`kmet.agent.ui.tui.resource-config`).
+  ref and forces a render (`kmet.ui.tui.resource-config`).
 - **Error contract**: a throwing component fn crashes the render loop
   (Throwable → render-crash.log → tui-stop) — loud beats silently wrong.
 
@@ -736,9 +736,9 @@ Coverage contract — tracked reads are exactly:
 (c) nested reaction/cursor derefs (automatic).
 
 Layering note: `kmet.libs.reakt.core` has no TUI dependencies, so
-`kmet.agent.*` (non-ui) code may require it directly for derived state and
-reactions outside any component — only `kmet.tui.*` itself is off-limits
-to the app layer.
+`kmet.app.*` and `kmet.ui.*` (non-component) code may require it directly for
+derived state and reactions outside any component — only `kmet.tui.*` itself
+is off-limits to the app layer.
 A bare `@plain-atom` inside a hand-written reaction body is UNTRACKED —
 correct under the batched fallback (§2.5), just not narrow.
 
@@ -1469,9 +1469,9 @@ Frame glyphs come from `kmet.tui.border` (§2.8), not from the components:
 app-layer `bash_execution` its top/bottom rules — each with a `:border` style.
 
 Message-like app components live in `kmet.ui.tui.*`, not here — landing 5h
-moved the last selector, so `kmet.agent.ui.tui.*` holds only
-`resource_config` until its package lookup moves below the UI; this layer
-stays generic: chat history, tool executions, the skill invocation
+moved the last selector and 5i the resource config, so `kmet.agent.ui.tui.*`
+holds only `tool_renderers`, the file shipped extensions require by name. This
+layer stays generic: chat history, tool executions, the skill invocation
 message (`skill_message`, which renders a `/skill:name` block as a
 collapsible `[skill] name (ctrl+o to expand)` entry — pi:
 SkillInvocationMessageComponent), and the inline image block
@@ -1639,8 +1639,8 @@ The repository capture helpers are:
 ## 13. Layer boundaries
 
 ```
-kmet.agent        owns atoms, pure data updates (no component knowledge)
-kmet.agent.ui     fn components (shared def'd computes, with-let local state)
+kmet.app         owns atoms, pure data updates (no component knowledge)
+kmet.ui          fn components (shared def'd computes, with-let local state)
                 + hiccup/root mount points
 kmet.tui        the TUI backend: hiccup facade, macros, protocols, components
                 — generic; no app/chat/session concepts
@@ -1655,9 +1655,9 @@ kmet.libs.*     self-contained helpers bottom layer (terminal protocol,
 ```
 
 `kmet.libs.hikap.core` may require `kmet.libs.*` only; `kmet.tui.*` and
-`kmet.tk.*` build on `kmet.libs.hikap.core` + `kmet.libs.*`. `kmet.tui.*` must never require
-`kmet.agent.*`, `kmet.agent.modes.*` or `kmet.ai.*`; app-specific components belong
-in `kmet.ui.tui.*`.
+`kmet.tk.*` build on `kmet.libs.hikap.core` + `kmet.libs.*`. `kmet.tui.*` must
+never require `kmet.app.*`, `kmet.app.modes.*`, `kmet.ui.*` or `kmet.ai.*`;
+app-specific components belong in `kmet.ui.tui.*`.
 
 ## 13.1 Foreign component cleanup — `defcomponent` + spliced records
 

@@ -3,7 +3,8 @@
 This directory contains the documentation intended for people using kmet.
 Implementation, API, design, and performance notes live next to the code they
 describe instead of being mixed into this user guide. The temporary root notes
-`run_code.md`, `perf.md`, and `jolt-bugs.md` are the deliberate exception.
+`run_code.md`, `perf.md`, `jolt-bugs.md`, `tcl.md`, `fix.md` and `new-app.md`
+are the deliberate exception.
 
 ## Start here
 
@@ -11,8 +12,10 @@ describe instead of being mixed into this user guide. The temporary root notes
   provider, and make the first request.
 - [Usage](usage.md) — run the TUI or print mode, use slash commands, and
   navigate sessions.
+- [Profiles and composition](profiles.md) — what a run mounts, `--profile`, and
+  how `--patch` layers edit the row list.
 - [RPC mode](rpc.md) — drive a long-lived session over EDN stdin/stdout:
-  protocol, commands, extension UI, and the client library.
+  protocol, commands, and extension UI.
 - [Configuration](configuration.md) — settings files, prompts, compaction,
   HTTP, and resource locations.
 

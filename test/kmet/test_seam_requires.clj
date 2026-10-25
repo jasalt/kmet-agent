@@ -1,7 +1,7 @@
 (ns kmet.test-seam-requires
   "Guard: the seam directions a layered module cannot get from the compiler.
 
-   kmet.ai is the lower layer — it must never require kmet.agent (the app).
+   kmet.ai is the lower layer — it must never require kmet.app (the app).
    Inside it, the per-wire builders under kmet.ai.api are named only by
    kmet.ai.wires (a builder may reuse another's helpers), and the
    provider-event hooks are per-call options: kmet.ai.hooks stays gone and
@@ -47,7 +47,7 @@
   (testing "kmet.ai requires nothing from the app layer (pi: pi-ai has no pi-agent-core dependency)"
     (doseq [f (source-files ["modules/ai/src"])
             :let [{:keys [ns requires]} (ns-info f)
-                  up (filter #(str/starts-with? (str %) "kmet.agent") requires)]
+                  up (filter #(str/starts-with? (str %) "kmet.app") requires)]
             :when (seq up)]
       (is false (str f " (" ns ") must not require the app layer, found: " (vec up))))))
 

@@ -655,7 +655,7 @@
           (t/is (nil? (:error result)) (str "loaded: " (:error result)))
           (extensions/unload-all-extensions!))))
 
-    (testing "kmet.agent.* requires are rejected with an actionable error"
+    (testing "app-namespace requires are rejected with an actionable error"
       (let [result (load "app" "(ns bad-app (:require [kmet.app.commands :as c]))\n(defn init [api] nil)\n")]
         (t/is (some? (:error result)))
         (t/is (str/includes? (:error result)

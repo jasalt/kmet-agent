@@ -7,7 +7,7 @@
    strictly lower-ranked module (its own module is fine); and each module's
    `src` requires must appear in its deps.edn, with nothing there that `src`
    does not use. The second is the one the compiler never checks: a
-   `kmet.app.*` namespace requiring a `kmet.agent.*` helper is one line away
+   `kmet.app.*` namespace requiring a `kmet.ui.*` helper is one line away
    at all times. The third is what let `app` require `kmet.srce` for two
    landings without declaring it — the guard checked only the direction of the
    edges that were written down.

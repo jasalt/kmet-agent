@@ -21,41 +21,50 @@ bb start @tasks.md "summarize the tasks"
 ### Command-line options
 
 ```
+  --profile <name>      Composition profile: tui (default), print, rpc, server
+                        (see profiles.md)
   -d, --debug           Log to debug.log
-  -p, --print           Print response and exit (non-interactive)
-  --mode <mode>         Non-interactive mode: rpc (EDN stdio protocol), or
-                        print output text (default)/edn
-  -c, --continue        Continue most recent session
-  -r, --resume          Browse sessions
-  --session <id|path>   Resume session by id/prefix or file path
-  --session-dir <dir>   Session storage directory
-  --model <id>          Model to use (pattern: provider/model[:thinking])
-  --provider <name>     Provider (opencode-go, opencode, deepseek, github-copilot,
-                        openai, xai, openai-codex, azure-openai-responses,
-                        anthropic, google, groq, cerebras, huggingface,
-                        moonshotai, xiaomi, qwen-token-plan, minimax, nvidia,
-                        openrouter, fireworks, vercel-ai-gateway, ...)
-  --models <patterns>   Comma-separated model patterns for Ctrl+P cycling
-  --list-models [search] List available models (with optional fuzzy search)
+  --list-models [search] List available models (optional fuzzy search)
   --generate-models     Fetch current provider + image model catalogs
-                        (models.dev + live sources) into ~/.kmet/agent/ and exit;
-                        used at startup when newer than the built-in data
-  --system-prompt <txt> Replace the system prompt (or a path to read it from)
-  --append-system-prompt <txt> Append to the system prompt (repeatable)
+                        (models.dev + live sources) into ~/.kmet/agent/ and exit
+  -p, --print           Run one prompt and exit (--mode text)
+  --mode <name>         The older spelling of --profile; text|edn run the
+                        print profile and choose its output
+  --patch <file>        Apply a composition layer from a file (repeatable)
+  --model <id>          Model the run's agent uses, over its settings
+  --provider <name>     Provider the run's agent uses, over its settings
+  --models <a,b>        Models the session's scope offers (comma separated)
   -t, --thinking <level> Thinking level (off, minimal, low, medium, high, xhigh, max)
+  --system-prompt <txt> Replace the system prompt (text, or a path to a file)
+  --append-system-prompt <txt> Append to the system prompt (repeatable)
+  --port <n>            --profile server's socket (0, the default, asks the OS)
+  -c, --continue        Continue this directory's last session (the TUI)
+  -r, --resume          Pick a session to resume (the TUI)
+  --session <id>        Open a session by id, prefix or path (the TUI)
+  --session-dir <dir>   Session storage directory
+  --dump-config         Print the composed plugin rows and exit
+  --dump-state          Boot the composition, print the ctx tree, and exit
   --version             Print the version and exit
   -h, --help            Show this help
 ```
 
 Positional `@file` args attach file content to the initial message; the
-remaining positional args form it. Unknown `--flags` are exposed to extensions.
+remaining positional args form it. An unsupported `--flag` is exposed to
+extensions (as `--ext-`-style data for the extension host), except the retired
+`--app`, which is refused by name: there is one app, so nothing selects
+between two.
 
-`--print` resolves sessions like the TUI: `-c/--continue` resumes the most
+`--profile` decides what the run mounts — the TUI, one prompt, the rpc
+protocol, or the server — and [`profiles.md`](profiles.md) covers the profiles,
+the composition a run mounts, and how `--patch` edits it.
+
+`-p/--print` resolves sessions like the TUI: `-c/--continue` resumes the most
 recent session for the current directory (falling back to a fresh one when
 none exists) and `--session <id|path>` resumes a specific session, by id,
 id prefix, or file path. A resumed session continues with its history and
 its recorded working directory. `-r/--resume` browses sessions interactively
-and is TUI-only.
+and is TUI-only. A mode that opens its own session (print, rpc, server)
+refuses these flags by name instead of silently starting a fresh one.
 
 `--mode edn` (implies `--print`) writes the machine-readable variant to
 stdout: the session header line, then every event as one EDN map per line.
@@ -63,11 +72,11 @@ Streaming `:message-update` events carry only the delta — no cumulative
 message snapshot — and `:agent-settled` ends the stream with the run's
 outcome; the exit code follows it (0 completed, 1 error or aborted).
 
-`--mode rpc` runs the long-lived EDN protocol instead: commands on stdin,
+`--profile rpc` runs the long-lived EDN protocol instead: commands on stdin,
 responses and the same event stream on stdout, plus extension dialogs and
-output channels. It is the integration surface for editor plugins and test
-harnesses; see the [RPC guide](rpc.md) for the protocol, the command
-reference, and the client library.
+output channels. `--profile server` serves the same protocol on a socket, one
+session per connection. See the [RPC guide](rpc.md) for the protocol and the
+command reference.
 
 ### Package subcommands
 

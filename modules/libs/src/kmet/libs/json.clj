@@ -46,7 +46,7 @@
   "Parse the JSON string S into Clojure data. KEYWORDS? true converts
    object keys to keywords; false (default) keeps strings. Malformed
    JSON throws. Array results are lazy seqs — realize inside a guard
-   when consuming (see kmet.agent.tools/edit)."
+   when consuming (see kmet.app.tools.edit)."
   (fn
     ([s] (json/read-str s))
     ([s keywords?] (json/read-str s :key-fn (if keywords? keyword identity)))))

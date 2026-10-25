@@ -577,7 +577,10 @@
           real (var-get (var status/activate-working-indicator!))]
       ((var status/show-status-indicator!) cs :share share)
       (with-redefs-fn {(var status/activate-working-indicator!)
-                       (fn [c] (reset! (:running-turn? c) false) (real c))}
+                       ;; the revival lands in a turn that just ended: the run
+                       ;; owns the flag and settles it before the teardown
+                       ;; reaches the UI, so the engine is where to end it
+                       (fn [c] (reset! (:turn-running? (:engine c)) false) (real c))}
         (fn [] ((var status/release-background-status!) cs :share)))
       (t/is (not (status-indicator/status-indicator-active? (:status-indicator cs)))
             "the revived spinner is stopped again"))))

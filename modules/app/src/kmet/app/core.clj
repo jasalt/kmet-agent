@@ -96,6 +96,13 @@
    \"--thinking\"."
   #{"--system-prompt" "--append-system-prompt"})
 
+(def ^:private retired-flags
+  "Flags whose meaning moved away, answered by name instead of falling through
+   to the extension-flag rule: `--app` selected the app before the one app was
+   left alone, and treating it as extension data would turn its value (`new`)
+   into the prompt."
+  #{"--app"})
+
 (def ^:private print-flags
   "kmet1's one-shot spelling: `-p`/`--print` run the print profile, as `kmet -p
    \"hi\"` does."
@@ -238,6 +245,10 @@
               (do (binding [*out* *err*] (println "Warning: empty path after @"))
                   (recur (next in) opts))))
 
+          (contains? retired-flags flag)
+          (throw (bad-args (str flag " is gone: there is one app now, so nothing "
+                                "selects between two — drop the flag")))
+
           (and (str/starts-with? arg "--")
                (not (str/blank? (subs flag 2))))
           ;; kmet1's extension-flag rule: an unsupported `--flag` is data for
@@ -336,13 +347,14 @@
   (println "Usage: kmet [options] [@files...] [messages...]")
   (println)
   (println "Options:")
-  (println "  --profile <name>   Composition profile: tui (default), print, rpc, server")
+  (println "  --profile <name>   Composition profile: tui (default), print, rpc, server
+                     (see docs/profiles.md)")
   (println "  -d, --debug        Log to debug.log")
   (println "  --list-models [search]  List available models (optional fuzzy search)")
   (println "  --generate-models  Fetch provider and image-model catalogs into ~/.kmet/agent/ and exit")
-  (println "  -p, --print        Run one prompt and exit (kmet1's spelling of --mode text)")
-  (println "  --mode <name>      kmet1's spelling of --profile; text|edn run the print")
-  (println "                     profile and choose its output")
+  (println "  -p, --print        Run one prompt and exit (--mode text)")
+  (println "  --mode <name>      The older spelling of --profile; text|edn run the")
+  (println "                     print profile and choose its output")
   (println "  --patch <file>     Apply a composition layer from a file (repeatable)")
   (println "  --model <id>       Model the run's agent uses, over its settings")
   (println "  --provider <name>  Provider the run's agent uses, over its settings")

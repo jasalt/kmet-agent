@@ -262,8 +262,8 @@
               :compat deepseek-compat)])
 
 (def data-dir
-  "Committed catalog directory, relative to the project root (bb tasks run
-   from there, matching kmet.agent.models/model-data-dir)."
+  "Committed catalog directory, relative to the project root (the bb tasks run
+   from there)."
   "modules/ai/src/kmet/ai/model_data")
 
 ;; ─── Small helpers ─────────────────────────────────────────────────────────
@@ -2424,8 +2424,8 @@
 
 (defn- structure-hash
   "sha256 over the canonical sorted {provider -> {model-id -> api}} (pi
-   modelDataStructureHash; identical to kmet.agent.models/catalog-structure so
-   the offline manifest check agrees)."
+   modelDataStructureHash; the offline manifest check hashes the same shape, so
+   the two agree)."
   [catalogs]
   (let [structure (into (sorted-map)
                         (for [[pid models] catalogs]

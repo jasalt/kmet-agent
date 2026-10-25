@@ -1,14 +1,14 @@
 (ns kmet.test-no-global-node
-  "Guard (kmet2 organization): the new modules never reach kmet1's process
-   state.
+  "Guard: the shipped modules never reach for a process-global store.
 
-   kmet2 replaced `kmet.libs.scope`'s one app-root store with a ctx tree
-   (`new-app.md`): a session, a UI provider or a mode is a child context, not
-   a registration on the process's single node. The store is deleted (landing
-   4e), so this bans its name and `kmet.agent.app-runtime`'s — whose `ctx`
-   resolves *the* root — as tripwires against reintroducing either, in the
-   modules that must be kmet1-free: the kernel, the app, and (from landing 5)
-   the front ends. Only the process-state edges are listed, not the prefix."
+   A session, a UI provider or a mode is a child context in the ctx tree
+   (`new-app.md`), not a registration on one process node. The store that did
+   that (`kmet.libs.scope`) and the shim that resolved *the* root
+   (`kmet.agent.app-runtime`) are deleted, so their names are tripwires here:
+   a name that no longer exists is exactly what a reintroduction has to type.
+   The ban is by name, in the modules that share the ctx tree — the kernel,
+   the app and the front ends. Only the process-state edges are listed, not a
+   prefix."
 
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
@@ -17,9 +17,8 @@
             [kmet.tasks.source-reader :as reader]))
 
 (def ^:private new-module-srcs
-  "The kmet2 modules. ui/ and mode/ are listed before they exist: adding the
-   tree is enough for the guard to cover it."
-  ["modules/srce/src" "modules/app/src" "modules/ui/src" "modules/mode/src"])
+  "The modules that share the ctx tree."
+  ["modules/srce/src" "modules/app/src" "modules/ui/src"])
 
 (def ^:private store-namespaces
   "kmet1's process-global state: the root-ctx resolver and the retired store."
@@ -35,8 +34,8 @@
        sort))
 
 (deftest the-guard-sees-the-new-modules
-  (is (<= 2 (count (filter #(fs/directory? %) new-module-srcs)))
-      "the kernel and the app module exist")
+  (is (every? fs/directory? new-module-srcs)
+      "every scanned module tree exists")
   (is (seq (sources)) "the guard found the kmet2 sources"))
 
 (deftest no-new-module-requires-the-process-store
