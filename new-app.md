@@ -3504,7 +3504,7 @@ five decisions, and an explicit list of what the plan does *not* reopen.
 
 ### What is left, measured
 
-`modules/agent/src` is 8 files and 1,890 lines, and every one of them is
+`modules/agent/src` is 8 files and 1,823 lines, and every one of them is
 kmet1's to delete at retirement — no edge blocks it any more:
 
 | Block | Files | Lines | Edges that hold it | Cut |
@@ -3754,7 +3754,7 @@ supplies `:approvals` too (`:ask!` → its own confirm dialog), which is what
 makes an `:ask-all` policy usable at a terminal — until now 4c-iii-a's "an
 `:ask` in kmet1's composition denies" was the only possible answer.
 
-**Landed** (`777099fb` for the move, and the provider with it): the seams are
+**Landed** (`777099fb` for the move; `da14f5b9` for the provider): the seams are
 the three the cut predicted, and the second tool-layer read needed no seam —
 `resolve-default-tools` is a pure `app` function, so only `layout`'s lookup
 moved, now a `tool-fn` built from the ctx's `:tools` registry handle. `/units`
@@ -3773,8 +3773,8 @@ the same header, context/skills block, footer and `/` autocomplete as before the
 move (that diff is the whole assertion — a module move is invisible to unit
 tests); `--app old` still starts kmet1's TUI through the same namespace;
 `modules/agent/src/kmet/agent/modes` holds only kmet1's three modes;
-`kmet.agent.modes.test-headless-guard`'s rule is "no `kmet.ui.tui` in
-print/rpc/server" (a static-require assertion, stronger than the planned
+`kmet.agent.modes.test-headless-guard`'s rule is "no `kmet.ui.*` namespace in
+print/rpc/rpc-client" (a static-require assertion, stronger than the planned
 plugin-graph one); and `kmet.ui.shared`'s docstring stops naming
 `kmet.agent.ui.tui.*` and a test namespace as its surfaces.
 
@@ -3835,7 +3835,7 @@ so it has no row of its own.
 its session resolution reads `:session`, `:resume` and `:continue` from the same
 map. kmet2's hand-off is the same map in kmet1's spellings: `mode-input` puts
 the invocation's keys in the mode row's config, the TUI row maps them to
-`interactive/run`'s opts (`kmet.agent.modes.tui/run-opts`), and print, rpc and
+`interactive/run`'s opts (`kmet.ui.tui/run-opts`), and print, rpc and
 the server hand `invocation/create-opts` — the run overrides and nothing of the
 mode's own — to `:agents`, whose factory applies them over the settings it
 loads. That is what makes `kmet --app new --model x` use x in every profile;

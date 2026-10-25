@@ -176,7 +176,13 @@
    `:confirm`, `:select` and `:input` mount the dialog and block until it is
    answered; every other kind takes the ABI's default answer, because no other
    kind has a terminal answer yet. Outside a run every kind degrades the same
-   way (`kmet.agent.extensions.core/ui-request-default`)."
+   way (`kmet.agent.extensions.core/ui-request-default`).
+
+   Blocks the caller until the dialog is answered, so it must not run on the
+   TUI's own threads: the permission gate calls it from the agent's run thread,
+   and a future front-end surface that answers extension requests from a render
+   or input thread must use the ABI's asynchronous `request-pending`/`respond!`
+   pair instead."
   [_ctx request]
   (if-let [cs @live-mode]
     (case (:kind request)
@@ -196,7 +202,9 @@
   "Answer a permission `:ask` through the live TUI: a Yes/No dialog naming the
    tool and, when the policy gave one, its reason. `:allow` on Yes; a deny
    otherwise — including outside a run, because nobody being able to ask is not
-   a yes. Blocks while the dialog is up."
+   a yes. Blocks while the dialog is up, so the caller must be a run thread (the
+   gate's) and never a TUI render/input thread; a future front-end surface
+   answers extension requests asynchronously for the same reason."
   [_ctx request]
   (if-let [cs @live-mode]
     (let [reason (str (:reason request))

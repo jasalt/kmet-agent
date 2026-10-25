@@ -6,9 +6,11 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
+            [kmet.agent.debug :as debug]
             [kmet.agent.version :as version]
             [kmet.ai.models :as models]
             [kmet.app.core :as core]
+            [kmet.app.maintenance :as maintenance]
             [kmet.app.test-support :as support]
             [kmet.app.world :as world]))
 
@@ -119,6 +121,27 @@
          (error-type #(core/parse-args ["--dump-config" "--dump-state"])))
       "the two dumps are different views; asking for both is a usage error"))
 
+(deftest the-maintenance-flags-run-where-their-contracts-put-them
+  ;; `--debug` before any load, `--generate-models` before the world and without
+  ;; it, `--list-models` after it. The order is each flag's contract, so the
+  ;; test reads the order rather than a threaded map.
+  (let [events (atom [])]
+    (with-redefs [debug/enable! (fn [] (swap! events conj :debug))
+                  debug/log (fn [& _] nil)
+                  world/load! (fn [& _] (swap! events conj :load) {})
+                  maintenance/generate-models! (fn [] (swap! events conj :generate) 0)
+                  maintenance/list-models (fn [_] (swap! events conj :list))]
+      (is (= 0 (:code (support/run-main ["-d" "--generate-models"]))))
+      (is (= [:generate] @events)
+          "--generate-models exits before the debug flag takes effect, and loads nothing")
+      (reset! events [])
+      (support/run-main ["-d" "--dump-config"])
+      (is (= [:debug] @events) "--debug is on before a dump")
+      (reset! events [])
+      (support/run-main ["-d" "--profile" "print" "--list-models"])
+      (is (= [:debug :load :list] @events)
+          "debug first, the process world, then the table"))))
+
 (deftest parse-args-takes-kmet1s-maintenance-flags
   ;; `-d` and `--generate-models` run before the process world, `--list-models`
   ;; after it; the entry owns all three (kmet.app.maintenance).
@@ -135,6 +158,23 @@
   (is (= :print (:profile (core/parse-args ["--list-models" "--profile" "print"]))))
   (is (= [] (:args (core/parse-args ["--list-models" "flash"])))
       "the filter does not become a prompt"))
+
+(deftest list-models-works-for-a-composition-with-no-mode
+  ;; The table is the entry's, not a mode's: a profile whose mode row is patched
+  ;; out still loads the world and lists. The mode-less boot report must not win
+  ;; the branch.
+  (let [listed (atom false)
+        path (scratch-patch! "{:rows [] :patch [{:id :mode-tui :remove true}]}\n")]
+    (try
+      (with-redefs [world/load! (fn [& _] {})
+                    maintenance/list-models (fn [filter]
+                                              (reset! listed [true filter]))]
+        (let [{:keys [code]} (support/run-main
+                              ["--patch" path "--list-models" "flash"])]
+          (is (= 0 code))
+          (is (= [true "flash"] @listed)
+              "the filtered table printed after the load, with no mode to mount")))
+      (finally (io/delete-file path true)))))
 
 (deftest parse-args-collects-extension-flags
   ;; kmet1's three forms: `=` splits, a following non-`-` token is the value,

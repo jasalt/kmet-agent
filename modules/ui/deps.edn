@@ -1,14 +1,14 @@
 {:paths ["src" "test"]
  ;; Rank 3: the front ends (new-app.md, landing 5). A module here may require
  ;; `app` (2) and the component backends (`tui`, `tk`, `hikap`) but never
- ;; `agent` (4) — that is why the TUI moves here in pieces rather than all at
- ;; once: what is written against kmet1's *process* stays behind until its edge
- ;; is parameterized (`kmet.agent.session.driver`, `kmet.agent.app-runtime`,
- ;; `commands`, `skills`, `prompts`, `packages`, `tools.core`, the modes
- ;; themselves), and only the components that already reach nothing above `app`
- ;; move. `kmet.agent.session.runtime` is not on that list: it is the engine
- ;; value at rank 2, so a UI file may read it and a widget must not reach the
- ;; driver that starts its runs.
+ ;; `agent` (4). The TUI and its interactive cluster moved here at 5l-iii, so
+ ;; this is kmet2's TUI in full: the widgets and selectors, the interactive
+ ;; mode (`kmet.ui.tui.interactive`), the mode row and terminal `:ui` provider
+ ;; (`kmet.ui.tui`), and the config command. The interactive cluster owns a run
+ ;; and therefore drives the session driver; every widget reads the engine value
+ ;; (`kmet.agent.session.runtime`) and never the machinery that starts work (the
+ ;; layer guard's `:ui` rule holds that split, and skips the cluster's files by
+ ;; path).
  ;;
  ;; `kmet.agent.ui.tui.tool-renderers` keeps its namespace: shipped extensions
  ;; require it and the loader whitelist admits it by name, so the file moves and

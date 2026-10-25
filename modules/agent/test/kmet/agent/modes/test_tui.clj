@@ -8,6 +8,8 @@
    over the composition's ctx; running it needs a real terminal, which is what
    `scripts/capture/pty_capture.py` drives."
   (:require [clojure.test :refer [deftest is]]
+            [kmet.app.core :as core]
+            [kmet.app.runtime :as runtime]
             [kmet.app.ui :as ui]
             [kmet.srce.core :as srce]
             [kmet.ui.tui :as tui]
@@ -39,6 +41,23 @@
   (is (nil? (interactive/request! nil {:kind :input})))
   (is (= {:decision :deny :reason "no terminal is running — nobody can ask"}
          (interactive/ask! nil {:tool-name "bash"}))))
+
+(deftest the-tui-profile-composes-a-terminal-provider
+  ;; The gate 5l-iii names: the profile's ctx provides the terminal `:ui`
+  ;; provider (with the ABI port a mode binds) and the approval seam a gate
+  ;; reads — and with no terminal running the seam denies rather than parking.
+  (let [booted (runtime/boot (core/compose-config {:profile :tui}))]
+    (try
+      (let [ctx (:ctx booted)
+            ui (srce/get ctx :ui)
+            approvals (srce/get ctx :approvals)]
+        (is (= :terminal (:kind ui)))
+        (is (fn? (get-in ui [:port :request]))
+            "the row publishes the ABI port, so a mode can bind it")
+        (is (fn? (:ask! approvals)))
+        (is (= {:decision :deny :reason "no terminal is running — nobody can ask"}
+               ((:ask! approvals) ctx {:tool-name "bash"}))))
+      (finally (runtime/shutdown! booted)))))
 
 (deftest a-diagnostic-mount-starts-nothing
   ;; `--dump-state` mounts every row and hands none of them an :on-result: a

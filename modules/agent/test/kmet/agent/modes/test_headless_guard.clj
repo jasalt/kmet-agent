@@ -1,9 +1,9 @@
 (ns kmet.agent.modes.test-headless-guard
-  "Guard: a headless front end's static require graph reaches no
-   interactive mode, no `kmet.tui.*` namespace, and no Tk backend. The
-   extension ABI and the config command load the shared TUI layer at call
-   time (`host-requires!`, `kmet.ui.tui.config-command`), invisible to
-   this static graph."
+  "Guard: a headless front end's static require graph reaches no UI layer
+   (`kmet.ui.*`, the TUI and its interactive cluster included), no
+   `kmet.tui.*` widget namespace, and no Tk backend. The extension ABI and the
+   config command load the shared TUI layer at call time (`host-requires!`,
+   `kmet.ui.tui.config-command`), invisible to this static graph."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
             [babashka.fs :as fs]
@@ -51,29 +51,26 @@
   (let [graph (transitive-requires [root])]
     {:root root
      :loaded? (contains? graph root)
-     :interactive (vec (filter #(str/starts-with? % "kmet.ui.tui") graph))
-     :view (vec (filter #(str/starts-with? % "kmet.agent.ui") graph))
+     :ui (vec (filter #(str/starts-with? % "kmet.ui") graph))
      :tui (vec (filter #(str/starts-with? % "kmet.tui") graph))
      :tk (vec (filter #(str/starts-with? % "kmet.tk") graph))}))
 
 (deftest headless-front-ends-do-not-reach-the-interactive-stack
   (testing "print and RPC modes require no interactive mode, TUI
             namespace, or Tk backend"
-    (doseq [{:keys [root loaded? interactive view tui tk]}
+    (doseq [{:keys [root loaded? ui tui tk]}
             (mapv headless-violations ["kmet.agent.modes.print" "kmet.agent.modes.rpc"])]
       (is loaded? (str root " must be part of the graph"))
-      (is (empty? interactive) (str root " reaches " interactive))
-      (is (empty? view) (str root " reaches the TUI view layer: " view))
+      (is (empty? ui) (str root " reaches the UI layer: " ui))
       (is (empty? tui) (str root " reaches the TUI layer: " tui))
       (is (empty? tk) (str root " reaches the Tk backend: " tk)))))
 
 (deftest rpc-client-stays-headless
   (testing "the scripted RPC client loads no view layer at all (it binds
             no extensions)"
-    (let [{:keys [root loaded? interactive view tui tk]}
+    (let [{:keys [root loaded? ui tui tk]}
           (headless-violations "kmet.agent.modes.rpc-client")]
       (is loaded? (str root " must be part of the graph"))
-      (is (empty? interactive) (str root " reaches " interactive))
-      (is (empty? view) (str root " reaches the TUI view layer: " view))
+      (is (empty? ui) (str root " reaches the UI layer: " ui))
       (is (empty? tui) (str root " reaches the TUI layer: " tui))
       (is (empty? tk) (str root " reaches the Tk backend: " tk)))))

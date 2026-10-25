@@ -3,7 +3,7 @@
    `kmet --app new --profile tui`, the kmet2 entry's default profile.
 
    The mode's tree moved here at 5l-iii, so a run is kmet2's own front end:
-   the row mounts `kmet.ui.tui.interactive` over the composition the profile
+   the row mounts `kmet.ui.tui.interactive` over the composition the entry
    booted, the run reads the composition's `:tools`, `:sessions` and
    `:systemPrompt` rows through the ctx it is given, and the startup a
    *process* world needs — catalogs, config, extension packages, themes —

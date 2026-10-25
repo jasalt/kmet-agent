@@ -20,6 +20,12 @@
    a profile without a mode row still boots, reports what it mounted, and
    exits, which is what proves the rest of the rows mount.
 
+   Three flags are maintenance rather than a run, and their order is part of
+   their contract: `--debug` before any load (so the catalog trail is in the
+   log), `--generate-models` before the process world (the run reads the caches
+   it wrote), and `--list-models [filter]` after it (extension providers are
+   catalog entries only then) — all three in `kmet.app.maintenance`.
+
    Package subcommands (`install`, `remove`, `update`, `list`, `config`) are
    commands rather than profiles: they run the same package CLI kmet1 uses
    (`kmet.agent.packages-cli`) before the app's own flags, and the config
@@ -151,7 +157,7 @@
    :help? :dump-config? :dump-state? :format kw :model str :provider kw
    :thinking kw :models [pattern …] :system-prompt str
    :append-system-prompt [str …] :session-dir path :continue? :resume?
-   :session str :debug? :generate-models? :list-models str-or-true
+   :session str :debug :generate-models :list-models str-or-true
    :ext-flags {name value-or-true}}`.
    `:profile` defaults to `profile/default-profile`; `--mode` is kmet1's spelling
    of it (`resolve-mode`), and the run flags are kmet1's: `--model`/`--provider`
@@ -429,8 +435,10 @@
    world: its `serve` starts the run, and the run must see the extensions,
    themes and catalogs the load installs. The model patterns resolve after the
    load for the same reason — an extension provider is one the catalog does not
-   have until then. The mode owns what it prints; the entry point owns the
-   process, the boot, the load and the teardown."
+   have until then. `--list-models` returns from here after the load and before
+   the mount, so MODE may be nil (a profile that patched its mode row out). The
+   mode owns what it prints; the entry point owns the process, the boot, the
+   load and the teardown."
   [composed mode opts prompt]
   (let [result (promise)
         booted (runtime/boot composed {:defer #(= (:id mode) (:id %))})]
@@ -506,24 +514,28 @@
    boots. A mode honors the session-lifecycle flags when its row says it owns
    the session (`:session-lifecycle`); the rest refuse them by name."
   [opts args]
-  (let [composed (compose-config opts)]
-    (if-let [mode (mode-row (:rows composed))]
-      (let [prompt (str/join " " args)
-            flag (session-flag opts)]
-        (cond
-          ;; the maintenance flag is the entry's: it needs the loaded world
-          ;; (extension providers) and no mode, and a print profile without a
-          ;; prompt is a legal invocation for it
-          (:list-models opts) (run-mode composed mode opts prompt)
+  (let [composed (compose-config opts)
+        mode (mode-row (:rows composed))
+        prompt (str/join " " args)]
+    (cond
+      ;; the maintenance flag is the entry's: it needs the loaded world
+      ;; (extension providers) and no mode, and a print profile without a
+      ;; prompt — or a composition with no mode row at all — is a legal
+      ;; invocation for it
+      (:list-models opts) (run-mode composed mode opts prompt)
 
+      (nil? mode) (boot-and-report composed (:profile opts) args)
+
+      :else
+      (let [flag (session-flag opts)]
+        (cond
           (and flag (not (:session-lifecycle mode)))
           (no-session-lifecycle (:profile opts) flag)
 
           (and (:prompt mode) (str/blank? prompt))
           (no-prompt (:profile opts))
 
-          :else (run-mode composed mode opts prompt)))
-      (boot-and-report composed (:profile opts) args))))
+          :else (run-mode composed mode opts prompt))))))
 
 (defn- configuration-error? [e]
   (str/starts-with? (str (:type (ex-data e))) ":kmet."))
