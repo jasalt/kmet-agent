@@ -26,9 +26,7 @@
             [kmet.ui.tui.bash-execution :as bash-execution]
             [kmet.agent.tools.core :as tools]
             [kmet.ui.tui.chat-history :as chat-history]
-            [kmet.ui.tui.footer :as footer]
             [kmet.ui.tui.loaded-resources :as loaded-resources]
-            [kmet.ui.tui.pending-messages :as pending-messages]
             [kmet.ui.tui.status-indicator :as status-indicator]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.ui.tui.subs :as subs]
@@ -59,6 +57,7 @@
             [kmet.agent.session.export :as session-export]
             [clojure.string :as str]
             [kmet.agent.session.runtime :as runtime]
+            [kmet.ui.tui.interactive.test-handle-support :as hs]
             [kmet.test-utils :as tu]))
 
 ;; The tests that install the interactive builtins leave the app's slash
@@ -113,134 +112,89 @@
   (testing "/new (pi: handleClearCommand → runtimeHost.newSession) swaps in a
             fresh session and rebuilds the agent's in-memory context from it
             — the old conversation must never reach the next LLM call"
-    (let [sess-dir (str "target/test-interactive-new-session-" (System/currentTimeMillis))
-          old-sess (session/create-session sess-dir)
-          ag (agent/make-agent-state :ctx (app/ctx) :session old-sess)
-          _ (swap! (:messages ag) conj {:role :user :content "old message"})
-          _ (swap! (:messages ag) conj {:role :assistant :content "old reply"})
-          ag-atom (atom ag)
-          sess-atom (atom old-sess)
-          engine (tu/test-engine {:agent-state ag-atom :session sess-atom
-                                  :config {:session-dir sess-dir}})
-          tui-stub {:render-requested? (atom false)}
-          ch (chat-history/make-chat-history :tool-fn tools/get-tool)
-          fdp (fdp/make-footer-data-provider :session old-sess)
-          ftr (footer/make-footer :provider fdp)
-          ed (editor/make-editor)
-          _ (editor/editor-set-text! ed "draft")
-          parked-bash (bash-execution/make-bash-execution :command "sleep 10")
-          pending-bash (atom [parked-bash])
-          cs (inter/map->CoreState
-              {:tui tui-stub
-               :engine engine
-               :agent-state ag-atom
-               :chat-history ch
-               :editor ed
-               :current-editor-atom (atom ed)
-               :anim-timer (atom nil)
-               :running-turn? (atom false)
-               :compaction-queued (atom [])
-               :bash-running? (atom false)
-               :bash-signal (atom false)
-               :session-atom sess-atom
-               :pending-messages-container (container/make-container)
-               :pending-bash-components pending-bash
-               :pending-messages-comp (pending-messages/make-pending-messages)
-               :status-current (atom nil)
-               :status-root nil
-               :status-indicator (status-indicator/make-status-indicator)
-               :footer-comp ftr
-               :footer-provider fdp})
-          shutdown-events (atom [])
-          _ (event-bus/clear-event-listeners!)
-          _ (event-bus/on-event :session-shutdown
-                                (fn [ev] (swap! shutdown-events conj ev)))]
-      (try
-        ;; a live turn: /new settles it and the runtime drops its turn flag
-        ;; (a cancelled run never reaches the wrapped :on-done)
-        (reset! (:turn-running? engine) true)
-        ((var session-admin/handle-new-session) cs)
-        (is (false? (runtime/turn-running? engine))
-            "/new settles the runtime turn flag")
-        (let [ag' @ag-atom
-              new-sess @sess-atom]
-          (is (not= (:id old-sess) (:id new-sess)) "a fresh session is created")
-          (is (= new-sess (:session ag')) "agent points at the new session")
-          (is (empty? @(:messages ag'))
-              "the old conversation is not carried into the new session")
-          (is (= :idle @(:status ag')) "agent status back to :idle")
-          (is (str/blank? (editor/editor-get-text ed))
-              "editor cleared (pi: editor.setText(\"\"))")
-          (is (= [{:type :session-shutdown :reason :new
-                   :target-session-file (:file old-sess)}]
-                 @shutdown-events)
-              "extensions are told the runtime is torn down before the swap (pi: teardownCurrent)")
-          (is (true? @(:done-atom parked-bash)) "/new stops the parked bash frame driver")
-          (is (nil? @(:ticker-id-atom parked-bash)) "/new cancels the parked driver timer")
-          (is (nil? @(:elapsed-ticker-id-atom parked-bash)) "/new cancels the parked elapsed ticker")
-          (is (empty? @pending-bash) "parked bash refs are dropped"))
-        (finally
-          (event-bus/clear-event-listeners!)
-          (fs/delete-tree sess-dir))))))
+    (hs/with-handle
+      (fn [{:keys [handle]}]
+        (let [sess-dir (str "target/test-interactive-new-session-"
+                            (System/currentTimeMillis))
+              old-sess (runtime/session handle)
+              _ (swap! (:messages (runtime/agent-state handle))
+                       conj {:role :user :content "old message"})
+              _ (swap! (:messages (runtime/agent-state handle))
+                       conj {:role :assistant :content "old reply"})
+              cs (hs/core-state handle)
+              parked-bash (bash-execution/make-bash-execution :command "sleep 10")
+              _ (reset! (:pending-bash-components cs) [parked-bash])
+              shutdown-events (atom [])
+              _ (event-bus/clear-event-listeners!)
+              _ (event-bus/on-event :session-shutdown
+                                    (fn [ev] (swap! shutdown-events conj ev)))]
+          (try
+           ;; a live turn: /new settles it and the runtime drops its turn flag
+           ;; (a cancelled run never reaches the wrapped :on-done)
+            (reset! (:turn-running? handle) true)
+            ((var session-admin/handle-new-session) cs)
+            (is (false? (runtime/turn-running? handle))
+                "/new settles the runtime turn flag")
+            (let [ag' (runtime/agent-state handle)
+                  new-sess (runtime/session handle)]
+              (is (not= (:id old-sess) (:id new-sess))
+                  "a fresh session is created")
+              (is (= new-sess (:session ag')) "agent points at the new session")
+              (is (empty? @(:messages ag'))
+                  "the old conversation is not carried into the new session")
+              (is (= :idle ((:status handle))) "agent status back to :idle")
+              (is (str/blank? (editor/editor-get-text (:editor cs)))
+                  "editor cleared (pi: editor.setText(\"\"))")
+              (is (= [{:type :session-shutdown :reason :new
+                       :target-session-file (:file old-sess)}]
+                     @shutdown-events)
+                  "extensions are told the runtime is torn down before the swap (pi: teardownCurrent)")
+              (is (true? @(:done-atom parked-bash))
+                  "/new stops the parked bash frame driver")
+              (is (nil? @(:ticker-id-atom parked-bash))
+                  "/new cancels the parked driver timer")
+              (is (nil? @(:elapsed-ticker-id-atom parked-bash))
+                  "/new cancels the parked elapsed ticker")
+              (is (empty? @(:pending-bash-components cs))
+                  "parked bash refs are dropped"))
+            (finally
+              (event-bus/clear-event-listeners!)
+              (fs/delete-tree sess-dir))))))))
 
 (deftest handle-new-session-extension-cancel
   (testing "a {:cancel true} :session-before-switch handler aborts /new —
             the session, agent context and editor stay untouched and no
             :session-shutdown fires (pi: emitBeforeSwitch → cancel)"
-    (let [sess-dir (str "target/test-interactive-new-session-cancel-"
-                        (System/currentTimeMillis))
-          old-sess (session/create-session sess-dir)
-          ag (agent/make-agent-state :ctx (app/ctx) :session old-sess)
-          _ (swap! (:messages ag) conj {:role :user :content "old message"})
-          _ (swap! (:messages ag) conj {:role :assistant :content "old reply"})
-          ag-atom (atom ag)
-          sess-atom (atom old-sess)
-          engine (tu/test-engine {:agent-state ag-atom :session sess-atom
-                                  :config {:session-dir sess-dir}})
-          tui-stub {:render-requested? (atom false)}
-          ch (chat-history/make-chat-history :tool-fn tools/get-tool)
-          ed (editor/make-editor)
-          _ (editor/editor-set-text! ed "draft")
-          cs (inter/map->CoreState
-              {:tui tui-stub
-               :engine engine
-               :agent-state ag-atom
-               :chat-history ch
-               :editor ed
-               :current-editor-atom (atom ed)
-               :anim-timer (atom nil)
-               :running-turn? (atom false)
-               :compaction-queued (atom [])
-               :bash-running? (atom false)
-               :bash-signal (atom false)
-               :session-atom sess-atom
-               :pending-messages-container (container/make-container)
-               :pending-bash-components (atom [])
-               :status-current (atom nil)
-               :status-root nil
-               :status-indicator (status-indicator/make-status-indicator)
-               :footer-comp nil
-               :footer-provider nil})
-          shutdown-events (atom [])
-          seen-before-switch (atom nil)
-          _ (event-bus/clear-event-listeners!)
-          _ (event-bus/on-event :session-before-switch
-                                (fn [ev]
-                                  (reset! seen-before-switch ev)
-                                  {:cancel true}))
-          _ (event-bus/on-event :session-shutdown
-                                (fn [ev] (swap! shutdown-events conj ev)))]
-      (try
-        ((var session-admin/handle-new-session) cs)
-        (is (= old-sess @sess-atom) "session NOT swapped")
-        (is (= old-sess (:session @ag-atom)) "agent still points at the old session")
-        (is (= 2 (count @(:messages @ag-atom))) "conversation untouched")
-        (is (= "draft" (editor/editor-get-text ed)) "editor untouched")
-        (is (= :new (:reason @seen-before-switch)) "before-switch carries the reason")
-        (is (empty? @shutdown-events) "no :session-shutdown on a cancelled switch")
-        (finally
-          (event-bus/clear-event-listeners!)
-          (fs/delete-tree sess-dir))))))
+    (hs/with-handle
+      (fn [{:keys [handle]}]
+        (let [old-sess (runtime/session handle)
+              _ (swap! (:messages (runtime/agent-state handle))
+                       conj {:role :user :content "old message"})
+              _ (swap! (:messages (runtime/agent-state handle))
+                       conj {:role :assistant :content "old reply"})
+              cs (hs/core-state handle)
+              shutdown-events (atom [])
+              seen-before-switch (atom nil)
+              _ (event-bus/clear-event-listeners!)
+              _ (event-bus/on-event :session-before-switch
+                                    (fn [ev]
+                                      (reset! seen-before-switch ev)
+                                      {:cancel true}))
+              _ (event-bus/on-event :session-shutdown
+                                    (fn [ev] (swap! shutdown-events conj ev)))]
+          (try
+            ((var session-admin/handle-new-session) cs)
+            (is (= old-sess (runtime/session handle)) "session NOT swapped")
+            (is (= 2 (count @(:messages (runtime/agent-state handle))))
+                "conversation untouched")
+            (is (= "draft" (editor/editor-get-text (:editor cs)))
+                "editor untouched")
+            (is (= :new (:reason @seen-before-switch))
+                "before-switch carries the reason")
+            (is (empty? @shutdown-events)
+                "no :session-shutdown on a cancelled switch")
+            (finally
+              (event-bus/clear-event-listeners!))))))))
 
 (deftest runtime-started-run-gets-the-working-presentation
   (testing "a run the runtime starts without start-agent-run! (a submit! or

@@ -3550,10 +3550,17 @@ finished, measured from the TUI's own code:
   (`modules/ui/test/kmet/ui/tui/interactive/test_interactive.clj` since T-2)
   builds kmet1's `session.driver` engine (`tu/test-engine`); a handle-shaped
   fixture boots the `:tui` composition and creates through `:agents`, so a
-  test fails when the handle stops answering an op the TUI calls. Started:
-  `kmet.ui.tui.interactive.test-handle-path` — the TUI's `/new` over a real
-  handle: one agent, a moved session, the process slot re-installed, the
-  shutdown event carrying the outgoing file.
+  test fails when the handle stops answering an op the TUI calls. The fixture
+  is `kmet.ui.tui.interactive.test-handle-support`: `with-boot` for a namespace,
+  `with-handle` for one test, `core-state` for the CoreState pieces a command
+  touches, all over `create!`'s handle. The `/new` group runs on it — the
+  one-agent check (`test-handle-path`) and the swap/cancel pair
+  (`test-interactive`), whose turn flag, session, context, editor, shutdown
+  event and parked bash now come from the handle; the cancel test lost the
+  duplicate ``(:session @ag-atom)`` assertion, which read the same value
+  `runtime/session` answers. Remaining: the session commands (`/tree`, `/fork`,
+  `/clone`, `/resume`, `/export`, `/name`, `/stats`, `/messages`), then the
+  settings, queue and compaction paths.
 - **T-2. The interactive suite moved to `modules/ui/test` — landed.** The ten
   files that test the TUI now live beside it: the interactive cluster — the
   support fixture, autocomplete, commands, the compaction queue, import,
