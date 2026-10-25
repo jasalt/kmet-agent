@@ -1,22 +1,24 @@
 {:paths ["src" "test"]
  ;; Rank 2: the application below every front end. Its sources require only
  ;; lower-ranked modules (kmet.srce.*, kmet.libs.*, kmet.ai.*, kmet.loader.*),
- ;; plus third-party code; a kmet.agent.* namespace may live here (the
- ;; two-axes rule: the file moves, the namespace does not) but the module may
- ;; never require a module at its own rank or above. babashka/process is the
- ;; version rule's git describe.
+ ;; plus third-party code; the module may never require a module at its own
+ ;; rank or above. babashka/process is the version rule's git describe.
  ;;
- ;; The `kmet.agent.*` namespaces here are that rule in practice: the session
- ;; layer (kmet.app.session.*, moved at 4c-i), kmet.app.registry (landing
- ;; 3), the tool layer — kmet.agent.tools.* and kmet.app.config, moved at 4f
- ;; in five steps and keeping their namespaces, with kmet1's arity-less façade
- ;; (kmet.agent.tools.core) left behind at rank 4 — and the host's leaf
- ;; dependencies (kmet.app.debug, .config-schema, .event-bus, .tools.util),
- ;; lifted ahead of the extension host's own move so its requires stop pointing
- ;; upward (new-app.md, 4b-ii). 5l-i closed the session pair the front ends
- ;; read: kmet.app.session.driver (the engine's operations) and
- ;; kmet.app.commands.builtins (the portable slash commands) — the driver
- ;; reached only what was already here.
+ ;; Every namespace here is `kmet.app.*`. The lifts of 4c/4f/5l/7a moved files
+ ;; and kept their `kmet.agent.*` names while kmet1 and kmet2 shared a module
+ ;; tree; landing 11's pass renamed them with the subtree they belong to, so the
+ ;; name follows the module now. The one exception is `kmet.extension`, the
+ ;; extension ABI, whose name is its contract.
+ ;;
+ ;; The session layer (kmet.app.session.*, moved at 4c-i), kmet.app.registry
+ ;; (landing 3), the tool layer (`kmet.app.tools.*`, moved at 4f in five steps,
+ ;; with kmet1's arity-less façade `kmet.agent.tools.core` left behind at rank
+ ;; 4), and the host's leaf dependencies (kmet.app.debug, .config-schema,
+ ;; .event-bus, .tools.util) were lifted ahead of the extension host's own move
+ ;; so its requires stop pointing upward (new-app.md, 4b-ii). 5l-i closed the
+ ;; session pair the front ends read: kmet.app.session.driver (the engine's
+ ;; operations) and kmet.app.commands.builtins (the portable slash commands) —
+ ;; the driver reached only what was already here.
  ;;
  ;; kmet.app.loop.stages is 7a's first step: the loop's stage map (`defaults`,
  ;; `for-ctx`, `refresh!`, and `with-defaults` for the ctx builders), so the
@@ -36,11 +38,13 @@
  ;; with no call-site edits because nothing in them reaches upward:
  ;; kmet.app.model-resolver (ai only), .project-context (no deps) and
  ;; .git-packages (fs/process, which this module already declares). They join
- ;; the session layer and the tool layer as `kmet.agent.*` namespaces here.
+ ;; the session layer and the tool layer here.
  ;;
- ;; kmet.agent.system-prompt is the first piece of 4c-iii-c: the prompt builder
- ;; with no registry of its own, so an engine composes its prompt from the ctx
- ;; it holds (kmet.app.skills/build-system-prompt is kmet1's wrapper).
+ ;; The prompt builder and the `:systemPrompt` row that provides it are one
+ ;; namespace (kmet.app.system-prompt): the builder takes no registry of its
+ ;; own, so an engine composes its prompt from the ctx it holds, and the row is
+ ;; what fills the one input a service owns (kmet.app.skills/build-system-prompt
+ ;; is kmet1's process-bound wrapper).
  ;;
  ;; The session layer brings the library edges it uses: libs for fs/edn-store,
  ;; ai for the usage tallies, and the two Maven siblings those need. The tool

@@ -4253,6 +4253,26 @@ It waits on a complete 8 and on 10a, and on one mechanical move: the
 interactive tests leave `modules/agent/test` for `modules/ui/test` in this
 landing's first step (the module they live in is deleted with kmet1).
 
+**Landed so far.** The test move happened with the T landing (T-2), and the
+rename pass is three commits: the session tree is `kmet.app.session.*`; the
+prompt builder folded into the `:systemPrompt` row that provides it (one
+namespace, one test file, since the rename collided with the row's name); and
+the other 41 namespaces are `kmet.app.*` under `modules/app/src/kmet/app`, with
+their tests moved and renamed alongside, and the lint configs' `:config-in-ns`
+entries following. Widening the layer guard from the emptying `kmet.agent` tree
+to the whole app tree found four things, all fixed: the loop DAG's `stages`
+edge; a namespace-from-path helper that knew only `modules/(agent|app)/src` and
+so mangled every `ui`/`libs`/`tui` path; `world`/`maintenance` reading
+`kmet.tui.theme`/`fuzzy`, which are rank-0 leaves in `modules/libs` (the rule is
+about the module, so it exempts what the libs tree holds rather than a file
+list); and the TUI's `/reload` reaching `kmet.app.loop.stages` (now
+`kmet.app.session.runtime/refresh-loop-stages!`). Two process-registry tests
+publish the composition service they mean for their own duration, because the
+new run order reaches them before anything else published a handle. What is
+left: the `agent` module's ~14k-line test tree (most of it tests app code), the
+`kmet.agent.tools.core` façade collapse, the deletion and the flag flip, and the
+documents.
+
 The two-axes endgame, in one landing because it cannot be split once started:
 the `s/kmet\.agent\./kmet.app./` pass over the known list (minus
 `kmet.extension`, the ABI, and minus the names re-hosted under `kmet.ui.*`),

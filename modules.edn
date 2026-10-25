@@ -24,8 +24,9 @@
   {:name "loader" :src "modules/loader/src" :test "modules/loader/test" :rank 0}
   {:name "srce" :src "modules/srce/src" :test "modules/srce/test" :rank 1}
   ;; The kmet2 application: shared services, the session layer and the
-  ;; extension host (new-app.md). Its files may keep a kmet.agent.* namespace
-  ;; when a lift moves them here — the module changes, the name does not.
+  ;; extension host (new-app.md). Every namespace here is kmet.app.* (landing
+  ;; 11 renamed the ones whose lifts had kept kmet1's names); kmet.extension is
+  ;; the ABI and keeps its name.
   {:name "app" :src "modules/app/src" :test "modules/app/test" :rank 2}
   ;; The front ends (new-app.md, landing 5): the TUI components in kmet.ui.*,
   ;; moved out of `agent` as their requires stop reaching kmet1's runtime. Rank 3
