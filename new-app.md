@@ -27,7 +27,7 @@ one thing every other part is wired through. The name also stays clear of
 | 2 | Does kmet1 keep shipping? | **Yes** | `kmet.agent.*` is untouched; kmet1 is the regression oracle for every kmet2 landing |
 | 3 | Server mode scope | **Remote, multi-session, phase 1** | Tokens, per-session ownership, bounded fan-out and idle reaping are phase-1 work, not follow-ups |
 | 4 | Hosts | **bb, Jolt, JVM — all portable** | No host-private concurrency or FFI in `kmet.srce.*`, `kmet.app.*`, `kmet.mode.*`; threads/queues go through `kmet.libs.concurrent`, and the kernel is single-threaded with no awaitable of its own |
-| 5 | Second UI provider | **`ui-tk`**, web later | Proves the `:ui` capability contract against an existing backend (`kmet.tk` is cross-host — Tcl through `babashka.ffi` on bb and `jolt.ffi` on Jolt, so the provider covers a second toolkit on two hosts and is absent on JVM) |
+| 5 | Second UI provider | **Deferred** — `ui-tk` is its own development; web later | The `:ui` contract is proven by the headless and terminal providers (5k, 5l-iii); a second toolkit provider would prove it against `kmet.tk` (Tcl through `babashka.ffi` on bb and `jolt.ffi` on Jolt, absent on the JVM) |
 | 6 | Tenancy | **Single principal in phase 1** | One bearer token per server, many clients; `:permissions` scoping is user-level control, not isolation. Multi-tenant later = token → principal → child ctx, one level above agents |
 | 7 | The kernel's name | **`srce`** — heart; Cordis is Latin for the same | One prefix, `srce/` alias. `kernel`, `kkernel`, `zrno`, `zrnce` rejected |
 | 8 | Plugin ABI | **A validated value**, no `IPlugin` protocol | Cordis's Base fields as a map (`:name :inject :config :provide :apply`), checked once at mount; loading polymorphism stays on `kmet.loader.core/Loader`, and no host class identity crosses the SCI boundary |
@@ -65,7 +65,8 @@ an agent's scoped world before it is published, and the
 **profile/bundle/patch** composition model — ordered rows, patches by row id,
 explicit plugin sources — with vars and extension ids in place of npm package
 names, instead of a keyword plugin registry. What is not taken: web-first
-(TUI, then `ui-tk`, web later) and npm as the plugin boundary — kmet's isolated
+(TUI first; a second provider — `ui-tk` — is separate development, web later)
+and npm as the plugin boundary — kmet's isolated
 SCI contexts with a per-extension `deps.edn` are the stronger isolation story,
 and they already exist
 (`modules/app/src/kmet/agent/extensions/context.cljc`).
@@ -231,7 +232,7 @@ effect half of it.
 | 1 | **`srce`** | **new**: context, services, plugins, events, config |
 | 2 | `tui`, `tk` | unchanged: component backends; become `:ui` providers |
 | 2 | **`app`** | **new**: shared services (tools, commands, prompts, skills, events, models, permissions, workspace), the session layer (session, sessions), and the extension host (ABI, loaders, api construction) |
-| 3 | **`ui`** | **new**: `kmet.ui.tui`, `kmet.ui.tk`, `kmet.ui.headless` |
+| 3 | **`ui`** | **new**: `kmet.ui.tui`, `kmet.ui.headless` (a second toolkit provider, `kmet.ui.tk`, is separate development) |
 | 3 | **`mode`** | **new**: `kmet.mode.tui`, `kmet.mode.print`, `kmet.mode.rpc`, `kmet.mode.server` |
 | 4 | `agent` | legacy: kmet1's app; may require `app`/`ui`/`mode`; deleted in one landing |
 | — | — | the `kmet2` command (`kmet.app.core/-main`, shipped from `app`): parse args, build the root context, load plugins, run the selected mode |
@@ -462,7 +463,8 @@ provider's namespace. That is the rule that keeps landing 5 a move rather than
 a rewrite — `kmet.ui.tui` may keep TUI-only chrome, and only the structural
 parts are extracted into shared code.
 
-Today's providers, and the one that proves the contract is worth having.
+Today's providers. The second-toolkit provider that would prove the contract
+against another backend — `ui-tk` — is deferred to its own development.
 `:ui/headless` is the one the tree starts from (landing 5k): nothing renders,
 dialogs answer by kind, and print/rpc/server stack it — the provider a promotion
 starts from, not a stub, because its answers are the ABI's own defaults. The
@@ -470,9 +472,10 @@ providers that draw are:
 
 1. `:ui/terminal` — components over `kmet.libs.hikap.core`, which already
    takes its backend map as an argument.
-2. `:ui/tk` — the same contract, second toolkit (Tk through
-   `babashka.ffi`/`jolt.ffi`: bb and Jolt, not JVM), starting from the existing
-   `kmet.gui-sample` widget skeleton (in `modules/tk`) rather than a blank page.
+2. `:ui/tk` — deferred to its own development: the same contract, second
+   toolkit (Tk through `babashka.ffi`/`jolt.ffi`: bb and Jolt, not JVM),
+   starting from the existing `kmet.gui-sample` widget skeleton (in
+   `modules/tk`) rather than a blank page.
 3. `:ui/web` — later; a third backend, no app change.
 
 App plugins declare `:inject {:ui :optional}` and upgrade themselves when a
@@ -496,7 +499,8 @@ scroll container over the extra-tag seam, no app content), so the second
 provider needs a transcript, not a backend. Landing 5a moves `kmet.agent.ui.*` and
 `modes/interactive/*` into `kmet.ui.tui` and extracts capabilities
 incrementally; it does not rewrite them as view-model + renderer. Landing 5b
-builds `kmet.ui.tk` on that skeleton.
+builds a second provider on that skeleton; that provider (`kmet.ui.tk`) is now
+its own development, not a landing here.
 
 ## Pluggable modes
 
@@ -874,7 +878,7 @@ Each is independently shippable and gated.
 | 4d | **landed** — **Inspection from the tree**: `kmet.app.inspect/units` renders a ctx's subtree, `--dump-state` boots the composition and renders the root's, `/units` re-points at the invocation ctx's subtree, and both halves of the old listing (the store's owner walk and the per-registry `keys=[…]` lines) are deleted. One kernel addition came with it: `srce/detach!`, the lifetime a plain child ctx (`extend`/`isolate`) had no way to end — the tree listed a line per ctx ever extended, so `test_tool_policy` released its agent ctxs and 4c-iii-b gets the release an agent ctx needs | `--dump-state` and `/units` show a `:pending` fiber with its `waiting-for` and a `:failed` one with its error, and a disposed or detached ctx leaves no line; `kmet.app.test-inspect` (10 tests) plus two rewritten `/units` tests replace the five listing tests |
 | 4e | **landed** — **Retire the store**: `kmet.libs.scope` (288 lines, with its two test namespaces), `kmet.agent.registry-store`, `app_runtime`'s `node`/`app-node`/`*error-reporter*` plumbing, the `cli.clj` force that only existed for it, and the loader whitelist entry are gone. Nothing still read it: 4b-ii-a took the host's nine sites, the Engine's two, 4d the `owner-listing` walk, and `registry_store` was its own last reader. `scope.md` went with the code in the same change: its surviving rules moved to the homes that implement them | `grep` finds no `(scope/` under `kmet.agent.*`, no `kmet.libs.scope` or `registry-store` require; `bb test` green; `kmet --app old` loads with no store in the process. 613 lines deleted, no source added |
 | 4f | **landed** — **The tool layer into `app`**, in five shippable steps: `tools/bash-output`, `tools/bash-executor`, the seven tool bodies (`tool`, `bash`, `edit`, `write`, `read`, `invoke`, `run-code`), `kmet.agent.config`, then `tools/registry` + `tools/config` + `tools/core`. The tool layer now lives in `app` with its namespaces kept — the one exception is kmet1's arity-less façade, which the review moved back to `agent`; `app` declares the SCI backend the sandbox mints contexts with. The one behavioral change: the registry took its handle as a first parameter, so no app namespace requires a rank-4 one, and kmet1's convenience arities moved to a rank-4 façade (`kmet.agent.tools.core`) that supplies `(app-runtime/registry)`. The run_code record is built per registry, so its sandbox seams close over the caller's handle | `kmet.test-module-deps` green after every step (both directions, plus the library view); `bb test` green; `kmet --app old --version`/`--list-models` load; `kmet.agent.tools.registry` has no arity that resolves a handle it was not given |
-| 5 | **Ten increments have landed — print mode as a row (§ "Landing 5a"), kmet1's one-shot flags + the edn wire (§ "Landing 5b"), the run's front-end surface (§ "Landing 5c"), rpc mode serving the protocol (§ "Landing 5d"), the rank-clean half of the TUI move into the new `ui` module (§ "Landing 5e") the transcript + its two neighbours after the parser and the tool lookup moved to the caller (§ "Landing 5f") the session runtime split into the value a front end reads and the driver that runs it (§ "Landing 5g") the seven selectors moved with no edits of their own (§ "Landing 5h") the registry handle became something the owner publishes, freeing four registries and the last UI file (§ "Landing 5i"), and the TUI became a row too, so `kmet --app new` starts a session (§ "Landing 5j")**. Neither the print mode nor the modes after it could be written before 7b-i: it is the first client of the `:agents` factory rather than the Engine, but its stream *and* its exit result are `:agent-settled` — kmet1's print mode is a `runtime/subscribe!` consumer, and kmet2 has no Engine to subscribe to. Then `:ui` service (required/optional capabilities, widget set) + `ui-headless` (**landed, 5k** — the contract, the provider, `:bundle/headless`) + `ui-terminal` (5l); the rest of the modes as plugins; then `ui-tk` from the existing `kmet.gui-sample` | print landed and at kmet1 parity for the one-shot flags it had (`-p`, `--mode text|edn`, `--model`, `--provider`: streams or prints the wire, writes its session log, exits 0); the `:ui` contract and its headless provider answered their gate (§ "5k"); rpc/tui parity via `scripts/capture/`; the TUI's own terminal provider landed at 5l-iii, and the tk provider on bb and Jolt is 5m |
+| 5 | **Ten increments have landed — print mode as a row (§ "Landing 5a"), kmet1's one-shot flags + the edn wire (§ "Landing 5b"), the run's front-end surface (§ "Landing 5c"), rpc mode serving the protocol (§ "Landing 5d"), the rank-clean half of the TUI move into the new `ui` module (§ "Landing 5e") the transcript + its two neighbours after the parser and the tool lookup moved to the caller (§ "Landing 5f") the session runtime split into the value a front end reads and the driver that runs it (§ "Landing 5g") the seven selectors moved with no edits of their own (§ "Landing 5h") the registry handle became something the owner publishes, freeing four registries and the last UI file (§ "Landing 5i"), and the TUI became a row too, so `kmet --app new` starts a session (§ "Landing 5j")**. Neither the print mode nor the modes after it could be written before 7b-i: it is the first client of the `:agents` factory rather than the Engine, but its stream *and* its exit result are `:agent-settled` — kmet1's print mode is a `runtime/subscribe!` consumer, and kmet2 has no Engine to subscribe to. Then `:ui` service (required/optional capabilities, widget set) + `ui-headless` (**landed, 5k** — the contract, the provider, `:bundle/headless`) + `ui-terminal` (5l); the rest of the modes as plugins | print landed and at kmet1 parity for the one-shot flags it had (`-p`, `--mode text|edn`, `--model`, `--provider`: streams or prints the wire, writes its session log, exits 0); the `:ui` contract and its headless provider answered their gate (§ "5k"); rpc/tui parity via `scripts/capture/`; the TUI's own terminal provider landed at 5l-iii; a tk provider is separate development |
 | 6 | **Complete.** `:agents` is a registry (4c-iii-b), **6a** gave the socket reader its queue (`kmet.libs.concurrent`), **6b** made a connection an agent (`mode-server`: rpc over a socket, `:agent-id` on every record, per-agent event scoping, `--port`), and **6c** put the dialog pair on the wire (a named `:ask-all` policy, a server-owned approvals row, an approval answered by the client) | two agents concurrently **met**, one stalling client **met**, an approval answered by a client **met** — all three in `kmet.app.modes.test-server` |
 | 7a | loop re-hosted as a driver plugin (`:agentLoop`), registering the `:agents` factory; the `:systemPrompt` row with its first reader | two agents created through `create!` each run a turn and settle once; `--dump-state` shows the driver active | **landed**: the stage map, the leaves and the whole cluster are `app`'s (names kept), 7a-ii made the resource load and input expansion the caller's, the `:systemPrompt` row reads over `:skills`, and `:agent-loop` registers the `:agents` factory with a runnable handle; the composition-level gate is met too — `:extensions` binds the host, and a composed agent runs a turn (`kmet.app.test-composition-run`); the Engine's `commands` dispatch and its wrapper fallback are the two named residuals; see § "Landing 7a" |
 | 7b-i | **landed** — **The events contract — the head of landing 5, not its tail**: the loop dispatches on the kernel from the run's own ctx, so `:agent-settled` is an event a front end subscribes to at the app's scope, while kmet1's process table keeps hearing the same events (the extension ABI registers there; kmet1 boots the composition, so a run cannot tell the two apps apart — only the listeners differ). A boundary threads **one** decision through both: the kernel's accumulated map seeds the table's chain. The composition test no longer listens on kmet1's table | a composed turn settles on the app's bus, and `kmet.app.test-composition-run` subscribes without kmet1's table — **met**; see § "Landing 7b-i settled" |
@@ -883,7 +887,6 @@ Each is independently shippable and gated.
 | 5l | **landed** — the TUI library is `ui`'s: the driver and the builtin command table (5l-i, namespaces kept), the process world's body, the rank-2 root publisher, the load at the entry and one registry publisher (5l-ii), and the interactive cluster, the mode row and the config command (5l-iii) — so a TUI run is kmet2's own front end, with the terminal `:ui` provider and the approval seam a terminal needs; § "The remaining plan" | pty capture parity on `--app new` **met** (same header, resources, extensions, footer); `modules/agent/src/kmet/agent/modes` holds only kmet1's three; an extension's command registered under `--app new` is in the ctx's `:commands`; a TUI profile's ctx provides `:ui` (`:kind :terminal`) and `:approvals` |
 | 5n | **landed** — the invocation surface is kmet1's: the run flags (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) parsed by the entry and resolved before a run, `@file` read at parse time, the maintenance flags (`-d`/`--debug` before the first load, `--generate-models` before the world, `--list-models [filter]` after it — one implementation in `kmet.app.maintenance` for both entries), extension `--flag` values in kmet1's three forms, the skill/prompt expansion chain in print and rpc, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) handed to the TUI row and refused by name where no factory opens a session (10a's); § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:`-style expansion reaches the agent in print and rpc, `--list-models` is byte-identical to `--app old` bare and filtered, `--session-dir` places the session, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run — met |
 | 8 | **in progress** — the handle is the value a front end reads and its settings/compaction surface landed (`479eb19d`), per-agent listeners and rpc's model/compaction setters landed (`c6723127`), a run now binds the extension surface (session, runtime capabilities, context) to its agent (`2ce32596`), and the session lifecycle moved below both drivers with its ops on the handle (`5a314785`); the TUI's own port — loop-event run callbacks, the front end's port and `:mode` per agent, the per-agent sinks, the commands — is what remains | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises (**the last is met at the listener level**: print and rpc subscribe on the agent's ctx, and two agents settle their own promises; no test mounts two print rows in one composition) |
-| 5m | **planned** — `ui-tk`: `kmet.ui.tk` over `kmet.tk` and the `:ui/transcript` skeleton; the second toolkit provider, no app change | one profile patch swaps `:ui/terminal` for `:ui/tk` and the same session paints on bb and Jolt; JVM refuses the row by name |
 | 9 | **planned** — the execution seams: `:shell`/`:subprocess`, `:workspace`/`:fs`, `:sandbox`, `:llm`/`:models`, `:config`/`:auth`; every `defonce` cell the audit names becomes a per-context read | two agents run shell in two cwds with two shells; the § "Multi-session server mode" audit table holds only the extension host's own bindings, each with a written reason |
 | 10 | **planned** — the server's phase 1: resume-by-id, the boundary drain (`submit!`'s first consumer), bearer token, unix socket where the host has one, `--max-sessions`, per-client depth, idle reaping, `:lag`/`:stream-gap`, `:remember!` enforced | an agent disposed, resumed by id and answered; a tool thread's mount lands at the next turn; two sessions isolated by cwd, shell and model |
 | 11 | **planned** — retirement: one `s/kmet\.agent\./kmet.app./` pass, kmet1's files deleted, `--app` flipped to the default and the flag dropped, the `agent` module row removed | the full gate set plus pi-alignment green with no `kmet.agent.*` in the tree except the ABI |
@@ -3499,7 +3502,7 @@ own, not a tweak.
 ## The remaining plan
 
 The ledger above ends at 7b-ii. This is the work that is left, in the order the
-dependencies allow, with the measurement that decided each cut. Five landings,
+dependencies allow, with the measurement that decided each cut. Four landings,
 five decisions, and an explicit list of what the plan does *not* reopen.
 
 ### What is left, measured
@@ -3514,14 +3517,14 @@ kmet1's to delete at retirement — no edge blocks it any more:
 
 Three things are missing rather than blocked, and they are the rest of the plan:
 
-- **`:ui` has its providers; the second toolkit and the server's per-connection
-  port are left.** 5k landed the contract (`kmet.app.ui`) and
-  `kmet.ui.headless`, and 5l-iii landed `kmet.ui.tui`'s terminal provider
-  (`:kind :terminal`, dialogs answered by the running TUI) with the approval
-  seam; `ui-tk` is 5m's. The server stacks the headless bundle but binds no
-  port: two connections cannot bind different ones until 8's per-agent surface
-  (the host's front-end binding is one process atom); rpc's dialog `:request`
-  over the wire is 10a's command table.
+- **`:ui` has its providers; the server's per-connection port is left.** 5k
+  landed the contract (`kmet.app.ui`) and `kmet.ui.headless`, and 5l-iii landed
+  `kmet.ui.tui`'s terminal provider (`:kind :terminal`, dialogs answered by the
+  running TUI) with the approval seam. A second toolkit provider (`ui-tk`) is
+  separate development, not this plan's. The server stacks the headless bundle
+  but binds no port: two connections cannot bind different ones until 8's
+  per-agent surface (the host's front-end binding is one process atom); rpc's
+  dialog `:request` over the wire is 10a's command table.
 - **The execution seams are absent** — `:shell`, `:subprocess`, `:workspace`,
   `:fs`, `:sandbox`, `:llm`/`:models`, `:config`/`:auth`, `:modes` — and the
   cells they replace are all still there: `tools/bash_executor.clj:31`
@@ -3541,12 +3544,11 @@ Three things are missing rather than blocked, and they are the rest of the plan:
 | 5l | **landed** — `agent` → `app` (two moves + the world load), `agent` → `ui` (12 moves) | ~5,300 moved, ~120 changed | 5k | pty parity; `agent/modes` holds only kmet1's three; a kmet2 extension's command is in the ctx's `:commands`; a print run has extensions loaded; the TUI profile's ctx provides a terminal `:ui` and an approver |
 | 5n | **landed** — `app` (the entry + the modes), no move | ~450 src, ~250 test | 5l | `-p @tasks.md`, `/skill:` expansion, `--thinking`/`--list-models`/`--debug`/`--generate-models`/`--session-dir`/`--my-ext-flag`, and `config` with no rank-4 load |
 | 8 | `ui`, `app` (the handle's op set, the mode listeners) | ~900 changed | 5n | a TUI run's agent is in `:agents`; no `session.driver` mutator left in `kmet.ui.tui.*`; two print runs settle their own promises |
-| 5m | `ui` (+ one module tree) | ~900 new | 8 | one patch swaps the provider; the same session paints on bb and Jolt |
 | 9 | `app`, `libs` | ~1,500 adapted | 8 | two agents run shell in two cwds with two shells |
 | 10 | `app` | ~1,100 | 8 (10a); 9 (10b/10c) | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; two sessions isolated |
 | 11 | all modules | −8,500, ~240 renames | 8, 10a | full gates + pi-alignment, no `kmet.agent.*` but the ABI |
 
-**The execution order is 8 → 10a → 11 → 9 → 10b/10c → 5m.** Retirement is
+**The execution order is 8 → 10a → 11 → 9 → 10b/10c.** Retirement is
 wanted as soon as it can be taken, so the schedule follows what each landing
 actually blocks on, not the landing numbers. 11's hard prerequisites are a
 complete 8 (the TUI reads a handle, so `session.driver`'s engine path and the
@@ -3555,15 +3557,15 @@ deleted by 11, and kmet2 must already answer the whole `docs/rpc.md` table, or
 the protocol regresses). 10b and 10c are kmet2's own boundary and transport
 work — the old app has no server to compare against — so they follow
 retirement; 9's isolation seams are also kmet2-only and now land after the
-rename pass, which keeps that pass out of files 9 would touch. 5m's only
-dependency is 8, so it floats to the end.
+rename pass, which keeps that pass out of files 9 would touch.
 
-5m closes landing 5 *after* 8 rather than before it, and the number says so: its
-gate is a provider, and a second toolkit is worth building over a front end that
-reads a handle — otherwise `kmet.ui.tk` implements the `Engine` port that 8 is
-about to delete. 5n sits between 5l and 8: it needs the world load at the entry
-(5l-ii, landed) and it extends the same create-opts map that 8's handle ops read,
-so landing it first keeps 8 about the port and not about flags.
+`ui-tk` is not scheduled here: it is its own development, and when it resumes
+it lands over the handle-based front end 8 produces — a second toolkit is worth
+building over a front end that reads a handle, because otherwise `kmet.ui.tk`
+would implement the `Engine` port that 8 deletes. 5n sits between 5l and 8: it
+needs the world load at the entry (5l-ii, landed) and it extends the same
+create-opts map that 8's handle ops read, so landing it first keeps 8 about the
+port and not about flags.
 
 ### What kmet1 has, and where each piece lands
 
@@ -3619,8 +3621,8 @@ connections cannot bind different ports).
 **Why first.** It is the smallest missing seam with a real consumer today: two
 modes built a port by hand, and `front-end/install!` is the one place they hand
 it over — so the re-point is a line per mode, and the contract test that makes
-the seam worth having is written against the provider the tree ships (the TUI at
-5l and Tk at 5m join the same table).
+the seam worth having is written against the providers the tree ships (the TUI
+together with the headless bundle; a tk provider would join the same table).
 
 **Gate.** `kmet.ui.test-headless` enumerates every provider the tree ships and
 asserts the four required keys — the 4b-i api key-set test's twin, failing when
@@ -3631,9 +3633,9 @@ for `:select`, while a patch that removes the `:ui` row leaves `(srce/get ctx
 waits (`waiting-for=[ui]`), an `:optional` one never does, and both render
 distinctly.
 
-**Not in it.** The toolkit. `ui-terminal` waits for 5l's move, and `ui-tk` for
-8. The server's per-connection port and the dialog `:request`/`:response` pair
-are landing 6's.
+**Not in it.** The toolkit. `ui-terminal` waits for 5l's move; `ui-tk` is
+separate development (it waited for 8). The server's per-connection port and the
+dialog `:request`/`:response` pair are landing 6's.
 
 ### 5l — the TUI library moves into `ui`
 
@@ -4005,26 +4007,17 @@ which is what makes the port incremental. A `-c`-style continue is
 `find-recent-session` plus a resume at the caller, not a handle op: a query is
 not an agent's state.
 
-### 5m — `ui-tk`, the second provider
+### `ui-tk` — deferred to separate development
 
-`kmet.ui.tk` implements the same four required keys over `kmet.tk`, starting
-from `kmet.gui-sample.ui`'s `:ui/transcript` (94 lines, a scroll container over
-the extra-tag seam) rather than a blank page: `:kind :tk`,
-`:render-tree` (a hiccup tree → Tk widgets through the transcript),
-`:widget-set` (`:text :input :select-list :markdown`), `:request!` (Tk dialogs),
-`:input!`, `:notify`, and `:capabilities #{:chat-history :footer :status :images}`.
-The profile patch that picks a provider is one row swap, and no app code changes —
-that is the contract's claim, and this landing is where it is tested. Plumbing:
-`modules/ui/deps.edn` gains `kmet/tk` (rank 2), the sample stays where it is
-(`modules/tk`'s `kmet.gui-sample.*` is the skeleton, not app UI), and the three
-extension classpaths already carry `modules/tk/src`.
-
-Gate: one `--patch` file swapping `:ui/terminal` for `:ui/tk` boots the same
-session and paints a transcript on bb and on Jolt; on the JVM the row is
-unresolvable by name (the host that has no `babashka.ffi`) and `--dump-config`
-says so rather than the boot dying, which is the "unresolvable here" marker
-landing 1 deferred. The pty/`term_dump` capture is the artefact, because Tk's
-contention is not a unit test's subject.
+`kmet.ui.tk` — the four required keys over `kmet.tk`, starting from
+`kmet.gui-sample`'s `:ui/transcript` — was landing 5m and is now its own
+development, not part of this plan. The design is unchanged and small: the
+provider in `modules/ui`, `modules/ui/deps.edn` gaining the rank-2 `kmet/tk`
+edge, and one `--patch` file swapping `:ui/terminal` for `:ui/tk` as its gate
+(the same session painting on bb and Jolt; the JVM refusing the row by name,
+since it has no `babashka.ffi`). It still waits for 8, for the same reason: the
+provider must implement the handle-based front end's contract, not the `Engine`
+port retirement deletes.
 
 ### 9 — the execution seams
 
@@ -4136,11 +4129,11 @@ suite nobody has seen green.
 
 ### What this plan does not do
 
-`:ui/web` (needs `ui-tk` proven first, per the layer rule), multi-tenancy
-(one principal in phase 1 is still the decision), the pi-alignment deferred
-families (session-format migration, browser transport, telemetry), and the
-rewrite of the TUI as view-model + renderer — 5l-iii moves files and cuts two
-seams, it does not restructure the interactive loop.
+`:ui/web` (needs a second toolkit provider proven first, per the layer rule),
+multi-tenancy (one principal in phase 1 is still the decision), the
+pi-alignment deferred families (session-format migration, browser transport,
+telemetry), and the rewrite of the TUI as view-model + renderer — 5l-iii moves
+files and cuts two seams, it does not restructure the interactive loop.
 
 ### Drift found while planning
 
@@ -4150,9 +4143,9 @@ seams, it does not restructure the interactive loop.
 - 5i's closing line, "what is left is landing 6", is stale: 6 is complete and
   the interactive cluster is now 5l's. The paragraph is kept as history; this
   section is the current answer.
-- The landings table's 5 row says "rpc/tui parity via `scripts/capture/` and the
-  tk provider on bb and Jolt still to come" — that is 5l-iii and 5m, so the row
-  keeps its "ten increments" shape until 5m lands.
+- The landings table's 5 row listed "the tk provider on bb and Jolt still to
+  come": with 5m dropped that is not a landing, so the row now says a tk
+  provider is separate development (the rpc/TUI parity half is 5l-iii).
 - `kmet.app.front-end`'s docstring named `kmet.agent.extensions.core` as the
   home of the port's capability map; 5k moved the docstring with the re-point,
   and the base a run binds is the `:ui` provider's `:port` now.
@@ -4242,7 +4235,7 @@ seams, it does not restructure the interactive loop.
 - Renaming `kmet.agent.*` namespaces at lift time, or inventing intermediate
   prefixes (`kmet.shared.*`, `kmet.services.*`): every rename is paid once more
   at retirement, and the last one is meant to be a `sed`.
-- A web UI before `ui-tk` has proven the capability contract.
+- A web UI before a second toolkit provider has proven the capability contract.
 - Deleting kmet1's `kmet.agent.*`; it stays until kmet2 passes the full gate
   set and the pi-alignment suite, then it is retired in one landing.
 - The kernel's own exclusions (JS syntax, the loader/HMR/console packages, the

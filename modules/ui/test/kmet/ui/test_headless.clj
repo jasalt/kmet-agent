@@ -23,9 +23,9 @@
 
 (def ^:private providers
   "Every `:ui` provider the tree ships, by the var a contract test can read. A
-   provider added without a line here is not covered — landing 5l adds
-   `kmet.ui.tui`, landing 5m `kmet.ui.tk` — and a provider that drops a required
-   key fails the check below."
+   provider added without a line here is not covered — landing 5l added
+   `kmet.ui.tui`; a second provider (`kmet.ui.tk`) is separate development — and
+   a provider that drops a required key fails the check below."
   {:ui/headless #'headless/provider})
 
 (defn- check-error
