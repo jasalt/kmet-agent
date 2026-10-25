@@ -4206,6 +4206,18 @@ on), `:workspace` and `:fs` (`user.dir`, the cwd-by-argument pattern),
 passes: `tools/read`'s skill resolver, `run_code`'s bridge queue,
 `keybindings`' theme fn cell.
 
+**What the gate measures, as of the retirement.** `modules/app/src` holds 23
+`defonce`s; 15 are the ones the gate keeps (the extension host's nine bindings
+and caches, the debug cells and the log paths, the session store's
+debug flag, `server.clj`'s ask route). The other eight are this landing's work:
+`tools/bash_executor`'s shell options, `run_code`'s bridge queue, `read`'s skill
+resolver, `keybindings`' theme cell, `event_bus`'s listener table (which
+converges with 10b's boundary drain rather than a row), and
+`registry.clj`'s process-handle pair — the fallback a rpc or server connection
+reads, which is the `:config`/`:auth`/`:modes` half of the re-point. `root.clj`'s
+process-root atom stays by decision (it is the one place a process root lives),
+so the gate text names it beside the host's bindings.
+
 Gate: two agents in one process run bash in two cwds with two shells and read two
 filesystems; then `grep '^(defonce' modules/app/src` shows only the extension
 host's own bindings, the debug cells and `server.clj`'s ask route — each of which
@@ -4333,6 +4345,17 @@ namespaces' render paths); they name their host now (`with-host`,
 `with-extension-host`), which is what the T landing's fixture existed for. The
 boundary case that required the façade inside the sandbox went with it: the
 sandbox's own exclusion is already pinned by `kmet.app.loop`.
+
+**Two loose ends the endgame left, recorded rather than fixed.**
+`scripts/bench/`'s three files (the frame, perf and render harnesses) require
+`kmet.agent.modes.interactive` and `kmet.agent.tools.core`; the interactive
+cluster moved to `ui` at 5l-iii and the façade died with kmet1, so they have not
+loaded since — each needs a rewrite against `kmet.ui.tui.interactive` and the
+handle-taking registry, or deletion. They are outside every gate, so nothing
+notices. And the server's user-facing page: `profiles.md` documents
+`--profile server`/`--port` and `rpc.md` the protocol, but the connection rules
+(one session per connection, the approval route, and 10c's token and
+`--max-sessions`) belong on a page of their own once 10c settles them.
 
 The deletion has guard work of its own, and each item is a guard that would
 either fail or go silently narrow: `test-front-end-policy`'s table names kmet1's
