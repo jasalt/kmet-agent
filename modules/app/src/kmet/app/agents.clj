@@ -91,6 +91,17 @@
    :request-compaction! :abort-compaction! :queue-compaction-message!
    :clear-compaction-queue!])
 
+(def session-ops
+  "The session-lifecycle ops a handle answers by name: the moves a front end's
+   /new, /session, /resume, fork, clone and branch commands need, plus the
+   session's name and HTML export. `:resume-session!` loads a stored session
+   and switches to it, as opposed to the registry's `:resume!`, which creates a
+   new agent for one. Same call shape as `setting-ops`
+   (`(op handle & args)`); each moves the session of the agent it was called
+   with, and none installs it into the process's extension slot."
+  [:new-session! :resume-session! :switch-session! :fork! :branch-session! :clone!
+   :set-session-name! :export-html!])
+
 (def handle-ops
   "The optional control surface a handle may answer. A caller asking for one a
    handle does not implement gets `:kmet.app/unsupported-op` naming it, never a
@@ -98,10 +109,11 @@
 
    The first five are the run's: send, the custom message (`:inject!`, pi's
    sendCustomMessage), cancel, the idle awaitable, and the status a listing
-   shows. `setting-ops` is the rest — each
-   writes that agent's state, so two agents of one process can differ —
+   shows. `setting-ops` and `session-ops` are the rest — each writes that
+   agent's state or moves its session, so two agents of one process can differ —
    measured from the interactive TUI's own call sites (new-app.md, landing 8)."
-  (into [:send! :inject! :cancel! :when-idle :status] setting-ops))
+  (into [:send! :inject! :cancel! :when-idle :status]
+        (concat setting-ops session-ops)))
 
 (defn- validate-handle!
   "HANDLE checked against `handle-contract` for ID and CHILD; returns it. A
@@ -444,12 +456,12 @@
         :when-idle (fn [handle] (dispatch handle :when-idle []))
 
         :status (fn [handle] (dispatch handle :status []))}
-      ;; the settings ops have one shape — take the handle, dispatch by name —
-      ;; so the table is generated from `handle-ops`' measured list rather than
-      ;; repeating the same closure
+      ;; the settings and session ops have one shape — take the handle, dispatch
+      ;; by name — so the table is generated from the measured lists rather than
+      ;; repeating the same closure per op
        (into {}
              (map (fn [op] [op (fn [handle & args] (dispatch handle op args))]))
-             setting-ops)))))
+             (concat setting-ops session-ops))))))
 
 (defn- serve
   "The `:agents` row: the registry over the injected projections, provided into

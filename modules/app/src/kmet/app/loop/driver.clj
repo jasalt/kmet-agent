@@ -22,6 +22,7 @@
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.project-context :as context]
             [kmet.agent.session.compaction :as manual]
+            [kmet.agent.session.lifecycle :as lifecycle]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.agent.tools.registry :as tools]
@@ -451,7 +452,22 @@
                         :request-compaction! manual/request-compaction!
                         :abort-compaction! manual/abort-compaction!
                         :queue-compaction-message! manual/queue-compaction-message!
-                        :clear-compaction-queue! manual/clear-compaction-queue!}))))))
+                        :clear-compaction-queue! manual/clear-compaction-queue!
+                        ;; the session lifecycle moves this handle's session in
+                        ;; place. No `:install!`: the process-wide extension
+                        ;; session is kmet1's front end, and a run's own binding
+                        ;; already covers handlers. A switch replaces the live
+                        ;; state record the `:session` thunk reads.
+                        :new-session! lifecycle/new-session!
+                        ;; load-and-switch: the registry's `:resume!` is a
+                        ;; different act (create an agent for a stored session)
+                        :resume-session! lifecycle/resume!
+                        :switch-session! lifecycle/switch-session!
+                        :fork! lifecycle/fork!
+                        :branch-session! lifecycle/branch-session!
+                        :clone! lifecycle/clone!
+                        :set-session-name! runtime/set-session-name!
+                        :export-html! runtime/export-html!}))))))
 
 ;; ── the row ───────────────────────────────────────────────────────────────
 

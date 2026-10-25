@@ -10,6 +10,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.session.backend :as backend]
+            [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
@@ -395,11 +396,83 @@
             "the trigger appends first, and the run flushes the next-turn one")
         (is (= :completed @(:last-outcome (:agent h))))))))
 
-(deftest the-handle-answers-every-setting-op
-  ;; `setting-ops` is the registry's list; the loop handle is the one
+(deftest the-handle-answers-every-registry-op
+  ;; `handle-ops` is the registry's list; the loop handle is the one
   ;; implementation behind it, so a name added there without a body fails here
   ;; instead of at a caller's first use.
   (let [{:keys [root agents]} (mounted)
         handle (create! {:root root :agents agents})]
-    (doseq [op agents/setting-ops]
+    (doseq [op agents/handle-ops]
       (is (fn? (get handle op)) (str "the loop handle answers " op)))))
+
+(deftest a-handle-moves-its-own-session
+  (let [{:keys [root agents]} (mounted)]
+    (with-stubbed-llm
+      (fn [_]
+        (let [a (create! {:root root :agents agents})
+              b (create! {:root root :agents agents})]
+          (try
+            ((:send! agents) a "hi" {:target :next-turn})
+            ((:when-idle agents) a)
+            (let [a-session (runtime/session a)
+                  b-session (runtime/session b)
+                  result ((:new-session! agents) a)
+                  started (:session result)]
+              (is (fs/exists? (:file a-session)) "the run wrote its log")
+              (is (some? started))
+              (is (not= (:id a-session) (:id started)) "new-session! starts a new log")
+              (is (= (:id started) (:id (runtime/session a)))
+                  "and the handle's live session moved")
+              (is (identical? b-session (runtime/session b))
+                  "a sibling handle keeps its own session")
+              (is (nil? (extensions/get-session))
+                  "no process-wide extension install: a handle is not a front end")
+              ;; resume! loads the session the handle started with
+              (let [resumed ((:resume-session! agents) a (:file a-session))]
+                (is (= (:id a-session) (:id (:session resumed))))
+                (is (= (:id a-session) (:id (runtime/session a)))))
+              ;; switch-session! takes a record: point a at b's log, b unaffected
+              ((:switch-session! agents) a b-session)
+              (is (identical? b-session (runtime/session a)))
+              (is (identical? b-session (runtime/session b))))
+            (finally
+              ((:dispose! agents) a)
+              ((:dispose! agents) b))))))))
+
+(deftest a-handle-forks-and-branches
+  (let [{:keys [root agents]} (mounted)]
+    (with-stubbed-llm
+      (fn [_]
+        (let [handle (create! {:root root :agents agents})]
+          (try
+            ((:send! agents) handle "hi" {:target :next-turn})
+            ((:when-idle agents) handle)
+            (let [entry (first (filter #(= :user (:role %)) (runtime/entries handle)))
+                  result ((:fork! agents) handle (:id entry))
+                  fork (:session result)]
+              (is (= :user (:role (:entry result))))
+              (is (some? fork) "the fork exists")
+              (is (= (:file fork) (:file (runtime/session handle)))
+                  "the handle switched to the fork")
+              ;; branching the fork back to the root rebuilds an empty context
+              (is (nil? ((:branch-session! agents) handle {:target-leaf nil})))
+              (is (= [] (runtime/messages handle))))
+            (finally
+              ((:dispose! agents) handle))))))))
+
+(deftest a-handle-names-and-exports-its-session
+  (let [{:keys [root agents]} (mounted)
+        path (str (fs/path sessions-dir (str "export-" (random-uuid) ".html")))]
+    (with-stubbed-llm
+      (fn [_]
+        (let [handle (create! {:root root :agents agents})]
+          (try
+            ((:send! agents) handle "hi" {:target :next-turn})
+            ((:when-idle agents) handle)
+            (is (= "a name" ((:set-session-name! agents) handle "a name")))
+            (is (= "a name" (session/get-session-name (runtime/session handle))))
+            (is (= path ((:export-html! agents) handle {:path path})))
+            (is (fs/exists? path))
+            (is (pos? (fs/size path)))
+            (finally
+              ((:dispose! agents) handle))))))))
