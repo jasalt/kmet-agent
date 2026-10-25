@@ -107,12 +107,14 @@
    handle does not implement gets `:kmet.app/unsupported-op` naming it, never a
    silent nil.
 
-   The first five are the run's: send, the custom message (`:inject!`, pi's
-   sendCustomMessage), cancel, the idle awaitable, and the status a listing
-   shows. `setting-ops` and `session-ops` are the rest — each writes that
+   The first group is the run's: send, the submission chain (`:submit!`,
+   pi's session.prompt input event), the compaction-queue flush, the custom
+   message (`:inject!`, pi's sendCustomMessage), cancel, the idle awaitable,
+   and the status a listing shows. `setting-ops` and `session-ops` are the rest — each writes that
    agent's state or moves its session, so two agents of one process can differ —
    measured from the interactive TUI's own call sites (new-app.md, landing 8)."
-  (into [:send! :inject! :cancel! :when-idle :status]
+  (into [:send! :inject! :cancel! :when-idle :status
+         :submit! :flush-compaction-queue!]
         (concat setting-ops session-ops)))
 
 (defn- validate-handle!
@@ -438,6 +440,10 @@
         :dispose! dispose!
 
         :send! send!
+
+        :submit! (fn [handle text opts] (dispatch handle :submit! [text opts]))
+        :flush-compaction-queue! (fn [handle will-retry]
+                                   (dispatch handle :flush-compaction-queue! [will-retry]))
 
         :steer! (fn [handle msg] (send! handle msg {:target :next-step}))
 

@@ -405,6 +405,61 @@
     (doseq [op agents/handle-ops]
       (is (fn? (get handle op)) (str "the loop handle answers " op)))))
 
+(deftest a-handle-submits-through-its-own-chain
+  ;; The TUI's submit path over the handle: the input hooks (told whether the
+  ;; text will be steered), the expansion opt and the handle's own
+  ;; start-or-queue rule — not the driver's prompt plumbing.
+  (let [{:keys [root agents]} (mounted)
+        gate (promise)
+        seen (atom [])]
+    (with-redefs [extensions/apply-input-hooks
+                  (fn [text _source {:keys [streaming-behavior]}]
+                    (swap! seen conj streaming-behavior)
+                    (if (= "handled" text)
+                      {:action :handled}
+                      {:action :pass :text text}))]
+      (with-stubbed-llm
+        (fn [_]
+          (let [handle (create! {:root root :agents agents})]
+            (try
+              (is (= {:action :started :text "hello"}
+                     ((:submit! agents) handle "hello" {})))
+              (is (= :steered (:action ((:submit! agents) handle "later" {})))
+                  "a submission while the run is live steers it")
+              (is (= ["later"] (:steering (runtime/queues handle))))
+              (is (= [nil :steer] @seen)
+                  "the hooks were told the second text would be steered")
+              (deliver gate true)
+              ((:when-idle agents) handle)
+              (is (= ["hello" "later"] (user-texts (:agent handle)))
+                  "the steered text reached the same run's context")
+              (is (= {:action :handled}
+                     ((:submit! agents) handle "handled" {}))
+                  "a hook that consumes the input starts nothing")
+              (finally
+                ((:dispose! agents) handle)))))
+        gate))))
+
+(deftest a-handle-flushes-its-compaction-queue
+  ;; Messages typed during a compaction reach the run through the handle: the
+  ;; flush starts a prompt when idle (the first non-extension message) instead
+  ;; of the driver's own prompt path.
+  (let [{:keys [root agents]} (mounted)]
+    (with-stubbed-llm
+      (fn [_]
+        (let [handle (create! {:root root :agents agents})]
+          (try
+            ((:queue-compaction-message! agents) handle "queued" :steer)
+            (is (= [{:text "queued" :mode :steer}]
+                   (runtime/compaction-queued handle)))
+            (is (nil? ((:flush-compaction-queue! agents) handle false)))
+            ((:when-idle agents) handle)
+            (is (= ["queued"] (user-texts (:agent handle)))
+                "the first message starts the run")
+            (is (= [] (runtime/compaction-queued handle)) "the queue drained")
+            (finally
+              ((:dispose! agents) handle))))))))
+
 (deftest a-handle-moves-its-own-session
   (let [{:keys [root agents]} (mounted)]
     (with-stubbed-llm

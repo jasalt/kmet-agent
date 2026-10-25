@@ -33,8 +33,6 @@
      reaches them; the settle path runs in the loop's `finally`."
   (:require
    [babashka.fs :as fs]
-   [clojure.string :as str]
-   [kmet.agent.commands :as commands]
    [kmet.agent.compaction.stage :as agent-compact]
    [kmet.agent.config :as cfg]
    [kmet.agent.debug :as debug]
@@ -45,7 +43,8 @@
    [kmet.agent.session.core :as session]
    [kmet.agent.session.lifecycle :as lifecycle]
    [kmet.ai.models :as models]
-   [kmet.agent.session.runtime :refer [agent-state compaction-queued ensure-cwd-session-dir extension-context find-recent-session map->Engine switch-model! turn-running?]]
+   [kmet.agent.session.runtime :refer [agent-state ensure-cwd-session-dir extension-context find-recent-session map->Engine switch-model! turn-running?]]
+   [kmet.agent.session.submission :as submission]
    [kmet.agent.skills :as skills]
    [kmet.app.loop.driver :as driver]
    [kmet.libs.concurrent :as concurrent]
@@ -115,8 +114,9 @@
    Loads the caller's resources (`:load-resources!`), builds the system prompt
    (custom prompt, appended prompt, project context files, active tools),
    derives every run option from CONFIG with the same defaults the TUI and
-   print mode used to wire by hand, seeds the scoped-model list, and installs
-   the extension runtime handle (session, context sink, UI registry)."
+   print mode used to wire by hand (the scoped-model list included — the
+   builder seeds it), and installs the extension runtime handle (session,
+   context sink, UI registry)."
   [config opts]
   (let [{:keys [model provider ui-context mode has-ui agent-opts ctx
                 load-resources! expand-input]} opts
@@ -160,7 +160,6 @@
                                                              t)))))
                              :agent-opts agent-opts})
         agent-state state
-        _ (loop-state/init-scoped-models! agent-state config)
         engine (map->Engine {:agent-state (atom agent-state)
                              :session (atom (:session agent-state))
                              :config (atom config)
@@ -403,42 +402,24 @@
   [engine]
   (manual/clear-compaction-queue! engine))
 
-(defn- split-command
-  "Split a slash-command line into [name args]. Non-command text returns
-   [nil nil]."
-  [text]
-  (when (str/starts-with? text "/")
-    (let [sp (str/index-of text " ")]
-      (if sp
-        [(subs text 1 sp) (subs text (inc sp))]
-        [(subs text 1) ""]))))
-
 (defn extension-command?
-  "True when TEXT is a registered extension command (pi: isExtensionCommand)."
+  "True when TEXT is a registered extension command (see
+   `submission/extension-command?`)."
   [text]
-  (some? (some-> (split-command text) first commands/find-command :extension-handler)))
+  (submission/extension-command? text))
 
 (defn execute-extension-command!
-  "Run a registered extension command with the extension context (pi:
-   prompt() → _tryExecuteExtensionCommand → handler(args, ctx))."
+  "Run a registered extension command with the extension context (see
+   `submission/execute-extension-command!`)."
   [text]
-  (let [[name args] (split-command text)
-        c (commands/find-command name)]
-    ((:extension-handler c) (extensions/build-extension-context) (or args ""))))
+  (submission/execute-extension-command! text))
 
 (defn expand-queued-text
   "Expand TEXT the way this engine's front end expands input — kmet1's skill
    commands and prompt templates — for a steered, follow-up or
-   compaction-queued message (pi: steer/followUp expand skill+template before
-   queueing; prompt applies the full chain). Queued text is raw (pre-hook);
-   the flush applies input hooks first (idle path) and expansion here matches
-   pi's steer/followUp for the running-turn path. Extension commands are not
-   expanded here — they are not allowed on the queue paths. An engine
-   bootstrapped without `:expand-input` queues its text as written."
+   compaction-queued message (see `submission/expand-text`)."
   [engine text]
-  (if-some [expand! (:expand-input engine)]
-    (expand! text)
-    text))
+  (submission/expand-text engine text))
 
 (defn expand-user-message-text
   "pi: prompt() expansion chain (sendUserMessage with
@@ -448,125 +429,37 @@
    only). Returns the expanded text, or nil when an extension command
    consumed the message."
   [engine text]
-  (let [trimmed (str/trim text)]
-    (if (and (str/starts-with? trimmed "/")
-             (not (str/includes? trimmed "\n")))
-      (let [space (str/index-of trimmed " ")
-            cmd (if (nil? space) (subs trimmed 1) (subs trimmed 1 space))
-            args (if (nil? space) "" (str/trim (subs trimmed (inc space))))]
-        (if-let [c (commands/find-command cmd)]
-          (if-let [eh (:extension-handler c)]
-            (do (eh (extensions/build-extension-context) args)
-                nil ;; consumed — nothing to send
-                )
-            text) ;; builtin command — not dispatched here (pi parity)
-          (expand-queued-text engine text)))
-      text)))
-
-(defn- apply-input-hooks
-  "Run extension input hooks on TEXT; returns the (possibly transformed)
-   text, or nil when a hook consumed the input (pi: session.prompt input
-   event). :streaming-behavior tells hooks whether the input will be
-   steered."
-  [engine text]
-  (let [input (extensions/apply-input-hooks text :interactive
-                                            {:streaming-behavior (when (turn-running? engine) :steer)})]
-    (if (= :handled (:action input))
-      (do (debug/log "input handled by extension: " text) nil)
-      (if (contains? input :text) (:text input) text))))
+  (submission/expand-user-message-text engine text))
 
 (defn submit!
-  "Submit TEXT from a front end (pi: session.prompt's input chain). While a
-   compaction runs the raw text queues as a steer message; otherwise the
-   extension input hooks run (a :handled input is consumed), and the text
-   either steers the running turn or starts a new one. With the :expand?
-   opt the engine's `:expand-input` chain runs first (pi: the
-   unknown-slash-command path); :run-opts are the front end's prompt
-   callbacks for a run this starts. Returns {:action :compaction-queued |
-   :handled | :started | :steered :text <hook-transformed text>} — the
-   front end records :text in its editor history."
+  "Submit TEXT from a front end (pi: session.prompt's input chain; see
+   `submission/submit!`). Returns
+   {:action :compaction-queued | :handled | :started | :steered,
+   :text <hook-transformed text>} — the front end records :text in its editor
+   history."
   ([engine text] (submit! engine text nil))
   ([engine text {:keys [expand? run-opts]}]
-   (if @(:compacting? (agent-state engine))
-     (do (queue-compaction-message! engine text :steer)
-         {:action :compaction-queued :text text})
-     (if-let [hooked (apply-input-hooks engine text)]
-       (let [out (if expand?
-                   (expand-queued-text engine hooked)
-                   hooked)]
-         (if (turn-running? engine)
-           (do (steer! engine out) {:action :steered :text hooked})
-           (do (prompt! engine (merge run-opts {:text out})) {:action :started :text hooked})))
-       {:action :handled}))))
-
-(defn- deliver-compaction-message!
-  "Deliver one compaction-queued M: extension commands execute immediately;
-   otherwise the message queues into the run per its mode (steer/follow-up,
-   with skill/template expansion). With :allow-prompt? and no run active,
-   the idle path runs the input hooks and starts a prompt instead (pi:
-   flushCompactionQueue → session.prompt); the overflow-retry flush never
-   prompts — every message queues via steer/followUp."
-  [engine m {:keys [allow-prompt? run-opts]}]
-  (if (extension-command? (:text m))
-    (execute-extension-command! (:text m))
-    (if (and allow-prompt? (not (turn-running? engine)))
-      (when-let [text (apply-input-hooks engine (:text m))]
-        (prompt! engine (merge run-opts {:text (expand-queued-text engine text)})))
-      (let [text (expand-queued-text engine (:text m))]
-        (if (= :follow-up (:mode m))
-          (follow-up! engine text)
-          (steer! engine text))))))
+   (submission/submit! engine text
+                       {:expand? expand?
+                        :deliver! (fn [text target]
+                                    (if (turn-running? engine)
+                                      (do (if (= :next-turn target)
+                                            (follow-up! engine text)
+                                            (steer! engine text))
+                                          :steered)
+                                      (do (prompt! engine (merge run-opts {:text text}))
+                                          :started)))})))
 
 (defn flush-compaction-queue!
-  "Deliver messages queued during compaction (pi: flushCompactionQueue —
-   runs on every compaction_end). With WILL-RETRY (overflow compaction: the
-   interrupted turn continues), every message queues into the running turn
-   via steer/follow-up per its mode. Otherwise the first non-extension
-   message becomes a prompt (starts a run when idle), extension commands
-   execute immediately, and the rest queue per mode. RUN-OPTS are the
-   front end's run callbacks for a prompt this starts. A failure restoring
-   the queue re-queues the messages so they are not lost; returns nil, or
-   {:error e} for the front end to report."
+  "Deliver messages queued during compaction (pi: flushCompactionQueue — see
+   `submission/flush-compaction-queue!`). RUN-OPTS are the front end's run
+   callbacks for a prompt this starts. A failure restoring the queue re-queues
+   the messages so they are not lost; returns nil, or {:error e} for the front
+   end to report."
   [engine will-retry run-opts]
-  (let [msgs (compaction-queued engine)]
-    (when (seq msgs)
-      (clear-compaction-queue! engine)
-      (let [restore! (fn []
-                        ;; pi: restoreQueue — the session queue is cleared too,
-                        ;; so messages already delivered by the failed flush are
-                        ;; not delivered again when the queue is re-flushed
-                       (loop-state/clear-queues! (agent-state engine))
-                       (reset! (:compaction-queued engine) msgs))]
-        (try
-          (if will-retry
-             ;; Overflow compaction: the turn retries — queue everything into it
-             ;; (pi: flushCompactionQueue willRetry — steer/followUp only, never
-             ;; a fresh prompt)
-            (doseq [m msgs] (deliver-compaction-message! engine m nil))
-             ;; Normal completion: first non-extension message prompts, the
-             ;; rest queue per mode
-            (let [first-idx (first (keep-indexed
-                                    (fn [i m] (when-not (extension-command? (:text m)) i))
-                                    msgs))]
-              (if first-idx
-                (do
-                   ;; extension commands before the first prompt execute now
-                  (doseq [m (take first-idx msgs)]
-                    (execute-extension-command! (:text m)))
-                   ;; the first message: prompt when idle, else queue per mode
-                  (deliver-compaction-message! engine (nth msgs first-idx)
-                                               {:allow-prompt? true :run-opts run-opts})
-                   ;; remaining messages queue per mode — never a fresh prompt
-                   ;; (pi: the rest go through steer/followUp)
-                  (doseq [m (drop (inc first-idx) msgs)]
-                    (deliver-compaction-message! engine m nil)))
-                 ;; all extension commands — execute them all
-                (doseq [m msgs] (execute-extension-command! (:text m))))))
-          nil
-          (catch Exception e
-            (restore!)
-            (debug/log "compaction queue flush failed: " e)
-            {:error e :count (count msgs)}))))))
+  (submission/flush-compaction-queue!
+   engine will-retry
+   {:start! (fn [text] (prompt! engine (merge run-opts {:text text})))}))
 
 (defn compact!
   "Compact the session (manual /compact path); custom-instructions and

@@ -25,6 +25,7 @@
             [kmet.agent.session.lifecycle :as lifecycle]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
+            [kmet.agent.session.submission :as submission]
             [kmet.agent.tools.registry :as tools]
             [kmet.ai.models :as models]
             [kmet.srce.core :as srce]))
@@ -177,6 +178,10 @@
                               ;; the state reads the ctx resolved above, so its
                               ;; tool table and the prompt's are the same table
                               {:ctx ctx})))]
+    ;; the session's scoped-model list is the config's (pi: resolveModelScope at
+    ;; runtime creation): seeded here, so kmet1's engine and every handle start
+    ;; with the same scope rather than only the bootstrapped one
+    (loop-state/init-scoped-models! state config)
     {:state state :cwd runtime-cwd}))
 
 ;; ── the handle ────────────────────────────────────────────────────────────
@@ -268,7 +273,10 @@
                  :last-run last-run
                  :disposed? disposed?
                  :cwd (atom runtime-cwd)
-                 :expand-input nil
+                 ;; the process's expansion chain: a queued or submitted text
+                 ;; reaches the run with its skill commands and prompt
+                 ;; templates replaced, the same way kmet1's engine does
+                 :expand-input packages/expand-input
                  :turn-running? running?
                  :compaction-queued (atom [])
                  :pending-compaction (atom [])
@@ -281,10 +289,13 @@
                 (loop-state/steer! @live text)
                 (loop-state/follow-up! @live text)))
             ;; start a run if this call claims it, else queue behind the one
-            ;; another caller claimed
+            ;; another caller claimed. Answers which happened: the submission
+            ;; chain reports it, and a caller that only wakes the agent ignores
+            ;; it.
             (deliver! [text target]
-              (when-not (and (not @running?) (start! text nil))
-                (queue! text target)))
+              (if (and (not @running?) (start! text nil))
+                :started
+                (do (queue! text target) :steered)))
             ;; an extension's sendCustomMessage (pi: ctx.sendCustomMessage):
             ;; the four branches driver/send-message-capability has, over this
             ;; agent's live state — a trigger while idle starts a run, a
@@ -391,6 +402,22 @@
            :id id
            :ctx child
            :agent state
+           ;; the front end's submission chain over this handle: input
+           ;; hooks, expansion, compaction queueing, then the handle's own
+           ;; start-or-queue rule (pi: session.prompt). A queued message is
+           ;; not recorded in the inbox here: the TUI is a single front end
+           ;; and the loop's log carries the message when it is consumed; the
+           ;; server's wire submit (10a) records the fact where the queue is
+           ;; durable.
+           :submit! (fn [text opts]
+                      (submission/submit! engine text
+                                          (assoc opts
+                                                 :deliver! (fn [text target]
+                                                             (deliver! text target)))))
+           :flush-compaction-queue! (fn [will-retry]
+                                      (submission/flush-compaction-queue!
+                                       engine will-retry
+                                       {:start! (fn [text] (start! text nil))}))
            :send! (fn [msg opts]
                     (let [text (if (map? msg) (:text msg) msg)
                           images (vec (:images msg))
