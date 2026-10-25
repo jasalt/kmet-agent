@@ -341,6 +341,53 @@
                 "and its own agent's model"))))
       (finally (off)))))
 
+(deftest a-runs-front-end-surface-is-the-agents
+  ;; A front end publishes its mode, port and sinks on the agent it serves; a
+  ;; run's handlers read that surface, not whatever install the process holds
+  ;; (a second front end in one process, an embedder's port). Outside a run the
+  ;; process install still answers: a command handler is not an agent's.
+  (let [{:keys [root agents]} (mounted)
+        previous (extensions/front-end-surface)
+        seen (atom [])
+        port {:notify (fn [message _type] (swap! seen conj [:notify message]))}
+        process-port {:notify (fn [message _type] (swap! seen conj [:process message]))}]
+    (try
+      (extensions/bind-extensions! {:mode :print :has-ui false :ui process-port})
+      (with-stubbed-llm
+        (fn [_]
+          (let [h (create! {:root root :agents agents})
+                off (event-bus/on-event
+                     :agent-start nil
+                     (fn [_]
+                       (let [ctx (extensions/build-extension-context)]
+                         (swap! seen conj [:mode (:mode ctx)])
+                         (swap! seen conj [:has-ui (:has-ui ctx)]))
+                       (extensions/ui-notify "hi")
+                       (extensions/append-custom-message! :note "custom" true)
+                       (extensions/append-custom-entry! :blob {:a 1}))
+                     (:ctx h))]
+            (try
+              (reset! (:front-end h)
+                      {:mode :interactive :has-ui true :ui port
+                       :context-sink (fn [msg] (swap! seen conj [:sink (:content msg)]))
+                       :entry-sink (fn [entry] (swap! seen conj [:entry (:custom-type entry)]))})
+              ((:send! agents) h "go" {:target :next-turn})
+              ((:when-idle agents) h)
+              (is (some #{[:mode :interactive]} @seen)
+                  "the run reads its agent's front-end kind, not the process's :print")
+              (is (some #{[:has-ui true]} @seen)
+                  "and its :has-ui, not the process's false")
+              (is (some #{[:notify "hi"]} @seen)
+                  "the agent's port took the call, not the process's")
+              (is (not-any? #{[:process "hi"]} @seen))
+              (is (some #{[:sink "custom"]} @seen)
+                  "the agent's context sink took the custom message")
+              (is (some #{[:entry :blob]} @seen)
+                  "the agent's entry sink took the appended entry")
+              (finally (off))))))
+      (finally
+        (extensions/bind-extensions! previous)))))
+
 (deftest an-extension-send-user-message-acts-on-the-running-agent
   ;; The runtime capability resolves through the run's binding: a handler that
   ;; steers steers this agent, and the message reaches this agent's context.

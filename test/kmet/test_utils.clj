@@ -37,7 +37,8 @@
                                 :compaction-queued (or compaction-queued (atom []))
                                 :pending-compaction (or pending-compaction (atom []))
                                 :pending-ui (atom {})
-                                :run-callbacks (atom nil)})]
+                                :run-callbacks (atom nil)
+                                :front-end (atom nil)})]
     ;; the run ops a front end calls on a handle (landing 8), over this
     ;; engine: the driver's fns are their production reference
     (assoc engine

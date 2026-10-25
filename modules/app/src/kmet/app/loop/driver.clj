@@ -240,11 +240,14 @@
    sibling's alone.
 
    A run binds the extension surface for its prompt (`extensions/*agent-context*`):
-   the agent's session, the runtime capabilities (`extension-runtime`) and the
-   ExtensionContext keys only the loop knows (`extension-context`). An
-   extension event handler, tool hook or custom tool called by the run
-   therefore sees the agent it is running inside; outside a run a command
-   handler or an extension's own fiber still reads the process binding."
+   the agent's session, the runtime capabilities (`extension-runtime`), the
+   ExtensionContext keys only the loop knows (`extension-context`), and — when
+   a front end published one on this agent — that agent's front-end surface
+   (:mode, the UI port, the context/entry sinks). An extension event handler,
+   tool hook or custom tool called by the run therefore sees the agent it is
+   running inside, not another agent's front end or the process's; outside a
+   run a command handler or an extension's own fiber still reads the process
+   binding."
   [child {:keys [id session config prompt-fn projections]}]
   (let [engine-ref (atom nil)
         {:keys [state] runtime-cwd :cwd}
@@ -267,6 +270,11 @@
         ;; the settings ops below write it without a second derivation
         engine (runtime/map->Engine
                 {:agent-state live
+                 ;; the surface a front end published for this agent (its
+                 ;; mode, UI port and context/entry sinks), when one owns the
+                 ;; agent rather than the process; a run binds it so its
+                 ;; handlers read their own front end
+                 :front-end (atom nil)
                  :session (fn [] (:session @live))
                  :config (atom config)
                  :subscribers (atom [])
@@ -386,7 +394,8 @@
                    (binding [extensions/*agent-context*
                              {:session #(runtime/session engine)
                               :runtime (extension-runtime)
-                              :context extension-context}]
+                              :context extension-context
+                              :front-end (some-> (:front-end engine) deref)}]
                      (reset! last-run
                              (loop/run-agent-turn
                               @live

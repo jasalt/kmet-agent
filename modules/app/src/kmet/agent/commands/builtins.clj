@@ -42,7 +42,12 @@
 
       :else
       (do (debug/log "/continue command")
-          (session-driver/prompt! engine {})))))
+          ;; A handle owns the run (kmet2): its :send! starts with no message,
+          ;; which is what /continue means. A bare engine (kmet1's modes) has
+          ;; no :send! and starts through the session driver.
+          (if-let [send! (:send! engine)]
+            (send! nil {:target :next-turn})
+            (session-driver/prompt! engine {}))))))
 
 (defn- handle-name
   [{:keys [ui] engine :runtime} args]
@@ -87,18 +92,21 @@
 (defn- handle-compact
   [{:keys [ui] engine :runtime} args]
   (let [instructions (when (seq args) args)
-        outcome (session-driver/request-compaction!
-                 engine instructions
-                 {:on-complete (fn [result]
-                                 (when-not (= :aborted result)
-                                   ;; pi: handleCompactCommand ignores the
-                                   ;; thrown compaction error — compaction_end
-                                   ;; surfaces it (showError for manual); the
-                                   ;; completion reply is only for success and
-                                   ;; nothing-to-compact.
-                                   (out ui :info "Compact" (if result
-                                                             "Session compacted."
-                                                             "Nothing to compact (session too small)."))))})]
+        callbacks {:on-complete (fn [result]
+                                  (when-not (= :aborted result)
+                                    ;; pi: handleCompactCommand ignores the
+                                    ;; thrown compaction error — compaction_end
+                                    ;; surfaces it (showError for manual); the
+                                    ;; completion reply is only for success and
+                                    ;; nothing-to-compact.
+                                    (out ui :info "Compact" (if result
+                                                              "Session compacted."
+                                                              "Nothing to compact (session too small)."))))}
+        ;; a handle answers the op (kmet2); a bare engine goes through the
+        ;; driver (kmet1's modes)
+        outcome (if-let [request (:request-compaction! engine)]
+                  (request instructions callbacks)
+                  (session-driver/request-compaction! engine instructions callbacks))]
     (case outcome
       ;; A run in flight defers the compaction (kmet's cancel is cooperative,
       ;; so compacting under a live run would race it — pi instead aborts the

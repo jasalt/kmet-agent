@@ -26,6 +26,7 @@
             [kmet.agent.loop :as agent]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.runtime :as runtime]
+            [kmet.agent.session.driver :as session-driver]
             [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
             [kmet.libs.concurrent :as concurrent]
@@ -326,6 +327,30 @@
       (with-redefs [chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))]
         ((:handler (commands/find-command "continue")) (support/command-ctx cs) ""))
       (t/is (= "No conversation to continue." (:content @msg))))))
+
+(deftest test-continue-starts-through-the-handle
+  (testing "/continue starts through the handle's :send! when the runtime is a
+            handle (kmet2) and through the session driver on a bare engine
+            (kmet1's modes) — the table is shared"
+    (commands/clear-commands!)
+    ((var builtins/register-builtin-commands!) cfg/default-config)
+    (let [ag (agent/make-agent-state)
+          cs (tu/with-test-engine {:agent-state (atom ag)
+                                   :running-turn? (atom false)
+                                   :tui nil})
+          engine (:engine cs)]
+      (swap! (:messages ag) conj {:role :user :content [{:type :text :text "hi"}]})
+      (let [sent (atom nil)
+            handle (assoc engine :send! (fn [msg opts] (reset! sent [msg opts])))]
+        ((:handler (commands/find-command "continue"))
+         (assoc (support/command-ctx cs) :runtime handle) "")
+        (t/is (= [nil {:target :next-turn}] @sent)
+              "the handle's send starts a message-less run"))
+      (let [prompted (atom nil)]
+        (with-redefs [session-driver/prompt! (fn [_ opts] (reset! prompted opts))]
+          ((:handler (commands/find-command "continue"))
+           (assoc (support/command-ctx cs) :runtime (dissoc engine :send!)) ""))
+        (t/is (= {} @prompted) "a bare engine keeps kmet1's path")))))
 
 (deftest test-compact-schedules-while-running
   (testing "/compact schedules while a run is active even when the status atom

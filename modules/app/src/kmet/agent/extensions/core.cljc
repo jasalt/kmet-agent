@@ -203,6 +203,10 @@
                  :compact, ...), merged over the front end's `:build-context`
                  per call — a mid-run model or thinking change is visible to
                  the next handler, as it is through the front end's map
+     :front-end — the surface this agent's front end published (:mode,
+                 :has-ui, :ui, and its context/entry sinks), when a front end
+                 owns the agent rather than the process; a missing key falls
+                 back to the process binding
 
    nil outside a run — a command handler, an extension's own fiber, kmet1 —
    where the process binding the front end installed is the answer. That is
@@ -624,10 +628,12 @@
   nil)
 
 (defn ui-capability
-  "The bound fn for CAPABILITY, or nil when the front end has not
-   installed it (headless/print)."
+  "The bound fn for CAPABILITY: the running agent's own front end when this
+   call is inside a run (the run binds it), otherwise the process's install —
+   nil when neither installed it (headless/print)."
   [capability]
-  (get (:ui @extension-binding) capability))
+  (or (get (some-> *agent-context* :front-end :ui) capability)
+      (get (:ui @extension-binding) capability)))
 
 (defn ui-call
   "Dispatch a UI capability call through the bound map. No-op (nil) when
@@ -758,20 +764,23 @@
    call — the fns capture live state at call time. Used for command handlers
    (replacing the internal CoreState leak) and event handler ctx args.
 
-   The bound front-end kind is authoritative: a :build-context capability
-   cannot drift :mode/:has-ui away from bind-extensions!.
+   The front-end kind is authoritative: a :build-context capability cannot
+   drift :mode/:has-ui away from the binding — the run's own front end when
+   this call is inside a run whose agent published one, the process binding
+   otherwise.
 
    Session control fns (new-session/fork/navigate-tree/switch-session/
    reload) run the interactive flows synchronously — call them from
    user-initiated command handlers, never from agent-loop event handlers
    (pi restricts these to the command ctx; they can re-enter the run loop)."
   []
-  (let [run (:context *agent-context*)]
+  (let [run (:context *agent-context*)
+        front-end (:front-end *agent-context*)]
     (assoc (merge (default-extension-context)
                   (ui-call :build-context)
                   (when run (run)))
-           :mode (extension-mode)
-           :has-ui (extension-has-ui?))))
+           :mode (if front-end (or (:mode front-end) :print) (extension-mode))
+           :has-ui (if front-end (boolean (:has-ui front-end)) (extension-has-ui?)))))
 
 (defn wrap-event-handler
   "Adapt an extension event handler to the bus: handlers always receive
@@ -941,22 +950,26 @@
 
 (defn append-custom-entry!
   "Append a custom entry (extension state, never in LLM context) to the live
-   session (extension api: session :append-entry!). Returns the entry id."
+   session (extension api: session :append-entry!). The running agent's own
+   front end sink wins over the process's install. Returns the entry id."
   [custom-type & [data]]
   (when-let [sess (get-session)]
     (let [entry (session/append-custom-entry! sess custom-type data)]
-      (when-let [sink @entry-sink-atom]
+      (when-let [sink (or (some-> *agent-context* :front-end :entry-sink)
+                          @entry-sink-atom)]
         (sink entry))
       (:id entry))))
 
 (defn append-custom-message!
   "Append a custom message that participates in LLM context (extension api:
-   session :append-message!). Returns the entry id."
+   session :append-message!). The running agent's own front end sink wins over
+   the process's install. Returns the entry id."
   [custom-type content display & [details]]
   (when-let [sess (get-session)]
     (let [entry (session/append-custom-message-entry! sess custom-type
                                                       content display details)]
-      (when-let [sink @context-sink-atom]
+      (when-let [sink (or (some-> *agent-context* :front-end :context-sink)
+                          @context-sink-atom)]
         (sink {:role :custom
                :custom-type custom-type
                :content content
