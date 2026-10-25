@@ -888,7 +888,7 @@ Each is independently shippable and gated.
 | 5n | **landed** — the invocation surface is kmet1's: the run flags (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) parsed by the entry and resolved before a run, `@file` read at parse time, the maintenance flags (`-d`/`--debug` before the first load, `--generate-models` before the world, `--list-models [filter]` after it — one implementation in `kmet.app.maintenance` for both entries), extension `--flag` values in kmet1's three forms, the skill/prompt expansion chain in print and rpc, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) handed to the TUI row and refused by name where no factory opens a session (10a's); § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:`-style expansion reaches the agent in print and rpc, `--list-models` is byte-identical to `--app old` bare and filtered, `--session-dir` places the session, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run — met |
 | 8 | **done** — the handle is the value a front end reads: its settings/compaction surface (`479eb19d`), per-agent listeners and rpc's model/compaction setters (`c6723127`), a run binding the extension surface to its agent (`2ce32596`), the session lifecycle below both drivers with its ops on the handle (`5a314785`), the TUI's agent as a handle presented from loop events (`6e3b6ce6`), the TUI's session commands and the per-agent front-end surface/sinks plus the builtins' handle path (`8f712922`, `5e9bbc98`), and the gate tests (`44044636` 8g: the agent in the tree, per-agent settings, per-ctx settlement, the image path) | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises (**the last is met at the listener level**: print and rpc subscribe on the agent's ctx, and `kmet.app.test-front-end-gates` settles two agents' promises in one booted composition; no test mounts two print rows in one composition) |
 | 9 | **planned** — the execution seams: `:shell`/`:subprocess`, `:workspace`/`:fs`, `:sandbox`, `:llm`/`:models`, `:config`/`:auth`; every `defonce` cell the audit names becomes a per-context read | two agents run shell in two cwds with two shells; the § "Multi-session server mode" audit table holds only the extension host's own bindings, each with a written reason |
-| 10 | **in progress** — 10a's rpc table: the wire's prompt is the submission chain (the portable commands dispatch through the registry, the input hooks and the engine's expansion run, and the durable queue facts land in the session log) and `get-commands` answers; the session family, the cycles, the queue modes, the dialog pair and `respond` remain. Then the server's phase 1: resume-by-id, the boundary drain, bearer token, unix socket where the host has one, `--max-sessions`, per-client depth, idle reaping, `:lag`/`:stream-gap`, `:remember!` enforced | an agent disposed, resumed by id and answered; a tool thread's mount lands at the next turn; two sessions isolated by cwd, shell and model |
+| 10 | **in progress — 10a landed**; 10b/10c remain. 10a: the wire's prompt is the submission chain, `get-commands` answers, the session reads and moves, the cycles and queue modes, and `respond` (silent) — kmet1's whole table answers or is a documented refusal. 10b/10c: resume-by-id, the boundary drain, the static submit guard, bearer token, unix socket where the host has one, `--max-sessions`, per-client depth, idle reaping, `:lag`/`:stream-gap`, `:remember!` enforced | an agent disposed, resumed by id and answered; a tool thread's mount lands at the next turn; two sessions isolated by cwd, shell and model |
 | 11 | **planned** — retirement: one `s/kmet\.agent\./kmet.app./` pass, kmet1's files deleted, `--app` flipped to the default and the flag dropped, the `agent` module row removed | the full gate set plus pi-alignment green with no `kmet.agent.*` in the tree except the ABI |
 
 **The order is not the table's order.** 7b's events half precedes landing 5:
@@ -4159,9 +4159,29 @@ rather than running one with its reply dropped — the per-connection port is
 while a compaction runs lands in the compaction queue, which records no fact —
 the queue is memory, and recording at submit time would leave a queue fact the
 delivery never folds, so 10b's inbox read decides whether to record at the
-flush instead. The
-steers/follow-ups still expand in the mode; the session family, the cycles, the
-queue modes, the dialog pair (`:request`/`:response`) and `respond` remain.
+flush instead.
+
+The table is complete (10a's later slices). The session reads are the runtime's
+and the log's (`get-messages`, `get-last-assistant-text`, `get-session-stats`,
+`get-tree`, `export-html`), and `get-entries` gained its `:since` narrowing and
+the `:leaf-id` a client that forked or switched reads; `get-state` answers
+`:compacting?`, `:last-outcome` and the session's `:name`. The moves are the
+handle's session ops (`new-session`, `switch-session`, `fork`, `clone`,
+`set-session-name`), each re-installing the process-wide extension session on
+the rpc row and none doing so on a server connection — one process, many
+agents, and a slot a connection must not take; the server test proves a move on
+one connection leaves the other agent where it was. The cycles, the levels and
+the queue modes are the handle's setters, and `clear-queue` answers the texts it
+dropped. `respond` answers nothing (pi writes no record for a valid answer),
+which made a silent command a transport concern on both wires; kmet2's
+extension ABI carries no host-built dialogs, so no dialog `:ui-request` is
+produced and the live `:request`/`:response` pair is the server's approval
+route. Two decisions worth keeping: a `steer`/`follow-up` on an idle agent
+starts a run under the handle's one start-or-queue rule, so the answer says
+`:started` rather than a `:queued` nothing would drain (kmet1 queued and waited
+— a client that depended on that should send them only around a live run); and
+an rpc row refuses the session-lifecycle flags by name until resume-by-id
+lands, which is 9's.
 
 ### `ui-tk` — deferred to separate development
 
