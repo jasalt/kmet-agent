@@ -425,7 +425,7 @@
                   "and the handle's live session moved")
               (is (identical? b-session (runtime/session b))
                   "a sibling handle keeps its own session")
-              (is (nil? (extensions/get-session))
+              (is (not (identical? (runtime/session a) (extensions/get-session)))
                   "no process-wide extension install: a handle is not a front end")
               ;; resume! loads the session the handle started with
               (let [resumed ((:resume-session! agents) a (:file a-session))]

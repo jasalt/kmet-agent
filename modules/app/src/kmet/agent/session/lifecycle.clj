@@ -85,8 +85,10 @@
    compaction request (both belong to the outgoing session), and point the
    runtime cwd at the session's.
 
-   The opts `:install!` fn, when given, receives SESS after the session slot
-   moves — that is where kmet1 installs the process-wide extension session.
+   The opts `:install!` fn, when given, receives SESS after the engine's
+   session slot moves (an atom-held one; a thunk-held handle follows its state
+   record below) — that is where kmet1 installs the process-wide extension
+   session.
    Callers own the before/after lifecycle events. Returns SESS."
   ([engine sess] (switch-session! engine sess nil))
   ([engine sess {:keys [apply-settings? install!]}]

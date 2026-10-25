@@ -3987,9 +3987,9 @@ callbacks replaced by loop events on the handle's ctx, the front end's `:ui`
 port and `:mode` published per agent, the per-agent context/entry sinks, and
 the commands themselves over the handle's ops. The TUI still bootstraps an
 engine; its reads already go through the accessors whose handle shape landed,
-which is what makes the port incremental. `continue!`/`find-recent-session`
-stay caller compositions over `runtime/find-recent-session` rather than handle
-ops: a query is not an agent's state.
+which is what makes the port incremental. A `-c`-style continue is
+`find-recent-session` plus a resume at the caller, not a handle op: a query is
+not an agent's state.
 
 ### 5m — `ui-tk`, the second provider
 

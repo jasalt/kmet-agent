@@ -93,12 +93,12 @@
 
 (def session-ops
   "The session-lifecycle ops a handle answers by name: the moves a front end's
-   /new, /session, /resume, fork, clone and branch commands need, plus the
-   session's name and HTML export. `:resume-session!` loads a stored session
-   and switches to it, as opposed to the registry's `:resume!`, which creates a
-   new agent for one. Same call shape as `setting-ops`
-   (`(op handle & args)`); each moves the session of the agent it was called
-   with, and none installs it into the process's extension slot."
+   /new, /session, fork, clone and branch commands need, plus the session's name
+   and HTML export. `:resume-session!` loads a stored session and switches to
+   it, as opposed to the registry's `:resume!`, which creates a new agent for
+   one. Same call shape as `setting-ops` (`(op handle & args)`); each moves the
+   session of the agent it was called with, and none installs it into the
+   process's extension slot."
   [:new-session! :resume-session! :switch-session! :fork! :branch-session! :clone!
    :set-session-name! :export-html!])
 
