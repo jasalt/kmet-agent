@@ -38,6 +38,7 @@
             [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
             [kmet.agent.event-bus :as event-bus]
+            [kmet.agent.extensions.core :as extensions]
             [kmet.agent.modes.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
@@ -248,6 +249,29 @@
                 "the configured surface governs the resumed session")
           (t/is (not (contains? (prompt-tool-names) "bash"))
                 "and the rebuilt prompt options agree"))
+        (finally (fs/delete-tree dir))))))
+
+(deftest test-a-session-switch-installs-the-front-ends-session
+  (testing "the handle's session ops install nothing; the front end installs
+            the process-wide extension session after every move — a command
+            handler runs outside a run and must act on the session the user
+            chose, and a mode whose runtime moved without an install would
+            leave the old session reachable"
+    (let [dir (str (fs/absolutize (str "target/test-install-session-" (System/currentTimeMillis))))]
+      (try
+        (let [outgoing (session/create-session (str dir "/out"))
+              _ (append-message! outgoing "hello")
+              incoming (session/create-session (str dir "/in"))
+              _ (append-message! incoming "imported")
+              cs (import-test-cs outgoing)
+              installed (atom [])]
+          (with-redefs [tui/tui-request-render (fn [_])
+                        tui/tui-set-focus (fn [_ _])
+                        extensions/install-session! (fn [s] (swap! installed conj s))]
+            (session-admin/restore-session! cs incoming true))
+          (t/is (= [(:id incoming)] (mapv :id @installed))
+                "exactly the front end installed: the runtime's own ops neither
+                 install nor duplicate the session switch"))
         (finally (fs/delete-tree dir))))))
 
 (deftest test-import-cancellation-paths

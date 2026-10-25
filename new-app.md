@@ -1517,10 +1517,12 @@ That is not a front-end fact but an agent one, and it cannot be fixed before the
 per-agent scoping it needs: the host's session slot is one process atom, which is
 the same constraint that keeps print mode's event listeners at the app scope. It
 is landing 6's line, with the per-agent listeners, and it is the piece that makes
-a second mode in one process meaningful. `mode-rpc` has its own bind to remember
-when it lands: kmet1's rpc mode is `:mode :rpc`, `has-ui true`, with a dialog port
-that forwards requests to the client — the headless port is print mode's, not
-rpc's.
+a second mode in one process meaningful. (`8f` has since landed the per-agent
+half: the front end publishes mode, port and sinks on the agent, and a run's
+handlers prefer them over the process install — § row 8.) `mode-rpc` has its own
+bind to remember when it lands: kmet1's rpc mode is `:mode :rpc`, `has-ui true`,
+with a dialog port that forwards requests to the client — the headless port is
+print mode's, not rpc's.
 
 **The `:ui` service has its first provider.** § "Pluggable UI" has it as a
 capability *service* (`:kind`, `:render-tree`, `:request!`, `:widget-set`,

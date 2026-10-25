@@ -6,6 +6,7 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.session.driver :as session-driver]
+            [kmet.agent.session.lifecycle :as lifecycle]
             [kmet.agent.session.runtime :as rt]
             [kmet.agent.skills :as skills]
             [kmet.tui.utils :as u]))
@@ -18,10 +19,13 @@
    last-run and disposal are fresh.
 
    The engine also answers the handle's run and session ops — the fns a front
-   end calls after landing 8 — by delegating to the driver, which is what a
-   production handle wraps. A mode test's subject is the UI; the handle's ids,
-   child ctx and registry lifecycle are the loop driver's tests. Production
-   builds handles through `kmet.app.loop.driver`'s factory."
+   end calls after landing 8. The run ops delegate to the driver (the reference
+   for their shapes); the session ops delegate to the session lifecycle, which
+   is what the handle wraps and which installs nothing — the front end installs
+   the process-wide extension session itself, so a test that forgot that
+   install cannot pass through the double. A mode test's subject is the UI; the
+   handle's ids, child ctx and registry lifecycle are the loop driver's tests.
+   Production builds handles through `kmet.app.loop.driver`'s factory."
   [{:keys [agent-state session config cwd turn-running? compaction-queued
            pending-compaction]}]
   (let [engine (rt/map->Engine {:agent-state agent-state
@@ -63,15 +67,15 @@
            :request-compaction! (fn [& args]
                                   (apply session-driver/request-compaction! engine args))
            :dispose! (fn [] (session-driver/dispose! engine))
-           ;; the session lifecycle (landing 8f): the front end's commands move
-           ;; the agent in place and install the session slot themselves, so
-           ;; the driver's wrappers are the reference here too
-           :new-session! (fn [& args] (apply session-driver/new-session! engine args))
-           :resume-session! (fn [& args] (apply session-driver/resume! engine args))
-           :switch-session! (fn [& args] (apply session-driver/switch-session! engine args))
-           :branch-session! (fn [& args] (apply session-driver/branch-session! engine args))
-           :fork! (fn [& args] (apply session-driver/fork! engine args))
-           :clone! (fn [& args] (apply session-driver/clone! engine args)))))
+           ;; the session lifecycle the handle wraps: it moves the agent in
+           ;; place and installs nothing (no :install!), so the front end's own
+           ;; install is what a mode test exercises
+           :new-session! (fn [& args] (apply lifecycle/new-session! engine args))
+           :resume-session! (fn [& args] (apply lifecycle/resume! engine args))
+           :switch-session! (fn [& args] (apply lifecycle/switch-session! engine args))
+           :branch-session! (fn [& args] (apply lifecycle/branch-session! engine args))
+           :fork! (fn [& args] (apply lifecycle/fork! engine args))
+           :clone! (fn [& args] (apply lifecycle/clone! engine args)))))
 
 (defn with-test-engine
   "Add a test engine to a CoreState-like map, reusing the map's legacy

@@ -451,7 +451,7 @@
    teardownCurrent: an in-flight turn refuses the import (like /fork and
    /clone — the switch path does not abort) and the switch emits
    :session-before-switch, exactly as /resume does. The session's recorded
-   cwd becomes the runtime cwd (session-driver/switch-session! →
+   cwd becomes the runtime cwd (the handle's :switch-session! →
    apply-session-cwd!), so
    the tools, the prompt's cwd line and the footer follow it, as in pi's
    createRuntime."
